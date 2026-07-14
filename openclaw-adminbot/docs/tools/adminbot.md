@@ -1,0 +1,525 @@
+---
+summary: "Use AdminBot as a typed approval broker for sensitive lab admin actions."
+read_when:
+  - You want an agent to prepare reimbursements, candidate decisions, Slack invites, calendar changes, email drafts, social posts, recommendation letters, paper publishing tasks, or join form classifications
+  - You need approvals and audit logging before an agent mutates external admin systems
+  - You are building a restricted admin agent that can observe and propose but not execute directly
+title: "AdminBot"
+---
+
+AdminBot is a plugin tool surface for running a restricted admin agent through
+OpenClaw without giving the model direct authority over Slack, Gmail, Calendar,
+forms, reimbursements, hiring decisions, recommendation letters, or public
+posts. OpenClaw observes, summarizes, drafts, and requests typed proposals. A
+separate local AdminBot service owns policy, approvals, connector scopes,
+execution, and audit logs.
+
+Use this shape when the same agent should actively read permitted conversations
+or forms and suggest useful work, but every sensitive action must become a
+specific approval item before anything mutates outside OpenClaw.
+
+## Before you begin
+
+You need a local AdminBot service listening on loopback, for example
+`http://127.0.0.1:8765`. The service must implement these endpoints:
+
+| Endpoint                              | Purpose                                                           |
+| ------------------------------------- | ----------------------------------------------------------------- |
+| `POST /proposals`                     | Create one typed action proposal.                                 |
+| `POST /privacy/tasks`                 | Route reasoning through the VM-local privacy gate.                |
+| `GET /proposals/pending`              | Return pending approval items.                                    |
+| `GET /settings`                       | Return service defaults such as member privilege and escalation.  |
+| `PUT /settings`                       | Update AdminBot service defaults.                                 |
+| `GET /lab/members`                    | Return lab members and computed access profiles.                  |
+| `PUT /lab/members/{member_id}`        | Create or update one lab member.                                  |
+| `GET /papers`                         | Return paper pipeline records with computed timeline estimates.   |
+| `PUT /papers/{paper_id}`              | Create or update one paper pipeline record.                       |
+| `GET /papers/nudges`                  | Return due paper reminders and PI escalations.                    |
+| `POST /approvals/{action_id}/approve` | Approve one immutable payload by hash.                            |
+| `POST /actions/{action_id}/execute`   | Execute or simulate an approved action.                           |
+| `GET /audit`                          | Return service audit events for local development and inspection. |
+
+Keep external connector credentials in the AdminBot service. Do not place Slack,
+Google, email, calendar, reimbursement, or social media write tokens in OpenClaw
+workspace files, prompts, or model-visible memory.
+
+### Private reasoning and NVIDIA NIM
+
+The AdminBot service classifies every `adminbot_reason` request with local
+Ollama `gemma4:e4b` before any remote call. Generic tasks can use NVIDIA NIM
+`minimaxai/minimax-m3`. Private tasks are replaced with opaque placeholders;
+only the sanitized task reaches NIM, and Gemma fills the placeholders locally.
+Use `privacy="private"` or `sensitiveTerms` to force private handling. Missing
+keys, uncertain or malformed classification, unsafe sanitization, and model
+errors fail closed to local execution.
+
+If the installed Ollama version cannot load Gemma, AdminBot falls back to the
+local `gpt-oss:20b` model. This fallback can be slower, but it never sends the
+raw request off the VM.
+
+Run Ollama and keep model credentials and endpoints on the Red Hat VM:
+
+```bash
+export NVIDIA_API_KEY="nvapi-..."
+ollama pull gemma4:e4b
+pnpm tsx start-adminbot.ts
+```
+
+Vercel should serve static Control UI assets only. Prompts must connect directly
+to the VM gateway over authenticated TLS; do not proxy or log prompts through a
+Vercel Function, analytics collector, or other hosted middleware.
+
+### Connect Gmail and Calendar with gog
+
+Install and authenticate `gog` from `gogcli` on the AdminBot service host. The
+provided `start-adminbot.ts` and built `start-adminbot.mjs` launch the durable
+loopback service with `createGogAdminBotExecutor()`. The executor uses only
+non-interactive, exact-command allowlists for Gmail drafts/sends and Calendar
+create/update/delete operations.
+
+For a headless service, configure gog's file keyring outside the repository and
+provide its password through the service environment:
+
+```bash
+export GOG_KEYRING_BACKEND=file
+export GOG_KEYRING_PASSWORD=<strong-keyring-password>
+pnpm tsx start-adminbot.ts
+```
+
+A dry-run records `execution.simulated` but leaves the proposal approved, so the
+same immutable proposal can later run live. A live request returns an error and
+keeps the proposal approved when `gog` is unavailable, its payload is invalid,
+or no connector handles the action type. The proposal is marked executed only
+after `gog` succeeds.
+
+Live gog payloads use these fields:
+
+- `email.draft` and `email.send`: `to`, `subject`, `body`; optional `account`,
+  `cc`, `bcc`, and `reply_to`.
+- Calendar create/invite: `summary`, `from`, `to`; optional `calendar_id`,
+  `account`, `attendees`, `description`, `location`, `timezone`, `all_day`, and
+  `with_meet`.
+- `calendar.reschedule`: `event_id`, `from`, and `to`, plus the optional Calendar
+  fields above.
+- `calendar.cancel`: `event_id`; optional `calendar_id` and `account`.
+
+### Connect LinkedIn and X for paper posts
+
+The AdminBot service can prepare and publish paper announcements to LinkedIn
+and X after approval. Keep platform credentials in the service environment:
+
+```bash
+export LINKEDIN_ACCESS_TOKEN="..."
+export LINKEDIN_AUTHOR_URN="urn:li:organization:..."
+export X_ACCESS_TOKEN="..."
+```
+
+`LINKEDIN_VERSION` is optional and defaults to `202506`. The service calls
+LinkedIn's REST posts endpoint and X API v2 tweet creation endpoint only from
+the approved `social_media.post_publicly` executor path.
+
+Use `adminbot_prepare_paper_social_posts` for prompted papers. It reads the
+AdminBot paper list and lab roster, builds LinkedIn text, splits X posts into a
+280-character-safe thread, and records missing author tags in the proposal. Add
+author tags to member notes before approval:
+
+```text
+X: @student_handle
+LinkedIn: @student-name
+LinkedIn URN: urn:li:person:abc123
+```
+
+If any requested platform tag is missing, execution refuses to post and reports
+which member needs `X:`/`Twitter:` or `LinkedIn:`/`LinkedIn URN:` in the roster.
+
+### Prepare approved Overleaf paper edits
+
+Use `adminbot_prepare_overleaf_paper_edit` when the user asks AdminBot to edit a
+paper through the Overleaf project link stored on the paper record. The tool
+creates a `paper.overleaf_edit` T4 proposal that includes the Overleaf edit URL,
+target source files, requested changes, and any affiliation-check findings. It
+does not mutate Overleaf until the immutable proposal is approved and executed.
+
+For affiliation-sensitive edits, set `mode="affiliation_check"`. AdminBot reads
+the paper authors, the lab member list, and member notes such as:
+
+```text
+Affiliation: Jinesis Lab, University of Toronto & Vector Institute
+Main affiliation: Jinesis
+```
+
+The check follows the supplied affiliation policy: use the exact Jinesis wording
+for Jinesis-main-affiliation members, never use `Jinesis AI Lab`, require exact
+confirmation for Zhijing and special collaborators, and do not infer EuroSafeAI
+or company affiliation facts without evidence. Missing or uncertain affiliations
+are recorded in the proposal and block execution until corrected or confirmed.
+
+Approved Overleaf writes require a service-side bridge or compatible API kept
+outside OpenClaw prompts and workspace files:
+
+```bash
+export OVERLEAF_API_BASE_URL="https://your-overleaf-bridge.example/api"
+export OVERLEAF_ACCESS_TOKEN="..."
+```
+
+Without these variables, approved execution fails closed and leaves the proposal
+approved for a later live run after the bridge is configured.
+
+## Set up AdminBot
+
+Run `openclaw setup`, choose the manual/custom flow, and accept the AdminBot
+prompt. The setup step:
+
+- enables the bundled `adminbot` plugin with loopback service defaults;
+- creates a dedicated `adminbot` agent with the AdminBot skill pack;
+- configures the hosted Jinesis Control UI at
+  `https://jinesis-admin.vercel.app/`;
+- gives that agent only Slack messaging and AdminBot proposal/approval tools;
+- pins the conversational agent to local `ollama/gemma4:e4b` so raw turns are classified on the VM;
+- removes the remaining built-in minimal-profile tool;
+- disables elevated exec for that agent; and
+- can route unmatched Slack conversations to the `adminbot` agent.
+
+Slack conversation uses the normal OpenClaw Slack channel. Configure the Slack
+channel as usual, then let AdminBot setup add the route binding when prompted.
+More specific Slack bindings, such as a team or peer binding for another agent,
+continue to win before the broad AdminBot Slack route.
+
+## Manual plugin config
+
+Enable the plugin and keep dry-run mode on while you evaluate proposals:
+
+```json
+{
+  "plugins": {
+    "entries": {
+      "adminbot": {
+        "enabled": true,
+        "config": {
+          "serviceBaseUrl": "http://127.0.0.1:8765",
+          "serviceTokenEnv": "ADMINBOT_SERVICE_TOKEN",
+          "defaultDryRun": true
+        }
+      }
+    }
+  }
+}
+```
+
+`serviceTokenEnv` names the environment variable that holds the bearer token.
+The token value is read by the plugin process and is not part of the model tool
+arguments.
+
+AdminBot setup also configures the hosted Jinesis Control UI. If you configure
+AdminBot manually, add the same launch URL and browser origin:
+
+```json
+{
+  "gateway": {
+    "controlUi": {
+      "launchUrl": "https://jinesis-admin.vercel.app/",
+      "allowedOrigins": ["https://jinesis-admin.vercel.app"]
+    }
+  }
+}
+```
+
+## Manual restricted agent
+
+Prefer a dedicated agent and workspace. Do not reuse a general personal
+assistant workspace for high-risk admin workflows. Include the `adminbot`
+plugin id in `tools.alsoAllow` so the bundled AdminBot workflow skills can see
+the plugin tools even under the minimal profile.
+
+```json
+{
+  "agents": {
+    "list": [
+      {
+        "id": "adminbot",
+        "name": "AdminBot",
+        "model": {
+          "primary": "ollama/gemma4:e4b",
+          "fallbacks": ["ollama/gpt-oss:20b"]
+        },
+        "workspace": "~/.openclaw/workspace-adminbot",
+        "sandbox": {
+          "mode": "all",
+          "scope": "agent"
+        },
+        "skills": [
+          "adminbot-workflows",
+          "adminbot-candidate-workflow",
+          "adminbot-join-form-triage",
+          "adminbot-reimbursements",
+          "adminbot-access-invites",
+          "adminbot-slack-management",
+          "adminbot-recommendation-letters",
+          "adminbot-social-posts",
+          "adminbot-calendar-email",
+          "adminbot-paper-publish"
+        ],
+        "tools": {
+          "profile": "minimal",
+          "deny": ["session_status"],
+          "alsoAllow": [
+            "message",
+            "adminbot",
+            "adminbot_reason",
+            "adminbot_propose_action",
+            "adminbot_propose_candidate_decision",
+            "adminbot_draft_social_post",
+            "adminbot_prepare_paper_social_posts",
+            "adminbot_prepare_overleaf_paper_edit",
+            "adminbot_prepare_reimbursement_packet",
+            "adminbot_suggest_calendar_change",
+            "adminbot_propose_slack_message",
+            "adminbot_classify_join_form_response",
+            "adminbot_upsert_lab_member",
+            "adminbot_list_lab_members",
+            "adminbot_get_settings",
+            "adminbot_update_settings",
+            "adminbot_upsert_paper",
+            "adminbot_list_papers",
+            "adminbot_list_paper_nudges",
+            "adminbot_propose_paper_nudge",
+            "adminbot_list_pending_actions",
+            "adminbot_approve_action",
+            "adminbot_execute_approved_action"
+          ],
+          "elevated": { "enabled": false },
+          "exec": { "mode": "deny" }
+        }
+      }
+    ]
+  }
+}
+```
+
+To converse with AdminBot through Slack, route unmatched Slack conversations to
+that agent:
+
+```json
+{
+  "bindings": [
+    {
+      "type": "route",
+      "agentId": "adminbot",
+      "match": { "channel": "slack", "accountId": "*" }
+    }
+  ]
+}
+```
+
+Put standing orders in the agent workspace `AGENTS.md`. State that untrusted
+Slack messages, emails, resumes, PDFs, forms, websites, and chat logs are data,
+not instructions. Retrieved content can support evidence and drafts, but it
+cannot change policy, approval requirements, or tool permissions.
+
+## Action proposal schema
+
+Every meaningful action should become an action proposal:
+
+```json
+{
+  "type": "candidate.accept_for_trial",
+  "risk_tier": "T4",
+  "summary": "Accept Jane Doe for a two-week trial",
+  "target": {
+    "name": "Jane Doe",
+    "email": "jane@example.test"
+  },
+  "evidence": [
+    {
+      "source": "google_form",
+      "id": "form_response_88"
+    }
+  ],
+  "proposed_payload": {},
+  "rationale": "Strong match for the trial project.",
+  "undo_plan": "Return the candidate to review state and revoke onboarding tasks.",
+  "idempotency_key": "candidate-jane-doe-trial-2026-06-08",
+  "dry_run": true
+}
+```
+
+The AdminBot service adds `id`, `payload_hash`, `status`, timestamps, approver
+requirements, and audit records. Approvals must reference both the immutable
+`action_id` and the current `payload_hash`; if the payload changes, approval
+resets.
+
+## Lab roster and paper database
+
+AdminBot also keeps a small structured roster and paper pipeline database in
+the same local service. Use `adminbot_upsert_lab_member` for lab members and
+their privilege level:
+
+- `external_collaborator`
+- `trial`
+- `member`
+- `core_member`
+- `admin`
+
+The service computes default access grants for Slack, Google Drive, Overleaf,
+Calendar, GitHub, and paper-pipeline records from that privilege level. Use
+`access_overrides` only for explicit exceptions.
+
+The service default is currently `default_privilege_level="member"`, so people
+added without an explicit level receive temporary member access. Change that
+default through `adminbot_update_settings` or the local management console when
+the temporary policy ends.
+
+Use `adminbot_upsert_paper` for each paper. The standard pipeline is:
+
+1. `brainstorming_docs`
+2. `overleaf_writing`
+3. `submission`
+4. `google_drive_pdf`
+5. `arxiv_polish`
+6. `social_posts`
+7. `slide_making`
+8. `poster_making`
+
+Paper records store links such as Brainstorming Docs, Overleaf view/edit URLs,
+submission URL, Google Drive PDF, arXiv URL, GitHub URL, Twitter/LinkedIn
+drafts, Google Slides, and poster output. For arXiv polish, track paper mentor,
+affiliation, and GitHub-link checks. For social posts, authors write Twitter
+first; AdminBot can adapt the content for LinkedIn and suggest tags. For poster
+making, start from the top six meaningful slides and rearrange them into a
+poster plan.
+
+When AdminBot asks authors for the next paper step, record
+`reminder.status="waiting_on_authors"` and `last_author_dm_at`. Calling `adminbot_list_papers` returns each paper with an estimated Gantt-style timeline derived from the current progress step. Calling `adminbot_list_paper_nudges` returns author reminders or a `head_professor_escalation` after three business days without an author reply. Set `head_professor_member_id` to Zhijing's lab-member id for Andrew's lab, then use `adminbot_propose_paper_nudge` to create the approval-gated Slack reminder that asks Zhijing to nudge the paper authors directly.
+The same defaults can be managed through service settings:
+`paper_escalation_business_days` and `head_professor_member_id`.
+
+For local development, open the mock service at `/adminbot` to manage settings,
+members, active papers, due nudges, pending actions, and audit events in a
+browser. The Control UI also supports a non-admin view: the admin password opens
+the full AdminBot dashboard, while the general password `jinesis` opens a
+read-only paper/member view. The console talks to the same local service
+endpoints as the AdminBot tools, so it does not create a second source of truth.
+
+These records are operational state, not freeform memory. They belong in the
+AdminBot service ledger so reminder timing, privilege levels, and paper links
+survive restarts.
+
+The bundled development service can keep this ledger in memory for tests, or it
+can auto-create a local SQLite file with
+`createAdminBotSqliteService({ databasePath })`. Set `auditRetentionDays` to
+prune old audit events while preserving the proposal, approval, execution, and
+idempotency rows needed for safety checks.
+
+For local development, the mock service can use the same zero-setup ledger:
+
+```ts
+createAdminBotMockService({
+  databasePath: "state/adminbot.sqlite",
+  auditRetentionDays: 30,
+});
+```
+
+Use Markdown for standing orders, workflow notes, rubrics, and human-readable
+proposal exports. Use the SQLite ledger for the small amount of structured
+state that must survive restarts: immutable payload hashes, approval records,
+execution status, idempotency keys, and audit events.
+
+## Skills and code responsibilities
+
+Implement most AdminBot features as skills over a small typed code surface.
+The plugin ships a bundled AdminBot skill pack. The `adminbot-workflows` skill
+routes requests to focused skills for reimbursements, candidate decisions,
+recommendation letters, social posts, calendar/email, PaperPublish,
+Slack/Vector access, Slack management, and join-form classification. Skills
+should read permitted context, follow lab-specific instructions, gather
+evidence, draft content, and decide which AdminBot proposal to create. The code
+surface should stay responsible for security-sensitive mechanics:
+
+| Layer            | Owns                                                                                                                                                                                                                    |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Skills           | Reimbursement preparation, candidate workflow, recommendation-letter workflow, social post drafting, calendar/email triage, PaperPublish preparation, Slack management playbooks, and join-form classification rubrics. |
+| AdminBot tools   | Typed proposals, lab-member and paper-record updates, due-nudge listing, payload hashing, pending-action listing, approval submission, and execution requests.                                                          |
+| AdminBot service | Policy, approver roles, lab roster, paper database, reminder timing, connector credentials, connector scopes, idempotency, execution, and audit retention.                                                              |
+
+This keeps setup light while avoiding prompt-only security policy. A skill can
+say "prepare a reimbursement packet from these receipts"; the service still
+decides whether the packet can be submitted, who must approve it, and whether
+the exact payload has already been executed.
+
+## Risk tiers
+
+Start with this policy:
+
+| Tier                              | Default behavior                                                       | Examples                                                                                                                        |
+| --------------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `T0` observe                      | Auto-run when data access is permitted.                                | Summarize, classify a join form, detect opportunities.                                                                          |
+| `T1` draft                        | Auto-run when policy allows.                                           | Draft email, draft social post, prepare reimbursement packet, draft recommendation letter.                                      |
+| `T2` reversible internal action   | Auto-run only when reversible and explicitly allowed.                  | Label email, create internal task, create tentative calendar hold.                                                              |
+| `T3` sensitive external action    | Requires explicit approval.                                            | Send email, invite Slack guest or member, send calendar invite.                                                                 |
+| `T4` HR, public, financial, legal | Requires explicit approval; some actions should require two approvers. | Accept or decline candidates, submit reimbursements, post publicly, send recommendation letters, submit paper publishing tasks. |
+
+Never auto-decline candidates, auto-post public content, auto-send
+recommendation letters, auto-submit reimbursements, or auto-send external
+messages unless your AdminBot service policy explicitly permits that action
+after the required approval.
+
+## Policy file
+
+Keep lab-specific policy in the AdminBot service, not in OpenClaw prompts:
+
+```yaml
+candidate_decisions:
+  accept_direct:
+    requires_approval: true
+    approver_roles: ["pi"]
+  accept_trial:
+    requires_approval: true
+    approver_roles: ["pi", "lab_manager"]
+  decline:
+    requires_approval: true
+    approver_roles: ["pi", "lab_manager"]
+
+social_media:
+  draft:
+    auto_allowed: true
+  post_publicly:
+    requires_approval: true
+
+calendar:
+  create_tentative_hold:
+    auto_allowed: true
+  send_invite:
+    requires_approval: true
+```
+
+The action broker should check approval status, risk tier, actor permissions,
+connector scope, idempotency key, rate limits, dry-run state, and policy
+constraints immediately before execution.
+
+The bundled development service implements the policy defaults above, immutable
+payload-hash approvals, idempotent execution replay, and audit events for
+proposal creation, auto-approval, approval recording, simulated execution, real
+execution, and idempotency replay.
+
+## Production readiness
+
+Run in dry-run mode for one or two weeks. Track false positives, missed
+opportunities, bad evidence, privacy leaks in drafts, approval rejections, and
+manual edits before increasing autonomy.
+
+Store evidence pointers rather than large raw dumps. An audit record should be
+able to reconstruct a decision through source IDs, short snippets, hashes, and
+access-controlled links without copying entire private chats or emails into a
+separate model-visible store.
+
+Keep connector scopes minimal. Start read-only for Gmail, Slack, Calendar, and
+Forms. Add write scopes only for the workflows that have service-side approval
+checks and audit logging.
+
+## Related
+
+- [Standing orders](/automation/standing-orders)
+- [Per-agent sandbox and tool restrictions](/tools/multi-agent-sandbox-tools)
+- [Skills config](/tools/skills-config)
+- [Lobster](/tools/lobster)
+- [Plugin manifest](/plugins/manifest)
