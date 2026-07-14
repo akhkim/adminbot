@@ -1,0 +1,495 @@
+{
+    "meta":  {
+                 "lastTouchedVersion":  "2026.6.8",
+                 "lastTouchedAt":  "2026-06-30T22:12:55.429Z"
+             },
+    "wizard":  {
+                   "lastRunAt":  "2026-06-30T20:40:09.856Z",
+                   "lastRunVersion":  "2026.6.8",
+                   "lastRunCommand":  "doctor",
+                   "lastRunMode":  "local"
+               },
+    "models":  {
+                   "providers":  {
+                                     "nvidia":  {
+                                                    "baseUrl":  "https://integrate.api.nvidia.com/v1",
+                                                    "api":  "openai-completions",
+                                                    "timeoutSeconds":  1800,
+                                                    "models":  [
+                                                                   {
+                                                                       "id":  "nvidia/nemotron-3-ultra-550b-a55b",
+                                                                       "name":  "NVIDIA Nemotron 3 Ultra 550B",
+                                                                       "reasoning":  false,
+                                                                       "input":  "text",
+                                                                       "cost":  {
+                                                                                    "input":  0,
+                                                                                    "output":  0,
+                                                                                    "cacheRead":  0,
+                                                                                    "cacheWrite":  0
+                                                                                },
+                                                                       "contextWindow":  1000000,
+                                                                       "maxTokens":  "\u003cREDACTED\u003e",
+                                                                       "compat":  {
+                                                                                      "requiresStringContent":  true
+                                                                                  },
+                                                                       "params":  {
+                                                                                      "chat_template_kwargs":  {
+                                                                                                                   "enable_thinking":  false,
+                                                                                                                   "force_nonempty_content":  true
+                                                                                                               }
+                                                                                  }
+                                                                   },
+                                                                   {
+                                                                       "id":  "nvidia/nemotron-3-super-120b-a12b",
+                                                                       "name":  "NVIDIA Nemotron 3 Super 120B",
+                                                                       "reasoning":  false,
+                                                                       "input":  "text",
+                                                                       "cost":  {
+                                                                                    "input":  0,
+                                                                                    "output":  0,
+                                                                                    "cacheRead":  0,
+                                                                                    "cacheWrite":  0
+                                                                                },
+                                                                       "contextWindow":  262144,
+                                                                       "maxTokens":  "\u003cREDACTED\u003e",
+                                                                       "compat":  {
+                                                                                      "requiresStringContent":  true
+                                                                                  }
+                                                                   },
+                                                                   {
+                                                                       "id":  "minimaxai/minimax-m3",
+                                                                       "name":  "Minimax M3",
+                                                                       "reasoning":  false,
+                                                                       "input":  "text",
+                                                                       "cost":  {
+                                                                                    "input":  0,
+                                                                                    "output":  0,
+                                                                                    "cacheRead":  0,
+                                                                                    "cacheWrite":  0
+                                                                                },
+                                                                       "contextWindow":  196608,
+                                                                       "maxTokens":  "\u003cREDACTED\u003e",
+                                                                       "compat":  {
+                                                                                      "requiresStringContent":  true
+                                                                                  }
+                                                                   },
+                                                                   {
+                                                                       "id":  "z-ai/glm-5.1",
+                                                                       "name":  "GLM 5.1",
+                                                                       "reasoning":  false,
+                                                                       "input":  "text",
+                                                                       "cost":  {
+                                                                                    "input":  0,
+                                                                                    "output":  0,
+                                                                                    "cacheRead":  0,
+                                                                                    "cacheWrite":  0
+                                                                                },
+                                                                       "contextWindow":  202752,
+                                                                       "maxTokens":  "\u003cREDACTED\u003e",
+                                                                       "compat":  {
+                                                                                      "requiresStringContent":  true
+                                                                                  }
+                                                                   }
+                                                               ]
+                                                },
+                                     "ollama":  {
+                                                    "baseUrl":  "http://127.0.0.1:11434",
+                                                    "apiKey":  "\u003cREDACTED\u003e",
+                                                    "api":  "ollama",
+                                                    "models":  [
+                                                                   {
+                                                                       "id":  "gemma4",
+                                                                       "name":  "gemma4",
+                                                                       "reasoning":  false,
+                                                                       "input":  "text",
+                                                                       "cost":  {
+                                                                                    "input":  0,
+                                                                                    "output":  0,
+                                                                                    "cacheRead":  0,
+                                                                                    "cacheWrite":  0
+                                                                                },
+                                                                       "contextWindow":  128000,
+                                                                       "maxTokens":  "\u003cREDACTED\u003e",
+                                                                       "compat":  {
+                                                                                      "supportsTools":  true,
+                                                                                      "supportsUsageInStreaming":  true
+                                                                                  },
+                                                                       "params":  {
+                                                                                      "num_ctx":  128000
+                                                                                  }
+                                                                   },
+                                                                   {
+                                                                       "id":  "gemma4:e4b-it-qat",
+                                                                       "name":  "gemma4:e4b-it-qat",
+                                                                       "reasoning":  true,
+                                                                       "input":  [
+                                                                                     "text",
+                                                                                     "image"
+                                                                                 ],
+                                                                       "cost":  {
+                                                                                    "input":  0,
+                                                                                    "output":  0,
+                                                                                    "cacheRead":  0,
+                                                                                    "cacheWrite":  0
+                                                                                },
+                                                                       "contextWindow":  131072,
+                                                                       "maxTokens":  "\u003cREDACTED\u003e",
+                                                                       "compat":  {
+                                                                                      "supportsTools":  true,
+                                                                                      "supportsUsageInStreaming":  true
+                                                                                  },
+                                                                       "params":  {
+                                                                                      "num_ctx":  131072
+                                                                                  }
+                                                                   },
+                                                                   {
+                                                                       "id":  "gemma4:e4b",
+                                                                       "name":  "gemma4:e4b",
+                                                                       "reasoning":  true,
+                                                                       "input":  [
+                                                                                     "text",
+                                                                                     "image"
+                                                                                 ],
+                                                                       "cost":  {
+                                                                                    "input":  0,
+                                                                                    "output":  0,
+                                                                                    "cacheRead":  0,
+                                                                                    "cacheWrite":  0
+                                                                                },
+                                                                       "contextWindow":  131072,
+                                                                       "maxTokens":  "\u003cREDACTED\u003e",
+                                                                       "compat":  {
+                                                                                      "supportsTools":  true,
+                                                                                      "supportsUsageInStreaming":  true
+                                                                                  },
+                                                                       "params":  {
+                                                                                      "num_ctx":  131072
+                                                                                  }
+                                                                   },
+                                                                   {
+                                                                       "id":  "gpt-oss:20b",
+                                                                       "name":  "gpt-oss:20b",
+                                                                       "reasoning":  true,
+                                                                       "input":  "text",
+                                                                       "cost":  {
+                                                                                    "input":  0,
+                                                                                    "output":  0,
+                                                                                    "cacheRead":  0,
+                                                                                    "cacheWrite":  0
+                                                                                },
+                                                                       "contextWindow":  131072,
+                                                                       "maxTokens":  "\u003cREDACTED\u003e",
+                                                                       "compat":  {
+                                                                                      "supportsTools":  true,
+                                                                                      "supportsUsageInStreaming":  true
+                                                                                  },
+                                                                       "params":  {
+                                                                                      "num_ctx":  131072
+                                                                                  }
+                                                                   }
+                                                               ]
+                                                }
+                                 },
+                   "mode":  "merge"
+               },
+    "agents":  {
+                   "defaults":  {
+                                    "workspace":  "\u003cLOCAL_VALUE\u003e",
+                                    "compaction":  {
+                                                       "mode":  "safeguard"
+                                                   },
+                                    "maxConcurrent":  4,
+                                    "subagents":  {
+                                                      "maxConcurrent":  8
+                                                  },
+                                    "sandbox":  {
+                                                    "mode":  "off"
+                                                },
+                                    "timeoutSeconds":  1800,
+                                    "models":  {
+                                                   "nvidia/nemotron-3-ultra-550b-a55b":  {
+                                                                                             "alias":  "NVIDIA"
+                                                                                         }
+                                               },
+                                    "model":  {
+                                                  "primary":  "nvidia/nemotron-3-ultra-550b-a55b"
+                                              }
+                                },
+                   "list":  [
+                                {
+                                    "id":  "main"
+                                },
+                                {
+                                    "id":  "adminbot",
+                                    "name":  "AdminBot",
+                                    "workspace":  "\u003cLOCAL_VALUE\u003e",
+                                    "model":  {
+                                                  "primary":  "ollama/gemma4:e4b-it-qat",
+                                                  "fallbacks":  "ollama/gpt-oss:20b"
+                                              },
+                                    "identity":  {
+                                                     "name":  "AdminBot"
+                                                 },
+                                    "sandbox":  {
+                                                    "mode":  "off",
+                                                    "scope":  "agent"
+                                                },
+                                    "skills":  [
+                                                   "adminbot-workflows",
+                                                   "adminbot-candidate-workflow",
+                                                   "adminbot-join-form-triage",
+                                                   "adminbot-reimbursements",
+                                                   "adminbot-access-invites",
+                                                   "adminbot-slack-management",
+                                                   "adminbot-recommendation-letters",
+                                                   "adminbot-social-posts",
+                                                   "adminbot-calendar-email",
+                                                   "adminbot-paper-publish"
+                                               ],
+                                    "tools":  {
+                                                  "profile":  "minimal",
+                                                  "elevated":  {
+                                                                   "enabled":  false
+                                                               },
+                                                  "alsoAllow":  [
+                                                                    "message",
+                                                                    "adminbot_propose_action",
+                                                                    "adminbot_propose_candidate_decision",
+                                                                    "adminbot_draft_social_post",
+                                                                    "adminbot_prepare_paper_social_posts",
+                                                                    "adminbot_prepare_overleaf_paper_edit",
+                                                                    "adminbot_prepare_reimbursement_packet",
+                                                                    "adminbot_suggest_calendar_change",
+                                                                    "adminbot_classify_join_form_response",
+                                                                    "adminbot_upsert_lab_member",
+                                                                    "adminbot_list_lab_members",
+                                                                    "adminbot_get_settings",
+                                                                    "adminbot_update_settings",
+                                                                    "adminbot_get_sensitive_info",
+                                                                    "adminbot_update_sensitive_info",
+                                                                    "adminbot_upsert_paper",
+                                                                    "adminbot_list_papers",
+                                                                    "adminbot_list_paper_nudges",
+                                                                    "adminbot_list_pending_actions",
+                                                                    "adminbot_approve_action",
+                                                                    "adminbot_execute_approved_action",
+                                                                    "adminbot",
+                                                                    "adminbot_reason",
+                                                                    "adminbot_propose_slack_message"
+                                                                ],
+                                                  "deny":  "session_status",
+                                                  "exec":  {
+                                                               "mode":  "deny"
+                                                           }
+                                              }
+                                }
+                            ]
+               },
+    "tools":  {
+                  "web":  {
+                              "search":  {
+                                             "enabled":  true,
+                                             "provider":  "brave",
+                                             "openaiCodex":  {
+
+                                                             }
+                                         },
+                              "fetch":  {
+                                            "enabled":  true
+                                        }
+                          }
+              },
+    "messages":  {
+                     "ackReactionScope":  "group-mentions"
+                 },
+    "commands":  {
+                     "native":  "auto",
+                     "nativeSkills":  "auto",
+                     "restart":  true,
+                     "ownerDisplay":  "\u003cLOCAL_VALUE\u003e"
+                 },
+    "channels":  "\u003cLOCAL_CONFIG\u003e",
+    "gateway":  {
+                    "mode":  "local",
+                    "bind":  "loopback",
+                    "port":  18789,
+                    "auth":  "\u003cLOCAL_CONFIG\u003e",
+                    "controlUi":  {
+                                      "launchUrl":  "https://jinesis-admin.vercel.app",
+                                      "allowedOrigins":  "https://jinesis-admin.vercel.app",
+                                      "dangerouslyDisableDeviceAuth":  true
+                                  }
+                },
+    "skills":  {
+                   "install":  {
+                                   "nodeManager":  "npm"
+                               },
+                   "entries":  {
+                                   "1password":  "\u003cREDACTED\u003e",
+                                   "apple-notes":  {
+                                                       "enabled":  false
+                                                   },
+                                   "apple-reminders":  {
+                                                           "enabled":  false
+                                                       },
+                                   "bear-notes":  {
+                                                      "enabled":  false
+                                                  },
+                                   "blogwatcher":  {
+                                                       "enabled":  false
+                                                   },
+                                   "blucli":  {
+                                                  "enabled":  false
+                                              },
+                                   "camsnap":  {
+                                                   "enabled":  false
+                                               },
+                                   "coding-agent":  {
+                                                        "enabled":  true
+                                                    },
+                                   "discord":  {
+                                                   "enabled":  false
+                                               },
+                                   "eightctl":  {
+                                                    "enabled":  false
+                                                },
+                                   "gemini":  {
+                                                  "enabled":  true
+                                              },
+                                   "gh-issues":  {
+                                                     "enabled":  true
+                                                 },
+                                   "gifgrep":  {
+                                                   "enabled":  true
+                                               },
+                                   "gog":  {
+                                               "enabled":  true
+                                           },
+                                   "goplaces":  {
+                                                    "enabled":  false
+                                                },
+                                   "himalaya":  {
+                                                    "enabled":  false
+                                                },
+                                   "imsg":  {
+                                                "enabled":  false
+                                            },
+                                   "mcporter":  {
+                                                    "enabled":  false
+                                                },
+                                   "model-usage":  {
+                                                       "enabled":  false
+                                                   },
+                                   "nano-pdf":  {
+                                                    "enabled":  false
+                                                },
+                                   "obsidian":  {
+                                                    "enabled":  false
+                                                },
+                                   "openai-whisper":  {
+                                                          "enabled":  false
+                                                      },
+                                   "openai-whisper-api":  {
+                                                              "enabled":  false
+                                                          },
+                                   "openhue":  {
+                                                   "enabled":  false
+                                               },
+                                   "oracle":  {
+                                                  "enabled":  false
+                                              },
+                                   "ordercli":  {
+                                                    "enabled":  false
+                                                },
+                                   "peekaboo":  {
+                                                    "enabled":  false
+                                                },
+                                   "playwright-mcp":  {
+                                                          "enabled":  false
+                                                      },
+                                   "sag":  {
+                                               "enabled":  false
+                                           },
+                                   "session-logs":  {
+                                                        "enabled":  false
+                                                    },
+                                   "sherpa-onnx-tts":  {
+                                                           "enabled":  false
+                                                       },
+                                   "songsee":  {
+                                                   "enabled":  false
+                                               },
+                                   "sonoscli":  {
+                                                    "enabled":  false
+                                                },
+                                   "spotify-player":  {
+                                                          "enabled":  false
+                                                      },
+                                   "summarize":  {
+                                                     "enabled":  true
+                                                 },
+                                   "things-mac":  {
+                                                      "enabled":  false
+                                                  },
+                                   "trello":  {
+                                                  "enabled":  false
+                                              },
+                                   "video-frames":  {
+                                                        "enabled":  false
+                                                    },
+                                   "voice-call":  {
+                                                      "enabled":  false
+                                                  },
+                                   "wacli":  {
+                                                 "enabled":  false
+                                             },
+                                   "xurl":  {
+                                                "enabled":  false
+                                            },
+                                   "qqbot-channel":  {
+                                                         "enabled":  false
+                                                     },
+                                   "qqbot-media":  {
+                                                       "enabled":  false
+                                                   },
+                                   "qqbot-remind":  {
+                                                        "enabled":  false
+                                                    }
+                               }
+               },
+    "plugins":  {
+                    "entries":  {
+                                    "brave":  {
+                                                  "config":  {
+                                                                 "webSearch":  {
+                                                                                   "apiKey":  "\u003cREDACTED\u003e",
+                                                                                   "mode":  "web"
+                                                                               }
+                                                             },
+                                                  "enabled":  true
+                                              },
+                                    "slack":  {
+                                                  "enabled":  true
+                                              },
+                                    "nvidia":  {
+                                                   "enabled":  true
+                                               },
+                                    "adminbot":  {
+                                                     "enabled":  true,
+                                                     "config":  {
+                                                                    "serviceBaseUrl":  "http://127.0.0.1:8765",
+                                                                    "serviceTokenEnv":  "\u003cREDACTED\u003e",
+                                                                    "defaultDryRun":  false
+                                                                }
+                                                 },
+                                    "ollama":  {
+                                                   "enabled":  true
+                                               },
+                                    "whatsapp":  {
+                                                     "enabled":  true
+                                                 }
+                                }
+                },
+    "bindings":  "\u003cLOCAL_CONFIG\u003e",
+    "auth":  "\u003cLOCAL_CONFIG\u003e"
+}

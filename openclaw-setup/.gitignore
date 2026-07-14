@@ -6,3 +6,7 @@
 !*.example
 !templates/
 !templates/**
+
+!completions/
+!completions/**
+!installs.json.example
