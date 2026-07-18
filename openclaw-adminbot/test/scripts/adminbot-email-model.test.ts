@@ -8,32 +8,27 @@ describe("AdminBot email model", () => {
     );
   });
 
-  it("uses the loopback vLLM chat API with constrained non-thinking JSON", async () => {
+  it("uses loopback Ollama with Gemma 4 and a constrained JSON schema", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => {
       return new Response(
         JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  category: "student_reachout",
-                  confidence: 0.97,
-                  reason: "prospective student requests a research opportunity",
-                  decision: null,
-                  candidateEmail: null,
-                  candidateName: "Genis",
-                }),
-              },
-            },
-          ],
+          message: {
+            content: JSON.stringify({
+              category: "student_reachout",
+              confidence: 0.97,
+              reason: "prospective student requests a research opportunity",
+              decision: null,
+              candidateEmail: null,
+              candidateName: "Genis",
+            }),
+          },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       );
     });
     const model = new AdminBotEmailModel(fetchMock, {
-      ADMINBOT_LOCAL_BASE_URL: "http://127.0.0.1:8000/v1",
-      ADMINBOT_LOCAL_MODEL: "nvidia/Qwen3.5-122B-A10B-NVFP4",
-      VLLM_API_KEY: "test-key",
+      OLLAMA_BASE_URL: "http://127.0.0.1:11434",
+      ADMINBOT_LOCAL_MODEL: "gemma4:e4b-it-qat",
     });
 
     await expect(
@@ -50,25 +45,36 @@ describe("AdminBot email model", () => {
 
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] ?? [];
-    expect(url).toBe("http://127.0.0.1:8000/v1/chat/completions");
-    expect(init?.headers).toMatchObject({ authorization: "Bearer test-key" });
+    expect(url).toBe("http://127.0.0.1:11434/api/chat");
     const payload = JSON.parse(String(init?.body)) as Record<string, unknown>;
     expect(payload).toMatchObject({
-      model: "nvidia/Qwen3.5-122B-A10B-NVFP4",
-      temperature: 0,
-      chat_template_kwargs: { enable_thinking: false },
-      response_format: {
-        type: "json_schema",
-        json_schema: { name: "email_classification", strict: true },
-      },
+      model: "gemma4:e4b-it-qat",
+      stream: false,
+      format: { type: "object" },
+      options: { temperature: 0, num_predict: 1200 },
     });
+  });
+
+  it("reports an actionable error when Ollama is unavailable", async () => {
+    const fetchMock = vi.fn<typeof fetch>(async () => {
+      throw new TypeError("fetch failed");
+    });
+    const model = new AdminBotEmailModel(fetchMock);
+
+    await expect(
+      model.classify({
+        from: "student@example.com",
+        subject: "Research",
+        body: "Can I join?",
+      }),
+    ).rejects.toThrow("local Ollama is unavailable at http://127.0.0.1:11434: fetch failed");
   });
 
   it("rejects malformed model output before any action handler sees it", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => {
       return new Response(
         JSON.stringify({
-          choices: [{ message: { content: '{"category":"student_reachout"}' } }],
+          message: { content: '{"category":"student_reachout"}' },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       );

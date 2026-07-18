@@ -159,5 +159,3 @@ describe("AdminBot privacy broker", () => {
     expect(calls[1]?.body).toEqual({ model: "gemma4:e4b-it-qat", stream: false });
   });
 });
-
-

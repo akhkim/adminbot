@@ -18,7 +18,6 @@ export type PrivacyBrokerFetch = (
 export type AdminBotPrivacyBrokerConfig = {
   localBaseUrl: string;
   localModel: string;
-  localFallbackModel?: string;
   remoteBaseUrl: string;
   remoteModel: string;
   remoteApiKeyEnv: string;
@@ -40,7 +39,6 @@ export type AdminBotPrivacyBroker = {
 export const defaultAdminBotPrivacyBrokerConfig = {
   localBaseUrl: "http://127.0.0.1:11434",
   localModel: "gemma4:e4b-it-qat",
-  localFallbackModel: "gpt-oss:20b",
   remoteBaseUrl: "https://integrate.api.nvidia.com/v1",
   remoteModel: "minimaxai/minimax-m3",
   remoteApiKeyEnv: "NVIDIA_API_KEY",
@@ -241,18 +239,7 @@ async function callLocalModel(
   json: boolean,
   signal?: AbortSignal,
 ): Promise<string> {
-  const models = [config.localModel, config.localFallbackModel].filter((model): model is string =>
-    Boolean(model),
-  );
-  let lastError: unknown;
-  for (const model of models) {
-    try {
-      return await callOllama(config, fetchImpl, model, messages, json, signal);
-    } catch (error) {
-      lastError = error;
-    }
-  }
-  throw lastError instanceof Error ? lastError : new Error("local privacy model failed");
+  return callOllama(config, fetchImpl, config.localModel, messages, json, signal);
 }
 
 async function callOllama(
@@ -281,7 +268,9 @@ async function callOllama(
       await pullLocalModel(baseUrl, fetchImpl, model, signal);
       return retryPulledLocalModel(baseUrl, fetchImpl, model, messages, json, signal);
     }
-    throw new Error(formatHttpError("local privacy model", response.status, response.statusText, parsed));
+    throw new Error(
+      formatHttpError("local privacy model", response.status, response.statusText, parsed),
+    );
   }
   const content = getNestedString(parsed, ["message", "content"]);
   if (!content?.trim()) {
@@ -311,7 +300,9 @@ async function retryPulledLocalModel(
   });
   const parsed = parseJson(await response.text(), "local privacy model");
   if (!response.ok) {
-    throw new Error(formatHttpError("local privacy model", response.status, response.statusText, parsed));
+    throw new Error(
+      formatHttpError("local privacy model", response.status, response.statusText, parsed),
+    );
   }
   const content = getNestedString(parsed, ["message", "content"]);
   if (!content?.trim()) {
@@ -334,10 +325,14 @@ async function pullLocalModel(
   });
   const parsed = parseJson(await response.text(), "local model pull");
   if (!response.ok) {
-    throw new Error(formatHttpError("local model pull", response.status, response.statusText, parsed));
+    throw new Error(
+      formatHttpError("local model pull", response.status, response.statusText, parsed),
+    );
   }
   if (getNestedString(parsed, ["status"]) !== "success") {
-    throw new Error(`local model pull failed: ${getNestedString(parsed, ["error"]) ?? "unknown error"}`);
+    throw new Error(
+      `local model pull failed: ${getNestedString(parsed, ["error"]) ?? "unknown error"}`,
+    );
   }
 }
 
@@ -516,5 +511,3 @@ function formatHttpError(
 function ensureTrailingSlash(value: string): string {
   return value.endsWith("/") ? value : `${value}/`;
 }
-
-

@@ -59,5 +59,6 @@ manual review instead of automatic retry, preventing duplicate mutations.
 - `gws` authenticated as the same account with Calendar ACL scope.
 - Slack bot token with `conversations.connect:write` for trial invites.
 - Slack admin user token with `admin.users:write` for full invites.
-- The loopback vLLM endpoint configured by `ADMINBOT_LOCAL_BASE_URL`,
-  `ADMINBOT_LOCAL_MODEL`, and `VLLM_API_KEY`.
+- The loopback Ollama endpoint configured by `OLLAMA_BASE_URL` and
+  `ADMINBOT_LOCAL_MODEL`. The temporary privacy/classification model is
+  `gemma4:e4b-it-qat`.

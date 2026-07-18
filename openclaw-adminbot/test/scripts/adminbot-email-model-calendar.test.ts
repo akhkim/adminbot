@@ -6,20 +6,16 @@ describe("AdminBot calendar extraction", () => {
     const fetchMock = vi.fn<typeof fetch>(async () => {
       return new Response(
         JSON.stringify({
-          choices: [
-            {
-              message: {
-                content: JSON.stringify({
-                  summary: "Test",
-                  start: "2026-07-30",
-                  end: "2026-07-31",
-                  allDay: true,
-                  description: null,
-                  location: null,
-                }),
-              },
-            },
-          ],
+          message: {
+            content: JSON.stringify({
+              summary: "Test",
+              start: "2026-07-30",
+              end: "2026-07-31",
+              allDay: true,
+              description: null,
+              location: null,
+            }),
+          },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
       );

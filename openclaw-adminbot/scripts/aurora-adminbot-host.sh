@@ -27,7 +27,7 @@ Options:
 Commands:
   check                  Verify VPN/DNS/SSH and Aurora prerequisites
   connect                Open SSH with Gateway/AdminBot local port forwards
-  deploy                 Upload, build, and install a versioned release
+  deploy                 Clean old releases, then upload/build/install the new release
   upload-env <file>      Install a secrets env file with mode 0600
   upload-config <file>   Install openclaw.json with mode 0600
   auth-gog               Run gog's remote/manual OAuth flow on Aurora
@@ -159,6 +159,31 @@ REMOTE
       printf 'note: the worktree is dirty; deploy uses committed ref %s only\n' "$REF" >&2
     fi
     git -C "$REPO_ROOT" archive --format=tar --output="$archive" "$REF"
+    "${SSH[@]}" bash -s -- "$REMOTE_BASE" "$REMOTE_CURRENT" <<'REMOTE_CLEAN'
+set -euo pipefail
+base="$1"
+current="$2"
+expected="/h/405/$USER/services/openclaw-adminbot"
+[[ "$base" == "$expected" ]] || {
+  printf 'Refusing cleanup outside expected deployment root: %s\n' "$base" >&2
+  exit 1
+}
+systemctl --user stop \
+  jinesis-adminbot-email.timer \
+  jinesis-adminbot-email.service \
+  jinesis-openclaw-gateway.service \
+  jinesis-adminbot.service 2>/dev/null || true
+if [[ -L "$current" ]]; then
+  rm -f -- "$current"
+elif [[ -e "$current" ]]; then
+  printf 'Refusing to delete non-symlink current path: %s\n' "$current" >&2
+  exit 1
+fi
+releases="$base/releases"
+[[ "$releases" == "$expected/releases" ]] || exit 1
+rm -rf -- "$releases"
+mkdir -p "$releases"
+REMOTE_CLEAN
     "${SSH[@]}" mkdir -p "$remote_release"
     "${SCP[@]}" "$archive" "${TARGET}:${remote_release}/source.tar"
 
