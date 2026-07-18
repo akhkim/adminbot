@@ -18,6 +18,7 @@ export type PrivacyBrokerFetch = (
 export type AdminBotPrivacyBrokerConfig = {
   localBaseUrl: string;
   localModel: string;
+  localApiKeyEnv: string;
   remoteBaseUrl: string;
   remoteModel: string;
   remoteApiKeyEnv: string;
@@ -37,8 +38,9 @@ export type AdminBotPrivacyBroker = {
 };
 
 export const defaultAdminBotPrivacyBrokerConfig = {
-  localBaseUrl: "http://127.0.0.1:11434",
-  localModel: "gemma4:e4b-it-qat",
+  localBaseUrl: "http://127.0.0.1:8000/v1",
+  localModel: "nvidia/Qwen3.5-122B-A10B-NVFP4",
+  localApiKeyEnv: "VLLM_API_KEY",
   remoteBaseUrl: "https://integrate.api.nvidia.com/v1",
   remoteModel: "minimaxai/minimax-m3",
   remoteApiKeyEnv: "NVIDIA_API_KEY",
@@ -91,10 +93,11 @@ function createPrivacyBrokerHandler(
           fetchImpl,
           task,
           { ...request, sensitive_terms: combinedSensitiveTerms },
+          env,
           signal,
         );
       } catch {
-        return runLocalOnly(config, fetchImpl, task, signal);
+        return runLocalOnly(config, fetchImpl, env, task, signal);
       }
       const required = findObviousSensitiveValues(task, combinedSensitiveTerms);
       if (
@@ -103,7 +106,9 @@ function createPrivacyBrokerHandler(
         classification.classification === "generic"
       ) {
         const output = await runRemote(config, fetchImpl, env, task, signal).catch(() => undefined);
-        return output ? { route: "remote", output } : runLocalOnly(config, fetchImpl, task, signal);
+        return output
+          ? { route: "remote", output }
+          : runLocalOnly(config, fetchImpl, env, task, signal);
       }
       return runPrivateTask(config, fetchImpl, env, task, classification, required, signal);
     },
@@ -138,6 +143,7 @@ async function runPrivateTask(
           task,
           draft,
           classification.replacements,
+          env,
           signal,
         );
         return { route: "hybrid", output };
@@ -146,7 +152,7 @@ async function runPrivateTask(
       }
     }
   }
-  return runLocalOnly(config, fetchImpl, task, signal);
+  return runLocalOnly(config, fetchImpl, env, task, signal);
 }
 
 async function classifyLocally(
@@ -154,6 +160,7 @@ async function classifyLocally(
   fetchImpl: PrivacyBrokerFetch,
   task: string,
   request: AdminBotPrivacyTaskRequest,
+  env: NodeJS.ProcessEnv,
   signal?: AbortSignal,
 ): Promise<PrivacyClassification> {
   const prompt = {
@@ -164,6 +171,7 @@ async function classifyLocally(
   const content = await callLocalModel(
     config,
     fetchImpl,
+    env,
     [
       {
         role: "system",
@@ -181,12 +189,14 @@ async function classifyLocally(
 async function runLocalOnly(
   config: AdminBotPrivacyBrokerConfig,
   fetchImpl: PrivacyBrokerFetch,
+  env: NodeJS.ProcessEnv,
   task: string,
   signal?: AbortSignal,
 ): Promise<AdminBotPrivacyTaskResult> {
   const output = await callLocalModel(
     config,
     fetchImpl,
+    env,
     [
       {
         role: "system",
@@ -207,11 +217,13 @@ async function finalizeLocally(
   originalTask: string,
   remoteOutput: string,
   replacements: PrivacyClassification["replacements"],
+  env: NodeJS.ProcessEnv,
   signal?: AbortSignal,
 ): Promise<string> {
   return callLocalModel(
     config,
     fetchImpl,
+    env,
     [
       {
         role: "system",
@@ -235,105 +247,75 @@ async function finalizeLocally(
 async function callLocalModel(
   config: AdminBotPrivacyBrokerConfig,
   fetchImpl: PrivacyBrokerFetch,
-  messages: Array<{ role: "system" | "user"; content: string }>,
-  json: boolean,
-  signal?: AbortSignal,
-): Promise<string> {
-  return callOllama(config, fetchImpl, config.localModel, messages, json, signal);
-}
-
-async function callOllama(
-  config: AdminBotPrivacyBrokerConfig,
-  fetchImpl: PrivacyBrokerFetch,
-  model: string,
+  env: NodeJS.ProcessEnv,
   messages: Array<{ role: "system" | "user"; content: string }>,
   json: boolean,
   signal?: AbortSignal,
 ): Promise<string> {
   const baseUrl = getValidatedLoopbackLocalBaseUrl(config.localBaseUrl);
-  const response = await fetchImpl(new URL("/api/chat", baseUrl), {
+  const apiKey = env[config.localApiKeyEnv]?.trim() || "vllm-local";
+  const response = await fetchImpl(new URL("chat/completions", baseUrl), {
     method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
     body: JSON.stringify({
-      model,
+      model: config.localModel,
       messages,
-      stream: false,
-      ...(json ? { format: "json" } : {}),
+      temperature: 0,
+      max_tokens: json ? 1024 : 4096,
+      chat_template_kwargs: { enable_thinking: false },
+      ...(json
+        ? {
+            response_format: {
+              type: "json_schema",
+              json_schema: {
+                name: "privacy_classification",
+                strict: true,
+                schema: {
+                  type: "object",
+                  properties: {
+                    classification: {
+                      type: "string",
+                      enum: ["generic", "private", "uncertain"],
+                    },
+                    sanitized_task: { type: "string" },
+                    replacements: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          placeholder: { type: "string" },
+                          value: { type: "string" },
+                        },
+                        required: ["placeholder", "value"],
+                        additionalProperties: false,
+                      },
+                    },
+                  },
+                  required: ["classification", "sanitized_task", "replacements"],
+                  additionalProperties: false,
+                },
+              },
+            },
+          }
+        : {}),
     }),
     signal,
   });
   const parsed = parseJson(await response.text(), "local privacy model");
   if (!response.ok) {
-    if (shouldPullMissingLocalModel(response.status, parsed)) {
-      await pullLocalModel(baseUrl, fetchImpl, model, signal);
-      return retryPulledLocalModel(baseUrl, fetchImpl, model, messages, json, signal);
-    }
     throw new Error(
       formatHttpError("local privacy model", response.status, response.statusText, parsed),
     );
   }
-  const content = getNestedString(parsed, ["message", "content"]);
+  const content = getNestedString(parsed, ["choices", "0", "message", "content"]);
   if (!content?.trim()) {
     throw new Error("local privacy model returned no content");
   }
   return content.trim();
-}
-
-async function retryPulledLocalModel(
-  baseUrl: string,
-  fetchImpl: PrivacyBrokerFetch,
-  model: string,
-  messages: Array<{ role: "system" | "user"; content: string }>,
-  json: boolean,
-  signal?: AbortSignal,
-): Promise<string> {
-  const response = await fetchImpl(new URL("/api/chat", baseUrl), {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: false,
-      ...(json ? { format: "json" } : {}),
-    }),
-    signal,
-  });
-  const parsed = parseJson(await response.text(), "local privacy model");
-  if (!response.ok) {
-    throw new Error(
-      formatHttpError("local privacy model", response.status, response.statusText, parsed),
-    );
-  }
-  const content = getNestedString(parsed, ["message", "content"]);
-  if (!content?.trim()) {
-    throw new Error("local privacy model returned no content");
-  }
-  return content.trim();
-}
-
-async function pullLocalModel(
-  baseUrl: string,
-  fetchImpl: PrivacyBrokerFetch,
-  model: string,
-  signal?: AbortSignal,
-): Promise<void> {
-  const response = await fetchImpl(new URL("/api/pull", baseUrl), {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ model, stream: false }),
-    signal,
-  });
-  const parsed = parseJson(await response.text(), "local model pull");
-  if (!response.ok) {
-    throw new Error(
-      formatHttpError("local model pull", response.status, response.statusText, parsed),
-    );
-  }
-  if (getNestedString(parsed, ["status"]) !== "success") {
-    throw new Error(
-      `local model pull failed: ${getNestedString(parsed, ["error"]) ?? "unknown error"}`,
-    );
-  }
 }
 
 async function runRemote(
@@ -490,10 +472,6 @@ function getValidatedLoopbackLocalBaseUrl(value: string): string {
     throw new Error("local privacy model must use a loopback URL");
   }
   return url.toString();
-}
-
-function shouldPullMissingLocalModel(status: number, parsed: unknown): boolean {
-  return status === 404 && /not found/i.test(getNestedString(parsed, ["error"]) ?? "");
 }
 
 function formatHttpError(

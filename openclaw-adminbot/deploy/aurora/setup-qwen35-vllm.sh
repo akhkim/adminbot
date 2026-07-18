@@ -5,7 +5,7 @@ export PATH="$HOME/.local/bin:$PATH"
 ROOT=""
 GPU="GPU-51e9e550-a798-120d-2926-5c76e25b9e56"
 MODEL_ID="nvidia/Qwen3.5-122B-A10B-NVFP4"
-MODEL_HOME="$HOME/.cache/jinesis-vllm"
+MODEL_HOME="${JINESIS_VLLM_MODEL_HOME:-/mfs1/u/$USER/jinesis-vllm}"
 PORT="8000"
 MAX_MODEL_LEN="32768"
 GPU_MEMORY_UTILIZATION="0.95"
@@ -25,7 +25,7 @@ Install and configure the single-GPU Qwen3.5 NVFP4 runtime on Aurora.
 Options:
   --root <path>                 Deployed OpenClaw release (required)
   --gpu <uuid-or-index>         Default: Aurora GPU 0 UUID
-  --model-home <path>           Default: ~/.cache/jinesis-vllm
+  --model-home <path>           Default: /mfs1/u/<user>/jinesis-vllm
   --port <port>                 Default: 8000
   --max-model-len <tokens>      Default: 32768
   --gpu-memory-utilization <n>  Default: 0.95
@@ -100,6 +100,8 @@ done
 
 [[ -n "$ROOT" ]] || die "--root is required"
 [[ -d "$ROOT" ]] || die "release root not found: $ROOT"
+[[ -d "/mfs1/u/$USER" ]] ||
+  die "/mfs1/u/$USER is missing; ask Aurora administrators to provision the model filesystem"
 [[ -f "$ROOT/deploy/aurora/configure-openclaw-qwen35.mjs" ]] ||
   die "OpenClaw Qwen configuration helper is missing from $ROOT"
 [[ "$GPU" =~ ^[A-Za-z0-9._,:-]+$ ]] || die "GPU selector contains unsupported characters"
