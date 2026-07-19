@@ -5,7 +5,8 @@ import os from "node:os";
 import path from "node:path";
 
 const configPath = process.argv[2] ?? path.join(os.homedir(), ".openclaw", "openclaw.json");
-const modelId = process.env.JINESIS_VLLM_MODEL ?? "nvidia/Qwen3.5-122B-A10B-NVFP4";
+const modelId =
+  process.env.JINESIS_VLLM_MODEL ?? "RedHatAI/Qwen3-Next-80B-A3B-Instruct-NVFP4";
 const modelRef = `vllm/${modelId}`;
 const baseUrl = process.env.JINESIS_VLLM_BASE_URL ?? "http://127.0.0.1:8000/v1";
 const apiKey = process.env.VLLM_API_KEY ?? "vllm-local";
@@ -22,11 +23,11 @@ providers.vllm = {
   models: [
     {
       id: modelId,
-      name: "Qwen3.5 122B A10B NVFP4 (Aurora)",
-      reasoning: true,
-      input: ["text", "image"],
+      name: "Qwen3-Next 80B A3B Instruct NVFP4 (Aurora)",
+      reasoning: false,
+      input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 32768,
+      contextWindow: 65536,
       maxTokens: 2048,
       compat: { thinkingFormat: "qwen-chat-template" },
     },
@@ -67,7 +68,7 @@ const next = {
   },
 };
 
-const backupPath = `${configPath}.before-qwen35`;
+const backupPath = `${configPath}.before-qwen-next-80b`;
 fs.copyFileSync(configPath, backupPath);
 fs.writeFileSync(configPath, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
 fs.chmodSync(configPath, 0o600);

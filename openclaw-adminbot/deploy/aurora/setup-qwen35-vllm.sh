@@ -4,38 +4,43 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ROOT=""
 GPU="GPU-51e9e550-a798-120d-2926-5c76e25b9e56"
-MODEL_ID="nvidia/Qwen3.5-122B-A10B-NVFP4"
+MODEL_ID="RedHatAI/Qwen3-Next-80B-A3B-Instruct-NVFP4"
+OLD_MODEL_ID="nvidia/Qwen3.5-122B-A10B-NVFP4"
 MODEL_HOME="${JINESIS_VLLM_MODEL_HOME:-/mfs1/u/$USER/jinesis-vllm}"
 PORT="8000"
-MAX_MODEL_LEN="32768"
-GPU_MEMORY_UTILIZATION="0.95"
+MAX_MODEL_LEN="65536"
+GPU_MEMORY_UTILIZATION="0.80"
 INSTALL_TIMEOUT="45m"
 DOWNLOAD_TIMEOUT="6h"
 STARTUP_TIMEOUT="15m"
 SKIP_INSTALL="no"
 SKIP_DOWNLOAD="no"
 SKIP_START="no"
+DELETE_OLD_CHECKPOINT="yes"
 
 usage() {
   cat <<'EOF'
 Usage: setup-qwen35-vllm.sh --root <current-release> [options]
 
-Install and configure the single-GPU Qwen3.5 NVFP4 runtime on Aurora.
+Install and configure the single-GPU Qwen3-Next 80B NVFP4 runtime on Aurora.
 
 Options:
   --root <path>                 Deployed OpenClaw release (required)
   --gpu <uuid-or-index>         Default: Aurora GPU 0 UUID
   --model-home <path>           Default: /mfs1/u/<user>/jinesis-vllm
   --port <port>                 Default: 8000
-  --max-model-len <tokens>      Default: 32768
-  --gpu-memory-utilization <n>  Default: 0.95
+  --max-model-len <tokens>      Default: 65536
+  --gpu-memory-utilization <n>  Default: 0.80
+  --keep-old-checkpoint         Keep the old Qwen3.5 122B Hugging Face cache
   --skip-install                Reuse the existing vLLM virtual environment
   --skip-download               Reuse the existing Hugging Face snapshot
   --skip-start                  Install/configure without starting vLLM
   -h, --help                    Show help
 
 The script is resumable. Re-running it reuses downloaded Hugging Face blobs.
-It keeps vLLM loopback-only and disables the old user Ollama service.
+It keeps vLLM loopback-only and disables the old user Ollama service. By
+default, it deletes the old 122B checkpoint only after the replacement passes
+the readiness and JSON-schema smoke tests.
 EOF
 }
 
@@ -88,6 +93,10 @@ while (($# > 0)); do
       SKIP_START="yes"
       shift
       ;;
+    --keep-old-checkpoint)
+      DELETE_OLD_CHECKPOINT="no"
+      shift
+      ;;
     -h | --help)
       usage
       exit 0
@@ -133,9 +142,9 @@ chmod 700 "$MODEL_HOME" "$ENV_DIR"
 
 if [[ "$SKIP_DOWNLOAD" == "no" ]]; then
   available_kb="$(df -Pk "$MODEL_HOME" | awk 'NR == 2 { print $4 }')"
-  required_kb=$((110 * 1024 * 1024))
+  required_kb=$((65 * 1024 * 1024))
   ((available_kb >= required_kb)) ||
-    die "at least 110 GiB free is required before first download; available KiB: $available_kb"
+    die "at least 65 GiB free is required before first download; available KiB: $available_kb"
 fi
 
 if [[ $SKIP_INSTALL == no ]]; then
@@ -194,7 +203,7 @@ fi
 
 cat >"$UNIT_DIR/jinesis-vllm.service" <<EOF
 [Unit]
-Description=Jinesis Qwen3.5 NVFP4 vLLM service
+Description=Jinesis Qwen3-Next 80B NVFP4 vLLM service
 After=network-online.target
 Wants=network-online.target
 
@@ -205,7 +214,7 @@ Environment=HF_HOME=$HF_HOME
 Environment=HUGGINGFACE_HUB_CACHE=$HUGGINGFACE_HUB_CACHE
 Environment=HF_HUB_DOWNLOAD_TIMEOUT=120
 Environment=VLLM_API_KEY=$VLLM_API_KEY
-ExecStart=$VENV/bin/vllm serve $MODEL_ID --host 127.0.0.1 --port $PORT --api-key $VLLM_API_KEY --trust-remote-code --quantization modelopt_fp4 --kv-cache-dtype fp8 --tensor-parallel-size 1 --max-model-len $MAX_MODEL_LEN --gpu-memory-utilization $GPU_MEMORY_UTILIZATION --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --generation-config vllm
+ExecStart=$VENV/bin/vllm serve $MODEL_ID --host 127.0.0.1 --port $PORT --api-key $VLLM_API_KEY --trust-remote-code --kv-cache-dtype fp8 --tensor-parallel-size 1 --max-model-len $MAX_MODEL_LEN --gpu-memory-utilization $GPU_MEMORY_UTILIZATION --enable-auto-tool-choice --tool-call-parser qwen3_coder --generation-config vllm --enable-chunked-prefill --enable-prefix-caching --max-num-seqs 4 --max-num-batched-tokens 8192
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=20min
@@ -242,13 +251,23 @@ done
 ((SECONDS < deadline)) ||
   die "vLLM did not become ready; inspect: journalctl --user -u jinesis-vllm -n 200"
 
-privacy_payload='{"model":"nvidia/Qwen3.5-122B-A10B-NVFP4","messages":[{"role":"system","content":"Classify locally. Return JSON only."},{"role":"user","content":"Return {\"classification\":\"generic\"}."}],"temperature":0,"max_tokens":128,"chat_template_kwargs":{"enable_thinking":false},"response_format":{"type":"json_schema","json_schema":{"name":"privacy_classification","strict":true,"schema":{"type":"object","properties":{"classification":{"type":"string","enum":["generic","private","uncertain"]}},"required":["classification"],"additionalProperties":false}}}}'
+privacy_payload="$(printf '{"model":"%s","messages":[{"role":"system","content":"Classify locally. Return JSON only."},{"role":"user","content":"Return {\"classification\":\"generic\"}."}],"temperature":0,"max_tokens":128,"response_format":{"type":"json_schema","json_schema":{"name":"privacy_classification","strict":true,"schema":{"type":"object","properties":{"classification":{"type":"string","enum":["generic","private","uncertain"]}},"required":["classification"],"additionalProperties":false}}}}' "$MODEL_ID")"
 curl --fail --silent --show-error --max-time 300 \
   -H "Authorization: Bearer $VLLM_API_KEY" \
   -H "Content-Type: application/json" \
   --data "$privacy_payload" \
   "http://127.0.0.1:$PORT/v1/chat/completions" >/dev/null ||
   die "JSON-schema privacy smoke test failed"
+
+if [[ "$DELETE_OLD_CHECKPOINT" == "yes" && "$OLD_MODEL_ID" != "$MODEL_ID" ]]; then
+  printf 'Replacement passed smoke tests; deleting old checkpoint %s\n' "$OLD_MODEL_ID"
+  "$VENV/bin/hf" cache rm "model/$OLD_MODEL_ID" \
+    --cache-dir "$HUGGINGFACE_HUB_CACHE" \
+    --yes
+  "$VENV/bin/hf" cache prune \
+    --cache-dir "$HUGGINGFACE_HUB_CACHE" \
+    --yes
+fi
 
 systemctl --user try-restart jinesis-adminbot.service jinesis-openclaw-gateway.service || true
 
@@ -257,4 +276,4 @@ printf 'model=%s\n' "$MODEL_ID"
 printf 'gpu=%s\n' "$GPU"
 printf 'context=%s\n' "$MAX_MODEL_LEN"
 printf 'Privacy calls: temperature=0, thinking=false, JSON schema, <=1024 tokens.\n'
-printf 'Normal inference: use /think on and temperature 0.15 through OpenClaw.\n'
+printf 'Normal inference: non-thinking instruct mode at temperature 0.15.\n'

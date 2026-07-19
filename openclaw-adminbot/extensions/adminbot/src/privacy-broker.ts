@@ -39,7 +39,7 @@ export type AdminBotPrivacyBroker = {
 
 export const defaultAdminBotPrivacyBrokerConfig = {
   localBaseUrl: "http://127.0.0.1:8000/v1",
-  localModel: "nvidia/Qwen3.5-122B-A10B-NVFP4",
+  localModel: "RedHatAI/Qwen3-Next-80B-A3B-Instruct-NVFP4",
   localApiKeyEnv: "VLLM_API_KEY",
   remoteBaseUrl: "https://integrate.api.nvidia.com/v1",
   remoteModel: "minimaxai/minimax-m3",

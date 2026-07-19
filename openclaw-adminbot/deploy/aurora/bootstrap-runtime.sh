@@ -14,7 +14,7 @@ usage() {
   cat <<'EOF'
 Usage: bootstrap-runtime.sh --root <current-release> [options]
 
-Configure Qwen3.5-122B-A10B-NVFP4 through loopback vLLM, install the
+Configure Qwen3-Next-80B-A3B-Instruct-NVFP4 through loopback vLLM, install the
 AdminBot/Gateway/email services, and optionally configure Tailscale Serve.
 
 Options:
@@ -125,5 +125,5 @@ fi
 
 printf 'Aurora Qwen runtime bootstrap complete.\n'
 printf 'vLLM: http://127.0.0.1:8000/v1\n'
-printf 'model: nvidia/Qwen3.5-122B-A10B-NVFP4\n'
+printf 'model: RedHatAI/Qwen3-Next-80B-A3B-Instruct-NVFP4\n'
 printf 'storage: /mfs1/u/%s/jinesis-vllm\n' "$USER"

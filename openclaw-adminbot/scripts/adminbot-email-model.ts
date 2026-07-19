@@ -126,7 +126,8 @@ export class AdminBotEmailModel {
     env: NodeJS.ProcessEnv = process.env,
   ) {
     this.baseUrl = (env.ADMINBOT_LOCAL_BASE_URL ?? "http://127.0.0.1:8000/v1").replace(/\/$/u, "");
-    this.model = env.ADMINBOT_LOCAL_MODEL ?? "nvidia/Qwen3.5-122B-A10B-NVFP4";
+    this.model =
+      env.ADMINBOT_LOCAL_MODEL ?? "RedHatAI/Qwen3-Next-80B-A3B-Instruct-NVFP4";
     this.apiKey = env.VLLM_API_KEY ?? "vllm-local";
   }
 
