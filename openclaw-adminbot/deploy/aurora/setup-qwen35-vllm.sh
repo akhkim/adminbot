@@ -251,8 +251,8 @@ done
 ((SECONDS < deadline)) ||
   die "vLLM did not become ready; inspect: journalctl --user -u jinesis-vllm -n 200"
 
-privacy_payload="$(printf '{"model":"%s","messages":[{"role":"system","content":"Classify locally. Return JSON only."},{"role":"user","content":"Return {\"classification\":\"generic\"}."}],"temperature":0,"max_tokens":128,"response_format":{"type":"json_schema","json_schema":{"name":"privacy_classification","strict":true,"schema":{"type":"object","properties":{"classification":{"type":"string","enum":["generic","private","uncertain"]}},"required":["classification"],"additionalProperties":false}}}}' "$MODEL_ID")"
-curl --fail --silent --show-error --max-time 300 \
+privacy_payload='{"model":"'"$MODEL_ID"'","messages":[{"role":"system","content":"Classify locally. Return JSON only."},{"role":"user","content":"Return a generic classification."}],"temperature":0,"max_tokens":128,"response_format":{"type":"json_schema","json_schema":{"name":"privacy_classification","strict":true,"schema":{"type":"object","properties":{"classification":{"type":"string","enum":["generic","private","uncertain"]}},"required":["classification"],"additionalProperties":false}}}}'
+curl --fail-with-body --silent --show-error --max-time 300 \
   -H "Authorization: Bearer $VLLM_API_KEY" \
   -H "Content-Type: application/json" \
   --data "$privacy_payload" \
