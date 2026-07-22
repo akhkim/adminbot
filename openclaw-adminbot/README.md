@@ -34,19 +34,6 @@ OpenClaw Onboard guides you step by step through setting up the gateway, workspa
 Windows desktop users can start with the native [Windows Hub](https://docs.openclaw.ai/platforms/windows) companion app for setup, tray status, chat, node mode, and local MCP mode.
 Works with npm, pnpm, or bun.
 
-## Lab AdminBot additions
-
-This repository is OpenClaw plus the AdminBot implementation used by our lab. The `openclaw-adminbot/` directory keeps the normal OpenClaw gateway, channels, agents, skills, Control UI, and CLI. The lab-specific additions are layered on top of that base:
-
-- A bundled `adminbot` plugin with proposal, approval, audit, lab-member, paper-workflow, privacy-routing, and action-execution tools.
-- A dedicated AdminBot agent and skill pack for candidate workflows, Slack management, calendar/email, reimbursements, recommendation letters, social posts, and paper publishing.
-- A local AdminBot service and Control UI panels for pending actions, members, papers, settings, nudges, and sensitive-information policy.
-- Approval-gated connectors for Google actions through `gog`, OpenClaw message delivery, social posting, Overleaf edits, and paper reminders. Unsupported live actions fail closed.
-- Local-first privacy handling with loopback Ollama classification and placeholder-only remote reasoning when sanitization is proven safe.
-
-The `openclaw-setup/` directory contains shareable setup metadata and a sanitized configuration template. It deliberately omits credentials, device identity and pairing state, runtime databases, logs, memory, browser state, media, sandboxes, and personal workspaces. Copy the template, fill in local secrets through environment variables or your local secret manager, then run the normal OpenClaw onboarding and AdminBot setup flow.
-
-This is a private lab-sharing repository, not a replacement for upstream OpenClaw. Rebase or compare the AdminBot changes against the upstream OpenClaw repository when updating the base.
 ## Sponsors
 
 <table>

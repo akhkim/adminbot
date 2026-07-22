@@ -1,3 +1,4 @@
+import { resolveCalendarSource } from "./calendar-source.js";
 import { AdminBotClient, type AdminBotClientConfig, type FetchLike } from "./client.js";
 import type {
   AdminBotActionProposal,
@@ -15,6 +16,10 @@ import type {
   AdminBotSettingsInput,
 } from "./contracts.js";
 import { buildOverleafEditPayload, type AdminBotOverleafEditMode } from "./overleaf-editing.js";
+import type {
+  AdminBotReimbursementMessage,
+  AdminBotReimbursementReceipt,
+} from "./reimbursement-workflow.js";
 import { buildPaperSocialPayload, type AdminBotSocialPlatform } from "./social-posting.js";
 
 export type AdminBotPluginConfig = {
@@ -106,12 +111,23 @@ type ReimbursementParams = EvidenceParams & {
   proposedPayload?: unknown;
 };
 
+type ReimbursementConversationParams = {
+  message: string;
+  receipts?: AdminBotReimbursementReceipt[];
+  messages?: AdminBotReimbursementMessage[];
+  draft?: Record<string, unknown>;
+};
 type CalendarParams = EvidenceParams & {
   changeType: "tentative_hold" | "send_invite" | "reschedule" | "cancel";
-  summary: string;
+  summary?: string;
   attendees?: string[];
   timeWindow?: string;
   proposedPayload?: unknown;
+  sourceUrl?: string;
+  calendarUrl?: string;
+  calendarName?: "personal" | "jinesis";
+  emailMessageId?: string;
+  emailQuery?: string;
 };
 
 type SlackMessageParams = EvidenceParams & {
@@ -140,6 +156,17 @@ type LabMemberParams = {
   privilegeLevel?: AdminBotPrivilegeLevel;
   accessOverrides?: AdminBotAccessGrant[];
   notes?: string;
+  role?: string;
+  status?: AdminBotLabMemberInput["status"];
+  researchBranch?: string;
+  researchTopics?: string[];
+  projects?: string[];
+  hoursPerWeek?: number;
+  capacityPercent?: number;
+  location?: string;
+  affiliation?: string;
+  timezone?: string;
+  personalWebsite?: string;
 };
 
 type PaperParams = {
@@ -168,6 +195,11 @@ export function createAdminBotToolHandlers(
   const client = new AdminBotClient(toClientConfig(config), options.fetchImpl, options.env);
   const signal = options.signal;
   return {
+    runEmailAutomation: () => client.runEmailAutomation(signal),
+    converseReimbursement: (params: ReimbursementConversationParams) =>
+      client.converseReimbursement(params, signal),
+    generateReimbursement: (params: { draft: Record<string, unknown> }) =>
+      client.generateReimbursement(params.draft, signal),
     reason: (params: PrivacyTaskParams) =>
       client.runPrivacyTask(
         {
@@ -350,8 +382,15 @@ export function createAdminBotToolHandlers(
         },
         signal,
       ),
-    suggestCalendarChange: (params: CalendarParams) =>
-      client.createProposal(calendarProposal(params), signal),
+    suggestCalendarChange: async (params: CalendarParams) => {
+      const resolved = await resolveCalendarSource(params, options.env ?? process.env);
+      const normalized = normalizeCalendarProposalParams({
+        ...params,
+        ...resolved,
+        evidence: resolved.evidence,
+      });
+      return await client.createProposal(calendarProposal(normalized), signal);
+    },
     proposeSlackMessage: (params: SlackMessageParams) =>
       client.createProposal(slackMessageProposal(params), signal),
     classifyJoinFormResponse: (params: JoinFormParams) =>
@@ -381,6 +420,7 @@ export function createAdminBotToolHandlers(
     updateSensitiveInfo: (params: { markdown: string }): Promise<AdminBotSensitiveInfoRecord> =>
       client.updateSensitiveInfo(params.markdown, signal),
     upsertPaper: (params: PaperParams) => client.upsertPaper(paperRecord(params), signal),
+    deletePaper: (params: { paperId: string }) => client.deletePaper(params.paperId, signal),
     listPapers: () => client.listPapers(signal),
     listPaperNudges: (params: { nowIso?: string }) => client.listPaperNudges(params.nowIso, signal),
     proposePaperNudge: async (params: PaperNudgeParams) => {
@@ -442,6 +482,15 @@ export function createAdminBotToolHandlers(
         },
         signal,
       ),
+    removePendingAction: (params: { actionId: string; actor?: string; note?: string }) =>
+      client.removePending(
+        params.actionId,
+        {
+          ...(params.actor ? { actor: params.actor } : {}),
+          ...(params.note ? { note: params.note } : {}),
+        },
+        signal,
+      ),
     executeApprovedAction: (params: { actionId: string; idempotencyKey?: string }) =>
       client.execute(
         params.actionId,
@@ -469,6 +518,17 @@ function labMemberRecord(params: LabMemberParams): AdminBotLabMemberInput {
     ...(params.slackUserId ? { slack_user_id: params.slackUserId } : {}),
     ...(params.accessOverrides ? { access_overrides: params.accessOverrides } : {}),
     ...(params.notes ? { notes: params.notes } : {}),
+    ...(params.role ? { role: params.role } : {}),
+    ...(params.status ? { status: params.status } : {}),
+    ...(params.researchBranch ? { research_branch: params.researchBranch } : {}),
+    ...(params.researchTopics ? { research_topics: params.researchTopics } : {}),
+    ...(params.projects ? { projects: params.projects } : {}),
+    ...(params.hoursPerWeek !== undefined ? { hours_per_week: params.hoursPerWeek } : {}),
+    ...(params.capacityPercent !== undefined ? { capacity_percent: params.capacityPercent } : {}),
+    ...(params.location ? { location: params.location } : {}),
+    ...(params.affiliation ? { affiliation: params.affiliation } : {}),
+    ...(params.timezone ? { timezone: params.timezone } : {}),
+    ...(params.personalWebsite ? { personal_website: params.personalWebsite } : {}),
   };
 }
 
@@ -535,7 +595,45 @@ function candidateDecisionProposal(params: CandidateDecisionParams): AdminBotAct
   };
 }
 
-function calendarProposal(params: CalendarParams): AdminBotActionProposal {
+function normalizeCalendarProposalParams(
+  params: CalendarParams & { summary: string },
+): CalendarParams & { summary: string } {
+  const supplied =
+    params.proposedPayload &&
+    typeof params.proposedPayload === "object" &&
+    !Array.isArray(params.proposedPayload)
+      ? { ...(params.proposedPayload as Record<string, unknown>) }
+      : {};
+  const suppliedAttendees = Array.isArray(supplied.attendees)
+    ? supplied.attendees
+    : supplied.attendees
+      ? [supplied.attendees]
+      : [];
+  const attendees = [...(params.attendees ?? []), ...suppliedAttendees]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim())
+    .filter((value, index, values) => isCalendarEmail(value) && values.indexOf(value) === index);
+  if (attendees.length > 0) {
+    supplied.attendees = attendees;
+  } else {
+    delete supplied.attendees;
+  }
+  return {
+    ...params,
+    changeType:
+      params.changeType === "send_invite" && attendees.length === 0
+        ? "tentative_hold"
+        : params.changeType,
+    ...(attendees.length > 0 ? { attendees } : { attendees: undefined }),
+    proposedPayload: supplied,
+  };
+}
+
+function isCalendarEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(value);
+}
+
+function calendarProposal(params: CalendarParams & { summary: string }): AdminBotActionProposal {
   const actionTypeByChange = {
     tentative_hold: "calendar.create_tentative_hold",
     send_invite: "calendar.send_invite",
@@ -558,11 +656,9 @@ function calendarProposal(params: CalendarParams): AdminBotActionProposal {
       ...(params.timeWindow ? { timeWindow: params.timeWindow } : {}),
     },
     evidence: params.evidence,
-    proposed_payload: params.proposedPayload ?? {
-      changeType: params.changeType,
-      attendees: params.attendees,
-      timeWindow: params.timeWindow,
-    },
+    // Preserve caller-supplied gog fields while ensuring proposal metadata is
+    // present in the live execution payload as well.
+    proposed_payload: calendarPayload(params),
     undo_plan:
       params.changeType === "tentative_hold"
         ? "Remove the tentative hold."
@@ -578,6 +674,210 @@ type PaperNudgeProposalParams = EvidenceParams & {
   message?: string;
   idempotencyKey?: string;
 };
+
+function calendarPayload(params: CalendarParams & { summary: string }): Record<string, unknown> {
+  const supplied =
+    params.proposedPayload &&
+    typeof params.proposedPayload === "object" &&
+    !Array.isArray(params.proposedPayload)
+      ? (params.proposedPayload as Record<string, unknown>)
+      : {};
+  const payload: Record<string, unknown> = {
+    changeType: params.changeType,
+    ...(params.attendees ? { attendees: params.attendees } : {}),
+    ...(params.timeWindow ? { timeWindow: params.timeWindow } : {}),
+    ...supplied,
+    summary:
+      typeof supplied.summary === "string" && supplied.summary.trim()
+        ? supplied.summary
+        : params.summary,
+  };
+  if (params.changeType !== "tentative_hold" && params.changeType !== "send_invite") {
+    return payload;
+  }
+  const timestampRange = calendarTimestampRange(params, payload);
+  if (timestampRange) {
+    return {
+      ...payload,
+      from: timestampRange.from,
+      to: timestampRange.to,
+      all_day: false,
+    };
+  }
+  const range = calendarDateRange(params, payload);
+  if (range) {
+    return {
+      ...payload,
+      ...(calendarString(payload, "from") ? {} : { from: range.from }),
+      ...(calendarString(payload, "to") ? {} : { to: range.to }),
+      ...(payload.all_day === undefined ? { all_day: true } : {}),
+    };
+  }
+  const date = calendarDateOnly(params, payload);
+  if (!date && (!calendarString(payload, "from") || !calendarString(payload, "to"))) {
+    throw new Error(
+      "Calendar create proposals need an RFC3339 from/to range or a date-only timeWindow (for example, 2026-07-30).",
+    );
+  }
+  if (!date) {
+    return payload;
+  }
+  return {
+    ...payload,
+    ...(calendarString(payload, "from") ? {} : { from: date }),
+    ...(calendarString(payload, "to") ? {} : { to: nextCalendarDate(date) }),
+    ...(payload.all_day === undefined ? { all_day: true } : {}),
+  };
+}
+
+function calendarTimestampRange(
+  params: CalendarParams,
+  payload: Record<string, unknown>,
+): { from: string; to: string } | undefined {
+  const candidates = [params.timeWindow, calendarString(payload, "timeWindow")];
+  const timestamp = /\b(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2}))\b/gu;
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const matches = [...candidate.matchAll(timestamp)].map((match) => match[1]);
+    if (matches.length >= 2) {
+      return { from: matches[0], to: matches[1] };
+    }
+  }
+  return undefined;
+}
+
+function calendarDateRange(
+  params: CalendarParams,
+  payload: Record<string, unknown>,
+): { from: string; to: string } | undefined {
+  const candidates = [params.timeWindow, params.summary, calendarString(payload, "timeWindow")];
+  const namedDate =
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?/giu;
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const matches = [...candidate.matchAll(namedDate)];
+    if (matches.length < 2) continue;
+    const between = candidate.slice(
+      (matches[0].index ?? 0) + matches[0][0].length,
+      matches[1].index ?? candidate.length,
+    );
+    if (!/(?:-|–|—|\bto\b|\bthrough\b)/iu.test(between)) continue;
+    const year = Number(matches[0][3] ?? matches[1][3] ?? new Date().getUTCFullYear());
+    const from = calendarIsoDate(year, calendarMonth(matches[0][1]), Number(matches[0][2]));
+    const end = calendarIsoDate(
+      Number(matches[1][3] ?? year),
+      calendarMonth(matches[1][1]),
+      Number(matches[1][2]),
+    );
+    if (from && end) return { from, to: nextCalendarDate(end) };
+  }
+  return undefined;
+}
+
+function calendarMonth(value: string): number {
+  const key = value.toLowerCase().slice(0, 3);
+  return [
+    "jan",
+    "feb",
+    "mar",
+    "apr",
+    "may",
+    "jun",
+    "jul",
+    "aug",
+    "sep",
+    "oct",
+    "nov",
+    "dec",
+  ].indexOf(key);
+}
+
+function calendarIsoDate(year: number, month: number, day: number): string | undefined {
+  const parsed = new Date(Date.UTC(year, month, day));
+  return parsed.getUTCFullYear() === year &&
+    parsed.getUTCMonth() === month &&
+    parsed.getUTCDate() === day
+    ? parsed.toISOString().slice(0, 10)
+    : undefined;
+}
+
+function calendarString(payload: Record<string, unknown>, key: string): string | undefined {
+  const value = payload[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function calendarDateOnly(
+  params: CalendarParams,
+  payload: Record<string, unknown>,
+): string | undefined {
+  const candidates = [
+    calendarString(payload, "date"),
+    calendarString(payload, "start_date"),
+    params.timeWindow,
+    params.summary,
+  ];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const iso = /\b(\d{4}-\d{2}-\d{2})\b/u.exec(candidate)?.[1];
+    if (iso) return iso;
+    const numeric = /\b(\d{1,2})[/.](\d{1,2})(?:[/.](\d{2,4}))?\b/u.exec(candidate);
+    if (numeric) {
+      const month = Number(numeric[1]) - 1;
+      const day = Number(numeric[2]);
+      const yearText = numeric[3];
+      const year = yearText
+        ? yearText.length === 2
+          ? 2000 + Number(yearText)
+          : Number(yearText)
+        : new Date().getUTCFullYear();
+      const parsed = new Date(Date.UTC(year, month, day));
+      if (
+        parsed.getUTCFullYear() === year &&
+        parsed.getUTCMonth() === month &&
+        parsed.getUTCDate() === day
+      ) {
+        return parsed.toISOString().slice(0, 10);
+      }
+    }
+    const named =
+      /\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s+(\d{4}))?\b/iu.exec(
+        candidate.trim(),
+      );
+    if (!named) continue;
+    const months = [
+      "january",
+      "february",
+      "march",
+      "april",
+      "may",
+      "june",
+      "july",
+      "august",
+      "september",
+      "october",
+      "november",
+      "december",
+    ];
+    const month = months.indexOf(named[1].toLowerCase());
+    const day = Number(named[2]);
+    const year = named[3] ? Number(named[3]) : new Date().getUTCFullYear();
+    const parsed = new Date(Date.UTC(year, month, day));
+    if (
+      parsed.getUTCFullYear() === year &&
+      parsed.getUTCMonth() === month &&
+      parsed.getUTCDate() === day
+    ) {
+      return parsed.toISOString().slice(0, 10);
+    }
+  }
+  return undefined;
+}
+
+function nextCalendarDate(date: string): string {
+  const next = new Date(date + "T00:00:00.000Z");
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+}
 
 function paperNudgeProposal(params: PaperNudgeProposalParams): AdminBotActionProposal {
   const recipientLabel = params.recipientName ?? params.recipientMemberId;

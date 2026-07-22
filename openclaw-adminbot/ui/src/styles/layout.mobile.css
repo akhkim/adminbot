@@ -110,7 +110,7 @@
     width: min(86vw, 320px);
     min-width: 0;
     border-right: none;
-    box-shadow: 0 30px 80px color-mix(in srgb, black 40%, transparent);
+    box-shadow: var(--shadow-lg);
     transform: translateX(-100%);
     opacity: 0;
     pointer-events: none;
@@ -266,13 +266,12 @@
   .shell--nav-collapsed:not(.shell--nav-drawer-open) .sidebar--collapsed .nav-item.active::before {
     content: "";
     position: absolute;
-    left: 8px;
-    top: 10px;
-    bottom: 10px;
-    width: 3px;
+    left: 0;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
     border-radius: var(--radius-full);
-    background: color-mix(in srgb, var(--accent) 86%, transparent);
-    box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 34%, transparent);
+    background: var(--accent);
   }
 
   .sidebar--collapsed .sidebar-shell__footer {
@@ -433,11 +432,11 @@
     left: auto;
     z-index: 100;
     width: min(420px, calc(100vw - var(--safe-area-left) - var(--safe-area-right) - 16px));
-    background: var(--card, #161b22);
-    border: 1px solid var(--border, #30363d);
+    background: var(--popover);
+    border: 1px solid var(--border-strong);
     border-radius: var(--radius-md);
     padding: 10px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    box-shadow: var(--shadow-lg);
     flex-direction: column;
     gap: 8px;
     min-width: 0;

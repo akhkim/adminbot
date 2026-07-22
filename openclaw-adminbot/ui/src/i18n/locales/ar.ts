@@ -393,6 +393,7 @@ export const ar: TranslationMap = {
   nav: {
     chat: "الدردشة",
     control: "التحكم",
+    adminbot: "AdminBot",
     agent: "الوكيل",
     settings: "الإعدادات",
     expand: "توسيع الشريط الجانبي",
@@ -401,6 +402,12 @@ export const ar: TranslationMap = {
   },
   tabs: {
     agents: "الوكلاء",
+    adminbot: "Pending Actions",
+    adminbotReimbursements: "Reimbursements",
+    adminbotSettings: "Settings",
+    adminbotMembers: "Lab Members",
+    adminbotPapers: "Active Papers",
+    adminbotNudges: "Paper Nudges",
     activity: "النشاط",
     overview: "نظرة عامة",
     workboard: "لوحة العمل",
@@ -426,6 +433,12 @@ export const ar: TranslationMap = {
   },
   subtitles: {
     agents: "مساحات العمل، والأدوات، والهويات.",
+    adminbot: "Approval queue and execution controls.",
+    adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
+    adminbotSettings: "Lab defaults and escalation policy.",
+    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotNudges: "Due reminders and professor escalations.",
     activity: "ملخصات نشاط الأدوات المحلية في المتصفح.",
     overview: "الحالة، ونقاط الدخول، والصحة.",
     workboard: "قائمة عمل الوكيل وتسليم الجلسات.",
@@ -1670,8 +1683,6 @@ export const ar: TranslationMap = {
     },
     jobDetail: {
       system: "النظام",
-      command: "الأمر",
-      cwd: "CWD",
       prompt: "المطالبة",
       delivery: "التسليم",
       agent: "الوكيل",

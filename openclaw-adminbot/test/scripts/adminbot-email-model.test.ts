@@ -64,6 +64,57 @@ describe("AdminBot email model", () => {
     });
   });
 
+  it("drafts flexible email text through the constrained local model", async () => {
+    const fetchMock = vi.fn<typeof fetch>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: {
+                  content: JSON.stringify({
+                    subject: "Research application next step",
+                    body: "Hi Genis,\n\nYour work on robotics sounds relevant. Please apply at https://example.test/app.\n\nBest,\nZhijing",
+                  }),
+                },
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+    );
+    const model = new AdminBotEmailModel(fetchMock);
+
+    await expect(
+      model.draft(
+        {
+          from: "student@example.com",
+          fromName: "Genis",
+          subject: "Robotics research",
+          body: "I work on robot learning and would like to join.",
+        },
+        {
+          purpose: "student_outreach",
+          recipientName: "Genis",
+          guidance: "Acknowledge supported interests and invite an application.",
+          requiredFacts: ["The application form is https://example.test/app."],
+        },
+      ),
+    ).resolves.toMatchObject({
+      subject: "Research application next step",
+      body: expect.stringContaining("robotics"),
+    });
+
+    const [, init] = fetchMock.mock.calls[0] ?? [];
+    const payload = JSON.parse(String(init?.body)) as {
+      messages: Array<{ content: string }>;
+      response_format: { json_schema: { name: string } };
+    };
+    expect(payload.response_format.json_schema.name).toBe("email_draft");
+    expect(payload.messages[0]?.content).toContain("instead of a fixed template");
+    expect(payload.messages[0]?.content).toContain("untrusted data");
+  });
+
   it("rejects malformed model output before any action handler sees it", async () => {
     const fetchMock = vi.fn<typeof fetch>(async () => {
       return new Response(

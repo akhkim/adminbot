@@ -5,11 +5,16 @@ import os from "node:os";
 import path from "node:path";
 
 const configPath = process.argv[2] ?? path.join(os.homedir(), ".openclaw", "openclaw.json");
-const modelId =
-  process.env.JINESIS_VLLM_MODEL ?? "RedHatAI/Qwen3-Next-80B-A3B-Instruct-NVFP4";
+const modelId = process.env.JINESIS_VLLM_MODEL ?? "nvidia/Qwen3.5-122B-A10B-NVFP4";
 const modelRef = `vllm/${modelId}`;
 const baseUrl = process.env.JINESIS_VLLM_BASE_URL ?? "http://127.0.0.1:8000/v1";
-const apiKey = process.env.VLLM_API_KEY ?? "vllm-local";
+const contextWindow = Number(process.env.JINESIS_VLLM_CONTEXT_WINDOW ?? "65536");
+const apiKey = {
+  source: "env",
+  provider: "default",
+  id: "VLLM_API_KEY",
+};
+const adminBotTools = ["adminbot_reimbursement_converse", "adminbot_reimbursement_generate"];
 
 const raw = fs.readFileSync(configPath, "utf8");
 const config = JSON.parse(raw);
@@ -23,12 +28,12 @@ providers.vllm = {
   models: [
     {
       id: modelId,
-      name: "Qwen3-Next 80B A3B Instruct NVFP4 (Aurora)",
-      reasoning: false,
+      name: modelId,
+      reasoning: true,
       input: ["text"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-      contextWindow: 65536,
-      maxTokens: 2048,
+      contextWindow,
+      maxTokens: 16384,
       compat: { thinkingFormat: "qwen-chat-template" },
     },
   ],
@@ -39,7 +44,8 @@ defaultModels[modelRef] = {
   ...(defaultModels[modelRef] ?? {}),
   params: {
     ...(defaultModels[modelRef]?.params ?? {}),
-    temperature: 0.15,
+    temperature: 0.6,
+    topP: 0.95,
   },
 };
 
@@ -48,6 +54,10 @@ const agentsList = (config.agents?.list ?? []).map((agent) =>
     ? {
         ...agent,
         model: { primary: modelRef, fallbacks: [] },
+        tools: {
+          ...agent.tools,
+          alsoAllow: [...new Set([...(agent.tools?.alsoAllow ?? []), ...adminBotTools])],
+        },
       }
     : agent,
 );
@@ -68,7 +78,7 @@ const next = {
   },
 };
 
-const backupPath = `${configPath}.before-qwen-next-80b`;
+const backupPath = `${configPath}.before-qwen35-122b`;
 fs.copyFileSync(configPath, backupPath);
 fs.writeFileSync(configPath, `${JSON.stringify(next, null, 2)}\n`, { mode: 0o600 });
 fs.chmodSync(configPath, 0o600);

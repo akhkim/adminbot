@@ -21,8 +21,8 @@ export class ResizableDivider extends LitElement {
     :host {
       width: 4px;
       cursor: col-resize;
-      background: var(--border, #333);
-      transition: background 150ms ease-out;
+      background: var(--border);
+      transition: background var(--duration-normal) var(--ease-out);
       flex-shrink: 0;
       position: relative;
       touch-action: none;
@@ -37,15 +37,15 @@ export class ResizableDivider extends LitElement {
       bottom: 0;
     }
     :host(:hover) {
-      background: var(--accent, #007bff);
+      background: var(--accent);
     }
     :host(.dragging) {
-      background: var(--accent, #007bff);
+      background: var(--accent);
     }
     :host(:focus-visible) {
-      outline: 2px solid var(--accent, #007bff);
+      outline: 2px solid var(--accent);
       outline-offset: 2px;
-      background: var(--accent, #007bff);
+      background: var(--accent);
     }
   `;
 

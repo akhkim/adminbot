@@ -23,13 +23,13 @@
 .dreams__tab {
   padding: 4px 14px;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--muted);
   font-family: inherit;
-  font-size: 12px; /* was 11px */
+  font-size: var(--control-ui-text-xs);
   font-weight: 500;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   cursor: pointer;
   transition:
@@ -61,7 +61,7 @@
 
 .dreams__lobster {
   animation: dreams-breathe 4s ease-in-out infinite;
-  filter: drop-shadow(0 0 40px rgba(255, 77, 77, 0.25));
+  filter: drop-shadow(0 0 40px color-mix(in srgb, var(--accent) 25%, transparent));
   transition: filter 0.6s ease;
 }
 
@@ -175,8 +175,8 @@
   left: calc(50% - 200px);
   padding: 16px 20px;
   background: var(--accent-subtle);
-  border: 1px solid rgba(255, 92, 92, 0.12);
-  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+  border-radius: var(--radius-xl);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -186,9 +186,9 @@
 }
 
 .dreams__bubble-label {
-  font-size: 12px; /* was 11px */
+  font-size: var(--control-ui-text-xs);
   color: var(--accent-muted);
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   font-weight: 600;
 }
@@ -219,7 +219,7 @@
   position: absolute;
   border-radius: 50%;
   background: var(--accent-subtle);
-  border: 1px solid rgba(255, 92, 92, 0.1);
+  border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent);
   animation: dreams-bubble-float 6s ease-in-out infinite;
 }
 
@@ -232,10 +232,14 @@
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #fef3c7, #fbbf24);
+  background: radial-gradient(
+    circle at 35% 35%,
+    color-mix(in srgb, var(--warn) 55%, var(--text-strong) 45%),
+    var(--warn)
+  );
   box-shadow:
-    0 0 40px rgba(251, 191, 36, 0.2),
-    0 0 80px rgba(251, 191, 36, 0.08);
+    0 0 40px color-mix(in srgb, var(--warn) 20%, transparent),
+    0 0 80px color-mix(in srgb, var(--warn) 8%, transparent);
   opacity: 0.7;
   animation: dreams-moon-glow 8s ease-in-out infinite alternate;
 }
@@ -243,14 +247,14 @@
 @keyframes dreams-moon-glow {
   0% {
     box-shadow:
-      0 0 40px rgba(251, 191, 36, 0.2),
-      0 0 80px rgba(251, 191, 36, 0.08);
+      0 0 40px color-mix(in srgb, var(--warn) 20%, transparent),
+      0 0 80px color-mix(in srgb, var(--warn) 8%, transparent);
     opacity: 0.6;
   }
   100% {
     box-shadow:
-      0 0 50px rgba(251, 191, 36, 0.3),
-      0 0 100px rgba(251, 191, 36, 0.12);
+      0 0 50px color-mix(in srgb, var(--warn) 30%, transparent),
+      0 0 100px color-mix(in srgb, var(--warn) 12%, transparent);
     opacity: 0.8;
   }
 }
@@ -265,7 +269,11 @@
   width: 240px;
   height: 100px;
   border-radius: 50%;
-  background: radial-gradient(ellipse, rgba(255, 77, 77, 0.08) 0%, transparent 70%);
+  background: radial-gradient(
+    ellipse,
+    color-mix(in srgb, var(--accent) 8%, transparent) 0%,
+    transparent 70%
+  );
   pointer-events: none;
   animation: dreams-glow-pulse 4s ease-in-out infinite;
 }
@@ -295,7 +303,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  border-radius: 12px;
+  border-radius: var(--radius-xl);
   background: color-mix(in oklab, var(--panel) 70%, transparent);
   border: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
 }
@@ -315,19 +323,19 @@
 .dreams__phase-dot--on {
   background: var(--ok);
   opacity: 1;
-  box-shadow: 0 0 6px rgba(34, 197, 94, 0.3);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--ok) 30%, transparent);
 }
 
 .dreams__phase-name {
-  font-size: 12px;
+  font-size: var(--control-ui-text-xs);
   font-weight: 600;
   color: var(--text);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-label);
 }
 
 .dreams__phase-next {
-  font-size: 12px; /* was 11px */
+  font-size: var(--control-ui-text-xs);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -343,9 +351,9 @@
   border: 1px solid var(--border);
   background: color-mix(in oklab, var(--panel) 70%, transparent);
   color: var(--muted);
-  font-size: 12px; /* was 11px */
+  font-size: var(--control-ui-text-xs);
   font-family: inherit;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   cursor: pointer;
   transition:
@@ -372,7 +380,7 @@
 .dreams__phase-toggle--on .dreams__phase-toggle-dot {
   background: var(--ok);
   opacity: 1;
-  box-shadow: 0 0 6px rgba(34, 197, 94, 0.3);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--ok) 30%, transparent);
 }
 
 .dreams__phase-toggle--on {
@@ -385,7 +393,7 @@
 }
 
 .dreams__controls-error {
-  font-size: 12px;
+  font-size: var(--control-ui-text-xs);
   color: var(--danger);
 }
 
@@ -402,7 +410,7 @@
 .dreams__status-label {
   font-size: 13px;
   color: var(--muted);
-  letter-spacing: 0.1em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   font-weight: 500;
 }
@@ -411,7 +419,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--control-ui-text-xs);
   color: var(--ok-muted);
 }
 
@@ -427,18 +435,18 @@
   0%,
   100% {
     opacity: 1;
-    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 40%, transparent);
   }
   50% {
     opacity: 0.7;
-    box-shadow: 0 0 8px 2px rgba(34, 197, 94, 0.2);
+    box-shadow: 0 0 8px 2px color-mix(in srgb, var(--ok) 20%, transparent);
   }
 }
 
 /* ---- Idle / inactive state ---- */
 
 .dreams--idle .dreams__lobster {
-  filter: drop-shadow(0 0 20px rgba(255, 77, 77, 0.1));
+  filter: drop-shadow(0 0 20px color-mix(in srgb, var(--accent) 10%, transparent));
 }
 
 .dreams--idle .dreams__status-dot {
@@ -479,9 +487,9 @@
 
 .dreams-advanced__eyebrow {
   display: block;
-  font-size: 12px; /* was 10px */
+  font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--accent-muted);
   margin-bottom: 10px;
@@ -489,9 +497,11 @@
 
 .dreams-advanced__title {
   margin: 0;
-  font-size: 24px;
+  font-size: var(--control-ui-text-2xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tighter);
   line-height: 1.1;
-  color: var(--text);
+  color: var(--text-strong);
 }
 
 .dreams-advanced__description {
@@ -511,7 +521,7 @@
 
 .dreams-advanced__summary {
   margin-top: 12px;
-  font-size: 12px;
+  font-size: var(--control-ui-text-xs);
   line-height: 1.5;
   color: var(--muted);
 }
@@ -526,7 +536,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  border-radius: 16px;
+  border-radius: var(--radius-xl);
   border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
   background: color-mix(in oklab, var(--panel) 86%, transparent);
   overflow: hidden;
@@ -548,16 +558,16 @@
 }
 
 .dreams-advanced__section-title {
-  font-size: 12px; /* was 11px */
+  font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: 0.1em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--muted);
 }
 
 .dreams-advanced__section-description {
   margin: 6px 0 0;
-  font-size: 12px;
+  font-size: var(--control-ui-text-xs);
   line-height: 1.5;
   color: var(--muted);
 }
@@ -573,13 +583,13 @@
   min-width: 26px;
   height: 26px;
   padding: 0 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: color-mix(in oklab, var(--accent-subtle) 85%, transparent);
   color: var(--accent);
-  font-size: 12px;
+  font-size: var(--control-ui-text-xs);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
@@ -589,7 +599,7 @@
   align-items: center;
   gap: 6px;
   padding: 3px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   border: 1px solid color-mix(in oklab, var(--border) 62%, transparent);
   background: color-mix(in oklab, var(--surface) 92%, transparent);
 }
@@ -599,8 +609,8 @@
   background: transparent;
   color: var(--muted);
   padding: 6px 10px;
-  border-radius: 999px;
-  font-size: 12px; /* was 11px */
+  border-radius: var(--radius-full);
+  font-size: var(--control-ui-text-xs);
   line-height: 1;
   cursor: pointer;
   transition:
@@ -632,12 +642,12 @@
   align-items: center;
   margin-bottom: 10px;
   padding: 4px 8px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: color-mix(in oklab, var(--accent-subtle) 72%, transparent);
   color: var(--accent);
-  font-size: 12px; /* was 10px */
+  font-size: var(--control-ui-text-xs);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
 
@@ -654,7 +664,7 @@
 .dreams-advanced__source,
 .dreams-advanced__meta,
 .dreams-advanced__empty {
-  font-size: 12px; /* was 11px */
+  font-size: var(--control-ui-text-xs);
   line-height: 1.45;
   color: var(--muted);
   margin-top: 8px;
@@ -713,10 +723,10 @@
 }
 
 .dreams-diary__title {
-  font-size: 12px; /* was 10px */
+  font-size: var(--control-ui-text-xs);
   font-weight: 500;
   color: var(--muted);
-  letter-spacing: 0.14em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   opacity: 0.7;
   flex: 1;
@@ -726,7 +736,7 @@
   display: inline-flex;
   gap: 6px;
   padding: 2px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: color-mix(in oklab, var(--panel) 82%, transparent);
   border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
 }
@@ -735,9 +745,9 @@
   border: 0;
   background: transparent;
   color: var(--muted);
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   padding: 5px 10px;
-  font-size: 12px; /* was 11px */
+  font-size: var(--control-ui-text-xs);
   cursor: pointer;
 }
 
@@ -749,7 +759,7 @@
 .dreams-diary__explainer {
   width: min(100%, 920px);
   margin: 0 0 16px;
-  font-size: 12px;
+  font-size: var(--control-ui-text-xs);
   line-height: 1.6;
   color: var(--muted);
 }
@@ -812,7 +822,7 @@
 
 .dreams-diary__date {
   display: block;
-  font-size: 12px;
+  font-size: var(--control-ui-text-xs);
   color: var(--text);
   font-weight: 600;
   margin-bottom: 16px;
@@ -840,11 +850,11 @@
 
 .dreams-diary__day-chip {
   padding: 4px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
   background: color-mix(in oklab, var(--panel) 84%, transparent);
   color: var(--muted);
-  font-size: 12px; /* was 11px */
+  font-size: var(--control-ui-text-xs);
   font-variant-numeric: tabular-nums;
   cursor: pointer;
   text-align: center;
@@ -882,7 +892,7 @@
 .dreams-diary__insight-card {
   border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
   background: color-mix(in oklab, var(--panel) 86%, transparent);
-  border-radius: 14px;
+  border-radius: var(--radius-xl);
   padding: 14px;
 }
 
@@ -915,7 +925,7 @@
 }
 
 .dreams-diary__insight-meta {
-  font-size: 12px; /* was 11px */
+  font-size: var(--control-ui-text-xs);
   color: var(--muted);
   margin-bottom: 10px;
 }
@@ -923,17 +933,17 @@
 .dreams-diary__insight-badge {
   display: inline-flex;
   align-items: center;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   padding: 3px 8px;
-  font-size: 12px; /* was 10px */
+  font-size: var(--control-ui-text-xs);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: var(--tracking-label);
   border: 1px solid color-mix(in oklab, var(--border) 70%, transparent);
 }
 
 .dreams-diary__insight-badge--high {
-  color: color-mix(in oklab, var(--danger) 82%, white);
-  background: color-mix(in oklab, var(--danger) 10%, transparent);
+  color: var(--danger);
+  background: var(--danger-subtle);
 }
 
 .dreams-diary__insight-badge--low,
@@ -950,7 +960,7 @@
 
 .dreams-diary__insight-line {
   margin: 0 0 8px;
-  font-size: 12px;
+  font-size: var(--control-ui-text-xs);
   line-height: 1.6;
   color: var(--text);
   overflow-wrap: anywhere;
@@ -963,8 +973,8 @@
 .dreams-diary__insight-list strong {
   display: block;
   margin-bottom: 6px;
-  font-size: 12px; /* was 11px */
-  letter-spacing: 0.04em;
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -987,8 +997,8 @@
   display: inline-flex;
   align-items: center;
   padding: 4px 8px;
-  border-radius: 999px;
-  font-size: 12px; /* was 11px */
+  border-radius: var(--radius-full);
+  font-size: var(--control-ui-text-xs);
   color: var(--text);
   background: color-mix(in oklab, var(--accent-subtle) 84%, transparent);
   border: 1px solid color-mix(in oklab, var(--accent) 24%, transparent);
@@ -1002,8 +1012,8 @@
   align-items: stretch;
   justify-content: center;
   padding: 32px;
-  background: color-mix(in oklab, var(--bg) 72%, black 28%);
-  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(4px);
 }
 
 .dreams-diary__preview-panel {
@@ -1011,10 +1021,10 @@
   flex-direction: column;
   width: min(1120px, 100%);
   min-height: 0;
-  border-radius: 18px;
-  border: 1px solid color-mix(in oklab, var(--border) 72%, transparent);
-  background: color-mix(in oklab, var(--panel) 96%, transparent);
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.22);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-strong);
+  background: var(--popover);
+  box-shadow: var(--shadow-xl);
   overflow: hidden;
 }
 
@@ -1035,7 +1045,7 @@
 
 .dreams-diary__preview-meta {
   margin-top: 6px;
-  font-size: 12px; /* was 11px */
+  font-size: var(--control-ui-text-xs);
   line-height: 1.5;
   color: var(--muted);
   overflow-wrap: anywhere;
@@ -1050,7 +1060,7 @@
 
 .dreams-diary__preview-hint {
   margin-bottom: 12px;
-  font-size: 12px;
+  font-size: var(--control-ui-text-xs);
   line-height: 1.5;
   color: var(--muted);
 }
@@ -1060,7 +1070,7 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: var(--control-ui-text-xs);
   line-height: 1.65;
   color: var(--text);
 }
@@ -1120,13 +1130,13 @@
 }
 
 .dreams-diary__empty-hint {
-  font-size: 12px; /* was 11px */
+  font-size: var(--control-ui-text-xs);
   color: var(--muted);
   opacity: 0.4;
 }
 
 .dreams-diary__error {
-  font-size: 12px;
+  font-size: var(--control-ui-text-xs);
   color: var(--danger);
   text-align: center;
   padding: 20px 0;

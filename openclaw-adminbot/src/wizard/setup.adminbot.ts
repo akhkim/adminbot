@@ -27,6 +27,7 @@ export const ADMINBOT_SKILLS = [
   "adminbot-recommendation-letters",
   "adminbot-social-posts",
   "adminbot-calendar-email",
+  "adminbot-email-automation",
   "adminbot-paper-publish",
 ] as const;
 
@@ -35,6 +36,7 @@ export const ADMINBOT_TOOLS = [
   // Allow the AdminBot plugin id as well as concrete tools so optional plugin
   // tools materialize for workflow skills when the agent uses a minimal profile.
   ADMINBOT_PLUGIN_ID,
+  "adminbot_run_email_automation",
   "adminbot_reason",
   "adminbot_propose_action",
   "adminbot_propose_candidate_decision",
@@ -42,6 +44,8 @@ export const ADMINBOT_TOOLS = [
   "adminbot_prepare_paper_social_posts",
   "adminbot_prepare_overleaf_paper_edit",
   "adminbot_prepare_reimbursement_packet",
+  "adminbot_reimbursement_converse",
+  "adminbot_reimbursement_generate",
   "adminbot_suggest_calendar_change",
   "adminbot_propose_slack_message",
   "adminbot_classify_join_form_response",
@@ -56,8 +60,10 @@ export const ADMINBOT_TOOLS = [
   "adminbot_list_paper_nudges",
   "adminbot_propose_paper_nudge",
   "adminbot_list_pending_actions",
+  "adminbot_delete_paper",
   "adminbot_approve_action",
   "adminbot_execute_approved_action",
+  "adminbot_remove_pending_action",
 ] as const;
 
 export const ADMINBOT_DENIED_TOOLS = ["session_status"] as const;

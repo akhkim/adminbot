@@ -395,6 +395,7 @@ export const fa: TranslationMap = {
   nav: {
     chat: "چت",
     control: "کنترل",
+    adminbot: "AdminBot",
     agent: "عامل",
     settings: "تنظیمات",
     expand: "گسترش نوار کناری",
@@ -403,6 +404,12 @@ export const fa: TranslationMap = {
   },
   tabs: {
     agents: "عامل‌ها",
+    adminbot: "Pending Actions",
+    adminbotReimbursements: "Reimbursements",
+    adminbotSettings: "Settings",
+    adminbotMembers: "Lab Members",
+    adminbotPapers: "Active Papers",
+    adminbotNudges: "Paper Nudges",
     activity: "فعالیت",
     overview: "نمای کلی",
     workboard: "تابلوی کار",
@@ -428,6 +435,12 @@ export const fa: TranslationMap = {
   },
   subtitles: {
     agents: "فضاهای کاری، ابزارها، هویت‌ها.",
+    adminbot: "Approval queue and execution controls.",
+    adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
+    adminbotSettings: "Lab defaults and escalation policy.",
+    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotNudges: "Due reminders and professor escalations.",
     activity: "خلاصه‌های فعالیت ابزار در مرورگر محلی.",
     overview: "وضعیت، نقاط ورود، سلامت.",
     workboard: "صف کار عامل و واگذاری جلسه.",
@@ -1690,8 +1703,6 @@ export const fa: TranslationMap = {
     },
     jobDetail: {
       system: "سیستم",
-      command: "دستور",
-      cwd: "CWD",
       prompt: "پرامپت",
       delivery: "تحویل",
       agent: "عامل",

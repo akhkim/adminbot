@@ -394,6 +394,7 @@ export const id: TranslationMap = {
   nav: {
     chat: "Chat",
     control: "Kontrol",
+    adminbot: "AdminBot",
     agent: "Agen",
     settings: "Pengaturan",
     expand: "Perluas bilah samping",
@@ -402,6 +403,12 @@ export const id: TranslationMap = {
   },
   tabs: {
     agents: "Agen",
+    adminbot: "Pending Actions",
+    adminbotReimbursements: "Reimbursements",
+    adminbotSettings: "Settings",
+    adminbotMembers: "Lab Members",
+    adminbotPapers: "Active Papers",
+    adminbotNudges: "Paper Nudges",
     activity: "Aktivitas",
     overview: "Ikhtisar",
     workboard: "Workboard",
@@ -427,6 +434,12 @@ export const id: TranslationMap = {
   },
   subtitles: {
     agents: "Ruang kerja, alat, identitas.",
+    adminbot: "Approval queue and execution controls.",
+    adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
+    adminbotSettings: "Lab defaults and escalation policy.",
+    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotNudges: "Due reminders and professor escalations.",
     activity: "Ringkasan aktivitas alat lokal browser.",
     overview: "Status, titik masuk, kesehatan.",
     workboard: "Antrean kerja agen dan serah terima sesi.",
@@ -1689,8 +1702,6 @@ export const id: TranslationMap = {
     },
     jobDetail: {
       system: "Sistem",
-      command: "Perintah",
-      cwd: "CWD",
       prompt: "Prompt",
       delivery: "Pengiriman",
       agent: "Agen",

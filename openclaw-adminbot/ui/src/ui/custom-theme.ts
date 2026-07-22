@@ -592,22 +592,17 @@ export async function importCustomThemeFromUrl(
   }
 }
 
+// Dark-only (design spec §2): the custom theme escape hatch only ever applies its dark
+// variant. `theme.light` is still parsed/stored for tweakcn payload round-tripping (and to
+// keep older persisted records valid), but it is never rendered into the document.
 export function buildCustomThemeStyles(theme: ImportedCustomTheme) {
-  const light = normalizeStoredTokenMap(theme.light);
   const dark = normalizeStoredTokenMap(theme.dark);
-  if (!light || !dark) {
+  if (!dark) {
     throw new Error("Stored custom theme is missing required tokens.");
   }
   const renderDeclarations = (modeTokens: ThemeTokenMap) =>
     MODE_TOKEN_ORDER.map((key) => `  --${key}: ${modeTokens[key]};`).join("\n");
-  return [
-    `:root[data-theme="custom"] {`,
-    renderDeclarations(dark),
-    `}`,
-    `:root[data-theme="custom-light"] {`,
-    renderDeclarations(light),
-    `}`,
-  ].join("\n");
+  return [`:root[data-theme="custom"] {`, renderDeclarations(dark), `}`].join("\n");
 }
 
 export function syncCustomThemeStyleTag(theme: ImportedCustomTheme | null | undefined) {

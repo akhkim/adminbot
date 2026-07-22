@@ -39,6 +39,16 @@ export default defineToolPlugin({
   configSchema: adminBotConfigSchema,
   tools: (tool) => [
     tool({
+      name: "adminbot_run_email_automation",
+      label: "AdminBot run email automation",
+      description:
+        "Run the hourly AdminBot inbox processor now, wait for it to finish, and return completion, review, skip, and failure counts for the final chat response.",
+      optional: true,
+      parameters: Type.Object({}),
+      execute: (_params, config) =>
+        createAdminBotToolHandlers(resolveConfig(config)).runEmailAutomation(),
+    }),
+    tool({
       name: "adminbot_reason",
       label: "AdminBot private reasoning",
       description:
@@ -69,6 +79,7 @@ export default defineToolPlugin({
         rationale: Type.Optional(Type.String()),
         undoPlan: Type.Optional(Type.String()),
         idempotencyKey: Type.Optional(Type.String()),
+        controlUiConfirmed: Type.Optional(Type.Boolean()),
       }),
       execute: (params, config) =>
         createAdminBotToolHandlers(resolveConfig(config)).proposeAction(params),
@@ -135,6 +146,7 @@ export default defineToolPlugin({
         ),
         evidence: evidenceArray,
         idempotencyKey: Type.Optional(Type.String()),
+        controlUiConfirmed: Type.Optional(Type.Boolean()),
       }),
       execute: (params, config) =>
         createAdminBotToolHandlers(resolveConfig(config)).preparePaperSocialPosts(params),
@@ -161,6 +173,7 @@ export default defineToolPlugin({
         policySource: Type.Optional(Type.String()),
         evidence: evidenceArray,
         idempotencyKey: Type.Optional(Type.String()),
+        controlUiConfirmed: Type.Optional(Type.Boolean()),
       }),
       execute: (params, config) =>
         createAdminBotToolHandlers(resolveConfig(config)).prepareOverleafPaperEdit(params),
@@ -182,19 +195,106 @@ export default defineToolPlugin({
         createAdminBotToolHandlers(resolveConfig(config)).prepareReimbursementPacket(params),
     }),
     tool({
+      name: "adminbot_reimbursement_converse",
+      label: "AdminBot reimbursement conversation",
+      description:
+        "Privately extract receipt PDFs and continue a natural-language reimbursement intake. Returns the merged draft, missing fields, and the next clarification question.",
+      optional: true,
+      parameters: Type.Object({
+        message: Type.String({ minLength: 1, maxLength: 20000 }),
+        receipts: Type.Optional(
+          Type.Array(
+            Type.Object(
+              {
+                name: Type.String({ minLength: 1, maxLength: 160 }),
+                media_type: Type.Literal("application/pdf"),
+                data_base64: Type.String({ minLength: 1 }),
+              },
+              { additionalProperties: false },
+            ),
+            { maxItems: 12 },
+          ),
+        ),
+        messages: Type.Optional(
+          Type.Array(
+            Type.Object(
+              {
+                role: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
+                content: Type.String({ maxLength: 20000 }),
+              },
+              { additionalProperties: false },
+            ),
+            { maxItems: 20 },
+          ),
+        ),
+        draft: Type.Optional(unknownRecord),
+      }),
+      execute: (params, config) =>
+        createAdminBotToolHandlers(resolveConfig(config)).converseReimbursement(params),
+    }),
+    tool({
+      name: "adminbot_reimbursement_generate",
+      label: "AdminBot generate reimbursement forms",
+      description:
+        "Fill the canonical Compute Expense and Trip Summary forms from a complete reviewed reimbursement draft. Returns both files for download without submitting them.",
+      optional: true,
+      parameters: Type.Object({ draft: unknownRecord }),
+      execute: (params, config) =>
+        createAdminBotToolHandlers(resolveConfig(config)).generateReimbursement(params),
+    }),
+    tool({
       name: "adminbot_suggest_calendar_change",
       label: "AdminBot suggest calendar change",
       description:
-        "Suggest a calendar hold, invite, reschedule, or cancellation through AdminBot policy and approvals.",
+        "Create a calendar proposal from explicit fields or extract its summary and date range from a Google Docs URL, Gmail message id, or Gmail query. A Google Calendar URL selects the writable destination calendar.",
       optional: true,
       parameters: Type.Object({
         changeType: Type.Unsafe<"tentative_hold" | "send_invite" | "reschedule" | "cancel">({
           type: "string",
           enum: ["tentative_hold", "send_invite", "reschedule", "cancel"],
         }),
-        summary: Type.String(),
+        summary: Type.Optional(
+          Type.String({
+            description:
+              "Event title. Optional when sourceUrl, emailMessageId, or emailQuery supplies it.",
+          }),
+        ),
         attendees: Type.Optional(Type.Array(Type.String())),
-        timeWindow: Type.Optional(Type.String()),
+        timeWindow: Type.Optional(
+          Type.String({
+            description:
+              "Explicit date/time range. Optional when the Google or Gmail source supplies it.",
+          }),
+        ),
+        sourceUrl: Type.Optional(
+          Type.String({
+            description:
+              "Google Docs or Gmail URL to read. For compatibility, a Google Calendar URL here is treated as calendarUrl.",
+          }),
+        ),
+        calendarUrl: Type.Optional(
+          Type.String({
+            description:
+              "Google Calendar embed/share URL. Its src or cid value becomes proposed_payload.calendar_id.",
+          }),
+        ),
+        calendarName: Type.Optional(
+          Type.Unsafe<"personal" | "jinesis">({
+            type: "string",
+            enum: ["personal", "jinesis"],
+            description:
+              "Named destination: personal selects the private group calendar; jinesis selects jinesis.adminbot@gmail.com.",
+          }),
+        ),
+        emailMessageId: Type.Optional(
+          Type.String({ description: "Gmail message id to read with authenticated gog." }),
+        ),
+        emailQuery: Type.Optional(
+          Type.String({
+            description:
+              "Gmail search query. AdminBot reads the first matching thread as the calendar source.",
+          }),
+        ),
         evidence: evidenceArray,
         proposedPayload: Type.Optional(Type.Unknown()),
       }),
@@ -222,6 +322,7 @@ export default defineToolPlugin({
         evidence: evidenceArray,
         proposedPayload: Type.Optional(Type.Unknown()),
         idempotencyKey: Type.Optional(Type.String()),
+        controlUiConfirmed: Type.Optional(Type.Boolean()),
       }),
       execute: (params, config) =>
         createAdminBotToolHandlers(resolveConfig(config)).proposeSlackMessage(params),
@@ -255,6 +356,25 @@ export default defineToolPlugin({
         privilegeLevel: Type.Optional(privilegeLevelSchema),
         accessOverrides: Type.Optional(Type.Array(accessGrantSchema)),
         notes: Type.Optional(Type.String()),
+        role: Type.Optional(Type.String()),
+        status: Type.Optional(
+          Type.Union([
+            Type.Literal("active"),
+            Type.Literal("part_time"),
+            Type.Literal("on_leave"),
+            Type.Literal("alumni"),
+            Type.Literal("external"),
+          ]),
+        ),
+        researchBranch: Type.Optional(Type.String()),
+        researchTopics: Type.Optional(Type.Array(Type.String())),
+        projects: Type.Optional(Type.Array(Type.String())),
+        hoursPerWeek: Type.Optional(Type.Number({ minimum: 0, maximum: 168 })),
+        capacityPercent: Type.Optional(Type.Number({ minimum: 0, maximum: 100 })),
+        location: Type.Optional(Type.String()),
+        affiliation: Type.Optional(Type.String()),
+        timezone: Type.Optional(Type.String()),
+        personalWebsite: Type.Optional(Type.String()),
       }),
       execute: (params, config) =>
         createAdminBotToolHandlers(resolveConfig(config)).upsertLabMember(params),
@@ -337,6 +457,17 @@ export default defineToolPlugin({
         createAdminBotToolHandlers(resolveConfig(config)).upsertPaper(params),
     }),
     tool({
+      name: "adminbot_delete_paper",
+      label: "AdminBot delete paper",
+      description: "Delete an AdminBot paper pipeline record by id.",
+      optional: true,
+      parameters: Type.Object({
+        paperId: Type.String({ minLength: 1 }),
+      }),
+      execute: (params, config) =>
+        createAdminBotToolHandlers(resolveConfig(config)).deletePaper(params),
+    }),
+    tool({
       name: "adminbot_list_papers",
       label: "AdminBot list papers",
       description: "List AdminBot paper pipeline records and their current publication steps.",
@@ -372,6 +503,7 @@ export default defineToolPlugin({
         message: Type.Optional(Type.String({ minLength: 1 })),
         evidence: evidenceArray,
         idempotencyKey: Type.Optional(Type.String()),
+        controlUiConfirmed: Type.Optional(Type.Boolean()),
       }),
       execute: (params, config) =>
         createAdminBotToolHandlers(resolveConfig(config)).proposePaperNudge(params),
@@ -389,58 +521,90 @@ export default defineToolPlugin({
       name: "adminbot_approve_action",
       label: "AdminBot approve action",
       description:
-        "Ask the user to confirm, then approve one immutable AdminBot action by action_id and payload hash. If the payload changes, the service must require a new approval.",
+        "Approve one immutable AdminBot action from the Control UI Pending Actions section. Chat approval is disabled.",
       optional: true,
-      approval: (params) => ({
-        title: "Approve AdminBot action",
-        description: `Approve AdminBot action: ${params.actionSummary}. Action id ${params.actionId}; payload hash ${String(params.payloadHash).slice(0, 12)}.`,
-        severity: "warning",
-        allowedDecisions: ["allow-once", "deny"],
-        timeoutBehavior: "deny",
-      }),
+      approval: () => undefined,
       parameters: Type.Object({
         actionId: Type.String(),
         payloadHash: Type.String(),
-        actionSummary: Type.String({
-          minLength: 1,
-          description:
-            "Plain-language description copied from the pending proposal, such as 'Send email to xxx@gmail.com'.",
-        }),
         approverRole: Type.String(),
         approverId: Type.Optional(Type.String()),
         note: Type.Optional(Type.String()),
+        controlUiConfirmed: Type.Optional(Type.Boolean()),
+      }),
+      execute: (params, config, context) => {
+        if (!isConfirmedControlUiCall(params, context)) {
+          throw new Error("Approve AdminBot actions from the Control UI Pending Actions section.");
+        }
+        return createAdminBotToolHandlers(resolveConfig(config)).approveAction(params);
+      },
+    }),
+    tool({
+      name: "adminbot_remove_pending_action",
+      label: "AdminBot remove pending action",
+      description:
+        "Remove a pending AdminBot action from the queue while retaining its audit record.",
+      optional: true,
+      approval: (params, context) => {
+        if (isConfirmedControlUiCall(params, context)) {
+          return undefined;
+        }
+        return {
+          title: "Remove pending AdminBot action",
+          description:
+            "Remove pending AdminBot action " +
+            approvalDisplayValue(params.actionId, "unknown action") +
+            ". The proposal will be retained as rejected for audit history.",
+          severity: "warning",
+          allowedDecisions: ["allow-once", "deny"],
+          timeoutBehavior: "deny",
+        };
+      },
+      parameters: Type.Object({
+        actionId: Type.String(),
+        actor: Type.Optional(Type.String()),
+        note: Type.Optional(Type.String()),
+        controlUiConfirmed: Type.Optional(Type.Boolean()),
       }),
       execute: (params, config) =>
-        createAdminBotToolHandlers(resolveConfig(config)).approveAction(params),
+        createAdminBotToolHandlers(resolveConfig(config)).removePendingAction(params),
     }),
     tool({
       name: "adminbot_execute_approved_action",
       label: "AdminBot execute approved action",
       description:
-        "Ask the user to confirm, then request execution of one approved AdminBot action. The AdminBot service rechecks approvals, policy, idempotency, connector scope, and dry-run mode.",
+        "Execute an action immediately after its single approval in the Control UI Pending Actions section. Chat execution is disabled.",
       optional: true,
-      approval: (params) => ({
-        title: "Execute AdminBot action",
-        description: `Execute AdminBot action: ${params.actionSummary}. This can trigger AdminBot connector side effects, so OpenClaw waits for explicit user confirmation every time.`,
-        severity: "critical",
-        allowedDecisions: ["allow-once", "deny"],
-        timeoutBehavior: "deny",
-      }),
+      approval: () => undefined,
       parameters: Type.Object({
         actionId: Type.String(),
-        actionSummary: Type.String({
-          minLength: 1,
-          description:
-            "Plain-language description copied from the approved proposal, such as 'Send email to xxx@gmail.com'.",
-        }),
         idempotencyKey: Type.Optional(Type.String()),
+        controlUiConfirmed: Type.Optional(Type.Boolean()),
       }),
-      execute: (params, config) =>
-        createAdminBotToolHandlers(resolveConfig(config)).executeApprovedAction(params),
+      execute: (params, config, context) => {
+        if (!isConfirmedControlUiCall(params, context)) {
+          throw new Error(
+            "Approved AdminBot actions execute from the Control UI Pending Actions section; chat execution is disabled.",
+          );
+        }
+        return createAdminBotToolHandlers(resolveConfig(config)).executeApprovedAction(params);
+      },
     }),
   ],
 });
 
 function resolveConfig(config: Partial<AdminBotPluginConfig>): AdminBotPluginConfig {
   return { ...defaultAdminBotConfig, ...config };
+}
+
+function isConfirmedControlUiCall(
+  params: { controlUiConfirmed?: boolean },
+  context: { toolCallId?: string },
+): boolean {
+  // The marker is model-visible, so require the host-owned RPC id to prevent model approval bypass.
+  return params.controlUiConfirmed === true && context.toolCallId?.startsWith("rpc-") === true;
+}
+
+function approvalDisplayValue(value: unknown, fallback: string): string {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }

@@ -33,13 +33,13 @@ import { CHAT_HISTORY_RENDER_LIMIT } from "../chat/history-limits.ts";
 import type { ChatInputHistoryKeyInput, ChatInputHistoryKeyResult } from "../chat/input-history.ts";
 import { PinnedMessages } from "../chat/pinned-messages.ts";
 import { getPinnedMessageSummary } from "../chat/pinned-summary.ts";
-import type { RealtimeTalkConversationEntry } from "../chat/realtime-talk-conversation.ts";
 import {
   REALTIME_TALK_FALLBACK_PROVIDERS,
   listSelectableRealtimeTalkProviders,
   resolveControlUiRealtimeTalkProviderTransports,
   type RealtimeTalkCatalogProvider,
 } from "../chat/realtime-talk-catalog.ts";
+import type { RealtimeTalkConversationEntry } from "../chat/realtime-talk-conversation.ts";
 import type { RealtimeTalkStatus } from "../chat/realtime-talk.ts";
 import { renderChatRunControls } from "../chat/run-controls.ts";
 import type { ChatRunUiStatus } from "../chat/run-lifecycle.ts";
@@ -227,6 +227,7 @@ export type ChatProps = {
     notice: { kind: "success" | "error"; text: string } | null;
     onRefresh: () => void;
     onApprove: (proposal: AdminBotActionProposal) => void;
+    onRemove: (proposal: AdminBotActionProposal) => void;
     onExecute: (proposal: AdminBotActionProposal) => void;
   };
 };
@@ -1600,7 +1601,6 @@ function renderAdminBotRail(
               const busy = adminBot.busyActionId === proposal.id;
               const approvals = proposal.approvals.length;
               const required = proposal.approval_requirement.min_approvals;
-              const canExecute = proposal.status === "approved" || approvals >= required;
               return html`
                 <article class="chat-adminbot-action">
                   <div class="chat-adminbot-action__top">
@@ -1614,20 +1614,20 @@ function renderAdminBotRail(
                   </div>
                   <div class="chat-adminbot-action__buttons">
                     <button
-                      class="btn btn--xs"
+                      class="btn btn--xs primary"
                       type="button"
                       ?disabled=${busy}
                       @click=${() => adminBot.onApprove(proposal)}
                     >
-                      ${busy ? "Working" : "Approve"}
+                      ${busy ? "Executing" : "Execute"}
                     </button>
                     <button
-                      class="btn btn--xs primary"
+                      class="btn btn--xs"
                       type="button"
-                      ?disabled=${busy || !canExecute}
-                      @click=${() => adminBot.onExecute(proposal)}
+                      ?disabled=${busy}
+                      @click=${() => adminBot.onRemove(proposal)}
                     >
-                      Execute
+                      Remove
                     </button>
                   </div>
                 </article>
@@ -2594,13 +2594,15 @@ export function renderChat(props: ChatProps) {
       onQueueRemove: props.onQueueRemove,
     })}
     ${renderSideResult(props.sideResult, props.onDismissSideResult)}
-    ${props.showNewMessages
-      ? html`
-          <button class="chat-new-messages" type="button" @click=${props.onScrollToBottom}>
-            ${icons.arrowDown} New messages
-          </button>
-        `
-      : nothing}
+    ${
+      props.showNewMessages
+        ? html`
+            <button class="chat-new-messages" type="button" @click=${props.onScrollToBottom}>
+              ${icons.arrowDown} New messages
+            </button>
+          `
+        : nothing
+    }
 
     <!-- Input bar -->
     <div
@@ -2618,39 +2620,41 @@ export function renderChat(props: ChatProps) {
       />
 
       ${renderRealtimeTalkOptions(props)}
-      ${props.realtimeTalkActive || props.realtimeTalkDetail || props.realtimeTalkTranscript
-        ? html`
-            <div
-              class="agent-chat__stt-interim agent-chat__talk-status"
-              role=${props.realtimeTalkStatus === "error" ? "alert" : nothing}
-            >
-              <span class="agent-chat__talk-status-text">
-                ${props.realtimeTalkDetail ??
-                ((props.realtimeTalkConversation?.length ?? 0) === 0
-                  ? props.realtimeTalkTranscript
-                  : null) ??
-                (props.realtimeTalkStatus === "thinking"
-                  ? "Asking OpenClaw..."
-                  : props.realtimeTalkStatus === "connecting"
-                    ? "Connecting Talk..."
-                    : "Talk live")}
-              </span>
-              ${props.realtimeTalkStatus === "error" && props.onDismissRealtimeTalkError
-                ? html`
-                    <button
-                      class="callout__dismiss"
-                      type="button"
-                      @click=${props.onDismissRealtimeTalkError}
-                      aria-label=${t("chat.composer.dismissTalkError")}
-                      title=${t("chat.composer.dismissTalkError")}
-                    >
-                      ${icons.x}
-                    </button>
-                  `
-                : nothing}
-            </div>
-          `
-        : nothing}
+      ${
+        props.realtimeTalkActive || props.realtimeTalkDetail || props.realtimeTalkTranscript
+          ? html`
+              <div
+                class="agent-chat__stt-interim agent-chat__talk-status"
+                role=${props.realtimeTalkStatus === "error" ? "alert" : nothing}
+              >
+                <span class="agent-chat__talk-status-text">
+                  ${props.realtimeTalkDetail ??
+                  ((props.realtimeTalkConversation?.length ?? 0) === 0
+                    ? props.realtimeTalkTranscript
+                    : null) ??
+                  (props.realtimeTalkStatus === "thinking"
+                    ? "Asking OpenClaw..."
+                    : props.realtimeTalkStatus === "connecting"
+                      ? "Connecting Talk..."
+                      : "Talk live")}
+                </span>
+                ${props.realtimeTalkStatus === "error" && props.onDismissRealtimeTalkError
+                  ? html`
+                      <button
+                        class="callout__dismiss"
+                        type="button"
+                        @click=${props.onDismissRealtimeTalkError}
+                        aria-label=${t("chat.composer.dismissTalkError")}
+                        title=${t("chat.composer.dismissTalkError")}
+                      >
+                        ${icons.x}
+                      </button>
+                    `
+                  : nothing}
+              </div>
+            `
+          : nothing
+      }
 
       <div class="agent-chat__composer-combobox">
         <textarea
@@ -2702,54 +2706,60 @@ export function renderChat(props: ChatProps) {
             <span class="agent-chat__control-label">${t("chat.composer.attachFile")}</span>
           </button>
 
-          ${props.onToggleRealtimeTalk
-            ? html`
-                <button
-                  class="agent-chat__input-btn ${props.realtimeTalkActive
-                    ? "agent-chat__input-btn--talk"
-                    : ""}"
-                  @click=${props.onToggleRealtimeTalk}
-                  title=${props.realtimeTalkActive
-                    ? t("chat.composer.stopTalk")
-                    : t("chat.composer.startTalk")}
-                  aria-label=${props.realtimeTalkActive
-                    ? t("chat.composer.stopTalk")
-                    : t("chat.composer.startTalk")}
-                  ?disabled=${!props.connected}
-                >
-                  ${props.realtimeTalkActive ? icons.volume2 : icons.radio}
-                  <span class="agent-chat__control-label"
-                    >${props.realtimeTalkActive
+          ${
+            props.onToggleRealtimeTalk
+              ? html`
+                  <button
+                    class="agent-chat__input-btn ${props.realtimeTalkActive
+                      ? "agent-chat__input-btn--talk"
+                      : ""}"
+                    @click=${props.onToggleRealtimeTalk}
+                    title=${props.realtimeTalkActive
                       ? t("chat.composer.stopTalk")
-                      : t("chat.composer.startTalk")}</span
+                      : t("chat.composer.startTalk")}
+                    aria-label=${props.realtimeTalkActive
+                      ? t("chat.composer.stopTalk")
+                      : t("chat.composer.startTalk")}
+                    ?disabled=${!props.connected}
                   >
-                </button>
-              `
-            : nothing}
-          ${props.onToggleRealtimeTalkOptions
-            ? html`
-                <button
-                  class="agent-chat__input-btn ${props.realtimeTalkOptionsOpen
-                    ? "agent-chat__input-btn--talk"
-                    : ""}"
-                  @click=${props.onToggleRealtimeTalkOptions}
-                  title="Talk settings"
-                  aria-label="Talk settings"
-                  aria-expanded=${props.realtimeTalkOptionsOpen ? "true" : "false"}
-                  ?disabled=${!props.connected || props.realtimeTalkActive}
-                >
-                  ${icons.settings}
-                  <span class="agent-chat__control-label">Talk settings</span>
-                </button>
-              `
-            : nothing}
+                    ${props.realtimeTalkActive ? icons.volume2 : icons.radio}
+                    <span class="agent-chat__control-label"
+                      >${props.realtimeTalkActive
+                        ? t("chat.composer.stopTalk")
+                        : t("chat.composer.startTalk")}</span
+                    >
+                  </button>
+                `
+              : nothing
+          }
+          ${
+            props.onToggleRealtimeTalkOptions
+              ? html`
+                  <button
+                    class="agent-chat__input-btn ${props.realtimeTalkOptionsOpen
+                      ? "agent-chat__input-btn--talk"
+                      : ""}"
+                    @click=${props.onToggleRealtimeTalkOptions}
+                    title="Talk settings"
+                    aria-label="Talk settings"
+                    aria-expanded=${props.realtimeTalkOptionsOpen ? "true" : "false"}
+                    ?disabled=${!props.connected || props.realtimeTalkActive}
+                  >
+                    ${icons.settings}
+                    <span class="agent-chat__control-label">Talk settings</span>
+                  </button>
+                `
+              : nothing
+          }
           ${tokens ? html`<span class="agent-chat__token-count">${tokens}</span>` : nothing}
           ${renderChatRunStatusIndicator(composerRunStatus)}
         </div>
 
-        ${composerControls && composerControls !== nothing
-          ? html`<div class="agent-chat__composer-controls">${composerControls}</div>`
-          : nothing}
+        ${
+          composerControls && composerControls !== nothing
+            ? html`<div class="agent-chat__composer-controls">${composerControls}</div>`
+            : nothing
+        }
         ${renderChatRunControls({
           canAbort: showAbortableUi,
           connected: props.connected,

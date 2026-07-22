@@ -5,9 +5,11 @@ import type {
   AdminBotLabMemberInput,
   AdminBotPaperRecordInput,
   AdminBotPrivacyTaskRequest,
+  AdminBotRemovePendingRequest,
   AdminBotSensitiveInfoRecord,
   AdminBotSettingsInput,
 } from "./contracts.js";
+import type { AdminBotReimbursementRequest } from "./reimbursement-workflow.js";
 
 export type AdminBotClientConfig = {
   serviceBaseUrl: string;
@@ -40,6 +42,24 @@ export class AdminBotClient {
     private readonly env: NodeJS.ProcessEnv = process.env,
   ) {}
 
+  async runEmailAutomation(signal?: AbortSignal): Promise<unknown> {
+    return this.request("POST", "/automation/email/run", {}, signal);
+  }
+
+  async converseReimbursement(
+    request: AdminBotReimbursementRequest,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.request("POST", "/reimbursements/converse", request, signal);
+  }
+
+  async generateReimbursement(
+    draft: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.request("POST", "/reimbursements/generate", { draft }, signal);
+  }
+
   async createProposal(proposal: AdminBotActionProposal, signal?: AbortSignal): Promise<unknown> {
     return this.request(
       "POST",
@@ -59,6 +79,19 @@ export class AdminBotClient {
   async listPending(limit?: number, signal?: AbortSignal): Promise<unknown> {
     const params = typeof limit === "number" ? `?limit=${encodeURIComponent(String(limit))}` : "";
     return this.request("GET", `/proposals/pending${params}`, undefined, signal);
+  }
+
+  async removePending(
+    actionId: string,
+    request: AdminBotRemovePendingRequest,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.request(
+      "POST",
+      "/proposals/" + encodeURIComponent(actionId) + "/remove",
+      request,
+      signal,
+    );
   }
 
   async upsertLabMember(member: AdminBotLabMemberInput, signal?: AbortSignal): Promise<unknown> {
@@ -100,6 +133,10 @@ export class AdminBotClient {
 
   async upsertPaper(paper: AdminBotPaperRecordInput, signal?: AbortSignal): Promise<unknown> {
     return this.request("PUT", `/papers/${encodeURIComponent(paper.id)}`, paper, signal);
+  }
+
+  async deletePaper(paperId: string, signal?: AbortSignal): Promise<unknown> {
+    return this.request("DELETE", `/papers/${encodeURIComponent(paperId)}`, undefined, signal);
   }
 
   async listPapers(signal?: AbortSignal): Promise<unknown> {

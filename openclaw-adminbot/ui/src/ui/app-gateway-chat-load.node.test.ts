@@ -284,6 +284,25 @@ describe("connectGateway chat load startup work", () => {
     expect(refreshActiveTabMock).toHaveBeenCalledTimes(1);
   });
 
+  it("ignores a stopped-client rejection from replaced startup work", async () => {
+    const startupRefresh = createDeferred();
+    refreshActiveTabMock.mockReturnValueOnce(startupRefresh.promise);
+    const { host, client } = connectHost("chat");
+
+    client.emitHello();
+    await vi.waitFor(() =>
+      expect(refreshActiveTabMock).toHaveBeenCalledWith(host, { chatStartup: true }),
+    );
+
+    connectGateway(host);
+    startupRefresh.reject(new Error("gateway client stopped"));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(gatewayClients[0]?.stop).toHaveBeenCalledOnce();
+    expect(gatewayClients[1]?.start).toHaveBeenCalledOnce();
+  });
+
   it("skips agents.list when the startup chat refresh returns agents", async () => {
     refreshActiveTabMock.mockImplementationOnce(async (target: unknown) => {
       (target as { agentsList: unknown }).agentsList = {

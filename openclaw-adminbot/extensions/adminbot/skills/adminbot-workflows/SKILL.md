@@ -22,24 +22,29 @@ narrowest typed tool.
 5. Use a draft/classification tool for T0/T1 work when possible.
 6. Use `adminbot_propose_action` only when no specialized tool fits.
 7. Before approval or execution, show the action id, payload hash, summary, risk
-   tier, approver role, and exact external effect. Continue only after the user
-   confirms that immutable action.
-8. If the payload changes, create a new proposal and require a new approval.
+   tier, approver role, and exact external effect. The user must approve or remove
+   it in the Control UI's Pending Actions section; never offer, accept, or invoke a
+   chat /approve command.
+8. Do not approve or execute a pending action from chat. One click in the
+   Control UI Pending Actions section both approves and executes the immutable
+   proposal.
+9. If the payload changes, create a new proposal and require a new approval.
 
 ## Skill Router
 
-| Request                                                                      | Use skill                         | Primary tools                                                                                            |
-| ---------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| Accept, trial, or decline a candidate                                        | `adminbot-candidate-workflow`     | `adminbot_propose_candidate_decision`                                                                    |
-| Filter or classify join-the-lab form responses                               | `adminbot-join-form-triage`       | `adminbot_classify_join_form_response`                                                                   |
-| Prepare or submit reimbursements                                             | `adminbot-reimbursements`         | `adminbot_prepare_reimbursement_packet`, `adminbot_propose_action`                                       |
-| Invite to Slack or Vector, draft/send Slack invite emails, adjust lab access | `adminbot-access-invites`         | `adminbot_upsert_lab_member`, `adminbot_list_lab_members`, `adminbot_propose_action`                     |
-| Broader Slack cleanup, routing, messages, or moderation                      | `adminbot-slack-management`       | `adminbot_propose_slack_message`, `adminbot_propose_action`                                              |
-| Draft or send recommendation letters                                         | `adminbot-recommendation-letters` | `adminbot_propose_action`                                                                                |
-| Draft or publish social media posts                                          | `adminbot-social-posts`           | `adminbot_draft_social_post`, `adminbot_prepare_paper_social_posts`, `adminbot_propose_action`           |
-| Generate a paper LinkedIn post from spreadsheet `twitter_draft` or a Twitter/X thread | `adminbot-linkedin-from-twitter`  | `adminbot_draft_social_post`, `adminbot_prepare_paper_social_posts`                                      |
-| Calendar or email management                                                 | `adminbot-calendar-email`         | `adminbot_suggest_calendar_change`, `adminbot_propose_action`                                            |
-| Paper publishing preparation, Overleaf edits, nudges, submission, slides, or posters | `adminbot-paper-publish`          | `adminbot_list_papers`, `adminbot_upsert_paper`, `adminbot_prepare_overleaf_paper_edit`, `adminbot_list_paper_nudges`, `adminbot_propose_paper_nudge`, `adminbot_propose_action` |
+| Request                                                                               | Use skill                         | Primary tools                                                                                                                                                                    |
+| ------------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Accept, trial, or decline a candidate                                                 | `adminbot-candidate-workflow`     | `adminbot_propose_candidate_decision`                                                                                                                                            |
+| Filter or classify join-the-lab form responses                                        | `adminbot-join-form-triage`       | `adminbot_classify_join_form_response`                                                                                                                                           |
+| Prepare or submit reimbursements                                                      | `adminbot-reimbursements`         | `adminbot_prepare_reimbursement_packet`, `adminbot_propose_action`                                                                                                               |
+| Invite to Slack or Vector, draft/send Slack invite emails, adjust lab access          | `adminbot-access-invites`         | `adminbot_upsert_lab_member`, `adminbot_list_lab_members`, `adminbot_propose_action`                                                                                             |
+| Broader Slack cleanup, routing, messages, or moderation                               | `adminbot-slack-management`       | `adminbot_propose_slack_message`, `adminbot_propose_action`                                                                                                                      |
+| Draft or send recommendation letters                                                  | `adminbot-recommendation-letters` | `adminbot_propose_action`                                                                                                                                                        |
+| Draft or publish social media posts                                                   | `adminbot-social-posts`           | `adminbot_draft_social_post`, `adminbot_prepare_paper_social_posts`, `adminbot_propose_action`                                                                                   |
+| Generate a paper LinkedIn post from spreadsheet `twitter_draft` or a Twitter/X thread | `adminbot-linkedin-from-twitter`  | `adminbot_draft_social_post`, `adminbot_prepare_paper_social_posts`                                                                                                              |
+| Run the hourly AdminBot inbox processor now                                           | `adminbot-email-automation`       | `adminbot_run_email_automation`                                                                                                                                                  |
+| Calendar or email management                                                          | `adminbot-calendar-email`         | `adminbot_suggest_calendar_change`, `adminbot_propose_action`                                                                                                                    |
+| Paper publishing preparation, Overleaf edits, nudges, submission, slides, or posters  | `adminbot-paper-publish`          | `adminbot_list_papers`, `adminbot_upsert_paper`, `adminbot_prepare_overleaf_paper_edit`, `adminbot_list_paper_nudges`, `adminbot_propose_paper_nudge`, `adminbot_propose_action` |
 
 Use `adminbot_get_settings` and `adminbot_update_settings` when the request is
 about AdminBot defaults, such as the temporary member privilege baseline,

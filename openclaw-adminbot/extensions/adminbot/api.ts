@@ -35,6 +35,12 @@ export {
   defaultAdminBotPrivacyBrokerConfig,
 } from "./src/privacy-broker.js";
 export type { AdminBotPrivacyBroker, AdminBotPrivacyBrokerConfig } from "./src/privacy-broker.js";
+export { createAdminBotReimbursementWorkflow } from "./src/reimbursement-workflow.js";
+export type {
+  AdminBotReimbursementRequest,
+  AdminBotReimbursementWorkflow,
+  AdminBotReimbursementWorkflowOptions,
+} from "./src/reimbursement-workflow.js";
 export type { AdminBotSensitiveInfoDocument } from "./src/sensitive-info-doc.js";
 export type { AdminBotPaperSocialPayload, AdminBotSocialPlatform } from "./src/social-posting.js";
 export type {

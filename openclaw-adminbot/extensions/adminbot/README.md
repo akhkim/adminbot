@@ -25,9 +25,8 @@ unless a stricter level is provided.
 The mock HTTP service serves a local management console at `/adminbot`. The
 console can edit service settings, manage privilege levels, inspect the member
 list, track active papers, view due nudges, review pending actions, and inspect
-the audit log without adding a separate frontend build step. In the Control UI,
-the normal admin password opens the full AdminBot dashboard, while the general
-password `jinesis` opens a read-only paper/member view.
+the audit log without adding a separate frontend build step. Keep that console
+and the full OpenClaw Control UI behind Gateway authentication.
 
 The mock HTTP service can use the same durable ledger:
 

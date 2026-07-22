@@ -65,14 +65,14 @@ export class OpenClawFilePreviewModal extends LitElement {
       transform: translate(-50%, -50%);
       width: min(1100px, 92vw);
       height: min(780px, 86vh);
-      background: var(--bg);
+      background: var(--popover);
       border: 1px solid var(--border-strong);
       border-radius: var(--radius-lg);
-      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.6);
+      box-shadow: var(--shadow-xl);
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      animation: pop 160ms ease-out;
+      animation: pop var(--duration-slow) var(--ease-out);
     }
 
     .head {
@@ -81,7 +81,7 @@ export class OpenClawFilePreviewModal extends LitElement {
       gap: 12px;
       padding: 16px 20px;
       border-bottom: 1px solid var(--border);
-      background: var(--bg);
+      background: var(--popover);
     }
 
     .search-icon {
@@ -155,9 +155,10 @@ export class OpenClawFilePreviewModal extends LitElement {
     }
 
     .list-section {
-      font-size: 11px;
+      font-size: var(--control-ui-text-xs);
+      font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: var(--tracking-label);
       color: var(--muted);
       padding: 4px 12px 8px;
     }
@@ -179,15 +180,15 @@ export class OpenClawFilePreviewModal extends LitElement {
     }
 
     .item:focus-visible {
-      box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);
+      box-shadow: inset 0 0 0 1px var(--accent);
     }
 
     .item:hover {
-      background: var(--bg-elevated);
+      background: var(--bg-hover);
     }
 
     .item.is-active {
-      background: var(--accent-subtle);
+      background: var(--bg-muted);
     }
 
     .item.is-active .item-name {
@@ -221,7 +222,7 @@ export class OpenClawFilePreviewModal extends LitElement {
 
     .item-name {
       font-family: var(--mono);
-      font-size: 14px;
+      font-size: var(--control-ui-text-md);
       color: var(--text);
       overflow: hidden;
       text-overflow: ellipsis;
@@ -230,12 +231,12 @@ export class OpenClawFilePreviewModal extends LitElement {
 
     .item-meta {
       color: var(--muted);
-      font-size: 12px;
+      font-size: var(--control-ui-text-sm);
     }
 
     .empty-list {
       color: var(--muted);
-      font-size: 13px;
+      font-size: var(--control-ui-text-sm);
       padding: 12px;
     }
 
@@ -261,10 +262,10 @@ export class OpenClawFilePreviewModal extends LitElement {
     .title {
       margin: 0 0 10px;
       font-family: var(--mono);
-      font-size: 22px;
+      font-size: var(--control-ui-text-2xl);
       color: var(--text-strong);
-      font-weight: 700;
-      letter-spacing: -0.01em;
+      font-weight: 600;
+      letter-spacing: var(--tracking-tight);
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -289,13 +290,13 @@ export class OpenClawFilePreviewModal extends LitElement {
 
     .chip.accent {
       background: var(--accent-subtle);
-      border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+      border-color: var(--accent);
       color: var(--accent);
     }
 
     .chip.ok {
-      background: color-mix(in srgb, var(--ok) 12%, transparent);
-      border-color: color-mix(in srgb, var(--ok) 30%, transparent);
+      background: var(--ok-subtle);
+      border-color: var(--ok-muted);
       color: var(--ok);
     }
 
@@ -323,8 +324,8 @@ export class OpenClawFilePreviewModal extends LitElement {
       gap: 18px;
       padding: 12px 20px;
       border-top: 1px solid var(--border);
-      background: var(--bg);
-      font-size: 12px;
+      background: var(--popover);
+      font-size: var(--control-ui-text-sm);
       color: var(--muted);
     }
 
@@ -347,23 +348,29 @@ export class OpenClawFilePreviewModal extends LitElement {
     }
 
     .button {
-      height: 36px;
+      height: var(--control-h-md);
       padding: 0 14px;
       border-radius: var(--radius-md);
-      border: 1px solid var(--border);
-      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      background: transparent;
       color: var(--text);
-      font-weight: 600;
+      font-weight: 500;
+      letter-spacing: var(--tracking-tight);
       cursor: pointer;
+      transition:
+        background var(--duration-fast) var(--ease-out),
+        border-color var(--duration-fast) var(--ease-out),
+        color var(--duration-fast) var(--ease-out);
     }
 
     .button:hover {
-      border-color: var(--border-strong);
+      background: var(--bg-hover);
+      border-color: var(--border-hover);
       color: var(--text-strong);
     }
 
     .empty-title {
-      font-size: 16px;
+      font-size: var(--control-ui-text-lg);
       font-weight: 600;
       color: var(--text-strong);
       margin: 0 0 8px;
@@ -371,7 +378,7 @@ export class OpenClawFilePreviewModal extends LitElement {
 
     .empty-subtitle {
       margin: 0;
-      font-size: 13px;
+      font-size: var(--control-ui-text-sm);
       color: var(--muted);
       max-width: 380px;
     }

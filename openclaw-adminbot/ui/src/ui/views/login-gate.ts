@@ -4,6 +4,7 @@ import { ConnectErrorDetailCodes } from "../../../../packages/gateway-protocol/s
 import { t } from "../../i18n/index.ts";
 import type { AppViewState } from "../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../external-link.ts";
+import { isGatewayClientStoppedError } from "../gateway.ts";
 import { icons } from "../icons.ts";
 import { normalizeBasePath } from "../navigation.ts";
 import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
@@ -90,7 +91,7 @@ function buildFeedback(params: {
 export function resolveLoginFailureFeedback(
   params: LoginFailureFeedbackParams,
 ): LoginFailureFeedback | null {
-  if (params.connected || !params.lastError) {
+  if (params.connected || !params.lastError || isGatewayClientStoppedError(params.lastError)) {
     return null;
   }
 

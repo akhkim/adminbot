@@ -14,6 +14,8 @@ export type AdminBotAccessGrant = {
   scope?: string;
 };
 
+export type AdminBotMemberStatus = "active" | "part_time" | "on_leave" | "alumni" | "external";
+
 export type AdminBotLabMember = {
   id: string;
   name: string;
@@ -22,6 +24,17 @@ export type AdminBotLabMember = {
   notes?: string;
   privilege_level: AdminBotPrivilegeLevel;
   access: AdminBotAccessGrant[];
+  role?: string;
+  status?: AdminBotMemberStatus;
+  research_branch?: string;
+  research_topics?: string[];
+  projects?: string[];
+  hours_per_week?: number;
+  capacity_percent?: number;
+  location?: string;
+  affiliation?: string;
+  timezone?: string;
+  personal_website?: string;
   created_at: string;
   updated_at: string;
 };
@@ -45,6 +58,29 @@ export type AdminBotLabMemberSaveInput = {
   slackUserId?: string;
   privilegeLevel?: AdminBotPrivilegeLevel;
   notes?: string;
+  role?: string;
+  status?: AdminBotMemberStatus;
+  researchBranch?: string;
+  researchTopics?: string[];
+  projects?: string[];
+  hoursPerWeek?: number;
+  capacityPercent?: number;
+  location?: string;
+  affiliation?: string;
+  timezone?: string;
+  personalWebsite?: string;
+};
+
+export type AdminBotPaperSaveInput = {
+  id: string;
+  title: string;
+  authors: string[];
+  currentStep: AdminBotPaperStep;
+  overleafEditUrl?: string;
+  googleDrivePdfUrl?: string;
+  conference?: string;
+  topic?: string;
+  reminderStatus?: "idle" | "waiting_on_authors" | "blocked" | "complete";
 };
 
 export type AdminBotSettingsSaveInput = {
@@ -140,6 +176,23 @@ export type AdminBotExecutionResult = {
   executed_at: string;
 };
 
+export type AdminBotReimbursementArtifact = {
+  filename: string;
+  media_type: string;
+  data_base64: string;
+};
+
+export type AdminBotReimbursementState = {
+  messages: Array<{ role: "user" | "assistant"; content: string }>;
+  draft: Record<string, unknown>;
+  missingFields: string[];
+  receiptNames: string[];
+  ready: boolean;
+  busy: boolean;
+  error: string | null;
+  artifacts: AdminBotReimbursementArtifact[];
+};
+
 export type AdminBotDashboardData = {
   proposals: AdminBotActionProposal[];
   members: AdminBotLabMember[];
@@ -158,12 +211,22 @@ export type AdminBotHost = {
   adminBotData: AdminBotDashboardData;
   adminBotBusyActionId: string | null;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
+  adminBotReimbursement: AdminBotReimbursementState;
 };
 
 export type AdminBotLoadMode = "admin" | "general";
 
-export function resolveAdminBotLoadMode(password: string | null | undefined): AdminBotLoadMode {
-  return password?.trim() === "jinesis" ? "general" : "admin";
+export function createEmptyAdminBotReimbursementState(): AdminBotReimbursementState {
+  return {
+    messages: [],
+    draft: {},
+    missingFields: [],
+    receiptNames: [],
+    ready: false,
+    busy: false,
+    error: null,
+    artifacts: [],
+  };
 }
 
 type ToolsInvokeResult = {
@@ -210,6 +273,37 @@ function readString(value: unknown, key: string): string | undefined {
   return typeof raw === "string" ? raw : undefined;
 }
 
+function unwrapAdminBotToolOutput(value: unknown): unknown {
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  const record = readRecord(value);
+  if (Object.hasOwn(record, "details") && record.details !== undefined) {
+    return record.details;
+  }
+  if (Array.isArray(record.content)) {
+    const textBlock = record.content.find(
+      (entry) =>
+        Boolean(entry) &&
+        typeof entry === "object" &&
+        (entry as { type?: unknown }).type === "text" &&
+        typeof (entry as { text?: unknown }).text === "string",
+    ) as { text?: string } | undefined;
+    if (textBlock?.text) {
+      try {
+        return JSON.parse(textBlock.text);
+      } catch {
+        return textBlock.text;
+      }
+    }
+  }
+  return value;
+}
+
 function formatAdminBotToolError(err: unknown): string {
   const message = err instanceof Error ? err.message : String(err);
   if (/tool not available:\s*adminbot_/iu.test(message) || /unknown tool/iu.test(message)) {
@@ -239,7 +333,7 @@ async function invokeAdminBotTool(
   if (!response.ok) {
     throw new Error(formatAdminBotToolError(response.error?.message ?? `${name} failed`));
   }
-  return response.output;
+  return unwrapAdminBotToolOutput(response.output);
 }
 
 function readArray<T>(value: unknown, key: string): T[] {
@@ -274,7 +368,14 @@ export async function loadAdminBot(
       };
       return;
     }
-    const [pending, members, papers, nudges, settings, sensitiveInfo] = await Promise.all([
+    const [
+      pendingResult,
+      membersResult,
+      papersResult,
+      nudgesResult,
+      settingsResult,
+      sensitiveResult,
+    ] = await Promise.allSettled([
       invokeAdminBotTool(host, "adminbot_list_pending_actions", { limit: 50 }),
       invokeAdminBotTool(host, "adminbot_list_lab_members"),
       invokeAdminBotTool(host, "adminbot_list_papers"),
@@ -282,6 +383,19 @@ export async function loadAdminBot(
       invokeAdminBotTool(host, "adminbot_get_settings"),
       invokeAdminBotTool(host, "adminbot_get_sensitive_info"),
     ]);
+    const essentialFailures = [membersResult, papersResult].filter(
+      (result): result is PromiseRejectedResult => result.status === "rejected",
+    );
+    if (essentialFailures.length > 0) {
+      throw essentialFailures[0].reason;
+    }
+    const pending = pendingResult.status === "fulfilled" ? pendingResult.value : undefined;
+    const members = membersResult.status === "fulfilled" ? membersResult.value : undefined;
+    const papers = papersResult.status === "fulfilled" ? papersResult.value : undefined;
+    const nudges = nudgesResult.status === "fulfilled" ? nudgesResult.value : undefined;
+    const settings = settingsResult.status === "fulfilled" ? settingsResult.value : undefined;
+    const sensitiveInfo =
+      sensitiveResult.status === "fulfilled" ? sensitiveResult.value : undefined;
     const settingsRecord = readRecord(settings);
     const sensitiveInfoRecord = readRecord(sensitiveInfo);
     const markdown = readString(sensitiveInfoRecord, "markdown");
@@ -310,14 +424,47 @@ export async function approveAdminBotAction(
   host.adminBotBusyActionId = proposal.id;
   host.adminBotNotice = null;
   try {
-    const role = proposal.approval_requirement.approver_roles[0] ?? "pi";
+    const role = "admin";
     await invokeAdminBotTool(host, "adminbot_approve_action", {
       actionId: proposal.id,
       payloadHash: proposal.payload_hash,
       approverRole: role,
       approverId: "control-ui",
+      controlUiConfirmed: true,
     });
-    host.adminBotNotice = { kind: "success", text: `Approved ${proposal.id}.` };
+    const result = (await invokeAdminBotTool(host, "adminbot_execute_approved_action", {
+      actionId: proposal.id,
+      idempotencyKey: `control-ui-${proposal.id}`,
+      controlUiConfirmed: true,
+    })) as AdminBotExecutionResult;
+    host.adminBotNotice = {
+      kind: "success",
+      text: `${result.status === "executed" ? "Approved and executed" : "Approved and simulated"} ${proposal.id}.`,
+    };
+    await loadAdminBot(host);
+  } catch (err) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: formatAdminBotToolError(err),
+    };
+  } finally {
+    host.adminBotBusyActionId = null;
+  }
+}
+
+export async function removePendingAdminBotAction(
+  host: AdminBotHost,
+  proposal: AdminBotActionProposal,
+): Promise<void> {
+  host.adminBotBusyActionId = proposal.id;
+  host.adminBotNotice = null;
+  try {
+    await invokeAdminBotTool(host, "adminbot_remove_pending_action", {
+      actionId: proposal.id,
+      actor: "control-ui",
+      controlUiConfirmed: true,
+    });
+    host.adminBotNotice = { kind: "success", text: "Removed " + proposal.id + "." };
     await loadAdminBot(host);
   } catch (err) {
     host.adminBotNotice = {
@@ -339,6 +486,7 @@ export async function executeAdminBotAction(
     const result = (await invokeAdminBotTool(host, "adminbot_execute_approved_action", {
       actionId: proposal.id,
       idempotencyKey: `control-ui-${proposal.id}`,
+      controlUiConfirmed: true,
     })) as AdminBotExecutionResult;
     host.adminBotNotice = {
       kind: "success",
@@ -368,6 +516,17 @@ export async function saveAdminBotMember(
       ...(member.slackUserId ? { slackUserId: member.slackUserId } : {}),
       ...(member.privilegeLevel ? { privilegeLevel: member.privilegeLevel } : {}),
       ...(member.notes ? { notes: member.notes } : {}),
+      ...(member.role ? { role: member.role } : {}),
+      ...(member.status ? { status: member.status } : {}),
+      ...(member.researchBranch ? { researchBranch: member.researchBranch } : {}),
+      ...(member.researchTopics ? { researchTopics: member.researchTopics } : {}),
+      ...(member.projects ? { projects: member.projects } : {}),
+      ...(member.hoursPerWeek !== undefined ? { hoursPerWeek: member.hoursPerWeek } : {}),
+      ...(member.capacityPercent !== undefined ? { capacityPercent: member.capacityPercent } : {}),
+      ...(member.location ? { location: member.location } : {}),
+      ...(member.affiliation ? { affiliation: member.affiliation } : {}),
+      ...(member.timezone ? { timezone: member.timezone } : {}),
+      ...(member.personalWebsite ? { personalWebsite: member.personalWebsite } : {}),
     });
     host.adminBotNotice = { kind: "success", text: `Saved member ${member.id}.` };
     await loadAdminBot(host);
@@ -376,6 +535,56 @@ export async function saveAdminBotMember(
       kind: "error",
       text: formatAdminBotToolError(err),
     };
+  }
+}
+
+export async function saveAdminBotPaper(
+  host: AdminBotHost,
+  paper: AdminBotPaperSaveInput,
+): Promise<void> {
+  host.adminBotNotice = null;
+  try {
+    const artifacts = {
+      ...(paper.overleafEditUrl ? { overleaf_edit_url: paper.overleafEditUrl } : {}),
+      ...(paper.googleDrivePdfUrl ? { google_drive_pdf_url: paper.googleDrivePdfUrl } : {}),
+      ...(paper.conference ? { conference: paper.conference } : {}),
+      ...(paper.topic ? { topic: paper.topic } : {}),
+    };
+    await invokeAdminBotTool(host, "adminbot_upsert_paper", {
+      id: paper.id,
+      title: paper.title,
+      authors: paper.authors,
+      currentStep: paper.currentStep,
+      ...(Object.keys(artifacts).length > 0 ? { artifacts } : {}),
+      ...(paper.reminderStatus ? { reminder: { status: paper.reminderStatus } } : {}),
+    });
+    host.adminBotNotice = { kind: "success", text: `Saved paper ${paper.id}.` };
+    await loadAdminBot(host);
+  } catch (err) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: formatAdminBotToolError(err),
+    };
+  }
+}
+
+export async function deleteAdminBotPaper(
+  host: AdminBotHost,
+  paper: Pick<AdminBotPaperRecord, "id" | "title">,
+): Promise<void> {
+  host.adminBotBusyActionId = paper.id;
+  host.adminBotNotice = null;
+  try {
+    await invokeAdminBotTool(host, "adminbot_delete_paper", { paperId: paper.id });
+    host.adminBotNotice = { kind: "success", text: `Deleted paper ${paper.title}.` };
+    await loadAdminBot(host);
+  } catch (err) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: formatAdminBotToolError(err),
+    };
+  } finally {
+    host.adminBotBusyActionId = null;
   }
 }
 
@@ -411,4 +620,105 @@ export async function saveAdminBotSensitiveInfo(
       text: formatAdminBotToolError(err),
     };
   }
+}
+
+type ReimbursementConversationResult = {
+  assistant_message: string;
+  draft: Record<string, unknown>;
+  missing_fields: string[];
+  ready: boolean;
+  receipt_names: string[];
+};
+
+type ReimbursementGenerationResult = {
+  artifacts: AdminBotReimbursementArtifact[];
+};
+
+export async function sendAdminBotReimbursementMessage(
+  host: AdminBotHost,
+  message: string,
+  files: File[],
+): Promise<void> {
+  const userMessage = message.trim();
+  if (!userMessage || host.adminBotReimbursement.busy) return;
+  host.adminBotReimbursement = {
+    ...host.adminBotReimbursement,
+    busy: true,
+    error: null,
+    artifacts: [],
+  };
+  try {
+    const receipts = await Promise.all(files.map(receiptPayload));
+    const result = (await invokeAdminBotTool(host, "adminbot_reimbursement_converse", {
+      message: userMessage,
+      messages: host.adminBotReimbursement.messages,
+      draft: host.adminBotReimbursement.draft,
+      ...(receipts.length ? { receipts } : {}),
+    })) as ReimbursementConversationResult;
+    host.adminBotReimbursement = {
+      messages: [
+        ...host.adminBotReimbursement.messages,
+        { role: "user", content: userMessage },
+        { role: "assistant", content: result.assistant_message },
+      ],
+      draft: readRecord(result.draft),
+      missingFields: Array.isArray(result.missing_fields) ? result.missing_fields : [],
+      receiptNames: [
+        ...new Set([
+          ...host.adminBotReimbursement.receiptNames,
+          ...(Array.isArray(result.receipt_names) ? result.receipt_names : []),
+        ]),
+      ],
+      ready: result.ready === true,
+      busy: false,
+      error: null,
+      artifacts: [],
+    };
+  } catch (err) {
+    host.adminBotReimbursement = {
+      ...host.adminBotReimbursement,
+      busy: false,
+      error: formatAdminBotToolError(err),
+    };
+  }
+}
+
+export async function generateAdminBotReimbursement(host: AdminBotHost): Promise<void> {
+  if (!host.adminBotReimbursement.ready || host.adminBotReimbursement.busy) return;
+  host.adminBotReimbursement = { ...host.adminBotReimbursement, busy: true, error: null };
+  try {
+    const result = (await invokeAdminBotTool(host, "adminbot_reimbursement_generate", {
+      draft: host.adminBotReimbursement.draft,
+    })) as ReimbursementGenerationResult;
+    host.adminBotReimbursement = {
+      ...host.adminBotReimbursement,
+      busy: false,
+      artifacts: Array.isArray(result.artifacts) ? result.artifacts : [],
+    };
+  } catch (err) {
+    host.adminBotReimbursement = {
+      ...host.adminBotReimbursement,
+      busy: false,
+      error: formatAdminBotToolError(err),
+    };
+  }
+}
+
+export function resetAdminBotReimbursement(host: AdminBotHost): void {
+  host.adminBotReimbursement = createEmptyAdminBotReimbursementState();
+}
+
+async function receiptPayload(file: File) {
+  if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
+    throw new Error(`${file.name} is not a PDF`);
+  }
+  if (file.size > 12 * 1024 * 1024) {
+    throw new Error(`${file.name} exceeds 12 MB`);
+  }
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = "";
+  for (let index = 0; index < bytes.length; index += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
+  }
+  return { name: file.name, media_type: "application/pdf", data_base64: btoa(binary) };
 }

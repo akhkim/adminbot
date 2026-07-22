@@ -394,6 +394,7 @@ export const vi: TranslationMap = {
   nav: {
     chat: "Trò chuyện",
     control: "Điều khiển",
+    adminbot: "AdminBot",
     agent: "Agent",
     settings: "Cài đặt",
     expand: "Mở rộng thanh bên",
@@ -402,6 +403,12 @@ export const vi: TranslationMap = {
   },
   tabs: {
     agents: "Agent",
+    adminbot: "Pending Actions",
+    adminbotReimbursements: "Reimbursements",
+    adminbotSettings: "Settings",
+    adminbotMembers: "Lab Members",
+    adminbotPapers: "Active Papers",
+    adminbotNudges: "Paper Nudges",
     activity: "Hoạt động",
     overview: "Tổng quan",
     workboard: "Bảng công việc",
@@ -427,6 +434,12 @@ export const vi: TranslationMap = {
   },
   subtitles: {
     agents: "Không gian làm việc, công cụ, danh tính.",
+    adminbot: "Approval queue and execution controls.",
+    adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
+    adminbotSettings: "Lab defaults and escalation policy.",
+    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotNudges: "Due reminders and professor escalations.",
     activity: "Tóm tắt hoạt động công cụ cục bộ trên trình duyệt.",
     overview: "Trạng thái, điểm vào, tình trạng.",
     workboard: "Hàng đợi công việc của tác nhân và bàn giao phiên.",
@@ -1680,8 +1693,6 @@ export const vi: TranslationMap = {
     },
     jobDetail: {
       system: "Hệ thống",
-      command: "Lệnh",
-      cwd: "CWD",
       prompt: "Prompt",
       delivery: "Gửi",
       agent: "Agent",

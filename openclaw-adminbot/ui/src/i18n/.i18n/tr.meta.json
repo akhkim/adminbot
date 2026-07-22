@@ -1,11 +1,25 @@
 {
-  "fallbackKeys": [],
-  "generatedAt": "2026-06-17T14:15:40.718Z",
+  "fallbackKeys": [
+    "nav.adminbot",
+    "subtitles.adminbot",
+    "subtitles.adminbotMembers",
+    "subtitles.adminbotNudges",
+    "subtitles.adminbotPapers",
+    "subtitles.adminbotReimbursements",
+    "subtitles.adminbotSettings",
+    "tabs.adminbot",
+    "tabs.adminbotMembers",
+    "tabs.adminbotNudges",
+    "tabs.adminbotPapers",
+    "tabs.adminbotReimbursements",
+    "tabs.adminbotSettings"
+  ],
+  "generatedAt": "2026-07-22T01:09:15.188Z",
   "locale": "tr",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "8b52ddcb7666a709aa96ea2622a9040a0b4097ffd6d3144ed634715a0d4ac63e",
-  "totalKeys": 1413,
-  "translatedKeys": 1413,
+  "sourceHash": "05c3faa77e3cf20317899259178d396ae1c86aa2d4d991b03f83cdc5c979f632",
+  "totalKeys": 1424,
+  "translatedKeys": 1411,
   "workflow": 1
 }

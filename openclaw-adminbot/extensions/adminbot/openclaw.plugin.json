@@ -7,12 +7,16 @@
   "description": "Typed AdminBot proposal, approval, and execution broker tools.",
   "contracts": {
     "tools": [
+      "adminbot_run_email_automation",
+      "adminbot_reason",
       "adminbot_propose_action",
       "adminbot_propose_candidate_decision",
       "adminbot_draft_social_post",
       "adminbot_prepare_paper_social_posts",
       "adminbot_prepare_overleaf_paper_edit",
       "adminbot_prepare_reimbursement_packet",
+      "adminbot_reimbursement_converse",
+      "adminbot_reimbursement_generate",
       "adminbot_suggest_calendar_change",
       "adminbot_propose_slack_message",
       "adminbot_classify_join_form_response",
@@ -23,16 +27,21 @@
       "adminbot_get_sensitive_info",
       "adminbot_update_sensitive_info",
       "adminbot_upsert_paper",
+      "adminbot_delete_paper",
       "adminbot_list_papers",
       "adminbot_list_paper_nudges",
       "adminbot_propose_paper_nudge",
       "adminbot_list_pending_actions",
       "adminbot_approve_action",
+      "adminbot_remove_pending_action",
       "adminbot_execute_approved_action"
     ]
   },
   "skills": ["./skills"],
   "toolMetadata": {
+    "adminbot_run_email_automation": {
+      "optional": true
+    },
     "adminbot_propose_action": {
       "optional": true
     },
@@ -49,6 +58,12 @@
       "optional": true
     },
     "adminbot_prepare_reimbursement_packet": {
+      "optional": true
+    },
+    "adminbot_reimbursement_converse": {
+      "optional": true
+    },
+    "adminbot_reimbursement_generate": {
       "optional": true
     },
     "adminbot_suggest_calendar_change": {
@@ -81,6 +96,9 @@
     "adminbot_upsert_paper": {
       "optional": true
     },
+    "adminbot_delete_paper": {
+      "optional": true
+    },
     "adminbot_list_papers": {
       "optional": true
     },
@@ -94,6 +112,9 @@
       "optional": true
     },
     "adminbot_approve_action": {
+      "optional": true
+    },
+    "adminbot_remove_pending_action": {
       "optional": true
     },
     "adminbot_execute_approved_action": {

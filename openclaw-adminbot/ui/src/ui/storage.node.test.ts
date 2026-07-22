@@ -147,7 +147,8 @@ describe("loadSettings default gateway URL derivation", () => {
     expect(JSON.parse(localStorage.getItem(scopedKey) ?? "{}")).toEqual({
       gatewayUrl: "wss://gateway.example:8443/openclaw",
       theme: "claw",
-      themeMode: "system",
+      // Dark-only: parseThemeSelection collapses every persisted mode to "dark".
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       chatAutoScroll: "near-bottom",
@@ -458,8 +459,8 @@ describe("loadSettings default gateway URL derivation", () => {
       token: "",
       sessionKey: "main",
       lastActiveSessionKey: "main",
-      theme: "dash",
-      themeMode: "light",
+      theme: "claw",
+      themeMode: "dark",
       chatShowThinking: true,
       chatShowToolCalls: true,
       splitRatio: 0.6,
@@ -474,8 +475,8 @@ describe("loadSettings default gateway URL derivation", () => {
       string,
       unknown
     >;
-    expect(persisted.theme).toBe("dash");
-    expect(persisted.themeMode).toBe("light");
+    expect(persisted.theme).toBe("claw");
+    expect(persisted.themeMode).toBe("dark");
     expect(persisted.navWidth).toBe(320);
   });
 

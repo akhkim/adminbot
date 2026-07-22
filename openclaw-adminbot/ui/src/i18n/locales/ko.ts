@@ -393,6 +393,7 @@ export const ko: TranslationMap = {
   nav: {
     chat: "채팅",
     control: "Control",
+    adminbot: "AdminBot",
     agent: "에이전트",
     settings: "설정",
     expand: "사이드바 펼치기",
@@ -401,6 +402,12 @@ export const ko: TranslationMap = {
   },
   tabs: {
     agents: "에이전트",
+    adminbot: "Pending Actions",
+    adminbotReimbursements: "Reimbursements",
+    adminbotSettings: "Settings",
+    adminbotMembers: "Lab Members",
+    adminbotPapers: "Active Papers",
+    adminbotNudges: "Paper Nudges",
     activity: "활동",
     overview: "개요",
     workboard: "워크보드",
@@ -426,6 +433,12 @@ export const ko: TranslationMap = {
   },
   subtitles: {
     agents: "워크스페이스, 도구, 정체성.",
+    adminbot: "Approval queue and execution controls.",
+    adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
+    adminbotSettings: "Lab defaults and escalation policy.",
+    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotNudges: "Due reminders and professor escalations.",
     activity: "브라우저 로컬 도구 활동 요약입니다.",
     overview: "상태, 진입점, 상태 정보.",
     workboard: "에이전트 작업 대기열 및 세션 인계.",
@@ -1676,8 +1689,6 @@ export const ko: TranslationMap = {
     },
     jobDetail: {
       system: "시스템",
-      command: "명령",
-      cwd: "CWD",
       prompt: "프롬프트",
       delivery: "전달",
       agent: "에이전트",

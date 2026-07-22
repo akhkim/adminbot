@@ -56,7 +56,17 @@ export type AdminBotAccessGrant = {
   scope?: string;
 };
 
-export type AdminBotMemberOnboardingStepStatus = 'complete' | 'current' | 'remaining';
+export const adminBotMemberStatuses = [
+  "active",
+  "part_time",
+  "on_leave",
+  "alumni",
+  "external",
+] as const;
+
+export type AdminBotMemberStatus = (typeof adminBotMemberStatuses)[number];
+
+export type AdminBotMemberOnboardingStepStatus = "complete" | "current" | "remaining";
 
 export type AdminBotMemberOnboardingStep = {
   id: string;
@@ -80,6 +90,17 @@ export type AdminBotLabMemberInput = {
   privilege_level?: AdminBotPrivilegeLevel;
   access_overrides?: AdminBotAccessGrant[];
   notes?: string;
+  role?: string;
+  status?: AdminBotMemberStatus;
+  research_branch?: string;
+  research_topics?: string[];
+  projects?: string[];
+  hours_per_week?: number;
+  capacity_percent?: number;
+  location?: string;
+  affiliation?: string;
+  timezone?: string;
+  personal_website?: string;
 };
 
 export type AdminBotLabMember = Omit<AdminBotLabMemberInput, "privilege_level"> & {
@@ -149,6 +170,8 @@ export type AdminBotPaperTimeline = {
   items: AdminBotPaperTimelineItem[];
 };
 export type AdminBotPaperArtifactLinks = {
+  conference?: string;
+  topic?: string;
   brainstorming_doc_url?: string;
   overleaf_view_url?: string;
   overleaf_edit_url?: string;
@@ -225,6 +248,11 @@ export type AdminBotApprovalRequest = {
   note?: string;
 };
 
+export type AdminBotRemovePendingRequest = {
+  actor?: string;
+  note?: string;
+};
+
 export type AdminBotExecutionRequest = {
   idempotency_key?: string;
   dry_run?: boolean;
@@ -277,6 +305,7 @@ export type AdminBotAuditEvent = {
   type:
     | "proposal.created"
     | "proposal.auto_approved"
+    | "proposal.removed"
     | "approval.recorded"
     | "execution.simulated"
     | "execution.executed"
@@ -284,6 +313,7 @@ export type AdminBotAuditEvent = {
     | "execution.idempotent_replay"
     | "lab_member.upserted"
     | "paper.upserted"
+    | "paper.deleted"
     | "settings.updated";
   timestamp: string;
   actor?: string;

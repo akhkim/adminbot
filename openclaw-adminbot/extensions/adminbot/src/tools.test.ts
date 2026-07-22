@@ -93,13 +93,72 @@ describe("AdminBot tool handlers", () => {
       changeType: "send_invite",
       summary: "Invite candidate to interview",
       attendees: ["candidate@example.test"],
-      timeWindow: "Friday afternoon",
+      timeWindow: "2099-07-30T13:00:00-04:00 through 2099-07-30T14:00:00-04:00",
+      proposedPayload: {
+        summary: "Invite candidate to interview",
+        from: "2099-07-30T13:00:00-04:00",
+        to: "2099-07-30T14:00:00-04:00",
+        attendees: ["candidate@example.test"],
+      },
     });
 
     expect(calls[0]?.body).toEqual(
       expect.objectContaining({
         type: "calendar.send_invite",
         risk_tier: "T3",
+      }),
+    );
+  });
+
+  it("turns Slack-originated no-email invites into all-day calendar holds", async () => {
+    const { fetchImpl, calls } = captureFetch();
+    const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl });
+
+    await tools.suggestCalendarChange({
+      changeType: "send_invite",
+      summary: "Flight Trip: Stuttgart to London (Jul 21-Jul 23)",
+      attendees: ["U09NYHPDDL4"],
+    });
+
+    expect(calls[0]?.body).toEqual(
+      expect.objectContaining({
+        type: "calendar.create_tentative_hold",
+        risk_tier: "T2",
+        target: expect.objectContaining({ attendees: [] }),
+        proposed_payload: expect.objectContaining({
+          from: `${new Date().getUTCFullYear()}-07-21`,
+          to: `${new Date().getUTCFullYear()}-07-24`,
+          all_day: true,
+        }),
+      }),
+    );
+    expect(
+      (calls[0]?.body as { proposed_payload?: { attendees?: unknown } }).proposed_payload,
+    ).not.toHaveProperty("attendees");
+  });
+
+  it("lets an explicit timestamp range override a source-derived all-day payload", async () => {
+    const { fetchImpl, calls } = captureFetch();
+    const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl });
+
+    await tools.suggestCalendarChange({
+      changeType: "tentative_hold",
+      summary: "Dinner",
+      timeWindow: "2099-07-30T18:30:00-04:00 through 2099-07-30T20:00:00-04:00",
+      proposedPayload: {
+        from: "2099-07-30",
+        to: "2099-07-31",
+        all_day: true,
+      },
+    });
+
+    expect(calls[0]?.body).toEqual(
+      expect.objectContaining({
+        proposed_payload: expect.objectContaining({
+          from: "2099-07-30T18:30:00-04:00",
+          to: "2099-07-30T20:00:00-04:00",
+          all_day: false,
+        }),
       }),
     );
   });

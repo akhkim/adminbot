@@ -217,22 +217,21 @@ describe("setTabFromRoute", () => {
     expect(host.debugPollInterval).toBeNull();
   });
 
-  it("re-resolves the active palette when only themeMode changes", () => {
+  it("keeps the dark palette when themeMode changes", () => {
     const host = createHost("chat");
-    host.settings.theme = "knot";
+    host.settings.theme = "claw";
     host.settings.themeMode = "dark";
-    host.theme = "knot" as unknown as ThemeName & ThemeMode;
+    host.theme = "claw";
     host.themeMode = "dark";
-    host.themeResolved = "openknot";
+    host.themeResolved = "dark";
 
     applySettings(host, {
       ...host.settings,
       themeMode: "light",
     });
 
-    expect(host.theme).toBe("knot");
-    expect(host.themeMode).toBe("light");
-    expect(host.themeResolved).toBe("openknot-light");
+    expect(host.theme).toBe("claw");
+    expect(host.themeResolved).toBe("dark");
   });
 
   it("applies normalized browser-local text scale", () => {
@@ -247,16 +246,17 @@ describe("setTabFromRoute", () => {
     expect(document.documentElement.style.getPropertyValue("--control-ui-text-scale")).toBe("1.25");
   });
 
-  it("syncs both theme family and mode from persisted settings", () => {
+  it("resolves a retired theme family to the dark palette", () => {
     const host = createHost("chat");
-    host.settings.theme = "dash";
+    // Retired families ("knot"/"dash") are rewritten to "claw" at the storage boundary by
+    // parseThemeSelection. This seam only has to guarantee the palette still resolves to
+    // dark if an un-normalized value reaches it.
+    host.settings.theme = "dash" as unknown as ThemeName;
     host.settings.themeMode = "light";
 
     syncThemeWithSettings(host);
 
-    expect(host.theme).toBe("dash");
-    expect(host.themeMode).toBe("light");
-    expect(host.themeResolved).toBe("dash-light");
+    expect(host.themeResolved).toBe("dark");
   });
 
   it("falls back to claw when custom is selected without a stored custom theme", () => {
@@ -287,33 +287,18 @@ describe("setTabFromRoute", () => {
     });
 
     const host = createHost("chat");
-    host.settings.theme = "knot" as unknown as ThemeName & ThemeMode;
+    host.settings.theme = "claw";
     host.settings.themeMode = "system";
 
     syncThemeWithSettings(host);
     listeners[0]?.({ matches: true } as MediaQueryListEvent);
-    expect(host.themeResolved).toBe("openknot");
+    expect(host.themeResolved).toBe("dark");
 
     listeners[0]?.({ matches: false } as MediaQueryListEvent);
-    expect(host.themeResolved).toBe("openknot");
+    expect(host.themeResolved).toBe("dark");
   });
 
-  it("normalizes light family themes to the shared light CSS token", () => {
-    const root = {
-      dataset: {} as DOMStringMap,
-      style: { colorScheme: "" } as CSSStyleDeclaration & { colorScheme: string },
-    };
-    vi.stubGlobal("document", { documentElement: root } as Document);
-
-    const host = createHost("chat");
-    applyResolvedTheme(host, "dash-light");
-
-    expect(host.themeResolved).toBe("dash-light");
-    expect(root.dataset.theme).toBe("dash-light");
-    expect(root.style.colorScheme).toBe("light");
-  });
-
-  it("applies imported custom light themes as light-mode tokens", () => {
+  it("applies the imported custom theme as dark-mode tokens", () => {
     const root = {
       dataset: {} as DOMStringMap,
       style: { colorScheme: "" } as CSSStyleDeclaration & { colorScheme: string },
@@ -322,11 +307,12 @@ describe("setTabFromRoute", () => {
 
     const host = createHost("chat");
     host.settings.customTheme = createImportedCustomThemeFixture();
-    applyResolvedTheme(host, "custom-light");
+    applyResolvedTheme(host, "custom");
 
-    expect(host.themeResolved).toBe("custom-light");
-    expect(root.dataset.theme).toBe("custom-light");
-    expect(root.style.colorScheme).toBe("light");
+    expect(host.themeResolved).toBe("custom");
+    expect(root.dataset.theme).toBe("custom");
+    expect(root.dataset.themeMode).toBe("dark");
+    expect(root.style.colorScheme).toBe("dark");
   });
 });
 

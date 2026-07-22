@@ -66,7 +66,7 @@ async function openMobileFixture(): Promise<MobileFixture> {
       viewport: { width: 390, height: 844 },
     });
     await page.setContent(
-      `<!doctype html><html data-theme-mode="light"><head><style>${readUiCss()}</style></head><body>${controlsHtml()}</body></html>`,
+      `<!doctype html><html data-theme-mode="dark"><head><style>${readUiCss()}</style></head><body>${controlsHtml()}</body></html>`,
     );
     return { browser, page };
   } catch (error) {

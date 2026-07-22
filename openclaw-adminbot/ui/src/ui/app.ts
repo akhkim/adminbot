@@ -78,15 +78,15 @@ import { normalizeAssistantIdentity } from "./assistant-identity.ts";
 import { restoreChatComposerState } from "./chat/composer-persistence.ts";
 import { exportChatMarkdown } from "./chat/export.ts";
 import {
+  reconcileRealtimeTalkCatalogSelection,
+  type RealtimeTalkCatalogProvider,
+} from "./chat/realtime-talk-catalog.ts";
+import {
   createRealtimeTalkConversationState,
   updateRealtimeTalkConversation,
   type RealtimeTalkConversationEntry,
   type RealtimeTalkConversationState,
 } from "./chat/realtime-talk-conversation.ts";
-import {
-  reconcileRealtimeTalkCatalogSelection,
-  type RealtimeTalkCatalogProvider,
-} from "./chat/realtime-talk-catalog.ts";
 import {
   RealtimeTalkSession,
   type RealtimeTalkLaunchOptions,
@@ -97,7 +97,9 @@ import type { ChatMessageCache } from "./chat/session-message-cache.ts";
 import type { ChatSideResult } from "./chat/side-result.ts";
 import {
   createEmptyAdminBotDashboardData,
+  createEmptyAdminBotReimbursementState,
   type AdminBotDashboardData,
+  type AdminBotReimbursementState,
 } from "./controllers/adminbot.ts";
 import {
   loadToolsEffective as loadToolsEffectiveInternal,
@@ -474,6 +476,8 @@ export class OpenClawApp extends LitElement {
   @state() adminBotData: AdminBotDashboardData = createEmptyAdminBotDashboardData();
   @state() adminBotBusyActionId: string | null = null;
   @state() adminBotNotice: { kind: "success" | "error"; text: string } | null = null;
+  @state() adminBotReimbursement: AdminBotReimbursementState =
+    createEmptyAdminBotReimbursementState();
   @state() toolsCatalogLoading = false;
   @state() toolsCatalogError: string | null = null;
   @state() toolsCatalogResult: ToolsCatalogResult | null = null;

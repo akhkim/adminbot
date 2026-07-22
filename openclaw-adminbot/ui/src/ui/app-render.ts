@@ -43,12 +43,17 @@ import {
 } from "./control-ui-performance.ts";
 import {
   approveAdminBotAction,
+  deleteAdminBotPaper,
   executeAdminBotAction,
+  generateAdminBotReimbursement,
   loadAdminBot,
-  resolveAdminBotLoadMode,
+  removePendingAdminBotAction,
+  resetAdminBotReimbursement,
   saveAdminBotMember,
+  saveAdminBotPaper,
   saveAdminBotSensitiveInfo,
   saveAdminBotSettings,
+  sendAdminBotReimbursementMessage,
 } from "./controllers/adminbot.ts";
 import type { AdminBotLoadMode } from "./controllers/adminbot.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
@@ -644,7 +649,7 @@ function renderSidebarRecentSession(state: AppViewState, row: GatewaySessionRow)
       href=${href}
       class="sidebar-recent-session ${active ? "sidebar-recent-session--active" : ""}"
       data-session-key=${row.key}
-      title=${`${label} Â· ${row.key}`}
+      title=${`${label} · ${row.key}`}
       @click=${(event: MouseEvent) => {
         if (
           event.defaultPrevented ||
@@ -706,6 +711,7 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
       case "adminbotSettings":
       case "adminbotPapers":
       case "adminbotNudges":
+      case "adminbotReimbursements":
         return "papers";
       default:
         return null;
@@ -716,6 +722,8 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
       return "actions";
     case "adminbotSettings":
       return "settings";
+    case "adminbotReimbursements":
+      return "reimbursements";
     case "adminbotMembers":
       return "members";
     case "adminbotPapers":
@@ -1131,7 +1139,7 @@ function buildAssistantAvatarRoute(basePathValue: string | null | undefined, age
   return basePath ? `${basePath}/avatar/${encoded}` : `/avatar/${encoded}`;
 }
 
-// â”€â”€ Quick Settings data extraction helpers â”€â”€
+// ── Quick Settings data extraction helpers ──
 
 const KNOWN_CHANNEL_IDS = [
   { id: "telegram", label: "Telegram" },
@@ -1444,7 +1452,7 @@ export function renderApp(state: AppViewState) {
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
   const chatDisabledReason = state.connected ? null : t("chat.disconnected");
   const isChat = state.tab === "chat";
-  const adminBotMode = resolveAdminBotLoadMode(state.password);
+  const adminBotMode: AdminBotLoadMode = "admin";
   const adminBotPanel = adminBotPanelForTab(state.tab, adminBotMode);
   const headerError = !isChat && state.lastError !== state.chatError ? state.lastError : null;
   const chatViewError = state.lastError;
@@ -1854,7 +1862,7 @@ export function renderApp(state: AppViewState) {
   const renderConfigTabForActiveTab = () => {
     switch (state.tab) {
       case "config": {
-        // Quick Settings mode â€” opinionated card layout
+        // Quick Settings mode — opinionated card layout
         if (state.configSettingsMode === "quick") {
           const configObj = state.configForm ?? state.configSnapshot?.config ?? {};
           const assistantAvatarOverride =
@@ -2014,7 +2022,7 @@ export function renderApp(state: AppViewState) {
             version: state.hello?.server?.version ?? "",
           });
         }
-        // Advanced mode â€” full config form with accordion groups
+        // Advanced mode — full config form with accordion groups
         return renderConfigTab({
           formMode: state.configFormMode,
           searchQuery: state.configSearchQuery,
@@ -2265,28 +2273,25 @@ export function renderApp(state: AppViewState) {
   ) {
     loadChatWorkspaceFiles();
   }
-  const refreshChatWorkspaceFiles = () => {
-    const toggleChatWorkspaceFilesCollapsed = () => {
-      chatWorkspaceFiles.collapsed = !chatWorkspaceFiles.collapsed;
-      if (
-        !chatWorkspaceFiles.collapsed &&
-        chatWorkspaceFiles.list?.sessionKey !== state.sessionKey
-      ) {
-        loadChatWorkspaceFiles();
-      }
-      requestHostUpdate?.();
-    };
-    if (
-      ((isChat && isAdminBotChat) || adminBotPanel) &&
-      state.connected &&
-      !state.adminBotLoading &&
-      !state.adminBotError &&
-      !state.adminBotData.loadedAt
-    ) {
-      void loadAdminBot(state, adminBotMode).finally(() => requestHostUpdate?.());
+  const toggleChatWorkspaceFilesCollapsed = () => {
+    chatWorkspaceFiles.collapsed = !chatWorkspaceFiles.collapsed;
+    if (!chatWorkspaceFiles.collapsed && chatWorkspaceFiles.list?.sessionKey !== state.sessionKey) {
+      loadChatWorkspaceFiles();
     }
+    requestHostUpdate?.();
+  };
+  const refreshChatWorkspaceFiles = () => {
     loadChatWorkspaceFiles({ force: true });
   };
+  if (
+    ((isChat && isAdminBotChat) || adminBotPanel) &&
+    state.connected &&
+    !state.adminBotLoading &&
+    !state.adminBotError &&
+    !state.adminBotData.loadedAt
+  ) {
+    void loadAdminBot(state, adminBotMode).finally(() => requestHostUpdate?.());
+  }
   const browseChatWorkspacePath = (path: string) => {
     if (chatWorkspaceFiles.browserSearchTimer) {
       globalThis.clearTimeout(chatWorkspaceFiles.browserSearchTimer);
@@ -2580,7 +2585,7 @@ export function renderApp(state: AppViewState) {
               aria-label=${t("chat.openCommandPalette")}
             >
               <span class="topbar-search__label">${t("common.search")}</span>
-              <kbd class="topbar-search__kbd">âŒ˜K</kbd>
+              <kbd class="topbar-search__kbd">⌘K</kbd>
             </button>
             <div class="topbar-status">${renderTopbarThemeModeToggle(state)}</div>
           </div>
@@ -2891,10 +2896,18 @@ export function renderApp(state: AppViewState) {
               busyActionId: state.adminBotBusyActionId,
               notice: state.adminBotNotice,
               mode: adminBotMode,
+              reimbursement: state.adminBotReimbursement,
+              onReimbursementMessage: (message, files) =>
+                void sendAdminBotReimbursementMessage(state, message, files),
+              onGenerateReimbursement: () => void generateAdminBotReimbursement(state),
+              onResetReimbursement: () => resetAdminBotReimbursement(state),
               onRefresh: () => void loadAdminBot(state, adminBotMode),
               onApprove: (proposal) => void approveAdminBotAction(state, proposal),
+              onRemove: (proposal) => void removePendingAdminBotAction(state, proposal),
               onExecute: (proposal) => void executeAdminBotAction(state, proposal),
               onSaveMember: (member) => void saveAdminBotMember(state, member),
+              onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
+              onDeletePaper: (paper) => void deleteAdminBotPaper(state, paper),
               onSaveSettings: (settings) => void saveAdminBotSettings(state, settings),
               onSaveSensitiveInfo: (markdown) => void saveAdminBotSensitiveInfo(state, markdown),
             })
@@ -3890,6 +3903,7 @@ export function renderApp(state: AppViewState) {
                         notice: state.adminBotNotice,
                         onRefresh: () => void loadAdminBot(state, adminBotMode),
                         onApprove: (proposal) => void approveAdminBotAction(state, proposal),
+                        onRemove: (proposal) => void removePendingAdminBotAction(state, proposal),
                         onExecute: (proposal) => void executeAdminBotAction(state, proposal),
                       }
                     : undefined,

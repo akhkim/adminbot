@@ -14,13 +14,14 @@ import type {
   AdminBotPaperRecordInput,
   AdminBotPaperStep,
   AdminBotPaperTimeline,
+  AdminBotRemovePendingRequest,
   AdminBotRiskTier,
   AdminBotSettings,
   AdminBotSettingsInput,
   AdminBotStoredProposal,
   AdminBotPrivilegeLevel,
 } from "./contracts.js";
-import { adminBotPrivilegeLevels } from "./contracts.js";
+import { adminBotMemberStatuses, adminBotPrivilegeLevels } from "./contracts.js";
 
 type AdminBotActionPolicy = {
   risk_tier: AdminBotRiskTier;
@@ -48,6 +49,7 @@ export type AdminBotServiceStore = {
   savePaper(paper: AdminBotPaperRecord): void;
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
   listPapers(): AdminBotPaperRecord[];
+  deletePaper(paperId: string): boolean;
   getSettings(): AdminBotSettings | undefined;
   saveSettings(settings: AdminBotSettings): void;
   recordAudit(event: AdminBotAuditEvent): void;
@@ -72,11 +74,11 @@ const DEFAULT_ACTION_POLICIES = {
   "slack.invite_member": approvalPolicy("T3", ["pi", "lab_manager"]),
   "slack.send_message": approvalPolicy("T3", ["pi", "lab_manager"]),
   "vector.invite": approvalPolicy("T3", ["pi", "lab_manager"]),
-  "calendar.create_tentative_hold": autoPolicy("T2"),
+  "calendar.create_tentative_hold": approvalPolicy("T2", ["admin"]),
   "calendar.send_invite": approvalPolicy("T3", ["pi", "lab_manager"]),
   "calendar.reschedule": approvalPolicy("T3", ["pi", "lab_manager"]),
   "calendar.cancel": approvalPolicy("T3", ["pi", "lab_manager"]),
-  "email.draft": autoPolicy("T1"),
+  "email.draft": approvalPolicy("T1", ["admin"]),
   "email.send": approvalPolicy("T3", ["pi", "lab_manager"]),
   "recommendation_letter.draft": autoPolicy("T1"),
   "recommendation_letter.send": approvalPolicy("T4", ["pi"], 2),
@@ -203,6 +205,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     );
   }
 
+  deletePaper(paperId: string): boolean {
+    return this.papers.delete(paperId);
+  }
+
   getSettings(): AdminBotSettings | undefined {
     return this.settings;
   }
@@ -289,13 +295,53 @@ export class AdminBotService {
   }
 
   listPending(limit?: number): AdminBotServiceResponse<{ proposals: AdminBotStoredProposal[] }> {
+    const proposals = this.store.listPending(limit).map((proposal) => {
+      if (!proposal.approval_requirement.requires_approval) {
+        return proposal;
+      }
+      const normalized: AdminBotStoredProposal = {
+        ...proposal,
+        approval_requirement: {
+          requires_approval: true,
+          approver_roles: ["admin"],
+          min_approvals: 1,
+        },
+      };
+      this.store.updateProposal(normalized);
+      return normalized;
+    });
     return {
       ok: true,
       status: 200,
-      payload: {
-        proposals: this.store.listPending(limit),
-      },
+      payload: { proposals },
     };
+  }
+
+  removePending(
+    actionId: string,
+    request: AdminBotRemovePendingRequest,
+  ): AdminBotServiceResponse<AdminBotStoredProposal> {
+    const proposal = this.store.getProposal(actionId);
+    if (!proposal) {
+      return serviceError(404, "proposal not found");
+    }
+    if (proposal.status !== "pending" && proposal.status !== "approved") {
+      return serviceError(409, "only pending or approved unexecuted proposals can be removed");
+    }
+    proposal.status = "rejected";
+    proposal.updated_at = new Date().toISOString();
+    this.store.updateProposal(proposal);
+    this.recordAudit({
+      type: "proposal.removed",
+      action_id: proposal.id,
+      actor: request.actor,
+      details: {
+        action_type: proposal.type,
+        risk_tier: proposal.risk_tier,
+        ...(request.note ? { note: request.note } : {}),
+      },
+    });
+    return { ok: true, status: 200, payload: proposal };
   }
 
   approve(
@@ -309,20 +355,20 @@ export class AdminBotService {
     if (proposal.status === "executed") {
       return serviceError(409, "proposal is already executed");
     }
+    if (proposal.status === "rejected") {
+      return serviceError(409, "proposal is removed");
+    }
     if (request.payload_hash !== proposal.payload_hash) {
       return serviceError(409, "payload hash mismatch");
     }
     const requirement = proposal.approval_requirement;
-    if (
-      requirement.requires_approval &&
-      !requirement.approver_roles.includes(request.approver_role)
-    ) {
+    if (requirement.requires_approval && request.approver_role !== "admin") {
       return serviceError(403, `approver role not allowed: ${request.approver_role}`);
     }
     if (!hasApproval(proposal.approvals, request)) {
       proposal.approvals.push(request);
     }
-    if (proposal.approvals.length >= requirement.min_approvals) {
+    if (proposal.approvals.length >= 1) {
       proposal.status = "approved";
     }
     proposal.updated_at = new Date().toISOString();
@@ -389,7 +435,7 @@ export class AdminBotService {
       return serviceError(409, "proposal is not approved");
     }
     const requirement = proposal.approval_requirement;
-    if (requirement.requires_approval && proposal.approvals.length < requirement.min_approvals) {
+    if (requirement.requires_approval && proposal.approvals.length < 1) {
       return serviceError(409, "proposal does not have the required approvals");
     }
     const now = new Date().toISOString();
@@ -602,6 +648,20 @@ export class AdminBotService {
     };
   }
 
+  deletePaper(paperId: string): AdminBotServiceResponse<{ deleted: true; paper_id: string }> {
+    const paper = this.store.getPaper(paperId);
+    if (!paper) {
+      return serviceError(404, "paper not found: " + paperId);
+    }
+    this.store.deletePaper(paperId);
+    this.recordAudit({
+      type: "paper.deleted",
+      actor: paperId,
+      details: { title: paper.title },
+    });
+    return { ok: true, status: 200, payload: { deleted: true, paper_id: paperId } };
+  }
+
   listPaperNudges(nowIso = new Date().toISOString()): AdminBotServiceResponse<{
     nudges: AdminBotPaperNudge[];
   }> {
@@ -654,17 +714,11 @@ export function payloadHash(value: unknown): string {
 
 function resolvePolicy(proposal: AdminBotActionProposal): AdminBotActionPolicy {
   const defaults = DEFAULT_ACTION_POLICIES[proposal.type];
-  if (!proposal.risk_tier) {
-    return defaults;
-  }
-  const fallback = defaultPolicyForRiskTier(proposal.risk_tier);
-  return {
-    ...fallback,
-    ...defaults,
-    risk_tier: proposal.risk_tier,
-    requires_approval:
-      defaults.requires_approval || fallback.requires_approval || defaults.auto_allowed !== true,
-  };
+  const riskTier = proposal.risk_tier ?? defaults.risk_tier;
+  const fallback = defaultPolicyForRiskTier(riskTier);
+  const requiresApproval =
+    defaults.requires_approval || fallback.requires_approval || defaults.auto_allowed !== true;
+  return requiresApproval ? approvalPolicy(riskTier, ["admin"]) : autoPolicy(riskTier);
 }
 
 function defaultPolicyForRiskTier(riskTier: AdminBotRiskTier): AdminBotActionPolicy {
@@ -698,8 +752,8 @@ function approvalPolicy(
   return {
     risk_tier: riskTier,
     requires_approval: true,
-    approver_roles: approverRoles,
-    min_approvals: minApprovals,
+    approver_roles: ["admin"],
+    min_approvals: 1,
   };
 }
 
@@ -713,6 +767,25 @@ function validateLabMember(member: AdminBotLabMemberInput): string | undefined {
   }
   if (!member.name.trim()) {
     return "member name is required";
+  }
+  if (member.status && !adminBotMemberStatuses.includes(member.status)) {
+    return "member status is invalid";
+  }
+  if (
+    member.hours_per_week !== undefined &&
+    (!Number.isFinite(member.hours_per_week) ||
+      member.hours_per_week < 0 ||
+      member.hours_per_week > 168)
+  ) {
+    return "member hours per week must be between 0 and 168";
+  }
+  if (
+    member.capacity_percent !== undefined &&
+    (!Number.isFinite(member.capacity_percent) ||
+      member.capacity_percent < 0 ||
+      member.capacity_percent > 100)
+  ) {
+    return "member capacity percent must be between 0 and 100";
   }
   return undefined;
 }

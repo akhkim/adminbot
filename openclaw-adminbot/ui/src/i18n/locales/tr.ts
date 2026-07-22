@@ -396,6 +396,7 @@ export const tr: TranslationMap = {
   nav: {
     chat: "Sohbet",
     control: "Kontrol",
+    adminbot: "AdminBot",
     agent: "Aracı",
     settings: "Ayarlar",
     expand: "Kenar çubuğunu genişlet",
@@ -404,6 +405,12 @@ export const tr: TranslationMap = {
   },
   tabs: {
     agents: "Aracılar",
+    adminbot: "Pending Actions",
+    adminbotReimbursements: "Reimbursements",
+    adminbotSettings: "Settings",
+    adminbotMembers: "Lab Members",
+    adminbotPapers: "Active Papers",
+    adminbotNudges: "Paper Nudges",
     activity: "Etkinlik",
     overview: "Genel Bakış",
     workboard: "Çalışma panosu",
@@ -429,6 +436,12 @@ export const tr: TranslationMap = {
   },
   subtitles: {
     agents: "Çalışma alanları, araçlar, kimlikler.",
+    adminbot: "Approval queue and execution controls.",
+    adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
+    adminbotSettings: "Lab defaults and escalation policy.",
+    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotNudges: "Due reminders and professor escalations.",
     activity: "Tarayıcıya yerel araç etkinliği özetleri.",
     overview: "Durum, giriş noktaları, sağlık.",
     workboard: "Ajan iş kuyruğu ve oturum devri.",
@@ -1698,8 +1711,6 @@ export const tr: TranslationMap = {
     },
     jobDetail: {
       system: "Sistem",
-      command: "Komut",
-      cwd: "CWD",
       prompt: "İstem",
       delivery: "Teslimat",
       agent: "Aracı",

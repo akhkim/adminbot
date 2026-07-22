@@ -64,6 +64,18 @@ describe("resolveLoginFailureFeedback", () => {
     ]);
   });
 
+  it("does not present intentional client replacement as a login failure", () => {
+    expect(
+      resolveLoginFailureFeedback({
+        connected: false,
+        lastError: "gateway client stopped",
+        lastErrorCode: null,
+        hasToken: true,
+        hasPassword: true,
+      }),
+    ).toBeNull();
+  });
+
   it("explains rejected stale credentials", () => {
     const feedback = resolveLoginFailureFeedback({
       connected: false,

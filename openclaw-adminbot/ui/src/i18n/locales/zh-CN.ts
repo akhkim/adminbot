@@ -391,6 +391,7 @@ export const zh_CN: TranslationMap = {
   nav: {
     chat: "聊天",
     control: "控制",
+    adminbot: "AdminBot",
     agent: "代理",
     settings: "设置",
     expand: "展开侧边栏",
@@ -399,6 +400,12 @@ export const zh_CN: TranslationMap = {
   },
   tabs: {
     agents: "代理",
+    adminbot: "Pending Actions",
+    adminbotReimbursements: "Reimbursements",
+    adminbotSettings: "Settings",
+    adminbotMembers: "Lab Members",
+    adminbotPapers: "Active Papers",
+    adminbotNudges: "Paper Nudges",
     activity: "活动",
     overview: "概览",
     workboard: "工作板",
@@ -424,6 +431,12 @@ export const zh_CN: TranslationMap = {
   },
   subtitles: {
     agents: "工作区、工具、身份。",
+    adminbot: "Approval queue and execution controls.",
+    adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
+    adminbotSettings: "Lab defaults and escalation policy.",
+    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotNudges: "Due reminders and professor escalations.",
     activity: "浏览器本地工具活动摘要。",
     overview: "状态、入口点、健康。",
     workboard: "智能体工作队列和会话交接。",
@@ -1648,8 +1661,6 @@ export const zh_CN: TranslationMap = {
     },
     jobDetail: {
       system: "系统",
-      command: "命令",
-      cwd: "CWD",
       prompt: "提示",
       delivery: "投递",
       agent: "代理",

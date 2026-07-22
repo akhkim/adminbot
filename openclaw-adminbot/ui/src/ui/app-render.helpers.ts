@@ -41,7 +41,6 @@ import {
 } from "./session-key.ts";
 import { normalizeChatAutoScrollMode, type ChatAutoScrollMode } from "./storage.ts";
 import { normalizeLowercaseStringOrEmpty, normalizeOptionalString } from "./string-coerce.ts";
-import type { ThemeMode } from "./theme.ts";
 import type { SessionsListResult } from "./types.ts";
 import type { ChatQueueItem } from "./ui-types.ts";
 
@@ -819,54 +818,11 @@ function countHiddenCronSessions(state: AppViewState, sessions: SessionsListResu
   ).length;
 }
 
-type ThemeModeOption = { id: ThemeMode; labelKey: string; short: string };
-const THEME_MODE_OPTIONS: ThemeModeOption[] = [
-  { id: "system", labelKey: "common.system", short: "SYS" },
-  { id: "light", labelKey: "common.light", short: "LIGHT" },
-  { id: "dark", labelKey: "common.dark", short: "DARK" },
-];
-
-export function renderTopbarThemeModeToggle(state: AppViewState) {
-  const modeIcon = (mode: ThemeMode) => {
-    if (mode === "system") {
-      return icons.monitor;
-    }
-    if (mode === "light") {
-      return icons.sun;
-    }
-    return icons.moon;
-  };
-
-  const applyMode = (mode: ThemeMode, e: Event) => {
-    if (mode === state.themeMode) {
-      return;
-    }
-    state.setThemeMode(mode, { element: e.currentTarget as HTMLElement });
-  };
-
-  return html`
-    <div class="topbar-theme-mode" role="group" aria-label=${t("common.colorMode")}>
-      ${THEME_MODE_OPTIONS.map((opt) => {
-        const label = t(opt.labelKey);
-        const tooltip = t("common.colorModeOption", { mode: label });
-        return html`
-          <button
-            type="button"
-            class="topbar-theme-mode__btn ${opt.id === state.themeMode
-              ? "topbar-theme-mode__btn--active"
-              : ""}"
-            title=${tooltip}
-            aria-label=${tooltip}
-            data-tooltip=${tooltip}
-            aria-pressed=${opt.id === state.themeMode}
-            @click=${(e: Event) => applyMode(opt.id, e)}
-          >
-            ${modeIcon(opt.id)}
-          </button>
-        `;
-      })}
-    </div>
-  `;
+// Dark-only (design spec §2): there is no light/dark/system choice left to render. The
+// function stays exported and callable — app-render.ts (off limits, owned by another
+// agent) still calls it from two chrome locations — but it no longer renders a picker.
+export function renderTopbarThemeModeToggle(_state: AppViewState) {
+  return nothing;
 }
 
 export function renderSidebarConnectionStatus(state: AppViewState) {

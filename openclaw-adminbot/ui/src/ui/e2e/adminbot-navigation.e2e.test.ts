@@ -92,8 +92,27 @@ function adminBotToolResponses() {
                 authors: ["Maya Chen"],
                 created_at: "2026-06-10T12:00:00.000Z",
                 current_step: "social_posts",
+                artifacts: { conference: "NeurIPS 2026" },
                 id: "paper-1",
                 title: "Causal Lab Systems",
+                timeline: {
+                  current_step_index: 5,
+                  progress_percent: 63,
+                  total_estimated_business_days: 40,
+                  items: [
+                    {
+                      color: "#5b8def",
+                      dependency_group: "publish",
+                      depends_on: [],
+                      duration_business_days: 6,
+                      label: "Social posts",
+                      offset_end_business_day: 30,
+                      offset_start_business_day: 24,
+                      status: "current",
+                      step: "social_posts",
+                    },
+                  ],
+                },
                 updated_at: "2026-06-10T12:00:00.000Z",
               },
             ],
@@ -133,6 +152,14 @@ function adminBotToolResponses() {
           toolName: "adminbot_get_settings",
         },
       },
+      {
+        match: { name: "adminbot_get_sensitive_info" },
+        response: {
+          ok: true,
+          output: { markdown: "" },
+          toolName: "adminbot_get_sensitive_info",
+        },
+      },
     ],
   };
 }
@@ -169,19 +196,34 @@ describeControlUiE2e("AdminBot Control UI navigation", () => {
       await page.goto(`${server.baseUrl}adminbot`);
       await page.getByText("Approve reimbursement packet").waitFor({ timeout: 10_000 });
 
-      await page.getByRole("link", { name: "Settings" }).click();
+      await page.locator('a[href="/adminbot/settings"]').click();
       await page.waitForURL("**/adminbot/settings");
-      await page.getByText("Escalation window").waitFor();
+      await page.getByText("Paper escalation business days").waitFor();
 
       await page.getByRole("link", { name: "Lab Members" }).click();
       await page.waitForURL("**/adminbot/members");
-      await page.getByText("Maya Chen").waitFor();
-      await page.getByText("Toronto").waitFor();
-      await page.getByText("Causal Inference and LLMs").waitFor();
+      await page
+        .locator(".adminbot-editor-card--member summary")
+        .filter({ hasText: "Maya Chen" })
+        .waitFor();
+      const memberCard = page.locator(".adminbot-editor-card--member").filter({
+        hasText: "Maya Chen",
+      });
+      expect(await memberCard.locator('input[name="location"]').inputValue()).toBe("Toronto");
+      expect(await memberCard.locator('input[name="researchInterests"]').inputValue()).toBe(
+        "Causal Inference and LLMs",
+      );
 
       await page.getByRole("link", { name: "Active Papers" }).click();
       await page.waitForURL("**/adminbot/papers");
-      await page.getByText("Causal Lab Systems").waitFor();
+      await page.locator(".adminbot-paper-overview").getByText("Causal Lab Systems").waitFor();
+      await page.getByText("Paper timeline overview").waitFor();
+      expect(await page.locator(".adminbot-paper-gantt__row").count()).toBe(1);
+      await page.locator('select[name="conference"]').selectOption("NeurIPS 2026");
+      await page.locator('select[name="progress"]').selectOption("early");
+      expect(await page.locator(".adminbot-paper-gantt__row:visible").count()).toBe(0);
+      await page.locator('select[name="progress"]').selectOption("");
+      expect(await page.locator(".adminbot-paper-gantt__row:visible").count()).toBe(1);
 
       await page.getByRole("link", { name: "Paper Nudges" }).click();
       await page.waitForURL("**/adminbot/nudges");

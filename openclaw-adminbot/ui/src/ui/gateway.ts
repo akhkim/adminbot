@@ -357,6 +357,11 @@ function getErrorMessage(err: unknown): string {
   return err instanceof Error && err.message ? err.message : String(err);
 }
 
+export function isGatewayClientStoppedError(err: unknown): boolean {
+  const message = getErrorMessage(err);
+  return message === "gateway client stopped" || message === "Error: gateway client stopped";
+}
+
 function getErrorName(err: unknown): string | undefined {
   if (err instanceof Error && err.name) {
     return err.name;

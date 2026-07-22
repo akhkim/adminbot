@@ -1366,7 +1366,11 @@ export function createExecTool(
       config: defaults?.config,
       agentId: agentId ?? context?.hookContext?.agentId,
       sessionKey: defaults?.sessionKey ?? context?.hookContext?.sessionKey,
-      existingEnv: { ...params.env, ...pluginEnv },
+      existingEnv: {
+        ...(host === "gateway" ? coerceEnv(process.env) : {}),
+        ...params.env,
+        ...pluginEnv,
+      },
     });
     const resolvedEnv = gogEnv ? { ...pluginEnv, ...gogEnv } : pluginEnv;
     return markResolveExecEnvPrepared(params, {

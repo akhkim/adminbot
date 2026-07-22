@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   spawnInputs: [] as Array<{
     env?: Record<string, string>;
   }>,
+  requestGogKeyringPassword: vi.fn(async () => "prompted-password"),
 }));
 
 vi.mock("../plugins/hook-runner-global.js", () => ({
@@ -39,6 +40,12 @@ vi.mock("../infra/shell-env.js", () => ({
   resolveShellEnvFallbackTimeoutMs: vi.fn(() => 0),
   shouldDeferShellEnvFallback: vi.fn(() => false),
   shouldEnableShellEnvFallback: vi.fn(() => false),
+}));
+
+vi.mock("./gog-keyring-password.js", () => ({
+  GOG_KEYRING_PASSWORD: "GOG_KEYRING_PASSWORD",
+  commandUsesGog: (command: string) => /(?:^|\s)gog(?:\s|$)/u.test(command),
+  requestGogKeyringPassword: mocks.requestGogKeyringPassword,
 }));
 
 vi.mock("./bash-tools.exec-host-gateway.js", () => ({
@@ -127,6 +134,7 @@ describe("exec resolve_exec_env hook wiring", () => {
     mocks.gatewayParams.length = 0;
     mocks.nodeHostParams.length = 0;
     mocks.spawnInputs.length = 0;
+    mocks.requestGogKeyringPassword.mockClear();
   });
 
   it("merges filtered plugin env into gateway execution and approval-visible requested env", async () => {
@@ -182,6 +190,32 @@ describe("exec resolve_exec_env hook wiring", () => {
       EXISTING: "plugin",
       PLUGIN_SAFE: "yes",
     });
+  });
+
+  it("uses the gateway inherited GOG keyring password without prompting", async () => {
+    const previousPassword = process.env.GOG_KEYRING_PASSWORD;
+    process.env.GOG_KEYRING_PASSWORD = "stored-password";
+    try {
+      const tool = createExecTool({
+        host: "gateway",
+        security: "full",
+        ask: "off",
+        sessionKey: "agent:main:main",
+      });
+      await tool.execute("call-gog", {
+        command: "gog gmail labels list",
+        yieldMs: 120_000,
+      });
+
+      expect(mocks.requestGogKeyringPassword).not.toHaveBeenCalled();
+      expect(mocks.gatewayParams[0]?.env.GOG_KEYRING_PASSWORD).toBe("stored-password");
+    } finally {
+      if (previousPassword === undefined) {
+        delete process.env.GOG_KEYRING_PASSWORD;
+      } else {
+        process.env.GOG_KEYRING_PASSWORD = previousPassword;
+      }
+    }
   });
 
   it("forwards filtered plugin env to node host requests", async () => {

@@ -4,10 +4,10 @@
   width: min(680px, calc(100vw - 40px));
   max-height: min(760px, calc(100vh - 56px));
   overflow-y: auto;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
-  background: var(--card);
-  box-shadow: var(--shadow-xl);
+  background: var(--popover);
+  box-shadow: var(--shadow-lg);
   padding: 28px;
 }
 
@@ -18,7 +18,7 @@
   display: grid;
   place-items: center;
   padding: 28px;
-  background: color-mix(in srgb, #000 58%, transparent);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: blur(8px);
 }
 
@@ -35,7 +35,7 @@
   gap: 10px;
   font-size: 1.2rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--tracking-tight);
   margin: 0;
   color: var(--text-strong);
 }
@@ -57,7 +57,7 @@
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: transparent;
   color: var(--muted);
@@ -70,7 +70,7 @@
 
 .cqc-header__close:hover {
   background: var(--bg-hover);
-  border-color: var(--border-strong);
+  border-color: var(--border-hover);
   color: var(--text);
 }
 
@@ -106,26 +106,28 @@
   justify-content: center;
   width: 26px;
   height: 26px;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   font-size: 0.6875rem;
   font-weight: 700;
-  background: color-mix(in srgb, var(--bg-elevated) 80%, var(--border) 20%);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
   color: var(--muted);
   flex-shrink: 0;
   transition:
     background var(--duration-slow) var(--ease-out),
-    color var(--duration-slow) var(--ease-out),
-    box-shadow var(--duration-slow) var(--ease-out);
+    border-color var(--duration-slow) var(--ease-out),
+    color var(--duration-slow) var(--ease-out);
 }
 
 .cqc-step--active .cqc-step__dot {
   background: var(--accent);
+  border-color: var(--accent);
   color: var(--primary-foreground);
-  box-shadow: 0 0 0 3px var(--accent-subtle);
 }
 
 .cqc-step--done .cqc-step__dot {
   background: var(--ok-subtle);
+  border-color: var(--ok-muted);
   color: var(--ok);
 }
 
@@ -147,18 +149,18 @@
 .cqc-step__line {
   width: 48px;
   height: 2px;
-  background: color-mix(in srgb, var(--border) 60%, transparent);
+  background: var(--border);
   margin: 0 10px;
   border-radius: 1px;
   transition: background var(--duration-slow) var(--ease-out);
 }
 
 .cqc-step__line--done {
-  background: color-mix(in srgb, var(--ok) 40%, transparent);
+  background: var(--ok-muted);
 }
 
 .cqc-step__line--active {
-  background: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: var(--accent);
 }
 
 /* ── Body ── */
@@ -170,7 +172,7 @@
 .cqc-body__heading {
   font-size: 1.05rem;
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--tracking-tight);
   margin: 0 0 4px;
   color: var(--text-strong);
 }
@@ -188,9 +190,9 @@
   width: 100%;
   min-height: 110px;
   padding: 14px;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border: 1px solid var(--input);
   border-radius: var(--radius-md);
-  background: var(--card);
+  background: var(--bg-accent);
   color: var(--text);
   font: inherit;
   font-size: 0.875rem;
@@ -202,15 +204,18 @@
     box-shadow var(--duration-fast) var(--ease-out);
 }
 
+.cqc-textarea:hover:not(:focus-visible) {
+  border-color: var(--border-hover);
+}
+
 .cqc-textarea:focus-visible {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-subtle);
+  box-shadow: 0 0 0 3px var(--focus);
 }
 
 .cqc-textarea::placeholder {
   color: var(--muted);
-  opacity: 0.7;
 }
 
 .cqc-field {
@@ -223,15 +228,16 @@
   font-weight: 600;
   color: var(--muted);
   margin-bottom: 6px;
-  letter-spacing: 0.01em;
+  letter-spacing: var(--tracking-normal);
 }
 
 .cqc-input {
   width: 100%;
-  padding: 10px 14px;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  height: var(--control-h-md);
+  padding: 0 14px;
+  border: 1px solid var(--input);
   border-radius: var(--radius-md);
-  background: var(--card);
+  background: var(--bg-accent);
   color: var(--text);
   font: inherit;
   font-size: 0.8125rem;
@@ -241,15 +247,18 @@
     box-shadow var(--duration-fast) var(--ease-out);
 }
 
+.cqc-input:hover:not(:focus-visible) {
+  border-color: var(--border-hover);
+}
+
 .cqc-input:focus-visible {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-subtle);
+  box-shadow: 0 0 0 3px var(--focus);
 }
 
 .cqc-input::placeholder {
   color: var(--muted);
-  opacity: 0.7;
 }
 
 /* ── Schedule Preset Grid ── */
@@ -266,33 +275,29 @@
   align-items: center;
   gap: 6px;
   padding: 18px 10px;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--card);
   cursor: pointer;
   transition:
-    border-color var(--duration-normal) var(--ease-out),
-    background var(--duration-normal) var(--ease-out),
-    box-shadow var(--duration-normal) var(--ease-out),
-    transform var(--duration-fast) var(--ease-out);
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
   text-align: center;
 }
 
 .cqc-preset-card:hover {
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border) 65%);
-  background: color-mix(in srgb, var(--accent-subtle) 30%, var(--card) 70%);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
 }
 
 .cqc-preset-card--active {
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--border) 50%);
-  background: color-mix(in srgb, var(--accent-subtle) 50%, var(--card) 50%);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--accent);
+  background: var(--accent-subtle);
 }
 
 .cqc-preset-card--active:hover {
-  background: color-mix(in srgb, var(--accent-subtle) 70%, var(--card) 30%);
+  background: var(--accent-subtle);
+  border-color: var(--accent-hover);
 }
 
 .cqc-preset-card__icon {
@@ -303,7 +308,7 @@
 .cqc-preset-card__label {
   font-size: 0.8125rem;
   font-weight: 650;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--tracking-tight);
   color: var(--text-strong);
 }
 
@@ -326,23 +331,23 @@
   align-items: center;
   gap: 14px;
   padding: 16px 18px;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--card);
   cursor: pointer;
   transition:
-    border-color var(--duration-normal) var(--ease-out),
-    background var(--duration-normal) var(--ease-out);
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
 }
 
 .cqc-radio-card:hover {
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--border) 70%);
-  background: color-mix(in srgb, var(--accent-subtle) 20%, var(--card) 80%);
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
 }
 
 .cqc-radio-card--active {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border) 55%);
-  background: color-mix(in srgb, var(--accent-subtle) 35%, var(--card) 65%);
+  border-color: var(--accent);
+  background: var(--accent-subtle);
 }
 
 .cqc-radio-card input[type="radio"] {
@@ -355,7 +360,7 @@
 .cqc-radio-card__label {
   font-size: 0.875rem;
   font-weight: 650;
-  letter-spacing: -0.01em;
+  letter-spacing: var(--tracking-tight);
   color: var(--text-strong);
 }
 
@@ -374,7 +379,7 @@
   gap: 8px;
   flex-wrap: wrap;
   padding-top: 20px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
+  border-top: 1px solid var(--border);
 }
 
 .cqc-actions__secondary {

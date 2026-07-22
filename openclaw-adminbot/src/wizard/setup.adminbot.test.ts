@@ -65,6 +65,7 @@ describe("setupAdminBot", () => {
     });
     expect(agent?.skills).toStrictEqual([...ADMINBOT_SKILLS]);
     expect(agent?.tools?.alsoAllow).toContain(ADMINBOT_PLUGIN_ID);
+    expect(agent?.tools?.alsoAllow).toContain("adminbot_run_email_automation");
     expect(agent?.tools?.alsoAllow).toContain("adminbot_reason");
     expect(result.config.bindings).toContainEqual({
       type: "route",

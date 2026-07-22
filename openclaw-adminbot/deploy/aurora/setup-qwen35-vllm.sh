@@ -4,34 +4,34 @@ export PATH="$HOME/.local/bin:$PATH"
 
 ROOT=""
 GPU="GPU-51e9e550-a798-120d-2926-5c76e25b9e56"
-MODEL_ID="RedHatAI/Qwen3-Next-80B-A3B-Instruct-NVFP4"
-OLD_MODEL_ID="nvidia/Qwen3.5-122B-A10B-NVFP4"
-MODEL_HOME="${JINESIS_VLLM_MODEL_HOME:-/mfs1/u/$USER/jinesis-vllm}"
-PORT="8000"
+MODEL_ID="nvidia/Qwen3.5-122B-A10B-NVFP4"
+OLD_MODEL_ID="RedHatAI/Qwen3-Next-80B-A3B-Instruct-NVFP4"
 MAX_MODEL_LEN="65536"
-GPU_MEMORY_UTILIZATION="0.80"
+GPU_MEMORY_UTILIZATION="0.90"
+MODEL_HOME="${JINESIS_VLLM_MODEL_HOME:-/mfs1/u/$USER/jinesis-vllm-qwen35}"
+PORT="8000"
 INSTALL_TIMEOUT="45m"
 DOWNLOAD_TIMEOUT="6h"
 STARTUP_TIMEOUT="15m"
 SKIP_INSTALL="no"
 SKIP_DOWNLOAD="no"
 SKIP_START="no"
-DELETE_OLD_CHECKPOINT="yes"
+DELETE_OLD_CHECKPOINT="no"
 
 usage() {
   cat <<'EOF'
 Usage: setup-qwen35-vllm.sh --root <current-release> [options]
 
-Install and configure the single-GPU Qwen3-Next 80B NVFP4 runtime on Aurora.
+Install and configure the single-GPU Qwen3.5 122B A10B NVFP4 runtime on Aurora.
 
 Options:
   --root <path>                 Deployed OpenClaw release (required)
   --gpu <uuid-or-index>         Default: Aurora GPU 0 UUID
-  --model-home <path>           Default: /mfs1/u/<user>/jinesis-vllm
+  --model-home <path>           Default: /mfs1/u/<user>/jinesis-vllm-qwen35
   --port <port>                 Default: 8000
   --max-model-len <tokens>      Default: 65536
-  --gpu-memory-utilization <n>  Default: 0.80
-  --keep-old-checkpoint         Keep the old Qwen3.5 122B Hugging Face cache
+  --gpu-memory-utilization <n>  Default: 0.90
+  --delete-old-checkpoint       Delete the old Qwen3-Next checkpoint after validation
   --skip-install                Reuse the existing vLLM virtual environment
   --skip-download               Reuse the existing Hugging Face snapshot
   --skip-start                  Install/configure without starting vLLM
@@ -39,8 +39,7 @@ Options:
 
 The script is resumable. Re-running it reuses downloaded Hugging Face blobs.
 It keeps vLLM loopback-only and disables the old user Ollama service. By
-default, it deletes the old 122B checkpoint only after the replacement passes
-the readiness and JSON-schema smoke tests.
+default, it keeps the old Qwen3-Next checkpoint for rollback.
 EOF
 }
 
@@ -93,8 +92,8 @@ while (($# > 0)); do
       SKIP_START="yes"
       shift
       ;;
-    --keep-old-checkpoint)
-      DELETE_OLD_CHECKPOINT="no"
+    --delete-old-checkpoint)
+      DELETE_OLD_CHECKPOINT="yes"
       shift
       ;;
     -h | --help)
@@ -123,6 +122,15 @@ for command_name in curl nvidia-smi python3 systemctl timeout; do
   command -v "$command_name" >/dev/null || die "$command_name is required"
 done
 
+NODE_BIN="$(command -v node || true)"
+if [[ -z "$NODE_BIN" ]]; then
+  gateway_pid="$(systemctl --user show jinesis-openclaw-gateway.service -p MainPID --value 2>/dev/null || true)"
+  if [[ "$gateway_pid" =~ ^[1-9][0-9]*$ ]]; then
+    NODE_BIN="$(readlink -f "/proc/$gateway_pid/exe" 2>/dev/null || true)"
+  fi
+fi
+[[ -x "$NODE_BIN" ]] || die "Node.js is missing; deploy/start the Gateway runtime first"
+
 gpu_row="$(nvidia-smi --query-gpu=uuid,name,memory.total,compute_cap --format=csv,noheader |
   grep -F "$GPU" || true)"
 [[ -n "$gpu_row" ]] || die "GPU $GPU is not visible"
@@ -142,9 +150,9 @@ chmod 700 "$MODEL_HOME" "$ENV_DIR"
 
 if [[ "$SKIP_DOWNLOAD" == "no" ]]; then
   available_kb="$(df -Pk "$MODEL_HOME" | awk 'NR == 2 { print $4 }')"
-  required_kb=$((65 * 1024 * 1024))
+  required_kb=$((80 * 1024 * 1024))
   ((available_kb >= required_kb)) ||
-    die "at least 65 GiB free is required before first download; available KiB: $available_kb"
+    die "at least 80 GiB free is required before first download; available KiB: $available_kb"
 fi
 
 if [[ $SKIP_INSTALL == no ]]; then
@@ -180,7 +188,8 @@ PY
 VLLM_API_KEY="$VLLM_API_KEY" \
 JINESIS_VLLM_MODEL="$MODEL_ID" \
 JINESIS_VLLM_BASE_URL="http://127.0.0.1:$PORT/v1" \
-  node "$ROOT/deploy/aurora/configure-openclaw-qwen35.mjs" "$OPENCLAW_CONFIG"
+JINESIS_VLLM_CONTEXT_WINDOW="$MAX_MODEL_LEN" \
+  "$NODE_BIN" "$ROOT/deploy/aurora/configure-openclaw-qwen35.mjs" "$OPENCLAW_CONFIG"
 
 if [[ -f "$ENV_FILE" ]]; then
   if grep -q '^VLLM_API_KEY=' "$ENV_FILE"; then
@@ -203,7 +212,7 @@ fi
 
 cat >"$UNIT_DIR/jinesis-vllm.service" <<EOF
 [Unit]
-Description=Jinesis Qwen3-Next 80B NVFP4 vLLM service
+Description=Jinesis Qwen3.5 122B A10B NVFP4 vLLM service
 After=network-online.target
 Wants=network-online.target
 
@@ -214,7 +223,7 @@ Environment=HF_HOME=$HF_HOME
 Environment=HUGGINGFACE_HUB_CACHE=$HUGGINGFACE_HUB_CACHE
 Environment=HF_HUB_DOWNLOAD_TIMEOUT=120
 Environment=VLLM_API_KEY=$VLLM_API_KEY
-ExecStart=$VENV/bin/vllm serve $MODEL_ID --host 127.0.0.1 --port $PORT --api-key $VLLM_API_KEY --trust-remote-code --kv-cache-dtype fp8 --tensor-parallel-size 1 --max-model-len $MAX_MODEL_LEN --gpu-memory-utilization $GPU_MEMORY_UTILIZATION --enable-auto-tool-choice --tool-call-parser qwen3_coder --generation-config vllm --enable-chunked-prefill --enable-prefix-caching --max-num-seqs 4 --max-num-batched-tokens 8192
+ExecStart=$VENV/bin/vllm serve $MODEL_ID --host 127.0.0.1 --port $PORT --api-key $VLLM_API_KEY --trust-remote-code --quantization modelopt_fp4 --kv-cache-dtype fp8 --tensor-parallel-size 1 --max-model-len $MAX_MODEL_LEN --gpu-memory-utilization $GPU_MEMORY_UTILIZATION --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser qwen3_coder --generation-config vllm --enable-chunked-prefill --enable-prefix-caching --max-num-seqs 2 --max-num-batched-tokens 8192
 Restart=on-failure
 RestartSec=10
 TimeoutStartSec=20min
@@ -225,6 +234,7 @@ PrivateTmp=true
 [Install]
 WantedBy=default.target
 EOF
+chmod 600 "$UNIT_DIR/jinesis-vllm.service"
 
 systemctl --user disable --now jinesis-ollama.service >/dev/null 2>&1 || true
 systemctl --user daemon-reload
@@ -235,13 +245,21 @@ if [[ "$SKIP_START" == "yes" ]]; then
   exit 0
 fi
 
-systemctl --user enable --now jinesis-vllm.service
+systemctl --user enable jinesis-vllm.service
+# `enable --now` does not restart an already-active service after its unit is
+# replaced. Always restart so upgrades cannot leave the previous model serving.
+systemctl --user restart jinesis-vllm.service
 deadline=$((SECONDS + 900))
 printf 'Waiting up to %s for vLLM' "$STARTUP_TIMEOUT"
 while ((SECONDS < deadline)); do
-  if curl --fail --silent --show-error --max-time 5 \
-    -H "Authorization: Bearer $VLLM_API_KEY" \
-    "http://127.0.0.1:$PORT/v1/models" >/dev/null; then
+  models_response="$(
+    curl --fail --silent --show-error --max-time 5 \
+      -H "Authorization: Bearer $VLLM_API_KEY" \
+      "http://127.0.0.1:$PORT/v1/models" 2>/dev/null || true
+  )"
+  if [[ -n "$models_response" ]] && \
+    MODELS_RESPONSE="$models_response" EXPECTED_MODEL="$MODEL_ID" "$VENV/bin/python" -c \
+      'import json, os; payload = json.loads(os.environ["MODELS_RESPONSE"]); ids = {str(item.get("id", "")) for item in payload.get("data", [])}; raise SystemExit(0 if os.environ["EXPECTED_MODEL"] in ids else 1)'; then
     printf '\n'
     break
   fi
@@ -251,13 +269,35 @@ done
 ((SECONDS < deadline)) ||
   die "vLLM did not become ready; inspect: journalctl --user -u jinesis-vllm -n 200"
 
-privacy_payload='{"model":"'"$MODEL_ID"'","messages":[{"role":"system","content":"Classify locally. Return JSON only."},{"role":"user","content":"Return a generic classification."}],"temperature":0,"max_tokens":128,"response_format":{"type":"json_schema","json_schema":{"name":"privacy_classification","strict":true,"schema":{"type":"object","properties":{"classification":{"type":"string","enum":["generic","private","uncertain"]}},"required":["classification"],"additionalProperties":false}}}}'
+privacy_payload='{"model":"'"$MODEL_ID"'","chat_template_kwargs":{"enable_thinking":false},"messages":[{"role":"system","content":"Classify locally. Return JSON only."},{"role":"user","content":"Return a generic classification."}],"temperature":0,"max_tokens":128,"response_format":{"type":"json_schema","json_schema":{"name":"privacy_classification","strict":true,"schema":{"type":"object","properties":{"classification":{"type":"string","enum":["generic","private","uncertain"]}},"required":["classification"],"additionalProperties":false}}}}'
 curl --fail-with-body --silent --show-error --max-time 300 \
   -H "Authorization: Bearer $VLLM_API_KEY" \
   -H "Content-Type: application/json" \
   --data "$privacy_payload" \
   "http://127.0.0.1:$PORT/v1/chat/completions" >/dev/null ||
   die "JSON-schema privacy smoke test failed"
+
+tool_payload='{"model":"'"$MODEL_ID"'","messages":[{"role":"user","content":"Call adminbot_probe exactly once with item alpha."}],"tools":[{"type":"function","function":{"name":"adminbot_probe","description":"Return a test item status.","parameters":{"type":"object","properties":{"item":{"type":"string"}},"required":["item"],"additionalProperties":false}}}],"tool_choice":"required","temperature":0.6,"top_p":0.95,"max_tokens":8192}'
+tool_response="$(curl --fail-with-body --silent --show-error --max-time 300 \
+  -H "Authorization: Bearer $VLLM_API_KEY" \
+  -H "Content-Type: application/json" \
+  --data "$tool_payload" \
+  "http://127.0.0.1:$PORT/v1/chat/completions")" ||
+  die "structured tool-call request failed"
+TOOL_RESPONSE="$tool_response" "$VENV/bin/python" <<'PY'
+import json
+import os
+
+payload = json.loads(os.environ["TOOL_RESPONSE"])
+calls = payload.get("choices", [{}])[0].get("message", {}).get("tool_calls") or []
+if len(calls) != 1 or calls[0].get("function", {}).get("name") != "adminbot_probe":
+    raise SystemExit("vLLM did not return one structured adminbot_probe tool call")
+arguments = calls[0]["function"].get("arguments", {})
+if isinstance(arguments, str):
+    arguments = json.loads(arguments)
+if arguments.get("item") != "alpha":
+    raise SystemExit("vLLM returned incorrect structured tool arguments")
+PY
 
 if [[ "$DELETE_OLD_CHECKPOINT" == "yes" && "$OLD_MODEL_ID" != "$MODEL_ID" ]]; then
   printf 'Replacement passed smoke tests; deleting old checkpoint %s\n' "$OLD_MODEL_ID"
@@ -276,4 +316,4 @@ printf 'model=%s\n' "$MODEL_ID"
 printf 'gpu=%s\n' "$GPU"
 printf 'context=%s\n' "$MAX_MODEL_LEN"
 printf 'Privacy calls: temperature=0, thinking=false, JSON schema, <=1024 tokens.\n'
-printf 'Normal inference: non-thinking instruct mode at temperature 0.15.\n'
+printf 'Normal inference: Qwen reasoning mode with native structured tool calls.\n'

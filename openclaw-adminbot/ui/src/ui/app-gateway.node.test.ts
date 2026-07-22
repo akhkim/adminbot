@@ -280,7 +280,7 @@ describe("connectGateway", () => {
     });
   });
 
-  it("ignores stale client onGap callbacks after reconnect", () => {
+  it("ignores stale gaps and keeps the socket after a repeated active gap", () => {
     const host = createHost();
 
     connectGateway(host);
@@ -296,6 +296,14 @@ describe("connectGateway", () => {
     expect(gatewayClientInstances).toHaveLength(3);
     expect(secondClient.stop).toHaveBeenCalledTimes(1);
     expect(host.lastError).toBeNull();
+
+    const thirdClient = requireGatewayClient(2);
+    thirdClient.emitGap(24, 28);
+
+    expect(gatewayClientInstances).toHaveLength(3);
+    expect(thirdClient.stop).not.toHaveBeenCalled();
+    expect(host.lastError).toContain("Kept the connection open to avoid a reconnect loop");
+    expect(host.chatError).toBe(host.lastError);
   });
 
   it("lets hello-scoped composer state replace an unchanged provisional restore", () => {

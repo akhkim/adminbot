@@ -84,7 +84,7 @@ function createState(overrides: Partial<AppViewState> = {}): AppViewState {
     theme: "claw",
     themeMode: "dark",
     themeResolved: "dark",
-    themeOrder: ["claw", "knot", "dash"],
+    themeOrder: ["claw", "custom"],
     customThemeImportUrl: "",
     customThemeImportBusy: false,
     customThemeImportMessage: null,

@@ -153,8 +153,8 @@ EOF
 cat >"$UNIT_DIR/jinesis-adminbot-email.service" <<EOF
 [Unit]
 Description=Jinesis AdminBot hourly email processor
-After=network-online.target jinesis-adminbot.service
-Wants=network-online.target jinesis-adminbot.service
+After=network-online.target jinesis-adminbot.service jinesis-vllm.service
+Wants=network-online.target jinesis-adminbot.service jinesis-vllm.service
 
 [Service]
 Type=oneshot
@@ -169,21 +169,8 @@ NoNewPrivileges=true
 PrivateTmp=true
 EOF
 
-cat >"$UNIT_DIR/jinesis-adminbot-email.timer" <<'EOF'
-[Unit]
-Description=Run Jinesis AdminBot email processor hourly
-
-[Timer]
-OnCalendar=hourly
-Persistent=true
-RandomizedDelaySec=0
-AccuracySec=1s
-Unit=jinesis-adminbot-email.service
-
-[Install]
-WantedBy=timers.target
-EOF
-
+systemctl --user disable --now jinesis-adminbot-email.timer 2>/dev/null || true
+rm -f -- "$UNIT_DIR/jinesis-adminbot-email.timer"
 systemctl --user daemon-reload
 
 if [[ "$START_MODE" == "yes" ]]; then
@@ -199,17 +186,39 @@ if [[ "$START_MODE" == "yes" ]]; then
     die "OPENCLAW_GATEWAY_TOKEN is missing"
   [[ -n "${GOG_KEYRING_PASSWORD:-}" ]] ||
     die "GOG_KEYRING_PASSWORD is missing"
+  [[ -n "${ADMINBOT_LOCAL_BASE_URL:-}" ]] ||
+    die "ADMINBOT_LOCAL_BASE_URL is missing"
+  [[ -n "${ADMINBOT_LOCAL_MODEL:-}" ]] ||
+    die "ADMINBOT_LOCAL_MODEL is missing"
+  [[ -n "${VLLM_API_KEY:-}" ]] ||
+    die "VLLM_API_KEY is missing"
+  slack_mode="$("$NODE_BIN" -e '
+    const fs = require("node:fs");
+    const config = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const slack = config.channels?.slack;
+    if (slack?.enabled === true) process.stdout.write(slack.mode ?? "socket");
+  ' "$HOME/.openclaw/openclaw.json")"
+  if [[ -n "$slack_mode" ]]; then
+    [[ -n "${SLACK_BOT_TOKEN:-}" ]] ||
+      die "Slack is enabled but SLACK_BOT_TOKEN is missing from $ENV_FILE"
+    if [[ "$slack_mode" == "socket" ]]; then
+      [[ -n "${SLACK_APP_TOKEN:-}" ]] ||
+        die "Slack socket mode is enabled but SLACK_APP_TOKEN is missing from $ENV_FILE"
+    fi
+  fi
   "${GOG_BIN:-gog}" gmail labels list --account jinesis.adminbot@gmail.com --json --no-input >/dev/null ||
     die "gog authentication is not ready on Aurora"
+  curl --fail --silent --show-error --max-time 10 \
+    -H "Authorization: Bearer $VLLM_API_KEY" \
+    "${ADMINBOT_LOCAL_BASE_URL%/}/models" >/dev/null ||
+    die "AdminBot local model endpoint is not ready on Aurora"
 
   systemctl --user enable --now \
     jinesis-adminbot.service \
-    jinesis-openclaw-gateway.service \
-    jinesis-adminbot-email.timer
+    jinesis-openclaw-gateway.service
   systemctl --user --no-pager --full status \
     jinesis-adminbot.service \
-    jinesis-openclaw-gateway.service \
-    jinesis-adminbot-email.timer
+    jinesis-openclaw-gateway.service
 else
   printf 'units installed; services were not started\n'
 fi

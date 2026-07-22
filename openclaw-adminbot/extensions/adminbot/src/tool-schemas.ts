@@ -60,6 +60,8 @@ export const sensitiveInfoSchema = Type.Object(
 
 export const paperArtifactsSchema = Type.Object(
   {
+    conference: Type.Optional(Type.String()),
+    topic: Type.Optional(Type.String()),
     brainstorming_doc_url: Type.Optional(Type.String()),
     overleaf_view_url: Type.Optional(Type.String()),
     overleaf_edit_url: Type.Optional(Type.String()),

@@ -1,4 +1,4 @@
-﻿import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { AdminBotService, payloadHash } from "./service-core.js";
 
 function unwrap<T>(
@@ -185,6 +185,54 @@ describe("AdminBotService", () => {
     );
   });
 
+  it("removes a pending proposal while retaining rejected audit state", () => {
+    const service = new AdminBotService();
+    const proposal = unwrap(
+      service.createProposal({
+        type: "slack.send_message",
+        summary: "Send a test DM",
+        proposed_payload: { message: "hello" },
+      }),
+    );
+
+    const removed = unwrap(
+      service.removePending(proposal.id, { actor: "control-ui", note: "no longer needed" }),
+    );
+
+    expect(removed.status).toBe("rejected");
+    expect(unwrap(service.listPending()).proposals).toEqual([]);
+    expect(
+      service.approve(proposal.id, {
+        payload_hash: proposal.payload_hash,
+        approver_role: "pi",
+      }),
+    ).toEqual({ ok: false, status: 409, error: { message: "proposal is removed" } });
+    expect(service.listAuditEvents()).toContainEqual(
+      expect.objectContaining({
+        action_id: proposal.id,
+        type: "proposal.removed",
+        actor: "control-ui",
+        details: expect.objectContaining({ note: "no longer needed" }),
+      }),
+    );
+  });
+
+  it("removes an approved but unexecuted proposal", () => {
+    const service = new AdminBotService();
+    const proposal = unwrap(
+      service.createProposal({
+        type: "join_form.classify",
+        summary: "Classify test response",
+        proposed_payload: { responseId: "response-1" },
+      }),
+    );
+
+    expect(proposal.status).toBe("approved");
+    const removed = unwrap(service.removePending(proposal.id, { actor: "control-ui" }));
+    expect(removed.status).toBe("rejected");
+    expect(unwrap(service.listPending()).proposals).toEqual([]);
+  });
+
   it("hashes equivalent object payloads consistently", () => {
     expect(payloadHash({ b: 2, a: { y: true, x: "x" } })).toBe(
       payloadHash({ a: { x: "x", y: true }, b: 2 }),
@@ -199,9 +247,24 @@ describe("AdminBotService", () => {
         name: "Zhijing",
         email: "zhijing@example.test",
         privilege_level: "admin",
+        role: "Principal investigator",
+        status: "active",
+        research_branch: "Machine intelligence",
+        research_topics: ["reasoning", "alignment"],
+        projects: ["AdminBot", "Jinesis"],
+        hours_per_week: 40,
+        capacity_percent: 70,
+        affiliation: "Jinesis",
+        location: "Cambridge, MA",
+        timezone: "America/New_York",
       }),
     );
 
+    expect(member).toMatchObject({
+      research_branch: "Machine intelligence",
+      projects: ["AdminBot", "Jinesis"],
+      capacity_percent: 70,
+    });
     expect(member.access).toContainEqual({
       service: "slack",
       access: "admin",
@@ -209,6 +272,32 @@ describe("AdminBotService", () => {
     });
     expect(unwrap(service.listLabMembers()).members).toEqual([member]);
     expect(service.listAuditEvents().map((event) => event.type)).toContain("lab_member.upserted");
+  });
+
+  it("validates lab member workload and status fields", () => {
+    const service = new AdminBotService();
+
+    expect(
+      service.upsertLabMember({
+        id: "invalid-capacity",
+        name: "Invalid Capacity",
+        capacity_percent: 101,
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
+    expect(
+      service.upsertLabMember({
+        id: "invalid-hours",
+        name: "Invalid Hours",
+        hours_per_week: 169,
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
+    expect(
+      service.upsertLabMember({
+        id: "invalid-status",
+        name: "Invalid Status",
+        status: "away" as never,
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
   });
 
   it("defaults temporary lab member privilege to member through service settings", () => {
@@ -268,6 +357,32 @@ describe("AdminBotService", () => {
       timeline: expect.objectContaining({ progress_percent: 69 }),
     });
   });
+  it("deletes paper records and records an audit event", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertPaper({
+        id: "paper-delete",
+        title: "Paper Delete",
+        authors: ["alice"],
+        current_step: "submission",
+      }),
+    );
+
+    expect(unwrap(service.deletePaper("paper-delete"))).toEqual({
+      deleted: true,
+      paper_id: "paper-delete",
+    });
+    expect(unwrap(service.listPapers()).papers).toEqual([]);
+    expect(service.deletePaper("paper-delete")).toEqual({
+      ok: false,
+      status: 404,
+      error: { message: "paper not found: paper-delete" },
+    });
+    expect(service.listAuditEvents()).toContainEqual(
+      expect.objectContaining({ type: "paper.deleted", actor: "paper-delete" }),
+    );
+  });
+
   it("uses settings defaults for paper escalation", () => {
     const service = new AdminBotService();
     unwrap(

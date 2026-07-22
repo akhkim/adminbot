@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   authorizeClassification,
   formatTalkLatex,
-  studentReply,
+  resolveEmailAutomationSlackAccount,
   type EmailMessage,
 } from "../../scripts/adminbot-email-automation.js";
 import type { ModelClassification } from "../../scripts/adminbot-email-model.js";
+import type { OpenClawConfig } from "../../src/config/types.openclaw.js";
 
 const message = (overrides: Partial<EmailMessage> = {}): EmailMessage => ({
   id: "m1",
@@ -28,10 +29,8 @@ const classification = (overrides: Partial<ModelClassification> = {}): ModelClas
 });
 
 describe("adminbot email automation", () => {
-  it("accepts high-confidence student outreach and retains the safe fallback reply", () => {
+  it("accepts high-confidence student outreach for LLM-guided handling", () => {
     expect(authorizeClassification(message(), classification()).category).toBe("student_reachout");
-    expect(studentReply(message())).toContain("Hi Genis,");
-    expect(studentReply(message())).toContain("docs.google.com/forms");
   });
 
   it("requires the real sender and complete model extraction for onboarding", () => {
@@ -88,6 +87,33 @@ describe("adminbot email automation", () => {
         }),
       ).category,
     ).toBe("unknown");
+  });
+
+  it("resolves env-backed Slack SecretRefs before standalone token reads", async () => {
+    const cfg = {
+      channels: {
+        slack: {
+          accounts: {
+            default: {
+              botToken: { source: "env", provider: "default", id: "SLACK_BOT_TOKEN" },
+              userToken: { source: "env", provider: "default", id: "SLACK_USER_TOKEN" },
+            },
+          },
+        },
+      },
+    } as OpenClawConfig;
+
+    const account = await resolveEmailAutomationSlackAccount({
+      cfg,
+      env: {
+        ...process.env,
+        SLACK_BOT_TOKEN: "xoxb-resolved-bot-token",
+        SLACK_USER_TOKEN: "xoxp-resolved-user-token",
+      },
+    });
+
+    expect(account.botToken).toBe("xoxb-resolved-bot-token");
+    expect(account.userToken).toBe("xoxp-resolved-user-token");
   });
 
   it("formats the requested CV talk LaTex structure", () => {

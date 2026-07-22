@@ -25,7 +25,14 @@ describe("AdminBot mock service", () => {
     const baseUrl = `http://127.0.0.1:${address.port}`;
     try {
       const ui = await fetch(`${baseUrl}/adminbot`);
-      await expect(ui.text()).resolves.toContain("AdminBot Console");
+      const uiHtml = await ui.text();
+      expect(uiHtml).toContain("AdminBot Console");
+      expect(uiHtml).toContain("member-search");
+      expect(uiHtml).toContain("People intelligence");
+      expect(uiHtml).toContain("member-branch-filter");
+      expect(uiHtml).toContain("member-project-filter");
+      expect(uiHtml).toContain("member-paper-filter");
+      expect(uiHtml).toContain("data-delete-paper");
 
       const settings = await fetch(`${baseUrl}/settings`);
       await expect(settings.json()).resolves.toMatchObject({
@@ -36,13 +43,44 @@ describe("AdminBot mock service", () => {
       const member = await fetch(`${baseUrl}/lab/members/pat`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: "Pat" }),
+        body: JSON.stringify({
+          name: "Pat",
+          status: "active",
+          research_branch: "Human-centered AI",
+          projects: ["Project Atlas"],
+          capacity_percent: 80,
+        }),
       });
       await expect(member.json()).resolves.toMatchObject({
         id: "pat",
         name: "Pat",
         privilege_level: "member",
+        research_branch: "Human-centered AI",
+        projects: ["Project Atlas"],
+        capacity_percent: 80,
       });
+
+      const paper = await fetch(baseUrl + "/papers/paper-web", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: "Paper Web",
+          authors: ["pat"],
+          current_step: "submission",
+        }),
+      });
+      expect(paper.status).toBe(200);
+      await expect(paper.json()).resolves.toMatchObject({ id: "paper-web", title: "Paper Web" });
+
+      const deletedPaper = await fetch(baseUrl + "/papers/paper-web", { method: "DELETE" });
+      expect(deletedPaper.status).toBe(200);
+      await expect(deletedPaper.json()).resolves.toEqual({
+        deleted: true,
+        paper_id: "paper-web",
+      });
+
+      const missingPaper = await fetch(baseUrl + "/papers/paper-web", { method: "DELETE" });
+      expect(missingPaper.status).toBe(404);
 
       const sensitiveInfo = await fetch(`${baseUrl}/sensitive-info`);
       await expect(sensitiveInfo.json()).resolves.toMatchObject({

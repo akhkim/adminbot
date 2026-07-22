@@ -402,6 +402,7 @@ export const en: TranslationMap = {
   tabs: {
     agents: "Agents",
     adminbot: "Pending Actions",
+    adminbotReimbursements: "Reimbursements",
     adminbotSettings: "Settings",
     adminbotMembers: "Lab Members",
     adminbotPapers: "Active Papers",
@@ -432,6 +433,7 @@ export const en: TranslationMap = {
   subtitles: {
     agents: "Workspaces, tools, identities.",
     adminbot: "Approval queue and execution controls.",
+    adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
     adminbotSettings: "Lab defaults and escalation policy.",
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotPapers: "PaperPublish records and current steps.",

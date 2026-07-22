@@ -128,11 +128,7 @@ export type QuickSettingsProps = {
 // ── Theme options ──
 
 type ThemeOption = { id: ThemeName; label: string };
-const BUILTIN_THEME_OPTIONS: ThemeOption[] = [
-  { id: "claw", label: "Claw" },
-  { id: "knot", label: "Knot" },
-  { id: "dash", label: "Dash" },
-];
+const BUILTIN_THEME_OPTIONS: ThemeOption[] = [{ id: "claw", label: "Claw" }];
 
 const BORDER_RADIUS_STOPS: Array<{ value: BorderRadiusStop; label: string }> = [
   { value: 0, label: "None" },
@@ -623,29 +619,6 @@ function renderAppearanceCard(props: QuickSettingsProps) {
                   }}
                 >
                   ${opt.label}
-                </button>
-              `,
-            )}
-          </div>
-        </div>
-        <div class="qs-row">
-          <span class="qs-row__label">Mode</span>
-          <div class="qs-segmented">
-            ${(["light", "dark", "system"] as ThemeMode[]).map(
-              (mode) => html`
-                <button
-                  class="qs-segmented__btn ${mode === props.themeMode
-                    ? "qs-segmented__btn--active"
-                    : ""}"
-                  @click=${(e: Event) => {
-                    if (mode !== props.themeMode) {
-                      props.setThemeMode(mode, {
-                        element: (e.currentTarget as HTMLElement) ?? undefined,
-                      });
-                    }
-                  }}
-                >
-                  ${mode.charAt(0).toUpperCase() + mode.slice(1)}
                 </button>
               `,
             )}

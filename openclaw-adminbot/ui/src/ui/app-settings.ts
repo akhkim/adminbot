@@ -19,11 +19,7 @@ import {
   roundedControlUiDurationMs,
   scheduleControlUiTabVisibleTiming,
 } from "./control-ui-performance.ts";
-import {
-  loadAdminBot,
-  resolveAdminBotLoadMode,
-  type AdminBotHost,
-} from "./controllers/adminbot.ts";
+import { loadAdminBot, type AdminBotHost } from "./controllers/adminbot.ts";
 import { loadAgentFiles, type AgentFilesState } from "./controllers/agent-files.ts";
 import {
   loadAgentIdentities,
@@ -453,7 +449,7 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "adminbotMembers":
       case "adminbotPapers":
       case "adminbotNudges":
-        await loadAdminBot(app, resolveAdminBotLoadMode(app.password));
+        await loadAdminBot(app);
         break;
       case "activity":
         break;
@@ -578,7 +574,10 @@ export function detachThemeListener(host: SettingsHost) {
   host.systemThemeCleanup = null;
 }
 
-const BASE_RADII = { sm: 6, md: 10, lg: 14, xl: 20, full: 9999, default: 10 };
+// Must stay in sync with the --radius-* tokens in ui/src/styles/base.css: this writes them
+// as inline styles on <html>, which overrides the stylesheet. Drift here silently discards
+// the token values for the whole app.
+const BASE_RADII = { sm: 4, md: 6, lg: 8, xl: 12, full: 9999, default: 6 };
 
 export function applyBorderRadius(value: number) {
   if (typeof document === "undefined") {
@@ -609,10 +608,10 @@ export function applyResolvedTheme(host: SettingsHost, resolved: ResolvedTheme) 
     return;
   }
   const root = document.documentElement;
-  const themeMode = resolved.endsWith("light") ? "light" : "dark";
+  // Dark-only: every resolved theme ("dark" and the custom escape hatch) is a dark palette.
   root.dataset.theme = resolved;
-  root.dataset.themeMode = themeMode;
-  root.style.colorScheme = themeMode;
+  root.dataset.themeMode = "dark";
+  root.style.colorScheme = "dark";
 }
 
 function syncSystemThemeListener(host: SettingsHost) {

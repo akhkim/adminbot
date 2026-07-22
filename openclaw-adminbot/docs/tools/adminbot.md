@@ -257,6 +257,7 @@ the plugin tools even under the minimal profile.
           "adminbot-recommendation-letters",
           "adminbot-social-posts",
           "adminbot-calendar-email",
+          "adminbot-email-automation",
           "adminbot-paper-publish"
         ],
         "tools": {
@@ -265,6 +266,7 @@ the plugin tools even under the minimal profile.
           "alsoAllow": [
             "message",
             "adminbot",
+            "adminbot_run_email_automation",
             "adminbot_reason",
             "adminbot_propose_action",
             "adminbot_propose_candidate_decision",

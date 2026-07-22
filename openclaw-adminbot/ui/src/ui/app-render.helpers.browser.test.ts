@@ -178,29 +178,13 @@ describe("chat header controls (browser)", () => {
     expect(container.querySelector('[data-chat-provider-usage="true"]')).toBeNull();
   });
 
-  it("renders explicit hover tooltip metadata for the color mode buttons", async () => {
+  it("renders no color mode picker (dark-only, design spec §2)", async () => {
     const container = document.createElement("div");
     render(renderTopbarThemeModeToggle(createState({ themeMode: "system" })), container);
     await Promise.resolve();
 
-    const buttons = Array.from(
-      container.querySelectorAll<HTMLButtonElement>(".topbar-theme-mode__btn[data-tooltip]"),
-    );
-
-    expect(buttons).toHaveLength(3);
-
-    const labels = buttons.map((button) => button.getAttribute("data-tooltip"));
-    expect(labels).toEqual([
-      t("common.colorModeOption", { mode: t("common.system") }),
-      t("common.colorModeOption", { mode: t("common.light") }),
-      t("common.colorModeOption", { mode: t("common.dark") }),
-    ]);
-
-    for (const button of buttons) {
-      expect(button.getAttribute("title")).toBe(button.getAttribute("data-tooltip"));
-      expect(button.getAttribute("aria-label")).toBe(button.getAttribute("data-tooltip"));
-    }
-    expect(buttons[0]?.classList.contains("topbar-theme-mode__btn--active")).toBe(true);
+    expect(container.querySelectorAll(".topbar-theme-mode__btn")).toHaveLength(0);
+    expect(container.textContent?.trim()).toBe("");
   });
 
   it("renders the cron session filter in the mobile dropdown controls", async () => {

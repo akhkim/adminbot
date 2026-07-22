@@ -74,11 +74,12 @@ import {
   type SessionsState,
 } from "./controllers/sessions.ts";
 import {
+  GatewayBrowserClient,
+  isGatewayClientStoppedError,
   resolveGatewayErrorDetailCode,
   type GatewayEventFrame,
   type GatewayHelloOk,
 } from "./gateway.ts";
-import { GatewayBrowserClient } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
 import {
   areUiSessionKeysEquivalent,
@@ -181,6 +182,7 @@ type GatewayHostWithSideResults = GatewayHost & {
 };
 
 const SESSIONS_CHANGED_RELOAD_DEBOUNCE_MS = 5_000;
+const SEQ_GAP_RECONNECT_COOLDOWN_MS = 30_000;
 const DEFERRED_SESSION_MESSAGE_REPLAY_POLL_MS = 250;
 const DEFERRED_SESSION_MESSAGE_REPLAY_TIMEOUT_MS = 10_000;
 const UPDATE_RESTART_VERIFICATION_POLL_MS = 250;
@@ -193,6 +195,7 @@ const PENDING_UPDATE_HANDOFF_REASONS = new Set([
   UPDATE_HANDOFF_STARTED_REASON,
   UPDATE_RESTART_HEALTH_PENDING_REASON,
 ]);
+const lastSeqGapReconnectAt = new WeakMap<GatewayHost, number>();
 
 function enqueueApprovalRequest(host: GatewayHost, entry: ExecApprovalRequest | null) {
   if (!entry) {
@@ -756,7 +759,16 @@ async function loadAgentsThenRefreshActiveTabForClient(
   if (host.client !== client) {
     return;
   }
-  await loadAgentsThenRefreshActiveTab(host);
+  try {
+    await loadAgentsThenRefreshActiveTab(host);
+  } catch (err) {
+    // Client replacement intentionally cancels old startup RPCs. The replacement
+    // owns the next refresh, so surfacing this cancellation as a login failure is stale.
+    if (host.client !== client && isGatewayClientStoppedError(err)) {
+      return;
+    }
+    throw err;
+  }
 }
 
 function scheduleDeferredStartupWork(callback: () => void) {
@@ -770,6 +782,9 @@ function scheduleDeferredStartupWork(callback: () => void) {
 export function connectGateway(host: GatewayHost, options?: ConnectGatewayOptions) {
   const shutdownHost = host as GatewayHostWithShutdownMessage;
   const reconnectReason = options?.reason ?? "initial";
+  if (reconnectReason === "initial") {
+    lastSeqGapReconnectAt.delete(host);
+  }
   shutdownHost.pendingShutdownMessage = null;
   shutdownHost.resumeChatQueueAfterReconnect = false;
   clearSessionsChangedReloadTimer(host);
@@ -963,6 +978,18 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
       if (host.client !== client) {
         return;
       }
+      const now = Date.now();
+      const previousReconnectAt = lastSeqGapReconnectAt.get(host);
+      if (
+        previousReconnectAt !== undefined &&
+        now - previousReconnectAt < SEQ_GAP_RECONNECT_COOLDOWN_MS
+      ) {
+        host.lastError = `Live event gap detected (expected seq ${expected}, got ${received}). Kept the connection open to avoid a reconnect loop; refresh if data looks stale.`;
+        host.lastErrorCode = null;
+        host.chatError = host.lastError;
+        return;
+      }
+      lastSeqGapReconnectAt.set(host, now);
       host.lastError = `event gap detected (expected seq ${expected}, got ${received}); reconnecting`;
       host.lastErrorCode = null;
       connectGateway(host, { reason: "seq-gap" });

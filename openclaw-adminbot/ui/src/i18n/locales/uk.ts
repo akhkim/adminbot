@@ -395,6 +395,7 @@ export const uk: TranslationMap = {
   nav: {
     chat: "Чат",
     control: "Керування",
+    adminbot: "AdminBot",
     agent: "Агент",
     settings: "Налаштування",
     expand: "Розгорнути бічну панель",
@@ -403,6 +404,12 @@ export const uk: TranslationMap = {
   },
   tabs: {
     agents: "Агенти",
+    adminbot: "Pending Actions",
+    adminbotReimbursements: "Reimbursements",
+    adminbotSettings: "Settings",
+    adminbotMembers: "Lab Members",
+    adminbotPapers: "Active Papers",
+    adminbotNudges: "Paper Nudges",
     activity: "Активність",
     overview: "Огляд",
     workboard: "Робоча дошка",
@@ -428,6 +435,12 @@ export const uk: TranslationMap = {
   },
   subtitles: {
     agents: "Робочі простори, інструменти, ідентичності.",
+    adminbot: "Approval queue and execution controls.",
+    adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
+    adminbotSettings: "Lab defaults and escalation policy.",
+    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotNudges: "Due reminders and professor escalations.",
     activity: "Підсумки активності інструментів, локальні для браузера.",
     overview: "Стан, точки входу, справність.",
     workboard: "Черга завдань агента та передавання сеансів.",
@@ -1696,8 +1709,6 @@ export const uk: TranslationMap = {
     },
     jobDetail: {
       system: "Система",
-      command: "Команда",
-      cwd: "CWD",
       prompt: "Запит",
       delivery: "Доставка",
       agent: "Агент",

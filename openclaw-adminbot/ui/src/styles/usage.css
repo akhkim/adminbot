@@ -47,7 +47,7 @@
   position: sticky;
   top: 16px;
   z-index: 4;
-  box-shadow: var(--shadow-md);
+  border-bottom: 1px solid var(--border-strong);
 }
 
 .usage-header {
@@ -190,7 +190,6 @@
 .chart-toggle .toggle-btn.active {
   background: var(--accent-subtle);
   border: none;
-  box-shadow: 0 1px 2px color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .usage-date-range {
@@ -235,8 +234,8 @@
 .usage-filters-inline select:focus-visible,
 .usage-filters-inline input[type="text"]:focus-visible {
   outline: none;
-  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
 }
 
 .usage-separator,
@@ -296,13 +295,11 @@
   background: var(--accent);
   color: var(--primary-foreground);
   font-weight: 600;
-  box-shadow: 0 1px 3px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .usage-action-btn.usage-primary-btn:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
-  box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 25%, transparent);
 }
 
 .chart-toggle .toggle-btn.active {
@@ -394,7 +391,6 @@ details.usage-filter-select summary::-webkit-details-marker,
   font-weight: 500;
   transition:
     border-color 0.18s var(--ease-out),
-    box-shadow 0.18s var(--ease-out),
     background 0.18s var(--ease-out);
 }
 
@@ -404,8 +400,7 @@ details.usage-filter-select summary::-webkit-details-marker,
 }
 
 .usage-filter-select[open] summary {
-  border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 8%, transparent);
+  border-color: var(--accent);
 }
 
 .usage-filter-badge {
@@ -570,8 +565,9 @@ details.usage-filter-select summary::-webkit-details-marker,
 }
 
 .usage-empty-state__title {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: var(--control-ui-text-2xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tighter);
   color: var(--text-strong);
 }
 
@@ -638,14 +634,9 @@ details.usage-filter-select summary::-webkit-details-marker,
   align-content: start;
   grid-auto-rows: min-content;
   min-height: 132px;
-  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--card) 92%, var(--bg-elevated)) 0%,
-    color-mix(in srgb, var(--card) 84%, var(--bg-muted)) 100%
-  );
-  box-shadow: var(--shadow-sm);
+  background: var(--card);
 }
 
 .usage-summary-card--hero,
@@ -662,17 +653,7 @@ details.usage-filter-select summary::-webkit-details-marker,
 }
 
 .usage-summary-card--throughput {
-  background:
-    radial-gradient(
-      circle at top right,
-      color-mix(in srgb, var(--accent) 14%, transparent) 0%,
-      transparent 42%
-    ),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--card) 92%, var(--bg-elevated)) 0%,
-      color-mix(in srgb, var(--card) 84%, var(--bg-muted)) 100%
-    );
+  background: var(--card);
 }
 
 .usage-summary-title,
@@ -682,28 +663,30 @@ details.usage-filter-select summary::-webkit-details-marker,
 .sessions-sort span,
 .cost-breakdown-header,
 .usage-mosaic-section-title {
-  font-size: 12px; /* was 11px */
+  font-size: var(--control-ui-text-xs);
   font-weight: 600;
   color: var(--muted);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: var(--tracking-label);
 }
 
 .usage-summary-value,
 .session-summary-value {
-  font-size: clamp(1.4rem, 2vw, 1.85rem);
+  font-size: var(--control-ui-text-2xl);
+  font-weight: 600;
   line-height: 1.1;
+  letter-spacing: var(--tracking-tighter);
   color: var(--text-strong);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
 .usage-summary-card--hero .usage-summary-value {
-  font-size: clamp(1.8rem, 2.5vw, 2.4rem);
+  font-size: calc(var(--control-ui-text-2xl) * 1.2);
 }
 
 .usage-summary-value--compact {
-  font-size: clamp(1.15rem, 1.5vw, 1.5rem);
+  font-size: var(--control-ui-text-xl);
   line-height: 1.15;
 }
 
@@ -765,14 +748,11 @@ details.usage-filter-select summary::-webkit-details-marker,
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--card);
-  transition:
-    border-color 0.18s var(--ease-out),
-    box-shadow 0.18s var(--ease-out);
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
 .usage-insight-card:hover {
   border-color: var(--border-strong);
-  box-shadow: var(--shadow-sm);
 }
 
 .usage-insight-card--wide {
@@ -794,8 +774,15 @@ details.usage-filter-select summary::-webkit-details-marker,
   gap: 12px;
   align-items: baseline;
   padding: 8px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
-  font-size: 13px;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--control-ui-text-md);
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.usage-list-item:hover,
+.usage-error-row:hover,
+.context-breakdown-item:hover {
+  background: var(--bg-hover);
 }
 
 .context-breakdown-item .mono {
@@ -829,8 +816,9 @@ details.usage-filter-select summary::-webkit-details-marker,
 }
 
 .usage-error-rate {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tighter);
   color: var(--danger);
   font-variant-numeric: tabular-nums;
 }
@@ -863,12 +851,13 @@ details.usage-filter-select summary::-webkit-details-marker,
 
 .usage-mosaic-title,
 .session-detail-title {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
 }
 
 .usage-mosaic-total {
-  font-size: 13px;
+  font-size: var(--control-ui-text-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
@@ -917,9 +906,11 @@ details.usage-filter-select summary::-webkit-details-marker,
 }
 
 .usage-daypart-value {
-  font-size: 15px;
-  font-weight: 700;
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tighter);
   color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
 }
 
 .usage-hour-grid {
@@ -931,20 +922,16 @@ details.usage-filter-select summary::-webkit-details-marker,
 .usage-hour-cell {
   min-height: 46px;
   cursor: pointer;
-  transition:
-    transform 0.18s var(--ease-out),
-    border-color 0.18s var(--ease-out),
-    box-shadow 0.18s var(--ease-out);
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
 .usage-hour-cell:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
+  border-color: var(--accent);
 }
 
 .usage-hour-cell.selected {
-  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
+  border-color: var(--accent);
+  background: var(--accent-subtle);
 }
 
 .usage-hour-labels {
@@ -1018,8 +1005,8 @@ details.usage-filter-select summary::-webkit-details-marker,
 }
 
 .daily-bar-wrapper.selected .daily-bar {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 18%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  border-color: var(--accent);
+  background: var(--accent);
 }
 
 .daily-bar {
@@ -1027,14 +1014,10 @@ details.usage-filter-select summary::-webkit-details-marker,
   min-height: 6px;
   border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border));
   border-radius: var(--radius-md) var(--radius-md) var(--radius-sm) var(--radius-sm);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent) 82%, white 6%),
-    color-mix(in srgb, var(--accent) 52%, var(--bg-muted))
-  );
+  background: color-mix(in srgb, var(--accent) 62%, var(--bg-muted));
   transition:
-    transform 0.18s var(--ease-out),
-    box-shadow 0.18s var(--ease-out);
+    transform var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
 }
 
 .daily-bar-wrapper:hover .daily-bar {
@@ -1244,23 +1227,20 @@ details.usage-filter-select summary::-webkit-details-marker,
   padding: 12px;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--card) 86%, var(--bg-muted));
+  background: var(--card);
   cursor: pointer;
   transition:
-    transform 0.18s var(--ease-out),
-    border-color 0.18s var(--ease-out),
-    box-shadow 0.18s var(--ease-out);
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
 }
 
 .session-bar-row:hover {
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 22%, var(--border));
-  box-shadow: 0 8px 18px color-mix(in srgb, black 12%, transparent);
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
 }
 
 .session-bar-row.selected {
-  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: var(--accent);
 }
 
 .session-bar-label,
@@ -1289,8 +1269,8 @@ details.usage-filter-select summary::-webkit-details-marker,
 }
 
 .session-bar-value {
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
   color: var(--text-strong);
 }
 
@@ -1564,25 +1544,6 @@ details.usage-filter-select summary::-webkit-details-marker,
   background: color-mix(in srgb, var(--accent) 8%, var(--card));
   border: 1px solid color-mix(in srgb, var(--accent) 16%, var(--border));
   font-size: 12px; /* was 11px */
-}
-
-:root[data-theme-mode="light"] .usage-daypart-cell,
-:root[data-theme-mode="light"] .usage-hour-cell {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent);
-}
-
-:root[data-theme-mode="light"] .daily-bar-tooltip,
-:root[data-theme-mode="light"] .usage-filter-popover,
-:root[data-theme-mode="light"] .usage-export-popover {
-  box-shadow: var(--shadow-md);
-}
-
-:root[data-theme-mode="light"] .session-bar-row,
-:root[data-theme-mode="light"] .usage-insight-card,
-:root[data-theme-mode="light"] .session-timeseries-compact,
-:root[data-theme-mode="light"] .context-details-panel,
-:root[data-theme-mode="light"] .session-logs-compact {
-  background: var(--card);
 }
 
 @container (min-width: 1400px) {

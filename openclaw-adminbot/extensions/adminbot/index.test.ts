@@ -27,6 +27,7 @@ describe("adminbot plugin metadata", () => {
       "adminbot-access-invites",
       "adminbot-calendar-email",
       "adminbot-candidate-workflow",
+      "adminbot-email-automation",
       "adminbot-join-form-triage",
       "adminbot-linkedin-from-twitter",
       "adminbot-paper-publish",
@@ -42,7 +43,24 @@ describe("adminbot plugin metadata", () => {
     expect(orchestrator).toContain("adminbot_propose_slack_message");
   });
 
-  it("shows the concrete action summary in approval confirmations", async () => {
+  it("declares every registered agent tool in the manifest contract", () => {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(packageRoot, "openclaw.plugin.json"), "utf8"),
+    ) as { contracts?: { tools?: string[] } };
+    const captured = createCapturedPluginRegistration({ id: "adminbot" });
+
+    adminbotPlugin.register(captured.api);
+
+    expect(new Set(manifest.contracts?.tools)).toEqual(
+      new Set(captured.tools.map((tool) => tool.name)),
+    );
+    expect(manifest.contracts?.tools).toContain("adminbot_run_email_automation");
+    expect(manifest.contracts?.tools).toContain("adminbot_reason");
+    expect(manifest.contracts?.tools).toContain("adminbot_list_lab_members");
+    expect(manifest.contracts?.tools).toContain("adminbot_list_papers");
+  });
+
+  it("shows immutable action identifiers without requiring display-only input", async () => {
     const captured = createCapturedPluginRegistration({ id: "adminbot" });
     const on = vi.fn();
     captured.api.on = on as typeof captured.api.on;
@@ -64,7 +82,6 @@ describe("adminbot plugin metadata", () => {
           params: {
             actionId: "act_9aeae1fd-40d1-406d-8433-5739e6e65dd3",
             payloadHash: "34a5bd8cf28d0000",
-            actionSummary: "Send email to xxx@gmail.com",
           },
           toolCallId: "call-1",
         },
@@ -74,7 +91,57 @@ describe("adminbot plugin metadata", () => {
       requireApproval: expect.objectContaining({
         title: "Approve AdminBot action",
         description:
-          "Approve AdminBot action: Send email to xxx@gmail.com. Action id act_9aeae1fd-40d1-406d-8433-5739e6e65dd3; payload hash 34a5bd8cf28d.",
+          "Approve AdminBot action act_9aeae1fd-40d1-406d-8433-5739e6e65dd3; payload hash 34a5bd8cf28d.",
+      }),
+    });
+
+    await expect(
+      handler(
+        {
+          toolName: "adminbot_approve_action",
+          params: {
+            actionId: "act_9aeae1fd-40d1-406d-8433-5739e6e65dd3",
+            payloadHash: "34a5bd8cf28d0000",
+            controlUiConfirmed: true,
+          },
+          toolCallId: "rpc-dashboard-1",
+        },
+        { agentId: "adminbot", sessionKey: "session-1" },
+      ),
+    ).resolves.toBeUndefined();
+
+    await expect(
+      handler(
+        {
+          toolName: "adminbot_remove_pending_action",
+          params: {
+            actionId: "act_9aeae1fd-40d1-406d-8433-5739e6e65dd3",
+            controlUiConfirmed: true,
+          },
+          toolCallId: "model-call-3",
+        },
+        { agentId: "adminbot", sessionKey: "session-1" },
+      ),
+    ).resolves.toEqual({
+      requireApproval: expect.objectContaining({
+        title: "Remove pending AdminBot action",
+      }),
+    });
+
+    await expect(
+      handler(
+        {
+          toolName: "adminbot_execute_approved_action",
+          params: { actionId: "act_9aeae1fd-40d1-406d-8433-5739e6e65dd3" },
+          toolCallId: "call-2",
+        },
+        { agentId: "adminbot", sessionKey: "session-1" },
+      ),
+    ).resolves.toEqual({
+      requireApproval: expect.objectContaining({
+        title: "Execute AdminBot action",
+        description:
+          "Execute AdminBot action act_9aeae1fd-40d1-406d-8433-5739e6e65dd3. This can trigger AdminBot connector side effects, so OpenClaw waits for explicit user confirmation every time.",
       }),
     });
   });

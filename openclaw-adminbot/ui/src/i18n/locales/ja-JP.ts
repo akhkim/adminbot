@@ -397,6 +397,7 @@ export const ja_JP: TranslationMap = {
   nav: {
     chat: "チャット",
     control: "コントロール",
+    adminbot: "AdminBot",
     agent: "エージェント",
     settings: "設定",
     expand: "サイドバーを展開",
@@ -405,6 +406,12 @@ export const ja_JP: TranslationMap = {
   },
   tabs: {
     agents: "エージェント",
+    adminbot: "Pending Actions",
+    adminbotReimbursements: "Reimbursements",
+    adminbotSettings: "Settings",
+    adminbotMembers: "Lab Members",
+    adminbotPapers: "Active Papers",
+    adminbotNudges: "Paper Nudges",
     activity: "アクティビティ",
     overview: "概要",
     workboard: "ワークボード",
@@ -430,6 +437,12 @@ export const ja_JP: TranslationMap = {
   },
   subtitles: {
     agents: "ワークスペース、ツール、ID。",
+    adminbot: "Approval queue and execution controls.",
+    adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
+    adminbotSettings: "Lab defaults and escalation policy.",
+    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotNudges: "Due reminders and professor escalations.",
     activity: "ブラウザー内のツールアクティビティ概要。",
     overview: "ステータス、エントリーポイント、健全性。",
     workboard: "エージェントの作業キューとセッションの引き継ぎ。",
@@ -1698,8 +1711,6 @@ export const ja_JP: TranslationMap = {
     },
     jobDetail: {
       system: "システム",
-      command: "コマンド",
-      cwd: "CWD",
       prompt: "プロンプト",
       delivery: "配信",
       agent: "エージェント",

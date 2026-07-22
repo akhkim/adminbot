@@ -8,11 +8,15 @@ import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import { getSlackWriteClient, resolveSlackAccount } from "../extensions/slack/api.js";
 import { loadConfig } from "../src/config/config.js";
+import type { OpenClawConfig } from "../src/config/types.openclaw.js";
+import { resolveSecretInputString } from "../src/secrets/resolve-secret-input-string.js";
 import { downloadLinkedDriveFiles } from "./adminbot-drive-download.js";
 import {
   AdminBotEmailModel,
   gmailOneHourQuery,
+  type EmailReplyPurpose,
   type ModelClassification,
+  type ModelEmailDraft,
 } from "./adminbot-email-model.js";
 
 const execFileAsync = promisify(execFile);
@@ -59,6 +63,23 @@ type TalkEntry = {
 };
 
 type CommandResult = { stdout: string; stderr: string };
+
+export type EmailAutomationSummary = {
+  found: number;
+  completed: number;
+  failed: number;
+  needs_review: number;
+  skipped: number;
+  errors: string[];
+};
+
+type GuidedDraftRequest = {
+  purpose: EmailReplyPurpose;
+  recipientName?: string;
+  guidance: string;
+  requiredFacts: string[];
+  requiredVerbatim?: string[];
+};
 
 function loadDotEnv(filePath: string): void {
   if (!fs.existsSync(filePath)) return;
@@ -206,47 +227,38 @@ export function authorizeClassification(
   return classification;
 }
 
-export function studentReply(message: EmailMessage): string {
-  return `Hi ${firstName(message)},
-
-Thank you for reaching out! Your interests look relevant to our research. I usually match students to projects through the application form on my personal website's Openings page:
-
-${APPLICATION_FORM}
-
-You're welcome to fill out the form, and I'll get in touch when there is a suitable project based on your description of your interests and skills.
-
-Looking forward to seeing your application!
-
-Best,
-Zhijing`;
+async function draftGuidedEmail(
+  message: EmailMessage,
+  model: AdminBotEmailModel,
+  request: GuidedDraftRequest,
+): Promise<ModelEmailDraft> {
+  const draft = await model.draft(message, {
+    purpose: request.purpose,
+    recipientName: request.recipientName,
+    guidance: request.guidance,
+    requiredFacts: request.requiredFacts,
+  });
+  const allowedText = request.requiredFacts.join("\n");
+  for (const value of request.requiredVerbatim ?? []) {
+    if (!draft.body.includes(value)) {
+      throw new Error(`generated ${request.purpose} email omitted required text: ${value}`);
+    }
+  }
+  for (const url of draft.body.match(/https?:\/\/[^\s)>]+/gu) ?? []) {
+    if (!allowedText.includes(url)) {
+      throw new Error(`generated ${request.purpose} email introduced an unapproved link`);
+    }
+  }
+  for (const email of allEmailAddresses(draft.body)) {
+    if (!allowedText.toLowerCase().includes(email)) {
+      throw new Error(`generated ${request.purpose} email introduced an unapproved address`);
+    }
+  }
+  if (!draft.body.trimEnd().endsWith("Zhijing")) {
+    throw new Error(`generated ${request.purpose} email omitted the required sender signature`);
+  }
+  return draft;
 }
-
-export function directOnboardingEmail(name?: string): string {
-  return `Hi ${name?.trim() || "there"},
-
-Welcome to the Jinesis AI Lab! Please complete the following steps:
-
-1. Create a @cs.toronto.edu email through ${DCS_FORM}
-2. Reply to this email with your newly created @cs.toronto.edu email
-3. Join the Slack workspace through the invitation email that will follow
-
-We will also add you to the lab calendar and the other lab services as they become available.
-
-Best,
-Zhijing`;
-}
-
-export function declineEmail(name?: string): string {
-  return `Hi ${name?.trim() || "there"},
-
-Thank you very much for your interest and for taking the time to speak with us. Unfortunately, we could not find a strong fit between your expertise and the projects currently underway in the lab.
-
-I'm sorry that we cannot offer a position at this time, and I wish you the very best in finding another opportunity.
-
-Best,
-Zhijing`;
-}
-
 class StateStore {
   readonly db: DatabaseSync;
 
@@ -599,16 +611,52 @@ async function prepareReimbursement(
     `${message.subject}\n${message.body}`,
     directory,
   );
-  const supportingFiles = [...attachments, ...driveFiles];
+  const supportingFiles = [...new Set([...attachments, ...driveFiles])];
   const extracted = await extractText(supportingFiles);
   const data = await model.reimbursement(message, extracted);
-  if (!data.claimant_name || !data.purpose || !data.expenses.length) {
+  const missing = [
+    ["claimant name", data.claimant_name],
+    ["claimant email", data.claimant_email],
+    ["claimant address", data.claimant_address],
+    ["claimant title", data.claimant_title],
+    ["travel period", data.travel_period || data.trip_dates],
+    ["trip title", data.trip_title],
+    ["trip location", data.trip_location],
+    ["purpose", data.purpose],
+  ]
+    .filter(([, value]) => !String(value ?? "").trim())
+    .map(([label]) => label);
+  if (!data.expenses.length || data.expenses.every((expense) => expense.amount === 0)) {
+    missing.push("at least one non-zero expense");
+  }
+  const requestedCurrency =
+    data.currency === "OTHER" ? data.other_currency?.trim().toUpperCase() : data.currency;
+  if (!requestedCurrency) {
+    missing.push("requested reimbursement currency");
+  }
+  if (missing.length) {
+    throw new Error(`reimbursement requires manual review; missing ${missing.join(", ")}`);
+  }
+  if (data.expenses.length > 30) {
     throw new Error(
-      "reimbursement email does not contain enough claimant, purpose, and expense information",
+      "reimbursement requires manual review; the Compute Expense Form supports at most 30 expense rows",
     );
   }
+  const mismatchedCurrencies = data.expenses
+    .map((expense) => expense.currency?.trim().toUpperCase())
+    .filter((currency): currency is string => Boolean(currency && currency !== requestedCurrency));
+  if (mismatchedCurrencies.length) {
+    throw new Error(
+      `reimbursement requires manual review; expense amounts must be converted to ${requestedCurrency} before the forms are filled`,
+    );
+  }
+  const fillData = {
+    ...data,
+    prepared_date: new Date().toISOString().slice(0, 10),
+    supporting_files: supportingFiles.map((file) => path.basename(file)),
+  };
   const input = path.join(directory, "reimbursement.json");
-  fs.writeFileSync(input, JSON.stringify(data, null, 2));
+  fs.writeFileSync(input, JSON.stringify(fillData, null, 2));
   const helper = path.join(
     path.dirname(new URL(import.meta.url).pathname),
     "adminbot-reimbursement-from-email.py",
@@ -620,8 +668,48 @@ async function prepareReimbursement(
   return [...output.files, ...supportingFiles];
 }
 
+const SLACK_SECRET_FIELDS = ["botToken", "appToken", "userToken", "signingSecret"] as const;
+
+async function resolveSlackSecretRefs(
+  sourceConfig: OpenClawConfig,
+  env: NodeJS.ProcessEnv,
+): Promise<OpenClawConfig> {
+  const resolvedConfig = structuredClone(sourceConfig);
+  const slack = resolvedConfig.channels?.slack;
+  if (!slack) return resolvedConfig;
+
+  const entries: Array<Record<string, unknown>> = [
+    slack as Record<string, unknown>,
+    ...Object.values(slack.accounts ?? {}).map((account) => account as Record<string, unknown>),
+  ];
+  for (const entry of entries) {
+    for (const field of SLACK_SECRET_FIELDS) {
+      if (entry[field] === undefined) continue;
+      const value = await resolveSecretInputString({
+        config: sourceConfig,
+        value: entry[field],
+        env,
+      });
+      if (value) entry[field] = value;
+      else delete entry[field];
+    }
+  }
+  return resolvedConfig;
+}
+
+export async function resolveEmailAutomationSlackAccount(
+  params: {
+    cfg?: OpenClawConfig;
+    env?: NodeJS.ProcessEnv;
+  } = {},
+) {
+  const sourceConfig = params.cfg ?? loadConfig({ skipPluginValidation: true });
+  const resolvedConfig = await resolveSlackSecretRefs(sourceConfig, params.env ?? process.env);
+  return resolveSlackAccount({ cfg: resolvedConfig });
+}
+
 async function inviteTrial(email: string): Promise<unknown> {
-  const account = resolveSlackAccount({ cfg: loadConfig({ skipPluginValidation: true }) });
+  const account = await resolveEmailAutomationSlackAccount();
   if (!account.botToken) throw new Error("Slack bot token is not configured");
   return getSlackWriteClient(account.botToken).apiCall("conversations.inviteShared", {
     channel: SLACK_CHANNEL,
@@ -631,7 +719,7 @@ async function inviteTrial(email: string): Promise<unknown> {
 }
 
 async function inviteFullMember(email: string): Promise<unknown> {
-  const account = resolveSlackAccount({ cfg: loadConfig({ skipPluginValidation: true }) });
+  const account = await resolveEmailAutomationSlackAccount();
   if (!account.userToken) throw new Error("Slack user token is required for admin.users.invite");
   const client = getSlackWriteClient(account.userToken);
   const auth = await client.auth.test();
@@ -663,62 +751,104 @@ async function processMessage(
   state: StateStore,
   google: GoogleClient,
   model: AdminBotEmailModel,
-): Promise<void> {
-  if (!state.begin(message, classification)) return;
+): Promise<boolean> {
+  if (!state.begin(message, classification)) return false;
   try {
     if (classification.category === "unknown") {
       state.finish(message.id, "needs_review", classification.reason);
-      return;
+      return true;
     }
     if (classification.category === "student_reachout") {
-      await state.effect(message.id, "student_reply", () =>
-        google.reply(message.id, studentReply(message)),
-      );
+      const draft = await draftGuidedEmail(message, model, {
+        purpose: "student_outreach",
+        recipientName: firstName(message),
+        guidance:
+          "Acknowledge specific stated interests, explain that project matching happens through the application form, and invite an application without promising a position.",
+        requiredFacts: [
+          `The application form is ${APPLICATION_FORM}.`,
+          "Submitting the form lets the lab match interests and skills to suitable projects.",
+        ],
+        requiredVerbatim: [APPLICATION_FORM],
+      });
+      await state.effect(message.id, "student_reply", () => google.reply(message.id, draft.body));
     } else if (classification.category === "onboarding_instruction") {
       const email = classification.candidateEmail;
-      if (!email || !classification.decision)
+      if (!email || !classification.decision) {
         throw new Error("trusted onboarding email is missing a candidate email or decision");
+      }
       if (classification.decision === "trial") {
         await state.effect(message.id, "slack_connect", () => inviteTrial(email));
         await state.effect(message.id, "calendar_reader", () => google.addCalendarReader(email));
       } else if (classification.decision === "direct") {
+        const draft = await draftGuidedEmail(message, model, {
+          purpose: "direct_onboarding",
+          recipientName: classification.candidateName ?? undefined,
+          guidance:
+            "Welcome the candidate and clearly sequence the department-email, reply, Slack, and calendar onboarding steps.",
+          requiredFacts: [
+            `The recipient is ${email}.`,
+            `Create a @cs.toronto.edu account through ${DCS_FORM}.`,
+            "Reply with the new @cs.toronto.edu address before the full Slack invitation is sent.",
+            "Calendar access is part of onboarding.",
+          ],
+          requiredVerbatim: [DCS_FORM, "@cs.toronto.edu"],
+        });
         const sent = await state.effect(message.id, "direct_instructions", () =>
-          google.send(
-            email,
-            "Welcome to the Jinesis AI Lab - onboarding steps",
-            directOnboardingEmail(classification.candidateName ?? undefined),
-          ),
+          google.send(email, draft.subject, draft.body),
         );
         const threadId = extractResultThreadId(sent) ?? message.threadId;
         state.saveOnboarding(threadId, email, "direct", message.id);
         await state.effect(message.id, "calendar_reader", () => google.addCalendarReader(email));
       } else {
+        const draft = await draftGuidedEmail(message, model, {
+          purpose: "decline_candidate",
+          recipientName: classification.candidateName ?? undefined,
+          guidance:
+            "Politely communicate the decline, thank the candidate, avoid unsupported evaluation details, and do not imply a future offer.",
+          requiredFacts: [
+            `The recipient is ${email}.`,
+            "The lab is not offering a position at this time.",
+          ],
+        });
         await state.effect(message.id, "decline_email", () =>
-          google.send(
-            email,
-            "Jinesis AI Lab research application",
-            declineEmail(classification.candidateName ?? undefined),
-          ),
+          google.send(email, draft.subject, draft.body),
         );
       }
     } else if (classification.category === "onboarding_followup") {
       const addresses = [normalizeAddress(message.from), ...allEmailAddresses(message.body)];
       const dcs = addresses.find((email) => email.endsWith("@cs.toronto.edu"));
       if (!dcs) {
+        const draft = await draftGuidedEmail(message, model, {
+          purpose: "request_department_email",
+          recipientName: firstName(message),
+          guidance:
+            "Explain the remaining department-account dependency and ask for a reply in this thread after the address is ready.",
+          requiredFacts: [
+            "The department sends the account-creation instructions.",
+            "The candidate must reply with the new @cs.toronto.edu address.",
+            "The full Slack invitation follows after that reply.",
+          ],
+          requiredVerbatim: ["@cs.toronto.edu"],
+        });
         await state.effect(message.id, "request_dcs_email", () =>
-          google.reply(
-            message.id,
-            `Thank you. The department will send you an email with instructions to create your @cs.toronto.edu address. Please reply here with that new address once it is ready, and we will send the full Slack invitation.\n\nBest,\nZhijing`,
-          ),
+          google.reply(message.id, draft.body),
         );
       } else {
         await state.effect(message.id, "full_slack_invite", () => inviteFullMember(dcs));
         await state.effect(message.id, "calendar_reader_dcs", () => google.addCalendarReader(dcs));
+        const draft = await draftGuidedEmail(message, model, {
+          purpose: "confirm_onboarding",
+          recipientName: firstName(message),
+          guidance:
+            "Confirm completion concisely and state which address received the Slack invitation and calendar access.",
+          requiredFacts: [
+            `The full Jinesis AI Lab Slack invitation was sent to ${dcs}.`,
+            `Calendar reader access was granted to ${dcs}.`,
+          ],
+          requiredVerbatim: [dcs],
+        });
         await state.effect(message.id, "onboarding_complete_reply", () =>
-          google.reply(
-            message.id,
-            `Thank you! Your full Jinesis AI Lab Slack invitation has been sent to ${dcs}.\n\nBest,\nZhijing`,
-          ),
+          google.reply(message.id, draft.body),
         );
       }
     } else if (classification.category === "calendar_event") {
@@ -732,12 +862,19 @@ async function processMessage(
       const talk = await extractTalk(message, model);
       if (!talk) throw new Error("talk email is missing title, venue, or date");
       const latex = formatTalkLatex(talk);
+      const draft = await draftGuidedEmail(message, model, {
+        purpose: "deliver_talk_entry",
+        guidance:
+          "Tell the administrator the CV entry is ready, preserve the LaTeX line exactly, and identify the source thread without adding unsupported details.",
+        requiredFacts: [
+          `Deliver this exact LaTeX line: ${latex}`,
+          `The source thread subject is ${message.subject}.`,
+          `The recipient is ${ADMIN_RECIPIENT}.`,
+        ],
+        requiredVerbatim: [latex],
+      });
       await state.effect(message.id, "send_talk_entry", () =>
-        google.send(
-          ADMIN_RECIPIENT,
-          `CV talk entry: ${talk.title}`,
-          `Generated from email thread \"${message.subject}\":\n\n${latex}`,
-        ),
+        google.send(ADMIN_RECIPIENT, draft.subject, draft.body),
       );
     } else if (classification.category === "reimbursement") {
       if (!PRIVILEGED_SENDERS.has(normalizeAddress(message.from))) {
@@ -745,17 +882,24 @@ async function processMessage(
       }
       const directory = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-reimbursement-"));
       const files = await prepareReimbursement(message, google, directory, model);
+      const draft = await draftGuidedEmail(message, model, {
+        purpose: "deliver_reimbursement",
+        guidance:
+          "Explain that both completed reimbursement forms and all source receipts are attached and identify the fields requiring human review before submission.",
+        requiredFacts: [
+          `The source thread subject is ${message.subject}.`,
+          "The completed Compute Expense Form, completed Trip Summary Form, and all supporting receipt files are attached.",
+          "Funding source and signature fields were intentionally left for human review.",
+          `The recipient is ${ADMIN_RECIPIENT}.`,
+        ],
+      });
       await state.effect(message.id, "send_reimbursement", () =>
-        google.send(
-          ADMIN_RECIPIENT,
-          `Prepared reimbursement forms: ${message.subject}`,
-          `Attached are the reimbursement forms and supporting files prepared from the email thread \"${message.subject}\". Please review the funding source and signature fields before submission.`,
-          files,
-        ),
+        google.send(ADMIN_RECIPIENT, draft.subject, draft.body, files),
       );
     }
     await state.effect(message.id, "mark_read", () => google.markRead(message.id));
     state.finish(message.id, "completed");
+    return true;
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     state.finish(
@@ -768,8 +912,7 @@ async function processMessage(
     throw error;
   }
 }
-
-async function main(): Promise<void> {
+export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   loadDotEnv(path.join(os.homedir(), ".openclaw", ".env"));
   process.env.GOG_ACCOUNT = ACCOUNT;
   const databasePath =
@@ -778,7 +921,14 @@ async function main(): Promise<void> {
   const state = new StateStore(databasePath);
   const google = new GoogleClient();
   const model = new AdminBotEmailModel();
-  const summary = { found: 0, completed: 0, failed: 0, needs_review: 0, errors: [] as string[] };
+  const summary: EmailAutomationSummary = {
+    found: 0,
+    completed: 0,
+    failed: 0,
+    needs_review: 0,
+    skipped: 0,
+    errors: [],
+  };
   try {
     const messages = await google.search();
     summary.found = messages.length;
@@ -789,29 +939,45 @@ async function main(): Promise<void> {
       try {
         const modelClassification = await model.classify(message, onboarding);
         const classification = authorizeClassification(message, modelClassification, onboarding);
-        await processMessage(message, classification, state, google, model);
+        const processed = await processMessage(message, classification, state, google, model);
+        if (!processed) {
+          summary.skipped += 1;
+          continue;
+        }
         const status = state.db
           .prepare("SELECT status FROM adminbot_email_messages WHERE message_id=?")
           .get(message.id) as { status?: string } | undefined;
         if (status?.status === "completed") summary.completed += 1;
         if (status?.status === "needs_review") summary.needs_review += 1;
       } catch (error) {
-        summary.failed += 1;
-        summary.errors.push(
-          `${message.id}: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        const status = state.db
+          .prepare("SELECT status FROM adminbot_email_messages WHERE message_id=?")
+          .get(message.id) as { status?: string } | undefined;
+        if (status?.status === "needs_review") {
+          summary.needs_review += 1;
+        } else {
+          summary.failed += 1;
+          summary.errors.push(
+            `${message.id}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
       }
     }
   } finally {
     state.close();
   }
-  console.log(JSON.stringify(summary));
-  if (summary.failed > 0) process.exitCode = 1;
+  return summary;
 }
-
 if (import.meta.url === `file://${process.argv[1]}`) {
-  void main().catch((error) => {
-    console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
-    process.exitCode = 1;
-  });
+  void runEmailAutomation()
+    .then((summary) => {
+      console.log(JSON.stringify(summary));
+      if (summary.failed > 0 && process.env.ADMINBOT_EMAIL_ALLOW_PARTIAL !== "1") {
+        process.exitCode = 1;
+      }
+    })
+    .catch((error) => {
+      console.error(error instanceof Error ? (error.stack ?? error.message) : String(error));
+      process.exitCode = 1;
+    });
 }

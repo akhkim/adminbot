@@ -3,16 +3,15 @@
   box-sizing: border-box;
   min-width: 0;
   max-width: 100%;
-  border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
   padding: 12px 14px;
   margin-top: 6px;
-  background: color-mix(in srgb, var(--card) 88%, var(--secondary) 12%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bg) 75%, transparent);
+  background: var(--bg-accent);
+  box-shadow: none;
   transition:
     border-color var(--duration-fast) ease-out,
-    background var(--duration-fast) ease-out,
-    box-shadow var(--duration-fast) ease-out;
+    background var(--duration-fast) ease-out;
   max-height: 120px;
   overflow: hidden;
 }
@@ -23,9 +22,8 @@
 }
 
 .chat-tool-card:hover {
-  border-color: color-mix(in srgb, var(--border-strong) 80%, transparent);
-  background: color-mix(in srgb, var(--card) 70%, var(--bg-hover) 30%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bg) 85%, transparent);
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
 }
 
 /* First tool card in a group - no top margin */
@@ -113,9 +111,9 @@
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--secondary) 55%, transparent);
+  background: var(--bg-accent);
   cursor: pointer;
   font: inherit;
 }
@@ -170,7 +168,7 @@
 .chat-tool-card__status--error,
 .chat-tool-card__action--error,
 .chat-tool-card__status-text--error {
-  color: var(--destructive, var(--danger, #c0392b));
+  color: var(--destructive);
 }
 
 .chat-tool-card__status-badge {
@@ -180,11 +178,11 @@
   padding: 1px 6px;
   margin-left: 6px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--destructive, var(--danger, #c0392b)) 15%, transparent);
-  color: var(--destructive, var(--danger, #c0392b));
+  background: color-mix(in srgb, var(--destructive) 15%, transparent);
+  color: var(--destructive);
   font-size: 12px; /* was 10px */
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   line-height: 1.4;
 }
@@ -200,34 +198,18 @@
 }
 
 .chat-tool-card--error {
-  border-color: color-mix(in srgb, var(--destructive, var(--danger, #c0392b)) 35%, var(--border));
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--destructive, var(--danger, #c0392b)) 8%, transparent),
-      transparent 36%
-    ),
-    color-mix(in srgb, var(--card) 86%, var(--secondary) 14%);
+  border-color: var(--danger-muted);
+  background: var(--danger-subtle);
 }
 
 .chat-tool-card--error:hover {
-  border-color: color-mix(
-    in srgb,
-    var(--destructive, var(--danger, #c0392b)) 44%,
-    var(--border-strong)
-  );
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--destructive, var(--danger, #c0392b)) 11%, transparent),
-      transparent 38%
-    ),
-    color-mix(in srgb, var(--card) 78%, var(--bg-hover) 22%);
+  border-color: var(--destructive);
+  background: var(--danger-subtle);
 }
 
 .chat-tool-card--error .chat-tool-card__icon,
 .chat-tool-msg-summary.chat-tool-msg-summary--error .chat-tool-msg-summary__icon {
-  color: var(--destructive, var(--danger, #c0392b));
+  color: var(--destructive);
   opacity: 0.9;
 }
 
@@ -241,11 +223,11 @@
   padding: 1px 6px;
   margin-left: auto;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--destructive, var(--danger, #c0392b)) 15%, transparent);
-  color: var(--destructive, var(--danger, #c0392b));
+  background: color-mix(in srgb, var(--destructive) 15%, transparent);
+  color: var(--destructive);
   font-size: 12px; /* was 10px */
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   line-height: 1;
   flex-shrink: 0;
@@ -284,9 +266,9 @@
 }
 
 .chat-tool-card__preview {
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--secondary) 78%, transparent);
+  background: var(--bg-accent);
   overflow: hidden;
 }
 
@@ -303,7 +285,7 @@
 .chat-tool-card__preview-label {
   font-size: 12px; /* was 11px */
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -315,7 +297,7 @@
 }
 
 .chat-tool-card__preview-tab {
-  border: 1px solid color-mix(in srgb, var(--border) 76%, transparent);
+  border: 1px solid var(--border);
   background: color-mix(in srgb, var(--bg) 72%, transparent);
   color: var(--muted);
   border-radius: 999px;
@@ -345,9 +327,11 @@
   display: block;
   width: 100%;
   min-height: 420px;
-  border: 1px solid color-mix(in srgb, var(--border) 68%, transparent);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: #fff;
+  /* Intentionally a true white canvas, not a token: this iframe renders arbitrary
+     external HTML previews that assume a light page background. */
+  background: white;
 }
 
 .chat-tool-card__raw-toggle {
@@ -357,9 +341,9 @@
   justify-content: space-between;
   gap: 8px;
   padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--secondary) 68%, transparent);
+  background: var(--bg-accent);
   color: var(--muted);
   font: inherit;
   font-size: 12px;
@@ -431,7 +415,7 @@
 .chat-tool-card__block-label {
   font-size: 12px; /* was 11px */
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: inherit;
 }
@@ -445,8 +429,8 @@
   margin: 0;
   padding: 11px 12px;
   border-radius: var(--radius-md);
-  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-  background: color-mix(in srgb, var(--secondary) 82%, transparent);
+  border: 1px solid var(--border);
+  background: var(--bg-accent);
   font-size: 12px; /* was 11px */
   line-height: 1.45;
   white-space: pre-wrap;
@@ -563,9 +547,9 @@
 
 .chat-json-collapse {
   margin-top: 4px;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--secondary) 60%, transparent);
+  background: var(--bg-accent);
   overflow: hidden;
 }
 
@@ -614,7 +598,7 @@
   font-size: 12px; /* was 10px */
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-label);
   line-height: 1.4;
   flex-shrink: 0;
 }
@@ -671,14 +655,10 @@
   color: var(--text);
   user-select: none;
   list-style: none;
-  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 34%),
-    color-mix(in srgb, var(--card) 86%, var(--secondary) 14%);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--bg) 76%, transparent),
-    0 8px 22px color-mix(in srgb, black 12%, transparent);
+  background: var(--bg-accent);
+  box-shadow: none;
   width: 100%;
   text-align: left;
   appearance: none;
@@ -702,20 +682,12 @@
 }
 
 .chat-tool-msg-summary[type="button"] {
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent 34%),
-    color-mix(in srgb, var(--card) 86%, var(--secondary) 14%);
+  background: var(--bg-accent);
 }
 
 .chat-tool-msg-summary.chat-tool-msg-summary--error {
-  border-color: color-mix(in srgb, var(--destructive, var(--danger, #c0392b)) 30%, var(--border));
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--destructive, var(--danger, #c0392b)) 11%, transparent),
-      transparent 36%
-    ),
-    color-mix(in srgb, var(--card) 86%, var(--secondary) 14%);
+  border-color: var(--danger-muted);
+  background: var(--danger-subtle);
 }
 
 .chat-tool-msg-summary::-webkit-details-marker {
@@ -750,25 +722,13 @@
 
 .chat-tool-msg-summary:hover {
   color: var(--text);
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--accent) 13%, transparent), transparent 38%),
-    color-mix(in srgb, var(--card) 76%, var(--bg-hover) 24%);
-  border-color: color-mix(in srgb, var(--border-strong) 70%, transparent);
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
 .chat-tool-msg-summary.chat-tool-msg-summary--error:hover {
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--destructive, var(--danger, #c0392b)) 14%, transparent),
-      transparent 38%
-    ),
-    color-mix(in srgb, var(--card) 78%, var(--bg-hover) 22%);
-  border-color: color-mix(
-    in srgb,
-    var(--destructive, var(--danger, #c0392b)) 38%,
-    var(--border-strong)
-  );
+  background: var(--danger-subtle);
+  border-color: var(--destructive);
 }
 
 .chat-tool-msg-collapse--manual.is-open > .chat-tool-msg-summary,
@@ -837,9 +797,9 @@
   width: 24px;
   height: 24px;
   padding: 0;
-  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border: 1px solid var(--border);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--secondary) 55%, transparent);
+  background: var(--bg-accent);
   color: var(--muted);
   display: inline-flex;
   align-items: center;
@@ -875,11 +835,11 @@
 .chat-bubble--tool-shell .chat-tool-msg-body {
   margin-top: 0;
   padding: 12px 14px 14px;
-  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  border: 1px solid var(--border);
   border-top: 0;
   border-radius: 0 0 var(--radius-md) var(--radius-md);
-  background: color-mix(in srgb, var(--card) 82%, var(--secondary) 18%);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--bg) 68%, transparent);
+  background: var(--bg-accent);
+  box-shadow: none;
   overflow: hidden;
 }
 
@@ -934,9 +894,9 @@
 
 .chat-activity-group {
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--card) 88%, var(--secondary) 12%);
+  background: var(--bg-accent);
 }
 
 .chat-activity-group__summary {
@@ -960,7 +920,7 @@
 }
 
 .chat-activity-group__summary--error {
-  color: var(--destructive, var(--danger, #c0392b));
+  color: var(--destructive);
 }
 
 .chat-activity-group__icon,
@@ -1004,11 +964,11 @@
   margin-left: auto;
   padding: 2px 6px;
   border-radius: var(--radius-full);
-  background: color-mix(in srgb, var(--destructive, var(--danger, #c0392b)) 15%, transparent);
-  color: var(--destructive, var(--danger, #c0392b));
+  background: color-mix(in srgb, var(--destructive) 15%, transparent);
+  color: var(--destructive);
   font-size: 12px; /* was 10px */
   font-weight: 650;
-  letter-spacing: 0.04em;
+  letter-spacing: var(--tracking-label);
   line-height: 1;
   text-transform: uppercase;
 }

@@ -392,6 +392,7 @@ export const th: TranslationMap = {
   nav: {
     chat: "แชต",
     control: "ควบคุม",
+    adminbot: "AdminBot",
     agent: "เอเจนต์",
     settings: "การตั้งค่า",
     expand: "ขยายแถบด้านข้าง",
@@ -400,6 +401,12 @@ export const th: TranslationMap = {
   },
   tabs: {
     agents: "เอเจนต์",
+    adminbot: "Pending Actions",
+    adminbotReimbursements: "Reimbursements",
+    adminbotSettings: "Settings",
+    adminbotMembers: "Lab Members",
+    adminbotPapers: "Active Papers",
+    adminbotNudges: "Paper Nudges",
     activity: "กิจกรรม",
     overview: "ภาพรวม",
     workboard: "กระดานงาน",
@@ -425,6 +432,12 @@ export const th: TranslationMap = {
   },
   subtitles: {
     agents: "เวิร์กสเปซ เครื่องมือ และข้อมูลประจำตัว",
+    adminbot: "Approval queue and execution controls.",
+    adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
+    adminbotSettings: "Lab defaults and escalation policy.",
+    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotNudges: "Due reminders and professor escalations.",
     activity: "สรุปกิจกรรมของเครื่องมือภายในเบราว์เซอร์",
     overview: "สถานะ จุดเข้าใช้งาน และความพร้อมใช้งาน",
     workboard: "คิวงานของ Agent และการส่งต่อเซสชัน",
@@ -1653,8 +1666,6 @@ export const th: TranslationMap = {
     },
     jobDetail: {
       system: "ระบบ",
-      command: "คำสั่ง",
-      cwd: "CWD",
       prompt: "พรอมป์ต์",
       delivery: "การส่ง",
       agent: "เอเจนต์",

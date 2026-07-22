@@ -54,7 +54,7 @@ describe("AdminBot privacy broker", () => {
     expect(calls[0]).toMatchObject({
       auth: "Bearer local-key",
       body: {
-        model: "RedHatAI/Qwen3-Next-80B-A3B-Instruct-NVFP4",
+        model: "nvidia/Qwen3.5-122B-A10B-NVFP4",
         temperature: 0,
         chat_template_kwargs: { enable_thinking: false },
         response_format: { type: "json_schema" },

@@ -395,6 +395,7 @@ export const pl: TranslationMap = {
   nav: {
     chat: "Czat",
     control: "Sterowanie",
+    adminbot: "AdminBot",
     agent: "Agent",
     settings: "Ustawienia",
     expand: "Rozwiń pasek boczny",
@@ -403,6 +404,12 @@ export const pl: TranslationMap = {
   },
   tabs: {
     agents: "Agenci",
+    adminbot: "Pending Actions",
+    adminbotReimbursements: "Reimbursements",
+    adminbotSettings: "Settings",
+    adminbotMembers: "Lab Members",
+    adminbotPapers: "Active Papers",
+    adminbotNudges: "Paper Nudges",
     activity: "Aktywność",
     overview: "Przegląd",
     workboard: "Tablica pracy",
@@ -428,6 +435,12 @@ export const pl: TranslationMap = {
   },
   subtitles: {
     agents: "Obszary robocze, narzędzia, tożsamości.",
+    adminbot: "Approval queue and execution controls.",
+    adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
+    adminbotSettings: "Lab defaults and escalation policy.",
+    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotNudges: "Due reminders and professor escalations.",
     activity: "Podsumowania aktywności narzędzi lokalne dla przeglądarki.",
     overview: "Status, punkty dostępu, stan.",
     workboard: "Kolejka zadań agenta i przekazywanie sesji.",
@@ -1702,8 +1715,6 @@ export const pl: TranslationMap = {
     },
     jobDetail: {
       system: "System",
-      command: "Polecenie",
-      cwd: "CWD",
       prompt: "Prompt",
       delivery: "Dostarczanie",
       agent: "Agent",

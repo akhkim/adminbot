@@ -6,7 +6,9 @@ import { createGogAdminBotExecutor } from "./extensions/adminbot/src/gog-executo
 import { createAdminBotMessageExecutor } from "./extensions/adminbot/src/message-executor.ts";
 import { createAdminBotMockService } from "./extensions/adminbot/src/mock-service.ts";
 import { createAdminBotOverleafExecutor } from "./extensions/adminbot/src/overleaf-executor.ts";
+import { createAdminBotReimbursementWorkflow } from "./extensions/adminbot/src/reimbursement-workflow.ts";
 import { createAdminBotSocialExecutor } from "./extensions/adminbot/src/social-executor.ts";
+import { runEmailAutomation } from "./scripts/adminbot-email-automation.ts";
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 loadOpenClawEnv();
@@ -24,6 +26,10 @@ const service = createAdminBotMockService({
     createGogAdminBotExecutor(),
   ]),
   sensitiveInfoPath: path.join(os.homedir(), ".openclaw/adminbot-sensitive-information.md"),
+  emailAutomationRunner: runEmailAutomation,
+  reimbursementWorkflow: createAdminBotReimbursementWorkflow({
+    formScriptPath: path.join(repoRoot, "scripts/adminbot-reimbursement-from-email.py"),
+  }),
 });
 
 await service.listen(8765, "127.0.0.1");

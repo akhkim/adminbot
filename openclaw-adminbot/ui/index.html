@@ -4,23 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>OpenClaw Control</title>
-    <meta name="color-scheme" content="dark light" />
+    <meta name="color-scheme" content="dark" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <script>
       (function () {
-        var THEMES = { claw: 1, knot: 1, dash: 1 };
-        var MODES = { system: 1, light: 1, dark: 1 };
-        var LEGACY = {
-          dark: "claw:dark",
-          light: "claw:light",
-          openknot: "knot:dark",
-          fieldmanual: "dash:dark",
-          clawdash: "dash:light",
-          system: "claw:system",
-        };
+        // Dark-only (design spec §2): the only theme choice left is the "custom" tweakcn
+        // escape hatch (dark variant only). Every other stored theme/mode value — including
+        // the removed "knot"/"dash" families and light mode — normalizes to plain dark.
         try {
           var keys = Object.keys(localStorage);
           var raw;
@@ -30,44 +23,31 @@
               if (raw) break;
             }
           }
-          if (!raw) return;
-          var s = JSON.parse(raw);
-          var t = s && s.theme;
-          var m = s && s.themeMode;
-          if (typeof t !== "string") t = "";
-          if (typeof m !== "string") m = "";
-          var legacy = LEGACY[t];
-          var theme = THEMES[t] ? t : legacy ? legacy.split(":")[0] : "claw";
-          var mode = MODES[m] ? m : legacy ? legacy.split(":")[1] : "system";
-          if (mode === "system") {
-            mode = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+          var resolved = "dark";
+          if (raw) {
+            var s = JSON.parse(raw);
+            var t = s && s.theme;
+            resolved = t === "custom" ? "custom" : "dark";
           }
-          var resolved =
-            theme === "knot"
-              ? mode === "light"
-                ? "openknot-light"
-                : "openknot"
-              : theme === "dash"
-                ? mode === "light"
-                  ? "dash-light"
-                  : "dash"
-                : mode === "light"
-                  ? "light"
-                  : "dark";
           document.documentElement.setAttribute("data-theme", resolved);
-          document.documentElement.setAttribute(
-            "data-theme-mode",
-            resolved.includes("light") ? "light" : "dark",
-          );
-        } catch (e) {}
+          document.documentElement.setAttribute("data-theme-mode", "dark");
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "dark");
+          document.documentElement.setAttribute("data-theme-mode", "dark");
+        }
       })();
     </script>
     <style>
+      /*
+       * Pre-hydration fallback. Literal colors are intentional: this panel renders before
+       * the token stylesheet loads, so it cannot use var(--*). Keep in sync with the
+       * dark palette in ui/src/styles/base.css.
+       */
       body.openclaw-mount-fallback-active {
         margin: 0;
         min-width: 320px;
-        color: #eef4f8;
-        background: #101418;
+        color: #e4e4e7;
+        background: #09090b;
         font-family:
           Inter,
           ui-sans-serif,
@@ -96,18 +76,18 @@
       .mount-fallback__panel {
         box-sizing: border-box;
         width: min(100%, 640px);
-        border: 1px solid rgba(148, 163, 184, 0.28);
+        border: 1px solid #1f1f23;
         border-radius: 8px;
-        background: #151b21;
-        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
+        background: #0f0f11;
+        box-shadow: 0 24px 56px rgba(0, 0, 0, 0.65);
         padding: 28px;
       }
 
       .mount-fallback__eyebrow {
         margin: 0 0 10px;
-        color: #9fb0bd;
+        color: #8f8f98;
         font-size: 0.78rem;
-        font-weight: 700;
+        font-weight: 600;
         letter-spacing: 0.08em;
         text-transform: uppercase;
       }
@@ -121,7 +101,7 @@
 
       .mount-fallback__panel p {
         margin: 16px 0 0;
-        color: #c8d3da;
+        color: #e4e4e7;
         font-size: 1rem;
         line-height: 1.6;
       }
@@ -129,12 +109,12 @@
       .mount-fallback__panel ul {
         margin: 18px 0 0;
         padding-left: 1.2rem;
-        color: #c8d3da;
+        color: #e4e4e7;
         line-height: 1.6;
       }
 
       .mount-fallback__panel a {
-        color: #8bd3ff;
+        color: #4d8dff;
         text-decoration-thickness: 0.08em;
         text-underline-offset: 0.18em;
       }
@@ -147,21 +127,21 @@
       }
 
       .mount-fallback__button {
-        min-height: 42px;
-        border: 1px solid rgba(148, 163, 184, 0.36);
+        min-height: 38px;
+        border: 1px solid #2a2a30;
         border-radius: 6px;
         padding: 0 16px;
         color: inherit;
         background: transparent;
         font: inherit;
-        font-weight: 700;
+        font-weight: 500;
         cursor: pointer;
       }
 
       .mount-fallback__button--primary {
-        border-color: #66c2ff;
-        color: #061019;
-        background: #8bd3ff;
+        border-color: #4d8dff;
+        color: #06080d;
+        background: #4d8dff;
       }
 
       .mount-fallback__panel:focus {
@@ -170,29 +150,8 @@
 
       .mount-fallback__button:focus-visible,
       .mount-fallback__panel a:focus-visible {
-        outline: 3px solid #f9c74f;
-        outline-offset: 3px;
-      }
-
-      html[data-theme-mode="light"] body.openclaw-mount-fallback-active {
-        color: #151b21;
-        background: #f5f7fa;
-      }
-
-      html[data-theme-mode="light"] .mount-fallback__panel {
-        border-color: rgba(71, 85, 105, 0.22);
-        background: #ffffff;
-        box-shadow: 0 24px 80px rgba(15, 23, 42, 0.14);
-      }
-
-      html[data-theme-mode="light"] .mount-fallback__eyebrow,
-      html[data-theme-mode="light"] .mount-fallback__panel p,
-      html[data-theme-mode="light"] .mount-fallback__panel ul {
-        color: #4b5963;
-      }
-
-      html[data-theme-mode="light"] .mount-fallback__panel a {
-        color: #0369a1;
+        outline: 2px solid #4d8dff;
+        outline-offset: 2px;
       }
     </style>
   </head>

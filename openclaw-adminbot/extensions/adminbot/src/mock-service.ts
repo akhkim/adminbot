@@ -6,9 +6,14 @@ import type {
   AdminBotLabMemberInput,
   AdminBotPaperRecordInput,
   AdminBotPrivacyTaskRequest,
+  AdminBotRemovePendingRequest,
   AdminBotSettingsInput,
 } from "./contracts.js";
 import { createAdminBotPrivacyBroker, type AdminBotPrivacyBroker } from "./privacy-broker.js";
+import type {
+  AdminBotReimbursementRequest,
+  AdminBotReimbursementWorkflow,
+} from "./reimbursement-workflow.js";
 import {
   createAdminBotSensitiveInfoDocument,
   type AdminBotSensitiveInfoDocument,
@@ -29,6 +34,8 @@ export type AdminBotMockServiceOptions = {
   privacyBroker?: AdminBotPrivacyBroker;
   sensitiveInfoPath?: string;
   sensitiveInfoDocument?: AdminBotSensitiveInfoDocument;
+  emailAutomationRunner?: () => Promise<unknown>;
+  reimbursementWorkflow?: AdminBotReimbursementWorkflow;
 };
 
 export function createAdminBotMockService(options: AdminBotMockServiceOptions = {}) {
@@ -49,9 +56,27 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     createAdminBotPrivacyBroker(undefined, {
       sensitiveTermsProvider: () => sensitiveInfo.listSensitiveTerms(),
     });
+  let activeEmailAutomation: Promise<unknown> | undefined;
+  const emailAutomationRunner = options.emailAutomationRunner;
+  const runEmailAutomation = emailAutomationRunner
+    ? () => {
+        activeEmailAutomation ??= emailAutomationRunner().finally(() => {
+          activeEmailAutomation = undefined;
+        });
+        return activeEmailAutomation;
+      }
+    : undefined;
   const server = createServer(async (req, res) => {
     try {
-      await routeRequest(req, res, service, privacyBroker, sensitiveInfo);
+      await routeRequest(
+        req,
+        res,
+        service,
+        privacyBroker,
+        sensitiveInfo,
+        runEmailAutomation,
+        options.reimbursementWorkflow,
+      );
     } catch (error) {
       sendJson(res, 500, {
         error: { message: error instanceof Error ? error.message : "mock service failed" },
@@ -86,10 +111,38 @@ async function routeRequest(
   service: AdminBotService,
   privacyBroker: AdminBotPrivacyBroker,
   sensitiveInfo: AdminBotSensitiveInfoDocument,
+  runEmailAutomation?: () => Promise<unknown>,
+  reimbursementWorkflow?: AdminBotReimbursementWorkflow,
 ) {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/adminbot")) {
     sendHtml(res, 200, renderAdminBotWebUi());
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/automation/email/run") {
+    if (!runEmailAutomation) {
+      sendJson(res, 503, { error: { message: "email automation runner is not configured" } });
+      return;
+    }
+    sendJson(res, 200, await runEmailAutomation());
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/reimbursements/converse") {
+    if (!reimbursementWorkflow) {
+      sendJson(res, 503, { error: { message: "reimbursement workflow is not configured" } });
+      return;
+    }
+    const body = (await readJson(req)) as AdminBotReimbursementRequest;
+    sendJson(res, 200, await reimbursementWorkflow.converse(body));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/reimbursements/generate") {
+    if (!reimbursementWorkflow) {
+      sendJson(res, 503, { error: { message: "reimbursement workflow is not configured" } });
+      return;
+    }
+    const body = (await readJson(req)) as AdminBotReimbursementRequest;
+    sendJson(res, 200, await reimbursementWorkflow.generate(body));
     return;
   }
   if (req.method === "POST" && url.pathname === "/proposals") {
@@ -149,8 +202,19 @@ async function routeRequest(
     sendServiceResult(res, service.upsertPaper({ ...body, id: paperId }));
     return;
   }
+  if (req.method === "DELETE" && paper?.[1]) {
+    sendServiceResult(res, service.deletePaper(decodeURIComponent(paper[1])));
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/papers/nudges") {
     sendServiceResult(res, service.listPaperNudges(url.searchParams.get("now") ?? undefined));
+    return;
+  }
+  const remove = /^\/proposals\/([^/]+)\/remove$/u.exec(url.pathname);
+  if (req.method === "POST" && remove?.[1]) {
+    const actionId = decodeURIComponent(remove[1]);
+    const body = (await readJson(req)) as AdminBotRemovePendingRequest;
+    sendServiceResult(res, service.removePending(actionId, body));
     return;
   }
   const approve = /^\/approvals\/([^/]+)\/approve$/u.exec(url.pathname);

@@ -7,7 +7,14 @@ export const TAB_GROUPS = [
   { label: "chat", tabs: ["chat"] },
   {
     label: "adminbot",
-    tabs: ["adminbot", "adminbotSettings", "adminbotMembers", "adminbotPapers", "adminbotNudges"],
+    tabs: [
+      "adminbot",
+      "adminbotReimbursements",
+      "adminbotSettings",
+      "adminbotMembers",
+      "adminbotPapers",
+      "adminbotNudges",
+    ],
   },
   {
     label: "control",
@@ -24,6 +31,7 @@ export type Tab =
   | "agents"
   | "activity"
   | "adminbot"
+  | "adminbotReimbursements"
   | "adminbotSettings"
   | "adminbotMembers"
   | "adminbotPapers"
@@ -67,6 +75,7 @@ const TAB_PATHS: Record<Tab, string> = {
   agents: "/agents",
   activity: "/activity",
   adminbot: "/adminbot",
+  adminbotReimbursements: "/adminbot/reimbursements",
   adminbotSettings: "/adminbot/settings",
   adminbotMembers: "/adminbot/members",
   adminbotPapers: "/adminbot/papers",
@@ -205,6 +214,8 @@ export function iconForTab(tab: Tab): IconName {
       return "activity";
     case "adminbot":
       return "brain";
+    case "adminbotReimbursements":
+      return "fileText";
     case "adminbotSettings":
       return "settings";
     case "adminbotMembers":

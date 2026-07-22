@@ -29,6 +29,9 @@ Commands:
   connect                Open SSH with Gateway/AdminBot local port forwards
   deploy                 Clean old releases, then upload/build/install the new release
   upload-env <file>      Install a secrets env file with mode 0600
+  sync-slack-env <file>  Merge only Slack tokens into the remote env and restart Gateway
+  sync-cron-jobs [db]    Sync local OpenClaw cron jobs into Aurora via Gateway RPC
+  sync-adminbot-data [db] Safely replace Aurora's AdminBot database and restart services
   upload-config <file>   Install openclaw.json with mode 0600
   auth-gog               Run gog's remote/manual OAuth flow on Aurora
   install-services       Regenerate user-systemd units without starting them
@@ -251,6 +254,160 @@ REMOTE
     printf 'installed=%s\n' "$REMOTE_ENV"
     ;;
 
+  sync-slack-env)
+    (($# == 1)) || die "sync-slack-env requires exactly one env file"
+    [[ -f "$1" ]] || die "env file not found: $1"
+    check_local_tools
+    slack_env="$(mktemp "${TMPDIR:-/tmp}/jinesis-slack-env.XXXXXX")"
+    trap 'rm -f -- "$slack_env"' EXIT
+    awk '
+      /^SLACK_(BOT|APP|USER)_TOKEN=/ {
+        key = $0
+        sub(/=.*/, "", key)
+        if (seen[key]++) {
+          printf "duplicate Slack variable: %s\n", key >"/dev/stderr"
+          exit 2
+        }
+        print
+      }
+    ' "$1" >"$slack_env" || die "could not extract Slack variables from $1"
+    chmod 600 "$slack_env"
+    grep -q '^SLACK_BOT_TOKEN=.\+' "$slack_env" ||
+      die "SLACK_BOT_TOKEN is missing or empty in $1"
+    grep -q '^SLACK_APP_TOKEN=.\+' "$slack_env" ||
+      die "SLACK_APP_TOKEN is missing or empty in $1 (required for Slack socket mode)"
+
+    remote_tmp="${REMOTE_ENV}.slack-upload.$$"
+    "${SCP[@]}" "$slack_env" "${TARGET}:${remote_tmp}"
+    "${SSH[@]}" bash -s -- "$remote_tmp" "$REMOTE_ENV" <<'REMOTE_SLACK'
+set -euo pipefail
+upload="$1"
+env_file="$2"
+[[ -f "$upload" ]] || {
+  printf 'Slack upload is missing: %s\n' "$upload" >&2
+  exit 1
+}
+umask 077
+mkdir -p "$(dirname "$env_file")"
+touch "$env_file"
+merged="${env_file}.merged.$$"
+trap 'rm -f -- "$upload" "$merged"' EXIT
+grep -vE '^SLACK_(BOT|APP|USER)_TOKEN=' "$env_file" >"$merged" || true
+cat "$upload" >>"$merged"
+chmod 600 "$merged"
+mv -f -- "$merged" "$env_file"
+systemctl --user restart jinesis-openclaw-gateway.service
+systemctl --user --no-pager --full status jinesis-openclaw-gateway.service
+REMOTE_SLACK
+    printf 'Slack secrets merged into %s; Gateway restarted.\n' "$REMOTE_ENV"
+    ;;
+
+  sync-cron-jobs)
+    (($# <= 1)) || die "sync-cron-jobs accepts at most one SQLite database path"
+    check_local_tools
+    command -v node >/dev/null || die "node is required locally"
+    local_database="${1:-$HOME/.openclaw/state/openclaw.sqlite}"
+    [[ -f "$local_database" ]] || die "OpenClaw state database not found: $local_database"
+    exporter="$REPO_ROOT/scripts/export-openclaw-cron-jobs.mjs"
+    importer="$REPO_ROOT/scripts/import-openclaw-cron-jobs.mjs"
+    [[ -f "$exporter" && -f "$importer" ]] || die "cron migration helpers are missing"
+    cron_bundle="$(mktemp "${TMPDIR:-/tmp}/jinesis-cron-jobs.XXXXXX.json")"
+    trap 'rm -f -- "$cron_bundle"' EXIT
+    node "$exporter" "$local_database" "$REPO_ROOT" "$REMOTE_CURRENT" >"$cron_bundle"
+    chmod 600 "$cron_bundle"
+
+    remote_bundle="${REMOTE_ENV}.cron-upload.$$"
+    remote_importer="${REMOTE_ENV}.cron-importer.$$"
+    "${SCP[@]}" "$cron_bundle" "${TARGET}:${remote_bundle}"
+    "${SCP[@]}" "$importer" "${TARGET}:${remote_importer}"
+    "${SSH[@]}" bash -s -- \
+      "$remote_bundle" \
+      "$remote_importer" \
+      "$REMOTE_ENV" \
+      "$REMOTE_CURRENT/openclaw.mjs" <<'REMOTE_CRON'
+set -euo pipefail
+bundle="$1"
+importer="$2"
+env_file="$3"
+openclaw_cli="$4"
+trap 'rm -f -- "$bundle" "$importer"' EXIT
+chmod 600 "$bundle" "$importer"
+[[ -f "$env_file" ]] || {
+  printf 'Aurora environment file is missing: %s\n' "$env_file" >&2
+  exit 1
+}
+[[ -f "$openclaw_cli" ]] || {
+  printf 'Aurora OpenClaw CLI is missing: %s\n' "$openclaw_cli" >&2
+  exit 1
+}
+systemctl --user disable --now jinesis-adminbot-email.timer 2>/dev/null || true
+set -a
+# shellcheck disable=SC1090
+source "$env_file"
+set +a
+node "$importer" "$openclaw_cli" "$bundle"
+node "$openclaw_cli" cron list --all --json
+REMOTE_CRON
+    printf 'OpenClaw cron jobs synced; legacy systemd email timer disabled.\n'
+    ;;
+
+  sync-adminbot-data)
+    (($# <= 1)) || die "sync-adminbot-data accepts at most one SQLite database path"
+    check_local_tools
+    command -v node >/dev/null || die "node is required locally"
+    local_database="${1:-$REPO_ROOT/state/adminbot.sqlite}"
+    [[ -f "$local_database" ]] || die "AdminBot database not found: $local_database"
+    snapshot_helper="$REPO_ROOT/scripts/snapshot-sqlite.mjs"
+    [[ -f "$snapshot_helper" ]] || die "SQLite snapshot helper is missing"
+    database_snapshot="$(mktemp "${TMPDIR:-/tmp}/jinesis-adminbot.XXXXXX.sqlite")"
+    rm -f -- "$database_snapshot"
+    trap 'rm -f -- "$database_snapshot"' EXIT
+    node "$snapshot_helper" "$local_database" "$database_snapshot"
+
+    remote_upload="${REMOTE_CONFIG}.adminbot-db-upload.$$"
+    remote_database="/h/405/${CS_USER}/.openclaw/state/adminbot.sqlite"
+    "${SCP[@]}" "$database_snapshot" "${TARGET}:${remote_upload}"
+    "${SSH[@]}" bash -s -- "$remote_upload" "$remote_database" <<'REMOTE_ADMINBOT_DATA'
+set -euo pipefail
+upload="$1"
+database="$2"
+database_new="${database}.new"
+timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+adminbot_stopped=0
+cleanup() {
+  status=$?
+  rm -f -- "$upload" "$database_new"
+  if ((adminbot_stopped)); then
+    systemctl --user start jinesis-adminbot.service >/dev/null 2>&1 || true
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+[[ -f "$upload" ]] || {
+  printf 'AdminBot database upload is missing: %s\n' "$upload" >&2
+  exit 1
+}
+mkdir -p "$(dirname "$database")"
+chmod 600 "$upload"
+systemctl --user stop jinesis-adminbot.service
+adminbot_stopped=1
+if [[ -f "$database" ]]; then
+  cp -p -- "$database" "${database}.backup-${timestamp}"
+fi
+rm -f -- "${database}-wal" "${database}-shm"
+install -m 600 "$upload" "$database_new"
+mv -f -- "$database_new" "$database"
+systemctl --user restart \
+  jinesis-adminbot.service \
+  jinesis-openclaw-gateway.service
+adminbot_stopped=0
+systemctl --user --no-pager --full status \
+  jinesis-adminbot.service \
+  jinesis-openclaw-gateway.service
+REMOTE_ADMINBOT_DATA
+    printf 'AdminBot database synced; AdminBot and Gateway restarted.\n'
+    ;;
+
   upload-config)
     (($# == 1)) || die "upload-config requires exactly one file"
     [[ -f "$1" ]] || die "config file not found: $1"
@@ -288,7 +445,6 @@ REMOTE
   stop)
     (($# == 0)) || die "stop takes no arguments"
     "${SSH[@]}" systemctl --user stop \
-      jinesis-adminbot-email.timer \
       jinesis-openclaw-gateway.service \
       jinesis-adminbot.service
     ;;
@@ -304,8 +460,7 @@ REMOTE
     (($# == 0)) || die "status takes no arguments"
     "${SSH[@]}" systemctl --user --no-pager --full status \
       jinesis-adminbot.service \
-      jinesis-openclaw-gateway.service \
-      jinesis-adminbot-email.timer
+      jinesis-openclaw-gateway.service
     ;;
 
   logs)

@@ -396,6 +396,7 @@ export const nl: TranslationMap = {
   nav: {
     chat: "Chat",
     control: "Control",
+    adminbot: "AdminBot",
     agent: "Agent",
     settings: "Instellingen",
     expand: "Zijbalk uitvouwen",
@@ -404,6 +405,12 @@ export const nl: TranslationMap = {
   },
   tabs: {
     agents: "Agents",
+    adminbot: "Pending Actions",
+    adminbotReimbursements: "Reimbursements",
+    adminbotSettings: "Settings",
+    adminbotMembers: "Lab Members",
+    adminbotPapers: "Active Papers",
+    adminbotNudges: "Paper Nudges",
     activity: "Activiteit",
     overview: "Overzicht",
     workboard: "Werkbord",
@@ -429,6 +436,12 @@ export const nl: TranslationMap = {
   },
   subtitles: {
     agents: "Werkruimten, tools, identiteiten.",
+    adminbot: "Approval queue and execution controls.",
+    adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
+    adminbotSettings: "Lab defaults and escalation policy.",
+    adminbotMembers: "Privilege levels and access profiles.",
+    adminbotPapers: "PaperPublish records and current steps.",
+    adminbotNudges: "Due reminders and professor escalations.",
     activity: "Browserlokale samenvattingen van toolactiviteit.",
     overview: "Status, toegangspunten, gezondheid.",
     workboard: "Werkwachtrij voor agents en sessieoverdracht.",
@@ -1697,8 +1710,6 @@ export const nl: TranslationMap = {
     },
     jobDetail: {
       system: "Systeem",
-      command: "Opdracht",
-      cwd: "CWD",
       prompt: "Prompt",
       delivery: "Levering",
       agent: "Agent",

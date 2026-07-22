@@ -288,6 +288,10 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return rows.map((row) => parseJson<AdminBotPaperRecord>(row.payload_json));
   }
 
+  deletePaper(paperId: string): boolean {
+    return this.db.prepare("DELETE FROM adminbot_papers WHERE id = ?").run(paperId).changes > 0;
+  }
+
   getSettings(): AdminBotSettings | undefined {
     const row = this.db
       .prepare("SELECT payload_json FROM adminbot_settings WHERE id = 'default'")

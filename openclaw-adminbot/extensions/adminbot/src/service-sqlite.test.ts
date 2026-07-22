@@ -128,6 +128,13 @@ describe("AdminBotSqliteStore", () => {
         name: "Alice",
         privilege_level: "member",
         slack_user_id: "U123",
+        role: "Research scientist",
+        status: "active",
+        research_branch: "Causal AI",
+        research_topics: ["causal inference", "reasoning"],
+        projects: ["Project Atlas"],
+        hours_per_week: 32,
+        capacity_percent: 80,
       }),
     );
     unwrap(
@@ -148,7 +155,15 @@ describe("AdminBotSqliteStore", () => {
     first.close();
 
     const second = createAdminBotSqliteService({ databasePath });
-    expect(unwrap(second.service.listLabMembers()).members).toHaveLength(1);
+    expect(unwrap(second.service.listLabMembers()).members).toEqual([
+      expect.objectContaining({
+        id: "alice",
+        research_branch: "Causal AI",
+        research_topics: ["causal inference", "reasoning"],
+        projects: ["Project Atlas"],
+        capacity_percent: 80,
+      }),
+    ]);
     expect(unwrap(second.service.listPapers()).papers).toEqual([
       expect.objectContaining({
         id: "paper-1",
@@ -156,7 +171,15 @@ describe("AdminBotSqliteStore", () => {
         artifacts: { overleaf_edit_url: "https://overleaf.example/edit" },
       }),
     ]);
+    expect(unwrap(second.service.deletePaper("paper-1"))).toEqual({
+      deleted: true,
+      paper_id: "paper-1",
+    });
     second.close();
+
+    const third = createAdminBotSqliteService({ databasePath });
+    expect(unwrap(third.service.listPapers()).papers).toEqual([]);
+    third.close();
   });
 
   it("preserves AdminBot settings across service instances", () => {
