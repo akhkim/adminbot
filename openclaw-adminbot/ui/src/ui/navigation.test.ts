@@ -31,6 +31,7 @@ describe("iconForTab", () => {
       chat: "messageSquare",
       overview: "barChart",
       adminbot: "brain",
+      adminbotRegistrations: "check",
       adminbotReimbursements: "fileText",
       adminbotSettings: "settings",
       adminbotMembers: "folder",
@@ -73,6 +74,7 @@ describe("titleForTab", () => {
       chat: "Chat",
       overview: "Overview",
       adminbot: "Pending Actions",
+      adminbotRegistrations: "Member Requests",
       adminbotSettings: "Settings",
       adminbotMembers: "Lab Members",
       adminbotReimbursements: "Reimbursements",
@@ -109,6 +111,7 @@ describe("subtitleForTab", () => {
       chat: "Gateway chat for quick interventions.",
       overview: "Status, entry points, health.",
       adminbot: "Approval queue and execution controls.",
+      adminbotRegistrations: "Approve or reject pending member signups and roster claims.",
       adminbotSettings: "Lab defaults and escalation policy.",
       adminbotMembers: "Privilege levels and access profiles.",
       adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
@@ -194,6 +197,7 @@ describe("tabFromPath", () => {
     expect(tabFromPath("/chat")).toBe("chat");
     expect(tabFromPath("/overview")).toBe("overview");
     expect(tabFromPath("/adminbot")).toBe("adminbot");
+    expect(tabFromPath("/adminbot/registrations")).toBe("adminbotRegistrations");
     expect(tabFromPath("/adminbot/settings")).toBe("adminbotSettings");
     expect(tabFromPath("/adminbot/members")).toBe("adminbotMembers");
     expect(tabFromPath("/adminbot/papers")).toBe("adminbotPapers");

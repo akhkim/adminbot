@@ -2,6 +2,7 @@
 import { html } from "lit";
 import { ConnectErrorDetailCodes } from "../../../../packages/gateway-protocol/src/connect-error-details.js";
 import { t } from "../../i18n/index.ts";
+import type { MemberAuthFailure } from "../adminbot-auth-flow.ts";
 import type { AppViewState } from "../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../external-link.ts";
 import { isGatewayClientStoppedError } from "../gateway.ts";
@@ -9,7 +10,6 @@ import { icons } from "../icons.ts";
 import { normalizeBasePath } from "../navigation.ts";
 import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 import { agentLogoUrl } from "./agents-utils.ts";
-import { renderConnectCommand } from "./connect-command.ts";
 import {
   resolveAuthHintKind,
   resolvePairingHint,
@@ -17,14 +17,18 @@ import {
 } from "./overview-hints.ts";
 
 type LoginFailureKind =
-  | "auth-required"
   | "auth-failed"
   | "auth-rate-limited"
   | "pairing-required"
   | "insecure-context"
   | "origin-not-allowed"
   | "protocol-mismatch"
-  | "network";
+  | "network"
+  | "member-auth-failed"
+  | "member-claim-failed"
+  | "member-rate-limited"
+  | "member-pending-approval"
+  | "adminbot-unreachable";
 
 export type LoginFailureFeedback = {
   kind: LoginFailureKind;
@@ -42,7 +46,61 @@ type LoginFailureFeedbackParams = {
   lastErrorCode?: string | null;
   hasToken: boolean;
   hasPassword: boolean;
+  // Member (email+password) auth failure takes priority over gateway diagnostics
+  // since it reflects the primary sign-in path.
+  memberFailure?: MemberAuthFailure | null;
 };
+
+function resolveMemberFailureFeedback(failure: MemberAuthFailure): LoginFailureFeedback {
+  if (failure.kind === "adminbot-unreachable") {
+    return buildFeedback({
+      kind: "adminbot-unreachable",
+      rawError: "",
+      titleKey: "login.failure.unreachable.title",
+      summaryKey: "login.failure.unreachable.summary",
+      stepKeys: ["login.failure.unreachable.stepService", "login.failure.unreachable.stepRetry"],
+    });
+  }
+  if (failure.kind === "member-rate-limited") {
+    const seconds = failure.retryAfterSeconds;
+    return buildFeedback({
+      kind: "member-rate-limited",
+      rawError: "",
+      titleKey: "login.failure.memberRateLimited.title",
+      summaryKey:
+        typeof seconds === "number"
+          ? "login.failure.memberRateLimited.summarySeconds"
+          : "login.failure.memberRateLimited.summary",
+      stepKeys: ["login.failure.memberRateLimited.stepWait"],
+      stepParams: { seconds: typeof seconds === "number" ? String(seconds) : "" },
+    });
+  }
+  if (failure.kind === "member-claim-failed") {
+    return buildFeedback({
+      kind: "member-claim-failed",
+      rawError: "",
+      titleKey: "login.failure.memberClaim.title",
+      summaryKey: "login.failure.memberClaim.summary",
+      stepKeys: ["login.failure.memberClaim.stepPassword", "login.failure.memberClaim.stepSignIn"],
+    });
+  }
+  if (failure.kind === "member-pending-approval") {
+    return buildFeedback({
+      kind: "member-pending-approval",
+      rawError: "",
+      titleKey: "login.failure.memberPending.title",
+      summaryKey: "login.failure.memberPending.summary",
+      stepKeys: ["login.failure.memberPending.stepWait", "login.failure.memberPending.stepContact"],
+    });
+  }
+  return buildFeedback({
+    kind: "member-auth-failed",
+    rawError: "",
+    titleKey: "login.failure.memberAuth.title",
+    summaryKey: "login.failure.memberAuth.summary",
+    stepKeys: ["login.failure.memberAuth.stepCredentials", "login.failure.memberAuth.stepClaim"],
+  });
+}
 
 function resolveDocsLabel(href: string): string {
   if (href.includes("insecure-http")) {
@@ -91,7 +149,13 @@ function buildFeedback(params: {
 export function resolveLoginFailureFeedback(
   params: LoginFailureFeedbackParams,
 ): LoginFailureFeedback | null {
-  if (params.connected || !params.lastError || isGatewayClientStoppedError(params.lastError)) {
+  if (params.connected) {
+    return null;
+  }
+  if (params.memberFailure) {
+    return resolveMemberFailureFeedback(params.memberFailure);
+  }
+  if (!params.lastError || isGatewayClientStoppedError(params.lastError)) {
     return null;
   }
 
@@ -204,17 +268,10 @@ export function resolveLoginFailureFeedback(
     hasPassword: params.hasPassword,
   });
   if (authHintKind === "required") {
-    return buildFeedback({
-      kind: "auth-required",
-      rawError,
-      titleKey: "login.failure.authRequired.title",
-      summaryKey: "login.failure.authRequired.summary",
-      stepKeys: [
-        "login.failure.authRequired.stepPaste",
-        "login.failure.authRequired.stepGenerate",
-        "login.failure.authRequired.stepConnect",
-      ],
-    });
+    // Gateway-token auth is now advanced/break-glass only; the primary sign-in
+    // path is member email+password, so an unconfigured gateway token is
+    // expected pre-login state, not a user-facing error to alarm on.
+    return null;
   }
   if (authHintKind === "failed") {
     return buildFeedback({
@@ -271,6 +328,370 @@ function renderLoginFailure(feedback: LoginFailureFeedback) {
   `;
 }
 
+function switchLoginMode(state: AppViewState, mode: AppViewState["loginMode"]) {
+  state.loginMode = mode;
+  state.memberFormError = null;
+  state.memberAuthFailure = null;
+  // Refresh the unclaimed roster whenever the picker becomes visible.
+  if (mode === "claim") {
+    void state.loadRoster();
+  }
+}
+
+function renderRosterPicker(state: AppViewState) {
+  const selected = state.selectedMemberId
+    ? state.rosterMembers.find((member) => member.id === state.selectedMemberId)
+    : null;
+  if (state.selectedMemberId) {
+    return html`
+      <div class="field login-gate__picker">
+        <span>${t("login.member.roster.label")}</span>
+        <div class="login-gate__picker-selected">
+          <span class="login-gate__picker-selected-name"
+            >${selected?.name ?? state.selectedMemberId}</span
+          >
+          <button
+            type="button"
+            class="session-link login-gate__picker-change"
+            @click=${() => {
+              state.selectedMemberId = null;
+            }}
+          >
+            ${t("login.member.roster.change")}
+          </button>
+        </div>
+      </div>
+    `;
+  }
+  const filter = state.rosterFilter.trim().toLowerCase();
+  const matches = filter
+    ? state.rosterMembers.filter((member) => member.name.toLowerCase().includes(filter))
+    : state.rosterMembers;
+  return html`
+    <div class="field login-gate__picker">
+      <span>${t("login.member.roster.label")}</span>
+      <input
+        type="text"
+        autocomplete="off"
+        spellcheck="false"
+        .value=${state.rosterFilter}
+        @input=${(e: Event) => {
+          state.rosterFilter = (e.target as HTMLInputElement).value;
+        }}
+        placeholder=${t("login.member.roster.searchPlaceholder")}
+      />
+      ${state.rosterLoading
+        ? html`<div class="login-gate__picker-empty">${t("login.member.roster.loading")}</div>`
+        : state.rosterError
+          ? html`<div class="login-gate__picker-error" role="alert">
+              <span>${t("login.member.roster.error")}</span>
+              <button
+                type="button"
+                class="session-link login-gate__picker-retry"
+                @click=${() => void state.loadRoster()}
+              >
+                ${t("login.member.roster.retry")}
+              </button>
+            </div>`
+          : matches.length === 0
+            ? html`<div class="login-gate__picker-empty">${t("login.member.roster.empty")}</div>`
+            : html`
+                <div
+                  class="login-gate__picker-list"
+                  role="listbox"
+                  aria-label=${t("login.member.roster.label")}
+                >
+                  ${matches.map(
+                    (member) => html`
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected="false"
+                        class="login-gate__picker-option"
+                        @click=${() => {
+                          state.selectedMemberId = member.id;
+                          state.rosterFilter = "";
+                        }}
+                      >
+                        ${member.name}
+                      </button>
+                    `,
+                  )}
+                </div>
+              `}
+    </div>
+  `;
+}
+
+function renderSignupFields(state: AppViewState) {
+  const field = (
+    label: string,
+    value: string,
+    apply: (next: string) => void,
+    placeholder: string,
+    autocomplete = "off",
+  ) => html`
+    <label class="field">
+      <span>${label}</span>
+      <input
+        type="text"
+        autocomplete=${autocomplete}
+        spellcheck="false"
+        .value=${value}
+        @input=${(e: Event) => apply((e.target as HTMLInputElement).value)}
+        placeholder=${placeholder}
+      />
+    </label>
+  `;
+  return html`
+    ${field(
+      t("login.member.signup.name"),
+      state.memberName,
+      (next) => {
+        state.memberName = next;
+      },
+      t("login.member.signup.namePlaceholder"),
+      "name",
+    )}
+    ${field(
+      t("login.member.signup.role"),
+      state.memberRole,
+      (next) => {
+        state.memberRole = next;
+      },
+      t("login.member.signup.rolePlaceholder"),
+    )}
+    ${field(
+      t("login.member.signup.affiliation"),
+      state.memberAffiliation,
+      (next) => {
+        state.memberAffiliation = next;
+      },
+      t("login.member.signup.affiliationPlaceholder"),
+    )}
+    ${field(
+      t("login.member.signup.slackUserId"),
+      state.memberSlackUserId,
+      (next) => {
+        state.memberSlackUserId = next;
+      },
+      t("login.member.signup.slackUserIdPlaceholder"),
+    )}
+    ${field(
+      t("login.member.signup.researchBranch"),
+      state.memberResearchBranch,
+      (next) => {
+        state.memberResearchBranch = next;
+      },
+      t("login.member.signup.researchBranchPlaceholder"),
+    )}
+    ${field(
+      t("login.member.signup.researchTopics"),
+      state.memberResearchTopics,
+      (next) => {
+        state.memberResearchTopics = next;
+      },
+      t("login.member.signup.researchTopicsPlaceholder"),
+    )}
+    ${field(
+      t("login.member.signup.projects"),
+      state.memberProjects,
+      (next) => {
+        state.memberProjects = next;
+      },
+      t("login.member.signup.projectsPlaceholder"),
+    )}
+    ${field(
+      t("login.member.signup.hoursPerWeek"),
+      state.memberHoursPerWeek,
+      (next) => {
+        state.memberHoursPerWeek = next;
+      },
+      t("login.member.signup.hoursPerWeekPlaceholder"),
+    )}
+    ${field(
+      t("login.member.signup.capacityPercent"),
+      state.memberCapacityPercent,
+      (next) => {
+        state.memberCapacityPercent = next;
+      },
+      t("login.member.signup.capacityPercentPlaceholder"),
+    )}
+    ${field(
+      t("login.member.signup.location"),
+      state.memberLocation,
+      (next) => {
+        state.memberLocation = next;
+      },
+      t("login.member.signup.locationPlaceholder"),
+    )}
+    ${field(
+      t("login.member.signup.timezone"),
+      state.memberTimezone,
+      (next) => {
+        state.memberTimezone = next;
+      },
+      t("login.member.signup.timezonePlaceholder"),
+    )}
+    ${field(
+      t("login.member.signup.personalWebsite"),
+      state.memberPersonalWebsite,
+      (next) => {
+        state.memberPersonalWebsite = next;
+      },
+      t("login.member.signup.personalWebsitePlaceholder"),
+    )}
+    ${field(
+      t("login.member.signup.notes"),
+      state.memberNotes,
+      (next) => {
+        state.memberNotes = next;
+      },
+      t("login.member.signup.notesPlaceholder"),
+    )}
+  `;
+}
+
+function renderMemberForm(state: AppViewState) {
+  const mode = state.loginMode;
+  const requiresConfirm = mode !== "signin";
+  const submitLabel =
+    mode === "claim"
+      ? t("login.member.claimSubmit")
+      : mode === "signup"
+        ? t("login.member.signupSubmit")
+        : t("login.member.signIn");
+  const workingLabel = mode === "signin" ? t("login.member.working") : t("login.member.submitting");
+  // Native <form> submission keeps Enter-to-submit, mobile "go" buttons, and
+  // password-manager autofill working without per-input key handlers.
+  const onSubmit = (e: Event) => {
+    e.preventDefault();
+    if (!state.memberAuthBusy) {
+      void state.submitMemberAuth();
+    }
+  };
+
+  return html`
+    <form class="login-gate__form" data-login-mode=${mode} @submit=${onSubmit} novalidate>
+      ${mode === "claim" ? renderRosterPicker(state) : ""}
+      ${mode === "signup" ? renderSignupFields(state) : ""}
+      <label class="field">
+        <span>${t("login.member.email")}</span>
+        <input
+          type="email"
+          name="email"
+          autocomplete="email"
+          spellcheck="false"
+          .value=${state.memberEmail}
+          @input=${(e: Event) => {
+            state.memberEmail = (e.target as HTMLInputElement).value;
+          }}
+          placeholder=${t("login.member.emailPlaceholder")}
+        />
+      </label>
+      <label class="field">
+        <span>${t("login.member.password")}</span>
+        <div class="login-gate__secret-row">
+          <input
+            type=${state.loginShowMemberPassword ? "text" : "password"}
+            name="password"
+            autocomplete=${requiresConfirm ? "new-password" : "current-password"}
+            spellcheck="false"
+            .value=${state.memberPassword}
+            @input=${(e: Event) => {
+              state.memberPassword = (e.target as HTMLInputElement).value;
+            }}
+            placeholder=${t("login.member.passwordPlaceholder")}
+          />
+          <button
+            type="button"
+            class="btn btn--icon ${state.loginShowMemberPassword ? "active" : ""}"
+            title=${state.loginShowMemberPassword
+              ? t("login.hidePassword")
+              : t("login.showPassword")}
+            aria-label=${t("login.togglePasswordVisibility")}
+            aria-pressed=${state.loginShowMemberPassword}
+            @click=${() => {
+              state.loginShowMemberPassword = !state.loginShowMemberPassword;
+            }}
+          >
+            ${state.loginShowMemberPassword ? icons.eye : icons.eyeOff}
+          </button>
+        </div>
+      </label>
+      ${requiresConfirm
+        ? html`
+            <label class="field">
+              <span>${t("login.member.confirmPassword")}</span>
+              <input
+                type=${state.loginShowMemberPassword ? "text" : "password"}
+                name="confirm-password"
+                autocomplete="new-password"
+                spellcheck="false"
+                .value=${state.memberPasswordConfirm}
+                @input=${(e: Event) => {
+                  state.memberPasswordConfirm = (e.target as HTMLInputElement).value;
+                }}
+                placeholder=${t("login.member.confirmPasswordPlaceholder")}
+              />
+            </label>
+          `
+        : ""}
+      ${state.memberFormError
+        ? html`<div class="login-gate__form-error" role="alert">${state.memberFormError}</div>`
+        : ""}
+      <button
+        type="submit"
+        class="btn primary login-gate__connect"
+        ?disabled=${state.memberAuthBusy}
+        aria-busy=${state.memberAuthBusy}
+      >
+        ${state.memberAuthBusy
+          ? html`<span class="login-gate__spinner" aria-hidden="true"></span>`
+          : ""}
+        ${state.memberAuthBusy ? workingLabel : submitLabel}
+      </button>
+      ${mode === "claim"
+        ? html`
+            <button
+              type="button"
+              class="login-gate__mode-toggle session-link"
+              @click=${() => switchLoginMode(state, "signup")}
+            >
+              ${t("login.member.toggleToSignup")}
+            </button>
+          `
+        : ""}
+      <button
+        type="button"
+        class="login-gate__mode-toggle session-link"
+        @click=${() => switchLoginMode(state, mode === "signin" ? "claim" : "signin")}
+      >
+        ${mode === "signin" ? t("login.member.toggleToClaim") : t("login.member.toggleToSignIn")}
+      </button>
+    </form>
+  `;
+}
+
+function renderPendingNotice(state: AppViewState) {
+  return html`
+    <div class="callout login-gate__pending" role="status" aria-live="polite">
+      <div class="login-gate__pending-title">${t("login.pending.title")}</div>
+      <div class="login-gate__pending-summary">${t("login.pending.summary")}</div>
+      <button
+        type="button"
+        class="btn login-gate__connect"
+        @click=${() => {
+          state.loginPendingNotice = false;
+          switchLoginMode(state, "signin");
+        }}
+      >
+        ${t("login.pending.back")}
+      </button>
+    </div>
+  `;
+}
+
 export function renderLoginGate(state: AppViewState) {
   const basePath = normalizeBasePath(state.basePath ?? "");
   const faviconSrc = agentLogoUrl(basePath);
@@ -280,6 +701,7 @@ export function renderLoginGate(state: AppViewState) {
     lastErrorCode: state.lastErrorCode,
     hasToken: Boolean(state.settings.token.trim()),
     hasPassword: Boolean(state.password.trim()),
+    memberFailure: state.memberAuthFailure,
   });
 
   return html`
@@ -290,110 +712,9 @@ export function renderLoginGate(state: AppViewState) {
           <div class="login-gate__title">OpenClaw</div>
           <div class="login-gate__sub">${t("login.subtitle")}</div>
         </div>
-        <div class="login-gate__form">
-          <label class="field">
-            <span>${t("overview.access.wsUrl")}</span>
-            <input
-              .value=${state.settings.gatewayUrl}
-              @input=${(e: Event) => {
-                const v = (e.target as HTMLInputElement).value;
-                state.applySettings({ ...state.settings, gatewayUrl: v });
-              }}
-              placeholder="ws://127.0.0.1:18789"
-            />
-          </label>
-          <label class="field">
-            <span>${t("overview.access.token")}</span>
-            <div class="login-gate__secret-row">
-              <input
-                type=${state.loginShowGatewayToken ? "text" : "password"}
-                autocomplete="off"
-                spellcheck="false"
-                .value=${state.settings.token}
-                @input=${(e: Event) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  state.applySettings({ ...state.settings, token: v });
-                }}
-                placeholder="OPENCLAW_GATEWAY_TOKEN (${t("login.passwordPlaceholder")})"
-                @keydown=${(e: KeyboardEvent) => {
-                  if (e.key === "Enter") {
-                    state.connect();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                class="btn btn--icon ${state.loginShowGatewayToken ? "active" : ""}"
-                title=${state.loginShowGatewayToken ? t("login.hideToken") : t("login.showToken")}
-                aria-label=${t("login.toggleTokenVisibility")}
-                aria-pressed=${state.loginShowGatewayToken}
-                @click=${() => {
-                  state.loginShowGatewayToken = !state.loginShowGatewayToken;
-                }}
-              >
-                ${state.loginShowGatewayToken ? icons.eye : icons.eyeOff}
-              </button>
-            </div>
-          </label>
-          <label class="field">
-            <span>${t("overview.access.password")}</span>
-            <div class="login-gate__secret-row">
-              <input
-                type=${state.loginShowGatewayPassword ? "text" : "password"}
-                autocomplete="off"
-                spellcheck="false"
-                .value=${state.password}
-                @input=${(e: Event) => {
-                  const v = (e.target as HTMLInputElement).value;
-                  state.password = v;
-                }}
-                placeholder="${t("login.passwordPlaceholder")}"
-                @keydown=${(e: KeyboardEvent) => {
-                  if (e.key === "Enter") {
-                    state.connect();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                class="btn btn--icon ${state.loginShowGatewayPassword ? "active" : ""}"
-                title=${state.loginShowGatewayPassword
-                  ? t("login.hidePassword")
-                  : t("login.showPassword")}
-                aria-label=${t("login.togglePasswordVisibility")}
-                aria-pressed=${state.loginShowGatewayPassword}
-                @click=${() => {
-                  state.loginShowGatewayPassword = !state.loginShowGatewayPassword;
-                }}
-              >
-                ${state.loginShowGatewayPassword ? icons.eye : icons.eyeOff}
-              </button>
-            </div>
-          </label>
-          <button class="btn primary login-gate__connect" @click=${() => state.connect()}>
-            ${t("common.connect")}
-          </button>
-        </div>
-        ${failure ? renderLoginFailure(failure) : ""}
-        <div class="login-gate__help">
-          <div class="login-gate__help-title">${t("overview.connection.title")}</div>
-          <ol class="login-gate__steps">
-            <li>
-              ${t("overview.connection.step1")}${renderConnectCommand("openclaw gateway run")}
-            </li>
-            <li>${t("overview.connection.step2")} ${renderConnectCommand("openclaw dashboard")}</li>
-            <li>${t("overview.connection.step3")}</li>
-          </ol>
-          <div class="login-gate__docs">
-            <a
-              class="session-link"
-              href="https://docs.openclaw.ai/web/dashboard"
-              target="_blank"
-              rel="noreferrer"
-              >${t("overview.connection.docsLink")}</a
-            >
-          </div>
-        </div>
+        ${state.loginPendingNotice
+          ? renderPendingNotice(state)
+          : html`${renderMemberForm(state)} ${failure ? renderLoginFailure(failure) : ""}`}
       </div>
     </div>
   `;

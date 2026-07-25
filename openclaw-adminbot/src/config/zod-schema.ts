@@ -11,10 +11,7 @@ import {
   isValidControlUiChatMessageMaxWidth,
   normalizeControlUiChatMessageMaxWidth,
 } from "./control-ui-css.js";
-import {
-  isValidControlUiLaunchUrl,
-  normalizeControlUiLaunchUrl,
-} from "./control-ui-launch-url.js";
+import { isValidControlUiLaunchUrl, normalizeControlUiLaunchUrl } from "./control-ui-launch-url.js";
 import type { GatewayRemoteConfig } from "./types.gateway.js";
 import { SilentReplyPolicyConfigSchema } from "./zod-schema.agent-defaults.js";
 import { ToolsSchema } from "./zod-schema.agent-runtime.js";
@@ -1038,6 +1035,7 @@ export const OpenClawSchema = z
               })
               .optional(),
             allowedOrigins: z.array(z.string()).optional(),
+            extraConnectSrc: z.array(z.string()).optional(),
             dangerouslyAllowHostHeaderOriginFallback: z.boolean().optional(),
             allowInsecureAuth: z.boolean().optional(),
             dangerouslyDisableDeviceAuth: z.boolean().optional(),

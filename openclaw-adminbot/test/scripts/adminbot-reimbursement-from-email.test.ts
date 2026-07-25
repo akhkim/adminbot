@@ -165,4 +165,36 @@ describe("AdminBot reimbursement form filler", () => {
     expect(inspection.table.at(-1)).toEqual(["TOTAL", "CAD 2050.00"]);
     expect([sha256(workbookTemplate), sha256(tripTemplate)]).toEqual(before);
   });
+
+  it("extracts receipts as structured JSON with per-page images for the vision model", () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-reimbursement-extract-"));
+    temporaryDirectories.push(directory);
+    const receipt = path.join(directory, "receipt.pdf");
+    // A garbage-but-.pdf-named file is enough to prove the extract contract (JSON shape,
+    // graceful fallback) without depending on poppler-utils being installed in this environment.
+    fs.writeFileSync(receipt, "%PDF-1.4\nnot a real pdf body\n");
+
+    const result = JSON.parse(
+      execFileSync("python3", [helper, "extract", receipt], {
+        encoding: "utf8",
+        env: pythonEnv,
+      }),
+    ) as {
+      receipts: Array<{
+        name: string;
+        text: string;
+        images: Array<{ media_type: string; data_base64: string }>;
+      }>;
+    };
+
+    expect(result.receipts).toHaveLength(1);
+    const [extracted] = result.receipts;
+    expect(extracted.name).toBe("receipt.pdf");
+    expect(Array.isArray(extracted.images)).toBe(true);
+    if (extracted.images.length === 0) {
+      expect(extracted.text).toContain("receipt.pdf");
+    } else {
+      expect(extracted.images[0]).toMatchObject({ media_type: "image/png" });
+    }
+  });
 });

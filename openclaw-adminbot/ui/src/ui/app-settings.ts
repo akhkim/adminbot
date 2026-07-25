@@ -1,6 +1,10 @@
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
+import {
+  loadAdminBotRegistrations,
+  type AdminBotRegistrationsHost,
+} from "./adminbot-registrations.ts";
 import { refreshChat } from "./app-chat.ts";
 import {
   startLogsPolling,
@@ -165,6 +169,7 @@ type SettingsAppHost = SettingsHost &
   SkillWorkshopState &
   ModelAuthStatusState &
   AdminBotHost &
+  AdminBotRegistrationsHost &
   UsageState & {
     overviewLogCursor: number | null;
     overviewLogLines: string[];
@@ -329,6 +334,20 @@ export function applySettingsFromUrl(host: SettingsHost) {
     shouldCleanUrl = true;
   }
 
+  // AdminBot base URL is non-secret; static deployments (e.g. Vercel) pass it as
+  // a param so the member login gate can reach the AdminBot service when the
+  // page host cannot serve it on :8765.
+  const adminBotUrlRaw = params.get("adminBotUrl") ?? hashParams.get("adminBotUrl");
+  if (adminBotUrlRaw != null) {
+    const nextAdminBotUrl = normalizeOptionalString(adminBotUrlRaw);
+    if (nextAdminBotUrl && nextAdminBotUrl !== host.settings.adminBotUrl) {
+      applySettings(host, { ...host.settings, adminBotUrl: nextAdminBotUrl });
+    }
+    params.delete("adminBotUrl");
+    hashParams.delete("adminBotUrl");
+    shouldCleanUrl = true;
+  }
+
   if (!shouldCleanUrl) {
     return;
   }
@@ -450,6 +469,9 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "adminbotPapers":
       case "adminbotNudges":
         await loadAdminBot(app);
+        break;
+      case "adminbotRegistrations":
+        await loadAdminBotRegistrations(app);
         break;
       case "activity":
         break;

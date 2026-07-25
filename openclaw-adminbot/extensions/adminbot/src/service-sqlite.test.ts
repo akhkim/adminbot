@@ -190,7 +190,6 @@ describe("AdminBotSqliteStore", () => {
     });
     unwrap(
       first.service.updateSettings({
-        default_privilege_level: "member",
         paper_escalation_business_days: 4,
         head_professor_member_id: "zhijing",
       }),
@@ -199,7 +198,6 @@ describe("AdminBotSqliteStore", () => {
 
     const second = createAdminBotSqliteService({ databasePath });
     expect(unwrap(second.service.getSettings())).toMatchObject({
-      default_privilege_level: "member",
       paper_escalation_business_days: 4,
       head_professor_member_id: "zhijing",
     });

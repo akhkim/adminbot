@@ -8,11 +8,89 @@ const GOG_TIMEOUT_MS = 60_000;
 const GOG_MAX_OUTPUT_BYTES = 1024 * 1024;
 
 type GogRun = (args: string[]) => Promise<void>;
+type GogCapture = (args: string[]) => Promise<string>;
 
 export type GogAdminBotExecutorOptions = {
   env?: NodeJS.ProcessEnv;
   run?: GogRun;
 };
+
+export type GogSheetReadOptions = {
+  env?: NodeJS.ProcessEnv;
+  range?: string;
+  capture?: GogCapture;
+};
+
+// Unbounded A1 range over the first tab, which is where Google Forms writes linked responses.
+const DEFAULT_SHEET_RANGE = "A:ZZ";
+
+/** Reads a spreadsheet range with the same non-interactive gog contract the executor uses. */
+export async function readGogSheetRows(
+  spreadsheetId: string,
+  options: GogSheetReadOptions = {},
+): Promise<string[][]> {
+  const id = spreadsheetId.trim();
+  if (!id) {
+    throw new Error("gog sheets get requires a spreadsheet id");
+  }
+  const capture = options.capture ?? createGogCapture(options.env);
+  const args = rootArgs("sheets.get", optionalAccount(options.env));
+  args.push("--readonly", "sheets", "get", id, options.range?.trim() || DEFAULT_SHEET_RANGE);
+  return parseGogSheetRows(await capture(args));
+}
+
+/**
+ * gog wraps API results in an envelope whose shape varies per command, so locate the
+ * Sheets `values` row matrix instead of assuming a fixed top-level key.
+ */
+export function parseGogSheetRows(output: string): string[][] {
+  const trimmed = output.trim();
+  if (!trimmed) {
+    return [];
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    throw new Error("gog sheets get did not return JSON output");
+  }
+  return findRowMatrix(parsed) ?? [];
+}
+
+function findRowMatrix(value: unknown): string[][] | undefined {
+  if (Array.isArray(value)) {
+    return isRowMatrix(value) ? toRowMatrix(value) : undefined;
+  }
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const record = value as Record<string, unknown>;
+  const values = record.values;
+  if (Array.isArray(values) && isRowMatrix(values)) {
+    return toRowMatrix(values);
+  }
+  for (const entry of Object.values(record)) {
+    const found = findRowMatrix(entry);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+function isRowMatrix(value: unknown[]): boolean {
+  return value.length > 0 && value.every((row) => Array.isArray(row));
+}
+
+function toRowMatrix(value: unknown[]): string[][] {
+  return value.map((row) =>
+    (row as unknown[]).map((cell) =>
+      cell === undefined || cell === null ? "" : String(cell).trim(),
+    ),
+  );
+}
+
+function optionalAccount(env: NodeJS.ProcessEnv | undefined): string | undefined {
+  return (env ?? process.env).GOG_ACCOUNT?.trim() || undefined;
+}
 
 export function createGogAdminBotExecutor(
   options: GogAdminBotExecutorOptions = {},
@@ -203,14 +281,22 @@ function appendBoolean(args: string[], flag: string, value: unknown): void {
 }
 
 function createGogRunner(env: NodeJS.ProcessEnv | undefined): GogRun {
+  const capture = createGogCapture(env);
+  return async (args) => {
+    await capture(args);
+  };
+}
+
+function createGogCapture(env: NodeJS.ProcessEnv | undefined): GogCapture {
   return async (args) => {
     try {
-      await execFile("gog", args, {
+      const result = await execFile("gog", args, {
         env: env ?? process.env,
         maxBuffer: GOG_MAX_OUTPUT_BYTES,
         timeout: GOG_TIMEOUT_MS,
         windowsHide: true,
       });
+      return result.stdout;
     } catch (error) {
       throw new Error(formatGogError(error), { cause: error });
     }

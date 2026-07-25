@@ -65,6 +65,41 @@ describe("buildControlUiCspHeader", () => {
     const csp = buildControlUiCspHeader({ inlineScriptHashes: [] });
     expect(csp).toMatch(/script-src 'self'(?:;|$)/);
   });
+
+  it("appends valid extra connect-src origins configured by a plugin", () => {
+    const csp = buildControlUiCspHeader({
+      extraConnectSrc: ["http://127.0.0.1:8765", "https://*:8443"],
+    });
+    const connectSrc = csp.split("; ").find((directive) => directive.startsWith("connect-src "));
+    expect(connectSrc?.split(" ")).toEqual([
+      "connect-src",
+      "'self'",
+      "ws:",
+      "wss:",
+      "https://api.openai.com",
+      "https://tweakcn.com",
+      "http://127.0.0.1:8765",
+      "https://*:8443",
+    ]);
+  });
+
+  it("drops malformed extra connect-src entries instead of corrupting the header", () => {
+    const csp = buildControlUiCspHeader({
+      extraConnectSrc: ["not a url", "javascript:alert(1)", "'unsafe-inline'", ""],
+    });
+    const connectSrc = csp.split("; ").find((directive) => directive.startsWith("connect-src "));
+    expect(connectSrc).toBe(
+      "connect-src 'self' ws: wss: https://api.openai.com https://tweakcn.com",
+    );
+  });
+
+  it("dedupes repeated extra connect-src origins", () => {
+    const csp = buildControlUiCspHeader({
+      extraConnectSrc: ["http://127.0.0.1:8765", "http://127.0.0.1:8765"],
+    });
+    const connectSrc = csp.split("; ").find((directive) => directive.startsWith("connect-src "));
+    expect(connectSrc?.split(" ").filter((s) => s === "http://127.0.0.1:8765")).toHaveLength(1);
+  });
 });
 
 describe("computeInlineScriptHashes", () => {

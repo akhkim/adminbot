@@ -11,6 +11,9 @@ REF="HEAD"
 GATEWAY_PORT="18789"
 ADMINBOT_PORT="8765"
 SSH_CONNECT_TIMEOUT="10"
+# Set once in your own shell (never in this file or any committed config) to run the whole
+# flow non-interactively, e.g.: read -rs AURORA_SSH_PASSWORD; export AURORA_SSH_PASSWORD
+SSH_PASSWORD="${AURORA_SSH_PASSWORD:-}"
 
 usage() {
   cat <<'EOF'
@@ -23,6 +26,13 @@ Options:
   --ref <git-ref>        Committed revision to deploy (default: HEAD)
   --gateway-port <port>  Local and remote Gateway port (default: 18789)
   --adminbot-port <port> Local and remote AdminBot port (default: 8765)
+
+Non-interactive auth:
+  Set AURORA_SSH_PASSWORD in your shell (never commit it) to skip every SSH
+  password prompt via sshpass, e.g.:
+    read -rs AURORA_SSH_PASSWORD; export AURORA_SSH_PASSWORD
+  Requires the `sshpass` binary. Unset (the default) keeps today's behavior
+  of prompting interactively for each SSH/SCP call.
 
 Commands:
   check                  Verify VPN/DNS/SSH and Aurora prerequisites
@@ -106,8 +116,17 @@ REMOTE_BASE="/h/405/${CS_USER}/services/openclaw-adminbot"
 REMOTE_CURRENT="${REMOTE_BASE}/current"
 REMOTE_ENV="/h/405/${CS_USER}/.config/jinesis-adminbot/adminbot.env"
 REMOTE_CONFIG="/h/405/${CS_USER}/.openclaw/openclaw.json"
-SSH=(ssh -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" "$TARGET")
-SCP=(scp -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}")
+# SSHPASS_PREFIX stays empty (today's interactive-prompt behavior) unless AURORA_SSH_PASSWORD
+# is set; every ssh/scp invocation below is prefixed with it so one password entry covers the
+# whole flow.
+SSHPASS_PREFIX=()
+if [[ -n "$SSH_PASSWORD" ]]; then
+  command -v sshpass >/dev/null || die "sshpass is required when AURORA_SSH_PASSWORD is set"
+  export SSHPASS="$SSH_PASSWORD"
+  SSHPASS_PREFIX=(sshpass -e)
+fi
+SSH=("${SSHPASS_PREFIX[@]}" ssh -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" "$TARGET")
+SCP=("${SSHPASS_PREFIX[@]}" scp -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}")
 
 check_local_tools() {
   command -v git >/dev/null || die "git is required locally"
@@ -141,7 +160,7 @@ REMOTE
 
   connect)
     check_local_tools
-    exec ssh \
+    exec "${SSHPASS_PREFIX[@]}" ssh \
       -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" \
       -L "${GATEWAY_PORT}:127.0.0.1:${GATEWAY_PORT}" \
       -L "${ADMINBOT_PORT}:127.0.0.1:${ADMINBOT_PORT}" \
@@ -420,7 +439,7 @@ REMOTE_ADMINBOT_DATA
 
   auth-gog)
     (($# == 0)) || die "auth-gog takes no arguments"
-    ssh -t -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" "$TARGET" \
+    "${SSHPASS_PREFIX[@]}" ssh -t -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" "$TARGET" \
       "set -euo pipefail; set -a; . $REMOTE_ENV; set +a; /h/405/${CS_USER}/.local/bin/gog auth add jinesis.adminbot@gmail.com --remote --force-consent --services gmail,calendar,drive,docs,sheets,contacts"
     ;;
 
@@ -472,7 +491,7 @@ REMOTE_ADMINBOT_DATA
       email) systemd_unit="jinesis-adminbot-email.service" ;;
       *) die "logs unit must be adminbot, gateway, or email" ;;
     esac
-    exec ssh -t "$TARGET" journalctl --user -u "$systemd_unit" -f
+    exec "${SSHPASS_PREFIX[@]}" ssh -t "$TARGET" journalctl --user -u "$systemd_unit" -f
     ;;
 
   *)

@@ -141,6 +141,14 @@ export type GatewayControlUiConfig = {
   /** Allowed browser origins for Control UI/WebChat websocket connections. */
   allowedOrigins?: string[];
   /**
+   * Additional origins the served Control UI page's CSP `connect-src` allows fetching from,
+   * beyond the Gateway's own origin. For a bundled plugin that runs its own HTTP service on a
+   * different port/origin than the Gateway (e.g. AdminBot), the plugin's setup step is
+   * responsible for adding its own origin here — core has no built-in knowledge of any plugin's
+   * origin.
+   */
+  extraConnectSrc?: string[];
+  /**
    * DANGEROUS: Keep Host-header origin fallback behavior.
    * Supported long-term for deployments that intentionally rely on this policy.
    */

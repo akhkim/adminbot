@@ -439,7 +439,6 @@ describe("AdminBot tool handlers", () => {
             }
           : url.endsWith("/settings")
             ? {
-                default_privilege_level: "member",
                 paper_escalation_business_days: 3,
                 head_professor_member_id: "zhijing",
                 updated_at: "2026-06-01T00:00:00.000Z",
@@ -481,7 +480,6 @@ describe("AdminBot tool handlers", () => {
 
     await tools.getSettings();
     await tools.updateSettings({
-      default_privilege_level: "member",
       paper_escalation_business_days: 3,
       head_professor_member_id: "zhijing",
     });
@@ -492,7 +490,6 @@ describe("AdminBot tool handlers", () => {
       {
         url: "http://127.0.0.1:8765/settings",
         body: {
-          default_privilege_level: "member",
           paper_escalation_business_days: 3,
           head_professor_member_id: "zhijing",
         },
@@ -557,6 +554,78 @@ describe("AdminBot tool handlers", () => {
     expect(calls[1]).toEqual({
       url: "http://127.0.0.1:8765/papers/nudges?now=2026-06-04T00%3A00%3A00.000Z",
       body: undefined,
+    });
+  });
+});
+
+function settingsFetch(settings: Record<string, unknown>) {
+  const calls: Array<{ url: string; body?: unknown }> = [];
+  const fetchImpl = vi.fn(async (input, init) => {
+    calls.push({
+      url: String(input),
+      body: init?.body ? JSON.parse(init.body) : undefined,
+    });
+    return {
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      async text() {
+        return JSON.stringify(settings);
+      },
+    };
+  }) as FetchLike;
+  return { fetchImpl, calls };
+}
+
+describe("AdminBot applicant review handlers", () => {
+  it("lists only applicants submitted after the stored review cursor", async () => {
+    const { fetchImpl, calls } = settingsFetch({
+      applicant_sheet_id: "sheet-1",
+      applicant_last_reviewed_at: "2026-07-10T00:00:00.000Z",
+    });
+    const readSheetRows = vi.fn(async () => [
+      ["Timestamp", "Full Name", "Email", "Link to your CV"],
+      ["2026-07-01T10:00:00Z", "Ada Lovelace", "ada@example.test", "https://drive.example/ada"],
+      ["2026-07-20T09:30:00Z", "Alan Turing", "alan@example.test", "https://drive.example/alan"],
+    ]);
+    const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl, readSheetRows });
+
+    await expect(tools.listUnreviewedApplicants({})).resolves.toEqual({
+      sheet_id: "sheet-1",
+      since: "2026-07-10T00:00:00.000Z",
+      applicants: [
+        {
+          name: "Alan Turing",
+          email: "alan@example.test",
+          cv_link: "https://drive.example/alan",
+          submitted_at: "2026-07-20T09:30:00Z",
+        },
+      ],
+    });
+    expect(calls[0]?.url).toBe("http://127.0.0.1:8765/settings");
+    expect(readSheetRows).toHaveBeenCalledWith("sheet-1", {});
+  });
+
+  it("fails clearly when no applicant sheet is configured", async () => {
+    const { fetchImpl } = settingsFetch({});
+    const readSheetRows = vi.fn(async () => []);
+    const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl, readSheetRows });
+
+    await expect(tools.listUnreviewedApplicants({})).rejects.toThrow(
+      "no applicant sheet configured, set it in AdminBot settings first",
+    );
+    expect(readSheetRows).not.toHaveBeenCalled();
+  });
+
+  it("advances the review cursor through the settings update path", async () => {
+    const { fetchImpl, calls } = settingsFetch({ applicant_sheet_id: "sheet-1" });
+    const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl });
+
+    await tools.markApplicantsReviewed({ reviewedAt: "2026-07-24T12:00:00.000Z" });
+
+    expect(calls[0]).toEqual({
+      url: "http://127.0.0.1:8765/settings",
+      body: { applicant_last_reviewed_at: "2026-07-24T12:00:00.000Z" },
     });
   });
 });

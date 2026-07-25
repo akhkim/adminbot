@@ -76,6 +76,27 @@ TSX_BIN="$ROOT/node_modules/.bin/tsx"
 [[ -f "$ROOT/dist/entry.js" || -f "$ROOT/dist/entry.mjs" ]] ||
   die "OpenClaw build output is missing; run pnpm build in $ROOT"
 
+PYTHON_BIN="$(command -v python3 || true)"
+[[ -n "$PYTHON_BIN" ]] || die "python3 is missing"
+
+# Aurora accounts have no sudo and no system pip. Bootstrap PyPA's official
+# zipapp installer (no root, no preexisting pip needed) and install the
+# reimbursement form filler's (scripts/adminbot-reimbursement-from-email.py)
+# python-docx/openpyxl dependencies into a user-owned directory on PYTHONPATH
+# instead of touching the system interpreter.
+REIMBURSEMENT_LIBS="$HOME/.local/share/jinesis-adminbot/python-libs"
+REIMBURSEMENT_REQUIREMENTS="$ROOT/scripts/adminbot-reimbursement-requirements.txt"
+if ! PYTHONPATH="$REIMBURSEMENT_LIBS" "$PYTHON_BIN" -c 'import docx, openpyxl' 2>/dev/null; then
+  pip_pyz="$HOME/.local/share/jinesis-adminbot/pip.pyz"
+  mkdir -p "$(dirname "$pip_pyz")" "$REIMBURSEMENT_LIBS"
+  [[ -f "$pip_pyz" ]] ||
+    curl --fail --location --retry 3 --connect-timeout 15 --max-time 300 \
+      https://bootstrap.pypa.io/pip/pip.pyz --output "$pip_pyz"
+  "$PYTHON_BIN" "$pip_pyz" install --target "$REIMBURSEMENT_LIBS" \
+    -r "$REIMBURSEMENT_REQUIREMENTS" ||
+    die "failed to install reimbursement form dependencies from $REIMBURSEMENT_REQUIREMENTS"
+fi
+
 CONFIG_DIR="$HOME/.config/jinesis-adminbot"
 ENV_FILE="$CONFIG_DIR/adminbot.env"
 UNIT_DIR="$HOME/.config/systemd/user"
@@ -114,6 +135,7 @@ WorkingDirectory=$ROOT
 EnvironmentFile=$ENV_FILE
 Environment=XDG_CACHE_HOME=$CACHE_ROOT
 Environment=NODE_ENV=production
+Environment=PYTHONPATH=$REIMBURSEMENT_LIBS
 ExecStart=$NODE_BIN $ROOT/start-adminbot.mjs
 Restart=on-failure
 RestartSec=5
@@ -162,6 +184,7 @@ WorkingDirectory=$ROOT
 EnvironmentFile=$ENV_FILE
 Environment=XDG_CACHE_HOME=$CACHE_ROOT
 Environment=NODE_ENV=production
+Environment=PYTHONPATH=$REIMBURSEMENT_LIBS
 ExecStart=$TSX_BIN $ROOT/scripts/adminbot-email-automation.ts
 TimeoutStartSec=30min
 UMask=0077

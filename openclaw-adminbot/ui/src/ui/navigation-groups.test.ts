@@ -33,6 +33,8 @@ describe("TAB_GROUPS", () => {
     const adminbot = TAB_GROUPS.find((group) => group.label === "adminbot");
     expect(adminbot?.tabs).toEqual([
       "adminbot",
+      "adminbotRegistrations",
+      "adminbotReimbursements",
       "adminbotSettings",
       "adminbotMembers",
       "adminbotPapers",
@@ -50,6 +52,14 @@ describe("TAB_GROUPS", () => {
     expect(isTabInGroup(settings, "channels")).toBe(true);
     expect(isTabInGroup(settings, "debug")).toBe(true);
     expect(isTabInGroup(settings, "chat")).toBe(false);
+
+    const adminbot = TAB_GROUPS.find((group) => group.label === "adminbot");
+    if (!adminbot) {
+      throw new Error("Expected adminbot group");
+    }
+    // Registration review is governance, so it belongs to the AdminBot group, not settings.
+    expect(isTabInGroup(adminbot, "adminbotRegistrations")).toBe(true);
+    expect(isTabInGroup(settings, "adminbotRegistrations")).toBe(false);
   });
 
   it("routes every published settings slice", () => {

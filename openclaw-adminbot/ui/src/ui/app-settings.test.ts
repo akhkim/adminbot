@@ -355,6 +355,18 @@ describe("applySettingsFromUrl", () => {
     expect(window.location.hash).toBe("");
   });
 
+  it("hydrates the adminBotUrl param into settings and strips it from the URL", () => {
+    setTestWindowUrl(
+      "https://control.example/ui/overview?adminBotUrl=https://adminbot.example:8443",
+    );
+    const host = createHost("overview");
+
+    applySettingsFromUrl(host);
+
+    expect(host.settings.adminBotUrl).toBe("https://adminbot.example:8443");
+    expect(window.location.search).toBe("");
+  });
+
   it("hydrates native Mac app auth before the first connection", () => {
     setTestWindowUrl("https://control.example/ui/chat");
     (

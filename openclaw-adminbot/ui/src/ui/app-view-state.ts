@@ -61,8 +61,44 @@ import type { SessionLogEntry } from "./views/usage.ts";
 export type AppViewState = {
   settings: UiSettings;
   password: string;
-  loginShowGatewayToken: boolean;
-  loginShowGatewayPassword: boolean;
+  memberEmail: string;
+  memberPassword: string;
+  memberPasswordConfirm: string;
+  loginMode: import("./adminbot-auth-flow.ts").LoginMode;
+  loginShowMemberPassword: boolean;
+  memberAuthBusy: boolean;
+  memberAuthFailure: import("./adminbot-auth-flow.ts").MemberAuthFailure | null;
+  memberFormError: string | null;
+  loginPendingNotice: boolean;
+  rosterMembers: import("./adminbot-auth.ts").RosterMember[];
+  rosterLoading: boolean;
+  rosterError: import("./adminbot-auth-flow.ts").RosterError;
+  rosterFilter: string;
+  selectedMemberId: string | null;
+  memberName: string;
+  memberSlackUserId: string;
+  memberRole: string;
+  memberAffiliation: string;
+  memberResearchBranch: string;
+  memberResearchTopics: string;
+  memberProjects: string;
+  memberHoursPerWeek: string;
+  memberCapacityPercent: string;
+  memberLocation: string;
+  memberTimezone: string;
+  memberPersonalWebsite: string;
+  memberNotes: string;
+  // Signed-in member's AdminBot privilege level, persisted app-wide so the
+  // Gateway-RPC admin surfaces (Lab Members) can gate on real privilege rather
+  // than assuming admin. Null until the member session is loaded.
+  memberPrivilegeLevel: string | null;
+  // Signed-in member's own roster id, so the Lab Members table can offer a
+  // self-edit row and sort it first. Null in break-glass gateway-token-only
+  // access, where no row is "mine".
+  memberId: string | null;
+  submitMemberAuth: () => Promise<void>;
+  signOutMember: () => Promise<void>;
+  loadRoster: () => Promise<void>;
   tab: Tab;
   onboarding: boolean;
   basePath: string;
@@ -288,6 +324,11 @@ export type AppViewState = {
   adminBotBusyActionId: string | null;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotReimbursement: AdminBotReimbursementState;
+  registrations: import("./adminbot-auth.ts").MemberRegistration[];
+  registrationsLoading: boolean;
+  registrationsError: import("./adminbot-registrations.ts").RegistrationsLoadError | null;
+  registrationsBusyId: string | null;
+  registrationsNotice: { kind: "success" | "error"; text: string } | null;
   toolsCatalogLoading: boolean;
   toolsCatalogError: string | null;
   toolsCatalogResult: ToolsCatalogResult | null;
@@ -477,7 +518,6 @@ export type AppViewState = {
     paletteQuery: string;
     paletteActiveIndex: number;
     streamMode: boolean;
-    overviewShowGatewayToken: boolean;
     overviewShowGatewayPassword: boolean;
     overviewLogLines: string[];
     overviewLogCursor: number;

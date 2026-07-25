@@ -34,12 +34,40 @@ function hasScriptSrcAttribute(openTag: string): boolean {
   );
 }
 
+/** Only well-formed http(s)/ws(s) origins (or a `scheme://*:port` port-wildcard form) are
+ *  accepted into connect-src — a malformed config value must not corrupt the CSP header. */
+function isValidConnectSrcOrigin(origin: string): boolean {
+  const trimmed = origin.trim();
+  if (!trimmed) {
+    return false;
+  }
+  if (/^(https?|wss?):\/\/\*:\d+$/.test(trimmed)) {
+    return true;
+  }
+  try {
+    const url = new URL(trimmed);
+    return ["http:", "https:", "ws:", "wss:"].includes(url.protocol);
+  } catch {
+    return false;
+  }
+}
+
 /** Build the CSP header applied to Gateway-served Control UI HTML. */
-export function buildControlUiCspHeader(opts?: { inlineScriptHashes?: string[] }): string {
+export function buildControlUiCspHeader(opts?: {
+  inlineScriptHashes?: string[];
+  extraConnectSrc?: string[];
+}): string {
   const hashes = opts?.inlineScriptHashes;
   const scriptSrc = hashes?.length
     ? `script-src 'self' ${hashes.map((h) => `'${h}'`).join(" ")}`
     : "script-src 'self'";
+  const extraOrigins = Array.from(
+    new Set((opts?.extraConnectSrc ?? []).filter(isValidConnectSrcOrigin)),
+  );
+  const connectSrc = [
+    "connect-src 'self' ws: wss: https://api.openai.com https://tweakcn.com",
+    ...extraOrigins,
+  ].join(" ");
   return [
     "default-src 'self'",
     "base-uri 'none'",
@@ -51,6 +79,6 @@ export function buildControlUiCspHeader(opts?: { inlineScriptHashes?: string[] }
     "media-src 'self' data: blob:",
     "font-src 'self' https://fonts.gstatic.com",
     "worker-src 'self'",
-    "connect-src 'self' ws: wss: https://api.openai.com https://tweakcn.com",
+    connectSrc,
   ].join("; ");
 }

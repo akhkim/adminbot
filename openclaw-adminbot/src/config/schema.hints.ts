@@ -89,6 +89,7 @@ const FIELD_PLACEHOLDERS: Record<string, string> = {
   "gateway.controlUi.root": "dist/control-ui",
   "gateway.controlUi.launchUrl": "https://your-control-ui.vercel.app",
   "gateway.controlUi.allowedOrigins": "https://control.example.com",
+  "gateway.controlUi.extraConnectSrc": "https://*:8443",
   "gateway.push.apns.relay.baseUrl": "https://ios-push-relay.openclaw.ai",
   "channels.mattermost.baseUrl": "https://chat.example.com",
   "agents.list[].identity.avatar": "avatars/openclaw.png",

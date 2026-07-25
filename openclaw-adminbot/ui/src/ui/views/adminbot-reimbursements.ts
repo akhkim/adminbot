@@ -191,9 +191,14 @@ export function renderAdminBotReimbursements(props: AdminBotReimbursementProps) 
           @submit=${(event: Event) => submitMessage(event, props)}
         >
           <label class="adminbot-receipt-drop">
-            <span>Receipt PDFs</span>
-            <input name="receipts" type="file" accept="application/pdf,.pdf" multiple />
-            <small>Up to 12 PDFs, 12 MB each. Add files with your first message.</small>
+            <span>Receipts</span>
+            <input
+              name="receipts"
+              type="file"
+              accept="application/pdf,.pdf,image/png,.png,image/jpeg,.jpg,.jpeg"
+              multiple
+            />
+            <small>Up to 12 PDFs or photos, 12 MB each. Add files with your first message.</small>
           </label>
           <label class="adminbot-form__field">
             <span>Trip details or answer</span>

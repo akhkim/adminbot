@@ -100,6 +100,7 @@ export type UiSettings = {
   textScale?: TextScaleStop; // Browser-local text scale percentage
   customTheme?: ImportedCustomTheme;
   locale?: string;
+  adminBotUrl?: string; // Override for the AdminBot auth service base URL (non-secret)
 };
 
 export type { LocalUserIdentity } from "./user-identity.ts";
@@ -326,6 +327,7 @@ export function loadSettings(): UiSettings {
       textScale: normalizeTextScale(parsed.textScale, defaults.textScale),
       customTheme: customTheme ?? undefined,
       locale: isSupportedLocale(parsed.locale) ? parsed.locale : undefined,
+      adminBotUrl: normalizeOptionalString(parsed.adminBotUrl),
     };
     if ("token" in parsed) {
       persistSettings(settings);
@@ -506,6 +508,7 @@ function persistSettings(next: UiSettings) {
     ...(next.customTheme ? { customTheme: next.customTheme } : {}),
     sessionsByGateway,
     ...(next.locale ? { locale: next.locale } : {}),
+    ...(next.adminBotUrl ? { adminBotUrl: next.adminBotUrl } : {}),
   };
   const serialized = JSON.stringify(persisted);
   try {

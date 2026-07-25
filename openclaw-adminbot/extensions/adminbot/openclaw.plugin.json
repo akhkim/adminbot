@@ -24,6 +24,8 @@
       "adminbot_list_lab_members",
       "adminbot_get_settings",
       "adminbot_update_settings",
+      "adminbot_list_unreviewed_applicants",
+      "adminbot_mark_applicants_reviewed",
       "adminbot_get_sensitive_info",
       "adminbot_update_sensitive_info",
       "adminbot_upsert_paper",
@@ -85,6 +87,12 @@
       "optional": true
     },
     "adminbot_update_settings": {
+      "optional": true
+    },
+    "adminbot_list_unreviewed_applicants": {
+      "optional": true
+    },
+    "adminbot_mark_applicants_reviewed": {
       "optional": true
     },
     "adminbot_get_sensitive_info": {

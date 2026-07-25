@@ -4,6 +4,7 @@ import { guard } from "lit/directives/guard.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { i18n, t } from "../i18n/index.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
+import { decideAdminBotRegistration, loadAdminBotRegistrations } from "./adminbot-registrations.ts";
 import {
   createChatSessionsLoadOverrides,
   hasAbortableSessionRun,
@@ -16,6 +17,7 @@ import { renderUsageTab } from "./app-render-usage-tab.ts";
 import {
   renderChatControls,
   renderTab,
+  resolveAdminBotMode,
   resolveAssistantAttachmentAuthToken,
   resolveDashboardHeaderContext,
   renderSidebarConnectionStatus,
@@ -50,6 +52,7 @@ import {
   removePendingAdminBotAction,
   resetAdminBotReimbursement,
   saveAdminBotMember,
+  saveAdminBotOwnProfile,
   saveAdminBotPaper,
   saveAdminBotSensitiveInfo,
   saveAdminBotSettings,
@@ -701,17 +704,22 @@ const lazySkillWorkshop = createLazyView(
 const lazySkills = createLazyView(() => import("./views/skills.ts"), notifyLazyViewChanged);
 const lazyUsage = createLazyView(() => import("./views/usage.ts"), notifyLazyViewChanged);
 const lazyWorkboard = createLazyView(() => import("./views/workboard.ts"), notifyLazyViewChanged);
+const lazyAdminBotRegistrations = createLazyView(
+  () => import("./views/adminbot-registrations.ts"),
+  notifyLazyViewChanged,
+);
 
 function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminBotPanel | null {
   if (mode === "general") {
     switch (tab) {
       case "adminbotMembers":
         return "members";
+      case "adminbotReimbursements":
+        return "reimbursements";
       case "adminbot":
       case "adminbotSettings":
       case "adminbotPapers":
       case "adminbotNudges":
-      case "adminbotReimbursements":
         return "papers";
       default:
         return null;
@@ -736,10 +744,21 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
 }
 
 function visibleTabsForAdminBotMode(tabs: readonly Tab[], mode: AdminBotLoadMode): Tab[] {
-  if (mode === "admin" || !tabs.some((tab) => String(tab).startsWith("adminbot"))) {
+  if (mode === "admin") {
     return [...tabs];
   }
-  return tabs.filter((tab) => tab === "adminbotMembers" || tab === "adminbotPapers");
+  // Gate per tab, not per group: AdminBot tabs live in more than one sidebar group, and a
+  // group-wide filter would drop that group's non-AdminBot tabs (e.g. Settings) for plain members.
+  // Reimbursements stays visible for every member — it is self-scoped, not a governance
+  // surface. The reimbursement panel is an ephemeral per-session assistant that only ever
+  // sees the drafts the signed-in member typed, so it exposes no other member's data.
+  return tabs.filter(
+    (tab) =>
+      !tab.startsWith("adminbot") ||
+      tab === "adminbotMembers" ||
+      tab === "adminbotPapers" ||
+      tab === "adminbotReimbursements",
+  );
 }
 
 type ChatWorkspaceFilesState = {
@@ -1452,7 +1471,7 @@ export function renderApp(state: AppViewState) {
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
   const chatDisabledReason = state.connected ? null : t("chat.disconnected");
   const isChat = state.tab === "chat";
-  const adminBotMode: AdminBotLoadMode = "admin";
+  const adminBotMode: AdminBotLoadMode = resolveAdminBotMode(state.memberPrivilegeLevel);
   const adminBotPanel = adminBotPanelForTab(state.tab, adminBotMode);
   const headerError = !isChat && state.lastError !== state.chatError ? state.lastError : null;
   const chatViewError = state.lastError;
@@ -2685,6 +2704,18 @@ export function renderApp(state: AppViewState) {
                     : nothing}
                 </a>
                 <div class="sidebar-mode-switch">${renderTopbarThemeModeToggle(state)}</div>
+                <button
+                  type="button"
+                  class="nav-item sidebar-utility-link sidebar-utility-link--signout"
+                  title=${t("login.member.signOut")}
+                  aria-label=${t("login.member.signOut")}
+                  @click=${() => void state.signOutMember()}
+                >
+                  <span class="nav-item__icon" aria-hidden="true">${icons.logOut}</span>
+                  ${!navCollapsed
+                    ? html`<span class="nav-item__text">${t("login.member.signOut")}</span>`
+                    : nothing}
+                </button>
                 ${(() => {
                   const version = state.hello?.server?.version ?? "";
                   return version
@@ -2818,15 +2849,11 @@ export function renderApp(state: AppViewState) {
               attentionItems: state.attentionItems,
               eventLog: state.eventLog,
               overviewLogLines: state.overviewLogLines,
-              showGatewayToken: state.overviewShowGatewayToken,
               showGatewayPassword: state.overviewShowGatewayPassword,
               onSettingsChange: (next) => state.applySettings(next),
               onPasswordChange: (next) => (state.password = next),
               onSessionKeyChange: (next) => {
                 switchChatSession(state, next);
-              },
-              onToggleGatewayTokenVisibility: () => {
-                state.overviewShowGatewayToken = !state.overviewShowGatewayToken;
               },
               onToggleGatewayPasswordVisibility: () => {
                 state.overviewShowGatewayPassword = !state.overviewShowGatewayPassword;
@@ -2896,6 +2923,7 @@ export function renderApp(state: AppViewState) {
               busyActionId: state.adminBotBusyActionId,
               notice: state.adminBotNotice,
               mode: adminBotMode,
+              signedInMemberId: state.memberId,
               reimbursement: state.adminBotReimbursement,
               onReimbursementMessage: (message, files) =>
                 void sendAdminBotReimbursementMessage(state, message, files),
@@ -2906,11 +2934,27 @@ export function renderApp(state: AppViewState) {
               onRemove: (proposal) => void removePendingAdminBotAction(state, proposal),
               onExecute: (proposal) => void executeAdminBotAction(state, proposal),
               onSaveMember: (member) => void saveAdminBotMember(state, member),
+              onSaveOwnProfile: (memberId, fields) =>
+                void saveAdminBotOwnProfile(state, memberId, fields),
               onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
               onDeletePaper: (paper) => void deleteAdminBotPaper(state, paper),
               onSaveSettings: (settings) => void saveAdminBotSettings(state, settings),
               onSaveSensitiveInfo: (markdown) => void saveAdminBotSensitiveInfo(state, markdown),
             })
+          : nothing}
+        ${state.tab === "adminbotRegistrations"
+          ? renderLazyView(lazyAdminBotRegistrations, (m) =>
+              m.renderAdminBotRegistrations({
+                registrations: state.registrations,
+                loading: state.registrationsLoading,
+                error: state.registrationsError,
+                busyId: state.registrationsBusyId,
+                notice: state.registrationsNotice,
+                onDecide: (registrationId, decision) =>
+                  void decideAdminBotRegistration(state, registrationId, decision),
+                onRefresh: () => void loadAdminBotRegistrations(state),
+              }),
+            )
           : nothing}
         ${state.tab === "instances"
           ? renderLazyView(lazyInstances, (m) =>

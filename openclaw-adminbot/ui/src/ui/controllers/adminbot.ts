@@ -1,5 +1,13 @@
 // Control UI controller for the AdminBot dashboard surface.
+import {
+  type MemberProfileUpdate,
+  loadStoredMemberSession,
+  resolveAdminBotBaseUrl,
+  updateOwnProfile,
+  upsertLabMemberAsAdmin,
+} from "../adminbot-auth.ts";
 import type { GatewayBrowserClient } from "../gateway.ts";
+import type { UiSettings } from "../storage.ts";
 
 export type AdminBotPrivilegeLevel =
   | "external_collaborator"
@@ -40,9 +48,10 @@ export type AdminBotLabMember = {
 };
 
 export type AdminBotSettings = {
-  default_privilege_level: AdminBotPrivilegeLevel;
   paper_escalation_business_days: number;
   head_professor_member_id?: string;
+  applicant_sheet_id?: string;
+  applicant_last_reviewed_at?: string;
   updated_at: string;
 };
 
@@ -60,7 +69,6 @@ export type AdminBotLabMemberSaveInput = {
   notes?: string;
   role?: string;
   status?: AdminBotMemberStatus;
-  researchBranch?: string;
   researchTopics?: string[];
   projects?: string[];
   hoursPerWeek?: number;
@@ -84,9 +92,10 @@ export type AdminBotPaperSaveInput = {
 };
 
 export type AdminBotSettingsSaveInput = {
-  default_privilege_level?: AdminBotPrivilegeLevel;
   paper_escalation_business_days?: number;
   head_professor_member_id?: string;
+  applicant_sheet_id?: string;
+  applicant_last_reviewed_at?: string;
 };
 
 export type AdminBotPaperStep =
@@ -212,6 +221,9 @@ export type AdminBotHost = {
   adminBotBusyActionId: string | null;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotReimbursement: AdminBotReimbursementState;
+  // Needed to resolve the AdminBot HTTP base URL for the direct admin-write path in
+  // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
+  settings: UiSettings;
 };
 
 export type AdminBotLoadMode = "admin" | "general";
@@ -503,11 +515,65 @@ export async function executeAdminBotAction(
   }
 }
 
+function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
+  return {
+    name: member.name,
+    ...(member.email ? { email: member.email } : {}),
+    ...(member.slackUserId ? { slack_user_id: member.slackUserId } : {}),
+    ...(member.privilegeLevel ? { privilege_level: member.privilegeLevel } : {}),
+    ...(member.notes ? { notes: member.notes } : {}),
+    ...(member.role ? { role: member.role } : {}),
+    ...(member.status ? { status: member.status } : {}),
+    ...(member.researchTopics ? { research_topics: member.researchTopics } : {}),
+    ...(member.projects ? { projects: member.projects } : {}),
+    ...(member.hoursPerWeek !== undefined ? { hours_per_week: member.hoursPerWeek } : {}),
+    ...(member.capacityPercent !== undefined ? { capacity_percent: member.capacityPercent } : {}),
+    ...(member.location ? { location: member.location } : {}),
+    ...(member.affiliation ? { affiliation: member.affiliation } : {}),
+    ...(member.timezone ? { timezone: member.timezone } : {}),
+    ...(member.personalWebsite ? { personal_website: member.personalWebsite } : {}),
+  };
+}
+
+// Saves a member from the Lab Members admin editor. Governance fields (privilege_level,
+// status, email) can only ever be set by a genuine admin *member Bearer session* — the
+// gateway-RPC tool path (adminbot_upsert_lab_member) always authenticates as the shared
+// service principal regardless of who is signed in, and that principal is deliberately
+// restricted to the same whitelist as a plain self-edit (the fix that closed the
+// chat-based privilege-escalation hole). So a signed-in admin's edits here go straight to
+// the AdminBot HTTP service with their own session token, bypassing the gateway tool
+// entirely. Falls back to the gateway tool only when there's no stored member session at
+// all (legacy break-glass access via the bare gateway token, predating member auth) —
+// that path keeps today's already-restricted behavior rather than losing the save entirely.
 export async function saveAdminBotMember(
   host: AdminBotHost,
   member: AdminBotLabMemberSaveInput,
 ): Promise<void> {
   host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (stored) {
+    const result = await upsertLabMemberAsAdmin(
+      member.id,
+      adminMemberUpdatePayload(member),
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      const message =
+        result.kind === "unreachable"
+          ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+          : result.kind === "forbidden"
+            ? "Your session no longer has admin access — sign in again and retry."
+            : result.kind === "rate-limited"
+              ? "Too many attempts. Wait a moment and try again."
+              : "Couldn't save this member. Check the values and try again.";
+      host.adminBotNotice = { kind: "error", text: message };
+      return;
+    }
+    host.adminBotNotice = { kind: "success", text: `Saved member ${member.id}.` };
+    await loadAdminBot(host);
+    return;
+  }
   try {
     await invokeAdminBotTool(host, "adminbot_upsert_lab_member", {
       id: member.id,
@@ -518,7 +584,6 @@ export async function saveAdminBotMember(
       ...(member.notes ? { notes: member.notes } : {}),
       ...(member.role ? { role: member.role } : {}),
       ...(member.status ? { status: member.status } : {}),
-      ...(member.researchBranch ? { researchBranch: member.researchBranch } : {}),
       ...(member.researchTopics ? { researchTopics: member.researchTopics } : {}),
       ...(member.projects ? { projects: member.projects } : {}),
       ...(member.hoursPerWeek !== undefined ? { hoursPerWeek: member.hoursPerWeek } : {}),
@@ -536,6 +601,47 @@ export async function saveAdminBotMember(
       text: formatAdminBotToolError(err),
     };
   }
+}
+
+// Saves the signed-in member's own roster row from the Lab Members table. Uses the
+// self-edit endpoint (PUT /lab/members/:id with a member Bearer session), whose server-side
+// whitelist drops governance fields — so a plain member editing their own row can never
+// reach the admin write path. Requires a real member session; break-glass gateway-token-only
+// access has no signed-in member and never renders this affordance.
+export async function saveAdminBotOwnProfile(
+  host: AdminBotHost,
+  memberId: string,
+  fields: MemberProfileUpdate,
+): Promise<void> {
+  host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your member account to edit your profile.",
+    };
+    return;
+  }
+  const result = await updateOwnProfile(
+    memberId,
+    fields,
+    stored.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  if (!result.ok) {
+    const message =
+      result.kind === "unreachable"
+        ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+        : result.kind === "rate-limited"
+          ? "Too many attempts. Wait a moment and try again."
+          : // 403 (editing someone else's id) folds into auth-failed here; the UI never
+            // offers this affordance on another member's row, so it reads as a stale session.
+            "Couldn't save your profile. Sign in again, check the values, and retry.";
+    host.adminBotNotice = { kind: "error", text: message };
+    return;
+  }
+  host.adminBotNotice = { kind: "success", text: "Saved your profile." };
+  await loadAdminBot(host);
 }
 
 export async function saveAdminBotPaper(
@@ -708,9 +814,33 @@ export function resetAdminBotReimbursement(host: AdminBotHost): void {
   host.adminBotReimbursement = createEmptyAdminBotReimbursementState();
 }
 
+const RECEIPT_MEDIA_TYPES_BY_EXTENSION: Record<
+  string,
+  "application/pdf" | "image/png" | "image/jpeg"
+> = {
+  ".pdf": "application/pdf",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+};
+
+function resolveReceiptMediaType(
+  file: File,
+): "application/pdf" | "image/png" | "image/jpeg" | undefined {
+  if (file.type === "application/pdf" || file.type === "image/png" || file.type === "image/jpeg") {
+    return file.type;
+  }
+  const name = file.name.toLowerCase();
+  const extension = Object.keys(RECEIPT_MEDIA_TYPES_BY_EXTENSION).find((candidate) =>
+    name.endsWith(candidate),
+  );
+  return extension ? RECEIPT_MEDIA_TYPES_BY_EXTENSION[extension] : undefined;
+}
+
 async function receiptPayload(file: File) {
-  if (file.type !== "application/pdf" && !file.name.toLowerCase().endsWith(".pdf")) {
-    throw new Error(`${file.name} is not a PDF`);
+  const mediaType = resolveReceiptMediaType(file);
+  if (!mediaType) {
+    throw new Error(`${file.name} is not a PDF, PNG, or JPEG file`);
   }
   if (file.size > 12 * 1024 * 1024) {
     throw new Error(`${file.name} exceeds 12 MB`);
@@ -720,5 +850,5 @@ async function receiptPayload(file: File) {
   for (let index = 0; index < bytes.length; index += 0x8000) {
     binary += String.fromCharCode(...bytes.subarray(index, index + 0x8000));
   }
-  return { name: file.name, media_type: "application/pdf", data_base64: btoa(binary) };
+  return { name: file.name, media_type: mediaType, data_base64: btoa(binary) };
 }

@@ -1,3 +1,4 @@
+import { selectUnreviewedApplicants } from "./applicant-sheet.js";
 import { resolveCalendarSource } from "./calendar-source.js";
 import { AdminBotClient, type AdminBotClientConfig, type FetchLike } from "./client.js";
 import type {
@@ -15,6 +16,7 @@ import type {
   AdminBotSensitiveInfoRecord,
   AdminBotSettingsInput,
 } from "./contracts.js";
+import { readGogSheetRows } from "./gog-executor.js";
 import { buildOverleafEditPayload, type AdminBotOverleafEditMode } from "./overleaf-editing.js";
 import type {
   AdminBotReimbursementMessage,
@@ -40,6 +42,7 @@ type ToolFactoryOptions = {
   fetchImpl?: FetchLike;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
+  readSheetRows?: typeof readGogSheetRows;
 };
 
 type EvidenceParams = {
@@ -416,6 +419,31 @@ export function createAdminBotToolHandlers(
     listLabMembers: () => client.listLabMembers(signal),
     getSettings: () => client.getSettings(signal),
     updateSettings: (params: AdminBotSettingsInput) => client.updateSettings(params, signal),
+    listUnreviewedApplicants: async (params: { since?: string; sheetRange?: string }) => {
+      const settings = readRecord(await client.getSettings(signal));
+      const sheetId = readString(settings, "applicant_sheet_id");
+      if (!sheetId) {
+        throw new Error(
+          "no applicant sheet configured, set it in AdminBot settings first (applicant_sheet_id)",
+        );
+      }
+      const since = params.since?.trim() || readString(settings, "applicant_last_reviewed_at");
+      const readSheetRows = options.readSheetRows ?? readGogSheetRows;
+      const rows = await readSheetRows(sheetId, {
+        ...(options.env ? { env: options.env } : {}),
+        ...(params.sheetRange ? { range: params.sheetRange } : {}),
+      });
+      return {
+        sheet_id: sheetId,
+        ...(since ? { since } : {}),
+        applicants: selectUnreviewedApplicants(rows, since),
+      };
+    },
+    markApplicantsReviewed: (params: { reviewedAt?: string }) =>
+      client.updateSettings(
+        { applicant_last_reviewed_at: params.reviewedAt?.trim() || new Date().toISOString() },
+        signal,
+      ),
     getSensitiveInfo: (): Promise<AdminBotSensitiveInfoRecord> => client.getSensitiveInfo(signal),
     updateSensitiveInfo: (params: { markdown: string }): Promise<AdminBotSensitiveInfoRecord> =>
       client.updateSensitiveInfo(params.markdown, signal),

@@ -43,6 +43,25 @@ Keep external connector credentials in the AdminBot service. Do not place Slack,
 Google, email, calendar, reimbursement, or social media write tokens in OpenClaw
 workspace files, prompts, or model-visible memory.
 
+Reimbursement packet generation shells out to Python and needs the
+`python-docx` and `openpyxl` packages installed for that interpreter. For
+local development, install them once with
+`python3 -m pip install -r scripts/adminbot-reimbursement-requirements.txt`
+(add `--user` or `--break-system-packages` if your platform requires it).
+Without them, `POST /reimbursements/generate` fails with
+`ModuleNotFoundError: No module named 'docx'`.
+
+On Aurora there is no sudo and no system `pip`, so
+`deploy/aurora/install-user-services.sh` bootstraps PyPA's official
+[`pip.pyz`](https://bootstrap.pypa.io/pip/pip.pyz) zipapp (no preexisting pip
+needed) and installs these packages with `--target` into a user-owned
+directory at `~/.local/share/jinesis-adminbot/python-libs`. The AdminBot and
+email-automation service units point `PYTHONPATH` at that directory so the
+system `python3` picks the packages up. Rerun
+`scripts/aurora-adminbot-host.sh --user <cs-user> deploy` (or
+`install-user-services.sh` directly on the host) to (re)provision it —
+`restart` alone does not rerun this install step.
+
 ### Private reasoning and NVIDIA NIM
 
 The AdminBot service classifies every `adminbot_reason` request with local
@@ -366,10 +385,8 @@ The service computes default access grants for Slack, Google Drive, Overleaf,
 Calendar, GitHub, and paper-pipeline records from that privilege level. Use
 `access_overrides` only for explicit exceptions.
 
-The service default is currently `default_privilege_level="member"`, so people
-added without an explicit level receive temporary member access. Change that
-default through `adminbot_update_settings` or the local management console when
-the temporary policy ends.
+People added without an explicit level receive `external_collaborator`, the
+least-privileged tier. Set `privilege_level` explicitly to grant more.
 
 Use `adminbot_upsert_paper` for each paper. The standard pipeline is:
 

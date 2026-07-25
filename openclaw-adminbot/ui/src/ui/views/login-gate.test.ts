@@ -13,8 +13,36 @@ function createState(overrides: Partial<AppViewState> = {}): AppViewState {
     connected: false,
     lastError: null,
     lastErrorCode: null,
-    loginShowGatewayToken: false,
-    loginShowGatewayPassword: false,
+    memberEmail: "",
+    memberPassword: "",
+    memberPasswordConfirm: "",
+    loginMode: "signin",
+    loginShowMemberPassword: false,
+    memberAuthBusy: false,
+    memberAuthFailure: null,
+    memberFormError: null,
+    loginPendingNotice: false,
+    rosterMembers: [],
+    rosterLoading: false,
+    rosterError: null,
+    rosterFilter: "",
+    selectedMemberId: null,
+    memberName: "",
+    memberSlackUserId: "",
+    memberRole: "",
+    memberAffiliation: "",
+    memberResearchBranch: "",
+    memberResearchTopics: "",
+    memberProjects: "",
+    memberHoursPerWeek: "",
+    memberCapacityPercent: "",
+    memberLocation: "",
+    memberTimezone: "",
+    memberPersonalWebsite: "",
+    memberNotes: "",
+    submitMemberAuth: async () => undefined,
+    signOutMember: async () => undefined,
+    loadRoster: async () => undefined,
     password: "",
     settings: {
       gatewayUrl: "ws://127.0.0.1:18789",
@@ -43,7 +71,7 @@ describe("resolveLoginFailureFeedback", () => {
     await i18n.setLocale("en");
   });
 
-  it("explains missing auth credentials", () => {
+  it("does not show a gateway auth-required notice on the member login screen", () => {
     const feedback = resolveLoginFailureFeedback({
       connected: false,
       lastError: "disconnected (4008): connect failed",
@@ -52,16 +80,7 @@ describe("resolveLoginFailureFeedback", () => {
       hasPassword: false,
     });
 
-    expect(feedback?.kind).toBe("auth-required");
-    expect(feedback?.title).toBe("Auth required");
-    expect(feedback?.summary).toBe(
-      "The Gateway is reachable, but it needs a matching token or password before this browser can connect.",
-    );
-    expect(feedback?.steps).toEqual([
-      "Paste the token from openclaw dashboard --no-open or enter the configured password.",
-      "If no token is configured, run openclaw doctor --generate-gateway-token on the gateway host.",
-      "Click Connect again after updating the credential.",
-    ]);
+    expect(feedback).toBeNull();
   });
 
   it("does not present intentional client replacement as a login failure", () => {
@@ -258,6 +277,66 @@ describe("resolveLoginFailureFeedback", () => {
       "failed ws://host/openclaw#[redacted-credential] Authorization: Bearer [redacted] token=[redacted]",
     );
   });
+
+  it("prioritizes member auth failures over gateway diagnostics", () => {
+    const feedback = resolveLoginFailureFeedback({
+      connected: false,
+      lastError: "protocol mismatch",
+      lastErrorCode: null,
+      hasToken: true,
+      hasPassword: false,
+      memberFailure: { kind: "member-auth-failed" },
+    });
+
+    expect(feedback?.kind).toBe("member-auth-failed");
+    expect(feedback?.title).toBe("Sign-in failed");
+  });
+
+  it("surfaces the AdminBot unreachable hint referencing port 8765", () => {
+    const feedback = resolveLoginFailureFeedback({
+      connected: false,
+      lastError: null,
+      lastErrorCode: null,
+      hasToken: false,
+      hasPassword: false,
+      memberFailure: { kind: "adminbot-unreachable" },
+    });
+
+    expect(feedback?.kind).toBe("adminbot-unreachable");
+    expect(feedback?.summary).toContain("port 8765");
+  });
+
+  it("explains a pending-approval account on sign-in", () => {
+    const feedback = resolveLoginFailureFeedback({
+      connected: false,
+      lastError: null,
+      lastErrorCode: null,
+      hasToken: false,
+      hasPassword: false,
+      memberFailure: { kind: "member-pending-approval" },
+    });
+
+    expect(feedback?.kind).toBe("member-pending-approval");
+    expect(feedback?.title).toBe("Approval pending");
+    expect(feedback?.steps).toEqual([
+      "Wait for an admin to approve your account, then sign in again.",
+      "If it's been a while, contact an admin to review your request.",
+    ]);
+  });
+
+  it("includes the retry window for member rate limits when known", () => {
+    const feedback = resolveLoginFailureFeedback({
+      connected: false,
+      lastError: null,
+      lastErrorCode: null,
+      hasToken: false,
+      hasPassword: false,
+      memberFailure: { kind: "member-rate-limited", retryAfterSeconds: 42 },
+    });
+
+    expect(feedback?.kind).toBe("member-rate-limited");
+    expect(feedback?.summary).toContain("42");
+  });
 });
 
 describe("renderLoginGate", () => {
@@ -304,6 +383,130 @@ describe("renderLoginGate", () => {
     expect(docsLink?.textContent?.trim()).toBe("Control UI auth docs");
     expect(docsLink?.getAttribute("href")).toBe(
       "https://docs.openclaw.ai/web/control-ui#debuggingtesting-dev-server--remote-gateway",
+    );
+  });
+
+  it("renders the member sign-in form with a claim toggle and no gateway-token section", async () => {
+    const container = document.createElement("div");
+    const state = createState();
+
+    render(renderLoginGate(state), container);
+    await Promise.resolve();
+
+    const emailInput = container.querySelector<HTMLInputElement>('input[type="email"]');
+    expect(emailInput).not.toBeNull();
+    const submit = container.querySelector<HTMLButtonElement>(".login-gate__connect");
+    expect(submit?.textContent?.trim()).toBe("Sign in");
+    const toggle = container.querySelector<HTMLButtonElement>(".login-gate__mode-toggle");
+    expect(toggle?.textContent?.trim()).toBe("First time here? Claim your profile");
+    expect(container.querySelector(".login-gate__advanced")).toBeNull();
+  });
+
+  it("renders the roster picker and a confirm-password field in claim mode", async () => {
+    const container = document.createElement("div");
+    const state = createState({
+      loginMode: "claim",
+      rosterMembers: [
+        { id: "m1", name: "Ada Lovelace" },
+        { id: "m2", name: "Alan Turing" },
+      ],
+    } as Partial<AppViewState>);
+
+    render(renderLoginGate(state), container);
+    await Promise.resolve();
+
+    const options = container.querySelectorAll<HTMLButtonElement>(".login-gate__picker-option");
+    expect(Array.from(options).map((option) => option.textContent?.trim())).toEqual([
+      "Ada Lovelace",
+      "Alan Turing",
+    ]);
+    const passwordFields = container.querySelectorAll(
+      '.login-gate__form[data-login-mode="claim"] input[type="password"]',
+    );
+    // password + confirm password
+    expect(passwordFields.length).toBe(2);
+    const submit = container.querySelector<HTMLButtonElement>(".login-gate__connect");
+    expect(submit?.textContent?.trim()).toBe("Claim profile");
+  });
+
+  it("shows a roster error with a retry action instead of the empty state", async () => {
+    const container = document.createElement("div");
+    let retries = 0;
+    const state = createState({
+      loginMode: "claim",
+      rosterMembers: [],
+      rosterError: "failed",
+      loadRoster: async () => {
+        retries += 1;
+      },
+    } as Partial<AppViewState>);
+
+    render(renderLoginGate(state), container);
+    await Promise.resolve();
+
+    const error = container.querySelector<HTMLElement>(".login-gate__picker-error");
+    expect(error).not.toBeNull();
+    expect(container.querySelector(".login-gate__picker-empty")).toBeNull();
+    const retry = container.querySelector<HTMLButtonElement>(".login-gate__picker-retry");
+    expect(retry?.textContent?.trim()).toBe("Retry");
+    retry?.click();
+    expect(retries).toBe(1);
+  });
+
+  it("shows the selected profile with a change affordance", async () => {
+    const container = document.createElement("div");
+    const state = createState({
+      loginMode: "claim",
+      rosterMembers: [{ id: "m1", name: "Ada Lovelace" }],
+      selectedMemberId: "m1",
+    } as Partial<AppViewState>);
+
+    render(renderLoginGate(state), container);
+    await Promise.resolve();
+
+    expect(container.querySelector(".login-gate__picker-selected-name")?.textContent?.trim()).toBe(
+      "Ada Lovelace",
+    );
+    expect(container.querySelectorAll(".login-gate__picker-option").length).toBe(0);
+    expect(container.querySelector(".login-gate__picker-change")).not.toBeNull();
+  });
+
+  it("renders name and profile fields in signup mode", async () => {
+    const container = document.createElement("div");
+    const state = createState({ loginMode: "signup" } as Partial<AppViewState>);
+
+    render(renderLoginGate(state), container);
+    await Promise.resolve();
+
+    const labels = Array.from(
+      container.querySelectorAll('.login-gate__form[data-login-mode="signup"] .field > span'),
+    ).map((span) => span.textContent?.trim());
+    expect(labels).toContain("Name");
+    expect(labels).toContain("Affiliation");
+    expect(labels).toContain("Research topics");
+    expect(labels).toContain("Research branch");
+    expect(labels).toContain("Location");
+    expect(labels).toContain("Timezone");
+    expect(labels).toContain("Projects");
+    expect(labels).toContain("Hours per week");
+    expect(labels).toContain("Capacity (%)");
+    const submit = container.querySelector<HTMLButtonElement>(".login-gate__connect");
+    expect(submit?.textContent?.trim()).toBe("Request access");
+  });
+
+  it("renders the pending-approval notice with a back action instead of the form", async () => {
+    const container = document.createElement("div");
+    const state = createState({ loginPendingNotice: true } as Partial<AppViewState>);
+
+    render(renderLoginGate(state), container);
+    await Promise.resolve();
+
+    expect(container.querySelector(".login-gate__pending-title")?.textContent?.trim()).toBe(
+      "Request submitted",
+    );
+    expect(container.querySelector(".login-gate__form")).toBeNull();
+    expect(container.querySelector(".login-gate__connect")?.textContent?.trim()).toBe(
+      "Back to sign in",
     );
   });
 });

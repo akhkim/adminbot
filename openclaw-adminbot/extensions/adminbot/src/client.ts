@@ -35,6 +35,18 @@ export type FetchLike = (
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
+/**
+ * `ToolInputError` is the only error name the Gateway forwards verbatim to callers
+ * (`resolveToolInputErrorStatus`); anything else becomes "tool execution failed". The Plugin SDK
+ * does not export the class, so the name is reproduced here like other plugins do.
+ */
+class AdminBotServiceError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ToolInputError";
+  }
+}
+
 export class AdminBotClient {
   constructor(
     private readonly config: AdminBotClientConfig,
@@ -192,16 +204,28 @@ export class AdminBotClient {
       headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await this.fetchImpl(url, {
-      method,
-      headers,
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-      signal,
-    });
+    // The Gateway replaces any non-ToolInputError with an opaque "tool execution failed",
+    // so every AdminBot service failure must carry its reason through this error shape or
+    // the dashboard loses the only diagnosis the operator can act on.
+    let response: Awaited<ReturnType<FetchLike>>;
+    try {
+      response = await this.fetchImpl(url, {
+        method,
+        headers,
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+        signal,
+      });
+    } catch (error) {
+      throw new AdminBotServiceError(
+        `AdminBot service at ${this.config.serviceBaseUrl} is unreachable: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
     const raw = await response.text();
     const parsed = raw.trim() ? parseJson(raw) : undefined;
     if (!response.ok) {
-      throw new Error(formatHttpError(response.status, response.statusText, parsed));
+      throw new AdminBotServiceError(formatHttpError(response.status, response.statusText, parsed));
     }
     return parsed;
   }
@@ -209,10 +233,10 @@ export class AdminBotClient {
   private resolveUrl(path: string): string {
     const url = new URL(path, ensureTrailingSlash(this.config.serviceBaseUrl));
     if (!["http:", "https:"].includes(url.protocol)) {
-      throw new Error("AdminBot service URL must use http or https");
+      throw new AdminBotServiceError("AdminBot service URL must use http or https");
     }
     if (!this.config.allowInsecureRemoteService && !LOOPBACK_HOSTS.has(url.hostname)) {
-      throw new Error(
+      throw new AdminBotServiceError(
         "AdminBot service URL must be loopback unless allowInsecureRemoteService is enabled",
       );
     }
@@ -244,7 +268,7 @@ function parseJson(raw: string): unknown {
   try {
     return JSON.parse(raw);
   } catch {
-    throw new Error("AdminBot service returned invalid JSON");
+    throw new AdminBotServiceError("AdminBot service returned invalid JSON");
   }
 }
 

@@ -103,7 +103,6 @@ describe("AdminBotClient", () => {
 
     await client.listPapers();
     await client.updateSettings({
-      default_privilege_level: "member",
       paper_escalation_business_days: 3,
       head_professor_member_id: "zhijing",
     });
@@ -119,7 +118,6 @@ describe("AdminBotClient", () => {
       expect.objectContaining({
         method: "PUT",
         body: JSON.stringify({
-          default_privilege_level: "member",
           paper_escalation_business_days: 3,
           head_professor_member_id: "zhijing",
         }),
@@ -174,5 +172,45 @@ describe("AdminBotClient", () => {
         idempotency_key: "idem_1",
       }),
     ).rejects.toThrow("payload hash mismatch");
+  });
+
+  // The Gateway only forwards a message to the dashboard when the error is named
+  // "ToolInputError"; any other name becomes an opaque "tool execution failed".
+  it("names service failures ToolInputError so the Gateway forwards the reason", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse({ error: { message: "reimbursement workflow is not configured" } }, 503),
+    ) as FetchLike;
+    const client = new AdminBotClient(
+      {
+        serviceBaseUrl: "http://localhost:8765",
+        allowInsecureRemoteService: false,
+        defaultDryRun: true,
+      },
+      fetchImpl,
+    );
+
+    await expect(client.converseReimbursement({ message: "hi" })).rejects.toMatchObject({
+      name: "ToolInputError",
+      message: expect.stringContaining("reimbursement workflow is not configured"),
+    });
+  });
+
+  it("reports an unreachable service instead of a bare transport error", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new TypeError("fetch failed");
+    }) as FetchLike;
+    const client = new AdminBotClient(
+      {
+        serviceBaseUrl: "http://127.0.0.1:8765",
+        allowInsecureRemoteService: false,
+        defaultDryRun: true,
+      },
+      fetchImpl,
+    );
+
+    await expect(client.listPapers()).rejects.toMatchObject({
+      name: "ToolInputError",
+      message: expect.stringContaining("http://127.0.0.1:8765 is unreachable"),
+    });
   });
 });

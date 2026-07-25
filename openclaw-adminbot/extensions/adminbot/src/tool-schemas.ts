@@ -44,9 +44,10 @@ export const accessGrantSchema = Type.Object(
 
 export const settingsSchema = Type.Object(
   {
-    default_privilege_level: Type.Optional(privilegeLevelSchema),
     paper_escalation_business_days: Type.Optional(Type.Integer({ minimum: 1 })),
     head_professor_member_id: Type.Optional(Type.String()),
+    applicant_sheet_id: Type.Optional(Type.String()),
+    applicant_last_reviewed_at: Type.Optional(Type.String()),
   },
   { additionalProperties: false },
 );

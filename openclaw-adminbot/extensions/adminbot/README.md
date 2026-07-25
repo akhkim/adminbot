@@ -18,9 +18,8 @@ The same ledger also stores lab members, privilege-derived access profiles, and
 paper pipeline records. Paper records track Brainstorming Docs, Overleaf,
 submission, Google Drive PDF, arXiv polish, social posts, slides, poster links,
 and reminder state. `adminbot_list_papers` adds an estimated Gantt-style timeline for each paper based on the current progress step. `adminbot_list_paper_nudges` reports author nudges and head-professor escalation after three business days without an author reply; `adminbot_propose_paper_nudge` turns that context into an approval-gated Slack reminder for Zhijing or the configured head professor.
-New lab members default to the service setting
-`default_privilege_level="member"` so the temporary baseline is member access
-unless a stricter level is provided.
+New lab members default to `external_collaborator`, the least-privileged tier,
+unless a level is provided.
 
 The mock HTTP service serves a local management console at `/adminbot`. The
 console can edit service settings, manage privilege levels, inspect the member

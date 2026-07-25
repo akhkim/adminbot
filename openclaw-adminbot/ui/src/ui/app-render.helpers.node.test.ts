@@ -77,6 +77,7 @@ import {
   handleChatManualRefresh,
   isCronSessionKey,
   parseSessionKey,
+  resolveAdminBotMode,
   resolveAssistantAttachmentAuthToken,
   resolveDashboardHeaderContext,
   resolveSessionOptionGroups,
@@ -551,6 +552,22 @@ describe("isCronSessionKey", () => {
     expect(isCronSessionKey("main")).toBe(false);
     expect(isCronSessionKey("discord:group:eng")).toBe(false);
     expect(isCronSessionKey("agent:main:slack:cron:job:run:uuid")).toBe(false);
+  });
+});
+
+describe("resolveAdminBotMode", () => {
+  it("grants admin mode only to admin and core_member", () => {
+    expect(resolveAdminBotMode("admin")).toBe("admin");
+    expect(resolveAdminBotMode("core_member")).toBe("admin");
+  });
+
+  it("defaults to the safe read-only general mode for everyone else", () => {
+    // Unknown/loading privilege must never flash admin controls to a plain member.
+    expect(resolveAdminBotMode(null)).toBe("general");
+    expect(resolveAdminBotMode("member")).toBe("general");
+    expect(resolveAdminBotMode("trial")).toBe("general");
+    expect(resolveAdminBotMode("external_collaborator")).toBe("general");
+    expect(resolveAdminBotMode("")).toBe("general");
   });
 });
 

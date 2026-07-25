@@ -47,8 +47,8 @@ narrowest typed tool.
 | Paper publishing preparation, Overleaf edits, nudges, submission, slides, or posters  | `adminbot-paper-publish`          | `adminbot_list_papers`, `adminbot_upsert_paper`, `adminbot_prepare_overleaf_paper_edit`, `adminbot_list_paper_nudges`, `adminbot_propose_paper_nudge`, `adminbot_propose_action` |
 
 Use `adminbot_get_settings` and `adminbot_update_settings` when the request is
-about AdminBot defaults, such as the temporary member privilege baseline,
-paper-escalation timing, or the head professor member id.
+about AdminBot defaults, such as paper-escalation timing or the head professor
+member id.
 
 If a request spans several workflows, split it into separate proposals. Example:
 accept a candidate, invite them to Slack, and schedule onboarding as three

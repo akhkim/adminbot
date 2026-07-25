@@ -1,5 +1,6 @@
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
+import type { MemberProfileUpdate } from "../adminbot-auth.ts";
 import type {
   AdminBotActionProposal,
   AdminBotDashboardData,
@@ -17,11 +18,16 @@ import type {
 } from "../controllers/adminbot.ts";
 import { formatRelativeTimestamp } from "../format.ts";
 import { icons } from "../icons.ts";
+import { buildMemberNotes, noteField, parseMemberNotes } from "../member-notes.ts";
 import { renderAdminBotReimbursements } from "./adminbot-reimbursements.ts";
 
 export type AdminBotProps = {
   panel: AdminBotPanel;
   mode?: "admin" | "general";
+  // Roster id of the signed-in member, so their own row sorts first and gets a
+  // self-edit affordance. Null in break-glass gateway-token-only access, where no
+  // member is signed in and therefore no row is "mine".
+  signedInMemberId?: string | null;
   connected: boolean;
   loading: boolean;
   error: string | null;
@@ -33,6 +39,7 @@ export type AdminBotProps = {
   onRemove: (proposal: AdminBotActionProposal) => void;
   onExecute: (proposal: AdminBotActionProposal) => void;
   onSaveMember: (member: AdminBotLabMemberSaveInput) => void;
+  onSaveOwnProfile: (memberId: string, fields: MemberProfileUpdate) => void;
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
   onDeletePaper: (paper: AdminBotPaperRecord) => void;
   onSaveSettings: (settings: AdminBotSettingsSaveInput) => void;
@@ -89,16 +96,13 @@ const privilegeLevels: AdminBotPrivilegeLevel[] = [
   "admin",
 ];
 
-type MemberNoteDraft = {
-  location: string;
-  joinedMonth: string;
-  researchInterests: string;
-  calendarEmail: string;
-  whatsapp: string;
-  github: string;
-  website: string;
-  notes: string;
-};
+const memberStatusOptions: Array<{ value: string; label: string }> = [
+  { value: "active", label: "Full time" },
+  { value: "part_time", label: "Part-time" },
+  { value: "on_leave", label: "On leave" },
+  { value: "external", label: "External" },
+  { value: "alumni", label: "Alumni" },
+];
 
 function friendly(value: string | undefined | null): string {
   if (!value) {
@@ -308,96 +312,6 @@ function renderMetric(label: string, value: string | number, detail?: string) {
   `;
 }
 
-function noteField(notes: string | undefined, key: string): string {
-  const expected = key.toLowerCase();
-  for (const line of (notes ?? "").split("\n")) {
-    const [rawKey, ...rest] = line.trim().split(":");
-    if (rawKey?.trim().toLowerCase() === expected) {
-      return rest.join(":").trim();
-    }
-  }
-  return "";
-}
-
-function memberProfileDetails(member: AdminBotLabMember): string[] {
-  const fields = [
-    ["Career", noteField(member.notes, "Career stage")],
-    ["Affiliation", noteField(member.notes, "Affiliation")],
-    ["Major", noteField(member.notes, "Major")],
-    ["Research topic", noteField(member.notes, "Research topic")],
-    ["Next", noteField(member.notes, "Next career stage")],
-  ];
-  return fields.filter(([, value]) => value).map(([label, value]) => label + ": " + value);
-}
-
-function parseMemberNotes(notes: string | undefined): MemberNoteDraft {
-  const draft: MemberNoteDraft = {
-    location: "",
-    joinedMonth: "",
-    researchInterests: "",
-    calendarEmail: "",
-    whatsapp: "",
-    github: "",
-    website: "",
-    notes: "",
-  };
-  const leftovers: string[] = [];
-  for (const line of (notes ?? "").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      continue;
-    }
-    const [rawKey, ...rest] = trimmed.split(":");
-    const value = rest.join(":").trim();
-    switch (rawKey.toLowerCase()) {
-      case "location":
-        draft.location = value;
-        break;
-      case "joined month":
-        draft.joinedMonth = value;
-        break;
-      case "research interests":
-        draft.researchInterests = value;
-        break;
-      case "gmail for calendar":
-        draft.calendarEmail = value;
-        break;
-      case "whatsapp":
-        draft.whatsapp = value;
-        break;
-      case "github":
-        draft.github = value;
-        break;
-      case "personal website":
-        draft.website = value;
-        break;
-      default:
-        leftovers.push(trimmed);
-        break;
-    }
-  }
-  draft.notes = leftovers.join("\n");
-  return draft;
-}
-
-function buildMemberNotes(draft: MemberNoteDraft): string | undefined {
-  const lines = [
-    ["Location", draft.location],
-    ["Joined month", draft.joinedMonth],
-    ["Research interests", draft.researchInterests],
-    ["Gmail for calendar", draft.calendarEmail],
-    ["WhatsApp", draft.whatsapp],
-    ["GitHub", draft.github],
-    ["Personal website", draft.website],
-  ]
-    .filter(([, value]) => value.trim())
-    .map(([label, value]) => `${label}: ${value.trim()}`);
-  if (draft.notes.trim()) {
-    lines.push(draft.notes.trim());
-  }
-  return lines.length > 0 ? lines.join("\n") : undefined;
-}
-
 function getFormValue(formData: FormData, key: string): string {
   const raw = formData.get(key);
   return typeof raw === "string" ? raw.trim() : "";
@@ -446,9 +360,6 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
     ...(getFormValue(data, "status")
       ? { status: getFormValue(data, "status") as AdminBotLabMemberSaveInput["status"] }
       : {}),
-    ...(getFormValue(data, "researchBranch")
-      ? { researchBranch: getFormValue(data, "researchBranch") }
-      : {}),
     ...(splitCsv("researchTopics").length ? { researchTopics: splitCsv("researchTopics") } : {}),
     ...(splitCsv("projects").length ? { projects: splitCsv("projects") } : {}),
     ...(getFormValue(data, "hoursPerWeek") && Number.isFinite(hoursPerWeek)
@@ -465,6 +376,62 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
     ...(getFormValue(data, "website") ? { personalWebsite: getFormValue(data, "website") } : {}),
     ...(notes ? { notes } : {}),
   });
+  form.closest<HTMLElement>("[popover]")?.hidePopover();
+}
+
+// Whitelisted self-editable fields, matching what the AdminBot service accepts from a
+// non-admin member editing their own row. Governance fields (id, email, privilege_level,
+// status) are absent by construction, not merely hidden. Joined month / research interests
+// / calendar email / WhatsApp / GitHub / website have no column of their own and are
+// reassembled into `notes` with the same encoding the admin editor uses.
+function collectSelfProfileFields(form: HTMLFormElement): MemberProfileUpdate {
+  const data = new FormData(form);
+  const splitCsv = (key: string) =>
+    getFormValue(data, key)
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean);
+  const hoursPerWeek = Number(getFormValue(data, "hoursPerWeek"));
+  const capacityPercent = Number(getFormValue(data, "capacityPercent"));
+  const location = getFormValue(data, "location");
+  const personalWebsite = getFormValue(data, "website");
+  const notes = buildMemberNotes({
+    location,
+    joinedMonth: getFormValue(data, "joinedMonth"),
+    researchInterests: getFormValue(data, "researchInterests"),
+    calendarEmail: getFormValue(data, "calendarEmail"),
+    whatsapp: getFormValue(data, "whatsapp"),
+    github: getFormValue(data, "github"),
+    website: personalWebsite,
+    notes: getFormValue(data, "notes"),
+  });
+  return {
+    name: getFormValue(data, "name"),
+    slack_user_id: getFormValue(data, "slackUserId"),
+    role: getFormValue(data, "role"),
+    research_topics: splitCsv("researchTopics"),
+    projects: splitCsv("projects"),
+    ...(getFormValue(data, "hoursPerWeek") && Number.isFinite(hoursPerWeek)
+      ? { hours_per_week: hoursPerWeek }
+      : {}),
+    ...(getFormValue(data, "capacityPercent") && Number.isFinite(capacityPercent)
+      ? { capacity_percent: capacityPercent }
+      : {}),
+    location,
+    affiliation: getFormValue(data, "affiliation"),
+    timezone: getFormValue(data, "timezone"),
+    personal_website: personalWebsite,
+    notes: notes ?? "",
+  };
+}
+
+function submitSelfProfileForm(event: Event, memberId: string, props: AdminBotProps): void {
+  event.preventDefault();
+  const form = event.currentTarget;
+  if (!(form instanceof HTMLFormElement)) {
+    return;
+  }
+  props.onSaveOwnProfile(memberId, collectSelfProfileFields(form));
   form.closest<HTMLElement>("[popover]")?.hidePopover();
 }
 
@@ -520,18 +487,12 @@ function submitSettingsForm(event: Event, props: AdminBotProps): void {
   const data = new FormData(form);
   const escalation = Number(getFormValue(data, "paperEscalationBusinessDays") || "0");
   props.onSaveSettings({
-    ...(getFormValue(data, "defaultPrivilegeLevel")
-      ? {
-          default_privilege_level: getFormValue(
-            data,
-            "defaultPrivilegeLevel",
-          ) as AdminBotPrivilegeLevel,
-        }
-      : {}),
     ...(Number.isInteger(escalation) && escalation > 0
       ? { paper_escalation_business_days: escalation }
       : {}),
     head_professor_member_id: getFormValue(data, "headProfessorMemberId"),
+    applicant_sheet_id: getFormValue(data, "applicantSheetId"),
+    applicant_last_reviewed_at: getFormValue(data, "applicantLastReviewedAt"),
   });
 }
 
@@ -565,18 +526,6 @@ function renderSettings(
         <form class="adminbot-form" @submit=${(event: Event) => submitSettingsForm(event, props)}>
           <div class="form-grid adminbot-form__grid">
             <label class="adminbot-form__field">
-              <span>Default privilege</span>
-              <select name="defaultPrivilegeLevel">
-                ${privilegeLevels.map(
-                  (level) => html`
-                    <option value=${level} ?selected=${level === settings.default_privilege_level}>
-                      ${privilegeLabels[level] ?? friendly(level)}
-                    </option>
-                  `,
-                )}
-              </select>
-            </label>
-            <label class="adminbot-form__field">
               <span>Paper escalation business days</span>
               <input
                 name="paperEscalationBusinessDays"
@@ -591,6 +540,18 @@ function renderSettings(
               <input
                 name="headProfessorMemberId"
                 .value=${settings.head_professor_member_id ?? ""}
+              />
+            </label>
+            <label class="adminbot-form__field">
+              <span>Applicant response sheet id</span>
+              <input name="applicantSheetId" .value=${settings.applicant_sheet_id ?? ""} />
+            </label>
+            <label class="adminbot-form__field">
+              <span>Applicants last reviewed at</span>
+              <input
+                name="applicantLastReviewedAt"
+                placeholder="2026-07-24T00:00:00.000Z"
+                .value=${settings.applicant_last_reviewed_at ?? ""}
               />
             </label>
           </div>
@@ -692,131 +653,6 @@ function renderPendingActions(props: AdminBotProps) {
   `;
 }
 
-function renderMemberCard(member: AdminBotLabMember, props: AdminBotProps) {
-  const noteDraft = parseMemberNotes(member.notes);
-  return html`
-    <article class="adminbot-editor-card adminbot-editor-card--member">
-      <details class="adminbot-expandable">
-        <summary>
-          ${member.name} ·
-          ${privilegeLabels[member.privilege_level] ?? friendly(member.privilege_level)}
-        </summary>
-        <div class="adminbot-editor-card__header">
-          <div>
-            <strong>${member.name}</strong>
-            <div class="card-sub">${member.id} - updated ${formatTime(member.updated_at)}</div>
-          </div>
-          <span class="pill"
-            >${privilegeLabels[member.privilege_level] ?? friendly(member.privilege_level)}</span
-          >
-        </div>
-        <form class="adminbot-form" @submit=${(event: Event) => submitMemberForm(event, props)}>
-          <div class="form-grid adminbot-form__grid">
-            <label class="adminbot-form__field"
-              ><span>Member id</span><input name="id" .value=${member.id} readonly
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Name</span><input name="name" .value=${member.name} required
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Email</span><input name="email" type="email" .value=${member.email ?? ""}
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Slack user id</span
-              ><input name="slackUserId" .value=${member.slack_user_id ?? ""}
-            /></label>
-            <label class="adminbot-form__field">
-              <span>Privilege</span>
-              <select name="privilegeLevel">
-                ${privilegeLevels.map(
-                  (level) => html`
-                    <option value=${level} ?selected=${level === member.privilege_level}>
-                      ${privilegeLabels[level] ?? friendly(level)}
-                    </option>
-                  `,
-                )}
-              </select>
-            </label>
-            <label class="adminbot-form__field"
-              ><span>Location</span><input name="location" .value=${noteDraft.location}
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Joined month</span><input name="joinedMonth" .value=${noteDraft.joinedMonth}
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Research interests</span
-              ><input name="researchInterests" .value=${noteDraft.researchInterests}
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Calendar email</span
-              ><input name="calendarEmail" .value=${noteDraft.calendarEmail}
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>WhatsApp</span><input name="whatsapp" .value=${noteDraft.whatsapp}
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>GitHub</span><input name="github" .value=${noteDraft.github}
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Website</span><input name="website" .value=${noteDraft.website}
-            /></label>
-          </div>
-          <label class="adminbot-form__field"
-            ><span>Additional notes</span
-            ><textarea name="notes" rows="4">${noteDraft.notes}</textarea>
-          </label>
-          <div class="adminbot-form__meta">
-            ${member.access
-              .map((entry) => (entry.scope ? `${entry.service}: ${entry.scope}` : entry.service))
-              .join(", ") || "n/a"}
-          </div>
-          <div class="adminbot-form__actions">
-            <button class="btn btn--sm primary" type="submit">Save member</button>
-          </div>
-        </form>
-      </details>
-    </article>
-  `;
-}
-
-function renderMemberReadOnlyCard(member: AdminBotLabMember) {
-  const noteDraft = parseMemberNotes(member.notes);
-  const profileDetails = memberProfileDetails(member);
-  const detailItems = [
-    member.email ? `Email: ${member.email}` : "",
-    member.slack_user_id ? `Slack: ${member.slack_user_id}` : "",
-    noteDraft.location ? `Location: ${noteDraft.location}` : "",
-    noteDraft.researchInterests ? `Research: ${noteDraft.researchInterests}` : "",
-    noteDraft.website ? `Website: ${noteDraft.website}` : "",
-  ].filter(Boolean);
-  detailItems.push(...profileDetails);
-  return html`
-    <article
-      class="adminbot-editor-card adminbot-editor-card--member adminbot-editor-card--readonly"
-    >
-      <details class="adminbot-expandable">
-        <summary>
-          ${member.name} ·
-          ${privilegeLabels[member.privilege_level] ?? friendly(member.privilege_level)}
-        </summary>
-        <div class="adminbot-editor-card__header">
-          <div>
-            <strong>${member.name}</strong>
-            <div class="card-sub">${member.id} - updated ${formatTime(member.updated_at)}</div>
-          </div>
-          <span class="pill"
-            >${privilegeLabels[member.privilege_level] ?? friendly(member.privilege_level)}</span
-          >
-        </div>
-        <div class="adminbot-readonly-list">
-          ${detailItems.length > 0
-            ? detailItems.map((item) => html`<span>${item}</span>`)
-            : html`<span>No public details yet.</span>`}
-        </div>
-      </details>
-    </article>
-  `;
-}
 function renderCompactSummary(rows: Array<{ title: string; meta: string; detail: string }>) {
   if (rows.length === 0)
     return html`<div class="adminbot-empty adminbot-empty--compact">No records yet.</div>`;
@@ -849,7 +685,6 @@ function filterMemberSpreadsheet(event: Event): void {
   if (!sheet) return;
   const data = new FormData(form);
   const search = getFormValue(data, "search").toLocaleLowerCase();
-  const branch = getFormValue(data, "branch");
   const status = getFormValue(data, "status");
   const project = getFormValue(data, "project");
   const paper = getFormValue(data, "paper");
@@ -857,7 +692,6 @@ function filterMemberSpreadsheet(event: Event): void {
   for (const row of sheet.querySelectorAll<HTMLTableRowElement>("tbody tr")) {
     const matches =
       (!search || (row.dataset.search ?? "").includes(search)) &&
-      (!branch || row.dataset.branch === branch) &&
       (!status || row.dataset.status === status) &&
       (!project || (row.dataset.projects ?? "").split("|").includes(project)) &&
       (!paper || (row.dataset.papers ?? "").split("|").includes(paper));
@@ -868,10 +702,345 @@ function filterMemberSpreadsheet(event: Event): void {
   if (count) count.textContent = `${visible} ${visible === 1 ? "person" : "people"}`;
 }
 
-function renderMemberSpreadsheet(members: AdminBotLabMember[], papers: AdminBotPaperRecord[]) {
-  const branches = [
-    ...new Set(members.map((member) => member.research_branch).filter(Boolean)),
-  ].sort((a, b) => String(a).localeCompare(String(b)));
+// Shared roster fields for the admin add/edit-member popovers. When a member is
+// supplied the fields are prefilled and the id is locked, so the same
+// submitMemberForm/onSaveMember upsert path edits the existing record (PUT is an
+// id-keyed merge) instead of creating a new one.
+function renderMemberFormFields(member?: AdminBotLabMember) {
+  const noteDraft = parseMemberNotes(member?.notes);
+  const editing = member !== undefined;
+  const numeric = (value: number | undefined) =>
+    value === undefined || value === null ? "" : String(value);
+  return html`
+    <div class="form-grid adminbot-form__grid">
+      <label class="adminbot-form__field"
+        ><span>Member id</span
+        ><input
+          name="id"
+          placeholder="pat"
+          .value=${member?.id ?? ""}
+          ?readonly=${editing}
+          required
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Name</span
+        ><input name="name" placeholder="Pat" .value=${member?.name ?? ""} required
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Email</span
+        ><input
+          name="email"
+          type="email"
+          placeholder="pat@example.test"
+          .value=${member?.email ?? ""}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Slack user id</span
+        ><input name="slackUserId" placeholder="U0123456789" .value=${member?.slack_user_id ?? ""}
+      /></label>
+      <label class="adminbot-form__field">
+        <span>Privilege</span>
+        <select name="privilegeLevel">
+          ${privilegeLevels.map(
+            (level) =>
+              html`<option
+                value=${level}
+                ?selected=${level === (member?.privilege_level ?? "external_collaborator")}
+              >
+                ${privilegeLabels[level] ?? friendly(level)}
+              </option>`,
+          )}
+        </select>
+      </label>
+      <label class="adminbot-form__field"
+        ><span>Role</span
+        ><input name="role" placeholder="Research scientist" .value=${member?.role ?? ""}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Status</span
+        ><select name="status">
+          ${memberStatusOptions.map(
+            (option) =>
+              html`<option
+                value=${option.value}
+                ?selected=${option.value === (member?.status ?? "active")}
+              >
+                ${option.label}
+              </option>`,
+          )}
+        </select></label
+      >
+      <label class="adminbot-form__field"
+        ><span>Research topics</span
+        ><input
+          name="researchTopics"
+          placeholder="robotics, world models"
+          .value=${(member?.research_topics ?? []).join(", ")}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Projects</span
+        ><input
+          name="projects"
+          placeholder="Project Atlas, Data Engine"
+          .value=${(member?.projects ?? []).join(", ")}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Hours / week</span
+        ><input
+          name="hoursPerWeek"
+          type="number"
+          min="0"
+          max="168"
+          .value=${numeric(member?.hours_per_week)}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Capacity %</span
+        ><input
+          name="capacityPercent"
+          type="number"
+          min="0"
+          max="100"
+          .value=${numeric(member?.capacity_percent)}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Affiliation</span><input name="affiliation" .value=${member?.affiliation ?? ""}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Timezone</span
+        ><input name="timezone" placeholder="America/New_York" .value=${member?.timezone ?? ""}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Location</span
+        ><input name="location" .value=${member?.location ?? noteDraft.location}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Joined month</span
+        ><input name="joinedMonth" placeholder="2026-06" .value=${noteDraft.joinedMonth}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Research interests</span
+        ><input name="researchInterests" .value=${noteDraft.researchInterests}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Calendar email</span><input name="calendarEmail" .value=${noteDraft.calendarEmail}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>WhatsApp</span><input name="whatsapp" .value=${noteDraft.whatsapp}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>GitHub</span><input name="github" .value=${noteDraft.github}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Website</span><input name="website" .value=${noteDraft.website}
+      /></label>
+    </div>
+    <label class="adminbot-form__field"
+      ><span>Additional notes</span><textarea name="notes" rows="4">${noteDraft.notes}</textarea>
+    </label>
+  `;
+}
+
+function renderMemberEditPopover(member: AdminBotLabMember, index: number, props: AdminBotProps) {
+  const editId = `adminbot-edit-member-${index}`;
+  return html`
+    <article class="adminbot-editor-card adminbot-popover" id=${editId} popover>
+      <button
+        class="btn btn--sm adminbot-popover__close"
+        type="button"
+        popovertarget=${editId}
+        popovertargetaction="hide"
+      >
+        Close
+      </button>
+      <div class="card-title">Edit member</div>
+      <div class="card-sub">${member.name} · ${member.id}</div>
+      <form class="adminbot-form" @submit=${(event: Event) => submitMemberForm(event, props)}>
+        ${renderMemberFormFields(member)}
+        <div class="adminbot-form__actions">
+          <button class="btn btn--sm primary" type="submit">Save member</button>
+        </div>
+      </form>
+    </article>
+  `;
+}
+
+// Restricted self-edit popover for a member's own row. Deliberately a separate field set
+// from renderMemberFormFields: no id/email/privilege/status inputs exist here, so the
+// non-admin path cannot even express a governance change.
+function renderMemberSelfEditPopover(
+  member: AdminBotLabMember,
+  index: number,
+  props: AdminBotProps,
+) {
+  const editId = `adminbot-self-edit-member-${index}`;
+  const noteDraft = parseMemberNotes(member.notes);
+  const numeric = (value: number | undefined) =>
+    value === undefined || value === null ? "" : String(value);
+  return html`
+    <article class="adminbot-editor-card adminbot-popover" id=${editId} popover>
+      <button
+        class="btn btn--sm adminbot-popover__close"
+        type="button"
+        popovertarget=${editId}
+        popovertargetaction="hide"
+      >
+        Close
+      </button>
+      <div class="card-title">Edit my profile</div>
+      <div class="card-sub">
+        Access level, status, and email are managed by admins and cannot be changed here.
+      </div>
+      <form
+        class="adminbot-form"
+        @submit=${(event: Event) => submitSelfProfileForm(event, member.id, props)}
+      >
+        <div class="form-grid adminbot-form__grid">
+          <label class="adminbot-form__field"
+            ><span>Name</span><input name="name" .value=${member.name ?? ""} required
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Slack user id</span
+            ><input name="slackUserId" .value=${member.slack_user_id ?? ""}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Role</span><input name="role" .value=${member.role ?? ""}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Research topics</span
+            ><input
+              name="researchTopics"
+              placeholder="Comma-separated"
+              .value=${(member.research_topics ?? []).join(", ")}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Projects</span
+            ><input
+              name="projects"
+              placeholder="Comma-separated"
+              .value=${(member.projects ?? []).join(", ")}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Hours / week</span
+            ><input
+              name="hoursPerWeek"
+              type="number"
+              min="0"
+              max="168"
+              .value=${numeric(member.hours_per_week)}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Capacity %</span
+            ><input
+              name="capacityPercent"
+              type="number"
+              min="0"
+              max="100"
+              .value=${numeric(member.capacity_percent)}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Location</span
+            ><input name="location" .value=${member.location ?? noteDraft.location}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Affiliation</span><input name="affiliation" .value=${member.affiliation ?? ""}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Timezone</span
+            ><input name="timezone" placeholder="America/New_York" .value=${member.timezone ?? ""}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Website</span><input name="website" .value=${noteDraft.website}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Joined month</span
+            ><input name="joinedMonth" placeholder="2026-06" .value=${noteDraft.joinedMonth}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Research interests</span
+            ><input name="researchInterests" .value=${noteDraft.researchInterests}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Calendar email</span
+            ><input name="calendarEmail" .value=${noteDraft.calendarEmail}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>WhatsApp</span><input name="whatsapp" .value=${noteDraft.whatsapp}
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>GitHub</span><input name="github" .value=${noteDraft.github}
+          /></label>
+        </div>
+        <label class="adminbot-form__field"
+          ><span>Additional notes</span
+          ><textarea name="notes" rows="4">${noteDraft.notes}</textarea>
+        </label>
+        <div class="adminbot-form__actions">
+          <button class="btn btn--sm primary" type="submit">Save my profile</button>
+        </div>
+      </form>
+    </article>
+  `;
+}
+
+// Row edit affordance. Admins get the full governance field set on every row; anyone else
+// gets the restricted self-edit form on their own row only, and nothing on other rows.
+type MemberRowEdit = "admin" | "self" | "none";
+
+function memberRowEdit(member: AdminBotLabMember, props: AdminBotProps): MemberRowEdit {
+  if (props.mode === "admin") {
+    return "admin";
+  }
+  return props.signedInMemberId && member.id === props.signedInMemberId ? "self" : "none";
+}
+
+// Signed-in member's own row floats to the top; everyone else keeps the roster's fetch order
+// so the table does not silently reshuffle. No signed-in member (break-glass gateway-token
+// access) leaves the order untouched.
+function sortSignedInMemberFirst(
+  members: AdminBotLabMember[],
+  signedInMemberId: string | null | undefined,
+): AdminBotLabMember[] {
+  if (!signedInMemberId) {
+    return members;
+  }
+  const own = members.filter((member) => member.id === signedInMemberId);
+  return own.length === 0 ? members : [...own, ...members.filter((m) => m.id !== signedInMemberId)];
+}
+
+// Click-and-drag horizontal panning for the roster scroller. The window listeners are
+// installed on drag start and removed on drag end, so the handler stays a stable module-level
+// reference and Lit re-renders never accumulate listeners. Drags starting on an interactive
+// element are ignored so Edit buttons, inputs, and links keep working.
+function startMemberSheetPan(event: MouseEvent): void {
+  const scroller = event.currentTarget;
+  if (!(scroller instanceof HTMLElement) || event.button !== 0) {
+    return;
+  }
+  const target = event.target;
+  if (
+    target instanceof Element &&
+    target.closest("button, input, select, textarea, a, label, [popover]")
+  ) {
+    return;
+  }
+  const startX = event.pageX;
+  const startScrollLeft = scroller.scrollLeft;
+  scroller.classList.add("adminbot-member-sheet__scroll--panning");
+  const onMove = (move: MouseEvent) => {
+    scroller.scrollLeft = startScrollLeft - (move.pageX - startX);
+  };
+  const onUp = () => {
+    scroller.classList.remove("adminbot-member-sheet__scroll--panning");
+    globalThis.removeEventListener("mousemove", onMove);
+    globalThis.removeEventListener("mouseup", onUp);
+  };
+  globalThis.addEventListener("mousemove", onMove);
+  globalThis.addEventListener("mouseup", onUp);
+}
+
+function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMember[]) {
+  const papers = props.data.papers;
+  const members = sortSignedInMemberFirst(allMembers, props.signedInMemberId);
   const statuses = [...new Set(members.map((member) => member.status ?? "active"))].sort();
   const projects = [...new Set(members.flatMap((member) => member.projects ?? []))].sort();
   const paperTitles = [...new Set(papers.map((paper) => paper.title))].sort();
@@ -894,13 +1063,6 @@ function renderMemberSpreadsheet(members: AdminBotLabMember[], papers: AdminBotP
           ><input name="search" type="search" placeholder="Name, topic, project…"
         /></label>
         <label
-          ><span>Branch</span
-          ><select name="branch">
-            <option value="">All branches</option>
-            ${branches.map((value) => html`<option value=${value}>${value}</option>`)}
-          </select></label
-        >
-        <label
           ><span>Status</span
           ><select name="status">
             <option value="">All statuses</option>
@@ -922,7 +1084,7 @@ function renderMemberSpreadsheet(members: AdminBotLabMember[], papers: AdminBotP
           </select></label
         >
       </form>
-      <div class="adminbot-member-sheet__scroll">
+      <div class="adminbot-member-sheet__scroll" @mousedown=${startMemberSheetPan}>
         <table>
           <thead>
             <tr>
@@ -930,7 +1092,6 @@ function renderMemberSpreadsheet(members: AdminBotLabMember[], papers: AdminBotP
               <th>Email</th>
               <th>Role</th>
               <th>Status</th>
-              <th>Research branch</th>
               <th>Topics</th>
               <th>Projects</th>
               <th>Active papers</th>
@@ -944,17 +1105,18 @@ function renderMemberSpreadsheet(members: AdminBotLabMember[], papers: AdminBotP
             </tr>
           </thead>
           <tbody>
-            ${members.map((member) => {
+            ${members.map((member, index) => {
+              const rowEdit = memberRowEdit(member, props);
               const memberPapers = papersForMember(member, papers);
               const noteDraft = parseMemberNotes(member.notes);
               const search = [
                 member.name,
                 member.email,
                 member.role,
-                member.research_branch,
                 member.affiliation,
                 member.location,
                 member.timezone,
+                member.slack_user_id,
                 noteDraft.joinedMonth,
                 noteDraft.calendarEmail,
                 noteDraft.whatsapp,
@@ -969,12 +1131,24 @@ function renderMemberSpreadsheet(members: AdminBotLabMember[], papers: AdminBotP
                 .toLocaleLowerCase();
               return html`<tr
                 data-search=${search}
-                data-branch=${member.research_branch ?? ""}
                 data-status=${member.status ?? "active"}
                 data-projects=${(member.projects ?? []).join("|")}
                 data-papers=${memberPapers.map((entry) => entry.title).join("|")}
               >
-                <td><strong>${member.name}</strong><small>${member.id}</small></td>
+                <td>
+                  <strong>${member.name}</strong><small>${member.id}</small>
+                  ${rowEdit === "none"
+                    ? nothing
+                    : html`<button
+                        class="btn btn--sm adminbot-member-sheet__edit"
+                        type="button"
+                        popovertarget=${rowEdit === "admin"
+                          ? `adminbot-edit-member-${index}`
+                          : `adminbot-self-edit-member-${index}`}
+                      >
+                        ${rowEdit === "admin" ? "Edit" : "Edit my profile"}
+                      </button>`}
+                </td>
                 <td>${member.email ?? "—"}</td>
                 <td>
                   ${member.role ??
@@ -986,7 +1160,6 @@ function renderMemberSpreadsheet(members: AdminBotLabMember[], papers: AdminBotP
                     >${friendly(member.status ?? "active")}</span
                   >
                 </td>
-                <td>${member.research_branch ?? "—"}</td>
                 <td>
                   ${(member.research_topics ?? []).map(
                     (value) => html`<span class="adminbot-tag">${value}</span>`,
@@ -1035,10 +1208,16 @@ function renderMemberSpreadsheet(members: AdminBotLabMember[], papers: AdminBotP
                   ${noteDraft.website
                     ? html`<span class="adminbot-contact-item">Website: ${noteDraft.website}</span>`
                     : nothing}
+                  ${member.slack_user_id
+                    ? html`<span class="adminbot-contact-item"
+                        >Slack: ${member.slack_user_id}</span
+                      >`
+                    : nothing}
                   ${!noteDraft.calendarEmail &&
                   !noteDraft.whatsapp &&
                   !noteDraft.github &&
-                  !noteDraft.website
+                  !noteDraft.website &&
+                  !member.slack_user_id
                     ? "—"
                     : nothing}
                 </td>
@@ -1053,19 +1232,23 @@ function renderMemberSpreadsheet(members: AdminBotLabMember[], papers: AdminBotP
           ? html`<div class="adminbot-empty adminbot-empty--compact">No lab members yet.</div>`
           : nothing}
       </div>
+      ${members.map((member, index) => {
+        const rowEdit = memberRowEdit(member, props);
+        if (rowEdit === "admin") {
+          return renderMemberEditPopover(member, index, props);
+        }
+        return rowEdit === "self" ? renderMemberSelfEditPopover(member, index, props) : nothing;
+      })}
     </section>
   `;
 }
 
 function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
-  const spreadsheet = renderMemberSpreadsheet(members, props.data.papers);
+  const spreadsheet = renderMemberSpreadsheet(props, members);
+  // The spreadsheet is the single roster view for every mode: admins edit any row, members
+  // edit their own row inline, everyone else reads. Only the Add-member popover is admin-only.
   if (props.mode === "general") {
-    return html`${spreadsheet}
-      <div class="adminbot-editor-list adminbot-editor-list--readonly">
-        ${members.length > 0
-          ? members.map((member) => renderMemberReadOnlyCard(member))
-          : html`<div class="adminbot-empty adminbot-empty--compact">No lab members yet.</div>`}
-      </div> `;
+    return spreadsheet;
   }
   return html`${spreadsheet}
     <div class="adminbot-editor-grid">
@@ -1081,99 +1264,12 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
         <div class="card-title">Add member</div>
         <div class="card-sub">Create a roster entry and seed its privilege-derived access.</div>
         <form class="adminbot-form" @submit=${(event: Event) => submitMemberForm(event, props)}>
-          <div class="form-grid adminbot-form__grid">
-            <label class="adminbot-form__field"
-              ><span>Member id</span><input name="id" placeholder="pat" required
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Name</span><input name="name" placeholder="Pat" required
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Email</span><input name="email" type="email" placeholder="pat@example.test"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Slack user id</span><input name="slackUserId" placeholder="U0123456789"
-            /></label>
-            <label class="adminbot-form__field">
-              <span>Privilege</span>
-              <select name="privilegeLevel">
-                <option value="">Use AdminBot default</option>
-                ${privilegeLevels.map(
-                  (level) =>
-                    html`<option value=${level}>
-                      ${privilegeLabels[level] ?? friendly(level)}
-                    </option>`,
-                )}
-              </select>
-            </label>
-            <label class="adminbot-form__field"
-              ><span>Role</span><input name="role" placeholder="Research scientist"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Status</span
-              ><select name="status">
-                <option value="active">Full time</option>
-                <option value="part_time">Part-time</option>
-                <option value="on_leave">On leave</option>
-                <option value="external">External</option>
-                <option value="alumni">Alumni</option>
-              </select></label
-            >
-            <label class="adminbot-form__field"
-              ><span>Research branch</span
-              ><input name="researchBranch" placeholder="Embodied intelligence"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Research topics</span
-              ><input name="researchTopics" placeholder="robotics, world models"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Projects</span><input name="projects" placeholder="Project Atlas, Data Engine"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Hours / week</span><input name="hoursPerWeek" type="number" min="0" max="168"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Capacity %</span><input name="capacityPercent" type="number" min="0" max="100"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Affiliation</span><input name="affiliation"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Timezone</span><input name="timezone" placeholder="America/New_York"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Location</span><input name="location"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Joined month</span><input name="joinedMonth" placeholder="2026-06"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Research interests</span><input name="researchInterests"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Calendar email</span><input name="calendarEmail"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>WhatsApp</span><input name="whatsapp"
-            /></label>
-            <label class="adminbot-form__field"><span>GitHub</span><input name="github" /></label>
-            <label class="adminbot-form__field"><span>Website</span><input name="website" /></label>
-          </div>
-          <label class="adminbot-form__field"
-            ><span>Additional notes</span><textarea name="notes" rows="4"></textarea>
-          </label>
+          ${renderMemberFormFields()}
           <div class="adminbot-form__actions">
             <button class="btn btn--sm primary" type="submit">Add member</button>
           </div>
         </form>
       </article>
-
-      <div class="adminbot-editor-list">
-        ${members.length > 0
-          ? members.map((member) => renderMemberCard(member, props))
-          : html`<div class="adminbot-empty adminbot-empty--compact">No lab members yet.</div>`}
-      </div>
     </div> `;
 }
 

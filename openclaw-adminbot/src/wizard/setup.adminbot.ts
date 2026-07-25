@@ -16,6 +16,11 @@ export const ADMINBOT_LOCAL_MODEL = {
 };
 export const ADMINBOT_CONTROL_UI_LAUNCH_URL = "https://jinesis-admin.vercel.app/";
 export const ADMINBOT_CONTROL_UI_ORIGIN = "https://jinesis-admin.vercel.app";
+// The Control UI talks to the AdminBot HTTP service directly (a different origin than the
+// Gateway that serves the UI itself), so its CSP connect-src needs these explicitly. The TLS
+// port entry is host-wildcarded because the actual tailnet/production hostname varies per
+// deployment and isn't known at config time; the port itself is AdminBot's fixed default.
+export const ADMINBOT_SERVICE_CONNECT_SRC_ORIGINS = [ADMINBOT_SERVICE_BASE_URL, "https://*:8443"];
 
 export const ADMINBOT_SKILLS = [
   "adminbot-workflows",
@@ -53,6 +58,8 @@ export const ADMINBOT_TOOLS = [
   "adminbot_list_lab_members",
   "adminbot_get_settings",
   "adminbot_update_settings",
+  "adminbot_list_unreviewed_applicants",
+  "adminbot_mark_applicants_reviewed",
   "adminbot_get_sensitive_info",
   "adminbot_update_sensitive_info",
   "adminbot_upsert_paper",
@@ -138,6 +145,10 @@ function removeExplicitAllow<T extends { allow?: string[] }>(
 function withAdminBotControlUiConfig(config: OpenClawConfig): OpenClawConfig {
   const existingOrigins = config.gateway?.controlUi?.allowedOrigins ?? [];
   const allowedOrigins = Array.from(new Set([...existingOrigins, ADMINBOT_CONTROL_UI_ORIGIN]));
+  const existingConnectSrc = config.gateway?.controlUi?.extraConnectSrc ?? [];
+  const extraConnectSrc = Array.from(
+    new Set([...existingConnectSrc, ...ADMINBOT_SERVICE_CONNECT_SRC_ORIGINS]),
+  );
   return {
     ...config,
     gateway: {
@@ -146,6 +157,7 @@ function withAdminBotControlUiConfig(config: OpenClawConfig): OpenClawConfig {
         ...config.gateway?.controlUi,
         launchUrl: ADMINBOT_CONTROL_UI_LAUNCH_URL,
         allowedOrigins,
+        extraConnectSrc,
       },
     },
   };

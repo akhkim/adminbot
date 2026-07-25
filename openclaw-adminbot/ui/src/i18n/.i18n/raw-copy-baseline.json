@@ -650,7 +650,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot-reimbursements.ts",
-      "text": "Receipt PDFs"
+      "text": "Receipts"
     },
     {
       "count": 1,
@@ -692,7 +692,14 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot-reimbursements.ts",
-      "text": "Up to 12 PDFs, 12 MB each. Add files with your first message."
+      "text": "Up to 12 PDFs or photos, 12 MB each. Add files with your first message."
+    },
+    {
+      "count": 1,
+      "kind": "html-attribute",
+      "name": "placeholder",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "2026-07-24T00:00:00.000Z"
     },
     {
       "count": 1,
@@ -702,18 +709,18 @@
       "text": "Alice, Bob"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/views/adminbot.ts",
       "text": "America/New_York"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Embodied intelligence"
+      "text": "Comma-separated"
     },
     {
       "count": 1,
@@ -807,6 +814,13 @@
       "text": "Access"
     },
     {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Access level, status, and email are managed by admins and cannot be changed here."
+    },
+    {
       "count": 2,
       "kind": "html-text",
       "name": "text",
@@ -842,18 +856,11 @@
       "text": "Additional notes"
     },
     {
-      "count": 2,
+      "count": 3,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
       "text": "Affiliation"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/adminbot.ts",
-      "text": "All branches"
     },
     {
       "count": 1,
@@ -909,7 +916,14 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Alumni"
+      "text": "Applicant response sheet id"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Applicants last reviewed at"
     },
     {
       "count": 1,
@@ -940,13 +954,6 @@
       "text": "Blocked"
     },
     {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Branch"
-    },
-    {
       "count": 2,
       "kind": "html-text",
       "name": "text",
@@ -954,14 +961,14 @@
       "text": "Calendar email"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
       "text": "Capacity %"
     },
     {
-      "count": 2,
+      "count": 4,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -1021,14 +1028,21 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Default privilege"
+      "text": "Due reminders and head professor escalations."
     },
     {
       "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Due reminders and head professor escalations."
+      "text": "Edit member"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Edit my profile"
     },
     {
       "count": 1,
@@ -1045,7 +1059,7 @@
       "text": "Edit the roster and reminder defaults AdminBot applies."
     },
     {
-      "count": 3,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -1056,21 +1070,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
-      "text": "External"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/adminbot.ts",
       "text": "File"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Full time"
     },
     {
       "count": 2,
@@ -1094,7 +1094,7 @@
       "text": "Head professor member id"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -1157,7 +1157,7 @@
       "text": "Markdown"
     },
     {
-      "count": 2,
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -1185,7 +1185,7 @@
       "text": "No due paper nudges."
     },
     {
-      "count": 3,
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -1210,13 +1210,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
-      "text": "No public details yet."
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/adminbot.ts",
       "text": "No records yet."
     },
     {
@@ -1225,13 +1218,6 @@
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
       "text": "Not started"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/adminbot.ts",
-      "text": "On leave"
     },
     {
       "count": 2,
@@ -1287,13 +1273,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Part-time"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/adminbot.ts",
       "text": "Pending actions"
     },
     {
@@ -1318,7 +1297,7 @@
       "text": "Policy defaults"
     },
     {
-      "count": 2,
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -1339,7 +1318,7 @@
       "text": "Project"
     },
     {
-      "count": 2,
+      "count": 3,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -1357,17 +1336,10 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Research branch"
-    },
-    {
-      "count": 2,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/adminbot.ts",
       "text": "Research interests"
     },
     {
-      "count": 1,
+      "count": 2,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -1381,7 +1353,7 @@
       "text": "Research, staffing, and publication context"
     },
     {
-      "count": 2,
+      "count": 3,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -1400,6 +1372,13 @@
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
       "text": "Save member"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Save my profile"
     },
     {
       "count": 1,
@@ -1472,7 +1451,7 @@
       "text": "Timeline unavailable"
     },
     {
-      "count": 2,
+      "count": 3,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -1511,13 +1490,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Use AdminBot default"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/adminbot.ts",
       "text": "Waiting on authors"
     },
     {
@@ -1533,6 +1505,41 @@
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
       "text": "WhatsApp"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Alumni"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "External"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Full time"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "On leave"
+    },
+    {
+      "count": 1,
+      "kind": "object-property",
+      "name": "label",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Part-time"
     },
     {
       "count": 1,
@@ -3786,13 +3793,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/config-quick.ts",
-      "text": "Mode"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/config-quick.ts",
       "text": "Model"
     },
     {
@@ -3912,13 +3912,6 @@
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/views/config-quick.ts",
-      "text": "Dash"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/views/config-quick.ts",
       "text": "Default"
     },
     {
@@ -3934,13 +3927,6 @@
       "name": "label",
       "path": "ui/src/ui/views/config-quick.ts",
       "text": "Full"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/views/config-quick.ts",
-      "text": "Knot"
     },
     {
       "count": 1,
@@ -4297,21 +4283,7 @@
       "kind": "object-property",
       "name": "description",
       "path": "ui/src/ui/views/config.ts",
-      "text": "Black & red"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "description",
-      "path": "ui/src/ui/views/config.ts",
-      "text": "Chocolate blueprint"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "description",
-      "path": "ui/src/ui/views/config.ts",
-      "text": "Chroma family"
+      "text": "Default theme"
     },
     {
       "count": 1,
@@ -4444,13 +4416,6 @@
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/views/config.ts",
-      "text": "Dash"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/views/config.ts",
       "text": "Diagnostics"
     },
     {
@@ -4487,13 +4452,6 @@
       "name": "label",
       "path": "ui/src/ui/views/config.ts",
       "text": "Infrastructure"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/views/config.ts",
-      "text": "Knot"
     },
     {
       "count": 1,
@@ -5085,13 +5043,6 @@
     },
     {
       "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/views/login-gate.ts",
-      "text": "ws://127.0.0.1:18789"
-    },
-    {
-      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/login-gate.ts",
@@ -5621,13 +5572,6 @@
       "name": "text",
       "path": "ui/src/ui/views/nodes.ts",
       "text": "Use default"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/views/overview.ts",
-      "text": "OPENCLAW_GATEWAY_TOKEN"
     },
     {
       "count": 1,

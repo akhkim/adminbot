@@ -108,6 +108,163 @@
   font-weight: 500;
 }
 
+.login-gate__form-error {
+  color: var(--danger);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.5;
+}
+
+.login-gate__spinner {
+  width: 14px;
+  height: 14px;
+  margin-right: var(--space-2);
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+.login-gate .login-gate__mode-toggle {
+  align-self: center;
+  margin-top: var(--space-1);
+  padding: var(--space-1) var(--space-2);
+  background: none;
+  border: 0;
+  font-size: var(--control-ui-text-sm);
+  cursor: pointer;
+}
+
+.login-gate .login-gate__mode-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.login-gate__picker {
+  gap: var(--space-2);
+}
+
+.login-gate__picker input {
+  width: 100%;
+  height: var(--control-h-lg);
+}
+
+.login-gate__picker-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.login-gate__picker-option {
+  display: block;
+  width: 100%;
+  min-height: var(--control-h-lg);
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.login-gate__picker-option + .login-gate__picker-option {
+  border-top: 1px solid var(--border);
+}
+
+.login-gate__picker-option:hover {
+  background: var(--bg-hover);
+}
+
+.login-gate__picker-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.login-gate__picker-empty {
+  padding: var(--space-3);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.login-gate__picker-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-items: flex-start;
+  padding: var(--space-3);
+  color: var(--danger);
+  font-size: var(--control-ui-text-sm);
+}
+
+.login-gate__picker-retry {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+
+.login-gate__picker-retry:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.login-gate__picker-selected {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--control-h-lg);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--card);
+}
+
+.login-gate__picker-selected-name {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 500;
+}
+
+.login-gate .login-gate__picker-change {
+  padding: var(--space-1) var(--space-2);
+  background: none;
+  border: 0;
+  font-size: var(--control-ui-text-sm);
+  cursor: pointer;
+}
+
+.login-gate .login-gate__picker-change:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.login-gate__pending {
+  margin-top: var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.login-gate__pending-title {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+}
+
+.login-gate__pending-summary {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.5;
+}
+
 .login-gate__failure {
   margin-top: var(--space-6);
 }
@@ -451,6 +608,46 @@
 
 .adminbot-card--wide {
   grid-column: 1 / -1;
+}
+
+.adminbot-registrations {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.adminbot-registration__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.adminbot-registration__member {
+  font-weight: 500;
+  color: var(--text);
+  margin-top: var(--space-2);
+}
+
+.adminbot-registration__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-3) 0 0;
+}
+
+.adminbot-registration__field dt {
+  font-size: var(--control-ui-text-sm);
+  color: var(--text-muted);
+}
+
+.adminbot-registration__field dd {
+  margin: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 .adminbot-editor-grid {
@@ -842,32 +1039,6 @@
   white-space: normal;
 }
 
-.adminbot-editor-list--readonly {
-  gap: var(--space-3);
-}
-
-.adminbot-editor-card--readonly {
-  gap: var(--space-3);
-}
-
-.adminbot-readonly-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1);
-  color: var(--muted);
-  font-size: var(--control-ui-text-sm);
-}
-
-.adminbot-readonly-list span {
-  min-width: 0;
-  max-width: 100%;
-  overflow-wrap: anywhere;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: var(--space-1) var(--space-2);
-  background: var(--bg);
-}
-
 .adminbot-paper {
   align-items: stretch;
   padding: 0;
@@ -1029,12 +1200,22 @@
 }
 
 .adminbot-member-sheet__scroll {
+  /* Bounded height so the container scrolls vertically itself — without it the page
+     scrolls past the table and the sticky <thead> below never engages. */
+  max-height: min(70vh, 800px);
   max-width: 100%;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
   overscroll-behavior-inline: contain;
+  cursor: grab;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   scrollbar-color: var(--border-hover) transparent;
+}
+
+.adminbot-member-sheet__scroll--panning {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .adminbot-member-sheet table {
@@ -1073,7 +1254,7 @@
   position: sticky;
   left: 0;
   z-index: 2;
-  min-width: 180px;
+  min-width: 200px;
   background: var(--card);
   box-shadow: 1px 0 0 var(--border);
 }
@@ -1101,6 +1282,12 @@
   margin-top: 2px;
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-member-sheet__edit {
+  /* Lives under the name in the frozen first column rather than its own Actions column. */
+  margin-top: var(--space-2);
+  cursor: pointer;
 }
 
 .adminbot-tag,

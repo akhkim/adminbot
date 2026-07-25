@@ -9,6 +9,7 @@ export const TAB_GROUPS = [
     label: "adminbot",
     tabs: [
       "adminbot",
+      "adminbotRegistrations",
       "adminbotReimbursements",
       "adminbotSettings",
       "adminbotMembers",
@@ -31,6 +32,7 @@ export type Tab =
   | "agents"
   | "activity"
   | "adminbot"
+  | "adminbotRegistrations"
   | "adminbotReimbursements"
   | "adminbotSettings"
   | "adminbotMembers"
@@ -75,6 +77,7 @@ const TAB_PATHS: Record<Tab, string> = {
   agents: "/agents",
   activity: "/activity",
   adminbot: "/adminbot",
+  adminbotRegistrations: "/adminbot/registrations",
   adminbotReimbursements: "/adminbot/reimbursements",
   adminbotSettings: "/adminbot/settings",
   adminbotMembers: "/adminbot/members",
@@ -154,10 +157,12 @@ export function isSettingsTab(tab: Tab): boolean {
 }
 
 export function isTabInGroup(group: (typeof TAB_GROUPS)[number], tab: Tab): boolean {
-  if (group.label === "settings") {
-    return isSettingsTab(tab);
+  if ((group.tabs as readonly Tab[]).includes(tab)) {
+    return true;
   }
-  return (group.tabs as readonly Tab[]).includes(tab);
+  // Nested settings slices (channels/appearance/...) render inside the settings page, so they keep
+  // the settings sidebar group active even though only its top-level tabs are listed.
+  return group.label === "settings" && isSettingsTab(tab);
 }
 
 export function tabFromPath(pathname: string, basePath = ""): Tab | null {
@@ -214,6 +219,8 @@ export function iconForTab(tab: Tab): IconName {
       return "activity";
     case "adminbot":
       return "brain";
+    case "adminbotRegistrations":
+      return "check";
     case "adminbotReimbursements":
       return "fileText";
     case "adminbotSettings":

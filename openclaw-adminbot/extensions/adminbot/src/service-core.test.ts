@@ -300,30 +300,49 @@ describe("AdminBotService", () => {
     ).toMatchObject({ ok: false, status: 400 });
   });
 
-  it("defaults temporary lab member privilege to member through service settings", () => {
+  it("lets a member self-edit whitelisted fields but not the governance fields", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        id: "self-edit",
+        name: "Self Edit",
+        email: "self-edit@example.test",
+        privilege_level: "member",
+      }),
+    );
+
+    const updated = unwrap(service.updateOwnProfile("self-edit", { role: "Research scientist" }));
+    expect(updated.role).toBe("Research scientist");
+    expect(updated.privilege_level).toBe("member");
+
+    for (const governed of [
+      { privilege_level: "admin" },
+      { status: "alumni" },
+      { email: "elsewhere@example.test" },
+      { access_overrides: [{ service: "slack", access: "admin" }] },
+    ]) {
+      expect(service.updateOwnProfile("self-edit", governed)).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+    }
+  });
+
+  it("defaults a new lab member without an explicit tier to external_collaborator", () => {
     const service = new AdminBotService();
     const member = unwrap(
       service.upsertLabMember({
-        id: "temporary-member",
-        name: "Temporary Member",
+        id: "unspecified-member",
+        name: "Unspecified Member",
       }),
     );
 
-    expect(member.privilege_level).toBe("member");
+    expect(member.privilege_level).toBe("external_collaborator");
     expect(member.access).toContainEqual({
       service: "google_drive",
-      access: "edit",
-      scope: "member paper folders",
+      access: "view",
+      scope: "shared paper folders",
     });
-
-    unwrap(service.updateSettings({ default_privilege_level: "trial" }));
-    const trial = unwrap(
-      service.upsertLabMember({
-        id: "trial-member",
-        name: "Trial Member",
-      }),
-    );
-    expect(trial.privilege_level).toBe("trial");
   });
 
   it("adds a progress-based paper timeline to listed papers and due nudges", () => {

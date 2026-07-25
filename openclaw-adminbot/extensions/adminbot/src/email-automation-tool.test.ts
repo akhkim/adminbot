@@ -27,7 +27,10 @@ describe("AdminBot email automation tool service", () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
       return summary;
     });
-    const service = createAdminBotMockService({ emailAutomationRunner: runner });
+    const service = createAdminBotMockService({
+      emailAutomationRunner: runner,
+      serviceToken: "test-service-token",
+    });
     openServices.push(service);
     await service.listen(0, "127.0.0.1");
     const address = service.server.address();
@@ -35,11 +38,16 @@ describe("AdminBot email automation tool service", () => {
       throw new Error("missing AdminBot service address");
     }
     const baseUrl = "http://127.0.0.1:" + address.port;
-    const client = new AdminBotClient({
-      serviceBaseUrl: baseUrl,
-      allowInsecureRemoteService: false,
-      defaultDryRun: false,
-    });
+    const client = new AdminBotClient(
+      {
+        serviceBaseUrl: baseUrl,
+        serviceTokenEnv: "ADMINBOT_SERVICE_TOKEN",
+        allowInsecureRemoteService: false,
+        defaultDryRun: false,
+      },
+      undefined,
+      { ADMINBOT_SERVICE_TOKEN: "test-service-token" },
+    );
 
     await expect(
       Promise.all([client.runEmailAutomation(), client.runEmailAutomation()]),
@@ -48,7 +56,7 @@ describe("AdminBot email automation tool service", () => {
   });
 
   it("reports an unavailable runner instead of pretending work started", async () => {
-    const service = createAdminBotMockService();
+    const service = createAdminBotMockService({ serviceToken: "test-service-token" });
     openServices.push(service);
     await service.listen(0, "127.0.0.1");
     const address = service.server.address();
@@ -56,11 +64,16 @@ describe("AdminBot email automation tool service", () => {
       throw new Error("missing AdminBot service address");
     }
     const baseUrl = "http://127.0.0.1:" + address.port;
-    const client = new AdminBotClient({
-      serviceBaseUrl: baseUrl,
-      allowInsecureRemoteService: false,
-      defaultDryRun: false,
-    });
+    const client = new AdminBotClient(
+      {
+        serviceBaseUrl: baseUrl,
+        serviceTokenEnv: "ADMINBOT_SERVICE_TOKEN",
+        allowInsecureRemoteService: false,
+        defaultDryRun: false,
+      },
+      undefined,
+      { ADMINBOT_SERVICE_TOKEN: "test-service-token" },
+    );
 
     await expect(client.runEmailAutomation()).rejects.toThrow(
       "email automation runner is not configured",

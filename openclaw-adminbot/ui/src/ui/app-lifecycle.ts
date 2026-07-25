@@ -1,4 +1,10 @@
 // Control UI module implements app lifecycle behavior.
+import {
+  hasStoredMemberSession,
+  loadMemberPrivilege,
+  type MemberAuthHost,
+  resumeMemberSession,
+} from "./adminbot-auth-flow.ts";
 import { connectGateway } from "./app-gateway.ts";
 import {
   startLogsPolling,
@@ -118,7 +124,30 @@ export function handleConnected(host: LifecycleHost) {
   syncThemeWithSettings(host as unknown as Parameters<typeof syncThemeWithSettings>[0]);
   window.addEventListener("popstate", host.popStateHandler);
   if (host.connectGeneration === connectGeneration) {
-    connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
+    // Resume a stored AdminBot member session before the login gate is shown:
+    // GET /auth/session re-injects the gateway url/token, then auto-connects.
+    // Break-glass/URL-param flows (a gateway token already in settings) skip
+    // this and connect directly.
+    const memberHost = host as unknown as MemberAuthHost;
+    const gatewayTokenPresent = Boolean(memberHost.settings?.token?.trim());
+    if (!gatewayTokenPresent && hasStoredMemberSession()) {
+      void resumeMemberSession(memberHost).then((outcome) => {
+        // "cleared": stored session was rejected — run the normal connect so the
+        // gate shows standard diagnostics. "unreachable" keeps its hint and skips
+        // a doomed tokenless connect. "resumed" already connected.
+        if (outcome === "cleared" && host.connectGeneration === connectGeneration) {
+          connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
+        }
+      });
+    } else {
+      // Gateway token already present (break-glass/URL-param or same-tab reload):
+      // the full resume is skipped, so eagerly load privilege from any stored
+      // member session so Lab Members gates correctly before it is ever opened.
+      if (hasStoredMemberSession()) {
+        void loadMemberPrivilege(memberHost);
+      }
+      connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
+    }
   }
   if (host.tab === "nodes") {
     startNodesPolling(host as unknown as Parameters<typeof startNodesPolling>[0]);

@@ -198,7 +198,7 @@ export default defineToolPlugin({
       name: "adminbot_reimbursement_converse",
       label: "AdminBot reimbursement conversation",
       description:
-        "Privately extract receipt PDFs and continue a natural-language reimbursement intake. Returns the merged draft, missing fields, and the next clarification question.",
+        "Privately extract receipt PDFs or photos and continue a natural-language reimbursement intake. Returns the merged draft, missing fields, and the next clarification question.",
       optional: true,
       parameters: Type.Object({
         message: Type.String({ minLength: 1, maxLength: 20000 }),
@@ -207,7 +207,11 @@ export default defineToolPlugin({
             Type.Object(
               {
                 name: Type.String({ minLength: 1, maxLength: 160 }),
-                media_type: Type.Literal("application/pdf"),
+                media_type: Type.Union([
+                  Type.Literal("application/pdf"),
+                  Type.Literal("image/png"),
+                  Type.Literal("image/jpeg"),
+                ]),
                 data_base64: Type.String({ minLength: 1 }),
               },
               { additionalProperties: false },
@@ -406,6 +410,40 @@ export default defineToolPlugin({
       parameters: settingsSchema,
       execute: (params, config) =>
         createAdminBotToolHandlers(resolveConfig(config)).updateSettings(params),
+    }),
+    tool({
+      name: "adminbot_list_unreviewed_applicants",
+      label: "AdminBot list unreviewed applicants",
+      description:
+        "List mentee-application form submissions received since applicant_last_reviewed_at, returning each applicant's name, email, CV link, and submission timestamp. Requires applicant_sheet_id in AdminBot settings. CV links are external URLs the reviewer opens; AdminBot does not copy the files.",
+      optional: true,
+      parameters: Type.Object({
+        since: Type.Optional(
+          Type.String({
+            description:
+              "ISO timestamp override. Defaults to the stored applicant_last_reviewed_at; unset means every row.",
+          }),
+        ),
+        sheetRange: Type.Optional(
+          Type.String({ description: "A1 range override, such as 'Form Responses 1'!A:ZZ." }),
+        ),
+      }),
+      execute: (params, config) =>
+        createAdminBotToolHandlers(resolveConfig(config)).listUnreviewedApplicants(params),
+    }),
+    tool({
+      name: "adminbot_mark_applicants_reviewed",
+      label: "AdminBot mark applicants reviewed",
+      description:
+        "Advance the applicant review cursor by writing applicant_last_reviewed_at into AdminBot settings so the next listing only returns newer submissions.",
+      optional: true,
+      parameters: Type.Object({
+        reviewedAt: Type.Optional(
+          Type.String({ description: "ISO timestamp to record. Defaults to now." }),
+        ),
+      }),
+      execute: (params, config) =>
+        createAdminBotToolHandlers(resolveConfig(config)).markApplicantsReviewed(params),
     }),
     tool({
       name: "adminbot_get_sensitive_info",

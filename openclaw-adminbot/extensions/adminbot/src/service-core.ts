@@ -1,14 +1,18 @@
 import { createHash, randomUUID } from "node:crypto";
 import type {
   AdminBotAccessGrant,
+  AdminBotAccountRegistration,
   AdminBotActionProposal,
   AdminBotActionType,
   AdminBotApprovalRequest,
   AdminBotAuditEvent,
+  AdminBotAuthSession,
+  AdminBotRegistrationStatus,
   AdminBotExecutionRequest,
   AdminBotExecutionResult,
   AdminBotLabMember,
   AdminBotLabMemberInput,
+  AdminBotMemberCredential,
   AdminBotPaperNudge,
   AdminBotPaperRecord,
   AdminBotPaperRecordInput,
@@ -21,7 +25,7 @@ import type {
   AdminBotStoredProposal,
   AdminBotPrivilegeLevel,
 } from "./contracts.js";
-import { adminBotMemberStatuses, adminBotPrivilegeLevels } from "./contracts.js";
+import { adminBotMemberStatuses } from "./contracts.js";
 
 type AdminBotActionPolicy = {
   risk_tier: AdminBotRiskTier;
@@ -55,6 +59,26 @@ export type AdminBotServiceStore = {
   recordAudit(event: AdminBotAuditEvent): void;
   listAuditEvents(): AdminBotAuditEvent[];
   pruneAuditEventsBefore(cutoffIso: string): number;
+  getCredentialByEmail(email: string): AdminBotMemberCredential | undefined;
+  getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined;
+  saveCredential(credential: AdminBotMemberCredential): void;
+  updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void;
+  saveAccountRegistration(registration: AdminBotAccountRegistration): void;
+  getAccountRegistration(id: string): AdminBotAccountRegistration | undefined;
+  listAccountRegistrations(status?: AdminBotRegistrationStatus): AdminBotAccountRegistration[];
+  updateAccountRegistrationDecision(
+    id: string,
+    status: AdminBotRegistrationStatus,
+    decidedBy: string,
+    decidedAt: string,
+  ): void;
+  getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined;
+  getPendingRegistrationByMemberId(memberId: string): AdminBotAccountRegistration | undefined;
+  saveSession(session: AdminBotAuthSession): void;
+  getSession(tokenHash: string): AdminBotAuthSession | undefined;
+  touchSession(tokenHash: string, lastSeenAt: string): void;
+  revokeSession(tokenHash: string, revokedAt: string): void;
+  pruneSessionsBefore(cutoffIso: string): number;
 };
 
 export type AdminBotActionExecutor = {
@@ -132,9 +156,11 @@ const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = 
 };
 
 const DEFAULT_SETTINGS = {
-  default_privilege_level: "member",
   paper_escalation_business_days: 3,
 } as const satisfies Omit<AdminBotSettings, "updated_at">;
+
+// Least-privilege baseline for a member created without an explicit tier.
+const DEFAULT_MEMBER_PRIVILEGE_LEVEL: AdminBotPrivilegeLevel = "external_collaborator";
 
 export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly proposals = new Map<string, AdminBotStoredProposal>();
@@ -144,6 +170,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly papers = new Map<string, AdminBotPaperRecord>();
   private settings: AdminBotSettings | undefined;
   private readonly auditEvents: AdminBotAuditEvent[] = [];
+  private readonly credentialsByMemberId = new Map<string, AdminBotMemberCredential>();
+  private readonly credentialsByEmail = new Map<string, AdminBotMemberCredential>();
+  private readonly registrations = new Map<string, AdminBotAccountRegistration>();
+  private readonly sessions = new Map<string, AdminBotAuthSession>();
 
   saveProposal(proposal: AdminBotStoredProposal): void {
     this.proposals.set(proposal.id, proposal);
@@ -231,6 +261,106 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     this.auditEvents.length = 0;
     this.auditEvents.push(...retained);
     return before - retained.length;
+  }
+
+  getCredentialByEmail(email: string): AdminBotMemberCredential | undefined {
+    return this.credentialsByEmail.get(email.toLowerCase());
+  }
+
+  getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined {
+    return this.credentialsByMemberId.get(memberId);
+  }
+
+  saveCredential(credential: AdminBotMemberCredential): void {
+    this.credentialsByMemberId.set(credential.member_id, credential);
+    this.credentialsByEmail.set(credential.email.toLowerCase(), credential);
+  }
+
+  updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void {
+    const existing = this.credentialsByMemberId.get(memberId);
+    if (!existing) {
+      return;
+    }
+    // Drop the stale email->credential mapping so the old login email no longer resolves.
+    this.credentialsByEmail.delete(existing.email.toLowerCase());
+    const updated = { ...existing, email: newEmail.toLowerCase(), updated_at: updatedAt };
+    this.credentialsByMemberId.set(memberId, updated);
+    this.credentialsByEmail.set(updated.email, updated);
+  }
+
+  saveAccountRegistration(registration: AdminBotAccountRegistration): void {
+    this.registrations.set(registration.id, registration);
+  }
+
+  getAccountRegistration(id: string): AdminBotAccountRegistration | undefined {
+    return this.registrations.get(id);
+  }
+
+  listAccountRegistrations(status?: AdminBotRegistrationStatus): AdminBotAccountRegistration[] {
+    const all = [...this.registrations.values()].toSorted((left, right) =>
+      left.created_at.localeCompare(right.created_at),
+    );
+    return status ? all.filter((entry) => entry.status === status) : all;
+  }
+
+  updateAccountRegistrationDecision(
+    id: string,
+    status: AdminBotRegistrationStatus,
+    decidedBy: string,
+    decidedAt: string,
+  ): void {
+    const registration = this.registrations.get(id);
+    if (registration) {
+      registration.status = status;
+      registration.decided_by = decidedBy;
+      registration.decided_at = decidedAt;
+    }
+  }
+
+  getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined {
+    const lowered = email.toLowerCase();
+    return [...this.registrations.values()].find(
+      (entry) => entry.status === "pending" && entry.email.toLowerCase() === lowered,
+    );
+  }
+
+  getPendingRegistrationByMemberId(memberId: string): AdminBotAccountRegistration | undefined {
+    return [...this.registrations.values()].find(
+      (entry) => entry.status === "pending" && entry.member_id === memberId,
+    );
+  }
+
+  saveSession(session: AdminBotAuthSession): void {
+    this.sessions.set(session.token_hash, session);
+  }
+
+  getSession(tokenHash: string): AdminBotAuthSession | undefined {
+    return this.sessions.get(tokenHash);
+  }
+
+  touchSession(tokenHash: string, lastSeenAt: string): void {
+    const session = this.sessions.get(tokenHash);
+    if (session) {
+      session.last_seen_at = lastSeenAt;
+    }
+  }
+
+  revokeSession(tokenHash: string, revokedAt: string): void {
+    const session = this.sessions.get(tokenHash);
+    if (session) {
+      session.revoked_at = revokedAt;
+    }
+  }
+
+  pruneSessionsBefore(cutoffIso: string): number {
+    let removed = 0;
+    for (const [tokenHash, session] of this.sessions) {
+      if (session.expires_at < cutoffIso) {
+        this.sessions.delete(tokenHash);
+        removed += 1;
+      }
+    }
+    return removed;
   }
 }
 
@@ -532,27 +662,37 @@ export class AdminBotService {
     }
     const current = this.resolveSettings();
     const headProfessorMemberId = normalizeOptionalString(settings.head_professor_member_id);
+    const applicantSheetId = normalizeOptionalString(settings.applicant_sheet_id);
+    const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
     const next: AdminBotSettings = {
       ...current,
-      ...(settings.default_privilege_level
-        ? { default_privilege_level: settings.default_privilege_level }
-        : {}),
       ...(typeof settings.paper_escalation_business_days === "number"
         ? { paper_escalation_business_days: settings.paper_escalation_business_days }
         : {}),
       ...(headProfessorMemberId ? { head_professor_member_id: headProfessorMemberId } : {}),
+      ...(applicantSheetId ? { applicant_sheet_id: applicantSheetId } : {}),
+      ...(applicantLastReviewedAt ? { applicant_last_reviewed_at: applicantLastReviewedAt } : {}),
       updated_at: new Date().toISOString(),
     };
     if (settings.head_professor_member_id !== undefined && !headProfessorMemberId) {
       delete next.head_professor_member_id;
     }
+    if (settings.applicant_sheet_id !== undefined && !applicantSheetId) {
+      delete next.applicant_sheet_id;
+    }
+    if (settings.applicant_last_reviewed_at !== undefined && !applicantLastReviewedAt) {
+      delete next.applicant_last_reviewed_at;
+    }
     this.store.saveSettings(next);
     this.recordAudit({
       type: "settings.updated",
       details: {
-        default_privilege_level: next.default_privilege_level,
         paper_escalation_business_days: next.paper_escalation_business_days,
         has_head_professor_member_id: Boolean(next.head_professor_member_id),
+        has_applicant_sheet_id: Boolean(next.applicant_sheet_id),
+        ...(next.applicant_last_reviewed_at
+          ? { applicant_last_reviewed_at: next.applicant_last_reviewed_at }
+          : {}),
       },
     });
     return { ok: true, status: 200, payload: next };
@@ -564,9 +704,8 @@ export class AdminBotService {
       return serviceError(400, validation);
     }
     const existing = this.store.getLabMember(member.id);
-    const settings = this.resolveSettings();
     const privilegeLevel =
-      member.privilege_level ?? existing?.privilege_level ?? settings.default_privilege_level;
+      member.privilege_level ?? existing?.privilege_level ?? DEFAULT_MEMBER_PRIVILEGE_LEVEL;
     const now = new Date().toISOString();
     const accessOverrides = member.access_overrides ?? existing?.access_overrides;
     const stored: AdminBotLabMember = {
@@ -591,6 +730,50 @@ export class AdminBotService {
 
   listLabMembers(): AdminBotServiceResponse<{ members: AdminBotLabMember[] }> {
     return { ok: true, status: 200, payload: { members: this.store.listLabMembers() } };
+  }
+
+  // Self-service profile edit for a member principal. Only the whitelisted profile fields are
+  // writable here; privilege_level/access_overrides/status/email are governance-owned and never
+  // accepted from the member's own request so a member cannot escalate their own access.
+  updateOwnProfile(
+    memberId: string,
+    input: Record<string, unknown>,
+  ): AdminBotServiceResponse<AdminBotLabMember> {
+    const existing = this.store.getLabMember(memberId);
+    if (!existing) {
+      return serviceError(404, "member not found");
+    }
+    for (const field of SELF_PROFILE_PRIVILEGED_FIELDS) {
+      if (input[field] !== undefined) {
+        return serviceError(400, `${field} cannot be changed from a self profile update`);
+      }
+    }
+    const patch: Partial<AdminBotLabMemberInput> = {};
+    for (const field of SELF_PROFILE_EDITABLE_FIELDS) {
+      if (input[field] !== undefined) {
+        (patch as Record<string, unknown>)[field] = input[field];
+      }
+    }
+    const merged: AdminBotLabMemberInput = {
+      ...existing,
+      ...patch,
+      id: memberId,
+      privilege_level: existing.privilege_level,
+    };
+    return this.upsertLabMember(merged);
+  }
+
+  // Case-insensitive relevance match of a member's research focus against paper metadata.
+  listPapersRelevantToMember(
+    memberId: string,
+  ): AdminBotServiceResponse<{ papers: AdminBotPaperRecord[] }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    const needles = memberRelevanceNeedles(member);
+    const papers = this.store.listPapers().filter((paper) => paperMatchesNeedles(paper, needles));
+    return { ok: true, status: 200, payload: { papers: papers.map(withPaperTimeline) } };
   }
 
   upsertPaper(paper: AdminBotPaperRecordInput): AdminBotServiceResponse<AdminBotPaperRecord> {
@@ -712,6 +895,51 @@ export function payloadHash(value: unknown): string {
   return createHash("sha256").update(stableJson(value)).digest("hex");
 }
 
+const SELF_PROFILE_EDITABLE_FIELDS = [
+  "name",
+  "slack_user_id",
+  "role",
+  "research_branch",
+  "research_topics",
+  "projects",
+  "hours_per_week",
+  "capacity_percent",
+  "location",
+  "affiliation",
+  "timezone",
+  "personal_website",
+  "notes",
+] as const;
+
+const SELF_PROFILE_PRIVILEGED_FIELDS = [
+  "privilege_level",
+  "access_overrides",
+  "status",
+  "email",
+] as const;
+
+function memberRelevanceNeedles(member: AdminBotLabMember): string[] {
+  const values = [
+    member.name,
+    member.research_branch,
+    ...(member.research_topics ?? []),
+    ...(member.projects ?? []),
+  ];
+  return values
+    .flatMap((value) => (typeof value === "string" ? [value.trim().toLowerCase()] : []))
+    .filter((value) => value.length > 0);
+}
+
+function paperMatchesNeedles(paper: AdminBotPaperRecord, needles: string[]): boolean {
+  if (needles.length === 0) {
+    return false;
+  }
+  const haystack = [paper.title, paper.artifacts?.topic, ...paper.authors]
+    .flatMap((value) => (typeof value === "string" ? [value.toLowerCase()] : []))
+    .join("\n");
+  return needles.some((needle) => haystack.includes(needle));
+}
+
 function resolvePolicy(proposal: AdminBotActionProposal): AdminBotActionPolicy {
   const defaults = DEFAULT_ACTION_POLICIES[proposal.type];
   const riskTier = proposal.risk_tier ?? defaults.risk_tier;
@@ -792,17 +1020,15 @@ function validateLabMember(member: AdminBotLabMemberInput): string | undefined {
 
 function validateSettings(settings: AdminBotSettingsInput): string | undefined {
   if (
-    settings.default_privilege_level &&
-    !adminBotPrivilegeLevels.includes(settings.default_privilege_level)
-  ) {
-    return "default privilege level is invalid";
-  }
-  if (
     settings.paper_escalation_business_days !== undefined &&
     (!Number.isInteger(settings.paper_escalation_business_days) ||
       settings.paper_escalation_business_days < 1)
   ) {
     return "paper escalation business days must be a positive integer";
+  }
+  const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
+  if (applicantLastReviewedAt && Number.isNaN(Date.parse(applicantLastReviewedAt))) {
+    return "applicant last reviewed at must be an ISO timestamp";
   }
   return undefined;
 }

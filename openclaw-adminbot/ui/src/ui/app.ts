@@ -4,6 +4,16 @@ import { state } from "lit/decorators.js";
 import { i18n, I18nController, isSupportedLocale, t } from "../i18n/index.ts";
 import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
 import {
+  type LoginMode,
+  type MemberAuthFailure,
+  type RosterError,
+  loadRoster as loadRosterInternal,
+  signOutMember as signOutMemberInternal,
+  submitMemberAuth as submitMemberAuthInternal,
+} from "./adminbot-auth-flow.ts";
+import type { MemberRegistration, RosterMember } from "./adminbot-auth.ts";
+import type { RegistrationsLoadError } from "./adminbot-registrations.ts";
+import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
   handleChannelConfigSave as handleChannelConfigSaveInternal,
   handleNostrProfileCancel as handleNostrProfileCancelInternal,
@@ -224,8 +234,35 @@ export class OpenClawApp extends LitElement {
     }
   }
   @state() password = "";
-  @state() loginShowGatewayToken = false;
-  @state() loginShowGatewayPassword = false;
+  @state() memberEmail = "";
+  @state() memberPassword = "";
+  @state() memberPasswordConfirm = "";
+  @state() loginMode: LoginMode = "signin";
+  @state() loginShowMemberPassword = false;
+  @state() memberAuthBusy = false;
+  @state() memberAuthFailure: MemberAuthFailure | null = null;
+  @state() memberFormError: string | null = null;
+  @state() loginPendingNotice = false;
+  @state() rosterMembers: RosterMember[] = [];
+  @state() rosterLoading = false;
+  @state() rosterError: RosterError = null;
+  @state() rosterFilter = "";
+  @state() selectedMemberId: string | null = null;
+  @state() memberName = "";
+  @state() memberSlackUserId = "";
+  @state() memberRole = "";
+  @state() memberAffiliation = "";
+  @state() memberResearchBranch = "";
+  @state() memberResearchTopics = "";
+  @state() memberProjects = "";
+  @state() memberHoursPerWeek = "";
+  @state() memberCapacityPercent = "";
+  @state() memberLocation = "";
+  @state() memberTimezone = "";
+  @state() memberPersonalWebsite = "";
+  @state() memberNotes = "";
+  @state() memberPrivilegeLevel: string | null = null;
+  @state() memberId: string | null = null;
   @state() tab: Tab = "chat";
   @state() onboarding = resolveOnboardingMode();
   @state() connected = false;
@@ -478,6 +515,11 @@ export class OpenClawApp extends LitElement {
   @state() adminBotNotice: { kind: "success" | "error"; text: string } | null = null;
   @state() adminBotReimbursement: AdminBotReimbursementState =
     createEmptyAdminBotReimbursementState();
+  @state() registrations: MemberRegistration[] = [];
+  @state() registrationsLoading = false;
+  @state() registrationsError: RegistrationsLoadError | null = null;
+  @state() registrationsBusyId: string | null = null;
+  @state() registrationsNotice: { kind: "success" | "error"; text: string } | null = null;
   @state() toolsCatalogLoading = false;
   @state() toolsCatalogError: string | null = null;
   @state() toolsCatalogResult: ToolsCatalogResult | null = null;
@@ -632,7 +674,6 @@ export class OpenClawApp extends LitElement {
   @state() paletteOpen = false;
   @state() paletteQuery = "";
   @state() paletteActiveIndex = 0;
-  @state() overviewShowGatewayToken = false;
   @state() overviewShowGatewayPassword = false;
   @state() overviewLogLines: string[] = [];
   @state() overviewLogCursor = 0;
@@ -940,6 +981,20 @@ export class OpenClawApp extends LitElement {
 
   connect() {
     connectGatewayInternal(this as unknown as Parameters<typeof connectGatewayInternal>[0]);
+  }
+
+  async submitMemberAuth() {
+    await submitMemberAuthInternal(
+      this as unknown as Parameters<typeof submitMemberAuthInternal>[0],
+    );
+  }
+
+  async signOutMember() {
+    await signOutMemberInternal(this as unknown as Parameters<typeof signOutMemberInternal>[0]);
+  }
+
+  async loadRoster() {
+    await loadRosterInternal(this as unknown as Parameters<typeof loadRosterInternal>[0]);
   }
 
   handleChatScroll(event: Event) {

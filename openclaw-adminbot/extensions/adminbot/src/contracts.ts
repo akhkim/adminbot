@@ -40,6 +40,7 @@ export type AdminBotEvidencePointer = {
   hash?: string;
 };
 
+// Ordered least- to most-privileged.
 export const adminBotPrivilegeLevels = [
   "external_collaborator",
   "trial",
@@ -112,15 +113,17 @@ export type AdminBotLabMember = Omit<AdminBotLabMemberInput, "privilege_level"> 
 };
 
 export type AdminBotSettingsInput = {
-  default_privilege_level?: AdminBotPrivilegeLevel;
   paper_escalation_business_days?: number;
   head_professor_member_id?: string;
+  applicant_sheet_id?: string;
+  applicant_last_reviewed_at?: string;
 };
 
 export type AdminBotSettings = {
-  default_privilege_level: AdminBotPrivilegeLevel;
   paper_escalation_business_days: number;
   head_professor_member_id?: string;
+  applicant_sheet_id?: string;
+  applicant_last_reviewed_at?: string;
   updated_at: string;
 };
 
@@ -314,8 +317,62 @@ export type AdminBotAuditEvent = {
     | "lab_member.upserted"
     | "paper.upserted"
     | "paper.deleted"
-    | "settings.updated";
+    | "settings.updated"
+    | "auth.login_succeeded"
+    | "auth.login_failed"
+    | "auth.rate_limited"
+    | "auth.logged_out"
+    | "auth.password_changed"
+    | "auth.email_changed"
+    | "auth.registration_submitted"
+    | "auth.registration_approved"
+    | "auth.registration_rejected";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;
+};
+
+// Per-member credential row. `password_scrypt` is the serialized scrypt string
+// (`scrypt$N$r$p$salt$hash`), never a plaintext or reversible secret.
+export type AdminBotMemberCredential = {
+  member_id: string;
+  email: string;
+  password_scrypt: string;
+  claimed_at: string;
+  updated_at: string;
+};
+
+export const adminBotRegistrationKinds = ["claim", "signup"] as const;
+
+export type AdminBotRegistrationKind = (typeof adminBotRegistrationKinds)[number];
+
+export const adminBotRegistrationStatuses = ["pending", "approved", "rejected"] as const;
+
+export type AdminBotRegistrationStatus = (typeof adminBotRegistrationStatuses)[number];
+
+// Pending account request awaiting admin decision. `member_id` is set for `claim`
+// (an existing roster profile); `profile_json` carries the proposed member fields for `signup`.
+// `password_scrypt` is the serialized scrypt string, copied into a credential only on approval.
+export type AdminBotAccountRegistration = {
+  id: string;
+  kind: AdminBotRegistrationKind;
+  member_id?: string;
+  email: string;
+  password_scrypt: string;
+  profile_json?: string;
+  status: AdminBotRegistrationStatus;
+  created_at: string;
+  decided_at?: string;
+  decided_by?: string;
+};
+
+// Session row. Only the sha256 hex of the raw token is persisted (`token_hash`);
+// the raw token lives solely in the caller's cookie/bearer header.
+export type AdminBotAuthSession = {
+  token_hash: string;
+  member_id: string;
+  created_at: string;
+  expires_at: string;
+  last_seen_at: string;
+  revoked_at?: string;
 };

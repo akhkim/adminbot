@@ -11,6 +11,7 @@ import {
   ADMINBOT_LOCAL_MODEL,
   ADMINBOT_PLUGIN_ID,
   ADMINBOT_SERVICE_BASE_URL,
+  ADMINBOT_SERVICE_CONNECT_SRC_ORIGINS,
   ADMINBOT_SERVICE_TOKEN_ENV,
   ADMINBOT_SKILLS,
   ADMINBOT_TOOLS,
@@ -46,6 +47,7 @@ describe("setupAdminBot", () => {
     expect(result.config.gateway?.controlUi).toMatchObject({
       launchUrl: ADMINBOT_CONTROL_UI_LAUNCH_URL,
       allowedOrigins: [ADMINBOT_CONTROL_UI_ORIGIN],
+      extraConnectSrc: ADMINBOT_SERVICE_CONNECT_SRC_ORIGINS,
     });
 
     const agent = findAdminBotAgent(result.config);
@@ -76,12 +78,13 @@ describe("setupAdminBot", () => {
     expect(result.slackBinding).toMatchObject({ added: true, conflicts: [] });
   });
 
-  it("preserves existing Control UI allowed origins when setting the hosted AdminBot UI", () => {
+  it("preserves existing Control UI allowed origins and connect-src when setting the hosted AdminBot UI", () => {
     const result = applyAdminBotSetupConfig(
       {
         gateway: {
           controlUi: {
             allowedOrigins: ["https://control.example.com", ADMINBOT_CONTROL_UI_ORIGIN],
+            extraConnectSrc: ["https://other-plugin.example.com"],
           },
         },
       },
@@ -98,6 +101,10 @@ describe("setupAdminBot", () => {
     expect(result.config.gateway?.controlUi?.allowedOrigins).toStrictEqual([
       "https://control.example.com",
       ADMINBOT_CONTROL_UI_ORIGIN,
+    ]);
+    expect(result.config.gateway?.controlUi?.extraConnectSrc).toStrictEqual([
+      "https://other-plugin.example.com",
+      ...ADMINBOT_SERVICE_CONNECT_SRC_ORIGINS,
     ]);
   });
 

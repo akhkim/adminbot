@@ -75,8 +75,6 @@ function createState(overrides: Partial<AppViewState> = {}): AppViewState {
       chatShowToolCalls: true,
     },
     password: "",
-    loginShowGatewayToken: false,
-    loginShowGatewayPassword: false,
     tab: "config",
     onboarding: false,
     basePath: "",

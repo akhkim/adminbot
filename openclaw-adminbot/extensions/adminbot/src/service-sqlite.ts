@@ -3,10 +3,15 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type {
+  AdminBotAccountRegistration,
   AdminBotAuditEvent,
+  AdminBotAuthSession,
   AdminBotExecutionResult,
   AdminBotLabMember,
+  AdminBotMemberCredential,
   AdminBotPaperRecord,
+  AdminBotRegistrationKind,
+  AdminBotRegistrationStatus,
   AdminBotSettings,
   AdminBotStoredProposal,
 } from "./contracts.js";
@@ -115,6 +120,45 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         updated_at TEXT NOT NULL,
         payload_json TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS adminbot_member_credentials (
+        member_id TEXT PRIMARY KEY,
+        email TEXT NOT NULL UNIQUE,
+        password_scrypt TEXT NOT NULL,
+        claimed_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_member_credentials_email_idx
+        ON adminbot_member_credentials(email);
+
+      CREATE TABLE IF NOT EXISTS adminbot_account_registrations (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        member_id TEXT,
+        email TEXT NOT NULL,
+        password_scrypt TEXT NOT NULL,
+        profile_json TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        decided_at TEXT,
+        decided_by TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_account_registrations_status_idx
+        ON adminbot_account_registrations(status, email, member_id);
+
+      CREATE TABLE IF NOT EXISTS adminbot_sessions (
+        token_hash TEXT PRIMARY KEY,
+        member_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        revoked_at TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_sessions_member_expiry_idx
+        ON adminbot_sessions(member_id, expires_at);
     `);
   }
 
@@ -350,6 +394,209 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return Number(result.changes ?? 0);
   }
 
+  getCredentialByEmail(email: string): AdminBotMemberCredential | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT member_id, email, password_scrypt, claimed_at, updated_at
+          FROM adminbot_member_credentials WHERE email = ?`,
+      )
+      .get(email.toLowerCase()) as AdminBotMemberCredential | undefined;
+    return row ?? undefined;
+  }
+
+  getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT member_id, email, password_scrypt, claimed_at, updated_at
+          FROM adminbot_member_credentials WHERE member_id = ?`,
+      )
+      .get(memberId) as AdminBotMemberCredential | undefined;
+    return row ?? undefined;
+  }
+
+  saveCredential(credential: AdminBotMemberCredential): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_member_credentials (
+          member_id,
+          email,
+          password_scrypt,
+          claimed_at,
+          updated_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(member_id) DO UPDATE SET
+          email = excluded.email,
+          password_scrypt = excluded.password_scrypt,
+          updated_at = excluded.updated_at`,
+      )
+      .run(
+        credential.member_id,
+        credential.email.toLowerCase(),
+        credential.password_scrypt,
+        credential.claimed_at,
+        credential.updated_at,
+      );
+  }
+
+  updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void {
+    this.db
+      .prepare(
+        `UPDATE adminbot_member_credentials
+          SET email = ?, updated_at = ?
+          WHERE member_id = ?`,
+      )
+      .run(newEmail.toLowerCase(), updatedAt, memberId);
+  }
+
+  saveAccountRegistration(registration: AdminBotAccountRegistration): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_account_registrations (
+          id,
+          kind,
+          member_id,
+          email,
+          password_scrypt,
+          profile_json,
+          status,
+          created_at,
+          decided_at,
+          decided_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          status = excluded.status,
+          decided_at = excluded.decided_at,
+          decided_by = excluded.decided_by`,
+      )
+      .run(
+        registration.id,
+        registration.kind,
+        registration.member_id ?? null,
+        registration.email.toLowerCase(),
+        registration.password_scrypt,
+        registration.profile_json ?? null,
+        registration.status,
+        registration.created_at,
+        registration.decided_at ?? null,
+        registration.decided_by ?? null,
+      );
+  }
+
+  getAccountRegistration(id: string): AdminBotAccountRegistration | undefined {
+    const row = this.db.prepare(`${REGISTRATION_COLUMNS} WHERE id = ?`).get(id) as
+      | AccountRegistrationRow
+      | undefined;
+    return row ? rowToRegistration(row) : undefined;
+  }
+
+  listAccountRegistrations(status?: AdminBotRegistrationStatus): AdminBotAccountRegistration[] {
+    const rows = status
+      ? (this.db
+          .prepare(`${REGISTRATION_COLUMNS} WHERE status = ? ORDER BY created_at ASC`)
+          .all(status) as AccountRegistrationRow[])
+      : (this.db
+          .prepare(`${REGISTRATION_COLUMNS} ORDER BY created_at ASC`)
+          .all() as AccountRegistrationRow[]);
+    return rows.map(rowToRegistration);
+  }
+
+  updateAccountRegistrationDecision(
+    id: string,
+    status: AdminBotRegistrationStatus,
+    decidedBy: string,
+    decidedAt: string,
+  ): void {
+    this.db
+      .prepare(
+        `UPDATE adminbot_account_registrations
+          SET status = ?, decided_by = ?, decided_at = ?
+          WHERE id = ?`,
+      )
+      .run(status, decidedBy, decidedAt, id);
+  }
+
+  getPendingRegistrationByEmail(email: string): AdminBotAccountRegistration | undefined {
+    const row = this.db
+      .prepare(`${REGISTRATION_COLUMNS} WHERE status = 'pending' AND email = ? LIMIT 1`)
+      .get(email.toLowerCase()) as AccountRegistrationRow | undefined;
+    return row ? rowToRegistration(row) : undefined;
+  }
+
+  getPendingRegistrationByMemberId(memberId: string): AdminBotAccountRegistration | undefined {
+    const row = this.db
+      .prepare(`${REGISTRATION_COLUMNS} WHERE status = 'pending' AND member_id = ? LIMIT 1`)
+      .get(memberId) as AccountRegistrationRow | undefined;
+    return row ? rowToRegistration(row) : undefined;
+  }
+
+  saveSession(session: AdminBotAuthSession): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_sessions (
+          token_hash,
+          member_id,
+          created_at,
+          expires_at,
+          last_seen_at,
+          revoked_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(token_hash) DO UPDATE SET
+          member_id = excluded.member_id,
+          expires_at = excluded.expires_at,
+          last_seen_at = excluded.last_seen_at,
+          revoked_at = excluded.revoked_at`,
+      )
+      .run(
+        session.token_hash,
+        session.member_id,
+        session.created_at,
+        session.expires_at,
+        session.last_seen_at,
+        session.revoked_at ?? null,
+      );
+  }
+
+  getSession(tokenHash: string): AdminBotAuthSession | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT token_hash, member_id, created_at, expires_at, last_seen_at, revoked_at
+          FROM adminbot_sessions WHERE token_hash = ?`,
+      )
+      .get(tokenHash) as
+      | (Omit<AdminBotAuthSession, "revoked_at"> & { revoked_at: string | null })
+      | undefined;
+    if (!row) {
+      return undefined;
+    }
+    return {
+      token_hash: row.token_hash,
+      member_id: row.member_id,
+      created_at: row.created_at,
+      expires_at: row.expires_at,
+      last_seen_at: row.last_seen_at,
+      ...(row.revoked_at ? { revoked_at: row.revoked_at } : {}),
+    };
+  }
+
+  touchSession(tokenHash: string, lastSeenAt: string): void {
+    this.db
+      .prepare("UPDATE adminbot_sessions SET last_seen_at = ? WHERE token_hash = ?")
+      .run(lastSeenAt, tokenHash);
+  }
+
+  revokeSession(tokenHash: string, revokedAt: string): void {
+    this.db
+      .prepare("UPDATE adminbot_sessions SET revoked_at = ? WHERE token_hash = ?")
+      .run(revokedAt, tokenHash);
+  }
+
+  pruneSessionsBefore(cutoffIso: string): number {
+    const result = this.db
+      .prepare("DELETE FROM adminbot_sessions WHERE expires_at < ?")
+      .run(cutoffIso);
+    return Number(result.changes ?? 0);
+  }
+
   close(): void {
     this.db.close();
   }
@@ -374,4 +621,35 @@ function ensureDatabaseDirectory(databasePath: string): void {
 
 function parseJson<T>(value: string): T {
   return JSON.parse(value) as T;
+}
+
+const REGISTRATION_COLUMNS = `SELECT id, kind, member_id, email, password_scrypt, profile_json, status, created_at, decided_at, decided_by
+  FROM adminbot_account_registrations`;
+
+type AccountRegistrationRow = {
+  id: string;
+  kind: AdminBotRegistrationKind;
+  member_id: string | null;
+  email: string;
+  password_scrypt: string;
+  profile_json: string | null;
+  status: AdminBotRegistrationStatus;
+  created_at: string;
+  decided_at: string | null;
+  decided_by: string | null;
+};
+
+function rowToRegistration(row: AccountRegistrationRow): AdminBotAccountRegistration {
+  return {
+    id: row.id,
+    kind: row.kind,
+    email: row.email,
+    password_scrypt: row.password_scrypt,
+    status: row.status,
+    created_at: row.created_at,
+    ...(row.member_id ? { member_id: row.member_id } : {}),
+    ...(row.profile_json ? { profile_json: row.profile_json } : {}),
+    ...(row.decided_at ? { decided_at: row.decided_at } : {}),
+    ...(row.decided_by ? { decided_by: row.decided_by } : {}),
+  };
 }

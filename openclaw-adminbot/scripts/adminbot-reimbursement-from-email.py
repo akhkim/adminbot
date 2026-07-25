@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
+import base64
 import json
 import os
 import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from copy import deepcopy
 from datetime import date, datetime
 from pathlib import Path
@@ -21,33 +23,38 @@ FORMS = Path(
 COMPUTE_EXPENSE_TEMPLATE = "Compute_Expense_Form.xlsx"
 TRIP_SUMMARY_TEMPLATE = "Trip_Summary_Form.docx"
 
+PDF_RENDER_MAX_PAGES = 6
+PDF_RENDER_DPI = 150
 
-def extract_file(path: Path) -> str:
-    suffix = path.suffix.lower()
-    if suffix in {".txt", ".md", ".csv", ".json"}:
-        return path.read_text(errors="replace")
-    if suffix == ".docx":
-        doc = Document(path)
-        paragraphs = [p.text for p in doc.paragraphs]
-        tables = [" | ".join(cell.text for cell in row.cells) for table in doc.tables for row in table.rows]
-        return "\n".join(paragraphs + tables)
-    if suffix == ".xlsx":
-        wb = load_workbook(path, data_only=True, read_only=True)
-        lines = []
-        for ws in wb.worksheets:
-            lines.append(f"SHEET: {ws.title}")
-            for row in ws.iter_rows(values_only=True):
-                values = [str(value) for value in row if value not in (None, "")]
-                if values:
-                    lines.append(" | ".join(values))
-        return "\n".join(lines)
-    if suffix == ".pdf" and shutil.which("pdftotext"):
+
+def render_pdf_pages(path: Path) -> list[dict]:
+    """Rasterize PDF pages to PNGs so the vision model can read scanned
+    receipts that have no extractable text layer (pdftotext returns nothing for those)."""
+    if not shutil.which("pdftoppm"):
+        return []
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        prefix = str(Path(tmp_dir) / "page")
+        subprocess.run(
+            ["pdftoppm", "-png", "-r", str(PDF_RENDER_DPI), "-l", str(PDF_RENDER_MAX_PAGES), str(path), prefix],
+            check=False,
+            capture_output=True,
+            timeout=60,
+        )
+        return [
+            {"media_type": "image/png", "data_base64": base64.b64encode(page.read_bytes()).decode("ascii")}
+            for page in sorted(Path(tmp_dir).glob("page-*.png"))
+        ]
+
+
+def extract_receipt(path: Path) -> dict:
+    text = ""
+    if shutil.which("pdftotext"):
         result = subprocess.run(["pdftotext", str(path), "-"], check=False, capture_output=True, text=True, timeout=45)
-        return result.stdout
-    if suffix in {".png", ".jpg", ".jpeg", ".tif", ".tiff"} and shutil.which("tesseract"):
-        result = subprocess.run(["tesseract", str(path), "stdout"], check=False, capture_output=True, text=True, timeout=45)
-        return result.stdout
-    return f"[{path.name}: unsupported text extraction; retain as supporting attachment]"
+        text = result.stdout
+    images = render_pdf_pages(path)
+    if not text.strip() and not images:
+        text = f"[{path.name}: unable to extract text or render pages; retain as supporting attachment]"
+    return {"name": path.name, "text": text, "images": images}
 
 
 def require_template(name: str) -> Path:
@@ -325,9 +332,8 @@ def main():
     if len(sys.argv) < 3:
         raise SystemExit("usage: helper extract FILE... | fill INPUT_JSON OUTPUT_DIR")
     if sys.argv[1] == "extract":
-        for item in sys.argv[2:]:
-            path = Path(item)
-            print(f"\n--- {path.name} ---\n{extract_file(path)}")
+        receipts = [extract_receipt(Path(item)) for item in sys.argv[2:]]
+        print(json.dumps({"receipts": receipts}))
         return
     if sys.argv[1] != "fill" or len(sys.argv) != 4:
         raise SystemExit("usage: helper fill INPUT_JSON OUTPUT_DIR")

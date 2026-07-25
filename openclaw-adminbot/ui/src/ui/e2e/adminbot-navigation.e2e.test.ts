@@ -144,7 +144,6 @@ function adminBotToolResponses() {
         response: {
           ok: true,
           output: {
-            default_privilege_level: "member",
             head_professor_member_id: "zhijing",
             paper_escalation_business_days: 3,
             updated_at: "2026-06-10T12:00:00.000Z",

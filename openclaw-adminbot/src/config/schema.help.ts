@@ -546,6 +546,8 @@ export const FIELD_HELP: Record<string, string> = {
     'Optional CSS max-width for grouped Control UI chat messages, for example "960px", "82%", or "min(1280px, 82%)". Values are validated against a constrained width grammar before reaching the browser.',
   "gateway.controlUi.allowedOrigins":
     'Allowed browser origins for Control UI/WebChat websocket connections (full origins only, e.g. https://control.example.com). Required for non-loopback Control UI deployments unless dangerous Host-header fallback is explicitly enabled. Setting ["*"] means allow any browser origin and should be avoided outside tightly controlled local testing.',
+  "gateway.controlUi.extraConnectSrc":
+    "Additional origins the served Control UI page's Content-Security-Policy connect-src allows fetching from, beyond the Gateway's own origin (e.g. https://api.example.com, or a port-wildcarded https://*:8443 form). Set this when a bundled plugin runs its own HTTP service on a different origin than the Gateway; core has no built-in knowledge of any plugin's origin, so the plugin's setup step is responsible for adding it here.",
   "gateway.controlUi.dangerouslyAllowHostHeaderOriginFallback":
     "DANGEROUS toggle that enables Host-header based origin fallback for Control UI/WebChat websocket checks. This mode is supported when your deployment intentionally relies on Host-header origin policy; explicit gateway.controlUi.allowedOrigins remains the recommended hardened default.",
   "gateway.controlUi.allowInsecureAuth":

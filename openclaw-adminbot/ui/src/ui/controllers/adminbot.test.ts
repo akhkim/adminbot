@@ -1,10 +1,16 @@
 // Control UI AdminBot controller tests cover explicit data-loading modes.
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createStorageMock } from "../../test-helpers/storage.ts";
+import { saveStoredMemberSession } from "../adminbot-auth.ts";
+import type { UiSettings } from "../storage.ts";
 import {
   approveAdminBotAction,
   createEmptyAdminBotDashboardData,
+  createEmptyAdminBotReimbursementState,
   loadAdminBot,
   removePendingAdminBotAction,
+  saveAdminBotMember,
+  saveAdminBotOwnProfile,
   type AdminBotHost,
 } from "./adminbot.js";
 
@@ -24,6 +30,8 @@ function createHost(outputs: Record<string, unknown>) {
     adminBotData: createEmptyAdminBotDashboardData(),
     adminBotBusyActionId: null,
     adminBotNotice: null,
+    adminBotReimbursement: createEmptyAdminBotReimbursementState(),
+    settings: { adminBotUrl: "http://127.0.0.1:8765" } as UiSettings,
   };
   return { host, calls };
 }
@@ -58,6 +66,8 @@ describe("loadAdminBot", () => {
       adminBotData: createEmptyAdminBotDashboardData(),
       adminBotBusyActionId: null,
       adminBotNotice: null,
+      adminBotReimbursement: createEmptyAdminBotReimbursementState(),
+      settings: { adminBotUrl: "http://127.0.0.1:8765" } as UiSettings,
     };
 
     await loadAdminBot(host, "admin");
@@ -137,6 +147,8 @@ describe("approveAdminBotAction", () => {
       adminBotData: createEmptyAdminBotDashboardData(),
       adminBotBusyActionId: null,
       adminBotNotice: null,
+      adminBotReimbursement: createEmptyAdminBotReimbursementState(),
+      settings: { adminBotUrl: "http://127.0.0.1:8765" } as UiSettings,
     };
 
     await approveAdminBotAction(host, {
@@ -197,6 +209,8 @@ describe("removePendingAdminBotAction", () => {
       adminBotData: createEmptyAdminBotDashboardData(),
       adminBotBusyActionId: null,
       adminBotNotice: null,
+      adminBotReimbursement: createEmptyAdminBotReimbursementState(),
+      settings: { adminBotUrl: "http://127.0.0.1:8765" } as UiSettings,
     };
     const proposal = {
       id: "act_remove",
@@ -225,5 +239,155 @@ describe("removePendingAdminBotAction", () => {
         },
       },
     });
+  });
+});
+
+describe("saveAdminBotMember", () => {
+  const baseInput = { id: "andrew-kim", name: "Andrew Kim", privilegeLevel: "admin" as const };
+
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", createStorageMock());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("writes governance fields directly via the member session, bypassing the gateway tool", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const toolInvocations: string[] = [];
+    const { host } = createHost({});
+    host.client = {
+      request: async (_method: string, params: { name?: string }) => {
+        toolInvocations.push(params.name ?? "");
+        return { ok: true, toolName: params.name, output: {} };
+      },
+    } as never;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          JSON.stringify({ id: "andrew-kim", name: "Andrew Kim", privilege_level: "admin" }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+
+    await saveAdminBotMember(host, baseInput);
+
+    // The old bug: this write used to go through the gateway tool (shared service
+    // principal), which since the privilege-escalation fix rejects privilege_level
+    // even for a genuine admin. It must now go straight to the HTTP service instead.
+    expect(toolInvocations).not.toContain("adminbot_upsert_lab_member");
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/lab/members/andrew-kim"),
+      expect.objectContaining({
+        method: "PUT",
+        headers: expect.objectContaining({ Authorization: "Bearer admin-sess-tok" }),
+      }),
+    );
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse(init!.body as string)).toMatchObject({ privilege_level: "admin" });
+    expect(host.adminBotNotice).toMatchObject({ kind: "success" });
+  });
+
+  it("surfaces a clear message when the session has lost admin privilege (403)", async () => {
+    saveStoredMemberSession({ sessionToken: "demoted-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ error: { message: "forbidden" } }), { status: 403 }),
+    );
+
+    await saveAdminBotMember(host, baseInput);
+
+    expect(host.adminBotNotice?.kind).toBe("error");
+    expect(host.adminBotNotice?.text).toMatch(/admin access/i);
+  });
+
+  it("falls back to the gateway tool when there is no stored member session (break-glass access)", async () => {
+    const toolInvocations: Array<{ name: string; args: Record<string, unknown> }> = [];
+    const { host } = createHost({});
+    host.client = {
+      request: async (
+        _method: string,
+        params: { name?: string; args?: Record<string, unknown> },
+      ) => {
+        toolInvocations.push({ name: params.name ?? "", args: params.args ?? {} });
+        return { ok: true, toolName: params.name, output: {} };
+      },
+    } as never;
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+
+    await saveAdminBotMember(host, baseInput);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(toolInvocations[0]?.name).toBe("adminbot_upsert_lab_member");
+    expect(toolInvocations[0]?.args).toMatchObject({ id: "andrew-kim", privilegeLevel: "admin" });
+  });
+});
+
+describe("saveAdminBotOwnProfile", () => {
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", createStorageMock());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("PUTs the self-edit whitelist with the member's own session and never touches the gateway tool", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const toolInvocations: string[] = [];
+    const { host } = createHost({});
+    host.client = {
+      request: async (_method: string, params: { name?: string }) => {
+        toolInvocations.push(params.name ?? "");
+        return { ok: true, toolName: params.name, output: {} };
+      },
+    } as never;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ id: "pat", name: "Pat Doe" }), { status: 200 }),
+      );
+
+    await saveAdminBotOwnProfile(host, "pat", { name: "Pat Doe", role: "Research scientist" });
+
+    expect(toolInvocations).not.toContain("adminbot_upsert_lab_member");
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/lab/members/pat"),
+      expect.objectContaining({
+        method: "PUT",
+        headers: expect.objectContaining({ Authorization: "Bearer member-sess-tok" }),
+      }),
+    );
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect(JSON.parse(init!.body as string)).toEqual({
+      name: "Pat Doe",
+      role: "Research scientist",
+    });
+    expect(host.adminBotNotice).toMatchObject({ kind: "success" });
+  });
+
+  it("refuses without a member session instead of falling back to the gateway tool", async () => {
+    const { host } = createHost({});
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+
+    await saveAdminBotOwnProfile(host, "pat", { name: "Pat Doe" });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(host.adminBotNotice?.kind).toBe("error");
+  });
+
+  it("reports an unreachable AdminBot service", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network down"));
+
+    await saveAdminBotOwnProfile(host, "pat", { name: "Pat Doe" });
+
+    expect(host.adminBotNotice?.kind).toBe("error");
+    expect(host.adminBotNotice?.text).toMatch(/not available/i);
   });
 });
