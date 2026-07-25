@@ -26,6 +26,7 @@ import type {
   AdminBotPrivilegeLevel,
 } from "./contracts.js";
 import { adminBotMemberStatuses } from "./contracts.js";
+import { buildInitialOnboarding } from "./onboarding.js";
 
 type AdminBotActionPolicy = {
   risk_tier: AdminBotRiskTier;
@@ -714,6 +715,9 @@ export class AdminBotService {
       privilege_level: privilegeLevel,
       ...(accessOverrides ? { access_overrides: accessOverrides } : {}),
       access: mergeAccessGrants(PRIVILEGE_ACCESS[privilegeLevel], accessOverrides),
+      // Generated once at first creation and never regenerated on later edits — this is a
+      // static onboarding checklist, not something profile updates should reset.
+      onboarding: existing?.onboarding ?? buildInitialOnboarding(),
       created_at: existing?.created_at ?? now,
       updated_at: now,
     };

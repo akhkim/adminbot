@@ -40,6 +40,9 @@ export type AdminBotProps = {
   onExecute: (proposal: AdminBotActionProposal) => void;
   onSaveMember: (member: AdminBotLabMemberSaveInput) => void;
   onSaveOwnProfile: (memberId: string, fields: MemberProfileUpdate) => void;
+  // Reopens the post-login onboarding welcome screen on demand. Omitted (or a no-op) when the
+  // signed-in member has no onboarding checklist to show.
+  onShowOnboardingWelcome?: () => void;
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
   onDeletePaper: (paper: AdminBotPaperRecord) => void;
   onSaveSettings: (settings: AdminBotSettingsSaveInput) => void;
@@ -1148,6 +1151,15 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                       >
                         ${rowEdit === "admin" ? "Edit" : "Edit my profile"}
                       </button>`}
+                  ${member.id === props.signedInMemberId && props.onShowOnboardingWelcome
+                    ? html`<button
+                        class="btn btn--sm btn--ghost adminbot-member-sheet__edit"
+                        type="button"
+                        @click=${() => props.onShowOnboardingWelcome?.()}
+                      >
+                        View onboarding checklist
+                      </button>`
+                    : nothing}
                 </td>
                 <td>${member.email ?? "—"}</td>
                 <td>

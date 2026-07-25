@@ -41,6 +41,9 @@ async function startService(
   const mock = createAdminBotMockService({
     serviceToken: SERVICE_TOKEN,
     sensitiveInfoPath,
+    // Default to a no-op so approving a registration never shells out to the real `gws` binary
+    // in tests; individual tests override this to assert on the calendar-invite call itself.
+    calendarInviteRunner: async () => {},
     ...options,
   });
   await new Promise<void>((resolve, reject) => {
@@ -271,6 +274,61 @@ describe("AdminBot mock service", () => {
     expect(created?.name).toBe("New Person");
 
     expect(await loginToken(baseUrl, "new@example.com")).toBeTruthy();
+  });
+
+  it("approving a registration invites the account email to the lab calendar and seeds an onboarding checklist", async () => {
+    const invited: string[] = [];
+    const { baseUrl } = await startService({
+      calendarInviteRunner: async (email) => {
+        invited.push(email);
+      },
+    });
+    const signup = await fetch(`${baseUrl}/auth/signup`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        profile: { name: "Calendar Person" },
+        email: "calendar-person@example.com",
+        password: "correcthorse",
+      }),
+    });
+    expect(signup.status).toBe(200);
+
+    const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
+    const approveBody = approveRegistration(baseUrl, registration!.id);
+
+    // Fire-and-forget: flush microtasks so the injected runner's resolution is observable.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(invited).toEqual(["calendar-person@example.com"]);
+
+    const members = (await (
+      await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() })
+    ).json()) as {
+      members: Array<{ id: string; onboarding?: { steps: Array<{ id: string; status: string }> } }>;
+    };
+    const created = members.members.find((m) => m.id === approveBody.member_id);
+    const calendarStep = created?.onboarding?.steps.find((step) => step.id === "calendar_invite");
+    expect(calendarStep?.status).toBe("complete");
+    expect(created?.onboarding?.steps.length).toBeGreaterThan(1);
+  });
+
+  it("a failing calendar invite does not block approval or expose an error to the caller", async () => {
+    const { baseUrl } = await startService({
+      calendarInviteRunner: async () => {
+        throw new Error("gws unreachable");
+      },
+    });
+    await seedMember(baseUrl, "rk", { name: "RK", email: "rk@example.com" });
+    await fetch(`${baseUrl}/auth/claim`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ member_id: "rk", email: "rk@example.com", password: "correcthorse" }),
+    });
+    const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "rk");
+    const approveBody = approveRegistration(baseUrl, registration!.id);
+    expect(approveBody).toEqual({ status: "approved", member_id: "rk" });
+    expect(await loginToken(baseUrl, "rk@example.com")).toBeTruthy();
   });
 
   it("rejected registrations produce a generic 401 on login", async () => {

@@ -431,6 +431,98 @@
 }
 
 /* ===========================================
+   AdminBot Onboarding Welcome
+   =========================================== */
+
+.adminbot-welcome {
+  align-items: flex-start;
+  overflow-y: auto;
+  padding-top: var(--space-10);
+  padding-bottom: var(--space-10);
+}
+
+.adminbot-welcome__card {
+  width: min(640px, 100%);
+}
+
+.adminbot-welcome__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  list-style: none;
+  margin: 0 0 var(--space-6);
+  padding: 0;
+}
+
+.adminbot-welcome__step {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+}
+
+.adminbot-welcome__step[data-status="complete"] {
+  opacity: 0.7;
+}
+
+.adminbot-welcome__step-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.adminbot-welcome__step-label {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.adminbot-welcome__step-badges {
+  display: flex;
+  gap: var(--space-2);
+  flex-shrink: 0;
+}
+
+.adminbot-welcome__badge {
+  font-size: var(--control-ui-text-xs);
+  border-radius: var(--radius-full);
+  padding: 2px var(--space-2);
+  white-space: nowrap;
+}
+
+.adminbot-welcome__badge--required {
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+.adminbot-welcome__badge--status {
+  background: var(--panel);
+  color: var(--muted);
+}
+
+.adminbot-welcome__badge--status[data-status="complete"] {
+  background: var(--ok-subtle);
+  color: var(--ok);
+}
+
+.adminbot-welcome__badge--status[data-status="current"] {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.adminbot-welcome__step-detail {
+  margin: var(--space-2) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.5;
+  white-space: pre-line;
+}
+
+.adminbot-welcome__dismiss {
+  width: 100%;
+}
+
+/* ===========================================
    Update Banner
    =========================================== */
 

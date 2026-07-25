@@ -1259,6 +1259,17 @@ export const zh_CN: TranslationMap = {
       notes: "Notes",
     },
   },
+  adminbotWelcome: {
+    title: "Welcome to the Jinesis Lab!",
+    subtitle: "Here's your onboarding checklist to get started.",
+    required: "Required",
+    dismiss: "Got it, let's go",
+    status: {
+      complete: "Done",
+      current: "Start here",
+      remaining: "To do",
+    },
+  },
   login: {
     subtitle: "网关仪表盘",
     showPassword: "显示密码",

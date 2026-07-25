@@ -1490,6 +1490,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
+      "text": "View onboarding checklist"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
       "text": "Waiting on authors"
     },
     {

@@ -7,6 +7,7 @@ import { t } from "../i18n/index.ts";
 // flows through applySettings so it stays in sessionStorage-scoped plumbing.
 import {
   type AuthErrorKind,
+  type MemberOnboarding,
   type MemberSession,
   type RosterMember,
   type SignupProfile,
@@ -14,9 +15,11 @@ import {
   clearStoredMemberSession,
   fetchMemberSession,
   fetchRoster,
+  hasSeenOnboardingWelcome,
   loadStoredMemberSession,
   loginMember,
   logoutMember,
+  markOnboardingWelcomeSeen,
   resolveAdminBotBaseUrl,
   saveStoredMemberSession,
   signupMember,
@@ -77,6 +80,8 @@ export type MemberAuthHost = {
   memberNotes: string;
   memberPrivilegeLevel: string | null;
   memberId: string | null;
+  adminBotOnboarding: MemberOnboarding | null;
+  adminBotWelcomeVisible: boolean;
   applySettings: (next: UiSettings) => void;
   connect: () => void;
 };
@@ -185,6 +190,12 @@ function applyMemberSession(host: MemberAuthHost, session: MemberSession) {
   // of assuming admin for every signed-in member.
   host.memberPrivilegeLevel = session.member?.privilege_level ?? null;
   host.memberId = session.member?.id ?? null;
+  host.adminBotOnboarding = session.member?.onboarding ?? null;
+  // Auto-show the welcome screen once per member per browser; a manual "view onboarding"
+  // entry point elsewhere can still reopen it later regardless of this flag.
+  host.adminBotWelcomeVisible = Boolean(
+    host.adminBotOnboarding && host.memberId && !hasSeenOnboardingWelcome(host.memberId),
+  );
   host.applySettings({
     ...host.settings,
     gatewayUrl: session.gateway?.url ?? host.settings.gatewayUrl,
@@ -270,6 +281,9 @@ export async function resumeMemberSession(host: MemberAuthHost): Promise<ResumeO
     });
     host.memberPrivilegeLevel = result.value.member?.privilege_level ?? null;
     host.memberId = result.value.member?.id ?? null;
+    // Refresh the checklist data but never auto-open the welcome screen on a plain page
+    // reload — only a fresh sign-in (applyMemberSession) or the manual reopen entry point do.
+    host.adminBotOnboarding = result.value.member?.onboarding ?? null;
     host.applySettings({
       ...host.settings,
       gatewayUrl: result.value.gateway?.url ?? host.settings.gatewayUrl,
@@ -312,6 +326,7 @@ export async function loadMemberPrivilege(host: MemberAuthHost): Promise<void> {
   if (result.ok) {
     host.memberPrivilegeLevel = result.value.member?.privilege_level ?? null;
     host.memberId = result.value.member?.id ?? null;
+    host.adminBotOnboarding = result.value.member?.onboarding ?? null;
   }
 }
 
@@ -345,6 +360,8 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.memberNotes = "";
   host.memberPrivilegeLevel = null;
   host.memberId = null;
+  host.adminBotOnboarding = null;
+  host.adminBotWelcomeVisible = false;
   host.loginMode = "signin";
   // Tear down the live gateway connection and drop the gateway token from the
   // in-memory + sessionStorage-scoped plumbing.
@@ -354,4 +371,21 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.hello = null;
   host.password = "";
   host.applySettings({ ...host.settings, token: "" });
+}
+
+// Called from the welcome screen's dismiss button. Marks it seen (so a future login/reload
+// doesn't auto-show it again) and hides it; the checklist stays reachable via the manual
+// reopen entry point in Lab Members regardless.
+export function dismissAdminBotWelcome(host: MemberAuthHost): void {
+  if (host.memberId) {
+    markOnboardingWelcomeSeen(host.memberId);
+  }
+  host.adminBotWelcomeVisible = false;
+}
+
+// Called from the Lab Members "view onboarding checklist" reopen entry point.
+export function showAdminBotWelcome(host: MemberAuthHost): void {
+  if (host.adminBotOnboarding) {
+    host.adminBotWelcomeVisible = true;
+  }
 }

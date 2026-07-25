@@ -8,8 +8,10 @@ import {
   fetchMemberSession,
   fetchRelevantPapers,
   fetchRoster,
+  hasSeenOnboardingWelcome,
   loadStoredMemberSession,
   loginMember,
+  markOnboardingWelcomeSeen,
   resolveAdminBotBaseUrl,
   saveStoredMemberSession,
   signupMember,
@@ -311,5 +313,21 @@ describe("stored member session", () => {
     saveStoredMemberSession({ sessionToken: "sess", expiresAt: "later" });
     clearStoredMemberSession();
     expect(loadStoredMemberSession()).toBeNull();
+  });
+});
+
+describe("onboarding welcome dismissal tracking", () => {
+  it("is unseen by default, then seen after marking, scoped per member id", () => {
+    expect(hasSeenOnboardingWelcome("pat")).toBe(false);
+    markOnboardingWelcomeSeen("pat");
+    expect(hasSeenOnboardingWelcome("pat")).toBe(true);
+    expect(hasSeenOnboardingWelcome("other")).toBe(false);
+  });
+
+  it("marking multiple members preserves earlier entries", () => {
+    markOnboardingWelcomeSeen("a");
+    markOnboardingWelcomeSeen("b");
+    expect(hasSeenOnboardingWelcome("a")).toBe(true);
+    expect(hasSeenOnboardingWelcome("b")).toBe(true);
   });
 });

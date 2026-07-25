@@ -9,10 +9,30 @@ import type { UiSettings } from "./storage.ts";
 import { normalizeOptionalString } from "./string-coerce.ts";
 
 const SESSION_STORAGE_KEY = "openclaw.adminbot.session.v1";
+const ONBOARDING_SEEN_STORAGE_KEY = "openclaw.adminbot.onboarding-seen.v1";
 const DEFAULT_ADMINBOT_PORT = "8765";
 // TLS-served AdminBot port (tailscale serve fronting :8765). Https pages cannot
 // call plain-http :8765 (mixed content), so they default here instead.
 const DEFAULT_ADMINBOT_TLS_PORT = "8443";
+
+export type MemberOnboardingStepStatus = "complete" | "current" | "remaining";
+
+export type MemberOnboardingStep = {
+  id: string;
+  label: string;
+  status: MemberOnboardingStepStatus;
+  detail?: string;
+  required: boolean;
+};
+
+// Onboarding checklist generated once when a member's account is first approved (see the
+// AdminBot service's `onboarding.ts`) and returned as part of the member record thereafter.
+export type MemberOnboarding = {
+  current_step?: MemberOnboardingStep;
+  completed: MemberOnboardingStep[];
+  remaining: MemberOnboardingStep[];
+  steps: MemberOnboardingStep[];
+};
 
 // Lab member record returned by the AdminBot service. Extra fields beyond these
 // are preserved but not consumed by the UI.
@@ -34,6 +54,7 @@ export type LabMember = {
   timezone?: string | null;
   personal_website?: string | null;
   notes?: string | null;
+  onboarding?: MemberOnboarding | null;
   [key: string]: unknown;
 };
 
@@ -586,5 +607,33 @@ export function clearStoredMemberSession(): void {
     storage?.removeItem(SESSION_STORAGE_KEY);
   } catch {
     // best-effort
+  }
+}
+
+// Tracks which members have already dismissed the post-login onboarding welcome screen, so it
+// only auto-shows once per member per browser rather than on every login/reload.
+function loadSeenOnboardingMemberIds(): Set<string> {
+  const storage = getSafeLocalStorage();
+  try {
+    const raw = storage?.getItem(ONBOARDING_SEEN_STORAGE_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    return new Set(Array.isArray(parsed) ? parsed.filter((id) => typeof id === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function hasSeenOnboardingWelcome(memberId: string): boolean {
+  return loadSeenOnboardingMemberIds().has(memberId);
+}
+
+export function markOnboardingWelcomeSeen(memberId: string): void {
+  const storage = getSafeLocalStorage();
+  try {
+    const seen = loadSeenOnboardingMemberIds();
+    seen.add(memberId);
+    storage?.setItem(ONBOARDING_SEEN_STORAGE_KEY, JSON.stringify([...seen]));
+  } catch {
+    // best-effort — quota/security failures just mean the welcome screen may reappear.
   }
 }

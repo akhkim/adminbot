@@ -3,8 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStorageMock } from "../test-helpers/storage.ts";
 import {
   type MemberAuthHost,
+  dismissAdminBotWelcome,
   loadMemberPrivilege,
   resumeMemberSession,
+  showAdminBotWelcome,
   signOutMember,
   submitMemberAuth,
 } from "./adminbot-auth-flow.ts";
@@ -62,6 +64,8 @@ function makeHost(overrides: Partial<MemberAuthHost> = {}): MemberAuthHost {
     memberNotes: "",
     memberPrivilegeLevel: null,
     memberId: null,
+    adminBotOnboarding: null,
+    adminBotWelcomeVisible: false,
     applySettings: vi.fn(),
     connect: vi.fn(),
     ...overrides,
@@ -139,6 +143,92 @@ describe("memberPrivilegeLevel wiring", () => {
     const host = makeHost({ memberPrivilegeLevel: "admin", client: { stop: vi.fn() } });
     await signOutMember(host);
     expect(host.memberPrivilegeLevel).toBeNull();
+  });
+});
+
+describe("onboarding welcome screen", () => {
+  const onboarding = {
+    completed: [],
+    remaining: [],
+    steps: [{ id: "profile_photo", label: "Photo", status: "current" as const, required: true }],
+  };
+
+  it("submitMemberAuth login auto-shows the welcome screen the first time for a member", async () => {
+    const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        session_token: "sess",
+        expires_at: "2026-08-01T00:00:00Z",
+        member: { id: "pat", onboarding },
+        gateway: { url: "ws://127.0.0.1:18789", token: "gw" },
+      }),
+    );
+    await submitMemberAuth(host);
+    expect(host.adminBotOnboarding).toEqual(onboarding);
+    expect(host.adminBotWelcomeVisible).toBe(true);
+  });
+
+  it("does not re-show the welcome screen once the member has dismissed it", async () => {
+    const first = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        session_token: "sess",
+        expires_at: "2026-08-01T00:00:00Z",
+        member: { id: "pat", onboarding },
+        gateway: { url: "ws://127.0.0.1:18789", token: "gw" },
+      }),
+    );
+    await submitMemberAuth(first);
+    dismissAdminBotWelcome(first);
+    expect(first.adminBotWelcomeVisible).toBe(false);
+
+    const second = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        session_token: "sess2",
+        expires_at: "2026-08-01T00:00:00Z",
+        member: { id: "pat", onboarding },
+        gateway: { url: "ws://127.0.0.1:18789", token: "gw" },
+      }),
+    );
+    await submitMemberAuth(second);
+    expect(second.adminBotWelcomeVisible).toBe(false);
+  });
+
+  it("resumeMemberSession refreshes the checklist but never auto-opens the welcome screen", async () => {
+    saveStoredMemberSession({ sessionToken: "sess", expiresAt: "2026-08-01T00:00:00Z" });
+    const host = makeHost();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        expires_at: "2026-08-01T00:00:00Z",
+        member: { id: "pat", onboarding },
+        gateway: { url: "ws://127.0.0.1:18789", token: "gw" },
+      }),
+    );
+    await resumeMemberSession(host);
+    expect(host.adminBotOnboarding).toEqual(onboarding);
+    expect(host.adminBotWelcomeVisible).toBe(false);
+  });
+
+  it("showAdminBotWelcome reopens it on demand, but only when checklist data is present", () => {
+    const withData = makeHost({ adminBotOnboarding: onboarding });
+    showAdminBotWelcome(withData);
+    expect(withData.adminBotWelcomeVisible).toBe(true);
+
+    const withoutData = makeHost({ adminBotOnboarding: null });
+    showAdminBotWelcome(withoutData);
+    expect(withoutData.adminBotWelcomeVisible).toBe(false);
+  });
+
+  it("signOutMember clears onboarding state", async () => {
+    const host = makeHost({
+      adminBotOnboarding: onboarding,
+      adminBotWelcomeVisible: true,
+      client: { stop: vi.fn() },
+    });
+    await signOutMember(host);
+    expect(host.adminBotOnboarding).toBeNull();
+    expect(host.adminBotWelcomeVisible).toBe(false);
   });
 });
 

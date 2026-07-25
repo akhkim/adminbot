@@ -96,6 +96,10 @@ export type AppViewState = {
   // self-edit row and sort it first. Null in break-glass gateway-token-only
   // access, where no row is "mine".
   memberId: string | null;
+  // Signed-in member's onboarding checklist (null until loaded/if unavailable) and whether the
+  // full-screen welcome overlay showing it is currently visible.
+  adminBotOnboarding: import("./adminbot-auth.ts").MemberOnboarding | null;
+  adminBotWelcomeVisible: boolean;
   submitMemberAuth: () => Promise<void>;
   signOutMember: () => Promise<void>;
   loadRoster: () => Promise<void>;

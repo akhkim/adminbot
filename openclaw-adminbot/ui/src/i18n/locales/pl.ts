@@ -1283,6 +1283,17 @@ export const pl: TranslationMap = {
       notes: "Notes",
     },
   },
+  adminbotWelcome: {
+    title: "Welcome to the Jinesis Lab!",
+    subtitle: "Here's your onboarding checklist to get started.",
+    required: "Required",
+    dismiss: "Got it, let's go",
+    status: {
+      complete: "Done",
+      current: "Start here",
+      remaining: "To do",
+    },
+  },
   login: {
     subtitle: "Panel Gateway",
     showPassword: "Pokaż hasło",

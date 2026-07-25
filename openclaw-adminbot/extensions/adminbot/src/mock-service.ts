@@ -5,6 +5,7 @@ import {
   type AdminBotAuthResponse,
   type AdminBotMemberPrincipal,
 } from "./auth.js";
+import { createCalendarInviteRunner } from "./calendar-invite.js";
 import { adminBotRegistrationStatuses } from "./contracts.js";
 import type {
   AdminBotActionProposal,
@@ -60,6 +61,9 @@ export type AdminBotMockServiceOptions = {
   gatewayToken?: string;
   gatewayUrl?: string;
   allowedOrigins?: string[];
+  // Overrides the default `gws` CLI-backed calendar invite runner — used by tests to avoid
+  // shelling out to a real `gws` binary.
+  calendarInviteRunner?: (email: string) => Promise<void>;
 };
 
 type AdminBotPrincipal = { kind: "service" } | AdminBotMemberPrincipal;
@@ -111,6 +115,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       }
       return result.payload;
     },
+    inviteToLabCalendar: options.calendarInviteRunner ?? createCalendarInviteRunner(),
     ...(gatewayToken ? { gatewayToken } : {}),
     gatewayUrl,
   });

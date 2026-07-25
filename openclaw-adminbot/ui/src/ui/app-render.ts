@@ -4,6 +4,7 @@ import { guard } from "lit/directives/guard.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { i18n, t } from "../i18n/index.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
+import { showAdminBotWelcome } from "./adminbot-auth-flow.ts";
 import { decideAdminBotRegistration, loadAdminBotRegistrations } from "./adminbot-registrations.ts";
 import {
   createChatSessionsLoadOverrides,
@@ -209,6 +210,7 @@ import type {
   SessionWorkspaceGetResult,
   SessionWorkspaceListResult,
 } from "./types.ts";
+import { renderAdminBotWelcome } from "./views/adminbot-welcome.ts";
 import { renderAdminBot, type AdminBotPanel } from "./views/adminbot.ts";
 import { isRenderableControlUiAvatarUrl } from "./views/agents-utils.ts";
 import { agentLogoUrl } from "./views/agents-utils.ts";
@@ -1464,6 +1466,9 @@ export function renderApp(state: AppViewState) {
   // The gateway URL confirmation overlay is always rendered so URL-param flows still work.
   if (!state.connected) {
     return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
+  }
+  if (state.adminBotWelcomeVisible) {
+    return renderAdminBotWelcome(state);
   }
 
   const presenceCount = state.presenceEntries.length;
@@ -2936,6 +2941,7 @@ export function renderApp(state: AppViewState) {
               onSaveMember: (member) => void saveAdminBotMember(state, member),
               onSaveOwnProfile: (memberId, fields) =>
                 void saveAdminBotOwnProfile(state, memberId, fields),
+              onShowOnboardingWelcome: () => showAdminBotWelcome(state),
               onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
               onDeletePaper: (paper) => void deleteAdminBotPaper(state, paper),
               onSaveSettings: (settings) => void saveAdminBotSettings(state, settings),

@@ -1260,6 +1260,17 @@ export const zh_TW: TranslationMap = {
       notes: "Notes",
     },
   },
+  adminbotWelcome: {
+    title: "Welcome to the Jinesis Lab!",
+    subtitle: "Here's your onboarding checklist to get started.",
+    required: "Required",
+    dismiss: "Got it, let's go",
+    status: {
+      complete: "Done",
+      current: "Start here",
+      remaining: "To do",
+    },
+  },
   login: {
     subtitle: "閘道儀表板",
     showPassword: "顯示密碼",

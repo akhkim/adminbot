@@ -78,6 +78,10 @@ export type AdminBotRegistrationView = {
 export type AdminBotAuthServiceOptions = {
   store: AdminBotServiceStore;
   createMember: (input: AdminBotLabMemberInput) => AdminBotLabMember;
+  // Best-effort side effect fired (not awaited) when a registration is approved, granting the
+  // new member's account email view access to the lab calendar. A rejection is audited but never
+  // fails or delays the approval response — see approveRegistration.
+  inviteToLabCalendar?: (email: string) => Promise<void>;
   gatewayToken?: string;
   gatewayUrl?: string;
   sessionTtlMs?: number;
@@ -122,6 +126,7 @@ const SIGNUP_NUMBER_FIELDS = new Set<string>(["hours_per_week", "capacity_percen
 export class AdminBotAuthService {
   private readonly store: AdminBotServiceStore;
   private readonly createMember: (input: AdminBotLabMemberInput) => AdminBotLabMember;
+  private readonly inviteToLabCalendar?: (email: string) => Promise<void>;
   private readonly gatewayToken?: string;
   private readonly gatewayUrl?: string;
   private readonly sessionTtlMs: number;
@@ -134,6 +139,7 @@ export class AdminBotAuthService {
   constructor(options: AdminBotAuthServiceOptions) {
     this.store = options.store;
     this.createMember = options.createMember;
+    this.inviteToLabCalendar = options.inviteToLabCalendar;
     this.gatewayToken = options.gatewayToken?.trim() || undefined;
     this.gatewayUrl = options.gatewayUrl?.trim() || undefined;
     this.sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
@@ -373,7 +379,27 @@ export class AdminBotAuthService {
       kind: registration.kind,
       member_id: memberId,
     });
+    this.inviteNewMemberToLabCalendar(registration.email, memberId, decidedBy);
     return { ok: true, status: 200, payload: { status: "approved", member_id: memberId } };
+  }
+
+  // Fire-and-forget: never blocks or fails approval on an external Google Calendar call. Success
+  // and failure are both audited so a failed invite can be retried/investigated later.
+  private inviteNewMemberToLabCalendar(email: string, memberId: string, decidedBy: string): void {
+    if (!this.inviteToLabCalendar) {
+      return;
+    }
+    void this.inviteToLabCalendar(email)
+      .then(() => {
+        this.audit("auth.calendar_invite_sent", decidedBy, { member_id: memberId, email });
+      })
+      .catch((error: unknown) => {
+        this.audit("auth.calendar_invite_failed", decidedBy, {
+          member_id: memberId,
+          email,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 
   rejectRegistration(id: string, decidedBy: string): AdminBotAuthResponse<{ status: "rejected" }> {

@@ -179,6 +179,37 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(popover?.querySelector('[name="id"]')).toBeNull();
   });
 
+  it("shows a 'view onboarding checklist' reopen button only on the signed-in member's own row", () => {
+    const clicks: string[] = [];
+    const roster = [member({ id: "pat", name: "Pat Doe" }), member({ id: "sam", name: "Sam Roe" })];
+    const container = renderToDiv(
+      baseProps({
+        mode: "general",
+        signedInMemberId: "pat",
+        onShowOnboardingWelcome: () => clicks.push("shown"),
+        data: { ...createEmptyAdminBotDashboardData(), members: roster, loadedAt: Date.now() },
+      }),
+    );
+    const rows = [...container.querySelectorAll<HTMLTableRowElement>("tbody tr")];
+    const ownButtons = [...(rows[0]?.querySelectorAll("button") ?? [])];
+    const otherButtons = [...(rows[1]?.querySelectorAll("button") ?? [])];
+
+    const reopenButton = ownButtons.find((btn) => btn.textContent?.includes("onboarding"));
+    expect(reopenButton).toBeTruthy();
+    expect(otherButtons.some((btn) => btn.textContent?.includes("onboarding"))).toBe(false);
+
+    reopenButton?.click();
+    expect(clicks).toEqual(["shown"]);
+  });
+
+  it("omits the onboarding reopen button when no handler is provided", () => {
+    const container = renderToDiv(baseProps({ mode: "general", signedInMemberId: "pat" }));
+    const button = [...container.querySelectorAll("tbody tr button")].find((btn) =>
+      btn.textContent?.includes("onboarding"),
+    );
+    expect(button).toBeUndefined();
+  });
+
   it("routes a self-edit submit to onSaveOwnProfile with whitelisted fields only", () => {
     const saved: Array<[string, Record<string, unknown>]> = [];
     const container = renderToDiv(

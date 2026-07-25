@@ -326,7 +326,9 @@ export type AdminBotAuditEvent = {
     | "auth.email_changed"
     | "auth.registration_submitted"
     | "auth.registration_approved"
-    | "auth.registration_rejected";
+    | "auth.registration_rejected"
+    | "auth.calendar_invite_sent"
+    | "auth.calendar_invite_failed";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;

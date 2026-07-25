@@ -11,7 +11,7 @@ import {
   signOutMember as signOutMemberInternal,
   submitMemberAuth as submitMemberAuthInternal,
 } from "./adminbot-auth-flow.ts";
-import type { MemberRegistration, RosterMember } from "./adminbot-auth.ts";
+import type { MemberOnboarding, MemberRegistration, RosterMember } from "./adminbot-auth.ts";
 import type { RegistrationsLoadError } from "./adminbot-registrations.ts";
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
@@ -263,6 +263,8 @@ export class OpenClawApp extends LitElement {
   @state() memberNotes = "";
   @state() memberPrivilegeLevel: string | null = null;
   @state() memberId: string | null = null;
+  @state() adminBotOnboarding: MemberOnboarding | null = null;
+  @state() adminBotWelcomeVisible = false;
   @state() tab: Tab = "chat";
   @state() onboarding = resolveOnboardingMode();
   @state() connected = false;
