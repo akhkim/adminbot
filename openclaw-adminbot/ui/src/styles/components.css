@@ -445,12 +445,25 @@
   width: min(640px, 100%);
 }
 
+.adminbot-welcome__category {
+  margin-bottom: var(--space-6);
+}
+
+.adminbot-welcome__category-title {
+  font-size: var(--control-ui-text-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wide, 0.06em);
+  color: var(--muted);
+  margin: 0 0 var(--space-3);
+}
+
 .adminbot-welcome__list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
   list-style: none;
-  margin: 0 0 var(--space-6);
+  margin: 0;
   padding: 0;
 }
 
@@ -516,6 +529,28 @@
   font-size: var(--control-ui-text-sm);
   line-height: 1.5;
   white-space: pre-line;
+}
+
+.adminbot-welcome__step-bullets {
+  margin: var(--space-2) 0 0;
+  padding-left: var(--space-5);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.5;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.adminbot-welcome__step-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.adminbot-welcome__step-link {
+  text-decoration: none;
 }
 
 .adminbot-welcome__dismiss {

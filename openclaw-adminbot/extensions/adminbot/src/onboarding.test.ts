@@ -16,12 +16,30 @@ describe("buildOnboardingSteps", () => {
     expect(current[0]?.id).not.toBe("calendar_invite");
   });
 
-  it("has exactly one step per onboarding id, all with a non-empty detail", () => {
+  it("has exactly one step per onboarding id, each with a non-empty category and some content", () => {
     const steps = buildOnboardingSteps();
     const ids = steps.map((step) => step.id);
     expect(new Set(ids).size).toBe(ids.length);
     for (const step of steps) {
-      expect(step.detail?.length).toBeGreaterThan(0);
+      expect(step.category.length).toBeGreaterThan(0);
+      const hasContent =
+        Boolean(step.detail?.length) ||
+        Boolean(step.bullets?.length) ||
+        Boolean(step.links?.length);
+      expect(hasContent).toBe(true);
+    }
+  });
+
+  it("no longer includes a dedicated Slack-channels step", () => {
+    const steps = buildOnboardingSteps();
+    expect(steps.some((step) => step.id === "slack_channels")).toBe(false);
+  });
+
+  it("gives social/reference steps clickable links instead of bare URLs in detail text", () => {
+    const steps = buildOnboardingSteps();
+    for (const id of ["linkedin", "twitter", "luma", "youtube", "compute_canada"]) {
+      const step = steps.find((s) => s.id === id);
+      expect(step?.links?.length).toBeGreaterThan(0);
     }
   });
 });

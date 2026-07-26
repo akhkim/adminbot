@@ -69,11 +69,23 @@ export type AdminBotMemberStatus = (typeof adminBotMemberStatuses)[number];
 
 export type AdminBotMemberOnboardingStepStatus = "complete" | "current" | "remaining";
 
+export type AdminBotMemberOnboardingLink = {
+  label: string;
+  url: string;
+};
+
 export type AdminBotMemberOnboardingStep = {
   id: string;
   label: string;
   status: AdminBotMemberOnboardingStepStatus;
+  // Section header the step renders under in the Control UI welcome screen (e.g. "Social media").
+  category: string;
+  // Short summary shown above the bullet breakdown, if any.
   detail?: string;
+  // Longer instructions broken into scannable points instead of one paragraph.
+  bullets?: string[];
+  // Clickable buttons (social pages, docs, application forms) shown below the text.
+  links?: AdminBotMemberOnboardingLink[];
   required: boolean;
 };
 

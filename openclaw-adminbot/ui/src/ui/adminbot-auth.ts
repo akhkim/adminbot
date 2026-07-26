@@ -17,11 +17,19 @@ const DEFAULT_ADMINBOT_TLS_PORT = "8443";
 
 export type MemberOnboardingStepStatus = "complete" | "current" | "remaining";
 
+export type MemberOnboardingLink = {
+  label: string;
+  url: string;
+};
+
 export type MemberOnboardingStep = {
   id: string;
   label: string;
   status: MemberOnboardingStepStatus;
+  category: string;
   detail?: string;
+  bullets?: string[];
+  links?: MemberOnboardingLink[];
   required: boolean;
 };
 
