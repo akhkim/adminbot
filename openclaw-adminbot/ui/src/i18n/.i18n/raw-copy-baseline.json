@@ -1084,13 +1084,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Each recipient becomes its own pending action awaiting approval in Pending actions — nothing sends immediately."
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/adminbot.ts",
       "text": "Edit member"
     },
     {
@@ -1505,6 +1498,13 @@
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
       "text": "Select all visible"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Sends immediately to each selected recipient — there's no separate approval step."
     },
     {
       "count": 1,
@@ -4851,6 +4851,34 @@
       "name": "text",
       "path": "ui/src/ui/views/cron.ts",
       "text": "Webhook (HTTP POST)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/deadlines.ts",
+      "text": "· NeurIPS 2026 workshop"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/deadlines.ts",
+      "text": "/deadlines"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/deadlines.ts",
+      "text": "No upcoming deadlines."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/deadlines.ts",
+      "text": "Upcoming conference &amp; workshop deadlines (times AoE, UTC&#8209;12). For the full live per&#8209;second countdown board, open the AdminBot service at"
     },
     {
       "count": 1,

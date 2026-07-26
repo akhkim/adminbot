@@ -1,0 +1,738 @@
+{
+  "venue": "NeurIPS 2026 Workshops",
+  "official_submission_deadline_aoe": "2026-08-29 23:59:59",
+  "official_notification_hard_aoe": "2026-09-29 23:59:59",
+  "count": 73,
+  "workshops": [
+    {
+      "code": "AI-Native_Academia",
+      "name": "NeurIPS 2026 Workshop on AI-Native Academia: Authorship, Peer Review, and Conference Governance under AI",
+      "website": "https://ai-native-academia.github.io",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI-Native_Academia",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "AI4ChipDesign",
+      "name": "AI for Chip Design - NeurIPS 2026 Workshop",
+      "website": "https://neurips-ai-for-chip-design-2026.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4ChipDesign",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "AI4DD",
+      "name": "NeurIPS 2026 Workshop on AI for Drug Discovery: Bridging the Translation Gap",
+      "website": "https://ai4dd-neurips2026.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4DD",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "AI4GOOD",
+      "name": "Trustworthy AI for Good (AI4GOOD) Workshop @ NeurIPS 2026",
+      "website": "https://trustworthy-ai-for-good.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4GOOD",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "AI4Mat",
+      "name": "AI for Accelerated Materials Design - NeurIPS 2026",
+      "website": "https://sites.google.com/view/ai4mat/home",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4Mat",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "AI4MetaScience",
+      "name": "NeurIPS 2026 Workshop on AI for Meta‑Science: Scaling and Organizing Science in the Age of AI",
+      "website": "https://ai4metascience.org/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI4MetaScience",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "AI_and_the_Self",
+      "name": "AI and the Self: Human Identity, Authenticity, and Agency in the Age of AI (Workshop at NeurIPS 2026)",
+      "website": "https://aintheself.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AI_and_the_Self",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "ASCI",
+      "name": "AI at Scale for Clinical Impact: Cancer Pathology Foundation Models",
+      "website": "https://asci.artificialintelligencepathology.org/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ASCI",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "ATTRIB",
+      "name": "Third NeurIPS Workshop on Attributing Model Behavior at Scale: Data Attribution and Provenance",
+      "website": "https://attrib-workshop.cc/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ATTRIB",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "AXIOM",
+      "name": "AXIOM: Foundations of Efficient Deep Learning",
+      "website": "https://axiom-neurips2026.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AXIOM",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "Africa_in_AI",
+      "name": "Africa in AI Affinity Group at Neural Information Processing Systems (NeurIPS) 2026",
+      "website": "https://africainai.mailab.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Africa_in_AI",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "AutoMLR",
+      "name": "40th Conference on Neural Information Processing Systems Workshop for Autonomous Machine Learning Research",
+      "website": "https://automlr.com",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/AutoMLR",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "CL4FMAgents",
+      "name": "NeurIPS 2026 Workshop on Continual Learning in the Era of Foundation Models and Embodied Agents",
+      "website": "https://neurips26-cl4fmagents.github.io",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/CL4FMAgents",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "CLEA",
+      "name": "NeurIPS 2026 Workshop on Continual Learning for Enterprise AI Agents",
+      "website": "https://clea-neurips.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/CLEA",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "CODEC-FM",
+      "name": "NeurIPS Workshop on Collaborative, Open, and Decentralized Training of Foundation Models",
+      "website": "https://open-collaborative-decentralized-fomo.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/CODEC-FM",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "Child_Safety_in_AI",
+      "name": "NeurIPS 2026 Workshop on Child Safety in AI",
+      "website": "https://childsafety-ai.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Child_Safety_in_AI",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "DynaFront",
+      "name": "Dynamics at the Frontiers of Optimization, Sampling, and Games",
+      "website": "https://sites.google.com/view/dynafrontneurips26",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/DynaFront",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "EIML",
+      "name": "NeurIPS 2026 Workshop: Epistemic Intelligence in Machine Learning",
+      "website": "https://epistemic-intelligence-in-ml.github.io",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/EIML",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "EvoRobust",
+      "name": "NeurIPS 2026 Workshop - Self-Evolving Diversity-Driven Search for Robust AI Systems",
+      "website": "https://neurips.cc/Conferences/2026",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/EvoRobust",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "FAST",
+      "name": "Foundations of Agentic Systems Theory",
+      "website": "https://fast-workshop.github.io",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/FAST",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "FLMSec",
+      "name": "Foundations of Language Model Security: Theory, Practice, and Fundamental Limits",
+      "website": "https://flmsec.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/FLMSec",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "GDDL",
+      "name": "NeurIPS 2026 Workshop: Bridging Optimal Transport, Learning and Structured Data: Toward Geometric Distributional Learning",
+      "website": "https://gddl-neurips-2026.github.io",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GDDL",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "GenAI4Health",
+      "name": "The Third Workshop on GenAI for Health: Agentic Systems, Clinical Trust, and Future Potential",
+      "website": "https://genai4health.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GenAI4Health",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "GenAI4Health_Demonstration_Paper_Track",
+      "name": "The Third Workshop on GenAI for Health: Agentic Systems, Clinical Trust, and Future Potential - Demonstration Paper Track",
+      "website": "https://genai4health.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GenAI4Health_Demonstration_Paper_Track",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "GenAI4Health_Position_Paper_Track",
+      "name": "The Third Workshop on GenAI for Health: Agentic Systems, Clinical Trust, and Future Potential - Position Paper Track",
+      "website": "https://genai4health.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/GenAI4Health_Position_Paper_Track",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "IAB",
+      "name": "The 1st Workshop on Interpreting Agent Behavior (IAB) at NeurIPS 2026",
+      "website": "https://iab-agents.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/IAB",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "IAEval",
+      "name": "Workshop on Evaluation of Interactive Agents @ NeurIPS 2026",
+      "website": "https://eval-interactive-agents-workshop.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/IAEval",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "ICBINB-BIO",
+      "name": "I Can’t Believe It’s Not Better (ICBINB): Failure Modes of AI in Biology",
+      "website": "https://icbinb-bio.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ICBINB-BIO",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "InfPriv",
+      "name": "Beyond Private Training: The New Landscape of AI Privacy",
+      "website": "https://beyond-private-training.ai.studio/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/InfPriv",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "Interp4Discovery",
+      "name": "NeurIPS 2026 Workshop on Interpretability for Discovery",
+      "website": "https://interpretability4discovery.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Interp4Discovery",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "JUDGe",
+      "name": "First Workshop on Reliable Evaluation for Language Models (JUDGe)",
+      "website": "https://judge2026.github.io",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/JUDGe",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "LIGHT",
+      "name": "Neurips 2026 Workshop - LIGHT: Deployable Small Foundation Models",
+      "website": "https://almaai-disi-unibo.github.io/neurips2026-light-smallModels/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/LIGHT",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "LP4FM",
+      "name": "NeurIPS 2026 Workshop on Linguistic Principles for Foundation Models",
+      "website": "https://lp4fm.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/LP4FM",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "LXAI",
+      "name": "LatinX in AI Workshop @ NeurIPS 2026",
+      "website": "https://www.latinxinai.org/neurips-2026",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/LXAI",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "MATH-AI",
+      "name": "The Sixth Workshop on Mathematical Reasoning and AI",
+      "website": "https://mathai-2026.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/MATH-AI",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "ML4Molecules",
+      "name": "NeurIPS 2026 Workshop on Agentic Systems for Molecular Sciences",
+      "website": "https://moleculediscovery.github.io/workshop2026/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ML4Molecules",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "ML4SpatialBio",
+      "name": "NeurIPS Workshop on Machine Learning for Spatially Resolved High-dimensional Biology",
+      "website": "https://imsb-uke.github.io/ml4spatialbio-2026/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ML4SpatialBio",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "MLForSys",
+      "name": "Machine Learning for Systems 2026",
+      "website": "https://mlforsystems.org",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/MLForSys",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "MLxOR",
+      "name": "NeurIPS 2026 Second Workshop on ML×OR: Mathematical Foundations and Operational Integration of Machine Learning for Uncertainty-Aware Decision-Making",
+      "website": "https://mlxor-2026.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/MLxOR",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "MPLR-FM",
+      "name": "Privacy in the Era of Large Opaque Models: Theoretical, Legal, and Practical Perspectives",
+      "website": "https://neurips-workshop2026.github.io/foundation_model_agentic_privacy/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/MPLR-FM",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "Meta-Agents",
+      "name": "First Workshop on Meta Agents: Managing Agents that Manage Agents",
+      "website": "https://meta-agents-workshop.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Meta-Agents",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "MusIML",
+      "name": "The 7th Muslims in ML (MusIML) Workshop at NeurIPS 2026",
+      "website": "https://www.musiml.org/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/MusIML",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "NeurReps_Extended_Abstracts",
+      "name": "NeurIPS 2026 Workshop on Symmetry and Geometry in Neural Representations (Extended Abstract Track)",
+      "website": "https://neurreps.org/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NeurReps_Extended_Abstracts",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "NeurReps_Findings",
+      "name": "NeurIPS 2026 Workshop on Symmetry and Geometry in Neural Representations (Findings Track)",
+      "website": "https://neurreps.org/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NeurReps_Findings",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "NeurReps_Proceedings",
+      "name": "NeurIPS 2026 Workshop on Symmetry and Geometry in Neural Representations (Proceedings Track)",
+      "website": "https://neurreps.org/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NeurReps_Proceedings",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "NewInML",
+      "name": "New In Machine Learning (NewInML) Workshop @NeurIPS 2026",
+      "website": "https://newinml.github.io/NewInML2026NeurIPS/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/NewInML",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "ODI",
+      "name": "On-Device Intelligence: Foundation Models under Real-World Constraints",
+      "website": "https://odi2026.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ODI",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "OPT",
+      "name": "OPT 2026: Optimization for Machine Learning (NeurIPS 2026 Workshop)",
+      "website": "https://opt-ml.org/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/OPT",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "PALM",
+      "name": "NeurIPS 2026 Workshop: Personalized, Aligned, Long-Term Memory for AI Systems",
+      "website": "https://palm-neurips-2026.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/PALM",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "PTA",
+      "name": "PTA: From Pretrained Representations to Acting Agents",
+      "website": "https://ptaworkshop.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/PTA",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "PhysUnderstand",
+      "name": "NeurIPS 2026 Workshop on Physical Understanding for Decision-Making: Bridging Foundation Models and Reliable Agents",
+      "website": "sites.google.com/view/neurips-2026-workshop-pudm",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/PhysUnderstand",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "QueerInAI",
+      "name": "Queer in AI workshop at NeurIPS 2026",
+      "website": "https://www.queerinai.com/neurips-2026",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/QueerInAI",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "RCMLR",
+      "name": "Responsible Communication of Machine Learning Research in Biomedicine",
+      "website": "https://translatingmlresearch.github.io/RCMLR/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RCMLR",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "RL4XS",
+      "name": "Reinforcement Learning for Experimental Sciences Workshop",
+      "website": "https://rl-experimental-sciences-workshop.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RL4XS",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "RPS",
+      "name": "Representations for the Physical Sciences Workshop @ NeurIPS 2026",
+      "website": "https://representations-physical-sciences.github.io/workshop-2026/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RPS",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "RTCA",
+      "name": "NeurIPS 2026 Workshop Real-Time Conversational Agents: Toward Natural Multimodal Interaction",
+      "website": "https://rtcaneurips26.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RTCA",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "ReMuCAI",
+      "name": "NeurIPS 2026 Workshop on Real-Time Multimodal Conversational AI",
+      "website": "https://sites.google.com/view/remucai",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ReMuCAI",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "RoCo-Spring",
+      "name": "RoCo-Spring: The Robust Correspondence Challenge",
+      "website": "https://roco-spring.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RoCo-Spring",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "RoboPAD",
+      "name": "RoboPAD: Post-Training Adaptation of Robot Foundation Models",
+      "website": "https://robotpad2026.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/RoboPAD",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "SLM-Agents",
+      "name": "SLM-Agents: 1st NeurIPS Workshop on SLMs for Agentic Systems",
+      "website": "https://slmw2026.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/SLM-Agents",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "STODY",
+      "name": "NeurIPS 2026 Workshop on AI for Stochastic Dynamics: From Theoretical Foundations to Scientific Applications",
+      "website": "https://eethanshi.github.io/stochastic-dynamics-2026/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/STODY",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "SaTQuML",
+      "name": "NeurIPS 2026 Workshop on SaTQuML: Secure and Trustworthy Quantum Machine Learning",
+      "website": "https://satquml.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/SaTQuML",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "Sim2Sci",
+      "name": "Sim2Science: ML with Imperfect Scientific Models",
+      "website": "https://www.sim2science.com/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Sim2Sci",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "Simbiochem",
+      "name": "The 2nd Workshop on Simulations for Biology and Chemistry",
+      "website": "www.simbiochem.com",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Simbiochem",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "SocialAgent",
+      "name": "Second Workshop on Large Language Models for Social Reasoning and Simulation",
+      "website": "https://social-llm-workshop.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/SocialAgent",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "TCCML",
+      "name": "Tackling Climate Change with Machine Learning: workshop at NeurIPS 2026",
+      "website": "https://www.climatechange.ai/events/neurips2026",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/TCCML",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "TTCL",
+      "name": "NeurIPS 2026 Workshop on Towards Test-Time Continual Learning Agents",
+      "website": "ttcl-agents.github.io",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/TTCL",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "VERICODEGEN",
+      "name": "NeurIPS 2026 Workshop on AI for Verifiable Coding",
+      "website": "https://vericodegen.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/VERICODEGEN",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "VLM4RWD",
+      "name": "Grounded and Faithful Vision-Language Models for Real-World Deployment 2026",
+      "website": "https://vlm4rwd.github.io",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/VLM4RWD",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "Verify-Agents",
+      "name": "NeurIPS 2026 Workshop Who Verifies the Agents? Toward Reliable Agent Development",
+      "website": "https://verify-agents-workshop.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/Verify-Agents",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "WM_PAI",
+      "name": "World Models in Physical AI Workshop",
+      "website": "http://www.worldmodels-physicalai.com/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/WM_PAI",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "WiML",
+      "name": "Women in Machine Learning Workshop @ NeurIPS 2026",
+      "website": "https://www.wiml.org/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/WiML",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    },
+    {
+      "code": "XAI4Science",
+      "name": "XAI4Science: Knowledge Discovery and Trust through Interpretable Foundation Models",
+      "website": "https://xai4science.github.io/",
+      "openreview": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/XAI4Science",
+      "submission_deadline_aoe": "2026-08-29 23:59:59",
+      "notification_hard_aoe": "2026-09-29 23:59:59",
+      "venue": "NeurIPS 2026 Workshop",
+      "year": 2026
+    }
+  ]
+}

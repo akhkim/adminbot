@@ -39,6 +39,7 @@ describe("TAB_GROUPS", () => {
       "adminbotMembers",
       "adminbotPapers",
       "adminbotAnnouncements",
+      "adminbotDeadlines",
     ]);
   });
 

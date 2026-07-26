@@ -175,6 +175,20 @@ describe("AdminBot mock service", () => {
     expect(sensitiveInfo.status).toBe(403);
   });
 
+  it("serves the deadlines board and dataset as public, unauthenticated routes", async () => {
+    const { baseUrl } = await startService();
+
+    const board = await fetch(`${baseUrl}/deadlines`);
+    expect(board.status).toBe(200);
+    expect(await board.text()).toContain("Deadlines");
+
+    const dataset = await fetch(`${baseUrl}/deadlines/venues.json`);
+    expect(dataset.status).toBe(200);
+    const body = (await dataset.json()) as { items: unknown[] };
+    expect(Array.isArray(body.items)).toBe(true);
+    expect(body.items.length).toBeGreaterThan(0);
+  });
+
   it("rejects unauthenticated requests to gated routes", async () => {
     const { baseUrl } = await startService();
     const members = await fetch(`${baseUrl}/lab/members`);

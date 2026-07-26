@@ -19,6 +19,8 @@ import type {
   AdminBotRemovePendingRequest,
   AdminBotSettingsInput,
 } from "./contracts.js";
+import { DEADLINE_VENUES } from "./deadlines-dataset.js";
+import { renderDeadlinesWebUi } from "./deadlines-web-ui.js";
 import { createAdminBotPrivacyBroker, type AdminBotPrivacyBroker } from "./privacy-broker.js";
 import type {
   AdminBotReimbursementRequest,
@@ -197,6 +199,14 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
   // Exempt public surfaces: HTML shells and the auth endpoints themselves.
   if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/adminbot")) {
     sendHtml(res, 200, renderAdminBotWebUi());
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/deadlines") {
+    sendHtml(res, 200, renderDeadlinesWebUi(DEADLINE_VENUES));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/deadlines/venues.json") {
+    sendJson(res, 200, { items: DEADLINE_VENUES });
     return;
   }
   if (url.pathname.startsWith("/auth/")) {

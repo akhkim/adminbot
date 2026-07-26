@@ -37,6 +37,7 @@ describe("iconForTab", () => {
       adminbotMembers: "folder",
       adminbotPapers: "fileText",
       adminbotAnnouncements: "activity",
+      adminbotDeadlines: "loader",
       activity: "activity",
       workboard: "folder",
       channels: "link",
@@ -80,6 +81,7 @@ describe("titleForTab", () => {
       adminbotReimbursements: "Reimbursements",
       adminbotPapers: "Active Papers",
       adminbotAnnouncements: "Announcements",
+      adminbotDeadlines: "Deadlines",
       activity: "Activity",
       workboard: "Workboard",
       channels: "Channels",
@@ -117,6 +119,7 @@ describe("subtitleForTab", () => {
       adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
       adminbotPapers: "PaperPublish records and current steps.",
       adminbotAnnouncements: "Nudge members or send a general announcement.",
+      adminbotDeadlines: "Upcoming conference & workshop deadlines.",
       activity: "Browser-local tool activity summaries.",
       workboard: "Agent work queue and session handoff.",
       channels: "Channels and settings.",
@@ -202,6 +205,7 @@ describe("tabFromPath", () => {
     expect(tabFromPath("/adminbot/members")).toBe("adminbotMembers");
     expect(tabFromPath("/adminbot/papers")).toBe("adminbotPapers");
     expect(tabFromPath("/adminbot/announcements")).toBe("adminbotAnnouncements");
+    expect(tabFromPath("/adminbot/deadlines")).toBe("adminbotDeadlines");
     expect(tabFromPath("/activity")).toBe("activity");
     expect(tabFromPath("/sessions")).toBe("sessions");
     expect(tabFromPath("/dreaming")).toBe("dreams");

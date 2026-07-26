@@ -700,6 +700,7 @@ const lazyAgents = createLazyView(() => import("./views/agents.ts"), notifyLazyV
 const lazyActivity = createLazyView(() => import("./views/activity.ts"), notifyLazyViewChanged);
 const lazyChannels = createLazyView(() => import("./views/channels.ts"), notifyLazyViewChanged);
 const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewChanged);
+const lazyDeadlines = createLazyView(() => import("./views/deadlines.ts"), notifyLazyViewChanged);
 const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewChanged);
 const lazyInstances = createLazyView(() => import("./views/instances.ts"), notifyLazyViewChanged);
 const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewChanged);
@@ -765,7 +766,9 @@ function visibleTabsForAdminBotMode(tabs: readonly Tab[], mode: AdminBotLoadMode
       !tab.startsWith("adminbot") ||
       tab === "adminbotMembers" ||
       tab === "adminbotPapers" ||
-      tab === "adminbotReimbursements",
+      tab === "adminbotReimbursements" ||
+      // Self-contained public countdown board (bundled snapshot, no gateway/privileged data).
+      tab === "adminbotDeadlines",
   );
 }
 
@@ -2974,6 +2977,9 @@ export function renderApp(state: AppViewState) {
                 onRefresh: () => void loadAdminBotRegistrations(state),
               }),
             )
+          : nothing}
+        ${state.tab === "adminbotDeadlines"
+          ? renderLazyView(lazyDeadlines, (m) => m.renderDeadlines())
           : nothing}
         ${state.tab === "instances"
           ? renderLazyView(lazyInstances, (m) =>
