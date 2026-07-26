@@ -57,7 +57,13 @@ import {
   saveAdminBotPaper,
   saveAdminBotSensitiveInfo,
   saveAdminBotSettings,
+  sendAdminBotMemberNudge,
   sendAdminBotReimbursementMessage,
+  setAdminBotNudgeChannel,
+  setAdminBotNudgeMessage,
+  setAdminBotNudgeRecipients,
+  setAdminBotNudgeSubject,
+  toggleAdminBotNudgeRecipient,
 } from "./controllers/adminbot.ts";
 import type { AdminBotLoadMode } from "./controllers/adminbot.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
@@ -721,7 +727,7 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
       case "adminbot":
       case "adminbotSettings":
       case "adminbotPapers":
-      case "adminbotNudges":
+      case "adminbotAnnouncements":
         return "papers";
       default:
         return null;
@@ -738,8 +744,8 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
       return "members";
     case "adminbotPapers":
       return "papers";
-    case "adminbotNudges":
-      return "nudges";
+    case "adminbotAnnouncements":
+      return "announcements";
     default:
       return null;
   }
@@ -2934,6 +2940,13 @@ export function renderApp(state: AppViewState) {
                 void sendAdminBotReimbursementMessage(state, message, files),
               onGenerateReimbursement: () => void generateAdminBotReimbursement(state),
               onResetReimbursement: () => resetAdminBotReimbursement(state),
+              memberNudge: state.adminBotMemberNudge,
+              onNudgeChannelChange: (channel) => setAdminBotNudgeChannel(state, channel),
+              onNudgeMessageChange: (message) => setAdminBotNudgeMessage(state, message),
+              onNudgeSubjectChange: (subject) => setAdminBotNudgeSubject(state, subject),
+              onNudgeToggleRecipient: (memberId) => toggleAdminBotNudgeRecipient(state, memberId),
+              onNudgeSetRecipients: (memberIds) => setAdminBotNudgeRecipients(state, memberIds),
+              onSendNudge: () => void sendAdminBotMemberNudge(state),
               onRefresh: () => void loadAdminBot(state, adminBotMode),
               onApprove: (proposal) => void approveAdminBotAction(state, proposal),
               onRemove: (proposal) => void removePendingAdminBotAction(state, proposal),

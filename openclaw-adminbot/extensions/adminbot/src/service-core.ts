@@ -13,6 +13,9 @@ import type {
   AdminBotLabMember,
   AdminBotLabMemberInput,
   AdminBotMemberCredential,
+  AdminBotMemberNudgeRequest,
+  AdminBotMemberNudgeResult,
+  AdminBotMemberNudgeSkip,
   AdminBotPaperNudge,
   AdminBotPaperRecord,
   AdminBotPaperRecordInput,
@@ -117,6 +120,7 @@ const DEFAULT_ACTION_POLICIES = {
   "paper_publish.nudge_author": approvalPolicy("T3", ["pi", "lab_manager"]),
   "paper_publish.escalate_to_pi": approvalPolicy("T3", ["pi", "lab_manager"]),
   "join_form.classify": autoPolicy("T0"),
+  "member_nudge.send": approvalPolicy("T3", ["pi", "lab_manager"]),
 } as const satisfies Record<AdminBotActionType, AdminBotActionPolicy>;
 
 const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = {
@@ -864,6 +868,104 @@ export class AdminBotService {
     };
   }
 
+  // Composes one `member_nudge.send` proposal per recipient (paper-flow reminder or general
+  // announcement) so approval/audit granularity stays per-recipient, matching every other
+  // outbound-message action type. A member missing the contact field the chosen channel needs is
+  // skipped with a reason rather than failing the whole batch.
+  sendMemberNudge(
+    request: AdminBotMemberNudgeRequest,
+    actor: string,
+  ): AdminBotServiceResponse<AdminBotMemberNudgeResult> {
+    const message = request.message.trim();
+    if (!message) {
+      return serviceError(400, "message is required");
+    }
+    if (request.recipient_member_ids.length === 0) {
+      return serviceError(400, "recipient_member_ids must not be empty");
+    }
+    if (request.channel === "email" && !request.subject?.trim()) {
+      return serviceError(400, "subject is required for the email channel");
+    }
+    const created: AdminBotStoredProposal[] = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+    for (const memberId of request.recipient_member_ids) {
+      const member = this.store.getLabMember(memberId);
+      if (!member) {
+        skipped.push({ member_id: memberId, reason: "member not found" });
+        continue;
+      }
+      if (request.channel === "slack") {
+        if (!member.slack_user_id) {
+          skipped.push({ member_id: memberId, reason: "member has no slack_user_id" });
+          continue;
+        }
+        const result = this.createProposal({
+          type: "member_nudge.send",
+          risk_tier: "T3",
+          summary: `Nudge ${member.name} via Slack: ${truncateForSummary(message)}`,
+          target: {
+            service: "slack",
+            channel: "slack",
+            target: member.slack_user_id,
+            recipientMemberId: member.id,
+          },
+          proposed_payload: {
+            channel: "slack",
+            tool: "message",
+            action: "send",
+            target: member.slack_user_id,
+            message,
+          },
+          undo_plan: "Send a Slack follow-up correcting or retracting the message.",
+        });
+        if (result.ok) {
+          created.push(result.payload);
+        } else {
+          skipped.push({ member_id: memberId, reason: result.error.message });
+        }
+        continue;
+      }
+      if (!member.email) {
+        skipped.push({ member_id: memberId, reason: "member has no email" });
+        continue;
+      }
+      const result = this.createProposal({
+        type: "member_nudge.send",
+        risk_tier: "T3",
+        summary: `Nudge ${member.name} via email: ${truncateForSummary(message)}`,
+        target: {
+          service: "email",
+          channel: "email",
+          target: member.email,
+          recipientMemberId: member.id,
+        },
+        proposed_payload: {
+          channel: "email",
+          to: member.email,
+          subject: request.subject?.trim(),
+          body: message,
+        },
+        undo_plan: "Send an email follow-up correcting or retracting the message.",
+      });
+      if (result.ok) {
+        created.push(result.payload);
+      } else {
+        skipped.push({ member_id: memberId, reason: result.error.message });
+      }
+    }
+    this.recordAudit({
+      type: "member_nudge.sent",
+      actor,
+      details: {
+        channel: request.channel,
+        requested: request.recipient_member_ids.length,
+        created: created.length,
+        skipped: skipped.length,
+      },
+    });
+    return { ok: true, status: 200, payload: { created, skipped } };
+  }
+
   pruneAuditEventsBefore(cutoffIso: string): number {
     return this.store.pruneAuditEventsBefore(cutoffIso);
   }
@@ -942,6 +1044,10 @@ function paperMatchesNeedles(paper: AdminBotPaperRecord, needles: string[]): boo
     .flatMap((value) => (typeof value === "string" ? [value.toLowerCase()] : []))
     .join("\n");
   return needles.some((needle) => haystack.includes(needle));
+}
+
+function truncateForSummary(message: string, maxLength = 80): string {
+  return message.length > maxLength ? `${message.slice(0, maxLength - 1)}…` : message;
 }
 
 function resolvePolicy(proposal: AdminBotActionProposal): AdminBotActionPolicy {

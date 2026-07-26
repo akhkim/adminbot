@@ -1,11 +1,12 @@
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
-import type { MemberProfileUpdate } from "../adminbot-auth.ts";
+import type { MemberNudgeChannel, MemberProfileUpdate } from "../adminbot-auth.ts";
 import type {
   AdminBotActionProposal,
   AdminBotDashboardData,
   AdminBotLabMember,
   AdminBotLabMemberSaveInput,
+  AdminBotMemberNudgeState,
   AdminBotPaperNudge,
   AdminBotPaperRecord,
   AdminBotPaperSaveInput,
@@ -51,6 +52,13 @@ export type AdminBotProps = {
   onReimbursementMessage: (message: string, files: File[]) => void;
   onGenerateReimbursement: () => void;
   onResetReimbursement: () => void;
+  memberNudge: AdminBotMemberNudgeState;
+  onNudgeChannelChange: (channel: MemberNudgeChannel) => void;
+  onNudgeMessageChange: (message: string) => void;
+  onNudgeSubjectChange: (subject: string) => void;
+  onNudgeToggleRecipient: (memberId: string) => void;
+  onNudgeSetRecipients: (memberIds: string[]) => void;
+  onSendNudge: () => void;
 };
 
 export type AdminBotPanel =
@@ -59,7 +67,7 @@ export type AdminBotPanel =
   | "settings"
   | "members"
   | "papers"
-  | "nudges";
+  | "announcements";
 
 const stepLabels: Record<string, string> = {
   brainstorming_docs: "Brainstorming docs",
@@ -1409,6 +1417,11 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
   }
   return html`
     ${renderPaperOverview(papers)}
+    <article class="adminbot-editor-card">
+      <div class="card-title">Paper nudges</div>
+      <div class="card-sub">Due reminders and head professor escalations.</div>
+      ${renderNudges(props.data.nudges)}
+    </article>
     <div class="adminbot-editor-grid">
       <article class="adminbot-editor-card adminbot-popover" id="adminbot-add-paper" popover>
         <button
@@ -1498,6 +1511,273 @@ function renderNudges(nudges: AdminBotPaperNudge[]) {
   `;
 }
 
+function announceChannelHasContact(
+  member: AdminBotLabMember,
+  channel: MemberNudgeChannel,
+): boolean {
+  return channel === "slack" ? Boolean(member.slack_user_id) : Boolean(member.email);
+}
+
+function filterAnnouncementRecipients(event: Event): void {
+  const form = event.currentTarget;
+  if (!(form instanceof HTMLFormElement)) return;
+  const sheet = form.closest<HTMLElement>(".adminbot-nudge-recipients");
+  if (!sheet) return;
+  const data = new FormData(form);
+  const search = getFormValue(data, "search").toLocaleLowerCase();
+  const status = getFormValue(data, "status");
+  const branch = getFormValue(data, "branch");
+  const privilege = getFormValue(data, "privilege");
+  const project = getFormValue(data, "project");
+  let visible = 0;
+  for (const row of sheet.querySelectorAll<HTMLTableRowElement>("tbody tr")) {
+    const matches =
+      (!search || (row.dataset.search ?? "").includes(search)) &&
+      (!status || row.dataset.status === status) &&
+      (!branch || row.dataset.branch === branch) &&
+      (!privilege || row.dataset.privilege === privilege) &&
+      (!project || (row.dataset.projects ?? "").split("|").includes(project));
+    row.hidden = !matches;
+    if (matches) visible += 1;
+  }
+  const count = sheet.querySelector<HTMLElement>("[data-recipient-result-count]");
+  if (count) count.textContent = `${visible} ${visible === 1 ? "person" : "people"} visible`;
+}
+
+// Adds every currently-visible (unhidden by the filter form) row to the existing selection,
+// rather than replacing it, so switching filters to build up a recipient list across several
+// passes ("NLP members" then separately "trial members") doesn't drop earlier picks.
+function selectAllVisibleRecipients(event: Event, props: AdminBotProps): void {
+  const button = event.currentTarget;
+  if (!(button instanceof HTMLElement)) return;
+  const sheet = button.closest<HTMLElement>(".adminbot-nudge-recipients");
+  if (!sheet) return;
+  const visibleIds = [...sheet.querySelectorAll<HTMLTableRowElement>("tbody tr")]
+    .filter((row) => !row.hidden)
+    .map((row) => row.dataset.memberId)
+    .filter((id): id is string => Boolean(id));
+  props.onNudgeSetRecipients([...new Set([...props.memberNudge.selectedMemberIds, ...visibleIds])]);
+}
+
+function renderAnnouncementRecipients(props: AdminBotProps, members: AdminBotLabMember[]) {
+  const channel = props.memberNudge.channel;
+  const selected = new Set(props.memberNudge.selectedMemberIds);
+  const statuses = [...new Set(members.map((member) => member.status ?? "active"))].sort();
+  const branches = [
+    ...new Set(
+      members.flatMap((member) => (member.research_branch ? [member.research_branch] : [])),
+    ),
+  ].sort();
+  const privileges = [...new Set(members.map((member) => member.privilege_level))].sort();
+  const projects = [...new Set(members.flatMap((member) => member.projects ?? []))].sort();
+  return html`
+    <section class="adminbot-nudge-recipients">
+      <div class="adminbot-member-sheet__heading">
+        <div>
+          <strong>Recipients</strong>
+          <span>${selected.size} selected</span>
+        </div>
+        <span class="pill" data-recipient-result-count>${members.length} people visible</span>
+      </div>
+      <form
+        class="adminbot-member-filters"
+        @input=${filterAnnouncementRecipients}
+        @change=${filterAnnouncementRecipients}
+      >
+        <label
+          ><span>Search</span
+          ><input name="search" type="search" placeholder="Name, topic, project…"
+        /></label>
+        <label
+          ><span>Status</span
+          ><select name="status">
+            <option value="">All statuses</option>
+            ${statuses.map((value) => html`<option value=${value}>${friendly(value)}</option>`)}
+          </select></label
+        >
+        <label
+          ><span>Research branch</span
+          ><select name="branch">
+            <option value="">All branches</option>
+            ${branches.map((value) => html`<option value=${value}>${value}</option>`)}
+          </select></label
+        >
+        <label
+          ><span>Privilege</span
+          ><select name="privilege">
+            <option value="">All levels</option>
+            ${privileges.map(
+              (value) =>
+                html`<option value=${value}>${privilegeLabels[value] ?? friendly(value)}</option>`,
+            )}
+          </select></label
+        >
+        <label
+          ><span>Project</span
+          ><select name="project">
+            <option value="">All projects</option>
+            ${projects.map((value) => html`<option value=${value}>${value}</option>`)}
+          </select></label
+        >
+      </form>
+      <div class="adminbot-nudge-recipients__actions">
+        <button
+          type="button"
+          class="btn btn--sm"
+          @click=${(event: Event) => selectAllVisibleRecipients(event, props)}
+        >
+          Select all visible
+        </button>
+        <button type="button" class="btn btn--sm" @click=${() => props.onNudgeSetRecipients([])}>
+          Clear selection
+        </button>
+      </div>
+      <div class="adminbot-member-sheet__scroll">
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Person</th>
+              <th>Contact</th>
+              <th>Status</th>
+              <th>Research branch</th>
+              <th>Topics</th>
+              <th>Projects</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${members.map((member) => {
+              const search = [
+                member.name,
+                member.email,
+                member.slack_user_id,
+                member.research_branch,
+                ...(member.research_topics ?? []),
+                ...(member.projects ?? []),
+              ]
+                .filter(Boolean)
+                .join(" ")
+                .toLocaleLowerCase();
+              const hasContact = announceChannelHasContact(member, channel);
+              return html`<tr
+                data-search=${search}
+                data-status=${member.status ?? "active"}
+                data-branch=${member.research_branch ?? ""}
+                data-privilege=${member.privilege_level}
+                data-projects=${(member.projects ?? []).join("|")}
+                data-member-id=${member.id}
+              >
+                <td>
+                  <input
+                    type="checkbox"
+                    ?checked=${selected.has(member.id)}
+                    ?disabled=${!hasContact}
+                    title=${hasContact
+                      ? ""
+                      : channel === "slack"
+                        ? "No slack_user_id on file"
+                        : "No email on file"}
+                    @change=${() => props.onNudgeToggleRecipient(member.id)}
+                  />
+                </td>
+                <td><strong>${member.name}</strong><small>${member.id}</small></td>
+                <td>
+                  ${channel === "slack"
+                    ? (member.slack_user_id ??
+                      html`<span class="adminbot-nudge-recipients__missing">no Slack ID</span>`)
+                    : (member.email ??
+                      html`<span class="adminbot-nudge-recipients__missing">no email</span>`)}
+                </td>
+                <td>
+                  <span class="adminbot-status adminbot-status--${member.status ?? "active"}"
+                    >${friendly(member.status ?? "active")}</span
+                  >
+                </td>
+                <td>${member.research_branch ?? "—"}</td>
+                <td>
+                  ${(member.research_topics ?? []).map(
+                    (value) => html`<span class="adminbot-tag">${value}</span>`,
+                  )}
+                </td>
+                <td>
+                  ${(member.projects ?? []).map(
+                    (value) => html`<span class="adminbot-tag">${value}</span>`,
+                  )}
+                </td>
+              </tr>`;
+            })}
+          </tbody>
+        </table>
+        ${members.length === 0
+          ? html`<div class="adminbot-empty adminbot-empty--compact">No lab members yet.</div>`
+          : nothing}
+      </div>
+    </section>
+  `;
+}
+
+function renderAnnouncements(props: AdminBotProps) {
+  const draft = props.memberNudge;
+  const recipientCount = draft.selectedMemberIds.length;
+  return html`
+    <div class="adminbot-announce">
+      <div class="adminbot-announce__compose">
+        <label class="adminbot-form__field">
+          <span>Channel</span>
+          <select
+            .value=${draft.channel}
+            @change=${(event: Event) =>
+              props.onNudgeChannelChange(
+                (event.target as HTMLSelectElement).value as MemberNudgeChannel,
+              )}
+          >
+            <option value="slack">Slack</option>
+            <option value="email">Email</option>
+          </select>
+        </label>
+        ${draft.channel === "email"
+          ? html`<label class="adminbot-form__field">
+              <span>Subject</span>
+              <input
+                .value=${draft.subject}
+                @input=${(event: Event) =>
+                  props.onNudgeSubjectChange((event.target as HTMLInputElement).value)}
+                placeholder="Lab announcement"
+              />
+            </label>`
+          : nothing}
+        <label class="adminbot-form__field adminbot-announce__message">
+          <span>Message</span>
+          <textarea
+            rows="5"
+            .value=${draft.message}
+            @input=${(event: Event) =>
+              props.onNudgeMessageChange((event.target as HTMLTextAreaElement).value)}
+            placeholder="Write your announcement or nudge…"
+          ></textarea>
+        </label>
+        <div class="adminbot-form__actions">
+          <button
+            class="btn primary"
+            type="button"
+            ?disabled=${draft.busy}
+            @click=${() => props.onSendNudge()}
+          >
+            ${draft.busy
+              ? "Sending…"
+              : `Send to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}`}
+          </button>
+        </div>
+        <p class="adminbot-announce__hint">
+          Each recipient becomes its own pending action awaiting approval in Pending actions —
+          nothing sends immediately.
+        </p>
+      </div>
+      ${renderAnnouncementRecipients(props, props.data.members)}
+    </div>
+  `;
+}
+
 function renderPanel(props: AdminBotProps) {
   const general = props.mode === "general";
   switch (props.panel) {
@@ -1553,15 +1833,17 @@ function renderPanel(props: AdminBotProps) {
           ${renderPapers(props, props.data.papers)}
         </div>
       `;
-    case "nudges":
+    case "announcements":
       if (general) {
         return renderPanel({ ...props, panel: "papers" });
       }
       return html`
         <div class="card adminbot-card adminbot-card--wide">
-          <div class="card-title">Paper nudges</div>
-          <div class="card-sub">Due reminders and head professor escalations.</div>
-          ${renderNudges(props.data.nudges)}
+          <div class="card-title">Announcements</div>
+          <div class="card-sub">
+            Nudge selected members or send a general announcement over Slack or email.
+          </div>
+          ${renderAnnouncements(props)}
         </div>
       `;
   }

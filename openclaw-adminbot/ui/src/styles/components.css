@@ -1652,6 +1652,42 @@
   line-height: 1.55;
 }
 
+.adminbot-announce {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.adminbot-announce__compose {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-width: 640px;
+}
+
+.adminbot-announce__message textarea {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.adminbot-announce__hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-nudge-recipients__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-3) 0;
+}
+
+.adminbot-nudge-recipients__missing {
+  color: var(--danger);
+  font-size: var(--control-ui-text-xs);
+  font-style: italic;
+}
+
 .adminbot-empty {
   display: flex;
   align-items: center;

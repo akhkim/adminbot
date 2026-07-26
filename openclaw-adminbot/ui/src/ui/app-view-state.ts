@@ -10,7 +10,11 @@ import type { RealtimeTalkStatus } from "./chat/realtime-talk.ts";
 import type { ChatRunUiStatus } from "./chat/run-lifecycle.ts";
 import type { ChatMessageCache } from "./chat/session-message-cache.ts";
 import type { ChatSideResult } from "./chat/side-result.ts";
-import type { AdminBotDashboardData, AdminBotReimbursementState } from "./controllers/adminbot.ts";
+import type {
+  AdminBotDashboardData,
+  AdminBotMemberNudgeState,
+  AdminBotReimbursementState,
+} from "./controllers/adminbot.ts";
 import type { CronModelSuggestionsState, CronState } from "./controllers/cron.ts";
 import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
@@ -328,6 +332,7 @@ export type AppViewState = {
   adminBotBusyActionId: string | null;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotReimbursement: AdminBotReimbursementState;
+  adminBotMemberNudge: AdminBotMemberNudgeState;
   registrations: import("./adminbot-auth.ts").MemberRegistration[];
   registrationsLoading: boolean;
   registrationsError: import("./adminbot-registrations.ts").RegistrationsLoadError | null;

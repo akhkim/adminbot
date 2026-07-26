@@ -28,6 +28,7 @@ export const adminBotActionTypes = [
   "paper_publish.nudge_author",
   "paper_publish.escalate_to_pi",
   "join_form.classify",
+  "member_nudge.send",
 ] as const;
 
 export type AdminBotActionType = (typeof adminBotActionTypes)[number];
@@ -243,6 +244,30 @@ export type AdminBotPaperNudge = {
   timeline?: AdminBotPaperTimeline;
 };
 
+// Member nudge: an admin-composed message (paper-flow reminder or general announcement) sent to a
+// chosen set of members over Slack or email. Each recipient becomes its own `member_nudge.send`
+// proposal (same propose -> approve -> execute pipeline as every other outbound message), so
+// approval/audit granularity stays per-recipient.
+export type AdminBotMemberNudgeChannel = "slack" | "email";
+
+export type AdminBotMemberNudgeRequest = {
+  channel: AdminBotMemberNudgeChannel;
+  recipient_member_ids: string[];
+  message: string;
+  // Email subject line. Required for channel "email"; ignored for "slack".
+  subject?: string;
+};
+
+export type AdminBotMemberNudgeSkip = {
+  member_id: string;
+  reason: string;
+};
+
+export type AdminBotMemberNudgeResult = {
+  created: AdminBotStoredProposal[];
+  skipped: AdminBotMemberNudgeSkip[];
+};
+
 export type AdminBotActionProposal = {
   type: AdminBotActionType;
   risk_tier?: AdminBotRiskTier;
@@ -340,7 +365,8 @@ export type AdminBotAuditEvent = {
     | "auth.registration_approved"
     | "auth.registration_rejected"
     | "auth.calendar_invite_sent"
-    | "auth.calendar_invite_failed";
+    | "auth.calendar_invite_failed"
+    | "member_nudge.sent";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;

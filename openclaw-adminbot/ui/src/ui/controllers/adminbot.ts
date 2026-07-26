@@ -1,8 +1,10 @@
 // Control UI controller for the AdminBot dashboard surface.
 import {
+  type MemberNudgeChannel,
   type MemberProfileUpdate,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
+  sendMemberNudge,
   updateOwnProfile,
   upsertLabMemberAsAdmin,
 } from "../adminbot-auth.ts";
@@ -212,6 +214,18 @@ export type AdminBotDashboardData = {
   loadedAt: number | null;
 };
 
+// Draft state for the "Announcements" compose form (member_nudge.send): channel + message text
+// plus which members are currently checked. Filtering the recipient table stays pure client-side
+// DOM hide/show (same pattern as the Lab Members and Papers filter forms); only the checked
+// selection itself needs to survive across filter changes and re-renders, hence state here.
+export type AdminBotMemberNudgeState = {
+  channel: MemberNudgeChannel;
+  message: string;
+  subject: string;
+  selectedMemberIds: string[];
+  busy: boolean;
+};
+
 export type AdminBotHost = {
   client: GatewayBrowserClient | null;
   connected: boolean;
@@ -221,6 +235,7 @@ export type AdminBotHost = {
   adminBotBusyActionId: string | null;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotReimbursement: AdminBotReimbursementState;
+  adminBotMemberNudge: AdminBotMemberNudgeState;
   // Needed to resolve the AdminBot HTTP base URL for the direct admin-write path in
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
   settings: UiSettings;
@@ -238,6 +253,16 @@ export function createEmptyAdminBotReimbursementState(): AdminBotReimbursementSt
     busy: false,
     error: null,
     artifacts: [],
+  };
+}
+
+export function createEmptyAdminBotMemberNudgeState(): AdminBotMemberNudgeState {
+  return {
+    channel: "slack",
+    message: "",
+    subject: "",
+    selectedMemberIds: [],
+    busy: false,
   };
 }
 
@@ -642,6 +667,106 @@ export async function saveAdminBotOwnProfile(
   }
   host.adminBotNotice = { kind: "success", text: "Saved your profile." };
   await loadAdminBot(host);
+}
+
+export function setAdminBotNudgeChannel(host: AdminBotHost, channel: MemberNudgeChannel): void {
+  host.adminBotMemberNudge = { ...host.adminBotMemberNudge, channel };
+}
+
+export function setAdminBotNudgeMessage(host: AdminBotHost, message: string): void {
+  host.adminBotMemberNudge = { ...host.adminBotMemberNudge, message };
+}
+
+export function setAdminBotNudgeSubject(host: AdminBotHost, subject: string): void {
+  host.adminBotMemberNudge = { ...host.adminBotMemberNudge, subject };
+}
+
+export function toggleAdminBotNudgeRecipient(host: AdminBotHost, memberId: string): void {
+  const selected = host.adminBotMemberNudge.selectedMemberIds;
+  host.adminBotMemberNudge = {
+    ...host.adminBotMemberNudge,
+    selectedMemberIds: selected.includes(memberId)
+      ? selected.filter((id) => id !== memberId)
+      : [...selected, memberId],
+  };
+}
+
+// Bulk-set the recipient list — used by "select all visible" (checks every filtered/visible row)
+// and "clear" (empties it) in the Announcements recipient table.
+export function setAdminBotNudgeRecipients(host: AdminBotHost, memberIds: string[]): void {
+  host.adminBotMemberNudge = { ...host.adminBotMemberNudge, selectedMemberIds: memberIds };
+}
+
+// Sends the composed Announcements message to every selected recipient. Requires a real admin
+// member session (same reasoning as saveAdminBotMember's direct-write path) since the server
+// rejects this route outright for the shared service principal. Each recipient becomes its own
+// member_nudge.send proposal awaiting pi/lab_manager approval in Pending actions — this never
+// sends anything immediately.
+export async function sendAdminBotMemberNudge(host: AdminBotHost): Promise<void> {
+  host.adminBotNotice = null;
+  const draft = host.adminBotMemberNudge;
+  if (draft.busy) {
+    return;
+  }
+  const message = draft.message.trim();
+  if (!message) {
+    host.adminBotNotice = { kind: "error", text: "Enter a message to send." };
+    return;
+  }
+  if (draft.selectedMemberIds.length === 0) {
+    host.adminBotNotice = { kind: "error", text: "Select at least one recipient." };
+    return;
+  }
+  if (draft.channel === "email" && !draft.subject.trim()) {
+    host.adminBotNotice = { kind: "error", text: "Enter a subject line for the email." };
+    return;
+  }
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your admin account to send a nudge.",
+    };
+    return;
+  }
+  host.adminBotMemberNudge = { ...draft, busy: true };
+  try {
+    const result = await sendMemberNudge(
+      {
+        channel: draft.channel,
+        recipient_member_ids: draft.selectedMemberIds,
+        message,
+        ...(draft.channel === "email" ? { subject: draft.subject.trim() } : {}),
+      },
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      const text =
+        result.kind === "unreachable"
+          ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+          : result.kind === "forbidden"
+            ? "Your session no longer has admin access — sign in again and retry."
+            : result.kind === "rate-limited"
+              ? "Too many attempts. Wait a moment and try again."
+              : "Couldn't send this nudge. Check the values and try again.";
+      host.adminBotNotice = { kind: "error", text };
+      return;
+    }
+    const { created, skipped } = result.value;
+    const skippedNote =
+      skipped.length > 0
+        ? ` Skipped ${skipped.length}: ${skipped.map((entry) => entry.reason).join(", ")}.`
+        : "";
+    host.adminBotNotice = {
+      kind: skipped.length > 0 ? "error" : "success",
+      text: `Queued ${created.length} nudge${created.length === 1 ? "" : "s"} for approval.${skippedNote}`,
+    };
+    host.adminBotMemberNudge = createEmptyAdminBotMemberNudgeState();
+    await loadAdminBot(host);
+  } finally {
+    host.adminBotMemberNudge = { ...host.adminBotMemberNudge, busy: false };
+  }
 }
 
 export async function saveAdminBotPaper(

@@ -12,6 +12,7 @@ import type {
   AdminBotApprovalRequest,
   AdminBotExecutionRequest,
   AdminBotLabMemberInput,
+  AdminBotMemberNudgeRequest,
   AdminBotPaperRecordInput,
   AdminBotPrivacyTaskRequest,
   AdminBotRegistrationStatus,
@@ -511,6 +512,17 @@ async function handleAuthenticatedRoute(
   }
   if (req.method === "GET" && url.pathname === "/papers/nudges") {
     sendServiceResult(res, service.listPaperNudges(url.searchParams.get("now") ?? undefined));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/nudges/send") {
+    // Same reasoning as /settings and /sensitive-info: this fans out real Slack/email sends to a
+    // chosen set of members, so it must be driven by a genuine admin/core_member member session,
+    // never the shared service principal every agent tool call authenticates as.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = (await readJson(req)) as AdminBotMemberNudgeRequest;
+    sendServiceResult(res, service.sendMemberNudge(body, principalActor(principal)));
     return;
   }
   const remove = /^\/proposals\/([^/]+)\/remove$/u.exec(url.pathname);

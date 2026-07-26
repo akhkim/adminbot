@@ -38,7 +38,7 @@ describe("TAB_GROUPS", () => {
       "adminbotSettings",
       "adminbotMembers",
       "adminbotPapers",
-      "adminbotNudges",
+      "adminbotAnnouncements",
     ]);
   });
 

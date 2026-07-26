@@ -52,6 +52,53 @@ describe("createAdminBotMessageExecutor", () => {
     ]);
   });
 
+  it("maps Slack-channel member nudges to the OpenClaw message send CLI", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createAdminBotMessageExecutor({ commandArgsPrefix: ["openclaw.mjs"], run });
+
+    await expect(
+      executor.execute(
+        proposal("member_nudge.send", {
+          channel: "slack",
+          tool: "message",
+          action: "send",
+          target: "U123",
+          message: "Reminder: submit your update.",
+        }),
+      ),
+    ).resolves.toEqual({ handled: true });
+
+    expect(run).toHaveBeenCalledWith([
+      "openclaw.mjs",
+      "message",
+      "send",
+      "--channel",
+      "slack",
+      "--target",
+      "U123",
+      "--message",
+      "Reminder: submit your update.",
+      "--json",
+    ]);
+  });
+
+  it("declines email-channel member nudges so gog-executor handles them instead", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createAdminBotMessageExecutor({ run });
+
+    await expect(
+      executor.execute(
+        proposal("member_nudge.send", {
+          channel: "email",
+          to: "person@example.test",
+          subject: "Hi",
+          body: "Hello",
+        }),
+      ),
+    ).resolves.toEqual({ handled: false });
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it("declines unrelated actions and rejects incomplete message payloads", async () => {
     const run = vi.fn(async () => {});
     const executor = createAdminBotMessageExecutor({ run });

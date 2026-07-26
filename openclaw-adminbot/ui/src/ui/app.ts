@@ -107,8 +107,10 @@ import type { ChatMessageCache } from "./chat/session-message-cache.ts";
 import type { ChatSideResult } from "./chat/side-result.ts";
 import {
   createEmptyAdminBotDashboardData,
+  createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   type AdminBotDashboardData,
+  type AdminBotMemberNudgeState,
   type AdminBotReimbursementState,
 } from "./controllers/adminbot.ts";
 import {
@@ -517,6 +519,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotNotice: { kind: "success" | "error"; text: string } | null = null;
   @state() adminBotReimbursement: AdminBotReimbursementState =
     createEmptyAdminBotReimbursementState();
+  @state() adminBotMemberNudge: AdminBotMemberNudgeState = createEmptyAdminBotMemberNudgeState();
   @state() registrations: MemberRegistration[] = [];
   @state() registrationsLoading = false;
   @state() registrationsError: RegistrationsLoadError | null = null;

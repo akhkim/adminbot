@@ -223,10 +223,12 @@ describeControlUiE2e("AdminBot Control UI navigation", () => {
       expect(await page.locator(".adminbot-paper-gantt__row:visible").count()).toBe(0);
       await page.locator('select[name="progress"]').selectOption("");
       expect(await page.locator(".adminbot-paper-gantt__row:visible").count()).toBe(1);
-
-      await page.getByRole("link", { name: "Paper Nudges" }).click();
-      await page.waitForURL("**/adminbot/nudges");
+      // Paper nudges now render inline within Active Papers rather than a separate tab.
       await page.getByText("Please send the Twitter draft.").waitFor();
+
+      await page.getByRole("link", { name: "Announcements" }).click();
+      await page.waitForURL("**/adminbot/announcements");
+      await page.getByText("Recipients").waitFor();
 
       const toolRequests = await gateway.getRequests("tools.invoke");
       expect(

@@ -36,10 +36,16 @@ function buildOpenClawMessageArgs(
   proposal: AdminBotStoredProposal,
   prefix: string[],
 ): string[] | undefined {
-  if (proposal.type !== "slack.send_message" && proposal.type !== "paper_publish.nudge_author") {
+  const isSlackOnlyType =
+    proposal.type === "slack.send_message" || proposal.type === "paper_publish.nudge_author";
+  if (!isSlackOnlyType && proposal.type !== "member_nudge.send") {
     return undefined;
   }
   const payload = requirePayload(proposal);
+  if (proposal.type === "member_nudge.send" && optionalString(payload, "channel") !== "slack") {
+    // Shared with gog-executor.ts; the email-shaped half of this action type belongs there.
+    return undefined;
+  }
   const tool = optionalString(payload, "tool") ?? "message";
   const action = optionalString(payload, "action") ?? "send";
   if (tool !== "message" || action !== "send") {

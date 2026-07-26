@@ -114,6 +114,16 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
       return buildEmailArgs(proposal, true);
     case "email.send":
       return buildEmailArgs(proposal, false);
+    case "member_nudge.send": {
+      // Shared with message-executor.ts (Slack-channel payloads); only the email-shaped half of
+      // this action type belongs to gog.
+      const payload = proposal.proposed_payload;
+      const channel =
+        payload && typeof payload === "object" && !Array.isArray(payload)
+          ? (payload as Record<string, unknown>).channel
+          : undefined;
+      return channel === "email" ? buildEmailArgs(proposal, false) : undefined;
+    }
     case "calendar.create_tentative_hold":
     case "calendar.send_invite":
       return buildCalendarCreateArgs(proposal);

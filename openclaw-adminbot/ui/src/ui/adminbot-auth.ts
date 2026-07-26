@@ -352,6 +352,45 @@ export async function upsertLabMemberAsAdmin(
   return { ok: true, value: result.body as LabMember };
 }
 
+export type MemberNudgeChannel = "slack" | "email";
+
+export type MemberNudgeRequest = {
+  channel: MemberNudgeChannel;
+  recipient_member_ids: string[];
+  message: string;
+  // Required when channel is "email"; ignored for "slack".
+  subject?: string;
+};
+
+export type MemberNudgeSkip = { member_id: string; reason: string };
+
+export type MemberNudgeResult = {
+  created: Array<{ id: string; status: string }>;
+  skipped: MemberNudgeSkip[];
+};
+
+// Admin-only bulk nudge/announcement send (POST /nudges/send): fans out into one
+// member_nudge.send proposal per recipient, same admin-Bearer-session write path as
+// upsertLabMemberAsAdmin — never routed through the shared service principal, which
+// the server would reject (403) precisely because this fans real messages out to members.
+export async function sendMemberNudge(
+  request: MemberNudgeRequest,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberNudgeResult>> {
+  const result = await authedJson(baseUrl, "/nudges/send", "POST", sessionToken, request);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as MemberNudgeResult };
+}
+
 // Change the member's login email (POST /auth/email). 401 wrong password folds to
 // auth-failed; 409 collision to email-unavailable; 429 to rate-limited.
 export async function changeMemberEmail(

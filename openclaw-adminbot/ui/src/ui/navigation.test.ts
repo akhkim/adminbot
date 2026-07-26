@@ -36,7 +36,7 @@ describe("iconForTab", () => {
       adminbotSettings: "settings",
       adminbotMembers: "folder",
       adminbotPapers: "fileText",
-      adminbotNudges: "activity",
+      adminbotAnnouncements: "activity",
       activity: "activity",
       workboard: "folder",
       channels: "link",
@@ -79,7 +79,7 @@ describe("titleForTab", () => {
       adminbotMembers: "Lab Members",
       adminbotReimbursements: "Reimbursements",
       adminbotPapers: "Active Papers",
-      adminbotNudges: "Paper Nudges",
+      adminbotAnnouncements: "Announcements",
       activity: "Activity",
       workboard: "Workboard",
       channels: "Channels",
@@ -116,7 +116,7 @@ describe("subtitleForTab", () => {
       adminbotMembers: "Privilege levels and access profiles.",
       adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
       adminbotPapers: "PaperPublish records and current steps.",
-      adminbotNudges: "Due reminders and professor escalations.",
+      adminbotAnnouncements: "Nudge members or send a general announcement.",
       activity: "Browser-local tool activity summaries.",
       workboard: "Agent work queue and session handoff.",
       channels: "Channels and settings.",
@@ -201,7 +201,7 @@ describe("tabFromPath", () => {
     expect(tabFromPath("/adminbot/settings")).toBe("adminbotSettings");
     expect(tabFromPath("/adminbot/members")).toBe("adminbotMembers");
     expect(tabFromPath("/adminbot/papers")).toBe("adminbotPapers");
-    expect(tabFromPath("/adminbot/nudges")).toBe("adminbotNudges");
+    expect(tabFromPath("/adminbot/announcements")).toBe("adminbotAnnouncements");
     expect(tabFromPath("/activity")).toBe("activity");
     expect(tabFromPath("/sessions")).toBe("sessions");
     expect(tabFromPath("/dreaming")).toBe("dreams");

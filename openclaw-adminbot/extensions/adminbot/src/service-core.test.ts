@@ -496,4 +496,90 @@ describe("AdminBotService", () => {
 
     expect(unwrap(service.listPaperNudges("2026-06-08T12:00:00.000Z")).nudges).toEqual([]);
   });
+
+  it("sends a member nudge over Slack as one proposal per recipient, skipping members without a slack_user_id", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "with-slack", name: "With Slack", slack_user_id: "U1" }));
+    unwrap(service.upsertLabMember({ id: "no-slack", name: "No Slack" }));
+
+    const result = unwrap(
+      service.sendMemberNudge(
+        {
+          channel: "slack",
+          recipient_member_ids: ["with-slack", "no-slack", "missing"],
+          message: "Reminder: submit your progress update.",
+        },
+        "admin-1",
+      ),
+    );
+
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0]).toMatchObject({
+      type: "member_nudge.send",
+      status: "pending",
+      target: { recipientMemberId: "with-slack" },
+      proposed_payload: {
+        channel: "slack",
+        target: "U1",
+        message: "Reminder: submit your progress update.",
+      },
+    });
+    expect(result.skipped).toEqual([
+      { member_id: "no-slack", reason: "member has no slack_user_id" },
+      { member_id: "missing", reason: "member not found" },
+    ]);
+    expect(service.listAuditEvents().map((event) => event.type)).toContain("member_nudge.sent");
+  });
+
+  it("sends a member nudge over email, requiring a subject and skipping members without an email", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "e1", name: "Has Email", email: "e1@example.test" }));
+    unwrap(service.upsertLabMember({ id: "e2", name: "No Email" }));
+
+    const missingSubject = service.sendMemberNudge(
+      { channel: "email", recipient_member_ids: ["e1"], message: "hi" },
+      "admin-1",
+    );
+    expect(missingSubject).toMatchObject({ ok: false, status: 400 });
+
+    const result = unwrap(
+      service.sendMemberNudge(
+        {
+          channel: "email",
+          recipient_member_ids: ["e1", "e2"],
+          message: "Announcement: lab meeting moved to Friday.",
+          subject: "Schedule change",
+        },
+        "admin-1",
+      ),
+    );
+
+    expect(result.created).toHaveLength(1);
+    expect(result.created[0]).toMatchObject({
+      type: "member_nudge.send",
+      proposed_payload: {
+        channel: "email",
+        to: "e1@example.test",
+        subject: "Schedule change",
+        body: "Announcement: lab meeting moved to Friday.",
+      },
+    });
+    expect(result.skipped).toEqual([{ member_id: "e2", reason: "member has no email" }]);
+  });
+
+  it("rejects an empty message or an empty recipient list", () => {
+    const service = new AdminBotService();
+    expect(
+      service.sendMemberNudge(
+        { channel: "slack", recipient_member_ids: ["a"], message: "   " },
+        "admin-1",
+      ),
+    ).toMatchObject({ ok: false, status: 400 });
+    expect(
+      service.sendMemberNudge(
+        { channel: "slack", recipient_member_ids: [], message: "hi" },
+        "admin-1",
+      ),
+    ).toMatchObject({ ok: false, status: 400 });
+  });
 });

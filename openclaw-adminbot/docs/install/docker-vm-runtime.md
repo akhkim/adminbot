@@ -38,20 +38,24 @@ FROM node:24-bookworm
 RUN apt-get update && apt-get install -y socat && rm -rf /var/lib/apt/lists/*
 
 # Example binary 1: Gmail CLI (gogcli — installs as `gog`)
-# Copy the current Linux asset URL from https://github.com/steipete/gogcli/releases
-RUN curl -L https://github.com/steipete/gogcli/releases/latest/download/gogcli_linux_amd64.tar.gz \
+# Release assets are versioned (no unversioned "latest" asset name), so resolve
+# the current tag from the GitHub API first. See https://github.com/openclaw/gogcli/releases
+RUN v=$(curl -sL https://api.github.com/repos/openclaw/gogcli/releases/latest | grep -oP '"tag_name":\s*"v\K[^"]+') \
+  && curl -L "https://github.com/openclaw/gogcli/releases/download/v${v}/gogcli_${v}_linux_amd64.tar.gz" \
   | tar -xzO gog > /usr/local/bin/gog; \
   chmod +x /usr/local/bin/gog
 
 # Example binary 2: Google Places CLI
-# Copy the current Linux asset URL from https://github.com/steipete/goplaces/releases
-RUN curl -L https://github.com/steipete/goplaces/releases/latest/download/goplaces_linux_amd64.tar.gz \
+# See https://github.com/openclaw/goplaces/releases
+RUN v=$(curl -sL https://api.github.com/repos/openclaw/goplaces/releases/latest | grep -oP '"tag_name":\s*"v\K[^"]+') \
+  && curl -L "https://github.com/openclaw/goplaces/releases/download/v${v}/goplaces_${v}_linux_amd64.tar.gz" \
   | tar -xzO goplaces > /usr/local/bin/goplaces; \
   chmod +x /usr/local/bin/goplaces
 
 # Example binary 3: WhatsApp CLI
-# Copy the current Linux asset URL from https://github.com/steipete/wacli/releases
-RUN curl -L https://github.com/steipete/wacli/releases/latest/download/wacli-linux-amd64.tar.gz \
+# See https://github.com/openclaw/wacli/releases
+RUN v=$(curl -sL https://api.github.com/repos/openclaw/wacli/releases/latest | grep -oP '"tag_name":\s*"v\K[^"]+') \
+  && curl -L "https://github.com/openclaw/wacli/releases/download/v${v}/wacli_${v}_linux_amd64.tar.gz" \
   | tar -xzO wacli > /usr/local/bin/wacli; \
   chmod +x /usr/local/bin/wacli
 

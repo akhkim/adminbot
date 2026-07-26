@@ -91,6 +91,37 @@ describe("createGogAdminBotExecutor", () => {
     ).resolves.toEqual({ handled: false });
     expect(run).not.toHaveBeenCalled();
   });
+
+  it("maps email-channel member nudges to gmail send and declines the Slack-channel half", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+
+    await expect(
+      executor.execute(
+        proposal("member_nudge.send", {
+          channel: "email",
+          to: "person@example.test",
+          subject: "Deadline reminder",
+          body: "Please submit your draft by Friday.",
+        }),
+      ),
+    ).resolves.toEqual({ handled: true });
+    expect(run).toHaveBeenCalledWith(
+      expect.arrayContaining(["--to", "person@example.test", "--subject", "Deadline reminder"]),
+    );
+
+    await expect(
+      executor.execute(
+        proposal("member_nudge.send", {
+          channel: "slack",
+          tool: "message",
+          action: "send",
+          target: "U123",
+          message: "hi",
+        }),
+      ),
+    ).resolves.toEqual({ handled: false });
+  });
 });
 
 describe("readGogSheetRows", () => {

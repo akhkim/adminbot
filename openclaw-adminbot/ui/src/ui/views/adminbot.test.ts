@@ -59,6 +59,19 @@ function baseProps(overrides: Partial<AdminBotProps> = {}): AdminBotProps {
     onReimbursementMessage: () => undefined,
     onGenerateReimbursement: () => undefined,
     onResetReimbursement: () => undefined,
+    memberNudge: {
+      channel: "slack",
+      message: "",
+      subject: "",
+      selectedMemberIds: [],
+      busy: false,
+    },
+    onNudgeChannelChange: () => undefined,
+    onNudgeMessageChange: () => undefined,
+    onNudgeSubjectChange: () => undefined,
+    onNudgeToggleRecipient: () => undefined,
+    onNudgeSetRecipients: () => undefined,
+    onSendNudge: () => undefined,
     ...overrides,
   };
 }
@@ -273,5 +286,147 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(firstCell?.querySelector("button")?.textContent?.trim()).toBe("Edit");
     // Row cell count now matches the header count exactly.
     expect(container.querySelectorAll("tbody tr td")).toHaveLength(headers.length);
+  });
+});
+
+describe("renderAdminBot papers panel — inline paper nudges", () => {
+  it("renders due paper nudges inside the Active papers panel in admin mode", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          papers: [],
+          nudges: [
+            {
+              type: "author_nudge",
+              paper_id: "paper-1",
+              title: "World Models Survey",
+              step: "slide_making",
+              recipients: ["alice"],
+              message: "Please nudge the authors.",
+            },
+          ],
+        },
+      }),
+    );
+
+    expect(container.textContent).toContain("Paper nudges");
+    expect(container.textContent).toContain("World Models Survey");
+    expect(container.textContent).toContain("Please nudge the authors.");
+  });
+});
+
+describe("renderAdminBot announcements panel", () => {
+  it("shows a subject field only for the email channel", () => {
+    const slack = renderToDiv(baseProps({ mode: "admin", panel: "announcements" }));
+    expect(slack.querySelector('input[placeholder="Lab announcement"]')).toBeNull();
+
+    const email = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "announcements",
+        memberNudge: {
+          channel: "email",
+          message: "",
+          subject: "",
+          selectedMemberIds: [],
+          busy: false,
+        },
+      }),
+    );
+    expect(email.querySelector('input[placeholder="Lab announcement"]')).not.toBeNull();
+  });
+
+  it("disables the checkbox for a member missing the selected channel's contact field", () => {
+    const roster = [
+      member({ id: "with-slack", name: "With Slack", slack_user_id: "U1", email: undefined }),
+      member({ id: "no-slack", name: "No Slack", slack_user_id: undefined }),
+    ];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "announcements",
+        data: { ...createEmptyAdminBotDashboardData(), members: roster, loadedAt: Date.now() },
+      }),
+    );
+    const rows = [
+      ...container.querySelectorAll<HTMLTableRowElement>(".adminbot-nudge-recipients tbody tr"),
+    ];
+    const withSlackCheckbox = rows
+      .find((row) => row.dataset.memberId === "with-slack")
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const noSlackCheckbox = rows
+      .find((row) => row.dataset.memberId === "no-slack")
+      ?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    expect(withSlackCheckbox?.disabled).toBe(false);
+    expect(noSlackCheckbox?.disabled).toBe(true);
+  });
+
+  it("toggles a recipient via onNudgeToggleRecipient when its checkbox changes", () => {
+    const toggled: string[] = [];
+    const roster = [member({ id: "pat", name: "Pat Doe", slack_user_id: "U1" })];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "announcements",
+        data: { ...createEmptyAdminBotDashboardData(), members: roster, loadedAt: Date.now() },
+        onNudgeToggleRecipient: (memberId) => toggled.push(memberId),
+      }),
+    );
+    const checkbox = container.querySelector<HTMLInputElement>(
+      '.adminbot-nudge-recipients input[type="checkbox"]',
+    );
+    checkbox?.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(toggled).toEqual(["pat"]);
+  });
+
+  it("select all visible adds every unhidden row's id to the existing selection", () => {
+    let recipients: string[] = [];
+    const roster = [
+      member({ id: "a", name: "A", slack_user_id: "U1" }),
+      member({ id: "b", name: "B", slack_user_id: "U2" }),
+    ];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "announcements",
+        data: { ...createEmptyAdminBotDashboardData(), members: roster, loadedAt: Date.now() },
+        memberNudge: {
+          channel: "slack",
+          message: "",
+          subject: "",
+          selectedMemberIds: ["existing"],
+          busy: false,
+        },
+        onNudgeSetRecipients: (ids) => {
+          recipients = ids;
+        },
+      }),
+    );
+    const selectAllButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Select all visible",
+    );
+    selectAllButton?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(new Set(recipients)).toEqual(new Set(["existing", "a", "b"]));
+  });
+
+  it("calls onSendNudge when the send button is clicked", () => {
+    let sent = false;
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "announcements",
+        onSendNudge: () => {
+          sent = true;
+        },
+      }),
+    );
+    const sendButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Send to"),
+    );
+    sendButton?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(sent).toBe(true);
   });
 });

@@ -959,4 +959,43 @@ describe("AdminBot service-principal privilege scoping", () => {
     });
     expect(reject.status).toBe(200);
   });
+
+  it("denies the service principal on /nudges/send", async () => {
+    const { baseUrl } = await startService();
+    seedMember(baseUrl, "target", { name: "Target", slack_user_id: "U1" });
+    const res = await fetch(`${baseUrl}/nudges/send`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        channel: "slack",
+        recipient_member_ids: ["target"],
+        message: "hi",
+      }),
+    });
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toEqual({ error: { message: SERVICE_DENIED } });
+  });
+
+  it("lets a genuine admin session send a member nudge", async () => {
+    const { baseUrl } = await startService();
+    const token = await adminToken(baseUrl, "boss", "boss@example.com");
+    seedMember(baseUrl, "target", { name: "Target", slack_user_id: "U1" });
+    const res = await fetch(`${baseUrl}/nudges/send`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channel: "slack",
+        recipient_member_ids: ["target"],
+        message: "Reminder: submit your update.",
+      }),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      created: Array<{ status: string }>;
+      skipped: unknown[];
+    };
+    expect(body.created).toHaveLength(1);
+    expect(body.created[0]?.status).toBe("pending");
+    expect(body.skipped).toEqual([]);
+  });
 });
