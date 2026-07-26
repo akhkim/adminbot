@@ -444,6 +444,9 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "overview":
         await loadOverview(host);
         break;
+      case "adminbotDeadlines":
+        // Deadlines tab renders from the bundled snapshot; no gateway load needed.
+        break;
       case "adminbot":
       case "adminbotSettings":
       case "adminbotMembers":

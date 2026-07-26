@@ -3786,13 +3786,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/config-quick.ts",
-      "text": "Mode"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/config-quick.ts",
       "text": "Model"
     },
     {
@@ -3912,13 +3905,6 @@
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/views/config-quick.ts",
-      "text": "Dash"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/views/config-quick.ts",
       "text": "Default"
     },
     {
@@ -3934,13 +3920,6 @@
       "name": "label",
       "path": "ui/src/ui/views/config-quick.ts",
       "text": "Full"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/views/config-quick.ts",
-      "text": "Knot"
     },
     {
       "count": 1,
@@ -4297,21 +4276,7 @@
       "kind": "object-property",
       "name": "description",
       "path": "ui/src/ui/views/config.ts",
-      "text": "Black & red"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "description",
-      "path": "ui/src/ui/views/config.ts",
-      "text": "Chocolate blueprint"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "description",
-      "path": "ui/src/ui/views/config.ts",
-      "text": "Chroma family"
+      "text": "Default theme"
     },
     {
       "count": 1,
@@ -4444,13 +4409,6 @@
       "kind": "object-property",
       "name": "label",
       "path": "ui/src/ui/views/config.ts",
-      "text": "Dash"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/views/config.ts",
       "text": "Diagnostics"
     },
     {
@@ -4487,13 +4445,6 @@
       "name": "label",
       "path": "ui/src/ui/views/config.ts",
       "text": "Infrastructure"
-    },
-    {
-      "count": 1,
-      "kind": "object-property",
-      "name": "label",
-      "path": "ui/src/ui/views/config.ts",
-      "text": "Knot"
     },
     {
       "count": 1,
@@ -4767,6 +4718,34 @@
       "name": "text",
       "path": "ui/src/ui/views/cron.ts",
       "text": "Webhook (HTTP POST)"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/deadlines.ts",
+      "text": "· NeurIPS 2026 workshop"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/deadlines.ts",
+      "text": "/deadlines"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/deadlines.ts",
+      "text": "No upcoming deadlines."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/deadlines.ts",
+      "text": "Upcoming conference &amp; workshop deadlines (times AoE, UTC&#8209;12). For the full live per&#8209;second countdown board, open the AdminBot service at"
     },
     {
       "count": 1,

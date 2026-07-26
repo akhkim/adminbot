@@ -14,6 +14,7 @@ export const TAB_GROUPS = [
       "adminbotMembers",
       "adminbotPapers",
       "adminbotNudges",
+      "adminbotDeadlines",
     ],
   },
   {
@@ -36,6 +37,7 @@ export type Tab =
   | "adminbotMembers"
   | "adminbotPapers"
   | "adminbotNudges"
+  | "adminbotDeadlines"
   | "overview"
   | "workboard"
   | "channels"
@@ -80,6 +82,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotMembers: "/adminbot/members",
   adminbotPapers: "/adminbot/papers",
   adminbotNudges: "/adminbot/nudges",
+  adminbotDeadlines: "/adminbot/deadlines",
   overview: "/overview",
   workboard: "/workboard",
   channels: "/channels",
@@ -224,6 +227,8 @@ export function iconForTab(tab: Tab): IconName {
       return "fileText";
     case "adminbotNudges":
       return "activity";
+    case "adminbotDeadlines":
+      return "loader";
     case "workboard":
       return "folder";
     case "channels":

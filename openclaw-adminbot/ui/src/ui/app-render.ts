@@ -701,6 +701,7 @@ const lazySkillWorkshop = createLazyView(
 const lazySkills = createLazyView(() => import("./views/skills.ts"), notifyLazyViewChanged);
 const lazyUsage = createLazyView(() => import("./views/usage.ts"), notifyLazyViewChanged);
 const lazyWorkboard = createLazyView(() => import("./views/workboard.ts"), notifyLazyViewChanged);
+const lazyDeadlines = createLazyView(() => import("./views/deadlines.ts"), notifyLazyViewChanged);
 
 function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminBotPanel | null {
   if (mode === "general") {
@@ -2911,6 +2912,9 @@ export function renderApp(state: AppViewState) {
               onSaveSettings: (settings) => void saveAdminBotSettings(state, settings),
               onSaveSensitiveInfo: (markdown) => void saveAdminBotSensitiveInfo(state, markdown),
             })
+          : nothing}
+        ${state.tab === "adminbotDeadlines"
+          ? renderLazyView(lazyDeadlines, (m) => m.renderDeadlines())
           : nothing}
         ${state.tab === "instances"
           ? renderLazyView(lazyInstances, (m) =>

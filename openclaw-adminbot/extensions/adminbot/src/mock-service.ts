@@ -26,6 +26,8 @@ import {
 } from "./service-core.js";
 import { createAdminBotSqliteService } from "./service-sqlite.js";
 import { renderAdminBotWebUi } from "./web-ui.js";
+import { renderDeadlinesWebUi } from "./deadlines-web-ui.js";
+import { DEADLINE_VENUES } from "./deadlines-dataset.js";
 
 export type AdminBotMockServiceOptions = {
   databasePath?: string;
@@ -117,6 +119,14 @@ async function routeRequest(
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/adminbot")) {
     sendHtml(res, 200, renderAdminBotWebUi());
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/deadlines") {
+    sendHtml(res, 200, renderDeadlinesWebUi(DEADLINE_VENUES));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/deadlines/venues.json") {
+    sendJson(res, 200, { items: DEADLINE_VENUES });
     return;
   }
   if (req.method === "POST" && url.pathname === "/automation/email/run") {
