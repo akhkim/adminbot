@@ -760,7 +760,7 @@ export async function sendAdminBotMemberNudge(host: AdminBotHost): Promise<void>
         : "";
     host.adminBotNotice = {
       kind: skipped.length > 0 ? "error" : "success",
-      text: `Queued ${created.length} nudge${created.length === 1 ? "" : "s"} for approval.${skippedNote}`,
+      text: `Sent ${created.length} nudge${created.length === 1 ? "" : "s"}.${skippedNote}`,
     };
     host.adminBotMemberNudge = createEmptyAdminBotMemberNudgeState();
     await loadAdminBot(host);

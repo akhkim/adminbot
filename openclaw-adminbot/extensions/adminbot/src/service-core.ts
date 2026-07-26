@@ -120,7 +120,12 @@ const DEFAULT_ACTION_POLICIES = {
   "paper_publish.nudge_author": approvalPolicy("T3", ["pi", "lab_manager"]),
   "paper_publish.escalate_to_pi": approvalPolicy("T3", ["pi", "lab_manager"]),
   "join_form.classify": autoPolicy("T0"),
-  "member_nudge.send": approvalPolicy("T3", ["pi", "lab_manager"]),
+  // Deliberately auto-approved, unlike every other outbound-message type (slack.send_message,
+  // email.send, paper_publish.nudge_author are all T3/approval-required): creating this proposal
+  // already requires a real admin/core_member session via POST /nudges/send (never reachable
+  // through the shared service principal an agent chat authenticates as), so that admin gate is
+  // the approval. resolvePolicy only honors auto_allowed below T2, hence T1 here.
+  "member_nudge.send": autoPolicy("T1"),
 } as const satisfies Record<AdminBotActionType, AdminBotActionPolicy>;
 
 const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = {
@@ -868,14 +873,19 @@ export class AdminBotService {
     };
   }
 
-  // Composes one `member_nudge.send` proposal per recipient (paper-flow reminder or general
-  // announcement) so approval/audit granularity stays per-recipient, matching every other
-  // outbound-message action type. A member missing the contact field the chosen channel needs is
-  // skipped with a reason rather than failing the whole batch.
-  sendMemberNudge(
+  // Composes and immediately sends one `member_nudge.send` proposal per recipient (paper-flow
+  // reminder or general announcement). Unlike every other outbound-message action type, this one
+  // is auto-approved (see DEFAULT_ACTION_POLICIES) and executed inline instead of waiting in
+  // Pending actions for a separate pi/lab_manager approval: creating it already requires a real
+  // admin/core_member session (POST /nudges/send is gated the same way as /settings), so that
+  // admin gate itself *is* the approval — a second review step would just be an invisible,
+  // undiscoverable extra click for a tool only admins can reach in the first place. A member
+  // missing the contact field the chosen channel needs, or whose send fails, is skipped with a
+  // reason rather than failing the whole batch.
+  async sendMemberNudge(
     request: AdminBotMemberNudgeRequest,
     actor: string,
-  ): AdminBotServiceResponse<AdminBotMemberNudgeResult> {
+  ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult>> {
     const message = request.message.trim();
     if (!message) {
       return serviceError(400, "message is required");
@@ -894,64 +904,64 @@ export class AdminBotService {
         skipped.push({ member_id: memberId, reason: "member not found" });
         continue;
       }
-      if (request.channel === "slack") {
-        if (!member.slack_user_id) {
-          skipped.push({ member_id: memberId, reason: "member has no slack_user_id" });
-          continue;
-        }
-        const result = this.createProposal({
-          type: "member_nudge.send",
-          risk_tier: "T3",
-          summary: `Nudge ${member.name} via Slack: ${truncateForSummary(message)}`,
-          target: {
-            service: "slack",
-            channel: "slack",
-            target: member.slack_user_id,
-            recipientMemberId: member.id,
-          },
-          proposed_payload: {
-            channel: "slack",
-            tool: "message",
-            action: "send",
-            target: member.slack_user_id,
-            message,
-          },
-          undo_plan: "Send a Slack follow-up correcting or retracting the message.",
+      const proposalInput =
+        request.channel === "slack"
+          ? member.slack_user_id
+            ? {
+                summary: `Nudge ${member.name} via Slack: ${truncateForSummary(message)}`,
+                target: {
+                  service: "slack",
+                  channel: "slack",
+                  target: member.slack_user_id,
+                  recipientMemberId: member.id,
+                },
+                proposed_payload: {
+                  channel: "slack",
+                  tool: "message",
+                  action: "send",
+                  target: member.slack_user_id,
+                  message,
+                },
+                undo_plan: "Send a Slack follow-up correcting or retracting the message.",
+              }
+            : undefined
+          : member.email
+            ? {
+                summary: `Nudge ${member.name} via email: ${truncateForSummary(message)}`,
+                target: {
+                  service: "email",
+                  channel: "email",
+                  target: member.email,
+                  recipientMemberId: member.id,
+                },
+                proposed_payload: {
+                  channel: "email",
+                  to: member.email,
+                  subject: request.subject?.trim(),
+                  body: message,
+                },
+                undo_plan: "Send an email follow-up correcting or retracting the message.",
+              }
+            : undefined;
+      if (!proposalInput) {
+        skipped.push({
+          member_id: memberId,
+          reason:
+            request.channel === "slack" ? "member has no slack_user_id" : "member has no email",
         });
-        if (result.ok) {
-          created.push(result.payload);
-        } else {
-          skipped.push({ member_id: memberId, reason: result.error.message });
-        }
         continue;
       }
-      if (!member.email) {
-        skipped.push({ member_id: memberId, reason: "member has no email" });
+      const created_ = this.createProposal({ type: "member_nudge.send", ...proposalInput });
+      if (!created_.ok) {
+        skipped.push({ member_id: memberId, reason: created_.error.message });
         continue;
       }
-      const result = this.createProposal({
-        type: "member_nudge.send",
-        risk_tier: "T3",
-        summary: `Nudge ${member.name} via email: ${truncateForSummary(message)}`,
-        target: {
-          service: "email",
-          channel: "email",
-          target: member.email,
-          recipientMemberId: member.id,
-        },
-        proposed_payload: {
-          channel: "email",
-          to: member.email,
-          subject: request.subject?.trim(),
-          body: message,
-        },
-        undo_plan: "Send an email follow-up correcting or retracting the message.",
-      });
-      if (result.ok) {
-        created.push(result.payload);
-      } else {
-        skipped.push({ member_id: memberId, reason: result.error.message });
+      const executed = await this.execute(created_.payload.id, { dry_run: false });
+      if (!executed.ok) {
+        skipped.push({ member_id: memberId, reason: executed.error.message });
+        continue;
       }
+      created.push(this.store.getProposal(created_.payload.id) ?? created_.payload);
     }
     this.recordAudit({
       type: "member_nudge.sent",

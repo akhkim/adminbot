@@ -497,13 +497,14 @@ describe("AdminBotService", () => {
     expect(unwrap(service.listPaperNudges("2026-06-08T12:00:00.000Z")).nudges).toEqual([]);
   });
 
-  it("sends a member nudge over Slack as one proposal per recipient, skipping members without a slack_user_id", () => {
-    const service = new AdminBotService();
+  it("sends a member nudge over Slack immediately (no approval step), skipping members without a slack_user_id", async () => {
+    const executor = { execute: vi.fn(async () => ({ handled: true })) };
+    const service = new AdminBotService(undefined, { executor });
     unwrap(service.upsertLabMember({ id: "with-slack", name: "With Slack", slack_user_id: "U1" }));
     unwrap(service.upsertLabMember({ id: "no-slack", name: "No Slack" }));
 
     const result = unwrap(
-      service.sendMemberNudge(
+      await service.sendMemberNudge(
         {
           channel: "slack",
           recipient_member_ids: ["with-slack", "no-slack", "missing"],
@@ -516,7 +517,9 @@ describe("AdminBotService", () => {
     expect(result.created).toHaveLength(1);
     expect(result.created[0]).toMatchObject({
       type: "member_nudge.send",
-      status: "pending",
+      // Auto-approved and executed inline — never sits in Pending actions awaiting approval.
+      status: "executed",
+      approval_requirement: { requires_approval: false },
       target: { recipientMemberId: "with-slack" },
       proposed_payload: {
         channel: "slack",
@@ -524,6 +527,7 @@ describe("AdminBotService", () => {
         message: "Reminder: submit your progress update.",
       },
     });
+    expect(executor.execute).toHaveBeenCalledTimes(1);
     expect(result.skipped).toEqual([
       { member_id: "no-slack", reason: "member has no slack_user_id" },
       { member_id: "missing", reason: "member not found" },
@@ -531,19 +535,20 @@ describe("AdminBotService", () => {
     expect(service.listAuditEvents().map((event) => event.type)).toContain("member_nudge.sent");
   });
 
-  it("sends a member nudge over email, requiring a subject and skipping members without an email", () => {
-    const service = new AdminBotService();
+  it("sends a member nudge over email, requiring a subject and skipping members without an email", async () => {
+    const executor = { execute: vi.fn(async () => ({ handled: true })) };
+    const service = new AdminBotService(undefined, { executor });
     unwrap(service.upsertLabMember({ id: "e1", name: "Has Email", email: "e1@example.test" }));
     unwrap(service.upsertLabMember({ id: "e2", name: "No Email" }));
 
-    const missingSubject = service.sendMemberNudge(
+    const missingSubject = await service.sendMemberNudge(
       { channel: "email", recipient_member_ids: ["e1"], message: "hi" },
       "admin-1",
     );
     expect(missingSubject).toMatchObject({ ok: false, status: 400 });
 
     const result = unwrap(
-      service.sendMemberNudge(
+      await service.sendMemberNudge(
         {
           channel: "email",
           recipient_member_ids: ["e1", "e2"],
@@ -557,6 +562,7 @@ describe("AdminBotService", () => {
     expect(result.created).toHaveLength(1);
     expect(result.created[0]).toMatchObject({
       type: "member_nudge.send",
+      status: "executed",
       proposed_payload: {
         channel: "email",
         to: "e1@example.test",
@@ -567,16 +573,38 @@ describe("AdminBotService", () => {
     expect(result.skipped).toEqual([{ member_id: "e2", reason: "member has no email" }]);
   });
 
-  it("rejects an empty message or an empty recipient list", () => {
+  it("skips a recipient whose send actually fails at execution, without failing the rest of the batch", async () => {
+    const service = new AdminBotService(undefined, {
+      executor: { execute: vi.fn(async () => ({ handled: false })) },
+    });
+    unwrap(service.upsertLabMember({ id: "with-slack", name: "With Slack", slack_user_id: "U1" }));
+
+    const result = unwrap(
+      await service.sendMemberNudge(
+        { channel: "slack", recipient_member_ids: ["with-slack"], message: "hi" },
+        "admin-1",
+      ),
+    );
+
+    expect(result.created).toEqual([]);
+    expect(result.skipped).toEqual([
+      {
+        member_id: "with-slack",
+        reason: "no live connector handles action type member_nudge.send",
+      },
+    ]);
+  });
+
+  it("rejects an empty message or an empty recipient list", async () => {
     const service = new AdminBotService();
     expect(
-      service.sendMemberNudge(
+      await service.sendMemberNudge(
         { channel: "slack", recipient_member_ids: ["a"], message: "   " },
         "admin-1",
       ),
     ).toMatchObject({ ok: false, status: 400 });
     expect(
-      service.sendMemberNudge(
+      await service.sendMemberNudge(
         { channel: "slack", recipient_member_ids: [], message: "hi" },
         "admin-1",
       ),

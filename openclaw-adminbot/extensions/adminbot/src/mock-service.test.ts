@@ -976,8 +976,9 @@ describe("AdminBot service-principal privilege scoping", () => {
     await expect(res.json()).resolves.toEqual({ error: { message: SERVICE_DENIED } });
   });
 
-  it("lets a genuine admin session send a member nudge", async () => {
-    const { baseUrl } = await startService();
+  it("lets a genuine admin session send a member nudge, which executes immediately with no separate approval step", async () => {
+    const executor = { execute: async () => ({ handled: true }) };
+    const { baseUrl } = await startService({ executor });
     const token = await adminToken(baseUrl, "boss", "boss@example.com");
     seedMember(baseUrl, "target", { name: "Target", slack_user_id: "U1" });
     const res = await fetch(`${baseUrl}/nudges/send`, {
@@ -991,11 +992,12 @@ describe("AdminBot service-principal privilege scoping", () => {
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      created: Array<{ status: string }>;
+      created: Array<{ status: string; approval_requirement: { requires_approval: boolean } }>;
       skipped: unknown[];
     };
     expect(body.created).toHaveLength(1);
-    expect(body.created[0]?.status).toBe("pending");
+    expect(body.created[0]?.status).toBe("executed");
+    expect(body.created[0]?.approval_requirement.requires_approval).toBe(false);
     expect(body.skipped).toEqual([]);
   });
 });

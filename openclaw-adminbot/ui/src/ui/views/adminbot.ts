@@ -1769,8 +1769,7 @@ function renderAnnouncements(props: AdminBotProps) {
           </button>
         </div>
         <p class="adminbot-announce__hint">
-          Each recipient becomes its own pending action awaiting approval in Pending actions —
-          nothing sends immediately.
+          Sends immediately to each selected recipient — there's no separate approval step.
         </p>
       </div>
       ${renderAnnouncementRecipients(props, props.data.members)}

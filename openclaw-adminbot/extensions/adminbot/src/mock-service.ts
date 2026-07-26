@@ -522,7 +522,7 @@ async function handleAuthenticatedRoute(
       return;
     }
     const body = (await readJson(req)) as AdminBotMemberNudgeRequest;
-    sendServiceResult(res, service.sendMemberNudge(body, principalActor(principal)));
+    sendServiceResult(res, await service.sendMemberNudge(body, principalActor(principal)));
     return;
   }
   const remove = /^\/proposals\/([^/]+)\/remove$/u.exec(url.pathname);
