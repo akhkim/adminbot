@@ -227,6 +227,10 @@ import {
   resolveModelPrimary,
   sortLocaleStrings,
 } from "./views/agents-utils.ts";
+import {
+  renderChangePasswordPopover,
+  renderChangePasswordTrigger,
+} from "./views/change-password.ts";
 import { renderChat } from "./views/chat.ts";
 import { renderCommandPalette } from "./views/command-palette.ts";
 import { getPresetById } from "./views/config-presets.ts";
@@ -2562,6 +2566,7 @@ export function renderApp(state: AppViewState) {
         state.handleChatDraftChange(cmd.endsWith(" ") ? cmd : `${cmd} `);
       },
     })}
+    ${state.memberId ? renderChangePasswordPopover(state) : nothing}
     <div
       class="shell ${isChat ? "shell--chat" : ""} ${navCollapsed
         ? "shell--nav-collapsed"
@@ -2718,6 +2723,7 @@ export function renderApp(state: AppViewState) {
                     : nothing}
                 </a>
                 <div class="sidebar-mode-switch">${renderTopbarThemeModeToggle(state)}</div>
+                ${state.memberId ? renderChangePasswordTrigger(state, navCollapsed) : nothing}
                 <button
                   type="button"
                   class="nav-item sidebar-utility-link sidebar-utility-link--signout"

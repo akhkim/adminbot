@@ -415,6 +415,27 @@ export async function changeMemberEmail(
   return { ok: true, value: result.body as { email: string } };
 }
 
+// Change the member's login password (POST /auth/password). 401 wrong current password folds to
+// auth-failed; 400 weak new password to weak-password; 429 to rate-limited.
+export async function changeMemberPassword(
+  currentPassword: string,
+  newPassword: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ changed: true }>> {
+  const result = await authedJson(baseUrl, "/auth/password", "POST", sessionToken, {
+    current_password: currentPassword,
+    new_password: newPassword,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: true }) };
+  }
+  return { ok: true, value: result.body as { changed: true } };
+}
+
 // Papers relevant to the signed-in member (GET /papers/relevant) with the session.
 export async function fetchRelevantPapers(
   sessionToken: string,

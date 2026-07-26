@@ -7,8 +7,11 @@ import {
   type LoginMode,
   type MemberAuthFailure,
   type RosterError,
+  closeChangePassword as closeChangePasswordInternal,
   loadRoster as loadRosterInternal,
+  openChangePassword as openChangePasswordInternal,
   signOutMember as signOutMemberInternal,
+  submitChangePassword as submitChangePasswordInternal,
   submitMemberAuth as submitMemberAuthInternal,
 } from "./adminbot-auth-flow.ts";
 import type { MemberOnboarding, MemberRegistration, RosterMember } from "./adminbot-auth.ts";
@@ -262,6 +265,12 @@ export class OpenClawApp extends LitElement {
   @state() memberLocation = "";
   @state() memberTimezone = "";
   @state() memberPersonalWebsite = "";
+  @state() changePasswordCurrent = "";
+  @state() changePasswordNew = "";
+  @state() changePasswordConfirm = "";
+  @state() changePasswordBusy = false;
+  @state() changePasswordError: string | null = null;
+  @state() changePasswordNotice: string | null = null;
   @state() memberNotes = "";
   @state() memberPrivilegeLevel: string | null = null;
   @state() memberId: string | null = null;
@@ -996,6 +1005,22 @@ export class OpenClawApp extends LitElement {
 
   async signOutMember() {
     await signOutMemberInternal(this as unknown as Parameters<typeof signOutMemberInternal>[0]);
+  }
+
+  openChangePassword() {
+    openChangePasswordInternal(this as unknown as Parameters<typeof openChangePasswordInternal>[0]);
+  }
+
+  closeChangePassword() {
+    closeChangePasswordInternal(
+      this as unknown as Parameters<typeof closeChangePasswordInternal>[0],
+    );
+  }
+
+  async submitChangePassword() {
+    await submitChangePasswordInternal(
+      this as unknown as Parameters<typeof submitChangePasswordInternal>[0],
+    );
   }
 
   async loadRoster() {

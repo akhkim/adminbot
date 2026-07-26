@@ -1,4 +1,7 @@
 import { execFile as execFileCallback } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { promisify } from "node:util";
 import type { AdminBotStoredProposal } from "./contracts.js";
 import type { AdminBotActionExecutor } from "./service-core.js";
@@ -6,6 +9,23 @@ import type { AdminBotActionExecutor } from "./service-core.js";
 const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 60_000;
 const GOG_MAX_OUTPUT_BYTES = 1024 * 1024;
+
+// The AdminBot systemd unit's PATH is a fixed list that doesn't always match whatever an
+// interactive shell resolves 'gog' to (e.g. after a fresh ~/.local/bin install), so a bare
+// 'gog' exec can ENOENT in production even though it works in a terminal. Mirrors the
+// GOG_BIN/homedir fallback resolution scripts/adminbot-email-automation.ts already uses.
+const GOG_EXECUTABLE = resolveGogExecutable();
+
+function resolveGogExecutable(): string {
+  const candidates = [process.env.GOG_BIN ?? "", path.join(os.homedir(), ".local", "bin", "gog")];
+  for (const candidate of candidates) {
+    if (candidate && fs.existsSync(candidate)) {
+      return candidate;
+    }
+  }
+  // Last resort: rely on PATH resolution, same as before this fallback existed.
+  return "gog";
+}
 
 type GogRun = (args: string[]) => Promise<void>;
 type GogCapture = (args: string[]) => Promise<string>;
@@ -300,7 +320,7 @@ function createGogRunner(env: NodeJS.ProcessEnv | undefined): GogRun {
 function createGogCapture(env: NodeJS.ProcessEnv | undefined): GogCapture {
   return async (args) => {
     try {
-      const result = await execFile("gog", args, {
+      const result = await execFile(GOG_EXECUTABLE, args, {
         env: env ?? process.env,
         maxBuffer: GOG_MAX_OUTPUT_BYTES,
         timeout: GOG_TIMEOUT_MS,

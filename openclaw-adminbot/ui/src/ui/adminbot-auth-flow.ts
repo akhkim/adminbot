@@ -11,6 +11,7 @@ import {
   type MemberSession,
   type RosterMember,
   type SignupProfile,
+  changeMemberPassword,
   claimMember,
   clearStoredMemberSession,
   fetchMemberSession,
@@ -82,6 +83,12 @@ export type MemberAuthHost = {
   memberId: string | null;
   adminBotOnboarding: MemberOnboarding | null;
   adminBotWelcomeVisible: boolean;
+  changePasswordCurrent: string;
+  changePasswordNew: string;
+  changePasswordConfirm: string;
+  changePasswordBusy: boolean;
+  changePasswordError: string | null;
+  changePasswordNotice: string | null;
   applySettings: (next: UiSettings) => void;
   connect: () => void;
 };
@@ -371,6 +378,78 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.hello = null;
   host.password = "";
   host.applySettings({ ...host.settings, token: "" });
+}
+
+export function openChangePassword(host: MemberAuthHost): void {
+  host.changePasswordCurrent = "";
+  host.changePasswordNew = "";
+  host.changePasswordConfirm = "";
+  host.changePasswordError = null;
+  host.changePasswordNotice = null;
+}
+
+export function closeChangePassword(host: MemberAuthHost): void {
+  host.changePasswordCurrent = "";
+  host.changePasswordNew = "";
+  host.changePasswordConfirm = "";
+  host.changePasswordError = null;
+}
+
+export async function submitChangePassword(host: MemberAuthHost): Promise<void> {
+  host.changePasswordNotice = null;
+  if (!host.changePasswordCurrent || !host.changePasswordNew) {
+    host.changePasswordError = t("login.member.changePassword.errorRequired");
+    return;
+  }
+  if (host.changePasswordNew.length < MIN_CLAIM_PASSWORD_LENGTH) {
+    host.changePasswordError = t("login.member.errorTooShort", {
+      min: String(MIN_CLAIM_PASSWORD_LENGTH),
+    });
+    return;
+  }
+  if (host.changePasswordNew !== host.changePasswordConfirm) {
+    host.changePasswordError = t("login.member.errorMismatch");
+    return;
+  }
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.changePasswordError = t("login.member.changePassword.errorAuthFailed");
+    return;
+  }
+  host.changePasswordBusy = true;
+  host.changePasswordError = null;
+  try {
+    const baseUrl = resolveAdminBotBaseUrl(host.settings);
+    const result = await changeMemberPassword(
+      host.changePasswordCurrent,
+      host.changePasswordNew,
+      stored.sessionToken,
+      baseUrl,
+    );
+    if (!result.ok) {
+      host.changePasswordError = changePasswordErrorMessage(result.kind);
+      return;
+    }
+    host.changePasswordCurrent = "";
+    host.changePasswordNew = "";
+    host.changePasswordConfirm = "";
+    host.changePasswordNotice = t("login.member.changePassword.success");
+  } finally {
+    host.changePasswordBusy = false;
+  }
+}
+
+function changePasswordErrorMessage(kind: AuthErrorKind): string {
+  switch (kind) {
+    case "rate-limited":
+      return t("login.member.changePassword.errorRateLimited");
+    case "unreachable":
+      return t("login.member.changePassword.errorUnreachable");
+    case "weak-password":
+      return t("login.member.errorTooShort", { min: String(MIN_CLAIM_PASSWORD_LENGTH) });
+    default:
+      return t("login.member.changePassword.errorAuthFailed");
+  }
 }
 
 // Called from the welcome screen's dismiss button. Marks it seen (so a future login/reload

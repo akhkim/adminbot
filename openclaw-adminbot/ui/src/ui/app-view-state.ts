@@ -92,6 +92,15 @@ export type AppViewState = {
   memberTimezone: string;
   memberPersonalWebsite: string;
   memberNotes: string;
+  changePasswordCurrent: string;
+  changePasswordNew: string;
+  changePasswordConfirm: string;
+  changePasswordBusy: boolean;
+  changePasswordError: string | null;
+  changePasswordNotice: string | null;
+  openChangePassword: () => void;
+  closeChangePassword: () => void;
+  submitChangePassword: () => Promise<void>;
   // Signed-in member's AdminBot privilege level, persisted app-wide so the
   // Gateway-RPC admin surfaces (Lab Members) can gate on real privilege rather
   // than assuming admin. Null until the member session is loaded.
