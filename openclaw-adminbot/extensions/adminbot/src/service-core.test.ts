@@ -328,6 +328,125 @@ describe("AdminBotService", () => {
     }
   });
 
+  it("lets a member self-edit availability and time off, and validates both", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "sched", name: "Sched", privilege_level: "member" }));
+
+    const saved = unwrap(
+      service.updateOwnProfile("sched", {
+        availability: [
+          { start: "2026-08-03", end: "2026-08-09", project: "Atlas", hours_per_week: 18 },
+          // Sentinel project: declared spare capacity, not a real project.
+          { start: "2026-08-10", end: "2026-08-16", project: "__open__", hours_per_week: 6 },
+          // No project: the whole-term baseline shape.
+          { start: "2026-09-01", end: "2026-12-01", hours_per_week: 12 },
+        ],
+        time_off: [
+          { start: "2026-10-12", end: "2026-10-25", kind: "conference", availability: "partial" },
+          { start: "2026-11-02", end: "2026-12-20", kind: "course_load", availability: "none" },
+        ],
+      }),
+    );
+    expect(saved.availability).toHaveLength(3);
+    expect(saved.time_off?.[1]).toMatchObject({ kind: "course_load", availability: "none" });
+
+    for (const bad of [
+      { availability: [{ start: "2026-08-09", end: "2026-08-03", hours_per_week: 4 }] },
+      { availability: [{ start: "03-08-2026", end: "2026-08-09", hours_per_week: 4 }] },
+      { availability: [{ start: "2026-08-03", end: "2026-08-09", hours_per_week: 200 }] },
+      { availability: "not-a-list" },
+      {
+        time_off: [
+          { start: "2026-08-03", end: "2026-08-09", kind: "sabbatical", availability: "none" },
+        ],
+      },
+      // availability is not derivable from kind, so an invalid state must be rejected outright.
+      {
+        time_off: [
+          { start: "2026-08-03", end: "2026-08-09", kind: "vacation", availability: "maybe" },
+        ],
+      },
+    ]) {
+      expect(service.updateOwnProfile("sched", bad)).toMatchObject({ ok: false, status: 400 });
+    }
+  });
+
+  it("restricts the availability doc link to https Google Docs or Drive hosts", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "doc", name: "Doc", privilege_level: "member" }));
+
+    const saved = unwrap(
+      service.updateOwnProfile("doc", {
+        availability_doc_url: "https://docs.google.com/document/d/abc123/edit",
+      }),
+    );
+    expect(saved.availability_doc_url).toBe("https://docs.google.com/document/d/abc123/edit");
+
+    // Empty clears the link; the importer just skips members without one.
+    expect(
+      unwrap(service.updateOwnProfile("doc", { availability_doc_url: "" })).availability_doc_url,
+    ).toBe("");
+
+    // The importer fetches this URL with the AdminBot's own Google credentials, so anything off
+    // the allowlist would turn a self-editable profile field into a fetch primitive.
+    for (const bad of [
+      "http://docs.google.com/document/d/abc123",
+      "https://evil.example.com/document/d/abc123",
+      "https://docs.google.com.evil.example.com/d/abc",
+      "file:///etc/passwd",
+      "not a url",
+      "https://169.254.169.254/latest/meta-data/",
+      42,
+    ]) {
+      expect(service.updateOwnProfile("doc", { availability_doc_url: bad })).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+    }
+  });
+
+  it("moves availability_updated_at only when the schedule content actually changes", () => {
+    // The stamp is an ISO string, so consecutive saves in the same millisecond are
+    // indistinguishable; the clock has to advance for "did it move" to mean anything.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-08-01T00:00:00Z"));
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "stamp", name: "Stamp", privilege_level: "member" }));
+
+      const first = unwrap(
+        service.updateOwnProfile("stamp", {
+          availability: [{ start: "2026-08-03", end: "2026-08-09", hours_per_week: 10 }],
+        }),
+      );
+      expect(first.availability_updated_at).toBe("2026-08-01T00:00:00.000Z");
+
+      // An unrelated profile save must not reset the staleness badge, or a member who stopped
+      // updating their hours would look current.
+      vi.setSystemTime(new Date("2026-08-02T00:00:00Z"));
+      const unrelated = unwrap(service.updateOwnProfile("stamp", { location: "Zurich" }));
+      expect(unrelated.availability_updated_at).toBe(first.availability_updated_at);
+
+      // Re-sending an identical schedule is not a change either.
+      const resent = unwrap(
+        service.updateOwnProfile("stamp", {
+          availability: [{ start: "2026-08-03", end: "2026-08-09", hours_per_week: 10 }],
+        }),
+      );
+      expect(resent.availability_updated_at).toBe(first.availability_updated_at);
+
+      vi.setSystemTime(new Date("2026-08-03T00:00:00Z"));
+      const changed = unwrap(
+        service.updateOwnProfile("stamp", {
+          availability: [{ start: "2026-08-03", end: "2026-08-09", hours_per_week: 12 }],
+        }),
+      );
+      expect(changed.availability_updated_at).toBe("2026-08-03T00:00:00.000Z");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("defaults a new lab member without an explicit tier to external_collaborator", () => {
     const service = new AdminBotService();
     const member = unwrap(
