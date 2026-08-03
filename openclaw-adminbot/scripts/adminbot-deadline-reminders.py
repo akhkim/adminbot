@@ -28,7 +28,7 @@ import json, os, re, sys, subprocess, argparse, datetime, urllib.request, urllib
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 DDIR = os.path.join(HERE, "..", "extensions", "adminbot", "deadlines")
-CADENCE = [30, 15, 7, 3, 2, 1]
+CADENCE = [30, 15, 7, 3, 2, 1, 0]   # 0 = due-today notice
 SVC = os.environ.get("ADMINBOT_SERVICE_BASE_URL", "http://127.0.0.1:8765")
 CLI = os.environ.get("OPENCLAW_CLI", os.path.join(HERE, "..", "openclaw.mjs"))
 
@@ -156,8 +156,9 @@ def main():
 
     fired, escalations = 0, []
     for p in papers:
-        D = aoe_utc(p["deadline_aoe"])
-        p["_deadline_date"] = D.date()
+        D = aoe_utc(p["deadline_aoe"])         # true UTC instant (AoE end, for pass check)
+        dd = datetime.date.fromisoformat(p["deadline_aoe"][:10])  # AoE calendar date
+        p["_deadline_date"] = dd               # display + cadence anchor on the AoE date
         p["_action_key"] = action_key_for(p["venue_group"])
         if submitted is not None and norm(p["title"]) in stop_titles:
             continue                           # already submitted -> silent
@@ -165,9 +166,9 @@ def main():
         if now > D:
             escalations.append(p)
             continue
-        # fire the reminder whose date == today
+        # fire the reminder whose date == today (cadence measured from the AoE date)
         for k in CADENCE:
-            if (D - datetime.timedelta(days=k)).date() == now_d:
+            if dd - datetime.timedelta(days=k) == now_d:
                 ws = p["suggestions"][0]["name"] if p.get("suggestions") else None
                 text = render(k, p, tmpl, workshop=ws)
                 recips = [(au, resolve_slack(au, roster)) for au in p.get("authors", [])]

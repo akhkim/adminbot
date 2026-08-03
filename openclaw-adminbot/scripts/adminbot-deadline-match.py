@@ -100,6 +100,17 @@ CONCEPTS = [
 ]
 TOPIC_THRESHOLD = 3.0
 
+# Human-pinned workshop matches: papers a person explicitly confirmed for a
+# workshop that topic-match cannot reliably catch (e.g. keyword collisions).
+# `workshop` is the code in the venues.json registry; each pin is emitted as a
+# confirmed match so reminders fire without further human gating.
+PINNED = [
+    dict(workshop="nlp4pi",
+         title=("[Speech Analysis] Measuring the Rhetoric of Power Concentration: "
+                "Autocratization Leaves a Trace in the Form of Political Speech"),
+         authors=["David G", "Leyla", "Arka"]),
+]
+
 
 def build_workshop_registry():
     # Every workshop across venues.json (NeurIPS + EMNLP/NLP4PI + future), keyed by
@@ -205,6 +216,20 @@ def main():
                                             deadline_aoe=reg[c]["deadline_aoe"], score=s)
                                        for c, s in picks],
                           confirmed=False))   # requires human confirmation before nudging
+
+    # inject human-pinned confirmed workshop matches (survive every regeneration)
+    pinned_titles = {p["title"].strip().lower() for p in ready}
+    for pin in PINNED:
+        w = reg.get(pin["workshop"])
+        if not w or pin["title"].strip().lower() in pinned_titles:
+            continue
+        ready.append(dict(kind="ready", title=pin["title"], year=str(cur_year),
+                          authors=pin["authors"], venue_group=w["venue_group"],
+                          deadline_aoe=w["deadline_aoe"],
+                          suggestions=[dict(code=pin["workshop"], name=w["name"],
+                                            venue_group=w["venue_group"],
+                                            deadline_aoe=w["deadline_aoe"], score=None)],
+                          confirmed=True, pinned=True))
 
     out = dict(generated=a.now, ongoing_count=len(ongoing), ready_suggestion_count=len(ready),
                ongoing=ongoing, ready=ready)

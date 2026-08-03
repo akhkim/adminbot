@@ -31,7 +31,8 @@
     "7": "One week ⏰ — **{paper}**: the {noun} is **{date}** (7 days). Please plan to {action}. Overleaf: {link}",
     "3": "3 days 🔔 — **{paper}**: {noun} **{date}**. Time to {action} — don't leave it to the wire. {link}",
     "2": "2 days ⚠️ — **{paper}**: {noun} **{date}**. Please {action} soon. {link}",
-    "1": "**Final call — tomorrow** 🚨 — **{paper}**: the {noun} is **{date}**. Please {action} today if you haven't. {link}"
+    "1": "**Final call — tomorrow** 🚨 — **{paper}**: the {noun} is **{date}**. Please {action} today if you haven't. {link}",
+    "0": "**Due TODAY** 🚨 — **{paper}**: the {noun} is **{date}** — that's *today* (AoE, so until ~noon UTC tomorrow). Please {action} before the cutoff. {link}"
   },
   "footer": "\n\nReply **done** here once it's in and I'll stop the reminders. — Jinesis Lab AdminBot 🦞",
   "escalation": "**Escalation for {prof}** — the following did **not** show as submitted by their deadline; may need a nudge:\n{list}\n\n(Auto‑checked against {prof}'s OpenReview; ‘—’ = OpenReview login not yet configured, so status unverified.)",
