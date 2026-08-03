@@ -25,6 +25,17 @@ export const DEADLINE_VENUES = [
     "link": "https://aclrollingreview.org/dates"
   },
   {
+    "id": "emnlp2026_ws_nlp4pi",
+    "name": "NLP4PI — 5th Workshop on NLP for Positive Impact (EMNLP 2026)",
+    "venue_type": "workshop",
+    "venue_group": "EMNLP 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "ARR commitment",
+    "deadline_aoe": "2026-08-03 23:59:59",
+    "notification_aoe": "2026-08-15 23:59:59",
+    "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment"
+  },
+  {
     "id": "neurips2026_rebuttal",
     "name": "NeurIPS 2026 — Author rebuttal / discussion",
     "venue_type": "rebuttal",
@@ -34,6 +45,28 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-03 23:59:59",
     "notification_aoe": "",
     "link": "https://neurips.cc/Conferences/2026"
+  },
+  {
+    "id": "neurips2026_ws_HAIC",
+    "name": "2026 NeurIPS Workshop Human-AI Coevolution",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "http://Neurips2026haic.com"
+  },
+  {
+    "id": "neurips2026_ws_AABA4ET",
+    "name": "2nd Workshop on Agentic AI Benchmarks and Applications for Enterprise Tasks (NeurIPS 2026)",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://sites.google.com/view/aaba4et"
   },
   {
     "id": "neurips2026_ws_AutoMLR",
@@ -47,8 +80,30 @@ export const DEADLINE_VENUES = [
     "link": "https://automlr.com"
   },
   {
+    "id": "neurips2026_ws_WRL",
+    "name": "8th Robot Learning Workshop:  Is Physical AI Going Zero-Shot?",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://www.robot-learning.ml/2026/"
+  },
+  {
+    "id": "neurips2026_ws_AI4PowerGrids",
+    "name": "AI Foundations for Power Grids @ NeurIPS 2026",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://ai4powergrids.github.io"
+  },
+  {
     "id": "neurips2026_ws_AI_and_the_Self",
-    "name": "AI and the Self: Human Identity, Authenticity, and Agency in the Age of AI (Workshop at NeurIPS 2026)",
+    "name": "AI and the Self: Human Identity, Authenticity, and Agency in the Age of AI",
     "venue_type": "workshop",
     "venue_group": "NeurIPS 2026 Workshops",
     "track": "workshop",
@@ -91,6 +146,17 @@ export const DEADLINE_VENUES = [
     "link": "https://neurips-ai-for-chip-design-2026.github.io/"
   },
   {
+    "id": "neurips2026_ws_AIDaR",
+    "name": "AIDaR: AI Data Readiness for Scientific Discovery",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://aidar-workshop.github.io/2026/"
+  },
+  {
     "id": "neurips2026_ws_AXIOM",
     "name": "AXIOM: Foundations of Efficient Deep Learning",
     "venue_type": "workshop",
@@ -113,6 +179,17 @@ export const DEADLINE_VENUES = [
     "link": "https://africainai.mailab.io/"
   },
   {
+    "id": "neurips2026_ws_BeNTo",
+    "name": "Beyond Next Token Prediction: Diffusion and Flow Models for Next-Generation Decoding",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://bento-neurips.github.io/"
+  },
+  {
     "id": "neurips2026_ws_InfPriv",
     "name": "Beyond Private Training: The New Landscape of AI Privacy",
     "venue_type": "workshop",
@@ -122,6 +199,28 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://beyond-private-training.ai.studio/"
+  },
+  {
+    "id": "neurips2026_ws_DevAI",
+    "name": "DevAI Workshop: Developmental Perspectives on AI",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://sites.google.com/view/devai-workshop-2026/"
+  },
+  {
+    "id": "neurips2026_ws_DiffuLM",
+    "name": "Diffusion Language Models: Foundations, Efficiency, and Reasoning",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://7amin.github.io/diffulm-neurips2026/"
   },
   {
     "id": "neurips2026_ws_DynaFront",
@@ -201,6 +300,17 @@ export const DEADLINE_VENUES = [
     "link": "https://icbinb-bio.github.io/"
   },
   {
+    "id": "neurips2026_ws_InterpScience",
+    "name": "Interpretability as a Science: NeurIPS 2026 Workshop",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://interpscience.github.io/"
+  },
+  {
     "id": "neurips2026_ws_LXAI",
     "name": "LatinX in AI Workshop @ NeurIPS 2026",
     "venue_type": "workshop",
@@ -223,6 +333,39 @@ export const DEADLINE_VENUES = [
     "link": "https://mlforsystems.org"
   },
   {
+    "id": "neurips2026_ws_AI4Science",
+    "name": "NeurIPS 2026 AI for Science Workshop: Verification in the Age of AI Scientists",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://ai4sciencecommunity.github.io/neurips26.html"
+  },
+  {
+    "id": "neurips2026_ws_AgenticLS",
+    "name": "NeurIPS 2026 Agentic AI for Biological Discovery Workshop",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://agenticls.github.io"
+  },
+  {
+    "id": "neurips2026_ws_GlobalSouthAI",
+    "name": "NeurIPS 2026 GlobalSouthAI",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://sites.google.com/view/globalsouthai-neurips26/home"
+  },
+  {
     "id": "neurips2026_ws_MLxOR",
     "name": "NeurIPS 2026 Second Workshop on ML×OR: Mathematical Foundations and Operational Integration of Machine Learning for Uncertainty-Aware Decision-Making",
     "venue_type": "workshop",
@@ -232,6 +375,17 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://mlxor-2026.github.io/"
+  },
+  {
+    "id": "neurips2026_ws_TAE",
+    "name": "NeurIPS 2026 Trust-AI-Eval Workshop",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://tai-eval.github.io"
   },
   {
     "id": "neurips2026_ws_EvoRobust",
@@ -366,6 +520,50 @@ export const DEADLINE_VENUES = [
     "link": "https://neurips26-cl4fmagents.github.io"
   },
   {
+    "id": "neurips2026_ws_CWM",
+    "name": "NeurIPS 2026 Workshop on Continual World Models",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://continual-world-models-workshop.github.io"
+  },
+  {
+    "id": "neurips2026_ws_BiAlign",
+    "name": "NeurIPS 2026 Workshop on Dynamic Alignment in Human-AI Coupled Systems",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://bialign-workshop.github.io/"
+  },
+  {
+    "id": "neurips2026_ws_E-values",
+    "name": "NeurIPS 2026 Workshop on E-values: From Statistics To ML",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://e-values-workshop.github.io/"
+  },
+  {
+    "id": "neurips2026_ws_FLLMPT",
+    "name": "NeurIPS 2026 Workshop on Foundations of LLM Post-Training in Changing Environments",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://www.fllmpt-work.shop/"
+  },
+  {
     "id": "neurips2026_ws_Interp4Discovery",
     "name": "NeurIPS 2026 Workshop on Interpretability for Discovery",
     "venue_type": "workshop",
@@ -397,6 +595,17 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "sites.google.com/view/neurips-2026-workshop-pudm"
+  },
+  {
+    "id": "neurips2026_ws_PriGM",
+    "name": "NeurIPS 2026 Workshop on Principles of Generative Modeling (PriGM)",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://sites.google.com/view/prigmneurips2026/home"
   },
   {
     "id": "neurips2026_ws_ReMuCAI",
@@ -498,6 +707,17 @@ export const DEADLINE_VENUES = [
     "link": "https://palm-neurips-2026.github.io/"
   },
   {
+    "id": "neurips2026_ws_Pre-to-Post",
+    "name": "NeurIPS 2026 Workshop: Transitioning from Pre-Training to Post-Training",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://pretrain2posttrain.github.io"
+  },
+  {
     "id": "neurips2026_ws_CODEC-FM",
     "name": "NeurIPS Workshop on Collaborative, Open, and Decentralized Training of Foundation Models",
     "venue_type": "workshop",
@@ -506,7 +726,7 @@ export const DEADLINE_VENUES = [
     "deadline_label": "submission",
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
-    "link": "https://open-collaborative-decentralized-fomo.github.io/"
+    "link": "https://collaborative-open-decentralized-fomo.github.io/"
   },
   {
     "id": "neurips2026_ws_ML4SpatialBio",
@@ -529,6 +749,17 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://almaai-disi-unibo.github.io/neurips2026-light-smallModels/"
+  },
+  {
+    "id": "neurips2026_ws_NEmo",
+    "name": "Neuro-Symbolic Embodied Intelligence",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://nemo.semantic.review/"
   },
   {
     "id": "neurips2026_ws_NewInML",
@@ -587,7 +818,7 @@ export const DEADLINE_VENUES = [
   },
   {
     "id": "neurips2026_ws_QueerInAI",
-    "name": "Queer in AI workshop at NeurIPS 2026",
+    "name": "Queer in AI and {Dis}Ability in AI Workshop at NeurIPS 2026",
     "venue_type": "workshop",
     "venue_group": "NeurIPS 2026 Workshops",
     "track": "workshop",
@@ -652,6 +883,17 @@ export const DEADLINE_VENUES = [
     "link": "https://robotpad2026.github.io/"
   },
   {
+    "id": "neurips2026_ws_Robotics_World_Modeling",
+    "name": "Robot Learning with World Models: Capabilities, Frontiers, and Challenges",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://robowm-ws.github.io/"
+  },
+  {
     "id": "neurips2026_ws_SLM-Agents",
     "name": "SLM-Agents: 1st NeurIPS Workshop on SLMs for Agentic Systems",
     "venue_type": "workshop",
@@ -705,6 +947,28 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://iab-agents.github.io/"
+  },
+  {
+    "id": "neurips2026_ws_IAB_Competition_Paper_Track",
+    "name": "The 1st Workshop on Interpreting Agent Behavior (IAB) at NeurIPS 2026 - Competition Paper Track",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "http://glee-competition.com; https://iab-agents.github.io/"
+  },
+  {
+    "id": "neurips2026_ws_PhysWorldAI",
+    "name": "The 1st Workshop on Physical World AI: Geometry, Characteristics, and Multimodal Sensing (NeurIPS 2026)",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://physworld-org.github.io/physworld.github.io/"
   },
   {
     "id": "neurips2026_ws_Simbiochem",
@@ -784,6 +1048,17 @@ export const DEADLINE_VENUES = [
     "link": "https://attrib-workshop.cc/"
   },
   {
+    "id": "neurips2026_ws_AIWILD",
+    "name": "Third Workshop on Agents in the Wild: Safety, Security, and Beyond",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://agentwild-workshop.github.io/neurips2026/"
+  },
+  {
     "id": "neurips2026_ws_AI4GOOD",
     "name": "Trustworthy AI for Good (AI4GOOD) Workshop @ NeurIPS 2026",
     "venue_type": "workshop",
@@ -806,6 +1081,28 @@ export const DEADLINE_VENUES = [
     "link": "https://www.wiml.org/"
   },
   {
+    "id": "neurips2026_ws_TS-LIMITS",
+    "name": "Workshop TS-LIMITS @NeurIPS 2026 -- Generalization for Time Series in Tight Settings: Latency, Inference, Memory, prIvacy and susTainability",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://ts-limits.github.io/"
+  },
+  {
+    "id": "neurips2026_ws_EconML",
+    "name": "Workshop on Economics for Machine Learning at NeurIPS 2026",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://safwanhossain.github.io/"
+  },
+  {
     "id": "neurips2026_ws_IAEval",
     "name": "Workshop on Evaluation of Interactive Agents @ NeurIPS 2026",
     "venue_type": "workshop",
@@ -815,6 +1112,17 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://eval-interactive-agents-workshop.github.io/"
+  },
+  {
+    "id": "neurips2026_ws_WMHS",
+    "name": "World Models for High-Stakes Health: Reliable Clinical Trial Simulation and Intervention-Aware Reasoning @ NeurIPS 2026",
+    "venue_type": "workshop",
+    "venue_group": "NeurIPS 2026 Workshops",
+    "track": "workshop",
+    "deadline_label": "submission",
+    "deadline_aoe": "2026-08-29 23:59:59",
+    "notification_aoe": "2026-09-29 23:59:59",
+    "link": "https://wmhs-neurips.github.io/WMHS/"
   },
   {
     "id": "neurips2026_ws_WM_PAI",

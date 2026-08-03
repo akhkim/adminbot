@@ -43,22 +43,35 @@ def build_message(items, now, window_days):
     if not up:
         return None
 
-    # collapse the 73 workshops into one line (they share Aug 29)
-    ws = [x for x in up if x[1]["venue_type"] == "workshop"]
-    other = [x for x in up if x[1]["venue_type"] != "workshop"]
-
     def aoe_label(it):                       # AoE calendar date (not the +12h UTC instant)
         y, m, d = it["deadline_aoe"][:10].split("-")
         return f"{MONTHS[int(m)]} {int(d)}"
-    lines = [f"📅 *Upcoming deadlines* — next {window_days} days (times AoE)"]
-    for D, it in other:
+
+    def link_of(it):
+        return f"  <{it['link']}|↗>" if it.get("link") else ""
+
+    # Collapse workshops that share a venue_group + date into one line (e.g. the
+    # NeurIPS Aug 29 set); show a lone workshop (e.g. NLP4PI on Aug 3) by name.
+    from collections import defaultdict
+    ws_groups = defaultdict(list)
+    entries = []
+    for D, it in up:
         days = (D - now).days
-        lines.append(f"{urgency(days)} *{aoe_label(it)}* ({days}d) — {it['name']}"
-                     + (f"  <{it['link']}|↗>" if it.get("link") else ""))
-    if ws:
-        D, it = ws[0]; days = (D - now).days
-        lines.append(f"{urgency(days)} *{aoe_label(it)}* ({days}d) — "
-                     f"*{len(ws)} NeurIPS 2026 workshops* (unified deadline)")
+        if it["venue_type"] == "workshop":
+            ws_groups[(it["venue_group"], it["deadline_aoe"][:10])].append((D, it))
+        else:
+            entries.append((D, f"{urgency(days)} *{aoe_label(it)}* ({days}d) — {it['name']}{link_of(it)}"))
+    for (group, _date), lst in ws_groups.items():
+        D, it = lst[0]
+        days = (D - now).days
+        if len(lst) > 1:
+            entries.append((D, f"{urgency(days)} *{aoe_label(it)}* ({days}d) — *{len(lst)} {group}* (unified deadline)"))
+        else:
+            entries.append((D, f"{urgency(days)} *{aoe_label(it)}* ({days}d) — {it['name']}{link_of(it)}"))
+    entries.sort(key=lambda x: x[0])
+
+    lines = [f"📅 *Upcoming deadlines* — next {window_days} days (times AoE)"]
+    lines += [text for _D, text in entries]
     lines.append("\nFull live countdown board + your paper's reminders are in the "
                  "AdminBot Deadlines tab. — Jinesis Lab AdminBot 🦞")
     return "\n".join(lines)

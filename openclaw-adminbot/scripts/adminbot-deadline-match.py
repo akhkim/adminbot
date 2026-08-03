@@ -93,24 +93,35 @@ CONCEPTS = [
     (r"distill|small|efficient|deploy|on.?device", ["LIGHT", "SLM-Agents", "ODI", "AXIOM"]),
     (r"vision|visual|vlm|3d|image|multimodal|spatial|grounding|medical|clinical|pathology", ["VLM4RWD", "ReMuCAI", "ML4SpatialBio", "ASCI", "GenAI4Health"]),
     (r"code|coding|verif", ["VERICODEGEN"]),
-    (r"democra|authoritarian|political|rights|election|moral|ethic|govern", ["AI4GOOD", "SocialAgent", "AI-Native_Academia", "AI_and_the_Self"]),
+    (r"democra|authoritarian|political|rights|election|moral|ethic|govern", ["AI4GOOD", "SocialAgent", "AI-Native_Academia", "AI_and_the_Self", "nlp4pi"]),
+    (r"positive impact|social good|for good|sustainab|poverty|hunger|climate|inequal|human right|social system|social issue|societ", ["nlp4pi", "AI4GOOD"]),
     (r"cross.?ling|multiling|translat", ["LP4FM"]),
     (r"optim|transport", ["OPT", "GDDL", "DynaFront", "AXIOM"]),
 ]
 TOPIC_THRESHOLD = 3.0
 
 
-def build_workshop_index():
-    ws = json.load(open(os.path.join(DDIR, "neurips2026-workshops.json")))["workshops"]
-    WT = {w["code"]: Counter(toks(w["name"])) for w in ws}
+def build_workshop_registry():
+    # Every workshop across venues.json (NeurIPS + EMNLP/NLP4PI + future), keyed by
+    # the code after "_ws_". Each carries its own deadline, so matches use the right date.
+    items = json.load(open(os.path.join(DDIR, "venues.json")))["items"]
+    reg = {}
+    for it in items:
+        if it.get("venue_type") != "workshop":
+            continue
+        reg[it["id"].rsplit("_ws_", 1)[-1]] = it
+    return reg
+
+
+def build_workshop_index(reg):
+    WT = {code: Counter(toks(it["name"])) for code, it in reg.items()}
     df = Counter()
     for cnt in WT.values():
         for t in cnt:
             df[t] += 1
-    N = len(WT)
+    N = max(1, len(WT))
     idf = {t: math.log(1 + N / df[t]) for t in df}
-    names = {w["code"]: w["name"] for w in ws}
-    return WT, idf, names
+    return WT, idf
 
 
 def topic_match(title, topic, WT, idf):
@@ -167,10 +178,11 @@ def main():
                                 venue_group=grp, deadline_aoe=venues[grp]["deadline_aoe"],
                                 authors=split_authors(au), confirmed=True))
 
-    # READY -> workshop suggestions
-    WT, idf, wnames = build_workshop_index()
+    # READY -> workshop suggestions. Topic-match against every workshop; each match
+    # carries its own venue/deadline (so a lone NLP4PI match keeps its Aug 3 date).
+    reg = build_workshop_registry()
+    WT, idf = build_workshop_index(reg)
     rows = read_csv(a.ready_csv, os.environ.get("ADMINBOT_READY_SHEET_ID"), "1634319760", "Formatted Papers")
-    ws_group = venues.get("NeurIPS 2026 Workshops")
     ready = []
     for r in rows[1:]:
         if len(r) <= 23:
@@ -182,13 +194,17 @@ def main():
         if not title:
             continue
         picks = topic_match(title, r[23], WT, idf)
-        if picks and ws_group:
-            ready.append(dict(kind="ready", title=title, year=yr,
-                              authors=split_authors(r[10]),
-                              venue_group="NeurIPS 2026 Workshops",
-                              deadline_aoe=ws_group["deadline_aoe"],
-                              suggestions=[dict(code=c, name=wnames[c], score=s) for c, s in picks],
-                              confirmed=False))   # requires human confirmation before nudging
+        if not picks:
+            continue
+        top = reg[picks[0][0]]
+        ready.append(dict(kind="ready", title=title, year=yr,
+                          authors=split_authors(r[10]),
+                          venue_group=top["venue_group"], deadline_aoe=top["deadline_aoe"],
+                          suggestions=[dict(code=c, name=reg[c]["name"],
+                                            venue_group=reg[c]["venue_group"],
+                                            deadline_aoe=reg[c]["deadline_aoe"], score=s)
+                                       for c, s in picks],
+                          confirmed=False))   # requires human confirmation before nudging
 
     out = dict(generated=a.now, ongoing_count=len(ongoing), ready_suggestion_count=len(ready),
                ongoing=ongoing, ready=ready)

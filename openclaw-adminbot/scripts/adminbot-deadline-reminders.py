@@ -101,9 +101,11 @@ def norm(s):
 
 def render(step, paper, tmpl, workshop=None):
     act = tmpl["actions"][paper["_action_key"]]
-    action = act["action"]
-    if workshop:
-        action = action.replace("{workshop}", workshop).replace("{paper}", paper["title"])
+    # Workshop templates carry a {workshop} slot. Fill it from the matched
+    # workshop name; ongoing workshop papers name no specific one, so fall back
+    # to the venue group so the DM never ships a literal "{workshop}" token.
+    ws = workshop or paper.get("venue_group") or "your target workshop"
+    action = act["action"].replace("{workshop}", ws).replace("{paper}", paper["title"])
     body = tmpl["steps"][str(step)].format(
         paper=paper["title"], noun=act["noun"],
         date=paper["_deadline_date"].strftime("%b %d, %Y") + " AoE",
@@ -114,7 +116,13 @@ def render(step, paper, tmpl, workshop=None):
 ACTION_KEY = {   # venue_group -> template action key
     "EMNLP 2026": "emnlp_commitment", "NeurIPS 2026": "neurips_rebuttal",
     "ARR August 2026": "arr_august", "ICLR 2027": "iclr2027",
-    "NAACL 2027": "naacl2027", "NeurIPS 2026 Workshops": "neurips_workshop"}
+    "NAACL 2027": "naacl2027", "NeurIPS 2026 Workshops": "workshop",
+    "EMNLP 2026 Workshops": "workshop"}
+
+
+def action_key_for(venue_group):
+    # any "... Workshops" group uses the venue-agnostic workshop template
+    return ACTION_KEY.get(venue_group) or ("workshop" if venue_group.endswith("Workshops") else "emnlp_commitment")
 
 
 def send_dm(slack_id, text, do_send):
@@ -150,7 +158,7 @@ def main():
     for p in papers:
         D = aoe_utc(p["deadline_aoe"])
         p["_deadline_date"] = D.date()
-        p["_action_key"] = ACTION_KEY.get(p["venue_group"], "emnlp_commitment")
+        p["_action_key"] = action_key_for(p["venue_group"])
         if submitted is not None and norm(p["title"]) in stop_titles:
             continue                           # already submitted -> silent
         # past deadline & unsubmitted -> escalate
