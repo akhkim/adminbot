@@ -1014,4 +1014,54 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(body.created[0]?.approval_requirement.requires_approval).toBe(false);
     expect(body.skipped).toEqual([]);
   });
+
+  async function proposeSlackMessage(baseUrl: string): Promise<{ id: string; hash: string }> {
+    const res = await fetch(`${baseUrl}/proposals`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ type: "slack.send_message", summary: "Ping the channel" }),
+    });
+    const body = (await res.json()) as { id: string; payload_hash: string };
+    return { id: body.id, hash: body.payload_hash };
+  }
+
+  it("refuses to record an approval from the service principal", async () => {
+    const { baseUrl } = await startService();
+    const proposal = await proposeSlackMessage(baseUrl);
+
+    const res = await fetch(`${baseUrl}/approvals/${proposal.id}/approve`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ payload_hash: proposal.hash, approver_role: "admin" }),
+    });
+
+    // An approval has to name a person, and every agent tool call shares this one principal.
+    expect(res.status).toBe(403);
+  });
+
+  it("records the approver from the session, not from the request body", async () => {
+    const { baseUrl } = await startService();
+    const token = await adminToken(baseUrl, "boss", "boss@example.com");
+    const proposal = await proposeSlackMessage(baseUrl);
+
+    const res = await fetch(`${baseUrl}/approvals/${proposal.id}/approve`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        payload_hash: proposal.hash,
+        approver_role: "admin",
+        approver_id: "somebody-else",
+      }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      status: string;
+      approvals: Array<{ approver_role: string; approver_id?: string }>;
+    };
+    expect(body.approvals).toEqual([
+      expect.objectContaining({ approver_role: "admin", approver_id: "boss" }),
+    ]);
+    expect(body.status).toBe("approved");
+  });
 });

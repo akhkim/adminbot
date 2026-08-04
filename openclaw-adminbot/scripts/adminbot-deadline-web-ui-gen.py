@@ -7,11 +7,14 @@ board template extensions/adminbot/deadlines/deadlines-board.html.
 replaced at render time from DEADLINE_VENUES (see mock-service.ts GET /deadlines).
 Run after editing the board template.  Output is TypeScript; no runtime I/O.
 """
-import os, re
+import os, re, sys
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-BOARD = os.path.join(HERE, "..", "extensions", "adminbot", "deadlines", "deadlines-board.html")
-OUT = os.path.join(HERE, "..", "extensions", "adminbot", "src", "deadlines-web-ui.ts")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from adminbot_deadlines import DEADLINES_DIR, REPO_ROOT
+
+BOARD = os.path.join(DEADLINES_DIR, "deadlines-board.html")
+OUT = os.path.join(REPO_ROOT, "extensions", "adminbot", "src", "deadlines-web-ui.ts")
 
 
 def main():

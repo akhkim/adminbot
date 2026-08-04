@@ -120,76 +120,116 @@ describe("loadAdminBot", () => {
 });
 
 describe("approveAdminBotAction", () => {
-  it("approves and executes an action with one explicit dashboard click", async () => {
-    const requests: Array<{ method: string; params: Record<string, unknown> }> = [];
-    const host: AdminBotHost = {
-      client: {
-        request: async (method: string, params: Record<string, unknown>) => {
-          requests.push({ method, params });
-          return {
-            ok: true,
-            toolName: params.name,
-            output:
-              params.name === "adminbot_execute_approved_action"
-                ? {
-                    status: "executed",
-                    action_id: "act_1",
-                    dry_run: false,
-                    executed_at: "2099-01-01T00:00:00.000Z",
-                  }
-                : undefined,
-          };
-        },
-      } as never,
-      connected: true,
-      adminBotLoading: false,
-      adminBotError: null,
-      adminBotData: createEmptyAdminBotDashboardData(),
-      adminBotBusyActionId: null,
-      adminBotNotice: null,
-      adminBotReimbursement: createEmptyAdminBotReimbursementState(),
-      settings: { adminBotUrl: "http://127.0.0.1:8765" } as UiSettings,
-    };
+  const pendingProposal = {
+    id: "act_1",
+    type: "slack.send_message" as const,
+    summary: "Send test DM to Andrew Kim",
+    risk_tier: "T3" as const,
+    payload_hash: "hash_1",
+    status: "pending" as const,
+    approval_requirement: {
+      requires_approval: true,
+      approver_roles: ["admin", "core_member"],
+      min_approvals: 1,
+    },
+    approvals: [],
+    created_at: "2026-07-14T19:00:00.000Z",
+    updated_at: "2026-07-14T19:00:00.000Z",
+  };
 
-    await approveAdminBotAction(host, {
-      id: "act_1",
-      type: "slack.send_message",
-      summary: "Send test DM to Andrew Kim",
-      risk_tier: "T3",
-      payload_hash: "hash_1",
-      status: "pending",
-      approval_requirement: { requires_approval: true, approver_roles: ["pi"], min_approvals: 1 },
-      approvals: [],
-      created_at: "2026-07-14T19:00:00.000Z",
-      updated_at: "2026-07-14T19:00:00.000Z",
+  function jsonResponse(body: unknown, status = 200): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
     });
+  }
 
-    expect(requests[0]).toMatchObject({
-      method: "tools.invoke",
-      params: {
-        name: "adminbot_approve_action",
-        agentId: "adminbot",
-        args: {
-          actionId: "act_1",
-          payloadHash: "hash_1",
-          approverRole: "admin",
-          approverId: "control-ui",
-          controlUiConfirmed: true,
-        },
+  beforeEach(() => {
+    vi.stubGlobal("localStorage", createStorageMock());
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  // Approvals go over the member session, never the gateway tool: the service refuses to record
+  // an approval for the shared service principal because it cannot name a person.
+  it("approves over the member session and executes once quorum is met", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const toolInvocations: string[] = [];
+    const { host } = createHost({});
+    host.client = {
+      request: async (_method: string, params: { name?: string }) => {
+        toolInvocations.push(params.name ?? "");
+        return { ok: true, toolName: params.name, output: {} };
       },
-    });
-    expect(requests[1]).toMatchObject({
-      method: "tools.invoke",
-      params: {
-        name: "adminbot_execute_approved_action",
-        agentId: "adminbot",
-        args: {
-          actionId: "act_1",
-          idempotencyKey: "control-ui-act_1",
-          controlUiConfirmed: true,
+    } as never;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        jsonResponse({
+          ...pendingProposal,
+          status: "approved",
+          approvals: [{ approver_role: "admin", approver_id: "boss" }],
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ action_id: "act_1", status: "executed", dry_run: false }),
+      )
+      .mockResolvedValue(jsonResponse({}));
+
+    await approveAdminBotAction(host, pendingProposal);
+
+    expect(toolInvocations).not.toContain("adminbot_approve_action");
+    expect(fetchMock.mock.calls[0]?.[0]).toEqual(
+      expect.stringContaining("/approvals/act_1/approve"),
+    );
+    expect(fetchMock.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer admin-sess-tok" }),
+      }),
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toEqual(expect.stringContaining("/actions/act_1/execute"));
+    expect(host.adminBotNotice).toMatchObject({ kind: "success" });
+  });
+
+  it("stops without executing while a second approver is still required", async () => {
+    saveStoredMemberSession({ sessionToken: "admin-sess-tok", expiresAt: "later" });
+    const { host } = createHost({});
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse({
+        ...pendingProposal,
+        approval_requirement: {
+          requires_approval: true,
+          approver_roles: ["admin", "core_member"],
+          min_approvals: 2,
         },
-      },
+        status: "pending",
+        approvals: [{ approver_role: "admin", approver_id: "boss" }],
+      }),
+    );
+
+    await approveAdminBotAction(host, pendingProposal);
+
+    // Exactly one call: the approval. Executing a proposal still short of quorum would defeat
+    // the two-person rule the service enforces.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(host.adminBotNotice).toMatchObject({
+      kind: "success",
+      text: expect.stringContaining("1 of 2 approvals"),
     });
+  });
+
+  it("tells an unauthenticated user to sign in instead of calling the service", async () => {
+    const { host } = createHost({});
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+
+    await approveAdminBotAction(host, pendingProposal);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(host.adminBotNotice).toMatchObject({ kind: "error" });
   });
 });
 

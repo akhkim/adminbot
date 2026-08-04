@@ -150,7 +150,13 @@ async function readCalendarSource(
   return undefined;
 }
 
-async function exportGoogleDoc(docId: string, env: NodeJS.ProcessEnv): Promise<string> {
+// Exported for the availability importer, which needs the same plain-text export of a member's
+// planning doc. Keep this the only gog docs.export call site so the readonly/no-input flags and
+// the size cap cannot drift between callers.
+export async function exportGoogleDoc(
+  docId: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "adminbot-calendar-"));
   const output = join(directory, "source.txt");
   try {
@@ -530,7 +536,7 @@ export function calendarIdFromUrl(value: string): string | undefined {
   }
 }
 
-function googleDocId(url: string): string | undefined {
+export function googleDocId(url: string): string | undefined {
   return /docs\.google\.com\/document\/d\/([A-Za-z0-9_-]+)/u.exec(url)?.[1];
 }
 

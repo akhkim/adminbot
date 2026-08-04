@@ -443,6 +443,105 @@ proposal exports. Use the SQLite ledger for the small amount of structured
 state that must survive restarts: immutable payload hashes, approval records,
 execution status, idempotency keys, and audit events.
 
+## Member availability and lab capacity
+
+Each lab member records how much time they have, on what, and when they are
+away. Members own this data: they edit it themselves under **My profile**, and
+nothing else in AdminBot overwrites it without being asked to.
+
+A member's schedule is two lists on their roster record.
+
+`availability` holds committed working time as one row per project per date
+range: `start`, `end`, `hours_per_week`, an optional `project`, and an optional
+`note`. Two project values are special. Omitting `project` means a whole-term
+baseline commitment not tied to any one project. The reserved value `__open__`
+means declared spare capacity — hours the member is offering for something new
+or to help others. It is a sentinel, not a real project, so it never appears in
+their `projects` list.
+
+`time_off` holds periods away from the lab: `start`, `end`, a `kind` of
+`vacation`, `internship`, `course_load`, `travel`, `conference`, or `other`, and
+an `availability` of `none` or `partial`. Availability is deliberately separate
+from the reason, because either can apply to the same kind: a conference might
+block the week entirely or leave someone partly available, and so might a heavy
+teaching semester. `none` zeroes the week; `partial` still counts toward
+capacity at a reduced rate. AdminBot never infers one from the other.
+
+Both lists are validated on write. Dates must be `YYYY-MM-DD` and are parsed as
+UTC calendar days so a server timezone cannot shift a range onto the neighbouring
+day; a range cannot end before it starts; `hours_per_week` must be between 0 and
+168; and each list is capped at 200 rows.
+
+`availability_updated_at` is stamped by the service, not the caller. It moves
+only when the schedule content actually changes, so saving an unrelated profile
+field — a new website, a corrected name — does not reset it. That makes it a
+usable staleness signal for finding members whose hours have gone out of date.
+
+### Reading it
+
+**My profile** shows the member their own `Time Availability_<name>` timeline:
+weeks across, one row per project, with declared open capacity and time off
+drawn as distinct non-project bands. A Table view lists the same rows as text.
+The editor sits directly beneath the chart and redraws it on every keystroke;
+nothing is written until the member saves.
+
+**Capacity** shows the whole lab: one row per member over the same week columns,
+with a project keeping the same colour across everyone so a commitment can be
+traced between people. Alongside it are the current week's totals — people
+scheduled, committed hours, declared open hours, and how many people are away —
+plus a per-project staffing roll-up and a capabilities roll-up derived from
+member research branches and topics. The capabilities table reads the roster
+rather than the schedule, so it still answers "can the lab do X" for members who
+have not recorded any availability yet.
+
+Time-off _reasons_ are visible lab-wide only to `admin` and `core_member`
+sessions. Everyone else sees that a person is away or partly away, without why.
+A member always sees their own reasons. Why someone is away — an internship, a
+hard semester — is personal, so the lab-wide default is the less revealing one.
+
+### Importing from a planning doc
+
+Members who already track availability in a Google Doc can link it instead of
+retyping it. The link goes in **My profile → Planning doc**, and must be an
+`https` `docs.google.com` or `drive.google.com` URL: the importer fetches it
+server-side with the AdminBot Google account, so the field is restricted to
+hosts that account can legitimately read.
+
+The doc has to be shared with the importer's account — `Viewer` is enough.
+Without that the export comes back empty and the import reports a failure for
+that member. The account is exported as `ADMINBOT_DRIVE_ACCOUNT` and shown in
+the UI beside the field, so the instruction cannot drift from the account doing
+the reading.
+
+Run the importer with:
+
+```bash
+node --import tsx scripts/adminbot-availability-import.ts --db state/adminbot.sqlite --dry-run
+```
+
+| Flag                      | Effect                                                     |
+| ------------------------- | ---------------------------------------------------------- |
+| `--db <path>`             | AdminBot SQLite ledger; defaults to `$ADMINBOT_DB_PATH`.   |
+| `--member <id>`           | Import one member instead of everyone with a linked doc.   |
+| `--reference-date <date>` | Anchor for relative wording in the doc; defaults to today. |
+| `--dry-run`               | Print what would be written and change nothing.            |
+| `--force`                 | Overwrite a schedule that already has rows.                |
+
+Planning docs share no common structure — some are tables, some bullet lists,
+some prose — so extraction is a constrained model call rather than a parser. It
+converts stated effort into hours (`2 days a week` becomes 16) and resolves
+dates against the reference date, which is why a doc saying only "Sept 14" still
+lands on a year. Anything it cannot place on a definite date is reported as
+`unresolved` for a human to deal with instead of being guessed into a row. The
+document is treated strictly as data; text inside it that looks like
+instructions is never followed.
+
+Imports are written through the same validated self-profile path a member's own
+save uses, so the service remains the only authority on what a valid schedule
+is. **A schedule that already has rows is skipped** unless `--force` is passed:
+an extraction is a guess, and a row a member typed is not. Start with
+`--dry-run` and a single `--member` before importing across the roster.
+
 ## Skills and code responsibilities
 
 Implement most AdminBot features as skills over a small typed code surface.

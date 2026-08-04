@@ -24,22 +24,29 @@ Env:
   ADMINBOT_DEADLINE_NOW           override "today" (YYYY-MM-DD), for testing
 Args: --send   --now YYYY-MM-DD
 """
-import json, os, re, sys, subprocess, argparse, datetime, urllib.request, urllib.parse
+import argparse
+import json
+import os
+import re
+import sys
+import urllib.request
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-DDIR = os.path.join(HERE, "..", "extensions", "adminbot", "deadlines")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from adminbot_deadlines import AoEClock, DeadlineDataset, SlackNotifier
+
 CADENCE = [30, 15, 7, 3, 2, 1]
 SVC = os.environ.get("ADMINBOT_SERVICE_BASE_URL", "http://127.0.0.1:8765")
-CLI = os.environ.get("OPENCLAW_CLI", os.path.join(HERE, "..", "openclaw.mjs"))
+
+ACTION_KEY = {   # venue_group -> template action key
+    "EMNLP 2026": "emnlp_commitment", "NeurIPS 2026": "neurips_rebuttal",
+    "ARR August 2026": "arr_august", "ICLR 2027": "iclr2027",
+    "NAACL 2027": "naacl2027", "NeurIPS 2026 Workshops": "neurips_workshop"}
+DEFAULT_ACTION_KEY = "emnlp_commitment"
 
 
-def aoe_utc(aoe):                              # "YYYY-MM-DD HH:MM:SS" AoE -> UTC datetime
-    d = datetime.datetime.strptime(aoe, "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
-    return d + datetime.timedelta(hours=12)
-
-
-def load(name):
-    return json.load(open(os.path.join(DDIR, name)))
+def norm(value):
+    return re.sub(r"[^a-z0-9]+", " ", (value or "").lower()).strip()
 
 
 # ---- roster: author name -> slack id (best-effort; dry-run works without) ----
@@ -95,96 +102,96 @@ def openreview_submitted_titles():
         return None
 
 
-def norm(s):
-    return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
+def action_key_for(paper):
+    return ACTION_KEY.get(paper.get("venue_group"), DEFAULT_ACTION_KEY)
 
 
 def render(step, paper, tmpl, workshop=None):
-    act = tmpl["actions"][paper["_action_key"]]
+    act = tmpl["actions"][action_key_for(paper)]
     action = act["action"]
     if workshop:
         action = action.replace("{workshop}", workshop).replace("{paper}", paper["title"])
-    body = tmpl["steps"][str(step)].format(
+    deadline_date = AoEClock.calendar_date(paper["deadline_aoe"])
+    return tmpl["steps"][str(step)].format(
         paper=paper["title"], noun=act["noun"],
-        date=paper["_deadline_date"].strftime("%b %d, %Y") + " AoE",
-        action=action, link=paper.get("overleaf", "(no Overleaf link on file)"))
-    return body + tmpl["footer"]
+        date=deadline_date.strftime("%b %d, %Y") + " AoE",
+        action=action, link=paper.get("overleaf", "(no Overleaf link on file)"),
+    ) + tmpl["footer"]
 
 
-ACTION_KEY = {   # venue_group -> template action key
-    "EMNLP 2026": "emnlp_commitment", "NeurIPS 2026": "neurips_rebuttal",
-    "ARR August 2026": "arr_august", "ICLR 2027": "iclr2027",
-    "NAACL 2027": "naacl2027", "NeurIPS 2026 Workshops": "neurips_workshop"}
+def confirmed_papers(matches):
+    """Only confirmed items get nudged.
+
+    `ongoing` rows are auto-confirmed by the matcher; workshop suggestions in
+    `ready` stay unconfirmed until a human sets confirmed=true, so a fuzzy topic
+    match can never DM an author on its own.
+    """
+    papers = [p for p in matches.get("ongoing", []) if p.get("confirmed")]
+    papers += [p for p in matches.get("ready", []) if p.get("confirmed")]
+    return papers
 
 
-def send_dm(slack_id, text, do_send):
-    tgt = "user:" + slack_id
-    if not do_send:
-        print(f"    [dry-run] would DM {tgt}:\n      " + text.replace("\n", "\n      "))
-        return
-    subprocess.run(["node", CLI, "message", "send", "--channel", "slack",
-                    "--target", tgt, "--message", text, "--json"], check=False)
+def due_cadence_step(paper, clock):
+    """The cadence step firing today, or None. Cadence is ordered widest-first."""
+    for step in CADENCE:
+        if clock.is_cadence_day(paper["deadline_aoe"], step):
+            return step
+    return None
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--send", action="store_true")
-    ap.add_argument("--now", default=os.environ.get("ADMINBOT_DEADLINE_NOW",
-                                                    datetime.date.today().isoformat()))
-    a = ap.parse_args()
-    now_d = datetime.date.fromisoformat(a.now)
-    now = datetime.datetime(now_d.year, now_d.month, now_d.day, 12, tzinfo=datetime.timezone.utc)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--send", action="store_true")
+    parser.add_argument("--now", default=None)
+    args = parser.parse_args()
 
-    tmpl = load("dm-templates.json")
-    matches = load("matches.json")
+    clock = AoEClock.resolve(args.now)
+    dataset = DeadlineDataset()
+    tmpl = dataset.templates()
+    notifier = SlackNotifier(send=args.send)
+
     roster = load_roster()
     submitted = openreview_submitted_titles()
-    stop_titles = submitted if submitted is not None else set()
-
-    # only confirmed items get nudged (ongoing = auto-confirmed; ready workshop
-    # suggestions must have confirmed=true set by a human first)
-    papers = [p for p in matches["ongoing"] if p.get("confirmed")]
-    papers += [dict(p, _action_key=None) for p in matches.get("ready", []) if p.get("confirmed")]
 
     fired, escalations = 0, []
-    for p in papers:
-        D = aoe_utc(p["deadline_aoe"])
-        p["_deadline_date"] = D.date()
-        p["_action_key"] = ACTION_KEY.get(p["venue_group"], "emnlp_commitment")
-        if submitted is not None and norm(p["title"]) in stop_titles:
+    for paper in confirmed_papers(dataset.matches()):
+        if submitted is not None and norm(paper["title"]) in submitted:
             continue                           # already submitted -> silent
-        # past deadline & unsubmitted -> escalate
-        if now > D:
-            escalations.append(p)
+        if clock.has_passed(paper["deadline_aoe"]):
+            escalations.append(paper)
             continue
-        # fire the reminder whose date == today
-        for k in CADENCE:
-            if (D - datetime.timedelta(days=k)).date() == now_d:
-                ws = p["suggestions"][0]["name"] if p.get("suggestions") else None
-                text = render(k, p, tmpl, workshop=ws)
-                recips = [(au, resolve_slack(au, roster)) for au in p.get("authors", [])]
-                print(f"  T-{k}d  {p['title'][:56]}  ({p['venue_group']})")
-                for au, sid in recips:
-                    if sid:
-                        send_dm(sid, text, a.send); fired += 1
-                    else:
-                        print(f"    [skip] no Slack id for author '{au}'")
-                break
+        step = due_cadence_step(paper, clock)
+        if step is None:
+            continue
+        workshop = paper["suggestions"][0]["name"] if paper.get("suggestions") else None
+        text = render(step, paper, tmpl, workshop=workshop)
+        print(f"  T-{step}d  {paper['title'][:56]}  ({paper.get('venue_group')})")
+        for author in paper.get("authors", []):
+            slack_id = resolve_slack(author, roster)
+            if slack_id:
+                notifier.send_to_user(slack_id, text)
+                fired += 1
+            else:
+                print(f"    [skip] no Slack id for author '{author}'")
 
-    # escalation digest to Zhijing
     if escalations:
         prof_slack = os.environ.get("ADMINBOT_HEAD_PROFESSOR_SLACK")
-        lst = "\n".join(f"• *{p['title']}* ({p['venue_group']}, {p['_deadline_date']}) — "
-                        f"authors: {', '.join(p.get('authors', []))}" for p in escalations)
-        msg = tmpl["escalation"].format(prof="Zhijing", list=lst)
+        listing = "\n".join(
+            f"• *{p['title']}* ({p.get('venue_group')}, "
+            f"{AoEClock.calendar_date(p['deadline_aoe'])}) — "
+            f"authors: {', '.join(p.get('authors', []))}"
+            for p in escalations
+        )
+        message = tmpl["escalation"].format(prof="Zhijing", list=listing)
         print(f"\n  ESCALATION ({len(escalations)} unsubmitted past deadline):")
         if prof_slack:
-            send_dm(prof_slack, msg, a.send)
+            notifier.send_to_user(prof_slack, message)
         else:
-            print("    [dry-run] (set ADMINBOT_HEAD_PROFESSOR_SLACK to deliver)\n    " + msg.replace("\n", "\n    "))
+            print("    [dry-run] (set ADMINBOT_HEAD_PROFESSOR_SLACK to deliver)\n    "
+                  + message.replace("\n", "\n    "))
 
     print(f"\nreminders fired: {fired} | escalations: {len(escalations)} | "
-          f"mode: {'SEND' if a.send else 'dry-run'} | now={a.now} | "
+          f"mode: {notifier.mode} | now={clock.today} | "
           f"openreview-stop: {'on' if submitted is not None else 'off (no creds)'}")
 
 

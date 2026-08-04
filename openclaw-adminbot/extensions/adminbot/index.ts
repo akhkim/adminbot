@@ -611,7 +611,7 @@ export default defineToolPlugin({
       name: "adminbot_execute_approved_action",
       label: "AdminBot execute approved action",
       description:
-        "Execute an action immediately after its single approval in the Control UI Pending Actions section. Chat execution is disabled.",
+        "Execute an action once it has collected the approvals its risk tier requires, from the Control UI Pending Actions section. Chat execution is disabled.",
       optional: true,
       approval: () => undefined,
       parameters: Type.Object({

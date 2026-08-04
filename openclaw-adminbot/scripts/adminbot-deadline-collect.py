@@ -18,7 +18,11 @@ Only OUTPUT is venues.json; nothing is sent.
 """
 import json, os, sys, urllib.request, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT  = os.path.join(HERE, "..", "extensions", "adminbot", "deadlines", "venues.json")
+
+sys.path.insert(0, HERE)
+
+from adminbot_deadlines import DEADLINES_DIR  # noqa: E402
+OUT  = os.path.join(DEADLINES_DIR, "venues.json")
 
 # --- curated, source-verified upcoming conference milestones (AoE 23:59:59) ---
 # Update these when the next cycle's official CFP is announced.
@@ -49,6 +53,17 @@ CONFERENCES = [
     #      venue_type="conference", venue_group="EACL 2027", track="main",
     #      deadline_label="commitment", deadline_aoe="2026-10-11 23:59:59",
     #      notification_aoe="", link="https://2027.eacl.org/"),
+]
+
+# Curated non-NeurIPS workshops (each has its own per-workshop deadline).
+# Add EMNLP 2026 workshops here as their CFPs are confirmed.
+EMNLP_WORKSHOPS = [
+    dict(id="emnlp2026_ws_nlp4pi",
+         name="NLP4PI — 5th Workshop on NLP for Positive Impact (EMNLP 2026)",
+         venue_type="workshop", venue_group="EMNLP 2026 Workshops", track="workshop",
+         deadline_label="ARR commitment",   # direct channel (Jul 14) already closed
+         deadline_aoe="2026-08-03 23:59:59", notification_aoe="2026-08-15 23:59:59",
+         link="https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment"),
 ]
 
 NEURIPS_WS_SUBMISSION = "2026-08-29 23:59:59"   # official recommended (AoE)
@@ -84,7 +99,7 @@ def fetch_neurips_workshops():
 
 
 def main():
-    items = list(CONFERENCES)
+    items = list(CONFERENCES) + list(EMNLP_WORKSHOPS)
     try:
         ws = fetch_neurips_workshops()
         print(f"OpenReview: collected {len(ws)} NeurIPS 2026 workshops")

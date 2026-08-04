@@ -25,8 +25,9 @@ Sheet IDs (used only if no local CSV given; must be readable by the caller):
 import csv, io, json, os, re, sys, math, argparse, datetime, urllib.request
 from collections import Counter, defaultdict
 
-HERE = os.path.dirname(os.path.abspath(__file__))
-DDIR = os.path.join(HERE, "..", "extensions", "adminbot", "deadlines")
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+from adminbot_deadlines import DEADLINES_DIR as DDIR
 
 # ongoing Venue-string -> venue_group key used in venues.json
 TARGET_TO_GROUP = {

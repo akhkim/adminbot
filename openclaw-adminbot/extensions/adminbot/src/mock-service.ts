@@ -383,6 +383,20 @@ function principalActor(principal: AdminBotPrincipal): string {
   return principal.kind === "service" ? "service" : principal.member.id;
 }
 
+// An approval must name a real person, so the shared service principal (which every agent tool
+// call authenticates as) cannot supply one.
+function approverIdentityFor(
+  principal: AdminBotPrincipal,
+): { approver_role: string; approver_id: string } | undefined {
+  if (principal.kind === "service") {
+    return undefined;
+  }
+  return {
+    approver_role: principal.member.privilege_level,
+    approver_id: principal.member.id,
+  };
+}
+
 async function handleAuthenticatedRoute(
   req: IncomingMessage,
   res: ServerResponse,
@@ -549,7 +563,20 @@ async function handleAuthenticatedRoute(
     }
     const actionId = decodeURIComponent(approve[1]);
     const body = (await readJson(req)) as AdminBotApprovalRequest;
-    sendServiceResult(res, service.approve(actionId, body));
+    // Role and approver id come from the session, never the body: a client-chosen role would make
+    // the policy check self-attested, and a client-chosen id would let one person fill a
+    // two-person quorum alone.
+    const identity = approverIdentityFor(principal);
+    if (!identity) {
+      sendJson(res, 403, {
+        error: {
+          message:
+            "approvals require an admin or core member session and cannot be recorded by the service principal",
+        },
+      });
+      return;
+    }
+    sendServiceResult(res, service.approve(actionId, { ...body, ...identity }));
     return;
   }
   const execute = /^\/actions\/([^/]+)\/execute$/u.exec(url.pathname);

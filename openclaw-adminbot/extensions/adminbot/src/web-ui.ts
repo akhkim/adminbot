@@ -1,3 +1,5 @@
+import { ADMINBOT_DRIVE_ACCOUNT } from "./contracts.js";
+
 export function renderAdminBotWebUi(): string {
   return `<!doctype html>
 <html lang="en">
@@ -658,6 +660,248 @@ export function renderAdminBotWebUi(): string {
       gap: 8px;
       flex-wrap: wrap;
     }
+    /* Availability timeline slots, in fixed assignment order. In a Gantt any project can end up
+       beside any other (see Andrew's HomeLab/Atlas row), so these are validated on the ALL-PAIRS
+       gate, not the weaker adjacent-pair one: worst pair CVD 9.2, normal-vision 16.3 on this white
+       panel. Four is the ceiling that clears it — adding yellow puts it next to orange (13.7, a
+       hard fail) and magenta/green fail too. Projects past the fourth take the neutral .other fill
+       and rely on their in-bar label. Aqua sits under 3:1 contrast, so labels and the table view
+       are mandatory relief. Re-run the palette validator before touching any of this. */
+    .viz {
+      --series-1: #2a78d6;
+      --series-2: #eb6834;
+      --series-3: #1baf7a;
+      --series-4: #4a3aa7;
+      --viz-grid: #e1e0d9;
+      --viz-axis: #c3c2b7;
+    }
+    .viz-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 4px;
+    }
+    /* The heading is the series label for a single-member chart, so it names the person. */
+    .viz-title {
+      margin: 0;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+    .compact-table { min-width: 0; }
+    /* Base th/td allow mid-word breaks for the wide directory; a narrow panel would hyphenate
+       these short headers instead of widening the column. */
+    .compact-table th { white-space: nowrap; }
+    .compact-table td { vertical-align: middle; }
+    /* Prerequisite the member has to act on, not decoration: an unshared doc fails the import
+       silently, so it gets a marked block rather than another line of grey subtext. */
+    .callout {
+      margin: 10px 0 14px;
+      border: 1px solid var(--line);
+      border-left: 3px solid var(--warn);
+      border-radius: 8px;
+      background: #fdfaf4;
+      padding: 10px 12px;
+      font-size: 13px;
+    }
+    .callout code {
+      font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      font-size: 12.5px;
+      background: #ffffff;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 1px 5px;
+      white-space: nowrap;
+    }
+    .viz-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+      gap: 12px;
+      margin: 12px 0 4px;
+    }
+    .toggle-view { display: flex; gap: 6px; }
+    .toggle-view .button[aria-pressed="true"] {
+      border-color: var(--accent);
+      background: #e6f3f5;
+      color: var(--accent-strong);
+      font-weight: 700;
+    }
+    .viz-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 14px;
+      margin: 10px 0 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .viz-legend span {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .viz-swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      background: var(--sw, var(--series-1));
+      flex: none;
+    }
+    /* Open capacity and time off are hatched in the chart, so their legend keys are hatched too —
+       a flat swatch would imply they are ordinary series. */
+    .viz-swatch.hatch {
+      background: repeating-linear-gradient(45deg, var(--sw), var(--sw) 3px, #ffffff 3px, #ffffff 6px);
+      border: 1px solid var(--viz-axis);
+    }
+    .timeline-scroll { overflow-x: auto; padding-bottom: 6px; }
+    /* The editor is a separate concern from the chart above it, and the last timeline row needs
+       clearance or its bars collide with the first heading. */
+    .sched-editor {
+      margin-top: 26px;
+      border-top: 1px solid var(--line);
+      padding-top: 20px;
+      display: grid;
+      gap: 22px;
+    }
+    .sched-editor h2 { margin-top: 0; }
+    .timeline {
+      min-width: 620px;
+      display: grid;
+      /* Row label gutter, then one equal column per week in the horizon. */
+      grid-template-columns: 148px repeat(var(--weeks), minmax(26px, 1fr));
+      align-items: center;
+      row-gap: 6px;
+      font-size: 12px;
+    }
+    .timeline .tl-month {
+      grid-row: 1;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      border-left: 1px solid var(--viz-axis);
+      padding: 0 0 4px 5px;
+      align-self: end;
+      white-space: nowrap;
+    }
+    .timeline .tl-label {
+      grid-column: 1;
+      color: var(--text);
+      padding-right: 12px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .timeline .tl-track {
+      grid-column: 2 / -1;
+      grid-row: var(--r);
+      height: 26px;
+      border-top: 1px solid var(--viz-grid);
+    }
+    /* Continuation lane of the row above it — same subject, so no dividing rule. */
+    .timeline .tl-track.lane { border-top: 0; }
+    /* Bars are placed on the same grid as the header months so a range always lines up with
+       the month it falls in; grid-column is 1-based over the week columns. */
+    .timeline .tl-bar {
+      grid-row: var(--r);
+      grid-column: var(--c-start) / var(--c-end);
+      height: 22px;
+      border-radius: 4px;
+      background: var(--sw);
+      /* 2px surface gap keeps adjacent fills from reading as one continuous bar. */
+      box-shadow: 0 0 0 2px var(--panel);
+      /* Block, not flex: text-overflow never applies to an anonymous flex item, so a narrow bar
+         would hard-clip its label instead of ellipsizing. line-height does the centring. */
+      display: block;
+      line-height: 20px;
+      padding: 0 7px;
+      min-width: 0;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 650;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      cursor: default;
+    }
+    /* Past the six validated slots a project takes the neutral fill rather than a recycled hue;
+       its in-bar label is what keeps it identifiable. */
+    .timeline .tl-bar.other {
+      background: #c3c2b7;
+      color: #17202a;
+    }
+    /* Declared spare capacity is a sentinel, not a project, so it gets a neutral outlined
+       treatment instead of a categorical slot. */
+    .timeline .tl-bar.open {
+      background: repeating-linear-gradient(45deg, #eef2f6, #eef2f6 5px, #ffffff 5px, #ffffff 10px);
+      color: var(--accent-strong);
+      border: 1px solid var(--accent);
+    }
+    /* Time off is a state, not a series: hatched, ink-coloured, and always labelled with its
+       kind so it never depends on colour alone. */
+    .timeline .tl-bar.off {
+      background: repeating-linear-gradient(45deg, #dfe5ec, #dfe5ec 5px, #f4f6f9 5px, #f4f6f9 10px);
+      color: var(--text);
+      border: 1px solid var(--viz-axis);
+    }
+    .timeline .tl-bar.off.partial {
+      background: repeating-linear-gradient(135deg, #e9edf2, #e9edf2 4px, #fbfcfd 4px, #fbfcfd 11px);
+    }
+    .timeline .tl-today {
+      grid-row: 2 / -1;
+      grid-column: var(--c-start) / span 1;
+      border-left: 2px solid var(--danger);
+      height: 100%;
+      pointer-events: none;
+    }
+    .viz-empty {
+      color: var(--muted);
+      font-size: 13px;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      padding: 22px 16px;
+      text-align: center;
+    }
+    .sched-rows { display: grid; gap: 10px; }
+    /* Flex rather than repeat(auto-fit): auto-fit is invalid alongside an intrinsic auto track,
+       which silently collapses the whole template to one column. Flex wrapping also degrades
+       cleanly at any panel width without a media query. */
+    .sched-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 10px;
+      align-items: flex-end;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fbfcfd;
+    }
+    .sched-row label {
+      font-size: 11px;
+      color: var(--muted);
+      flex: 1 1 150px;
+      min-width: 0;
+    }
+    .sched-row label.tight { flex: 0 1 116px; }
+    .sched-row .drop {
+      align-self: center;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--panel);
+      color: var(--danger);
+      cursor: pointer;
+      padding: 7px 10px;
+      white-space: nowrap;
+    }
+    .sched-row .drop:hover { border-color: var(--danger); }
+    .sched-empty { color: var(--muted); font-size: 12px; }
+    .viz-source {
+      color: var(--muted);
+      font-size: 11px;
+      margin: 10px 0 0;
+    }
   </style>
 </head>
 <body>
@@ -698,6 +942,7 @@ export function renderAdminBotWebUi(): string {
       <div class="brand"><span class="mark">A</span><span>AdminBot</span></div>
       <nav aria-label="AdminBot console sections">
         <button class="tab" data-tab="members" aria-selected="true">Members</button>
+        <button class="tab" data-tab="capacity">Capacity</button>
         <button class="tab" data-tab="papers">Papers</button>
         <button class="tab" data-tab="profile">My profile</button>
         <button class="tab" data-tab="actions">Actions</button>
@@ -784,6 +1029,50 @@ export function renderAdminBotWebUi(): string {
         </div>
       </section>
 
+      <section class="section" id="capacity">
+        <div class="panel viz">
+          <div class="viz-head">
+            <h2 class="viz-title">Lab capacity</h2>
+            <span class="count" id="capacity-week"></span>
+          </div>
+          <div class="viz-stats">
+            <div class="metric"><strong id="cap-people">0</strong><span>People scheduled</span></div>
+            <div class="metric"><strong id="cap-committed">0</strong><span>Committed h/wk</span></div>
+            <div class="metric"><strong id="cap-open">0</strong><span>Open h/wk</span></div>
+            <div class="metric"><strong id="cap-away">0</strong><span>Away this week</span></div>
+          </div>
+          <div class="viz-legend" id="capacity-legend"></div>
+          <div class="timeline-scroll">
+            <div class="timeline" id="capacity-timeline"></div>
+          </div>
+          <div class="viz-empty" id="capacity-empty" hidden>
+            Nobody has recorded availability yet. Members add theirs under My profile.
+          </div>
+          <p class="viz-source" id="capacity-note"></p>
+        </div>
+        <div class="grid">
+          <div class="panel">
+            <h2>Project staffing</h2>
+            <p class="subtle">Who is on what this week, and how far each commitment runs.</p>
+            <div class="table-wrap">
+              <table class="compact-table">
+                <thead><tr><th>Project</th><th>h/wk now</th><th>People</th><th>Through</th></tr></thead>
+                <tbody id="capacity-projects"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel">
+            <h2>Capabilities</h2>
+            <p class="subtle">Research expertise across the lab, from member branches and topics.</p>
+            <div class="table-wrap">
+              <table class="compact-table">
+                <thead><tr><th>Expertise</th><th>People</th><th>Who</th></tr></thead>
+                <tbody id="capacity-skills"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
       <section class="section" id="papers">
         <div class="grid">
           <div class="panel">
@@ -880,6 +1169,58 @@ export function renderAdminBotWebUi(): string {
       </section>
 
       <section class="section" id="profile">
+        <div class="panel viz">
+          <div class="viz-head">
+            <h2 class="viz-title" id="availability-title">Time Availability</h2>
+            <div class="toggle-view">
+              <button class="button" type="button" id="availability-view-timeline" aria-pressed="true">Timeline</button>
+              <button class="button" type="button" id="availability-view-table" aria-pressed="false">Table</button>
+            </div>
+          </div>
+          <p class="subtle" id="availability-updated"></p>
+          <div class="viz-legend" id="availability-legend"></div>
+          <div class="timeline-scroll" id="availability-timeline-wrap">
+            <div class="timeline" id="availability-timeline"></div>
+          </div>
+          <div class="table-wrap" id="availability-table-wrap" hidden>
+            <table class="compact-table">
+              <thead><tr><th>From</th><th>To</th><th>Commitment</th><th>Hours / week</th><th>Note</th></tr></thead>
+              <tbody id="availability-tbody"></tbody>
+            </table>
+          </div>
+          <div class="viz-empty" id="availability-empty" hidden>
+            No availability recorded yet. Add a commitment below, or import it from your planning doc in Drive.
+          </div>
+          <form id="schedule-form" class="sched-editor">
+            <div>
+              <h2>Planning doc</h2>
+              <p class="subtle">Link your own availability doc in Google Drive and AdminBot can read it to prefill the rows below. Whatever it gets wrong, edit here — your edits win.</p>
+              <p class="callout">Remember to share the doc with <code>${ADMINBOT_DRIVE_ACCOUNT}</code> — Viewer access is enough. Without it AdminBot cannot open the doc and the import will find nothing.</p>
+              <label>Availability doc URL
+                <input name="availability_doc_url" type="url" id="availability-doc-url"
+                  placeholder="https://docs.google.com/document/d/…"
+                  pattern="https://(docs|drive)\\.google\\.com/.*">
+              </label>
+              <p class="viz-source" id="availability-doc-hint"></p>
+            </div>
+            <div>
+              <h2>Commitments</h2>
+              <p class="subtle">Weekly hours per project over a date range. Leave the project blank for a whole-term baseline, or pick “Open capacity” to declare spare hours.</p>
+              <div class="sched-rows" id="availability-rows"></div>
+              <button class="button" type="button" id="availability-add">Add commitment</button>
+            </div>
+            <div>
+              <h2>Time off</h2>
+              <p class="subtle">Holidays and time away from the lab for another career arrangement — a busy semester, an internship, a conference. “Partial” still counts toward capacity at a reduced rate; “none” zeroes the week.</p>
+              <div class="sched-rows" id="time-off-rows"></div>
+              <button class="button" type="button" id="time-off-add">Add time off</button>
+            </div>
+            <div>
+              <button class="button primary" type="submit">Save schedule</button>
+              <div class="status" id="schedule-status"></div>
+            </div>
+          </form>
+        </div>
         <div class="grid">
           <div class="panel">
             <h2>My profile</h2>
@@ -930,6 +1271,7 @@ export function renderAdminBotWebUi(): string {
     ];
     const sectionCopy = {
       members: ["Members", "Manage lab roster and privilege-derived access."],
+      capacity: ["Capacity", "Lab-wide availability, open capacity, project staffing, and expertise."],
       papers: ["Papers", "Track active paper pipeline state, links, and reminders."],
       profile: ["My profile", "Update your own profile and account password."],
       actions: ["Actions", "Review approval-gated AdminBot proposals."],
@@ -1040,6 +1382,7 @@ export function renderAdminBotWebUi(): string {
       document.querySelector('[name="applicant_last_reviewed_at"]').value =
         state.settings?.applicant_last_reviewed_at || "";
       renderMembers();
+      renderCapacity();
       renderPapers();
       renderActions();
       renderApprovals();
@@ -1478,7 +1821,7 @@ export function renderAdminBotWebUi(): string {
         if (target.dataset.approve) {
           await api("/approvals/" + encodeURIComponent(target.dataset.approve) + "/approve", {
             method: "POST",
-            body: JSON.stringify({ payload_hash: target.dataset.hash, approver_role: "pi" })
+            body: JSON.stringify({ payload_hash: target.dataset.hash })
           });
         }
         if (target.dataset.execute) {
@@ -1573,6 +1916,532 @@ export function renderAdminBotWebUi(): string {
         const field = form.elements.namedItem(name);
         if (field) field.value = value;
       });
+      setSchedule(sessionMember);
+      document.getElementById("availability-doc-url").value =
+        sessionMember.availability_doc_url || "";
+      renderScheduleEditors();
+      renderAvailability();
+      renderDocHint();
+    }
+
+    function renderDocHint() {
+      const linked = String(document.getElementById("availability-doc-url").value || "").trim();
+      document.getElementById("availability-doc-hint").textContent = linked
+        ? "Linked. AdminBot reads this doc on the next import and fills in the rows below."
+        : "Not linked. Add the rows below by hand, or paste a doc link to have them read for you.";
+    }
+
+    // Mirrors ADMINBOT_OPEN_PROJECT in contracts.ts: a sentinel project name meaning "declared
+    // spare capacity". It is not a real project, so it never takes a categorical colour slot and
+    // never joins the member's own projects list.
+    const OPEN_PROJECT = "__open__";
+    const timeOffKinds = ["vacation", "internship", "course_load", "travel", "conference", "other"];
+    // Four is what clears the all-pairs colour-vision gate on this surface; see the .viz comment.
+    const SERIES_SLOTS = 4;
+    const MS_PER_DAY = 86400000;
+    const WEEK_MS = 7 * MS_PER_DAY;
+    const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+    // Schedule edits stay local until "Save schedule", so the timeline can redraw on every
+    // keystroke without a round trip. Server-owned availability_updated_at is read off
+    // sessionMember, never set here.
+    let schedule = { availability: [], time_off: [] };
+    let availabilityView = "timeline";
+
+    function setSchedule(member) {
+      schedule = {
+        availability: Array.isArray(member?.availability) ? member.availability.map((row) => ({ ...row })) : [],
+        time_off: Array.isArray(member?.time_off) ? member.time_off.map((row) => ({ ...row })) : []
+      };
+    }
+
+    // Schedule dates are calendar days parsed as UTC, matching the server validator, so the
+    // browser timezone can never shift a range onto the neighbouring day.
+    function parseIso(value) {
+      const ms = Date.parse(String(value || "").trim() + "T00:00:00Z");
+      return Number.isFinite(ms) ? ms : null;
+    }
+
+    function isoOf(ms) {
+      return new Date(ms).toISOString().slice(0, 10);
+    }
+
+    function addDays(ms, days) {
+      return ms + days * MS_PER_DAY;
+    }
+
+    // Weeks start Monday. getUTCDay() is 0 on Sunday, which is 6 days into the week.
+    function mondayOf(ms) {
+      return addDays(ms, -((new Date(ms).getUTCDay() + 6) % 7));
+    }
+
+    // One normalized bar shape for both the per-member and the lab-wide timeline: the bar carries
+    // its own type, so the renderer never infers styling from whichever group it landed in.
+    function toBar(row, type, label) {
+      return {
+        start: row.start,
+        end: row.end,
+        type,
+        label,
+        project: projectKey(row),
+        hours: row.hours_per_week,
+        kind: row.kind,
+        availability: row.availability,
+        note: row.note
+      };
+    }
+
+    function barType(row) {
+      const project = projectKey(row);
+      if (project === OPEN_PROJECT) return "open";
+      if (!project) return "baseline";
+      return "project";
+    }
+
+    // showReasons=false renders time off as a bare away/partly-away state. Why someone is away —
+    // an internship, a heavy semester — is personal, so the lab-wide view reveals the reason only
+    // to privileged sessions, while a member always sees their own.
+    function memberBars(member, showReasons) {
+      const availability = Array.isArray(member?.availability) ? member.availability : [];
+      const timeOff = Array.isArray(member?.time_off) ? member.time_off : [];
+      return availability
+        .map((row) => toBar(row, barType(row), commitmentLabel(row)))
+        .concat(timeOff.map((row) =>
+          toBar(row, "off", showReasons ? humanize(row.kind || "other") : "Away")));
+    }
+
+    function scheduleBars() {
+      return memberBars(schedule, true);
+    }
+
+    // The horizon covers every recorded range plus the current week so no bar is clipped, with a
+    // 12-week floor so a near-empty chart does not collapse into a handful of columns, and a
+    // 78-week ceiling because past that every bar compresses into an unreadable sliver.
+    function horizonOf(bars) {
+      const today = mondayOf(parseIso(isoOf(Date.now())));
+      let first = today;
+      let last = addDays(today, 11 * 7);
+      for (const bar of bars) {
+        const start = parseIso(bar.start);
+        const end = parseIso(bar.end);
+        if (start !== null && start < first) first = mondayOf(start);
+        if (end !== null && end > last) last = end;
+      }
+      const weeks = Math.ceil((mondayOf(last) - first) / WEEK_MS) + 1;
+      return { start: first, weeks: Math.min(Math.max(weeks, 12), 78), today };
+    }
+
+    // Grid column for a date; column 1 is the row-label gutter, so week 0 starts at column 2.
+    // Out-of-horizon dates clamp to the edge rather than escaping the grid.
+    function weekColumn(ms, horizon) {
+      const index = Math.floor((mondayOf(ms) - horizon.start) / WEEK_MS);
+      return Math.min(Math.max(index, 0), horizon.weeks - 1) + 2;
+    }
+
+    // Colour follows the project, not its row position, so adding or removing a commitment never
+    // repaints the others: slots are assigned over the sorted project names. Past the six
+    // validated slots a project gets the neutral treatment instead of a recycled hue — the in-bar
+    // label still carries its identity.
+    function assignProjectSlots(bars) {
+      const slots = new Map();
+      uniqueValues(bars.filter((bar) => bar.type === "project").map((bar) => bar.project))
+        .forEach((name, index) => slots.set(name, index < SERIES_SLOTS ? index + 1 : 0));
+      return slots;
+    }
+
+    function projectKey(row) {
+      return String(row?.project || "").trim();
+    }
+
+    // A blank project is the whole-term baseline row; the sentinel is declared spare capacity.
+    function commitmentLabel(row) {
+      const project = projectKey(row);
+      if (!project) return "Term baseline";
+      if (project === OPEN_PROJECT) return "Open capacity";
+      return project;
+    }
+
+    function renderAvailability() {
+      const name = String(sessionMember?.name || sessionMember?.id || "").trim();
+      // For a single-member chart the heading is the series label, so it names the person and no
+      // legend entry is needed to identify whose availability this is.
+      document.getElementById("availability-title").textContent =
+        name ? "Time Availability_" + name : "Time Availability";
+      const stamp = String(sessionMember?.availability_updated_at || "");
+      document.getElementById("availability-updated").textContent = stamp
+        ? "Schedule last updated " + stamp.slice(0, 10) + "."
+        : "No schedule saved yet.";
+      const bars = scheduleBars();
+      const hasRows = bars.length > 0;
+      document.getElementById("availability-empty").hidden = hasRows;
+      document.getElementById("availability-timeline-wrap").hidden = !hasRows || availabilityView !== "timeline";
+      document.getElementById("availability-table-wrap").hidden = !hasRows || availabilityView !== "table";
+      document.getElementById("availability-legend").hidden = !hasRows;
+      if (!hasRows) return;
+      const slots = assignProjectSlots(bars);
+      renderLegendInto("availability-legend", bars, slots);
+      // One row per commitment label, with every kind of time off collapsed into a single row at
+      // the bottom: the reason already rides on each bar, so a row per reason would just repeat it.
+      const groups = groupBars(bars, (bar) => (bar.type === "off" ? "Time off" : bar.label));
+      renderTimelineInto("availability-timeline", groups, bars, slots);
+      renderAvailabilityTable();
+    }
+
+    // Groups preserve first-appearance order of the key, and time off always sinks to the bottom.
+    function groupBars(bars, keyOf) {
+      const groups = [];
+      const byKey = new Map();
+      for (const bar of bars) {
+        const key = keyOf(bar);
+        if (!byKey.has(key)) {
+          byKey.set(key, { label: key, bars: [], off: bar.type === "off" });
+          groups.push(byKey.get(key));
+        }
+        const group = byKey.get(key);
+        group.bars.push(bar);
+        group.off = group.off && bar.type === "off";
+      }
+      return groups.filter((group) => !group.off).concat(groups.filter((group) => group.off));
+    }
+
+    function renderLegendInto(hostId, bars, slots) {
+      const entries = [];
+      for (const [name, slot] of slots) {
+        entries.push(swatchLegend(name, slot ? "var(--series-" + slot + ")" : "#c3c2b7"));
+      }
+      if (bars.some((bar) => bar.type === "baseline")) {
+        entries.push(swatchLegend("Term baseline", "#c3c2b7"));
+      }
+      if (bars.some((bar) => bar.type === "open")) {
+        entries.push(swatchLegend("Open capacity", "var(--accent)", true));
+      }
+      if (bars.some((bar) => bar.type === "off")) {
+        entries.push(swatchLegend("Time off", "#c3c2b7", true));
+      }
+      document.getElementById(hostId).innerHTML = entries.join("");
+    }
+
+    function swatchLegend(label, color, hatched) {
+      return '<span><i class="viz-swatch' + (hatched ? " hatch" : "") + '" style="--sw: ' + color +
+        '"></i>' + escapeHtml(label) + "</span>";
+    }
+
+    function renderTimelineInto(hostId, groups, bars, slots) {
+      const horizon = horizonOf(bars);
+      const timeline = document.getElementById(hostId);
+      timeline.style.setProperty("--weeks", String(horizon.weeks));
+      const parts = [];
+      // Month ruler: one tick per month boundary inside the horizon, so a bar always lines up
+      // with the month it falls in without labelling all 78 weeks.
+      let cursorMonth = -1;
+      for (let week = 0; week < horizon.weeks; week += 1) {
+        const date = new Date(addDays(horizon.start, week * 7));
+        const month = date.getUTCMonth();
+        if (month === cursorMonth) continue;
+        cursorMonth = month;
+        const suffix = month === 0 || week === 0 ? " " + String(date.getUTCFullYear()).slice(2) : "";
+        parts.push('<div class="tl-month" style="grid-column: ' + (week + 2) + '">' +
+          MONTH_NAMES[month] + suffix + "</div>");
+      }
+      // Grid row 1 is the month ruler, so data rows start at 2.
+      let gridRow = 2;
+      for (const group of groups) {
+        const lanes = packLanes(group.bars);
+        lanes.forEach((lane, laneIndex) => {
+          const row = gridRow + laneIndex;
+          // The label belongs to the group, not the lane, so only its first lane is labelled; the
+          // title carries the full name because the gutter ellipsizes long project names.
+          parts.push('<div class="tl-label" style="grid-row: ' + row + '" title="' +
+            escapeHtml(group.label) + '">' +
+            escapeHtml(laneIndex === 0 ? group.label : "") + "</div>");
+          // The hairline delimits groups, not lanes: a person whose time off overlaps their project
+          // bars occupies several lanes, and a rule above each one would read as separate people.
+          parts.push('<div class="tl-track' + (laneIndex ? " lane" : "") +
+            '" style="--r: ' + row + '"></div>');
+          for (const bar of lane) {
+            const rendered = renderTimelineBar(bar, row, horizon, slots);
+            if (rendered) parts.push(rendered);
+          }
+        });
+        gridRow += Math.max(lanes.length, 1);
+      }
+      parts.push('<div class="tl-today" style="--c-start: ' + weekColumn(horizon.today, horizon) + '"></div>');
+      timeline.innerHTML = parts.join("");
+    }
+
+    // Two overlapping ranges on one grid row stack on top of each other and the lower one becomes
+    // invisible — a conference during a heavy semester is exactly that case — so overlaps are
+    // greedily packed into extra lanes. Input is sorted by start, so the first lane whose last bar
+    // has already ended is always a valid home.
+    function packLanes(bars) {
+      const lanes = [];
+      const ordered = bars.slice().sort((left, right) => String(left.start).localeCompare(String(right.start)));
+      for (const bar of ordered) {
+        const start = parseIso(bar.start);
+        const lane = lanes.find((rows) => {
+          const end = parseIso(rows[rows.length - 1].end);
+          return start === null || end === null || end < start;
+        });
+        if (lane) lane.push(bar);
+        else lanes.push([bar]);
+      }
+      return lanes;
+    }
+
+    function renderTimelineBar(bar, gridRow, horizon, slots) {
+      const start = parseIso(bar.start);
+      const end = parseIso(bar.end);
+      // A row mid-edit can hold a blank or half-typed date; skip it rather than drawing garbage.
+      if (start === null || end === null || start > end) return "";
+      const columnStart = weekColumn(start, horizon);
+      const columnEnd = Math.max(weekColumn(end, horizon) + 1, columnStart + 1);
+      const style = ["--r: " + gridRow, "--c-start: " + columnStart, "--c-end: " + columnEnd];
+      let classes = "tl-bar";
+      let text = "";
+      if (bar.type === "off") {
+        // Icon before the label, not a " · partial" suffix: a narrow bar ellipsizes the suffix away
+        // and leaves a dangling separator, and the glyph keeps the state readable without colour.
+        classes += bar.availability === "partial" ? " off partial" : " off";
+        text = (bar.availability === "partial" ? "◐ " : "● ") + bar.label;
+      } else if (bar.type === "open") {
+        classes += " open";
+        text = formatHours(bar.hours) + " open";
+      } else {
+        const slot = slots.get(bar.project);
+        if (slot) style.push("--sw: var(--series-" + slot + ")");
+        else classes += " other";
+        // In the lab view a row is a person, so the bar has to name the project it belongs to.
+        text = formatHours(bar.hours) + (bar.showProject ? " " + bar.label : "");
+      }
+      return '<div class="' + classes + '" style="' + style.join("; ") + '" title="' +
+        escapeHtml(barTooltip(bar)) + '">' + escapeHtml(text) + "</div>";
+    }
+
+    function barTooltip(bar) {
+      const range = bar.start + " → " + bar.end;
+      const detail = bar.type === "off"
+        ? bar.label + " · availability " + (bar.availability || "none")
+        : formatHours(bar.hours) + " / week";
+      const owner = bar.owner ? bar.owner + " · " : "";
+      const subject = bar.type === "off" ? "Time off" : bar.label;
+      return owner + subject + " · " + range + " · " + detail + (bar.note ? " · " + bar.note : "");
+    }
+
+    function formatHours(value) {
+      const hours = numericValue(value);
+      return hours === null ? "—" : hours + "h";
+    }
+
+    // The table is the relief path for the three categorical slots that sit under 3:1 contrast on
+    // this white panel, and the accessible read of the same data.
+    function renderAvailabilityTable() {
+      const rows = schedule.availability
+        .map((row) => ({
+          start: row.start,
+          end: row.end,
+          commitment: commitmentLabel(row),
+          hours: formatHours(row.hours_per_week),
+          note: row.note || ""
+        }))
+        .concat(schedule.time_off.map((row) => ({
+          start: row.start,
+          end: row.end,
+          commitment: "Time off · " + humanize(row.kind || "other"),
+          hours: row.availability === "partial" ? "Partial" : "None",
+          note: row.note || ""
+        })))
+        .sort((left, right) => String(left.start).localeCompare(String(right.start)));
+      document.getElementById("availability-tbody").innerHTML = rows.map((row) =>
+        "<tr><td>" + escapeHtml(row.start || "—") + "</td><td>" + escapeHtml(row.end || "—") +
+        "</td><td>" + escapeHtml(row.commitment) + "</td><td>" + escapeHtml(row.hours) +
+        "</td><td>" + escapeHtml(row.note) + "</td></tr>").join("");
+    }
+
+    // Lab-wide view: one row per member, so the bar has to name its project, and project colours
+    // are assigned over every member's bars at once — a project keeps one colour lab-wide, which is
+    // the whole point of reading across people.
+    function renderCapacity() {
+      const showReasons = isPrivileged();
+      const groups = [];
+      const bars = [];
+      for (const member of state.members.slice().sort((left, right) =>
+        String(left.name || left.id).localeCompare(String(right.name || right.id)))) {
+        const owner = String(member.name || member.id || "").trim();
+        const own = memberBars(member, showReasons)
+          .map((bar) => ({ ...bar, owner, showProject: bar.type === "project" }));
+        if (!own.length) continue;
+        bars.push(...own);
+        groups.push({ label: owner, bars: own });
+      }
+      const hasRows = bars.length > 0;
+      document.getElementById("capacity-empty").hidden = hasRows;
+      document.getElementById("capacity-legend").hidden = !hasRows;
+      const weekStart = mondayOf(parseIso(isoOf(Date.now())));
+      renderCapacityStats(groups, bars, weekStart);
+      renderCapacityProjects(bars, weekStart);
+      renderCapabilities();
+      document.getElementById("capacity-week").textContent =
+        "Week of " + isoOf(weekStart);
+      if (!hasRows) {
+        document.getElementById("capacity-timeline").innerHTML = "";
+        document.getElementById("capacity-note").textContent = "";
+        return;
+      }
+      const slots = assignProjectSlots(bars);
+      // Never let the palette cap be silent: past four projects the extras share the neutral fill
+      // and only their label tells them apart, so say so instead of looking fully colour-coded.
+      const greyed = [...slots.values()].filter((slot) => slot === 0).length;
+      document.getElementById("capacity-note").textContent = [
+        "Hours are as recorded by each member.",
+        showReasons
+          ? "Time-off reasons are visible to admins and core members only."
+          : "Time-off reasons are hidden; only away/partly-away is shown.",
+        greyed
+          ? greyed + (greyed === 1
+            ? " project past the first four shares"
+            : " projects past the first four share") +
+            " the neutral fill — read their bar labels."
+          : ""
+      ].filter(Boolean).join(" ");
+      renderLegendInto("capacity-legend", bars, slots);
+      renderTimelineInto("capacity-timeline", groups, bars, slots);
+    }
+
+    // A range counts toward "this week" if it overlaps the Monday–Sunday window at all.
+    function activeInWeek(bar, weekStart) {
+      const start = parseIso(bar.start);
+      const end = parseIso(bar.end);
+      return start !== null && end !== null && start <= addDays(weekStart, 6) && end >= weekStart;
+    }
+
+    function renderCapacityStats(groups, bars, weekStart) {
+      const live = bars.filter((bar) => activeInWeek(bar, weekStart));
+      const sumHours = (type) => live
+        .filter((bar) => bar.type === type)
+        .reduce((total, bar) => total + (numericValue(bar.hours) ?? 0), 0);
+      // Baseline rows are real committed hours too; only the open sentinel is spare.
+      const committed = sumHours("project") + sumHours("baseline");
+      const away = new Set(live.filter((bar) => bar.type === "off").map((bar) => bar.owner));
+      document.getElementById("cap-people").textContent = groups.length;
+      document.getElementById("cap-committed").textContent = committed;
+      document.getElementById("cap-open").textContent = sumHours("open");
+      document.getElementById("cap-away").textContent = away.size;
+    }
+
+    function renderCapacityProjects(bars, weekStart) {
+      const projects = new Map();
+      for (const bar of bars.filter((bar) => bar.type === "project")) {
+        if (!projects.has(bar.project)) {
+          projects.set(bar.project, { hours: 0, people: new Set(), through: "" });
+        }
+        const entry = projects.get(bar.project);
+        entry.people.add(bar.owner);
+        if (String(bar.end) > entry.through) entry.through = String(bar.end);
+        if (activeInWeek(bar, weekStart)) entry.hours += numericValue(bar.hours) ?? 0;
+      }
+      const rows = [...projects.entries()].sort((left, right) => right[1].hours - left[1].hours);
+      document.getElementById("capacity-projects").innerHTML = rows.length
+        ? rows.map(([name, entry]) =>
+          "<tr><td>" + escapeHtml(name) + "</td><td>" + entry.hours +
+          "</td><td>" + escapeHtml([...entry.people].sort().join(", ")) +
+          "</td><td>" + escapeHtml(entry.through || "—") + "</td></tr>").join("")
+        : '<tr><td colspan="4" class="cell-details">No project commitments recorded.</td></tr>';
+    }
+
+    // "Capabilities" comes from the roster itself (branch + topics), not the schedule, so it still
+    // answers "can the lab do X" for members who have not filled in availability yet.
+    function renderCapabilities() {
+      const skills = new Map();
+      for (const member of state.members) {
+        const profile = memberProfile(member);
+        const owner = String(member.name || member.id || "").trim();
+        for (const skill of [profile.branch].concat(profile.topics).filter(Boolean)) {
+          if (!skills.has(skill)) skills.set(skill, new Set());
+          skills.get(skill).add(owner);
+        }
+      }
+      const rows = [...skills.entries()]
+        .sort((left, right) => right[1].size - left[1].size || left[0].localeCompare(right[0]));
+      document.getElementById("capacity-skills").innerHTML = rows.length
+        ? rows.map(([skill, people]) =>
+          "<tr><td>" + escapeHtml(skill) + "</td><td>" + people.size +
+          "</td><td>" + escapeHtml([...people].sort().join(", ")) + "</td></tr>").join("")
+        : '<tr><td colspan="3" class="cell-details">No research branches or topics recorded.</td></tr>';
+    }
+
+    // Editors are re-rendered only on add/remove; a keystroke updates state and redraws the chart
+    // alone, because rebuilding the inputs mid-edit would steal focus from the field being typed.
+    function renderScheduleEditors() {
+      const availabilityHost = document.getElementById("availability-rows");
+      availabilityHost.innerHTML = schedule.availability.length
+        ? schedule.availability.map((row, index) => availabilityRowMarkup(row, index)).join("")
+        : '<p class="sched-empty">No commitments yet.</p>';
+      const timeOffHost = document.getElementById("time-off-rows");
+      timeOffHost.innerHTML = schedule.time_off.length
+        ? schedule.time_off.map((row, index) => timeOffRowMarkup(row, index)).join("")
+        : '<p class="sched-empty">No time off recorded.</p>';
+    }
+
+    function availabilityRowMarkup(row, index) {
+      const project = projectKey(row);
+      const options = uniqueValues(memberProfile(sessionMember || {}).projects)
+        .map((name) => '<option value="' + escapeHtml(name) + '"' +
+          (name === project ? " selected" : "") + ">" + escapeHtml(name) + "</option>").join("");
+      return '<div class="sched-row" data-list="availability" data-index="' + index + '">' +
+        '<label class="tight">From<input type="date" data-field="start" value="' + escapeHtml(row.start || "") + '"></label>' +
+        '<label class="tight">To<input type="date" data-field="end" value="' + escapeHtml(row.end || "") + '"></label>' +
+        '<label>Project<select data-field="project"><option value="">Term baseline</option>' +
+        '<option value="' + OPEN_PROJECT + '"' + (project === OPEN_PROJECT ? " selected" : "") +
+        ">Open capacity</option>" + options +
+        (project && project !== OPEN_PROJECT && !options.includes('value="' + escapeHtml(project) + '"')
+          ? '<option value="' + escapeHtml(project) + '" selected>' + escapeHtml(project) + "</option>"
+          : "") +
+        "</select></label>" +
+        '<label class="tight">Hours / week<input type="number" min="0" max="168" step="1" data-field="hours_per_week" value="' +
+        escapeHtml(row.hours_per_week ?? "") + '"></label>' +
+        '<label>Note<input type="text" data-field="note" placeholder="Optional" value="' +
+        escapeHtml(row.note || "") + '"></label>' +
+        '<button class="drop" type="button" data-drop="availability" data-index="' + index + '">Remove</button>' +
+        "</div>";
+    }
+
+    function timeOffRowMarkup(row, index) {
+      const kinds = timeOffKinds.map((kind) => '<option value="' + kind + '"' +
+        (row.kind === kind ? " selected" : "") + ">" + humanize(kind) + "</option>").join("");
+      return '<div class="sched-row" data-list="time_off" data-index="' + index + '">' +
+        '<label class="tight">From<input type="date" data-field="start" value="' + escapeHtml(row.start || "") + '"></label>' +
+        '<label class="tight">To<input type="date" data-field="end" value="' + escapeHtml(row.end || "") + '"></label>' +
+        '<label>Reason<select data-field="kind">' + kinds + "</select></label>" +
+        '<label>Still available<select data-field="availability">' +
+        '<option value="none"' + (row.availability === "partial" ? "" : " selected") + ">Not available</option>" +
+        '<option value="partial"' + (row.availability === "partial" ? " selected" : "") + ">Partly available</option>" +
+        "</select></label>" +
+        '<label>Note<input type="text" data-field="note" placeholder="Optional" value="' +
+        escapeHtml(row.note || "") + '"></label>' +
+        '<button class="drop" type="button" data-drop="time_off" data-index="' + index + '">Remove</button>' +
+        "</div>";
+    }
+
+    // Client-side mirror of validateAvailability in service-core.ts. The server stays the trust
+    // boundary; this only saves a round trip on obvious mistakes.
+    function scheduleValidationError() {
+      for (const row of schedule.availability) {
+        if (!row.start || !row.end) return "Every commitment needs a start and end date.";
+        if (parseIso(row.start) > parseIso(row.end)) return "A commitment cannot end before it starts.";
+        const hours = numericValue(row.hours_per_week);
+        if (hours === null || hours < 0 || hours > 168) return "Hours per week must be between 0 and 168.";
+      }
+      for (const row of schedule.time_off) {
+        if (!row.start || !row.end) return "Every time-off entry needs a start and end date.";
+        if (parseIso(row.start) > parseIso(row.end)) return "Time off cannot end before it starts.";
+      }
+      // Mirrors the server's host allowlist: the importer fetches this URL, so it has to be a
+      // Google Docs or Drive link, not an arbitrary host.
+      const doc = String(document.getElementById("availability-doc-url").value || "").trim();
+      if (doc && !/^https:\\/\\/(docs|drive)\\.google\\.com\\//u.test(doc)) {
+        return "The availability doc must be an https Google Docs or Drive link.";
+      }
+      return "";
     }
 
     // Dedicated auth POST so we can surface generic server errors and the 429 retry_after_seconds
@@ -1855,6 +2724,112 @@ export function renderAdminBotWebUi(): string {
         await refresh();
       } catch (error) {
         setStatus("profile-status", error.message, "error");
+      }
+    });
+
+    // Delegated so the handlers survive every editor re-render. A field edit mutates state and
+    // redraws the chart only; add/remove rebuilds the inputs.
+    document.getElementById("schedule-form").addEventListener("input", (event) => {
+      const field = event.target.dataset?.field;
+      const container = event.target.closest(".sched-row");
+      if (!field || !container) return;
+      const row = schedule[container.dataset.list]?.[Number(container.dataset.index)];
+      if (!row) return;
+      // Kept as the raw string; Number() conversion happens once, on submit.
+      row[field] = event.target.value;
+      renderAvailability();
+    });
+
+    document.getElementById("schedule-form").addEventListener("change", (event) => {
+      if (event.target.dataset?.field) renderAvailability();
+    });
+
+    document.getElementById("schedule-form").addEventListener("click", (event) => {
+      const list = event.target.dataset?.drop;
+      if (!list) return;
+      schedule[list].splice(Number(event.target.dataset.index), 1);
+      renderScheduleEditors();
+      renderAvailability();
+    });
+
+    document.getElementById("availability-add").addEventListener("click", () => {
+      // Seed a one-week row starting this coming Monday: the near-term horizon is the common case,
+      // and a prefilled range means the bar shows up immediately instead of after four fields.
+      const monday = mondayOf(addDays(Date.now(), 7));
+      schedule.availability.push({
+        start: isoOf(monday),
+        end: isoOf(addDays(monday, 6)),
+        project: "",
+        hours_per_week: memberProfile(sessionMember || {}).hours ?? 0
+      });
+      renderScheduleEditors();
+      renderAvailability();
+    });
+
+    document.getElementById("time-off-add").addEventListener("click", () => {
+      const monday = mondayOf(addDays(Date.now(), 7));
+      schedule.time_off.push({
+        start: isoOf(monday),
+        end: isoOf(addDays(monday, 6)),
+        kind: "vacation",
+        availability: "none"
+      });
+      renderScheduleEditors();
+      renderAvailability();
+    });
+
+    document.getElementById("availability-view-timeline").addEventListener("click", () => setAvailabilityView("timeline"));
+    document.getElementById("availability-view-table").addEventListener("click", () => setAvailabilityView("table"));
+
+    function setAvailabilityView(view) {
+      availabilityView = view;
+      document.getElementById("availability-view-timeline").setAttribute("aria-pressed", String(view === "timeline"));
+      document.getElementById("availability-view-table").setAttribute("aria-pressed", String(view === "table"));
+      renderAvailability();
+    }
+
+    document.getElementById("schedule-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!sessionMember) return;
+      const invalid = scheduleValidationError();
+      if (invalid) {
+        setStatus("schedule-status", invalid, "error");
+        return;
+      }
+      // Only the schedule fields are sent; updateOwnProfile merges a whitelisted patch, so this
+      // cannot clobber the profile fields owned by the other form.
+      const body = {
+        availability: schedule.availability.map((row) => ({
+          start: row.start,
+          end: row.end,
+          ...(projectKey(row) ? { project: projectKey(row) } : {}),
+          hours_per_week: Number(row.hours_per_week),
+          ...(row.note ? { note: row.note } : {})
+        })),
+        time_off: schedule.time_off.map((row) => ({
+          start: row.start,
+          end: row.end,
+          kind: row.kind || "other",
+          availability: row.availability === "partial" ? "partial" : "none",
+          ...(row.note ? { note: row.note } : {})
+        })),
+        availability_doc_url:
+          String(document.getElementById("availability-doc-url").value || "").trim()
+      };
+      try {
+        const updated = await api("/lab/members/" + encodeURIComponent(sessionMember.id), {
+          method: "PUT",
+          body: JSON.stringify(body)
+        });
+        sessionMember = updated;
+        setSchedule(updated);
+        setStatus("schedule-status", "Saved schedule.", "ok");
+        renderScheduleEditors();
+        renderAvailability();
+        renderDocHint();
+        await refresh();
+      } catch (error) {
+        setStatus("schedule-status", error.message, "error");
       }
     });
 
