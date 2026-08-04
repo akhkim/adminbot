@@ -2,6 +2,8 @@
 import {
   type MemberNudgeChannel,
   type MemberProfileUpdate,
+  approveActionAsMember,
+  executeActionAsMember,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
   sendMemberNudge,
@@ -454,29 +456,73 @@ export async function loadAdminBot(
   }
 }
 
+function approvalFailureMessage(kind: string): string {
+  if (kind === "unreachable") {
+    return ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE;
+  }
+  if (kind === "forbidden") {
+    return "Your session no longer has approval rights — sign in again and retry.";
+  }
+  if (kind === "rate-limited") {
+    return "Too many attempts. Wait a moment and try again.";
+  }
+  return "Couldn't record this approval. Reload the pending list and try again.";
+}
+
 export async function approveAdminBotAction(
   host: AdminBotHost,
   proposal: AdminBotActionProposal,
 ): Promise<void> {
   host.adminBotBusyActionId = proposal.id;
   host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your member account to approve actions.",
+    };
+    host.adminBotBusyActionId = null;
+    return;
+  }
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
   try {
-    const role = "admin";
-    await invokeAdminBotTool(host, "adminbot_approve_action", {
-      actionId: proposal.id,
-      payloadHash: proposal.payload_hash,
-      approverRole: role,
-      approverId: "control-ui",
-      controlUiConfirmed: true,
-    });
-    const result = (await invokeAdminBotTool(host, "adminbot_execute_approved_action", {
-      actionId: proposal.id,
-      idempotencyKey: `control-ui-${proposal.id}`,
-      controlUiConfirmed: true,
-    })) as AdminBotExecutionResult;
+    const approved = await approveActionAsMember(
+      proposal.id,
+      proposal.payload_hash,
+      stored.sessionToken,
+      baseUrl,
+    );
+    if (!approved.ok) {
+      host.adminBotNotice = { kind: "error", text: approvalFailureMessage(approved.kind) };
+      return;
+    }
+    // High-risk actions need a second distinct approver; stop here rather than executing an
+    // action that is still pending quorum.
+    if (approved.value.status !== "approved") {
+      const need = approved.value.approval_requirement.min_approvals;
+      const have = new Set(
+        approved.value.approvals.map((entry) => entry.approver_id ?? entry.approver_role),
+      ).size;
+      host.adminBotNotice = {
+        kind: "success",
+        text: `Recorded your approval of ${proposal.id}. ${have} of ${need} approvals — another admin or core member must approve before it runs.`,
+      };
+      await loadAdminBot(host);
+      return;
+    }
+    const executed = await executeActionAsMember(
+      proposal.id,
+      `control-ui-${proposal.id}`,
+      stored.sessionToken,
+      baseUrl,
+    );
+    if (!executed.ok) {
+      host.adminBotNotice = { kind: "error", text: approvalFailureMessage(executed.kind) };
+      return;
+    }
     host.adminBotNotice = {
       kind: "success",
-      text: `${result.status === "executed" ? "Approved and executed" : "Approved and simulated"} ${proposal.id}.`,
+      text: `${executed.value.status === "executed" ? "Approved and executed" : "Approved and simulated"} ${proposal.id}.`,
     };
     await loadAdminBot(host);
   } catch (err) {

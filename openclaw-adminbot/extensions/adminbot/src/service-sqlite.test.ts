@@ -43,7 +43,7 @@ describe("AdminBotSqliteStore", () => {
     unwrap(
       first.service.approve(proposal.id, {
         payload_hash: proposal.payload_hash,
-        approver_role: "pi",
+        approver_role: "admin",
       }),
     );
     first.close();
@@ -71,6 +71,13 @@ describe("AdminBotSqliteStore", () => {
       first.service.createProposal({
         type: "calendar.create_tentative_hold",
         summary: "Hold interview slot",
+      }),
+    );
+    unwrap(
+      first.service.approve(proposal.id, {
+        payload_hash: proposal.payload_hash,
+        approver_role: "admin",
+        approver_id: "andrew",
       }),
     );
     const result = unwrap(

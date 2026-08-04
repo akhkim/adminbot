@@ -1478,7 +1478,7 @@ export function renderAdminBotWebUi(): string {
         if (target.dataset.approve) {
           await api("/approvals/" + encodeURIComponent(target.dataset.approve) + "/approve", {
             method: "POST",
-            body: JSON.stringify({ payload_hash: target.dataset.hash, approver_role: "pi" })
+            body: JSON.stringify({ payload_hash: target.dataset.hash })
           });
         }
         if (target.dataset.execute) {

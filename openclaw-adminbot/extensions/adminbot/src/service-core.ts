@@ -31,10 +31,15 @@ import type {
 import { adminBotMemberStatuses } from "./contracts.js";
 import { buildInitialOnboarding } from "./onboarding.js";
 
+// Approver roles are privilege levels from the member roster, not a separate vocabulary: the
+// service can only ever verify the level on the authenticated session, so anything else here
+// would be unenforceable decoration.
+type AdminBotApproverRole = Extract<AdminBotPrivilegeLevel, "admin" | "core_member">;
+
 type AdminBotActionPolicy = {
   risk_tier: AdminBotRiskTier;
   requires_approval: boolean;
-  approver_roles: string[];
+  approver_roles: AdminBotApproverRole[];
   min_approvals: number;
   auto_allowed?: boolean;
 };
@@ -95,30 +100,30 @@ export type AdminBotServiceOptions = {
 };
 
 const DEFAULT_ACTION_POLICIES = {
-  "candidate.accept_for_trial": approvalPolicy("T4", ["pi", "lab_manager"]),
-  "candidate.accept_direct": approvalPolicy("T4", ["pi"]),
-  "candidate.decline": approvalPolicy("T4", ["pi", "lab_manager"]),
-  "slack.invite_guest": approvalPolicy("T3", ["pi", "lab_manager"]),
-  "slack.invite_member": approvalPolicy("T3", ["pi", "lab_manager"]),
-  "slack.send_message": approvalPolicy("T3", ["pi", "lab_manager"]),
-  "vector.invite": approvalPolicy("T3", ["pi", "lab_manager"]),
+  "candidate.accept_for_trial": approvalPolicy("T4", ["admin", "core_member"]),
+  "candidate.accept_direct": approvalPolicy("T4", ["admin"]),
+  "candidate.decline": approvalPolicy("T4", ["admin", "core_member"]),
+  "slack.invite_guest": approvalPolicy("T3", ["admin", "core_member"]),
+  "slack.invite_member": approvalPolicy("T3", ["admin", "core_member"]),
+  "slack.send_message": approvalPolicy("T3", ["admin", "core_member"]),
+  "vector.invite": approvalPolicy("T3", ["admin", "core_member"]),
   "calendar.create_tentative_hold": approvalPolicy("T2", ["admin"]),
-  "calendar.send_invite": approvalPolicy("T3", ["pi", "lab_manager"]),
-  "calendar.reschedule": approvalPolicy("T3", ["pi", "lab_manager"]),
-  "calendar.cancel": approvalPolicy("T3", ["pi", "lab_manager"]),
+  "calendar.send_invite": approvalPolicy("T3", ["admin", "core_member"]),
+  "calendar.reschedule": approvalPolicy("T3", ["admin", "core_member"]),
+  "calendar.cancel": approvalPolicy("T3", ["admin", "core_member"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
-  "email.send": approvalPolicy("T3", ["pi", "lab_manager"]),
+  "email.send": approvalPolicy("T3", ["admin", "core_member"]),
   "recommendation_letter.draft": autoPolicy("T1"),
-  "recommendation_letter.send": approvalPolicy("T4", ["pi"], 2),
+  "recommendation_letter.send": approvalPolicy("T4", ["admin"], 2),
   "reimbursement.prepare_packet": autoPolicy("T1"),
-  "reimbursement.submit": approvalPolicy("T4", ["pi", "lab_manager"], 2),
+  "reimbursement.submit": approvalPolicy("T4", ["admin", "core_member"], 2),
   "social_media.draft": autoPolicy("T1"),
-  "social_media.post_publicly": approvalPolicy("T4", ["pi", "lab_manager"], 2),
+  "social_media.post_publicly": approvalPolicy("T4", ["admin", "core_member"], 2),
   "paper_publish.prepare": autoPolicy("T1"),
-  "paper.overleaf_edit": approvalPolicy("T4", ["pi", "lab_manager"], 2),
-  "paper_publish.submit": approvalPolicy("T4", ["pi"], 2),
-  "paper_publish.nudge_author": approvalPolicy("T3", ["pi", "lab_manager"]),
-  "paper_publish.escalate_to_pi": approvalPolicy("T3", ["pi", "lab_manager"]),
+  "paper.overleaf_edit": approvalPolicy("T4", ["admin", "core_member"], 2),
+  "paper_publish.submit": approvalPolicy("T4", ["admin"], 2),
+  "paper_publish.nudge_author": approvalPolicy("T3", ["admin", "core_member"]),
+  "paper_publish.escalate_to_pi": approvalPolicy("T3", ["admin", "core_member"]),
   "join_form.classify": autoPolicy("T0"),
   // Deliberately auto-approved, unlike every other outbound-message type (slack.send_message,
   // email.send, paper_publish.nudge_author are all T3/approval-required): creating this proposal
@@ -435,25 +440,10 @@ export class AdminBotService {
   }
 
   listPending(limit?: number): AdminBotServiceResponse<{ proposals: AdminBotStoredProposal[] }> {
-    const proposals = this.store.listPending(limit).map((proposal) => {
-      if (!proposal.approval_requirement.requires_approval) {
-        return proposal;
-      }
-      const normalized: AdminBotStoredProposal = {
-        ...proposal,
-        approval_requirement: {
-          requires_approval: true,
-          approver_roles: ["admin"],
-          min_approvals: 1,
-        },
-      };
-      this.store.updateProposal(normalized);
-      return normalized;
-    });
     return {
       ok: true,
       status: 200,
-      payload: { proposals },
+      payload: { proposals: this.store.listPending(limit) },
     };
   }
 
@@ -502,13 +492,18 @@ export class AdminBotService {
       return serviceError(409, "payload hash mismatch");
     }
     const requirement = proposal.approval_requirement;
-    if (requirement.requires_approval && request.approver_role !== "admin") {
+    if (
+      requirement.requires_approval &&
+      !requirement.approver_roles.includes(request.approver_role)
+    ) {
       return serviceError(403, `approver role not allowed: ${request.approver_role}`);
     }
     if (!hasApproval(proposal.approvals, request)) {
       proposal.approvals.push(request);
     }
-    if (proposal.approvals.length >= 1) {
+    // Quorum counts distinct approvers, not rows: a two-person rule that the same person can
+    // satisfy twice by varying the role or note is not a two-person rule.
+    if (distinctApprovers(proposal.approvals) >= requirement.min_approvals) {
       proposal.status = "approved";
     }
     proposal.updated_at = new Date().toISOString();
@@ -575,7 +570,12 @@ export class AdminBotService {
       return serviceError(409, "proposal is not approved");
     }
     const requirement = proposal.approval_requirement;
-    if (requirement.requires_approval && proposal.approvals.length < 1) {
+    // Re-check quorum at execution rather than trusting the stored status: the requirement is
+    // the contract, and a proposal marked approved under a weaker one must not execute.
+    if (
+      requirement.requires_approval &&
+      distinctApprovers(proposal.approvals) < requirement.min_approvals
+    ) {
       return serviceError(409, "proposal does not have the required approvals");
     }
     const now = new Date().toISOString();
@@ -1064,22 +1064,23 @@ function resolvePolicy(proposal: AdminBotActionProposal): AdminBotActionPolicy {
   const defaults = DEFAULT_ACTION_POLICIES[proposal.type];
   const riskTier = proposal.risk_tier ?? defaults.risk_tier;
   const fallback = defaultPolicyForRiskTier(riskTier);
-  const requiresApproval =
-    defaults.requires_approval || fallback.requires_approval || defaults.auto_allowed !== true;
-  return requiresApproval ? approvalPolicy(riskTier, ["admin"]) : autoPolicy(riskTier);
+  return {
+    ...fallback,
+    ...defaults,
+    risk_tier: riskTier,
+    requires_approval:
+      defaults.requires_approval || fallback.requires_approval || defaults.auto_allowed !== true,
+  };
 }
 
 function defaultPolicyForRiskTier(riskTier: AdminBotRiskTier): AdminBotActionPolicy {
   if (riskTier === "T0" || riskTier === "T1") {
     return autoPolicy(riskTier);
   }
-  if (riskTier === "T2") {
-    return approvalPolicy(riskTier, ["pi", "lab_manager"]);
+  if (riskTier === "T2" || riskTier === "T3") {
+    return approvalPolicy(riskTier, ["admin", "core_member"]);
   }
-  if (riskTier === "T3") {
-    return approvalPolicy(riskTier, ["pi", "lab_manager"]);
-  }
-  return approvalPolicy(riskTier, ["pi"], 2);
+  return approvalPolicy(riskTier, ["admin"], 2);
 }
 
 function autoPolicy(riskTier: AdminBotRiskTier): AdminBotActionPolicy {
@@ -1094,14 +1095,14 @@ function autoPolicy(riskTier: AdminBotRiskTier): AdminBotActionPolicy {
 
 function approvalPolicy(
   riskTier: AdminBotRiskTier,
-  approverRoles: string[],
+  approverRoles: AdminBotApproverRole[],
   minApprovals = 1,
 ): AdminBotActionPolicy {
   return {
     risk_tier: riskTier,
     requires_approval: true,
-    approver_roles: ["admin"],
-    min_approvals: 1,
+    approver_roles: approverRoles,
+    min_approvals: minApprovals,
   };
 }
 
@@ -1395,9 +1396,18 @@ function hasApproval(
   return approvals.some(
     (approval) =>
       approval.payload_hash === request.payload_hash &&
-      approval.approver_role === request.approver_role &&
-      (approval.approver_id ?? "") === (request.approver_id ?? ""),
+      approverIdentity(approval) === approverIdentity(request),
   );
+}
+
+// The approver's member id is the identity; the role is only the permission that let them in.
+// Falling back to the role keeps pre-identity audit rows countable as one approver.
+function approverIdentity(approval: AdminBotApprovalRequest): string {
+  return approval.approver_id?.trim() || `role:${approval.approver_role}`;
+}
+
+function distinctApprovers(approvals: AdminBotApprovalRequest[]): number {
+  return new Set(approvals.map(approverIdentity)).size;
 }
 
 function stableJson(value: unknown): string {

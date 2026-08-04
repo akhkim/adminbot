@@ -25,7 +25,7 @@ describe("AdminBotService", () => {
     expect(proposal.risk_tier).toBe("T4");
     expect(proposal.approval_requirement).toEqual({
       requires_approval: true,
-      approver_roles: ["pi", "lab_manager"],
+      approver_roles: ["admin", "core_member"],
       min_approvals: 1,
     });
 
@@ -39,7 +39,7 @@ describe("AdminBotService", () => {
     const approved = unwrap(
       service.approve(proposal.id, {
         payload_hash: proposal.payload_hash,
-        approver_role: "pi",
+        approver_role: "admin",
         approver_id: "andrew",
       }),
     );
@@ -60,7 +60,7 @@ describe("AdminBotService", () => {
     expect(
       service.approve(proposal.id, {
         payload_hash: proposal.payload_hash,
-        approver_role: "pi",
+        approver_role: "admin",
         approver_id: "pi-1",
       }),
     ).toMatchObject({ ok: true });
@@ -74,7 +74,7 @@ describe("AdminBotService", () => {
     unwrap(
       service.approve(proposal.id, {
         payload_hash: proposal.payload_hash,
-        approver_role: "lab_manager",
+        approver_role: "core_member",
         approver_id: "manager-1",
       }),
     );
@@ -115,14 +115,14 @@ describe("AdminBotService", () => {
     expect(proposal.risk_tier).toBe("T3");
     expect(proposal.approval_requirement).toEqual({
       requires_approval: true,
-      approver_roles: ["pi", "lab_manager"],
+      approver_roles: ["admin", "core_member"],
       min_approvals: 1,
     });
 
     expect(
       service.approve(proposal.id, {
         payload_hash: proposal.payload_hash,
-        approver_role: "lab_manager",
+        approver_role: "core_member",
       }),
     ).toMatchObject({ ok: true });
   });
@@ -155,14 +155,14 @@ describe("AdminBotService", () => {
     expect(
       service.approve(proposal.id, {
         payload_hash: "wrong-hash",
-        approver_role: "pi",
+        approver_role: "admin",
       }),
     ).toEqual({ ok: false, status: 409, error: { message: "payload hash mismatch" } });
 
     unwrap(
       service.approve(proposal.id, {
         payload_hash: proposal.payload_hash,
-        approver_role: "pi",
+        approver_role: "admin",
       }),
     );
     const first = unwrap(
@@ -204,7 +204,7 @@ describe("AdminBotService", () => {
     expect(
       service.approve(proposal.id, {
         payload_hash: proposal.payload_hash,
-        approver_role: "pi",
+        approver_role: "admin",
       }),
     ).toEqual({ ok: false, status: 409, error: { message: "proposal is removed" } });
     expect(service.listAuditEvents()).toContainEqual(
@@ -593,6 +593,106 @@ describe("AdminBotService", () => {
         reason: "no live connector handles action type member_nudge.send",
       },
     ]);
+  });
+
+  // Regression guard for the approval model. Each of these once passed silently while the policy
+  // table was ignored: approvalPolicy() dropped its arguments, resolvePolicy() returned a fresh
+  // single-admin policy, listPending() rewrote stored requirements, and approve()/execute()
+  // compared against hardcoded literals instead of the requirement.
+  describe("approval policy enforcement", () => {
+    it("carries each action's declared roles and quorum onto the proposal", () => {
+      const service = new AdminBotService();
+      const publicPost = unwrap(
+        service.createProposal({ type: "social_media.post_publicly", summary: "Announce" }),
+      );
+      const draft = unwrap(
+        service.createProposal({ type: "social_media.draft", summary: "Draft post" }),
+      );
+
+      expect(publicPost.approval_requirement).toEqual({
+        requires_approval: true,
+        approver_roles: ["admin", "core_member"],
+        min_approvals: 2,
+      });
+      expect(publicPost.status).toBe("pending");
+      expect(draft.approval_requirement.requires_approval).toBe(false);
+      expect(draft.status).toBe("approved");
+    });
+
+    it("does not let one person satisfy a two-person quorum", async () => {
+      const service = new AdminBotService();
+      const proposal = unwrap(
+        service.createProposal({ type: "paper_publish.submit", summary: "Submit to NeurIPS" }),
+      );
+      expect(proposal.approval_requirement.min_approvals).toBe(2);
+
+      // Same member, different role label and note: still one approver.
+      unwrap(
+        service.approve(proposal.id, {
+          payload_hash: proposal.payload_hash,
+          approver_role: "admin",
+          approver_id: "andrew",
+          note: "first",
+        }),
+      );
+      unwrap(
+        service.approve(proposal.id, {
+          payload_hash: proposal.payload_hash,
+          approver_role: "admin",
+          approver_id: "andrew",
+          note: "second",
+        }),
+      );
+
+      expect(service.getProposal(proposal.id)?.status).toBe("pending");
+      expect(await service.execute(proposal.id, { dry_run: true })).toMatchObject({
+        ok: false,
+        status: 409,
+      });
+
+      unwrap(
+        service.approve(proposal.id, {
+          payload_hash: proposal.payload_hash,
+          approver_role: "admin",
+          approver_id: "zhijing",
+        }),
+      );
+      expect(service.getProposal(proposal.id)?.status).toBe("approved");
+      expect(await service.execute(proposal.id, { dry_run: true })).toMatchObject({ ok: true });
+    });
+
+    it("rejects an approver whose role is outside the action's allowed roles", () => {
+      const service = new AdminBotService();
+      const proposal = unwrap(
+        service.createProposal({ type: "paper_publish.submit", summary: "Submit to NeurIPS" }),
+      );
+
+      // paper_publish.submit is admin-only; core_member may approve lesser T3 actions.
+      expect(proposal.approval_requirement.approver_roles).toEqual(["admin"]);
+      expect(
+        service.approve(proposal.id, {
+          payload_hash: proposal.payload_hash,
+          approver_role: "core_member",
+          approver_id: "manager-1",
+        }),
+      ).toMatchObject({ ok: false, status: 403 });
+    });
+
+    it("leaves stored approval requirements untouched when listing pending proposals", () => {
+      const service = new AdminBotService();
+      const proposal = unwrap(
+        service.createProposal({ type: "reimbursement.submit", summary: "Submit expenses" }),
+      );
+
+      unwrap(service.listPending());
+      unwrap(service.listPending());
+
+      expect(service.getProposal(proposal.id)?.approval_requirement).toEqual({
+        requires_approval: true,
+        approver_roles: ["admin", "core_member"],
+        min_approvals: 2,
+      });
+    });
   });
 
   it("rejects an empty message or an empty recipient list", async () => {

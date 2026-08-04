@@ -352,6 +352,69 @@ export async function upsertLabMemberAsAdmin(
   return { ok: true, value: result.body as LabMember };
 }
 
+// Approvals go over the member session rather than the gateway tool: the service records the
+// approver from the authenticated principal, and the shared service principal every agent tool
+// call uses cannot name a person (extensions/adminbot/src/mock-service.ts).
+export async function approveActionAsMember(
+  actionId: string,
+  payloadHash: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<AdminBotProposalView>> {
+  return await privilegedActionCall<AdminBotProposalView>(
+    baseUrl,
+    `/approvals/${encodeURIComponent(actionId)}/approve`,
+    sessionToken,
+    { payload_hash: payloadHash },
+  );
+}
+
+export async function executeActionAsMember(
+  actionId: string,
+  idempotencyKey: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<AdminBotExecutionView>> {
+  return await privilegedActionCall<AdminBotExecutionView>(
+    baseUrl,
+    `/actions/${encodeURIComponent(actionId)}/execute`,
+    sessionToken,
+    { idempotency_key: idempotencyKey, dry_run: false },
+  );
+}
+
+export type AdminBotProposalView = {
+  id: string;
+  status: "pending" | "approved" | "executed" | "rejected";
+  approval_requirement: { min_approvals: number; approver_roles: string[] };
+  approvals: Array<{ approver_role: string; approver_id?: string }>;
+};
+
+export type AdminBotExecutionView = {
+  action_id: string;
+  status: "simulated" | "executed";
+  dry_run: boolean;
+};
+
+async function privilegedActionCall<T>(
+  baseUrl: string,
+  path: string,
+  sessionToken: string,
+  body: unknown,
+): Promise<AuthResult<T>> {
+  const result = await authedJson(baseUrl, path, "POST", sessionToken, body);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as T };
+}
+
 export type MemberNudgeChannel = "slack" | "email";
 
 export type MemberNudgeRequest = {
