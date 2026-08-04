@@ -21,6 +21,9 @@ coverage/
 test-results/
 playwright-report/
 
+__pycache__/
+*.pyc
+
 .DS_Store
 *.log
 npm-debug.log*

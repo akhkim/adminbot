@@ -18,7 +18,11 @@ Only OUTPUT is venues.json; nothing is sent.
 """
 import json, os, sys, urllib.request, datetime
 HERE = os.path.dirname(os.path.abspath(__file__))
-OUT  = os.path.join(HERE, "..", "extensions", "adminbot", "deadlines", "venues.json")
+
+sys.path.insert(0, HERE)
+
+from adminbot_deadlines import DEADLINES_DIR  # noqa: E402
+OUT  = os.path.join(DEADLINES_DIR, "venues.json")
 
 # --- curated, source-verified upcoming conference milestones (AoE 23:59:59) ---
 # Update these when the next cycle's official CFP is announced.
