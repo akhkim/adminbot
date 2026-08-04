@@ -248,6 +248,7 @@ export class OpenClawApp extends LitElement {
   @state() memberAuthFailure: MemberAuthFailure | null = null;
   @state() memberFormError: string | null = null;
   @state() loginPendingNotice = false;
+  @state() guestReimbursements = false;
   @state() rosterMembers: RosterMember[] = [];
   @state() rosterLoading = false;
   @state() rosterError: RosterError = null;
@@ -261,7 +262,6 @@ export class OpenClawApp extends LitElement {
   @state() memberResearchTopics = "";
   @state() memberProjects = "";
   @state() memberHoursPerWeek = "";
-  @state() memberCapacityPercent = "";
   @state() memberLocation = "";
   @state() memberTimezone = "";
   @state() memberPersonalWebsite = "";

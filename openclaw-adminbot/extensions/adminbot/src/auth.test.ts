@@ -219,7 +219,6 @@ describe("AdminBotAuthService claim/login flow", () => {
         research_topics: ["alignment", "rl"],
         projects: ["proj-a", "proj-b"],
         hours_per_week: 20,
-        capacity_percent: 80,
         location: "Toronto",
         timezone: "America/Toronto",
         personal_website: "https://example.com",
@@ -248,7 +247,6 @@ describe("AdminBotAuthService claim/login flow", () => {
       research_topics: ["alignment", "rl"],
       projects: ["proj-a", "proj-b"],
       hours_per_week: 20,
-      capacity_percent: 80,
       location: "Toronto",
       timezone: "America/Toronto",
       personal_website: "https://example.com",
@@ -257,7 +255,7 @@ describe("AdminBotAuthService claim/login flow", () => {
     });
   });
 
-  it("rejects signup profiles with non-numeric hours_per_week/capacity_percent", () => {
+  it("rejects signup profiles with non-numeric hours_per_week", () => {
     const { auth } = setup();
     const badHours = auth.signup({
       profile: { name: "Bad Hours", hours_per_week: "twenty" as unknown as number },

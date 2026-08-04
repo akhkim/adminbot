@@ -86,6 +86,7 @@ export function createAdminBotReimbursementWorkflow(
         options.pythonCommand ?? "python3",
       );
       const draft = await callLocalReimbursementModel(fetchImpl, env, request, extracted, signal);
+      applyDerivedTripDetails(draft);
       const missingFields = reimbursementMissingFields(draft);
       const assistantMessage = readString(draft, "assistant_message");
       delete draft.assistant_message;
@@ -103,6 +104,9 @@ export function createAdminBotReimbursementWorkflow(
     },
     async generate(request) {
       const draft = readRecord(request.draft);
+      // Same derivation as converse, so generation never rejects a draft for a field the receipts
+      // already answer -- the client may post back a draft assembled before this ran.
+      applyDerivedTripDetails(draft);
       const missingFields = reimbursementMissingFields(draft);
       if (missingFields.length > 0) {
         throw new Error(`reimbursement details are incomplete: ${missingFields.join(", ")}`);
@@ -197,6 +201,12 @@ async function extractPdfReceipts(
       timeout: 120_000,
       maxBuffer: 64 * 1024 * 1024,
     });
+    // The helper degrades to empty output when its poppler dependencies are missing and reports
+    // that only on stderr; dropping stderr turns a fixable host misconfiguration into a silent
+    // "extraction failed" that the model then blames on the user's attachments.
+    if (result.stderr.trim()) {
+      console.warn(`reimbursement receipt extraction: ${result.stderr.trim()}`);
+    }
     const parsed = readRecord(JSON.parse(result.stdout));
     return Array.isArray(parsed.receipts) ? (parsed.receipts as ExtractedReceipt[]) : [];
   } finally {
@@ -275,7 +285,14 @@ have no usable text layer and receipt_text may be empty or unreliable for those.
 amount, date, or vendor as missing, examine every attached image labeled for that receipt first; do
 not ask the user for a value you have not yet looked for in its images. Merge only supported facts
 from the latest message, conversation, prior draft, receipt images, and receipt text. Never invent or
-convert amounts. Preserve each receipt as a separate expense.
+convert amounts. Preserve each receipt as a separate expense: never merge two meals, taxi rides, or
+flight segments into one line, since each is listed individually on the trip summary. Keep each
+expense's own currency in its currency field rather than restating it in the claim currency. Always
+keep amount as the full receipt total including any tip; additionally, when a receipt itemizes a tip
+as its own line, repeat just that tip in tip_amount, and otherwise leave tip_amount null rather than
+guessing at one. Write description as the specific thing purchased and where (for
+example "lunch at Cafe X", or for taxis the pick-up and drop-off points), since it is printed
+verbatim beside the amount.
 
 Always open assistant_message by directly responding to latest_message, even if it is off-topic
 (e.g. answer a stray question briefly), before returning to reimbursement details. Never repeat
@@ -284,6 +301,13 @@ so plainly instead of restating the same explanation, and prefer a different, mo
 (e.g. ask for one concrete number instead of re-listing every missing field again). If receipt_text
 and receipt_images are both empty for a receipt the user already knows was uploaded, do not keep
 re-reporting that extraction failed after the first time; move on to asking for the values directly.
+Derive from the receipts instead of asking whenever they answer the question: currency from the
+receipt amounts, trip_dates from the earliest and latest receipt dates, trip_location from the city
+and country of the hotel, venue, or destination airport on the receipts, and trip_title from the
+purpose plus that location (for example "ICML 2026, Baltimore"). Fill these in silently and do not
+list them as things you need. Ask only for what the receipts genuinely cannot show -- typically the
+claimant's mailing address and job title.
+
 Ask one concise natural-language follow-up covering the most important missing facts. When complete,
 say both forms are ready for review. Return JSON only.`,
         },
@@ -406,6 +430,10 @@ function reimbursementSchema(): Record<string, unknown> {
               anyOf: [{ type: "string", enum: ["economy", "above_economy"] }, { type: "null" }],
             },
             includes_tip: { anyOf: [{ type: "boolean" }, { type: "null" }] },
+            // Meals, taxis, and hospitality have a dedicated TIP column on the expense summary.
+            // Filling it needs the tip as its own number; null means the tip stays inside amount,
+            // which the form also accepts.
+            tip_amount: { anyOf: [{ type: "number", minimum: 0 }, { type: "null" }] },
           },
           required: [
             "receipt_number",
@@ -418,6 +446,7 @@ function reimbursementSchema(): Record<string, unknown> {
             "tax_region",
             "airfare_class",
             "includes_tip",
+            "tip_amount",
           ],
         },
       },
@@ -439,6 +468,50 @@ function reimbursementSchema(): Record<string, unknown> {
       "expenses",
     ],
   };
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/u;
+
+// Fields the receipts already answer. Deriving them here rather than leaving it to the model means
+// a claimant is never asked for something their own uploads establish, and the answer is the same
+// every turn instead of depending on what the model felt like restating.
+function applyDerivedTripDetails(draft: Record<string, unknown>): void {
+  const expenses = (Array.isArray(draft.expenses) ? draft.expenses : []).map(readRecord);
+  if (expenses.length === 0) {
+    return;
+  }
+  if (!readString(draft, "currency")) {
+    // Claim currency is the one carrying most of the claim's value: exact for the common
+    // single-currency claim, and for a mixed one it picks the currency the form should be
+    // denominated in rather than whichever receipt happened to be uploaded first.
+    const totals = new Map<string, number>();
+    for (const expense of expenses) {
+      const code = readString(expense, "currency")?.trim().toUpperCase();
+      if (!code) {
+        continue;
+      }
+      totals.set(
+        code,
+        (totals.get(code) ?? 0) + (typeof expense.amount === "number" ? expense.amount : 0),
+      );
+    }
+    const dominant = [...totals].sort((a, b) => b[1] - a[1])[0]?.[0];
+    if (dominant) {
+      draft.currency = dominant;
+    }
+  }
+  if (!readString(draft, "trip_dates")) {
+    // Only ISO dates are ordered reliably; anything else is left for the model to resolve.
+    const dates = expenses
+      .map((expense) => readString(expense, "date")?.trim())
+      .filter((date): date is string => Boolean(date && ISO_DATE.test(date)))
+      .sort();
+    const first = dates[0];
+    const last = dates[dates.length - 1];
+    if (first && last) {
+      draft.trip_dates = first === last ? first : `${first} to ${last}`;
+    }
+  }
 }
 
 function reimbursementMissingFields(draft: Record<string, unknown>): string[] {

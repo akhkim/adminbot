@@ -160,6 +160,23 @@ export class AdminBotClient {
     return this.request("GET", `/papers/nudges${params}`, undefined, signal);
   }
 
+  async listOpenReviewStatus(signal?: AbortSignal): Promise<unknown> {
+    return this.request("GET", "/openreview/status", undefined, signal);
+  }
+
+  async runOpenReviewCycle(send: boolean, signal?: AbortSignal): Promise<unknown> {
+    return this.request("POST", "/openreview/cycle/run", { send }, signal);
+  }
+
+  async suggestOpenReviewReviewers(venueId: string, signal?: AbortSignal): Promise<unknown> {
+    return this.request(
+      "GET",
+      `/openreview/suggest-reviewers?venue=${encodeURIComponent(venueId)}`,
+      undefined,
+      signal,
+    );
+  }
+
   async approve(
     actionId: string,
     request: AdminBotApprovalRequest,

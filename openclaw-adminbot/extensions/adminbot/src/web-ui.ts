@@ -441,24 +441,55 @@ export function renderAdminBotWebUi(): string {
     .status-pill.on_leave { color: #85b8ef; }
     .status-pill.alumni,
     .status-pill.external { color: #9aa8b2; }
-    .capacity {
+    /* Availability: a compact this-week strip in the roster; the full schedule lives in
+       the Time Availability timeline. Bands are separated by a 2px gap in the surface
+       colour rather than by borders, so neighbours read apart without adding ink that
+       isn't data. Time off is hatched, never a hue, so it cannot read as a project. */
+    .avail-strip {
       display: grid;
-      grid-template-columns: 42px 72px;
+      gap: 4px;
+      min-width: 120px;
+    }
+    .avail-strip-track {
+      display: flex;
+      gap: 2px;
+      height: 10px;
+      border-radius: 3px;
+      overflow: hidden;
+      background: var(--panel-alt);
+    }
+    .avail-strip-track span { display: block; height: 100%; }
+    .avail-strip-off {
+      background: repeating-linear-gradient(
+        45deg, #c3c2b7, #c3c2b7 3px, var(--panel-alt) 3px, var(--panel-alt) 6px);
+    }
+    .avail-strip-meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    #map-canvas svg { display: block; width: 100%; height: auto; margin: 12px 0 4px; }
+    .map-grid { stroke: var(--line); stroke-width: 1; }
+    .map-equator { stroke: var(--line); stroke-width: 1.5; }
+    .map-dot { fill: #2a78d6; fill-opacity: 0.75; }
+    .map-label { font-size: 11px; fill: var(--text); font-weight: 600; }
+    .checkbox-field {
+      display: grid;
+      grid-template-columns: auto 1fr;
       align-items: center;
       gap: 8px;
-      white-space: nowrap;
+      font-weight: 600;
     }
-    .capacity-track {
-      height: 5px;
-      overflow: hidden;
-      border-radius: 99px;
-      background: #283139;
-    }
-    .capacity-track span {
+    .checkbox-field input { width: auto; margin: 0; }
+    .checkbox-field .field-hint { grid-column: 2; margin: 0; }
+    .field-hint {
       display: block;
-      height: 100%;
-      border-radius: inherit;
-      background: linear-gradient(90deg, #49bba9, #78d5aa);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 400;
+      margin-top: 4px;
+    }
+    .field-hint code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background: var(--panel-alt);
+      border-radius: 3px;
+      padding: 1px 4px;
     }
     .empty-row {
       height: 170px !important;
@@ -948,6 +979,8 @@ export function renderAdminBotWebUi(): string {
         <button class="tab" data-tab="actions">Actions</button>
         <button class="tab" data-tab="approvals">Approvals</button>
         <button class="tab" data-tab="settings">Settings</button>
+        <button class="tab" data-tab="reviewing">Reviewing</button>
+        <button class="tab" data-tab="map">Map</button>
         <button class="tab" data-tab="audit">Audit</button>
       </nav>
     </aside>
@@ -1008,7 +1041,6 @@ export function renderAdminBotWebUi(): string {
               <label class="wide">Research topics<input name="research_topics" placeholder="robot learning, world models"></label>
               <label>Projects<input name="projects" placeholder="Project Atlas, HomeLab"></label>
               <label>Hours / week<input name="hours_per_week" type="number" min="0" max="168" step="1" placeholder="40"></label>
-              <label>Capacity %<input name="capacity_percent" type="number" min="0" max="100" step="1" placeholder="80"></label>
               <label>Affiliation<input name="affiliation" placeholder="Jinesis / MIT"></label>
               <label>Location<input name="location" placeholder="Cambridge, MA"></label>
               <label>Timezone<input name="timezone" placeholder="America/New_York"></label>
@@ -1017,6 +1049,11 @@ export function renderAdminBotWebUi(): string {
               <label>Slack user id<input name="slack_user_id" placeholder="U0123456789"></label>
               <label>Privilege
                 <select name="privilege_level" id="member-privilege"></select>
+              </label>
+              <label>OpenReview id<input name="openreview_id" placeholder="~Jane_Doe1"></label>
+              <label class="checkbox-field"
+                ><input type="checkbox" name="reviewer_exempt"> Never assign as an emergency reviewer
+                <span class="field-hint">Standing exemption; overrides any topic match.</span>
               </label>
               <label class="full">Notes<textarea name="notes" placeholder="Free-form details and temporary access exceptions"></textarea></label>
               <div class="form-actions">
@@ -1161,6 +1198,38 @@ export function renderAdminBotWebUi(): string {
         </div>
       </section>
 
+      <section class="section" id="reviewing">
+        <div class="panel">
+          <h2>Reviewing cycles</h2>
+          <div class="list-toolbar">
+            <span class="subtle">Venues discovered from OpenReview, with the reminder ladder fired so far. A run is a dry run unless you tick send.</span>
+            <span class="count" id="reviewing-count"></span>
+          </div>
+          <div class="toolbar">
+            <label class="inline"><input type="checkbox" id="reviewing-send"> Actually send due reminders</label>
+            <button type="button" id="reviewing-run">Run cycle now</button>
+          </div>
+          <div id="reviewing-status" class="subtle"></div>
+          <div id="reviewing-list"></div>
+        </div>
+      </section>
+
+      <section class="section" id="map">
+        <div class="panel">
+          <h2>Member map</h2>
+          <div class="list-toolbar">
+            <span class="subtle">Where everyone is. Slack profile first; the roster location is used only where Slack has nothing.</span>
+            <span class="count" id="map-count"></span>
+          </div>
+          <div class="toolbar">
+            <button type="button" id="map-refresh">Refresh from Slack</button>
+            <span class="status" id="map-status"></span>
+          </div>
+          <div id="map-canvas"></div>
+          <div id="map-list"></div>
+        </div>
+      </section>
+
       <section class="section" id="audit">
         <div class="panel">
           <h2>Audit Events</h2>
@@ -1229,10 +1298,7 @@ export function renderAdminBotWebUi(): string {
               <label>Research branch<input name="research_branch" placeholder="Embodied intelligence"></label>
               <label>Research topics<input name="research_topics" placeholder="robot learning, world models"></label>
               <label>Projects<input name="projects" placeholder="Project Atlas, HomeLab"></label>
-              <div class="row">
-                <label>Hours / week<input name="hours_per_week" type="number" min="0" max="168" step="1" placeholder="40"></label>
-                <label>Capacity %<input name="capacity_percent" type="number" min="0" max="100" step="1" placeholder="80"></label>
-              </div>
+              <label>Hours / week<input name="hours_per_week" type="number" min="0" max="168" step="1" placeholder="40"></label>
               <label>Affiliation<input name="affiliation" placeholder="Jinesis / MIT"></label>
               <label>Location<input name="location" placeholder="Cambridge, MA"></label>
               <label>Timezone<input name="timezone" placeholder="America/New_York"></label>
@@ -1291,6 +1357,8 @@ export function renderAdminBotWebUi(): string {
       nudges: [],
       proposals: [],
       audit: [],
+      reviewing: { cycles: [], milestones: [] },
+      memberMap: { places: [], unplaced: [], counts: { placed: 0, unplaced: 0, unknown: 0 } },
       registrations: [],
       roster: [],
       memberQuery: "",
@@ -1360,8 +1428,21 @@ export function renderAdminBotWebUi(): string {
         } catch {
           state.registrations = [];
         }
+        // 503 here just means no OpenReview script is wired up on this host; the rest
+        // of the console must still render.
+        try {
+          state.reviewing = await api("/openreview/status");
+        } catch {
+          state.reviewing = { cycles: [], milestones: [] };
+        }
+        try {
+          state.memberMap = await api("/member-map");
+        } catch {
+          state.memberMap = { places: [], unplaced: [], counts: { placed: 0, unplaced: 0, unknown: 0 } };
+        }
       } else {
         state.registrations = [];
+        state.reviewing = { cycles: [], milestones: [] };
       }
       render();
     }
@@ -1386,6 +1467,8 @@ export function renderAdminBotWebUi(): string {
       renderPapers();
       renderActions();
       renderApprovals();
+      renderReviewing();
+      renderMemberMap();
       document.getElementById("settings-json").textContent = JSON.stringify(state.settings, null, 2);
       document.getElementById("audit-json").textContent = JSON.stringify(state.audit, null, 2);
     }
@@ -1439,9 +1522,7 @@ export function renderAdminBotWebUi(): string {
         const projectTags = renderTags(profile.projects, "project", 2);
         const paperTags = renderTags(profile.papers.map((paper) => paper.title), "paper", 2);
         const initials = member.name.split(/\\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase();
-        const capacity = profile.capacity === null ? "—" : profile.capacity + "%";
-        const capacityWidth = profile.capacity === null ? 0 : Math.max(0, Math.min(100, profile.capacity));
-        const hours = profile.hours === null ? "—" : profile.hours + "h";
+        const hours = profile.hours === null ? "" : profile.hours + "h / week";
         return '<tr data-edit-member="' + escapeHtml(member.id) + '">' +
           '<td><div class="person-cell"><span class="avatar">' + escapeHtml(initials) + '</span><div class="person-meta"><strong>' + escapeHtml(member.name) + '</strong><span>' + escapeHtml(member.email || member.id) + '</span></div></div></td>' +
           '<td><strong>' + escapeHtml(profile.role || "—") + '</strong><br><span class="cell-details">' + escapeHtml(profile.affiliation || "") + '</span></td>' +
@@ -1450,7 +1531,8 @@ export function renderAdminBotWebUi(): string {
           '<td>' + topicTags + '</td>' +
           '<td>' + projectTags + '</td>' +
           '<td>' + paperTags + '</td>' +
-          '<td><div class="capacity"><span>' + escapeHtml(hours) + '</span><div class="capacity-track" title="' + escapeHtml(capacity) + ' capacity"><span style="width:' + capacityWidth + '%"></span></div></div></td>' +
+          '<td>' + availabilityStrip(member) +
+            (hours ? '<span class="cell-details">' + escapeHtml(hours) + '</span>' : "") + '</td>' +
           '<td>' + escapeHtml(profile.location || "—") + '<br><span class="cell-details">' + escapeHtml(profile.timezone || "") + '</span></td>' +
           '<td><span class="data-tag">' + escapeHtml(humanize(member.privilege_level)) + '</span></td>' +
         '</tr>';
@@ -1481,7 +1563,6 @@ export function renderAdminBotWebUi(): string {
         .map((value) => String(value || "").trim().toLowerCase()).filter(Boolean);
       const papers = state.papers.filter((paper) => (paper.authors || []).some((author) =>
         identities.includes(String(author).trim().toLowerCase())));
-      const rawCapacity = member.capacity_percent ?? noteValue(member, "Capacity");
       const rawHours = member.hours_per_week ?? noteValue(member, "Hours per week");
       return {
         member,
@@ -1492,13 +1573,59 @@ export function renderAdminBotWebUi(): string {
         projects: listValue(member.projects, noteValue(member, "Projects")),
         papers,
         hours: numericValue(rawHours),
-        capacity: numericValue(rawCapacity),
+        availability: member.availability || [],
         location: member.location || noteValue(member, "Location"),
         affiliation: member.affiliation || noteValue(member, "Affiliation") || noteValue(member, "Main affiliation"),
         timezone: member.timezone || noteValue(member, "Timezone"),
         website: member.personal_website || noteValue(member, "Personal website")
       };
     }
+
+
+    // --- Time availability ----------------------------------------------------
+    // The roster cell: the week in force today only, so a 140-row table stays scannable.
+    // Built from the same bars the Time Availability timeline and the Capacity view use, so
+    // the strip can never tell a different story from the member's own chart.
+    function availabilityStrip(member) {
+      const weekStart = mondayOf(parseIso(isoOf(Date.now())));
+      const live = memberBars(member, false).filter((bar) => activeInWeek(bar, weekStart));
+      if (!live.length) return '<span class="cell-details">No availability set</span>';
+      const commitments = live.filter((bar) => bar.type !== "off");
+      const timeOff = live.filter((bar) => bar.type === "off");
+      const slots = assignProjectSlots(commitments);
+      const hours = commitments.reduce((total, bar) => total + (numericValue(bar.hours) ?? 0), 0);
+      // Widths are shares of this week's committed hours, so the strip reads as "where the
+      // time goes", not as a fraction of some assumed full week the member never declared.
+      const bands = hours > 0
+        ? commitments.map((bar) => {
+            const share = ((numericValue(bar.hours) ?? 0) / hours) * 100;
+            return share > 0
+              ? '<span style="width:' + share + '%;background:' + stripFill(bar, slots) + '"></span>'
+              : "";
+          }).join("")
+        : '<span style="width:100%;background:#c3c2b7"></span>';
+      const summary = commitments
+        .map((bar) => bar.label + (numericValue(bar.hours) === null ? "" : " " + bar.hours + "h"))
+        .concat(timeOff.map((bar) => bar.availability === "partial" ? "partly away" : "away"))
+        .join(", ");
+      // Fully away wins the meta line: someone on leave is not "20h committed this week",
+      // and whoever is looking for a spare pair of hands has to see that at a glance.
+      const fullyAway = timeOff.some((bar) => bar.availability !== "partial");
+      return '<div class="avail-strip" title="' + escapeHtml("Week of " + isoOf(weekStart) + ": " + summary) + '">' +
+        '<div class="avail-strip-track">' + bands +
+        (timeOff.length ? '<span class="avail-strip-off" style="width:' + (fullyAway ? 100 : 25) + '%"></span>' : "") +
+        '</div>' +
+        '<span class="avail-strip-meta">' +
+        (fullyAway ? "away this week" : escapeHtml(hours + "h committed")) +
+        '</span></div>';
+    }
+
+    function stripFill(bar, slots) {
+      if (bar.type === "open") return "var(--accent)";
+      const slot = slots.get(bar.project);
+      return slot ? "var(--series-" + slot + ")" : "#c3c2b7";
+    }
+
 
     function numericValue(value) {
       if (value === undefined || value === null || value === "") return null;
@@ -1629,6 +1756,49 @@ export function renderAdminBotWebUi(): string {
       }).join("");
     }
 
+    function renderReviewing() {
+      const list = document.getElementById("reviewing-list");
+      const count = document.getElementById("reviewing-count");
+      const cycles = state.reviewing?.cycles || [];
+      const milestones = state.reviewing?.milestones || [];
+      const missing = cycles.reduce((total, cycle) => total + (cycle.reviews_missing || 0), 0);
+      count.textContent = cycles.length
+        ? cycles.length + " cycle(s) · " + missing + " review(s) missing"
+        : "";
+      if (!cycles.length) {
+        list.innerHTML = '<p class="subtle">No reviewing cycles discovered yet. Run a cycle to query OpenReview.</p>';
+        return;
+      }
+      list.innerHTML = cycles.map((cycle) => {
+        const fired = milestones
+          .filter((entry) => entry.venue_id === cycle.venue_id && entry.role === cycle.role)
+          .map((entry) => '<span class="pill" title="' + escapeHtml(entry.detail || entry.fired_at) + '">' +
+            escapeHtml(entry.milestone_key) + ' · ' + escapeHtml(entry.status) + '</span>')
+          .join(" ");
+        return '<div class="approval-request">' +
+          '<div class="req-head"><strong>' + escapeHtml(cycle.title || cycle.venue_id) + '</strong>' +
+          '<span class="pill">' + escapeHtml(roleLabel(cycle.role)) + '</span></div>' +
+          '<span class="cell-details">' + escapeHtml(cycle.venue_id) + ' · deadline ' +
+          escapeHtml(formatDeadline(cycle.deadline_ms)) + ' · ' +
+          escapeHtml(String(cycle.reviews_missing ?? 0)) + ' of ' +
+          escapeHtml(String(cycle.papers_total ?? 0)) + ' paper-reviews outstanding</span>' +
+          (cycle.last_error ? '<span class="cell-details">Last error: ' + escapeHtml(cycle.last_error) + '</span>' : '') +
+          (fired ? '<div class="toolbar">' + fired + '</div>' : '<span class="cell-details">No reminders fired yet.</span>') +
+        '</div>';
+      }).join("");
+    }
+
+    function roleLabel(role) {
+      return role === "sac" ? "Senior AC" : role === "ac" ? "Area Chair" : "Reviewer";
+    }
+
+    function formatDeadline(deadlineMs) {
+      if (!deadlineMs) return "unknown";
+      const days = Math.round((deadlineMs - Date.now()) / 86400000);
+      const when = new Date(deadlineMs).toISOString().slice(0, 16).replace("T", " ") + " UTC";
+      return when + (days >= 0 ? " (in " + days + "d)" : " (" + Math.abs(days) + "d ago)");
+    }
+
     function formData(form) {
       return Object.fromEntries(new FormData(form).entries());
     }
@@ -1697,7 +1867,8 @@ export function renderAdminBotWebUi(): string {
         research_topics: commaList(data.research_topics),
         projects: commaList(data.projects),
         ...(data.hours_per_week !== "" ? { hours_per_week: Number(data.hours_per_week) } : {}),
-        ...(data.capacity_percent !== "" ? { capacity_percent: Number(data.capacity_percent) } : {}),
+        ...(data.openreview_id ? { openreview_id: data.openreview_id } : {}),
+        reviewer_exempt: form.elements.namedItem("reviewer_exempt")?.checked === true,
         affiliation: data.affiliation,
         location: data.location,
         timezone: data.timezone,
@@ -1732,7 +1903,7 @@ export function renderAdminBotWebUi(): string {
         research_topics: profile.topics.join(", "),
         projects: profile.projects.join(", "),
         hours_per_week: profile.hours ?? "",
-        capacity_percent: profile.capacity ?? "",
+        openreview_id: member.openreview_id || "",
         affiliation: profile.affiliation,
         location: profile.location,
         timezone: profile.timezone,
@@ -1746,6 +1917,10 @@ export function renderAdminBotWebUi(): string {
         const field = form.elements.namedItem(name);
         if (field) field.value = value;
       });
+      // Checkboxes carry state on .checked, not .value, so they are set apart from the
+      // text fields above; a missing one would silently read as "not exempt".
+      const exemptField = form.elements.namedItem("reviewer_exempt");
+      if (exemptField) exemptField.checked = member.reviewer_exempt === true;
       form.closest("details").open = true;
       form.scrollIntoView({ behavior: "smooth", block: "start" });
       setStatus("member-status", "Editing " + member.name + ".", "");
@@ -1855,6 +2030,139 @@ export function renderAdminBotWebUi(): string {
       }
     });
 
+    document.getElementById("reviewing-run").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      const send = document.getElementById("reviewing-send").checked;
+      button.disabled = true;
+      setStatus("reviewing-status", send ? "Running and sending…" : "Running (dry run)…", "");
+      try {
+        const result = await api("/openreview/cycle/run", {
+          method: "POST",
+          body: JSON.stringify({ send })
+        });
+        const fired = (result.outcomes || []).filter((outcome) => outcome.status !== "no_milestone_due");
+        setStatus(
+          "reviewing-status",
+          "Checked " + (result.venues || 0) + " cycle(s); " + fired.length + " milestone(s) actioned" +
+            (result.errors?.length ? "; " + result.errors.length + " error(s)" : "") + ".",
+          result.errors?.length ? "warn" : "ok"
+        );
+        await refresh();
+      } catch (error) {
+        setStatus("reviewing-status", error.message, "error");
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+
+    // --- Member map -----------------------------------------------------------
+    // Equirectangular: longitude and latitude map straight onto x and y, which keeps the
+    // projection honest and needs no coastline data. A graticule gives the eye something
+    // to place the dots against; the labels do the rest of the work.
+    function mapProject(lat, lon, width, height) {
+      return { x: ((lon + 180) / 360) * width, y: ((90 - lat) / 180) * height };
+    }
+
+    function renderMemberMap() {
+      const data = state.memberMap || { places: [], unplaced: [], counts: {} };
+      const places = data.places || [];
+      const counts = data.counts || {};
+      document.getElementById("map-count").textContent = places.length
+        ? places.length + " place(s) · " + (counts.placed || 0) + " placed"
+        : "";
+      const canvas = document.getElementById("map-canvas");
+      const list = document.getElementById("map-list");
+      if (!places.length) {
+        canvas.innerHTML = "";
+        list.innerHTML = '<p class="subtle">Nobody is placed yet. Members need a location on their profile, or a Slack profile to read one from.</p>';
+        return;
+      }
+
+      const width = 900, height = 450;
+      const biggest = places.reduce((max, place) => Math.max(max, place.members.length), 1);
+      let grid = "";
+      for (let lon = -180; lon <= 180; lon += 30) {
+        const x = mapProject(0, lon, width, height).x;
+        grid += '<line x1="' + x + '" y1="0" x2="' + x + '" y2="' + height + '" class="map-grid" />';
+      }
+      for (let lat = -60; lat <= 60; lat += 30) {
+        const y = mapProject(lat, 0, width, height).y;
+        grid += '<line x1="0" y1="' + y + '" x2="' + width + '" y2="' + y + '" class="map-grid" />';
+      }
+      const equator = mapProject(0, 0, width, height).y;
+      grid += '<line x1="0" y1="' + equator + '" x2="' + width + '" y2="' + equator + '" class="map-equator" />';
+
+      // Labels are placed biggest-first and skipped where they would collide with one
+      // already down. Europe puts six cities inside a few degrees, so labelling every dot
+      // produces an unreadable pile; the ranked list below carries what the map drops,
+      // and every dot keeps its hover text either way.
+      const placedLabels = [];
+      const marks = places.map((place) => {
+        const point = mapProject(place.lat, place.lon, width, height);
+        // Area scales with headcount, so a city of ten does not read as ten times the
+        // radius of a city of one.
+        const radius = 5 + 9 * Math.sqrt(place.members.length / biggest);
+        const names = place.members.map((member) => member.name).join(", ");
+        const anchor = point.x > width - 120 ? "end" : "start";
+        const text = place.label + " " + place.members.length;
+        const textWidth = text.length * 6.2;
+        const labelX = anchor === "end" ? point.x - radius - 5 : point.x + radius + 5;
+        const box = {
+          left: anchor === "end" ? labelX - textWidth : labelX,
+          right: anchor === "end" ? labelX : labelX + textWidth,
+          top: point.y - 8,
+          bottom: point.y + 8
+        };
+        const collides = placedLabels.some((other) =>
+          box.left < other.right && box.right > other.left &&
+          box.top < other.bottom && box.bottom > other.top);
+        if (!collides) placedLabels.push(box);
+        return '<g><circle cx="' + point.x + '" cy="' + point.y + '" r="' + radius +
+          '" class="map-dot"><title>' + escapeHtml(place.label + " — " + place.members.length + ": " + names) +
+          '</title></circle>' +
+          (collides ? "" : '<text x="' + labelX + '" y="' + (point.y + 4) + '" text-anchor="' + anchor +
+            '" class="map-label">' + escapeHtml(text) + '</text>') + '</g>';
+      }).join("");
+
+      canvas.innerHTML = '<svg viewBox="0 0 ' + width + ' ' + height +
+        '" role="img" aria-label="Where lab members are">' + grid + marks + '</svg>';
+
+      const rows = places.map((place) => {
+        const sources = place.members.filter((member) => member.source === "slack").length;
+        return '<div class="approval-request"><div class="req-head"><strong>' +
+          escapeHtml(place.label) + '</strong><span class="pill">' + place.members.length + '</span>' +
+          '<span class="cell-details">' + escapeHtml(place.country) +
+          (sources ? " · " + sources + " from Slack" : "") + '</span></div>' +
+          '<span class="cell-details">' +
+          place.members.map((member) => escapeHtml(member.name)).join(", ") + '</span></div>';
+      }).join("");
+      const unplaced = (data.unplaced || []).length
+        ? '<div class="approval-request"><div class="req-head"><strong>Not placed</strong>' +
+          '<span class="pill">' + data.unplaced.length + '</span></div>' +
+          '<span class="cell-details">' + data.unplaced.map((entry) =>
+            escapeHtml(entry.name + (entry.raw ? " (" + entry.raw + ")" : " — no location"))).join(", ") +
+          '</span></div>'
+        : "";
+      list.innerHTML = rows + unplaced;
+    }
+
+    document.getElementById("map-refresh").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      setStatus("map-status", "Reading Slack profiles…", "");
+      try {
+        const result = await api("/member-map/refresh", { method: "POST" });
+        setStatus("map-status", "Checked " + result.checked + " Slack profile(s); " +
+          result.updated + " location(s) changed.", "ok");
+        await refresh();
+      } catch (error) {
+        setStatus("map-status", error.message, "error");
+      } finally {
+        button.disabled = false;
+      }
+    });
+
     function isPrivileged() {
       const level = sessionMember?.privilege_level;
       return level === "admin" || level === "core_member";
@@ -1863,7 +2171,7 @@ export function renderAdminBotWebUi(): string {
     // Cosmetic gating only; the service still enforces privilege on every sensitive route.
     function applyPrivilegeGating() {
       const privileged = isPrivileged();
-      ["approvals", "settings", "audit"].forEach((tab) => {
+      ["approvals", "settings", "audit", "reviewing", "map"].forEach((tab) => {
         const button = document.querySelector('.tab[data-tab="' + tab + '"]');
         if (button) button.hidden = !privileged;
       });
@@ -1904,7 +2212,6 @@ export function renderAdminBotWebUi(): string {
         research_topics: profile.topics.join(", "),
         projects: profile.projects.join(", "),
         hours_per_week: profile.hours ?? "",
-        capacity_percent: profile.capacity ?? "",
         affiliation: profile.affiliation,
         location: profile.location,
         timezone: profile.timezone,
@@ -2705,7 +3012,6 @@ export function renderAdminBotWebUi(): string {
         research_topics: commaList(data.research_topics),
         projects: commaList(data.projects),
         ...(data.hours_per_week !== "" ? { hours_per_week: Number(data.hours_per_week) } : {}),
-        ...(data.capacity_percent !== "" ? { capacity_percent: Number(data.capacity_percent) } : {}),
         affiliation: data.affiliation,
         location: data.location,
         timezone: data.timezone,

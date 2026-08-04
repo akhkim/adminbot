@@ -22,6 +22,10 @@ export type CronQuickCreateProps = {
   onCreate: () => void;
   onCancel: () => void;
   onAdvancedCreate?: () => void;
+  /** Selectable model refs; empty hides the picker rather than showing an empty select. */
+  modelOptions?: string[];
+  /** Display for the inherit option, e.g. the model the chat session is on. */
+  inheritedModelLabel?: string;
 };
 
 export type CronQuickCreateStep = "what" | "when" | "how";
@@ -31,6 +35,8 @@ export type CronQuickCreateDraft = {
   name: string;
   schedulePreset: SchedulePresetId | "custom";
   deliveryPreset: DeliveryPresetId;
+  /** Explicit model ref, or "" to inherit whatever the new-job form seeds. */
+  model: string;
 };
 
 type SchedulePresetId =
@@ -123,6 +129,7 @@ export function createDefaultDraft(): CronQuickCreateDraft {
     name: "",
     schedulePreset: "every-morning",
     deliveryPreset: "notify",
+    model: "",
   };
 }
 
@@ -148,6 +155,13 @@ export function draftToCronFormPatch(draft: CronQuickCreateDraft): Partial<CronF
     payloadText: draft.prompt,
     enabled: true,
   };
+
+  // Only pin an explicit pick. Leaving this unset lets buildNewCronForm's
+  // chat-session seed stand, so "inherit" keeps meaning one thing.
+  const model = draft.model.trim();
+  if (model) {
+    patch.payloadModel = model;
+  }
 
   // Schedule
   switch (draft.schedulePreset) {
@@ -320,6 +334,38 @@ function renderWhenStep(props: CronQuickCreateProps) {
   `;
 }
 
+function renderModelPicker(props: CronQuickCreateProps) {
+  const options = props.modelOptions ?? [];
+  const selected = props.draft.model.trim();
+  // A retired ref still needs a row, otherwise reopening the wizard on an
+  // unavailable model would silently drop the selection.
+  const rows = selected && !options.includes(selected) ? [...options, selected] : options;
+  if (rows.length === 0) {
+    return nothing;
+  }
+  const inheritLabel = props.inheritedModelLabel?.trim();
+  return html`
+    <label class="field cqc-model">
+      <span>${t("cron.quickCreate.model")}</span>
+      <select
+        data-test-id="cron-quick-create-model"
+        @change=${(e: Event) =>
+          props.onDraftChange({ model: (e.target as HTMLSelectElement).value })}
+      >
+        <option value="" ?selected=${!selected}>
+          ${inheritLabel
+            ? t("cron.quickCreate.modelInheritNamed", { model: inheritLabel })
+            : t("cron.quickCreate.modelInherit")}
+        </option>
+        ${rows.map(
+          (value) => html`<option value=${value} ?selected=${value === selected}>${value}</option>`,
+        )}
+      </select>
+      <span class="cqc-body__hint muted">${t("cron.quickCreate.modelHint")}</span>
+    </label>
+  `;
+}
+
 function renderHowStep(props: CronQuickCreateProps) {
   return html`
     <div class="cqc-body">
@@ -345,6 +391,7 @@ function renderHowStep(props: CronQuickCreateProps) {
           `,
         )}
       </div>
+      ${renderModelPicker(props)}
     </div>
     <div class="cqc-actions">
       <div class="cqc-actions__secondary">

@@ -374,14 +374,68 @@ export default defineToolPlugin({
         researchTopics: Type.Optional(Type.Array(Type.String())),
         projects: Type.Optional(Type.Array(Type.String())),
         hoursPerWeek: Type.Optional(Type.Number({ minimum: 0, maximum: 168 })),
-        capacityPercent: Type.Optional(Type.Number({ minimum: 0, maximum: 100 })),
+        availability: Type.Optional(
+          Type.String({
+            description:
+              'Time availability, one period per line: "Until 09032026: 20% Rebuttals, 80% Studying". Percentages per period must not exceed 100.',
+          }),
+        ),
         location: Type.Optional(Type.String()),
         affiliation: Type.Optional(Type.String()),
         timezone: Type.Optional(Type.String()),
         personalWebsite: Type.Optional(Type.String()),
+        openreviewId: Type.Optional(
+          Type.String({ description: 'OpenReview tilde id, e.g. "~Jane_Doe1".' }),
+        ),
+        reviewerExempt: Type.Optional(
+          Type.Boolean({
+            description:
+              "Never propose or assign this person as an emergency reviewer, whatever their topic match.",
+          }),
+        ),
       }),
       execute: (params, config) =>
         createAdminBotToolHandlers(resolveConfig(config)).upsertLabMember(params),
+    }),
+    tool({
+      name: "adminbot_openreview_status",
+      label: "AdminBot OpenReview status",
+      description:
+        "List the reviewing cycles AdminBot is tracking (venue, role, review deadline, outstanding reviews) and the reminder milestones that have already fired.",
+      optional: true,
+      parameters: Type.Object({}),
+      execute: (_params, config) =>
+        createAdminBotToolHandlers(resolveConfig(config)).listOpenReviewStatus(),
+    }),
+    tool({
+      name: "adminbot_openreview_run_cycle",
+      label: "AdminBot run OpenReview cycle",
+      description:
+        "Run one pass of the reviewing-cycle automation: discover venues, compute missing reviews, and fire whichever reminder milestone is due. Defaults to a dry run; pass send=true to actually deliver.",
+      optional: true,
+      parameters: Type.Object({
+        send: Type.Optional(
+          Type.Boolean({
+            description: "Deliver the due reminders instead of only reporting what would be sent.",
+          }),
+        ),
+      }),
+      execute: (params, config) =>
+        createAdminBotToolHandlers(resolveConfig(config)).runOpenReviewCycle(params),
+    }),
+    tool({
+      name: "adminbot_openreview_suggest_reviewers",
+      label: "AdminBot suggest emergency reviewers",
+      description:
+        "For each submission still missing a review at a venue, rank Jinesis lab members by research overlap as emergency reviewer candidates. Suggestion only; assigning is a separate explicit action.",
+      optional: true,
+      parameters: Type.Object({
+        venueId: Type.String({
+          description: "OpenReview venue id, e.g. NeurIPS.cc/2026/Conference",
+        }),
+      }),
+      execute: (params, config) =>
+        createAdminBotToolHandlers(resolveConfig(config)).suggestOpenReviewReviewers(params),
     }),
     tool({
       name: "adminbot_list_lab_members",

@@ -1290,10 +1290,17 @@ export const es: TranslationMap = {
     subtitle: "Here's your onboarding checklist to get started.",
     required: "Required",
     dismiss: "Got it, let's go",
+    dismissBlocked: '{remaining} step(s) still need "I\'ve read this".',
     status: {
       complete: "Done",
       current: "Start here",
       remaining: "To do",
+    },
+    ack: {
+      action: "I've read this",
+      done: "Leídos",
+      progress: "{read} of {total} read",
+      allDone: "You've read every step — welcome aboard.",
     },
   },
   login: {
@@ -1366,8 +1373,6 @@ export const es: TranslationMap = {
         projectsPlaceholder: "Comma-separated (optional)",
         hoursPerWeek: "Hours per week",
         hoursPerWeekPlaceholder: "Optional",
-        capacityPercent: "Capacity (%)",
-        capacityPercentPlaceholder: "Optional",
         location: "Location",
         locationPlaceholder: "City, country (optional)",
         timezone: "Timezone",
@@ -1377,6 +1382,11 @@ export const es: TranslationMap = {
         notes: "Notes",
         notesPlaceholder: "Anything else worth knowing (optional)",
       },
+    },
+    guest: {
+      reimbursements: "Submit a reimbursement",
+      reimbursementsHint: "Upload receipts and generate your forms without signing in.",
+      backToSignIn: "Back to sign in",
     },
     pending: {
       title: "Request submitted",
@@ -1684,6 +1694,10 @@ export const es: TranslationMap = {
       whenHint: "Elige una programación. Puedes ajustarla más adelante.",
       howHeading: "¿Cómo debe funcionar?",
       howHint: "Elige cómo se entregan los resultados.",
+      model: "Model",
+      modelInherit: "Use the agent default",
+      modelInheritNamed: "Use the current model ({model})",
+      modelHint: "Which model this job runs on.",
       title: "Nueva automatización",
     },
     summary: {
@@ -1717,6 +1731,9 @@ export const es: TranslationMap = {
       emptyHint: "Create one from a plain-language prompt; advanced fields can wait.",
       emptyFilteredHint: "Clear or change filters to see scheduled jobs.",
       noMatching: "No hay tareas coincidentes.",
+      groupScheduled: "Scheduled",
+      groupOnDemand: "Run on command",
+      groupOnDemandHint: "These do not fire on their own. Press Run to execute one now.",
       loading: "Cargando...",
       loadMore: "Cargar más tareas",
     },
@@ -1839,7 +1856,7 @@ export const es: TranslationMap = {
       staggerPlaceholder: "30",
       seconds: "Segundos",
       model: "Modelo",
-      modelPlaceholder: "openai/gpt-5.2",
+      modelInherit: "Use the agent default",
       modelHelp:
         "Comienza a escribir para seleccionar un modelo conocido o ingresa uno personalizado.",
       thinking: "Pensamiento",

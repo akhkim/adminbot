@@ -5,11 +5,15 @@ import {
   approveActionAsMember,
   executeActionAsMember,
   loadStoredMemberSession,
+  removePendingAction,
+  fetchMemberResource,
   resolveAdminBotBaseUrl,
+  saveOwnPaper,
   sendMemberNudge,
   updateOwnProfile,
   upsertLabMemberAsAdmin,
 } from "../adminbot-auth.ts";
+import type { AvailabilityRow, TimeOffRow } from "../adminbot-availability.js";
 import type { GatewayBrowserClient } from "../gateway.ts";
 import type { UiSettings } from "../storage.ts";
 
@@ -42,7 +46,8 @@ export type AdminBotLabMember = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
-  capacity_percent?: number;
+  availability?: AvailabilityRow[];
+  time_off?: TimeOffRow[];
   location?: string;
   affiliation?: string;
   timezone?: string;
@@ -79,7 +84,7 @@ export type AdminBotLabMemberSaveInput = {
   researchTopics?: string[];
   projects?: string[];
   hoursPerWeek?: number;
-  capacityPercent?: number;
+  availability?: string;
   location?: string;
   affiliation?: string;
   timezone?: string;
@@ -151,6 +156,9 @@ export type AdminBotPaperRecord = {
     head_professor_member_id?: string;
   };
   notes?: string;
+  // Set by the service when a member files a paper themselves; one of the signals that lets the
+  // UI offer them the edit form.
+  submitted_by_member_id?: string;
   timeline?: AdminBotPaperTimeline;
   created_at: string;
   updated_at: string;
@@ -229,6 +237,14 @@ export type AdminBotMemberNudgeState = {
   subject: string;
   selectedMemberIds: string[];
   busy: boolean;
+};
+
+// The guest flow runs before any gateway connection exists, so it needs only the reimbursement
+// slice of the host plus the resolved AdminBot origin -- deliberately not the full AdminBotHost,
+// which would imply a client/session this path does not have.
+export type GuestReimbursementHost = {
+  adminBotReimbursement: AdminBotReimbursementState;
+  guestReimbursementBaseUrl: string;
 };
 
 export type AdminBotHost = {
@@ -384,10 +400,84 @@ function readArray<T>(value: unknown, key: string): T[] {
   return Array.isArray(raw) ? (raw as T[]) : [];
 }
 
+// Dashboard read path for a signed-in member. Members and papers are the two surfaces every
+// signed-in person may read, so a failure there is a real error; the privileged extras (pending
+// queue, nudges, settings, sensitive info) are fetched best-effort and simply stay empty for a
+// member whose session the server refuses them to.
+async function loadAdminBotOverSession(
+  host: AdminBotHost,
+  mode: AdminBotLoadMode,
+  session: { sessionToken: string; baseUrl: string },
+): Promise<void> {
+  host.adminBotLoading = true;
+  host.adminBotError = null;
+  const read = async (path: string): Promise<unknown> => {
+    const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      throw new Error(
+        result.kind === "unreachable" ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE : result.kind,
+      );
+    }
+    return result.value;
+  };
+  const optional = async (path: string): Promise<unknown> => {
+    const result = await fetchMemberResource(path, session.sessionToken, session.baseUrl);
+    return result.ok ? result.value : undefined;
+  };
+  try {
+    const [members, papers] = await Promise.all([read("/lab/members"), read("/papers")]);
+    if (mode === "general") {
+      host.adminBotData = {
+        ...createEmptyAdminBotDashboardData(),
+        members: readArray<AdminBotLabMember>(members, "members"),
+        papers: readArray<AdminBotPaperRecord>(papers, "papers"),
+        loadedAt: Date.now(),
+      };
+      return;
+    }
+    const [pending, nudges, settings, sensitiveInfo] = await Promise.all([
+      optional("/proposals/pending?limit=50"),
+      optional("/papers/nudges"),
+      optional("/settings"),
+      optional("/sensitive-info"),
+    ]);
+    const settingsRecord = readRecord(settings);
+    const sensitiveInfoRecord = readRecord(sensitiveInfo);
+    const markdown = readString(sensitiveInfoRecord, "markdown");
+    const filePath = readString(sensitiveInfoRecord, "path");
+    host.adminBotData = {
+      proposals: readArray<AdminBotActionProposal>(pending, "proposals"),
+      members: readArray<AdminBotLabMember>(members, "members"),
+      papers: readArray<AdminBotPaperRecord>(papers, "papers"),
+      nudges: readArray<AdminBotPaperNudge>(nudges, "nudges"),
+      settings:
+        Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
+      sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,
+      loadedAt: Date.now(),
+    };
+  } catch (err) {
+    host.adminBotError = err instanceof Error ? err.message : String(err);
+  } finally {
+    host.adminBotLoading = false;
+  }
+}
+
 export async function loadAdminBot(
   host: AdminBotHost,
   mode: AdminBotLoadMode = "admin",
 ): Promise<void> {
+  // A signed-in member reads through their own session. The gateway tool path needs
+  // operator.write, which a plain member's paired device deliberately does not hold, so for them
+  // every tool call fails and the dashboard renders empty -- including after a successful save,
+  // which is what made edits look like they never persisted.
+  const stored = loadStoredMemberSession();
+  if (stored) {
+    await loadAdminBotOverSession(host, mode, {
+      sessionToken: stored.sessionToken,
+      baseUrl: resolveAdminBotBaseUrl(host.settings),
+    });
+    return;
+  }
   const unavailable = adminBotUnavailableError(host);
   if (unavailable) {
     host.adminBotError = unavailable;
@@ -478,22 +568,16 @@ export async function approveAdminBotAction(
 ): Promise<void> {
   host.adminBotBusyActionId = proposal.id;
   host.adminBotNotice = null;
-  const stored = loadStoredMemberSession();
-  if (!stored) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: "Sign in with your member account to approve actions.",
-    };
-    host.adminBotBusyActionId = null;
-    return;
-  }
-  const baseUrl = resolveAdminBotBaseUrl(host.settings);
   try {
+    const session = requirePrivilegedSession(host);
+    if (!session) {
+      return;
+    }
     const approved = await approveActionAsMember(
       proposal.id,
       proposal.payload_hash,
-      stored.sessionToken,
-      baseUrl,
+      session.sessionToken,
+      session.baseUrl,
     );
     if (!approved.ok) {
       host.adminBotNotice = { kind: "error", text: approvalFailureMessage(approved.kind) };
@@ -516,8 +600,8 @@ export async function approveAdminBotAction(
     const executed = await executeActionAsMember(
       proposal.id,
       `control-ui-${proposal.id}`,
-      stored.sessionToken,
-      baseUrl,
+      session.sessionToken,
+      session.baseUrl,
     );
     if (!executed.ok) {
       host.adminBotNotice = { kind: "error", text: approvalFailureMessage(executed.kind) };
@@ -528,14 +612,25 @@ export async function approveAdminBotAction(
       text: `${executed.value.status === "executed" ? "Approved and executed" : "Approved and simulated"} ${proposal.id}.`,
     };
     await loadAdminBot(host);
-  } catch (err) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: formatAdminBotToolError(err),
-    };
   } finally {
     host.adminBotBusyActionId = null;
   }
+}
+
+// Approvals require a real privileged member session — the gateway service principal is
+// rejected by the server (403) so that chat-driven privileged actions are impossible.
+function requirePrivilegedSession(
+  host: AdminBotHost,
+): { sessionToken: string; baseUrl: string } | null {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your lab account to approve or dismiss actions.",
+    };
+    return null;
+  }
+  return { sessionToken: stored.sessionToken, baseUrl: resolveAdminBotBaseUrl(host.settings) };
 }
 
 export async function removePendingAdminBotAction(
@@ -545,18 +640,17 @@ export async function removePendingAdminBotAction(
   host.adminBotBusyActionId = proposal.id;
   host.adminBotNotice = null;
   try {
-    await invokeAdminBotTool(host, "adminbot_remove_pending_action", {
-      actionId: proposal.id,
-      actor: "control-ui",
-      controlUiConfirmed: true,
-    });
+    const session = requirePrivilegedSession(host);
+    if (!session) {
+      return;
+    }
+    const removed = await removePendingAction(proposal.id, session.sessionToken, session.baseUrl);
+    if (!removed.ok) {
+      host.adminBotNotice = { kind: "error", text: approvalFailureMessage(removed.kind) };
+      return;
+    }
     host.adminBotNotice = { kind: "success", text: "Removed " + proposal.id + "." };
     await loadAdminBot(host);
-  } catch (err) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: formatAdminBotToolError(err),
-    };
   } finally {
     host.adminBotBusyActionId = null;
   }
@@ -569,21 +663,25 @@ export async function executeAdminBotAction(
   host.adminBotBusyActionId = proposal.id;
   host.adminBotNotice = null;
   try {
-    const result = (await invokeAdminBotTool(host, "adminbot_execute_approved_action", {
-      actionId: proposal.id,
-      idempotencyKey: `control-ui-${proposal.id}`,
-      controlUiConfirmed: true,
-    })) as AdminBotExecutionResult;
+    const session = requirePrivilegedSession(host);
+    if (!session) {
+      return;
+    }
+    const executed = await executeActionAsMember(
+      proposal.id,
+      `control-ui-${proposal.id}`,
+      session.sessionToken,
+      session.baseUrl,
+    );
+    if (!executed.ok) {
+      host.adminBotNotice = { kind: "error", text: approvalFailureMessage(executed.kind) };
+      return;
+    }
     host.adminBotNotice = {
       kind: "success",
-      text: `${result.status === "executed" ? "Executed" : "Simulated"} ${proposal.id}.`,
+      text: `${executed.value.status === "executed" ? "Executed" : "Simulated"} ${proposal.id}.`,
     };
     await loadAdminBot(host);
-  } catch (err) {
-    host.adminBotNotice = {
-      kind: "error",
-      text: formatAdminBotToolError(err),
-    };
   } finally {
     host.adminBotBusyActionId = null;
   }
@@ -601,7 +699,7 @@ function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
     ...(member.researchTopics ? { research_topics: member.researchTopics } : {}),
     ...(member.projects ? { projects: member.projects } : {}),
     ...(member.hoursPerWeek !== undefined ? { hours_per_week: member.hoursPerWeek } : {}),
-    ...(member.capacityPercent !== undefined ? { capacity_percent: member.capacityPercent } : {}),
+    ...(member.availability !== undefined ? { availability: member.availability } : {}),
     ...(member.location ? { location: member.location } : {}),
     ...(member.affiliation ? { affiliation: member.affiliation } : {}),
     ...(member.timezone ? { timezone: member.timezone } : {}),
@@ -661,7 +759,7 @@ export async function saveAdminBotMember(
       ...(member.researchTopics ? { researchTopics: member.researchTopics } : {}),
       ...(member.projects ? { projects: member.projects } : {}),
       ...(member.hoursPerWeek !== undefined ? { hoursPerWeek: member.hoursPerWeek } : {}),
-      ...(member.capacityPercent !== undefined ? { capacityPercent: member.capacityPercent } : {}),
+      ...(member.availability !== undefined ? { availability: member.availability } : {}),
       ...(member.location ? { location: member.location } : {}),
       ...(member.affiliation ? { affiliation: member.affiliation } : {}),
       ...(member.timezone ? { timezone: member.timezone } : {}),
@@ -823,13 +921,38 @@ export async function saveAdminBotPaper(
   paper: AdminBotPaperSaveInput,
 ): Promise<void> {
   host.adminBotNotice = null;
+  const artifacts = {
+    ...(paper.overleafEditUrl ? { overleaf_edit_url: paper.overleafEditUrl } : {}),
+    ...(paper.googleDrivePdfUrl ? { google_drive_pdf_url: paper.googleDrivePdfUrl } : {}),
+    ...(paper.conference ? { conference: paper.conference } : {}),
+    ...(paper.topic ? { topic: paper.topic } : {}),
+  };
+  // Prefer the member's own session: the service scopes the write to what that member may change
+  // (any paper for an admin, their own for an author). The gateway tool path stays as the fallback
+  // for break-glass sessions that hold a gateway token but no member login.
+  const stored = loadStoredMemberSession();
+  if (stored) {
+    const saved = await saveOwnPaper(
+      paper.id,
+      {
+        title: paper.title,
+        authors: paper.authors,
+        current_step: paper.currentStep,
+        ...(Object.keys(artifacts).length > 0 ? { artifacts } : {}),
+        ...(paper.reminderStatus ? { reminder: { status: paper.reminderStatus } } : {}),
+      },
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!saved.ok) {
+      host.adminBotNotice = { kind: "error", text: paperSaveErrorText(saved.kind) };
+      return;
+    }
+    host.adminBotNotice = { kind: "success", text: `Saved paper ${paper.id}.` };
+    await loadAdminBot(host);
+    return;
+  }
   try {
-    const artifacts = {
-      ...(paper.overleafEditUrl ? { overleaf_edit_url: paper.overleafEditUrl } : {}),
-      ...(paper.googleDrivePdfUrl ? { google_drive_pdf_url: paper.googleDrivePdfUrl } : {}),
-      ...(paper.conference ? { conference: paper.conference } : {}),
-      ...(paper.topic ? { topic: paper.topic } : {}),
-    };
     await invokeAdminBotTool(host, "adminbot_upsert_paper", {
       id: paper.id,
       title: paper.title,
@@ -845,6 +968,19 @@ export async function saveAdminBotPaper(
       kind: "error",
       text: formatAdminBotToolError(err),
     };
+  }
+}
+
+function paperSaveErrorText(kind: string): string {
+  switch (kind) {
+    case "unreachable":
+      return ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE;
+    case "forbidden":
+      return "You can only add or edit papers you authored.";
+    case "rate-limited":
+      return "Too many attempts. Wait a moment and try again.";
+    default:
+      return "Couldn't save this paper. Check the details and try again.";
   }
 }
 
@@ -984,7 +1120,10 @@ export async function generateAdminBotReimbursement(host: AdminBotHost): Promise
   }
 }
 
-export function resetAdminBotReimbursement(host: AdminBotHost): void {
+// Narrowed to the slice it writes so the guest host (which has no client/session) can reuse it.
+export function resetAdminBotReimbursement(
+  host: Pick<AdminBotHost, "adminBotReimbursement">,
+): void {
   host.adminBotReimbursement = createEmptyAdminBotReimbursementState();
 }
 
@@ -1009,6 +1148,114 @@ function resolveReceiptMediaType(
     name.endsWith(candidate),
   );
   return extension ? RECEIPT_MEDIA_TYPES_BY_EXTENSION[extension] : undefined;
+}
+
+// Guest (not-signed-in) reimbursement path. The signed-in flow reaches the workflow through the
+// gateway's `tools.invoke`, which needs a connected gateway client and therefore a login; these two
+// helpers talk to the AdminBot service's own HTTP routes instead, which accept anonymous callers.
+// Everything else about the flow -- state shape, receipt encoding, error text -- stays shared, so
+// the guest view and the signed-in view cannot drift apart.
+async function guestReimbursementRequest(
+  baseUrl: string,
+  path: "/reimbursements/converse" | "/reimbursements/generate",
+  payload: Record<string, unknown>,
+): Promise<unknown> {
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      method: "POST",
+      // No credentials: the route is anonymous, and sending them would be misleading.
+      credentials: "omit",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    throw new Error("Could not reach the AdminBot service. Check that it is running.");
+  }
+  const body = (await response.json().catch(() => null)) as { error?: { message?: string } } | null;
+  if (!response.ok) {
+    if (response.status === 429) {
+      throw new Error("Too many reimbursement requests from this network. Try again later.");
+    }
+    throw new Error(body?.error?.message ?? `Reimbursement request failed (${response.status}).`);
+  }
+  return body;
+}
+
+export async function sendGuestReimbursementMessage(
+  host: GuestReimbursementHost,
+  message: string,
+  files: File[],
+): Promise<void> {
+  const userMessage = message.trim();
+  if (!userMessage || host.adminBotReimbursement.busy) return;
+  host.adminBotReimbursement = {
+    ...host.adminBotReimbursement,
+    busy: true,
+    error: null,
+    artifacts: [],
+  };
+  try {
+    const receipts = await Promise.all(files.map(receiptPayload));
+    const result = (await guestReimbursementRequest(
+      host.guestReimbursementBaseUrl,
+      "/reimbursements/converse",
+      {
+        message: userMessage,
+        messages: host.adminBotReimbursement.messages,
+        draft: host.adminBotReimbursement.draft,
+        ...(receipts.length ? { receipts } : {}),
+      },
+    )) as ReimbursementConversationResult;
+    host.adminBotReimbursement = {
+      messages: [
+        ...host.adminBotReimbursement.messages,
+        { role: "user", content: userMessage },
+        { role: "assistant", content: result.assistant_message },
+      ],
+      draft: readRecord(result.draft),
+      missingFields: Array.isArray(result.missing_fields) ? result.missing_fields : [],
+      receiptNames: [
+        ...new Set([
+          ...host.adminBotReimbursement.receiptNames,
+          ...(Array.isArray(result.receipt_names) ? result.receipt_names : []),
+        ]),
+      ],
+      ready: result.ready === true,
+      busy: false,
+      error: null,
+      artifacts: [],
+    };
+  } catch (err) {
+    host.adminBotReimbursement = {
+      ...host.adminBotReimbursement,
+      busy: false,
+      error: formatAdminBotToolError(err),
+    };
+  }
+}
+
+export async function generateGuestReimbursement(host: GuestReimbursementHost): Promise<void> {
+  if (!host.adminBotReimbursement.ready || host.adminBotReimbursement.busy) return;
+  host.adminBotReimbursement = { ...host.adminBotReimbursement, busy: true, error: null };
+  try {
+    const result = (await guestReimbursementRequest(
+      host.guestReimbursementBaseUrl,
+      "/reimbursements/generate",
+      { draft: host.adminBotReimbursement.draft },
+    )) as ReimbursementGenerationResult;
+    host.adminBotReimbursement = {
+      ...host.adminBotReimbursement,
+      busy: false,
+      artifacts: Array.isArray(result.artifacts) ? result.artifacts : [],
+    };
+  } catch (err) {
+    host.adminBotReimbursement = {
+      ...host.adminBotReimbursement,
+      busy: false,
+      error: formatAdminBotToolError(err),
+    };
+  }
 }
 
 async function receiptPayload(file: File) {

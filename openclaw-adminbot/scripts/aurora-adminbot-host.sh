@@ -336,7 +336,9 @@ REMOTE_SLACK
     chmod 600 "$cron_bundle"
 
     remote_bundle="${REMOTE_ENV}.cron-upload.$$"
-    remote_importer="${REMOTE_ENV}.cron-importer.$$"
+    # Keep the .mjs suffix: node resolves module format from the extension and refuses
+    # to run a copy named after the pid alone (ERR_UNKNOWN_FILE_EXTENSION).
+    remote_importer="${REMOTE_ENV}.cron-importer.$$.mjs"
     "${SCP[@]}" "$cron_bundle" "${TARGET}:${remote_bundle}"
     "${SCP[@]}" "$importer" "${TARGET}:${remote_importer}"
     "${SSH[@]}" bash -s -- \
@@ -345,6 +347,10 @@ REMOTE_SLACK
       "$REMOTE_ENV" \
       "$REMOTE_CURRENT/openclaw.mjs" <<'REMOTE_CRON'
 set -euo pipefail
+# Aurora's node lives in ~/.local/bin, which a non-interactive ssh shell does not put on
+# PATH. Every other remote block here does the same; without it the import dies on
+# "node: command not found" after the bundle has already been uploaded.
+export PATH=$HOME/.local/bin:$PATH
 bundle="$1"
 importer="$2"
 env_file="$3"

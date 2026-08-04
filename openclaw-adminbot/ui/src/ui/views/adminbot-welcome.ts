@@ -1,7 +1,11 @@
 // Control UI view renders the post-login AdminBot onboarding welcome screen.
 import { html, nothing } from "lit";
 import { t } from "../../i18n/index.ts";
-import { dismissAdminBotWelcome, toggleOnboardingStep } from "../adminbot-auth-flow.ts";
+import {
+  acknowledgeOnboardingStepForMember,
+  dismissAdminBotWelcome,
+  toggleOnboardingStep,
+} from "../adminbot-auth-flow.ts";
 import type { MemberOnboardingStep } from "../adminbot-auth.ts";
 import type { AppViewState } from "../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../external-link.ts";
@@ -114,11 +118,45 @@ function renderStep(state: AppViewState, step: MemberOnboardingStep) {
       ${step.detail ? html`<p class="adminbot-welcome__step-detail">${step.detail}</p>` : nothing}
       ${step.bullets?.length
         ? html`<ul class="adminbot-welcome__step-bullets">
-            ${step.bullets.map((bullet) => html`<li>${bullet}</li>`)}
+            ${step.bullets.map(
+              (bullet) => html`<li>
+                <span class="adminbot-welcome__bullet-text">${bullet.text}</span>
+                ${bullet.points?.length
+                  ? html`<ul class="adminbot-welcome__step-points">
+                      ${bullet.points.map((point) => html`<li>${point}</li>`)}
+                    </ul>`
+                  : nothing}
+              </li>`,
+            )}
           </ul>`
         : nothing}
-      ${renderStepLinks(step)}
+      ${renderStepLinks(step)} ${renderStepAck(state, step)}
     </li>
+  `;
+}
+
+// Every step ends with an explicit "I've read this". The checklist is reading material, so a click
+// is the only evidence it was read -- nothing else about the step can be observed. The automatic
+// calendar grant is the one step with nothing to acknowledge, so it shows as already done.
+function renderStepAck(state: AppViewState, step: MemberOnboardingStep) {
+  if (step.acknowledged_at) {
+    return html`<p class="adminbot-welcome__step-ack" data-acknowledged="true">
+      ${t("adminbotWelcome.ack.done")}
+    </p>`;
+  }
+  if (step.status === "complete") {
+    return nothing;
+  }
+  return html`
+    <div class="adminbot-welcome__step-ack">
+      <button
+        type="button"
+        class="btn btn--sm adminbot-welcome__ack-button"
+        @click=${() => void acknowledgeOnboardingStepForMember(state, step.id)}
+      >
+        ${t("adminbotWelcome.ack.action")}
+      </button>
+    </div>
   `;
 }
 
@@ -136,12 +174,42 @@ function renderCategory(
   `;
 }
 
+// Steps that ask the member to read something. Automatic grants (the calendar invite completes
+// itself) are not chores, so they count towards neither the progress line nor the dismiss gate.
+function readableSteps(steps: MemberOnboardingStep[]): MemberOnboardingStep[] {
+  return steps.filter((step) => !(step.status === "complete" && !step.acknowledged_at));
+}
+
+// A single line of "where am I", so the screen opens with the shape of the work instead of a wall
+// of steps. Counts what is left to read rather than total steps.
+function renderAckProgress(steps: MemberOnboardingStep[]) {
+  const readable = readableSteps(steps);
+  const read = readable.filter((step) => step.acknowledged_at).length;
+  if (readable.length === 0) {
+    return nothing;
+  }
+  const remaining = readable.length - read;
+  return html`
+    <p class="adminbot-welcome__progress" data-complete=${remaining === 0 ? "true" : "false"}>
+      ${remaining === 0
+        ? t("adminbotWelcome.ack.allDone")
+        : t("adminbotWelcome.ack.progress", {
+            read: String(read),
+            total: String(readable.length),
+          })}
+    </p>
+  `;
+}
+
 export function renderAdminBotWelcome(state: AppViewState) {
   const onboarding = state.adminBotOnboarding;
   if (!onboarding) {
     return nothing;
   }
   const faviconSrc = agentLogoUrl(state.basePath ?? "");
+  // Leaving is gated on reading: dismissing is what hides the checklist, so allowing it early is
+  // the one way a member can skip required steps outright.
+  const unread = readableSteps(onboarding.steps).filter((step) => !step.acknowledged_at).length;
   return html`
     <div class="login-gate adminbot-welcome">
       <div class="login-gate__card adminbot-welcome__card">
@@ -150,6 +218,7 @@ export function renderAdminBotWelcome(state: AppViewState) {
           <div class="login-gate__title">${t("adminbotWelcome.title")}</div>
           <div class="login-gate__sub">${t("adminbotWelcome.subtitle")}</div>
         </div>
+        ${renderAckProgress(onboarding.steps)}
         ${groupStepsByCategory(onboarding.steps).map((group) => renderCategory(state, group))}
         ${state.adminBotOnboardingError
           ? html`<p class="adminbot-welcome__error" role="alert">
@@ -159,6 +228,10 @@ export function renderAdminBotWelcome(state: AppViewState) {
         <button
           type="button"
           class="btn primary adminbot-welcome__dismiss"
+          ?disabled=${unread > 0}
+          title=${unread > 0
+            ? t("adminbotWelcome.dismissBlocked", { remaining: String(unread) })
+            : nothing}
           @click=${() => dismissAdminBotWelcome(state)}
         >
           ${t("adminbotWelcome.dismiss")}

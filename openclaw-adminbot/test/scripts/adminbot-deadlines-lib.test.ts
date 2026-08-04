@@ -182,8 +182,21 @@ describe("deadline digest message", () => {
   it("lists conferences individually and collapses the shared workshop deadline", () => {
     const directory = datasetDir([
       venue("conf", "2026-08-10 23:59:59", { name: "EMNLP 2026", link: "https://emnlp.example" }),
-      venue("ws1", "2026-08-29 23:59:59", { venue_type: "workshop", name: "WS One" }),
-      venue("ws2", "2026-08-29 23:59:59", { venue_type: "workshop", name: "WS Two" }),
+      venue("ws1", "2026-08-29 23:59:59", {
+        venue_type: "workshop",
+        venue_group: "NeurIPS 2026 Workshops",
+        name: "WS One",
+      }),
+      venue("ws2", "2026-08-29 23:59:59", {
+        venue_type: "workshop",
+        venue_group: "NeurIPS 2026 Workshops",
+        name: "WS Two",
+      }),
+      venue("ws3", "2026-08-20 23:59:59", {
+        venue_type: "workshop",
+        venue_group: "Other 2026 Workshops",
+        name: "Lone Workshop",
+      }),
     ]);
 
     const message = runPython(
@@ -194,8 +207,11 @@ describe("deadline digest message", () => {
     ) as string;
 
     expect(message).toContain("🟠 *Aug 10* (6d) — EMNLP 2026  <https://emnlp.example|↗>");
-    expect(message).toContain("*2 NeurIPS 2026 workshops* (unified deadline)");
+    // Collapsing keys off the dataset's venue_group, so the line names whichever series shares
+    // the date and a series of one still shows under its own name.
+    expect(message).toContain("*2 NeurIPS 2026 Workshops* (unified deadline)");
     expect(message).not.toContain("WS Two");
+    expect(message).toContain("— Lone Workshop");
   });
 
   it("returns nothing when the window is empty, so cron posts no message", () => {
@@ -247,8 +263,11 @@ describe("deadline reminder cadence", () => {
       runPython(
         "m = load('adminbot-deadline-reminders')\n" +
           "print(json.dumps([m.action_key_for({'venue_group': 'NeurIPS 2026 Workshops'}), " +
+          "m.action_key_for({'venue_group': 'Brand New 2027 Workshops'}), " +
           "m.action_key_for({'venue_group': 'Some New Venue'}), m.action_key_for({})]))",
       ),
-    ).toEqual(["neurips_workshop", "emnlp_commitment", "emnlp_commitment"]);
+      // Any "<venue> Workshops" group reaches the one venue-agnostic workshop template, so a new
+      // series needs a dataset row rather than a code edit.
+    ).toEqual(["workshop", "workshop", "emnlp_commitment", "emnlp_commitment"]);
   });
 });

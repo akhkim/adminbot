@@ -82,6 +82,10 @@ export type AdminBotAuthServiceOptions = {
   // new member's account email view access to the lab calendar. A rejection is audited but never
   // fails or delays the approval response — see approveRegistration.
   inviteToLabCalendar?: (email: string) => Promise<void>;
+  // Best-effort side effect fired (not awaited) when a registration is approved, telling the new
+  // member their account is live. Same contract as inviteToLabCalendar: audited either way, never
+  // fails or delays the approval response.
+  sendAccountApprovedEmail?: (params: { email: string; name?: string }) => Promise<void>;
   gatewayToken?: string;
   gatewayUrl?: string;
   sessionTtlMs?: number;
@@ -113,7 +117,6 @@ const SIGNUP_PROFILE_FIELDS = [
   "research_topics",
   "projects",
   "hours_per_week",
-  "capacity_percent",
   "location",
   "timezone",
   "personal_website",
@@ -121,12 +124,16 @@ const SIGNUP_PROFILE_FIELDS = [
 ] as const;
 
 const SIGNUP_STRING_ARRAY_FIELDS = new Set<string>(["research_topics", "projects"]);
-const SIGNUP_NUMBER_FIELDS = new Set<string>(["hours_per_week", "capacity_percent"]);
+const SIGNUP_NUMBER_FIELDS = new Set<string>(["hours_per_week"]);
 
 export class AdminBotAuthService {
   private readonly store: AdminBotServiceStore;
   private readonly createMember: (input: AdminBotLabMemberInput) => AdminBotLabMember;
   private readonly inviteToLabCalendar?: (email: string) => Promise<void>;
+  private readonly sendAccountApprovedEmail?: (params: {
+    email: string;
+    name?: string;
+  }) => Promise<void>;
   private readonly gatewayToken?: string;
   private readonly gatewayUrl?: string;
   private readonly sessionTtlMs: number;
@@ -140,6 +147,7 @@ export class AdminBotAuthService {
     this.store = options.store;
     this.createMember = options.createMember;
     this.inviteToLabCalendar = options.inviteToLabCalendar;
+    this.sendAccountApprovedEmail = options.sendAccountApprovedEmail;
     this.gatewayToken = options.gatewayToken?.trim() || undefined;
     this.gatewayUrl = options.gatewayUrl?.trim() || undefined;
     this.sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
@@ -380,7 +388,29 @@ export class AdminBotAuthService {
       member_id: memberId,
     });
     this.inviteNewMemberToLabCalendar(registration.email, memberId, decidedBy);
+    this.notifyAccountApproved(registration.email, memberId, decidedBy);
     return { ok: true, status: 200, payload: { status: "approved", member_id: memberId } };
+  }
+
+  // Fire-and-forget, same reasoning as the calendar invite: the approval is already recorded, so a
+  // failed mail is audited for follow-up rather than rolled back. The member's name comes from the
+  // roster record the approval just created/claimed, so the mail can greet them properly.
+  private notifyAccountApproved(email: string, memberId: string, decidedBy: string): void {
+    if (!this.sendAccountApprovedEmail) {
+      return;
+    }
+    const name = this.store.getLabMember(memberId)?.name;
+    void this.sendAccountApprovedEmail({ email, ...(name ? { name } : {}) })
+      .then(() => {
+        this.audit("auth.approval_email_sent", decidedBy, { member_id: memberId, email });
+      })
+      .catch((error: unknown) => {
+        this.audit("auth.approval_email_failed", decidedBy, {
+          member_id: memberId,
+          email,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 
   // Fire-and-forget: never blocks or fails approval on an external Google Calendar call. Success
@@ -639,8 +669,9 @@ function isValidEmail(email: string): boolean {
 }
 
 // Validate a signup profile: name is required and non-empty, only whitelisted keys are allowed,
-// research_topics/projects must be string[], hours_per_week/capacity_percent must be finite
-// numbers. Any unknown key or wrong type rejects the whole profile.
+// research_topics/projects must be string[], hours_per_week must be a finite number.
+// Any unknown key or wrong type rejects the whole profile. A schedule is not part of signup:
+// availability rows and time off are recorded by the member afterwards, in the console.
 function sanitizeSignupProfile(
   profile: Record<string, unknown>,
 ): Record<string, unknown> | undefined {

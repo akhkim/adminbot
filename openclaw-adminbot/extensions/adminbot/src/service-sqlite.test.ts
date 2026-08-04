@@ -141,7 +141,6 @@ describe("AdminBotSqliteStore", () => {
         research_topics: ["causal inference", "reasoning"],
         projects: ["Project Atlas"],
         hours_per_week: 32,
-        capacity_percent: 80,
       }),
     );
     unwrap(
@@ -168,7 +167,6 @@ describe("AdminBotSqliteStore", () => {
         research_branch: "Causal AI",
         research_topics: ["causal inference", "reasoning"],
         projects: ["Project Atlas"],
-        capacity_percent: 80,
       }),
     ]);
     expect(unwrap(second.service.listPapers()).papers).toEqual([
@@ -208,6 +206,39 @@ describe("AdminBotSqliteStore", () => {
       paper_escalation_business_days: 4,
       head_professor_member_id: "zhijing",
     });
+    second.close();
+  });
+
+  // Checklists seeded before bullets gained nested points stored them as bare strings, which the
+  // Control UI renders as empty bullets. Opening the database rewrites them from the definitions.
+  it("rebuilds onboarding checklists stored under an older step shape, keeping acknowledgements", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(first.service.upsertLabMember({ id: "ada", name: "Ada Lovelace" }));
+    const acknowledgedAt = unwrap(
+      first.service.acknowledgeOwnOnboardingStep("ada", "calendar_conventions"),
+    ).onboarding.steps.find((step) => step.id === "calendar_conventions")?.acknowledged_at;
+    expect(acknowledgedAt).toBeTruthy();
+    // Rewind the stored copy to the shape members were seeded with before the UI change.
+    const stale = first.store.getLabMember("ada");
+    first.store.saveLabMember({
+      ...stale!,
+      onboarding: {
+        ...stale!.onboarding!,
+        steps: stale!.onboarding!.steps.map((step) => ({
+          ...step,
+          bullets: ["Mandatory events come with a personal email invite."],
+        })),
+      } as (typeof stale)["onboarding"] & object,
+    });
+    first.close();
+
+    const second = createAdminBotSqliteService({ databasePath });
+    const step = second.store
+      .getLabMember("ada")
+      ?.onboarding?.steps.find((entry) => entry.id === "calendar_conventions");
+    expect(step?.acknowledged_at).toBe(acknowledgedAt);
+    expect(step?.bullets?.every((bullet) => typeof bullet.text === "string")).toBe(true);
     second.close();
   });
 });

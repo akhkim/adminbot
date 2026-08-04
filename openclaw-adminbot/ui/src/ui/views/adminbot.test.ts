@@ -4,6 +4,7 @@ import { render } from "lit";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   type AdminBotLabMember,
+  type AdminBotPaperRecord,
   createEmptyAdminBotDashboardData,
 } from "../controllers/adminbot.ts";
 import { renderAdminBot, type AdminBotProps } from "./adminbot.ts";
@@ -339,6 +340,78 @@ describe("renderAdminBot announcements panel", () => {
     expect(email.querySelector('input[placeholder="Lab announcement"]')).not.toBeNull();
   });
 
+  it("offers only conferences with live papers, and tags each recipient with theirs", () => {
+    const roster = [
+      member({ id: "pat", name: "Pat Doe" }),
+      member({ id: "sam", name: "Sam Roe", slack_user_id: "U2" }),
+    ];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "announcements",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: roster,
+          papers: [
+            paper({ id: "live", authors: ["Pat Doe"] }),
+            // Finished work: its venue must not appear as something to announce about.
+            paper({
+              id: "done",
+              authors: ["Sam Roe"],
+              artifacts: { conference: "ICML 2025", topic: "Old" },
+              reminder: { status: "complete" },
+            }),
+          ],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+
+    const select = container.querySelector<HTMLSelectElement>(
+      '.adminbot-nudge-recipients select[name="conference"]',
+    );
+    expect([...(select?.options ?? [])].map((option) => option.value)).toEqual([
+      "",
+      "NeurIPS 2026",
+    ]);
+
+    // The list comes from the active papers, not from the roster: a paper whose authors match no
+    // member record still contributes its venue.
+    const orphan = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "announcements",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: roster,
+          papers: [
+            paper({
+              id: "orphan",
+              authors: ["Nobody On The Roster"],
+              artifacts: { conference: "ICLR 2027", topic: "Unmatched" },
+            }),
+          ],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+    expect(
+      [
+        ...(orphan.querySelector<HTMLSelectElement>(
+          '.adminbot-nudge-recipients select[name="conference"]',
+        )?.options ?? []),
+      ].map((option) => option.value),
+    ).toEqual(["", "ICLR 2027"]);
+
+    const rows = [
+      ...container.querySelectorAll<HTMLTableRowElement>(".adminbot-nudge-recipients tbody tr"),
+    ];
+    expect(rows.find((row) => row.dataset.memberId === "pat")?.dataset.conferences).toBe(
+      "NeurIPS 2026",
+    );
+    expect(rows.find((row) => row.dataset.memberId === "sam")?.dataset.conferences).toBe("");
+  });
+
   it("disables the checkbox for a member missing the selected channel's contact field", () => {
     const roster = [
       member({ id: "with-slack", name: "With Slack", slack_user_id: "U1", email: undefined }),
@@ -469,5 +542,246 @@ describe("renderAdminBot announcements panel", () => {
     );
     sendButton?.dispatchEvent(new Event("click", { bubbles: true }));
     expect(sent).toBe(true);
+  });
+});
+
+const item = (
+  step: string,
+  start: number,
+  end: number,
+  dependsOn: string[],
+): NonNullable<AdminBotPaperRecord["timeline"]>["items"][number] =>
+  ({
+    step,
+    label: stepLabelFixtures[step] ?? step,
+    dependency_group: "release",
+    depends_on: dependsOn,
+    status: "upcoming",
+    offset_start_business_day: start,
+    offset_end_business_day: end,
+    duration_business_days: end - start,
+    color: "#2563eb",
+  }) as NonNullable<AdminBotPaperRecord["timeline"]>["items"][number];
+
+const stepLabelFixtures: Record<string, string> = {
+  brainstorming_docs: "Brainstorming docs",
+  overleaf_writing: "Overleaf writing",
+  submission: "Submission",
+  google_drive_pdf: "Drive PDF",
+  slide_making: "Slides",
+};
+
+const paper = (overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecord => ({
+  id: "paper-1",
+  title: "World Models Survey",
+  authors: ["Pat Doe"],
+  current_step: "overleaf_writing",
+  artifacts: { conference: "NeurIPS 2026", topic: "World models" },
+  created_at: "2026-01-01T00:00:00Z",
+  updated_at: "2026-01-02T00:00:00Z",
+  ...overrides,
+});
+
+describe("renderAdminBot members panel — authored papers", () => {
+  it("lists a member's papers in their first cell, above the rest of the row", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "general",
+        panel: "members",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members,
+          papers: [paper(), paper({ id: "paper-2", authors: ["Someone Else"] })],
+        },
+      }),
+    );
+
+    const firstCell = container.querySelector("tbody tr td");
+    const titles = [
+      ...(firstCell?.querySelectorAll(".adminbot-member-sheet__papers .adminbot-tag") ?? []),
+    ].map((node) => node.textContent?.trim());
+    // Only the papers this member authors, and in the name cell rather than a trailing column.
+    expect(titles).toEqual(["World Models Survey"]);
+  });
+
+  it("renders no paper strip for a member who authors nothing", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "general",
+        panel: "members",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members,
+          papers: [paper({ id: "paper-2", authors: ["Someone Else"] })],
+        },
+      }),
+    );
+
+    expect(container.querySelector(".adminbot-member-sheet__papers")).toBeNull();
+  });
+});
+
+describe("renderAdminBot members panel — conference filter", () => {
+  it("offers the conferences of the papers members author and tags each row with them", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "general",
+        panel: "members",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members,
+          papers: [paper(), paper({ id: "paper-2", authors: ["Someone Else"] })],
+        },
+      }),
+    );
+
+    const select = container.querySelector<HTMLSelectElement>(
+      '.adminbot-member-filters select[name="conference"]',
+    );
+    expect(select).not.toBeNull();
+    expect([...(select?.options ?? [])].map((option) => option.value)).toEqual([
+      "",
+      "NeurIPS 2026",
+    ]);
+
+    const row = container.querySelector<HTMLTableRowElement>("tbody tr");
+    expect(row?.dataset.conferences).toBe("NeurIPS 2026");
+  });
+
+  it("marks a member with no papers as matching no conference", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "general",
+        panel: "members",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members,
+          papers: [paper({ authors: ["Someone Else"] })],
+        },
+      }),
+    );
+
+    const row = container.querySelector<HTMLTableRowElement>("tbody tr");
+    expect(row?.dataset.conferences).toBe("");
+  });
+});
+
+describe("renderAdminBot papers panel — member self-service", () => {
+  function papersProps(overrides: Partial<AdminBotProps>, papers: AdminBotPaperRecord[]) {
+    return baseProps({
+      mode: "general",
+      panel: "papers",
+      signedInMemberId: "pat",
+      data: { ...createEmptyAdminBotDashboardData(), members, papers },
+      ...overrides,
+    });
+  }
+
+  it("gives a signed-in member the add-paper form, prefilled with their own name", () => {
+    const container = renderToDiv(papersProps({}, [paper()]));
+
+    const addCard = container.querySelector<HTMLElement>("#adminbot-add-paper");
+    expect(addCard).not.toBeNull();
+    expect(addCard?.querySelector<HTMLInputElement>('input[name="authors"]')?.value).toBe(
+      "Pat Doe",
+    );
+    // Reminder cadence is paper-flow governance the service rejects from a member write.
+    expect(addCard?.querySelector('select[name="reminderStatus"]')).toBeNull();
+  });
+
+  it("shows the edit form on a paper the member authors and hides it on one they don't", () => {
+    const container = renderToDiv(
+      papersProps({}, [paper(), paper({ id: "paper-2", authors: ["Someone Else"] })]),
+    );
+
+    const forms = [
+      ...container.querySelectorAll('[id^="adminbot-edit-paper-"] form.adminbot-form'),
+    ];
+    expect(forms).toHaveLength(1);
+    expect(forms[0]?.querySelector<HTMLInputElement>('input[name="id"]')?.value).toBe("paper-1");
+  });
+
+  it("treats a paper the member filed as theirs even when the authors are written differently", () => {
+    const container = renderToDiv(
+      papersProps({}, [paper({ authors: ["P. Doe"], submitted_by_member_id: "pat" })]),
+    );
+
+    expect(
+      container.querySelectorAll('[id^="adminbot-edit-paper-"] form.adminbot-form'),
+    ).toHaveLength(1);
+  });
+
+  it("keeps deletion out of the member view", () => {
+    const container = renderToDiv(papersProps({}, [paper()]));
+
+    expect(container.querySelector(".adminbot-paper-gantt__actions .btn.danger")).toBeNull();
+  });
+
+  it("stacks concurrent branches into separate lanes so bars never overlap", () => {
+    // Slides branch off the submission and overlap the arXiv/announcement chain in time.
+    const timeline = {
+      progress_percent: 40,
+      current_step_index: 2,
+      total_estimated_business_days: 12,
+      items: [
+        item("brainstorming_docs", 0, 2, []),
+        item("overleaf_writing", 2, 7, ["brainstorming_docs"]),
+        item("submission", 7, 8, ["overleaf_writing"]),
+        item("google_drive_pdf", 8, 9, ["submission"]),
+        item("slide_making", 8, 10, ["submission"]),
+      ],
+    };
+    const container = renderToDiv(papersProps({}, [paper({ timeline })]));
+
+    const tracks = container.querySelectorAll(".adminbot-paper-timeline__track");
+    expect(tracks).toHaveLength(2);
+    // The overlapping pair must land on different tracks.
+    const laneOf = (label: string) =>
+      [...tracks].findIndex((track) => track.textContent?.includes(label));
+    expect(laneOf("Drive PDF")).not.toBe(laneOf("Slides"));
+    // ...and the linear head of the chain stays on one track.
+    expect(laneOf("Brainstorming docs")).toBe(laneOf("Submission"));
+  });
+
+  it("keeps a purely linear timeline in a single lane", () => {
+    const timeline = {
+      progress_percent: 20,
+      current_step_index: 1,
+      total_estimated_business_days: 8,
+      items: [
+        item("brainstorming_docs", 0, 2, []),
+        item("overleaf_writing", 2, 7, ["brainstorming_docs"]),
+        item("submission", 7, 8, ["overleaf_writing"]),
+      ],
+    };
+    const container = renderToDiv(papersProps({}, [paper({ timeline })]));
+
+    expect(container.querySelectorAll(".adminbot-paper-timeline__track")).toHaveLength(1);
+  });
+
+  it("anchors the edit control to the paper's own timeline row", () => {
+    const container = renderToDiv(papersProps({}, [paper()]));
+
+    const row = container.querySelector(".adminbot-paper-gantt__row");
+    expect(row).not.toBeNull();
+    // The row owns both the trigger and the popover it opens, so a paper is read and edited in
+    // one place instead of a second list underneath.
+    const trigger = row?.querySelector<HTMLButtonElement>(
+      'button[popovertarget^="adminbot-edit-paper-"]',
+    );
+    expect(trigger).not.toBeNull();
+    expect(row?.querySelector(`#${trigger?.getAttribute("popovertarget")}`)).not.toBeNull();
+  });
+
+  it("offers no add-paper form when nobody is signed in", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "general",
+        panel: "papers",
+        data: { ...createEmptyAdminBotDashboardData(), members, papers: [paper()] },
+      }),
+    );
+
+    expect(container.querySelector("#adminbot-add-paper")).toBeNull();
   });
 });

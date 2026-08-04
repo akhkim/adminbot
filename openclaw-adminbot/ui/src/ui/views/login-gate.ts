@@ -510,14 +510,6 @@ function renderSignupFields(state: AppViewState) {
       t("login.member.signup.hoursPerWeekPlaceholder"),
     )}
     ${field(
-      t("login.member.signup.capacityPercent"),
-      state.memberCapacityPercent,
-      (next) => {
-        state.memberCapacityPercent = next;
-      },
-      t("login.member.signup.capacityPercentPlaceholder"),
-    )}
-    ${field(
       t("login.member.signup.location"),
       state.memberLocation,
       (next) => {
@@ -692,6 +684,26 @@ function renderPendingNotice(state: AppViewState) {
   `;
 }
 
+// Reimbursement is the one tool a claimant may need without ever having an account, so it gets an
+// explicit door out of the login screen rather than being reachable only after signing in.
+function renderGuestReimbursementLink(state: AppViewState) {
+  return html`
+    <div class="login-gate__guest">
+      <button
+        type="button"
+        class="btn login-gate__guest-button"
+        data-testid="login-guest-reimbursements"
+        @click=${() => {
+          state.guestReimbursements = true;
+        }}
+      >
+        ${t("login.guest.reimbursements")}
+      </button>
+      <div class="login-gate__guest-hint">${t("login.guest.reimbursementsHint")}</div>
+    </div>
+  `;
+}
+
 export function renderLoginGate(state: AppViewState) {
   const basePath = normalizeBasePath(state.basePath ?? "");
   const faviconSrc = agentLogoUrl(basePath);
@@ -714,7 +726,8 @@ export function renderLoginGate(state: AppViewState) {
         </div>
         ${state.loginPendingNotice
           ? renderPendingNotice(state)
-          : html`${renderMemberForm(state)} ${failure ? renderLoginFailure(failure) : ""}`}
+          : html`${renderMemberForm(state)} ${failure ? renderLoginFailure(failure) : ""}
+            ${renderGuestReimbursementLink(state)}`}
       </div>
     </div>
   `;

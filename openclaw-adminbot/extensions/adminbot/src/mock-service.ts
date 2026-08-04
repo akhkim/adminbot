@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { createAccountApprovedEmailRunner } from "./account-approved-email.js";
 import {
   AdminBotAuthService,
   type AdminBotAuthResponse,
@@ -22,6 +23,11 @@ import type {
 } from "./contracts.js";
 import { DEADLINE_VENUES } from "./deadlines-dataset.js";
 import { renderDeadlinesWebUi } from "./deadlines-web-ui.js";
+import { allowedGatewayScopesForPrivilege } from "./device-pairing-scopes.js";
+import {
+  createAdminBotOpenReviewWorkflow,
+  type AdminBotOpenReviewWorkflow,
+} from "./openreview-workflow.js";
 import { createAdminBotPrivacyBroker, type AdminBotPrivacyBroker } from "./privacy-broker.js";
 import type {
   AdminBotReimbursementRequest,
@@ -68,9 +74,111 @@ export type AdminBotMockServiceOptions = {
   // Overrides the default `gws` CLI-backed calendar invite runner — used by tests to avoid
   // shelling out to a real `gws` binary.
   calendarInviteRunner?: (email: string) => Promise<void>;
+  // Same for the `gog` CLI-backed "your account is approved" email.
+  accountApprovedEmailRunner?: (params: { email: string; name?: string }) => Promise<void>;
+  // Approves a pending gateway device pairing on behalf of a signed-in member. Injected from the
+  // repo-root composition layer (start-adminbot.mjs) so the extension never imports core
+  // device-pairing internals. `allowedScopes` is the ceiling derived from the member's privilege;
+  // the approver must not grant beyond it. Absent in unit/mock setups that don't test pairing.
+  devicePairingApprover?: DevicePairingApprover;
+  // Pairs a member's browser device and mints a gateway token bound to it, so the browser never
+  // needs the shared gateway secret to open its first connection. Injected from the repo-root
+  // composition layer for the same boundary reason as devicePairingApprover.
+  deviceTokenIssuer?: DeviceTokenIssuer;
+  // Path to scripts/adminbot-openreview.py. Injected as a path rather than a built
+  // workflow because the workflow needs the store this factory owns; absent in unit
+  // setups, which leaves every /openreview route reporting 503 rather than half-working.
+  openReviewScriptPath?: string;
+  openReviewPythonCommand?: string;
+  // Reads each member's location from their Slack profile. Injected from the repo-root
+  // composition layer, which owns how Slack is reached; absent here means the map falls
+  // back to roster locations for everyone.
+  fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
 };
 
-type AdminBotPrincipal = { kind: "service" } | AdminBotMemberPrincipal;
+export type DeviceTokenIssuance =
+  | { ok: true; token: string; scopes: string[] }
+  | {
+      ok: false;
+      reason: "unsupported" | "failed";
+      message?: string;
+    };
+
+export type DeviceTokenIssuer = (params: {
+  deviceId: string;
+  publicKey: string;
+  platform?: string;
+  deviceFamily?: string;
+  displayName?: string;
+  allowedScopes: readonly string[];
+}) => Promise<DeviceTokenIssuance>;
+
+export type DevicePairingApproval =
+  | { ok: true }
+  | {
+      ok: false;
+      reason: "unknown_request" | "scope_exceeds_privilege" | "failed";
+      message?: string;
+    };
+
+export type DevicePairingApprover = (params: {
+  requestId: string;
+  allowedScopes: readonly string[];
+}) => Promise<DevicePairingApproval>;
+
+type AdminBotPrincipal =
+  | { kind: "service" }
+  | { kind: "anonymous"; ip?: string }
+  | AdminBotMemberPrincipal;
+
+// Reimbursement is deliberately usable without an account: the forms carry only the claimant's own
+// details, which they are typing in anyway. The anonymous principal therefore reaches these two
+// routes and nothing else -- it is rejected by isPrivileged, carries no member, and is re-checked
+// against this list before any handler runs, so a new route cannot become anonymously reachable by
+// being added to handleAuthenticatedRoute.
+const ANONYMOUS_ROUTES = new Set(["/reimbursements/converse", "/reimbursements/generate"]);
+
+function isAnonymousRoute(method: string | undefined, pathname: string): boolean {
+  return method === "POST" && ANONYMOUS_ROUTES.has(pathname);
+}
+
+// Anonymous callers are unauthenticated by design, so the only abuse control left is volume. These
+// caps are per-IP and generous enough that a real claimant filling one packet never notices; they
+// exist to stop the open endpoint being used as free inference against the local model.
+const ANONYMOUS_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
+const ANONYMOUS_RATE_LIMIT_MAX_REQUESTS = 60;
+const ANONYMOUS_RATE_LIMIT_MAX_TRACKED_IPS = 10_000;
+
+type AnonymousRateLimiter = { check(ip: string | undefined): boolean };
+
+function createAnonymousRateLimiter(): AnonymousRateLimiter {
+  const hits = new Map<string, number[]>();
+  return {
+    check(ip) {
+      const key = ip ?? "unknown";
+      const now = Date.now();
+      const recent = (hits.get(key) ?? []).filter(
+        (at) => now - at < ANONYMOUS_RATE_LIMIT_WINDOW_MS,
+      );
+      if (recent.length >= ANONYMOUS_RATE_LIMIT_MAX_REQUESTS) {
+        hits.set(key, recent);
+        return false;
+      }
+      recent.push(now);
+      hits.set(key, recent);
+      // Unbounded growth would be its own denial of service, so the map is swept once it is large
+      // rather than kept forever for IPs that have gone quiet.
+      if (hits.size > ANONYMOUS_RATE_LIMIT_MAX_TRACKED_IPS) {
+        for (const [trackedIp, timestamps] of hits) {
+          if (timestamps.every((at) => now - at >= ANONYMOUS_RATE_LIMIT_WINDOW_MS)) {
+            hits.delete(trackedIp);
+          }
+        }
+      }
+      return true;
+    },
+  };
+}
 
 type AdminBotRouteContext = {
   service: AdminBotService;
@@ -79,8 +187,13 @@ type AdminBotRouteContext = {
   sensitiveInfo: AdminBotSensitiveInfoDocument;
   runEmailAutomation?: () => Promise<unknown>;
   reimbursementWorkflow?: AdminBotReimbursementWorkflow;
+  openReviewWorkflow?: AdminBotOpenReviewWorkflow;
+  fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
   serviceToken?: string;
+  devicePairingApprover?: DevicePairingApprover;
+  deviceTokenIssuer?: DeviceTokenIssuer;
   allowedOrigins: Set<string>;
+  anonymousRateLimiter: AnonymousRateLimiter;
 };
 
 export function createAdminBotMockService(options: AdminBotMockServiceOptions = {}) {
@@ -120,6 +233,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       return result.payload;
     },
     inviteToLabCalendar: options.calendarInviteRunner ?? createCalendarInviteRunner(),
+    sendAccountApprovedEmail:
+      options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
     ...(gatewayToken ? { gatewayToken } : {}),
     gatewayUrl,
   });
@@ -143,6 +258,16 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         return activeEmailAutomation;
       }
     : undefined;
+  const openReviewWorkflow = options.openReviewScriptPath
+    ? createAdminBotOpenReviewWorkflow({
+        scriptPath: options.openReviewScriptPath,
+        ...(options.openReviewPythonCommand
+          ? { pythonCommand: options.openReviewPythonCommand }
+          : {}),
+        service,
+        store,
+      })
+    : undefined;
   const ctx: AdminBotRouteContext = {
     service,
     auth,
@@ -153,7 +278,14 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       ? { reimbursementWorkflow: options.reimbursementWorkflow }
       : {}),
     ...(serviceToken ? { serviceToken } : {}),
+    ...(options.devicePairingApprover
+      ? { devicePairingApprover: options.devicePairingApprover }
+      : {}),
+    ...(options.deviceTokenIssuer ? { deviceTokenIssuer: options.deviceTokenIssuer } : {}),
+    ...(openReviewWorkflow ? { openReviewWorkflow } : {}),
+    ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
     allowedOrigins,
+    anonymousRateLimiter: createAnonymousRateLimiter(),
   };
   const server = createServer(async (req, res) => {
     try {
@@ -217,7 +349,31 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
 
   const principal = resolvePrincipal(req, ctx);
   if (!principal) {
-    sendJson(res, 401, { error: { message: "authentication required" } });
+    if (!isAnonymousRoute(req.method, url.pathname)) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    const ip = remoteIp(req);
+    if (!ctx.anonymousRateLimiter.check(ip)) {
+      ctx.service.recordAnonymousReimbursementUse({
+        route: url.pathname,
+        outcome: "rate_limited",
+        ...(ip ? { ip } : {}),
+      });
+      sendJson(res, 429, {
+        error: { message: "too many reimbursement requests; please try again later" },
+      });
+      return;
+    }
+    ctx.service.recordAnonymousReimbursementUse({
+      route: url.pathname,
+      outcome: "accepted",
+      ...(ip ? { ip } : {}),
+    });
+    await handleAuthenticatedRoute(req, res, ctx, url, {
+      kind: "anonymous",
+      ...(ip ? { ip } : {}),
+    });
     return;
   }
   await handleAuthenticatedRoute(req, res, ctx, url, principal);
@@ -281,6 +437,14 @@ async function handleAuthRoute(
       return;
     }
     sendJson(res, 200, ctx.auth.sessionView(principal));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/auth/pair-device") {
+    await handlePairDeviceRoute(req, res, ctx);
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/auth/device-token") {
+    await handleDeviceTokenRoute(req, res, ctx);
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/logout") {
@@ -381,7 +545,108 @@ async function handleRegistrationRoute(
 }
 
 function principalActor(principal: AdminBotPrincipal): string {
-  return principal.kind === "service" ? "service" : principal.member.id;
+  if (principal.kind === "service") {
+    return "service";
+  }
+  return principal.kind === "anonymous" ? "anonymous" : principal.member.id;
+}
+
+// Approves a pending gateway device pairing for the signed-in member, with scopes capped by their
+// privilege. This is what makes member-side gateway enforcement automatic: the member's own login
+// session authorizes their browser's device, and the injected approver binds member-appropriate
+// scopes server-side. The shared service principal is denied outright — otherwise any agent tool
+// call could pair itself a write-scoped device and re-open the escalation this closes.
+async function handlePairDeviceRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: AdminBotRouteContext,
+): Promise<void> {
+  const principal = resolvePrincipal(req, ctx);
+  if (!principal || principal.kind !== "member") {
+    sendJson(res, 401, { error: { message: "member session required" } });
+    return;
+  }
+  if (!ctx.devicePairingApprover) {
+    sendJson(res, 503, { error: { message: "device pairing is not configured" } });
+    return;
+  }
+  const body = readRecord(await readJson(req));
+  const requestId = asString(body.requestId);
+  if (!requestId) {
+    sendJson(res, 400, { error: { message: "requestId is required" } });
+    return;
+  }
+  const allowedScopes = allowedGatewayScopesForPrivilege(principal.member.privilege_level);
+  const result = await ctx.devicePairingApprover({ requestId, allowedScopes });
+  if (result.ok) {
+    sendJson(res, 200, { approved: true, scopes: allowedScopes });
+    return;
+  }
+  if (result.reason === "unknown_request") {
+    sendJson(res, 404, { error: { message: "no pending pairing for this request" } });
+    return;
+  }
+  if (result.reason === "scope_exceeds_privilege") {
+    sendJson(res, 403, {
+      error: {
+        message: "this device requested more access than your account allows",
+      },
+    });
+    return;
+  }
+  sendJson(res, 502, {
+    error: { message: result.message ?? "device pairing approval failed" },
+  });
+}
+
+// Issues the signed-in member's browser a gateway token bound to its own device key, scoped to
+// their privilege. Without this the browser can only reach the gateway by holding the shared
+// gateway secret, which every member would then possess -- the escalation this whole design
+// closes -- and a member with no secret is stuck at a manual "paste a token" prompt instead.
+//
+// A member can only ever mint a token for a device key they present, capped at their own
+// privilege, so claiming someone else's device id buys nothing they could not get with their own.
+async function handleDeviceTokenRoute(
+  req: IncomingMessage,
+  res: ServerResponse,
+  ctx: AdminBotRouteContext,
+): Promise<void> {
+  const principal = resolvePrincipal(req, ctx);
+  if (!principal || principal.kind !== "member") {
+    sendJson(res, 401, { error: { message: "member session required" } });
+    return;
+  }
+  if (!ctx.deviceTokenIssuer) {
+    sendJson(res, 503, { error: { message: "device token issuance is not configured" } });
+    return;
+  }
+  const body = readRecord(await readJson(req));
+  const deviceId = asString(body.deviceId);
+  const publicKey = asString(body.publicKey);
+  if (!deviceId || !publicKey) {
+    sendJson(res, 400, { error: { message: "deviceId and publicKey are required" } });
+    return;
+  }
+  const platform = asString(body.platform);
+  const deviceFamily = asString(body.deviceFamily);
+  const allowedScopes = allowedGatewayScopesForPrivilege(principal.member.privilege_level);
+  const result = await ctx.deviceTokenIssuer({
+    deviceId,
+    publicKey,
+    ...(platform ? { platform } : {}),
+    ...(deviceFamily ? { deviceFamily } : {}),
+    displayName: principal.member.name,
+    allowedScopes,
+  });
+  if (result.ok) {
+    sendJson(res, 200, { token: result.token, scopes: result.scopes, deviceId });
+    return;
+  }
+  // "unsupported" means the gateway has no shared secret to bind the token to, so the browser
+  // must keep using whatever credential it already has rather than retry forever.
+  sendJson(res, result.reason === "unsupported" ? 501 : 502, {
+    error: { message: result.message ?? "device token issuance failed" },
+  });
 }
 
 // An approval must name a real person, so the shared service principal (which every agent tool
@@ -389,7 +654,9 @@ function principalActor(principal: AdminBotPrincipal): string {
 function approverIdentityFor(
   principal: AdminBotPrincipal,
 ): { approver_role: string; approver_id: string } | undefined {
-  if (principal.kind === "service") {
+  // Only a member principal names a person: the shared service principal is anonymous by
+  // construction, and the anonymous reimbursement principal has no account at all.
+  if (principal.kind !== "member") {
     return undefined;
   }
   return {
@@ -405,6 +672,13 @@ async function handleAuthenticatedRoute(
   url: URL,
   principal: AdminBotPrincipal,
 ): Promise<void> {
+  // Re-assert the anonymous boundary here rather than trusting the caller: this function is the
+  // single entry point for every authenticated route, so a route added later is denied to
+  // anonymous callers unless it is explicitly added to ANONYMOUS_ROUTES.
+  if (principal.kind === "anonymous" && !isAnonymousRoute(req.method, url.pathname)) {
+    sendJson(res, 401, { error: { message: "authentication required" } });
+    return;
+  }
   const { service, privacyBroker, sensitiveInfo } = ctx;
   if (req.method === "POST" && url.pathname === "/automation/email/run") {
     // Triggers outbound email on behalf of the lab; not a per-member action.
@@ -417,6 +691,88 @@ async function handleAuthenticatedRoute(
     }
     sendJson(res, 200, await ctx.runEmailAutomation());
     return;
+  }
+  if (req.method === "GET" && url.pathname === "/member-map") {
+    // Where everyone is, by name. Privileged rather than public: the doc calls this a
+    // public website function, but publishing 144 people's locations is a decision to
+    // make deliberately, not a side effect of building the view.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.memberMap());
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/member-map/refresh") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.fetchSlackLocations) {
+      sendJson(res, 503, { error: { message: "slack location lookup is not configured" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      await service.refreshMemberMap(ctx.fetchSlackLocations, principalActor(principal)),
+    );
+    return;
+  }
+  if (url.pathname.startsWith("/openreview/")) {
+    // The whole reviewing-cycle surface is admin-only: it mails conference committees
+    // under Zhijing's OpenReview identity and mutates reviewer assignments.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.openReviewWorkflow) {
+      sendJson(res, 503, { error: { message: "openreview workflow is not configured" } });
+      return;
+    }
+    const workflow = ctx.openReviewWorkflow;
+    if (req.method === "GET" && url.pathname === "/openreview/status") {
+      sendServiceResult(res, service.listOpenReviewStatus());
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/openreview/cycle/run") {
+      // Dry run unless the caller explicitly asks to send, so a stray trigger of the
+      // route reports what it would have done instead of mailing anyone.
+      const body = (await readJson(req)) as { send?: boolean } | undefined;
+      sendJson(res, 200, await workflow.runCycle({ dryRun: body?.send !== true }));
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/openreview/load-forms") {
+      sendJson(res, 200, { forms: await workflow.loadForms() });
+      return;
+    }
+    if (req.method === "GET" && url.pathname === "/openreview/suggest-reviewers") {
+      const venueId = url.searchParams.get("venue");
+      if (!venueId) {
+        sendJson(res, 400, { error: { message: "venue query parameter is required" } });
+        return;
+      }
+      sendJson(res, 200, { submissions: await workflow.suggestReviewers(venueId) });
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/openreview/assignments") {
+      const body = (await readJson(req)) as {
+        venue_id?: string;
+        submission?: string;
+        reviewer?: string;
+        remove?: boolean;
+      };
+      if (!body?.venue_id || !body?.submission || !body?.reviewer) {
+        sendJson(res, 400, {
+          error: { message: "venue_id, submission and reviewer are required" },
+        });
+        return;
+      }
+      const result = await workflow.applyAssignment({
+        venueId: body.venue_id,
+        submission: body.submission,
+        reviewer: body.reviewer,
+        ...(body.remove ? { remove: true } : {}),
+      });
+      sendJson(res, result.ok === true ? 200 : 502, result);
+      return;
+    }
   }
   if (req.method === "POST" && url.pathname === "/reimbursements/converse") {
     if (!ctx.reimbursementWorkflow) {
@@ -447,6 +803,11 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "GET" && url.pathname === "/proposals/pending") {
+    // The pending-action queue is a governance surface: plain members must not see what is
+    // awaiting approval. Service principal stays allowed so agent tooling can still triage.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
     const rawLimit = url.searchParams.get("limit");
     const limit = rawLimit ? Number(rawLimit) : undefined;
     sendServiceResult(res, service.listPending(limit));
@@ -457,6 +818,11 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "GET" && url.pathname === "/settings") {
+    // Lab-wide settings (escalation windows, head professor, applicant sheet id) are
+    // governance config, not member-facing data.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
     sendServiceResult(res, service.getSettings());
     return;
   }
@@ -482,6 +848,22 @@ async function handleAuthenticatedRoute(
     const body = readRecord(await readJson(req));
     const markdown = typeof body.markdown === "string" ? body.markdown : "";
     sendJson(res, 200, await sensitiveInfo.update(markdown));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/onboarding/ack") {
+    // Self-service only: the body names a step, never a member, so this can never reach anyone
+    // else's checklist. The shared service principal has no checklist of its own and is denied.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const stepId = asString(body.step_id);
+    if (!stepId) {
+      sendJson(res, 400, { error: { message: "step_id is required" } });
+      return;
+    }
+    sendServiceResult(res, service.acknowledgeOwnOnboardingStep(principal.member.id, stepId));
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers/relevant") {
@@ -513,6 +895,12 @@ async function handleAuthenticatedRoute(
       sendServiceResult(res, service.updateOwnProfile(memberId, body));
       return;
     }
+    // Unreachable while this route stays out of ANONYMOUS_ROUTES, but written as an explicit deny
+    // so profile writes fail closed rather than depending on a check made elsewhere.
+    if (principal.kind === "anonymous") {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
     if (principal.member.id !== memberId) {
       sendJson(res, 403, { error: { message: "members can only update their own profile" } });
       return;
@@ -527,11 +915,25 @@ async function handleAuthenticatedRoute(
   const paper = /^\/papers\/([^/]+)$/u.exec(url.pathname);
   if (req.method === "PUT" && paper?.[1]) {
     const paperId = decodeURIComponent(paper[1]);
-    const body = (await readJson(req)) as AdminBotPaperRecordInput;
-    sendServiceResult(res, service.upsertPaper({ ...body, id: paperId }));
+    // Admins and automation write any paper. A plain member gets the narrower self-service path:
+    // their own submissions only, and without the governance fields the paper flow owns.
+    if (isPrivileged(principal)) {
+      const body = (await readJson(req)) as AdminBotPaperRecordInput;
+      sendServiceResult(res, service.upsertPaper({ ...body, id: paperId }));
+      return;
+    }
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(res, service.upsertOwnPaper(principal.member.id, { ...body, id: paperId }));
     return;
   }
   if (req.method === "DELETE" && paper?.[1]) {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
     sendServiceResult(res, service.deletePaper(decodeURIComponent(paper[1])));
     return;
   }
@@ -544,8 +946,9 @@ async function handleAuthenticatedRoute(
     const memberId = decodeURIComponent(onboardingStep[1]);
     // Members tick off their own checklist; admins can correct anyone's. The service principal
     // is allowed so the agent can mark a step done when it observes the work (e.g. it just sent
-    // the calendar invite) -- this is roster bookkeeping, not an outbound action.
-    if (principal.kind !== "service" && principal.member.id !== memberId) {
+    // the calendar invite) -- this is roster bookkeeping, not an outbound action. An anonymous
+    // caller never reaches here: this route is not in ANONYMOUS_ROUTES.
+    if (principal.kind === "member" && principal.member.id !== memberId) {
       if (!requirePrivileged(res, principal)) {
         return;
       }
@@ -610,6 +1013,9 @@ async function handleAuthenticatedRoute(
   }
   const remove = /^\/proposals\/([^/]+)\/remove$/u.exec(url.pathname);
   if (req.method === "POST" && remove?.[1]) {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
     const actionId = decodeURIComponent(remove[1]);
     const body = (await readJson(req)) as AdminBotRemovePendingRequest;
     sendServiceResult(res, service.removePending(actionId, body));
@@ -617,7 +1023,7 @@ async function handleAuthenticatedRoute(
   }
   const approve = /^\/approvals\/([^/]+)\/approve$/u.exec(url.pathname);
   if (req.method === "POST" && approve?.[1]) {
-    if (!requirePrivileged(res, principal)) {
+    if (!requireMemberPrivileged(res, principal)) {
       return;
     }
     const actionId = decodeURIComponent(approve[1]);
@@ -640,7 +1046,7 @@ async function handleAuthenticatedRoute(
   }
   const execute = /^\/actions\/([^/]+)\/execute$/u.exec(url.pathname);
   if (req.method === "POST" && execute?.[1]) {
-    if (!requirePrivileged(res, principal)) {
+    if (!requireMemberPrivileged(res, principal)) {
       return;
     }
     const actionId = decodeURIComponent(execute[1]);
@@ -663,6 +1069,9 @@ async function handleAuthenticatedRoute(
 function isPrivileged(principal: AdminBotPrincipal): boolean {
   if (principal.kind === "service") {
     return true;
+  }
+  if (principal.kind === "anonymous") {
+    return false;
   }
   const level = principal.member.privilege_level;
   return level === "admin" || level === "core_member";

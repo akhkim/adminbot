@@ -15,6 +15,9 @@ export type {
   AdminBotPaperStep,
   AdminBotPrivacyTaskRequest,
   AdminBotPrivacyTaskResult,
+  AdminBotOpenReviewCycleRecord,
+  AdminBotOpenReviewMilestoneRecord,
+  AdminBotOpenReviewRole,
   AdminBotPrivilegeLevel,
   AdminBotRiskTier,
   AdminBotSensitiveInfoRecord,
@@ -26,9 +29,21 @@ export { createGogAdminBotExecutor } from "./src/gog-executor.js";
 export { createAdminBotSocialExecutor } from "./src/social-executor.js";
 export { createAdminBotOverleafExecutor } from "./src/overleaf-executor.js";
 export { createAdminBotMessageExecutor } from "./src/message-executor.js";
+export { createAdminBotOpenReviewExecutor } from "./src/openreview-executor.js";
+export type { AdminBotOpenReviewExecutorOptions } from "./src/openreview-executor.js";
+export type {
+  AdminBotOpenReviewWorkflow,
+  AdminBotOpenReviewRunResult,
+} from "./src/openreview-workflow.js";
 export { createCompositeAdminBotExecutor } from "./src/composite-executor.js";
 export { createAdminBotSqliteService, AdminBotSqliteStore } from "./src/service-sqlite.js";
-export { createAdminBotMockService } from "./src/mock-service.js";
+export {
+  createAdminBotMockService,
+  type DevicePairingApprover,
+  type DevicePairingApproval,
+  type DeviceTokenIssuer,
+  type DeviceTokenIssuance,
+} from "./src/mock-service.js";
 export { createAdminBotSensitiveInfoDocument } from "./src/sensitive-info-doc.js";
 export {
   createAdminBotPrivacyBroker,

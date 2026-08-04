@@ -1354,6 +1354,34 @@ describe("server-channels auto restart", () => {
     expect(manager.isHealthMonitorEnabled("discord", DEFAULT_ACCOUNT_ID)).toBe(false);
   });
 
+  it("keeps the runtime snapshot usable when one account's secret cannot be resolved", () => {
+    // A channel account whose credential is still an unresolved SecretRef must not take
+    // the whole snapshot down with it: the health monitor sweeps every channel from this
+    // one call, so an escaping throw silently stops monitoring all of them.
+    installTestRegistry(
+      createTestPlugin({
+        listAccountIds: () => ["default", "second"],
+        resolveAccount: (_cfg, accountId) => {
+          if (accountId === "default") {
+            throw new Error(
+              'channels.slack.accounts.default.botToken: unresolved SecretRef "env:default:SLACK_BOT_TOKEN".',
+            );
+          }
+          return { enabled: true, configured: true };
+        },
+      }),
+    );
+
+    const manager = createManager();
+    const snapshot = manager.getRuntimeSnapshot();
+
+    const broken = snapshot.channelAccounts.discord?.default;
+    expect(broken?.enabled).toBe(false);
+    expect(broken?.lastError).toContain("unresolved SecretRef");
+    // The healthy sibling still makes it into the snapshot.
+    expect(snapshot.channelAccounts.discord?.second?.enabled).toBe(true);
+  });
+
   it("fails closed when account resolution throws during health monitor gating", () => {
     installTestRegistry(
       createTestPlugin({

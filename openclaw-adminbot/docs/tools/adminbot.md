@@ -388,6 +388,72 @@ Calendar, GitHub, and paper-pipeline records from that privilege level. Use
 People added without an explicit level receive `external_collaborator`, the
 least-privileged tier. Set `privilege_level` explicitly to grant more.
 
+### Member map
+
+`GET /member-map` groups active members by city; the **Map** tab in the console
+renders it as a dot map with a ranked list beneath. Alumni are left off.
+
+Location comes from two sources in a fixed order. **Slack wins**: `POST
+/member-map/refresh` reads each member's Slack profile (a workspace location
+field if one is configured, otherwise their timezone, whose IANA name carries a
+city) and stamps it on the member as `slack_location`. The roster `location` --
+what they typed when they joined -- is used **only** for members Slack has
+nothing for. A member Slack no longer knows about has their stamp cleared rather
+than left stale, so an old value cannot outrank their roster entry forever.
+
+Both sources are free text, so the resolver copes with what people actually
+write: institutions (`ETH` becomes Zürich), accents and spelling variants
+(`Tuebingen`/`Tübingen`), several places at once (`Zurich/Tuebingen/Toronto`
+takes the first), parentheticals, and leading hedges (`Mainly Montreal`).
+Anything it cannot place is listed under **Not placed** with the text the member
+wrote -- that is the signal to add a city to the gazetteer in
+`extensions/adminbot/src/member-map.ts`, not a reason to guess.
+
+The map is admin-gated. The brainstorming doc describes it as a public website
+function; publishing 144 people's locations is a decision worth making
+deliberately rather than inheriting from the view being built, so it is
+privileged for now and the JSON is there to feed a public page when you choose.
+
+### Time availability
+
+Each member maintains their own time availability as plain text on their
+profile, one period per line:
+
+```
+Until 09032026: 20% Rebuttals, 30% Studying, 50% FAR AI Collaboration
+Until 12312026: 60% Game Theory, 40% Teaching
+```
+
+The date is the end of the period written as `MMDDYYYY` (ISO `YYYY-MM-DD` is
+accepted too), and periods run consecutively from today. Percentages within a
+period may add up to less than 100 but never more; whatever is left over shows
+as unallocated rather than being scaled up to fill the bar.
+
+`away` is the one reserved activity name, for time out of the lab entirely --
+holiday, an internship, a semester elsewhere:
+
+```
+Until 12312026: 20% Thesis, 80% away (internship at DeepMind)
+Until 02152027: 100% away (parental leave)
+```
+
+The reason in parentheses is optional but worth writing: it is what the chart
+labels the band with. Away time is deliberately not the same as unallocated
+time. Unallocated reads as spare capacity someone could take on more work in;
+away is the opposite, and mixing them would tell an AC hunting for an emergency
+reviewer that someone on internship is wide open. It renders in its own neutral
+band rather than a categorical colour, and a member who is away for **all** of
+their current period is not proposed as an emergency reviewer at all. Being
+partly away does not gate them out -- they are still around, just with less time. The service parses
+the text once on save and stores the structured periods, so a bad line is
+rejected with a message saying what to fix.
+
+The console renders this as a stacked chart per member, one band per period with
+its width proportional to how long the period runs. The roster's Availability
+column shows a compact strip for the period in force today; the full chart is on
+the member's own profile and in the admin person editor. Members can set this
+themselves without an admin, the same as the rest of their profile.
+
 Use `adminbot_upsert_paper` for each paper. The standard pipeline is:
 
 1. `brainstorming_docs`

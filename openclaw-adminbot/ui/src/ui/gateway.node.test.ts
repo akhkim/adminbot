@@ -102,6 +102,7 @@ const {
   CONTROL_UI_OPERATOR_SCOPES,
   GatewayBrowserClient,
   GatewayRequestError,
+  resolveMemberOperatorScopes,
   shouldRetryWithDeviceToken,
 } = await import("./gateway.ts");
 
@@ -378,6 +379,28 @@ describe("GatewayBrowserClient", () => {
     expect(connectFrame.params?.minProtocol).toBe(MIN_CLIENT_PROTOCOL_VERSION);
     expect(connectFrame.params?.maxProtocol).toBe(PROTOCOL_VERSION);
     expect(connectFrame.params?.scopes).toEqual([...CONTROL_UI_OPERATOR_SCOPES]);
+  });
+
+  it("requests only the operatorScopes it was given (member read-only pairing)", async () => {
+    // Drop the stored device token so the fresh-pairing scope path (not the stored-scopes path) runs.
+    localStorage.clear();
+    const client = new GatewayBrowserClient({
+      url: "ws://127.0.0.1:18789",
+      token: "shared-auth-token",
+      operatorScopes: ["operator.read"],
+    });
+
+    const { connectFrame } = await startConnect(client);
+
+    expect(connectFrame.params?.scopes).toEqual(["operator.read"]);
+  });
+
+  it("resolveMemberOperatorScopes gives admins the full set and everyone else read only", () => {
+    expect(resolveMemberOperatorScopes("admin")).toEqual([...CONTROL_UI_OPERATOR_SCOPES]);
+    expect(resolveMemberOperatorScopes("core_member")).toEqual([...CONTROL_UI_OPERATOR_SCOPES]);
+    expect(resolveMemberOperatorScopes("member")).toEqual(["operator.read"]);
+    expect(resolveMemberOperatorScopes("trial")).toEqual(["operator.read"]);
+    expect(resolveMemberOperatorScopes(null)).toEqual(["operator.read"]);
   });
 
   it("adds the current Control UI protocol to bare protocol mismatch errors", () => {

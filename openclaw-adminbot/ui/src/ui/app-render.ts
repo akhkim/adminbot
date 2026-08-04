@@ -13,7 +13,6 @@ import {
   scopedAgentListParamsForSession,
   scopedAgentParamsForSession,
 } from "./app-chat.ts";
-import { DEFAULT_CRON_FORM } from "./app-defaults.ts";
 import { renderUsageTab } from "./app-render-usage-tab.ts";
 import {
   renderChatControls,
@@ -98,6 +97,7 @@ import {
   updateMcpServerEnabled,
 } from "./controllers/config.ts";
 import {
+  buildNewCronForm,
   loadCronJobsPage,
   loadCronRuns,
   loadMoreCronRuns,
@@ -111,6 +111,7 @@ import {
   validateCronForm,
   hasCronFormErrors,
   normalizeCronFormState,
+  prepareNewCronForm,
   getVisibleCronJobs,
   updateCronJobsFilter,
   updateCronRunsFilter,
@@ -245,6 +246,7 @@ import { renderDreamingRestartConfirmation } from "./views/dreaming-restart-conf
 import { renderDreaming } from "./views/dreaming.ts";
 import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
+import { renderGuestReimbursements } from "./views/guest-reimbursements.ts";
 import { renderLoginGate } from "./views/login-gate.ts";
 import { renderMcp } from "./views/mcp.ts";
 import { renderOverview } from "./views/overview.ts";
@@ -1337,10 +1339,15 @@ function resolveQuickSettingsSessionRow(state: AppViewState) {
 function renderCronQuickCreateForTab(
   state: AppViewState,
   requestHostUpdate: (() => void) | undefined,
+  modelOptions: string[],
 ) {
   return renderCronQuickCreate({
     open: state.cronQuickCreateOpen,
     step: state.cronQuickCreateStep,
+    modelOptions,
+    // What "inherit" actually resolves to for a new job, so the option is not
+    // an unlabelled mystery.
+    inheritedModelLabel: buildNewCronForm(state).payloadModel,
     draft: state.cronQuickCreateDraft ?? createDefaultDraft(),
     onDraftChange: (patch) => {
       state.cronQuickCreateDraft = {
@@ -1357,7 +1364,7 @@ function renderCronQuickCreateForTab(
       const draft = state.cronQuickCreateDraft ?? createDefaultDraft();
       const formPatch = draftToCronFormPatch(draft);
       state.cronEditingJobId = null;
-      state.cronForm = { ...DEFAULT_CRON_FORM, ...formPatch } as typeof state.cronForm;
+      state.cronForm = { ...buildNewCronForm(state), ...formPatch } as typeof state.cronForm;
       requestHostUpdate?.();
       void (async () => {
         const saved = await addCronJob(state);
@@ -1376,7 +1383,7 @@ function renderCronQuickCreateForTab(
       const formPatch = draftToCronFormPatch(draft);
       state.cronEditingJobId = null;
       state.cronForm = normalizeCronFormState({
-        ...DEFAULT_CRON_FORM,
+        ...buildNewCronForm(state),
         ...formPatch,
       } as typeof state.cronForm);
       state.cronFieldErrors = validateCronForm(state.cronForm);
@@ -1478,6 +1485,11 @@ export function renderApp(state: AppViewState) {
   // Gate: require successful gateway connection before showing the dashboard.
   // The gateway URL confirmation overlay is always rendered so URL-param flows still work.
   if (!state.connected) {
+    // Reimbursement is reachable without a session; it replaces the gate rather than sitting behind
+    // it, and the gateway URL overlay stays mounted so URL-param flows keep working either way.
+    if (state.guestReimbursements) {
+      return html` ${renderGuestReimbursements(state)} ${renderGatewayUrlConfirmation(state)} `;
+    }
     return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
   }
   if (state.adminBotWelcomeVisible) {
@@ -2970,7 +2982,7 @@ export function renderApp(state: AppViewState) {
               onSaveSensitiveInfo: (markdown) => void saveAdminBotSensitiveInfo(state, markdown),
             })
           : nothing}
-        ${state.tab === "adminbotRegistrations"
+        ${state.tab === "adminbotRegistrations" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotRegistrations, (m) =>
               m.renderAdminBotRegistrations({
                 registrations: state.registrations,
@@ -3199,7 +3211,9 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
         ${renderUsageTab(state, lazyUsage)}
-        ${state.tab === "cron" ? renderCronQuickCreateForTab(state, requestHostUpdate) : nothing}
+        ${state.tab === "cron"
+          ? renderCronQuickCreateForTab(state, requestHostUpdate, cronModelSuggestions)
+          : nothing}
         ${state.tab === "cron"
           ? renderLazyView(lazyCron, (m) =>
               m.renderCron({
@@ -3274,6 +3288,9 @@ export function renderApp(state: AppViewState) {
                 },
                 onToggleFormCollapsed: (collapsed) => {
                   state.cronFormCollapsed = collapsed;
+                  if (!collapsed) {
+                    prepareNewCronForm(state);
+                  }
                   requestHostUpdate?.();
                 },
                 onToggle: (job, enabled) => void toggleCronJob(state, job, enabled),

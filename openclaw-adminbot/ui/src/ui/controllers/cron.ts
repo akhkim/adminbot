@@ -1,6 +1,8 @@
 // Control UI controller manages cron gateway state.
 import { t } from "../../i18n/index.ts";
 import { DEFAULT_CRON_FORM } from "../app-defaults.ts";
+import type { ChatModelOverride } from "../chat-model-ref.ts";
+import { resolveChatModelOverrideValue } from "../chat-model-select-state.ts";
 import { getCronJobPayload, hasCronJobPayload } from "../cron-payload.ts";
 import { resolveCronJobLastRunStatus } from "../cron-status.ts";
 import { toNumber } from "../format.ts";
@@ -20,6 +22,8 @@ import type {
   CronRunsStatusValue,
   CronSortDir,
   CronStatus,
+  ModelCatalogEntry,
+  SessionsListResult,
 } from "../types.ts";
 import { CRON_CHANNEL_LAST } from "../ui-types.ts";
 import type { CronFormState } from "../ui-types.ts";
@@ -48,7 +52,19 @@ export type CronJobsScheduleKindFilter = "all" | "at" | "every" | "cron";
 export type CronJobsLastStatusFilter = "all" | CronRunStatus | "unknown";
 export type CronRunsLoadStatus = "ok" | "error" | "skipped";
 
-export type CronState = {
+// Chat-session model state used to seed new cron jobs. Spelled out rather than
+// picked from AppViewState because AppViewState already embeds CronState, and a
+// Pick would close that type cycle. Optional because most cron call sites (and
+// their fixtures) never touch the chat surface; a missing slice just means "no
+// chat selection", which falls back to the agent default.
+export type CronChatModelState = {
+  sessionKey?: string;
+  chatModelOverrides?: Record<string, ChatModelOverride | null>;
+  chatModelCatalog?: ModelCatalogEntry[];
+  sessionsResult?: SessionsListResult | null;
+};
+
+export type CronState = CronChatModelState & {
   client: GatewayBrowserClient | null;
   connected: boolean;
   cronLoading: boolean;
@@ -431,9 +447,42 @@ function clearCronRunsPage(state: CronState) {
   state.cronRunsNextOffset = null;
 }
 
+/**
+ * Blank cron form for a new job, seeded with the model picked in the chat
+ * session so a scheduled run uses the same model the operator is chatting with.
+ * An empty selection stays empty so the job keeps following the agent default.
+ */
+export function buildNewCronForm(state: CronChatModelState): CronFormState {
+  const chatModel =
+    state.chatModelOverrides && typeof state.sessionKey === "string"
+      ? resolveChatModelOverrideValue({
+          sessionKey: state.sessionKey,
+          chatModelOverrides: state.chatModelOverrides,
+          chatModelCatalog: state.chatModelCatalog ?? [],
+          sessionsResult: state.sessionsResult ?? null,
+        })
+      : "";
+  return { ...DEFAULT_CRON_FORM, payloadModel: chatModel };
+}
+
 function resetCronFormToDefaults(state: CronState) {
-  state.cronForm = { ...DEFAULT_CRON_FORM };
+  state.cronForm = buildNewCronForm(state);
   state.cronFieldErrors = validateCronForm(state.cronForm);
+}
+
+/**
+ * Re-seeds the chat model when the advanced form is opened for a new job. The
+ * pristine check keeps a half-filled draft (or an explicitly cleared model)
+ * intact across collapse/expand.
+ */
+export function prepareNewCronForm(state: CronState) {
+  if (state.cronEditingJobId) {
+    return;
+  }
+  if (state.cronForm.name.trim() || state.cronForm.payloadText.trim()) {
+    return;
+  }
+  resetCronFormToDefaults(state);
 }
 
 function formatDateTimeLocal(input: string): string {

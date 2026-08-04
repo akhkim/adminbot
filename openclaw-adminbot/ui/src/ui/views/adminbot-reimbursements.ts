@@ -5,7 +5,9 @@ import type {
 } from "../controllers/adminbot.ts";
 
 export type AdminBotReimbursementProps = {
-  connected: boolean;
+  // Whether this view's transport can carry a submission right now: the gateway connection for the
+  // signed-in path, and always true for the guest path, which posts straight to AdminBot over HTTP.
+  canSubmit: boolean;
   state: AdminBotReimbursementState;
   onMessage: (message: string, receipts: File[]) => void;
   onGenerate: () => void;
@@ -213,7 +215,7 @@ export function renderAdminBotReimbursements(props: AdminBotReimbursementProps) 
           <button
             class="btn btn--sm primary"
             type="submit"
-            ?disabled=${props.state.busy || !props.connected}
+            ?disabled=${props.state.busy || !props.canSubmit}
           >
             ${props.state.busy ? "Analyzing..." : "Send to assistant"}
           </button>

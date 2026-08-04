@@ -22,6 +22,7 @@ function createState(overrides: Partial<AppViewState> = {}): AppViewState {
     memberAuthFailure: null,
     memberFormError: null,
     loginPendingNotice: false,
+    guestReimbursements: false,
     rosterMembers: [],
     rosterLoading: false,
     rosterError: null,
@@ -35,7 +36,7 @@ function createState(overrides: Partial<AppViewState> = {}): AppViewState {
     memberResearchTopics: "",
     memberProjects: "",
     memberHoursPerWeek: "",
-    memberCapacityPercent: "",
+    memberAvailability: "",
     memberLocation: "",
     memberTimezone: "",
     memberPersonalWebsite: "",
@@ -489,7 +490,6 @@ describe("renderLoginGate", () => {
     expect(labels).toContain("Timezone");
     expect(labels).toContain("Projects");
     expect(labels).toContain("Hours per week");
-    expect(labels).toContain("Capacity (%)");
     const submit = container.querySelector<HTMLButtonElement>(".login-gate__connect");
     expect(submit?.textContent?.trim()).toBe("Request access");
   });
@@ -508,5 +508,46 @@ describe("renderLoginGate", () => {
     expect(container.querySelector(".login-gate__connect")?.textContent?.trim()).toBe(
       "Back to sign in",
     );
+  });
+});
+
+describe("guest reimbursement entry", () => {
+  it("renders a button on the login screen and opens the guest view when clicked", () => {
+    const state = createState();
+    const host = document.createElement("div");
+
+    render(renderLoginGate(state), host);
+    const button = host.querySelector<HTMLButtonElement>(
+      '[data-testid="login-guest-reimbursements"]',
+    );
+    expect(button).not.toBeNull();
+    expect(button?.textContent?.trim()).toBe("Submit a reimbursement");
+    // Nothing should have happened before the click: the gate is still the only thing shown.
+    expect(state.guestReimbursements).toBe(false);
+
+    button?.click();
+    expect(state.guestReimbursements).toBe(true);
+  });
+
+  it("keeps the button visible while a login failure is displayed", () => {
+    const state = createState({
+      lastError: "auth failed",
+      memberAuthFailure: { kind: "member-auth-failed" },
+    });
+    const host = document.createElement("div");
+
+    render(renderLoginGate(state), host);
+    expect(host.querySelector('[data-testid="login-guest-reimbursements"]')).not.toBeNull();
+  });
+
+  // The pending-approval notice replaces the form entirely; a user stuck waiting for approval is
+  // exactly who still needs to file a reimbursement, so the door must not disappear there.
+  it("is reachable from the pending-approval notice", () => {
+    const state = createState({ loginPendingNotice: true });
+    const host = document.createElement("div");
+
+    render(renderLoginGate(state), host);
+    const back = host.querySelector<HTMLButtonElement>(".login-gate__connect");
+    expect(back).not.toBeNull();
   });
 });

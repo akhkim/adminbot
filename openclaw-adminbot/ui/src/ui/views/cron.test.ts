@@ -114,6 +114,25 @@ function getElement<T extends Element>(
   return element;
 }
 
+describe("cron view job grouping", () => {
+  it("splits scheduled jobs from run-on-command ones when both are present", () => {
+    const container = document.createElement("div");
+    const tool: CronJob = { ...createJob("tool-1"), name: "tool: reference check", enabled: false };
+    render(renderCron(createProps({ jobs: [createJob("job-1"), tool] })), container);
+    const headings = [...container.querySelectorAll(".cron-job-group__title")].map((node) =>
+      node.textContent?.trim(),
+    );
+    expect(headings).toEqual(["Scheduled", "Run on command"]);
+    expect(container.querySelector(".cron-job-group__hint")?.textContent).toContain("Press Run");
+  });
+
+  it("stays a flat list when every job is on the same footing", () => {
+    const container = document.createElement("div");
+    render(renderCron(createProps({ jobs: [createJob("job-1"), createJob("job-2")] })), container);
+    expect(container.querySelectorAll(".cron-job-group__title")).toHaveLength(0);
+  });
+});
+
 describe("cron view", () => {
   it("shows all-job history mode and wires run/job filters", () => {
     const container = document.createElement("div");
@@ -656,14 +675,15 @@ describe("cron view", () => {
     expect(scheduleSection?.querySelector(".cron-help.cron-span-2")?.textContent?.trim()).toBe(
       "Need jitter? Use Advanced \u2192 Stagger window / Stagger unit.",
     );
-    expect(
-      ["#cron-payload-model", "#cron-payload-thinking"].map((selector) =>
-        getElement(container, selector, HTMLInputElement)
-          .closest("label")
-          ?.querySelector("span")
-          ?.textContent?.trim(),
-      ),
-    ).toEqual(["Model", "Thinking"]);
+    const labelTextFor = (element: Element) =>
+      element.closest("label")?.querySelector("span")?.textContent?.trim();
+    // Model is a <select>; thinking stays a free-text input.
+    expect(labelTextFor(getElement(container, "#cron-payload-model", HTMLSelectElement))).toBe(
+      "Model",
+    );
+    expect(labelTextFor(getElement(container, "#cron-payload-thinking", HTMLInputElement))).toBe(
+      "Thinking",
+    );
 
     const checkboxLabel = getElement(container, ".cron-checkbox", HTMLLabelElement);
     const firstElement = checkboxLabel.firstElementChild;
@@ -859,7 +879,7 @@ describe("cron view", () => {
     expect(actionLoadRuns).toHaveBeenNthCalledWith(5, "job-actions");
   });
 
-  it("renders suggestion datalists for agent/model/thinking/timezone", () => {
+  it("renders suggestion datalists for agent/thinking/timezone", () => {
     const container = document.createElement("div");
     render(
       renderCron(
@@ -877,9 +897,9 @@ describe("cron view", () => {
       container,
     );
 
+    // The model field is a <select>, so it owns no datalist.
     const suggestionListIds = [
       "cron-agent-suggestions",
-      "cron-model-suggestions",
       "cron-thinking-suggestions",
       "cron-tz-suggestions",
       "cron-delivery-to-suggestions",
@@ -896,8 +916,55 @@ describe("cron view", () => {
       "cron-tz-suggestions",
       "cron-delivery-to-suggestions",
       "cron-delivery-account-suggestions",
-      "cron-model-suggestions",
       "cron-thinking-suggestions",
     ]);
+  });
+
+  it("offers configured models as a select, defaulting to inherit", () => {
+    const container = document.createElement("div");
+    render(
+      renderCron(
+        createProps({
+          cronFormCollapsed: false,
+          form: { ...DEFAULT_CRON_FORM, scheduleKind: "cron", payloadKind: "agentTurn" },
+          modelSuggestions: ["openrouter/anthropic/claude-opus-4.8", "vllm/nvidia/Qwen3.5-122B"],
+        }),
+      ),
+      container,
+    );
+
+    const select = container.querySelector<HTMLSelectElement>("select#cron-payload-model");
+    expect(select).not.toBeNull();
+    expect(Array.from(select?.options ?? []).map((o) => o.value)).toEqual([
+      "",
+      "openrouter/anthropic/claude-opus-4.8",
+      "vllm/nvidia/Qwen3.5-122B",
+    ]);
+    expect(select?.value).toBe("");
+  });
+
+  it("keeps a retired pinned model selectable when editing a job", () => {
+    const container = document.createElement("div");
+    render(
+      renderCron(
+        createProps({
+          cronFormCollapsed: false,
+          form: {
+            ...DEFAULT_CRON_FORM,
+            scheduleKind: "cron",
+            payloadKind: "agentTurn",
+            payloadModel: "vllm/RedHatAI/Qwen3-Next-80B",
+          },
+          modelSuggestions: ["openrouter/anthropic/claude-opus-4.8"],
+        }),
+      ),
+      container,
+    );
+
+    const select = container.querySelector<HTMLSelectElement>("select#cron-payload-model");
+    expect(Array.from(select?.options ?? []).map((o) => o.value)).toContain(
+      "vllm/RedHatAI/Qwen3-Next-80B",
+    );
+    expect(select?.value).toBe("vllm/RedHatAI/Qwen3-Next-80B");
   });
 });

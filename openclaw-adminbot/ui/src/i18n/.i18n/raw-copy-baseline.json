@@ -3,6 +3,20 @@
   "entries": [
     {
       "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot-availability.ts",
+      "text": "No availability recorded from today onward. Add commitments in the AdminBot console, or link your planning doc there and have them read for you."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/adminbot-availability.ts",
+      "text": "No availability set"
+    },
+    {
+      "count": 1,
       "kind": "html-attribute",
       "name": "aria-label",
       "path": "ui/src/ui/app-render.ts",
@@ -822,6 +836,13 @@
     },
     {
       "count": 1,
+      "kind": "html-attribute",
+      "name": "title",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Members (excluding alumni/external) who haven't marked the LinkedIn onboarding step done"
+    },
+    {
+      "count": 1,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -884,7 +905,7 @@
       "text": "All branches"
     },
     {
-      "count": 1,
+      "count": 3,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -996,13 +1017,6 @@
       "text": "Calendar email"
     },
     {
-      "count": 2,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Capacity %"
-    },
-    {
       "count": 1,
       "kind": "html-text",
       "name": "text",
@@ -1017,7 +1031,7 @@
       "text": "Clear selection"
     },
     {
-      "count": 4,
+      "count": 5,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -1031,7 +1045,7 @@
       "text": "Complete"
     },
     {
-      "count": 3,
+      "count": 4,
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
@@ -1043,13 +1057,6 @@
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
       "text": "Contact"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Create a PaperPublish record in the shared AdminBot ledger."
     },
     {
       "count": 1,
@@ -1084,6 +1091,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Edit"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
       "text": "Edit member"
     },
     {
@@ -1092,6 +1106,13 @@
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
       "text": "Edit my profile"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Edit paper"
     },
     {
       "count": 1,
@@ -1231,13 +1252,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
-      "text": "No active papers yet."
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/adminbot.ts",
       "text": "No due paper nudges."
     },
     {
@@ -1287,6 +1301,13 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
+      "text": "none"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
       "text": "Not started"
     },
     {
@@ -1295,6 +1316,20 @@
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
       "text": "Nudge selected members or send a general announcement over Slack or email."
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Ongoing conference"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Ongoing conferences"
     },
     {
       "count": 2,
@@ -1498,6 +1533,13 @@
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
       "text": "Select all visible"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Select: LinkedIn not joined"
     },
     {
       "count": 1,

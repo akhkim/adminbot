@@ -18,6 +18,10 @@ import type {
   AdminBotMemberNudgeRequest,
   AdminBotMemberNudgeResult,
   AdminBotMemberNudgeSkip,
+  AdminBotMemberOnboarding,
+  AdminBotOpenReviewCycleRecord,
+  AdminBotOpenReviewMilestoneRecord,
+  AdminBotPaperArtifactLinks,
   AdminBotPaperNudge,
   AdminBotPaperRecord,
   AdminBotPaperRecordInput,
@@ -31,13 +35,17 @@ import type {
   AdminBotPrivilegeLevel,
 } from "./contracts.js";
 import { adminBotMemberStatuses, adminBotTimeOffKinds } from "./contracts.js";
+import { buildMemberMap, type AdminBotMemberMap } from "./member-map.js";
 import {
+  acknowledgeOnboardingStep,
   buildInitialOnboarding,
   findOnboardingStep,
   isOnboardingStepComplete,
   onboardingStepIds,
+  resolveMemberOnboarding,
   setOnboardingStepStatus,
 } from "./onboarding.js";
+import { memberRelevanceNeedles, textMatchesNeedles } from "./openreview-matching.js";
 
 // Approver roles are privilege levels from the member roster, not a separate vocabulary: the
 // service can only ever verify the level on the authenticated session, so anything else here
@@ -71,6 +79,12 @@ export type AdminBotServiceStore = {
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
   listPapers(): AdminBotPaperRecord[];
   deletePaper(paperId: string): boolean;
+  saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void;
+  listOpenReviewCycles(): AdminBotOpenReviewCycleRecord[];
+  // Returns false when the milestone had already fired, which is how the caller
+  // knows not to send.
+  recordOpenReviewMilestone(milestone: AdminBotOpenReviewMilestoneRecord): boolean;
+  listOpenReviewMilestones(venueId?: string): AdminBotOpenReviewMilestoneRecord[];
   getSettings(): AdminBotSettings | undefined;
   saveSettings(settings: AdminBotSettings): void;
   recordAudit(event: AdminBotAuditEvent): void;
@@ -139,6 +153,14 @@ const DEFAULT_ACTION_POLICIES = {
   // through the shared service principal an agent chat authenticates as), so that admin gate is
   // the approval. resolvePolicy only honors auto_allowed below T2, hence T1 here.
   "member_nudge.send": autoPolicy("T1"),
+  // Routine cycle reminders auto-send for the same reason member_nudge.send does: the
+  // run route is admin-gated, the recipients are the venue's own committee groups, and
+  // the cadence fires each milestone at most once.
+  "openreview.nudge": autoPolicy("T1"),
+  // Overdue warnings carry real social weight and go out under Zhijing's name, so they
+  // wait in Pending actions for a human however the run was triggered. Approver roles are
+  // privilege levels because that is the only thing the session can be checked against.
+  "openreview.warning": approvalPolicy("T2", ["admin", "core_member"]),
 } as const satisfies Record<AdminBotActionType, AdminBotActionPolicy>;
 
 const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = {
@@ -191,6 +213,8 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly executionResultsByIdempotencyKey = new Map<string, AdminBotExecutionResult>();
   private readonly labMembers = new Map<string, AdminBotLabMember>();
   private readonly papers = new Map<string, AdminBotPaperRecord>();
+  private readonly openReviewCycles = new Map<string, AdminBotOpenReviewCycleRecord>();
+  private readonly openReviewMilestones = new Map<string, AdminBotOpenReviewMilestoneRecord>();
   private settings: AdminBotSettings | undefined;
   private readonly auditEvents: AdminBotAuditEvent[] = [];
   private readonly credentialsByMemberId = new Map<string, AdminBotMemberCredential>();
@@ -260,6 +284,31 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
 
   deletePaper(paperId: string): boolean {
     return this.papers.delete(paperId);
+  }
+
+  saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void {
+    this.openReviewCycles.set(`${cycle.venue_id} ${cycle.role}`, cycle);
+  }
+
+  listOpenReviewCycles(): AdminBotOpenReviewCycleRecord[] {
+    return [...this.openReviewCycles.values()].toSorted(
+      (left, right) => left.deadline_ms - right.deadline_ms,
+    );
+  }
+
+  recordOpenReviewMilestone(milestone: AdminBotOpenReviewMilestoneRecord): boolean {
+    const key = `${milestone.venue_id} ${milestone.role} ${milestone.milestone_key}`;
+    if (this.openReviewMilestones.has(key)) {
+      return false;
+    }
+    this.openReviewMilestones.set(key, milestone);
+    return true;
+  }
+
+  listOpenReviewMilestones(venueId?: string): AdminBotOpenReviewMilestoneRecord[] {
+    return [...this.openReviewMilestones.values()]
+      .filter((milestone) => !venueId || milestone.venue_id === venueId)
+      .toSorted((left, right) => left.fired_at.localeCompare(right.fired_at));
   }
 
   getSettings(): AdminBotSettings | undefined {
@@ -665,6 +714,16 @@ export class AdminBotService {
     return this.store.listAuditEvents();
   }
 
+  // Anonymous reimbursement use has no member to attribute it to, so the audit trail is the only
+  // record that a submission happened and the only way to spot abuse of the open endpoint.
+  recordAnonymousReimbursementUse(details: {
+    route: string;
+    ip?: string;
+    outcome: "accepted" | "rate_limited";
+  }): void {
+    this.recordAudit({ type: "reimbursement.anonymous_use", actor: "anonymous", details });
+  }
+
   getProposal(actionId: string): AdminBotStoredProposal | undefined {
     return this.store.getProposal(actionId);
   }
@@ -732,13 +791,22 @@ export class AdminBotService {
       privilege_level: privilegeLevel,
       ...(accessOverrides ? { access_overrides: accessOverrides } : {}),
       access: mergeAccessGrants(PRIVILEGE_ACCESS[privilegeLevel], accessOverrides),
-      // Generated once at first creation and never regenerated on later edits — this is a
-      // static onboarding checklist, not something profile updates should reset.
-      onboarding: existing?.onboarding ?? buildInitialOnboarding(),
+      // Step text always comes from the current definitions; only the member's acknowledgements
+      // survive, so editing a profile never resets their progress and never leaves them reading a
+      // checklist frozen at the shape it had when they signed up.
+      onboarding: resolveMemberOnboarding(existing?.onboarding),
       created_at: existing?.created_at ?? now,
       updated_at: now,
       ...availabilityStamp(existing, member, now),
     };
+    // An empty list clears the schedule outright; keeping [] would render as an empty
+    // chart rather than "nothing recorded".
+    if (stored.availability && stored.availability.length === 0) {
+      delete stored.availability;
+    }
+    if (stored.time_off && stored.time_off.length === 0) {
+      delete stored.time_off;
+    }
     this.store.saveLabMember(stored);
     this.recordAudit({
       type: "lab_member.upserted",
@@ -776,13 +844,113 @@ export class AdminBotService {
         (patch as Record<string, unknown>)[field] = input[field];
       }
     }
+    // Drop the parsed availability when rebuilding the input: leaving it undefined makes
+    // upsertLabMember keep what is stored unless this request actually sent new text.
+    const { availability: _stored, ...existingFields } = existing;
     const merged: AdminBotLabMemberInput = {
-      ...existing,
+      ...existingFields,
       ...patch,
       id: memberId,
       privilege_level: existing.privilege_level,
     };
     return this.upsertLabMember(merged);
+  }
+
+  // Creates or edits a paper on behalf of the member themselves, so authors can file and maintain
+  // their own submissions without an admin. Ownership is checked against the *stored* record, so a
+  // member cannot take over someone else's paper by adding their own name to the authors they send.
+  upsertOwnPaper(
+    memberId: string,
+    input: Record<string, unknown>,
+  ): AdminBotServiceResponse<AdminBotPaperRecord> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    for (const field of OWN_PAPER_PRIVILEGED_FIELDS) {
+      if (input[field] !== undefined) {
+        return serviceError(400, `${field} cannot be set from a member paper update`);
+      }
+    }
+    const paperId = typeof input.id === "string" ? input.id.trim() : "";
+    if (!paperId) {
+      return serviceError(400, "paper id is required");
+    }
+    const existing = this.store.getPaper(paperId);
+    if (existing && !this.memberOwnsPaper(member, existing)) {
+      return serviceError(403, "members can only edit papers they authored");
+    }
+    const patch: Record<string, unknown> = {};
+    for (const field of OWN_PAPER_EDITABLE_FIELDS) {
+      if (input[field] !== undefined) {
+        patch[field] = input[field];
+      }
+    }
+    return this.upsertPaper({
+      ...existing,
+      ...(patch as Partial<AdminBotPaperRecordInput>),
+      id: paperId,
+      title: typeof patch.title === "string" ? patch.title : (existing?.title ?? ""),
+      authors: Array.isArray(patch.authors)
+        ? (patch.authors as string[])
+        : (existing?.authors ?? []),
+      current_step: (patch.current_step ??
+        existing?.current_step ??
+        "brainstorming_docs") as AdminBotPaperStep,
+      artifacts: { ...existing?.artifacts, ...(patch.artifacts as AdminBotPaperArtifactLinks) },
+      // Stamped once, on the create. Re-stamping on every edit would let the last member to touch
+      // a shared paper claim it.
+      submitted_by_member_id: existing?.submitted_by_member_id ?? memberId,
+    });
+  }
+
+  // A member owns a paper they filed, or one that names them in `authors`. Author entries are free
+  // text, so an id or email matches outright while a bare name only counts when it is unambiguous
+  // on the roster — otherwise two people sharing a name would inherit each other's edit rights.
+  private memberOwnsPaper(member: AdminBotLabMember, paper: AdminBotPaperRecord): boolean {
+    if (paper.submitted_by_member_id === member.id) {
+      return true;
+    }
+    const authors = paper.authors.map((author) => author.trim().toLocaleLowerCase());
+    const unique = [member.id, member.email]
+      .flatMap((value) => (value ? [value.toLocaleLowerCase()] : []))
+      .some((value) => authors.includes(value));
+    if (unique) {
+      return true;
+    }
+    const name = member.name.trim().toLocaleLowerCase();
+    if (!name || !authors.includes(name)) {
+      return false;
+    }
+    return (
+      this.store.listLabMembers().filter((entry) => entry.name.trim().toLocaleLowerCase() === name)
+        .length === 1
+    );
+  }
+
+  // Records a member reading one onboarding step. Members act only on their own checklist, so the
+  // caller's id is the record we touch -- there is no step-id path that reaches anyone else's.
+  acknowledgeOwnOnboardingStep(
+    memberId: string,
+    stepId: string,
+  ): AdminBotServiceResponse<{ onboarding: AdminBotMemberOnboarding }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    if (!member.onboarding) {
+      return serviceError(404, "member has no onboarding checklist");
+    }
+    const onboarding = acknowledgeOnboardingStep(
+      member.onboarding,
+      stepId,
+      new Date().toISOString(),
+    );
+    if (!onboarding) {
+      return serviceError(404, "onboarding step not found");
+    }
+    this.store.saveLabMember({ ...member, onboarding, updated_at: new Date().toISOString() });
+    return { ok: true, status: 200, payload: { onboarding } };
   }
 
   // Case-insensitive relevance match of a member's research focus against paper metadata.
@@ -878,6 +1046,72 @@ export class AdminBotService {
           .listPapers()
           .map(withPaperTimeline)
           .flatMap((paper) => duePaperNudges(paper, nowIso)),
+      },
+    };
+  }
+
+  // Where members are, Slack first and the roster location only where Slack has nothing.
+  // Reads stamped state: refreshing from Slack is refreshMemberMap's job, not a page
+  // load's, so opening the map never waits on 144 API calls.
+  memberMap(): AdminBotServiceResponse<AdminBotMemberMap> {
+    const members = this.store.listLabMembers();
+    const slackLocations = new Map<string, string>();
+    for (const member of members) {
+      if (member.slack_user_id && member.slack_location) {
+        slackLocations.set(member.slack_user_id, member.slack_location);
+      }
+    }
+    return { ok: true, status: 200, payload: buildMemberMap(members, slackLocations) };
+  }
+
+  // Re-reads every member's Slack profile and stamps what it finds. A member Slack has
+  // nothing for is cleared rather than left stale: keeping an old value would quietly
+  // outrank their roster location forever.
+  async refreshMemberMap(
+    fetchSlackLocations: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>,
+    actor: string,
+  ): Promise<AdminBotServiceResponse<{ checked: number; updated: number }>> {
+    const members = this.store.listLabMembers().filter((member) => member.slack_user_id);
+    const ids = members.flatMap((member) => (member.slack_user_id ? [member.slack_user_id] : []));
+    const located = await fetchSlackLocations(ids);
+    const now = new Date().toISOString();
+    let updated = 0;
+    for (const member of members) {
+      const next = located.get(member.slack_user_id ?? "")?.trim() || undefined;
+      if ((member.slack_location ?? undefined) === next) {
+        continue;
+      }
+      const stored: AdminBotLabMember = { ...member, updated_at: now };
+      if (next) {
+        stored.slack_location = next;
+        stored.slack_location_updated_at = now;
+      } else {
+        delete stored.slack_location;
+        delete stored.slack_location_updated_at;
+      }
+      this.store.saveLabMember(stored);
+      updated += 1;
+    }
+    this.recordAudit({
+      type: "member_map.refreshed",
+      actor,
+      details: { checked: ids.length, updated },
+    });
+    return { ok: true, status: 200, payload: { checked: ids.length, updated } };
+  }
+
+  // Reviewing cycles and their firing history, for the admin panel. Reads persisted
+  // state only — refreshing it from OpenReview is the workflow's job, not a page load's.
+  listOpenReviewStatus(): AdminBotServiceResponse<{
+    cycles: AdminBotOpenReviewCycleRecord[];
+    milestones: AdminBotOpenReviewMilestoneRecord[];
+  }> {
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        cycles: this.store.listOpenReviewCycles(),
+        milestones: this.store.listOpenReviewMilestones(),
       },
     };
   }
@@ -1120,11 +1354,12 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "research_topics",
   "projects",
   "hours_per_week",
-  "capacity_percent",
+  "availability",
   "location",
   "affiliation",
   "timezone",
   "personal_website",
+  "openreview_id",
   "notes",
   "availability",
   "time_off",
@@ -1138,26 +1373,30 @@ const SELF_PROFILE_PRIVILEGED_FIELDS = [
   "email",
 ] as const;
 
-function memberRelevanceNeedles(member: AdminBotLabMember): string[] {
-  const values = [
-    member.name,
-    member.research_branch,
-    ...(member.research_topics ?? []),
-    ...(member.projects ?? []),
-  ];
-  return values
-    .flatMap((value) => (typeof value === "string" ? [value.trim().toLowerCase()] : []))
-    .filter((value) => value.length > 0);
-}
+// What an author may maintain on their own paper: the record's own description, plus every artifact
+// link (conference and topic live there too).
+const OWN_PAPER_EDITABLE_FIELDS = [
+  "title",
+  "authors",
+  "current_step",
+  "artifacts",
+  "notes",
+] as const;
+
+// Governance the paper flow drives: mentor assignment, the reviewer checklist, and reminder cadence
+// (escalation windows and the head professor who gets escalated to). Ownership is server-stamped.
+const OWN_PAPER_PRIVILEGED_FIELDS = [
+  "mentor_member_id",
+  "checks",
+  "reminder",
+  "submitted_by_member_id",
+] as const;
 
 function paperMatchesNeedles(paper: AdminBotPaperRecord, needles: string[]): boolean {
-  if (needles.length === 0) {
-    return false;
-  }
   const haystack = [paper.title, paper.artifacts?.topic, ...paper.authors]
-    .flatMap((value) => (typeof value === "string" ? [value.toLowerCase()] : []))
+    .flatMap((value) => (typeof value === "string" ? [value] : []))
     .join("\n");
-  return needles.some((needle) => haystack.includes(needle));
+  return textMatchesNeedles(haystack, needles);
 }
 
 function truncateForSummary(message: string, maxLength = 80): string {
@@ -1253,14 +1492,6 @@ function validateLabMember(member: AdminBotLabMemberInput): string | undefined {
       member.hours_per_week > 168)
   ) {
     return "member hours per week must be between 0 and 168";
-  }
-  if (
-    member.capacity_percent !== undefined &&
-    (!Number.isFinite(member.capacity_percent) ||
-      member.capacity_percent < 0 ||
-      member.capacity_percent > 100)
-  ) {
-    return "member capacity percent must be between 0 and 100";
   }
   if (member.availability_doc_url !== undefined) {
     const docError = validateAvailabilityDocUrl(member.availability_doc_url);
@@ -1439,6 +1670,12 @@ type PaperTimelinePlanItem = {
   dependency_group: AdminBotPaperTimeline["items"][number]["dependency_group"];
   duration_business_days: number;
   color: string;
+  /**
+   * Steps that must finish first. The paper flow is not a single line: slides branch off the
+   * submission and run alongside the arXiv/announcement chain, so this is a graph rather than the
+   * plan's array order. Scheduling walks these edges; the array order only defines step identity.
+   */
+  depends_on: readonly AdminBotPaperStep[];
 };
 
 const PAPER_TIMELINE_PLAN = [
@@ -1448,6 +1685,7 @@ const PAPER_TIMELINE_PLAN = [
     dependency_group: "ideation",
     duration_business_days: 2,
     color: "#64748b",
+    depends_on: [],
   },
   {
     step: "overleaf_writing",
@@ -1455,6 +1693,7 @@ const PAPER_TIMELINE_PLAN = [
     dependency_group: "writing",
     duration_business_days: 5,
     color: "#2563eb",
+    depends_on: ["brainstorming_docs"],
   },
   {
     step: "submission",
@@ -1462,6 +1701,7 @@ const PAPER_TIMELINE_PLAN = [
     dependency_group: "submission",
     duration_business_days: 1,
     color: "#7c3aed",
+    depends_on: ["overleaf_writing"],
   },
   {
     step: "google_drive_pdf",
@@ -1469,6 +1709,7 @@ const PAPER_TIMELINE_PLAN = [
     dependency_group: "release",
     duration_business_days: 1,
     color: "#0891b2",
+    depends_on: ["submission"],
   },
   {
     step: "arxiv_polish",
@@ -1476,6 +1717,7 @@ const PAPER_TIMELINE_PLAN = [
     dependency_group: "release",
     duration_business_days: 2,
     color: "#0f766e",
+    depends_on: ["google_drive_pdf"],
   },
   {
     step: "social_posts",
@@ -1483,6 +1725,7 @@ const PAPER_TIMELINE_PLAN = [
     dependency_group: "outreach",
     duration_business_days: 1,
     color: "#db2777",
+    depends_on: ["arxiv_polish"],
   },
   {
     step: "slide_making",
@@ -1490,6 +1733,7 @@ const PAPER_TIMELINE_PLAN = [
     dependency_group: "materials",
     duration_business_days: 2,
     color: "#d97706",
+    depends_on: ["submission"],
   },
   {
     step: "poster_making",
@@ -1497,6 +1741,7 @@ const PAPER_TIMELINE_PLAN = [
     dependency_group: "materials",
     duration_business_days: 2,
     color: "#16a34a",
+    depends_on: ["slide_making"],
   },
 ] as const satisfies readonly PaperTimelinePlanItem[];
 
@@ -1514,35 +1759,50 @@ function buildPaperTimeline(
     0,
     PAPER_TIMELINE_PLAN.findIndex((item) => item.step === paper.current_step),
   );
-  const totalEstimatedBusinessDays = PAPER_TIMELINE_PLAN.reduce(
+  // Work in the plan, used for progress. This is the sum of every step's estimate and is not the
+  // same as the schedule length below: parallel branches take calendar time off the schedule
+  // without taking work off the paper.
+  const totalWorkBusinessDays = PAPER_TIMELINE_PLAN.reduce(
     (total, item) => total + item.duration_business_days,
     0,
   );
-  let cursor = 0;
   const complete = paper.reminder?.status === "complete";
   const blocked = paper.reminder?.status === "blocked";
+
+  // Earliest start per step = latest finish among its dependencies (longest path). The plan is
+  // ordered so every step appears after its dependencies, so one forward pass is enough.
+  const finishByStep = new Map<AdminBotPaperStep, number>();
   const items = PAPER_TIMELINE_PLAN.map((item, index) => {
-    const start = cursor;
-    cursor += item.duration_business_days;
+    const start = item.depends_on.reduce(
+      (latest, dependency) => Math.max(latest, finishByStep.get(dependency) ?? 0),
+      0,
+    );
+    const end = start + item.duration_business_days;
+    finishByStep.set(item.step, end);
     return {
       step: item.step,
       label: item.label,
       dependency_group: item.dependency_group,
-      depends_on: index > 0 ? [PAPER_TIMELINE_PLAN[index - 1].step] : [],
+      depends_on: [...item.depends_on],
       status: timelineStatus(index, currentStepIndex, complete, blocked),
       offset_start_business_day: start,
-      offset_end_business_day: cursor,
+      offset_end_business_day: end,
       duration_business_days: item.duration_business_days,
       color: item.color,
     };
   });
-  const completedBusinessDays = complete
-    ? totalEstimatedBusinessDays
-    : (items[currentStepIndex]?.offset_start_business_day ?? 0);
+  // Schedule length is the critical path, which is what a Gantt axis spans.
+  const scheduleBusinessDays = Math.max(1, ...items.map((item) => item.offset_end_business_day));
+  const completedWorkBusinessDays = complete
+    ? totalWorkBusinessDays
+    : PAPER_TIMELINE_PLAN.slice(0, currentStepIndex).reduce(
+        (total, item) => total + item.duration_business_days,
+        0,
+      );
   return {
-    progress_percent: Math.round((completedBusinessDays / totalEstimatedBusinessDays) * 100),
+    progress_percent: Math.round((completedWorkBusinessDays / totalWorkBusinessDays) * 100),
     current_step_index: currentStepIndex,
-    total_estimated_business_days: totalEstimatedBusinessDays,
+    total_estimated_business_days: scheduleBusinessDays,
     items,
   };
 }

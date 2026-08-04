@@ -941,7 +941,28 @@ export function createChannelManager(opts: ChannelManagerOptions): ChannelManage
       });
       const accounts: Record<string, ChannelAccountSnapshot> = {};
       for (const id of accountIds) {
-        const account = plugin.config.resolveAccount(cfg, id);
+        // resolveAccount reads credential fields strictly and throws when one is still an
+        // unresolved SecretRef. That is a property of a single account, but this snapshot
+        // feeds the health monitor's whole sweep, so letting it escape would stop every
+        // channel from being monitored because one account's secret could not be read.
+        // Degrade that account instead, the same way isHealthMonitorEnabled fails closed.
+        let account: ReturnType<typeof plugin.config.resolveAccount>;
+        try {
+          account = plugin.config.resolveAccount(cfg, id);
+        } catch (err) {
+          const reason = formatErrorMessage(err);
+          ensureChannelLog(plugin.id).warn?.(
+            `[${plugin.id}:${id}] runtime snapshot: failed to resolve account (${reason})`,
+          );
+          const current = store.runtimes.get(id) ?? cloneDefaultRuntime(plugin.id, id);
+          accounts[id] = {
+            ...current,
+            accountId: id,
+            enabled: false,
+            lastError: current.lastError ?? `unresolved account config: ${reason}`,
+          };
+          continue;
+        }
         const enabled = plugin.config.isEnabled
           ? plugin.config.isEnabled(account, cfg)
           : isAccountEnabled(account);

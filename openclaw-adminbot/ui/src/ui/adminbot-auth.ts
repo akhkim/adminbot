@@ -5,6 +5,7 @@
 // localStorage; the gateway token it returns is a secret that must only flow
 // through the existing sessionStorage-scoped token plumbing via applySettings.
 import { getSafeLocalStorage } from "../local-storage.ts";
+import type { AvailabilityRow, TimeOffRow } from "./adminbot-availability.js";
 import type { UiSettings } from "./storage.ts";
 import { normalizeOptionalString } from "./string-coerce.ts";
 
@@ -22,15 +23,21 @@ export type MemberOnboardingLink = {
   url: string;
 };
 
+export type MemberOnboardingBullet = {
+  text: string;
+  points?: string[];
+};
+
 export type MemberOnboardingStep = {
   id: string;
   label: string;
   status: MemberOnboardingStepStatus;
   category: string;
   detail?: string;
-  bullets?: string[];
+  bullets?: MemberOnboardingBullet[];
   links?: MemberOnboardingLink[];
   required: boolean;
+  acknowledged_at?: string;
 };
 
 // Onboarding checklist generated once when a member's account is first approved (see the
@@ -56,7 +63,9 @@ export type LabMember = {
   research_topics?: string[] | null;
   projects?: string[] | null;
   hours_per_week?: number | null;
-  capacity_percent?: number | null;
+  // Owned by the member and edited in the AdminBot console; the Control UI only renders it.
+  availability?: AvailabilityRow[] | null;
+  time_off?: TimeOffRow[] | null;
   location?: string | null;
   affiliation?: string | null;
   timezone?: string | null;
@@ -75,7 +84,7 @@ export type MemberProfileUpdate = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
-  capacity_percent?: number;
+  availability?: string;
   location?: string;
   affiliation?: string;
   timezone?: string;
@@ -99,7 +108,7 @@ export type AdminLabMemberUpdate = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
-  capacity_percent?: number;
+  availability?: string;
   location?: string;
   affiliation?: string;
   timezone?: string;
@@ -153,7 +162,7 @@ export type SignupProfile = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
-  capacity_percent?: number;
+  availability?: string;
   location?: string;
   timezone?: string;
   personal_website?: string;
@@ -273,9 +282,9 @@ async function postJson(
 async function authedJson(
   baseUrl: string,
   path: string,
-  method: "POST" | "PUT",
+  method: "GET" | "POST" | "PUT",
   token: string,
-  payload: unknown,
+  payload?: unknown,
 ): Promise<{ response: Response; body: unknown } | { unreachable: true }> {
   let response: Response;
   try {
@@ -287,7 +296,8 @@ async function authedJson(
         Accept: "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(payload),
+      // GET carries no body; every other member-session call sends JSON.
+      ...(method === "GET" ? {} : { body: JSON.stringify(payload) }),
     });
   } catch {
     return { unreachable: true };
@@ -507,6 +517,189 @@ export async function sendMemberNudge(
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
   return { ok: true, value: result.body as MemberNudgeResult };
+}
+
+export type ApprovalExecutionResult = { status: string; [key: string]: unknown };
+
+// Dismiss a pending action with the signed-in member's own Bearer session
+// (POST /proposals/:id/remove). Approve and execute live in approveActionAsMember /
+// executeActionAsMember above: the server records the approver from the authenticated
+// principal, so the caller cannot name itself and the two-distinct-approver requirement
+// on high-risk actions actually binds.
+//
+// This deliberately does NOT go through the gateway `tools.invoke` path. That path always
+// authenticates as the shared service principal regardless of who is chatting, so routing
+// approvals through it would let any member drive a privileged action by asking the
+// AdminBot agent to do it in chat. The server answers these routes with
+// requireMemberPrivileged, which rejects the service principal outright (403) and demands a
+// real admin/core_member session — so the capability exists only where a genuine privileged
+// member session is present: this UI path.
+export async function removePendingAction(
+  actionId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<ApprovalExecutionResult>> {
+  return await approvalCall(
+    `/proposals/${encodeURIComponent(actionId)}/remove`,
+    { actor: "control-ui" },
+    sessionToken,
+    baseUrl,
+  );
+}
+
+async function approvalCall(
+  path: string,
+  payload: unknown,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<ApprovalExecutionResult>> {
+  const result = await authedJson(baseUrl, path, "POST", sessionToken, payload);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: (result.body ?? {}) as ApprovalExecutionResult };
+}
+
+// Approves the member's own pending gateway device pairing (POST /auth/pair-device). Called when a
+// connect attempt returns PAIRING_REQUIRED with a requestId: the member's login session authorizes
+// their browser's device, and the service caps the granted scopes at their privilege. On success
+// the caller reconnects so the now-paired device picks up its server-bound scopes.
+export async function pairDevice(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ scopes: string[] }>> {
+  const result = await authedJson(baseUrl, "/auth/pair-device", "POST", sessionToken, {
+    requestId,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const scopes = Array.isArray((result.body as { scopes?: unknown })?.scopes)
+    ? (result.body as { scopes: string[] }).scopes
+    : [];
+  return { ok: true, value: { scopes } };
+}
+
+// Records that the member has read one onboarding step (POST /onboarding/ack) and returns the
+// rebuilt checklist, so the welcome screen re-renders from the server's view rather than guessing
+// what the acknowledgement did to `current_step`.
+export async function acknowledgeOnboardingStep(
+  stepId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberOnboarding>> {
+  const result = await authedJson(baseUrl, "/onboarding/ack", "POST", sessionToken, {
+    step_id: stepId,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const onboarding = (result.body as { onboarding?: MemberOnboarding } | null)?.onboarding;
+  if (!onboarding) {
+    return { ok: false, kind: "auth-failed" };
+  }
+  return { ok: true, value: onboarding };
+}
+
+// Reads an AdminBot resource over the member's own session. The dashboard uses this rather than
+// the gateway tool path because `tools.invoke` requires operator.write, which a plain member's
+// paired device deliberately does not hold -- so for them the tool path returns nothing at all.
+export async function fetchMemberResource(
+  path: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, path, "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+// Creates or edits a paper over the member's own session (PUT /papers/:id). Papers are written on
+// the member Bearer rather than the gateway tool path because the service decides there what a
+// plain member may touch -- their own submissions, without the governance fields -- and because a
+// member's paired device holds read-only gateway scopes, so `tools.invoke` is not open to them.
+export async function saveOwnPaper(
+  paperId: string,
+  body: Record<string, unknown>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}`,
+    "PUT",
+    sessionToken,
+    body,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+// Mints a gateway token bound to this browser's device key (POST /auth/device-token), scoped to
+// the member's privilege. This is what lets the browser connect without ever holding the shared
+// gateway secret: the member's login session is the only credential they need.
+export async function issueDeviceToken(
+  device: { deviceId: string; publicKey: string; platform?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ token: string; scopes: string[] }>> {
+  const result = await authedJson(baseUrl, "/auth/device-token", "POST", sessionToken, {
+    deviceId: device.deviceId,
+    publicKey: device.publicKey,
+    ...(device.platform ? { platform: device.platform } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { token?: unknown; scopes?: unknown };
+  if (typeof body?.token !== "string" || !body.token) {
+    return { ok: false, kind: "auth-failed" };
+  }
+  return {
+    ok: true,
+    value: {
+      token: body.token,
+      scopes: Array.isArray(body.scopes) ? (body.scopes as string[]) : [],
+    },
+  };
 }
 
 // Change the member's login email (POST /auth/email). 401 wrong password folds to

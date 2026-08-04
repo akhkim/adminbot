@@ -41,9 +41,11 @@ async function startService(
   const mock = createAdminBotMockService({
     serviceToken: SERVICE_TOKEN,
     sensitiveInfoPath,
-    // Default to a no-op so approving a registration never shells out to the real `gws` binary
-    // in tests; individual tests override this to assert on the calendar-invite call itself.
+    // Default to no-ops so approving a registration never shells out to the real `gws`/`gog`
+    // binaries in tests (which would send live invites and mail); individual tests override these
+    // to assert on the calls themselves.
     calendarInviteRunner: async () => {},
+    accountApprovedEmailRunner: async () => {},
     ...options,
   });
   await new Promise<void>((resolve, reject) => {
@@ -160,7 +162,6 @@ describe("AdminBot mock service", () => {
         name: "Pat",
         research_branch: "Human-centered AI",
         projects: ["Project Atlas"],
-        capacity_percent: 80,
       }),
     });
     expect(member.status).toBe(200);
@@ -325,6 +326,76 @@ describe("AdminBot mock service", () => {
     const calendarStep = created?.onboarding?.steps.find((step) => step.id === "calendar_invite");
     expect(calendarStep?.status).toBe("complete");
     expect(created?.onboarding?.steps.length).toBeGreaterThan(1);
+  });
+
+  it("approving a registration emails the member that their account is live", async () => {
+    const sent: Array<{ email: string; name?: string }> = [];
+    const { baseUrl } = await startService({
+      accountApprovedEmailRunner: async (params) => {
+        sent.push(params);
+      },
+    });
+    await fetch(`${baseUrl}/auth/signup`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        profile: { name: "Mailed Person" },
+        email: "mailed-person@example.com",
+        password: "correcthorse",
+      }),
+    });
+    const registration = (await listPending(baseUrl)).find((entry) => entry.kind === "signup");
+    approveRegistration(baseUrl, registration!.id);
+
+    // Fire-and-forget: flush microtasks so the injected runner's resolution is observable.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sent).toEqual([{ email: "mailed-person@example.com", name: "Mailed Person" }]);
+  });
+
+  it("does not email anyone when a registration is rejected", async () => {
+    const sent: Array<{ email: string }> = [];
+    const { baseUrl } = await startService({
+      accountApprovedEmailRunner: async (params) => {
+        sent.push(params);
+      },
+    });
+    seedMember(baseUrl, "nope", { name: "Nope", email: "nope@example.com" });
+    await fetch(`${baseUrl}/auth/claim`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({
+        member_id: "nope",
+        email: "nope@example.com",
+        password: "correcthorse",
+      }),
+    });
+    const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "nope");
+    rejectRegistration(baseUrl, registration!.id);
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(sent).toEqual([]);
+  });
+
+  it("a failing approval email does not block approval or expose an error to the caller", async () => {
+    const { baseUrl } = await startService({
+      accountApprovedEmailRunner: async () => {
+        throw new Error("gog unreachable");
+      },
+    });
+    seedMember(baseUrl, "mk", { name: "MK", email: "mk@example.com" });
+    await fetch(`${baseUrl}/auth/claim`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ member_id: "mk", email: "mk@example.com", password: "correcthorse" }),
+    });
+    const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "mk");
+    expect(approveRegistration(baseUrl, registration!.id)).toEqual({
+      status: "approved",
+      member_id: "mk",
+    });
+    expect(await loginToken(baseUrl, "mk@example.com")).toBeTruthy();
   });
 
   it("a failing calendar invite does not block approval or expose an error to the caller", async () => {
@@ -565,7 +636,6 @@ describe("AdminBot mock service", () => {
         research_topics: ["diffusion", "alignment"],
         projects: ["Project Atlas"],
         hours_per_week: 20,
-        capacity_percent: 50,
         location: "Zurich",
         affiliation: "ETH",
         timezone: "Europe/Zurich",
@@ -591,7 +661,6 @@ describe("AdminBot mock service", () => {
       research_topics: ["diffusion", "alignment"],
       projects: ["Project Atlas"],
       hours_per_week: 20,
-      capacity_percent: 50,
       location: "Zurich",
       affiliation: "ETH",
       timezone: "Europe/Zurich",
@@ -750,6 +819,35 @@ describe("AdminBot mock service", () => {
       expect((await attempt()).status).toBe(401);
     }
     expect((await attempt()).status).toBe(429);
+  });
+
+  it("serves the member map to a privileged principal and refuses anonymous callers", async () => {
+    const { baseUrl } = await startService();
+    await seedMember(baseUrl, "ada", {
+      name: "Ada",
+      privilege_level: "member",
+      location: "Toronto",
+    });
+
+    const anonymous = await fetch(`${baseUrl}/member-map`);
+    expect(anonymous.status).toBe(401);
+
+    const response = await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      places: Array<{ label: string; members: Array<{ name: string; source: string }> }>;
+    };
+    expect(body.places[0]?.label).toBe("Toronto");
+    expect(body.places[0]?.members[0]).toMatchObject({ name: "Ada", source: "roster" });
+  });
+
+  it("reports a 503 for a map refresh when no slack lookup is configured", async () => {
+    const { baseUrl } = await startService();
+    const response = await fetch(`${baseUrl}/member-map/refresh`, {
+      method: "POST",
+      headers: serviceHeaders(),
+    });
+    expect(response.status).toBe(503);
   });
 
   it("lists papers relevant to the member principal", async () => {
@@ -1128,5 +1226,671 @@ describe("AdminBot service-principal privilege scoping", () => {
       expect.objectContaining({ approver_role: "admin", approver_id: "boss" }),
     ]);
     expect(body.status).toBe("approved");
+  });
+});
+
+// Member-side surface: a plain member signs into the same Control UI as an admin, so every
+// governance surface has to be denied at the HTTP layer rather than only hidden in the nav.
+// The service principal is denied on the act-on-pending routes specifically because it is the
+// identity every AdminBot *chat* tool call runs as — allowing it there would let any member
+// drive a privileged action just by asking the agent to.
+describe("AdminBot member-side restrictions", () => {
+  // The act-on-pending routes are deliberately spread across three prefixes.
+  const approvalRoutes = [
+    "/approvals/any-action/approve",
+    "/actions/any-action/execute",
+    "/proposals/any-action/remove",
+  ];
+
+  async function memberToken(baseUrl: string): Promise<string> {
+    seedMember(baseUrl, "plain", {
+      name: "Plain Member",
+      email: "plain@example.com",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "plain", "plain@example.com");
+    return await loginToken(baseUrl, "plain@example.com");
+  }
+
+  it("hides the pending-action queue and lab settings from a plain member", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl);
+    const headers = { Authorization: `Bearer ${token}` };
+
+    const pending = await fetch(`${baseUrl}/proposals/pending`, { headers });
+    expect(pending.status).toBe(403);
+
+    const settings = await fetch(`${baseUrl}/settings`, { headers });
+    expect(settings.status).toBe(403);
+  });
+
+  it("denies a plain member acting on pending actions", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl);
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+
+    for (const path of approvalRoutes) {
+      const res = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(403);
+    }
+  });
+
+  it("denies the service principal acting on pending actions, blocking chat-driven approvals", async () => {
+    const { baseUrl } = await startService();
+
+    for (const path of approvalRoutes) {
+      const res = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers: serviceHeaders({ "Content-Type": "application/json" }),
+        body: JSON.stringify({}),
+      });
+      expect(res.status).toBe(403);
+    }
+  });
+
+  it("still lets a genuine admin session act on pending actions", async () => {
+    const { baseUrl } = await startService();
+    seedMember(baseUrl, "boss", {
+      name: "Boss",
+      email: "boss@example.com",
+      privilege_level: "admin",
+    });
+    await approveClaim(baseUrl, "boss", "boss@example.com");
+    const token = await loginToken(baseUrl, "boss@example.com");
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+
+    // The action id does not exist, so the service answers 404 — the point is that the
+    // privilege guard let the request through instead of short-circuiting with 403.
+    for (const path of approvalRoutes) {
+      const res = await fetch(`${baseUrl}${path}`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({}),
+      });
+      expect(res.status).not.toBe(403);
+    }
+
+    const pending = await fetch(`${baseUrl}/proposals/pending`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(pending.status).toBe(200);
+  });
+
+  it("keeps other people's papers and paper deletion out of a plain member's reach", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl);
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    await fetch(`${baseUrl}/papers/some-paper`, {
+      method: "PUT",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        title: "Someone else's paper",
+        authors: ["Other Person"],
+        current_step: "overleaf_writing",
+      }),
+    });
+
+    const write = await fetch(`${baseUrl}/papers/some-paper`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ title: "Rewritten" }),
+    });
+    expect(write.status).toBe(403);
+
+    const remove = await fetch(`${baseUrl}/papers/some-paper`, { method: "DELETE", headers });
+    expect(remove.status).toBe(403);
+
+    // Members still read the roster and paper list — those are the member-side dashboard.
+    const members = await fetch(`${baseUrl}/lab/members`, { headers });
+    expect(members.status).toBe(200);
+    const papers = await fetch(`${baseUrl}/papers`, { headers });
+    expect(papers.status).toBe(200);
+  });
+});
+
+// The automatic per-member gateway-pairing path: a member's own login session authorizes their
+// browser device, and the injected approver caps the granted scopes at their privilege. This is
+// what makes member-side gateway enforcement automatic (no manual token handout) while denying the
+// shared service principal, which must never be able to pair itself a write-scoped device.
+// The onboarding checklist is reading material, so a step only completes when the member says they
+// have read it. Acknowledgement is per-member and self-service: the body names a step, never a
+// person, so there is no path to marking someone else's checklist.
+describe("onboarding acknowledgement", () => {
+  async function signedInMember(baseUrl: string): Promise<string> {
+    seedMember(baseUrl, "newbie", {
+      name: "Newbie",
+      email: "newbie@example.com",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "newbie", "newbie@example.com");
+    return await loginToken(baseUrl, "newbie@example.com");
+  }
+
+  async function ack(baseUrl: string, token: string, stepId: string) {
+    return await fetch(`${baseUrl}/onboarding/ack`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ step_id: stepId }),
+    });
+  }
+
+  it("marks a step read and moves the current step to the next unread one", async () => {
+    const { baseUrl } = await startService();
+    const token = await signedInMember(baseUrl);
+
+    const before = (await (
+      await fetch(`${baseUrl}/auth/session`, { headers: { Authorization: `Bearer ${token}` } })
+    ).json()) as { member: { onboarding: { current_step?: { id: string } } } };
+    const firstStepId = before.member.onboarding.current_step!.id;
+
+    const res = await ack(baseUrl, token, firstStepId);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      onboarding: {
+        current_step?: { id: string };
+        steps: Array<{ id: string; status: string; acknowledged_at?: string }>;
+      };
+    };
+    const acknowledged = body.onboarding.steps.find((step) => step.id === firstStepId);
+    expect(acknowledged?.status).toBe("complete");
+    expect(acknowledged?.acknowledged_at).toBeTruthy();
+    expect(body.onboarding.current_step?.id).not.toBe(firstStepId);
+  });
+
+  it("persists the acknowledgement on the member record", async () => {
+    const { baseUrl } = await startService();
+    const token = await signedInMember(baseUrl);
+    await ack(baseUrl, token, "profile_photo");
+
+    const session = (await (
+      await fetch(`${baseUrl}/auth/session`, { headers: { Authorization: `Bearer ${token}` } })
+    ).json()) as { member: { onboarding: { steps: Array<{ id: string; status: string }> } } };
+    const step = session.member.onboarding.steps.find((entry) => entry.id === "profile_photo");
+    expect(step?.status).toBe("complete");
+  });
+
+  it("rejects an unknown step and an anonymous caller", async () => {
+    const { baseUrl } = await startService();
+    const token = await signedInMember(baseUrl);
+
+    expect((await ack(baseUrl, token, "not-a-step")).status).toBe(404);
+    expect((await ack(baseUrl, token, "")).status).toBe(400);
+
+    const anonymous = await fetch(`${baseUrl}/onboarding/ack`, {
+      method: "POST",
+      headers: jsonHeaders(),
+      body: JSON.stringify({ step_id: "profile_photo" }),
+    });
+    expect(anonymous.status).toBe(401);
+  });
+
+  it("denies the shared service principal", async () => {
+    const { baseUrl } = await startService();
+    const res = await fetch(`${baseUrl}/onboarding/ack`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ step_id: "profile_photo" }),
+    });
+    expect(res.status).toBe(401);
+  });
+});
+
+// Authors filing and maintaining their own submissions. Ownership is the whole boundary here: the
+// board stays shared, but a member's write is confined to papers they filed or are named on, and to
+// the descriptive fields (governance -- mentor, checklist, reminder cadence -- stays admin-only).
+describe("member-authored papers", () => {
+  async function tokenFor(baseUrl: string, id: string, name: string): Promise<string> {
+    seedMember(baseUrl, id, {
+      name,
+      email: `${id}@example.com`,
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, id, `${id}@example.com`);
+    return await loginToken(baseUrl, `${id}@example.com`);
+  }
+
+  function memberHeaders(token: string): Record<string, string> {
+    return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  }
+
+  async function putPaper(
+    baseUrl: string,
+    paperId: string,
+    headers: Record<string, string>,
+    body: Record<string, unknown>,
+  ) {
+    return await fetch(`${baseUrl}/papers/${paperId}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("lets a member file a paper and stamps them as the submitter", async () => {
+    const { baseUrl } = await startService();
+    const token = await tokenFor(baseUrl, "ada", "Ada Author");
+
+    const res = await putPaper(baseUrl, "ada-paper", memberHeaders(token), {
+      title: "Sparse world models",
+      authors: ["Ada Author"],
+      current_step: "overleaf_writing",
+      artifacts: { conference: "NeurIPS 2026", topic: "World models" },
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      id: "ada-paper",
+      title: "Sparse world models",
+      submitted_by_member_id: "ada",
+      artifacts: { conference: "NeurIPS 2026" },
+    });
+  });
+
+  it("lets the submitter edit it again without re-stamping ownership", async () => {
+    const { baseUrl } = await startService();
+    const token = await tokenFor(baseUrl, "ada", "Ada Author");
+    await putPaper(baseUrl, "ada-paper", memberHeaders(token), {
+      title: "Draft",
+      authors: ["Ada Author"],
+      current_step: "brainstorming_docs",
+    });
+
+    const res = await putPaper(baseUrl, "ada-paper", memberHeaders(token), {
+      title: "Sparse world models",
+      authors: ["Ada Author", "Bo Coauthor"],
+      current_step: "submission",
+      artifacts: { conference: "ICML 2026" },
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      title: "Sparse world models",
+      current_step: "submission",
+      submitted_by_member_id: "ada",
+      artifacts: { conference: "ICML 2026" },
+    });
+  });
+
+  it("lets a member named in the authors edit a paper an admin filed", async () => {
+    const { baseUrl } = await startService();
+    const token = await tokenFor(baseUrl, "bo", "Bo Coauthor");
+    await putPaper(baseUrl, "lab-paper", serviceHeaders({ "Content-Type": "application/json" }), {
+      title: "Lab paper",
+      authors: ["Bo Coauthor"],
+      current_step: "overleaf_writing",
+    });
+
+    const res = await putPaper(baseUrl, "lab-paper", memberHeaders(token), {
+      title: "Lab paper v2",
+      authors: ["Bo Coauthor"],
+      current_step: "submission",
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("refuses a bare-name author match when two members share that name", async () => {
+    const { baseUrl } = await startService();
+    const token = await tokenFor(baseUrl, "bo", "Bo Coauthor");
+    seedMember(baseUrl, "bo-two", { name: "Bo Coauthor", email: "bo-two@example.com" });
+    await putPaper(baseUrl, "lab-paper", serviceHeaders({ "Content-Type": "application/json" }), {
+      title: "Lab paper",
+      authors: ["Bo Coauthor"],
+      current_step: "overleaf_writing",
+    });
+
+    const res = await putPaper(baseUrl, "lab-paper", memberHeaders(token), { title: "Hijacked" });
+    expect(res.status).toBe(403);
+  });
+
+  it("cannot take over someone else's paper by listing itself as an author", async () => {
+    const { baseUrl } = await startService();
+    const token = await tokenFor(baseUrl, "ada", "Ada Author");
+    await putPaper(baseUrl, "lab-paper", serviceHeaders({ "Content-Type": "application/json" }), {
+      title: "Lab paper",
+      authors: ["Someone Else"],
+      current_step: "overleaf_writing",
+    });
+
+    const res = await putPaper(baseUrl, "lab-paper", memberHeaders(token), {
+      title: "Mine now",
+      authors: ["Ada Author"],
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects governance fields from a member write", async () => {
+    const { baseUrl } = await startService();
+    const token = await tokenFor(baseUrl, "ada", "Ada Author");
+
+    for (const field of [
+      { mentor_member_id: "someone" },
+      { checks: { affiliation_checked: true } },
+      { reminder: { escalation_after_business_days: 1 } },
+      { submitted_by_member_id: "someone-else" },
+    ]) {
+      const res = await putPaper(baseUrl, "ada-paper", memberHeaders(token), {
+        title: "Sparse world models",
+        authors: ["Ada Author"],
+        current_step: "overleaf_writing",
+        ...field,
+      });
+      expect(res.status).toBe(400);
+    }
+  });
+});
+
+describe("AdminBot device pairing approval", () => {
+  type ApproverCall = { requestId: string; allowedScopes: readonly string[] };
+
+  function fakeApprover(
+    calls: ApproverCall[],
+    result: import("./mock-service.js").DevicePairingApproval = { ok: true },
+  ) {
+    return async (params: ApproverCall) => {
+      calls.push(params);
+      return result;
+    };
+  }
+
+  async function seededMemberToken(
+    baseUrl: string,
+    id: string,
+    privilege: string,
+  ): Promise<string> {
+    seedMember(baseUrl, id, {
+      name: id,
+      email: `${id}@example.com`,
+      privilege_level: privilege,
+    });
+    await approveClaim(baseUrl, id, `${id}@example.com`);
+    return await loginToken(baseUrl, `${id}@example.com`);
+  }
+
+  it("approves a plain member's device with read-only scope", async () => {
+    const calls: ApproverCall[] = [];
+    const { baseUrl } = await startService({ devicePairingApprover: fakeApprover(calls) });
+    const token = await seededMemberToken(baseUrl, "plain", "member");
+
+    const res = await fetch(`${baseUrl}/auth/pair-device`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: "req-1" }),
+    });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ approved: true, scopes: ["operator.read"] });
+    expect(calls).toEqual([{ requestId: "req-1", allowedScopes: ["operator.read"] }]);
+  });
+
+  it("approves an admin's device with write scope", async () => {
+    const calls: ApproverCall[] = [];
+    const { baseUrl } = await startService({ devicePairingApprover: fakeApprover(calls) });
+    const token = await seededMemberToken(baseUrl, "boss", "admin");
+
+    const res = await fetch(`${baseUrl}/auth/pair-device`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: "req-2" }),
+    });
+    expect(res.status).toBe(200);
+    expect(calls[0]?.allowedScopes).toEqual([
+      "operator.admin",
+      "operator.read",
+      "operator.write",
+      "operator.approvals",
+      "operator.pairing",
+    ]);
+  });
+
+  it("denies the shared service principal outright", async () => {
+    const calls: ApproverCall[] = [];
+    const { baseUrl } = await startService({ devicePairingApprover: fakeApprover(calls) });
+
+    const res = await fetch(`${baseUrl}/auth/pair-device`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ requestId: "req-3" }),
+    });
+    expect(res.status).toBe(401);
+    expect(calls).toEqual([]);
+  });
+
+  it("maps a scope-exceeds-privilege rejection to 403", async () => {
+    const { baseUrl } = await startService({
+      devicePairingApprover: async () => ({ ok: false, reason: "scope_exceeds_privilege" }),
+    });
+    const token = await seededMemberToken(baseUrl, "greedy", "member");
+
+    const res = await fetch(`${baseUrl}/auth/pair-device`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: "req-4" }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 503 when no approver is configured", async () => {
+    const { baseUrl } = await startService();
+    const token = await seededMemberToken(baseUrl, "orphan", "member");
+
+    const res = await fetch(`${baseUrl}/auth/pair-device`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: "req-5" }),
+    });
+    expect(res.status).toBe(503);
+  });
+});
+
+// Minting the browser its own gateway token is what removes the last manual step: without it a
+// member can only reach the gateway by holding the shared secret, so a deployment that stops
+// handing that out strands them at a "paste a token" prompt.
+describe("AdminBot device token issuance", () => {
+  type IssuerCall = {
+    deviceId: string;
+    publicKey: string;
+    platform?: string;
+    deviceFamily?: string;
+    displayName?: string;
+    allowedScopes: readonly string[];
+  };
+
+  function fakeIssuer(
+    calls: IssuerCall[],
+    result: import("./mock-service.js").DeviceTokenIssuance = {
+      ok: true,
+      token: "device-token",
+      scopes: ["operator.read"],
+    },
+  ) {
+    return async (params: IssuerCall) => {
+      calls.push(params);
+      return result;
+    };
+  }
+
+  async function seededMemberToken(
+    baseUrl: string,
+    id: string,
+    privilege: string,
+  ): Promise<string> {
+    seedMember(baseUrl, id, {
+      name: id,
+      email: `${id}@example.com`,
+      privilege_level: privilege,
+    });
+    await approveClaim(baseUrl, id, `${id}@example.com`);
+    return await loginToken(baseUrl, `${id}@example.com`);
+  }
+
+  async function postDeviceToken(baseUrl: string, token: string, body: unknown) {
+    return await fetch(`${baseUrl}/auth/device-token`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("mints a read-only token for a plain member", async () => {
+    const calls: IssuerCall[] = [];
+    const { baseUrl } = await startService({ deviceTokenIssuer: fakeIssuer(calls) });
+    const token = await seededMemberToken(baseUrl, "plain", "member");
+
+    const res = await postDeviceToken(baseUrl, token, {
+      deviceId: "dev-1",
+      publicKey: "pk-1",
+      platform: "Win32",
+    });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      token: "device-token",
+      scopes: ["operator.read"],
+      deviceId: "dev-1",
+    });
+    expect(calls[0]).toMatchObject({
+      deviceId: "dev-1",
+      publicKey: "pk-1",
+      platform: "Win32",
+      allowedScopes: ["operator.read"],
+    });
+  });
+
+  it("caps an admin's token at the full operator scope set", async () => {
+    const calls: IssuerCall[] = [];
+    const { baseUrl } = await startService({ deviceTokenIssuer: fakeIssuer(calls) });
+    const token = await seededMemberToken(baseUrl, "boss", "admin");
+
+    const res = await postDeviceToken(baseUrl, token, { deviceId: "dev-2", publicKey: "pk-2" });
+    expect(res.status).toBe(200);
+    expect(calls[0]?.allowedScopes).toEqual([
+      "operator.admin",
+      "operator.read",
+      "operator.write",
+      "operator.approvals",
+      "operator.pairing",
+    ]);
+  });
+
+  it("denies the shared service principal", async () => {
+    const calls: IssuerCall[] = [];
+    const { baseUrl } = await startService({ deviceTokenIssuer: fakeIssuer(calls) });
+
+    const res = await fetch(`${baseUrl}/auth/device-token`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ deviceId: "dev-3", publicKey: "pk-3" }),
+    });
+    expect(res.status).toBe(401);
+    expect(calls).toEqual([]);
+  });
+
+  it("rejects a request without a device key", async () => {
+    const calls: IssuerCall[] = [];
+    const { baseUrl } = await startService({ deviceTokenIssuer: fakeIssuer(calls) });
+    const token = await seededMemberToken(baseUrl, "keyless", "member");
+
+    const res = await postDeviceToken(baseUrl, token, { deviceId: "dev-4" });
+    expect(res.status).toBe(400);
+    expect(calls).toEqual([]);
+  });
+
+  it("reports an unsupported gateway as 501 so the browser stops retrying", async () => {
+    const { baseUrl } = await startService({
+      deviceTokenIssuer: async () => ({ ok: false, reason: "unsupported" as const }),
+    });
+    const token = await seededMemberToken(baseUrl, "nosecret", "member");
+
+    const res = await postDeviceToken(baseUrl, token, { deviceId: "dev-5", publicKey: "pk-5" });
+    expect(res.status).toBe(501);
+  });
+
+  it("returns 503 when no issuer is configured", async () => {
+    const { baseUrl } = await startService();
+    const token = await seededMemberToken(baseUrl, "orphan2", "member");
+
+    const res = await postDeviceToken(baseUrl, token, { deviceId: "dev-6", publicKey: "pk-6" });
+    expect(res.status).toBe(503);
+  });
+});
+
+describe("anonymous reimbursement access", () => {
+  const stubWorkflow = {
+    converse: async () => ({
+      assistant_message: "ok",
+      draft: {},
+      missing_fields: [],
+      ready: false,
+    }),
+    generate: async () => ({ artifacts: [] }),
+  } as unknown as NonNullable<
+    Parameters<typeof createAdminBotMockService>[0]
+  >["reimbursementWorkflow"];
+
+  it("allows converse and generate without any credentials", async () => {
+    const { baseUrl } = await startService({ reimbursementWorkflow: stubWorkflow });
+
+    for (const route of ["/reimbursements/converse", "/reimbursements/generate"]) {
+      const res = await fetch(`${baseUrl}${route}`, {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify({ messages: [], draft: {} }),
+      });
+      expect(res.status).toBe(200);
+    }
+  });
+
+  it("still rejects every other route without credentials", async () => {
+    const { baseUrl } = await startService({ reimbursementWorkflow: stubWorkflow });
+
+    for (const [method, route] of [
+      ["GET", "/audit"],
+      ["GET", "/sensitive-info"],
+      ["GET", "/settings"],
+      ["GET", "/lab/members"],
+      ["GET", "/proposals/pending"],
+      ["POST", "/proposals"],
+      ["POST", "/automation/email/run"],
+    ] as const) {
+      const res = await fetch(`${baseUrl}${route}`, {
+        method,
+        headers: jsonHeaders(),
+        ...(method === "POST" ? { body: "{}" } : {}),
+      });
+      expect(`${route}:${res.status}`).toBe(`${route}:401`);
+    }
+  });
+
+  // GET must not become an anonymous door onto the same paths.
+  it("rejects anonymous non-POST requests to reimbursement routes", async () => {
+    const { baseUrl } = await startService({ reimbursementWorkflow: stubWorkflow });
+
+    const res = await fetch(`${baseUrl}/reimbursements/converse`, { method: "GET" });
+    expect(res.status).toBe(401);
+  });
+
+  it("rate limits anonymous callers and records both outcomes in the audit trail", async () => {
+    const { baseUrl } = await startService({ reimbursementWorkflow: stubWorkflow });
+
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 62; attempt += 1) {
+      const res = await fetch(`${baseUrl}/reimbursements/converse`, {
+        method: "POST",
+        headers: jsonHeaders(),
+        body: JSON.stringify({ messages: [] }),
+      });
+      statuses.push(res.status);
+    }
+    expect(statuses.filter((status) => status === 200)).toHaveLength(60);
+    expect(statuses.filter((status) => status === 429)).toHaveLength(2);
+
+    const events = mockFor(baseUrl).service.listAuditEvents();
+    const anonymous = events.filter((event) => event.type === "reimbursement.anonymous_use");
+    expect(anonymous).toHaveLength(62);
+    expect(anonymous.every((event) => event.actor === "anonymous")).toBe(true);
+    expect(anonymous.every((event) => typeof event.details?.ip === "string")).toBe(true);
+    expect(anonymous.filter((event) => event.details?.outcome === "rate_limited")).toHaveLength(2);
   });
 });

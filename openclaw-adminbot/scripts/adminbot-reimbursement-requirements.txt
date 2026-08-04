@@ -1,2 +1,6 @@
 python-docx
 openpyxl
+# Self-contained PDFium wheel: receipt text + page rendering with no system packages, so hosts
+# without root (Aurora) can still extract receipts.
+pypdfium2
+Pillow

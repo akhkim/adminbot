@@ -29,6 +29,8 @@ export const adminBotActionTypes = [
   "paper_publish.escalate_to_pi",
   "join_form.classify",
   "member_nudge.send",
+  "openreview.nudge",
+  "openreview.warning",
 ] as const;
 
 export type AdminBotActionType = (typeof adminBotActionTypes)[number];
@@ -75,6 +77,13 @@ export type AdminBotMemberOnboardingLink = {
   url: string;
 };
 
+// One scannable point in a step. `points` nests a second level so a long instruction becomes a
+// short lead line plus its details, instead of a paragraph wearing a bullet.
+export type AdminBotMemberOnboardingBullet = {
+  text: string;
+  points?: string[];
+};
+
 export type AdminBotMemberOnboardingStep = {
   id: string;
   label: string;
@@ -84,10 +93,13 @@ export type AdminBotMemberOnboardingStep = {
   // Short summary shown above the bullet breakdown, if any.
   detail?: string;
   // Longer instructions broken into scannable points instead of one paragraph.
-  bullets?: string[];
+  bullets?: AdminBotMemberOnboardingBullet[];
   // Clickable buttons (social pages, docs, application forms) shown below the text.
   links?: AdminBotMemberOnboardingLink[];
   required: boolean;
+  // Set when the member clicks "I've read this". Acknowledgement is what completes a step: the
+  // checklist is reading material, so nothing else can tell us they have actually read it.
+  acknowledged_at?: string;
 };
 
 export type AdminBotMemberOnboarding = {
@@ -155,11 +167,23 @@ export type AdminBotLabMemberInput = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
-  capacity_percent?: number;
   location?: string;
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
+  // OpenReview tilde id (e.g. "~Jane_Doe1"). First-class rather than buried in `notes`
+  // because the reviewing-cycle automation maps OpenReview profiles back to members
+  // with it, and posts assignment edges against it.
+  openreview_id?: string;
+  // Never propose or assign this person as an emergency reviewer, whatever their topic
+  // match. Governance-owned: it encodes a standing commitment about someone's time, so
+  // it is deliberately absent from the fields a member may edit on their own profile.
+  reviewer_exempt?: boolean;
+  // Last location read from this person's Slack profile, stamped by the member-map
+  // refresh. Kept apart from `location` so the two sources never overwrite each other:
+  // `location` is what they told us when they joined, this is what Slack knows now.
+  slack_location?: string;
+  slack_location_updated_at?: string;
   availability?: AdminBotAvailabilityRow[];
   time_off?: AdminBotTimeOffRow[];
   // Link to the member's own planning doc in Drive, which the availability importer reads to
@@ -279,6 +303,10 @@ export type AdminBotPaperRecordInput = {
   };
   reminder?: AdminBotPaperReminderState;
   notes?: string;
+  // Member who filed this paper themselves. Set by the service on a member-authored create, never
+  // accepted from request input, and it is one of the two ways a member is recognized as an owner
+  // allowed to edit the record (the other is being named in `authors`).
+  submitted_by_member_id?: string;
 };
 
 export type AdminBotPaperRecord = AdminBotPaperRecordInput & {
@@ -320,6 +348,49 @@ export type AdminBotMemberNudgeSkip = {
 export type AdminBotMemberNudgeResult = {
   created: AdminBotStoredProposal[];
   skipped: AdminBotMemberNudgeSkip[];
+};
+
+// --- OpenReview reviewing cycles ---
+
+export const adminBotOpenReviewRoles = ["reviewer", "ac", "sac"] as const;
+
+export type AdminBotOpenReviewRole = (typeof adminBotOpenReviewRoles)[number];
+
+// One reviewing cycle: a venue plus the role being served there. The same venue can
+// appear twice (an SAC who also reviews), and the two are chased independently.
+export type AdminBotOpenReviewCycleRecord = {
+  venue_id: string;
+  role: AdminBotOpenReviewRole;
+  title: string;
+  deadline_ms: number;
+  cycle_start_ms?: number;
+  discovered_at: string;
+  updated_at: string;
+  // Latest missing-review snapshot, refreshed each run so the UI has something to
+  // show between runs without re-querying OpenReview.
+  papers_total?: number;
+  reviews_missing?: number;
+  last_error?: string;
+};
+
+export type AdminBotOpenReviewMilestoneStatus =
+  | "sent"
+  | "dry_run"
+  | "proposed"
+  | "blocked"
+  | "skipped";
+
+// Firing history, one row per milestone per cycle. The (venue_id, role, milestone_key)
+// uniqueness is what makes the automation idempotent: a milestone with a row here is
+// never sent again, whatever restarts or double-triggers happen.
+export type AdminBotOpenReviewMilestoneRecord = {
+  venue_id: string;
+  role: AdminBotOpenReviewRole;
+  milestone_key: string;
+  fired_at: string;
+  status: AdminBotOpenReviewMilestoneStatus;
+  recipients: number;
+  detail?: string;
 };
 
 export type AdminBotActionProposal = {
@@ -420,8 +491,16 @@ export type AdminBotAuditEvent = {
     | "auth.registration_rejected"
     | "auth.calendar_invite_sent"
     | "auth.calendar_invite_failed"
+    | "auth.approval_email_sent"
+    | "auth.approval_email_failed"
     | "member_nudge.sent"
-    | "onboarding.step_updated";
+    | "onboarding.step_updated"
+    | "reimbursement.anonymous_use"
+    | "openreview.cycle_run"
+    | "openreview.milestone_sent"
+    | "openreview.milestone_blocked"
+    | "openreview.assignment_changed"
+    | "member_map.refreshed";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;

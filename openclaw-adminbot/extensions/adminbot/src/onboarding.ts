@@ -34,9 +34,18 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       required: true,
       detail: "Know which lab events you should attend.",
       bullets: [
-        "Mandatory events directly relevant to your research (e.g. our Monday big group meeting) come with a personal email invite.",
-        "Every other event on the lab calendar is open — join any session that interests you.",
-        "Each themed topic may have its own Slack group chat (#meeting-xxx) you're welcome to join.",
+        {
+          text: "Mandatory events come with a personal email invite.",
+          points: [
+            "These are the ones directly relevant to your research, e.g. the Monday big group meeting.",
+          ],
+        },
+        {
+          text: "Every other event on the lab calendar is open — join any session that interests you.",
+        },
+        {
+          text: "Each themed topic may have its own Slack group chat (#meeting-xxx) you're welcome to join.",
+        },
       ],
     },
     {
@@ -46,8 +55,12 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       required: true,
       detail: "Build your professional presence with the lab.",
       bullets: [
-        "Update your own LinkedIn to show you joined as a Research Assistant at the Jinesis Lab.",
-        "Working on democracy or based in Europe? Also welcome to join EuroSafeAI as a parallel org.",
+        {
+          text: "Update your own LinkedIn to show you joined as a Research Assistant at the Jinesis Lab.",
+        },
+        {
+          text: "Working on democracy or based in Europe? You are also welcome to add EuroSafeAI as a parallel org.",
+        },
       ],
       links: [
         { label: "Connect with Zhijing", url: "https://linkedin.com/in/zhijing-jin/" },
@@ -88,23 +101,49 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       required: true,
       detail: "Set up compute access for research, sponsored by Zhijing's CCID hqw-052-01.",
       bullets: [
-        "An institutional email is preferred (current or previous university/company email); a " +
-          "personal email works too, but affiliation and email domain must look consistent or " +
-          'approval may be rejected (e.g. "University of Toronto" needs a utoronto.ca-style ' +
-          "email, not a personal gmail address).",
-        '"External Collaborator" applies to people not directly paid by Zhijing (independent ' +
-          "researchers, or those with a primary appointment elsewhere).",
-        "Approval is handled by a lab admin — if you don't hear back in 3 business days, ping " +
-          "Andrew Kim or Yongjin Yang on Slack or email.",
-        "Anyone can also apply for the Killarney H100 cluster under Roger's CCID (vxq-872-01) via " +
-          "My Account -> Apply for a New Role (leave the checkboxes unticked, put the CCID in the " +
-          "sponsor field) — this is invite-only for selected large-compute projects, so always ask " +
-          "before proceeding.",
-        "Generate and register an SSH key since Killarney doesn't use password login.",
-        "Some compute nodes aren't internet-connected, so pre-download Python wheels and install " +
-          "your environment in $SLURM_TMPDIR; if a wheel is missing, email " +
-          "support@tech.alliancecan.ca.",
-        "Join #discussion-gpu-canada on Slack — Punya and Keenan know the workflow best and can help.",
+        {
+          text: "Use an institutional email if you have one.",
+          points: [
+            "A current or previous university/company address is preferred.",
+            "A personal address works, but the affiliation and the email domain must look consistent or approval may be rejected.",
+            'Example: "University of Toronto" needs a utoronto.ca-style address, not a personal gmail one.',
+          ],
+        },
+        {
+          text: 'Pick the right role: "External Collaborator" is for people not directly paid by Zhijing.',
+          points: [
+            "That covers independent researchers, and anyone whose primary appointment is elsewhere.",
+          ],
+        },
+        {
+          text: "Approval is handled by a lab admin.",
+          points: [
+            "No reply within 3 business days? Ping Andrew Kim or Yongjin Yang on Slack or email.",
+          ],
+        },
+        {
+          text: "Optional: the Killarney H100 cluster, under Roger's CCID vxq-872-01.",
+          points: [
+            "Apply from My Account -> Apply for a New Role.",
+            "Leave the checkboxes unticked and put the CCID in the sponsor field.",
+            "Invite-only for selected large-compute projects, so always ask before proceeding.",
+          ],
+        },
+        {
+          text: "Generate and register an SSH key.",
+          points: ["Killarney has no password login, so the key is the only way in."],
+        },
+        {
+          text: "Prepare for nodes with no internet access.",
+          points: [
+            "Pre-download Python wheels and install your environment in $SLURM_TMPDIR.",
+            "If a wheel is missing, email support@tech.alliancecan.ca.",
+          ],
+        },
+        {
+          text: "Join #discussion-gpu-canada on Slack.",
+          points: ["Punya and Keenan know the workflow best and can help."],
+        },
       ],
       links: [
         {
@@ -125,14 +164,28 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       category: "Working with us",
       required: true,
       bullets: [
-        "Copy the Zhijing-StudentName prototype folder, rename it with your name, and set access " +
-          'to "Editable to everyone".',
-        "Add your CV as a PDF as your first file.",
-        'Keep docs "Pageless" (File > Page setup > Pageless), one long doc using headings rather ' +
-          "than multiple tabs.",
-        "Prefix document names with the creation date (yyyymmdd).",
-        "Keep the folder flat (avoid deep nesting) so files sort cleanly by last-modified date.",
-        "Installing Google Drive for desktop keeps the folder synced locally.",
+        {
+          text: "Copy the Zhijing-StudentName prototype folder and rename it with your name.",
+          points: [
+            'Set access to "Editable to everyone".',
+            "Add your CV as a PDF as the first file.",
+          ],
+        },
+        {
+          text: "Write one long doc per topic, not several tabs.",
+          points: [
+            'Keep docs "Pageless": File > Page setup > Pageless.',
+            "Use headings to structure it rather than splitting into tabs.",
+          ],
+        },
+        {
+          text: "Name and arrange files so they stay findable.",
+          points: [
+            "Prefix document names with the creation date (yyyymmdd).",
+            "Keep the folder flat — deep nesting breaks sorting by last-modified date.",
+          ],
+        },
+        { text: "Installing Google Drive for desktop keeps the folder synced locally." },
       ],
     },
     {
@@ -141,11 +194,23 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       category: "Working with us",
       required: true,
       bullets: [
-        "Prefer docs > Slack > a 30-min Zoom, in that order of speed.",
-        "Pass-by-reference in Slack messages; keep detailed updates in a google doc section.",
-        "Send a doc link 1 day before each meeting with your progress and what you plan to discuss.",
-        "Meetings are usually scheduled after every 20-40 hours of work.",
-        "Ping a progress update roughly every 10 hours of work.",
+        {
+          text: "Prefer docs > Slack > a 30-minute Zoom, in that order.",
+          points: [
+            "Pass by reference in Slack; the detail belongs in a section of your google doc.",
+          ],
+        },
+        {
+          text: "Send a doc link 1 day before each meeting.",
+          points: ["Include your progress and what you want to discuss."],
+        },
+        {
+          text: "Expected cadence:",
+          points: [
+            "A meeting after roughly every 20-40 hours of work.",
+            "A short progress ping roughly every 10 hours of work.",
+          ],
+        },
       ],
     },
     {
@@ -173,6 +238,62 @@ export function buildOnboardingSteps(): AdminBotMemberOnboardingStep[] {
     }
     return { ...definition, status: "remaining" };
   });
+}
+
+/**
+ * Builds a member's checklist from the current step definitions, carrying over the only things that
+ * are per-member: which steps they have acknowledged, and which they have marked done. Step text is
+ * a snapshot of the lab's onboarding doc, so a copy stored at signup goes stale as soon as the doc
+ * changes -- and a copy stored under an older step shape (bullets as plain strings, before they
+ * gained nested points) renders as empty bullets in the Control UI. Content belongs to this file;
+ * only the member's own answers belong to the member.
+ */
+export function resolveMemberOnboarding(
+  existing?: AdminBotMemberOnboarding,
+): AdminBotMemberOnboarding {
+  const acknowledgedAt = new Map(
+    (existing?.steps ?? [])
+      .filter((step) => step.acknowledged_at)
+      .map((step) => [step.id, step.acknowledged_at as string]),
+  );
+  const completed = new Set(
+    (existing?.steps ?? []).filter((step) => step.status === "complete").map((step) => step.id),
+  );
+  return projectOnboarding(
+    promoteCurrentStep(
+      buildOnboardingSteps().map((step) => {
+        const at = acknowledgedAt.get(step.id);
+        const complete = at !== undefined || completed.has(step.id);
+        return {
+          ...step,
+          ...(complete ? { status: "complete" as const } : {}),
+          ...(at ? { acknowledged_at: at } : {}),
+        };
+      }),
+    ),
+  );
+}
+
+/**
+ * Records that a member has read a step, and rebuilds the derived views around it. Reading and
+ * doing are tracked apart: the acknowledgement stamp is what gates dismissing the welcome screen,
+ * while `status` is the self-attested "I did this" that the onboarding nudge keys off. Acknowledging
+ * also completes the step, because a step nobody can observe is done once its reader says so.
+ */
+export function acknowledgeOnboardingStep(
+  onboarding: AdminBotMemberOnboarding,
+  stepId: string,
+  acknowledgedAt: string,
+): AdminBotMemberOnboarding | undefined {
+  if (!onboarding.steps.some((step) => step.id === stepId)) {
+    return undefined;
+  }
+  const steps = onboarding.steps.map((step) =>
+    step.id === stepId && !step.acknowledged_at
+      ? { ...step, status: "complete" as const, acknowledged_at: acknowledgedAt }
+      : step,
+  );
+  return projectOnboarding(promoteCurrentStep(steps));
 }
 
 export function buildInitialOnboarding(): AdminBotMemberOnboarding {
@@ -215,6 +336,8 @@ export function setOnboardingStepStatus(
   return projectOnboarding(promoteCurrentStep(steps));
 }
 
+// `current` is positional: the first required step still outstanding. Kept apart from the
+// projection below so callers that already promoted cannot double-promote.
 function promoteCurrentStep(steps: AdminBotMemberOnboardingStep[]): AdminBotMemberOnboardingStep[] {
   let promoted = false;
   return steps.map((step) => {
@@ -229,9 +352,12 @@ function promoteCurrentStep(steps: AdminBotMemberOnboardingStep[]): AdminBotMemb
   });
 }
 
+// Keeps `current_step`/`completed`/`remaining` consistent with `steps`, which is the only field
+// callers mutate. Everything unfinished stays in `remaining` so the UI can count what is left.
 function projectOnboarding(steps: AdminBotMemberOnboardingStep[]): AdminBotMemberOnboarding {
+  const current = steps.find((step) => step.status === "current");
   return {
-    current_step: steps.find((step) => step.status === "current"),
+    ...(current ? { current_step: current } : {}),
     completed: steps.filter((step) => step.status === "complete"),
     remaining: steps.filter((step) => step.status !== "complete"),
     steps,

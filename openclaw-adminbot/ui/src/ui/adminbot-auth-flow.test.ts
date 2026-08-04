@@ -5,6 +5,7 @@ import {
   type MemberAuthHost,
   dismissAdminBotWelcome,
   loadMemberPrivilege,
+  recoverFromRejectedDeviceToken,
   resumeMemberSession,
   showAdminBotWelcome,
   toggleOnboardingStep,
@@ -58,7 +59,6 @@ function makeHost(overrides: Partial<MemberAuthHost> = {}): MemberAuthHost {
     memberResearchTopics: "",
     memberProjects: "",
     memberHoursPerWeek: "",
-    memberCapacityPercent: "",
     memberLocation: "",
     memberTimezone: "",
     memberPersonalWebsite: "",
@@ -153,7 +153,15 @@ describe("onboarding welcome screen", () => {
   const onboarding = {
     completed: [],
     remaining: [],
-    steps: [{ id: "profile_photo", label: "Photo", status: "current" as const, required: true }],
+    steps: [
+      {
+        id: "profile_photo",
+        label: "Photo",
+        status: "current" as const,
+        category: "Getting started",
+        required: true,
+      },
+    ],
   };
 
   it("submitMemberAuth login auto-shows the welcome screen the first time for a member", async () => {
@@ -250,7 +258,6 @@ describe("submitMemberAuth signup", () => {
       memberResearchTopics: "alignment, rl",
       memberProjects: "proj-a, proj-b",
       memberHoursPerWeek: "20",
-      memberCapacityPercent: "not-a-number",
       memberLocation: "Toronto",
       memberTimezone: "America/Toronto",
       memberPersonalWebsite: "https://example.com",
@@ -279,6 +286,142 @@ describe("submitMemberAuth signup", () => {
       personal_website: "https://example.com",
     });
     expect(host.loginPendingNotice).toBe(true);
+  });
+});
+
+// The browser minting its own device-bound gateway token is what lets a member connect with only
+// their login: settings.token stays empty, so the shared gateway secret never reaches the browser.
+describe("device-bound gateway token", () => {
+  function routedFetch(routes: Record<string, () => Response>) {
+    return vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      const match = Object.keys(routes).find((path) => url.includes(path));
+      if (!match) {
+        throw new Error(`unexpected fetch: ${url}`);
+      }
+      return routes[match]!();
+    });
+  }
+
+  const loginBody = {
+    session_token: "sess",
+    expires_at: "2026-08-01T00:00:00Z",
+    member: { id: "pat", privilege_level: "member" },
+    gateway: { url: "ws://127.0.0.1:18789", token: "shared-gw-token" },
+  };
+
+  it("stores the minted token and keeps the shared gateway token out of settings", async () => {
+    const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
+    const fetchSpy = routedFetch({
+      "/auth/login": () => jsonResponse(200, loginBody),
+      "/auth/device-token": () =>
+        jsonResponse(200, { token: "device-tok", scopes: ["operator.read"] }),
+    });
+
+    await submitMemberAuth(host);
+
+    expect(fetchSpy.mock.calls.some(([url]) => String(url).includes("/auth/device-token"))).toBe(
+      true,
+    );
+    expect(host.applySettings).toHaveBeenCalledWith(expect.objectContaining({ token: "" }));
+    expect(host.connect).toHaveBeenCalled();
+    const stored = JSON.parse(localStorage.getItem("openclaw.device.auth.v1") ?? "{}");
+    expect(Object.values(stored.tokens ?? {})).toContainEqual(
+      expect.objectContaining({ token: "device-tok", scopes: ["operator.read"] }),
+    );
+  });
+
+  it("falls back to the session's gateway token when the service cannot mint one", async () => {
+    const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
+    routedFetch({
+      "/auth/login": () => jsonResponse(200, loginBody),
+      "/auth/device-token": () => jsonResponse(501, { error: { message: "no shared secret" } }),
+    });
+
+    await submitMemberAuth(host);
+
+    expect(host.applySettings).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "shared-gw-token" }),
+    );
+    expect(host.connect).toHaveBeenCalled();
+  });
+
+  it("signing out clears the device's gateway token", async () => {
+    saveStoredMemberSession({ sessionToken: "sess", expiresAt: "2026-08-01T00:00:00Z" });
+    const host = makeHost();
+    routedFetch({
+      "/auth/session": () =>
+        jsonResponse(200, {
+          expires_at: "2026-08-01T00:00:00Z",
+          member: { id: "pat", privilege_level: "member" },
+          gateway: { url: "ws://127.0.0.1:18789", token: "shared-gw-token" },
+        }),
+      "/auth/device-token": () =>
+        jsonResponse(200, { token: "device-tok", scopes: ["operator.read"] }),
+      "/auth/logout": () => jsonResponse(200, {}),
+    });
+
+    await resumeMemberSession(host);
+    const afterResume = JSON.parse(localStorage.getItem("openclaw.device.auth.v1") ?? "{}");
+    expect(JSON.stringify(afterResume)).toContain("device-tok");
+
+    await signOutMember(host);
+    const afterSignOut = JSON.parse(localStorage.getItem("openclaw.device.auth.v1") ?? "{}");
+    expect(JSON.stringify(afterSignOut)).not.toContain("device-tok");
+  });
+});
+
+// A device token the gateway won't verify (rotated shared secret, device no longer paired, revoked
+// token) must not strand a signed-in member: recovery drops it and hands the connection back to the
+// session's shared gateway token.
+describe("recoverFromRejectedDeviceToken", () => {
+  it("clears the device token and restores the session's gateway token", async () => {
+    saveStoredMemberSession({ sessionToken: "sess", expiresAt: "2026-08-01T00:00:00Z" });
+    const host = makeHost();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/auth/session")) {
+        return jsonResponse(200, {
+          expires_at: "2026-08-01T00:00:00Z",
+          member: { id: "pat", privilege_level: "member" },
+          gateway: { url: "ws://127.0.0.1:18789", token: "shared-gw-token" },
+        });
+      }
+      if (url.includes("/auth/device-token")) {
+        return jsonResponse(200, { token: "device-tok", scopes: ["operator.read"] });
+      }
+      throw new Error(`unexpected fetch: ${url}`);
+    });
+
+    await resumeMemberSession(host);
+    expect(localStorage.getItem("openclaw.device.auth.v1")).toContain("device-tok");
+
+    const recovered = await recoverFromRejectedDeviceToken(host);
+
+    expect(recovered).toBe(true);
+    expect(localStorage.getItem("openclaw.device.auth.v1") ?? "").not.toContain("device-tok");
+    expect(host.applySettings).toHaveBeenLastCalledWith(
+      expect.objectContaining({ token: "shared-gw-token" }),
+    );
+  });
+
+  it("declines when no member is signed in", async () => {
+    const host = makeHost();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    expect(await recoverFromRejectedDeviceToken(host)).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("declines when the service hands back no gateway token to fall back to", async () => {
+    saveStoredMemberSession({ sessionToken: "sess", expiresAt: "2026-08-01T00:00:00Z" });
+    const host = makeHost();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        expires_at: "2026-08-01T00:00:00Z",
+        member: { id: "pat", privilege_level: "member" },
+      }),
+    );
+    expect(await recoverFromRejectedDeviceToken(host)).toBe(false);
   });
 });
 

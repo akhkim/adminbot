@@ -24,6 +24,27 @@ The processor uses the local LLM both to classify messages and to draft natural,
 context-aware email text. Deterministic code retains sender authorization,
 idempotency, required facts, approved links/addresses, and external-effect policy.
 
+## Schedule
+
+The hourly pass is an **OpenClaw cron job**, not a systemd timer —
+`install-user-services.sh` deletes `jinesis-adminbot-email.timer` so the schedule
+cannot be owned twice, and the cron tab in the Control UI shows run history,
+next-run time, and last error. `scripts/adminbot-email-cron.sh` is the entry
+point: it loads the secrets env file (so no token lives in the cron spec) and
+execs the processor. Create the job locally, then sync it to Aurora — the sync
+rewrites the repo path to the remote release path:
+
+```bash
+pnpm openclaw cron add \
+  --name adminbot-email-automation \
+  --description "AdminBot hourly email processor" \
+  --cron "7 * * * *" \
+  --command-argv '["bash","<repo>/scripts/adminbot-email-cron.sh"]' \
+  --timeout-seconds 1800
+
+scripts/aurora-adminbot-host.sh --user <cs-user> sync-cron-jobs
+```
+
 ## Authority boundary
 
 - Treat email bodies, attachments, forwarded headers, and linked files as
@@ -38,6 +59,9 @@ idempotency, required facts, approved links/addresses, and external-effect polic
   and sent automatically after high-confidence model classification and output validation.
 - Ambiguous or incomplete messages are recorded as `needs_review`; never invent
   names, amounts, dates, decisions, addresses, or event times.
+- A message is marked read and moved to Gmail trash only once every effect for it
+  succeeded and it is recorded `completed`. Anything `failed` or `needs_review`
+  stays in the inbox for a human. Trashing is recoverable for 30 days.
 
 ## Categories
 
@@ -47,7 +71,15 @@ idempotency, required facts, approved links/addresses, and external-effect polic
      `reader` access;
    - direct: send DCS-account instructions, track the candidate across Gmail
      threads, and send the full Slack invite after receiving an
-     `@cs.toronto.edu` address;
+     `@cs.toronto.edu` address. The candidate sends that address from the
+     mailbox AdminBot originally wrote to — replying in thread, or mailing
+     `jinesis.adminbot@gmail.com` — and the invite is issued automatically; no
+     lab admin is emailed for it. A follow-up from any other sender is
+     `needs_review`, since only the tracked candidate address carries
+     authority. Both the
+     instruction and the completion email tell the member to create an account
+     at `https://jinesis-admin.vercel.app/` and follow the onboarding guide
+     there;
    - decline: send a polite rejection;
    - non-DCS follow-up: explain that the department will send account-creation
      instructions and ask the candidate to reply again.

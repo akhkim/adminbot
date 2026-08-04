@@ -20,9 +20,9 @@
       "action": "submit via **ARR** for **NAACL 2027**",
       "noun": "submission deadline"
     },
-    "neurips_workshop": {
-      "action": "submit it to **{workshop}** (NeurIPS 2026 workshop)",
-      "noun": "recommended submission date"
+    "workshop": {
+      "action": "submit it to **{workshop}**",
+      "noun": "submission deadline"
     }
   },
   "steps": {

@@ -7,6 +7,7 @@ import { t } from "../i18n/index.ts";
 // flows through applySettings so it stays in sessionStorage-scoped plumbing.
 import {
   type AuthErrorKind,
+  acknowledgeOnboardingStep,
   type MemberOnboarding,
   type MemberSession,
   type RosterMember,
@@ -17,6 +18,7 @@ import {
   fetchMemberSession,
   fetchRoster,
   hasSeenOnboardingWelcome,
+  issueDeviceToken,
   loadStoredMemberSession,
   loginMember,
   logoutMember,
@@ -26,6 +28,8 @@ import {
   setOnboardingStep,
   signupMember,
 } from "./adminbot-auth.ts";
+import { clearDeviceAuthToken, storeDeviceAuthToken } from "./device-auth.ts";
+import { loadOrCreateDeviceIdentity } from "./device-identity.ts";
 import type { UiSettings } from "./storage.ts";
 
 const MIN_CLAIM_PASSWORD_LENGTH = 10;
@@ -75,7 +79,6 @@ export type MemberAuthHost = {
   memberResearchTopics: string;
   memberProjects: string;
   memberHoursPerWeek: string;
-  memberCapacityPercent: string;
   memberLocation: string;
   memberTimezone: string;
   memberPersonalWebsite: string;
@@ -142,7 +145,6 @@ function buildSignupProfile(host: MemberAuthHost): SignupProfile {
   const role = host.memberRole.trim();
   const researchBranch = host.memberResearchBranch.trim();
   const hoursPerWeek = parseOptionalNumber(host.memberHoursPerWeek);
-  const capacityPercent = parseOptionalNumber(host.memberCapacityPercent);
   const location = host.memberLocation.trim();
   const timezone = host.memberTimezone.trim();
   const personalWebsite = host.memberPersonalWebsite.trim();
@@ -156,7 +158,6 @@ function buildSignupProfile(host: MemberAuthHost): SignupProfile {
     ...(topics.length ? { research_topics: topics } : {}),
     ...(projects.length ? { projects } : {}),
     ...(hoursPerWeek !== undefined ? { hours_per_week: hoursPerWeek } : {}),
-    ...(capacityPercent !== undefined ? { capacity_percent: capacityPercent } : {}),
     ...(location ? { location } : {}),
     ...(timezone ? { timezone } : {}),
     ...(personalWebsite ? { personal_website: personalWebsite } : {}),
@@ -187,7 +188,66 @@ export async function loadRoster(host: MemberAuthHost): Promise<void> {
   }
 }
 
-function applyMemberSession(host: MemberAuthHost, session: MemberSession) {
+// Gives this browser its own gateway credential: a device token minted from the member session and
+// capped at their privilege. Returns true when the browser can connect on that token alone, which
+// is the whole point — no member ever has to hold (or paste) the shared gateway secret.
+//
+// Returns false whenever the token can't be minted (insecure context with no crypto.subtle, an
+// AdminBot that predates the route, or a gateway with no shared secret to bind to) so the caller
+// falls back to the token the session handed it instead of leaving the user stranded offline.
+async function ensureMemberDeviceToken(
+  host: MemberAuthHost,
+  sessionToken: string,
+): Promise<boolean> {
+  if (typeof crypto === "undefined" || !crypto.subtle) {
+    return false;
+  }
+  try {
+    const identity = await loadOrCreateDeviceIdentity();
+    const result = await issueDeviceToken(
+      {
+        deviceId: identity.deviceId,
+        publicKey: identity.publicKey,
+        ...(typeof navigator === "undefined" ? {} : { platform: navigator.platform }),
+      },
+      sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      return false;
+    }
+    // Stored under the same key the gateway client reads at connect, so the client picks it up
+    // with no extra plumbing and re-uses it on every later reload.
+    storeDeviceAuthToken({
+      deviceId: identity.deviceId,
+      role: "operator",
+      token: result.value.token,
+      scopes: result.value.scopes,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Applies the gateway settings a signed-in member connects with. The shared gateway token from the
+// session is only injected when this browser could not get a device token of its own — otherwise
+// settings.token stays empty, which is what makes the client authenticate as the device.
+async function connectAsMember(
+  host: MemberAuthHost,
+  session: { session_token?: string; gateway?: { url?: string; token?: string } },
+  sessionToken: string,
+) {
+  const hasDeviceToken = await ensureMemberDeviceToken(host, sessionToken);
+  host.applySettings({
+    ...host.settings,
+    gatewayUrl: session.gateway?.url ?? host.settings.gatewayUrl,
+    token: hasDeviceToken ? "" : (session.gateway?.token ?? host.settings.token),
+  });
+  host.connect();
+}
+
+async function applyMemberSession(host: MemberAuthHost, session: MemberSession) {
   saveStoredMemberSession({
     sessionToken: session.session_token,
     expiresAt: session.expires_at,
@@ -206,12 +266,7 @@ function applyMemberSession(host: MemberAuthHost, session: MemberSession) {
   host.adminBotWelcomeVisible = Boolean(
     host.adminBotOnboarding && host.memberId && !hasSeenOnboardingWelcome(host.memberId),
   );
-  host.applySettings({
-    ...host.settings,
-    gatewayUrl: session.gateway?.url ?? host.settings.gatewayUrl,
-    token: session.gateway?.token ?? host.settings.token,
-  });
-  host.connect();
+  await connectAsMember(host, session, session.session_token);
 }
 
 export async function submitMemberAuth(host: MemberAuthHost): Promise<void> {
@@ -254,7 +309,7 @@ export async function submitMemberAuth(host: MemberAuthHost): Promise<void> {
         host.memberAuthFailure = toMemberAuthFailure(result.kind, result.retryAfterSeconds, mode);
         return;
       }
-      applyMemberSession(host, result.value);
+      await applyMemberSession(host, result.value);
       return;
     }
     // Claim/signup do not log in — the account awaits admin approval.
@@ -294,12 +349,7 @@ export async function resumeMemberSession(host: MemberAuthHost): Promise<ResumeO
     // Refresh the checklist data but never auto-open the welcome screen on a plain page
     // reload — only a fresh sign-in (applyMemberSession) or the manual reopen entry point do.
     host.adminBotOnboarding = result.value.member?.onboarding ?? null;
-    host.applySettings({
-      ...host.settings,
-      gatewayUrl: result.value.gateway?.url ?? host.settings.gatewayUrl,
-      token: result.value.gateway?.token ?? host.settings.token,
-    });
-    host.connect();
+    await connectAsMember(host, result.value, stored.sessionToken);
     return "resumed";
   }
   if (result.kind === "unreachable") {
@@ -363,7 +413,6 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.memberResearchTopics = "";
   host.memberProjects = "";
   host.memberHoursPerWeek = "";
-  host.memberCapacityPercent = "";
   host.memberLocation = "";
   host.memberTimezone = "";
   host.memberPersonalWebsite = "";
@@ -381,6 +430,48 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.hello = null;
   host.password = "";
   host.applySettings({ ...host.settings, token: "" });
+  await clearMemberDeviceToken();
+}
+
+// Recovers from a gateway that rejects this device's token (AUTH_DEVICE_TOKEN_MISMATCH). Every
+// cause is a dead end for the browser -- the gateway no longer has the device paired, the token was
+// revoked, or the shared secret rotated so the token's issuer stamp is stale -- and none of them
+// are fixable from the client. The member is still signed in, so drop the token and hand the
+// connection back to the session's shared gateway token; the gateway re-pairs the device and mints
+// a replacement token in its hello, so the browser still ends up device-bound.
+//
+// Returns true when the caller should reconnect.
+export async function recoverFromRejectedDeviceToken(host: MemberAuthHost): Promise<boolean> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    return false;
+  }
+  await clearMemberDeviceToken();
+  const result = await fetchMemberSession(
+    stored.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  const gatewayToken = result.ok ? result.value.gateway?.token : undefined;
+  if (!gatewayToken) {
+    return false;
+  }
+  host.applySettings({ ...host.settings, token: gatewayToken });
+  return true;
+}
+
+// Signing out must also drop the device's gateway token: it outlives the member session otherwise,
+// leaving a credential on the machine that still reaches the gateway with the signed-out member's
+// scopes. Best-effort — a browser with no device identity has nothing to clear.
+async function clearMemberDeviceToken(): Promise<void> {
+  if (typeof crypto === "undefined" || !crypto.subtle) {
+    return;
+  }
+  try {
+    const identity = await loadOrCreateDeviceIdentity();
+    clearDeviceAuthToken({ deviceId: identity.deviceId, role: "operator" });
+  } catch {
+    // No device identity to clear.
+  }
 }
 
 export function openChangePassword(host: MemberAuthHost): void {
@@ -452,6 +543,27 @@ function changePasswordErrorMessage(kind: AuthErrorKind): string {
       return t("login.member.errorTooShort", { min: String(MIN_CLAIM_PASSWORD_LENGTH) });
     default:
       return t("login.member.changePassword.errorAuthFailed");
+  }
+}
+
+// Called from the welcome screen's per-step "I've read this" button. The server owns the
+// checklist, so the rebuilt copy it returns replaces the local one rather than being patched in
+// place -- that keeps `current_step` and the remaining count honest after each acknowledgement.
+export async function acknowledgeOnboardingStepForMember(
+  host: MemberAuthHost,
+  stepId: string,
+): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    return;
+  }
+  const result = await acknowledgeOnboardingStep(
+    stepId,
+    stored.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  if (result.ok) {
+    host.adminBotOnboarding = result.value;
   }
 }
 

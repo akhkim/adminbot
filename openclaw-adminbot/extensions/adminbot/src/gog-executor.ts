@@ -16,8 +16,12 @@ const GOG_MAX_OUTPUT_BYTES = 1024 * 1024;
 // GOG_BIN/homedir fallback resolution scripts/adminbot-email-automation.ts already uses.
 const GOG_EXECUTABLE = resolveGogExecutable();
 
-function resolveGogExecutable(): string {
-  const candidates = [process.env.GOG_BIN ?? "", path.join(os.homedir(), ".local", "bin", "gog")];
+// Exported so every gog caller resolves the binary the same way: the service's systemd unit runs
+// with a minimal PATH that does not include ~/.local/bin, so a bare "gog" lookup ENOENTs there
+// even though it works in an interactive shell.
+export function resolveGogExecutable(env?: NodeJS.ProcessEnv): string {
+  const source = env ?? process.env;
+  const candidates = [source.GOG_BIN ?? "", path.join(os.homedir(), ".local", "bin", "gog")];
   for (const candidate of candidates) {
     if (candidate && fs.existsSync(candidate)) {
       return candidate;

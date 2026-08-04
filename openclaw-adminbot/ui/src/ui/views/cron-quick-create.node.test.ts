@@ -8,6 +8,7 @@ function createDraft(overrides: Partial<CronQuickCreateDraft> = {}): CronQuickCr
     name: "Inbox check",
     schedulePreset: "every-morning",
     deliveryPreset: "notify",
+    model: "",
     ...overrides,
   };
 }
@@ -37,5 +38,18 @@ describe("cron quick create", () => {
     expect(patch.sessionTarget).toBe("isolated");
     expect(patch.deliveryMode).toBe("announce");
     expect(patch.wakeMode).toBe("now");
+  });
+
+  it("pins an explicitly picked model", () => {
+    const patch = draftToCronFormPatch(
+      createDraft({ model: "openrouter/anthropic/claude-opus-4.8" }),
+    );
+
+    expect(patch.payloadModel).toBe("openrouter/anthropic/claude-opus-4.8");
+  });
+
+  it("leaves payloadModel unset when inheriting, so the form seed stands", () => {
+    expect(draftToCronFormPatch(createDraft({ model: "" }))).not.toHaveProperty("payloadModel");
+    expect(draftToCronFormPatch(createDraft({ model: "   " }))).not.toHaveProperty("payloadModel");
   });
 });

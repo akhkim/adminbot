@@ -17,6 +17,7 @@ Args: --send   --days N (window, default 45)   --now YYYY-MM-DD
 import argparse
 import os
 import sys
+from collections import defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -25,31 +26,50 @@ from adminbot_deadlines import AoEClock, DeadlineDataset, SlackNotifier, urgency
 CHANNEL = os.environ.get("ADMINBOT_ACTIVE_CHANNEL", "#jinesis-active")
 
 
+def digest_line(venue, clock):
+    """One venue's line: urgency, AoE calendar date, countdown, name, optional link."""
+    days = clock.days_until(venue["deadline_aoe"])
+    link = f"  <{venue['link']}|↗>" if venue.get("link") else ""
+    return (
+        f"{urgency_marker(days)} *{AoEClock.calendar_label(venue['deadline_aoe'])}* "
+        f"({days}d) — {venue['name']}{link}"
+    )
+
+
 def build_message(venues, clock, window_days):
     """Render the digest, or None when nothing falls inside the window."""
     if not venues:
         return None
 
-    # The NeurIPS workshops share one unified deadline, so listing all ~100
-    # would bury the handful of distinct conference dates that need attention.
-    workshops = [v for v in venues if v["venue_type"] == "workshop"]
-    others = [v for v in venues if v["venue_type"] != "workshop"]
+    # Workshops sharing a venue_group and a date collapse into one line: a call that
+    # spawns ~100 co-located workshops would otherwise bury the handful of distinct
+    # conference dates. Grouping is by dataset field, never by venue name, so a lone
+    # workshop still shows under its own name and a new series needs no code change.
+    grouped_workshops = defaultdict(list)
+    entries = []
+    for venue in venues:
+        if venue["venue_type"] == "workshop":
+            grouped_workshops[(venue["venue_group"], venue["deadline_aoe"][:10])].append(venue)
+        else:
+            entries.append((venue["deadline_aoe"], venue["name"], digest_line(venue, clock)))
+    for (group, _date), members in grouped_workshops.items():
+        first = members[0]
+        if len(members) == 1:
+            entries.append((first["deadline_aoe"], first["name"], digest_line(first, clock)))
+            continue
+        days = clock.days_until(first["deadline_aoe"])
+        entries.append((
+            first["deadline_aoe"],
+            first["name"],
+            f"{urgency_marker(days)} *{AoEClock.calendar_label(first['deadline_aoe'])}* "
+            f"({days}d) — *{len(members)} {group}* (unified deadline)",
+        ))
+    # Same ordering DeadlineDataset.upcoming applies, re-established because collapsing
+    # a group moves its line to the group's earliest deadline.
+    entries.sort(key=lambda entry: (entry[0], entry[1]))
 
     lines = [f"📅 *Upcoming deadlines* — next {window_days} days (times AoE)"]
-    for venue in others:
-        days = clock.days_until(venue["deadline_aoe"])
-        link = f"  <{venue['link']}|↗>" if venue.get("link") else ""
-        lines.append(
-            f"{urgency_marker(days)} *{AoEClock.calendar_label(venue['deadline_aoe'])}* "
-            f"({days}d) — {venue['name']}{link}"
-        )
-    if workshops:
-        first = workshops[0]
-        days = clock.days_until(first["deadline_aoe"])
-        lines.append(
-            f"{urgency_marker(days)} *{AoEClock.calendar_label(first['deadline_aoe'])}* "
-            f"({days}d) — *{len(workshops)} NeurIPS 2026 workshops* (unified deadline)"
-        )
+    lines += [text for _deadline, _name, text in entries]
     lines.append(
         "\nFull live countdown board + your paper's reminders are in the "
         "AdminBot Deadlines tab. — Jinesis Lab AdminBot 🦞"

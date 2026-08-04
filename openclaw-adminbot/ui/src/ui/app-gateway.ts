@@ -1,9 +1,14 @@
 // Control UI module implements app gateway behavior.
-import { ConnectErrorDetailCodes } from "../../../packages/gateway-protocol/src/connect-error-details.js";
+import {
+  ConnectErrorDetailCodes,
+  readPairingConnectErrorDetails,
+} from "../../../packages/gateway-protocol/src/connect-error-details.js";
 import {
   GATEWAY_EVENT_UPDATE_AVAILABLE,
   type GatewayUpdateAvailableEventPayload,
 } from "../../../src/gateway/events.js";
+import { recoverFromRejectedDeviceToken } from "./adminbot-auth-flow.ts";
+import { loadStoredMemberSession, pairDevice, resolveAdminBotBaseUrl } from "./adminbot-auth.ts";
 import {
   clearPendingQueueItemsForRun,
   createChatSessionsLoadOverrides,
@@ -77,7 +82,9 @@ import {
   GatewayBrowserClient,
   isGatewayClientStoppedError,
   resolveGatewayErrorDetailCode,
+  resolveMemberOperatorScopes,
   type GatewayEventFrame,
+  type GatewayErrorInfo,
   type GatewayHelloOk,
 } from "./gateway.ts";
 import type { Tab } from "./navigation.ts";
@@ -158,6 +165,14 @@ type GatewayHost = {
   fetchRealtimeTalkCatalog?: () => Promise<void>;
   sessionsChangedReloadTimer?: number | ReturnType<typeof globalThis.setTimeout> | null;
   controlUiBootstrapReady?: Promise<void> | null;
+  // Signed-in member's privilege, used to request privilege-appropriate operator scopes when the
+  // browser pairs its device (plain members request read only). Null when no member is signed in.
+  memberPrivilegeLevel?: string | null;
+  // requestIds we've already tried to auto-approve, so a pairing that keeps failing doesn't loop.
+  devicePairingAttemptedRequestIds?: Set<string>;
+  // Set once the device-token fallback has been tried; cleared on a successful hello so a later
+  // rejection (a rotated secret mid-session) can recover again.
+  deviceTokenRecoveryAttempted?: boolean;
 };
 
 type GatewayHostWithDeferredSessionMessageReload = GatewayHost & {
@@ -779,6 +794,80 @@ function scheduleDeferredStartupWork(callback: () => void) {
   void Promise.resolve().then(callback);
 }
 
+// Handles a PAIRING_REQUIRED connect failure by approving the member's device through the AdminBot
+// service, then reconnecting. Returns true when it took ownership of the failure (so onClose skips
+// surfacing it as an error). Guards against loops by only attempting each requestId once; a repeated
+// failure falls through to the normal error path on the next close.
+function maybeAutoApproveDevicePairing(
+  host: GatewayHost,
+  client: GatewayBrowserClient,
+  error: GatewayErrorInfo | undefined,
+): boolean {
+  const details = readPairingConnectErrorDetails(error?.details);
+  const requestId = details?.requestId;
+  if (!requestId) {
+    return false;
+  }
+  const session = loadStoredMemberSession();
+  if (!session) {
+    return false;
+  }
+  const attempted = (host.devicePairingAttemptedRequestIds ??= new Set());
+  if (attempted.has(requestId)) {
+    return false;
+  }
+  attempted.add(requestId);
+  void (async () => {
+    const result = await pairDevice(
+      requestId,
+      session.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    // Only reconnect if this client is still the active one — the member may have signed out or a
+    // newer connect may have superseded this attempt while the request was in flight.
+    if (host.client !== client) {
+      return;
+    }
+    if (result.ok) {
+      connectGateway(host);
+    } else {
+      host.lastError =
+        result.kind === "forbidden"
+          ? "Your account doesn't have access to this dashboard."
+          : "Couldn't set up this device. Refresh to try again.";
+    }
+  })();
+  return true;
+}
+
+// Handles a connect rejected because the gateway won't accept this device's token. Recovery falls
+// back to the member session's shared gateway token, which re-pairs the device and gets a fresh
+// gateway-issued token, so a token the gateway can't verify never strands a signed-in member at
+// "Auth did not match". Attempted once per connected session (the flag clears on hello) so a
+// deployment that rejects both credentials still surfaces the error instead of looping.
+function maybeRecoverRejectedDeviceToken(host: GatewayHost, client: GatewayBrowserClient): boolean {
+  if (host.deviceTokenRecoveryAttempted) {
+    return false;
+  }
+  host.deviceTokenRecoveryAttempted = true;
+  void (async () => {
+    const recovered = await recoverFromRejectedDeviceToken(
+      host as unknown as Parameters<typeof recoverFromRejectedDeviceToken>[0],
+    );
+    // Only act if this client is still the active one — a newer connect may have superseded this
+    // attempt while the session fetch was in flight.
+    if (host.client !== client) {
+      return;
+    }
+    if (recovered) {
+      connectGateway(host);
+      return;
+    }
+    host.lastError = "Couldn't set up this device. Sign out and back in to try again.";
+  })();
+  return true;
+}
+
 export function connectGateway(host: GatewayHost, options?: ConnectGatewayOptions) {
   const shutdownHost = host as GatewayHostWithShutdownMessage;
   const reconnectReason = options?.reason ?? "initial";
@@ -818,12 +907,16 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
     clientVersion,
     mode: "webchat",
     instanceId: host.clientInstanceId,
+    // Request only the operator scopes the signed-in member's privilege allows, so device pairing
+    // approves a read-only device for plain members (the gateway then denies them operator.write).
+    operatorScopes: resolveMemberOperatorScopes(host.memberPrivilegeLevel),
     onHello: (hello) => {
       if (host.client !== client) {
         return;
       }
       shutdownHost.pendingShutdownMessage = null;
       host.connected = true;
+      host.deviceTokenRecoveryAttempted = false;
       host.lastError = null;
       host.lastErrorCode = null;
       host.chatError = null;
@@ -935,6 +1028,21 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
       host.lastErrorCode =
         resolveGatewayErrorDetailCode(error) ??
         (typeof error?.code === "string" ? error.code : null);
+      // With device auth on, a signed-in member's first connect from a new browser returns
+      // PAIRING_REQUIRED. Auto-approve the device via the member's own session, then reconnect —
+      // this is what makes per-member gateway pairing invisible to the user.
+      if (
+        host.lastErrorCode === ConnectErrorDetailCodes.PAIRING_REQUIRED &&
+        maybeAutoApproveDevicePairing(host, client, error)
+      ) {
+        return;
+      }
+      if (
+        host.lastErrorCode === ConnectErrorDetailCodes.AUTH_DEVICE_TOKEN_MISMATCH &&
+        maybeRecoverRejectedDeviceToken(host, client)
+      ) {
+        return;
+      }
       if (code !== 1012) {
         if (error?.message) {
           host.lastError =

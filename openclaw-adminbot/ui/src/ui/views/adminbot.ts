@@ -1,6 +1,10 @@
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
 import type { MemberNudgeChannel, MemberProfileUpdate } from "../adminbot-auth.ts";
+import {
+  renderAvailabilitySchedule,
+  renderAvailabilityStrip,
+} from "../adminbot-availability.js";
 import type {
   AdminBotActionProposal,
   AdminBotDashboardData,
@@ -158,6 +162,35 @@ function paperProgressBucket(progress: number): string {
   if (progress > 0) return "early";
   return "not-started";
 }
+type PaperTimelineItem = NonNullable<AdminBotPaperRecord["timeline"]>["items"][number];
+
+/**
+ * Pack the schedule into as few rows as possible without two bars overlapping in time.
+ *
+ * The flow is a graph, not a line - slides branch off the submission and run alongside the
+ * arXiv/announcement chain - so items no longer tile left to right, and drawing them in one track
+ * would overlap them. Greedy first-fit gives the main chain one row and each concurrent branch its
+ * own, which is what makes the branch legible.
+ */
+function packPaperTimelineLanes(items: readonly PaperTimelineItem[]): PaperTimelineItem[][] {
+  const lanes: PaperTimelineItem[][] = [];
+  const ordered = items.toSorted(
+    (left, right) => left.offset_start_business_day - right.offset_start_business_day,
+  );
+  for (const item of ordered) {
+    const lane = lanes.find(
+      (candidate) =>
+        (candidate.at(-1)?.offset_end_business_day ?? 0) <= item.offset_start_business_day,
+    );
+    if (lane) {
+      lane.push(item);
+    } else {
+      lanes.push([item]);
+    }
+  }
+  return lanes;
+}
+
 function paperTimelineBarStyle(
   item: NonNullable<AdminBotPaperRecord["timeline"]>["items"][number],
   total: number,
@@ -197,7 +230,8 @@ function filterPaperOverview(event: Event): void {
   if (empty) empty.hidden = visible !== 0;
 }
 
-function renderPaperOverview(papers: AdminBotPaperRecord[]) {
+function renderPaperOverview(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
+  const viewer = signedInMember(props);
   const timelinePapers = papers.filter((paper) => paper.timeline?.items.length);
   const conferences = [...new Set(papers.map(paperConference))].sort((a, b) => a.localeCompare(b));
   const topics = [...new Set(papers.map(paperTopic))].sort((a, b) => a.localeCompare(b));
@@ -205,11 +239,16 @@ function renderPaperOverview(papers: AdminBotPaperRecord[]) {
     1,
     ...timelinePapers.map((paper) => paper.timeline?.total_estimated_business_days ?? 1),
   );
-  const renderRow = (paper: AdminBotPaperRecord) => {
+  const renderRow = (paper: AdminBotPaperRecord, index: number) => {
     const timeline = paper.timeline;
     const conference = paperConference(paper);
     const topic = paperTopic(paper);
     const progress = timeline?.progress_percent ?? 0;
+    const currentItem = timeline?.items.find((item) => item.status === "current");
+    const nextItem = timeline?.items.find((item) => item.status === "upcoming");
+    // Admins edit the whole board; an author edits their own paper. Deleting stays admin-only
+    // either way, so an author cannot remove a record other people's work depends on.
+    const canEdit = props.mode !== "general" || memberOwnsPaper(paper, viewer, props.data.members);
     return html`
       <div
         class="adminbot-paper-gantt__row"
@@ -220,22 +259,84 @@ function renderPaperOverview(papers: AdminBotPaperRecord[]) {
         data-step=${paper.current_step}
       >
         <div class="adminbot-paper-gantt__label">
-          <strong title=${paper.title}>${paper.title}</strong
-          ><span>${conference} · ${topic} · ${progress}%</span>
+          <strong title=${paper.title}>${paper.title}</strong>
+          <span class="adminbot-paper-gantt__authors" title=${paper.authors.join(", ")}
+            >${paper.authors.join(", ") || "No authors"}</span
+          >
+          <span class="adminbot-paper-gantt__facets">
+            <span class="adminbot-tag">${conference}</span>
+            <span class="adminbot-tag">${topic}</span>
+          </span>
+          <span class="adminbot-paper-gantt__status">
+            <span
+              class="adminbot-paper-gantt__meter adminbot-paper-gantt__meter--${paperProgressBucket(
+                progress,
+              )}"
+              role="img"
+              aria-label=${`${progress}% complete`}
+            >
+              <span style=${`width: ${progress}%`}></span>
+            </span>
+            <small
+              >${progress}% ·
+              ${currentItem
+                ? `now: ${currentItem.label}`
+                : nextItem
+                  ? `next: ${nextItem.label}`
+                  : "complete"}</small
+            >
+          </span>
+          <span class="adminbot-paper-gantt__actions">
+            ${canEdit
+              ? html`<button
+                  class="btn btn--sm"
+                  type="button"
+                  popovertarget=${`adminbot-edit-paper-${index}`}
+                >
+                  Edit
+                </button>`
+              : nothing}
+            ${props.mode === "general"
+              ? nothing
+              : html`<button
+                  class="btn btn--sm btn--ghost danger"
+                  type="button"
+                  ?disabled=${props.busyActionId === paper.id}
+                  @click=${() => {
+                    if (globalThis.confirm(`Delete active paper "${paper.title}"?`)) {
+                      props.onDeletePaper(paper);
+                    }
+                  }}
+                >
+                  ${props.busyActionId === paper.id ? "Deleting..." : "Delete"}
+                </button>`}
+          </span>
+          ${canEdit ? renderPaperEditPopover(paper, index, props) : nothing}
         </div>
         ${timeline?.items.length
           ? html`<div
-              class="adminbot-paper-timeline__track"
+              class="adminbot-paper-timeline"
               aria-label=${`${paper.title}, ${progress}% complete`}
             >
-              ${timeline.items.map(
-                (item) =>
-                  html`<div
-                    class="adminbot-paper-timeline__bar adminbot-paper-timeline__bar--${item.status}"
-                    style=${paperTimelineBarStyle(item, maxTotal)}
-                    title=${`${item.label}: ${item.duration_business_days} business day estimate`}
-                  >
-                    <span>${item.label}</span>
+              ${packPaperTimelineLanes(timeline.items).map(
+                (lane) =>
+                  html`<div class="adminbot-paper-timeline__track">
+                    ${lane.map(
+                      (item) =>
+                        html`<div
+                          class="adminbot-paper-timeline__bar adminbot-paper-timeline__bar--${item.status}"
+                          style=${paperTimelineBarStyle(item, maxTotal)}
+                          title=${`${item.label}: ${item.duration_business_days} business day estimate${
+                            item.depends_on.length
+                              ? `, after ${item.depends_on
+                                  .map((step) => stepLabels[step] ?? friendly(step))
+                                  .join(" and ")}`
+                              : ", starts the flow"
+                          }`}
+                        >
+                          <span>${item.label}</span>
+                        </div>`,
+                    )}
                   </div>`,
               )}
             </div>`
@@ -298,6 +399,14 @@ function renderPaperOverview(papers: AdminBotPaperRecord[]) {
           </select></label
         >
       </form>
+      <div class="adminbot-paper-gantt__legend" aria-hidden="true">
+        ${(["complete", "current", "upcoming", "blocked"] as const).map(
+          (status) =>
+            html`<span class="adminbot-paper-gantt__legend-item"
+              ><i class="adminbot-paper-timeline__bar--${status}"></i>${friendly(status)}</span
+            >`,
+        )}
+      </div>
       <div class="adminbot-paper-gantt">
         <div class="adminbot-paper-gantt__axis" aria-hidden="true">
           <span>Paper</span>
@@ -306,7 +415,7 @@ function renderPaperOverview(papers: AdminBotPaperRecord[]) {
             ><span>Day ${maxTotal}</span>
           </div>
         </div>
-        ${papers.map(renderRow)}
+        ${papers.map((paper, index) => renderRow(paper, index))}
         <div class="adminbot-paper-gantt__empty" hidden>No papers match these filters.</div>
       </div>
     </section>
@@ -346,7 +455,6 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
       .map((value) => value.trim())
       .filter(Boolean);
   const hoursPerWeek = Number(getFormValue(data, "hoursPerWeek"));
-  const capacityPercent = Number(getFormValue(data, "capacityPercent"));
   const notes = buildMemberNotes({
     location: getFormValue(data, "location"),
     joinedMonth: getFormValue(data, "joinedMonth"),
@@ -376,9 +484,7 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
     ...(getFormValue(data, "hoursPerWeek") && Number.isFinite(hoursPerWeek)
       ? { hoursPerWeek }
       : {}),
-    ...(getFormValue(data, "capacityPercent") && Number.isFinite(capacityPercent)
-      ? { capacityPercent }
-      : {}),
+    availability: getFormValue(data, "availability"),
     ...(getFormValue(data, "location") ? { location: getFormValue(data, "location") } : {}),
     ...(getFormValue(data, "affiliation")
       ? { affiliation: getFormValue(data, "affiliation") }
@@ -403,7 +509,6 @@ function collectSelfProfileFields(form: HTMLFormElement): MemberProfileUpdate {
       .map((value) => value.trim())
       .filter(Boolean);
   const hoursPerWeek = Number(getFormValue(data, "hoursPerWeek"));
-  const capacityPercent = Number(getFormValue(data, "capacityPercent"));
   const location = getFormValue(data, "location");
   const personalWebsite = getFormValue(data, "website");
   const notes = buildMemberNotes({
@@ -425,9 +530,7 @@ function collectSelfProfileFields(form: HTMLFormElement): MemberProfileUpdate {
     ...(getFormValue(data, "hoursPerWeek") && Number.isFinite(hoursPerWeek)
       ? { hours_per_week: hoursPerWeek }
       : {}),
-    ...(getFormValue(data, "capacityPercent") && Number.isFinite(capacityPercent)
-      ? { capacity_percent: capacityPercent }
-      : {}),
+    availability: getFormValue(data, "availability"),
     location,
     affiliation: getFormValue(data, "affiliation"),
     timezone: getFormValue(data, "timezone"),
@@ -689,6 +792,70 @@ function papersForMember(
   );
 }
 
+/**
+ * A paper still moving through the pipeline. Explicitly marked complete, or a timeline that has
+ * run to 100%, both mean the work is done and its venue is no longer something to announce about.
+ * Kept separate from `conferencesForMember` so the members sheet keeps listing every conference a
+ * person has touched, while announcements only offer the ones with live work behind them.
+ */
+function isOngoingPaper(paper: AdminBotPaperRecord): boolean {
+  if (paper.reminder?.status === "complete") return false;
+  return (paper.timeline?.progress_percent ?? 0) < 100;
+}
+
+// Conferences a member has *ongoing* papers for, which is what makes them worth announcing to.
+function ongoingConferencesForMember(
+  member: AdminBotLabMember,
+  papers: AdminBotPaperRecord[],
+): string[] {
+  return [
+    ...new Set(papersForMember(member, papers).filter(isOngoingPaper).map(paperConference)),
+  ].toSorted((left, right) => left.localeCompare(right));
+}
+
+// Conferences a member is submitting to, derived from the papers they author. There is no
+// conference field on a member record, so the active papers are the only source for this filter.
+function conferencesForMember(member: AdminBotLabMember, papers: AdminBotPaperRecord[]): string[] {
+  return [...new Set(papersForMember(member, papers).map(paperConference))].toSorted(
+    (left, right) => left.localeCompare(right),
+  );
+}
+
+// Mirrors the service's ownership rule (upsertOwnPaper) so the UI only offers an edit form the
+// server will accept: the member filed the paper, or is named in its authors -- by id or email
+// outright, by bare name only when that name is unambiguous on the roster.
+function memberOwnsPaper(
+  paper: AdminBotPaperRecord,
+  member: AdminBotLabMember | undefined,
+  members: AdminBotLabMember[],
+): boolean {
+  if (!member) {
+    return false;
+  }
+  if (paper.submitted_by_member_id === member.id) {
+    return true;
+  }
+  const authors = paper.authors.map((author) => author.trim().toLocaleLowerCase());
+  if (
+    [member.id, member.email]
+      .flatMap((value) => (value ? [value.toLocaleLowerCase()] : []))
+      .some((value) => authors.includes(value))
+  ) {
+    return true;
+  }
+  const name = member.name.trim().toLocaleLowerCase();
+  if (!name || !authors.includes(name)) {
+    return false;
+  }
+  return members.filter((entry) => entry.name.trim().toLocaleLowerCase() === name).length === 1;
+}
+
+function signedInMember(props: AdminBotProps): AdminBotLabMember | undefined {
+  return props.signedInMemberId
+    ? props.data.members.find((member) => member.id === props.signedInMemberId)
+    : undefined;
+}
+
 function filterMemberSpreadsheet(event: Event): void {
   const form = event.currentTarget;
   if (!(form instanceof HTMLFormElement)) return;
@@ -699,13 +866,15 @@ function filterMemberSpreadsheet(event: Event): void {
   const status = getFormValue(data, "status");
   const project = getFormValue(data, "project");
   const paper = getFormValue(data, "paper");
+  const conference = getFormValue(data, "conference");
   let visible = 0;
   for (const row of sheet.querySelectorAll<HTMLTableRowElement>("tbody tr")) {
     const matches =
       (!search || (row.dataset.search ?? "").includes(search)) &&
       (!status || row.dataset.status === status) &&
       (!project || (row.dataset.projects ?? "").split("|").includes(project)) &&
-      (!paper || (row.dataset.papers ?? "").split("|").includes(paper));
+      (!paper || (row.dataset.papers ?? "").split("|").includes(paper)) &&
+      (!conference || (row.dataset.conferences ?? "").split("|").includes(conference));
     row.hidden = !matches;
     if (matches) visible += 1;
   }
@@ -803,15 +972,6 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
           min="0"
           max="168"
           .value=${numeric(member?.hours_per_week)}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Capacity %</span
-        ><input
-          name="capacityPercent"
-          type="number"
-          min="0"
-          max="100"
-          .value=${numeric(member?.capacity_percent)}
       /></label>
       <label class="adminbot-form__field"
         ><span>Affiliation</span><input name="affiliation" .value=${member?.affiliation ?? ""}
@@ -940,15 +1100,6 @@ function renderMemberSelfEditPopover(
               .value=${numeric(member.hours_per_week)}
           /></label>
           <label class="adminbot-form__field"
-            ><span>Capacity %</span
-            ><input
-              name="capacityPercent"
-              type="number"
-              min="0"
-              max="100"
-              .value=${numeric(member.capacity_percent)}
-          /></label>
-          <label class="adminbot-form__field"
             ><span>Location</span
             ><input name="location" .value=${member.location ?? noteDraft.location}
           /></label>
@@ -989,6 +1140,7 @@ function renderMemberSelfEditPopover(
           <button class="btn btn--sm primary" type="submit">Save my profile</button>
         </div>
       </form>
+      ${renderAvailabilitySchedule(member.availability, member.time_off, member.name ?? member.id)}
     </article>
   `;
 }
@@ -1055,6 +1207,11 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
   const statuses = [...new Set(members.map((member) => member.status ?? "active"))].sort();
   const projects = [...new Set(members.flatMap((member) => member.projects ?? []))].sort();
   const paperTitles = [...new Set(papers.map((paper) => paper.title))].sort();
+  // Only conferences someone on the roster is actually submitting to, so the options match what
+  // selecting one can return.
+  const conferences = [
+    ...new Set(members.flatMap((member) => conferencesForMember(member, papers))),
+  ].toSorted((left, right) => left.localeCompare(right));
   return html`
     <section class="adminbot-member-sheet">
       <div class="adminbot-member-sheet__heading">
@@ -1092,6 +1249,13 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
           ><select name="paper">
             <option value="">All papers</option>
             ${paperTitles.map((value) => html`<option value=${value}>${value}</option>`)}
+          </select></label
+        >
+        <label
+          ><span>Conference</span
+          ><select name="conference">
+            <option value="">All conferences</option>
+            ${conferences.map((value) => html`<option value=${value}>${value}</option>`)}
           </select></label
         >
       </form>
@@ -1136,6 +1300,7 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 ...(member.research_topics ?? []),
                 ...(member.projects ?? []),
                 ...memberPapers.map((entry) => entry.title),
+                ...memberPapers.map(paperConference),
               ]
                 .filter(Boolean)
                 .join(" ")
@@ -1145,9 +1310,23 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 data-status=${member.status ?? "active"}
                 data-projects=${(member.projects ?? []).join("|")}
                 data-papers=${memberPapers.map((entry) => entry.title).join("|")}
+                data-conferences=${[...new Set(memberPapers.map(paperConference))].join("|")}
               >
                 <td>
                   <strong>${member.name}</strong><small>${member.id}</small>
+                  ${memberPapers.length
+                    ? html`<span
+                        class="adminbot-member-sheet__papers"
+                        title=${memberPapers.map((entry) => entry.title).join("\n")}
+                      >
+                        ${memberPapers.map(
+                          (entry) =>
+                            html`<span class="adminbot-tag adminbot-tag--paper"
+                              >${entry.title}</span
+                            >`,
+                        )}
+                      </span>`
+                    : nothing}
                   ${rowEdit === "none"
                     ? nothing
                     : html`<button
@@ -1197,11 +1376,8 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                   )}
                 </td>
                 <td>
-                  <strong
-                    >${member.capacity_percent === undefined
-                      ? "—"
-                      : `${member.capacity_percent}%`}</strong
-                  ><small
+                  ${renderAvailabilityStrip(member.availability, member.time_off)}
+                  <small
                     >${member.hours_per_week === undefined
                       ? "Hours not set"
                       : `${member.hours_per_week} h/week`}</small
@@ -1293,196 +1469,183 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
     </div> `;
 }
 
-function renderPaperList(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
-  if (papers.length === 0) {
-    return html`<div class="adminbot-empty adminbot-empty--compact">No active papers yet.</div>`;
-  }
+/**
+ * Editable fields for one paper. Shared by the row popover and kept separate from the record so a
+ * member-scoped caller can compose the same inputs without the governance ones.
+ */
+function renderPaperFormFields(paper: AdminBotPaperRecord) {
   return html`
-    <div class="adminbot-paper-list">
-      ${papers.map(
-        (paper) => html`
-          <article class="adminbot-paper">
-            <details class="adminbot-expandable">
-              <summary>
-                ${paper.title} · ${stepLabels[paper.current_step] ?? friendly(paper.current_step)}
-              </summary>
-              <div class="adminbot-paper__main">
-                <div class="adminbot-paper__header">
-                  <div>
-                    <strong>${paper.title}</strong>
-                    <div class="adminbot-paper__meta">
-                      ${paper.authors.join(", ") || "No authors"} - ${formatTime(paper.updated_at)}
-                    </div>
-                  </div>
-                  <div class="adminbot-form__actions">
-                    <span class="pill"
-                      >${stepLabels[paper.current_step] ?? friendly(paper.current_step)}</span
-                    >
-                    ${props.mode === "general"
-                      ? nothing
-                      : html`<button
-                          class="btn btn--sm danger"
-                          type="button"
-                          ?disabled=${props.busyActionId === paper.id}
-                          @click=${() => {
-                            if (globalThis.confirm(`Delete active paper "${paper.title}"?`)) {
-                              props.onDeletePaper(paper);
-                            }
-                          }}
-                        >
-                          ${props.busyActionId === paper.id ? "Deleting..." : "Delete"}
-                        </button>`}
-                  </div>
-                </div>
-                ${props.mode === "general"
-                  ? nothing
-                  : html`
-                      <form
-                        class="adminbot-form"
-                        @submit=${(event: Event) => submitPaperForm(event, props)}
-                      >
-                        <div class="form-grid adminbot-form__grid">
-                          <label class="adminbot-form__field"
-                            ><span>Paper id</span><input name="id" .value=${paper.id} readonly
-                          /></label>
-                          <label class="adminbot-form__field"
-                            ><span>Title</span><input name="title" .value=${paper.title} required
-                          /></label>
-                          <label class="adminbot-form__field"
-                            ><span>Conference</span
-                            ><input
-                              name="conference"
-                              .value=${paperConference(paper) === "Unspecified"
-                                ? ""
-                                : paperConference(paper)}
-                          /></label>
-                          <label class="adminbot-form__field"
-                            ><span>Topic</span
-                            ><input
-                              name="topic"
-                              .value=${paperTopic(paper) === "Unspecified"
-                                ? ""
-                                : paperTopic(paper)}
-                          /></label>
-                          <label class="adminbot-form__field"
-                            ><span>Authors</span
-                            ><input name="authors" .value=${paper.authors.join(", ")} required
-                          /></label>
-                          <label class="adminbot-form__field"
-                            ><span>Current step</span
-                            ><select name="currentStep">
-                              ${paperSteps.map(
-                                (step) =>
-                                  html`<option
-                                    value=${step}
-                                    ?selected=${step === paper.current_step}
-                                  >
-                                    ${stepLabels[step] ?? friendly(step)}
-                                  </option>`,
-                              )}
-                            </select></label
-                          >
-                          <label class="adminbot-form__field"
-                            ><span>Overleaf edit URL</span
-                            ><input
-                              name="overleafEditUrl"
-                              type="url"
-                              .value=${paper.artifacts?.overleaf_edit_url ?? ""}
-                          /></label>
-                          <label class="adminbot-form__field"
-                            ><span>Google Drive PDF</span
-                            ><input
-                              name="googleDrivePdfUrl"
-                              type="url"
-                              .value=${paper.artifacts?.google_drive_pdf_url ?? ""}
-                          /></label>
-                        </div>
-                        <div class="adminbot-form__actions">
-                          <button class="btn btn--sm primary" type="submit">Save paper</button>
-                        </div>
-                      </form>
-                    `}
-              </div>
-            </details>
-          </article>
-        `,
-      )}
+    <div class="form-grid adminbot-form__grid">
+      <label class="adminbot-form__field"
+        ><span>Paper id</span><input name="id" .value=${paper.id} readonly
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Title</span><input name="title" .value=${paper.title} required
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Conference</span
+        ><input
+          name="conference"
+          .value=${paperConference(paper) === "Unspecified" ? "" : paperConference(paper)}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Topic</span
+        ><input name="topic" .value=${paperTopic(paper) === "Unspecified" ? "" : paperTopic(paper)}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Authors</span><input name="authors" .value=${paper.authors.join(", ")} required
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Current step</span
+        ><select name="currentStep">
+          ${paperSteps.map(
+            (step) =>
+              html`<option value=${step} ?selected=${step === paper.current_step}>
+                ${stepLabels[step] ?? friendly(step)}
+              </option>`,
+          )}
+        </select></label
+      >
+      <label class="adminbot-form__field"
+        ><span>Overleaf edit URL</span
+        ><input
+          name="overleafEditUrl"
+          type="url"
+          .value=${paper.artifacts?.overleaf_edit_url ?? ""}
+      /></label>
+      <label class="adminbot-form__field"
+        ><span>Google Drive PDF</span
+        ><input
+          name="googleDrivePdfUrl"
+          type="url"
+          .value=${paper.artifacts?.google_drive_pdf_url ?? ""}
+      /></label>
     </div>
+  `;
+}
+
+/**
+ * Edit surface for one paper, anchored to its own row in the timeline. This mirrors how a lab
+ * member is edited from their row rather than from a second list underneath, so the timeline is
+ * the single place a paper is both read and changed.
+ */
+function renderPaperEditPopover(paper: AdminBotPaperRecord, index: number, props: AdminBotProps) {
+  const editId = `adminbot-edit-paper-${index}`;
+  return html`
+    <article class="adminbot-editor-card adminbot-popover" id=${editId} popover>
+      <button
+        class="btn btn--sm adminbot-popover__close"
+        type="button"
+        popovertarget=${editId}
+        popovertargetaction="hide"
+      >
+        Close
+      </button>
+      <div class="card-title">Edit paper</div>
+      <div class="card-sub">
+        ${paper.title} · ${paper.authors.join(", ") || "No authors"} ·
+        ${formatTime(paper.updated_at)}
+      </div>
+      <form class="adminbot-form" @submit=${(event: Event) => submitPaperForm(event, props)}>
+        ${renderPaperFormFields(paper)}
+        <div class="adminbot-form__actions">
+          <button class="btn btn--sm primary" type="submit">Save paper</button>
+        </div>
+      </form>
+    </article>
+  `;
+}
+
+function renderAddPaperCard(props: AdminBotProps, options: { governance: boolean }) {
+  const viewer = signedInMember(props);
+  return html`
+    <article class="adminbot-editor-card adminbot-popover" id="adminbot-add-paper" popover>
+      <button
+        class="btn btn--sm adminbot-popover__close"
+        type="button"
+        popovertarget="adminbot-add-paper"
+        popovertargetaction="hide"
+      >
+        Close
+      </button>
+      <div class="card-title">Add active paper</div>
+      <div class="card-sub">
+        ${options.governance
+          ? "Create a PaperPublish record in the shared AdminBot ledger."
+          : "File your own submission. You stay able to edit the papers you author."}
+      </div>
+      <form class="adminbot-form" @submit=${(event: Event) => submitPaperForm(event, props)}>
+        <div class="form-grid adminbot-form__grid">
+          <label class="adminbot-form__field"
+            ><span>Paper id</span><input name="id" placeholder="paper-2026-example" required
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Title</span><input name="title" required
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Authors</span
+            ><input
+              name="authors"
+              placeholder="Alice, Bob"
+              .value=${options.governance ? "" : (viewer?.name ?? "")}
+              required
+          /></label>
+          <label class="adminbot-form__field">
+            <span>Current step</span>
+            <select name="currentStep">
+              ${paperSteps.map(
+                (step) =>
+                  html`<option value=${step}>${stepLabels[step] ?? friendly(step)}</option>`,
+              )}
+            </select>
+          </label>
+          <label class="adminbot-form__field"
+            ><span>Overleaf edit URL</span><input name="overleafEditUrl" type="url"
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Google Drive PDF</span><input name="googleDrivePdfUrl" type="url"
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Conference</span><input name="conference" placeholder="NeurIPS 2026"
+          /></label>
+          <label class="adminbot-form__field"
+            ><span>Topic</span><input name="topic" placeholder="World models"
+          /></label>
+          ${options.governance
+            ? html`<label class="adminbot-form__field">
+                <span>Reminder status</span>
+                <select name="reminderStatus">
+                  <option value="idle">Idle</option>
+                  <option value="waiting_on_authors">Waiting on authors</option>
+                  <option value="blocked">Blocked</option>
+                  <option value="complete">Complete</option>
+                </select>
+              </label>`
+            : nothing}
+        </div>
+        <div class="adminbot-form__actions">
+          <button class="btn btn--sm primary" type="submit">Add paper</button>
+        </div>
+      </form>
+    </article>
   `;
 }
 
 function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
   if (props.mode === "general") {
-    return html`${renderPaperOverview(papers)}${renderPaperList(props, papers)}`;
+    // Members file their own submissions here. The popover carries no reminder-status field: that
+    // is paper-flow governance the service rejects from a member write.
+    return html`${renderPaperOverview(props, papers)}
+    ${props.signedInMemberId ? renderAddPaperCard(props, { governance: false }) : nothing}`;
   }
   return html`
-    ${renderPaperOverview(papers)}
+    ${renderPaperOverview(props, papers)}
     <article class="adminbot-editor-card">
       <div class="card-title">Paper nudges</div>
       <div class="card-sub">Due reminders and head professor escalations.</div>
       ${renderNudges(props.data.nudges)}
     </article>
-    <div class="adminbot-editor-grid">
-      <article class="adminbot-editor-card adminbot-popover" id="adminbot-add-paper" popover>
-        <button
-          class="btn btn--sm adminbot-popover__close"
-          type="button"
-          popovertarget="adminbot-add-paper"
-          popovertargetaction="hide"
-        >
-          Close
-        </button>
-        <div class="card-title">Add active paper</div>
-        <div class="card-sub">Create a PaperPublish record in the shared AdminBot ledger.</div>
-        <form class="adminbot-form" @submit=${(event: Event) => submitPaperForm(event, props)}>
-          <div class="form-grid adminbot-form__grid">
-            <label class="adminbot-form__field"
-              ><span>Paper id</span><input name="id" placeholder="paper-2026-example" required
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Title</span><input name="title" required
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Authors</span><input name="authors" placeholder="Alice, Bob" required
-            /></label>
-            <label class="adminbot-form__field">
-              <span>Current step</span>
-              <select name="currentStep">
-                ${paperSteps.map(
-                  (step) =>
-                    html`<option value=${step}>${stepLabels[step] ?? friendly(step)}</option>`,
-                )}
-              </select>
-            </label>
-            <label class="adminbot-form__field"
-              ><span>Overleaf edit URL</span><input name="overleafEditUrl" type="url"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Google Drive PDF</span><input name="googleDrivePdfUrl" type="url"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Conference</span><input name="conference" placeholder="NeurIPS 2026"
-            /></label>
-            <label class="adminbot-form__field"
-              ><span>Topic</span><input name="topic" placeholder="World models"
-            /></label>
-            <label class="adminbot-form__field">
-              <span>Reminder status</span>
-              <select name="reminderStatus">
-                <option value="idle">Idle</option>
-                <option value="waiting_on_authors">Waiting on authors</option>
-                <option value="blocked">Blocked</option>
-                <option value="complete">Complete</option>
-              </select>
-            </label>
-          </div>
-          <div class="adminbot-form__actions">
-            <button class="btn btn--sm primary" type="submit">Add paper</button>
-          </div>
-        </form>
-      </article>
-      <div>${renderPaperList(props, papers)}</div>
-    </div>
+    ${renderAddPaperCard(props, { governance: true })}
   `;
 }
 
@@ -1529,6 +1692,7 @@ function filterAnnouncementRecipients(event: Event): void {
   const branch = getFormValue(data, "branch");
   const privilege = getFormValue(data, "privilege");
   const project = getFormValue(data, "project");
+  const conference = getFormValue(data, "conference");
   let visible = 0;
   for (const row of sheet.querySelectorAll<HTMLTableRowElement>("tbody tr")) {
     const matches =
@@ -1536,7 +1700,8 @@ function filterAnnouncementRecipients(event: Event): void {
       (!status || row.dataset.status === status) &&
       (!branch || row.dataset.branch === branch) &&
       (!privilege || row.dataset.privilege === privilege) &&
-      (!project || (row.dataset.projects ?? "").split("|").includes(project));
+      (!project || (row.dataset.projects ?? "").split("|").includes(project)) &&
+      (!conference || (row.dataset.conferences ?? "").split("|").includes(conference));
     row.hidden = !matches;
     if (matches) visible += 1;
   }
@@ -1581,7 +1746,11 @@ function selectOnboardingLaggards(
   props.onNudgeSetRecipients([...new Set([...props.memberNudge.selectedMemberIds, ...laggards])]);
 }
 
-function renderAnnouncementRecipients(props: AdminBotProps, members: AdminBotLabMember[]) {
+function renderAnnouncementRecipients(
+  props: AdminBotProps,
+  members: AdminBotLabMember[],
+  papers: AdminBotPaperRecord[],
+) {
   const channel = props.memberNudge.channel;
   const selected = new Set(props.memberNudge.selectedMemberIds);
   const statuses = [...new Set(members.map((member) => member.status ?? "active"))].sort();
@@ -1592,6 +1761,14 @@ function renderAnnouncementRecipients(props: AdminBotProps, members: AdminBotLab
   ].sort();
   const privileges = [...new Set(members.map((member) => member.privilege_level))].sort();
   const projects = [...new Set(members.flatMap((member) => member.projects ?? []))].sort();
+  // Only venues someone on the roster still has live work for: announcing about a conference
+  // whose papers are all finished has no audience.
+  // Taken from the active papers themselves, not from the roster. Deriving it per member meant a
+  // paper whose authors do not resolve to a member record contributed no venue at all, so real
+  // ongoing conferences went missing from the list.
+  const conferences = [...new Set(papers.filter(isOngoingPaper).map(paperConference))].sort(
+    (left, right) => left.localeCompare(right),
+  );
   return html`
     <section class="adminbot-nudge-recipients">
       <div class="adminbot-member-sheet__heading">
@@ -1641,6 +1818,13 @@ function renderAnnouncementRecipients(props: AdminBotProps, members: AdminBotLab
             ${projects.map((value) => html`<option value=${value}>${value}</option>`)}
           </select></label
         >
+        <label
+          ><span>Ongoing conference</span
+          ><select name="conference">
+            <option value="">All conferences</option>
+            ${conferences.map((value) => html`<option value=${value}>${value}</option>`)}
+          </select></label
+        >
       </form>
       <div class="adminbot-nudge-recipients__actions">
         <button
@@ -1673,10 +1857,12 @@ function renderAnnouncementRecipients(props: AdminBotProps, members: AdminBotLab
               <th>Research branch</th>
               <th>Topics</th>
               <th>Projects</th>
+              <th>Ongoing conferences</th>
             </tr>
           </thead>
           <tbody>
             ${members.map((member) => {
+              const memberConferences = ongoingConferencesForMember(member, papers);
               const search = [
                 member.name,
                 member.email,
@@ -1684,6 +1870,7 @@ function renderAnnouncementRecipients(props: AdminBotProps, members: AdminBotLab
                 member.research_branch,
                 ...(member.research_topics ?? []),
                 ...(member.projects ?? []),
+                ...memberConferences,
               ]
                 .filter(Boolean)
                 .join(" ")
@@ -1695,6 +1882,7 @@ function renderAnnouncementRecipients(props: AdminBotProps, members: AdminBotLab
                 data-branch=${member.research_branch ?? ""}
                 data-privilege=${member.privilege_level}
                 data-projects=${(member.projects ?? []).join("|")}
+                data-conferences=${memberConferences.join("|")}
                 data-member-id=${member.id}
               >
                 <td>
@@ -1733,6 +1921,13 @@ function renderAnnouncementRecipients(props: AdminBotProps, members: AdminBotLab
                   ${(member.projects ?? []).map(
                     (value) => html`<span class="adminbot-tag">${value}</span>`,
                   )}
+                </td>
+                <td>
+                  ${memberConferences.length
+                    ? memberConferences.map(
+                        (value) => html`<span class="adminbot-tag">${value}</span>`,
+                      )
+                    : html`<span class="adminbot-nudge-recipients__missing">none</span>`}
                 </td>
               </tr>`;
             })}
@@ -1802,7 +1997,7 @@ function renderAnnouncements(props: AdminBotProps) {
           Sends immediately to each selected recipient — there's no separate approval step.
         </p>
       </div>
-      ${renderAnnouncementRecipients(props, props.data.members)}
+      ${renderAnnouncementRecipients(props, props.data.members, props.data.papers)}
     </div>
   `;
 }
@@ -1813,7 +2008,7 @@ function renderPanel(props: AdminBotProps) {
     case "reimbursements":
       return html`<div class="card adminbot-card adminbot-card--wide">
         ${renderAdminBotReimbursements({
-          connected: props.connected,
+          canSubmit: props.connected,
           state: props.reimbursement,
           onMessage: props.onReimbursementMessage,
           onGenerate: props.onGenerateReimbursement,
@@ -1902,7 +2097,7 @@ export function renderAdminBot(props: AdminBotProps) {
                 Add member
               </button>`
             : nothing}
-          ${!general && props.panel === "papers"
+          ${props.panel === "papers" && (!general || props.signedInMemberId)
             ? html`<button
                 class="btn btn--sm primary"
                 type="button"

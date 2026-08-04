@@ -9,12 +9,15 @@ import type {
   AdminBotExecutionResult,
   AdminBotLabMember,
   AdminBotMemberCredential,
+  AdminBotOpenReviewCycleRecord,
+  AdminBotOpenReviewMilestoneRecord,
   AdminBotPaperRecord,
   AdminBotRegistrationKind,
   AdminBotRegistrationStatus,
   AdminBotSettings,
   AdminBotStoredProposal,
 } from "./contracts.js";
+import { resolveMemberOnboarding } from "./onboarding.js";
 import {
   AdminBotService,
   type AdminBotActionExecutor,
@@ -95,6 +98,28 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       CREATE INDEX IF NOT EXISTS adminbot_audit_events_timestamp_idx
         ON adminbot_audit_events(timestamp);
 
+      CREATE TABLE IF NOT EXISTS adminbot_openreview_cycles (
+        venue_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        deadline_ms INTEGER NOT NULL,
+        updated_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        PRIMARY KEY (venue_id, role)
+      );
+
+      -- The unique key is the idempotency guarantee for outbound reminders: a fired
+      -- milestone has a row, and a row means it is never sent again. Dropping this
+      -- constraint would let a restart or a double-triggered timer re-mail a committee.
+      CREATE TABLE IF NOT EXISTS adminbot_openreview_milestones (
+        venue_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        milestone_key TEXT NOT NULL,
+        fired_at TEXT NOT NULL,
+        status TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        PRIMARY KEY (venue_id, role, milestone_key)
+      );
+
       CREATE TABLE IF NOT EXISTS adminbot_lab_members (
         id TEXT PRIMARY KEY,
         privilege_level TEXT NOT NULL,
@@ -160,6 +185,30 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       CREATE INDEX IF NOT EXISTS adminbot_sessions_member_expiry_idx
         ON adminbot_sessions(member_id, expires_at);
     `);
+    this.migrateStoredOnboarding();
+  }
+
+  // Members seeded before the checklist gained structured bullets still carry the step shape from
+  // signup day, which the Control UI renders as empty bullets. Rewrite every stored checklist from
+  // the current definitions once at open so runtime only ever reads the canonical shape; this is
+  // idempotent because `resolveMemberOnboarding` derives content and keeps only acknowledgements.
+  private migrateStoredOnboarding(): void {
+    const rows = this.db
+      .prepare("SELECT id, payload_json FROM adminbot_lab_members")
+      .all() as Array<{ id: string; payload_json: string }>;
+    for (const row of rows) {
+      const member = parseJson<AdminBotLabMember>(row.payload_json);
+      if (!member.onboarding) {
+        continue;
+      }
+      const onboarding = resolveMemberOnboarding(member.onboarding);
+      if (JSON.stringify(onboarding) === JSON.stringify(member.onboarding)) {
+        continue;
+      }
+      this.db
+        .prepare("UPDATE adminbot_lab_members SET payload_json = ? WHERE id = ?")
+        .run(JSON.stringify({ ...member, onboarding }), row.id);
+    }
   }
 
   saveProposal(proposal: AdminBotStoredProposal): void {
@@ -297,6 +346,71 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       )
       .all() as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
+  }
+
+  saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_openreview_cycles (
+          venue_id,
+          role,
+          deadline_ms,
+          updated_at,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(venue_id, role) DO UPDATE SET
+          deadline_ms = excluded.deadline_ms,
+          updated_at = excluded.updated_at,
+          payload_json = excluded.payload_json`,
+      )
+      .run(cycle.venue_id, cycle.role, cycle.deadline_ms, cycle.updated_at, JSON.stringify(cycle));
+  }
+
+  listOpenReviewCycles(): AdminBotOpenReviewCycleRecord[] {
+    const rows = this.db
+      .prepare("SELECT payload_json FROM adminbot_openreview_cycles ORDER BY deadline_ms")
+      .all() as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotOpenReviewCycleRecord>(row.payload_json));
+  }
+
+  // INSERT without an upsert clause: a milestone row is written exactly once, and a
+  // second attempt must be rejected rather than silently overwriting the first send.
+  recordOpenReviewMilestone(milestone: AdminBotOpenReviewMilestoneRecord): boolean {
+    const result = this.db
+      .prepare(
+        `INSERT OR IGNORE INTO adminbot_openreview_milestones (
+          venue_id,
+          role,
+          milestone_key,
+          fired_at,
+          status,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        milestone.venue_id,
+        milestone.role,
+        milestone.milestone_key,
+        milestone.fired_at,
+        milestone.status,
+        JSON.stringify(milestone),
+      );
+    return result.changes > 0;
+  }
+
+  listOpenReviewMilestones(venueId?: string): AdminBotOpenReviewMilestoneRecord[] {
+    const rows = (
+      venueId
+        ? this.db
+            .prepare(
+              "SELECT payload_json FROM adminbot_openreview_milestones WHERE venue_id = ? ORDER BY fired_at",
+            )
+            .all(venueId)
+        : this.db
+            .prepare("SELECT payload_json FROM adminbot_openreview_milestones ORDER BY fired_at")
+            .all()
+    ) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotOpenReviewMilestoneRecord>(row.payload_json));
   }
 
   savePaper(paper: AdminBotPaperRecord): void {

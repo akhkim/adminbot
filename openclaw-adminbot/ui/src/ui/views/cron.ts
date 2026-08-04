@@ -214,6 +214,20 @@ function renderRunFilterDropdown(params: {
   `;
 }
 
+/**
+ * Selectable model refs for a cron job. `current` is appended when the catalog
+ * no longer offers it so editing a job pinned to a retired model does not
+ * silently repoint it at the agent default on save.
+ */
+export function cronModelOptions(suggestions: string[], current: string): string[] {
+  const options = uniqueStrings(normalizeStringEntries(suggestions));
+  const trimmed = current.trim();
+  if (trimmed && !options.includes(trimmed)) {
+    options.push(trimmed);
+  }
+  return options;
+}
+
 function renderSuggestionList(id: string, options: string[]) {
   const clean = uniqueStrings(normalizeStringEntries(options));
   if (clean.length === 0) {
@@ -609,11 +623,7 @@ export function renderCron(props: CronProps) {
                     : nothing}
                 </div>
               `
-            : html`
-                <div class="list" style="margin-top: 12px;">
-                  ${props.jobs.map((job) => renderJob(job, props))}
-                </div>
-              `}
+            : html` ${renderJobGroups(props)} `}
           ${props.jobsHasMore
             ? html`
                 <div class="row" style="margin-top: 12px">
@@ -1249,16 +1259,30 @@ export function renderCron(props: CronProps) {
                           </label>
                           <label class="field">
                             ${renderFieldLabel(t("cron.form.model"))}
-                            <input
+                            <select
                               id="cron-payload-model"
-                              .value=${props.form.payloadModel}
-                              list="cron-model-suggestions"
-                              @input=${(e: Event) =>
+                              @change=${(e: Event) =>
                                 props.onFormChange({
-                                  payloadModel: (e.target as HTMLInputElement).value,
+                                  payloadModel: (e.target as HTMLSelectElement).value,
                                 })}
-                              placeholder=${t("cron.form.modelPlaceholder")}
-                            />
+                            >
+                              <option value="" ?selected=${!props.form.payloadModel.trim()}>
+                                ${t("cron.form.modelInherit")}
+                              </option>
+                              ${cronModelOptions(
+                                props.modelSuggestions,
+                                props.form.payloadModel,
+                              ).map(
+                                (value) => html`
+                                  <option
+                                    value=${value}
+                                    ?selected=${value === props.form.payloadModel.trim()}
+                                  >
+                                    ${value}
+                                  </option>
+                                `,
+                              )}
+                            </select>
                             <div class="cron-help">${t("cron.form.modelHelp")}</div>
                           </label>
                           <label class="field">
@@ -1492,7 +1516,6 @@ export function renderCron(props: CronProps) {
         `
       : nothing}
     ${renderSuggestionList("cron-agent-suggestions", props.agentSuggestions)}
-    ${renderSuggestionList("cron-model-suggestions", props.modelSuggestions)}
     ${renderSuggestionList("cron-thinking-suggestions", props.thinkingSuggestions)}
     ${renderSuggestionList("cron-tz-suggestions", props.timezoneSuggestions)}
     ${renderSuggestionList("cron-delivery-to-suggestions", props.deliveryToSuggestions)}
@@ -1598,6 +1621,37 @@ function renderFieldError(message?: string, id?: string) {
     return nothing;
   }
   return html`<div id=${ifDefined(id)} class="cron-help cron-error">${t(message)}</div>`;
+}
+
+/**
+ * Split the list into what runs on a schedule and what only runs when someone presses Run.
+ *
+ * There is no separate "tool" record: a job that is disabled never fires on its own but still
+ * executes via `cron run`, which is exactly what a run-once-on-command tool is. That also covers a
+ * temporarily paused schedule, and the heading is worded to be true of both. The groups are only
+ * shown when the list actually contains a mix, so a workspace with no tools looks unchanged.
+ */
+function renderJobGroups(props: CronProps) {
+  const scheduled = props.jobs.filter((job) => job.enabled);
+  const onDemand = props.jobs.filter((job) => !job.enabled);
+  if (scheduled.length === 0 || onDemand.length === 0) {
+    return html`
+      <div class="list" style="margin-top: 12px;">
+        ${props.jobs.map((job) => renderJob(job, props))}
+      </div>
+    `;
+  }
+  return html`
+    <div class="cron-job-group" style="margin-top: 12px;">
+      <div class="cron-job-group__title">${t("cron.jobs.groupScheduled")}</div>
+      <div class="list">${scheduled.map((job) => renderJob(job, props))}</div>
+    </div>
+    <div class="cron-job-group" style="margin-top: 16px;">
+      <div class="cron-job-group__title">${t("cron.jobs.groupOnDemand")}</div>
+      <div class="cron-job-group__hint">${t("cron.jobs.groupOnDemandHint")}</div>
+      <div class="list">${onDemand.map((job) => renderJob(job, props))}</div>
+    </div>
+  `;
 }
 
 function renderJob(job: CronJob, props: CronProps) {

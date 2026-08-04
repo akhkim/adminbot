@@ -39,7 +39,17 @@ providers.vllm = {
   ],
 };
 
-const defaultModels = { ...(config.agents?.defaults?.models ?? {}) };
+// Drop vllm refs for any model this loopback endpoint no longer serves. vLLM
+// serves exactly one model, so a second `vllm/*` entry is always a leftover
+// from a previous runtime (e.g. the Qwen3-Next 80B detour). Merging without
+// pruning left the dead ref in the picker, where selecting it 404s.
+const defaultModels = {};
+for (const [ref, entry] of Object.entries(config.agents?.defaults?.models ?? {})) {
+  if (ref.startsWith("vllm/") && ref !== modelRef) {
+    continue;
+  }
+  defaultModels[ref] = entry;
+}
 defaultModels[modelRef] = {
   ...(defaultModels[modelRef] ?? {}),
   params: {

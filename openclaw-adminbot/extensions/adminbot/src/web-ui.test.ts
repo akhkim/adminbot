@@ -92,7 +92,6 @@ describe("renderAdminBotWebUi", () => {
       "research_topics",
       "projects",
       "hours_per_week",
-      "capacity_percent",
       "location",
       "affiliation",
       "timezone",
@@ -105,6 +104,38 @@ describe("renderAdminBotWebUi", () => {
     // Privileged fields must not be part of the self-service profile form.
     expect(html).not.toContain('id="profile-form"><label>Privilege');
   });
+
+  it("keeps the reviewer exemption in the admin editor only, never the self-profile form", () => {
+    // Governance-owned: a member must not be able to exempt themselves from reviewing.
+    expect(html).toContain('name="reviewer_exempt"');
+    expect(html).toContain("exemptField.checked = member.reviewer_exempt === true");
+    const selfProfileForm = html.slice(
+      html.indexOf('id="profile-form"'),
+      html.indexOf('id="password-form"'),
+    );
+    expect(selfProfileForm).not.toContain("reviewer_exempt");
+  });
+
+  it("puts the compact this-week availability strip in the roster", () => {
+    // The strip is built from the same bars as the timeline, so the roster cell and the
+    // member's own chart cannot tell different stories.
+    expect(html).toContain("availabilityStrip(member)");
+    expect(html).toContain("memberBars(member, false).filter((bar) => activeInWeek(bar, weekStart))");
+    expect(html).toContain("<th>Availability</th>");
+    // Availability is member-owned: the admin editor never writes it.
+    expect(html).not.toContain('id="member-availability-preview"');
+  });
+
+  it("adds an admin-gated member map that labels selectively", () => {
+    expect(html).toContain('data-tab="map"');
+    expect(html).toContain('["approvals", "settings", "audit", "reviewing", "map"]');
+    expect(html).toContain('api("/member-map")');
+    expect(html).toContain('api("/member-map/refresh"');
+    // Europe puts several cities within a few degrees, so labels are skipped on collision
+    // rather than drawn over each other.
+    expect(html).toContain("placedLabels");
+  });
+
 
   it("emits an inline script that actually parses", () => {
     // The page is built as one TS template literal, so an over-escaped quote (\\" inside a
@@ -259,9 +290,10 @@ describe("renderAdminBotWebUi", () => {
     expect(html).toContain('level === "admin" || level === "core_member"');
     expect(html).toContain("applyPrivilegeGating");
     expect(html).toContain("isPrivileged() ?");
-    // The Approvals tab is gated by the same privileged mechanism as Settings/Audit.
+    // Approvals and Reviewing are gated by the same privileged mechanism as Settings/Audit.
     expect(html).toContain('data-tab="approvals"');
-    expect(html).toContain('["approvals", "settings", "audit"]');
+    expect(html).toContain('data-tab="reviewing"');
+    expect(html).toContain('["approvals", "settings", "audit", "reviewing", "map"]');
     // Registrations are only fetched for privileged sessions to avoid a guaranteed 403.
     expect(html).toContain("if (isPrivileged()) {");
     expect(html).toContain('api("/auth/registrations?status=pending")');

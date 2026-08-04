@@ -253,7 +253,10 @@ describe("AdminBotService", () => {
         research_topics: ["reasoning", "alignment"],
         projects: ["AdminBot", "Jinesis"],
         hours_per_week: 40,
-        capacity_percent: 70,
+        availability: [
+          { start: "2026-08-01", end: "2026-09-03", project: "AdminBot", hours_per_week: 28 },
+          { start: "2026-08-01", end: "2026-09-03", project: "Jinesis", hours_per_week: 12 },
+        ],
         affiliation: "Jinesis",
         location: "Cambridge, MA",
         timezone: "America/New_York",
@@ -263,7 +266,10 @@ describe("AdminBotService", () => {
     expect(member).toMatchObject({
       research_branch: "Machine intelligence",
       projects: ["AdminBot", "Jinesis"],
-      capacity_percent: 70,
+      availability: [
+        { start: "2026-08-01", end: "2026-09-03", project: "AdminBot", hours_per_week: 28 },
+        { start: "2026-08-01", end: "2026-09-03", project: "Jinesis", hours_per_week: 12 },
+      ],
     });
     expect(member.access).toContainEqual({
       service: "slack",
@@ -279,9 +285,11 @@ describe("AdminBotService", () => {
 
     expect(
       service.upsertLabMember({
-        id: "invalid-capacity",
-        name: "Invalid Capacity",
-        capacity_percent: 101,
+        id: "invalid-availability",
+        name: "Invalid Availability",
+        availability: [
+          { start: "2026-09-03", end: "2026-08-01", project: "A", hours_per_week: 10 },
+        ],
       }),
     ).toMatchObject({ ok: false, status: 400 });
     expect(
@@ -481,8 +489,12 @@ describe("AdminBotService", () => {
 
     const [paper] = unwrap(service.listPapers()).papers;
     expect(paper?.timeline).toMatchObject({
+      // Progress is work-based (11 of 16 estimated days), so it does not move when parallel
+      // branches shorten the schedule.
       progress_percent: 69,
-      total_estimated_business_days: 16,
+      // The critical path, not the sum of every estimate: slides and poster run alongside the
+      // arXiv/announcement chain, taking 4 days off the schedule's 16 days of work.
+      total_estimated_business_days: 12,
       items: expect.arrayContaining([
         expect.objectContaining({ step: "overleaf_writing", status: "complete" }),
         expect.objectContaining({ step: "social_posts", status: "current" }),
@@ -490,6 +502,16 @@ describe("AdminBotService", () => {
         expect.objectContaining({ step: "poster_making", status: "upcoming" }),
       ]),
     });
+
+    // The flow branches at the submission: slides hang off it rather than off the announcements,
+    // so the two chains overlap in time instead of queueing behind one another.
+    const byStep = new Map(paper?.timeline?.items.map((item) => [item.step, item]));
+    expect(byStep.get("slide_making")?.depends_on).toEqual(["submission"]);
+    expect(byStep.get("google_drive_pdf")?.depends_on).toEqual(["submission"]);
+    expect(byStep.get("slide_making")?.offset_start_business_day).toBe(
+      byStep.get("google_drive_pdf")?.offset_start_business_day,
+    );
+    expect(byStep.get("brainstorming_docs")?.depends_on).toEqual([]);
     expect(unwrap(service.listPaperNudges("2026-06-02T00:00:00.000Z")).nudges[0]).toMatchObject({
       paper_id: "paper-timeline",
       timeline: expect.objectContaining({ progress_percent: 69 }),

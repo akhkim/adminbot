@@ -323,3 +323,87 @@ print(json.dumps({"receipts": [
     );
   });
 });
+
+describe("derived trip details", () => {
+  function draftMissingDerivable(expenses: unknown[]) {
+    const draft = completeDraft() as Record<string, unknown>;
+    draft.currency = "";
+    draft.trip_dates = "";
+    draft.expenses = expenses;
+    return draft;
+  }
+
+  function expense(overrides: Record<string, unknown>) {
+    return { ...completeDraft().expenses[0], ...overrides };
+  }
+
+  async function converseWith(draft: Record<string, unknown>) {
+    const fetchImpl = vi.fn(async () => modelResponse(draft));
+    const workflow = createAdminBotReimbursementWorkflow({
+      formScriptPath: stubExtractScript([]),
+      fetchImpl: fetchImpl as unknown as typeof globalThis.fetch,
+      env: { ADMINBOT_LOCAL_BASE_URL: "http://127.0.0.1:8000/v1" } as NodeJS.ProcessEnv,
+    });
+    return workflow.converse({ message: "here are my receipts" });
+  }
+
+  it("fills currency and trip dates from the receipts instead of asking for them", async () => {
+    const result = await converseWith(
+      draftMissingDerivable([
+        expense({ date: "2026-07-10", amount: 100, currency: "CAD" }),
+        expense({ date: "2026-07-08", amount: 40, currency: "CAD" }),
+      ]),
+    );
+
+    expect(result.draft.currency).toBe("CAD");
+    expect(result.draft.trip_dates).toBe("2026-07-08 to 2026-07-10");
+    expect(result.missing_fields).not.toContain("currency");
+    expect(result.missing_fields).not.toContain("trip_dates");
+  });
+
+  // The workbook is denominated in one currency, so a mixed claim takes the currency holding most
+  // of the value rather than whichever receipt was uploaded first.
+  it("picks the currency carrying the largest share of a mixed-currency claim", async () => {
+    const result = await converseWith(
+      draftMissingDerivable([
+        expense({ date: "2026-07-08", amount: 30, currency: "USD" }),
+        expense({ date: "2026-07-09", amount: 900, currency: "EUR" }),
+        expense({ date: "2026-07-10", amount: 120, currency: "USD" }),
+      ]),
+    );
+
+    expect(result.draft.currency).toBe("EUR");
+  });
+
+  it("collapses a single-day trip to one date", async () => {
+    const result = await converseWith(
+      draftMissingDerivable([expense({ date: "2026-07-08", amount: 20, currency: "CAD" })]),
+    );
+
+    expect(result.draft.trip_dates).toBe("2026-07-08");
+  });
+
+  // Non-ISO dates cannot be ordered reliably, so the field is left for the model rather than
+  // guessed at from string sort order.
+  it("leaves trip dates alone when receipt dates are not ISO", async () => {
+    const result = await converseWith(
+      draftMissingDerivable([expense({ date: "July 8th 2026", amount: 20, currency: "CAD" })]),
+    );
+
+    expect(result.draft.trip_dates).toBe("");
+    expect(result.missing_fields).toContain("trip_dates");
+  });
+
+  it("never overrides values the model already resolved", async () => {
+    const draft = draftMissingDerivable([
+      expense({ date: "2026-07-08", amount: 20, currency: "USD" }),
+    ]);
+    draft.currency = "CAD";
+    draft.trip_dates = "the second week of July";
+
+    const result = await converseWith(draft);
+
+    expect(result.draft.currency).toBe("CAD");
+    expect(result.draft.trip_dates).toBe("the second week of July");
+  });
+});

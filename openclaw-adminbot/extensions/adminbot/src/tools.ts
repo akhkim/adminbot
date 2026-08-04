@@ -165,11 +165,12 @@ type LabMemberParams = {
   researchTopics?: string[];
   projects?: string[];
   hoursPerWeek?: number;
-  capacityPercent?: number;
   location?: string;
   affiliation?: string;
   timezone?: string;
   personalWebsite?: string;
+  openreviewId?: string;
+  reviewerExempt?: boolean;
 };
 
 type PaperParams = {
@@ -451,6 +452,11 @@ export function createAdminBotToolHandlers(
     deletePaper: (params: { paperId: string }) => client.deletePaper(params.paperId, signal),
     listPapers: () => client.listPapers(signal),
     listPaperNudges: (params: { nowIso?: string }) => client.listPaperNudges(params.nowIso, signal),
+    listOpenReviewStatus: () => client.listOpenReviewStatus(signal),
+    runOpenReviewCycle: (params: { send?: boolean }) =>
+      client.runOpenReviewCycle(params.send === true, signal),
+    suggestOpenReviewReviewers: (params: { venueId: string }) =>
+      client.suggestOpenReviewReviewers(params.venueId, signal),
     proposePaperNudge: async (params: PaperNudgeParams) => {
       const [papersResult, membersResult, settingsResult] = await Promise.all([
         client.listPapers(signal),
@@ -552,11 +558,12 @@ function labMemberRecord(params: LabMemberParams): AdminBotLabMemberInput {
     ...(params.researchTopics ? { research_topics: params.researchTopics } : {}),
     ...(params.projects ? { projects: params.projects } : {}),
     ...(params.hoursPerWeek !== undefined ? { hours_per_week: params.hoursPerWeek } : {}),
-    ...(params.capacityPercent !== undefined ? { capacity_percent: params.capacityPercent } : {}),
     ...(params.location ? { location: params.location } : {}),
     ...(params.affiliation ? { affiliation: params.affiliation } : {}),
     ...(params.timezone ? { timezone: params.timezone } : {}),
     ...(params.personalWebsite ? { personal_website: params.personalWebsite } : {}),
+    ...(params.openreviewId ? { openreview_id: params.openreviewId } : {}),
+    ...(params.reviewerExempt !== undefined ? { reviewer_exempt: params.reviewerExempt } : {}),
   };
 }
 

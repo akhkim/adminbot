@@ -41,8 +41,12 @@ SVC = os.environ.get("ADMINBOT_SERVICE_BASE_URL", "http://127.0.0.1:8765")
 ACTION_KEY = {   # venue_group -> template action key
     "EMNLP 2026": "emnlp_commitment", "NeurIPS 2026": "neurips_rebuttal",
     "ARR August 2026": "arr_august", "ICLR 2027": "iclr2027",
-    "NAACL 2027": "naacl2027", "NeurIPS 2026 Workshops": "neurips_workshop"}
+    "NAACL 2027": "naacl2027"}
 DEFAULT_ACTION_KEY = "emnlp_commitment"
+# Every co-located workshop call reads the same way, so one venue-agnostic template
+# serves them all; a new "<venue> Workshops" group needs a dataset row, not a code edit.
+WORKSHOP_GROUP_SUFFIX = " Workshops"
+WORKSHOP_ACTION_KEY = "workshop"
 
 
 def norm(value):
@@ -103,14 +107,19 @@ def openreview_submitted_titles():
 
 
 def action_key_for(paper):
-    return ACTION_KEY.get(paper.get("venue_group"), DEFAULT_ACTION_KEY)
+    venue_group = paper.get("venue_group") or ""
+    if venue_group.endswith(WORKSHOP_GROUP_SUFFIX):
+        return WORKSHOP_ACTION_KEY
+    return ACTION_KEY.get(venue_group, DEFAULT_ACTION_KEY)
 
 
 def render(step, paper, tmpl, workshop=None):
     act = tmpl["actions"][action_key_for(paper)]
-    action = act["action"]
-    if workshop:
-        action = action.replace("{workshop}", workshop).replace("{paper}", paper["title"])
+    # The workshop template carries a {workshop} slot. An ongoing workshop paper names
+    # no specific workshop, so fall back to its venue group: the DM must never ship a
+    # literal "{workshop}" token to an author.
+    workshop_name = workshop or paper.get("venue_group") or "your target workshop"
+    action = act["action"].replace("{workshop}", workshop_name).replace("{paper}", paper["title"])
     deadline_date = AoEClock.calendar_date(paper["deadline_aoe"])
     return tmpl["steps"][str(step)].format(
         paper=paper["title"], noun=act["noun"],

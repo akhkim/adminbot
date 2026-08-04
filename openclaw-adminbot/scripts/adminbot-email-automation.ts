@@ -29,6 +29,10 @@ const PRIVILEGED_SENDERS = new Set([...ONBOARDING_SENDERS, "andrewkihyun@gmail.c
 const APPLICATION_FORM =
   "https://docs.google.com/forms/d/e/1FAIpQLSdyRYBiLPFUaaUC5v4ATIUwQpYPgmjRja33qwZFvH6BoIRCAA/viewform";
 const DCS_FORM = "https://forms.office.com/r/TgGWBGWLZa";
+// Onboarding emails cite the launch URL, but `requiredVerbatim` matches the origin: the model writes
+// the link with or without the trailing slash, and the origin is a prefix of both renderings.
+const CONTROL_UI_URL = "https://jinesis-admin.vercel.app/";
+const CONTROL_UI_ORIGIN = "https://jinesis-admin.vercel.app";
 const DEFAULT_TIMEZONE = "America/Toronto";
 
 export type EmailMessage = {
@@ -457,6 +461,12 @@ class GoogleClient {
     await command(GOG, this.args(["gmail", "mark-read", messageId]));
   }
 
+  // Gmail's trash, not a permanent delete: a wrongly handled message is still
+  // recoverable from the bin for 30 days.
+  async trash(messageId: string): Promise<void> {
+    await command(GOG, this.args(["gmail", "trash", messageId]));
+  }
+
   async createEvent(event: CalendarEvent): Promise<unknown> {
     const args = [
       "calendar",
@@ -784,14 +794,16 @@ async function processMessage(
           purpose: "direct_onboarding",
           recipientName: classification.candidateName ?? undefined,
           guidance:
-            "Welcome the candidate and clearly sequence the department-email, reply, Slack, and calendar onboarding steps.",
+            "Welcome the candidate and clearly sequence the department-email, reply, Slack, calendar, and member-account onboarding steps.",
           requiredFacts: [
             `The recipient is ${email}.`,
             `Create a @cs.toronto.edu account through ${DCS_FORM}.`,
-            "Reply with the new @cs.toronto.edu address before the full Slack invitation is sent.",
+            `Send the new @cs.toronto.edu address from this same mailbox — reply to this thread, or email ${ACCOUNT} — before the full Slack invitation is sent.`,
+            "The Slack invitation is issued automatically on that reply; no lab admin has to be emailed.",
+            `Create a member account at ${CONTROL_UI_URL} and work through the onboarding guide there.`,
             "Calendar access is part of onboarding.",
           ],
-          requiredVerbatim: [DCS_FORM, "@cs.toronto.edu"],
+          requiredVerbatim: [DCS_FORM, "@cs.toronto.edu", ACCOUNT, CONTROL_UI_ORIGIN],
         });
         const sent = await state.effect(message.id, "direct_instructions", () =>
           google.send(email, draft.subject, draft.body),
@@ -825,10 +837,10 @@ async function processMessage(
             "Explain the remaining department-account dependency and ask for a reply in this thread after the address is ready.",
           requiredFacts: [
             "The department sends the account-creation instructions.",
-            "The candidate must reply with the new @cs.toronto.edu address.",
-            "The full Slack invitation follows after that reply.",
+            `The candidate must send the new @cs.toronto.edu address from this same mailbox, in this thread or to ${ACCOUNT}.`,
+            "The full Slack invitation is issued automatically after that reply; no lab admin has to be emailed.",
           ],
-          requiredVerbatim: ["@cs.toronto.edu"],
+          requiredVerbatim: ["@cs.toronto.edu", ACCOUNT],
         });
         await state.effect(message.id, "request_dcs_email", () =>
           google.reply(message.id, draft.body),
@@ -840,12 +852,13 @@ async function processMessage(
           purpose: "confirm_onboarding",
           recipientName: firstName(message),
           guidance:
-            "Confirm completion concisely and state which address received the Slack invitation and calendar access.",
+            "Confirm completion concisely, state which address received the Slack invitation and calendar access, and point at the member account as the remaining step.",
           requiredFacts: [
             `The full Jinesis AI Lab Slack invitation was sent to ${dcs}.`,
             `Calendar reader access was granted to ${dcs}.`,
+            `The remaining step is to create a member account at ${CONTROL_UI_URL} and follow the onboarding guide there.`,
           ],
-          requiredVerbatim: [dcs],
+          requiredVerbatim: [dcs, CONTROL_UI_ORIGIN],
         });
         await state.effect(message.id, "onboarding_complete_reply", () =>
           google.reply(message.id, draft.body),
@@ -898,6 +911,10 @@ async function processMessage(
       );
     }
     await state.effect(message.id, "mark_read", () => google.markRead(message.id));
+    // Only fully handled messages are deleted, and only after every other
+    // effect landed. Anything that failed or went to needs_review returns
+    // through the catch below and stays in the inbox for a human.
+    await state.effect(message.id, "trash", () => google.trash(message.id));
     state.finish(message.id, "completed");
     return true;
   } catch (error) {

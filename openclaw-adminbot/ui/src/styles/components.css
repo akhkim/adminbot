@@ -140,6 +140,42 @@
   border-radius: var(--radius-sm);
 }
 
+/* Separated from the sign-in form by a rule: filing a reimbursement is a different task, not
+   another way to log in, so it should not read as one more auth option. */
+.login-gate__guest {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.25));
+}
+
+.login-gate .login-gate__guest-button {
+  width: 100%;
+}
+
+.login-gate__guest-hint {
+  font-size: var(--control-ui-text-sm);
+  opacity: 0.75;
+  text-align: center;
+}
+
+/* The reimbursement body is a full working surface (chat, receipts, draft table), so the guest
+   screen is far wider than the sign-in card it replaces. */
+.guest-reimbursements__card {
+  width: min(920px, 100%);
+}
+
+.guest-reimbursements__back {
+  display: block;
+  margin: var(--space-4) auto 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
 .login-gate__picker {
   gap: var(--space-2);
 }
@@ -536,10 +572,55 @@
   padding-left: var(--space-5);
   color: var(--muted);
   font-size: var(--control-ui-text-sm);
-  line-height: 1.5;
+  /* Roomier than body copy: this is a checklist people skim, not prose they read. */
+  line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: disc;
+}
+
+.adminbot-welcome__bullet-text {
+  display: block;
+  color: var(--text);
+}
+
+/* Second level: the detail behind a point. Hollow markers and muted text keep the lead lines
+   scannable when a step has a lot of sub-detail. */
+.adminbot-welcome__step-points {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
+  list-style: circle;
+  color: var(--muted);
+}
+
+.adminbot-welcome__progress {
+  margin: 0 0 var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--panel-strong);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-welcome__progress[data-complete="true"] {
+  border-color: var(--ok);
+  color: var(--text);
+}
+
+.adminbot-welcome__step-ack {
+  margin: var(--space-3) 0 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.adminbot-welcome__step-ack[data-acknowledged="true"]::before {
+  content: "✓ ";
+  color: var(--ok);
 }
 
 .adminbot-welcome__step-links {
@@ -1478,9 +1559,9 @@
 .adminbot-paper-gantt__axis,
 .adminbot-paper-gantt__row {
   display: grid;
-  grid-template-columns: minmax(150px, 240px) minmax(560px, 1fr);
+  grid-template-columns: minmax(210px, 300px) minmax(520px, 1fr);
   gap: var(--space-4);
-  min-width: 760px;
+  min-width: 780px;
 }
 
 .adminbot-paper-gantt__axis {
@@ -1516,7 +1597,10 @@
 }
 
 .adminbot-paper-gantt__label strong,
-.adminbot-paper-gantt__label span {
+.adminbot-paper-gantt__label
+  > span:not(.adminbot-paper-gantt__facets):not(.adminbot-paper-gantt__status):not(
+    .adminbot-paper-gantt__actions
+  ) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1535,6 +1619,114 @@
   font-variant-numeric: tabular-nums;
 }
 
+.adminbot-paper-gantt__authors {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-paper-gantt__facets,
+.adminbot-paper-gantt__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.adminbot-paper-gantt__facets {
+  margin-top: 2px;
+}
+
+.adminbot-paper-gantt__actions {
+  margin-top: 6px;
+}
+
+/* The row is the only place a paper is edited, so its controls stay quiet until the row is
+   hovered or something inside it has focus - otherwise every row shouts two buttons. */
+.adminbot-paper-gantt__actions {
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.adminbot-paper-gantt__row:hover .adminbot-paper-gantt__actions,
+.adminbot-paper-gantt__row:focus-within .adminbot-paper-gantt__actions {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .adminbot-paper-gantt__actions {
+    opacity: 1;
+  }
+}
+
+.adminbot-paper-gantt__status {
+  display: grid;
+  gap: 3px;
+  margin-top: 4px;
+}
+
+.adminbot-paper-gantt__meter {
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  overflow: hidden;
+}
+
+.adminbot-paper-gantt__meter > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent, #2563eb);
+}
+
+.adminbot-paper-gantt__meter--complete > span {
+  background: #16a34a;
+}
+
+.adminbot-paper-gantt__meter--late > span {
+  background: #0891b2;
+}
+
+.adminbot-paper-gantt__meter--not-started > span {
+  background: var(--muted);
+}
+
+.adminbot-paper-gantt__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: 0 var(--space-2) var(--space-2);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-paper-gantt__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.adminbot-paper-gantt__legend-item i {
+  width: 14px;
+  height: 8px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.adminbot-member-sheet__papers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0;
+}
+
+.adminbot-tag--paper {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .adminbot-paper-gantt__missing {
   padding: 10px;
   border: 1px dashed var(--border-strong);
@@ -1549,9 +1741,10 @@
   text-align: center;
 }
 
+/* One track per concurrency lane; branches stack instead of colliding. */
 .adminbot-paper-timeline {
   display: grid;
-  gap: var(--space-2);
+  gap: 3px;
   min-width: 0;
 }
 
@@ -1563,6 +1756,10 @@
   border-radius: var(--radius-md);
   background:
     repeating-linear-gradient(to right, var(--grid-line) 0 1px, transparent 1px 12.5%), var(--bg);
+}
+
+.adminbot-paper-timeline__track:not(:first-child) {
+  height: 24px;
 }
 
 .adminbot-paper-timeline__bar {
@@ -3028,6 +3225,23 @@
   color: var(--muted);
   font-size: 13px;
   line-height: 1.45;
+  max-width: 520px;
+}
+
+.cron-job-group__title {
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.cron-job-group__hint {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-bottom: 8px;
   max-width: 520px;
 }
 

@@ -12,6 +12,8 @@ import {
   loadStoredMemberSession,
   loginMember,
   markOnboardingWelcomeSeen,
+  issueDeviceToken,
+  pairDevice,
   resolveAdminBotBaseUrl,
   saveStoredMemberSession,
   signupMember,
@@ -331,6 +333,76 @@ describe("onboarding welcome dismissal tracking", () => {
     markOnboardingWelcomeSeen("b");
     expect(hasSeenOnboardingWelcome("a")).toBe(true);
     expect(hasSeenOnboardingWelcome("b")).toBe(true);
+  });
+});
+
+describe("pairDevice", () => {
+  it("POSTs the requestId with the member Bearer and returns granted scopes", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { approved: true, scopes: ["operator.read"] }));
+
+    const result = await pairDevice("req-1", "sess-tok", BASE_URL);
+
+    expect(result).toEqual({ ok: true, value: { scopes: ["operator.read"] } });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toContain("/auth/pair-device");
+    expect(init).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({ Authorization: "Bearer sess-tok" }),
+    });
+    expect(JSON.parse(init!.body as string)).toEqual({ requestId: "req-1" });
+  });
+
+  it("maps 403 to forbidden", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(403, { error: "nope" }));
+    const result = await pairDevice("req-2", "sess-tok", BASE_URL);
+    expect(result).toEqual({ ok: false, kind: "forbidden" });
+  });
+
+  it("maps a network failure to unreachable", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("failed to fetch"));
+    const result = await pairDevice("req-3", "sess-tok", BASE_URL);
+    expect(result).toEqual({ ok: false, kind: "unreachable" });
+  });
+});
+
+describe("issueDeviceToken", () => {
+  it("POSTs the device key with the member Bearer and returns the minted token", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { token: "dev-tok", scopes: ["operator.read"] }));
+
+    const result = await issueDeviceToken(
+      { deviceId: "dev-1", publicKey: "pk-1", platform: "Win32" },
+      "sess-tok",
+      BASE_URL,
+    );
+
+    expect(result).toEqual({ ok: true, value: { token: "dev-tok", scopes: ["operator.read"] } });
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toContain("/auth/device-token");
+    expect(init).toMatchObject({
+      method: "POST",
+      headers: expect.objectContaining({ Authorization: "Bearer sess-tok" }),
+    });
+    expect(JSON.parse(init!.body as string)).toEqual({
+      deviceId: "dev-1",
+      publicKey: "pk-1",
+      platform: "Win32",
+    });
+  });
+
+  it("fails when the service answers without a token", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, { scopes: [] }));
+    const result = await issueDeviceToken({ deviceId: "d", publicKey: "p" }, "sess-tok", BASE_URL);
+    expect(result).toEqual({ ok: false, kind: "auth-failed" });
+  });
+
+  it("maps a network failure to unreachable", async () => {
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new TypeError("failed to fetch"));
+    const result = await issueDeviceToken({ deviceId: "d", publicKey: "p" }, "sess-tok", BASE_URL);
+    expect(result).toEqual({ ok: false, kind: "unreachable" });
   });
 });
 

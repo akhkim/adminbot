@@ -8,7 +8,9 @@ import {
   loadCronJobsPage,
   loadCronRuns,
   loadMoreCronRuns,
+  buildNewCronForm,
   normalizeCronFormState,
+  prepareNewCronForm,
   runCronJob,
   startCronEdit,
   startCronClone,
@@ -1619,5 +1621,48 @@ describe("cron controller", () => {
     await runCronJob(state, job, "due");
 
     expect(request).toHaveBeenCalledWith("cron.run", { id: "job-due", mode: "due" });
+  });
+});
+
+describe("cron new-job model default", () => {
+  const chatState = {
+    sessionKey: "main",
+    chatModelOverrides: {
+      main: { kind: "qualified", value: "anthropic/claude-opus-4-8" },
+    },
+    chatModelCatalog: [],
+    sessionsResult: null,
+  } satisfies Partial<CronState>;
+
+  it("seeds the chat session model into a new cron form", () => {
+    expect(buildNewCronForm(chatState).payloadModel).toBe("anthropic/claude-opus-4-8");
+  });
+
+  it("leaves the model empty when the chat session follows the default", () => {
+    expect(
+      buildNewCronForm({ ...chatState, chatModelOverrides: { main: null } }).payloadModel,
+    ).toBe("");
+    expect(buildNewCronForm({}).payloadModel).toBe("");
+  });
+
+  it("reseeds a pristine form when the advanced form is opened", () => {
+    const state = createState(chatState);
+
+    prepareNewCronForm(state);
+
+    expect(state.cronForm.payloadModel).toBe("anthropic/claude-opus-4-8");
+  });
+
+  it("keeps an in-progress draft and an edited job untouched", () => {
+    const draft = createState({
+      ...chatState,
+      cronForm: { ...DEFAULT_CRON_FORM, payloadText: "ping", payloadModel: "" },
+    });
+    prepareNewCronForm(draft);
+    expect(draft.cronForm.payloadModel).toBe("");
+
+    const editing = createState({ ...chatState, cronEditingJobId: "job-1" });
+    prepareNewCronForm(editing);
+    expect(editing.cronForm.payloadModel).toBe("");
   });
 });

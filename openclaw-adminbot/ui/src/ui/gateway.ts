@@ -214,6 +214,16 @@ export const CONTROL_UI_OPERATOR_SCOPES = [
   "operator.pairing",
 ] as const;
 
+// Operator scopes the Control-UI requests when pairing a member's device. Must mirror the
+// AdminBot service's allowedGatewayScopesForPrivilege: with device auth ON, the service caps the
+// approved scopes at the member's privilege and rejects (does not narrow) an over-request, so
+// requesting more than the member is allowed would leave them unable to pair. Plain members get
+// read only — which is what denies them operator.write (and therefore tools.invoke) at the gateway.
+export function resolveMemberOperatorScopes(privilegeLevel: string | null | undefined): string[] {
+  const privileged = privilegeLevel === "admin" || privilegeLevel === "core_member";
+  return privileged ? [...CONTROL_UI_OPERATOR_SCOPES] : ["operator.read"];
+}
+
 export type GatewayConnectAuth = {
   token?: string;
   deviceToken?: string;
@@ -285,6 +295,10 @@ export type GatewayBrowserClientOptions = {
   onGap?: (info: { expected: number; received: number }) => void;
   onRequestTiming?: (timing: GatewayRequestTiming) => void;
   onConnectTiming?: (timing: GatewayConnectTiming) => void;
+  // Operator scopes to request when initiating device pairing / connect. Defaults to the full
+  // Control-UI set; app-gateway narrows this to the signed-in member's privilege so a plain member
+  // pairs a read-only device. See resolveMemberOperatorScopes.
+  operatorScopes?: readonly string[];
 };
 
 export type GatewayEventListener = (evt: GatewayEventFrame) => void;
@@ -414,7 +428,10 @@ function formatBrowserWebSocketConstructorError(err: unknown, url: string): Gate
   };
 }
 
-function resolveControlUiConnectScopes(selectedAuth: SelectedConnectAuth): string[] {
+function resolveControlUiConnectScopes(
+  selectedAuth: SelectedConnectAuth,
+  requestedOperatorScopes: readonly string[] | undefined,
+): string[] {
   const isUsingStoredDeviceToken =
     Boolean(selectedAuth.storedToken) &&
     (selectedAuth.resolvedDeviceToken === selectedAuth.storedToken ||
@@ -426,7 +443,7 @@ function resolveControlUiConnectScopes(selectedAuth: SelectedConnectAuth): strin
   ) {
     return [...selectedAuth.storedScopes];
   }
-  return [...CONTROL_UI_OPERATOR_SCOPES];
+  return [...(requestedOperatorScopes ?? CONTROL_UI_OPERATOR_SCOPES)];
 }
 
 async function buildGatewayConnectDevice(params: {
@@ -752,7 +769,7 @@ export class GatewayBrowserClient {
         deviceId: deviceIdentity.deviceId,
       });
     }
-    const scopes = resolveControlUiConnectScopes(selectedAuth);
+    const scopes = resolveControlUiConnectScopes(selectedAuth, this.opts.operatorScopes);
     const device = await buildGatewayConnectDevice({
       deviceIdentity,
       client,

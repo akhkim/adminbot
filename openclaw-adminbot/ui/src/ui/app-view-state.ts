@@ -74,6 +74,10 @@ export type AppViewState = {
   memberAuthFailure: import("./adminbot-auth-flow.ts").MemberAuthFailure | null;
   memberFormError: string | null;
   loginPendingNotice: boolean;
+  // Shows the reimbursement tool standalone, from the login screen, with no session. The
+  // reimbursement routes accept anonymous callers, so a claimant can file a packet without an
+  // account; every other view still requires signing in.
+  guestReimbursements: boolean;
   rosterMembers: import("./adminbot-auth.ts").RosterMember[];
   rosterLoading: boolean;
   rosterError: import("./adminbot-auth-flow.ts").RosterError;
@@ -87,7 +91,6 @@ export type AppViewState = {
   memberResearchTopics: string;
   memberProjects: string;
   memberHoursPerWeek: string;
-  memberCapacityPercent: string;
   memberLocation: string;
   memberTimezone: string;
   memberPersonalWebsite: string;

@@ -36,7 +36,10 @@
       "adminbot_list_pending_actions",
       "adminbot_approve_action",
       "adminbot_remove_pending_action",
-      "adminbot_execute_approved_action"
+      "adminbot_execute_approved_action",
+      "adminbot_openreview_status",
+      "adminbot_openreview_run_cycle",
+      "adminbot_openreview_suggest_reviewers"
     ]
   },
   "skills": ["./skills"],
@@ -126,6 +129,15 @@
       "optional": true
     },
     "adminbot_execute_approved_action": {
+      "optional": true
+    },
+    "adminbot_openreview_status": {
+      "optional": true
+    },
+    "adminbot_openreview_run_cycle": {
+      "optional": true
+    },
+    "adminbot_openreview_suggest_reviewers": {
       "optional": true
     }
   },

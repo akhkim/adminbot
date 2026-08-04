@@ -391,8 +391,12 @@ function uniqueHeaders(headers: string[]): string[] {
 function mergeValue(left: string | undefined, right: string | undefined): string {
   const first = clean(left);
   const second = clean(right);
-  if (!first) return second;
-  if (!second || first === second) return first;
+  if (!first) {
+    return second;
+  }
+  if (!second || first === second) {
+    return first;
+  }
   return first + " / " + second;
 }
 
