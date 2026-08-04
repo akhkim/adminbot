@@ -13,6 +13,8 @@ import type {
   AdminBotLabMember,
   AdminBotLabMemberInput,
   AdminBotMemberCredential,
+  AdminBotMemberOnboardingStep,
+  AdminBotMemberNudgeChannel,
   AdminBotMemberNudgeRequest,
   AdminBotMemberNudgeResult,
   AdminBotMemberNudgeSkip,
@@ -29,7 +31,13 @@ import type {
   AdminBotPrivilegeLevel,
 } from "./contracts.js";
 import { adminBotMemberStatuses, adminBotTimeOffKinds } from "./contracts.js";
-import { buildInitialOnboarding } from "./onboarding.js";
+import {
+  buildInitialOnboarding,
+  findOnboardingStep,
+  isOnboardingStepComplete,
+  onboardingStepIds,
+  setOnboardingStepStatus,
+} from "./onboarding.js";
 
 // Approver roles are privilege levels from the member roster, not a separate vocabulary: the
 // service can only ever verify the level on the authenticated session, so anything else here
@@ -883,6 +891,98 @@ export class AdminBotService {
   // undiscoverable extra click for a tool only admins can reach in the first place. A member
   // missing the contact field the chosen channel needs, or whose send fails, is skipped with a
   // reason rather than failing the whole batch.
+  /**
+   * Record that a member has (or has not) finished one onboarding step.
+   *
+   * Onboarding used to be write-once: it was generated at first upsert and no
+   * code path ever changed it, so every checklist stayed permanently unfinished
+   * and could not drive anything.
+   */
+  setOnboardingStep(
+    memberId: string,
+    stepId: string,
+    complete: boolean,
+    actor: string,
+  ): AdminBotServiceResponse<AdminBotLabMember> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    const onboarding = member.onboarding ?? buildInitialOnboarding();
+    if (!findOnboardingStep(onboarding, stepId)) {
+      return serviceError(400, `unknown onboarding step: ${stepId}`);
+    }
+    const stored: AdminBotLabMember = {
+      ...member,
+      onboarding: setOnboardingStepStatus(onboarding, stepId, complete),
+      updated_at: new Date().toISOString(),
+    };
+    this.store.saveLabMember(stored);
+    this.recordAudit({
+      type: "onboarding.step_updated",
+      actor,
+      details: { member_id: memberId, step_id: stepId, complete },
+    });
+    return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * Members who have not finished `stepId` yet.
+   *
+   * Alumni and external collaborators are excluded: the checklist is for people
+   * currently working in the lab, and nudging someone who has left is worse than
+   * not nudging at all.
+   */
+  listOnboardingStepPending(
+    stepId: string,
+  ): AdminBotServiceResponse<{ step_id: string; members: AdminBotLabMember[] }> {
+    if (!onboardingStepIds().includes(stepId)) {
+      return serviceError(400, `unknown onboarding step: ${stepId}`);
+    }
+    const members = this.store
+      .listLabMembers()
+      .filter((member) => member.status !== "alumni" && member.status !== "external")
+      .filter((member) => !isOnboardingStepComplete(member.onboarding, stepId));
+    return { ok: true, status: 200, payload: { step_id: stepId, members } };
+  }
+
+  /**
+   * Nudge everyone who has not finished `stepId`.
+   *
+   * Membership is roster state, not something observed: LinkedIn exposes no API
+   * that can tell you whether a given person follows or works at an
+   * organization, so "has this member joined" can only ever be what they or an
+   * admin recorded via setOnboardingStep.
+   *
+   * Delivery reuses sendMemberNudge, so each recipient still becomes its own
+   * approve-then-execute proposal with its own audit row.
+   */
+  async nudgeOnboardingStep(
+    request: { step_id: string; channel: AdminBotMemberNudgeChannel; message?: string },
+    actor: string,
+  ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult>> {
+    const pending = this.listOnboardingStepPending(request.step_id);
+    if (!pending.ok) {
+      return pending;
+    }
+    const recipients = pending.payload.members.map((member) => member.id);
+    if (recipients.length === 0) {
+      return { ok: true, status: 200, payload: { created: [], skipped: [] } };
+    }
+    const step = findOnboardingStep(buildInitialOnboarding(), request.step_id);
+    return await this.sendMemberNudge(
+      {
+        channel: request.channel,
+        recipient_member_ids: recipients,
+        message: request.message?.trim() || buildOnboardingNudgeMessage(step),
+        ...(request.channel === "email"
+          ? { subject: `Reminder: ${step?.label ?? "an onboarding step"}` }
+          : {}),
+      },
+      actor,
+    );
+  }
+
   async sendMemberNudge(
     request: AdminBotMemberNudgeRequest,
     actor: string,
@@ -1112,6 +1212,28 @@ function approvalPolicy(
 
 function serviceError<T>(status: number, message: string): AdminBotServiceResponse<T> {
   return { ok: false, status, error: { message } };
+}
+
+// Built from the checklist definition rather than hardcoded per step, so the nudge text and the
+// welcome screen can never describe the task differently.
+function buildOnboardingNudgeMessage(step: AdminBotMemberOnboardingStep | undefined): string {
+  if (!step) {
+    return "You have an outstanding lab onboarding step — see the AdminBot welcome screen.";
+  }
+  const lines = [`Quick reminder: *${step.label}* is still outstanding on your lab onboarding.`];
+  if (step.detail) {
+    lines.push(step.detail);
+  }
+  for (const bullet of step.bullets ?? []) {
+    lines.push(`• ${bullet}`);
+  }
+  for (const link of step.links ?? []) {
+    lines.push(`${link.label}: ${link.url}`);
+  }
+  lines.push(
+    "Already done? Mark it complete on your AdminBot welcome screen so you stop getting reminded.",
+  );
+  return lines.join("\n");
 }
 
 function validateLabMember(member: AdminBotLabMemberInput): string | undefined {

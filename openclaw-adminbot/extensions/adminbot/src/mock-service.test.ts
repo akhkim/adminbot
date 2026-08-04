@@ -1039,6 +1039,71 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(res.status).toBe(403);
   });
 
+  it("lets a member tick off their own onboarding step but not someone else's", async () => {
+    const { baseUrl } = await startService();
+    seedMember(baseUrl, "sam", { name: "Sam", email: "sam@example.com" });
+    await approveClaim(baseUrl, "sam", "sam@example.com");
+    const token = await loginToken(baseUrl, "sam@example.com");
+    seedMember(baseUrl, "other", { name: "Other" });
+
+    const own = await fetch(`${baseUrl}/lab/members/sam/onboarding/linkedin`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ complete: true }),
+    });
+    expect(own.status).toBe(200);
+    await expect(own.json()).resolves.toMatchObject({
+      onboarding: { completed: expect.arrayContaining([expect.objectContaining({ id: "linkedin" })]) },
+    });
+
+    const someoneElse = await fetch(`${baseUrl}/lab/members/other/onboarding/linkedin`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ complete: true }),
+    });
+    expect(someoneElse.status).toBe(403);
+  });
+
+  it("refuses to fan out an onboarding nudge for the service principal", async () => {
+    const { baseUrl } = await startService();
+    seedMember(baseUrl, "sam", { name: "Sam", slack_user_id: "U1" });
+
+    const res = await fetch(`${baseUrl}/onboarding/linkedin/nudge`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ channel: "slack" }),
+    });
+
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toEqual({ error: { message: SERVICE_DENIED } });
+  });
+
+  it("lets a real admin nudge everyone who still owes the LinkedIn step", async () => {
+    const executor = { execute: async () => ({ handled: true }) };
+    const { baseUrl } = await startService({ executor });
+    const token = await adminToken(baseUrl, "boss", "boss@example.com");
+    seedMember(baseUrl, "sam", { name: "Sam", slack_user_id: "U1" });
+    seedMember(baseUrl, "kai", { name: "Kai", slack_user_id: "U2" });
+    seedMember(baseUrl, "gone", { name: "Gone", slack_user_id: "U3", status: "alumni" });
+
+    await fetch(`${baseUrl}/lab/members/kai/onboarding/linkedin`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ complete: true }),
+    });
+
+    const res = await fetch(`${baseUrl}/onboarding/linkedin/nudge`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ channel: "slack" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { created: Array<{ target?: { target?: string } }> };
+    // kai already did it, gone is alumni, boss has no slack id -- only sam is nudged.
+    expect(body.created.map((proposal) => proposal.target?.target)).toEqual(["U1"]);
+  });
+
   it("records the approver from the session, not from the request body", async () => {
     const { baseUrl } = await startService();
     const token = await adminToken(baseUrl, "boss", "boss@example.com");

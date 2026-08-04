@@ -15,6 +15,8 @@ import {
   resolveAdminBotBaseUrl,
   saveStoredMemberSession,
   signupMember,
+  nudgeOnboardingStep,
+  setOnboardingStep,
   updateOwnProfile,
 } from "./adminbot-auth.ts";
 
@@ -329,5 +331,57 @@ describe("onboarding welcome dismissal tracking", () => {
     markOnboardingWelcomeSeen("b");
     expect(hasSeenOnboardingWelcome("a")).toBe(true);
     expect(hasSeenOnboardingWelcome("b")).toBe(true);
+  });
+});
+
+describe("onboarding step completion", () => {
+  it("POSTs the completion flag to the member's step route with a Bearer session", async () => {
+    const updated = { id: "member-7", name: "Ada", privilege_level: "member" };
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, updated));
+
+    const result = await setOnboardingStep("member-7", "linkedin", true, "sess-tok", BASE_URL);
+
+    expect(result).toEqual({ ok: true, value: updated });
+    expect(spy.mock.calls[0]?.[0]).toBe(`${BASE_URL}/lab/members/member-7/onboarding/linkedin`);
+    const init = spy.mock.calls[0]?.[1];
+    expect(init?.method).toBe("POST");
+    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer sess-tok");
+    expect(JSON.parse(String(init?.body))).toEqual({ complete: true });
+  });
+
+  it("maps a lost-privilege response to forbidden rather than a generic auth failure", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(403, { error: { message: "insufficient privileges" } }),
+    );
+
+    await expect(
+      setOnboardingStep("someone-else", "linkedin", true, "sess-tok", BASE_URL),
+    ).resolves.toEqual({ ok: false, kind: "forbidden" });
+  });
+});
+
+describe("onboarding step nudge", () => {
+  it("POSTs the channel to the step's nudge route", async () => {
+    const value = { created: [{ id: "act_1" }], skipped: [] };
+    const spy = vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(200, value));
+
+    const result = await nudgeOnboardingStep("linkedin", "slack", "sess-tok", BASE_URL);
+
+    expect(result).toEqual({ ok: true, value });
+    expect(spy.mock.calls[0]?.[0]).toBe(`${BASE_URL}/onboarding/linkedin/nudge`);
+    expect(JSON.parse(String(spy.mock.calls[0]?.[1]?.body))).toEqual({ channel: "slack" });
+  });
+
+  it("passes an override message through when one is given", async () => {
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { created: [], skipped: [] }));
+
+    await nudgeOnboardingStep("linkedin", "email", "sess-tok", BASE_URL, "Please join us.");
+
+    expect(JSON.parse(String(spy.mock.calls[0]?.[1]?.body))).toEqual({
+      channel: "email",
+      message: "Please join us.",
+    });
   });
 });

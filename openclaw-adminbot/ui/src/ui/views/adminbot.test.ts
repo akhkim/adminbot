@@ -412,6 +412,47 @@ describe("renderAdminBot announcements panel", () => {
     expect(new Set(recipients)).toEqual(new Set(["existing", "a", "b"]));
   });
 
+  it("preselects members who haven't marked the LinkedIn step done, skipping alumni/external", () => {
+    let recipients: string[] = [];
+    const step = (status: string) => ({ steps: [{ id: "linkedin", status }] });
+    const roster = [
+      { ...members[0], id: "pending", name: "Pending", onboarding: step("current") },
+      { ...members[0], id: "joined", name: "Joined", onboarding: step("complete") },
+      { ...members[0], id: "no-checklist", name: "No Checklist", onboarding: null },
+      {
+        ...members[0],
+        id: "left",
+        name: "Left",
+        status: "alumni" as const,
+        onboarding: step("current"),
+      },
+    ];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "announcements",
+        data: { ...createEmptyAdminBotDashboardData(), members: roster, loadedAt: Date.now() },
+        memberNudge: {
+          channel: "slack",
+          message: "",
+          subject: "",
+          selectedMemberIds: ["existing"],
+          busy: false,
+        },
+        onNudgeSetRecipients: (ids) => {
+          recipients = ids;
+        },
+      }),
+    );
+    const laggardsButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent?.trim() === "Select: LinkedIn not joined",
+    );
+    laggardsButton?.dispatchEvent(new Event("click", { bubbles: true }));
+    // A member with no checklist at all counts as not-joined; alumni are never nudged, and the
+    // existing manual selection is kept (additive, like "Select all visible").
+    expect(new Set(recipients)).toEqual(new Set(["existing", "pending", "no-checklist"]));
+  });
+
   it("calls onSendNudge when the send button is clicked", () => {
     let sent = false;
     const container = renderToDiv(

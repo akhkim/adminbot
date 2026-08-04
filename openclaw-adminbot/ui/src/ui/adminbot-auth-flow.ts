@@ -23,6 +23,7 @@ import {
   markOnboardingWelcomeSeen,
   resolveAdminBotBaseUrl,
   saveStoredMemberSession,
+  setOnboardingStep,
   signupMember,
 } from "./adminbot-auth.ts";
 import type { UiSettings } from "./storage.ts";
@@ -83,6 +84,8 @@ export type MemberAuthHost = {
   memberId: string | null;
   adminBotOnboarding: MemberOnboarding | null;
   adminBotWelcomeVisible: boolean;
+  adminBotOnboardingBusyStepId: string | null;
+  adminBotOnboardingError: string | null;
   changePasswordCurrent: string;
   changePasswordNew: string;
   changePasswordConfirm: string;
@@ -466,5 +469,40 @@ export function dismissAdminBotWelcome(host: MemberAuthHost): void {
 export function showAdminBotWelcome(host: MemberAuthHost): void {
   if (host.adminBotOnboarding) {
     host.adminBotWelcomeVisible = true;
+  }
+}
+
+// Called from the welcome screen's per-step "Mark done"/"Undo" toggle. Completion is
+// self-attested by design — no external service (LinkedIn included) can verify these steps, so
+// the member's own word is the source of truth, and it is what the onboarding nudge keys off.
+export async function toggleOnboardingStep(
+  host: MemberAuthHost,
+  stepId: string,
+  complete: boolean,
+): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored || !host.memberId || host.adminBotOnboardingBusyStepId) {
+    return;
+  }
+  host.adminBotOnboardingBusyStepId = stepId;
+  host.adminBotOnboardingError = null;
+  try {
+    const result = await setOnboardingStep(
+      host.memberId,
+      stepId,
+      complete,
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      host.adminBotOnboardingError =
+        result.kind === "unreachable"
+          ? "The AdminBot service is unreachable — try again in a moment."
+          : "Couldn't update this step — sign in again and retry.";
+      return;
+    }
+    host.adminBotOnboarding = result.value.onboarding ?? host.adminBotOnboarding;
+  } finally {
+    host.adminBotOnboardingBusyStepId = null;
   }
 }

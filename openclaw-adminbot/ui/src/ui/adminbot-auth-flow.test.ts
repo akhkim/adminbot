@@ -7,6 +7,7 @@ import {
   loadMemberPrivilege,
   resumeMemberSession,
   showAdminBotWelcome,
+  toggleOnboardingStep,
   signOutMember,
   submitMemberAuth,
 } from "./adminbot-auth-flow.ts";
@@ -66,6 +67,8 @@ function makeHost(overrides: Partial<MemberAuthHost> = {}): MemberAuthHost {
     memberId: null,
     adminBotOnboarding: null,
     adminBotWelcomeVisible: false,
+    adminBotOnboardingBusyStepId: null,
+    adminBotOnboardingError: null,
     applySettings: vi.fn(),
     connect: vi.fn(),
     ...overrides,
@@ -276,5 +279,52 @@ describe("submitMemberAuth signup", () => {
       personal_website: "https://example.com",
     });
     expect(host.loginPendingNotice).toBe(true);
+  });
+});
+
+describe("toggleOnboardingStep", () => {
+  it("saves the step over the member session and refreshes the checklist from the response", async () => {
+    saveStoredMemberSession({ sessionToken: "sess-tok", expiresAt: "later" });
+    const refreshed = {
+      steps: [{ id: "linkedin", status: "complete", label: "Connect on LinkedIn" }],
+      completed: [],
+      remaining: [],
+    };
+    const spy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(jsonResponse(200, { id: "pat", onboarding: refreshed }));
+    const host = makeHost({ memberId: "pat" });
+
+    await toggleOnboardingStep(host, "linkedin", true);
+
+    expect(spy.mock.calls[0]?.[0]).toBe(`${BASE_URL}/lab/members/pat/onboarding/linkedin`);
+    expect(JSON.parse(String(spy.mock.calls[0]?.[1]?.body))).toEqual({ complete: true });
+    expect(host.adminBotOnboarding).toEqual(refreshed);
+    expect(host.adminBotOnboardingBusyStepId).toBeNull();
+    expect(host.adminBotOnboardingError).toBeNull();
+  });
+
+  it("does nothing without a stored session", async () => {
+    const spy = vi.spyOn(globalThis, "fetch");
+    const host = makeHost({ memberId: "pat" });
+
+    await toggleOnboardingStep(host, "linkedin", true);
+
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("keeps the old checklist and surfaces an error when the save fails", async () => {
+    saveStoredMemberSession({ sessionToken: "sess-tok", expiresAt: "later" });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(403, { error: { message: "insufficient privileges" } }),
+    );
+    const before = { steps: [], completed: [], remaining: [] };
+    const host = makeHost({ memberId: "pat", adminBotOnboarding: before });
+
+    await toggleOnboardingStep(host, "linkedin", true);
+
+    expect(host.adminBotOnboarding).toBe(before);
+    expect(host.adminBotOnboardingError).toContain("sign in again");
+    expect(host.adminBotOnboardingBusyStepId).toBeNull();
   });
 });

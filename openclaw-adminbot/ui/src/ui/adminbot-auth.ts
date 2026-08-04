@@ -415,6 +415,61 @@ async function privilegedActionCall<T>(
   return { ok: true, value: result.body as T };
 }
 
+// LinkedIn (and every other checklist step) is roster state, not something observed: no LinkedIn
+// API can report whether a given person follows or works at an organization, so completion is
+// only ever what the member or an admin recorded here.
+export async function setOnboardingStep(
+  memberId: string,
+  stepId: string,
+  complete: boolean,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LabMember>> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/${encodeURIComponent(memberId)}/onboarding/${encodeURIComponent(stepId)}`,
+    "POST",
+    sessionToken,
+    { complete },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as LabMember };
+}
+
+export async function nudgeOnboardingStep(
+  stepId: string,
+  channel: MemberNudgeChannel,
+  sessionToken: string,
+  baseUrl: string,
+  message?: string,
+): Promise<AuthResult<MemberNudgeResult>> {
+  const result = await authedJson(
+    baseUrl,
+    `/onboarding/${encodeURIComponent(stepId)}/nudge`,
+    "POST",
+    sessionToken,
+    { channel, ...(message ? { message } : {}) },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as MemberNudgeResult };
+}
+
 export type MemberNudgeChannel = "slack" | "email";
 
 export type MemberNudgeRequest = {
