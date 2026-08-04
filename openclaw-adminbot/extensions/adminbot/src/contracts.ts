@@ -420,7 +420,8 @@ export type AdminBotAuditEvent = {
     | "auth.registration_rejected"
     | "auth.calendar_invite_sent"
     | "auth.calendar_invite_failed"
-    | "member_nudge.sent";
+    | "member_nudge.sent"
+    | "onboarding.step_updated";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;

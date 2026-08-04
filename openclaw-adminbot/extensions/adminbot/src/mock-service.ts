@@ -12,6 +12,7 @@ import type {
   AdminBotApprovalRequest,
   AdminBotExecutionRequest,
   AdminBotLabMemberInput,
+  AdminBotMemberNudgeChannel,
   AdminBotMemberNudgeRequest,
   AdminBotPaperRecordInput,
   AdminBotPrivacyTaskRequest,
@@ -536,6 +537,64 @@ async function handleAuthenticatedRoute(
   }
   if (req.method === "GET" && url.pathname === "/papers/nudges") {
     sendServiceResult(res, service.listPaperNudges(url.searchParams.get("now") ?? undefined));
+    return;
+  }
+  const onboardingStep = /^\/lab\/members\/([^/]+)\/onboarding\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "POST" && onboardingStep?.[1] && onboardingStep[2]) {
+    const memberId = decodeURIComponent(onboardingStep[1]);
+    // Members tick off their own checklist; admins can correct anyone's. The service principal
+    // is allowed so the agent can mark a step done when it observes the work (e.g. it just sent
+    // the calendar invite) -- this is roster bookkeeping, not an outbound action.
+    if (principal.kind !== "service" && principal.member.id !== memberId) {
+      if (!requirePrivileged(res, principal)) {
+        return;
+      }
+    }
+    const body = (await readJson(req)) as { complete?: boolean };
+    sendServiceResult(
+      res,
+      service.setOnboardingStep(
+        memberId,
+        decodeURIComponent(onboardingStep[2]),
+        body.complete !== false,
+        principalActor(principal),
+      ),
+    );
+    return;
+  }
+  const onboardingPending = /^\/onboarding\/([^/]+)\/pending$/u.exec(url.pathname);
+  if (req.method === "GET" && onboardingPending?.[1]) {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.listOnboardingStepPending(decodeURIComponent(onboardingPending[1])),
+    );
+    return;
+  }
+  const onboardingNudge = /^\/onboarding\/([^/]+)\/nudge$/u.exec(url.pathname);
+  if (req.method === "POST" && onboardingNudge?.[1]) {
+    // Same reasoning as /nudges/send: this fans out real Slack/email messages to a set of
+    // members, so it needs a genuine admin session, not the shared service principal.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = (await readJson(req)) as {
+      channel?: AdminBotMemberNudgeChannel;
+      message?: string;
+    };
+    sendServiceResult(
+      res,
+      await service.nudgeOnboardingStep(
+        {
+          step_id: decodeURIComponent(onboardingNudge[1]),
+          channel: body.channel ?? "slack",
+          ...(body.message ? { message: body.message } : {}),
+        },
+        principalActor(principal),
+      ),
+    );
     return;
   }
   if (req.method === "POST" && url.pathname === "/nudges/send") {

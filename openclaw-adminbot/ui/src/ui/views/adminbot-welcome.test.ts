@@ -13,6 +13,8 @@ function createState(onboarding: MemberOnboarding | null): AppViewState {
     memberId: "pat",
     adminBotOnboarding: onboarding,
     adminBotWelcomeVisible: true,
+    adminBotOnboardingBusyStepId: null,
+    adminBotOnboardingError: null,
   } as unknown as AppViewState;
 }
 
@@ -162,5 +164,73 @@ describe("renderAdminBotWelcome", () => {
 
     container.querySelector<HTMLButtonElement>(".adminbot-welcome__dismiss")?.click();
     expect(state.adminBotWelcomeVisible).toBe(false);
+  });
+});
+
+describe("onboarding step toggle", () => {
+  const onboarding: MemberOnboarding = {
+    current_step: undefined,
+    completed: [],
+    remaining: [],
+    steps: [
+      {
+        id: "calendar_invite",
+        label: "Lab calendar access",
+        status: "complete",
+        category: "Getting started",
+        required: true,
+      },
+      {
+        id: "linkedin",
+        label: "Connect on LinkedIn",
+        status: "current",
+        category: "Social media",
+        required: true,
+      },
+      {
+        id: "twitter",
+        label: "Follow the lab on X/Twitter",
+        status: "complete",
+        category: "Social media",
+        required: false,
+      },
+    ],
+  };
+
+  it("offers Mark done on open steps, Undo on completed ones, and nothing on auto-granted ones", () => {
+    const container = document.createElement("div");
+    render(renderAdminBotWelcome(createState(onboarding)), container);
+
+    const buttons = [...container.querySelectorAll(".adminbot-welcome__step-toggle")];
+    // calendar_invite is granted by the server at approval time; a self-attestation
+    // toggle there would only invite people to un-record something they never did.
+    expect(buttons).toHaveLength(2);
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual(["Mark done", "Undo"]);
+  });
+
+  it("disables the toggles and shows progress while a save is in flight", () => {
+    const container = document.createElement("div");
+    const state = createState(onboarding);
+    (state as { adminBotOnboardingBusyStepId: string | null }).adminBotOnboardingBusyStepId =
+      "linkedin";
+    render(renderAdminBotWelcome(state), container);
+
+    const buttons = [
+      ...container.querySelectorAll<HTMLButtonElement>(".adminbot-welcome__step-toggle"),
+    ];
+    expect(buttons.every((button) => button.disabled)).toBe(true);
+    expect(buttons[0]?.textContent?.trim()).toBe("Saving…");
+  });
+
+  it("surfaces a save failure next to the dismiss button", () => {
+    const container = document.createElement("div");
+    const state = createState(onboarding);
+    (state as { adminBotOnboardingError: string | null }).adminBotOnboardingError =
+      "Couldn't update this step — sign in again and retry.";
+    render(renderAdminBotWelcome(state), container);
+
+    expect(container.querySelector(".adminbot-welcome__error")?.textContent).toContain(
+      "Couldn't update this step",
+    );
   });
 });
