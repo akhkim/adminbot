@@ -829,4 +829,145 @@ describe("AdminBotService", () => {
       ),
     ).toMatchObject({ ok: false, status: 400 });
   });
+
+  // Onboarding was generated once at first upsert and never updated by any code path, so every
+  // checklist stayed permanently unfinished and could not drive a reminder.
+  describe("onboarding step tracking", () => {
+    function seed(service: AdminBotService, id: string, extra: Record<string, unknown> = {}) {
+      return unwrap(
+        service.upsertLabMember({ id, name: id, slack_user_id: `U-${id}`, ...extra }),
+      );
+    }
+
+    it("starts every member with the LinkedIn step outstanding", () => {
+      const service = new AdminBotService();
+      const member = seed(service, "sam");
+      expect(
+        member.onboarding?.steps.find((step) => step.id === "linkedin")?.status,
+      ).not.toBe("complete");
+    });
+
+    it("marks a step complete and promotes the next required one", () => {
+      const service = new AdminBotService();
+      seed(service, "sam");
+      const updated = unwrap(service.setOnboardingStep("sam", "linkedin", true, "sam"));
+
+      const steps = updated.onboarding?.steps ?? [];
+      expect(steps.find((step) => step.id === "linkedin")?.status).toBe("complete");
+      expect(updated.onboarding?.completed.map((step) => step.id)).toContain("linkedin");
+      expect(updated.onboarding?.remaining.map((step) => step.id)).not.toContain("linkedin");
+      // `current` is positional — the first required step still outstanding.
+      expect(updated.onboarding?.current_step?.id).toBe("profile_photo");
+    });
+
+    it("can un-complete a step, pulling current back to it", () => {
+      const service = new AdminBotService();
+      seed(service, "sam");
+      unwrap(service.setOnboardingStep("sam", "profile_photo", true, "sam"));
+      const reverted = unwrap(service.setOnboardingStep("sam", "profile_photo", false, "admin"));
+      expect(reverted.onboarding?.current_step?.id).toBe("profile_photo");
+    });
+
+    it("rejects an unknown step and an unknown member", () => {
+      const service = new AdminBotService();
+      seed(service, "sam");
+      expect(service.setOnboardingStep("sam", "myspace", true, "sam")).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+      expect(service.setOnboardingStep("ghost", "linkedin", true, "admin")).toMatchObject({
+        ok: false,
+        status: 404,
+      });
+    });
+
+    it("does not reset a member's progress when their profile is edited", () => {
+      const service = new AdminBotService();
+      seed(service, "sam");
+      unwrap(service.setOnboardingStep("sam", "linkedin", true, "sam"));
+      const edited = unwrap(service.upsertLabMember({ id: "sam", name: "Sam Student" }));
+      expect(
+        edited.onboarding?.steps.find((step) => step.id === "linkedin")?.status,
+      ).toBe("complete");
+    });
+
+    it("lists only current members who still owe the step", () => {
+      const service = new AdminBotService();
+      seed(service, "sam");
+      seed(service, "joined");
+      seed(service, "gone", { status: "alumni" });
+      seed(service, "outsider", { status: "external" });
+      unwrap(service.setOnboardingStep("joined", "linkedin", true, "joined"));
+
+      const pending = unwrap(service.listOnboardingStepPending("linkedin"));
+      expect(pending.members.map((member) => member.id)).toEqual(["sam"]);
+      expect(service.listOnboardingStepPending("myspace")).toMatchObject({
+        ok: false,
+        status: 400,
+      });
+    });
+  });
+
+  describe("onboarding step nudge", () => {
+    it("nudges each outstanding member once, with the step's own links", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(service.upsertLabMember({ id: "sam", name: "Sam", slack_user_id: "U1" }));
+      unwrap(service.upsertLabMember({ id: "kai", name: "Kai", slack_user_id: "U2" }));
+      unwrap(service.upsertLabMember({ id: "done", name: "Done", slack_user_id: "U3" }));
+      unwrap(service.setOnboardingStep("done", "linkedin", true, "done"));
+
+      const result = unwrap(
+        await service.nudgeOnboardingStep({ step_id: "linkedin", channel: "slack" }, "admin-1"),
+      );
+
+      expect(result.created).toHaveLength(2);
+      expect(result.created.every((proposal) => proposal.type === "member_nudge.send")).toBe(true);
+      // The message is derived from the checklist definition, so it cannot drift from the
+      // welcome screen's wording or links.
+      const payload = JSON.stringify(result.created[0]?.proposed_payload);
+      expect(payload).toContain("https://www.linkedin.com/company/jinesis-lab/");
+      expect(payload).toContain("Connect on LinkedIn");
+    });
+
+    it("sends nothing when everyone has already done the step", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(service.upsertLabMember({ id: "sam", name: "Sam", slack_user_id: "U1" }));
+      unwrap(service.setOnboardingStep("sam", "linkedin", true, "sam"));
+
+      expect(
+        unwrap(await service.nudgeOnboardingStep({ step_id: "linkedin", channel: "slack" }, "a")),
+      ).toEqual({ created: [], skipped: [] });
+    });
+
+    it("skips members with no route on the chosen channel instead of failing the batch", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(service.upsertLabMember({ id: "sam", name: "Sam", slack_user_id: "U1" }));
+      unwrap(service.upsertLabMember({ id: "noslack", name: "No Slack" }));
+
+      const result = unwrap(
+        await service.nudgeOnboardingStep({ step_id: "linkedin", channel: "slack" }, "admin-1"),
+      );
+      expect(result.created).toHaveLength(1);
+      expect(result.skipped.map((skip) => skip.member_id)).toEqual(["noslack"]);
+    });
+
+    it("carries a subject on the email channel and honours an override message", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(service.upsertLabMember({ id: "sam", name: "Sam", email: "sam@example.com" }));
+
+      const result = unwrap(
+        await service.nudgeOnboardingStep(
+          { step_id: "linkedin", channel: "email", message: "Please join the org." },
+          "admin-1",
+        ),
+      );
+      const payload = JSON.stringify(result.created[0]?.proposed_payload);
+      expect(payload).toContain("Please join the org.");
+      expect(payload).toContain("Reminder: Connect on LinkedIn");
+    });
+  });
 });

@@ -47,6 +47,9 @@ export type AdminBotLabMember = {
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
+  // Self-attested checklist state (see extensions/adminbot/src/onboarding.ts); the dashboard
+  // only reads step id + status to preselect nudge recipients.
+  onboarding?: { steps?: Array<{ id: string; status: string }> } | null;
   created_at: string;
   updated_at: string;
 };

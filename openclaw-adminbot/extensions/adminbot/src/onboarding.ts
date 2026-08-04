@@ -176,7 +176,60 @@ export function buildOnboardingSteps(): AdminBotMemberOnboardingStep[] {
 }
 
 export function buildInitialOnboarding(): AdminBotMemberOnboarding {
-  const steps = buildOnboardingSteps();
+  return projectOnboarding(buildOnboardingSteps());
+}
+
+export function onboardingStepIds(): string[] {
+  return buildOnboardingStepDefinitions().map((definition) => definition.id);
+}
+
+export function findOnboardingStep(
+  onboarding: AdminBotMemberOnboarding | undefined,
+  stepId: string,
+): AdminBotMemberOnboardingStep | undefined {
+  return onboarding?.steps.find((step) => step.id === stepId);
+}
+
+export function isOnboardingStepComplete(
+  onboarding: AdminBotMemberOnboarding | undefined,
+  stepId: string,
+): boolean {
+  return findOnboardingStep(onboarding, stepId)?.status === "complete";
+}
+
+/**
+ * Mark one step complete (or back to incomplete) and re-derive the checklist.
+ *
+ * `current` is positional, not stored per step: it is always the first required
+ * step still outstanding, so completing one step promotes the next automatically
+ * and un-completing one can pull `current` backwards.
+ */
+export function setOnboardingStepStatus(
+  onboarding: AdminBotMemberOnboarding,
+  stepId: string,
+  complete: boolean,
+): AdminBotMemberOnboarding {
+  const steps = onboarding.steps.map((step) =>
+    step.id === stepId ? { ...step, status: complete ? "complete" : "remaining" } : step,
+  ) as AdminBotMemberOnboardingStep[];
+  return projectOnboarding(promoteCurrentStep(steps));
+}
+
+function promoteCurrentStep(steps: AdminBotMemberOnboardingStep[]): AdminBotMemberOnboardingStep[] {
+  let promoted = false;
+  return steps.map((step) => {
+    if (step.status === "complete") {
+      return step;
+    }
+    if (!promoted && step.required) {
+      promoted = true;
+      return { ...step, status: "current" };
+    }
+    return { ...step, status: "remaining" };
+  });
+}
+
+function projectOnboarding(steps: AdminBotMemberOnboardingStep[]): AdminBotMemberOnboarding {
   return {
     current_step: steps.find((step) => step.status === "current"),
     completed: steps.filter((step) => step.status === "complete"),

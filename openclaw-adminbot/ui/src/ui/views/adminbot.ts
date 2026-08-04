@@ -1559,6 +1559,28 @@ function selectAllVisibleRecipients(event: Event, props: AdminBotProps): void {
   props.onNudgeSetRecipients([...new Set([...props.memberNudge.selectedMemberIds, ...visibleIds])]);
 }
 
+// LinkedIn membership cannot be observed (LinkedIn has no API that reports whether a person
+// follows or works at an organization), so "hasn't joined" means the member has not marked the
+// checklist step done on their welcome screen.
+function hasCompletedOnboardingStep(member: AdminBotLabMember, stepId: string): boolean {
+  return (member.onboarding?.steps ?? []).some(
+    (step) => step.id === stepId && step.status === "complete",
+  );
+}
+
+// Additive, like selectAllVisibleRecipients: adds the laggards to whatever is already picked.
+function selectOnboardingLaggards(
+  props: AdminBotProps,
+  members: AdminBotLabMember[],
+  stepId: string,
+): void {
+  const laggards = members
+    .filter((member) => member.status !== "alumni" && member.status !== "external")
+    .filter((member) => !hasCompletedOnboardingStep(member, stepId))
+    .map((member) => member.id);
+  props.onNudgeSetRecipients([...new Set([...props.memberNudge.selectedMemberIds, ...laggards])]);
+}
+
 function renderAnnouncementRecipients(props: AdminBotProps, members: AdminBotLabMember[]) {
   const channel = props.memberNudge.channel;
   const selected = new Set(props.memberNudge.selectedMemberIds);
@@ -1627,6 +1649,14 @@ function renderAnnouncementRecipients(props: AdminBotProps, members: AdminBotLab
           @click=${(event: Event) => selectAllVisibleRecipients(event, props)}
         >
           Select all visible
+        </button>
+        <button
+          type="button"
+          class="btn btn--sm"
+          title="Members (excluding alumni/external) who haven't marked the LinkedIn onboarding step done"
+          @click=${() => selectOnboardingLaggards(props, members, "linkedin")}
+        >
+          Select: LinkedIn not joined
         </button>
         <button type="button" class="btn btn--sm" @click=${() => props.onNudgeSetRecipients([])}>
           Clear selection

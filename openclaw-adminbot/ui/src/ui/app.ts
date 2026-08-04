@@ -276,6 +276,8 @@ export class OpenClawApp extends LitElement {
   @state() memberId: string | null = null;
   @state() adminBotOnboarding: MemberOnboarding | null = null;
   @state() adminBotWelcomeVisible = false;
+  @state() adminBotOnboardingBusyStepId: string | null = null;
+  @state() adminBotOnboardingError: string | null = null;
   @state() tab: Tab = "chat";
   @state() onboarding = resolveOnboardingMode();
   @state() connected = false;

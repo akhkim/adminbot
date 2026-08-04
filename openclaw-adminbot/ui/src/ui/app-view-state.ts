@@ -113,6 +113,8 @@ export type AppViewState = {
   // full-screen welcome overlay showing it is currently visible.
   adminBotOnboarding: import("./adminbot-auth.ts").MemberOnboarding | null;
   adminBotWelcomeVisible: boolean;
+  adminBotOnboardingBusyStepId: string | null;
+  adminBotOnboardingError: string | null;
   submitMemberAuth: () => Promise<void>;
   signOutMember: () => Promise<void>;
   loadRoster: () => Promise<void>;
