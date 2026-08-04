@@ -51,6 +51,17 @@ CONFERENCES = [
     #      notification_aoe="", link="https://2027.eacl.org/"),
 ]
 
+# Curated non-NeurIPS workshops (each has its own per-workshop deadline).
+# Add EMNLP 2026 workshops here as their CFPs are confirmed.
+EMNLP_WORKSHOPS = [
+    dict(id="emnlp2026_ws_nlp4pi",
+         name="NLP4PI — 5th Workshop on NLP for Positive Impact (EMNLP 2026)",
+         venue_type="workshop", venue_group="EMNLP 2026 Workshops", track="workshop",
+         deadline_label="ARR commitment",   # direct channel (Jul 14) already closed
+         deadline_aoe="2026-08-03 23:59:59", notification_aoe="2026-08-15 23:59:59",
+         link="https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment"),
+]
+
 NEURIPS_WS_SUBMISSION = "2026-08-29 23:59:59"   # official recommended (AoE)
 NEURIPS_WS_NOTIF      = "2026-09-29 23:59:59"   # official hard accept/reject (AoE)
 OPENREVIEW_PARENT     = "NeurIPS.cc/2026/Workshop"
@@ -84,7 +95,7 @@ def fetch_neurips_workshops():
 
 
 def main():
-    items = list(CONFERENCES)
+    items = list(CONFERENCES) + list(EMNLP_WORKSHOPS)
     try:
         ws = fetch_neurips_workshops()
         print(f"OpenReview: collected {len(ws)} NeurIPS 2026 workshops")
