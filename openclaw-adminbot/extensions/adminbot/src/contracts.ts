@@ -96,6 +96,51 @@ export type AdminBotMemberOnboarding = {
   remaining: AdminBotMemberOnboardingStep[];
   steps: AdminBotMemberOnboardingStep[];
 };
+export const adminBotTimeOffKinds = [
+  "vacation",
+  "internship",
+  "course_load",
+  "travel",
+  "conference",
+  "other",
+] as const;
+
+export type AdminBotTimeOffKind = (typeof adminBotTimeOffKinds)[number];
+
+// Reserved project name for hours a member has explicitly declared as spare
+// capacity ("can take on something new / help others"). It is a sentinel, not a
+// real project, so it never earns a categorical colour slot in the charts and
+// never appears in the member's own `projects` list.
+export const ADMINBOT_OPEN_PROJECT = "__open__";
+
+// The Google account the availability importer reads planning docs as, so a member has to share
+// their doc with it (Viewer is enough) or the import silently finds nothing. Must stay in step with
+// the account `scripts/adminbot-drive-download.ts` downloads with; the UI shows this same value so
+// the instruction can never drift from the account actually doing the reading.
+export const ADMINBOT_DRIVE_ACCOUNT = "jinesis.adminbot@gmail.com";
+
+// One allocation of weekly hours over a date range. The same shape covers both
+// horizons: a near-term entry is a one-week row with a project set, a term
+// baseline is a long row with `project` omitted. Keeping them one type is what
+// lets the form, the validator, and the timeline renderer stay single-path.
+export type AdminBotAvailabilityRow = {
+  start: string;
+  end: string;
+  project?: string;
+  hours_per_week: number;
+  note?: string;
+};
+
+export type AdminBotTimeOffRow = {
+  start: string;
+  end: string;
+  kind: AdminBotTimeOffKind;
+  // "partial" still counts toward capacity at a reduced rate; "none" zeroes the
+  // week. Callers must not infer this from `kind` — a conference can be either.
+  availability: "none" | "partial";
+  note?: string;
+};
+
 export type AdminBotLabMemberInput = {
   id: string;
   name: string;
@@ -115,6 +160,15 @@ export type AdminBotLabMemberInput = {
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
+  availability?: AdminBotAvailabilityRow[];
+  time_off?: AdminBotTimeOffRow[];
+  // Link to the member's own planning doc in Drive, which the availability importer reads to
+  // prefill the rows above. Member-owned and self-editable: whatever the importer gets wrong, the
+  // member fixes in the same panel.
+  availability_doc_url?: string;
+  // Stamped server-side on every write that touches availability/time_off, so
+  // the UI can show staleness without diffing payloads.
+  availability_updated_at?: string;
 };
 
 export type AdminBotLabMember = Omit<AdminBotLabMemberInput, "privilege_level"> & {

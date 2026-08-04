@@ -28,7 +28,7 @@ import type {
   AdminBotStoredProposal,
   AdminBotPrivilegeLevel,
 } from "./contracts.js";
-import { adminBotMemberStatuses } from "./contracts.js";
+import { adminBotMemberStatuses, adminBotTimeOffKinds } from "./contracts.js";
 import { buildInitialOnboarding } from "./onboarding.js";
 
 // Approver roles are privilege levels from the member roster, not a separate vocabulary: the
@@ -729,6 +729,7 @@ export class AdminBotService {
       onboarding: existing?.onboarding ?? buildInitialOnboarding(),
       created_at: existing?.created_at ?? now,
       updated_at: now,
+      ...availabilityStamp(existing, member, now),
     };
     this.store.saveLabMember(stored);
     this.recordAudit({
@@ -1025,6 +1026,9 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "timezone",
   "personal_website",
   "notes",
+  "availability",
+  "time_off",
+  "availability_doc_url",
 ] as const;
 
 const SELF_PROFILE_PRIVILEGED_FIELDS = [
@@ -1136,7 +1140,134 @@ function validateLabMember(member: AdminBotLabMemberInput): string | undefined {
   ) {
     return "member capacity percent must be between 0 and 100";
   }
+  if (member.availability_doc_url !== undefined) {
+    const docError = validateAvailabilityDocUrl(member.availability_doc_url);
+    if (docError) {
+      return docError;
+    }
+  }
+  return validateAvailability(member);
+}
+
+// The availability importer fetches this URL server-side with the AdminBot's own Google
+// credentials, so it is restricted to the hosts the Drive tooling can actually read. Without the
+// allowlist a self-editable profile field would become a fetch primitive aimed at any host.
+const AVAILABILITY_DOC_HOSTS = new Set(["docs.google.com", "drive.google.com"]);
+
+function validateAvailabilityDocUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return "availability doc url must be a string";
+  }
+  const trimmed = value.trim();
+  // Empty clears the link; the importer simply skips members without one.
+  if (!trimmed) {
+    return undefined;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return "availability doc url must be a valid URL";
+  }
+  if (parsed.protocol !== "https:") {
+    return "availability doc url must use https";
+  }
+  if (!AVAILABILITY_DOC_HOSTS.has(parsed.hostname)) {
+    return "availability doc url must be a Google Docs or Drive link";
+  }
   return undefined;
+}
+
+// Members are stored as one JSON blob, so an unbounded array here would bloat every
+// read of the roster. The cap is deliberately far above any real schedule.
+const MAX_AVAILABILITY_ROWS = 200;
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/u;
+
+// A calendar date with no time part; parsed as UTC so a server timezone can never
+// shift a row onto the neighbouring day.
+function parseIsoDate(value: string): number {
+  if (!ISO_DATE.test(value)) {
+    return Number.NaN;
+  }
+  return Date.parse(`${value}T00:00:00Z`);
+}
+
+function validateDateRange(row: { start: string; end: string }, label: string): string | undefined {
+  const start = parseIsoDate(row.start);
+  const end = parseIsoDate(row.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return `${label} dates must be YYYY-MM-DD`;
+  }
+  if (start > end) {
+    return `${label} start date must not be after its end date`;
+  }
+  return undefined;
+}
+
+function validateAvailability(member: AdminBotLabMemberInput): string | undefined {
+  if (member.availability !== undefined) {
+    if (!Array.isArray(member.availability)) {
+      return "member availability must be a list";
+    }
+    if (member.availability.length > MAX_AVAILABILITY_ROWS) {
+      return `member availability cannot exceed ${MAX_AVAILABILITY_ROWS} rows`;
+    }
+    for (const row of member.availability) {
+      const rangeError = validateDateRange(row, "availability");
+      if (rangeError) {
+        return rangeError;
+      }
+      if (
+        !Number.isFinite(row.hours_per_week) ||
+        row.hours_per_week < 0 ||
+        row.hours_per_week > 168
+      ) {
+        return "availability hours per week must be between 0 and 168";
+      }
+    }
+  }
+  if (member.time_off !== undefined) {
+    if (!Array.isArray(member.time_off)) {
+      return "member time off must be a list";
+    }
+    if (member.time_off.length > MAX_AVAILABILITY_ROWS) {
+      return `member time off cannot exceed ${MAX_AVAILABILITY_ROWS} rows`;
+    }
+    for (const row of member.time_off) {
+      const rangeError = validateDateRange(row, "time off");
+      if (rangeError) {
+        return rangeError;
+      }
+      if (!adminBotTimeOffKinds.includes(row.kind)) {
+        return "time off kind is invalid";
+      }
+      if (row.availability !== "none" && row.availability !== "partial") {
+        return "time off availability must be none or partial";
+      }
+    }
+  }
+  return undefined;
+}
+
+// availability_updated_at is server-owned: it moves only when the schedule content
+// actually changes, so an unrelated profile save (name, website) does not reset the
+// staleness badge and mask a member who has stopped updating their hours.
+function availabilityStamp(
+  existing: AdminBotLabMember | undefined,
+  member: AdminBotLabMemberInput,
+  now: string,
+): { availability_updated_at?: string } {
+  const previous = existing?.availability_updated_at;
+  const touched =
+    (member.availability !== undefined &&
+      stableJson(member.availability) !== stableJson(existing?.availability)) ||
+    (member.time_off !== undefined &&
+      stableJson(member.time_off) !== stableJson(existing?.time_off));
+  if (touched) {
+    return { availability_updated_at: now };
+  }
+  return previous ? { availability_updated_at: previous } : {};
 }
 
 function validateSettings(settings: AdminBotSettingsInput): string | undefined {
