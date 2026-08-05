@@ -16,6 +16,7 @@ import {
   resolvePairingHint,
   shouldShowInsecureContextHint,
 } from "./overview-hints.ts";
+import { renderSignedOutHeader } from "./signed-out-header.ts";
 
 type LoginFailureKind =
   | "auth-failed"
@@ -748,6 +749,7 @@ export function renderLoginGate(state: AppViewState) {
 
   return html`
     <div class="login-gate">
+      ${renderSignedOutHeader(state, "back")}
       <div class="login-gate__card">
         <div class="login-gate__header">
           <img class="login-gate__logo" src=${faviconSrc} alt="OpenClaw" />

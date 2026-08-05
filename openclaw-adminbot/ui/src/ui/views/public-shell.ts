@@ -84,50 +84,59 @@ export function renderPublicShell(state: AppViewState) {
   const tabs = visibleTabsForRole(["adminbotReimbursements", "adminbotDeadlines"], "anonymous");
   return html`
     <div class="app-shell app-shell--public">
-      <aside class="sidebar sidebar--public">
-        <div class="sidebar-shell">
-          <div class="sidebar-shell__header">
-            <div class="sidebar-brand">
-              <img class="sidebar-brand__logo" src=${agentLogoUrl(basePath)} alt="OpenClaw" />
-              <span class="sidebar-brand__copy">
-                <span class="sidebar-brand__eyebrow">${t("nav.adminbot")}</span>
-                <span class="sidebar-brand__title">OpenClaw</span>
-              </span>
-            </div>
-          </div>
-          <div class="sidebar-shell__body">
-            <nav class="sidebar-nav">
-              <section class="nav-section">
-                <div class="nav-section__items">
-                  ${tabs.map((tab) => renderPublicNavItem(state, tab))}
-                </div>
-              </section>
-            </nav>
-          </div>
-          <div class="sidebar-shell__footer">
-            <div class="sidebar-utility-group">
-              <button
-                type="button"
-                class="nav-item sidebar-utility-link sidebar-utility-link--signin"
-                data-testid="public-shell-sign-in"
-                @click=${() => {
-                  state.authGateVisible = true;
-                }}
-              >
-                <span class="nav-item__icon" aria-hidden="true">${icons.lock}</span>
-                <span class="nav-item__text">${t("login.member.signIn")}</span>
-              </button>
-              <p class="sidebar-public-hint">${t("login.public.hint")}</p>
-            </div>
+      <header class="topbar topbar--public">
+        <div class="topnav-shell">
+          <div class="topnav-shell__content"></div>
+          <div class="topnav-shell__actions">
+            <button
+              type="button"
+              class="btn primary public-signin"
+              data-testid="public-shell-sign-in"
+              @click=${() => {
+                state.authGateVisible = true;
+              }}
+            >
+              <span class="public-signin__icon" aria-hidden="true">${icons.lock}</span>
+              <span>${t("login.member.signIn")}</span>
+            </button>
           </div>
         </div>
-      </aside>
-      <main class="content content--public">
-        <div class="card adminbot-card adminbot-card--wide">
-          <div class="card-title">${titleForTab(state.tab)}</div>
-          ${renderPublicPanel(state)}
-        </div>
-      </main>
+      </header>
+      <div class="public-shell-body">
+        <aside class="sidebar sidebar--public">
+          <div class="sidebar-shell">
+            <div class="sidebar-shell__header">
+              <div class="sidebar-brand">
+                <img class="sidebar-brand__logo" src=${agentLogoUrl(basePath)} alt="OpenClaw" />
+                <span class="sidebar-brand__copy">
+                  <span class="sidebar-brand__eyebrow">${t("nav.adminbot")}</span>
+                  <span class="sidebar-brand__title">OpenClaw</span>
+                </span>
+              </div>
+            </div>
+            <div class="sidebar-shell__body">
+              <nav class="sidebar-nav">
+                <section class="nav-section">
+                  <div class="nav-section__items">
+                    ${tabs.map((tab) => renderPublicNavItem(state, tab))}
+                  </div>
+                </section>
+              </nav>
+            </div>
+            <div class="sidebar-shell__footer">
+              <div class="sidebar-utility-group">
+                <p class="sidebar-public-hint">${t("login.public.hint")}</p>
+              </div>
+            </div>
+          </div>
+        </aside>
+        <main class="content content--public">
+          <div class="card adminbot-card adminbot-card--wide">
+            <div class="card-title">${titleForTab(state.tab)}</div>
+            ${renderPublicPanel(state)}
+          </div>
+        </main>
+      </div>
     </div>
   `;
 }

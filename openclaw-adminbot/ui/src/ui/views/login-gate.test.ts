@@ -345,6 +345,23 @@ describe("renderLoginGate", () => {
     await i18n.setLocale("en");
   });
 
+  // The gate is a full-page takeover, so without a way back a visitor who opened it by accident is
+  // stuck with the browser's back button.
+  it("leaves the gate from the header back action", async () => {
+    const container = document.createElement("div");
+    const state = createState({ authGateVisible: true });
+
+    render(renderLoginGate(state), container);
+    await Promise.resolve();
+
+    const back = container.querySelector<HTMLButtonElement>(
+      '[data-testid="signed-out-header-back"]',
+    );
+    expect(back?.textContent?.trim()).toBe("Back");
+    back?.click();
+    expect(state.authGateVisible).toBe(false);
+  });
+
   it("renders an accessible structured failure panel with raw error details", async () => {
     const container = document.createElement("div");
     const state = createState({

@@ -1289,6 +1289,13 @@ export const en: TranslationMap = {
       allDone: "You've read every step — welcome aboard.",
     },
   },
+  landing: {
+    eyebrow: "Lab operations",
+    tagline:
+      "Reimbursements, deadlines, papers, and the lab roster — the admin side of research, in one place.",
+    signIn: "Sign in or sign up",
+    openWithoutAccount: "Open without an account",
+  },
   login: {
     subtitle: "Gateway Dashboard",
     showPassword: "Show password",
