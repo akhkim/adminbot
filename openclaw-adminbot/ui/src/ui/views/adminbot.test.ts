@@ -237,17 +237,17 @@ describe("renderAdminBot members panel — edit affordance", () => {
       }),
     );
     const form = container.querySelector<HTMLFormElement>("#adminbot-self-edit-member-0 form");
-    form?.querySelector<HTMLInputElement>('input[name="role"]')?.setAttribute("value", "");
-    const roleInput = form?.querySelector<HTMLInputElement>('input[name="role"]');
-    if (roleInput) {
-      roleInput.value = "Research scientist";
+    // Role is a closed vocabulary now, so the self-edit form offers a select rather than a box.
+    const roleSelect = form?.querySelector<HTMLSelectElement>('select[name="role"]');
+    if (roleSelect) {
+      roleSelect.value = "Industry Researcher";
     }
     form?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
 
     expect(saved).toHaveLength(1);
     const [memberId, fields] = saved[0]!;
     expect(memberId).toBe("pat");
-    expect(fields.role).toBe("Research scientist");
+    expect(fields.role).toBe("Industry Researcher");
     expect(fields.name).toBe("Pat Doe");
     // Governance keys can never appear — the form has no inputs for them.
     expect(Object.keys(fields)).not.toContain("privilege_level");

@@ -249,6 +249,7 @@ export class OpenClawApp extends LitElement {
   @state() memberFormError: string | null = null;
   @state() loginPendingNotice = false;
   @state() guestReimbursements = false;
+  @state() authGateVisible = false;
   @state() rosterMembers: RosterMember[] = [];
   @state() rosterLoading = false;
   @state() rosterError: RosterError = null;

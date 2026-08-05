@@ -213,7 +213,7 @@ describe("AdminBotAuthService claim/login flow", () => {
       profile: {
         name: "Full Profile",
         slack_user_id: "U123",
-        role: "PhD student",
+        role: "PhD Student",
         affiliation: "Jinesis Lab",
         research_branch: "NLP",
         research_topics: ["alignment", "rl"],
@@ -241,7 +241,7 @@ describe("AdminBotAuthService claim/login flow", () => {
     expect(created).toMatchObject({
       name: "Full Profile",
       slack_user_id: "U123",
-      role: "PhD student",
+      role: "PhD Student",
       affiliation: "Jinesis Lab",
       research_branch: "NLP",
       research_topics: ["alignment", "rl"],

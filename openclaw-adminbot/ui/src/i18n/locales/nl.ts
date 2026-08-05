@@ -1381,6 +1381,10 @@ export const nl: TranslationMap = {
         notesPlaceholder: "Anything else worth knowing (optional)",
       },
     },
+    public: {
+      hint: "Sign in to see the lab roster, active papers, and everything else you have access to.",
+      continueWithoutSignIn: "Continue without signing in",
+    },
     guest: {
       reimbursements: "Submit a reimbursement",
       reimbursementsHint: "Upload receipts and generate your forms without signing in.",

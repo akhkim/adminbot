@@ -4,6 +4,12 @@ import { guard } from "lit/directives/guard.js";
 import { styleMap } from "lit/directives/style-map.js";
 import { i18n, t } from "../i18n/index.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
+import {
+  resolveAccessRole,
+  resolveAccessibleTab,
+  visibleTabsForRole,
+  type AccessRole,
+} from "./access.ts";
 import { showAdminBotWelcome } from "./adminbot-auth-flow.ts";
 import { decideAdminBotRegistration, loadAdminBotRegistrations } from "./adminbot-registrations.ts";
 import {
@@ -197,8 +203,8 @@ import {
   type Tab,
 } from "./navigation.ts";
 import { isPluginEnabledInConfigSnapshot } from "./plugin-activation.ts";
-import { isCronSessionKey, resolveSessionDisplayName } from "./session-display.ts";
 import "./components/dashboard-header.ts";
+import { isCronSessionKey, resolveSessionDisplayName } from "./session-display.ts";
 import {
   buildAgentMainSessionKey,
   isSessionKeyTiedToAgent,
@@ -250,6 +256,7 @@ import { renderGuestReimbursements } from "./views/guest-reimbursements.ts";
 import { renderLoginGate } from "./views/login-gate.ts";
 import { renderMcp } from "./views/mcp.ts";
 import { renderOverview } from "./views/overview.ts";
+import { renderPublicShell } from "./views/public-shell.ts";
 
 let pendingUpdate: (() => void) | undefined;
 
@@ -758,24 +765,15 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
   }
 }
 
-function visibleTabsForAdminBotMode(tabs: readonly Tab[], mode: AdminBotLoadMode): Tab[] {
-  if (mode === "admin") {
-    return [...tabs];
+// Deep links and sign-out both leave `state.tab` pointing at a surface the current role may not
+// see. Correct it before rendering rather than after: a privileged panel with no data behind it is
+// worse than landing on the role's own default.
+function withAccessibleTab<T extends AppViewState>(state: T, role: AccessRole): T {
+  const allowed = resolveAccessibleTab(state.tab, role);
+  if (allowed !== state.tab) {
+    state.tab = allowed;
   }
-  // Gate per tab, not per group: AdminBot tabs live in more than one sidebar group, and a
-  // group-wide filter would drop that group's non-AdminBot tabs (e.g. Settings) for plain members.
-  // Reimbursements stays visible for every member — it is self-scoped, not a governance
-  // surface. The reimbursement panel is an ephemeral per-session assistant that only ever
-  // sees the drafts the signed-in member typed, so it exposes no other member's data.
-  return tabs.filter(
-    (tab) =>
-      !tab.startsWith("adminbot") ||
-      tab === "adminbotMembers" ||
-      tab === "adminbotPapers" ||
-      tab === "adminbotReimbursements" ||
-      // Self-contained public countdown board (bundled snapshot, no gateway/privileged data).
-      tab === "adminbotDeadlines",
-  );
+  return state;
 }
 
 type ChatWorkspaceFilesState = {
@@ -1482,19 +1480,39 @@ export function renderApp(state: AppViewState) {
       : undefined;
   pendingUpdate = requestHostUpdate;
 
-  // Gate: require successful gateway connection before showing the dashboard.
-  // The gateway URL confirmation overlay is always rendered so URL-param flows still work.
-  if (!state.connected) {
-    // Reimbursement is reachable without a session; it replaces the gate rather than sitting behind
-    // it, and the gateway URL overlay stays mounted so URL-param flows keep working either way.
+  const accessRole = resolveAccessRole({
+    // Truthiness, not `!== null`: these fields are absent (undefined) before a session is ever
+    // loaded, and treating "absent" as signed-in demoted a connected operator to a member — which
+    // then rewrote their tab out from under them.
+    signedIn: Boolean(state.memberId) || Boolean(state.memberPrivilegeLevel),
+    privilegeLevel: state.memberPrivilegeLevel,
+    gatewayConnected: state.connected,
+  });
+
+  // A visitor gets the public shell, not a wall: the two surfaces the access table opens to
+  // `anonymous` need no gateway, and the sign-in gate is something they open from the sidebar.
+  // The gateway URL confirmation overlay stays mounted throughout so URL-param flows keep working.
+  if (accessRole === "anonymous") {
     if (state.guestReimbursements) {
       return html` ${renderGuestReimbursements(state)} ${renderGatewayUrlConfirmation(state)} `;
     }
+    if (state.authGateVisible) {
+      return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
+    }
+    return html`
+      ${renderPublicShell(withAccessibleTab(state, accessRole))}
+      ${renderGatewayUrlConfirmation(state)}
+    `;
+  }
+  if (!state.connected) {
     return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
   }
   if (state.adminBotWelcomeVisible) {
     return renderAdminBotWelcome(state);
   }
+  // A deep link into a surface this role may not see lands on their own default instead, so a
+  // hidden tab cannot be reached by typing its path.
+  withAccessibleTab(state, accessRole);
 
   const presenceCount = state.presenceEntries.length;
   const sessionsCount = state.sessionsResult?.count ?? null;
@@ -2680,6 +2698,12 @@ export function renderApp(state: AppViewState) {
               ${renderSidebarSessions(state)}
               <nav class="sidebar-nav">
                 ${TAB_GROUPS.map((group) => {
+                  const groupTabs = visibleTabsForRole(group.tabs as readonly Tab[], accessRole);
+                  // A group whose every tab is out of reach renders nothing at all, header
+                  // included: an empty "Settings" heading reads as a broken sidebar.
+                  if (groupTabs.length === 0) {
+                    return nothing;
+                  }
                   const isGroupCollapsed = state.settings.navGroupsCollapsed[group.label] ?? false;
                   const showItems = navCollapsed || !isGroupCollapsed;
 
@@ -2707,10 +2731,9 @@ export function renderApp(state: AppViewState) {
                           `
                         : nothing}
                       <div class="nav-section__items">
-                        ${visibleTabsForAdminBotMode(
-                          group.tabs as readonly Tab[],
-                          adminBotMode,
-                        ).map((tab) => renderTab(state, tab, { collapsed: navCollapsed }))}
+                        ${groupTabs.map((tab) =>
+                          renderTab(state, tab, { collapsed: navCollapsed }),
+                        )}
                       </div>
                     </section>
                   `;

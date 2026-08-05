@@ -135,7 +135,7 @@ describe("AdminBotSqliteStore", () => {
         name: "Alice",
         privilege_level: "member",
         slack_user_id: "U123",
-        role: "Research scientist",
+        role: "Industry Researcher",
         status: "active",
         research_branch: "Causal AI",
         research_topics: ["causal inference", "reasoning"],

@@ -595,12 +595,12 @@ describe("AdminBot mock service", () => {
     const save = await fetch(`${baseUrl}/lab/members/peerish`, {
       method: "PUT",
       headers: memberHeaders,
-      body: JSON.stringify({ role: "Research scientist" }),
+      body: JSON.stringify({ role: "Industry Researcher" }),
     });
     expect(save.status).toBe(200);
     await expect(save.json()).resolves.toMatchObject({
       id: "peerish",
-      role: "Research scientist",
+      role: "Industry Researcher",
       privilege_level: "member",
     });
 
@@ -1151,7 +1151,9 @@ describe("AdminBot service-principal privilege scoping", () => {
     });
     expect(own.status).toBe(200);
     await expect(own.json()).resolves.toMatchObject({
-      onboarding: { completed: expect.arrayContaining([expect.objectContaining({ id: "linkedin" })]) },
+      onboarding: {
+        completed: expect.arrayContaining([expect.objectContaining({ id: "linkedin" })]),
+      },
     });
 
     const someoneElse = await fetch(`${baseUrl}/lab/members/other/onboarding/linkedin`, {

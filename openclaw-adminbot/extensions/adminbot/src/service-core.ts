@@ -34,7 +34,7 @@ import type {
   AdminBotStoredProposal,
   AdminBotPrivilegeLevel,
 } from "./contracts.js";
-import { adminBotMemberStatuses, adminBotTimeOffKinds } from "./contracts.js";
+import { adminBotMemberRoles, adminBotMemberStatuses, adminBotTimeOffKinds } from "./contracts.js";
 import { buildMemberMap, type AdminBotMemberMap } from "./member-map.js";
 import {
   acknowledgeOnboardingStep,
@@ -1484,6 +1484,14 @@ function validateLabMember(member: AdminBotLabMemberInput): string | undefined {
   }
   if (member.status && !adminBotMemberStatuses.includes(member.status)) {
     return "member status is invalid";
+  }
+  // Role is a closed vocabulary, not free text: the roster is filtered and reported on by role,
+  // and "PhD student" / "PhD Student" / "PhD" as three distinct values made those counts lie.
+  // Empty stays legal — a role nobody has recorded yet is different from a wrong one.
+  if (member.role !== undefined && member.role !== "") {
+    if (!adminBotMemberRoles.includes(member.role as (typeof adminBotMemberRoles)[number])) {
+      return `member role must be one of: ${adminBotMemberRoles.join(", ")}`;
+    }
   }
   if (
     member.hours_per_week !== undefined &&

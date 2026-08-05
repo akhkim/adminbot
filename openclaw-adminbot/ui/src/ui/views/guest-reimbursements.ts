@@ -58,6 +58,7 @@ export function renderGuestReimbursements(state: AppViewState) {
           data-testid="guest-reimbursements-back"
           @click=${() => {
             state.guestReimbursements = false;
+            state.authGateVisible = true;
           }}
         >
           ${t("login.guest.backToSignIn")}

@@ -1,10 +1,8 @@
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
+import { adminBotMemberRoles } from "../../../../extensions/adminbot/src/contracts.js";
 import type { MemberNudgeChannel, MemberProfileUpdate } from "../adminbot-auth.ts";
-import {
-  renderAvailabilitySchedule,
-  renderAvailabilityStrip,
-} from "../adminbot-availability.js";
+import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../adminbot-availability.js";
 import type {
   AdminBotActionProposal,
   AdminBotDashboardData,
@@ -934,8 +932,14 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
       </label>
       <label class="adminbot-form__field"
         ><span>Role</span
-        ><input name="role" placeholder="Research scientist" .value=${member?.role ?? ""}
-      /></label>
+        ><select name="role">
+          <option value="" ?selected=${!member?.role}>Not set</option>
+          ${adminBotMemberRoles.map(
+            (role) =>
+              html`<option value=${role} ?selected=${member?.role === role}>${role}</option>`,
+          )}
+        </select>
+      </label>
       <label class="adminbot-form__field"
         ><span>Status</span
         ><select name="status">
@@ -1074,8 +1078,15 @@ function renderMemberSelfEditPopover(
             ><input name="slackUserId" .value=${member.slack_user_id ?? ""}
           /></label>
           <label class="adminbot-form__field"
-            ><span>Role</span><input name="role" .value=${member.role ?? ""}
-          /></label>
+            ><span>Role</span
+            ><select name="role">
+              <option value="" ?selected=${!member.role}>Not set</option>
+              ${adminBotMemberRoles.map(
+                (role) =>
+                  html`<option value=${role} ?selected=${member.role === role}>${role}</option>`,
+              )}
+            </select>
+          </label>
           <label class="adminbot-form__field"
             ><span>Research topics</span
             ><input

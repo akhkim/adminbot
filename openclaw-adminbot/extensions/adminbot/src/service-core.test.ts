@@ -247,7 +247,7 @@ describe("AdminBotService", () => {
         name: "Zhijing",
         email: "zhijing@example.test",
         privilege_level: "admin",
-        role: "Principal investigator",
+        role: "Professor",
         status: "active",
         research_branch: "Machine intelligence",
         research_topics: ["reasoning", "alignment"],
@@ -292,6 +292,20 @@ describe("AdminBotService", () => {
         ],
       }),
     ).toMatchObject({ ok: false, status: 400 });
+    // Role is a closed vocabulary: the roster is filtered and counted by it, and three spellings
+    // of "PhD student" made those counts lie.
+    expect(
+      service.upsertLabMember({
+        id: "invalid-role",
+        name: "Invalid Role",
+        role: "Chief Scientist",
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
+    expect(
+      service.upsertLabMember({ id: "vocab-role", name: "Vocab Role", role: "PhD Student" }).ok,
+    ).toBe(true);
+    // A role nobody has recorded yet is different from a wrong one.
+    expect(service.upsertLabMember({ id: "no-role", name: "No Role", role: "" }).ok).toBe(true);
     expect(
       service.upsertLabMember({
         id: "invalid-hours",
@@ -319,8 +333,8 @@ describe("AdminBotService", () => {
       }),
     );
 
-    const updated = unwrap(service.updateOwnProfile("self-edit", { role: "Research scientist" }));
-    expect(updated.role).toBe("Research scientist");
+    const updated = unwrap(service.updateOwnProfile("self-edit", { role: "Industry Researcher" }));
+    expect(updated.role).toBe("Industry Researcher");
     expect(updated.privilege_level).toBe("member");
 
     for (const governed of [
@@ -856,17 +870,15 @@ describe("AdminBotService", () => {
   // checklist stayed permanently unfinished and could not drive a reminder.
   describe("onboarding step tracking", () => {
     function seed(service: AdminBotService, id: string, extra: Record<string, unknown> = {}) {
-      return unwrap(
-        service.upsertLabMember({ id, name: id, slack_user_id: `U-${id}`, ...extra }),
-      );
+      return unwrap(service.upsertLabMember({ id, name: id, slack_user_id: `U-${id}`, ...extra }));
     }
 
     it("starts every member with the LinkedIn step outstanding", () => {
       const service = new AdminBotService();
       const member = seed(service, "sam");
-      expect(
-        member.onboarding?.steps.find((step) => step.id === "linkedin")?.status,
-      ).not.toBe("complete");
+      expect(member.onboarding?.steps.find((step) => step.id === "linkedin")?.status).not.toBe(
+        "complete",
+      );
     });
 
     it("marks a step complete and promotes the next required one", () => {
@@ -908,9 +920,9 @@ describe("AdminBotService", () => {
       seed(service, "sam");
       unwrap(service.setOnboardingStep("sam", "linkedin", true, "sam"));
       const edited = unwrap(service.upsertLabMember({ id: "sam", name: "Sam Student" }));
-      expect(
-        edited.onboarding?.steps.find((step) => step.id === "linkedin")?.status,
-      ).toBe("complete");
+      expect(edited.onboarding?.steps.find((step) => step.id === "linkedin")?.status).toBe(
+        "complete",
+      );
     });
 
     it("lists only current members who still owe the step", () => {

@@ -89,6 +89,9 @@ export type MemberAuthHost = {
   adminBotWelcomeVisible: boolean;
   adminBotOnboardingBusyStepId: string | null;
   adminBotOnboardingError: string | null;
+  // Optional so the auth flow can be driven by hosts that never render the gate (tests, the
+  // console). Signing out closes it so the visitor lands on the public shell, not the form.
+  authGateVisible?: boolean;
   changePasswordCurrent: string;
   changePasswordNew: string;
   changePasswordConfirm: string;
@@ -422,6 +425,7 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.adminBotOnboarding = null;
   host.adminBotWelcomeVisible = false;
   host.loginMode = "signin";
+  host.authGateVisible = false;
   // Tear down the live gateway connection and drop the gateway token from the
   // in-memory + sessionStorage-scoped plumbing.
   host.client?.stop();

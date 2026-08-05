@@ -1,4 +1,4 @@
-import { ADMINBOT_DRIVE_ACCOUNT } from "./contracts.js";
+import { ADMINBOT_DRIVE_ACCOUNT, adminBotMemberRoles } from "./contracts.js";
 
 export function renderAdminBotWebUi(): string {
   return `<!doctype html>
@@ -464,6 +464,28 @@ export function renderAdminBotWebUi(): string {
         45deg, #c3c2b7, #c3c2b7 3px, var(--panel-alt) 3px, var(--panel-alt) 6px);
     }
     .avail-strip-meta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+    /* Public surfaces: the deadline board is embedded rather than reimplemented, so the console
+       and the standalone /deadlines page can never show different dates. */
+    .public-frame {
+      width: 100%;
+      height: 70vh;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+    .reimb-log {
+      display: grid;
+      gap: 6px;
+      margin: 12px 0;
+      padding: 12px;
+      background: var(--panel-alt);
+      border-radius: 8px;
+      max-height: 320px;
+      overflow-y: auto;
+    }
+    .reimb-line { margin: 0; font-size: 13px; line-height: 1.6; }
+    .reimb-line--user strong { color: var(--accent); }
+    .reimb-form { display: grid; gap: 10px; }
     #map-canvas svg { display: block; width: 100%; height: auto; margin: 12px 0 4px; }
     .map-grid { stroke: var(--line); stroke-width: 1; }
     .map-equator { stroke: var(--line); stroke-width: 1.5; }
@@ -949,6 +971,7 @@ export function renderAdminBotWebUi(): string {
         </div>
         <div id="signup-fields" hidden>
           <label>Name<input name="name" autocomplete="name" placeholder="Zhijing"></label>
+          <label>Role<select name="role" id="signup-role"></select></label>
           <label>Affiliation<input name="affiliation" placeholder="Jinesis / MIT"></label>
           <label>Research branch<input name="research_branch" placeholder="Embodied intelligence"></label>
           <label>Research topics<input name="research_topics" placeholder="robot learning, world models"></label>
@@ -972,6 +995,8 @@ export function renderAdminBotWebUi(): string {
     <aside>
       <div class="brand"><span class="mark">A</span><span>AdminBot</span></div>
       <nav aria-label="AdminBot console sections">
+        <button class="tab" data-tab="deadlines">Deadlines</button>
+        <button class="tab" data-tab="reimbursements">Reimbursement</button>
         <button class="tab" data-tab="members" aria-selected="true">Members</button>
         <button class="tab" data-tab="capacity">Capacity</button>
         <button class="tab" data-tab="papers">Papers</button>
@@ -993,6 +1018,7 @@ export function renderAdminBotWebUi(): string {
         <div class="toolbar">
           <span class="pill" id="session-identity" hidden></span>
           <button class="button" id="refresh-button" type="button">Refresh</button>
+          <button class="button primary" id="signin-button" type="button" hidden>Sign in</button>
           <button class="button danger" id="signout-button" type="button">Sign out</button>
         </div>
       </header>
@@ -1035,7 +1061,7 @@ export function renderAdminBotWebUi(): string {
             <form id="member-form">
               <label>Member id<input name="id" required placeholder="zhijing"></label>
               <label>Name<input name="name" required placeholder="Zhijing"></label>
-              <label>Role / career stage<input name="role" placeholder="Research scientist"></label>
+              <label>Role<select name="role" id="member-role-select"></select></label>
               <label>Status<select name="status" id="member-status-select"></select></label>
               <label>Research branch<input name="research_branch" placeholder="Embodied intelligence"></label>
               <label class="wide">Research topics<input name="research_topics" placeholder="robot learning, world models"></label>
@@ -1321,10 +1347,41 @@ export function renderAdminBotWebUi(): string {
           </div>
         </div>
       </section>
+      <section class="section" id="deadlines">
+        <div class="panel">
+          <h2>Upcoming deadlines</h2>
+          <p class="subtle">Times are AoE (UTC-12). The same board the lab channel digest reads.</p>
+          <iframe class="public-frame" id="deadlines-frame" title="Deadline board" src="/deadlines"></iframe>
+        </div>
+      </section>
+
+      <section class="section" id="reimbursements">
+        <div class="panel">
+          <h2>Reimbursement</h2>
+          <p class="subtle">
+            Describe the expense and AdminBot prepares the packet. Nothing here needs an account,
+            and what you type is only used to fill your own forms.
+          </p>
+          <div class="reimb-log" id="reimb-log" aria-live="polite"></div>
+          <form id="reimb-form" class="reimb-form">
+            <label class="full">Your message
+              <textarea name="message" rows="3" placeholder="I paid 82 CHF for a train to the EMNLP tutorial on 12 May"></textarea>
+            </label>
+            <div class="form-actions">
+              <button class="button primary" type="submit">Send</button>
+              <button class="button" type="button" id="reimb-generate">Generate packet</button>
+              <button class="button" type="button" id="reimb-reset">Start over</button>
+              <div class="status" id="reimb-status"></div>
+            </div>
+          </form>
+        </div>
+      </section>
+
     </main>
   </div>
   <script>
     const privilegeLevels = ["external_collaborator", "trial", "member", "core_member", "admin"];
+    const memberRoles = ${JSON.stringify([...adminBotMemberRoles])};
     const paperSteps = [
       "brainstorming_docs",
       "overleaf_writing",
@@ -1343,8 +1400,14 @@ export function renderAdminBotWebUi(): string {
       actions: ["Actions", "Review approval-gated AdminBot proposals."],
       approvals: ["Approvals", "Review and decide pending account requests."],
       settings: ["Settings", "Set roster and paper reminder defaults."],
-      audit: ["Audit", "Inspect local AdminBot service events."]
+      audit: ["Audit", "Inspect local AdminBot service events."],
+      deadlines: ["Deadlines", "Upcoming submission deadlines, AoE-correct and open to everyone."],
+      reimbursements: ["Reimbursement", "Prepare a reimbursement packet. No account needed."]
     };
+    // Surfaces a visitor may use before signing in. Mirrors the Control UI access table
+    // (ui/src/ui/access.ts): the deadline board is a public snapshot and the reimbursement
+    // assistant only ever sees what the claimant in front of it typed.
+    const PUBLIC_TABS = ["deadlines", "reimbursements"];
     // Session member is held only in memory for the lifetime of the page; the HttpOnly cookie is
     // the real credential, so no token or gateway secret is placed in JS-accessible web storage.
     let sessionMember = null;
@@ -2170,17 +2233,27 @@ export function renderAdminBotWebUi(): string {
 
     // Cosmetic gating only; the service still enforces privilege on every sensitive route.
     function applyPrivilegeGating() {
+      const signedIn = Boolean(sessionMember);
       const privileged = isPrivileged();
-      ["approvals", "settings", "audit", "reviewing", "map"].forEach((tab) => {
-        const button = document.querySelector('.tab[data-tab="' + tab + '"]');
-        if (button) button.hidden = !privileged;
+      document.querySelectorAll(".tab").forEach((button) => {
+        const tab = button.dataset.tab;
+        // Visitors see only the public surfaces; members lose the governance ones.
+        button.hidden = signedIn
+          ? !privileged && ["approvals", "settings", "audit", "reviewing", "map"].includes(tab)
+          : !PUBLIC_TABS.includes(tab);
       });
+      document.getElementById("signin-button").hidden = signedIn;
+      document.getElementById("signout-button").hidden = !signedIn;
+      document.getElementById("refresh-button").hidden = !signedIn;
       // The admin add/edit-person editor lives inside the members section; hide it
       // for plain members so they only see the read-only roster and their own profile.
       const memberEditor = document.querySelector(".member-editor");
       if (memberEditor) memberEditor.hidden = !privileged;
     }
 
+    // A visitor is not turned away: the console opens on the surfaces PUBLIC_TABS names, and the
+    // sign-in form becomes something they ask for from the toolbar. A message is passed only when
+    // the gate is being shown because of a failure, in which case it is shown straight away.
     function showAuthGate(message, kind) {
       sessionMember = null;
       document.getElementById("app-shell").hidden = true;
@@ -2189,6 +2262,23 @@ export function renderAdminBotWebUi(): string {
       if (message !== undefined) {
         setStatus("auth-status", message, kind || "");
       }
+    }
+
+    function showPublicConsole(message, kind) {
+      sessionMember = null;
+      document.getElementById("auth-gate").hidden = true;
+      document.getElementById("app-shell").hidden = false;
+      document.getElementById("session-identity").hidden = true;
+      applyPrivilegeGating();
+      selectTab(PUBLIC_TABS[0]);
+      if (message !== undefined) {
+        setStatus("reimb-status", message, kind || "");
+      }
+    }
+
+    function selectTab(tab) {
+      const button = document.querySelector('.tab[data-tab="' + tab + '"]');
+      if (button) button.click();
     }
 
     function showConsole() {
@@ -2938,6 +3028,7 @@ export function renderAdminBotWebUi(): string {
       const topics = commaList(data.research_topics);
       const profile = {
         name: data.name.trim(),
+        ...(String(data.role || "").trim() ? { role: data.role.trim() } : {}),
         ...(String(data.affiliation || "").trim() ? { affiliation: data.affiliation.trim() } : {}),
         ...(String(data.research_branch || "").trim() ? { research_branch: data.research_branch.trim() } : {}),
         ...(topics.length ? { research_topics: topics } : {})
@@ -3174,7 +3265,9 @@ export function renderAdminBotWebUi(): string {
           headers: { Accept: "application/json" }
         });
         if (!response.ok) {
-          showAuthGate();
+          // No session is the ordinary case for a visitor, not an error: open the public console
+          // and let them reach the sign-in form from the toolbar.
+          showPublicConsole();
           return;
         }
         const view = await response.json();
@@ -3182,9 +3275,96 @@ export function renderAdminBotWebUi(): string {
         showConsole();
         await refresh();
       } catch (error) {
-        showAuthGate(error.message, "error");
+        showPublicConsole();
+        setStatus("reimb-status", error.message, "error");
       }
     }
+
+    document.getElementById("signin-button").addEventListener("click", () => {
+      showAuthGate("", "");
+    });
+
+    // Reimbursement over the two open routes. The service treats this principal as anonymous and
+    // lets it reach nothing else, so the packet it builds only ever contains what was typed here.
+    const reimbursement = { messages: [], draft: {}, ready: false };
+
+    function renderReimbursementLog() {
+      document.getElementById("reimb-log").innerHTML = reimbursement.messages
+        .map((entry) =>
+          '<p class="reimb-line reimb-line--' + entry.role + '"><strong>' +
+          (entry.role === "user" ? "You" : "AdminBot") + ':</strong> ' +
+          escapeHtml(entry.text) + "</p>")
+        .join("") || '<p class="subtle">Describe the expense to get started.</p>';
+    }
+
+    document.getElementById("reimb-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const message = String(formData(form).message || "").trim();
+      if (!message) return;
+      reimbursement.messages.push({ role: "user", text: message });
+      // One vocabulary for both surfaces: the options come from adminBotMemberRoles in contracts.ts
+    // rather than being retyped in markup, so the console and the Control UI cannot drift.
+    const roleOptions = (placeholder) =>
+      '<option value="">' + placeholder + "</option>" +
+      memberRoles.map((role) => '<option value="' + escapeHtml(role) + '">' + escapeHtml(role) + "</option>").join("");
+    document.getElementById("signup-role").innerHTML = roleOptions("Select a role…");
+    document.getElementById("member-role-select").innerHTML = roleOptions("Not set");
+
+    renderReimbursementLog();
+      form.reset();
+      setStatus("reimb-status", "Working…", "");
+      try {
+        const response = await fetch("/reimbursements/converse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ message, draft: reimbursement.draft })
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.error?.message || "Could not reach AdminBot.");
+        reimbursement.draft = payload.draft || reimbursement.draft;
+        reimbursement.ready = payload.ready === true;
+        reimbursement.messages.push({ role: "adminbot", text: payload.reply || "" });
+        renderReimbursementLog();
+        setStatus("reimb-status", reimbursement.ready ? "Ready to generate." : "", "");
+      } catch (error) {
+        setStatus("reimb-status", error.message, "error");
+      }
+    });
+
+    document.getElementById("reimb-generate").addEventListener("click", async () => {
+      setStatus("reimb-status", "Generating…", "");
+      try {
+        const response = await fetch("/reimbursements/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ draft: reimbursement.draft })
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload?.error?.message || "Could not generate the packet.");
+        const artifacts = Array.isArray(payload.artifacts) ? payload.artifacts : [];
+        reimbursement.messages.push({
+          role: "adminbot",
+          text: artifacts.length
+            ? "Prepared: " + artifacts.map((item) => item.name || item.kind || "artifact").join(", ")
+            : "Packet prepared."
+        });
+        renderReimbursementLog();
+        setStatus("reimb-status", "Done.", "ok");
+      } catch (error) {
+        setStatus("reimb-status", error.message, "error");
+      }
+    });
+
+    document.getElementById("reimb-reset").addEventListener("click", () => {
+      reimbursement.messages = [];
+      reimbursement.draft = {};
+      reimbursement.ready = false;
+      renderReimbursementLog();
+      setStatus("reimb-status", "", "");
+    });
+
+    renderReimbursementLog();
 
     boot();
   </script>

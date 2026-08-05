@@ -120,7 +120,9 @@ describe("renderAdminBotWebUi", () => {
     // The strip is built from the same bars as the timeline, so the roster cell and the
     // member's own chart cannot tell different stories.
     expect(html).toContain("availabilityStrip(member)");
-    expect(html).toContain("memberBars(member, false).filter((bar) => activeInWeek(bar, weekStart))");
+    expect(html).toContain(
+      "memberBars(member, false).filter((bar) => activeInWeek(bar, weekStart))",
+    );
     expect(html).toContain("<th>Availability</th>");
     // Availability is member-owned: the admin editor never writes it.
     expect(html).not.toContain('id="member-availability-preview"');
@@ -135,7 +137,6 @@ describe("renderAdminBotWebUi", () => {
     // rather than drawn over each other.
     expect(html).toContain("placedLabels");
   });
-
 
   it("emits an inline script that actually parses", () => {
     // The page is built as one TS template literal, so an over-escaped quote (\\" inside a
@@ -278,6 +279,45 @@ describe("renderAdminBotWebUi", () => {
     expect(html).toContain("Time-off reasons are hidden");
     // A member's own profile always sees their own reasons.
     expect(html).toContain("return memberBars(schedule, true)");
+  });
+
+  it("opens to a visitor on the public surfaces instead of a sign-in wall", () => {
+    // Mirrors the Control UI access table: a visitor gets the deadline board and the
+    // reimbursement assistant, and asks for the sign-in form from the toolbar.
+    expect(html).toContain('const PUBLIC_TABS = ["deadlines", "reimbursements"]');
+    expect(html).toContain("function showPublicConsole(");
+    expect(html).toContain("showPublicConsole();");
+    expect(html).toContain('id="signin-button"');
+    expect(html).toContain('data-tab="deadlines"');
+    expect(html).toContain('data-tab="reimbursements"');
+  });
+
+  it("hides every non-public tab until someone signs in", () => {
+    expect(html).toContain("const signedIn = Boolean(sessionMember)");
+    expect(html).toContain("!PUBLIC_TABS.includes(tab)");
+    // Governance surfaces stay gated on privilege for signed-in members, as before.
+    expect(html).toContain('["approvals", "settings", "audit", "reviewing", "map"].includes(tab)');
+    // Refresh and sign-out are session actions; a visitor has neither.
+    expect(html).toContain('document.getElementById("signout-button").hidden = !signedIn');
+    expect(html).toContain('document.getElementById("refresh-button").hidden = !signedIn');
+  });
+
+  it("embeds the deadline board rather than reimplementing it", () => {
+    expect(html).toContain('id="deadlines-frame"');
+    expect(html).toContain('src="/deadlines"');
+  });
+
+  it("drives the visitor reimbursement flow over the two anonymous routes only", () => {
+    expect(html).toContain('fetch("/reimbursements/converse"');
+    expect(html).toContain('fetch("/reimbursements/generate"');
+    expect(html).toContain('id="reimb-form"');
+    expect(html).toContain('id="reimb-generate"');
+    // No credentials on the anonymous path: the routes are open and carry no session.
+    const reimbursementBlock = html.slice(
+      html.indexOf('fetch("/reimbursements/converse"'),
+      html.indexOf('id="reimb-reset"'),
+    );
+    expect(reimbursementBlock).not.toContain("credentials:");
   });
 
   it("adds a relevant-papers toggle backed by /papers/relevant", () => {

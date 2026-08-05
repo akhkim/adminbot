@@ -313,7 +313,6 @@ describe("approveAdminBotAction", () => {
     expect(host.adminBotNotice?.kind).toBe("error");
     expect(host.adminBotNotice?.text).toMatch(/sign in/i);
   });
-
 });
 
 describe("removePendingAdminBotAction", () => {
@@ -468,7 +467,7 @@ describe("saveAdminBotOwnProfile", () => {
         new Response(JSON.stringify({ id: "pat", name: "Pat Doe" }), { status: 200 }),
       );
 
-    await saveAdminBotOwnProfile(host, "pat", { name: "Pat Doe", role: "Research scientist" });
+    await saveAdminBotOwnProfile(host, "pat", { name: "Pat Doe", role: "Industry Researcher" });
 
     expect(toolInvocations).not.toContain("adminbot_upsert_lab_member");
     expect(fetchMock).toHaveBeenCalledWith(
@@ -481,7 +480,7 @@ describe("saveAdminBotOwnProfile", () => {
     const [, init] = fetchMock.mock.calls[0]!;
     expect(JSON.parse(init!.body as string)).toEqual({
       name: "Pat Doe",
-      role: "Research scientist",
+      role: "Industry Researcher",
     });
     expect(host.adminBotNotice).toMatchObject({ kind: "success" });
   });
@@ -599,7 +598,6 @@ describe("saveAdminBotPaper", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
-
 
 describe("approveAdminBotAction", () => {
   const pendingProposal = {

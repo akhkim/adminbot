@@ -144,6 +144,8 @@
     "login.pending.back",
     "login.pending.summary",
     "login.pending.title",
+    "login.public.continueWithoutSignIn",
+    "login.public.hint",
     "nav.adminbot",
     "subtitles.adminbot",
     "subtitles.adminbotAnnouncements",
@@ -162,12 +164,12 @@
     "tabs.adminbotReimbursements",
     "tabs.adminbotSettings"
   ],
-  "generatedAt": "2026-08-04T16:22:17.301Z",
+  "generatedAt": "2026-08-05T05:32:28.318Z",
   "locale": "de",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "15afe857b74a5feb8cc043e2dce6cef46d93fd916f4b409c891422fc7218ea95",
-  "totalKeys": 1559,
+  "sourceHash": "53d92f53e93a49af26f36152acf23578128da6159daf2aeae7251d8bc8015dd4",
+  "totalKeys": 1561,
   "translatedKeys": 1398,
   "workflow": 1
 }

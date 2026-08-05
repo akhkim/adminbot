@@ -78,6 +78,9 @@ export type AppViewState = {
   // reimbursement routes accept anonymous callers, so a claimant can file a packet without an
   // account; every other view still requires signing in.
   guestReimbursements: boolean;
+  // Whether the sign-in gate is on screen. A visitor browses the public shell until they ask for
+  // it, so the gate is a surface they open rather than a wall they start behind.
+  authGateVisible: boolean;
   rosterMembers: import("./adminbot-auth.ts").RosterMember[];
   rosterLoading: boolean;
   rosterError: import("./adminbot-auth-flow.ts").RosterError;

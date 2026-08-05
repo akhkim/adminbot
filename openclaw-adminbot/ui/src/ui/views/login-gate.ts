@@ -1,5 +1,6 @@
 // Control UI view renders login gate screen content.
 import { html } from "lit";
+import { adminBotMemberRoles } from "../../../../extensions/adminbot/src/contracts.js";
 import { ConnectErrorDetailCodes } from "../../../../packages/gateway-protocol/src/connect-error-details.js";
 import { t } from "../../i18n/index.ts";
 import type { MemberAuthFailure } from "../adminbot-auth-flow.ts";
@@ -443,6 +444,24 @@ function renderSignupFields(state: AppViewState) {
       />
     </label>
   `;
+  const selectField = (
+    label: string,
+    value: string,
+    apply: (next: string) => void,
+    options: readonly string[],
+    placeholder: string,
+  ) => html`
+    <label class="field">
+      <span>${label}</span>
+      <select .value=${value} @change=${(e: Event) => apply((e.target as HTMLSelectElement).value)}>
+        <option value="" ?selected=${!value}>${placeholder}</option>
+        ${options.map(
+          (option) =>
+            html`<option value=${option} ?selected=${value === option}>${option}</option>`,
+        )}
+      </select>
+    </label>
+  `;
   return html`
     ${field(
       t("login.member.signup.name"),
@@ -453,12 +472,13 @@ function renderSignupFields(state: AppViewState) {
       t("login.member.signup.namePlaceholder"),
       "name",
     )}
-    ${field(
+    ${selectField(
       t("login.member.signup.role"),
       state.memberRole,
       (next) => {
         state.memberRole = next;
       },
+      adminBotMemberRoles,
       t("login.member.signup.rolePlaceholder"),
     )}
     ${field(
@@ -700,6 +720,16 @@ function renderGuestReimbursementLink(state: AppViewState) {
         ${t("login.guest.reimbursements")}
       </button>
       <div class="login-gate__guest-hint">${t("login.guest.reimbursementsHint")}</div>
+      <button
+        type="button"
+        class="session-link login-gate__public-back"
+        data-testid="login-continue-without-sign-in"
+        @click=${() => {
+          state.authGateVisible = false;
+        }}
+      >
+        ${t("login.public.continueWithoutSignIn")}
+      </button>
     </div>
   `;
 }

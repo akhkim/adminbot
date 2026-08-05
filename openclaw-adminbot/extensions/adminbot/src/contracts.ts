@@ -60,6 +60,27 @@ export type AdminBotAccessGrant = {
   scope?: string;
 };
 
+// The roles a person picks for themselves when they ask for an account. Free text on the record
+// rather than an enum: 158 imported profiles predate this list and several carry shapes it does
+// not cover ("PhD Mentee / MSc"), so the service keeps accepting any string and this is the
+// vocabulary the forms offer. Distinct from privilege_level, which is what someone may do rather
+// than what they are — an external collaborator can hold any privilege the lab grants them.
+export const adminBotMemberRoles = [
+  "Undergraduate Student",
+  "Master's Student",
+  "PhD Student",
+  "Postdoc",
+  "Research Assistant",
+  "Research Intern",
+  "Professor",
+  "Industry Researcher",
+  "External Collaborator",
+  "Lab Manager",
+  "Other",
+] as const;
+
+export type AdminBotMemberRole = (typeof adminBotMemberRoles)[number];
+
 export const adminBotMemberStatuses = [
   "active",
   "part_time",

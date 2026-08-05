@@ -1587,3 +1587,53 @@
 .chat-controls-dropdown {
   display: none;
 }
+
+/* ===========================================
+   Public shell (no session)
+   ===========================================
+   A visitor gets the same sidebar language as the signed-in shell, but a plain two-column flex
+   layout rather than the dashboard grid: none of the grid's other areas (topbar, chat rail) exist
+   without a gateway behind them. */
+
+.app-shell--public {
+  display: flex;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.sidebar--public {
+  flex: 0 0 var(--shell-nav-width, 248px);
+  max-width: var(--shell-nav-width, 248px);
+  border-right: 1px solid var(--border);
+}
+
+.content--public {
+  grid-area: auto;
+  flex: 1;
+  min-width: 0;
+  padding: 24px clamp(16px, 4vw, 48px) 48px;
+}
+
+.sidebar-public-hint {
+  margin: 10px 4px 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.login-gate__public-back {
+  margin-top: 10px;
+}
+
+@media (max-width: 720px) {
+  .app-shell--public {
+    flex-direction: column;
+  }
+
+  .sidebar--public {
+    flex: none;
+    max-width: none;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+}
