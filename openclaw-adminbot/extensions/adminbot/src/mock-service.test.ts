@@ -979,14 +979,14 @@ describe("AdminBot service-principal privilege scoping", () => {
       body: JSON.stringify({
         name: "Grantee",
         email: "grantee@example.com",
-        privilege_level: "core_member",
+        privilege_level: "admin",
         status: "active",
       }),
     });
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({
       id: "grantee",
-      privilege_level: "core_member",
+      privilege_level: "admin",
     });
   });
 

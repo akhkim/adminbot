@@ -556,9 +556,8 @@ describe("isCronSessionKey", () => {
 });
 
 describe("resolveAdminBotMode", () => {
-  it("grants admin mode only to admin and core_member", () => {
+  it("grants admin mode only to admin", () => {
     expect(resolveAdminBotMode("admin")).toBe("admin");
-    expect(resolveAdminBotMode("core_member")).toBe("admin");
   });
 
   it("defaults to the safe read-only general mode for everyone else", () => {

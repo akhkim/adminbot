@@ -50,7 +50,6 @@ describe("resolveAccessRole", () => {
 
   it("gives governance levels admin and everything else member", () => {
     expect(resolveAccessRole({ signedIn: true, privilegeLevel: "admin" })).toBe("admin");
-    expect(resolveAccessRole({ signedIn: true, privilegeLevel: "core_member" })).toBe("admin");
     expect(resolveAccessRole({ signedIn: true, privilegeLevel: "member" })).toBe("member");
     expect(resolveAccessRole({ signedIn: true, privilegeLevel: "trial" })).toBe("member");
     expect(resolveAccessRole({ signedIn: true, privilegeLevel: "external_collaborator" })).toBe(

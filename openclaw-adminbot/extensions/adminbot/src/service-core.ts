@@ -55,7 +55,7 @@ import { memberRelevanceNeedles, textMatchesNeedles } from "./openreview-matchin
 // Approver roles are privilege levels from the member roster, not a separate vocabulary: the
 // service can only ever verify the level on the authenticated session, so anything else here
 // would be unenforceable decoration.
-type AdminBotApproverRole = Extract<AdminBotPrivilegeLevel, "admin" | "core_member">;
+type AdminBotApproverRole = Extract<AdminBotPrivilegeLevel, "admin">;
 
 type AdminBotActionPolicy = {
   risk_tier: AdminBotRiskTier;
@@ -127,34 +127,34 @@ export type AdminBotServiceOptions = {
 };
 
 const DEFAULT_ACTION_POLICIES = {
-  "candidate.accept_for_trial": approvalPolicy("T4", ["admin", "core_member"]),
+  "candidate.accept_for_trial": approvalPolicy("T4", ["admin"]),
   "candidate.accept_direct": approvalPolicy("T4", ["admin"]),
-  "candidate.decline": approvalPolicy("T4", ["admin", "core_member"]),
-  "slack.invite_guest": approvalPolicy("T3", ["admin", "core_member"]),
-  "slack.invite_member": approvalPolicy("T3", ["admin", "core_member"]),
-  "slack.send_message": approvalPolicy("T3", ["admin", "core_member"]),
-  "vector.invite": approvalPolicy("T3", ["admin", "core_member"]),
+  "candidate.decline": approvalPolicy("T4", ["admin"]),
+  "slack.invite_guest": approvalPolicy("T3", ["admin"]),
+  "slack.invite_member": approvalPolicy("T3", ["admin"]),
+  "slack.send_message": approvalPolicy("T3", ["admin"]),
+  "vector.invite": approvalPolicy("T3", ["admin"]),
   "calendar.create_tentative_hold": approvalPolicy("T2", ["admin"]),
-  "calendar.send_invite": approvalPolicy("T3", ["admin", "core_member"]),
-  "calendar.reschedule": approvalPolicy("T3", ["admin", "core_member"]),
-  "calendar.cancel": approvalPolicy("T3", ["admin", "core_member"]),
+  "calendar.send_invite": approvalPolicy("T3", ["admin"]),
+  "calendar.reschedule": approvalPolicy("T3", ["admin"]),
+  "calendar.cancel": approvalPolicy("T3", ["admin"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
-  "email.send": approvalPolicy("T3", ["admin", "core_member"]),
+  "email.send": approvalPolicy("T3", ["admin"]),
   "recommendation_letter.draft": autoPolicy("T1"),
   "recommendation_letter.send": approvalPolicy("T4", ["admin"], 2),
   "reimbursement.prepare_packet": autoPolicy("T1"),
-  "reimbursement.submit": approvalPolicy("T4", ["admin", "core_member"], 2),
+  "reimbursement.submit": approvalPolicy("T4", ["admin"], 2),
   "social_media.draft": autoPolicy("T1"),
-  "social_media.post_publicly": approvalPolicy("T4", ["admin", "core_member"], 2),
+  "social_media.post_publicly": approvalPolicy("T4", ["admin"], 2),
   "paper_publish.prepare": autoPolicy("T1"),
-  "paper.overleaf_edit": approvalPolicy("T4", ["admin", "core_member"], 2),
+  "paper.overleaf_edit": approvalPolicy("T4", ["admin"], 2),
   "paper_publish.submit": approvalPolicy("T4", ["admin"], 2),
-  "paper_publish.nudge_author": approvalPolicy("T3", ["admin", "core_member"]),
-  "paper_publish.escalate_to_pi": approvalPolicy("T3", ["admin", "core_member"]),
+  "paper_publish.nudge_author": approvalPolicy("T3", ["admin"]),
+  "paper_publish.escalate_to_pi": approvalPolicy("T3", ["admin"]),
   "join_form.classify": autoPolicy("T0"),
   // Deliberately auto-approved, unlike every other outbound-message type (slack.send_message,
   // email.send, paper_publish.nudge_author are all T3/approval-required): creating this proposal
-  // already requires a real admin/core_member session via POST /nudges/send (never reachable
+  // already requires a real admin session via POST /nudges/send (never reachable
   // through the shared service principal an agent chat authenticates as), so that admin gate is
   // the approval. resolvePolicy only honors auto_allowed below T2, hence T1 here.
   "member_nudge.send": autoPolicy("T1"),
@@ -165,7 +165,7 @@ const DEFAULT_ACTION_POLICIES = {
   // Overdue warnings carry real social weight and go out under Zhijing's name, so they
   // wait in Pending actions for a human however the run was triggered. Approver roles are
   // privilege levels because that is the only thing the session can be checked against.
-  "openreview.warning": approvalPolicy("T2", ["admin", "core_member"]),
+  "openreview.warning": approvalPolicy("T2", ["admin"]),
 } as const satisfies Record<AdminBotActionType, AdminBotActionPolicy>;
 
 const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = {
@@ -180,14 +180,10 @@ const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = 
     { service: "overleaf", access: "edit", scope: "assigned paper projects" },
     { service: "calendar", access: "view", scope: "lab events" },
   ],
+  // Full members hold what `core_member` used to: the tier was retired and its lab-wide scopes
+  // folded down here, so a member edits at lab scope rather than assigned-only scope. Governance
+  // did not come with it — approvals and operator scopes are `admin` alone (AdminBotApproverRole).
   member: [
-    { service: "slack", access: "comment", scope: "member channels" },
-    { service: "google_drive", access: "edit", scope: "member paper folders" },
-    { service: "overleaf", access: "edit", scope: "paper projects" },
-    { service: "calendar", access: "comment", scope: "lab events" },
-    { service: "github", access: "edit", scope: "assigned repos" },
-  ],
-  core_member: [
     { service: "slack", access: "comment", scope: "core channels" },
     { service: "google_drive", access: "edit", scope: "core lab folders" },
     { service: "overleaf", access: "edit", scope: "lab projects" },
@@ -1137,7 +1133,7 @@ export class AdminBotService {
   // reminder or general announcement). Unlike every other outbound-message action type, this one
   // is auto-approved (see DEFAULT_ACTION_POLICIES) and executed inline instead of waiting in
   // Pending actions for a separate pi/lab_manager approval: creating it already requires a real
-  // admin/core_member session (POST /nudges/send is gated the same way as /settings), so that
+  // admin session (POST /nudges/send is gated the same way as /settings), so that
   // admin gate itself *is* the approval — a second review step would just be an invisible,
   // undiscoverable extra click for a tool only admins can reach in the first place. A member
   // missing the contact field the chosen channel needs, or whose send fails, is skipped with a
@@ -1445,7 +1441,7 @@ function defaultPolicyForRiskTier(riskTier: AdminBotRiskTier): AdminBotActionPol
     return autoPolicy(riskTier);
   }
   if (riskTier === "T2" || riskTier === "T3") {
-    return approvalPolicy(riskTier, ["admin", "core_member"]);
+    return approvalPolicy(riskTier, ["admin"]);
   }
   return approvalPolicy(riskTier, ["admin"], 2);
 }

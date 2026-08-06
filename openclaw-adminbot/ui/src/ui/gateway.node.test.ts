@@ -397,7 +397,6 @@ describe("GatewayBrowserClient", () => {
 
   it("resolveMemberOperatorScopes gives admins the full set and everyone else read only", () => {
     expect(resolveMemberOperatorScopes("admin")).toEqual([...CONTROL_UI_OPERATOR_SCOPES]);
-    expect(resolveMemberOperatorScopes("core_member")).toEqual([...CONTROL_UI_OPERATOR_SCOPES]);
     expect(resolveMemberOperatorScopes("member")).toEqual(["operator.read"]);
     expect(resolveMemberOperatorScopes("trial")).toEqual(["operator.read"]);
     expect(resolveMemberOperatorScopes(null)).toEqual(["operator.read"]);

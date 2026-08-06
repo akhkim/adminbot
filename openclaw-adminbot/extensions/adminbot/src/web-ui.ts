@@ -1407,7 +1407,7 @@ export function renderAdminBotWebUi(): string {
     </main>
   </div>
   <script>
-    const privilegeLevels = ["external_collaborator", "trial", "member", "core_member", "admin"];
+    const privilegeLevels = ["external_collaborator", "trial", "member", "admin"];
     const collaboratorSubgroups = ${JSON.stringify([...adminBotExternalCollaboratorSubgroups])};
     const collaboratorSubgroupGrants = ${JSON.stringify(collaboratorSubgroupGrants)};
     // Cells that are not a plain yes carry an instruction the person acting on the grant has to
@@ -1521,7 +1521,7 @@ export function renderAdminBotWebUi(): string {
       state.nudges = nudges.nudges || [];
       state.proposals = pending.proposals || [];
       state.audit = audit.events || [];
-      // Registration review is admin/core_member only; skip the fetch for members who would just 403.
+      // Registration review is admin only; skip the fetch for members who would just 403.
       if (isPrivileged()) {
         try {
           const registrations = await api("/auth/registrations?status=pending");
@@ -2304,7 +2304,7 @@ export function renderAdminBotWebUi(): string {
 
     function isPrivileged() {
       const level = sessionMember?.privilege_level;
-      return level === "admin" || level === "core_member";
+      return level === "admin";
     }
 
     // Cosmetic gating only; the service still enforces privilege on every sensitive route.

@@ -25,7 +25,7 @@ describe("AdminBotService", () => {
     expect(proposal.risk_tier).toBe("T4");
     expect(proposal.approval_requirement).toEqual({
       requires_approval: true,
-      approver_roles: ["admin", "core_member"],
+      approver_roles: ["admin"],
       min_approvals: 1,
     });
 
@@ -74,7 +74,7 @@ describe("AdminBotService", () => {
     unwrap(
       service.approve(proposal.id, {
         payload_hash: proposal.payload_hash,
-        approver_role: "core_member",
+        approver_role: "admin",
         approver_id: "manager-1",
       }),
     );
@@ -115,14 +115,14 @@ describe("AdminBotService", () => {
     expect(proposal.risk_tier).toBe("T3");
     expect(proposal.approval_requirement).toEqual({
       requires_approval: true,
-      approver_roles: ["admin", "core_member"],
+      approver_roles: ["admin"],
       min_approvals: 1,
     });
 
     expect(
       service.approve(proposal.id, {
         payload_hash: proposal.payload_hash,
-        approver_role: "core_member",
+        approver_role: "admin",
       }),
     ).toMatchObject({ ok: true });
   });
@@ -352,7 +352,7 @@ describe("AdminBotService", () => {
       {
         id: "bad-level-2",
         name: "Bad Level",
-        privilege_level: "core_member",
+        privilege_level: "admin",
         collaborator_subgroup: "alumni",
       },
       {
@@ -820,7 +820,7 @@ describe("AdminBotService", () => {
 
       expect(publicPost.approval_requirement).toEqual({
         requires_approval: true,
-        approver_roles: ["admin", "core_member"],
+        approver_roles: ["admin"],
         min_approvals: 2,
       });
       expect(publicPost.status).toBe("pending");
@@ -876,12 +876,12 @@ describe("AdminBotService", () => {
         service.createProposal({ type: "paper_publish.submit", summary: "Submit to NeurIPS" }),
       );
 
-      // paper_publish.submit is admin-only; core_member may approve lesser T3 actions.
+      // Every approval-gated action is admin-only, so a plain member is always outside the set.
       expect(proposal.approval_requirement.approver_roles).toEqual(["admin"]);
       expect(
         service.approve(proposal.id, {
           payload_hash: proposal.payload_hash,
-          approver_role: "core_member",
+          approver_role: "member",
           approver_id: "manager-1",
         }),
       ).toMatchObject({ ok: false, status: 403 });
@@ -898,7 +898,7 @@ describe("AdminBotService", () => {
 
       expect(service.getProposal(proposal.id)?.approval_requirement).toEqual({
         requires_approval: true,
-        approver_roles: ["admin", "core_member"],
+        approver_roles: ["admin"],
         min_approvals: 2,
       });
     });

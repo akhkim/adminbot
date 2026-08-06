@@ -186,6 +186,28 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         ON adminbot_sessions(member_id, expires_at);
     `);
     this.migrateStoredOnboarding();
+    this.migrateRetiredPrivilegeLevels();
+  }
+
+  // `core_member` was retired and its access grants folded into `member`, so rows seeded before
+  // that carry a level the current union no longer contains. Rewrite them once at open — both the
+  // indexed column and the payload copy, which must not drift — so runtime only ever reads a
+  // canonical level and no read path needs a fallback for the retired name.
+  private migrateRetiredPrivilegeLevels(): void {
+    const rows = this.db
+      .prepare(
+        "SELECT id, payload_json FROM adminbot_lab_members WHERE privilege_level = 'core_member'",
+      )
+      .all() as Array<{ id: string; payload_json: string }>;
+    for (const row of rows) {
+      const member = parseJson<AdminBotLabMember>(row.payload_json);
+      const migrated = JSON.stringify({ ...member, privilege_level: "member" });
+      this.db
+        .prepare(
+          "UPDATE adminbot_lab_members SET privilege_level = 'member', payload_json = ? WHERE id = ?",
+        )
+        .run(migrated, row.id);
+    }
   }
 
   // Members seeded before the checklist gained structured bullets still carry the step shape from

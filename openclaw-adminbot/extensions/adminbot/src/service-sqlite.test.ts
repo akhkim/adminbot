@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import type { AdminBotLabMember } from "./contracts.js";
 import { createAdminBotSqliteService } from "./service-sqlite.js";
 
 const tempDirs: string[] = [];
@@ -269,6 +270,47 @@ describe("AdminBotSqliteStore", () => {
       ?.onboarding?.steps.find((entry) => entry.id === "calendar_conventions");
     expect(step?.acknowledged_at).toBe(acknowledgedAt);
     expect(step?.bullets?.every((bullet) => typeof bullet.text === "string")).toBe(true);
+    second.close();
+  });
+
+  // `core_member` was retired into `member`. Rows seeded before that carry a level the union no
+  // longer contains, so opening the database rewrites them; the cast is the only way to write the
+  // retired shape now that the type is narrowed.
+  it("migrates members stored at the retired core_member level to member", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(first.service.upsertLabMember({ id: "ada", name: "Ada Lovelace" }));
+    // A genuine retired row carries the grants that tier had, which are exactly the grants `member`
+    // now holds — so the migration only has to move the level, never recompute access.
+    const grants = unwrap(
+      first.service.upsertLabMember({
+        id: "grace",
+        name: "Grace Hopper",
+        privilege_level: "member",
+      }),
+    ).access;
+    const seeded = first.store.getLabMember("ada");
+    first.store.saveLabMember({
+      ...seeded!,
+      privilege_level: "core_member",
+      access: grants,
+    } as unknown as AdminBotLabMember);
+    first.close();
+
+    const second = createAdminBotSqliteService({ databasePath });
+    const migrated = second.store.getLabMember("ada");
+    expect(migrated?.privilege_level).toBe("member");
+    // The indexed column drives listing/filtering, so it must not keep the retired value either.
+    const listed = unwrap(second.service.listLabMembers()).members.find(
+      (member) => member.id === "ada",
+    );
+    expect(listed?.privilege_level).toBe("member");
+    // Lab-wide scopes the retired tier carried survive the move.
+    expect(migrated?.access).toContainEqual({
+      service: "paper_pipeline",
+      access: "edit",
+      scope: "paper records",
+    });
     second.close();
   });
 });

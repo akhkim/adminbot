@@ -273,7 +273,7 @@ describe("renderAdminBotWebUi", () => {
 
   it("hides time-off reasons from unprivileged sessions in the lab view", () => {
     // Why someone is away (internship, heavy semester) is personal; the lab view shows only the
-    // away/partly-away state unless the session is admin or core_member.
+    // away/partly-away state unless the session is admin.
     expect(html).toContain("const showReasons = isPrivileged()");
     expect(html).toContain("memberBars(member, showReasons)");
     expect(html).toContain('showReasons ? humanize(row.kind || "other") : "Away"');
@@ -384,7 +384,7 @@ describe("renderAdminBotWebUi", () => {
 
   it("gates privileged surfaces (including Approvals) on the member privilege level", () => {
     expect(html).toContain("function isPrivileged()");
-    expect(html).toContain('level === "admin" || level === "core_member"');
+    expect(html).toContain('level === "admin"');
     expect(html).toContain("applyPrivilegeGating");
     expect(html).toContain("isPrivileged() ?");
     // Approvals and Reviewing are gated by the same privileged mechanism as Settings/Audit.

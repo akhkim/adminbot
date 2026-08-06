@@ -263,7 +263,7 @@ describe("approveAdminBotAction", () => {
     status: "pending" as const,
     approval_requirement: {
       requires_approval: true,
-      approver_roles: ["admin", "core_member"],
+      approver_roles: ["admin"],
       min_approvals: 1,
     },
     approvals: [],
@@ -639,7 +639,7 @@ describe("approveAdminBotAction", () => {
     status: "pending" as const,
     approval_requirement: {
       requires_approval: true,
-      approver_roles: ["admin", "core_member"],
+      approver_roles: ["admin"],
       min_approvals: 1,
     },
     approvals: [],
@@ -713,7 +713,7 @@ describe("approveAdminBotAction", () => {
         ...pendingProposal,
         approval_requirement: {
           requires_approval: true,
-          approver_roles: ["admin", "core_member"],
+          approver_roles: ["admin"],
           min_approvals: 2,
         },
         status: "pending",

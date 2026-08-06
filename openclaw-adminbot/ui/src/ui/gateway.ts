@@ -220,7 +220,7 @@ export const CONTROL_UI_OPERATOR_SCOPES = [
 // requesting more than the member is allowed would leave them unable to pair. Plain members get
 // read only — which is what denies them operator.write (and therefore tools.invoke) at the gateway.
 export function resolveMemberOperatorScopes(privilegeLevel: string | null | undefined): string[] {
-  const privileged = privilegeLevel === "admin" || privilegeLevel === "core_member";
+  const privileged = privilegeLevel === "admin";
   return privileged ? [...CONTROL_UI_OPERATOR_SCOPES] : ["operator.read"];
 }
 

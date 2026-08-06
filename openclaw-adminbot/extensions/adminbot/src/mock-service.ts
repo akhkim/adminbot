@@ -1002,7 +1002,7 @@ async function handleAuthenticatedRoute(
   }
   if (req.method === "POST" && url.pathname === "/nudges/send") {
     // Same reasoning as /settings and /sensitive-info: this fans out real Slack/email sends to a
-    // chosen set of members, so it must be driven by a genuine admin/core_member member session,
+    // chosen set of members, so it must be driven by a genuine admin member session,
     // never the shared service principal every agent tool call authenticates as.
     if (!requireMemberPrivileged(res, principal)) {
       return;
@@ -1065,7 +1065,7 @@ async function handleAuthenticatedRoute(
   sendJson(res, 404, { error: { message: "not found" } });
 }
 
-// Sensitive routes: service principal, or admin/core_member privilege.
+// Sensitive routes: service principal, or admin privilege.
 function isPrivileged(principal: AdminBotPrincipal): boolean {
   if (principal.kind === "service") {
     return true;
@@ -1074,7 +1074,7 @@ function isPrivileged(principal: AdminBotPrincipal): boolean {
     return false;
   }
   const level = principal.member.privilege_level;
-  return level === "admin" || level === "core_member";
+  return level === "admin";
 }
 
 function requirePrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {
@@ -1088,8 +1088,8 @@ function requirePrivileged(res: ServerResponse, principal: AdminBotPrincipal): b
 // Escalation-sensitive governance (global settings, sensitive-info read/write, registration
 // approve/reject) must be driven by a real member session. The shared service principal is used by
 // every agent tool call regardless of which member is chatting, so treating it as admin here would
-// let any signed-in member perform these actions through the agent. Require an admin/core_member
-// member Bearer session and deny the service principal outright.
+// let any signed-in member perform these actions through the agent. Require an admin member
+// Bearer session and deny the service principal outright.
 function requireMemberPrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {
   if (principal.kind === "service") {
     sendJson(res, 403, {
