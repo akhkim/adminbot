@@ -72,6 +72,9 @@ describe("visibleTabsForRole", () => {
 
   it("adds the roster, the paper list and chat for a member", () => {
     expect(visibleTabsForRole(ALL_TABS, "member")).toEqual([
+      "dashboard",
+      "profile",
+      "myWork",
       "chat",
       "adminbotReimbursements",
       "adminbotMembers",
@@ -120,7 +123,7 @@ describe("resolveAccessibleTab", () => {
   // rendering a privileged panel with no data behind it.
   it("falls back to the role's default when the tab is out of reach", () => {
     expect(resolveAccessibleTab("config", "anonymous")).toBe("adminbotDeadlines");
-    expect(resolveAccessibleTab("adminbotSettings", "member")).toBe("chat");
+    expect(resolveAccessibleTab("adminbotSettings", "member")).toBe("dashboard");
     expect(canAccessTab(defaultTabForRole("anonymous"), "anonymous")).toBe(true);
     expect(canAccessTab(defaultTabForRole("member"), "member")).toBe(true);
   });

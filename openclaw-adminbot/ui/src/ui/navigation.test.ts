@@ -28,6 +28,9 @@ const leadingSlashNormalizerCases = [
 describe("iconForTab", () => {
   it("returns stable icons for every tab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, iconForTab(tab)]))).toEqual({
+      dashboard: "layoutComfortable",
+      profile: "user",
+      myWork: "book",
       chat: "messageSquare",
       overview: "barChart",
       adminbot: "brain",
@@ -72,6 +75,9 @@ describe("iconForTab", () => {
 describe("titleForTab", () => {
   it("returns expected titles for every tab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, titleForTab(tab)]))).toEqual({
+      dashboard: "Dashboard",
+      profile: "My Profile",
+      myWork: "My Projects & Papers",
       chat: "Chat",
       overview: "Overview",
       adminbot: "Pending Actions",
@@ -110,6 +116,9 @@ describe("titleForTab", () => {
 describe("subtitleForTab", () => {
   it("returns expected subtitles for every tab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, subtitleForTab(tab)]))).toEqual({
+      dashboard: "What needs you, and where the lab stands.",
+      profile: "Your details, your badges, and anything still blank.",
+      myWork: "What you are working on, and anything holding it up.",
       chat: "Gateway chat for quick interventions.",
       overview: "Status, entry points, health.",
       adminbot: "Approval queue and execution controls.",
@@ -212,8 +221,8 @@ describe("tabFromPath", () => {
     expect(tabFromPath("/dreams")).toBe("dreams");
   });
 
-  it("returns chat for root path", () => {
-    expect(tabFromPath("/")).toBe("chat");
+  it("returns the dashboard for root path", () => {
+    expect(tabFromPath("/")).toBe("dashboard");
   });
 
   it("handles base paths", () => {
@@ -257,6 +266,7 @@ describe("inferBasePathFromPathname", () => {
 describe("TAB_GROUPS", () => {
   it("contains all expected groups", () => {
     expect(TAB_GROUPS.map((g) => g.label)).toEqual([
+      "home",
       "chat",
       "adminbot",
       "control",

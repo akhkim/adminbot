@@ -71,7 +71,9 @@ export type AdminBotPanel =
   | "papers"
   | "announcements";
 
-const stepLabels: Record<string, string> = {
+// Exported so My Projects & Papers advances a paper through the same named steps this page shows;
+// two step vocabularies would let the pages disagree about where a paper is.
+export const stepLabels: Record<string, string> = {
   brainstorming_docs: "Brainstorming docs",
   overleaf_writing: "Overleaf writing",
   submission: "Submission",
@@ -82,7 +84,7 @@ const stepLabels: Record<string, string> = {
   poster_making: "Poster",
 };
 
-const paperSteps: AdminBotPaperStep[] = [
+export const paperSteps: AdminBotPaperStep[] = [
   "brainstorming_docs",
   "overleaf_writing",
   "submission",

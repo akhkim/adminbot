@@ -483,7 +483,51 @@
 }
 
 .adminbot-welcome__card {
+  position: relative;
   width: min(640px, 100%);
+}
+
+/* The always-available exit, opposite the read-gated button at the foot of the card. */
+.adminbot-welcome__close {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--control-h-md);
+  height: var(--control-h-md);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out);
+}
+
+.adminbot-welcome__close:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.adminbot-welcome__close:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.adminbot-welcome__close svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .adminbot-welcome__category {

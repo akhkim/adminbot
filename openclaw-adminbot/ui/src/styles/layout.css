@@ -1651,6 +1651,993 @@
 }
 
 /* ===========================================
+   Dashboard (home, signed in)
+   ===========================================
+   Two bands: what is waiting on you, then where to go. The attention stack is the loud one, so the
+   shortcut grid below it stays deliberately flat -- no cards competing with cards. */
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  max-width: 62rem;
+}
+
+.dashboard__section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The count is the whole reason the band has a heading; without something waiting it is absent. */
+.dashboard__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-family: var(--font-body);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-normal);
+}
+
+.dashboard__stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.dashboard__empty {
+  margin: 0;
+  padding: var(--space-6);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-xl);
+  color: var(--muted);
+  font-size: var(--control-ui-text-md);
+}
+
+.dashboard-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+}
+
+/* One accent edge marks the band as actionable without tinting every card a different colour. */
+.dashboard-card {
+  border-left: 2px solid var(--accent);
+}
+
+.dashboard-card__body {
+  min-width: 0;
+}
+
+.dashboard-card__title {
+  margin: 0;
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+}
+
+.dashboard-card__summary {
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.dashboard-card__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboard-card__step {
+  padding: 3px var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--bg);
+  font-size: var(--control-ui-text-xs);
+  color: var(--text);
+}
+
+.dashboard-card__step--more {
+  color: var(--muted);
+}
+
+.dashboard-card__action {
+  flex-shrink: 0;
+}
+
+.dashboard__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--space-3);
+}
+
+/* Summary of a page the member owns. One number worth opening the page for, then the door. */
+.dashboard-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-accent);
+}
+
+.dashboard-summary__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dashboard-summary__icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+}
+
+.dashboard-summary__icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dashboard-summary__headline {
+  margin: 0;
+  font-size: var(--control-ui-text-xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+}
+
+.dashboard-summary__detail {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.dashboard-summary__action {
+  margin-top: var(--space-3);
+}
+
+/* Overview rows: enough of each page to decide whether to open it, never enough to replace it. */
+.dashboard-summary__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--space-2);
+}
+
+.dashboard-summary__badge {
+  padding: 3px var(--space-3);
+  border: 1px solid var(--accent-muted);
+  border-radius: var(--radius-full);
+  background: var(--accent-subtle);
+  font-size: var(--control-ui-text-xs);
+  color: var(--text-strong);
+}
+
+.dashboard-summary__badge--more {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--muted);
+}
+
+.dashboard-summary__line {
+  margin: var(--space-3) 0 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.dashboard-summary__line--warn {
+  color: var(--text);
+}
+
+.dashboard-summary__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboard-summary__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 34px;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--control-ui-text-sm);
+}
+
+.dashboard-summary__row--paper {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.dashboard-summary__row-label {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-summary__bar {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.dashboard-summary__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+
+.dashboard-summary__row-value {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  text-align: right;
+}
+
+.dashboard-summary__row-step {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.dashboard-summary__more {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* ===========================================
+   My Profile
+   =========================================== */
+
+.profile,
+.my-work {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  max-width: 62rem;
+}
+
+.profile__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.profile__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  background: var(--accent-subtle);
+  border: 1px solid var(--accent-muted);
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+}
+
+.profile__identity-copy {
+  display: flex;
+  flex-direction: column;
+}
+
+.profile__name {
+  font-size: var(--control-ui-text-xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+}
+
+.profile__role {
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.profile__avatar--photo {
+  object-fit: cover;
+  padding: 0;
+}
+
+/* The picture is the control. The pencil is hidden until the pointer (or keyboard focus) is on it,
+   so the header stays a header until you mean to change something. */
+.profile__avatar-slot {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.profile__avatar-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: rgba(9, 9, 11, 0.68);
+  color: var(--text-strong);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.profile__avatar-slot:hover .profile__avatar-overlay,
+.profile__avatar-slot:focus-within .profile__avatar-overlay {
+  opacity: 1;
+}
+
+.profile__avatar-slot:focus-within {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.profile__avatar-overlay svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile__avatar-overlay {
+    transition: none;
+  }
+}
+
+.profile__links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.profile__link {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.profile__link:hover,
+.profile__link:focus-visible {
+  color: var(--text);
+  border-bottom-color: var(--border-hover);
+}
+
+/* The CV is the one link people come here for, so it is the one that looks like a link. */
+.profile__link--strong {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.profile__section-title,
+.my-work__section-title {
+  margin: 0 0 var(--space-4);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.profile__section-sub {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.profile__empty,
+.my-work__empty {
+  margin: 0;
+  padding: var(--space-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.profile__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--space-3) var(--space-6);
+  margin: 0;
+}
+
+.profile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.profile-field__label {
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.profile-field__value {
+  margin: 0;
+  font-size: var(--control-ui-text-md);
+  color: var(--text);
+}
+
+/* A blank is information too, so it is stated rather than left as an empty row. */
+.profile-field__value--empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.profile__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.profile-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px var(--space-3);
+  border: 1px solid var(--accent-muted);
+  border-radius: var(--radius-full);
+  background: var(--accent-subtle);
+  font-size: var(--control-ui-text-xs);
+  color: var(--text-strong);
+}
+
+.profile-badge__icon {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  color: var(--accent);
+}
+
+.profile-badge__icon svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+}
+
+.profile__form {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  gap: var(--space-4);
+  align-items: end;
+}
+
+.profile__form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile__form-label {
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.profile__save {
+  justify-self: start;
+}
+
+.profile__optional {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+}
+
+.profile__upload {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  grid-column: 1 / -1;
+}
+
+.profile__upload-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.profile__upload-preview {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-muted);
+  object-fit: cover;
+}
+
+.profile__upload-preview--empty {
+  display: inline-block;
+}
+
+.profile__upload-button {
+  cursor: pointer;
+}
+
+.profile__upload-hint {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.profile__suggestions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--space-3);
+}
+
+.profile-suggestion {
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-accent);
+}
+
+.profile-suggestion__title {
+  margin: 0;
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.profile-suggestion__body {
+  margin: var(--space-1) 0 var(--space-3);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.profile-suggestion__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  font-size: var(--control-ui-text-sm);
+  text-decoration: none;
+}
+
+.profile-suggestion__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.profile-suggestion__icon {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+}
+
+.profile-suggestion__icon svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+}
+
+/* ===========================================
+   My Projects & Papers
+   =========================================== */
+
+.profile__section-head,
+.my-work__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.profile__section-head .profile__section-title,
+.my-work__section-head .my-work__section-title {
+  margin-bottom: 0;
+}
+
+.profile__edit-icon {
+  display: inline-flex;
+  width: 13px;
+  height: 13px;
+  margin-right: 6px;
+}
+
+.profile__edit-icon svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.profile__form-actions {
+  display: flex;
+  gap: var(--space-2);
+  align-self: end;
+}
+
+/* Says which fields the form deliberately omits, so their absence reads as a rule rather than an
+   oversight. */
+.profile__managed {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.profile-field--locked .profile-field__label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.profile-field__lock {
+  display: inline-flex;
+  width: 11px;
+  height: 11px;
+  color: var(--muted);
+}
+
+.profile-field__lock svg {
+  width: 11px;
+  height: 11px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+}
+
+.my-work__items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.my-work-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-lg);
+  background: var(--bg-accent);
+}
+
+/* A blocked item is marked where the work is, not only in the band above it. */
+.my-work-item--blocked {
+  border-left-color: var(--warning, #d97706);
+}
+
+.my-work-item__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.my-work-item__copy {
+  min-width: 0;
+}
+
+.my-work-item__title {
+  margin: 0;
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.my-work-item__meta {
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.my-work-item__report {
+  flex-shrink: 0;
+}
+
+.my-work-item__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.my-work-item__bar {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.my-work-item__fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  transition: width var(--duration-fast) var(--ease-out);
+}
+
+.my-work-item__step {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.my-work-item__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.my-work-item__step-picker select {
+  min-width: 12rem;
+}
+
+.my-work__blockers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.my-work-paper {
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-accent);
+}
+
+.my-work-paper__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.my-work-paper__copy {
+  min-width: 0;
+}
+
+.my-work-paper__title {
+  margin: 0;
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.my-work-paper__meta {
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.my-work-paper__report {
+  flex-shrink: 0;
+}
+
+.my-work-blocker-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(100%, 26rem);
+  flex-shrink: 0;
+}
+
+.my-work-blocker-form__text {
+  width: 100%;
+  resize: vertical;
+}
+
+.my-work-blocker-form__reviewer {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.my-work-blocker-form__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Blockers sit above the work they block: the whole point is that they are what you look at. */
+.my-work-blocker {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-strong);
+  border-left: 2px solid var(--warning, #d97706);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+.my-work-blocker__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--warning, #d97706);
+}
+
+.my-work-blocker__icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.my-work-blocker__copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.my-work-blocker__text {
+  margin: 0;
+  font-size: var(--control-ui-text-md);
+  color: var(--text);
+}
+
+.my-work-blocker__meta {
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.my-work-blocker__status {
+  flex-shrink: 0;
+}
+
+.my-work__notice {
+  margin: var(--space-3) 0 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .my-work-paper__head {
+    flex-direction: column;
+  }
+}
+
+.dashboard-shortcut {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.dashboard-shortcut:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+}
+
+.dashboard-shortcut:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.dashboard-shortcut__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+/* The shared icon set ships unstyled paths, so each surface states its own stroke — same values as
+   `.nav-item__icon svg`, since these are the same glyphs at the same size. */
+.dashboard-shortcut__icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dashboard-shortcut__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dashboard-shortcut__title {
+  font-size: var(--control-ui-text-md);
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.dashboard-shortcut__sub {
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .dashboard-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ===========================================
    Landing (visitor, no session)
    ===========================================
    The one place in the app that gets to breathe. Everything else here is a dense operations

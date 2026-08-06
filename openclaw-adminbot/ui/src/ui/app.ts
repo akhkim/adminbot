@@ -186,6 +186,7 @@ import type {
 import type { ChatAttachment, ChatQueueItem, CronFormState } from "./ui-types.ts";
 import { generateUUID } from "./uuid.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
+import type { Blocker, BlockerDraft } from "./views/my-work.ts";
 
 declare global {
   interface Window {
@@ -532,6 +533,10 @@ export class OpenClawApp extends LitElement {
   @state() adminBotReimbursement: AdminBotReimbursementState =
     createEmptyAdminBotReimbursementState();
   @state() adminBotMemberNudge: AdminBotMemberNudgeState = createEmptyAdminBotMemberNudgeState();
+  @state() myWorkBlockerDraft: BlockerDraft | null = null;
+  @state() myWorkBlockers: Blocker[] = [];
+  @state() myWorkProjectDraft: string | null = null;
+  @state() profileEditingSection: "basics" | null = null;
   @state() registrations: MemberRegistration[] = [];
   @state() registrationsLoading = false;
   @state() registrationsError: RegistrationsLoadError | null = null;

@@ -4,6 +4,7 @@ import type { IconName } from "./icons.js";
 import { normalizeLowercaseStringOrEmpty } from "./string-coerce.ts";
 
 export const TAB_GROUPS = [
+  { label: "home", tabs: ["dashboard", "profile", "myWork"] },
   { label: "chat", tabs: ["chat"] },
   {
     label: "adminbot",
@@ -31,6 +32,9 @@ export const TAB_GROUPS = [
 
 export type Tab =
   | "agents"
+  | "dashboard"
+  | "profile"
+  | "myWork"
   | "activity"
   | "adminbot"
   | "adminbotRegistrations"
@@ -77,6 +81,9 @@ export const SETTINGS_TABS = [
 
 const TAB_PATHS: Record<Tab, string> = {
   agents: "/agents",
+  dashboard: "/dashboard",
+  profile: "/profile",
+  myWork: "/my-work",
   activity: "/activity",
   adminbot: "/adminbot",
   adminbotRegistrations: "/adminbot/registrations",
@@ -182,8 +189,10 @@ export function tabFromPath(pathname: string, basePath = ""): Tab | null {
   if (normalized.endsWith("/index.html")) {
     normalized = "/";
   }
+  // The root is home: the dashboard for anyone signed in, and — because a visitor may not see it —
+  // the coercion in app-render turns the same resolution into the landing page for them.
   if (normalized === "/") {
-    return "chat";
+    return "dashboard";
   }
   return PATH_TO_TAB.get(normalized) ?? null;
 }
@@ -214,6 +223,12 @@ export function iconForTab(tab: Tab): IconName {
   switch (tab) {
     case "agents":
       return "folder";
+    case "dashboard":
+      return "layoutComfortable";
+    case "profile":
+      return "user";
+    case "myWork":
+      return "book";
     case "chat":
       return "messageSquare";
     case "overview":

@@ -350,6 +350,14 @@ export type AppViewState = {
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
+  // Prototype-only: blockers a member raises from My Projects & Papers. Held in the browser
+  // because the AdminBot service has no blocker route yet -- see views/my-work.ts.
+  myWorkBlockerDraft: import("./views/my-work.ts").BlockerDraft | null;
+  myWorkBlockers: import("./views/my-work.ts").Blocker[];
+  // Non-null while the "add a project" field is open; holds what has been typed.
+  myWorkProjectDraft: string | null;
+  // Which profile section is in edit mode, if any.
+  profileEditingSection: "basics" | null;
   registrations: import("./adminbot-auth.ts").MemberRegistration[];
   registrationsLoading: boolean;
   registrationsError: import("./adminbot-registrations.ts").RegistrationsLoadError | null;

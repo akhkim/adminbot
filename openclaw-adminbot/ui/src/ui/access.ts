@@ -52,6 +52,13 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotMembers: "member",
   adminbotPapers: "member",
   chat: "member",
+  // Home for anyone signed in. It only ever shows what the viewer's own role already reaches, so
+  // it needs no privilege of its own beyond having an account.
+  dashboard: "member",
+  // Your own record and your own work. Both are scoped to the viewer, so neither needs privilege
+  // beyond having an account.
+  profile: "member",
+  myWork: "member",
 
   // Everything else is an operator or governance surface.
   adminbot: "admin",
@@ -97,7 +104,7 @@ export function visibleTabsForRole(tabs: readonly Tab[], role: AccessRole): Tab[
 // Where a role lands when it has no tab of its own choosing — a fresh visit, or a tab that is no
 // longer allowed after signing out. Deliberately the least privileged surface that role can see.
 export function defaultTabForRole(role: AccessRole): Tab {
-  return role === "anonymous" ? "adminbotDeadlines" : "chat";
+  return role === "anonymous" ? "adminbotDeadlines" : "dashboard";
 }
 
 // The tab to actually render: the requested one when the role may see it, otherwise that role's
