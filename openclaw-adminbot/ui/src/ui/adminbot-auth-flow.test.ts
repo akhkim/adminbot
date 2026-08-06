@@ -371,13 +371,15 @@ describe("device-bound gateway token", () => {
   });
 });
 
-// A device token the gateway won't verify (rotated shared secret, device no longer paired, revoked
-// token) must not strand a signed-in member: recovery drops it and hands the connection back to the
-// session's shared gateway token.
+// A connect the gateway refuses for want of an acceptable credential — the device token was
+// rejected (rotated shared secret, device no longer paired, revoked token) or none was ever minted
+// — must not strand a signed-in member. Recovery re-mints first so the member stays off the shared
+// gateway secret, and only falls back to the session's shared token when minting is unavailable.
 describe("recoverFromRejectedDeviceToken", () => {
-  it("clears the device token and restores the session's gateway token", async () => {
+  it("re-mints the device token rather than handing the member the shared secret", async () => {
     saveStoredMemberSession({ sessionToken: "sess", expiresAt: "2026-08-01T00:00:00Z" });
     const host = makeHost();
+    let mintedTokens = 0;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
       const url = String(input);
       if (url.includes("/auth/session")) {
@@ -388,18 +390,43 @@ describe("recoverFromRejectedDeviceToken", () => {
         });
       }
       if (url.includes("/auth/device-token")) {
-        return jsonResponse(200, { token: "device-tok", scopes: ["operator.read"] });
+        mintedTokens += 1;
+        return jsonResponse(200, {
+          token: `device-tok-${mintedTokens}`,
+          scopes: ["operator.read"],
+        });
       }
       throw new Error(`unexpected fetch: ${url}`);
     });
 
     await resumeMemberSession(host);
-    expect(localStorage.getItem("openclaw.device.auth.v1")).toContain("device-tok");
+    expect(localStorage.getItem("openclaw.device.auth.v1")).toContain("device-tok-1");
 
     const recovered = await recoverFromRejectedDeviceToken(host);
 
     expect(recovered).toBe(true);
-    expect(localStorage.getItem("openclaw.device.auth.v1") ?? "").not.toContain("device-tok");
+    // The rejected token is gone and a fresh one took its place, so the reconnect authenticates as
+    // the device with settings.token left empty.
+    expect(localStorage.getItem("openclaw.device.auth.v1")).toContain("device-tok-2");
+    expect(host.applySettings).toHaveBeenLastCalledWith(expect.objectContaining({ token: "" }));
+  });
+
+  it("falls back to the session's gateway token when the service cannot mint", async () => {
+    saveStoredMemberSession({ sessionToken: "sess", expiresAt: "2026-08-01T00:00:00Z" });
+    const host = makeHost();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url.includes("/auth/device-token")) {
+        return jsonResponse(503, { error: { message: "device token issuance is not configured" } });
+      }
+      return jsonResponse(200, {
+        expires_at: "2026-08-01T00:00:00Z",
+        member: { id: "pat", privilege_level: "member" },
+        gateway: { url: "ws://127.0.0.1:18789", token: "shared-gw-token" },
+      });
+    });
+
+    expect(await recoverFromRejectedDeviceToken(host)).toBe(true);
     expect(host.applySettings).toHaveBeenLastCalledWith(
       expect.objectContaining({ token: "shared-gw-token" }),
     );
@@ -412,15 +439,18 @@ describe("recoverFromRejectedDeviceToken", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("declines when the service hands back no gateway token to fall back to", async () => {
+  it("declines when neither a mint nor a shared gateway token is available", async () => {
     saveStoredMemberSession({ sessionToken: "sess", expiresAt: "2026-08-01T00:00:00Z" });
     const host = makeHost();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      jsonResponse(200, {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      if (String(input).includes("/auth/device-token")) {
+        return jsonResponse(503, { error: { message: "device token issuance is not configured" } });
+      }
+      return jsonResponse(200, {
         expires_at: "2026-08-01T00:00:00Z",
         member: { id: "pat", privilege_level: "member" },
-      }),
-    );
+      });
+    });
     expect(await recoverFromRejectedDeviceToken(host)).toBe(false);
   });
 });
@@ -469,5 +499,29 @@ describe("toggleOnboardingStep", () => {
     expect(host.adminBotOnboarding).toBe(before);
     expect(host.adminBotOnboardingError).toContain("sign in again");
     expect(host.adminBotOnboardingBusyStepId).toBeNull();
+  });
+});
+
+describe("device-token recovery latch", () => {
+  // A stale device token rejected before sign-in cannot recover: recoverFromRejectedDeviceToken
+  // needs a member session and returns false without one. It still sets the once-per-session latch,
+  // so the very next connect — the one right after logging in — refused to try again, and the
+  // member saw "Auth did not match / device token mismatch" until they reloaded the page.
+  it("re-arms recovery when a member signs in", async () => {
+    const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });
+    host.deviceTokenRecoveryAttempted = true;
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        session_token: "sess",
+        expires_at: "2026-08-01T00:00:00Z",
+        member: { id: "pat", privilege_level: "member" },
+        gateway: { url: "ws://127.0.0.1:18789", token: "gw" },
+      }),
+    );
+
+    await submitMemberAuth(host);
+
+    expect(host.deviceTokenRecoveryAttempted).toBe(false);
+    expect(host.connect).toHaveBeenCalled();
   });
 });

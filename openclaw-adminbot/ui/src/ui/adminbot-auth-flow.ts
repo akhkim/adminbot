@@ -92,6 +92,9 @@ export type MemberAuthHost = {
   // Optional so the auth flow can be driven by hosts that never render the gate (tests, the
   // console). Signing out closes it so the visitor lands on the public shell, not the form.
   authGateVisible?: boolean;
+  // Latch owned by app-gateway: device-token recovery runs at most once per connected session.
+  // Signing in is a new session, so the flow below clears it.
+  deviceTokenRecoveryAttempted?: boolean;
   changePasswordCurrent: string;
   changePasswordNew: string;
   changePasswordConfirm: string;
@@ -263,6 +266,11 @@ async function applyMemberSession(host: MemberAuthHost, session: MemberSession) 
   // of assuming admin for every signed-in member.
   host.memberPrivilegeLevel = session.member?.privilege_level ?? null;
   host.memberId = session.member?.id ?? null;
+  // A rejected device token before sign-in cannot recover — recoverFromRejectedDeviceToken needs a
+  // member session and returns false without one — but it still burns the once-per-session latch.
+  // Signing in is exactly the event that makes recovery possible, so re-arm it here; otherwise the
+  // first login after a stale token shows "device token mismatch" and only a page reload fixes it.
+  host.deviceTokenRecoveryAttempted = false;
   host.adminBotOnboarding = session.member?.onboarding ?? null;
   // Auto-show the welcome screen once per member per browser; a manual "view onboarding"
   // entry point elsewhere can still reopen it later regardless of this flag.
@@ -437,12 +445,17 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   await clearMemberDeviceToken();
 }
 
-// Recovers from a gateway that rejects this device's token (AUTH_DEVICE_TOKEN_MISMATCH). Every
-// cause is a dead end for the browser -- the gateway no longer has the device paired, the token was
-// revoked, or the shared secret rotated so the token's issuer stamp is stale -- and none of them
-// are fixable from the client. The member is still signed in, so drop the token and hand the
-// connection back to the session's shared gateway token; the gateway re-pairs the device and mints
-// a replacement token in its hello, so the browser still ends up device-bound.
+// Recovers a connect the gateway refused for want of a credential it accepts: it rejected this
+// device's token (AUTH_DEVICE_TOKEN_MISMATCH), or we presented none at all (AUTH_TOKEN_MISSING).
+// Neither is fixable by retrying the same way -- the device is no longer paired, the token was
+// revoked, the shared secret rotated so the issuer stamp is stale, or the token was never minted.
+// The member is still signed in, which is the one credential that can produce a new one.
+//
+// Minting a replacement comes first: it keeps the member off the shared gateway secret, which is
+// the whole point of per-device tokens. The session's shared token is the fallback for a service
+// that cannot mint (no issuer configured, or a build predating the route) -- the gateway then
+// re-pairs the device and returns a device token in its hello, so the browser still ends up
+// device-bound.
 //
 // Returns true when the caller should reconnect.
 export async function recoverFromRejectedDeviceToken(host: MemberAuthHost): Promise<boolean> {
@@ -451,6 +464,12 @@ export async function recoverFromRejectedDeviceToken(host: MemberAuthHost): Prom
     return false;
   }
   await clearMemberDeviceToken();
+  if (await ensureMemberDeviceToken(host, stored.sessionToken)) {
+    // Clear any stale shared token so the reconnect authenticates as the device, matching the
+    // post-login state connectAsMember establishes.
+    host.applySettings({ ...host.settings, token: "" });
+    return true;
+  }
   const result = await fetchMemberSession(
     stored.sessionToken,
     resolveAdminBotBaseUrl(host.settings),

@@ -436,6 +436,49 @@ describe("GatewayBrowserClient", () => {
     expect(connectFrame.params?.scopes).toEqual(storedEntry.scopes);
   });
 
+  // A signed-in member holds no shared gateway secret: connectAsMember clears settings.token once
+  // the AdminBot mints a device token. The connect frame must then carry that token, or the gateway
+  // sees `auth=none device=yes` and closes with "gateway token missing".
+  it("presents a plain member's stored device token as the only credential", async () => {
+    localStorage.clear();
+    storeDeviceAuthToken({
+      deviceId: "device-1",
+      role: "operator",
+      token: "member-device-token",
+      scopes: ["operator.read"],
+    });
+    const client = new GatewayBrowserClient({
+      url: "ws://127.0.0.1:18789",
+      operatorScopes: ["operator.read"],
+    });
+
+    const { connectFrame } = await startConnect(client);
+
+    expect(connectFrame.params?.auth?.token).toBe("member-device-token");
+    expect(connectFrame.params?.auth?.deviceToken).toBe("member-device-token");
+    expect(connectFrame.params?.scopes).toEqual(["operator.read"]);
+  });
+
+  // The mint path stores through the same helper the client reads, so a token written mid-session
+  // (login-time mint) is picked up by the next connect with no extra plumbing.
+  it("picks up a device token minted after the client was constructed", async () => {
+    localStorage.clear();
+    const client = new GatewayBrowserClient({
+      url: "ws://127.0.0.1:18789",
+      operatorScopes: ["operator.read"],
+    });
+    storeDeviceAuthToken({
+      deviceId: "device-1",
+      role: "operator",
+      token: "freshly-minted-token",
+      scopes: ["operator.read"],
+    });
+
+    const { connectFrame } = await startConnect(client);
+
+    expect(connectFrame.params?.auth?.token).toBe("freshly-minted-token");
+  });
+
   it("reports browser security errors from WebSocket construction without retrying", async () => {
     vi.useFakeTimers();
     const onClose = vi.fn();
