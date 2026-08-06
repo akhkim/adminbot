@@ -1306,6 +1306,12 @@ export const fr: TranslationMap = {
       allDone: "You've read every step — welcome aboard.",
     },
   },
+  landing: {
+    eyebrow: "Lab operations",
+    tagline: "The admin side of research, in one place.",
+    signIn: "Sign in or sign up",
+    openWithoutAccount: "Open without an account",
+  },
   login: {
     subtitle: "Tableau de bord Gateway",
     showPassword: "Afficher le mot de passe",

@@ -1300,6 +1300,12 @@ export const pt_BR: TranslationMap = {
       allDone: "You've read every step — welcome aboard.",
     },
   },
+  landing: {
+    eyebrow: "Lab operations",
+    tagline: "The admin side of research, in one place.",
+    signIn: "Sign in or sign up",
+    openWithoutAccount: "Open without an account",
+  },
   login: {
     subtitle: "Painel do Gateway",
     showPassword: "Mostrar senha",

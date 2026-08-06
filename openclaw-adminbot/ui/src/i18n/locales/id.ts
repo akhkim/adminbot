@@ -1297,6 +1297,12 @@ export const id: TranslationMap = {
       allDone: "You've read every step — welcome aboard.",
     },
   },
+  landing: {
+    eyebrow: "Lab operations",
+    tagline: "The admin side of research, in one place.",
+    signIn: "Sign in or sign up",
+    openWithoutAccount: "Open without an account",
+  },
   login: {
     subtitle: "Dasbor Gateway",
     showPassword: "Tampilkan kata sandi",

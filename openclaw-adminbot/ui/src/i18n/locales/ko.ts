@@ -1290,6 +1290,12 @@ export const ko: TranslationMap = {
       allDone: "You've read every step — welcome aboard.",
     },
   },
+  landing: {
+    eyebrow: "Lab operations",
+    tagline: "The admin side of research, in one place.",
+    signIn: "Sign in or sign up",
+    openWithoutAccount: "Open without an account",
+  },
   login: {
     subtitle: "Gateway 대시보드",
     showPassword: "비밀번호 표시",

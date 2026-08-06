@@ -1279,6 +1279,12 @@ export const zh_CN: TranslationMap = {
       allDone: "You've read every step — welcome aboard.",
     },
   },
+  landing: {
+    eyebrow: "Lab operations",
+    tagline: "The admin side of research, in one place.",
+    signIn: "Sign in or sign up",
+    openWithoutAccount: "Open without an account",
+  },
   login: {
     subtitle: "网关仪表盘",
     showPassword: "显示密码",

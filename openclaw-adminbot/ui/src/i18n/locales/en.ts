@@ -1291,8 +1291,7 @@ export const en: TranslationMap = {
   },
   landing: {
     eyebrow: "Lab operations",
-    tagline:
-      "Reimbursements, deadlines, papers, and the lab roster — the admin side of research, in one place.",
+    tagline: "The admin side of research, in one place.",
     signIn: "Sign in or sign up",
     openWithoutAccount: "Open without an account",
   },
