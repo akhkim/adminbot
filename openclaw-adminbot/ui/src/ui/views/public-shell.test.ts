@@ -37,10 +37,12 @@ describe("renderPublicShell", () => {
     ]);
   });
 
-  it("puts a sign-in button in the sidebar rather than a gate in front of the page", () => {
+  it("puts a sign-in button in the topbar rather than a gate in front of the page", () => {
     const signIn = container.querySelector('[data-testid="public-shell-sign-in"]');
     expect(signIn).not.toBeNull();
     expect(signIn?.textContent?.trim()).toContain("Sign in");
+    expect(signIn?.closest(".topbar")).not.toBeNull();
+    expect(signIn?.closest(".sidebar")).toBeNull();
   });
 
   it("opens the sign-in gate on demand", () => {

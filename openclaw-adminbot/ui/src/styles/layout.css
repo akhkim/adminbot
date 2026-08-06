@@ -1589,16 +1589,240 @@
 }
 
 /* ===========================================
+   Signed-out header (landing + sign-in gate)
+   ===========================================
+   In flow rather than floating, so both hosts lay out as a column and the thing below centres in
+   whatever height the bar leaves behind — no magic offset to keep in sync. Sticky on top of that,
+   because the sign-up form is long enough to scroll and the way back out has to stay reachable from
+   the bottom of it.
+
+   Unruled and unfilled: both surfaces behind it are single uninterrupted fields, so the bar earns
+   its separation from the inset instead of a border. The inset is deliberately generous — the
+   action should never sit against the viewport edge. */
+
+.signed-out-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  padding: var(--space-5) clamp(var(--space-5), 4vw, var(--space-10));
+  padding-top: max(var(--space-5), env(safe-area-inset-top));
+  background: var(--bg);
+}
+
+/* Small and quiet on the landing page, where the hero wordmark is the mark that matters; on the
+   gate it is the only mark, which is why it keeps the same two-weight treatment. */
+.signed-out-topbar__brand {
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+.signed-out-topbar__brand-tail {
+  margin-left: 0.2em;
+  font-weight: 300;
+  color: var(--muted);
+}
+
+.signed-out-topbar__action {
+  flex-shrink: 0;
+  gap: 8px;
+  height: var(--control-h-lg);
+  padding: 0 var(--space-5);
+}
+
+.signed-out-topbar__icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+}
+
+@media (max-width: 480px) {
+  .signed-out-topbar {
+    padding: var(--space-4);
+    padding-top: max(var(--space-4), env(safe-area-inset-top));
+  }
+}
+
+/* ===========================================
+   Landing (visitor, no session)
+   ===========================================
+   The one place in the app that gets to breathe. Everything else here is a dense operations
+   dashboard, so the landing earns its weight from space and type rather than from new colour: the
+   wordmark is the whole hero, and the ruled backdrop echoes the ledgers the lab actually runs on
+   (the deadline board, the reimbursement table) instead of decorating with a gradient. */
+
+.landing {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Hairline ledger rules, faded out at the edges so they never compete with the wordmark. */
+.landing__rules {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--border) 0,
+    var(--border) 1px,
+    transparent 1px,
+    transparent 72px
+  );
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 0%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.landing__inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Auto margins centre the hero in whatever height the header leaves behind. */
+  margin: auto;
+  padding: var(--space-10) var(--space-6) var(--space-16);
+  max-width: 44rem;
+  text-align: center;
+  animation: landing-rise 520ms var(--ease-out) both;
+}
+
+@keyframes landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.landing__eyebrow {
+  margin: 0 0 var(--space-6);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.landing__wordmark {
+  margin: 0;
+  font-size: clamp(2.75rem, 9vw, 5.5rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-tighter);
+  color: var(--text-strong);
+}
+
+/* The mark is the type treatment: one word, two weights of attention, no logo needed. */
+.landing__wordmark-tail {
+  margin-left: 0.28em;
+  font-weight: 300;
+  color: var(--muted);
+}
+
+.landing__tagline {
+  margin: var(--space-6) 0 0;
+  max-width: 34rem;
+  font-size: var(--control-ui-text-lg);
+  line-height: 1.6;
+  color: var(--muted-strong);
+}
+
+.landing__cta {
+  margin-top: var(--space-10);
+  height: var(--control-h-lg);
+  padding: 0 var(--space-8);
+  font-size: var(--control-ui-text-md);
+}
+
+.landing__open {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: min(100%, 22rem);
+  margin-top: var(--space-16);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border);
+}
+
+.landing__open-label {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.landing__surfaces {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+}
+
+.landing__surface {
+  padding-bottom: 2px;
+  border-bottom: 1px solid var(--border-strong);
+  color: var(--text);
+  font-size: var(--control-ui-text-md);
+  text-decoration: none;
+}
+
+.landing__surface:hover,
+.landing__surface:focus-visible {
+  border-bottom-color: var(--accent);
+  color: var(--text-strong);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing__inner {
+    animation: none;
+  }
+}
+
+/* ===========================================
    Public shell (no session)
    ===========================================
-   A visitor gets the same sidebar language as the signed-in shell, but a plain two-column flex
-   layout rather than the dashboard grid: none of the grid's other areas (topbar, chat rail) exist
-   without a gateway behind them. */
+   A visitor gets the same sidebar language as the signed-in shell, plus a slim topbar carrying the
+   sign-in action, but a plain flex layout rather than the dashboard grid: none of the grid's other
+   areas (chat rail, status) exist without a gateway behind them. */
 
 .app-shell--public {
   display: flex;
+  flex-direction: column;
   min-height: 100vh;
   background: var(--bg);
+}
+
+.public-shell-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The public topbar carries nothing but the sign-in action, so push it to the right edge. */
+.topbar--public .topnav-shell__actions {
+  margin-left: auto;
+}
+
+.public-signin {
+  gap: 8px;
+}
+
+.public-signin__icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
 }
 
 .sidebar--public {
@@ -1626,7 +1850,7 @@
 }
 
 @media (max-width: 720px) {
-  .app-shell--public {
+  .public-shell-body {
     flex-direction: column;
   }
 

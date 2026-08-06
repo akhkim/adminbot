@@ -4,14 +4,14 @@
    Login Gate
    =========================================== */
 
+/* A column, so the signed-out header can sit in flow at the top and the card centre itself in the
+   height left over — see `.signed-out-topbar` in layout.css. */
 .login-gate {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--bg);
-  padding: var(--space-8) var(--space-6);
   padding-bottom: max(var(--space-8), env(safe-area-inset-bottom));
 }
 
@@ -23,11 +23,16 @@
 }
 
 .login-gate__card {
-  width: min(440px, 100%);
+  box-sizing: border-box;
+  width: 100%;
+  /* The 440px form plus its gutters, so the fields keep their width and still clear the edges on a
+     narrow screen. Auto margins centre it in whatever height the header leaves behind. */
+  max-width: calc(440px + 2 * var(--space-6));
+  margin: auto;
+  padding: var(--space-8) var(--space-6);
   background: transparent;
   border: 0;
   border-radius: 0;
-  padding: 0;
   animation: rise var(--duration-slow) var(--ease-out) backwards;
 }
 

@@ -5,6 +5,7 @@ import { styleMap } from "lit/directives/style-map.js";
 import { i18n, t } from "../i18n/index.ts";
 import { getSafeLocalStorage } from "../local-storage.ts";
 import {
+  canAccessTab,
   resolveAccessRole,
   resolveAccessibleTab,
   visibleTabsForRole,
@@ -253,6 +254,7 @@ import { renderDreaming } from "./views/dreaming.ts";
 import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 import { renderGuestReimbursements } from "./views/guest-reimbursements.ts";
+import { renderLanding } from "./views/landing.ts";
 import { renderLoginGate } from "./views/login-gate.ts";
 import { renderMcp } from "./views/mcp.ts";
 import { renderOverview } from "./views/overview.ts";
@@ -1489,8 +1491,9 @@ export function renderApp(state: AppViewState) {
     gatewayConnected: state.connected,
   });
 
-  // A visitor gets the public shell, not a wall: the two surfaces the access table opens to
-  // `anonymous` need no gateway, and the sign-in gate is something they open from the sidebar.
+  // A visitor gets the landing page and then the public shell, not a wall: the two surfaces the
+  // access table opens to `anonymous` need no gateway, and the sign-in gate is something they open
+  // from the landing page or the public topbar.
   // The gateway URL confirmation overlay stays mounted throughout so URL-param flows keep working.
   if (accessRole === "anonymous") {
     if (state.guestReimbursements) {
@@ -1498,6 +1501,13 @@ export function renderApp(state: AppViewState) {
     }
     if (state.authGateVisible) {
       return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
+    }
+    // Read the requested tab before `withAccessibleTab` coerces it. A tab a visitor may not see
+    // means they did not ask for one of the open surfaces — they opened the root (which resolves
+    // to `chat`) or followed a link into a members-only tab — so the landing page is where they
+    // belong. A direct link to an open surface still lands on that surface.
+    if (!canAccessTab(state.tab, accessRole)) {
+      return html` ${renderLanding(state)} ${renderGatewayUrlConfirmation(state)} `;
     }
     return html`
       ${renderPublicShell(withAccessibleTab(state, accessRole))}
