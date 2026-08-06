@@ -59,7 +59,7 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
           text: "Update your own LinkedIn to show you joined as a Research Assistant at the Jinesis Lab.",
         },
         {
-          text: "Working on democracy or based in Europe? You are also welcome to add EuroSafeAI as a parallel org.",
+          text: "Working on AI safety or democracy, based in Europe, or just interested? You are also welcome to add EuroSafeAI as a parallel org.",
         },
       ],
       links: [
