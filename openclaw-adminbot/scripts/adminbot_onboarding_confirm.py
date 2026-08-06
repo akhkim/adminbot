@@ -29,6 +29,7 @@ import datetime
 import json
 import os
 import time
+import urllib.error
 import urllib.request
 
 # Reactions that count as "I've done it". The nudge text sent by the service only
@@ -245,14 +246,20 @@ def main(argv: list[str] | None = None) -> None:
         if args.now
         else time.time()
     )
-    report = poll_step(
-        AdminBotApi(args.base_url, service_token),
-        SlackDm(slack_token),
-        args.step,
-        args.cadence_days,
-        now,
-        args.live,
-    )
+    try:
+        report = poll_step(
+            AdminBotApi(args.base_url, service_token),
+            SlackDm(slack_token),
+            args.step,
+            args.cadence_days,
+            now,
+            args.live,
+        )
+    except urllib.error.HTTPError as error:
+        # This runs as a cron job whose stdout/stderr is the run summary; the server's own
+        # error body ("unknown onboarding step: ...") beats a urllib traceback there.
+        detail = error.read().decode("utf-8", "replace").strip()
+        raise SystemExit(f"adminbot request failed ({error.code}): {detail}") from error
     print(json.dumps(report, indent=2, ensure_ascii=False))
 
 
