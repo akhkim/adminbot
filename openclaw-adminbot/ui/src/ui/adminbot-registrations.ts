@@ -2,7 +2,7 @@
 //
 // Lists pending account claims/signups and drives approve/reject against the
 // AdminBot HTTP service with the signed-in admin's member session token. The
-// service only honours these routes for an admin/core_member member session, so
+// service only honours these routes for an admin member session, so
 // a plain member reaching this page gets a `forbidden` state, not silence.
 import { t } from "../i18n/index.ts";
 import {

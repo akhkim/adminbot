@@ -48,7 +48,6 @@ export const adminBotPrivilegeLevels = [
   "external_collaborator",
   "trial",
   "member",
-  "core_member",
   "admin",
 ] as const;
 

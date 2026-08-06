@@ -116,7 +116,7 @@ curl -s -H "Authorization: Bearer $ADMINBOT_SERVICE_TOKEN" \
   http://127.0.0.1:8765/openreview/status | jq
 ```
 
-Or use the **Reviewing** tab in the console (admin/core_member only), which has
+Or use the **Reviewing** tab in the console (admin only), which has
 a "Run cycle now" button with a send toggle that defaults to off. The Control UI's
 **Cron** tab shows whether the schedule itself is firing; the Reviewing tab shows what
 the passes actually did.

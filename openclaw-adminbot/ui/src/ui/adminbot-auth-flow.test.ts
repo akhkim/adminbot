@@ -82,12 +82,12 @@ describe("memberPrivilegeLevel wiring", () => {
       jsonResponse(200, {
         session_token: "sess",
         expires_at: "2026-08-01T00:00:00Z",
-        member: { id: "pat", privilege_level: "core_member" },
+        member: { id: "pat", privilege_level: "admin" },
         gateway: { url: "ws://127.0.0.1:18789", token: "gw" },
       }),
     );
     await submitMemberAuth(host);
-    expect(host.memberPrivilegeLevel).toBe("core_member");
+    expect(host.memberPrivilegeLevel).toBe("admin");
     expect(host.connect).toHaveBeenCalled();
   });
 

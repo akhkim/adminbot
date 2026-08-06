@@ -31,6 +31,6 @@ export const PRIVILEGED_OPERATOR_SCOPES = [
 export function allowedGatewayScopesForPrivilege(
   privilege: AdminBotPrivilegeLevel,
 ): readonly string[] {
-  const privileged = privilege === "admin" || privilege === "core_member";
+  const privileged = privilege === "admin";
   return privileged ? [...PRIVILEGED_OPERATOR_SCOPES] : [OPERATOR_READ_SCOPE];
 }

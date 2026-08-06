@@ -17,12 +17,7 @@ import type { AvailabilityRow, TimeOffRow } from "../adminbot-availability.js";
 import type { GatewayBrowserClient } from "../gateway.ts";
 import type { UiSettings } from "../storage.ts";
 
-export type AdminBotPrivilegeLevel =
-  | "external_collaborator"
-  | "trial"
-  | "member"
-  | "core_member"
-  | "admin";
+export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
 
 // Mirrors `adminBotExternalCollaboratorSubgroups` in extensions/adminbot/src/contracts.ts. Copied
 // rather than imported for the same reason as AdminBotPrivilegeLevel above: the Control UI does not

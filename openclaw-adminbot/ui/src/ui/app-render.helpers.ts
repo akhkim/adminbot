@@ -49,11 +49,11 @@ export { isCronSessionKey, parseSessionKey, resolveSessionDisplayName, resolveSe
 // Real AdminBot privilege gates the Gateway-RPC admin surfaces (Add/Edit member,
 // settings, approvals). Default to the safe read-only "general" mode whenever
 // privilege is unknown/loading so a plain member never briefly sees admin
-// controls; only admin/core_member get the editable "admin" mode.
+// controls; only `admin` gets the editable "admin" mode.
 export function resolveAdminBotMode(
   privilegeLevel: string | null,
 ): import("./controllers/adminbot.ts").AdminBotDashboardMode {
-  return privilegeLevel === "admin" || privilegeLevel === "core_member" ? "admin" : "general";
+  return privilegeLevel === "admin" ? "admin" : "general";
 }
 
 type SessionDefaultsSnapshot = {

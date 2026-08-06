@@ -19,7 +19,7 @@ const members: AdminBotLabMember[] = [
     id: "pat",
     name: "Pat Doe",
     email: "pat@lab.co",
-    privilege_level: "core_member",
+    privilege_level: "admin",
     access: [],
     status: "active",
     research_topics: ["robotics"],
@@ -114,7 +114,7 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(nameInput?.value).toBe("Pat Doe");
 
     const privilege = popover?.querySelector<HTMLSelectElement>('select[name="privilegeLevel"]');
-    expect(privilege?.value).toBe("core_member");
+    expect(privilege?.value).toBe("admin");
 
     // The Add-member popover still exists alongside per-row editing.
     expect(container.querySelector("#adminbot-add-member")).not.toBeNull();
@@ -131,7 +131,6 @@ describe("renderAdminBot members panel — edit affordance", () => {
       "external_collaborator",
       "trial",
       "member",
-      "core_member",
       "admin",
     ]);
   });

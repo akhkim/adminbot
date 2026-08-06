@@ -343,7 +343,7 @@ describe("AdminBot tool handlers", () => {
       name: "Alice",
       email: "alice@example.test",
       slackUserId: "U123",
-      privilegeLevel: "core_member",
+      privilegeLevel: "admin",
     });
 
     expect(calls[0]).toEqual({
@@ -353,7 +353,7 @@ describe("AdminBot tool handlers", () => {
         name: "Alice",
         email: "alice@example.test",
         slack_user_id: "U123",
-        privilege_level: "core_member",
+        privilege_level: "admin",
       },
     });
   });

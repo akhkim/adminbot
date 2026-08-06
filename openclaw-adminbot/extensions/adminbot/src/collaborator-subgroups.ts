@@ -1,4 +1,8 @@
-import type { AdminBotExternalCollaboratorSubgroup } from "./contracts.js";
+import type {
+  AdminBotExternalCollaboratorSubgroup,
+  AdminBotLabMember,
+  AdminBotPrivilegeLevel,
+} from "./contracts.js";
 
 // The document the `yes_separate` follow-up email tells the person to read; the skill's
 // separate-delivery template links the same doc. Defined once so surfaces do not carry copies.
@@ -191,6 +195,25 @@ const ACCESS_ITEMS = [
       disappearing_coauthor: "auto_decline",
     },
   },
+  {
+    id: "vector_roster_share",
+    label: "Vector sponsor roster share",
+    detail:
+      "On the constantly-updating name + institutional-email sheet auto-shared with our Vector sponsor contact, who reads it to decide whether to extend or remove an account. Full members are on it too, by privilege level rather than subgroup — see vectorSponsorRoster.",
+    cells: { coauthor_major: "yes" },
+  },
+  {
+    id: "city_dinner_invite",
+    label: "City-based dinner or team building invite",
+    detail: "Invite to city-based dinners and team building events.",
+    cells: {
+      interviewee: "yes",
+      acquaintance: "yes",
+      alumni: "yes",
+      coauthor_minor: "yes",
+      coauthor_major: "yes",
+    },
+  },
 ] as const satisfies readonly AccessItemDefinition[];
 
 export type AdminBotCollaboratorAccessItemId = (typeof ACCESS_ITEMS)[number]["id"];
@@ -217,4 +240,52 @@ export function collaboratorSubgroupAccess(
     }
   }
   return grants;
+}
+
+// The `vector_roster_share` row is the one item whose population crosses both axes: the sponsor
+// sheet carries internal lab members by privilege level plus external collaborators in the
+// coauthor_major subgroup. Admins are on it because they are lab people who hold Vector accounts —
+// leaving them off would have the sponsor read their absence as "remove this account".
+const VECTOR_ROSTER_PRIVILEGE_LEVELS: readonly AdminBotPrivilegeLevel[] = ["member", "admin"];
+
+export type AdminBotVectorRosterEntry = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+export type AdminBotVectorRoster = {
+  entries: AdminBotVectorRosterEntry[];
+  // Ids that belong on the sheet but have no email to put there. Reported rather than dropped
+  // silently: an omitted person reads to the sponsor as an account to remove.
+  missing_email: string[];
+};
+
+/**
+ * Who belongs on the Vector sponsor sheet: name and institutional email only, nothing else about
+ * the person. Sorted by name then id so the shared sheet does not churn between refreshes.
+ */
+export function vectorSponsorRoster(members: readonly AdminBotLabMember[]): AdminBotVectorRoster {
+  const entries: AdminBotVectorRosterEntry[] = [];
+  const missingEmail: string[] = [];
+  for (const member of members) {
+    const onRoster =
+      VECTOR_ROSTER_PRIVILEGE_LEVELS.includes(member.privilege_level) ||
+      (member.privilege_level === "external_collaborator" &&
+        member.collaborator_subgroup === "coauthor_major");
+    if (!onRoster) {
+      continue;
+    }
+    const email = member.email?.trim();
+    if (!email) {
+      missingEmail.push(member.id);
+      continue;
+    }
+    entries.push({ id: member.id, name: member.name, email });
+  }
+  entries.sort(
+    (left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id),
+  );
+  missingEmail.sort((left, right) => left.localeCompare(right));
+  return { entries, missing_email: missingEmail };
 }

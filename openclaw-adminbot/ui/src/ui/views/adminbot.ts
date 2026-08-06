@@ -98,7 +98,6 @@ const privilegeLabels: Record<string, string> = {
   external_collaborator: "External Collaborator",
   trial: "Trial",
   member: "Member",
-  core_member: "Core Member",
   admin: "Admin",
 };
 
@@ -106,7 +105,6 @@ const privilegeLevels: AdminBotPrivilegeLevel[] = [
   "external_collaborator",
   "trial",
   "member",
-  "core_member",
   "admin",
 ];
 

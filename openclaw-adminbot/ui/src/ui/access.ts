@@ -20,10 +20,11 @@ function rank(role: AccessRole): number {
   return ACCESS_ROLES.indexOf(role);
 }
 
-// AdminBot privilege levels that carry governance rights. `core_member` sits with `admin` because
-// the service already treats the two as one approver class (AdminBotApproverRole in
-// service-core.ts); anything below is a plain member.
-const ADMIN_PRIVILEGE_LEVELS = new Set(["admin", "core_member"]);
+// AdminBot privilege levels that carry governance rights. `admin` alone, matching the service's
+// sole approver class (AdminBotApproverRole in service-core.ts); anything below is a plain member.
+// The retired `core_member` tier used to sit here too — its access grants folded into `member`,
+// its governance rights did not.
+const ADMIN_PRIVILEGE_LEVELS = new Set(["admin"]);
 
 export function resolveAccessRole(params: {
   signedIn: boolean;

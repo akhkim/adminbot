@@ -194,7 +194,7 @@ export type AuthErrorKind =
   | "pending-approval"
   // Email change collided with an address already in use (POST /auth/email 409).
   | "email-unavailable"
-  // Session authenticated but lacks admin/core_member privilege (403). Distinct from
+  // Session authenticated but lacks admin privilege (403). Distinct from
   // auth-failed so governance surfaces can say "not allowed" instead of "sign in again".
   | "forbidden";
 
@@ -352,7 +352,7 @@ export async function upsertLabMemberAsAdmin(
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
-    // The service only grants the full governance write to an admin/core_member member
+    // The service only grants the full governance write to an admin member
     // session (extensions/adminbot/src/mock-service.ts) — a session that has lost that
     // privilege gets 403, mapped to `forbidden` rather than the generic auth-failed.
     if (result.response.status === 403) {
@@ -533,7 +533,7 @@ export type ApprovalExecutionResult = { status: string; [key: string]: unknown }
 // approvals through it would let any member drive a privileged action by asking the
 // AdminBot agent to do it in chat. The server answers these routes with
 // requireMemberPrivileged, which rejects the service principal outright (403) and demands a
-// real admin/core_member session — so the capability exists only where a genuine privileged
+// real admin session — so the capability exists only where a genuine privileged
 // member session is present: this UI path.
 export async function removePendingAction(
   actionId: string,
@@ -772,7 +772,7 @@ export async function fetchRelevantPapers(
 }
 
 // Pending account requests awaiting an admin decision (GET /auth/registrations).
-// The service only answers this for an admin/core_member member session, so 403
+// The service only answers this for an admin member session, so 403
 // maps to `forbidden` rather than the generic auth-failed.
 export async function fetchPendingRegistrations(
   sessionToken: string,
