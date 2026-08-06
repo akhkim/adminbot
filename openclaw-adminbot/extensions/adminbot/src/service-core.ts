@@ -1465,7 +1465,9 @@ function buildOnboardingNudgeMessage(step: AdminBotMemberOnboardingStep | undefi
   if (!step) {
     return "You have an outstanding lab onboarding step — see the AdminBot welcome screen.";
   }
-  const lines = [`Quick reminder: *${step.label}* is still outstanding on your lab onboarding.`];
+  const lines = [
+    `Hey! 👋 If you haven't gotten to *${step.label}* yet, please take a minute to do it — it's part of your lab onboarding.`,
+  ];
   if (step.detail) {
     lines.push(step.detail);
   }
@@ -1481,8 +1483,9 @@ function buildOnboardingNudgeMessage(step: AdminBotMemberOnboardingStep | undefi
   // The reaction option only works because scripts/adminbot_onboarding_confirm.py polls the DM
   // for it; keep this wording and that script's CONFIRM_REACTIONS in sync.
   lines.push(
-    "Already done? React to this message with ✅ and I'll record it, or mark it complete on your AdminBot welcome screen.",
+    "Already done? React to this message with ✅ and I'll record it. If not, do it now and react when you're done — thanks! 🙌",
   );
+  lines.push("(You can also mark it complete on your AdminBot welcome screen.)");
   return lines.join("\n");
 }
 
