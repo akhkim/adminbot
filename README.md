@@ -1,4 +1,4 @@
-# 🦞 AdminBot — Lab Admin Assistant
+# AdminBot — Lab Admin Assistant
 
 <p align="center">
   <strong>Approval-gated AI operations for the lab.</strong>
