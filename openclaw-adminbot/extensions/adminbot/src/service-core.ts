@@ -1485,7 +1485,9 @@ function buildOnboardingNudgeMessage(step: AdminBotMemberOnboardingStep | undefi
   lines.push(
     "Already done? React to this message with ✅ and I'll record it. If not, do it now and react when you're done — thanks! 🙌",
   );
-  lines.push("(You can also mark it complete on your AdminBot welcome screen.)");
+  lines.push(
+    "(Reactions are picked up automatically every few hours, so the confirmation isn't instant — don't worry, it will be recorded. You can also mark it complete on your AdminBot welcome screen.)",
+  );
   return lines.join("\n");
 }
 
