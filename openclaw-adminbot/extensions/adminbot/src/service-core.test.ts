@@ -985,6 +985,17 @@ describe("AdminBotService", () => {
         status: 400,
       });
     });
+
+    it("carries the composed nudge message so external tooling reuses the exact wording", () => {
+      const service = new AdminBotService();
+      const pending = unwrap(service.listOnboardingStepPending("linkedin"));
+      // Bullets are {text, points} objects; interpolating the object itself printed
+      // "[object Object]" into real DMs.
+      expect(pending.message).not.toContain("[object Object]");
+      expect(pending.message).toContain("Update your own LinkedIn");
+      // The reaction line is what scripts/adminbot_onboarding_confirm.py acts on.
+      expect(pending.message).toContain("React to this message with ✅");
+    });
   });
 
   describe("onboarding step nudge", () => {
