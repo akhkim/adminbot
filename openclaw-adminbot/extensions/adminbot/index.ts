@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import {
   accessGrantSchema,
   actionTypeSchema,
+  collaboratorSubgroupSchema,
   evidencePointerSchema,
   paperArtifactsSchema,
   paperReminderSchema,
@@ -350,7 +351,7 @@ export default defineToolPlugin({
       name: "adminbot_upsert_lab_member",
       label: "AdminBot upsert lab member",
       description:
-        "Create or update a lab member privilege record and compute the default access profile for that privilege level.",
+        "Create or update a lab member privilege record and compute the default access profile for that privilege level. For an external collaborator, also set collaboratorSubgroup, which decides the access items (spreadsheet depth, Slack channels, Drive folders, meetings, rec letters) they get.",
       optional: true,
       parameters: Type.Object({
         id: Type.String(),
@@ -358,6 +359,7 @@ export default defineToolPlugin({
         email: Type.Optional(Type.String()),
         slackUserId: Type.Optional(Type.String()),
         privilegeLevel: Type.Optional(privilegeLevelSchema),
+        collaboratorSubgroup: Type.Optional(collaboratorSubgroupSchema),
         accessOverrides: Type.Optional(Type.Array(accessGrantSchema)),
         notes: Type.Optional(Type.String()),
         role: Type.Optional(Type.String()),

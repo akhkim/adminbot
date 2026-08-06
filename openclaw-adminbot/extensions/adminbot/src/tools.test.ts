@@ -358,6 +358,28 @@ describe("AdminBot tool handlers", () => {
     });
   });
 
+  it("maps the collaborator subgroup onto the member record", async () => {
+    const { fetchImpl, calls } = captureFetch();
+    const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl });
+
+    await tools.upsertLabMember({
+      id: "rin",
+      name: "Rin",
+      privilegeLevel: "external_collaborator",
+      collaboratorSubgroup: "disappearing_coauthor",
+    });
+
+    expect(calls[0]).toEqual({
+      url: "http://127.0.0.1:8765/lab/members/rin",
+      body: {
+        id: "rin",
+        name: "Rin",
+        privilege_level: "external_collaborator",
+        collaborator_subgroup: "disappearing_coauthor",
+      },
+    });
+  });
+
   it("omits lab member privilege when the service default should apply", async () => {
     const { fetchImpl, calls } = captureFetch();
     const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl });

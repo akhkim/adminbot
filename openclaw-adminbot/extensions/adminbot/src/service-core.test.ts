@@ -322,6 +322,50 @@ describe("AdminBotService", () => {
     ).toMatchObject({ ok: false, status: 400 });
   });
 
+  it("accepts a collaborator subgroup only for external collaborators", () => {
+    const service = new AdminBotService();
+    const collaborator = unwrap(
+      service.upsertLabMember({
+        id: "sub",
+        name: "Sub",
+        privilege_level: "external_collaborator",
+        collaborator_subgroup: "coauthor_minor",
+      }),
+    );
+    expect(collaborator.collaborator_subgroup).toBe("coauthor_minor");
+
+    // The stored level is enough: an edit that does not resend privilege_level still validates.
+    expect(
+      unwrap(service.upsertLabMember({ id: "sub", name: "Sub", collaborator_subgroup: "alumni" }))
+        .collaborator_subgroup,
+    ).toBe("alumni");
+
+    // A promotion drops the subgroup rather than leaving a stale one on the record.
+    expect(
+      unwrap(service.upsertLabMember({ id: "sub", name: "Sub", privilege_level: "member" }))
+        .collaborator_subgroup,
+    ).toBeUndefined();
+
+    for (const rejected of [
+      // "sub" is a plain member after the promotion above, so its stored level refuses this now.
+      { id: "sub", name: "Sub", collaborator_subgroup: "alumni" },
+      {
+        id: "bad-level-2",
+        name: "Bad Level",
+        privilege_level: "core_member",
+        collaborator_subgroup: "alumni",
+      },
+      {
+        id: "bad-value",
+        name: "Bad Value",
+        privilege_level: "external_collaborator",
+        collaborator_subgroup: "pen_pal",
+      },
+    ] as const) {
+      expect(service.upsertLabMember(rejected as never)).toMatchObject({ ok: false, status: 400 });
+    }
+  });
+
   it("lets a member self-edit whitelisted fields but not the governance fields", () => {
     const service = new AdminBotService();
     unwrap(
@@ -339,6 +383,7 @@ describe("AdminBotService", () => {
 
     for (const governed of [
       { privilege_level: "admin" },
+      { collaborator_subgroup: "coauthor_major" },
       { status: "alumni" },
       { email: "elsewhere@example.test" },
       { access_overrides: [{ service: "slack", access: "admin" }] },

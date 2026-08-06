@@ -6,6 +6,7 @@ import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../adminbot
 import type {
   AdminBotActionProposal,
   AdminBotDashboardData,
+  AdminBotExternalCollaboratorSubgroup,
   AdminBotLabMember,
   AdminBotLabMemberSaveInput,
   AdminBotMemberNudgeState,
@@ -107,6 +108,19 @@ const privilegeLevels: AdminBotPrivilegeLevel[] = [
   "member",
   "core_member",
   "admin",
+];
+
+// Ordered least- to most-engaged, matching the service list. Labels come from `friendly()` so the
+// vocabulary lives in one place instead of a second hand-written label map.
+const collaboratorSubgroups: AdminBotExternalCollaboratorSubgroup[] = [
+  "interviewee",
+  "slightly_better_than_emails",
+  "acquaintance",
+  "alumni",
+  "coauthor_minor",
+  "coauthor_major",
+  "disappearing_coauthor",
+  "external_prof",
 ];
 
 const memberStatusOptions: Array<{ value: string; label: string }> = [
@@ -473,6 +487,17 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
     ...(getFormValue(data, "privilegeLevel")
       ? { privilegeLevel: getFormValue(data, "privilegeLevel") as AdminBotPrivilegeLevel }
       : {}),
+    // The hidden field still submits, so the privilege check is what keeps a subgroup out of the
+    // payload for a non-collaborator — the service rejects the pair outright.
+    ...(getFormValue(data, "privilegeLevel") === "external_collaborator" &&
+    getFormValue(data, "collaboratorSubgroup")
+      ? {
+          collaboratorSubgroup: getFormValue(
+            data,
+            "collaboratorSubgroup",
+          ) as AdminBotExternalCollaboratorSubgroup,
+        }
+      : {}),
     ...(getFormValue(data, "role") ? { role: getFormValue(data, "role") } : {}),
     ...(getFormValue(data, "status")
       ? { status: getFormValue(data, "status") as AdminBotLabMemberSaveInput["status"] }
@@ -492,6 +517,21 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
     ...(notes ? { notes } : {}),
   });
   form.closest<HTMLElement>("[popover]")?.hidePopover();
+}
+
+// A subgroup only means something on an external collaborator, so the field follows the privilege
+// select. Cosmetic only: the service is what rejects the field on any other level.
+function syncCollaboratorSubgroupField(event: Event): void {
+  const select = event.currentTarget;
+  if (!(select instanceof HTMLSelectElement)) {
+    return;
+  }
+  const field = select
+    .closest("form")
+    ?.querySelector<HTMLElement>("[data-collaborator-subgroup-field]");
+  if (field) {
+    field.hidden = select.value !== "external_collaborator";
+  }
 }
 
 // Whitelisted self-editable fields, matching what the AdminBot service accepts from a
@@ -918,7 +958,7 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
       /></label>
       <label class="adminbot-form__field">
         <span>Privilege</span>
-        <select name="privilegeLevel">
+        <select name="privilegeLevel" @change=${syncCollaboratorSubgroupField}>
           ${privilegeLevels.map(
             (level) =>
               html`<option
@@ -926,6 +966,25 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
                 ?selected=${level === (member?.privilege_level ?? "external_collaborator")}
               >
                 ${privilegeLabels[level] ?? friendly(level)}
+              </option>`,
+          )}
+        </select>
+      </label>
+      <label
+        class="adminbot-form__field"
+        data-collaborator-subgroup-field
+        ?hidden=${(member?.privilege_level ?? "external_collaborator") !== "external_collaborator"}
+      >
+        <span>Collaborator subgroup</span>
+        <select name="collaboratorSubgroup">
+          <option value="" ?selected=${!member?.collaborator_subgroup}>Not set</option>
+          ${collaboratorSubgroups.map(
+            (subgroup) =>
+              html`<option
+                value=${subgroup}
+                ?selected=${member?.collaborator_subgroup === subgroup}
+              >
+                ${friendly(subgroup)}
               </option>`,
           )}
         </select>
@@ -1430,6 +1489,12 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
                 </td>
                 <td>
                   ${privilegeLabels[member.privilege_level] ?? friendly(member.privilege_level)}
+                  ${member.privilege_level === "external_collaborator" &&
+                  member.collaborator_subgroup
+                    ? html`<span class="adminbot-tag"
+                        >${friendly(member.collaborator_subgroup)}</span
+                      >`
+                    : nothing}
                 </td>
               </tr>`;
             })}

@@ -187,6 +187,36 @@ describe("AdminBotSqliteStore", () => {
     third.close();
   });
 
+  it("preserves an external collaborator's subgroup across service instances", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(
+      first.service.upsertLabMember({
+        id: "prof",
+        name: "Prof",
+        privilege_level: "external_collaborator",
+        collaborator_subgroup: "external_prof",
+      }),
+    );
+    first.close();
+
+    const second = createAdminBotSqliteService({ databasePath });
+    expect(unwrap(second.service.listLabMembers()).members[0]).toMatchObject({
+      id: "prof",
+      privilege_level: "external_collaborator",
+      collaborator_subgroup: "external_prof",
+    });
+    // Reopening must not resurrect the subgroup once a promotion cleared it.
+    unwrap(second.service.upsertLabMember({ id: "prof", name: "Prof", privilege_level: "member" }));
+    second.close();
+
+    const third = createAdminBotSqliteService({ databasePath });
+    expect(
+      unwrap(third.service.listLabMembers()).members[0]?.collaborator_subgroup,
+    ).toBeUndefined();
+    third.close();
+  });
+
   it("preserves AdminBot settings across service instances", () => {
     const databasePath = tempDbPath();
     const first = createAdminBotSqliteService({

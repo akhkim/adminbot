@@ -103,6 +103,7 @@ export type AdminLabMemberUpdate = {
   email?: string;
   slack_user_id?: string;
   privilege_level?: string;
+  collaborator_subgroup?: string;
   status?: string;
   role?: string;
   research_topics?: string[];
