@@ -71,7 +71,11 @@ import {
   setAdminBotNudgeSubject,
   toggleAdminBotNudgeRecipient,
 } from "./controllers/adminbot.ts";
-import type { AdminBotLoadMode } from "./controllers/adminbot.ts";
+import type {
+  AdminBotDashboardData,
+  AdminBotDashboardMode,
+  AdminBotLoadMode,
+} from "./controllers/adminbot.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
@@ -716,6 +720,10 @@ const lazyActivity = createLazyView(() => import("./views/activity.ts"), notifyL
 const lazyChannels = createLazyView(() => import("./views/channels.ts"), notifyLazyViewChanged);
 const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewChanged);
 const lazyDeadlines = createLazyView(() => import("./views/deadlines.ts"), notifyLazyViewChanged);
+const lazyAdminBotTimeAvailability = createLazyView(
+  () => import("./views/adminbot-time-availability.ts"),
+  notifyLazyViewChanged,
+);
 const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewChanged);
 const lazyInstances = createLazyView(() => import("./views/instances.ts"), notifyLazyViewChanged);
 const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewChanged);
@@ -733,7 +741,10 @@ const lazyAdminBotRegistrations = createLazyView(
   notifyLazyViewChanged,
 );
 
-function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminBotPanel | null {
+function adminBotPanelForTab(
+  tab: Tab,
+  mode: AdminBotDashboardMode = "admin",
+): AdminBotPanel | null {
   if (mode === "general") {
     switch (tab) {
       case "adminbotMembers":
@@ -765,6 +776,19 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
     default:
       return null;
   }
+}
+
+function hasAdminBotDataForMode(data: AdminBotDashboardData, mode: AdminBotLoadMode): boolean {
+  if (!data.loadedMode) {
+    return false;
+  }
+  if (mode === "members") {
+    return true;
+  }
+  if (mode === "general") {
+    return data.loadedMode !== "members";
+  }
+  return data.loadedMode === "admin";
 }
 
 // Deep links and sign-out both leave `state.tab` pointing at a surface the current role may not
@@ -1474,6 +1498,14 @@ function buildArtifactSidebarContent(params: {
   return { kind: "markdown", content, rawText: content };
 }
 
+function allowDisconnectedViteMemberPreview(state: AppViewState): boolean {
+  return (
+    Boolean(state.memberId) &&
+    typeof document !== "undefined" &&
+    Boolean(document.querySelector('script[src*="/@vite/client"]'))
+  );
+}
+
 export function renderApp(state: AppViewState) {
   const updatableState = state as AppViewState & { requestUpdate?: () => void };
   const requestHostUpdate =
@@ -1514,7 +1546,10 @@ export function renderApp(state: AppViewState) {
       ${renderGatewayUrlConfirmation(state)}
     `;
   }
-  if (!state.connected) {
+  // Source checkouts may intentionally run the AdminBot HTTP service without a Gateway. Once the
+  // local member login succeeds, keep AdminBot's independently authenticated surfaces available
+  // in Vite development; production builds still require the Gateway before rendering this shell.
+  if (!state.connected && !allowDisconnectedViteMemberPreview(state)) {
     return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
   }
   if (state.adminBotWelcomeVisible) {
@@ -1529,8 +1564,11 @@ export function renderApp(state: AppViewState) {
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
   const chatDisabledReason = state.connected ? null : t("chat.disconnected");
   const isChat = state.tab === "chat";
-  const adminBotMode: AdminBotLoadMode = resolveAdminBotMode(state.memberPrivilegeLevel);
+  const adminBotMode: AdminBotDashboardMode = resolveAdminBotMode(state.memberPrivilegeLevel);
   const adminBotPanel = adminBotPanelForTab(state.tab, adminBotMode);
+  const needsAdminBotData = Boolean(adminBotPanel) || state.tab === "adminbotTimeAvailability";
+  const adminBotLoadMode: AdminBotLoadMode =
+    state.tab === "adminbotTimeAvailability" ? "members" : adminBotMode;
   const headerError = !isChat && state.lastError !== state.chatError ? state.lastError : null;
   const chatViewError = state.lastError;
   const chatHeaderHidden = isChat && (state.onboarding || state.chatHeaderControlsHidden);
@@ -2360,14 +2398,16 @@ export function renderApp(state: AppViewState) {
   const refreshChatWorkspaceFiles = () => {
     loadChatWorkspaceFiles({ force: true });
   };
+  const canLoadAvailabilityOverMemberSession =
+    state.tab === "adminbotTimeAvailability" && allowDisconnectedViteMemberPreview(state);
   if (
-    ((isChat && isAdminBotChat) || adminBotPanel) &&
-    state.connected &&
+    ((isChat && isAdminBotChat) || needsAdminBotData) &&
+    (state.connected || canLoadAvailabilityOverMemberSession) &&
     !state.adminBotLoading &&
     !state.adminBotError &&
-    !state.adminBotData.loadedAt
+    !hasAdminBotDataForMode(state.adminBotData, adminBotLoadMode)
   ) {
-    void loadAdminBot(state, adminBotMode).finally(() => requestHostUpdate?.());
+    void loadAdminBot(state, adminBotLoadMode).finally(() => requestHostUpdate?.());
   }
   const browseChatWorkspacePath = (path: string) => {
     if (chatWorkspaceFiles.browserSearchTimer) {
@@ -3026,6 +3066,34 @@ export function renderApp(state: AppViewState) {
                 onDecide: (registrationId, decision) =>
                   void decideAdminBotRegistration(state, registrationId, decision),
                 onRefresh: () => void loadAdminBotRegistrations(state),
+              }),
+            )
+          : nothing}
+        ${state.tab === "adminbotTimeAvailability"
+          ? renderLazyView(lazyAdminBotTimeAvailability, (m) =>
+              m.renderAdminBotTimeAvailability({
+                members: state.adminBotData.members,
+                loading: state.adminBotLoading,
+                error: state.adminBotError,
+                selectedMemberId: state.adminBotTimeAvailabilityMemberId,
+                signedInMemberId: state.memberId,
+                viewInterval: state.adminBotTimeAvailabilityInterval,
+                onMemberChange: (memberId) => {
+                  state.adminBotTimeAvailabilityMemberId = memberId;
+                },
+                onViewIntervalChange: (interval) => {
+                  state.adminBotTimeAvailabilityInterval = interval;
+                },
+                onAvailabilityChange: (memberId, availability, hoursPerWeek) => {
+                  const member = state.adminBotData.members.find(
+                    (candidate) => candidate.id === memberId,
+                  );
+                  void saveAdminBotOwnProfile(state, memberId, {
+                    ...(member ? { name: member.name } : {}),
+                    ...(hoursPerWeek !== undefined ? { hours_per_week: hoursPerWeek } : {}),
+                    availability,
+                  });
+                },
               }),
             )
           : nothing}

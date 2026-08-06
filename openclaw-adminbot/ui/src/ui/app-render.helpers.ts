@@ -52,7 +52,7 @@ export { isCronSessionKey, parseSessionKey, resolveSessionDisplayName, resolveSe
 // controls; only admin/core_member get the editable "admin" mode.
 export function resolveAdminBotMode(
   privilegeLevel: string | null,
-): import("./controllers/adminbot.ts").AdminBotLoadMode {
+): import("./controllers/adminbot.ts").AdminBotDashboardMode {
   return privilegeLevel === "admin" || privilegeLevel === "core_member" ? "admin" : "general";
 }
 

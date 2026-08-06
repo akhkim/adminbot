@@ -63,7 +63,7 @@ export type LabMember = {
   research_topics?: string[] | null;
   projects?: string[] | null;
   hours_per_week?: number | null;
-  // Owned by the member and edited in the AdminBot console; the Control UI only renders it.
+  // Owned by the member and editable from the time-allocation view.
   availability?: AvailabilityRow[] | null;
   time_off?: TimeOffRow[] | null;
   location?: string | null;
@@ -84,7 +84,7 @@ export type MemberProfileUpdate = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
-  availability?: string;
+  availability?: AvailabilityRow[] | string;
   location?: string;
   affiliation?: string;
   timezone?: string;
@@ -109,7 +109,7 @@ export type AdminLabMemberUpdate = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
-  availability?: string;
+  availability?: AvailabilityRow[] | string;
   location?: string;
   affiliation?: string;
   timezone?: string;

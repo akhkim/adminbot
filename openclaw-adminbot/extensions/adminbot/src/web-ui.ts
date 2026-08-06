@@ -3230,6 +3230,7 @@ export function renderAdminBotWebUi(): string {
       // and a prefilled range means the bar shows up immediately instead of after four fields.
       const monday = mondayOf(addDays(Date.now(), 7));
       schedule.availability.push({
+        id: crypto.randomUUID(),
         start: isoOf(monday),
         end: isoOf(addDays(monday, 6)),
         project: "",
@@ -3273,11 +3274,13 @@ export function renderAdminBotWebUi(): string {
       // cannot clobber the profile fields owned by the other form.
       const body = {
         availability: schedule.availability.map((row) => ({
+          id: row.id || crypto.randomUUID(),
           start: row.start,
           end: row.end,
           ...(projectKey(row) ? { project: projectKey(row) } : {}),
           hours_per_week: Number(row.hours_per_week),
-          ...(row.note ? { note: row.note } : {})
+          ...(row.note ? { note: row.note } : {}),
+          ...(row.color ? { color: row.color } : {})
         })),
         time_off: schedule.time_off.map((row) => ({
           start: row.start,

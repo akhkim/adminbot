@@ -47,9 +47,10 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotReimbursements: "anonymous",
   adminbotDeadlines: "anonymous",
 
-  // Members. The roster and the paper list are lab-internal but not governance surfaces, and chat
-  // is how members talk to AdminBot at all.
+  // Members. The roster, availability picker, and paper list are lab-internal but not governance
+  // surfaces, and chat is how members talk to AdminBot at all.
   adminbotMembers: "member",
+  adminbotTimeAvailability: "member",
   adminbotPapers: "member",
   chat: "member",
 

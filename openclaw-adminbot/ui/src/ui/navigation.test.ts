@@ -35,6 +35,7 @@ describe("iconForTab", () => {
       adminbotReimbursements: "fileText",
       adminbotSettings: "settings",
       adminbotMembers: "folder",
+      adminbotTimeAvailability: "clock",
       adminbotPapers: "fileText",
       adminbotAnnouncements: "activity",
       adminbotDeadlines: "loader",
@@ -78,6 +79,7 @@ describe("titleForTab", () => {
       adminbotRegistrations: "Member Requests",
       adminbotSettings: "Settings",
       adminbotMembers: "Lab Members",
+      adminbotTimeAvailability: "Time Availability",
       adminbotReimbursements: "Reimbursements",
       adminbotPapers: "Active Papers",
       adminbotAnnouncements: "Announcements",
@@ -116,6 +118,7 @@ describe("subtitleForTab", () => {
       adminbotRegistrations: "Approve or reject pending member signups and roster claims.",
       adminbotSettings: "Lab defaults and escalation policy.",
       adminbotMembers: "Privilege levels and access profiles.",
+      adminbotTimeAvailability: "Choose a lab member to view time availability.",
       adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
       adminbotPapers: "PaperPublish records and current steps.",
       adminbotAnnouncements: "Nudge members or send a general announcement.",
@@ -203,6 +206,7 @@ describe("tabFromPath", () => {
     expect(tabFromPath("/adminbot/registrations")).toBe("adminbotRegistrations");
     expect(tabFromPath("/adminbot/settings")).toBe("adminbotSettings");
     expect(tabFromPath("/adminbot/members")).toBe("adminbotMembers");
+    expect(tabFromPath("/adminbot/time-availability")).toBe("adminbotTimeAvailability");
     expect(tabFromPath("/adminbot/papers")).toBe("adminbotPapers");
     expect(tabFromPath("/adminbot/announcements")).toBe("adminbotAnnouncements");
     expect(tabFromPath("/adminbot/deadlines")).toBe("adminbotDeadlines");
