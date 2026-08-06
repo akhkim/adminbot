@@ -39,44 +39,10 @@ public product.
 
 ## Architecture
 
-```
-                        ┌─────────────────────────────────────────┐
-   Browser (Control UI) │  Vercel: jinesis-admin.vercel.app        │
-        │               └─────────────────────────────────────────┘
-        │  wss:// (gateway RPC)          https:// (member API)
-        ▼                                        ▼
-┌──────────────────────┐              ┌──────────────────────────┐
-│  OpenClaw Gateway     │  in-proc    │  AdminBot HTTP service    │
-│  :18789 (WS RPC)      │◄──plugin───►│  :8765 (member auth/data) │
-│  device pairing/scopes│              │  proposals/approvals/...  │
-└──────────────────────┘              └──────────────────────────┘
-        host: aurora, exposed via Tailscale Serve/Funnel
-        :443  → gateway        :8443 → AdminBot service
-```
-
 - The **gateway** is the control plane (sessions, tools, events) and the WebSocket surface the
   Control UI connects to. Authorization is enforced via per-device pairing scopes.
 - The **AdminBot service** is the member-facing HTTP API. Login issues a member session; the
   member's privilege caps the gateway scopes their device is paired with.
-- **aurora** hosts both, published over Tailscale (`aurora-adminbot.taila4f725.ts.net`): `:443`
-  fronts the gateway, `:8443` fronts the AdminBot service.
-
-## Hosting
-
-The Control UI deploys to **Vercel** (`jinesis-admin.vercel.app`) directly from this repo,
-building from source:
-
-- Vercel **Root Directory** = `openclaw-adminbot`, **Node.js Version** = 22.x.
-- `openclaw-adminbot/vercel.json` drives it: `corepack pnpm install --frozen-lockfile` →
-  `corepack pnpm ui:build && node scripts/vercel-postbuild-index.mjs` → serves `dist/control-ui`.
-- `scripts/vercel-postbuild-index.mjs` re-injects the two deploy-specific `index.html` edits a
-  plain build drops: `<base href="/">` (so SPA deep links resolve assets from root) and the boot
-  script that points `gatewayUrl` / `adminBotUrl` at the aurora endpoints. It is idempotent.
-
-The gateway + AdminBot service run on **aurora** as systemd user services. Deploys from the dev
-checkout via `scripts/aurora-adminbot-host.sh` (`git archive`s the repo, uploads, builds,
-restarts). After any extension change, a `pnpm build` + service restart is required — the service
-imports from `dist/`, so a stale `dist/` makes `/auth/*` 404.
 
 ## Setup
 
