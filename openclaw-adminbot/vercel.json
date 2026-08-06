@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "corepack pnpm install --frozen-lockfile",
-  "buildCommand": "corepack pnpm ui:build",
+  "buildCommand": "corepack pnpm ui:build && node scripts/vercel-postbuild-index.mjs",
   "outputDirectory": "dist/control-ui",
   "rewrites": [
     {
