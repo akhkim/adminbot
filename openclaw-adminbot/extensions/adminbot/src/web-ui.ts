@@ -1,4 +1,22 @@
-import { ADMINBOT_DRIVE_ACCOUNT, adminBotMemberRoles } from "./contracts.js";
+import {
+  ADMINBOT_SEPARATE_DELIVERY_DOC_URL,
+  collaboratorSubgroupAccess,
+} from "./collaborator-subgroups.js";
+import {
+  ADMINBOT_DRIVE_ACCOUNT,
+  adminBotExternalCollaboratorSubgroups,
+  adminBotMemberRoles,
+} from "./contracts.js";
+
+// Item label plus cell per subgroup, inlined into the page so the editor can show what a subgroup
+// grants without another round trip. Only `label`/`cell` travel: the long matrix `detail` strings
+// would multiply the page size for text the compact tag list has no room for anyway.
+const collaboratorSubgroupGrants = Object.fromEntries(
+  adminBotExternalCollaboratorSubgroups.map((subgroup) => [
+    subgroup,
+    collaboratorSubgroupAccess(subgroup).map((grant) => ({ label: grant.label, cell: grant.cell })),
+  ]),
+);
 
 export function renderAdminBotWebUi(): string {
   return `<!doctype html>
@@ -417,6 +435,11 @@ export function renderAdminBotWebUi(): string {
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+    .data-tag em { margin-left: 5px; color: var(--muted); font-style: normal; }
+    /* Keep the marker link inside the pill's muted type; only the underline says it is clickable. */
+    .data-tag em a { color: inherit; }
+    .subgroup-access { display: flex; flex-wrap: wrap; gap: 5px; }
+    .subgroup-access .data-tag { max-width: none; }
     .data-tag.project { border-color: #3e3a58; background: #211e31; color: #c9bdf2; }
     .data-tag.paper { border-color: #254a4c; background: #142b2c; color: #91d9d0; }
     .status-pill {
@@ -1076,6 +1099,10 @@ export function renderAdminBotWebUi(): string {
               <label>Privilege
                 <select name="privilege_level" id="member-privilege"></select>
               </label>
+              <label id="member-subgroup-field" hidden>Collaborator subgroup
+                <select name="collaborator_subgroup" id="member-subgroup"></select>
+              </label>
+              <div class="full subgroup-access" id="member-subgroup-access" hidden></div>
               <label>OpenReview id<input name="openreview_id" placeholder="~Jane_Doe1"></label>
               <label class="checkbox-field"
                 ><input type="checkbox" name="reviewer_exempt"> Never assign as an emergency reviewer
@@ -1381,6 +1408,17 @@ export function renderAdminBotWebUi(): string {
   </div>
   <script>
     const privilegeLevels = ["external_collaborator", "trial", "member", "core_member", "admin"];
+    const collaboratorSubgroups = ${JSON.stringify([...adminBotExternalCollaboratorSubgroups])};
+    const collaboratorSubgroupGrants = ${JSON.stringify(collaboratorSubgroupGrants)};
+    // Cells that are not a plain yes carry an instruction the person acting on the grant has to
+    // see; without the marker "Rec letter button" would read as granted to everyone listed.
+    // The separate marker links the doc its follow-up email points at, so an admin can read it first.
+    const subgroupCellMarkers = {
+      yes_separate: { text: "separate", href: ${JSON.stringify(ADMINBOT_SEPARATE_DELIVERY_DOC_URL)} },
+      pending: { text: "pending" },
+      case_by_case: { text: "case-by-case" },
+      auto_decline: { text: "auto-decline" }
+    };
     const memberRoles = ${JSON.stringify([...adminBotMemberRoles])};
     const paperSteps = [
       "brainstorming_docs",
@@ -1434,10 +1472,10 @@ export function renderAdminBotWebUi(): string {
       }
     };
 
-    function optionList(values, selected, blankLabel) {
+    function optionList(values, selected, blankLabel, labeler = (value) => value) {
       const blank = blankLabel ? '<option value="">' + blankLabel + '</option>' : "";
       return blank + values.map((value) =>
-        '<option value="' + value + '"' + (value === selected ? " selected" : "") + '>' + value + '</option>'
+        '<option value="' + value + '"' + (value === selected ? " selected" : "") + '>' + labeler(value) + '</option>'
       ).join("");
     }
 
@@ -1515,6 +1553,13 @@ export function renderAdminBotWebUi(): string {
         privilegeLevels,
         "external_collaborator"
       );
+      document.getElementById("member-subgroup").innerHTML = optionList(
+        collaboratorSubgroups,
+        "",
+        "Not set",
+        humanize
+      );
+      syncSubgroupField();
       document.getElementById("member-status-select").innerHTML = optionList(memberStatuses, "active");
       document.getElementById("paper-step").innerHTML = optionList(paperSteps, "brainstorming_docs");
       document.querySelector('[name="paper_escalation_business_days"]').value =
@@ -1597,7 +1642,10 @@ export function renderAdminBotWebUi(): string {
           '<td>' + availabilityStrip(member) +
             (hours ? '<span class="cell-details">' + escapeHtml(hours) + '</span>' : "") + '</td>' +
           '<td>' + escapeHtml(profile.location || "—") + '<br><span class="cell-details">' + escapeHtml(profile.timezone || "") + '</span></td>' +
-          '<td><span class="data-tag">' + escapeHtml(humanize(member.privilege_level)) + '</span></td>' +
+          '<td><span class="data-tag">' + escapeHtml(humanize(member.privilege_level)) + '</span>' +
+            (member.collaborator_subgroup && member.privilege_level === "external_collaborator"
+              ? '<span class="data-tag">' + escapeHtml(humanize(member.collaborator_subgroup)) + '</span>'
+              : "") + '</td>' +
         '</tr>';
       }).join("");
       document.getElementById("members-table").innerHTML =
@@ -1939,6 +1987,7 @@ export function renderAdminBotWebUi(): string {
         ...(data.email ? { email: data.email } : {}),
         ...(data.slack_user_id ? { slack_user_id: data.slack_user_id } : {}),
         ...(data.privilege_level ? { privilege_level: data.privilege_level } : {}),
+        ...(data.collaborator_subgroup ? { collaborator_subgroup: data.collaborator_subgroup } : {}),
         notes: data.notes
       };
       try {
@@ -1949,6 +1998,31 @@ export function renderAdminBotWebUi(): string {
         setStatus("member-status", error.message, "error");
       }
     });
+
+    // Cosmetic gating only: the service is what rejects a subgroup on any other privilege level and
+    // clears it on promotion. Blanking the select while hidden keeps the save payload honest.
+    function syncSubgroupField() {
+      const subgroup = document.getElementById("member-subgroup");
+      const applicable =
+        document.getElementById("member-privilege").value === "external_collaborator";
+      if (!applicable) subgroup.value = "";
+      document.getElementById("member-subgroup-field").hidden = !applicable;
+      const grants = applicable ? collaboratorSubgroupGrants[subgroup.value] || [] : [];
+      const panel = document.getElementById("member-subgroup-access");
+      panel.hidden = grants.length === 0;
+      panel.innerHTML = grants.map((grant) => {
+        const marker = subgroupCellMarkers[grant.cell];
+        if (!marker) return '<span class="data-tag">' + escapeHtml(grant.label) + '</span>';
+        const text = escapeHtml(marker.text);
+        const body = marker.href
+          ? '<a href="' + marker.href + '" target="_blank" rel="noreferrer">' + text + '</a>'
+          : text;
+        return '<span class="data-tag">' + escapeHtml(grant.label) + '<em>' + body + '</em></span>';
+      }).join("");
+    }
+
+    document.getElementById("member-privilege").addEventListener("change", syncSubgroupField);
+    document.getElementById("member-subgroup").addEventListener("change", syncSubgroupField);
 
     function commaList(value) {
       return String(value || "").split(",").map((entry) => entry.trim()).filter(Boolean);
@@ -1974,12 +2048,14 @@ export function renderAdminBotWebUi(): string {
         email: member.email || "",
         slack_user_id: member.slack_user_id || "",
         privilege_level: member.privilege_level,
+        collaborator_subgroup: member.collaborator_subgroup || "",
         notes: member.notes || ""
       };
       Object.entries(values).forEach(([name, value]) => {
         const field = form.elements.namedItem(name);
         if (field) field.value = value;
       });
+      syncSubgroupField();
       // Checkboxes carry state on .checked, not .value, so they are set apart from the
       // text fields above; a missing one would silently read as "not exempt".
       const exemptField = form.elements.namedItem("reviewer_exempt");

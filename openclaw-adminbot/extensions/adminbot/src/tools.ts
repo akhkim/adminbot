@@ -6,6 +6,7 @@ import type {
   AdminBotActionType,
   AdminBotAccessGrant,
   AdminBotEvidencePointer,
+  AdminBotExternalCollaboratorSubgroup,
   AdminBotLabMemberInput,
   AdminBotLabMember,
   AdminBotPaperRecordInput,
@@ -157,6 +158,7 @@ type LabMemberParams = {
   email?: string;
   slackUserId?: string;
   privilegeLevel?: AdminBotPrivilegeLevel;
+  collaboratorSubgroup?: AdminBotExternalCollaboratorSubgroup;
   accessOverrides?: AdminBotAccessGrant[];
   notes?: string;
   role?: string;
@@ -548,6 +550,7 @@ function labMemberRecord(params: LabMemberParams): AdminBotLabMemberInput {
     id: params.id,
     name: params.name,
     ...(params.privilegeLevel ? { privilege_level: params.privilegeLevel } : {}),
+    ...(params.collaboratorSubgroup ? { collaborator_subgroup: params.collaboratorSubgroup } : {}),
     ...(params.email ? { email: params.email } : {}),
     ...(params.slackUserId ? { slack_user_id: params.slackUserId } : {}),
     ...(params.accessOverrides ? { access_overrides: params.accessOverrides } : {}),

@@ -1,10 +1,12 @@
 import { Type } from "typebox";
 import {
   adminBotActionTypes,
+  adminBotExternalCollaboratorSubgroups,
   adminBotPaperSteps,
   adminBotPrivilegeLevels,
   adminBotRiskTiers,
   type AdminBotActionType,
+  type AdminBotExternalCollaboratorSubgroup,
   type AdminBotPaperStep,
   type AdminBotPrivilegeLevel,
   type AdminBotRiskTier,
@@ -23,6 +25,13 @@ export const riskTierSchema = Type.Unsafe<AdminBotRiskTier>({
 export const privilegeLevelSchema = Type.Unsafe<AdminBotPrivilegeLevel>({
   type: "string",
   enum: [...adminBotPrivilegeLevels],
+});
+
+export const collaboratorSubgroupSchema = Type.Unsafe<AdminBotExternalCollaboratorSubgroup>({
+  type: "string",
+  enum: [...adminBotExternalCollaboratorSubgroups],
+  description:
+    "Which kind of external collaborator this is, ordered least to most engaged. Only accepted when the member's privilege level is external_collaborator.",
 });
 
 export const paperStepSchema = Type.Unsafe<AdminBotPaperStep>({

@@ -24,6 +24,20 @@ export type AdminBotPrivilegeLevel =
   | "core_member"
   | "admin";
 
+// Mirrors `adminBotExternalCollaboratorSubgroups` in extensions/adminbot/src/contracts.ts. Copied
+// rather than imported for the same reason as AdminBotPrivilegeLevel above: the Control UI does not
+// reach across the extensions boundary. Only meaningful while privilege_level is
+// "external_collaborator" — the service rejects it on any other level and clears it on promotion.
+export type AdminBotExternalCollaboratorSubgroup =
+  | "interviewee"
+  | "slightly_better_than_emails"
+  | "acquaintance"
+  | "alumni"
+  | "coauthor_minor"
+  | "coauthor_major"
+  | "disappearing_coauthor"
+  | "external_prof";
+
 export type AdminBotAccessGrant = {
   service: string;
   access: "none" | "view" | "comment" | "edit" | "admin";
@@ -39,6 +53,7 @@ export type AdminBotLabMember = {
   slack_user_id?: string;
   notes?: string;
   privilege_level: AdminBotPrivilegeLevel;
+  collaborator_subgroup?: AdminBotExternalCollaboratorSubgroup;
   access: AdminBotAccessGrant[];
   role?: string;
   status?: AdminBotMemberStatus;
@@ -78,6 +93,7 @@ export type AdminBotLabMemberSaveInput = {
   email?: string;
   slackUserId?: string;
   privilegeLevel?: AdminBotPrivilegeLevel;
+  collaboratorSubgroup?: AdminBotExternalCollaboratorSubgroup;
   notes?: string;
   role?: string;
   status?: AdminBotMemberStatus;
@@ -693,6 +709,7 @@ function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
     ...(member.email ? { email: member.email } : {}),
     ...(member.slackUserId ? { slack_user_id: member.slackUserId } : {}),
     ...(member.privilegeLevel ? { privilege_level: member.privilegeLevel } : {}),
+    ...(member.collaboratorSubgroup ? { collaborator_subgroup: member.collaboratorSubgroup } : {}),
     ...(member.notes ? { notes: member.notes } : {}),
     ...(member.role ? { role: member.role } : {}),
     ...(member.status ? { status: member.status } : {}),
@@ -753,6 +770,7 @@ export async function saveAdminBotMember(
       ...(member.email ? { email: member.email } : {}),
       ...(member.slackUserId ? { slackUserId: member.slackUserId } : {}),
       ...(member.privilegeLevel ? { privilegeLevel: member.privilegeLevel } : {}),
+      ...(member.collaboratorSubgroup ? { collaboratorSubgroup: member.collaboratorSubgroup } : {}),
       ...(member.notes ? { notes: member.notes } : {}),
       ...(member.role ? { role: member.role } : {}),
       ...(member.status ? { status: member.status } : {}),

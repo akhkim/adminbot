@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { ADMINBOT_SEPARATE_DELIVERY_DOC_URL } from "./collaborator-subgroups.js";
 import { ADMINBOT_DRIVE_ACCOUNT } from "./contracts.js";
 import { renderAdminBotWebUi } from "./web-ui.js";
 
@@ -300,6 +301,62 @@ describe("renderAdminBotWebUi", () => {
     // Refresh and sign-out are session actions; a visitor has neither.
     expect(html).toContain('document.getElementById("signout-button").hidden = !signedIn');
     expect(html).toContain('document.getElementById("refresh-button").hidden = !signedIn');
+  });
+
+  it("offers the collaborator subgroup on the member editor, gated on the privilege select", () => {
+    expect(html).toContain('id="member-subgroup-field" hidden');
+    expect(html).toContain('<select name="collaborator_subgroup" id="member-subgroup">');
+    // All eight subgroups reach the page, labeled through the same humanize() the roster uses.
+    expect(html).toContain(
+      '["interviewee","slightly_better_than_emails","acquaintance","alumni","coauthor_minor","coauthor_major","disappearing_coauthor","external_prof"]',
+    );
+    expect(html).toContain("collaboratorSubgroups,");
+    expect(html).toContain('"Not set",');
+    // The field is shown/blanked from the privilege value, and reset whenever a member is loaded.
+    expect(html).toContain("function syncSubgroupField()");
+    expect(html).toContain('=== "external_collaborator"');
+    expect(html).toContain('addEventListener("change", syncSubgroupField)');
+    expect(html).toContain('if (!applicable) subgroup.value = ""');
+    expect(html).toContain('collaborator_subgroup: member.collaborator_subgroup || ""');
+    // Saved only when set, so a non-collaborator never sends the field the service would reject.
+    expect(html).toContain(
+      "...(data.collaborator_subgroup ? { collaborator_subgroup: data.collaborator_subgroup } : {})",
+    );
+  });
+
+  it("shows a subgroup's granted access items with a marker on every non-plain cell", () => {
+    // The matrix travels with the page so the editor can explain a subgroup without a round trip.
+    expect(html).toContain('"coauthor_minor":[');
+    expect(html).toContain('{"label":"Recommendation letter button","cell":"case_by_case"}');
+    expect(html).toContain('{"label":"Google file common practice guide","cell":"yes_separate"}');
+    expect(html).toContain('{"label":"#proj-xxx project channel","cell":"pending"}');
+    expect(html).toContain('{"label":"Recommendation letter button","cell":"auto_decline"}');
+    // Non-plain cells carry the instruction as a marker inside the tag.
+    expect(html).toContain('pending: { text: "pending" }');
+    expect(html).toContain('case_by_case: { text: "case-by-case" }');
+    expect(html).toContain('auto_decline: { text: "auto-decline" }');
+    expect(html).toContain('id="member-subgroup-access"');
+    expect(html).toContain("const marker = subgroupCellMarkers[grant.cell]");
+  });
+
+  it("links the separate-delivery marker at the doc its follow-up email points at", () => {
+    expect(html).toContain(
+      `yes_separate: { text: "separate", href: "${ADMINBOT_SEPARATE_DELIVERY_DOC_URL}" }`,
+    );
+    // Only that marker is a link; the rest stay plain text inside the pill.
+    expect(html).toContain(
+      "'<a href=\"' + marker.href + '\" target=\"_blank\" rel=\"noreferrer\">' + text + '</a>'",
+    );
+    expect(html).toContain(".data-tag em a { color: inherit; }");
+  });
+
+  it("tags the roster access column with the subgroup of an external collaborator", () => {
+    expect(html).toContain(
+      'member.collaborator_subgroup && member.privilege_level === "external_collaborator"',
+    );
+    expect(html).toContain(
+      "'<span class=\"data-tag\">' + escapeHtml(humanize(member.collaborator_subgroup)) + '</span>'",
+    );
   });
 
   it("embeds the deadline board rather than reimplementing it", () => {

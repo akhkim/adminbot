@@ -4,6 +4,7 @@ import { render } from "lit";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
   type AdminBotLabMember,
+  type AdminBotLabMemberSaveInput,
   type AdminBotPaperRecord,
   createEmptyAdminBotDashboardData,
 } from "../controllers/adminbot.ts";
@@ -133,6 +134,120 @@ describe("renderAdminBot members panel — edit affordance", () => {
       "core_member",
       "admin",
     ]);
+  });
+
+  it("offers the collaborator subgroup only while the privilege select says external collaborator", () => {
+    const container = renderToDiv(baseProps({ mode: "admin" }));
+    const form = container.querySelector<HTMLElement>("#adminbot-add-member");
+    const field = form?.querySelector<HTMLElement>("[data-collaborator-subgroup-field]");
+    const subgroup = form?.querySelector<HTMLSelectElement>('select[name="collaboratorSubgroup"]');
+
+    // A new member defaults to external_collaborator, so the field starts visible.
+    expect(field?.hidden).toBe(false);
+    expect([...(subgroup?.options ?? [])].map((option) => option.value)).toEqual([
+      "",
+      "interviewee",
+      "slightly_better_than_emails",
+      "acquaintance",
+      "alumni",
+      "coauthor_minor",
+      "coauthor_major",
+      "disappearing_coauthor",
+      "external_prof",
+    ]);
+    expect([...(subgroup?.options ?? [])].map((option) => option.textContent?.trim())).toContain(
+      "Slightly Better Than Emails",
+    );
+
+    const privilege = form?.querySelector<HTMLSelectElement>('select[name="privilegeLevel"]');
+    privilege!.value = "member";
+    privilege!.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(field?.hidden).toBe(true);
+
+    // The prefilled edit popover for a core member starts hidden for the same reason.
+    const editField = container.querySelector<HTMLElement>(
+      "#adminbot-edit-member-0 [data-collaborator-subgroup-field]",
+    );
+    expect(editField?.hidden).toBe(true);
+  });
+
+  it("prefills the subgroup of an external collaborator and sends it with the save", () => {
+    const saved: AdminBotLabMemberSaveInput[] = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [
+            member({
+              privilege_level: "external_collaborator",
+              collaborator_subgroup: "coauthor_major",
+            }),
+          ],
+          loadedAt: Date.now(),
+        },
+        onSaveMember: (input) => saved.push(input),
+      }),
+    );
+    const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
+    const field = popover?.querySelector<HTMLElement>("[data-collaborator-subgroup-field]");
+    expect(field?.hidden).toBe(false);
+    expect(
+      popover?.querySelector<HTMLSelectElement>('select[name="collaboratorSubgroup"]')?.value,
+    ).toBe("coauthor_major");
+
+    popover
+      ?.querySelector<HTMLFormElement>("form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved[0]?.collaboratorSubgroup).toBe("coauthor_major");
+
+    // The roster shows the subgroup next to the privilege it qualifies.
+    expect(container.querySelector("tbody tr")?.textContent).toContain("Coauthor Major");
+  });
+
+  it("keeps the subgroup out of the payload once the privilege is no longer collaborator", () => {
+    const saved: AdminBotLabMemberSaveInput[] = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [
+            member({
+              privilege_level: "external_collaborator",
+              collaborator_subgroup: "coauthor_major",
+            }),
+          ],
+          loadedAt: Date.now(),
+        },
+        onSaveMember: (input) => saved.push(input),
+      }),
+    );
+    const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
+    const privilege = popover?.querySelector<HTMLSelectElement>('select[name="privilegeLevel"]');
+    privilege!.value = "member";
+    privilege!.dispatchEvent(new Event("change", { bubbles: true }));
+    popover
+      ?.querySelector<HTMLFormElement>("form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    expect(saved).toHaveLength(1);
+    expect(saved[0]).not.toHaveProperty("collaboratorSubgroup");
+  });
+
+  it("hides the subgroup of a member whose privilege is not collaborator", () => {
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          // Stale pairing the service would clear on promotion; the roster must not advertise it.
+          members: [member({ privilege_level: "member", collaborator_subgroup: "alumni" })],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+    expect(container.querySelector("tbody tr")?.textContent).not.toContain("Alumni");
   });
 
   // Regression: the Slack user ID is self-editable but had no cell in the Lab

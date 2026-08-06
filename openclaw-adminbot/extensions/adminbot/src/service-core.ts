@@ -34,7 +34,12 @@ import type {
   AdminBotStoredProposal,
   AdminBotPrivilegeLevel,
 } from "./contracts.js";
-import { adminBotMemberRoles, adminBotMemberStatuses, adminBotTimeOffKinds } from "./contracts.js";
+import {
+  adminBotExternalCollaboratorSubgroups,
+  adminBotMemberRoles,
+  adminBotMemberStatuses,
+  adminBotTimeOffKinds,
+} from "./contracts.js";
 import { buildMemberMap, type AdminBotMemberMap } from "./member-map.js";
 import {
   acknowledgeOnboardingStep,
@@ -776,15 +781,19 @@ export class AdminBotService {
   }
 
   upsertLabMember(member: AdminBotLabMemberInput): AdminBotServiceResponse<AdminBotLabMember> {
-    const validation = validateLabMember(member);
-    if (validation) {
-      return serviceError(400, validation);
-    }
     const existing = this.store.getLabMember(member.id);
     const privilegeLevel =
       member.privilege_level ?? existing?.privilege_level ?? DEFAULT_MEMBER_PRIVILEGE_LEVEL;
+    const validation = validateLabMember(member, privilegeLevel);
+    if (validation) {
+      return serviceError(400, validation);
+    }
     const now = new Date().toISOString();
     const accessOverrides = member.access_overrides ?? existing?.access_overrides;
+    const collaboratorSubgroup =
+      privilegeLevel === "external_collaborator"
+        ? (member.collaborator_subgroup ?? existing?.collaborator_subgroup)
+        : undefined;
     const stored: AdminBotLabMember = {
       ...existing,
       ...member,
@@ -799,6 +808,14 @@ export class AdminBotService {
       updated_at: now,
       ...availabilityStamp(existing, member, now),
     };
+    // Promoting someone out of external_collaborator drops the subgroup instead of letting a stale
+    // one ride along on ...existing: the access matrix only means anything for external
+    // collaborators, and a hidden value would come back if they were ever demoted again.
+    if (collaboratorSubgroup) {
+      stored.collaborator_subgroup = collaboratorSubgroup;
+    } else {
+      delete stored.collaborator_subgroup;
+    }
     // An empty list clears the schedule outright; keeping [] would render as an empty
     // chart rather than "nothing recorded".
     if (stored.availability && stored.availability.length === 0) {
@@ -1368,6 +1385,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
 
 const SELF_PROFILE_PRIVILEGED_FIELDS = [
   "privilege_level",
+  "collaborator_subgroup",
   "access_overrides",
   "status",
   "email",
@@ -1475,7 +1493,10 @@ function buildOnboardingNudgeMessage(step: AdminBotMemberOnboardingStep | undefi
   return lines.join("\n");
 }
 
-function validateLabMember(member: AdminBotLabMemberInput): string | undefined {
+function validateLabMember(
+  member: AdminBotLabMemberInput,
+  privilegeLevel: AdminBotPrivilegeLevel,
+): string | undefined {
   if (!member.id.trim()) {
     return "member id is required";
   }
@@ -1484,6 +1505,17 @@ function validateLabMember(member: AdminBotLabMemberInput): string | undefined {
   }
   if (member.status && !adminBotMemberStatuses.includes(member.status)) {
     return "member status is invalid";
+  }
+  if (member.collaborator_subgroup !== undefined) {
+    if (!adminBotExternalCollaboratorSubgroups.includes(member.collaborator_subgroup)) {
+      return `member collaborator subgroup must be one of: ${adminBotExternalCollaboratorSubgroups.join(", ")}`;
+    }
+    // Checked against the *effective* level, so setting a subgroup on a stored external
+    // collaborator works without resending privilege_level, and a same-request promotion is refused
+    // rather than silently keeping a subgroup the new level has no matrix for.
+    if (privilegeLevel !== "external_collaborator") {
+      return "member collaborator subgroup requires privilege level external_collaborator";
+    }
   }
   // Role is a closed vocabulary, not free text: the roster is filtered and reported on by role,
   // and "PhD student" / "PhD Student" / "PhD" as three distinct values made those counts lie.

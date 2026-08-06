@@ -54,6 +54,23 @@ export const adminBotPrivilegeLevels = [
 
 export type AdminBotPrivilegeLevel = (typeof adminBotPrivilegeLevels)[number];
 
+// Subgroups an `external_collaborator` can be sorted into, ordered least- to most-engaged. Each
+// one carries its own access-item matrix (collaborator-subgroups.ts). `alumni` here is a
+// collaboration shape, unrelated to the member *status* of the same name.
+export const adminBotExternalCollaboratorSubgroups = [
+  "interviewee",
+  "slightly_better_than_emails",
+  "acquaintance",
+  "alumni",
+  "coauthor_minor",
+  "coauthor_major",
+  "disappearing_coauthor",
+  "external_prof",
+] as const;
+
+export type AdminBotExternalCollaboratorSubgroup =
+  (typeof adminBotExternalCollaboratorSubgroups)[number];
+
 export type AdminBotAccessGrant = {
   service: string;
   access: "none" | "view" | "comment" | "edit" | "admin";
@@ -180,6 +197,10 @@ export type AdminBotLabMemberInput = {
   email?: string;
   slack_user_id?: string;
   privilege_level?: AdminBotPrivilegeLevel;
+  // Which kind of external collaborator this person is, which decides the access items they get.
+  // Only meaningful while `privilege_level` is "external_collaborator"; governance-owned like
+  // `privilege_level`, so a member self-edit can never set it.
+  collaborator_subgroup?: AdminBotExternalCollaboratorSubgroup;
   access_overrides?: AdminBotAccessGrant[];
   notes?: string;
   role?: string;
