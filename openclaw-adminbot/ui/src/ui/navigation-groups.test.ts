@@ -37,6 +37,7 @@ describe("TAB_GROUPS", () => {
       "adminbotReimbursements",
       "adminbotSettings",
       "adminbotMembers",
+      "adminbotTimeAvailability",
       "adminbotPapers",
       "adminbotAnnouncements",
       "adminbotDeadlines",

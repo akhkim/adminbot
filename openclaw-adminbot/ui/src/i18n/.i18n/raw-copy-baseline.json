@@ -797,13 +797,6 @@
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Research scientist"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/views/adminbot.ts",
       "text": "robotics, world models"
     },
     {
@@ -1302,6 +1295,13 @@
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
       "text": "none"
+    },
+    {
+      "count": 2,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Not set"
     },
     {
       "count": 1,
