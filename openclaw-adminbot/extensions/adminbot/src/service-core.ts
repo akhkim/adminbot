@@ -1169,7 +1169,7 @@ export class AdminBotService {
    */
   listOnboardingStepPending(
     stepId: string,
-  ): AdminBotServiceResponse<{ step_id: string; members: AdminBotLabMember[] }> {
+  ): AdminBotServiceResponse<{ step_id: string; message: string; members: AdminBotLabMember[] }> {
     if (!onboardingStepIds().includes(stepId)) {
       return serviceError(400, `unknown onboarding step: ${stepId}`);
     }
@@ -1177,7 +1177,13 @@ export class AdminBotService {
       .listLabMembers()
       .filter((member) => member.status !== "alumni" && member.status !== "external")
       .filter((member) => !isOnboardingStepComplete(member.onboarding, stepId));
-    return { ok: true, status: 200, payload: { step_id: stepId, members } };
+    // The composed nudge text rides along so the reaction-confirm poller
+    // (scripts/adminbot_onboarding_confirm.py) re-nudges with exactly the words the service
+    // itself would send, instead of keeping a second copy of the message.
+    const message = buildOnboardingNudgeMessage(
+      findOnboardingStep(buildInitialOnboarding(), stepId),
+    );
+    return { ok: true, status: 200, payload: { step_id: stepId, message, members } };
   }
 
   /**
@@ -1208,7 +1214,7 @@ export class AdminBotService {
       {
         channel: request.channel,
         recipient_member_ids: recipients,
-        message: request.message?.trim() || buildOnboardingNudgeMessage(step),
+        message: request.message?.trim() || pending.payload.message,
         ...(request.channel === "email"
           ? { subject: `Reminder: ${step?.label ?? "an onboarding step"}` }
           : {}),
@@ -1464,13 +1470,18 @@ function buildOnboardingNudgeMessage(step: AdminBotMemberOnboardingStep | undefi
     lines.push(step.detail);
   }
   for (const bullet of step.bullets ?? []) {
-    lines.push(`• ${bullet}`);
+    lines.push(`• ${bullet.text}`);
+    for (const point of bullet.points ?? []) {
+      lines.push(`    ◦ ${point}`);
+    }
   }
   for (const link of step.links ?? []) {
     lines.push(`${link.label}: ${link.url}`);
   }
+  // The reaction option only works because scripts/adminbot_onboarding_confirm.py polls the DM
+  // for it; keep this wording and that script's CONFIRM_REACTIONS in sync.
   lines.push(
-    "Already done? Mark it complete on your AdminBot welcome screen so you stop getting reminded.",
+    "Already done? React to this message with ✅ and I'll record it, or mark it complete on your AdminBot welcome screen.",
   );
   return lines.join("\n");
 }
