@@ -174,11 +174,13 @@ export const ADMINBOT_DRIVE_ACCOUNT = "jinesis.adminbot@gmail.com";
 // baseline is a long row with `project` omitted. Keeping them one type is what
 // lets the form, the validator, and the timeline renderer stay single-path.
 export type AdminBotAvailabilityRow = {
+  id?: string;
   start: string;
   end: string;
   project?: string;
   hours_per_week: number;
   note?: string;
+  color?: string;
 };
 
 export type AdminBotTimeOffRow = {

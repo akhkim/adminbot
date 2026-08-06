@@ -9,11 +9,13 @@
 import { html, type TemplateResult } from "lit-html";
 
 export type AvailabilityRow = {
+  id?: string;
   start: string;
   end: string;
   project?: string;
   hours_per_week: number;
   note?: string;
+  color?: string;
 };
 
 export type TimeOffRow = {
@@ -49,11 +51,13 @@ export function availabilityRows(value: unknown): AvailabilityRow[] {
     return row && typeof row.start === "string" && typeof row.end === "string"
       ? [
           {
+            ...(typeof row.id === "string" ? { id: row.id } : {}),
             start: row.start,
             end: row.end,
             hours_per_week: Number(row.hours_per_week) || 0,
             ...(typeof row.project === "string" ? { project: row.project } : {}),
             ...(typeof row.note === "string" ? { note: row.note } : {}),
+            ...(typeof row.color === "string" ? { color: row.color } : {}),
           },
         ]
       : [];
@@ -119,7 +123,9 @@ function projectColors(rows: readonly AvailabilityRow[]): Map<string, string> {
         .map((row) => row.project as string),
     ),
   ].sort();
-  return new Map(projects.map((project, index) => [project, SERIES_COLORS[index] ?? NEUTRAL_COLOR]));
+  return new Map(
+    projects.map((project, index) => [project, SERIES_COLORS[index] ?? NEUTRAL_COLOR]),
+  );
 }
 
 function commitmentFill(row: AvailabilityRow, colors: Map<string, string>): string {

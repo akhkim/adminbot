@@ -402,7 +402,14 @@ describe("AdminBotService", () => {
     const saved = unwrap(
       service.updateOwnProfile("sched", {
         availability: [
-          { start: "2026-08-03", end: "2026-08-09", project: "Atlas", hours_per_week: 18 },
+          {
+            id: "task-atlas",
+            start: "2026-08-03",
+            end: "2026-08-09",
+            project: "Atlas",
+            hours_per_week: 18,
+            color: "#3575DA",
+          },
           // Sentinel project: declared spare capacity, not a real project.
           { start: "2026-08-10", end: "2026-08-16", project: "__open__", hours_per_week: 6 },
           // No project: the whole-term baseline shape.
@@ -415,6 +422,8 @@ describe("AdminBotService", () => {
       }),
     );
     expect(saved.availability).toHaveLength(3);
+    expect(saved.availability?.[0]?.id).toBe("task-atlas");
+    expect(saved.availability?.[0]?.color).toBe("#3575DA");
     expect(saved.time_off?.[1]).toMatchObject({ kind: "course_load", availability: "none" });
 
     for (const bad of [

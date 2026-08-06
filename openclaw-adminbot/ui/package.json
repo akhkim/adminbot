@@ -17,12 +17,18 @@
     "highlight.js": "11.11.1",
     "json5": "2.2.3",
     "lit": "3.3.3",
+    "lucide-react": "^1.28.0",
     "markdown-it": "14.2.0",
     "markdown-it-task-lists": "2.1.1",
-    "marked": "18.0.4"
+    "marked": "18.0.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "recharts": "^3.10.1"
   },
   "devDependencies": {
     "@types/markdown-it": "14.1.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
     "@vitest/browser-playwright": "4.1.8",
     "jsdom": "29.1.1",
     "playwright": "1.60.0",
