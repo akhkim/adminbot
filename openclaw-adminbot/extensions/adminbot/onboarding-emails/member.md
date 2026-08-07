@@ -1,36 +1,45 @@
 ---
 group: member
 applies_to: privilege_level = member
-separate_followups: none
-omitted_internal_items: none
+source: supplied verbatim by the lab ("Accept Full Member")
+placeholders: { first_name }
 note: |
-  Deliberately short. The onboarding checklist on the dashboard is the guide; this
-  email's job is to get them to it and to start the one item with a lead time.
+  Links the site root rather than /signup, which is not a routed path. The landing page
+  is where the root lands anyway, and Sign in -> Request an account is one click from
+  there.
 ---
 
-Subject: `Welcome to the Jinesis Lab`
+Subject: `Welcome to the Jinesis AI Research Lab – Onboarding Steps`
 
 ```text
 Hi {first_name},
 
-Welcome to the Jinesis Lab. Your account is live — sign in with the email and
-password you registered:
+Thank you for your interest in joining the Jinesis AI Research Lab with Prof. Zhijing Jin! We're excited to have you on board.
 
-{dashboard_url}
+To complete your onboarding as a full member, please follow these steps:
 
-Your onboarding checklist is waiting on the welcome screen. It walks you through
-everything: the lab calendar and which meetings you are expected at, compute access,
-setting up your Drive folder, and how we work with docs and meetings. Work through it
-at your own pace and tick things off as you go.
+Step 1: Create your member portal account: Sign up at https://jinesis-admin.vercel.app and follow the onboarding guide in the portal.
 
-One thing worth starting today rather than later: the Compute Canada (Alliance)
-account. A lab admin has to approve it and it is the step most likely to hold you up,
-so getting the application in early saves you waiting later. The checklist has the
-details, including which email address to use — the usual reason an application gets
-rejected is an affiliation that does not match the email domain.
+Step 2: Create an email address for the Department of Computer Science (DCS) at the University of Toronto: Request your @cs.toronto.edu email through this form:
 
-Anything at all, ask our lab admin Andrew Kim.
+Highly Preferred format:
+Top 1 choice: yourFirstName@cs.toronto.edu, or yourLastName@cs.toronto.edu, e.g., david@cs.toronto.edu or smith@cs.toronto.edu
+Top 2 choice: {first_letter_of_first_name}{full_last_name}@cs.toronto.edu, e.g., zjin@cs.toronto.edu
 
-Best,
-{sender_name}
+Otherwise you can pick one that you like. Our high preference is to make it very much reflect your first and last name, so we can use it for professional communications with senior external collaborators.
+
+https://forms.office.com/r/TgGWBGWLZa
+
+Step 3: Send an email to jinesis.adminbot@gmail.com with the email subject of "Create Jinesis slack access for XX@cs.toronto.edu email". Then in 1-2 days, you will receive an invitation to the full Slack workspace.
+
+An internal mentee handbook should be shared with you already in your google drive folder, if you have any questions you can refer to there first.
+
+If any of the steps does not proceed within 7 business days after you have done it, report the technical error to Andrew Kim at andrewkihyun@gmail.com. If you have any urgent questions, email andrewkihyun@gmail.com.
+
+Best regards,
+Jinesis AI Research Lab
 ```
+
+**Note:** `{first_letter_of_first_name}{full_last_name}` inside the body is the lab's
+own example text, not a placeholder for the sender to fill. It must survive
+substitution literally.

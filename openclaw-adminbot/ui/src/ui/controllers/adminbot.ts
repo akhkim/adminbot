@@ -72,6 +72,7 @@ export type AdminBotLabMember = {
 export type AdminBotSettings = {
   paper_escalation_business_days: number;
   head_professor_member_id?: string;
+  head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
   applicant_last_reviewed_at?: string;
   updated_at: string;
@@ -117,6 +118,7 @@ export type AdminBotPaperSaveInput = {
 export type AdminBotSettingsSaveInput = {
   paper_escalation_business_days?: number;
   head_professor_member_id?: string;
+  head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
   applicant_last_reviewed_at?: string;
 };

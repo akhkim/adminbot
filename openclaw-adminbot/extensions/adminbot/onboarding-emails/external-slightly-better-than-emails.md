@@ -1,24 +1,27 @@
 ---
 group: external_collaborator / slightly_better_than_emails
+lab_name: Single-Project Collaborator (Nikita-type -- one project, minimal access)
 matrix_grants: spreadsheet_basic, slack_guest_chat_zhijing, project_drive_folder
-separate_followups: none
+source: supplied verbatim by the lab
+placeholders: {first_name}, {project_or_context}, {project_channel_or_meeting}, {contact_name}, {deliverable}, {timeline}, {slack_connect_link}
 omitted_internal_items: spreadsheet_basic
+mapping_note: |
+  The lab's "Single-Project Collaborator" is mapped to `slightly_better_than_emails`
+  because both are the minimal-access tier. `acquaintance` is the other candidate --
+  confirm the mapping.
 ---
 
-Subject: `A quicker way to reach us`
+Subject: (none supplied -- suggest `Collaborating on {project_or_context}`)
 
 ```text
 Hi {first_name},
 
-Rather than keep this on email, we have set up a Slack guest chat with Zhijing and
-the team — it is a lot faster for the back-and-forth on {project_or_context}, and
-you can drop questions in whenever they come up.
+Great to have you collaborating with us on {project_or_context}. Since this is a focused single-project collaboration, we will keep logistics light: you will be added to {project_channel_or_meeting} only, and {contact_name} is your contact for everything project-related.
 
-You also have access to our project Google Drive folder: {drive_folder_link}
+We will send the Slack invite through Slack Connect. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: https://join.slack.com/t/jinesis/shared_invite/zt-3d5p5t0nl-dsxvIZW3DJuC0b5lMkk3Vg
 
-Nothing to set up beyond accepting the Slack invite. If anything there is not
-working, just reply here.
+The expected scope is {deliverable}, on a rough timeline of {timeline}. If your availability changes, just tell us early and we will adjust.
 
 Best,
-{sender_name}
+AdminBot
 ```

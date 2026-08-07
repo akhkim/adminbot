@@ -1223,6 +1223,9 @@ export function renderAdminBotWebUi(): string {
               <label>Head professor member id
                 <input name="head_professor_member_id" placeholder="zhijing">
               </label>
+              <label>Head professor WhatsApp
+                <input name="head_professor_whatsapp" placeholder="+00 0000 0000 000">
+              </label>
               <label>Applicant response sheet id
                 <input name="applicant_sheet_id" placeholder="1AbC...">
               </label>
@@ -1566,6 +1569,8 @@ export function renderAdminBotWebUi(): string {
         state.settings?.paper_escalation_business_days || 3;
       document.querySelector('[name="head_professor_member_id"]').value =
         state.settings?.head_professor_member_id || "";
+      document.querySelector('[name="head_professor_whatsapp"]').value =
+        state.settings?.head_professor_whatsapp || "";
       document.querySelector('[name="applicant_sheet_id"]').value =
         state.settings?.applicant_sheet_id || "";
       document.querySelector('[name="applicant_last_reviewed_at"]').value =

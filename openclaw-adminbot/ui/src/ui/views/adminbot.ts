@@ -641,6 +641,7 @@ function submitSettingsForm(event: Event, props: AdminBotProps): void {
       ? { paper_escalation_business_days: escalation }
       : {}),
     head_professor_member_id: getFormValue(data, "headProfessorMemberId"),
+    head_professor_whatsapp: getFormValue(data, "headProfessorWhatsapp"),
     applicant_sheet_id: getFormValue(data, "applicantSheetId"),
     applicant_last_reviewed_at: getFormValue(data, "applicantLastReviewedAt"),
   });
@@ -690,6 +691,13 @@ function renderSettings(
               <input
                 name="headProfessorMemberId"
                 .value=${settings.head_professor_member_id ?? ""}
+              />
+            </label>
+            <label class="adminbot-form__field">
+              <span>Head professor WhatsApp</span>
+              <input
+                name="headProfessorWhatsapp"
+                .value=${settings.head_professor_whatsapp ?? ""}
               />
             </label>
             <label class="adminbot-form__field">

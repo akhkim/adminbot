@@ -11,18 +11,112 @@ they get folded into a typed module next to `onboarding.ts` and
 
 ## Files
 
-| File                                      | Group                         | Source of truth for content        |
-| ----------------------------------------- | ----------------------------- | ---------------------------------- |
-| `trial.md`                                | `trial` privilege             | subset of `onboarding.ts`          |
-| `member.md`                               | `member` privilege            | points at the dashboard checklist  |
-| `external-interviewee.md`                 | `interviewee`                 | `collaborator-subgroups.ts` matrix |
-| `external-slightly-better-than-emails.md` | `slightly_better_than_emails` | matrix                             |
-| `external-acquaintance.md`                | `acquaintance`                | matrix                             |
-| `external-alumni.md`                      | `alumni`                      | matrix                             |
-| `external-coauthor-minor.md`              | `coauthor_minor`              | matrix                             |
-| `external-coauthor-major.md`              | `coauthor_major`              | matrix                             |
-| `external-disappearing-coauthor.md`       | `disappearing_coauthor`       | matrix                             |
-| `external-prof.md`                        | `external_prof`               | matrix                             |
+Templates marked **lab text** are the lab's own supplied wording, used verbatim (or
+verbatim plus the matrix items it did not cover -- see `enriched:` in front matter).
+The four subgroups with no supplied wording keep their earlier drafts, which the lab
+has approved for use.
+
+### Candidate pipeline (pre-membership)
+
+| File                            | Stage                                                 | Source       |
+| ------------------------------- | ----------------------------------------------------- | ------------ |
+| `candidate-interview-invite.md` | interview invite                                      | **lab text** |
+| `candidate-trial-phase.md`      | interview passed -> trial (`privilege_level = trial`) | **lab text** |
+| `candidate-rejection.md`        | interview declined                                    | **lab text** |
+
+### Membership
+
+| File                       | Group                                     | Source       |
+| -------------------------- | ----------------------------------------- | ------------ |
+| `member.md`                | `member` privilege ("Accept Full Member") | **lab text** |
+| `member-what-to-expect.md` | direct mentees of Zhijing only            | **lab text** |
+| `member-rejection.md`      | application declined                      | **lab text** |
+
+`admin` has no template: appointment is manual, so the tab should not offer it.
+
+"Accept as Guest" is not a template -- it is the Slack Connect invite action with no
+accompanying email.
+
+### External collaborators
+
+The lab's wording groups collaborators by engagement level; the code groups them by
+`collaborator_subgroup`. Mapping used:
+
+| Lab name                                  | Subgroup                      | File                                      | Source                  |
+| ----------------------------------------- | ----------------------------- | ----------------------------------------- | ----------------------- |
+| External Senior Collaborator              | `external_prof`               | `external-prof.md`                        | **lab text**            |
+| External Junior Collaborator              | `coauthor_minor`              | `external-coauthor-minor.md`              | **lab text**            |
+| Single-Project Collaborator (Nikita-type) | `slightly_better_than_emails` | `external-slightly-better-than-emails.md` | **lab text**            |
+| High-Commitment (Michael Regan-type)      | `coauthor_major`              | `external-coauthor-major.md`              | **lab text**            |
+| --                                        | `interviewee`                 | `external-interviewee.md`                 | draft, approved for use |
+| --                                        | `acquaintance`                | `external-acquaintance.md`                | draft, approved for use |
+| --                                        | `alumni`                      | `external-alumni.md`                      | draft, approved for use |
+| --                                        | `disappearing_coauthor`       | `external-disappearing-coauthor.md`       | draft, approved for use |
+
+`collaboration-rhythm-reminder.md` is a mid-project note, not an onboarding email, and
+is sent by hand rather than by the tab.
+
+## Unresolved before any of this is sent
+
+1. `member-what-to-expect.md` has Zhijing's real WhatsApp number in the source. Repo
+   policy forbids committing real phone numbers, so it is `{zhijing_whatsapp}` and is
+   resolved at send time -- see the next section.
+2. Several lab templates supply no subject line; suggestions are noted in each file.
+
+Resolved: the two `XXX` contacts are Andrew Kim / andrewkihyun@gmail.com; the signup
+link is the site root, since `/signup` is not a routed path; `coauthor_major` is 20-40 h/week (the matrix was right); the thin lab text for
+`coauthor_minor` and `external_prof` has been enriched with the matrix items it omitted;
+the four subgroups without lab text keep their approved drafts.
+
+## Slack Connect and the free workspace
+
+Slack Connect only works if the invitee is already in _some_ Slack workspace. Anyone
+without one -- which is most external collaborators, and the case the matrix's
+`slack_guest_space_check` row exists for -- has to join the free Jinesis space first or
+the invite cannot be accepted:
+
+```
+https://join.slack.com/t/jinesis/shared_invite/zt-3d5p5t0nl-dsxvIZW3DJuC0b5lMkk3Vg
+```
+
+Every template that offers Slack Connect carries that fallback line: all eight external
+subgroups plus `candidate-trial-phase.md`. This is the _free_ space, distinct from the
+main UofT workspace, which needs a `@cs.toronto.edu` address (see `member.md` step 2).
+
+The link is an access-granting invite. It lives here because this repo is private; if it
+is ever regenerated it must be updated in all nine files, which is one more reason to
+fold these into a typed module with the URL declared once.
+
+## Where the WhatsApp number lives
+
+`{zhijing_whatsapp}` is resolved from **AdminBot settings**, not from this repo and not
+from an env var.
+
+Settings already exist for exactly this shape of value -- lab-wide governance config an
+admin owns (`head_professor_member_id`, `applicant_sheet_id`, ...). They are stored in
+the `adminbot_settings` SQLite table, editable from the Control UI, and both `GET` and
+`PUT /settings` are admin-gated (`requirePrivileged` / `requireMemberPrivileged`), so a
+plain member never reads the number.
+
+`head_professor_whatsapp` is wired through `AdminBotSettingsInput`/`AdminBotSettings`,
+`updateSettings`, the AdminBot web UI form, and the Control UI settings form. Set it
+once from either settings screen; `{zhijing_whatsapp}` reads it at send time.
+
+Not publicly reachable: `/settings` requires `requirePrivileged` to read and
+`requireMemberPrivileged` to write, and only the two `/reimbursements/*` POST routes are
+anonymous. It is governance config, not encrypted secret storage -- admins and the agent
+service principal can read it, plain members and anonymous callers cannot.
+
+Why not the alternatives:
+
+- **`.env`** works, but the repo bar for a new env var is explicitly high ("before
+  adding a config option or env var, first prove existing product behavior cannot solve
+  it"), and it would mean shell access to Aurora plus a service restart to change a
+  phone number, with no audit trail.
+- **The sensitive-info document** is the wrong store despite the name: it defines _what
+  kinds_ of information are sensitive and feeds `listSensitiveTerms()` for redaction.
+  Putting the number there risks the privacy broker redacting it out of the very email
+  meant to carry it.
 
 ## Rules applied to the external templates
 
@@ -57,17 +151,26 @@ omitted from every template:
 
 ## Placeholders
 
-| Token                  | Source                | Meaning                                                                           |
-| ---------------------- | --------------------- | --------------------------------------------------------------------------------- |
-| `{first_name}`         | form                  | recipient's first name (from the name field)                                      |
-| `{sender_name}`        | session               | the signed-in admin                                                               |
-| `{sponsor_name}`       | form                  | the lab member who brought them in                                                |
-| `{project_or_context}` | form                  | the project or paper they are joining                                             |
-| `{slack_connect_link}` | **generated at send** | `conversations.inviteShared` -> `url`; expires in 14 days, so it cannot be stored |
-| `{drive_folder_link}`  | **generated at send** | copy of the prototype folder, renamed `Zhijing-<Name>`                            |
-| `{discussion_channel}` | **Slack picker**      | one of `#discussion-*`                                                            |
-| `{meeting_channel}`    | **Slack picker**      | one of `#meeting-*`                                                               |
-| `{dashboard_url}`      | constant              | `https://jinesis-admin.vercel.app`                                                |
+| Token                          | Source                | Meaning                                                                           |
+| ------------------------------ | --------------------- | --------------------------------------------------------------------------------- |
+| `{first_name}`                 | form                  | recipient's first name (from the name field)                                      |
+| `{sender_name}`                | session               | the signed-in admin                                                               |
+| `{contact_name}`               | form                  | day-to-day point of contact for the collaboration                                 |
+| `{discussion_channel}`         | **Slack picker**      | one of `#discussion-*`                                                            |
+| `{next_steps}`                 | form                  | what happens immediately after this email                                         |
+| `{update_cadence}`             | form                  | how often we send substantive updates (default: 2 to 4 weeks)                     |
+| `{update_due_date}`            | form                  | when the next update will reach them                                              |
+| `{meeting_cadence}`            | form                  | how often the project meets, and where                                            |
+| `{meeting_names}`              | form                  | which meetings they join                                                          |
+| `{core_meetings}`              | form                  | meetings attendance is expected at                                                |
+| `{deliverable}`                | form                  | expected scope for a single-project collaboration                                 |
+| `{timeline}`                   | form                  | rough timeline for that scope                                                     |
+| `{project_channel_or_meeting}` | form                  | the one channel or meeting a single-project collaborator joins                    |
+| `{zhijing_whatsapp}`           | config                | resolved at send time; never stored in this repo                                  |
+| `{project_or_context}`         | form                  | the project or paper they are joining                                             |
+| `{slack_connect_link}`         | **generated at send** | `conversations.inviteShared` -> `url`; expires in 14 days, so it cannot be stored |
+| `{drive_folder_link}`          | **generated at send** | copy of the prototype folder, renamed `Zhijing-<Name>`                            |
+| `{dashboard_url}`              | constant              | `https://jinesis-admin.vercel.app`                                                |
 
 Fixed channels are written into the copy directly rather than parameterised, since
 they never vary: `#jinesis-with-friends-and-collaborators` (C09MANEUPPZ),
@@ -130,22 +233,13 @@ Two flags for the implementation:
 - `Time Availability_Student Name.docx` keeps the placeholder name in every copy.
   Open question whether the copier should rename it per person.
 
-## Tier coverage
+## Placeholder conventions for the lab text
 
-`admin` has no template: admin appointment is manual, so the tab should not offer it
-as a sendable tier. A person promoted to admin has already had `member.md`.
+The supplied templates use `[Name]`, `[NAME]`, `______` and `XXX`. Those were
+normalised to the `{token}` convention already used here so one substitution pass can
+fill them. **Wording is otherwise verbatim** -- only the placeholder tokens changed.
 
-`member.md` is deliberately thin. The dashboard checklist is the guide, so the email
-only signs them in, points at it, and starts the one item with a real lead time
-(Compute Canada needs a lab admin's approval). Everything else stays in
-`onboarding.ts`, where it is already maintained.
-
-## Open question for review
-
-**`trial`** — the email-automation skill grants trial members Slack Connect to
-`C09MANEUPPZ` and calendar `reader`, and nothing else. `trial.md` matches that and
-deliberately omits Compute Canada and the Drive setup. Confirm that is right.
-
-`trial.md` was left at its original length rather than trimmed like `member.md`: its
-content is Slack, calendar and dashboard access, which is not a restatement of the
-checklist. Say the word if you want it cut back too.
+One exception worth knowing: `member.md` contains
+`{first_letter_of_first_name}{full_last_name}` _inside the body_. That is the lab's own
+example text explaining the preferred DCS address format, not a placeholder for the
+sender. It must survive substitution literally.

@@ -22,6 +22,8 @@ we would like to keep it that way.
 
 - #general-channel-with-external-collaborators-and-alumni on Slack Connect, where
   people who have worked with us stay in touch: {slack_connect_link}
+  Not already on Slack? Join our free Jinesis space first, or the invite cannot
+  go through: https://join.slack.com/t/jinesis/shared_invite/zt-3d5p5t0nl-dsxvIZW3DJuC0b5lMkk3Vg
 - Your dashboard account stays active at {dashboard_url} — the roster, active
   papers and their deadlines, and the reimbursement tool are all still there.
 - Our newsletter and the lab's LinkedIn (https://www.linkedin.com/company/jinesis-lab/)

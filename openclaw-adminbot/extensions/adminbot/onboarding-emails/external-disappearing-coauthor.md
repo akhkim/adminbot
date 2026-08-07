@@ -16,6 +16,8 @@ this around a lot of other things, we want to keep it light and predictable.
 
 - Slack Connect to #jinesis-with-friends-and-collaborators, so you are reachable without email
   round-trips: {slack_connect_link}
+  Not already on Slack? Join our free Jinesis space first, or the invite cannot
+  go through: https://join.slack.com/t/jinesis/shared_invite/zt-3d5p5t0nl-dsxvIZW3DJuC0b5lMkk3Vg
 - We will email you to confirm your time plan rather than assume it, so you always
   know what is expected and when. If a stretch is not going to work, just say so on
   the reply.

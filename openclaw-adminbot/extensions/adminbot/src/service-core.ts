@@ -740,6 +740,7 @@ export class AdminBotService {
     }
     const current = this.resolveSettings();
     const headProfessorMemberId = normalizeOptionalString(settings.head_professor_member_id);
+    const headProfessorWhatsapp = normalizeOptionalString(settings.head_professor_whatsapp);
     const applicantSheetId = normalizeOptionalString(settings.applicant_sheet_id);
     const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
     const next: AdminBotSettings = {
@@ -748,6 +749,7 @@ export class AdminBotService {
         ? { paper_escalation_business_days: settings.paper_escalation_business_days }
         : {}),
       ...(headProfessorMemberId ? { head_professor_member_id: headProfessorMemberId } : {}),
+      ...(headProfessorWhatsapp ? { head_professor_whatsapp: headProfessorWhatsapp } : {}),
       ...(applicantSheetId ? { applicant_sheet_id: applicantSheetId } : {}),
       ...(applicantLastReviewedAt ? { applicant_last_reviewed_at: applicantLastReviewedAt } : {}),
       updated_at: new Date().toISOString(),

@@ -16,6 +16,8 @@ conversation can keep going, we have set a few things up for you.
 
 - A Slack guest chat with Zhijing and the team, so you can ask things as they come
   up rather than saving them for email.
+  Not already on Slack? Join our free Jinesis space first, or the invite cannot
+  go through: https://join.slack.com/t/jinesis/shared_invite/zt-3d5p5t0nl-dsxvIZW3DJuC0b5lMkk3Vg
 - Our project Google Drive folder: {drive_folder_link}
 - If you would like to follow along more generally, Zhijing is on LinkedIn
   (https://linkedin.com/in/zhijing-jin/) and the lab is at

@@ -249,6 +249,10 @@ export type AdminBotLabMember = Omit<AdminBotLabMemberInput, "privilege_level"> 
 export type AdminBotSettingsInput = {
   paper_escalation_business_days?: number;
   head_professor_member_id?: string;
+  // Contact number the onboarding "what to expect" note hands to direct mentees. Governance
+  // config rather than a repo constant: it is a real phone number, so it never belongs in the
+  // source tree, and /settings is admin-gated on read as well as write.
+  head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
   applicant_last_reviewed_at?: string;
 };
@@ -256,6 +260,7 @@ export type AdminBotSettingsInput = {
 export type AdminBotSettings = {
   paper_escalation_business_days: number;
   head_professor_member_id?: string;
+  head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
   applicant_last_reviewed_at?: string;
   updated_at: string;
