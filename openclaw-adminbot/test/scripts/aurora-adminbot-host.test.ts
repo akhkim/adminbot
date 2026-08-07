@@ -6,10 +6,13 @@ import { describe, expect, it } from "vitest";
 const root = process.cwd();
 const hostScript = path.join(root, "scripts/aurora-adminbot-host.sh");
 const installer = path.join(root, "deploy/aurora/install-user-services.sh");
+const sheetPollerInstaller = path.join(root, "deploy/aurora/install-member-sheet-poller.sh");
 
 describe("Aurora AdminBot hosting", () => {
   it("keeps both shell entrypoints syntactically valid", () => {
-    expect(() => execFileSync("bash", ["-n", hostScript, installer])).not.toThrow();
+    expect(() =>
+      execFileSync("bash", ["-n", hostScript, installer, sheetPollerInstaller]),
+    ).not.toThrow();
   });
 
   it("deploys committed revisions and keeps services stopped until explicit start", () => {
@@ -47,5 +50,10 @@ describe("Aurora AdminBot hosting", () => {
     expect(script).toContain('"${ADMINBOT_LOCAL_BASE_URL%/}/models"');
     expect(script).toContain("Slack is enabled but SLACK_BOT_TOKEN is missing");
     expect(script).toContain("Slack socket mode is enabled but SLACK_APP_TOKEN is missing");
+    expect(script).toContain("install-member-sheet-poller.sh");
+    const poller = fs.readFileSync(sheetPollerInstaller, "utf8");
+    expect(poller).toContain("jinesis-adminbot-sheet-poller.timer");
+    expect(poller).toContain('adminbot-member-sheet-poller.ts" --dry-run');
+    expect(poller).toContain("OnUnitActiveSec=$INTERVAL");
   });
 });

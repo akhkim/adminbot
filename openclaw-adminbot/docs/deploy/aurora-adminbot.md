@@ -145,6 +145,51 @@ scripts/aurora-adminbot-host.sh --user <cs-user> logs gateway
 scripts/aurora-adminbot-host.sh --user <cs-user> logs email
 ```
 
+## Optional Google Sheet member poller
+
+Aurora can poll one Google Sheet tab every minute and import safe member-profile changes through
+the loopback AdminBot API. Add these values to
+`~/.config/jinesis-adminbot/adminbot.env`, then rerun the normal `start` command:
+
+```bash
+ADMINBOT_MEMBER_SHEET_ID=1AbC...
+ADMINBOT_MEMBER_SHEET_RANGE='Members!A:Z'
+
+scripts/aurora-adminbot-host.sh --user <cs-user> start
+```
+
+The tab must contain an `AdminBot ID` column whose values exactly match existing roster member
+IDs. It may contain these spreadsheet-owned columns:
+
+- `Name`, `Slack User ID`, `Role`, `Research Branch`, `Research Topics`, `Projects`
+- `Hours Per Week`, `Location`, `Affiliation`, `Timezone`
+- `Personal Website`, `OpenReview ID`, `Notes`, `Availability Doc URL`
+
+Separate `Research Topics` and `Projects` entries with commas, semicolons, or newlines. Blank cells
+mean “leave the database value unchanged.” Unknown IDs, duplicate IDs, missing IDs, invalid hours,
+and service validation failures fail the poll without creating or deleting members.
+
+Columns such as `Email`, `Privilege Level`, `Status`, `Collaborator Subgroup`, and
+`Access Overrides` are read-only from this poller's perspective and are ignored. The AdminBot
+service independently rejects them for the poller's service credential.
+
+Before enabling the timer, the installer runs one dry pass that reads both the Sheet and AdminBot
+but writes nothing. Inspect recurring runs with:
+
+```bash
+scripts/aurora-adminbot-host.sh --user <cs-user> logs sheet-poller
+systemctl --user status jinesis-adminbot-sheet-poller.timer
+```
+
+To test the configured mapping manually without changing the database:
+
+```bash
+set -a
+. ~/.config/jinesis-adminbot/adminbot.env
+set +a
+node_modules/.bin/tsx scripts/adminbot-member-sheet-poller.ts --dry-run
+```
+
 ## 6. Connect to the hosted services
 
 ```bash

@@ -49,7 +49,7 @@ Commands:
   stop                   Stop all services/timer
   restart                Restart AdminBot and Gateway
   status                 Show service/timer status
-  logs [unit]            Follow logs (adminbot, gateway, or email)
+  logs [unit]            Follow logs (adminbot, gateway, email, or sheet-poller)
 
 Aurora requires the CS VPN or the on-campus network.
 EOF
@@ -191,6 +191,8 @@ expected="/h/405/$USER/services/openclaw-adminbot"
   exit 1
 }
 systemctl --user stop \
+  jinesis-adminbot-sheet-poller.timer \
+  jinesis-adminbot-sheet-poller.service \
   jinesis-adminbot-email.timer \
   jinesis-adminbot-email.service \
   jinesis-openclaw-gateway.service \
@@ -470,6 +472,8 @@ REMOTE_ADMINBOT_DATA
   stop)
     (($# == 0)) || die "stop takes no arguments"
     "${SSH[@]}" systemctl --user stop \
+      jinesis-adminbot-sheet-poller.timer \
+      jinesis-adminbot-sheet-poller.service \
       jinesis-openclaw-gateway.service \
       jinesis-adminbot.service
     ;;
@@ -495,7 +499,8 @@ REMOTE_ADMINBOT_DATA
       adminbot) systemd_unit="jinesis-adminbot.service" ;;
       gateway) systemd_unit="jinesis-openclaw-gateway.service" ;;
       email) systemd_unit="jinesis-adminbot-email.service" ;;
-      *) die "logs unit must be adminbot, gateway, or email" ;;
+      sheet-poller) systemd_unit="jinesis-adminbot-sheet-poller.service" ;;
+      *) die "logs unit must be adminbot, gateway, email, or sheet-poller" ;;
     esac
     exec "${SSHPASS_PREFIX[@]}" ssh -t "$TARGET" journalctl --user -u "$systemd_unit" -f
     ;;
