@@ -10,9 +10,13 @@
 //      /adminbot/announcements, the browser would resolve ./assets against that
 //      path and 404 the whole bundle. Pinning <base> to root fixes resolution
 //      regardless of the visited path.
-//   2. A boot <script> that forces gatewayUrl / adminBotUrl to the aurora
-//      tailscale endpoints when they aren't already set (and rewrites known
-//      legacy gateway hosts), so a fresh visitor connects to the live gateway.
+//   2. A boot <script> that declares the aurora tailscale gateway as this page's
+//      default and seeds adminBotUrl. The gateway goes in a global rather than a
+//      ?gatewayUrl= param on purpose: a param reads as "someone is changing your
+//      gateway" and the UI (rightly) makes the visitor confirm that, which meant a
+//      first visit dialled a dead default, failed, and then demanded a click. As a
+//      declared default it is simply what this deployment connects to. The legacy
+//      hosts are still rewritten out of any param a stale bookmark carries.
 //
 // This script is invoked from vercel.json's buildCommand after ui:build. It is
 // idempotent: running it on already-injected HTML is a no-op. Keep the aurora
@@ -35,12 +39,15 @@ const GATEWAY_SCRIPT = `    <script>
           "wss://desktop-k2ba38v-1.taila4f725.ts.net",
           "wss://andrew.taila4f725.ts.net",
         ];
+        window.__OPENCLAW_CONTROL_UI_GATEWAY_URL__ = DEFAULT_GATEWAY_URL;
         try {
           var url = new URL(window.location.href);
           var changed = false;
           var configuredGateway = url.searchParams.get("gatewayUrl");
-          if (!configuredGateway || LEGACY_GATEWAY_URLS.includes(configuredGateway)) {
-            url.searchParams.set("gatewayUrl", DEFAULT_GATEWAY_URL);
+          // A stale bookmark pinning a retired gateway host would otherwise keep prompting to
+          // switch to a host that no longer exists; drop it and let the declared default stand.
+          if (configuredGateway && LEGACY_GATEWAY_URLS.includes(configuredGateway)) {
+            url.searchParams.delete("gatewayUrl");
             changed = true;
           }
           if (!url.searchParams.get("adminBotUrl")) {

@@ -23,6 +23,7 @@ import {
 import { buildDeviceAuthPayload } from "../../../src/gateway/device-auth.js";
 import { clearDeviceAuthToken, loadDeviceAuthToken, storeDeviceAuthToken } from "./device-auth.ts";
 import { loadOrCreateDeviceIdentity, signDevicePayload } from "./device-identity.ts";
+import { isLoopbackGatewayHost } from "./loopback-host.ts";
 import { generateUUID } from "./uuid.ts";
 
 export type GatewayEventFrame = {
@@ -136,31 +137,6 @@ export function isNonRecoverableAuthError(error: GatewayErrorInfo | undefined): 
     code === ConnectErrorDetailCodes.CONTROL_UI_DEVICE_IDENTITY_REQUIRED ||
     code === ConnectErrorDetailCodes.DEVICE_IDENTITY_REQUIRED
   );
-}
-
-/** True for hosts that only resolve on the machine the browser itself runs on. */
-export function isLoopbackGatewayHost(host: string): boolean {
-  const normalized = host.trim().toLowerCase();
-  return (
-    normalized === "localhost" ||
-    normalized === "::1" ||
-    normalized === "[::1]" ||
-    isLoopbackIPv4Host(normalized)
-  );
-}
-
-function isLoopbackIPv4Host(host: string): boolean {
-  const octets = host.split(".");
-  if (octets.length !== 4 || octets[0] !== "127") {
-    return false;
-  }
-  return octets.every((octet) => {
-    if (!/^\d+$/.test(octet)) {
-      return false;
-    }
-    const value = Number(octet);
-    return value >= 0 && value <= 255;
-  });
 }
 
 function isTrustedRetryEndpoint(url: string): boolean {

@@ -8,7 +8,7 @@
 // refused socket as a bare `disconnected (1006): no reason`; only a reload (which re-applies the
 // page's configured URL) recovered. The service knows its gateway token, not this browser's route
 // to the gateway, so its advertisement is a suggestion the page may decline.
-import { isLoopbackGatewayHost } from "./gateway.ts";
+import { isLoopbackGatewayHost } from "./loopback-host.ts";
 
 const GATEWAY_PROTOCOLS = new Set(["ws:", "wss:"]);
 

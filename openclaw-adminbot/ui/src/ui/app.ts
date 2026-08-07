@@ -190,6 +190,9 @@ import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.
 declare global {
   interface Window {
     __OPENCLAW_CONTROL_UI_BASE_PATH__?: string;
+    // Set by a statically hosted deployment's index.html: the gateway this page connects to by
+    // default, since such a page is not served by its gateway and cannot derive one.
+    __OPENCLAW_CONTROL_UI_GATEWAY_URL__?: string;
   }
 }
 
