@@ -1,4 +1,5 @@
 ---
+required_placeholders: zhijing_whatsapp
 group: member / what to expect
 applies_to: direct mentees of Zhijing only -- not every full member
 delivery: separate note, or a section appended to member.md

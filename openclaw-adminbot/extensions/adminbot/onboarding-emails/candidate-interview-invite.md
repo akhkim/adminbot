@@ -1,4 +1,5 @@
 ---
+required_placeholders: first_name
 group: candidate / interview invite
 pipeline: candidate (pre-membership) -- not a collaborator_subgroup
 source: supplied verbatim by the lab

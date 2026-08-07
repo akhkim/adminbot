@@ -1,4 +1,5 @@
 ---
+required_placeholders: contact_name, first_name, next_steps, project_or_context, sender_name, slack_connect_link, update_cadence
 group: external_collaborator / external_prof
 lab_name: External Senior Collaborator -- Collaboration Kickoff
 applies_to: professors, industry researchers, org leaders; peer or senior to Zhijing
@@ -22,7 +23,9 @@ To make the collaboration smooth, a brief note on how our lab works. Research se
 
 Your main contact for day-to-day matters is {contact_name} (cc'd), and Zhijing remains involved throughout. As immediate next steps, we suggest: {next_steps}.
 
-Two practical things. You are invited to our Slack workspace through Slack Connect, in #jinesis-with-friends-and-collaborators, which is low traffic and a good way to reach us without a formal email. Slack Connect needs you to be in a Slack workspace of your own. If you are not on one, join our free Jinesis space first and the invite will go through: https://join.slack.com/t/jinesis/shared_invite/zt-3d5p5t0nl-dsxvIZW3DJuC0b5lMkk3Vg We will also email you at the points that matter on the projects you are attached to: when a paper is submitted or resubmitted, and when a social media draft goes out for review, so nothing goes public with your name on it without you having seen it. If you would rather we narrowed or widened that, just say.
+Two practical things. You are invited to our Slack workspace through Slack Connect, in #jinesis-with-friends-and-collaborators, which is low traffic and a good way to reach us without a formal email: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: https://join.slack.com/t/jinesis/shared_invite/zt-3d5p5t0nl-dsxvIZW3DJuC0b5lMkk3Vg
+
+We will also email you at the points that matter on the projects you are attached to: when a paper is submitted or resubmitted, and when a social media draft goes out for review, so nothing goes public with your name on it without you having seen it. If you would rather we narrowed or widened that, just say.
 
 We are looking forward to this!
 

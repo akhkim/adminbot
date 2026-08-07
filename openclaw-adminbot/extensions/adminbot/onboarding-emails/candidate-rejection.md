@@ -1,4 +1,5 @@
 ---
+required_placeholders: first_name
 group: candidate / interview result -- rejection
 pipeline: candidate (post-interview)
 source: supplied verbatim by the lab

@@ -1,4 +1,5 @@
 ---
+required_placeholders: contact_name, discussion_channel, drive_folder_link, first_name, meeting_cadence, next_steps, project_or_context, slack_connect_link
 group: external_collaborator / coauthor_minor
 lab_name: External Junior Collaborator -- Onboarding + Expectations
 expected_commitment: 5-10 h/week
@@ -25,7 +26,7 @@ How we work: the project meets {meeting_cadence}, and your main point of contact
 
 Two things we ask of everyone: flag blockers early (a blocked week is normal, a silent blocked month is not), and let us know in advance about exams, internships, or travel so we can plan around them.
 
-Where things live on Slack: #jinesis-with-friends-and-collaborators for our wider circle, #jinesis-active and #random-active for the lab's day-to-day, and {discussion_channel} for the broader topic your work sits in. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: https://join.slack.com/t/jinesis/shared_invite/zt-3d5p5t0nl-dsxvIZW3DJuC0b5lMkk3Vg
+Where things live on Slack: #jinesis-with-friends-and-collaborators for our wider circle, #jinesis-active and #random-active for the lab's day-to-day, and {discussion_channel} for the broader topic your work sits in. Your invite: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: https://join.slack.com/t/jinesis/shared_invite/zt-3d5p5t0nl-dsxvIZW3DJuC0b5lMkk3Vg
 
 Your project Google Drive folder is {drive_folder_link}. A few conventions save a lot of friction later: one long doc per topic rather than several tabs, kept Pageless, filenames prefixed with the date (yyyymmdd), and a flat folder so sorting by last-modified stays useful. I will send our Google file practices and what to expect working with us as a separate short note.
 

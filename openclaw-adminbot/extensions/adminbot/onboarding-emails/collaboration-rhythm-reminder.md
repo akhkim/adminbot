@@ -1,4 +1,5 @@
 ---
+required_placeholders: first_name, project_or_context, update_due_date
 group: mid-project note -- not an onboarding email
 applies_to: any external collaborator who misreads silence or floods the channel
 trigger: sent by hand mid-project, not by the Onboarding tab

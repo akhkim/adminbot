@@ -1,4 +1,5 @@
 ---
+required_placeholders: first_name
 group: member / rejection
 pipeline: membership application declined
 source: supplied verbatim by the lab ("Reject Member")

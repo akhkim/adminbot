@@ -1,4 +1,5 @@
 ---
+required_placeholders: drive_folder_link, first_name, slack_connect_link
 group: candidate / interview result -- trial phase begins
 pipeline: candidate -> trial
 maps_to: privilege_level = trial

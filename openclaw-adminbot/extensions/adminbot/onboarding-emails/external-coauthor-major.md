@@ -1,4 +1,5 @@
 ---
+required_placeholders: contact_name, core_meetings, first_name, meeting_names, next_steps, project_or_context, slack_connect_link
 group: external_collaborator / coauthor_major
 lab_name: High-Commitment External Collaborator (Michael Regan-type)
 expected_commitment: 20-40 h/week
@@ -14,7 +15,7 @@ Subject: `Welcome aboard – your setup for {project_or_context}`
 ```text
 Hi {first_name},
 
-We are delighted you will be working with us at this level of involvement on {project_or_context}. Given the time commitment, you will be onboarded close to a full member: Slack workspace, the {meeting_names} meetings, and the shared project folders. Your Slack invite comes through Slack Connect. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: https://join.slack.com/t/jinesis/shared_invite/zt-3d5p5t0nl-dsxvIZW3DJuC0b5lMkk3Vg
+We are delighted you will be working with us at this level of involvement on {project_or_context}. Given the time commitment, you will be onboarded close to a full member: Slack workspace, the {meeting_names} meetings, and the shared project folders. Your Slack invite comes through Slack Connect: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: https://join.slack.com/t/jinesis/shared_invite/zt-3d5p5t0nl-dsxvIZW3DJuC0b5lMkk3Vg
 
 What we ask in return matches the commitment: attendance at {core_meetings}, progress visible in the project channel week by week, and an early heads-up when your availability shifts. Your mentor/contact is {contact_name}, and the usual 3-month reflection point with Zhijing applies to you too.
 

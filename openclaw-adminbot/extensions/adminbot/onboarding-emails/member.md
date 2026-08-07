@@ -1,4 +1,5 @@
 ---
+required_placeholders: first_name
 group: member
 applies_to: privilege_level = member
 source: supplied verbatim by the lab ("Accept Full Member")
@@ -22,9 +23,10 @@ Step 1: Create your member portal account: Sign up at https://jinesis-admin.verc
 
 Step 2: Create an email address for the Department of Computer Science (DCS) at the University of Toronto: Request your @cs.toronto.edu email through this form:
 
-Highly Preferred format:
-Top 1 choice: yourFirstName@cs.toronto.edu, or yourLastName@cs.toronto.edu, e.g., david@cs.toronto.edu or smith@cs.toronto.edu
-Top 2 choice: {first_letter_of_first_name}{full_last_name}@cs.toronto.edu, e.g., zjin@cs.toronto.edu
+Highly preferred format:
+
+- First choice: yourFirstName@cs.toronto.edu or yourLastName@cs.toronto.edu — e.g. david@cs.toronto.edu or smith@cs.toronto.edu
+- Second choice: {first_letter_of_first_name}{full_last_name}@cs.toronto.edu — e.g. zjin@cs.toronto.edu
 
 Otherwise you can pick one that you like. Our high preference is to make it very much reflect your first and last name, so we can use it for professional communications with senior external collaborators.
 
@@ -34,7 +36,7 @@ Step 3: Send an email to jinesis.adminbot@gmail.com with the email subject of "C
 
 An internal mentee handbook should be shared with you already in your google drive folder, if you have any questions you can refer to there first.
 
-If any of the steps does not proceed within 7 business days after you have done it, report the technical error to Andrew Kim at andrewkihyun@gmail.com. If you have any urgent questions, email andrewkihyun@gmail.com.
+If any of the steps does not proceed within 7 business days after you have done it, report the technical error to Andrew Kim at andrewkihyun@gmail.com.
 
 Best regards,
 Jinesis AI Research Lab

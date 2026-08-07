@@ -118,6 +118,29 @@ Why not the alternatives:
   Putting the number there risks the privacy broker redacting it out of the very email
   meant to carry it.
 
+## Send-time rules
+
+**Never send with an unfilled placeholder.** Each template's front matter carries
+`required_placeholders`. The send path must refuse to send when any of them is empty
+and ask the operator for the missing values instead. A blank `{contact_name}` or a
+literal `{project_or_context}` reaching a collaborator is worse than not sending at all
+-- three of the templates need six or more values, so this will fire often and is not
+an edge case.
+
+`{slack_connect_link}` and `{drive_folder_link}` are generated during the send, so
+they are "provided" once generation succeeds. If either fails, the send fails; do not
+fall back to sending the email without them.
+
+**Subjects never name the tier.** `Collaborating with us on X`, not
+`Single-Project Collaborator - Collaborating with us on X`. The recipient has no idea
+which internal bucket they are in and should not learn it from a subject line. This
+applies to anything the send path prepends, too.
+
+**Bodies carry no hard wrapping.** Every paragraph and every bullet is a single line;
+line breaks exist only between blocks. A wrap inside a paragraph becomes a literal
+newline in the delivered mail and reads as broken text in most clients. Bullets are
+used where a list genuinely helps; prose stays prose.
+
 ## Rules applied to the external templates
 
 The matrix `detail` strings are written as instructions to a lab admin, not prose
