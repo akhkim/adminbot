@@ -81,6 +81,7 @@ import {
   type Tab,
 } from "./navigation.ts";
 import { normalizeAgentId, parseAgentSessionKey } from "./session-key.ts";
+import { syncSignedOutViewWithLocation } from "./signed-out-view.ts";
 import {
   normalizeTextScale,
   saveLocalUserIdentity,
@@ -119,6 +120,9 @@ type SettingsHost = {
   agentsSelectedId?: string | null;
   agentsPanel?: "overview" | "files" | "tools" | "skills" | "channels" | "cron";
   pendingGatewayUrl?: string | null;
+  // Signed-out overlays, restored from the URL on popstate alongside the tab.
+  authGateVisible?: boolean;
+  guestReimbursements?: boolean;
   systemThemeCleanup?: (() => void) | null;
   pendingGatewayToken?: string | null;
   requestUpdate?: () => void;
@@ -690,6 +694,9 @@ export function onPopState(host: SettingsHost) {
   if (typeof window === "undefined") {
     return;
   }
+  // Ahead of the tab lookup: the sign-in gate and the guest reimbursement tool are overlays on the
+  // current tab, so Back off one of them changes only this and leaves the path alone.
+  syncSignedOutViewWithLocation(host);
   const resolved = tabFromPath(window.location.pathname, host.basePath);
   if (!resolved) {
     return;

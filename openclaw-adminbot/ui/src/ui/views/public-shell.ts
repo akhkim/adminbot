@@ -22,6 +22,7 @@ import {
 } from "../controllers/adminbot.ts";
 import { icons } from "../icons.ts";
 import { iconForTab, normalizeBasePath, pathForTab, titleForTab, type Tab } from "../navigation.ts";
+import { goToSignedOutView } from "../signed-out-view.ts";
 import { renderAdminBotReimbursements } from "./adminbot-reimbursements.ts";
 import { agentLogoUrl } from "./agents-utils.ts";
 import { renderDeadlines } from "./deadlines.ts";
@@ -93,7 +94,7 @@ export function renderPublicShell(state: AppViewState) {
               class="btn primary public-signin"
               data-testid="public-shell-sign-in"
               @click=${() => {
-                state.authGateVisible = true;
+                goToSignedOutView(state, "login");
               }}
             >
               <span class="public-signin__icon" aria-hidden="true">${icons.lock}</span>

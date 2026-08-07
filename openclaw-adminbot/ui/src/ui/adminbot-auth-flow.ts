@@ -30,6 +30,7 @@ import {
 } from "./adminbot-auth.ts";
 import { clearDeviceAuthToken, storeDeviceAuthToken } from "./device-auth.ts";
 import { loadOrCreateDeviceIdentity } from "./device-identity.ts";
+import { clearSignedOutView } from "./signed-out-view.ts";
 import type { UiSettings } from "./storage.ts";
 
 const MIN_CLAIM_PASSWORD_LENGTH = 10;
@@ -433,7 +434,8 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.adminBotOnboarding = null;
   host.adminBotWelcomeVisible = false;
   host.loginMode = "signin";
-  host.authGateVisible = false;
+  // Back to the landing page, and drop `?signedOut=login` so a reload does not reopen the gate.
+  clearSignedOutView(host);
   // Tear down the live gateway connection and drop the gateway token from the
   // in-memory + sessionStorage-scoped plumbing.
   host.client?.stop();

@@ -9,6 +9,7 @@ import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../external-link.ts"
 import { isGatewayClientStoppedError } from "../gateway.ts";
 import { icons } from "../icons.ts";
 import { normalizeBasePath } from "../navigation.ts";
+import { goToSignedOutView } from "../signed-out-view.ts";
 import { normalizeLowercaseStringOrEmpty } from "../string-coerce.ts";
 import { agentLogoUrl } from "./agents-utils.ts";
 import {
@@ -715,7 +716,7 @@ function renderGuestReimbursementLink(state: AppViewState) {
         class="btn login-gate__guest-button"
         data-testid="login-guest-reimbursements"
         @click=${() => {
-          state.guestReimbursements = true;
+          goToSignedOutView(state, "guest-reimbursements");
         }}
       >
         ${t("login.guest.reimbursements")}
@@ -726,7 +727,7 @@ function renderGuestReimbursementLink(state: AppViewState) {
         class="session-link login-gate__public-back"
         data-testid="login-continue-without-sign-in"
         @click=${() => {
-          state.authGateVisible = false;
+          goToSignedOutView(state, "landing");
         }}
       >
         ${t("login.public.continueWithoutSignIn")}

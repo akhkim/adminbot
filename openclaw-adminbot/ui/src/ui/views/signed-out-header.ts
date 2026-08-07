@@ -8,6 +8,7 @@ import { html } from "lit";
 import { t } from "../../i18n/index.ts";
 import type { AppViewState } from "../app-view-state.ts";
 import { icons } from "../icons.ts";
+import { goToSignedOutView } from "../signed-out-view.ts";
 
 export type SignedOutHeaderAction = "sign-in" | "back";
 
@@ -19,7 +20,7 @@ function renderAction(state: AppViewState, action: SignedOutHeaderAction) {
         class="btn signed-out-topbar__action"
         data-testid="signed-out-header-back"
         @click=${() => {
-          state.authGateVisible = false;
+          goToSignedOutView(state, "landing");
         }}
       >
         <span class="signed-out-topbar__icon" aria-hidden="true">${icons.arrowLeft}</span>
@@ -33,7 +34,7 @@ function renderAction(state: AppViewState, action: SignedOutHeaderAction) {
       class="btn primary signed-out-topbar__action"
       data-testid="signed-out-header-sign-in"
       @click=${() => {
-        state.authGateVisible = true;
+        goToSignedOutView(state, "login");
       }}
     >
       <span class="signed-out-topbar__icon" aria-hidden="true">${icons.lock}</span>

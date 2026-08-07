@@ -216,16 +216,23 @@ const ABNORMAL_CLOSE_CODE = 1006;
 const ABNORMAL_CLOSE_RECOVERY_ATTEMPTS = 4;
 // GatewayBrowserClient backs off 0.8s -> 15s, so four attempts land inside this window.
 const ABNORMAL_CLOSE_RECOVERY_WINDOW_MS = 45_000;
+// A connection that never reached hello gets a much smaller budget: one backoff retry (0.8s), which
+// covers a funnel that dropped the upgrade, without sitting silently on a URL that will never work.
+const ABNORMAL_CLOSE_FIRST_CONNECT_ATTEMPTS = 1;
+const ABNORMAL_CLOSE_FIRST_CONNECT_WINDOW_MS = 5_000;
 const abnormalCloseRecovery = new WeakMap<GatewayHost, { attempts: number; startedAtMs: number }>();
 
-// A reverse proxy or Tailscale funnel drops an idle-but-healthy connection as a 1006 with no reason.
-// GatewayBrowserClient already schedules its own backoff reconnect for that close, so painting the
-// fatal "Could not connect" panel right away hides a connection that is about to come back and
-// pushes the user into a manual reload. Stay quiet for a bounded number of attempts, then let the
-// normal error path run so a genuinely dead gateway is still reported.
+// A reverse proxy or Tailscale funnel drops a healthy connection as a 1006 with no reason, and it
+// does it to the opening upgrade as readily as to an idle established socket. GatewayBrowserClient
+// schedules its own backoff reconnect for either, so painting the fatal "Could not connect" panel
+// on the first close hides a connection that is about to come back and pushes the user into a
+// manual reload — which is exactly what makes a member's sign-in look like it failed when the
+// retry behind the panel would have succeeded. Stay quiet for a bounded number of attempts, then
+// let the normal error path run so a genuinely dead gateway is still reported.
 //
-// Only for connections that reached hello: a 1006 on the very first connect is a real failure (bad
-// URL, wrong scheme, gateway down) and must surface instead of retrying silently forever.
+// The budget is smaller before hello: a bad URL, a wrong scheme, or a gateway that is simply down
+// also presents as a bare 1006 there, and those must surface in about a second rather than sit
+// behind a long silent retry loop.
 function shouldAwaitAbnormalCloseReconnect(
   host: GatewayHost,
   info: {
@@ -238,21 +245,25 @@ function shouldAwaitAbnormalCloseReconnect(
   if (
     info.code !== ABNORMAL_CLOSE_CODE ||
     info.error ||
-    !info.established ||
     // An announced restart already owns the message and its own reconnect expectation.
     info.shuttingDown
   ) {
     return false;
   }
+  const maxAttempts = info.established
+    ? ABNORMAL_CLOSE_RECOVERY_ATTEMPTS
+    : ABNORMAL_CLOSE_FIRST_CONNECT_ATTEMPTS;
+  const windowMs = info.established
+    ? ABNORMAL_CLOSE_RECOVERY_WINDOW_MS
+    : ABNORMAL_CLOSE_FIRST_CONNECT_WINDOW_MS;
   const now = Date.now();
   const previous = abnormalCloseRecovery.get(host);
-  const withinWindow =
-    previous !== undefined && now - previous.startedAtMs <= ABNORMAL_CLOSE_RECOVERY_WINDOW_MS;
+  const withinWindow = previous !== undefined && now - previous.startedAtMs <= windowMs;
   const next = withinWindow
     ? { attempts: previous.attempts + 1, startedAtMs: previous.startedAtMs }
     : { attempts: 1, startedAtMs: now };
   abnormalCloseRecovery.set(host, next);
-  return next.attempts <= ABNORMAL_CLOSE_RECOVERY_ATTEMPTS;
+  return next.attempts <= maxAttempts;
 }
 
 function enqueueApprovalRequest(host: GatewayHost, entry: ExecApprovalRequest | null) {

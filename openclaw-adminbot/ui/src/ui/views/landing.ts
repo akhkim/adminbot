@@ -8,6 +8,7 @@ import { html } from "lit";
 import { t } from "../../i18n/index.ts";
 import type { AppViewState } from "../app-view-state.ts";
 import { normalizeBasePath, pathForTab, titleForTab, type Tab } from "../navigation.ts";
+import { goToSignedOutView } from "../signed-out-view.ts";
 import { renderSignedOutHeader } from "./signed-out-header.ts";
 
 // The two surfaces the access table opens to `anonymous`. Named here rather than derived so the
@@ -49,7 +50,7 @@ export function renderLanding(state: AppViewState) {
           class="btn primary landing__cta"
           data-testid="landing-sign-in"
           @click=${() => {
-            state.authGateVisible = true;
+            goToSignedOutView(state, "login");
           }}
         >
           ${t("landing.signIn")}

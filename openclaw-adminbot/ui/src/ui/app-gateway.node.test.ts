@@ -1199,13 +1199,19 @@ describe("connectGateway", () => {
     expect(host.lastError).toBeNull();
   });
 
-  it("reports an abnormal close on the initial connect instead of waiting", () => {
+  // A member signing in gets a brand-new connection, so a funnel that drops the opening upgrade
+  // surfaced as a fatal panel over a connect the client was already retrying.
+  it("gives an abnormal close on the initial connect one retry before reporting it", () => {
     const host = createHost();
 
     connectGateway(host);
     const client = requireGatewayClient();
 
-    // Never reached hello, so a 1006 here is a real failure (bad URL, wrong scheme, gateway down).
+    client.emitClose({ code: 1006 });
+    expect(host.lastError).toBeNull();
+
+    // Budget spent: a bad URL, a wrong scheme, or a gateway that is down still reports quickly
+    // rather than retrying silently forever.
     client.emitClose({ code: 1006 });
     expect(host.lastError).toBe("disconnected (1006): no reason");
   });

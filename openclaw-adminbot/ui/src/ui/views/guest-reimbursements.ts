@@ -14,8 +14,9 @@ import {
   type GuestReimbursementHost,
 } from "../controllers/adminbot.ts";
 import { normalizeBasePath } from "../navigation.ts";
-import { agentLogoUrl } from "./agents-utils.ts";
+import { goToSignedOutView } from "../signed-out-view.ts";
 import { renderAdminBotReimbursements } from "./adminbot-reimbursements.ts";
+import { agentLogoUrl } from "./agents-utils.ts";
 
 // Proxies the one state slice the guest flow owns back onto the reactive app instance, so
 // controller writes still trigger a re-render without handing the controller the whole app.
@@ -57,8 +58,7 @@ export function renderGuestReimbursements(state: AppViewState) {
           class="session-link guest-reimbursements__back"
           data-testid="guest-reimbursements-back"
           @click=${() => {
-            state.guestReimbursements = false;
-            state.authGateVisible = true;
+            goToSignedOutView(state, "login");
           }}
         >
           ${t("login.guest.backToSignIn")}

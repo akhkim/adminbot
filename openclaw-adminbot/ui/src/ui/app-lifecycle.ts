@@ -32,6 +32,7 @@ import { startControlUiResponsivenessObserver } from "./control-ui-performance.t
 import { loadControlUiBootstrapConfig } from "./controllers/control-ui-bootstrap.ts";
 import { stopWorkboardLifecycleRefresh, stopWorkboardPolling } from "./controllers/workboard.ts";
 import type { Tab } from "./navigation.ts";
+import { syncSignedOutViewWithLocation } from "./signed-out-view.ts";
 import type { ChatQueueItem } from "./ui-types.ts";
 
 const CHAT_COMPOSER_DRAFT_PERSIST_DELAY_MS = 200;
@@ -98,6 +99,8 @@ type LifecycleHost = {
   controlUiResponsivenessObserver?: { disconnect: () => void } | null;
   controlUiBootstrapReady?: Promise<void> | null;
   popStateHandler: () => void;
+  authGateVisible?: boolean;
+  guestReimbursements?: boolean;
   topbarObserver: ResizeObserver | null;
 };
 
@@ -110,6 +113,9 @@ export function handleConnected(host: LifecycleHost) {
     { applyIdentity: false },
   );
   syncTabWithLocation(host as unknown as Parameters<typeof syncTabWithLocation>[0], true);
+  // Signed-out surfaces live in the URL too, so a reload or a shared link reopens the one the
+  // visitor was on instead of dropping them back on the landing page.
+  syncSignedOutViewWithLocation(host);
   const hasPendingGatewaySwitch =
     typeof host.pendingGatewayUrl === "string" && host.pendingGatewayUrl.trim();
   if (!hasPendingGatewaySwitch && restoreChatComposerState(host, { preserveCurrent: true })) {
