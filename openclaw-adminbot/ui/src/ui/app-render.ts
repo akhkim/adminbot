@@ -741,19 +741,15 @@ const lazyAdminBotRegistrations = createLazyView(
   notifyLazyViewChanged,
 );
 
-<<<<<<< ours
-function adminBotPanelForTab(
-  tab: Tab,
-  mode: AdminBotDashboardMode = "admin",
-): AdminBotPanel | null {
-=======
 const lazyAdminBotOnboarding = createLazyView(
   () => import("./views/adminbot-onboarding.ts"),
   notifyLazyViewChanged,
 );
 
-function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminBotPanel | null {
->>>>>>> theirs
+function adminBotPanelForTab(
+  tab: Tab,
+  mode: AdminBotDashboardMode = "admin",
+): AdminBotPanel | null {
   if (mode === "general") {
     switch (tab) {
       case "adminbotMembers":
@@ -3078,7 +3074,6 @@ export function renderApp(state: AppViewState) {
               }),
             )
           : nothing}
-<<<<<<< ours
         ${state.tab === "adminbotTimeAvailability"
           ? renderLazyView(lazyAdminBotTimeAvailability, (m) =>
               m.renderAdminBotTimeAvailability({
@@ -3106,10 +3101,9 @@ export function renderApp(state: AppViewState) {
                 },
               }),
             )
-=======
+          : nothing}
         ${state.tab === "adminbotOnboarding" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotOnboarding, (m) => m.renderAdminBotOnboarding(state))
->>>>>>> theirs
           : nothing}
         ${state.tab === "adminbotDeadlines"
           ? renderLazyView(lazyDeadlines, (m) => m.renderDeadlines())
