@@ -115,6 +115,7 @@ import {
   type AdminBotDashboardData,
   type AdminBotMemberNudgeState,
   type AdminBotReimbursementState,
+  sendOnboardingGuide as sendOnboardingGuideController,
 } from "./controllers/adminbot.ts";
 import {
   loadToolsEffective as loadToolsEffectiveInternal,
@@ -253,6 +254,15 @@ export class OpenClawApp extends LitElement {
   @state() loginPendingNotice = false;
   @state() guestReimbursements = false;
   @state() authGateVisible = false;
+  @state() onboardingTemplateId = "interview_invite";
+  @state() onboardingName = "";
+  @state() onboardingEmail = "";
+  @state() onboardingValues: Record<string, string> = {};
+  @state() onboardingBusy = false;
+  @state() onboardingError: string | null = null;
+  @state() onboardingMissing: string[] = [];
+  @state() onboardingResult: import("./controllers/adminbot.ts").AdminBotOnboardingResult | null =
+    null;
   @state() rosterMembers: RosterMember[] = [];
   @state() rosterLoading = false;
   @state() rosterError: RosterError = null;
@@ -1584,6 +1594,13 @@ export class OpenClawApp extends LitElement {
     } finally {
       this.execApprovalBusy = false;
     }
+  }
+
+  sendOnboardingGuide(options: { preview: boolean }): Promise<void> {
+    return sendOnboardingGuideController(
+      this as unknown as Parameters<typeof sendOnboardingGuideController>[0],
+      options,
+    );
   }
 
   handleGatewayUrlConfirm() {

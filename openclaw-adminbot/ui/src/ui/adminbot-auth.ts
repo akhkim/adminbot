@@ -483,6 +483,58 @@ export async function nudgeOnboardingStep(
   return { ok: true, value: result.body as MemberNudgeResult };
 }
 
+export type OnboardingGuideRequest = {
+  templateId: string;
+  name: string;
+  email: string;
+  values: Record<string, string>;
+  preview: boolean;
+};
+
+export type OnboardingGuideResult = {
+  template_id: string;
+  subject: string;
+  body: string;
+  sent: boolean;
+  drive_folder_link?: string;
+  slack_connect_link?: string;
+};
+
+/**
+ * Previews or sends an onboarding guide as the signed-in admin.
+ *
+ * The 422 carries the exact list of values the service is still waiting on, which is the whole
+ * point of the endpoint refusing rather than sending a half-filled email; it is surfaced verbatim
+ * so the form can name the fields instead of guessing.
+ */
+export async function sendOnboardingGuide(
+  request: OnboardingGuideRequest,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<OnboardingGuideResult> | { ok: false; kind: "missing"; missing: string[] }> {
+  const result = await authedJson(baseUrl, "/onboarding/guide", "POST", sessionToken, {
+    template_id: request.templateId,
+    name: request.name,
+    email: request.email,
+    values: request.values,
+    preview: request.preview,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const error = (result.body as { error?: { missing?: string[] } } | undefined)?.error;
+    if (result.response.status === 422 && error?.missing?.length) {
+      return { ok: false, kind: "missing", missing: error.missing };
+    }
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as OnboardingGuideResult };
+}
+
 export type MemberNudgeChannel = "slack" | "email";
 
 export type MemberNudgeRequest = {

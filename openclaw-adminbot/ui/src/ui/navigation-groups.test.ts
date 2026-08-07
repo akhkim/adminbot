@@ -34,6 +34,7 @@ describe("TAB_GROUPS", () => {
     expect(adminbot?.tabs).toEqual([
       "adminbot",
       "adminbotRegistrations",
+      "adminbotOnboarding",
       "adminbotReimbursements",
       "adminbotSettings",
       "adminbotMembers",

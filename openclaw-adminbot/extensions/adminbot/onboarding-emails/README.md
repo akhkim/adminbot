@@ -1,13 +1,13 @@
-# Onboarding guide email templates
+# Onboarding guide emails
 
-One template per user group, for the Onboarding tab: an admin picks a tier, types a
-name and email, and AdminBot sends that group's guide directly (admin session
-required, audited — no propose/approve step, same reasoning as
-`account-approved-email.ts`).
+**The copy now lives in `../src/onboarding-emails.ts`.** These templates were reviewed as
+markdown here and folded into that module so a string lives in exactly one place and ships
+with the service instead of being read off disk at runtime. This file keeps the decisions
+behind the copy, which the module itself cannot carry.
 
-**Status: draft, for review. Nothing reads these yet.** Once the copy is signed off
-they get folded into a typed module next to `onboarding.ts` and
-`collaborator-subgroups.ts` so there is one source per string.
+The surface is the `Onboarding` tab (admin only). It posts to `POST /onboarding/guide`,
+which requires an admin member session and rejects the shared service principal, so nobody
+can onboard anyone by talking to AdminBot in Slack.
 
 ## Files
 

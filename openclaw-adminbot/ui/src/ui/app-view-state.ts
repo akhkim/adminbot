@@ -81,6 +81,16 @@ export type AppViewState = {
   // Whether the sign-in gate is on screen. A visitor browses the public shell until they ask for
   // it, so the gate is a surface they open rather than a wall they start behind.
   authGateVisible: boolean;
+  // Onboarding tab: the form is driven by the selected template's required placeholders.
+  onboardingTemplateId?: string;
+  onboardingName?: string;
+  onboardingEmail?: string;
+  onboardingValues?: Record<string, string>;
+  onboardingBusy?: boolean;
+  onboardingError?: string | null;
+  onboardingMissing?: string[];
+  onboardingResult?: import("./controllers/adminbot.ts").AdminBotOnboardingResult | null;
+  sendOnboardingGuide?: (options: { preview: boolean }) => Promise<void>;
   rosterMembers: import("./adminbot-auth.ts").RosterMember[];
   rosterLoading: boolean;
   rosterError: import("./adminbot-auth-flow.ts").RosterError;

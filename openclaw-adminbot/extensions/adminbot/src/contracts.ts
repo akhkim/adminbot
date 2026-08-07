@@ -527,6 +527,7 @@ export type AdminBotAuditEvent = {
     | "lab_member.upserted"
     | "paper.upserted"
     | "paper.deleted"
+    | "onboarding.guide_sent"
     | "settings.updated"
     | "auth.login_succeeded"
     | "auth.login_failed"

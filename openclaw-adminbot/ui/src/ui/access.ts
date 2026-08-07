@@ -58,6 +58,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Everything else is an operator or governance surface.
   adminbot: "admin",
   adminbotRegistrations: "admin",
+  adminbotOnboarding: "admin",
   adminbotSettings: "admin",
   adminbotAnnouncements: "admin",
   activity: "admin",

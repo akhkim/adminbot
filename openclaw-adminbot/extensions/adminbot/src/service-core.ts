@@ -1182,6 +1182,27 @@ export class AdminBotService {
    * currently working in the lab, and nudging someone who has left is worse than
    * not nudging at all.
    */
+  /**
+   * Records that an onboarding guide went out. Audited rather than stored as state: the email is
+   * the artifact, and "who onboarded whom, when" is exactly the question the audit log answers.
+   */
+  recordOnboardingGuideSent(params: {
+    actor: string;
+    template_id: string;
+    email: string;
+    sent: boolean;
+  }): void {
+    this.recordAudit({
+      type: "onboarding.guide_sent",
+      actor: params.actor,
+      details: {
+        template_id: params.template_id,
+        recipient: params.email,
+        sent: params.sent,
+      },
+    });
+  }
+
   listOnboardingStepPending(
     stepId: string,
   ): AdminBotServiceResponse<{ step_id: string; message: string; members: AdminBotLabMember[] }> {

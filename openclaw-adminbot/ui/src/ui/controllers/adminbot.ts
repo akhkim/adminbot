@@ -4,10 +4,11 @@ import {
   type MemberProfileUpdate,
   approveActionAsMember,
   executeActionAsMember,
-  loadStoredMemberSession,
   removePendingAction,
   fetchMemberResource,
+  loadStoredMemberSession,
   resolveAdminBotBaseUrl,
+  sendOnboardingGuide as sendOnboardingGuideRequest,
   saveOwnPaper,
   sendMemberNudge,
   updateOwnProfile,
@@ -114,6 +115,82 @@ export type AdminBotPaperSaveInput = {
   topic?: string;
   reminderStatus?: "idle" | "waiting_on_authors" | "blocked" | "complete";
 };
+
+export type AdminBotOnboardingResult = {
+  template_id: string;
+  subject: string;
+  body: string;
+  sent: boolean;
+  drive_folder_link?: string;
+  slack_connect_link?: string;
+};
+
+export type AdminBotOnboardingHost = {
+  onboardingTemplateId?: string;
+  onboardingName?: string;
+  onboardingEmail?: string;
+  onboardingValues?: Record<string, string>;
+  onboardingBusy?: boolean;
+  onboardingError?: string | null;
+  onboardingMissing?: string[];
+  onboardingResult?: AdminBotOnboardingResult | null;
+  settings: UiSettings;
+};
+
+/**
+ * Previews or sends an onboarding guide.
+ *
+ * The service is the authority on whether this may happen at all: POST /onboarding/guide requires
+ * an admin member session and rejects the shared service principal, so hiding the tab is only an
+ * affordance and this call is not the permission check. The service also owns the "every required
+ * value is present" rule, so a 422 comes back with the exact list and is rendered rather than
+ * re-derived here.
+ */
+export async function sendOnboardingGuide(
+  host: AdminBotOnboardingHost,
+  options: { preview: boolean },
+): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.onboardingError = "Sign in again to send onboarding guides.";
+    return;
+  }
+  host.onboardingBusy = true;
+  host.onboardingError = null;
+  host.onboardingMissing = [];
+  if (!options.preview) {
+    host.onboardingResult = null;
+  }
+  try {
+    const result = await sendOnboardingGuideRequest(
+      {
+        templateId: host.onboardingTemplateId ?? "",
+        name: host.onboardingName ?? "",
+        email: host.onboardingEmail ?? "",
+        values: host.onboardingValues ?? {},
+        preview: options.preview,
+      },
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (result.ok) {
+      host.onboardingResult = result.value;
+      return;
+    }
+    if (result.kind === "missing") {
+      host.onboardingMissing = result.missing;
+      return;
+    }
+    host.onboardingError =
+      result.kind === "unreachable"
+        ? "The AdminBot service is unreachable — try again in a moment."
+        : result.kind === "forbidden"
+          ? "Only an admin can send onboarding guides."
+          : "Couldn't send that guide — check the details and try again.";
+  } finally {
+    host.onboardingBusy = false;
+  }
+}
 
 export type AdminBotSettingsSaveInput = {
   paper_escalation_business_days?: number;

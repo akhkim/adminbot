@@ -57,6 +57,26 @@ const service = createAdminBotMockService({
       send: process.env.ADMINBOT_OPENREVIEW_SEND === "1",
     }),
   ]),
+  // Slack lives in another bundled plugin, so the invite is wired here rather than imported by
+  // the AdminBot extension. Same call the hourly email automation already makes for trial invites,
+  // so the scopes and token are known to work; Slack emails the invitee as well, and the guide
+  // carries the same url so either message gets them in.
+  inviteToSlackConnect: async ({ email, channelId }) => {
+    const { getSlackWriteClient, resolveSlackAccount } = await import("./extensions/slack/api.js");
+    const account = await resolveSlackAccount({});
+    if (!account.botToken) {
+      throw new Error("Slack bot token is not configured; cannot mint a Slack Connect invite");
+    }
+    const response = await getSlackWriteClient(account.botToken).apiCall(
+      "conversations.inviteShared",
+      { channel: channelId, emails: [email], external_limited: true },
+    );
+    const url = response?.url ?? response?.invite?.url;
+    if (typeof url !== "string" || !url) {
+      throw new Error("Slack did not return an invite url");
+    }
+    return { url };
+  },
   sensitiveInfoPath: path.join(os.homedir(), ".openclaw/adminbot-sensitive-information.md"),
   emailAutomationRunner: runEmailAutomationProcess,
   reimbursementWorkflow: createAdminBotReimbursementWorkflow({

@@ -24,6 +24,12 @@ import type {
 import { DEADLINE_VENUES } from "./deadlines-dataset.js";
 import { renderDeadlinesWebUi } from "./deadlines-web-ui.js";
 import { allowedGatewayScopesForPrivilege } from "./device-pairing-scopes.js";
+import { createDriveWorkspaceProvisioner } from "./drive-workspace.js";
+import {
+  createAdminBotOnboardingSender,
+  type AdminBotOnboardingSender,
+  type AdminBotOnboardingSendRequest,
+} from "./onboarding-guide-sender.js";
 import {
   createAdminBotOpenReviewWorkflow,
   type AdminBotOpenReviewWorkflow,
@@ -69,6 +75,11 @@ export type AdminBotMockServiceOptions = {
   serviceToken?: string;
   gatewayToken?: string;
   gatewayUrl?: string;
+  // Injected so the composition root owns the Slack dependency: the invite needs the Slack
+  // extension's write client, and a bundled plugin importing another plugin is what the
+  // extensions boundary forbids.
+  onboardingSender?: AdminBotOnboardingSender;
+  inviteToSlackConnect?: import("./onboarding-guide-sender.js").SlackConnectInviter;
   allowedOrigins?: string[];
   // Overrides the default `gws` CLI-backed calendar invite runner — used by tests to avoid
   // shelling out to a real `gws` binary.
@@ -191,6 +202,7 @@ type AdminBotRouteContext = {
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
   deviceTokenIssuer?: DeviceTokenIssuer;
+  onboardingSender: AdminBotOnboardingSender;
   allowedOrigins: Set<string>;
   anonymousRateLimiter: AnonymousRateLimiter;
 };
@@ -239,6 +251,19 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(gatewayToken ? { gatewayToken } : {}),
     ...(gatewayUrl ? { gatewayUrl } : {}),
   });
+  const onboardingSender =
+    options.onboardingSender ??
+    createAdminBotOnboardingSender({
+      provisionDriveWorkspace: createDriveWorkspaceProvisioner(),
+      // The number lives in settings, never in the repo (see AGENTS.md: no real phone numbers).
+      headProfessorWhatsapp: () => {
+        const settings = service.getSettings();
+        return settings.ok ? settings.payload.head_professor_whatsapp : undefined;
+      },
+      ...(options.inviteToSlackConnect
+        ? { inviteToSlackConnect: options.inviteToSlackConnect }
+        : {}),
+    });
   const sensitiveInfo =
     options.sensitiveInfoDocument ??
     createAdminBotSensitiveInfoDocument({
@@ -274,6 +299,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     auth,
     privacyBroker,
     sensitiveInfo,
+    onboardingSender,
     ...(runEmailAutomation ? { runEmailAutomation } : {}),
     ...(options.reimbursementWorkflow
       ? { reimbursementWorkflow: options.reimbursementWorkflow }
@@ -975,6 +1001,34 @@ async function handleAuthenticatedRoute(
       res,
       service.listOnboardingStepPending(decodeURIComponent(onboardingPending[1])),
     );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/onboarding/guide") {
+    // Sends real mail to an arbitrary address and provisions a Drive folder and a Slack invite
+    // along the way, so it needs a genuine admin member session. The shared service principal is
+    // denied outright: it authenticates every agent tool call regardless of who is chatting, so
+    // accepting it here would let anyone talking to AdminBot in Slack onboard anyone they like.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = (await readJson(req)) as AdminBotOnboardingSendRequest;
+    const result = await ctx.onboardingSender(body);
+    if (!result.ok) {
+      sendJson(res, result.error.status, {
+        error: {
+          message: result.error.message,
+          ...(result.error.missing ? { missing: result.error.missing } : {}),
+        },
+      });
+      return;
+    }
+    service.recordOnboardingGuideSent({
+      actor: principalActor(principal),
+      template_id: result.payload.template_id,
+      email: body.email,
+      sent: result.payload.sent,
+    });
+    sendJson(res, 200, result.payload);
     return;
   }
   const onboardingNudge = /^\/onboarding\/([^/]+)\/nudge$/u.exec(url.pathname);
