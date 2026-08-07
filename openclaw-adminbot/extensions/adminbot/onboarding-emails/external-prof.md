@@ -11,7 +11,7 @@ enriched: |
   Connect invite and the back-end email triggers (reworded for the recipient).
 ---
 
-Subject: (none supplied -- suggest `Collaboration kickoff: {project_or_context}`)
+Subject: `Starting our collaboration on {project_or_context}`
 
 ```text
 Dear {first_name},

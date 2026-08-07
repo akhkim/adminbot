@@ -12,6 +12,10 @@ policy_note: |
   and write, so the number is never member- or publicly readable.
 ---
 
+Subject: `Working with Zhijing – what to expect`
+
+(Only when sent as its own email. Omit when appended to `member.md`.)
+
 ```text
 For direct mentees of Zhijing:
 

@@ -61,10 +61,10 @@ is sent by hand rather than by the tab.
 1. `member-what-to-expect.md` has Zhijing's real WhatsApp number in the source. Repo
    policy forbids committing real phone numbers, so it is `{zhijing_whatsapp}` and is
    resolved at send time -- see the next section.
-2. Several lab templates supply no subject line; suggestions are noted in each file.
 
 Resolved: the two `XXX` contacts are Andrew Kim / andrewkihyun@gmail.com; the signup
-link is the site root, since `/signup` is not a routed path; `coauthor_major` is 20-40 h/week (the matrix was right); the thin lab text for
+link is the site root, since `/signup` is not a routed path; every template now carries a
+subject line; `coauthor_major` is 20-40 h/week (the matrix was right); the thin lab text for
 `coauthor_minor` and `external_prof` has been enriched with the matrix items it omitted;
 the four subgroups without lab text keep their approved drafts.
 

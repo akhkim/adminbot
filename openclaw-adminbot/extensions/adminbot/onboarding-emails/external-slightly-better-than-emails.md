@@ -11,7 +11,7 @@ mapping_note: |
   confirm the mapping.
 ---
 
-Subject: (none supplied -- suggest `Collaborating on {project_or_context}`)
+Subject: `Collaborating with us on {project_or_context}`
 
 ```text
 Hi {first_name},

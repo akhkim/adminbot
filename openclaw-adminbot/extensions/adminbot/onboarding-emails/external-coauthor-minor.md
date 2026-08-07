@@ -14,7 +14,7 @@ enriched: |
   yes_separate practice docs remain a separate email.
 ---
 
-Subject: (none supplied -- suggest `Welcome aboard: {project_or_context}`)
+Subject: `Getting started on {project_or_context}`
 
 ```text
 Hi {first_name},

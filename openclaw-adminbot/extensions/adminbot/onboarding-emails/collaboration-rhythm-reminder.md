@@ -6,7 +6,7 @@ source: supplied verbatim by the lab
 placeholders: {first_name}, {project_or_context}, {update_due_date}
 ---
 
-Subject: (none supplied -- suggest `Where we are on {project_or_context}`)
+Subject: `Where we are on {project_or_context}`
 
 ```text
 Dear {first_name},

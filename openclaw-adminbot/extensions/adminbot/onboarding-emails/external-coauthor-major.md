@@ -9,7 +9,7 @@ placeholders: {first_name}, {project_or_context}, {meeting_names}, {core_meeting
 omitted_internal_items: spreadsheet_full_details, vector_roster_share, newcomer_drive_practice
 ---
 
-Subject: (none supplied -- suggest `Welcome aboard: {project_or_context}`)
+Subject: `Welcome aboard – your setup for {project_or_context}`
 
 ```text
 Hi {first_name},

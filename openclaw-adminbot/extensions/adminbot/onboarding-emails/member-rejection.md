@@ -6,7 +6,7 @@ placeholders: { first_name }
 signed_by: Zhijing
 ---
 
-Subject: (none supplied -- suggest `Jinesis Lab application`)
+Subject: `Update on your Jinesis AI Research Lab application`
 
 ```text
 Dear {first_name},
