@@ -128,7 +128,9 @@ export type RelevantPaper = {
 };
 
 export type MemberGateway = {
-  url: string;
+  // Optional: the service omits it unless an operator configured one, because it cannot know how
+  // this browser reaches the gateway. See resolveAdvertisedGatewayUrl.
+  url?: string;
   // The OpenClaw gateway token for the WS connection. Never persist to
   // localStorage — it flows only into sessionStorage-scoped token plumbing.
   token: string;

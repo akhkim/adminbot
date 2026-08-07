@@ -31,7 +31,7 @@ export type AdminBotAuthSessionPayload = {
   session_token: string;
   expires_at: string;
   member: AdminBotLabMember;
-  gateway?: { url: string; token: string };
+  gateway?: { url?: string; token: string };
 };
 
 // GET /auth/session view: same as the login payload minus the raw token, which is never echoed
@@ -39,7 +39,7 @@ export type AdminBotAuthSessionPayload = {
 export type AdminBotAuthSessionView = {
   expires_at: string;
   member: AdminBotLabMember;
-  gateway?: { url: string; token: string };
+  gateway?: { url?: string; token: string };
 };
 
 export type AdminBotMemberPrincipal = {
@@ -534,11 +534,15 @@ export class AdminBotAuthService {
     };
   }
 
-  private gateway(): { url: string; token: string } | undefined {
+  // The URL is omitted unless an operator configured one. This service knows its own gateway
+  // token; it does not know how a given browser reaches the gateway, and a browser on another host
+  // cannot use a loopback address. Omitting lets the client keep the URL it was already configured
+  // with (which is how it reached the sign-in form in the first place).
+  private gateway(): { url?: string; token: string } | undefined {
     if (!this.gatewayToken) {
       return undefined;
     }
-    return { url: this.gatewayUrl ?? "", token: this.gatewayToken };
+    return { ...(this.gatewayUrl ? { url: this.gatewayUrl } : {}), token: this.gatewayToken };
   }
 
   private checkRateLimit(

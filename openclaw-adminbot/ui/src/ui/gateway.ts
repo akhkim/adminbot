@@ -138,6 +138,17 @@ export function isNonRecoverableAuthError(error: GatewayErrorInfo | undefined): 
   );
 }
 
+/** True for hosts that only resolve on the machine the browser itself runs on. */
+export function isLoopbackGatewayHost(host: string): boolean {
+  const normalized = host.trim().toLowerCase();
+  return (
+    normalized === "localhost" ||
+    normalized === "::1" ||
+    normalized === "[::1]" ||
+    isLoopbackIPv4Host(normalized)
+  );
+}
+
 function isLoopbackIPv4Host(host: string): boolean {
   const octets = host.split(".");
   if (octets.length !== 4 || octets[0] !== "127") {
@@ -155,10 +166,7 @@ function isLoopbackIPv4Host(host: string): boolean {
 function isTrustedRetryEndpoint(url: string): boolean {
   try {
     const gatewayUrl = new URL(url, window.location.href);
-    const host = gatewayUrl.hostname.trim().toLowerCase();
-    const isLoopbackHost = host === "localhost" || host === "::1" || host === "[::1]";
-    const isLoopbackIPv4 = isLoopbackIPv4Host(host);
-    if (isLoopbackHost || isLoopbackIPv4) {
+    if (isLoopbackGatewayHost(gatewayUrl.hostname)) {
       return true;
     }
     const pageUrl = new URL(window.location.href);

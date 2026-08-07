@@ -48,7 +48,6 @@ import {
 import { createAdminBotSqliteService } from "./service-sqlite.js";
 import { renderAdminBotWebUi } from "./web-ui.js";
 
-const DEFAULT_GATEWAY_WS_URL = "ws://127.0.0.1:18789";
 const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
@@ -213,8 +212,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     service = new AdminBotService(store, serviceOptions(options));
   }
   const gatewayToken = trimmedEnv(options.gatewayToken ?? process.env.OPENCLAW_GATEWAY_TOKEN);
-  const gatewayUrl =
-    trimmedEnv(options.gatewayUrl ?? process.env.ADMINBOT_GATEWAY_WS_URL) ?? DEFAULT_GATEWAY_WS_URL;
+  // No default: a loopback URL is only reachable by a browser on this host, so guessing one and
+  // handing it to a remote member replaced their working gateway URL with a dead one. Left unset,
+  // the client keeps the URL it already connects with.
+  const gatewayUrl = trimmedEnv(options.gatewayUrl ?? process.env.ADMINBOT_GATEWAY_WS_URL);
   const serviceToken = trimmedEnv(options.serviceToken ?? process.env.ADMINBOT_SERVICE_TOKEN);
   const allowedOrigins = new Set(
     options.allowedOrigins ??
@@ -236,7 +237,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     sendAccountApprovedEmail:
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
     ...(gatewayToken ? { gatewayToken } : {}),
-    gatewayUrl,
+    ...(gatewayUrl ? { gatewayUrl } : {}),
   });
   const sensitiveInfo =
     options.sensitiveInfoDocument ??

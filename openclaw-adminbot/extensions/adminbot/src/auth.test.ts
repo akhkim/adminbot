@@ -20,7 +20,11 @@ function member(
   };
 }
 
-function setup(options: { now?: () => Date; gatewayToken?: string } = {}) {
+const GATEWAY_URL = "ws://127.0.0.1:18789";
+
+function setup(
+  options: { now?: () => Date; gatewayToken?: string; gatewayUrl?: string | null } = {},
+) {
   const store = new AdminBotMemoryStore();
   const service = new AdminBotService(store);
   const auth = new AdminBotAuthService({
@@ -32,7 +36,7 @@ function setup(options: { now?: () => Date; gatewayToken?: string } = {}) {
       }
       return result.payload;
     },
-    gatewayUrl: "ws://127.0.0.1:18789",
+    ...(options.gatewayUrl === null ? {} : { gatewayUrl: options.gatewayUrl ?? GATEWAY_URL }),
     ...(options.gatewayToken ? { gatewayToken: options.gatewayToken } : {}),
     ...(options.now ? { now: options.now } : {}),
   });
@@ -134,8 +138,27 @@ describe("AdminBotAuthService claim/login flow", () => {
     }
     expect(login.payload.member.id).toBe("ada");
     expect(login.payload.session_token).toBeTruthy();
-    expect(login.payload.gateway).toEqual({ url: "ws://127.0.0.1:18789", token: "gw-token" });
+    expect(login.payload.gateway).toEqual({ url: GATEWAY_URL, token: "gw-token" });
     expect(auth.resolveSession(login.payload.session_token)?.member.id).toBe("ada");
+  });
+
+  // The service cannot know how a given browser reaches the gateway, so with no URL configured it
+  // advertises only the token and the client keeps the URL it already connects with. Advertising a
+  // loopback guess instead pointed every remote member at their own machine on sign-in.
+  it("omits the gateway url when none is configured", () => {
+    const { store, auth } = setup({ gatewayToken: "gw-token", gatewayUrl: null });
+    store.saveLabMember(member("ada", "ada@example.com"));
+    auth.claim({ member_id: "ada", email: "ada@example.com", password: "correcthorse" });
+    auth.approveRegistration(pendingIdForMember(auth, "ada"), "admin-1");
+
+    const login = auth.login({ email: "ada@example.com", password: "correcthorse" });
+    expect(login.ok).toBe(true);
+    if (!login.ok) {
+      return;
+    }
+    expect(login.payload.gateway).toEqual({ token: "gw-token" });
+    const principal = auth.resolveSession(login.payload.session_token);
+    expect(principal && auth.sessionView(principal).gateway).toEqual({ token: "gw-token" });
   });
 
   it("signup approval mints a plain member and enables login", () => {

@@ -75,6 +75,75 @@ function makeHost(overrides: Partial<MemberAuthHost> = {}): MemberAuthHost {
   };
 }
 
+// Signing in must not downgrade the gateway URL the page is already configured with. AdminBot
+// advertised its own loopback address, so adopting it pointed a hosted browser at port 18789 on the
+// member's own machine and every sign-in ended at "disconnected (1006): no reason".
+describe("gateway URL on sign-in", () => {
+  const REMOTE = "wss://aurora-adminbot.taila4f725.ts.net";
+
+  function signedInHost() {
+    return makeHost({
+      memberEmail: "a@b.co",
+      memberPassword: "pw",
+      settings: { adminBotUrl: BASE_URL, gatewayUrl: REMOTE, token: "" } as unknown as UiSettings,
+    });
+  }
+
+  it("keeps the configured URL when the service advertises loopback", async () => {
+    const host = signedInHost();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        session_token: "sess",
+        expires_at: "2026-08-01T00:00:00Z",
+        member: { id: "pat" },
+        gateway: { url: "ws://127.0.0.1:18789", token: "gw" },
+      }),
+    );
+
+    await submitMemberAuth(host);
+
+    expect(host.applySettings).toHaveBeenCalledWith(
+      expect.objectContaining({ gatewayUrl: REMOTE }),
+    );
+  });
+
+  it("keeps the configured URL when the service omits one", async () => {
+    const host = signedInHost();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        session_token: "sess",
+        expires_at: "2026-08-01T00:00:00Z",
+        member: { id: "pat" },
+        gateway: { token: "gw" },
+      }),
+    );
+
+    await submitMemberAuth(host);
+
+    expect(host.applySettings).toHaveBeenCalledWith(
+      expect.objectContaining({ gatewayUrl: REMOTE }),
+    );
+  });
+
+  it("adopts a routable URL the service does advertise", async () => {
+    const host = signedInHost();
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(200, {
+        session_token: "sess",
+        expires_at: "2026-08-01T00:00:00Z",
+        member: { id: "pat" },
+        gateway: { url: "wss://moved.example.ts.net", token: "gw" },
+      }),
+    );
+
+    await submitMemberAuth(host);
+
+    expect(host.applySettings).toHaveBeenCalledWith(
+      expect.objectContaining({ gatewayUrl: "wss://moved.example.ts.net" }),
+    );
+  });
+});
+
 describe("memberPrivilegeLevel wiring", () => {
   it("applyMemberSession persists privilege on signin success", async () => {
     const host = makeHost({ memberEmail: "a@b.co", memberPassword: "pw" });

@@ -28,6 +28,7 @@ import {
   setOnboardingStep,
   signupMember,
 } from "./adminbot-auth.ts";
+import { resolveAdvertisedGatewayUrl } from "./advertised-gateway-url.ts";
 import { clearDeviceAuthToken, storeDeviceAuthToken } from "./device-auth.ts";
 import { loadOrCreateDeviceIdentity } from "./device-identity.ts";
 import { clearSignedOutView } from "./signed-out-view.ts";
@@ -248,7 +249,11 @@ async function connectAsMember(
   const hasDeviceToken = await ensureMemberDeviceToken(host, sessionToken);
   host.applySettings({
     ...host.settings,
-    gatewayUrl: session.gateway?.url ?? host.settings.gatewayUrl,
+    gatewayUrl: resolveAdvertisedGatewayUrl({
+      advertised: session.gateway?.url,
+      current: host.settings.gatewayUrl,
+      ...(typeof window === "undefined" ? {} : { pageHref: window.location?.href }),
+    }),
     token: hasDeviceToken ? "" : (session.gateway?.token ?? host.settings.token),
   });
   host.connect();
