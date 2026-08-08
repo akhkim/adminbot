@@ -19,6 +19,7 @@ using AdminBot.Contracts.Common;
 using AdminBot.Contracts.Governance;
 using AdminBot.Contracts.Identity;
 using AdminBot.Contracts.Privacy;
+using AdminBot.Contracts.Policy;
 using AdminBot.Contracts.Supporting;
 using AdminBot.Contracts.Workflows.Communications;
 using AdminBot.Contracts.Workflows.Availability;
@@ -142,7 +143,22 @@ interface ReimbursementsApi {
   generatePacket(@body input: GenerateReimbursementPacketInput):
     | ReimbursementPacketResult
     | ErrorResponse;
+
+  @post
+  @route("/submissions")
+  proposeSubmission(@body input: ProposeReimbursementSubmissionCommand):
+    | GovernedActionProjection
+    | ErrorResponse;
 }
+
+@route("/policy/settings")
+interface PolicySettingsApi {
+  @get get(): AdministratorPolicySettings | ErrorResponse;
+  @post replace(@body input: ReplaceAdministratorPolicySettingsCommand):
+    | AdministratorPolicySettings
+    | ErrorResponse;
+}
+
 
 @route("/capabilities")
 interface CapabilitiesApi {
@@ -178,21 +194,21 @@ interface ActionsApi {
   getAction(@path actionId: ActionId): Action | ErrorResponse;
 
   @get
-  listActions(
-    @query state?: string,
-    @query cursor?: string,
-    @query limit?: int32,
-  ): Page<Action> | ErrorResponse;
+  listActions(): GovernanceWorkspaceProjection | ErrorResponse;
 
   @route("/{actionId}/decisions")
   @post
-  decideAction(@path actionId: ActionId, @body input: ApprovalInput):
-    | Action
-    | ErrorResponse;
+  decideAction(
+    @path actionId: ActionId,
+    @body input: DecideGovernedActionCommand,
+  ): GovernedActionProjection | ErrorResponse;
 
   @route("/{actionId}/executions")
   @post
-  executeAction(@path actionId: ActionId): Execution | ErrorResponse;
+  executeAction(
+    @path actionId: ActionId,
+    @body input: ExecuteGovernedActionCommand,
+  ): GovernedActionProjection | ErrorResponse;
 
   @route("/{actionId}/cancellations")
   @post

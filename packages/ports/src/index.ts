@@ -372,6 +372,7 @@ export interface AdminBotUnitOfWork {
   readonly availability?: AvailabilityRepository;
   readonly audit: AuditRepository;
   readonly identity: IdentityRepository;
+  readonly governance?: import("./governance.js").GovernanceRepository;
   readonly legacyMigration: import("./legacy-migration.js").LegacyMigrationRepository;
   readonly outbox: OutboxRepository;
   readonly papers?: PaperRepository;
@@ -386,3 +387,4 @@ export interface TransactionBoundary {
 }
 
 export * from "./legacy-migration.js";
+export * from "./governance.js";

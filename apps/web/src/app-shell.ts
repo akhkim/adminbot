@@ -171,6 +171,14 @@ export class AdminBotAppShell extends LitElement {
         this.session === undefined,
       );
     }
+    if (this.activeRoute.audience === "governance" && !this.canReviewActions) {
+      return this.renderAccessState(
+        this.session === undefined
+          ? "Sign in with an administrator or approver account to continue."
+          : "This area requires the administrator or approver role.",
+        this.session === undefined,
+      );
+    }
     if (this.activeRoute.id === "overview") return renderOverviewView(this.handleRouteClick);
     if (this.activeRoute.id === "signIn") {
       if (this.session !== undefined) {
@@ -202,6 +210,12 @@ export class AdminBotAppShell extends LitElement {
     if (this.activeRoute.id === "availability") {
       return html`<adminbot-availability-workspace></adminbot-availability-workspace>`;
     }
+    if (this.activeRoute.id === "actions") {
+      return html`<adminbot-governance-actions></adminbot-governance-actions>`;
+    }
+    if (this.activeRoute.id === "settings") {
+      return html`<adminbot-policy-settings></adminbot-policy-settings>`;
+    }
     if (this.activeRoute.status === "backend_pending") {
       return renderPendingSurface(this.activeRoute);
     }
@@ -229,12 +243,17 @@ export class AdminBotAppShell extends LitElement {
       if (route.id === "signIn") return this.session === undefined;
       if (route.audience === "public") return true;
       if (route.audience === "member") return this.session !== undefined;
+      if (route.audience === "governance") return this.canReviewActions;
       return this.isAdministrator;
     });
   }
 
   private get isAdministrator(): boolean {
     return this.session?.roles.includes("administrator") ?? false;
+  }
+
+  private get canReviewActions(): boolean {
+    return this.session?.roles.some((role) => role === "administrator" || role === "approver") ?? false;
   }
 
   private readonly handleRouteClick = (event: MouseEvent): void => {

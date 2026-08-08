@@ -104,6 +104,33 @@ model PolicySnapshot {
   facts: PolicyFacts;
 }
 
+/** Administrator-managed, versioned policy data. The financial risk floor is not configurable. */
+model AdministratorPolicySettings extends VersionedRecord {
+  organizationId: OrganizationId;
+  policyVersion: SemVer;
+  reimbursementSubmissionEnabled: boolean;
+  reimbursementApprovalRoles: RoleName[];
+  @minValue(1) @maxValue(5) reimbursementApprovalQuorum: int32;
+  reimbursementRequesterMayApprove: boolean;
+  reimbursementDistinctApprovers: boolean;
+  reimbursementRecentReauthenticationRequired: boolean;
+  @minValue(1) @maxValue(168) reimbursementApprovalExpiryHours: int32;
+  reimbursementDestinations: string[];
+}
+
+model ReplaceAdministratorPolicySettingsCommand {
+  @minValue(1) expectedVersion: int32;
+  reimbursementSubmissionEnabled: boolean;
+  reimbursementApprovalRoles: RoleName[];
+  @minValue(1) @maxValue(5) reimbursementApprovalQuorum: int32;
+  reimbursementRequesterMayApprove: boolean;
+  reimbursementDistinctApprovers: boolean;
+  reimbursementRecentReauthenticationRequired: boolean;
+  @minValue(1) @maxValue(168) reimbursementApprovalExpiryHours: int32;
+  reimbursementDestinations: string[];
+  @minLength(1) @maxLength(2000) reason: string;
+}
+
 interface PolicyEngine {
   evaluate(facts: PolicyFacts): PolicyDecision;
   recheck(snapshot: PolicySnapshot, currentFacts: PolicyFacts): PolicyDecision;

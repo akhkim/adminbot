@@ -57,6 +57,9 @@ importers:
       '@adminbot/availability':
         specifier: workspace:*
         version: link:../../packages/availability
+      '@adminbot/governance':
+        specifier: workspace:*
+        version: link:../../packages/governance
       '@adminbot/identity':
         specifier: workspace:*
         version: link:../../packages/identity
@@ -108,6 +111,18 @@ importers:
       '@adminbot/ports':
         specifier: workspace:*
         version: link:../ports
+
+  packages/governance:
+    dependencies:
+      '@adminbot/api-contracts':
+        specifier: workspace:*
+        version: link:../api-contracts
+      '@adminbot/ports':
+        specifier: workspace:*
+        version: link:../ports
+      '@adminbot/reimbursements':
+        specifier: workspace:*
+        version: link:../reimbursements
 
   packages/identity:
     dependencies:

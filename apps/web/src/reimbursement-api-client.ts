@@ -3,6 +3,8 @@ import {
   createApiUrl,
   type ErrorResponse,
   type GenerateReimbursementPacketInput,
+  type GovernedActionProjection,
+  type ProposeReimbursementSubmissionCommand,
   type ReimbursementConversationInput,
   type ReimbursementConversationResult,
   type ReimbursementPacketResult,
@@ -18,6 +20,7 @@ export class ReimbursementApiError extends Error {
 export interface ReimbursementClient {
   converse(input: ReimbursementConversationInput): Promise<ReimbursementConversationResult>;
   generate(input: GenerateReimbursementPacketInput): Promise<ReimbursementPacketResult>;
+  proposeSubmission(input: ProposeReimbursementSubmissionCommand): Promise<GovernedActionProjection>;
 }
 
 export class ReimbursementApiClient implements ReimbursementClient {
@@ -33,6 +36,10 @@ export class ReimbursementApiClient implements ReimbursementClient {
 
   generate(input: GenerateReimbursementPacketInput): Promise<ReimbursementPacketResult> {
     return this.json(apiRoutes.generateReimbursementPacket.build(), input) as Promise<ReimbursementPacketResult>;
+  }
+
+  proposeSubmission(input: ProposeReimbursementSubmissionCommand): Promise<GovernedActionProjection> {
+    return this.json(apiRoutes.proposeReimbursementSubmission.build(), input) as Promise<GovernedActionProjection>;
   }
 
   private async json(path: string, input: unknown): Promise<unknown> {

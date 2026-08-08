@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from "vitest";
+import type { GovernedActionProjection } from "@adminbot/api-contracts";
 import { AdminBotReimbursementApp } from "./reimbursement-app.js";
 
 if (!customElements.get("adminbot-reimbursement-app")) {
@@ -22,6 +23,7 @@ describe("AdminBotReimbursementApp", () => {
         missingFields: [], ready: true, receiptNames: ["receipt.pdf"],
       })),
       generate: vi.fn(async () => ({ artifacts: [], warnings: [] })),
+      proposeSubmission: vi.fn(async () => ({} as GovernedActionProjection)),
     };
     document.body.append(element); await element.updateComplete;
     expect(element.shadowRoot?.textContent).toContain("Receipt bytes are sent only to the loopback");

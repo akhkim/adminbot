@@ -22,6 +22,7 @@ import {
   createReimbursementRoutes,
   type ReimbursementApplication,
 } from "./reimbursement-routes.js";
+import { createGovernanceRoutes, type GovernanceApplication } from "./governance-routes.js";
 
 const MAXIMUM_JSON_BODY_BYTES = 64 * 1_024;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1"]);
@@ -33,6 +34,7 @@ export interface ApiServerOptions {
   readonly papers?: PaperApplication;
   readonly availability?: AvailabilityApplication;
   readonly reimbursements?: ReimbursementApplication;
+  readonly governance?: GovernanceApplication;
   readonly allowedOrigins?: readonly string[];
   readonly secureCookies?: boolean;
   readonly onUnexpectedError?: (error: unknown, operationId?: string) => void;
@@ -59,6 +61,7 @@ export class AdminBotApiServer {
       ...(options.papers === undefined ? [] : createPaperRoutes(options.sessions, options.papers)),
       ...(options.availability === undefined ? [] : createAvailabilityRoutes(options.sessions, options.availability)),
       ...(options.reimbursements === undefined ? [] : createReimbursementRoutes(options.reimbursements)),
+      ...(options.governance === undefined ? [] : createGovernanceRoutes(options.sessions, options.governance)),
     ];
     const allowedOrigins = parseAllowedOrigins(options.allowedOrigins ?? []);
     this.server = createServer((request, response) => {

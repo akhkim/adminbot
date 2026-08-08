@@ -2,6 +2,7 @@ import type {
   ReimbursementConversationMessage,
   ReimbursementDraft,
   ReimbursementPacketArtifact,
+  GovernedActionProjection,
 } from "@adminbot/api-contracts";
 import { css, html, LitElement, nothing, type TemplateResult } from "lit";
 import {
@@ -15,13 +16,14 @@ export class AdminBotReimbursementApp extends LitElement {
     draft: { state: true }, messages: { state: true }, missingFields: { state: true },
     receiptNames: { state: true }, selectedFiles: { state: true }, busy: { state: true },
     errorMessage: { state: true }, warnings: { state: true },
+    proposedAction: { state: true },
   };
 
   static override styles = css`
     :host { display: block; color: var(--text); } * { box-sizing: border-box; }
     h1 { margin: 0; color: var(--text-strong); font: 500 clamp(2rem, 5vw, 3.5rem)/1.05 Georgia, serif; }
     h2 { margin: 0 0 .75rem; color: var(--text-strong); font-size: 1rem; }
-    button, textarea, input { font: inherit; }
+    button, textarea, input, select { font: inherit; }
     .eyebrow { margin: 0 0 .55rem; color: var(--accent); font-size: .65rem; font-weight: 780; letter-spacing: .14em; text-transform: uppercase; }
     .lede { max-width: 54rem; color: var(--text-muted); line-height: 1.65; }
     .privacy { display: grid; grid-template-columns: auto 1fr; gap: .7rem; margin: 1.25rem 0; border: 1px solid var(--border); border-radius: .8rem; padding: .85rem 1rem; background: var(--surface-2); }
@@ -51,6 +53,10 @@ export class AdminBotReimbursementApp extends LitElement {
     th, td { border-bottom: 1px solid var(--border); padding: .55rem .45rem; text-align: left; white-space: nowrap; }
     th { color: var(--text-muted); font-size: .61rem; letter-spacing: .05em; text-transform: uppercase; }
     .warning { margin: .6rem 0; color: var(--warning); font-size: .72rem; }
+    .submission { margin-top: 1rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+    .submission label { display: grid; gap: .3rem; margin: .65rem 0; color: var(--text-muted); font-size: .7rem; }
+    .submission input[type=text] { border: 1px solid var(--border-strong); border-radius: .55rem; padding: .55rem; color: var(--text-strong); background: var(--surface-1); }
+    .success { border-left: .2rem solid var(--accent); padding: .65rem .8rem; color: var(--text-strong); background: var(--accent-soft); font-size: .74rem; }
     .receipts { margin: .5rem 0; color: var(--text-muted); font-size: .68rem; }
     @media (max-width: 880px) { .layout { grid-template-columns: 1fr; } }
     @media (max-width: 520px) { .details { grid-template-columns: 1fr; } }
@@ -67,12 +73,14 @@ export class AdminBotReimbursementApp extends LitElement {
   declare private busy: boolean;
   declare private errorMessage: string;
   declare private warnings: string[];
+  declare private proposedAction: GovernedActionProjection | undefined;
 
   constructor() {
     super();
     this.draft = { expenses: [] }; this.messages = []; this.missingFields = [];
     this.receiptNames = []; this.selectedFiles = []; this.busy = false;
     this.errorMessage = ""; this.warnings = [];
+    this.proposedAction = undefined;
   }
 
   override render(): TemplateResult {
@@ -94,6 +102,14 @@ export class AdminBotReimbursementApp extends LitElement {
           ${this.warnings.map((warning) => html`<p class="warning">${warning}</p>`)}
           ${this.receiptNames.length ? html`<p class="receipts">Processed this session: ${this.receiptNames.join(", ")}</p>` : nothing}
           <button class="primary" ?disabled=${!ready || this.busy} @click=${this.generatePacket}>Generate both forms</button>
+          <section class="submission"><h2>Governed submission</h2>
+            <p class="empty">Signed-in members can propose this exact reviewed claim. It is hash-bound, requires an eligible approver, and is never sent directly from this page.</p>
+            ${this.proposedAction === undefined ? html`<form @submit=${this.proposeSubmission}>
+              <label>Approved destination identifier<input name="destination" type="text" value="finance_office" maxlength="240" required></label>
+              <label><span><input name="attested" type="checkbox" required> I attest that the reviewed claim and expense rows are accurate.</span></label>
+              <button class="primary" type="submit" ?disabled=${!ready || this.busy}>Propose authenticated submission</button>
+            </form>` : html`<p class="success" role="status">Proposal ${this.proposedAction.id} is ${this.proposedAction.state.replaceAll("_", " ")}. Payload hash: ${this.proposedAction.payloadHash}</p>`}
+          </section>
         </section></div>`;
   }
 
@@ -150,9 +166,21 @@ export class AdminBotReimbursementApp extends LitElement {
     } catch (error) { this.errorMessage = userError(error); } finally { this.busy = false; }
   };
 
+  private readonly proposeSubmission = async (event: SubmitEvent): Promise<void> => {
+    event.preventDefault(); this.busy = true; this.errorMessage = "";
+    const data = new FormData(event.currentTarget as HTMLFormElement);
+    try {
+      this.proposedAction = await this.client.proposeSubmission({
+        clientRequestId: crypto.randomUUID(), packId: "waterloo_travel_v1", draft: this.draft,
+        destination: String(data.get("destination") ?? "").trim(), attestedAccurate: data.get("attested") === "on",
+      });
+    } catch (error) { this.errorMessage = userError(error); } finally { this.busy = false; }
+  };
+
   private readonly reset = (): void => {
     this.draft = { expenses: [] }; this.messages = []; this.missingFields = [];
     this.receiptNames = []; this.selectedFiles = []; this.errorMessage = ""; this.warnings = [];
+    this.proposedAction = undefined;
   };
 }
 

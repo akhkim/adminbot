@@ -97,6 +97,19 @@ enum AvailabilitySource {
   imported
 }
 
+enum GovernedActionState {
+  awaiting_approval
+  approved
+  rejected
+  cancelled
+  failed
+}
+
+enum ApprovalDecision {
+  approve
+  reject
+}
+
 model Person {
   id             String       @id
   organizationId String       @map("organization_id")
@@ -346,4 +359,75 @@ model RateLimitBucket {
 
   @@index([updatedAt])
   @@map("rate_limit_buckets")
+}
+
+model AdministratorPolicy {
+  organizationId                               String   @id @map("organization_id")
+  policyVersion                                String   @map("policy_version")
+  reimbursementSubmissionEnabled              Boolean  @map("reimbursement_submission_enabled")
+  reimbursementApprovalRoles                   Json     @map("reimbursement_approval_roles")
+  reimbursementApprovalQuorum                  Int      @map("reimbursement_approval_quorum")
+  reimbursementRequesterMayApprove             Boolean  @map("reimbursement_requester_may_approve")
+  reimbursementDistinctApprovers               Boolean  @map("reimbursement_distinct_approvers")
+  reimbursementRecentReauthenticationRequired  Boolean  @map("reimbursement_recent_reauthentication_required")
+  reimbursementApprovalExpiryHours             Int      @map("reimbursement_approval_expiry_hours")
+  reimbursementDestinations                    Json     @map("reimbursement_destinations")
+  version                                      Int      @default(1)
+  createdAt                                    DateTime @default(now()) @map("created_at")
+  updatedAt                                    DateTime @updatedAt @map("updated_at")
+
+  @@map("administrator_policies")
+}
+
+model GovernedAction {
+  id                             String              @id
+  organizationId                 String              @map("organization_id")
+  clientRequestId                String              @map("client_request_id")
+  revision                       Int                 @default(1)
+  actionType                     String              @map("action_type")
+  actionVersion                  String              @map("action_version")
+  state                          GovernedActionState
+  summary                        String
+  canonicalPayload               Json                @map("canonical_payload")
+  payloadHash                    String              @map("payload_hash")
+  requestedByAccountId           String              @map("requested_by_account_id")
+  requestedByPersonId            String              @map("requested_by_person_id")
+  requestedAt                    DateTime            @map("requested_at")
+  policyDecisionId               String              @map("policy_decision_id")
+  policyVersion                  String              @map("policy_version")
+  risk                           String
+  eligibleRoles                  Json                @map("eligible_roles")
+  approvalQuorum                 Int                 @map("approval_quorum")
+  requesterMayApprove            Boolean             @map("requester_may_approve")
+  distinctPeople                 Boolean             @map("distinct_people")
+  recentReauthenticationRequired Boolean             @map("recent_reauthentication_required")
+  expiresAt                      DateTime            @map("expires_at")
+  safeFailureCode                String?             @map("safe_failure_code")
+  createdAt                      DateTime            @default(now()) @map("created_at")
+  updatedAt                      DateTime            @updatedAt @map("updated_at")
+
+  approvals GovernedApproval[]
+
+  @@unique([organizationId, clientRequestId])
+  @@index([organizationId, state, requestedAt])
+  @@map("governed_actions")
+}
+
+model GovernedApproval {
+  id                 String           @id
+  actionId           String           @map("action_id")
+  actionRevision     Int              @map("action_revision")
+  payloadHash        String           @map("payload_hash")
+  policyDecisionId   String           @map("policy_decision_id")
+  decision           ApprovalDecision
+  decidedByPersonId  String           @map("decided_by_person_id")
+  roleBasis          Json             @map("role_basis")
+  note               String?
+  decidedAt          DateTime         @map("decided_at")
+
+  action GovernedAction @relation(fields: [actionId], references: [id], onDelete: Restrict)
+
+  @@unique([actionId, decidedByPersonId])
+  @@index([actionId, decidedAt])
+  @@map("governed_approvals")
 }

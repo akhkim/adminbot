@@ -1,5 +1,6 @@
 import { pathToFileURL } from "node:url";
 import { AvailabilityWorkspaceService } from "@adminbot/availability";
+import { GovernanceService } from "@adminbot/governance";
 import {
   RegistrationReviewService,
   RegistrationService,
@@ -59,6 +60,7 @@ export async function startFromEnvironment(
       console.error(JSON.stringify({ event: "reimbursement.dependency_failed", operation, errorType }));
     },
   });
+  const governance = new GovernanceService({ transactions: persistence.transactions, organizationId });
   const api = new AdminBotApiServer({
     registration,
     registrationReview,
@@ -66,6 +68,7 @@ export async function startFromEnvironment(
     papers,
     availability,
     reimbursements,
+    governance,
     allowedOrigins,
     secureCookies: parseBoolean(environment.ADMINBOT_SECURE_COOKIES, false),
     onUnexpectedError: (error) => {

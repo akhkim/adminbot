@@ -18,3 +18,4 @@ export {
   createReimbursementRoutes,
   type ReimbursementApplication,
 } from "./reimbursement-routes.js";
+export { createGovernanceRoutes, type GovernanceApplication } from "./governance-routes.js";

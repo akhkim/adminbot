@@ -6,6 +6,7 @@ export {
 } from "./routes.js";
 export { apiErrorCodes, isApiErrorCode, type ApiErrorCode } from "./errors.js";
 export type {
+  AdministratorPolicySettings,
   AvailabilityEntry,
   AvailabilityPlan,
   AvailabilitySummary,
@@ -14,8 +15,12 @@ export type {
   ClaimablePerson,
   CreatePaperCommand,
   DeletePaperCommand,
+  DecideGovernedActionCommand,
   ErrorResponse,
+  ExecuteGovernedActionCommand,
   GenerateReimbursementPacketInput,
+  GovernedActionProjection,
+  GovernanceWorkspaceProjection,
   LoginInput,
   Person,
   PaperProjection,
@@ -23,6 +28,7 @@ export type {
   Registration,
   RegistrationDecisionInput,
   RegistrationSubmitted,
+  ReplaceAdministratorPolicySettingsCommand,
   ReplaceAvailabilityPlanCommand,
   ReimbursementConversationInput,
   ReimbursementConversationMessage,
@@ -32,6 +38,7 @@ export type {
   ReimbursementPacketArtifact,
   ReimbursementPacketResult,
   ReimbursementReceiptUpload,
+  ProposeReimbursementSubmissionCommand,
   RoleName,
   SessionView,
   SignupProfile,
@@ -40,6 +47,7 @@ export type {
 } from "./dtos.js";
 export type {
   ApiRoute,
+  GovernedActionRoute,
   HttpMethod,
   PaperRoute,
   RegistrationDecisionRoute,

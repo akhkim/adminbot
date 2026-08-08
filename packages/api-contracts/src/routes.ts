@@ -12,6 +12,15 @@ export interface PaperRoute {
   matches(pathname: string): boolean;
 }
 
+export interface GovernedActionRoute {
+  readonly method: "POST";
+  readonly operationId: "ActionsApi.decideAction" | "ActionsApi.executeAction";
+  readonly template: string;
+  build(parameters: { readonly actionId: string }): string;
+  match(pathname: string): { readonly actionId: string } | undefined;
+  matches(pathname: string): boolean;
+}
+
 export interface StaticApiRoute<
   Method extends HttpMethod = HttpMethod,
   OperationId extends string = string,
@@ -33,7 +42,7 @@ export interface RegistrationDecisionRoute {
   match(pathname: string): { readonly registrationId: string } | undefined;
 }
 
-export type ApiRoute = StaticApiRoute | RegistrationDecisionRoute | PaperRoute;
+export type ApiRoute = StaticApiRoute | RegistrationDecisionRoute | PaperRoute | GovernedActionRoute;
 
 export const apiRoutes = Object.freeze({
   listClaimablePeople: staticRoute(
@@ -102,6 +111,12 @@ export const apiRoutes = Object.freeze({
     "ReimbursementsApi.generatePacket",
     "/reimbursements/packet",
   ),
+  proposeReimbursementSubmission: staticRoute("POST", "ReimbursementsApi.proposeSubmission", "/reimbursements/submissions"),
+  getPolicySettings: staticRoute("GET", "PolicySettingsApi.get", "/policy/settings"),
+  replacePolicySettings: staticRoute("POST", "PolicySettingsApi.replace", "/policy/settings"),
+  listGovernedActions: staticRoute("GET", "ActionsApi.listActions", "/actions"),
+  decideGovernedAction: governedActionRoute("ActionsApi.decideAction", "/decisions"),
+  executeGovernedAction: governedActionRoute("ActionsApi.executeAction", "/executions"),
   listPapers: staticRoute("GET", "PapersApi.listPapers", "/papers"),
   createPaper: staticRoute("POST", "PapersApi.createPaper", "/papers"),
   updatePaper: paperRoute("PapersApi.updatePaper", ""),
@@ -188,6 +203,46 @@ function paperRoute(
     match,
     matches: (pathname: string) => match(pathname) !== undefined,
   });
+}
+
+function governedActionRoute(
+  operationId: GovernedActionRoute["operationId"],
+  suffix: "/decisions" | "/executions",
+): GovernedActionRoute {
+  const prefix = `${API_BASE_PATH}/actions/`;
+  const template = `${prefix}{actionId}${suffix}`;
+  const match = (pathname: string) => {
+    const parameters = matchSingleSegmentPath(pathname, prefix, suffix, "actionId");
+    return parameters?.actionId === undefined ? undefined : { actionId: parameters.actionId };
+  };
+  return Object.freeze({
+    method: "POST",
+    operationId,
+    template,
+    build: ({ actionId }: { readonly actionId: string }) => {
+      if (actionId.length === 0) throw new Error("actionId is required");
+      return `${prefix}${encodeURIComponent(actionId)}${suffix}`;
+    },
+    match,
+    matches: (pathname: string) => match(pathname) !== undefined,
+  });
+}
+
+function matchSingleSegmentPath(
+  pathname: string,
+  prefix: string,
+  suffix: string,
+  parameter: string,
+): Record<string, string> | undefined {
+  if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
+  const encoded = pathname.slice(prefix.length, pathname.length - suffix.length);
+  if (encoded.length === 0 || encoded.includes("/")) return undefined;
+  try {
+    const decoded = decodeURIComponent(encoded);
+    return decoded.length === 0 ? undefined : { [parameter]: decoded };
+  } catch {
+    return undefined;
+  }
 }
 
 function matchRegistrationDecisionPath(

@@ -19,6 +19,7 @@ import type {
   SafeAuditDetails,
   SessionRepository,
 } from "@adminbot/ports";
+import { PrismaGovernanceRepository } from "./prisma-governance-repository.js";
 
 type DatabaseClient = PrismaClient | Prisma.TransactionClient;
 
@@ -816,6 +817,7 @@ export function createUnitOfWork(database: DatabaseClient): AdminBotUnitOfWork {
     availability: new PrismaAvailabilityRepository(database),
     audit: new PrismaAuditRepository(database),
     identity,
+    governance: new PrismaGovernanceRepository(database),
     legacyMigration: new PrismaLegacyMigrationRepository(database),
     outbox: new PrismaOutboxRepository(database),
     papers: new PrismaPaperRepository(database),

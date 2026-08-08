@@ -2,6 +2,14 @@ import type { components } from "./generated/openapi.js";
 
 type Schemas = components["schemas"];
 
+export type AdministratorPolicySettings = Schemas["AdminBot.Contracts.Policy.AdministratorPolicySettings"];
+export type ReplaceAdministratorPolicySettingsCommand = Schemas["AdminBot.Contracts.Policy.ReplaceAdministratorPolicySettingsCommand"];
+export type GovernedActionProjection = Schemas["AdminBot.Contracts.Governance.GovernedActionProjection"];
+export type GovernanceWorkspaceProjection = Schemas["AdminBot.Contracts.Governance.GovernanceWorkspaceProjection"];
+export type DecideGovernedActionCommand = Schemas["AdminBot.Contracts.Governance.DecideGovernedActionCommand"];
+export type ExecuteGovernedActionCommand = Schemas["AdminBot.Contracts.Governance.ExecuteGovernedActionCommand"];
+export type ProposeReimbursementSubmissionCommand = Schemas["AdminBot.Contracts.Workflows.Reimbursements.ProposeReimbursementSubmissionCommand"];
+
 export type AvailabilityEntry = Schemas["AdminBot.Contracts.Workflows.Availability.AvailabilityEntry"];
 export type AvailabilityPlan = Schemas["AdminBot.Contracts.Workflows.Availability.AvailabilityPlan"];
 export type AvailabilitySummary = Schemas["AdminBot.Contracts.Workflows.Availability.AvailabilitySummary"];

@@ -1,4 +1,4 @@
-export type AppAudience = "public" | "member" | "administrator";
+export type AppAudience = "public" | "member" | "administrator" | "governance";
 export type AppRouteGroup = "public" | "workspace" | "operations";
 export type PortStatus = "live" | "backend_pending";
 export type PreviewKind = "cards" | "composer" | "queue" | "table" | "timeline";
@@ -189,12 +189,11 @@ export const APP_ROUTES: readonly AppRoute[] = [
     shortLabel: "Actions",
     eyebrow: "Governance",
     description: "Inspect immutable proposals, approvals, execution state, and evidence.",
-    audience: "administrator",
+    audience: "governance",
     group: "operations",
-    status: "backend_pending",
+    status: "live",
     preview: "queue",
     legacyBehavior: "The proposal queue displayed risk, payload hashes, approvals, and execution controls.",
-    nextBoundary: "Authenticated approval queries and execution commands must be wired to the kernel.",
   },
   {
     id: "announcements",
@@ -219,10 +218,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     description: "Manage reviewed defaults, privacy routing, and connector policy.",
     audience: "administrator",
     group: "operations",
-    status: "backend_pending",
+    status: "live",
     preview: "cards",
     legacyBehavior: "Administrators edited policy defaults and local sensitive-information guidance.",
-    nextBoundary: "Typed settings commands, secret-safe storage, and audit history must be ported first.",
   },
 ] as const;
 

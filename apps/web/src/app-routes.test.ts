@@ -13,10 +13,10 @@ describe("AdminBot application routes", () => {
     expect(resolveAppRoute("/not-a-real-page").id).toBe("overview");
   });
 
-  it("keeps administrator routes out of public and member navigation groups", () => {
+  it("keeps privileged routes out of public and member navigation groups", () => {
     expect(routesInGroup("public").every(({ audience }) => audience === "public")).toBe(true);
     expect(routesInGroup("workspace").every(({ audience }) => audience === "member")).toBe(true);
-    expect(routesInGroup("operations").every(({ audience }) => audience === "administrator")).toBe(
+    expect(routesInGroup("operations").every(({ audience }) => audience === "administrator" || audience === "governance")).toBe(
       true,
     );
     expect(appRoute("access").status).toBe("live");

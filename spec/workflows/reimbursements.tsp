@@ -68,8 +68,18 @@ model SubmitReimbursementActionPayload {
   reimbursementId: ReimbursementId;
   claimantId: PersonId;
   exactTotal: Money;
-  packetArtifactId: ArtifactId;
+  packId: "waterloo_travel_v1";
+  packetInputDigest: Sha256;
+  draft: ReimbursementDraft;
   destination: string;
+}
+
+model ProposeReimbursementSubmissionCommand {
+  @format("uuid") clientRequestId: string;
+  packId: "waterloo_travel_v1";
+  draft: ReimbursementDraft;
+  @minLength(1) @maxLength(240) destination: string;
+  attestedAccurate: boolean;
 }
 
 enum ReceiptMediaType {

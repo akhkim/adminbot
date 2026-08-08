@@ -6,6 +6,8 @@ import { AdminBotRegistrationReviewApp } from "./registration-review-app.js";
 import { AdminBotDeadlineBoard } from "./deadline-board.js";
 import { AdminBotPaperWorkspace } from "./paper-workspace.js";
 import { AdminBotReimbursementApp } from "./reimbursement-app.js";
+import { AdminBotGovernanceActionsApp } from "./governance-actions-app.js";
+import { AdminBotPolicySettingsApp } from "./policy-settings-app.js";
 
 if (!customElements.get("adminbot-login-app")) {
   customElements.define("adminbot-login-app", AdminBotLoginApp);
@@ -37,4 +39,12 @@ if (!customElements.get("adminbot-app")) {
 
 if (!customElements.get("adminbot-reimbursement-app")) {
   customElements.define("adminbot-reimbursement-app", AdminBotReimbursementApp);
+}
+
+if (!customElements.get("adminbot-governance-actions")) {
+  customElements.define("adminbot-governance-actions", AdminBotGovernanceActionsApp);
+}
+
+if (!customElements.get("adminbot-policy-settings")) {
+  customElements.define("adminbot-policy-settings", AdminBotPolicySettingsApp);
 }

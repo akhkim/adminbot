@@ -4,6 +4,7 @@ import "./policy.tsp";
 import "./privacy.tsp";
 
 using AdminBot.Contracts.Common;
+using AdminBot.Contracts.Identity;
 using AdminBot.Contracts.Policy;
 using AdminBot.Contracts.Privacy;
 
@@ -191,6 +192,63 @@ model ApprovalInput {
   payloadHash: Sha256;
   decision: "approve" | "reject";
   note?: string;
+}
+
+model ApprovalProjection {
+  id: ApprovalId;
+  decision: "approve" | "reject";
+  decidedBy: PersonId;
+  decidedByName: string;
+  roleBasis: RoleName[];
+  note?: string;
+  decidedAt: utcDateTime;
+}
+
+model GovernedActionProjection {
+  id: ActionId;
+  @minValue(1) revision: int32;
+  actionType: ActionType;
+  actionVersion: SemVer;
+  state: "awaiting_approval" | "approved" | "rejected" | "cancelled" | "failed";
+  summary: string;
+  canonicalPayload: unknown;
+  payloadHash: Sha256;
+  requestedByPersonId: PersonId;
+  requestedByName: string;
+  requestedAt: utcDateTime;
+  policyDecisionId: PolicyDecisionId;
+  policyVersion: SemVer;
+  risk: RiskClass;
+  eligibleRoles: RoleName[];
+  @minValue(1) approvalQuorum: int32;
+  requesterMayApprove: boolean;
+  distinctPeople: boolean;
+  recentReauthenticationRequired: boolean;
+  expiresAt: utcDateTime;
+  approvals: ApprovalProjection[];
+  safeFailureCode?: string;
+}
+
+model GovernanceWorkspaceProjection {
+  viewerPersonId: PersonId;
+  viewerRoles: RoleName[];
+  actions: GovernedActionProjection[];
+  reimbursementConnectorAvailable: boolean;
+  asOf: utcDateTime;
+}
+
+model DecideGovernedActionCommand {
+  @minValue(1) actionRevision: int32;
+  payloadHash: Sha256;
+  policyDecisionId: PolicyDecisionId;
+  decision: "approve" | "reject";
+  @maxLength(2000) note?: string;
+}
+
+model ExecuteGovernedActionCommand {
+  @minValue(1) actionRevision: int32;
+  payloadHash: Sha256;
+  policyDecisionId: PolicyDecisionId;
 }
 
 interface GovernanceKernel {
