@@ -1,12 +1,16 @@
 import {
   apiRoutes,
   type ClaimablePerson,
-  type StaticApiRoute,
 } from "@adminbot/api-contracts";
 import type {
   RegistrationRequestContext,
   RegistrationSubmissionResult,
 } from "@adminbot/identity";
+import type {
+  ApiRequestContext,
+  ApiResponse,
+  ApiRouteHandler,
+} from "./route-handler.js";
 
 export interface RegistrationApplication {
   listClaimablePeople(): Promise<readonly ClaimablePerson[]>;
@@ -18,22 +22,6 @@ export interface RegistrationApplication {
     input: unknown,
     context?: RegistrationRequestContext,
   ): Promise<RegistrationSubmissionResult>;
-}
-
-export interface ApiRequestContext extends RegistrationRequestContext {
-  readonly body?: unknown;
-}
-
-export interface ApiResponse {
-  readonly status: number;
-  readonly body?: unknown;
-  readonly headers?: Readonly<Record<string, string>>;
-}
-
-export interface ApiRouteHandler {
-  readonly route: StaticApiRoute;
-  readonly body: "json" | "none";
-  handle(context: ApiRequestContext): Promise<ApiResponse>;
 }
 
 export function createRegistrationRoutes(

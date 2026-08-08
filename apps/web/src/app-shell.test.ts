@@ -2,6 +2,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AdminBotAppShell } from "./app-shell.js";
+import type { SessionClient } from "./api-client.js";
+import { SESSION_CHANGED_EVENT } from "./identity-events.js";
 import { THEME_STORAGE_KEY } from "./theme.js";
 
 if (!customElements.get("adminbot-app")) {
@@ -38,16 +40,16 @@ describe("AdminBotAppShell", () => {
     await element.updateComplete;
 
     element.shadowRoot
-      ?.querySelector<HTMLAnchorElement>('a[href="/adminbot/members"]')
+      ?.querySelector<HTMLAnchorElement>('a[href="/adminbot/reimbursements"]')
       ?.click();
     await element.updateComplete;
 
-    expect(window.location.pathname).toBe("/adminbot/members");
-    expect(element.shadowRoot?.querySelector("h1")?.textContent).toBe("Lab members");
+    expect(window.location.pathname).toBe("/adminbot/reimbursements");
+    expect(element.shadowRoot?.querySelector("h1")?.textContent).toBe("Reimbursements");
     expect(element.shadowRoot?.textContent).toContain(
       "data and commands are not connected",
     );
-    expect(document.title).toBe("Lab members · AdminBot");
+    expect(document.title).toBe("Reimbursements · AdminBot");
   });
 
   it("persists only the selected color theme", async () => {
@@ -72,10 +74,65 @@ describe("AdminBotAppShell", () => {
     expect(element.shadowRoot?.querySelector("adminbot-registration-app")).not.toBeNull();
     expect(document.title).toBe("Request access · AdminBot");
   });
+
+  it("restores an administrator session and exposes only authorized navigation", async () => {
+    const element = mountShell({
+      restore: vi.fn(async () => session()),
+      login: vi.fn(),
+      logout: vi.fn(async () => undefined),
+    });
+    await vi.waitFor(() => {
+      expect(element.shadowRoot?.querySelector('a[href="/adminbot/registrations"]')).not.toBeNull();
+    });
+    expect(element.shadowRoot?.querySelector('a[href="/sign-in"]')).toBeNull();
+    expect(element.shadowRoot?.textContent).toContain("Synthetic Administrator");
+  });
+
+  it("accepts a safe session event from the login component and signs out through the API", async () => {
+    window.history.replaceState({}, "", "/sign-in");
+    const logout = vi.fn(async () => undefined);
+    const element = mountShell({ restore: vi.fn(async () => undefined), login: vi.fn(), logout });
+    await vi.waitFor(() => expect(element.shadowRoot?.querySelector("adminbot-login-app")).not.toBeNull());
+    element.dispatchEvent(new CustomEvent(SESSION_CHANGED_EVENT, {
+      detail: { session: session() },
+      bubbles: true,
+      composed: true,
+    }));
+    await element.updateComplete;
+    expect(window.location.pathname).toBe("/");
+    [...(element.shadowRoot?.querySelectorAll<HTMLButtonElement>(".topbar .icon-button") ?? [])]
+      .find((button) => button.textContent?.trim() === "Sign out")
+      ?.click();
+    await vi.waitFor(() => expect(logout).toHaveBeenCalledOnce());
+    expect(window.location.pathname).toBe("/sign-in");
+  });
 });
 
-function mountShell(): AdminBotAppShell {
+function mountShell(client: SessionClient = {
+  restore: vi.fn(async () => undefined),
+  login: vi.fn(),
+  logout: vi.fn(async () => undefined),
+}): AdminBotAppShell {
   const element = document.createElement("adminbot-app") as AdminBotAppShell;
+  element.sessionClient = client;
   document.body.append(element);
   return element;
+}
+
+function session() {
+  return {
+    sessionId: "40000000-0000-4000-8000-000000000001",
+    expiresAt: "2026-08-09T12:00:00.000Z",
+    authenticationLevel: "recent_reauthentication" as const,
+    person: {
+      id: "20000000-0000-4000-8000-000000000001",
+      organizationId: "10000000-0000-4000-8000-000000000001",
+      displayName: "Synthetic Administrator",
+      status: "active" as const,
+      version: 1,
+      createdAt: "2026-08-01T12:00:00.000Z",
+      updatedAt: "2026-08-01T12:00:00.000Z",
+    },
+    roles: ["administrator" as const],
+  };
 }

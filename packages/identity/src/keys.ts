@@ -34,6 +34,18 @@ export class IdentityKeyDeriver {
     return this.derive("registration-address", `${organizationId}\0${remoteAddress}`);
   }
 
+  loginEmailAttempt(organizationId: string, email: string): string {
+    return this.derive("login-email", `${organizationId}\0${email}`);
+  }
+
+  loginAddressAttempt(organizationId: string, remoteAddress: string): string {
+    return this.derive("login-address", `${organizationId}\0${remoteAddress}`);
+  }
+
+  sessionToken(rawToken: string): string {
+    return this.derive("session-token", rawToken);
+  }
+
   private derive(scope: string, value: string): string {
     const digest = createHmac("sha256", this.secret)
       .update(scope)

@@ -5,11 +5,11 @@ onboarding, communications, projects, papers, reimbursements, availability, revi
 organization knowledge, public tools, and media publishing through one approval-gated control
 plane.
 
-The repository now contains the first working vertical slice: SQLite/Prisma persistence, anonymous
-claim and signup submission, a loopback HTTP API, a standalone dark-mode Lit application shell,
-and a guarded read-only-first legacy identity importer. Registration is the only connected web
-workflow. The other legacy AdminBot surfaces are visibly marked, inert previews until their
-backend, session, and authorization slices are implemented.
+The repository now contains the first working identity slice: SQLite/Prisma persistence, anonymous
+claim and signup submission, password login and secure session lifecycle, administrator
+registration review, a loopback HTTP API, a standalone dark-mode Lit application shell, and a
+guarded read-only-first legacy identity importer. The other legacy AdminBot surfaces are visibly
+marked, inert previews until their backend and authorization slices are implemented.
 
 ## Current contents
 
@@ -23,9 +23,9 @@ backend, session, and authorization slices are implemented.
 - `packages/api-contracts/`: generated TypeScript DTO facade plus centralized `/v0alpha` routes.
 - `packages/ports/`: shared repository and transaction contracts.
 - `packages/persistence/`: the sole Prisma schema/client/migration and repository implementation.
-- `packages/identity/`: registration validation, password hashing, and submission use cases.
+- `packages/identity/`: registration, password login, session, and administrator-review use cases.
 - `apps/api/`: loopback HTTP composition and transport protections.
-- `apps/web/`: standalone AdminBot shell, centralized view routes, theme, and registration client.
+- `apps/web/`: standalone shell, theme, access, sign-in/session, and registration-review clients.
 - `apps/migrate/`: exact-fingerprint v1 SQLite reader and transactional identity importer.
 - `.legacy-reference/`: ignored local reference copy of the pre-v2 implementation. It is not part
   of commits and may be absent in a fresh clone; the previous implementation remains in Git
@@ -53,7 +53,7 @@ Generated OpenAPI and JSON Schema files are written under ignored `.generated/`;
 TypeScript DTOs are written under ignored `packages/api-contracts/src/generated/`. The committed
 TypeSpec files are authoritative.
 
-## Local registration slice
+## Local identity slice
 
 Copy `.env.example` to ignored `.env`, choose a durable organization UUID, and replace the identity
 key placeholder. Apply committed migrations before starting the API:

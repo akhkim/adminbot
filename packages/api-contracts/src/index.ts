@@ -9,11 +9,18 @@ export type {
   ClaimRegistrationInput,
   ClaimablePerson,
   ErrorResponse,
+  LoginInput,
+  Person,
+  Registration,
+  RegistrationDecisionInput,
   RegistrationSubmitted,
+  RoleName,
+  SessionView,
   SignupProfile,
   SignupRegistrationInput,
 } from "./dtos.js";
 export type {
+  ApiRoute,
   HttpMethod,
   RegistrationDecisionRoute,
   StaticApiRoute,

@@ -182,6 +182,148 @@ describe("Prisma transaction boundary", () => {
       },
     ]);
   });
+
+  it("persists session resolution and least-privileged registration approval", async () => {
+    const persistence = openTestPersistence();
+    const organizationId = "10000000-0000-4000-8000-000000000001";
+    const adminPersonId = "20000000-0000-4000-8000-000000000001";
+    const adminAccountId = "21000000-0000-4000-8000-000000000001";
+    const registrationId = "30000000-0000-4000-8000-000000000001";
+    const now = new Date("2026-08-08T12:00:00.000Z");
+    await persistence.transactions.write(({ legacyMigration }) =>
+      legacyMigration.importIdentity({
+        run: {
+          id: "40000000-0000-4000-8000-000000000002",
+          scope: "identity",
+          sourceFingerprint: "b".repeat(64),
+          mapperSetVersion: "identity-session-test-v1",
+          redactedReport: { people: 1, accounts: 1 },
+          completedAt: now,
+        },
+        people: [
+          {
+            id: adminPersonId,
+            organizationId,
+            displayName: "Synthetic Administrator",
+            status: "active",
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+        accounts: [
+          {
+            id: adminAccountId,
+            organizationId,
+            personId: adminPersonId,
+            loginHandle: "admin@example.com",
+            passwordHash: "synthetic-password-hash",
+            status: "active",
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+        registrations: [],
+        roles: [
+          {
+            id: "23000000-0000-4000-8000-000000000001",
+            organizationId,
+            personId: adminPersonId,
+            role: "administrator",
+            validFrom: now,
+            assignedBy: adminPersonId,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+        links: [
+          {
+            legacyMemberId: "synthetic-admin",
+            personId: adminPersonId,
+            importedAt: now,
+          },
+        ],
+      }),
+    );
+
+    await persistence.transactions.write(async ({ identity, sessions }) => {
+      await expect(
+        sessions.createSession({
+          id: "22000000-0000-4000-8000-000000000001",
+          accountId: adminAccountId,
+          tokenHash: "v1:session-token:synthetic",
+          now,
+          expiresAt: new Date("2026-08-15T12:00:00.000Z"),
+        }),
+      ).resolves.toBe(true);
+      await expect(
+        identity.createSignupRegistration({
+          id: registrationId,
+          organizationId,
+          requestedLoginHandle: "applicant@example.com",
+          passwordHash: "synthetic-applicant-password-hash",
+          openRequestKey: "v1:open-email:applicant",
+          profile: {
+            displayName: "Synthetic Applicant",
+            researchTopics: ["systems"],
+          },
+          now,
+        }),
+      ).resolves.toBe(true);
+    });
+
+    const beforeDecision = await persistence.transactions.read(async ({ sessions }) => ({
+      login: await sessions.findLoginIdentity(organizationId, "admin@example.com"),
+      session: await sessions.findSession(
+        organizationId,
+        "v1:session-token:synthetic",
+        now,
+      ),
+    }));
+    expect(beforeDecision.login).toMatchObject({ accountId: adminAccountId });
+    expect(beforeDecision.session?.roles).toEqual(["administrator"]);
+
+    const decision = await persistence.transactions.write(({ registrationReviews }) =>
+      registrationReviews.commitRegistrationDecision({
+        decision: "approve",
+        organizationId,
+        registrationId,
+        actorPersonId: adminPersonId,
+        accountId: "21000000-0000-4000-8000-000000000002",
+        signupPersonId: "20000000-0000-4000-8000-000000000002",
+        roleAssignmentId: "23000000-0000-4000-8000-000000000002",
+        defaultRole: "external_collaborator",
+        now,
+      }),
+    );
+    expect(decision).toMatchObject({
+      status: "decided",
+      registration: { status: "approved", version: 2 },
+    });
+
+    const afterDecision = await persistence.transactions.read(
+      async ({ registrationReviews, sessions }) => ({
+        account: await sessions.findLoginIdentity(organizationId, "applicant@example.com"),
+        pending: await sessions.findOpenRegistrationLogin(
+          organizationId,
+          "applicant@example.com",
+        ),
+        registrations: await registrationReviews.listRegistrations(
+          organizationId,
+          "approved",
+        ),
+      }),
+    );
+    expect(afterDecision.account).toMatchObject({
+      personId: "20000000-0000-4000-8000-000000000002",
+      accountStatus: "active",
+    });
+    expect(afterDecision.pending).toBeUndefined();
+    expect(afterDecision.registrations[0]).toMatchObject({
+      status: "approved",
+      linkedPersonId: "20000000-0000-4000-8000-000000000002",
+      profile: { researchTopics: ["systems"] },
+    });
+  });
 });
 
 function openTestPersistence(): Persistence {

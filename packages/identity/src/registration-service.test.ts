@@ -235,6 +235,21 @@ function createHarness(options: HarnessOptions = {}): Harness {
         }
         return undefined;
       },
+      reset: async (keys) => {
+        for (const key of keys) attempts.delete(key);
+      },
+    },
+    registrationReviews: {
+      listRegistrations: async () => [],
+      commitRegistrationDecision: async () => ({ status: "not_found" }),
+    },
+    sessions: {
+      findLoginIdentity: async () => undefined,
+      findOpenRegistrationLogin: async () => undefined,
+      createSession: async () => false,
+      findSession: async () => undefined,
+      touchSession: async () => undefined,
+      revokeSession: async () => false,
     },
   };
   const transactions: TransactionBoundary = {

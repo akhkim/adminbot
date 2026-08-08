@@ -1,4 +1,6 @@
-import { html, LitElement, type TemplateResult } from "lit";
+import type { SessionView } from "@adminbot/api-contracts";
+import { html, LitElement, nothing, type TemplateResult } from "lit";
+import { SessionApiClient, type SessionClient } from "./api-client.js";
 import {
   APP_ROUTES,
   NAV_GROUPS,
@@ -6,8 +8,10 @@ import {
   resolveAppRoute,
   routesInGroup,
   type AppRoute,
+  type AppRouteGroup,
 } from "./app-routes.js";
 import { appShellStyles } from "./app-shell-styles.js";
+import { SESSION_CHANGED_EVENT, type SessionChangedDetail } from "./identity-events.js";
 import { readColorTheme, writeColorTheme, type ColorTheme } from "./theme.js";
 import { renderOverviewView } from "./views/overview-view.js";
 import { renderPendingSurface } from "./views/pending-surface.js";
@@ -17,6 +21,9 @@ export class AdminBotAppShell extends LitElement {
     activeRoute: { state: true },
     colorTheme: { state: true },
     mobileNavigationOpen: { state: true },
+    session: { state: true },
+    sessionLoading: { state: true },
+    sessionError: { state: true },
   };
 
   static override styles = appShellStyles;
@@ -24,22 +31,35 @@ export class AdminBotAppShell extends LitElement {
   declare private activeRoute: AppRoute;
   declare private colorTheme: ColorTheme;
   declare private mobileNavigationOpen: boolean;
+  declare private session: SessionView | undefined;
+  declare private sessionLoading: boolean;
+  declare private sessionError: string;
+
+  sessionClient: SessionClient = new SessionApiClient({
+    serviceOrigin: import.meta.env.VITE_ADMINBOT_API_ORIGIN || window.location.origin,
+  });
 
   constructor() {
     super();
     this.activeRoute = resolveAppRoute(window.location.pathname);
     this.colorTheme = readColorTheme(window.localStorage);
     this.mobileNavigationOpen = false;
+    this.session = undefined;
+    this.sessionLoading = true;
+    this.sessionError = "";
     this.syncDocumentState();
   }
 
   override connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener("popstate", this.handlePopState);
+    this.addEventListener(SESSION_CHANGED_EVENT, this.handleSessionChanged as EventListener);
+    void this.restoreSession();
   }
 
   override disconnectedCallback(): void {
     window.removeEventListener("popstate", this.handlePopState);
+    this.removeEventListener(SESSION_CHANGED_EVENT, this.handleSessionChanged as EventListener);
     super.disconnectedCallback();
   }
 
@@ -59,7 +79,7 @@ export class AdminBotAppShell extends LitElement {
               (group) => html`
                 <section class="nav-group" aria-labelledby=${`nav-${group.id}`}>
                   <h2 class="nav-group-label" id=${`nav-${group.id}`}>${group.label}</h2>
-                  ${routesInGroup(group.id).map((route) => this.renderNavigationItem(route))}
+                  ${this.visibleRoutes(group.id).map((route) => this.renderNavigationItem(route))}
                 </section>
               `,
             )}
@@ -90,6 +110,12 @@ export class AdminBotAppShell extends LitElement {
             </div>
             <div class="topbar-actions">
               <span class="environment">v0alpha · local API</span>
+              ${this.session === undefined
+                ? nothing
+                : html`
+                    <span class="session-person">${this.session.person.displayName}</span>
+                    <button class="icon-button" type="button" @click=${this.signOut}>Sign out</button>
+                  `}
               <button
                 class="icon-button"
                 type="button"
@@ -131,16 +157,72 @@ export class AdminBotAppShell extends LitElement {
   }
 
   private renderActiveRoute(): TemplateResult {
+    if (this.sessionLoading && this.activeRoute.audience !== "public") {
+      return this.renderAccessState("Restoring your secure session…");
+    }
+    if (this.activeRoute.audience === "member" && this.session === undefined) {
+      return this.renderAccessState("Sign in to open the lab workspace.", true);
+    }
+    if (this.activeRoute.audience === "administrator" && !this.isAdministrator) {
+      return this.renderAccessState(
+        this.session === undefined
+          ? "Sign in with an administrator account to continue."
+          : "This area requires the administrator role.",
+        this.session === undefined,
+      );
+    }
     if (this.activeRoute.id === "overview") return renderOverviewView(this.handleRouteClick);
+    if (this.activeRoute.id === "signIn") {
+      if (this.session !== undefined) {
+        return this.renderAccessState(`Signed in as ${this.session.person.displayName}.`);
+      }
+      return html`<section class="registration-frame" aria-label="Sign in">
+        <adminbot-login-app></adminbot-login-app>
+      </section>`;
+    }
     if (this.activeRoute.id === "access") {
       return html`<section class="registration-frame" aria-label="Request access">
         <adminbot-registration-app></adminbot-registration-app>
+      </section>`;
+    }
+    if (this.activeRoute.id === "registrations") {
+      return html`<section class="registration-frame" aria-label="Registration review">
+        <adminbot-registration-review-app></adminbot-registration-review-app>
       </section>`;
     }
     if (this.activeRoute.status === "backend_pending") {
       return renderPendingSurface(this.activeRoute);
     }
     throw new Error(`Live route ${this.activeRoute.id} has no view implementation`);
+  }
+
+  private renderAccessState(message: string, signIn = false): TemplateResult {
+    return html`
+      <section class="access-state">
+        <span class="empty-state-mark" aria-hidden="true">ID</span>
+        <h1>${signIn ? "Authentication required" : "Session"}</h1>
+        <p>${message}</p>
+        ${this.sessionError === ""
+          ? nothing
+          : html`<p class="access-error" role="alert">${this.sessionError}</p>`}
+        ${signIn
+          ? html`<a class="primary-link" href=${appRoute("signIn").path} @click=${this.handleRouteClick}>Sign in</a>`
+          : nothing}
+      </section>
+    `;
+  }
+
+  private visibleRoutes(group: AppRouteGroup): readonly AppRoute[] {
+    return routesInGroup(group).filter((route) => {
+      if (route.id === "signIn") return this.session === undefined;
+      if (route.audience === "public") return true;
+      if (route.audience === "member") return this.session !== undefined;
+      return this.isAdministrator;
+    });
+  }
+
+  private get isAdministrator(): boolean {
+    return this.session?.roles.includes("administrator") ?? false;
   }
 
   private readonly handleRouteClick = (event: MouseEvent): void => {
@@ -162,6 +244,40 @@ export class AdminBotAppShell extends LitElement {
 
   private readonly handlePopState = (): void => {
     this.setActiveRoute(resolveAppRoute(window.location.pathname));
+  };
+
+  private readonly handleSessionChanged = (event: CustomEvent<SessionChangedDetail>): void => {
+    this.session = event.detail.session;
+    this.sessionError = "";
+    if (this.session !== undefined && this.activeRoute.id === "signIn") {
+      window.history.replaceState({}, "", appRoute("overview").path);
+      this.setActiveRoute(appRoute("overview"));
+    }
+  };
+
+  private async restoreSession(): Promise<void> {
+    this.sessionLoading = true;
+    try {
+      this.session = await this.sessionClient.restore();
+      this.sessionError = "";
+    } catch {
+      this.session = undefined;
+      this.sessionError = "AdminBot could not check the current session.";
+    } finally {
+      this.sessionLoading = false;
+    }
+  }
+
+  private readonly signOut = async (): Promise<void> => {
+    try {
+      await this.sessionClient.logout();
+      this.session = undefined;
+      this.sessionError = "";
+      window.history.pushState({}, "", appRoute("signIn").path);
+      this.setActiveRoute(appRoute("signIn"));
+    } catch {
+      this.sessionError = "AdminBot could not sign out. Try again.";
+    }
   };
 
   private setActiveRoute(route: AppRoute): void {

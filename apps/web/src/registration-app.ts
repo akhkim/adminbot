@@ -251,8 +251,8 @@ export class AdminBotRegistrationApp extends LitElement {
         <div class="pending-mark" aria-hidden="true">✓</div>
         <h2>Request received</h2>
         <p>
-          An administrator will review it. No account session has been created yet; return to the
-          sign-in page after your approval notice arrives.
+          An administrator will review it. No account session has been created yet;
+          <a href="/sign-in">sign in after your approval notice arrives</a>.
         </p>
       </div>
     `;

@@ -5,6 +5,7 @@ export type PreviewKind = "cards" | "composer" | "queue" | "table" | "timeline";
 
 export type AppRouteId =
   | "overview"
+  | "signIn"
   | "access"
   | "reimbursements"
   | "deadlines"
@@ -60,6 +61,19 @@ export const APP_ROUTES: readonly AppRoute[] = [
     status: "live",
     preview: "cards",
     legacyBehavior: "Summarized proposals, members, papers, nudges, and freshness.",
+  },
+  {
+    id: "signIn",
+    path: "/sign-in",
+    label: "Sign in",
+    shortLabel: "Sign in",
+    eyebrow: "Identity",
+    description: "Restore a secure member or administrator session.",
+    audience: "public",
+    group: "public",
+    status: "live",
+    preview: "cards",
+    legacyBehavior: "Members signed in, restored their session, and signed out from the UI.",
   },
   {
     id: "access",
@@ -154,10 +168,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     description: "Review pending roster claims and new-collaborator applications.",
     audience: "administrator",
     group: "operations",
-    status: "backend_pending",
+    status: "live",
     preview: "queue",
     legacyBehavior: "Administrators approved or denied pending requests after inspecting details.",
-    nextBoundary: "Administrator sessions and the registration decision command must be ported first.",
   },
   {
     id: "onboarding",

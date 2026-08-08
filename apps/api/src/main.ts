@@ -1,5 +1,9 @@
 import { pathToFileURL } from "node:url";
-import { RegistrationService } from "@adminbot/identity";
+import {
+  RegistrationReviewService,
+  RegistrationService,
+  SessionService,
+} from "@adminbot/identity";
 import { openPersistence } from "@adminbot/persistence";
 import { AdminBotApiServer } from "./server.js";
 
@@ -18,9 +22,21 @@ export async function startFromEnvironment(
     organizationId,
     keySecret,
   });
+  const sessions = new SessionService({
+    transactions: persistence.transactions,
+    organizationId,
+    keySecret,
+  });
+  const registrationReview = new RegistrationReviewService({
+    transactions: persistence.transactions,
+    organizationId,
+  });
   const api = new AdminBotApiServer({
     registration,
+    registrationReview,
+    sessions,
     allowedOrigins,
+    secureCookies: parseBoolean(environment.ADMINBOT_SECURE_COOKIES, false),
     onUnexpectedError: (error) => {
       const errorType = error instanceof Error ? error.name : "UnknownError";
       console.error(JSON.stringify({ event: "api.request_failed", errorType }));
@@ -61,6 +77,13 @@ function splitOrigins(raw: string | undefined): readonly string[] {
     .split(",")
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
+}
+
+function parseBoolean(raw: string | undefined, fallback: boolean): boolean {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  throw new Error("ADMINBOT_SECURE_COOKIES must be true or false");
 }
 
 const isEntryPoint =

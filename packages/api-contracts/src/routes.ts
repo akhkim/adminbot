@@ -20,8 +20,11 @@ export interface RegistrationDecisionRoute {
   readonly operationId: "AuthenticationApi.decideRegistration";
   readonly template: `${typeof API_BASE_PATH}/auth/registrations/{registrationId}/decision`;
   build(parameters: { readonly registrationId: string }): string;
+  matches(pathname: string): boolean;
   match(pathname: string): { readonly registrationId: string } | undefined;
 }
+
+export type ApiRoute = StaticApiRoute | RegistrationDecisionRoute;
 
 export const apiRoutes = Object.freeze({
   listClaimablePeople: staticRoute(
@@ -124,16 +127,26 @@ function registrationDecisionRoute(): RegistrationDecisionRoute {
       if (registrationId.length === 0) throw new Error("registrationId is required");
       return `${prefix}${encodeURIComponent(registrationId)}${suffix}`;
     },
+    matches: (pathname: string) => matchRegistrationDecisionPath(pathname, prefix, suffix) !== undefined,
     match: (pathname: string) => {
-      if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
-      const encoded = pathname.slice(prefix.length, -suffix.length);
-      if (encoded.length === 0 || encoded.includes("/")) return undefined;
-      try {
-        const registrationId = decodeURIComponent(encoded);
-        return registrationId.length === 0 ? undefined : { registrationId };
-      } catch {
-        return undefined;
-      }
+      const registrationId = matchRegistrationDecisionPath(pathname, prefix, suffix);
+      return registrationId === undefined ? undefined : { registrationId };
     },
   });
+}
+
+function matchRegistrationDecisionPath(
+  pathname: string,
+  prefix: string,
+  suffix: string,
+): string | undefined {
+  if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
+  const encoded = pathname.slice(prefix.length, -suffix.length);
+  if (encoded.length === 0 || encoded.includes("/")) return undefined;
+  try {
+    const registrationId = decodeURIComponent(encoded);
+    return registrationId.length === 0 ? undefined : registrationId;
+  } catch {
+    return undefined;
+  }
 }

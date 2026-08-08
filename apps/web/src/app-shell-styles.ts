@@ -305,6 +305,46 @@ export const appShellStyles = css`
     font-size: 0.62rem;
   }
 
+  .session-person {
+    max-width: 12rem;
+    overflow: hidden;
+    color: var(--text-muted);
+    font-size: 0.69rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .access-state {
+    display: grid;
+    place-items: center;
+    min-height: 28rem;
+    border: 1px solid var(--border);
+    border-radius: 1rem;
+    padding: 2rem;
+    text-align: center;
+    background: var(--surface-2);
+  }
+
+  .access-state h1 {
+    margin: 0.4rem 0;
+    font-size: clamp(2rem, 5vw, 3.5rem);
+  }
+
+  .access-state p {
+    max-width: 30rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    line-height: 1.55;
+  }
+
+  .access-state .primary-link {
+    margin-top: 0.65rem;
+  }
+
+  .access-error {
+    color: var(--danger) !important;
+  }
+
   .icon-button {
     min-height: 2.15rem;
     border: 1px solid var(--border);

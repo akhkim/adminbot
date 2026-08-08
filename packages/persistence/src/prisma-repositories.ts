@@ -10,8 +10,10 @@ import type {
   OutboxEventRecord,
   OutboxRepository,
   RateLimitRepository,
+  RegistrationReviewRepository,
   RegistrationProfileRecord,
   SafeAuditDetails,
+  SessionRepository,
 } from "@adminbot/ports";
 
 type DatabaseClient = PrismaClient | Prisma.TransactionClient;
@@ -216,6 +218,281 @@ class PrismaIdentityRepository implements IdentityRepository {
     }
   }
 
+  async findLoginIdentity(
+    organizationId: string,
+    loginHandle: string,
+  ) {
+    const account = await this.database.account.findUnique({
+      where: { organizationId_loginHandle: { organizationId, loginHandle } },
+      include: { person: true },
+    });
+    if (account === null) return undefined;
+    return {
+      accountId: account.id,
+      organizationId: account.organizationId,
+      personId: account.personId,
+      displayName: account.person.displayName,
+      accountStatus: account.status,
+      personStatus: account.person.status,
+      passwordHash: account.passwordHash,
+    };
+  }
+
+  async findOpenRegistrationLogin(
+    organizationId: string,
+    loginHandle: string,
+  ) {
+    const registration = await this.database.registration.findFirst({
+      where: {
+        organizationId,
+        requestedLoginHandle: loginHandle,
+        status: { in: ["submitted", "under_review"] },
+        passwordHash: { not: null },
+      },
+      select: { id: true, passwordHash: true },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    });
+    return registration?.passwordHash === null || registration === null
+      ? undefined
+      : {
+          registrationId: registration.id,
+          passwordHash: registration.passwordHash,
+        };
+  }
+
+  async createSession(
+    input: Parameters<SessionRepository["createSession"]>[0],
+  ): Promise<boolean> {
+    const account = await this.database.account.findUnique({
+      where: { id: input.accountId },
+      select: { status: true, person: { select: { status: true } } },
+    });
+    if (
+      account === null ||
+      account.status !== "active" ||
+      account.person.status !== "active"
+    ) {
+      return false;
+    }
+    await this.database.session.create({
+      data: {
+        id: input.id,
+        accountId: input.accountId,
+        tokenHash: input.tokenHash,
+        createdAt: input.now,
+        expiresAt: input.expiresAt,
+        lastSeenAt: input.now,
+        lastReauthenticatedAt: input.now,
+      },
+    });
+    return true;
+  }
+
+  async findSession(
+    organizationId: string,
+    tokenHash: string,
+    now: Date,
+  ) {
+    const session = await this.database.session.findUnique({
+      where: { tokenHash },
+      include: {
+        account: {
+          include: {
+            person: {
+              include: {
+                roles: {
+                  where: {
+                    validFrom: { lte: now },
+                    OR: [{ validUntil: null }, { validUntil: { gt: now } }],
+                  },
+                  orderBy: [{ role: "asc" }, { id: "asc" }],
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (
+      session === null ||
+      session.account.organizationId !== organizationId ||
+      session.expiresAt <= now
+    ) {
+      return undefined;
+    }
+    return {
+      sessionId: session.id,
+      accountId: session.accountId,
+      organizationId: session.account.organizationId,
+      personId: session.account.personId,
+      displayName: session.account.person.displayName,
+      personStatus: session.account.person.status,
+      personVersion: session.account.person.version,
+      personCreatedAt: session.account.person.createdAt,
+      personUpdatedAt: session.account.person.updatedAt,
+      accountStatus: session.account.status,
+      createdAt: session.createdAt,
+      expiresAt: session.expiresAt,
+      lastSeenAt: session.lastSeenAt,
+      lastReauthenticatedAt: session.lastReauthenticatedAt,
+      ...(session.revokedAt === null ? {} : { revokedAt: session.revokedAt }),
+      roles: session.account.person.roles.map((assignment) => assignment.role),
+    };
+  }
+
+  async touchSession(sessionId: string, seenAt: Date): Promise<void> {
+    await this.database.session.updateMany({
+      where: { id: sessionId, revokedAt: null, expiresAt: { gt: seenAt } },
+      data: { lastSeenAt: seenAt },
+    });
+  }
+
+  async revokeSession(
+    input: Parameters<SessionRepository["revokeSession"]>[0],
+  ): Promise<boolean> {
+    const result = await this.database.session.updateMany({
+      where: { tokenHash: input.tokenHash, revokedAt: null },
+      data: {
+        revokedAt: input.revokedAt,
+        revocationReason: input.reason,
+      },
+    });
+    return result.count === 1;
+  }
+
+  async listRegistrations(
+    organizationId: string,
+    state?: Parameters<RegistrationReviewRepository["listRegistrations"]>[1],
+  ) {
+    const registrations = await this.database.registration.findMany({
+      where: {
+        organizationId,
+        status: state ?? { in: ["submitted", "under_review"] },
+      },
+      include: { profile: true },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+    });
+    return registrations.map(toRegistrationReviewRecord);
+  }
+
+  async commitRegistrationDecision(
+    input: Parameters<RegistrationReviewRepository["commitRegistrationDecision"]>[0],
+  ) {
+    const registration = await this.database.registration.findUnique({
+      where: { id: input.registrationId },
+      include: { profile: true },
+    });
+    if (registration === null || registration.organizationId !== input.organizationId) {
+      return { status: "not_found" as const };
+    }
+    if (registration.status !== "submitted" && registration.status !== "under_review") {
+      return { status: "state_conflict" as const };
+    }
+
+    if (input.decision === "approve") {
+      if (registration.passwordHash === null) {
+        return { status: "identity_conflict" as const };
+      }
+      const existingAccount = await this.database.account.findUnique({
+        where: {
+          organizationId_loginHandle: {
+            organizationId: input.organizationId,
+            loginHandle: registration.requestedLoginHandle,
+          },
+        },
+        select: { id: true },
+      });
+      if (existingAccount !== null) return { status: "identity_conflict" as const };
+
+      const personId =
+        registration.kind === "claim" ? registration.linkedPersonId : input.signupPersonId;
+      if (personId === null) return { status: "identity_conflict" as const };
+      if (registration.kind === "claim") {
+        const person = await this.database.person.findUnique({
+          where: {
+            organizationId_id: { organizationId: input.organizationId, id: personId },
+          },
+          select: { status: true, account: { select: { id: true } } },
+        });
+        if (person === null || person.status !== "active" || person.account !== null) {
+          return { status: "identity_conflict" as const };
+        }
+      } else {
+        await this.database.person.create({
+          data: {
+            id: personId,
+            organizationId: input.organizationId,
+            displayName: registration.requestedDisplayName,
+            status: "active",
+            createdAt: input.now,
+            updatedAt: input.now,
+          },
+        });
+      }
+
+      await this.database.account.create({
+        data: {
+          id: input.accountId,
+          organizationId: input.organizationId,
+          personId,
+          loginHandle: registration.requestedLoginHandle,
+          passwordHash: registration.passwordHash,
+          status: "active",
+          createdAt: input.now,
+          updatedAt: input.now,
+        },
+      });
+      if (registration.kind === "signup") {
+        await this.database.roleAssignment.create({
+          data: {
+            id: input.roleAssignmentId,
+            organizationId: input.organizationId,
+            personId,
+            role: input.defaultRole,
+            validFrom: input.now,
+            assignedBy: input.actorPersonId,
+            createdAt: input.now,
+            updatedAt: input.now,
+          },
+        });
+      }
+      const decided = await this.database.registration.update({
+        where: { id: registration.id },
+        data: {
+          status: "approved",
+          linkedPersonId: personId,
+          reviewedByPersonId: input.actorPersonId,
+          reviewedAt: input.now,
+          reviewReason: input.reason ?? null,
+          passwordHash: null,
+          openRequestKey: null,
+          openClaimPersonKey: null,
+          version: { increment: 1 },
+          updatedAt: input.now,
+        },
+        include: { profile: true },
+      });
+      return { status: "decided" as const, registration: toRegistrationReviewRecord(decided) };
+    }
+
+    const decided = await this.database.registration.update({
+      where: { id: registration.id },
+      data: {
+        status: "rejected",
+        reviewedByPersonId: input.actorPersonId,
+        reviewedAt: input.now,
+        reviewReason: input.reason ?? null,
+        passwordHash: null,
+        openRequestKey: null,
+        openClaimPersonKey: null,
+        version: { increment: 1 },
+        updatedAt: input.now,
+      },
+      include: { profile: true },
+    });
+    return { status: "decided" as const, registration: toRegistrationReviewRecord(decided) };
+  }
+
 }
 
 class PrismaRateLimitRepository implements RateLimitRepository {
@@ -251,6 +528,12 @@ class PrismaRateLimitRepository implements RateLimitRepository {
       });
     }
     return undefined;
+  }
+
+  async reset(keys: readonly string[]): Promise<void> {
+    const uniqueKeys = [...new Set(keys)];
+    if (uniqueKeys.length === 0) return;
+    await this.database.rateLimitBucket.deleteMany({ where: { key: { in: uniqueKeys } } });
   }
 }
 
@@ -322,12 +605,15 @@ class PrismaLegacyMigrationRepository implements LegacyMigrationRepository {
 }
 
 export function createUnitOfWork(database: DatabaseClient): AdminBotUnitOfWork {
+  const identity = new PrismaIdentityRepository(database);
   return {
     audit: new PrismaAuditRepository(database),
-    identity: new PrismaIdentityRepository(database),
+    identity,
     legacyMigration: new PrismaLegacyMigrationRepository(database),
     outbox: new PrismaOutboxRepository(database),
     rateLimits: new PrismaRateLimitRepository(database),
+    registrationReviews: identity as RegistrationReviewRepository,
+    sessions: identity as SessionRepository,
   };
 }
 
@@ -347,6 +633,75 @@ function profileCreateData(profile: RegistrationProfileRecord, now: Date) {
     ...(profile.personalWebsite === undefined ? {} : { personalWebsite: profile.personalWebsite }),
     ...(profile.notes === undefined ? {} : { notes: profile.notes }),
   };
+}
+
+function toRegistrationReviewRecord(
+  registration: Prisma.RegistrationGetPayload<{ include: { profile: true } }>,
+) {
+  return {
+    id: registration.id,
+    organizationId: registration.organizationId,
+    kind: registration.kind,
+    status: registration.status,
+    requestedLoginHandle: registration.requestedLoginHandle,
+    requestedDisplayName: registration.requestedDisplayName,
+    ...(registration.linkedPersonId === null
+      ? {}
+      : { linkedPersonId: registration.linkedPersonId }),
+    ...(registration.profile === null
+      ? {}
+      : {
+          profile: {
+            displayName: registration.requestedDisplayName,
+            ...(registration.profile.slackUserId === null
+              ? {}
+              : { slackUserId: registration.profile.slackUserId }),
+            ...(registration.profile.role === null ? {} : { role: registration.profile.role }),
+            ...(registration.profile.affiliation === null
+              ? {}
+              : { affiliation: registration.profile.affiliation }),
+            ...(registration.profile.researchBranch === null
+              ? {}
+              : { researchBranch: registration.profile.researchBranch }),
+            ...(registration.profile.researchTopics === null
+              ? {}
+              : { researchTopics: parseStringArray(registration.profile.researchTopics) }),
+            ...(registration.profile.projects === null
+              ? {}
+              : { projects: parseStringArray(registration.profile.projects) }),
+            ...(registration.profile.hoursPerWeek === null
+              ? {}
+              : { hoursPerWeek: registration.profile.hoursPerWeek }),
+            ...(registration.profile.location === null
+              ? {}
+              : { location: registration.profile.location }),
+            ...(registration.profile.timezone === null
+              ? {}
+              : { timezone: registration.profile.timezone }),
+            ...(registration.profile.personalWebsite === null
+              ? {}
+              : { personalWebsite: registration.profile.personalWebsite }),
+            ...(registration.profile.notes === null
+              ? {}
+              : { notes: registration.profile.notes }),
+          },
+        }),
+    ...(registration.reviewedByPersonId === null
+      ? {}
+      : { reviewedByPersonId: registration.reviewedByPersonId }),
+    ...(registration.reviewedAt === null ? {} : { reviewedAt: registration.reviewedAt }),
+    ...(registration.reviewReason === null ? {} : { reviewReason: registration.reviewReason }),
+    createdAt: registration.createdAt,
+    updatedAt: registration.updatedAt,
+    version: registration.version,
+  };
+}
+
+function parseStringArray(value: unknown): readonly string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error("stored registration profile array is invalid");
+  }
+  return value as string[];
 }
 
 function isUniqueConstraintError(error: unknown): boolean {

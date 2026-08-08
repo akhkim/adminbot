@@ -65,6 +65,105 @@ export interface RegistrationRecord {
   readonly version: number;
 }
 
+export type AccessRoleName =
+  | "external_collaborator"
+  | "member"
+  | "administrator"
+  | "approver"
+  | "security_operator"
+  | "auditor";
+
+export type AccountStatus = "pending" | "active" | "suspended" | "closed";
+export type PersonStatus = "active" | "inactive" | "merged";
+
+export interface LoginIdentityRecord {
+  readonly accountId: string;
+  readonly organizationId: string;
+  readonly personId: string;
+  readonly displayName: string;
+  readonly accountStatus: AccountStatus;
+  readonly personStatus: PersonStatus;
+  readonly passwordHash: string;
+}
+
+export interface OpenRegistrationLoginRecord {
+  readonly registrationId: string;
+  readonly passwordHash: string;
+}
+
+export interface CreateSessionRecord {
+  readonly id: string;
+  readonly accountId: string;
+  readonly tokenHash: string;
+  readonly now: Date;
+  readonly expiresAt: Date;
+}
+
+export interface AuthenticatedSessionRecord {
+  readonly sessionId: string;
+  readonly accountId: string;
+  readonly organizationId: string;
+  readonly personId: string;
+  readonly displayName: string;
+  readonly personStatus: PersonStatus;
+  readonly personVersion: number;
+  readonly personCreatedAt: Date;
+  readonly personUpdatedAt: Date;
+  readonly accountStatus: AccountStatus;
+  readonly createdAt: Date;
+  readonly expiresAt: Date;
+  readonly lastSeenAt: Date;
+  readonly lastReauthenticatedAt: Date;
+  readonly revokedAt?: Date;
+  readonly roles: readonly AccessRoleName[];
+}
+
+export interface RevokeSessionInput {
+  readonly tokenHash: string;
+  readonly revokedAt: Date;
+  readonly reason:
+    | "logout"
+    | "password_changed"
+    | "email_changed"
+    | "account_suspended"
+    | "legacy_migration"
+    | "administrator";
+}
+
+export interface RegistrationReviewRecord extends RegistrationRecord {
+  readonly reviewedByPersonId?: string;
+  readonly reviewedAt?: Date;
+  readonly reviewReason?: string;
+}
+
+export type RegistrationDecisionCommit =
+  | Readonly<{
+      decision: "reject";
+      organizationId: string;
+      registrationId: string;
+      actorPersonId: string;
+      reason?: string;
+      now: Date;
+    }>
+  | Readonly<{
+      decision: "approve";
+      organizationId: string;
+      registrationId: string;
+      actorPersonId: string;
+      accountId: string;
+      signupPersonId: string;
+      roleAssignmentId: string;
+      defaultRole: "external_collaborator";
+      reason?: string;
+      now: Date;
+    }>;
+
+export type RegistrationDecisionCommitResult =
+  | Readonly<{ status: "decided"; registration: RegistrationReviewRecord }>
+  | Readonly<{
+      status: "not_found" | "state_conflict" | "identity_conflict";
+    }>;
+
 export interface CreateSignupRegistration {
   readonly id: string;
   readonly organizationId: string;
@@ -97,6 +196,35 @@ export interface IdentityRepository {
   createClaimRegistration(input: CreateClaimRegistration): Promise<boolean>;
 }
 
+export interface SessionRepository {
+  findLoginIdentity(
+    organizationId: string,
+    loginHandle: string,
+  ): Promise<LoginIdentityRecord | undefined>;
+  findOpenRegistrationLogin(
+    organizationId: string,
+    loginHandle: string,
+  ): Promise<OpenRegistrationLoginRecord | undefined>;
+  createSession(input: CreateSessionRecord): Promise<boolean>;
+  findSession(
+    organizationId: string,
+    tokenHash: string,
+    now: Date,
+  ): Promise<AuthenticatedSessionRecord | undefined>;
+  touchSession(sessionId: string, seenAt: Date): Promise<void>;
+  revokeSession(input: RevokeSessionInput): Promise<boolean>;
+}
+
+export interface RegistrationReviewRepository {
+  listRegistrations(
+    organizationId: string,
+    state?: RegistrationRecord["status"],
+  ): Promise<readonly RegistrationReviewRecord[]>;
+  commitRegistrationDecision(
+    input: RegistrationDecisionCommit,
+  ): Promise<RegistrationDecisionCommitResult>;
+}
+
 export interface ConsumeRateLimitInput {
   readonly keys: readonly string[];
   readonly now: Date;
@@ -110,6 +238,7 @@ export interface RateLimitRepository {
    * returns the longest number of seconds it must wait.
    */
   consume(input: ConsumeRateLimitInput): Promise<number | undefined>;
+  reset(keys: readonly string[]): Promise<void>;
 }
 
 /**
@@ -122,6 +251,8 @@ export interface AdminBotUnitOfWork {
   readonly legacyMigration: import("./legacy-migration.js").LegacyMigrationRepository;
   readonly outbox: OutboxRepository;
   readonly rateLimits: RateLimitRepository;
+  readonly registrationReviews: RegistrationReviewRepository;
+  readonly sessions: SessionRepository;
 }
 
 export interface TransactionBoundary {

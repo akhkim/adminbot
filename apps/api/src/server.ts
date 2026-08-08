@@ -3,17 +3,29 @@ import type { AddressInfo } from "node:net";
 import type { ErrorResponse } from "@adminbot/api-contracts";
 import {
   createRegistrationRoutes,
-  type ApiResponse,
-  type ApiRouteHandler,
   type RegistrationApplication,
 } from "./registration-routes.js";
+import {
+  createRegistrationReviewRoutes,
+  type RegistrationReviewApplication,
+  type SessionAuthenticator,
+} from "./registration-review-routes.js";
+import type { ApiResponse, ApiRouteHandler } from "./route-handler.js";
+import { readSessionCookie } from "./session-cookie.js";
+import {
+  createSessionRoutes,
+  type SessionApplication,
+} from "./session-routes.js";
 
 const MAXIMUM_JSON_BODY_BYTES = 64 * 1_024;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1"]);
 
 export interface ApiServerOptions {
   readonly registration: RegistrationApplication;
+  readonly registrationReview: RegistrationReviewApplication;
+  readonly sessions: SessionApplication & SessionAuthenticator;
   readonly allowedOrigins?: readonly string[];
+  readonly secureCookies?: boolean;
   readonly onUnexpectedError?: (error: unknown, operationId?: string) => void;
 }
 
@@ -31,7 +43,11 @@ export class AdminBotApiServer {
   private readonly server: Server;
 
   constructor(options: ApiServerOptions) {
-    const routes = createRegistrationRoutes(options.registration);
+    const routes = [
+      ...createRegistrationRoutes(options.registration),
+      ...createSessionRoutes(options.sessions, { secure: options.secureCookies ?? false }),
+      ...createRegistrationReviewRoutes(options.sessions, options.registrationReview),
+    ];
     const allowedOrigins = parseAllowedOrigins(options.allowedOrigins ?? []);
     this.server = createServer((request, response) => {
       void dispatchRequest(request, response, routes, allowedOrigins).catch((error: unknown) => {
@@ -87,7 +103,8 @@ async function dispatchRequest(
     return;
   }
 
-  const pathname = requestPathname(request);
+  const requestUrl = parseRequestUrl(request);
+  const pathname = requestUrl.pathname;
   if (request.method === "OPTIONS") {
     handlePreflight(request, response, pathname, routes, origin);
     return;
@@ -133,11 +150,15 @@ async function dispatchRequest(
     }
   }
 
+  const sessionToken = readSessionCookie(request.headers.cookie);
   const result = await route.handle({
     ...(body === undefined ? {} : { body }),
+    pathname,
+    query: requestUrl.searchParams,
     ...(request.socket.remoteAddress === undefined
       ? {}
       : { remoteAddress: request.socket.remoteAddress }),
+    ...(sessionToken === undefined ? {} : { sessionToken }),
   });
   sendJson(response, result, origin);
 }
@@ -162,6 +183,7 @@ function handlePreflight(
     "access-control-allow-origin": origin,
     "access-control-allow-methods": route.route.method,
     "access-control-allow-headers": "content-type",
+    "access-control-allow-credentials": "true",
     "access-control-max-age": "600",
     vary: "Origin",
   });
@@ -191,12 +213,14 @@ async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   }
 }
 
-function requestPathname(request: IncomingMessage): string {
-  if (request.url === undefined || request.url.length > 8_192) return "/invalid-request-target";
+function parseRequestUrl(request: IncomingMessage): URL {
+  if (request.url === undefined || request.url.length > 8_192) {
+    return new URL("http://adminbot.invalid/invalid-request-target");
+  }
   try {
-    return new URL(request.url, "http://adminbot.invalid").pathname;
+    return new URL(request.url, "http://adminbot.invalid");
   } catch {
-    return "/invalid-request-target";
+    return new URL("http://adminbot.invalid/invalid-request-target");
   }
 }
 
@@ -212,9 +236,14 @@ function sendJson(response: ServerResponse, result: ApiResponse, origin?: string
     "cache-control": "no-store",
     "x-content-type-options": "nosniff",
     "referrer-policy": "no-referrer",
+    "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
     ...(origin === undefined
       ? {}
-      : { "access-control-allow-origin": origin, vary: "Origin" }),
+      : {
+          "access-control-allow-origin": origin,
+          "access-control-allow-credentials": "true",
+          vary: "Origin",
+        }),
     ...result.headers,
   });
   response.end(serialized);
