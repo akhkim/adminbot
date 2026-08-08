@@ -12,6 +12,18 @@ export interface PaperRoute {
   matches(pathname: string): boolean;
 }
 
+export interface MemberTargetRoute {
+  readonly method: "POST";
+  readonly operationId:
+    | "MembersApi.updateGovernance"
+    | "MembersApi.replaceRoles"
+    | "MembersApi.replaceVisibility";
+  readonly template: string;
+  build(parameters: { readonly personId: string }): string;
+  match(pathname: string): { readonly personId: string } | undefined;
+  matches(pathname: string): boolean;
+}
+
 export interface GovernedActionRoute {
   readonly method: "POST";
   readonly operationId: "ActionsApi.decideAction" | "ActionsApi.executeAction";
@@ -42,7 +54,7 @@ export interface RegistrationDecisionRoute {
   match(pathname: string): { readonly registrationId: string } | undefined;
 }
 
-export type ApiRoute = StaticApiRoute | RegistrationDecisionRoute | PaperRoute | GovernedActionRoute;
+export type ApiRoute = StaticApiRoute | RegistrationDecisionRoute | PaperRoute | MemberTargetRoute | GovernedActionRoute;
 
 export const apiRoutes = Object.freeze({
   listClaimablePeople: staticRoute(
@@ -101,6 +113,11 @@ export const apiRoutes = Object.freeze({
     "CurrentPrincipalApi.getCurrentPrincipal",
     "/me",
   ),
+  listMembers: staticRoute("GET", "MembersApi.list", "/members"),
+  updateOwnMemberProfile: staticRoute("POST", "MembersApi.updateOwnProfile", "/members/profile"),
+  updateMemberGovernance: memberTargetRoute("MembersApi.updateGovernance", "/governance"),
+  replaceMemberRoles: memberTargetRoute("MembersApi.replaceRoles", "/roles"),
+  replaceMemberVisibility: memberTargetRoute("MembersApi.replaceVisibility", "/visibility"),
   converseReimbursement: staticRoute(
     "POST",
     "ReimbursementsApi.converse",
@@ -199,6 +216,29 @@ function paperRoute(
     build: ({ paperId }: { readonly paperId: string }) => {
       if (paperId.length === 0) throw new Error("paperId is required");
       return `${prefix}${encodeURIComponent(paperId)}${suffix}`;
+    },
+    match,
+    matches: (pathname: string) => match(pathname) !== undefined,
+  });
+}
+
+function memberTargetRoute(
+  operationId: MemberTargetRoute["operationId"],
+  suffix: "/governance" | "/roles" | "/visibility",
+): MemberTargetRoute {
+  const prefix = `${API_BASE_PATH}/members/`;
+  const template = `${prefix}{personId}${suffix}`;
+  const match = (pathname: string): { readonly personId: string } | undefined => {
+    const parameters = matchSingleSegmentPath(pathname, prefix, suffix, "personId");
+    return parameters?.personId === undefined ? undefined : { personId: parameters.personId };
+  };
+  return Object.freeze({
+    method: "POST",
+    operationId,
+    template,
+    build: ({ personId }: { readonly personId: string }) => {
+      if (personId.length === 0) throw new Error("personId is required");
+      return `${prefix}${encodeURIComponent(personId)}${suffix}`;
     },
     match,
     matches: (pathname: string) => match(pathname) !== undefined,

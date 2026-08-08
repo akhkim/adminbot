@@ -301,7 +301,7 @@ describe("Prisma transaction boundary", () => {
     });
 
     const afterDecision = await persistence.transactions.read(
-      async ({ registrationReviews, sessions }) => ({
+      async ({ registrationReviews, sessions, members }) => ({
         account: await sessions.findLoginIdentity(organizationId, "applicant@example.com"),
         pending: await sessions.findOpenRegistrationLogin(
           organizationId,
@@ -311,6 +311,7 @@ describe("Prisma transaction boundary", () => {
           organizationId,
           "approved",
         ),
+        members: members === undefined ? [] : await members.list(organizationId, now),
       }),
     );
     expect(afterDecision.account).toMatchObject({
@@ -322,6 +323,55 @@ describe("Prisma transaction boundary", () => {
       status: "approved",
       linkedPersonId: "20000000-0000-4000-8000-000000000002",
       profile: { researchTopics: ["systems"] },
+    });
+    expect(afterDecision.members).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        profile: expect.objectContaining({
+          personId: "20000000-0000-4000-8000-000000000002",
+          researchTopics: ["systems"],
+        }),
+        membership: expect.objectContaining({ tier: "external_collaborator" }),
+      }),
+    ]));
+  });
+
+  it("backfills imported people into version-checked member aggregates", async () => {
+    const persistence = openTestPersistence();
+    const organizationId = "10000000-0000-4000-8000-000000000001";
+    const personId = "20000000-0000-4000-8000-000000000008";
+    const now = new Date("2026-08-08T12:00:00.000Z");
+    await persistence.transactions.write(({ legacyMigration }) => legacyMigration.importIdentity({
+      run: { id: "40000000-0000-4000-8000-000000000008", scope: "identity", sourceFingerprint: "d".repeat(64), mapperSetVersion: "members-test-v1", redactedReport: { people: 1 }, completedAt: now },
+      people: [{ id: personId, organizationId, displayName: "Synthetic Member", status: "active", createdAt: now, updatedAt: now }],
+      accounts: [], registrations: [], roles: [], links: [{ legacyMemberId: "synthetic-member", personId, importedAt: now }],
+    }));
+    const updated = await persistence.transactions.write(({ members }) => {
+      if (members === undefined) throw new Error("member repository missing");
+      return members.updateOwnProfile({
+        organizationId, personId, expectedVersion: 1,
+        preferredName: "Synth", biography: "Synthetic biography",
+        researchTopics: ["Systems"], now,
+      });
+    });
+    expect(updated).toMatchObject({
+      profile: { preferredName: "Synth", version: 2, researchTopics: ["Systems"] },
+      membership: { tier: "external_collaborator", lifecycle: "active", version: 1 },
+    });
+    await expect(persistence.transactions.write(({ members }) => {
+      if (members === undefined) throw new Error("member repository missing");
+      return members.updateOwnProfile({ organizationId, personId, expectedVersion: 1, biography: "stale", now });
+    })).resolves.toBe("conflict");
+    const governed = await persistence.transactions.write(({ members }) => {
+      if (members === undefined) throw new Error("member repository missing");
+      return members.updateGovernance({
+        organizationId, personId, expectedProfileVersion: 2, expectedMembershipVersion: 1,
+        displayName: "Synthetic Canonical Member", institutionalEmail: "member@example.com",
+        tier: "member", lifecycle: "active", now,
+      });
+    });
+    expect(governed).toMatchObject({
+      profile: { displayName: "Synthetic Canonical Member", institutionalEmail: "member@example.com", version: 3 },
+      membership: { tier: "member", version: 2 },
     });
   });
 

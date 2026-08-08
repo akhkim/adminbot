@@ -9,6 +9,8 @@ import type {
   JsonValue,
   LegacyIdentityImportBatch,
   LegacyMigrationRepository,
+  MemberRecord,
+  MemberRepository,
   OutboxEventRecord,
   OutboxRepository,
   PaperRecord,
@@ -431,7 +433,46 @@ class PrismaIdentityRepository implements IdentityRepository {
             status: "active",
             createdAt: input.now,
             updatedAt: input.now,
+            memberProfile: {
+              create: {
+                id: personId,
+                researchTopics: registration.profile?.researchTopics ?? [],
+                fieldVisibility: defaultMemberFieldVisibility(),
+                createdAt: input.now,
+                updatedAt: input.now,
+              },
+            },
+            membership: {
+              create: {
+                id: personId,
+                tier: input.defaultRole,
+                lifecycle: "active",
+                createdAt: input.now,
+                updatedAt: input.now,
+              },
+            },
           },
+        });
+      }
+
+      if (registration.kind === "claim") {
+        await this.database.memberProfile.upsert({
+          where: { organizationId_personId: { organizationId: input.organizationId, personId } },
+          create: {
+            id: personId, organizationId: input.organizationId, personId,
+            researchTopics: [], fieldVisibility: defaultMemberFieldVisibility(),
+            createdAt: input.now, updatedAt: input.now,
+          },
+          update: {},
+        });
+        await this.database.membership.upsert({
+          where: { organizationId_personId: { organizationId: input.organizationId, personId } },
+          create: {
+            id: personId, organizationId: input.organizationId, personId,
+            tier: "external_collaborator", lifecycle: "active",
+            createdAt: input.now, updatedAt: input.now,
+          },
+          update: {},
         });
       }
 
@@ -619,6 +660,182 @@ class PrismaAvailabilityRepository implements AvailabilityRepository {
   }
 }
 
+class PrismaMemberRepository implements MemberRepository {
+  constructor(private readonly database: DatabaseClient) {}
+
+  async list(organizationId: string, now: Date): Promise<readonly MemberRecord[]> {
+    const people = await this.database.person.findMany({
+      where: { organizationId, memberProfile: { isNot: null }, membership: { isNot: null } },
+      include: memberInclude(now),
+      orderBy: [{ displayName: "asc" }, { id: "asc" }],
+    });
+    return people.map(toMemberRecord);
+  }
+
+  async updateOwnProfile(input: Parameters<MemberRepository["updateOwnProfile"]>[0]) {
+    const current = await this.database.memberProfile.findUnique({
+      where: { organizationId_personId: { organizationId: input.organizationId, personId: input.personId } },
+      select: { version: true },
+    });
+    if (current === null) return "not_found" as const;
+    if (current.version !== input.expectedVersion) return "conflict" as const;
+    const changed = await this.database.memberProfile.updateMany({
+      where: { organizationId: input.organizationId, personId: input.personId, version: input.expectedVersion },
+      data: {
+        ...(input.preferredName === undefined ? {} : { preferredName: input.preferredName }),
+        ...(input.biography === undefined ? {} : { biography: input.biography }),
+        ...(input.researchTopics === undefined ? {} : { researchTopics: [...input.researchTopics] }),
+        version: { increment: 1 },
+        updatedAt: input.now,
+      },
+    });
+    if (changed.count !== 1) return "conflict" as const;
+    return this.findRequired(input.organizationId, input.personId, input.now);
+  }
+
+  async updateGovernance(input: Parameters<MemberRepository["updateGovernance"]>[0]) {
+    const person = await this.database.person.findUnique({
+      where: { organizationId_id: { organizationId: input.organizationId, id: input.personId } },
+      select: { memberProfile: { select: { version: true } }, membership: { select: { version: true } } },
+    });
+    if (person?.memberProfile === null || person?.membership === null || person === null) {
+      return "not_found" as const;
+    }
+    if (
+      person.memberProfile.version !== input.expectedProfileVersion ||
+      person.membership.version !== input.expectedMembershipVersion
+    ) return "conflict" as const;
+    if (input.mentorId !== undefined && input.mentorId !== null) {
+      if (input.mentorId === input.personId) return "mentor_not_found" as const;
+      const mentor = await this.database.person.count({
+        where: { organizationId: input.organizationId, id: input.mentorId, status: "active", membership: { isNot: null } },
+      });
+      if (mentor !== 1) return "mentor_not_found" as const;
+    }
+    await this.database.person.update({
+      where: { organizationId_id: { organizationId: input.organizationId, id: input.personId } },
+      data: {
+        ...(input.displayName === undefined ? {} : { displayName: input.displayName }),
+        version: { increment: 1 }, updatedAt: input.now,
+      },
+    });
+    await this.database.memberProfile.update({
+      where: { organizationId_personId: { organizationId: input.organizationId, personId: input.personId } },
+      data: {
+        ...(input.institutionalEmail === undefined ? {} : { institutionalEmail: input.institutionalEmail }),
+        version: { increment: 1 }, updatedAt: input.now,
+      },
+    });
+    await this.database.membership.update({
+      where: { organizationId_personId: { organizationId: input.organizationId, personId: input.personId } },
+      data: {
+        ...(input.tier === undefined ? {} : { tier: input.tier }),
+        ...(input.lifecycle === undefined ? {} : { lifecycle: input.lifecycle }),
+        ...(input.mentorId === undefined ? {} : { mentorId: input.mentorId }),
+        version: { increment: 1 }, updatedAt: input.now,
+      },
+    });
+    return this.findRequired(input.organizationId, input.personId, input.now);
+  }
+
+  async replaceRoles(input: Parameters<MemberRepository["replaceRoles"]>[0]) {
+    if (input.actorPersonId === input.personId) return "self_change" as const;
+    if (!await this.isCurrentAdministrator(input.organizationId, input.actorPersonId, input.now)) {
+      return "not_authorized" as const;
+    }
+    const target = await this.database.person.findUnique({
+      where: { organizationId_id: { organizationId: input.organizationId, id: input.personId } },
+      select: {
+        membership: { select: { version: true } },
+        roles: {
+          where: { validFrom: { lte: input.now }, OR: [{ validUntil: null }, { validUntil: { gt: input.now } }] },
+          select: { role: true },
+        },
+      },
+    });
+    if (target?.membership === null || target === null) return "not_found" as const;
+    if (target.membership.version !== input.expectedMembershipVersion) return "conflict" as const;
+    const current = [...new Set(target.roles.map(({ role }) => role))].sort();
+    const desired = [...new Set(input.roles)].sort();
+    if (current.join("\0") === desired.join("\0")) return "no_change" as const;
+    if (current.includes("administrator") && !desired.includes("administrator")) {
+      const otherAdministrators = await this.database.person.count({
+        where: {
+          organizationId: input.organizationId,
+          id: { not: input.personId },
+          status: "active",
+          roles: { some: {
+            role: "administrator", validFrom: { lte: input.now },
+            OR: [{ validUntil: null }, { validUntil: { gt: input.now } }],
+          } },
+        },
+      });
+      if (otherAdministrators === 0) return "last_administrator" as const;
+    }
+    const changed = await this.database.membership.updateMany({
+      where: { organizationId: input.organizationId, personId: input.personId, version: input.expectedMembershipVersion },
+      data: { version: { increment: 1 }, updatedAt: input.now },
+    });
+    if (changed.count !== 1) return "conflict" as const;
+    const removals = current.filter((role) => !desired.includes(role));
+    if (removals.length > 0) {
+      await this.database.roleAssignment.updateMany({
+        where: {
+          organizationId: input.organizationId, personId: input.personId, role: { in: removals },
+          validFrom: { lte: input.now }, OR: [{ validUntil: null }, { validUntil: { gt: input.now } }],
+        },
+        data: { validUntil: input.now, version: { increment: 1 }, updatedAt: input.now },
+      });
+    }
+    const additions = input.assignments.filter(({ role }) => !current.includes(role));
+    if (additions.length > 0) {
+      await this.database.roleAssignment.createMany({
+        data: additions.map(({ id, role }) => ({
+          id, organizationId: input.organizationId, personId: input.personId, role,
+          validFrom: input.now, assignedBy: input.actorPersonId, createdAt: input.now, updatedAt: input.now,
+        })),
+      });
+    }
+    return this.findRequired(input.organizationId, input.personId, input.now);
+  }
+
+  async replaceVisibility(input: Parameters<MemberRepository["replaceVisibility"]>[0]) {
+    if (!await this.isCurrentAdministrator(input.organizationId, input.actorPersonId, input.now)) {
+      return "not_authorized" as const;
+    }
+    const current = await this.database.memberProfile.findUnique({
+      where: { organizationId_personId: { organizationId: input.organizationId, personId: input.personId } },
+      select: { version: true, fieldVisibility: true },
+    });
+    if (current === null) return "not_found" as const;
+    if (current.version !== input.expectedProfileVersion) return "conflict" as const;
+    if (sameVisibility(parseFieldVisibility(current.fieldVisibility), input.fieldVisibility)) return "no_change" as const;
+    const changed = await this.database.memberProfile.updateMany({
+      where: { organizationId: input.organizationId, personId: input.personId, version: input.expectedProfileVersion },
+      data: { fieldVisibility: input.fieldVisibility, version: { increment: 1 }, updatedAt: input.now },
+    });
+    if (changed.count !== 1) return "conflict" as const;
+    return this.findRequired(input.organizationId, input.personId, input.now);
+  }
+
+  private async isCurrentAdministrator(organizationId: string, personId: string, now: Date): Promise<boolean> {
+    return await this.database.person.count({
+      where: {
+        organizationId, id: personId, status: "active",
+        roles: { some: { role: "administrator", validFrom: { lte: now }, OR: [{ validUntil: null }, { validUntil: { gt: now } }] } },
+      },
+    }) === 1;
+  }
+
+  private async findRequired(organizationId: string, personId: string, now: Date): Promise<MemberRecord> {
+    const person = await this.database.person.findUniqueOrThrow({
+      where: { organizationId_id: { organizationId, id: personId } },
+      include: memberInclude(now),
+    });
+    return toMemberRecord(person);
+  }
+}
+
 class PrismaPaperRepository implements PaperRepository {
   constructor(private readonly database: DatabaseClient) {}
 
@@ -768,6 +985,23 @@ class PrismaLegacyMigrationRepository implements LegacyMigrationRepository {
   async importIdentity(batch: LegacyIdentityImportBatch): Promise<void> {
     if (batch.people.length > 0) {
       await this.database.person.createMany({ data: [...batch.people] });
+      await this.database.memberProfile.createMany({
+        data: batch.people.map((person) => ({
+          id: person.id, organizationId: person.organizationId, personId: person.id,
+          researchTopics: [], fieldVisibility: defaultMemberFieldVisibility(),
+          createdAt: person.createdAt, updatedAt: person.updatedAt,
+        })),
+      });
+      await this.database.membership.createMany({
+        data: batch.people.map((person) => ({
+          id: person.id, organizationId: person.organizationId, personId: person.id,
+          tier: batch.roles.some((role) =>
+            role.personId === person.id && (role.role === "member" || role.role === "administrator")
+          ) ? "member" as const : "external_collaborator" as const,
+          lifecycle: "active" as const,
+          createdAt: person.createdAt, updatedAt: person.updatedAt,
+        })),
+      });
     }
     if (batch.accounts.length > 0) {
       await this.database.account.createMany({ data: [...batch.accounts] });
@@ -819,11 +1053,57 @@ export function createUnitOfWork(database: DatabaseClient): AdminBotUnitOfWork {
     identity,
     governance: new PrismaGovernanceRepository(database),
     legacyMigration: new PrismaLegacyMigrationRepository(database),
+    members: new PrismaMemberRepository(database),
     outbox: new PrismaOutboxRepository(database),
     papers: new PrismaPaperRepository(database),
     rateLimits: new PrismaRateLimitRepository(database),
     registrationReviews: identity as RegistrationReviewRepository,
     sessions: identity as SessionRepository,
+  };
+}
+
+function memberInclude(now: Date) {
+  return {
+    memberProfile: true,
+    account: { select: { status: true } },
+    membership: { include: { mentor: { select: { displayName: true } } } },
+    roles: {
+      where: { validFrom: { lte: now }, OR: [{ validUntil: null }, { validUntil: { gt: now } }] },
+      orderBy: [{ role: "asc" }, { id: "asc" }],
+    },
+  } satisfies Prisma.PersonInclude;
+}
+
+type MemberPersonRow = Prisma.PersonGetPayload<{ include: ReturnType<typeof memberInclude> }>;
+
+function toMemberRecord(person: MemberPersonRow): MemberRecord {
+  if (person.memberProfile === null || person.membership === null) {
+    throw new Error("stored member aggregate is incomplete");
+  }
+  const profile = person.memberProfile;
+  const membership = person.membership;
+  return {
+    profile: {
+      id: profile.id, organizationId: profile.organizationId, personId: profile.personId,
+      displayName: person.displayName, researchTopics: parseStoredStringArray(profile.researchTopics, "member research topics"),
+      fieldVisibility: parseFieldVisibility(profile.fieldVisibility), version: profile.version,
+      createdAt: profile.createdAt, updatedAt: profile.updatedAt,
+      ...(profile.preferredName === null ? {} : { preferredName: profile.preferredName }),
+      ...(profile.institutionalEmail === null ? {} : { institutionalEmail: profile.institutionalEmail }),
+      ...(profile.biography === null ? {} : { biography: profile.biography }),
+      ...(profile.profileImageArtifactId === null ? {} : { profileImageArtifactId: profile.profileImageArtifactId }),
+    },
+    membership: {
+      id: membership.id, organizationId: membership.organizationId, personId: membership.personId,
+      tier: membership.tier, lifecycle: membership.lifecycle, roles: person.roles.map(({ role }) => role),
+      version: membership.version, createdAt: membership.createdAt, updatedAt: membership.updatedAt,
+      ...(membership.startDate === null ? {} : { startDate: membership.startDate }),
+      ...(membership.endDate === null ? {} : { endDate: membership.endDate }),
+      ...(membership.mentorId === null ? {} : { mentorId: membership.mentorId }),
+      ...(membership.mentor === null ? {} : { mentorName: membership.mentor.displayName }),
+    },
+    personStatus: person.status,
+    ...(person.account === null ? {} : { accountStatus: person.account.status }),
   };
 }
 
@@ -943,6 +1223,39 @@ function parseStoredStringArray(value: unknown, label: string): readonly string[
     throw new Error(`stored ${label} are invalid`);
   }
   return value as string[];
+}
+
+function defaultMemberFieldVisibility(): Record<string, string> {
+  return {
+    preferredName: "members",
+    institutionalEmail: "members",
+    biography: "members",
+    researchTopics: "members",
+    profileImageArtifactId: "members",
+  };
+}
+
+function parseFieldVisibility(value: unknown): MemberRecord["profile"]["fieldVisibility"] {
+  if (!isRecord(value)) throw new Error("stored member field visibility is invalid");
+  const result: Record<string, "self" | "members" | "administrators" | "public"> = {};
+  for (const [key, audience] of Object.entries(value)) {
+    if (audience !== "self" && audience !== "members" && audience !== "administrators" && audience !== "public") {
+      throw new Error("stored member field visibility is invalid");
+    }
+    result[key] = audience;
+  }
+  for (const key of ["preferredName", "institutionalEmail", "biography", "researchTopics", "profileImageArtifactId"] as const) {
+    if (result[key] === undefined) throw new Error("stored member field visibility is incomplete");
+  }
+  return result as MemberRecord["profile"]["fieldVisibility"];
+}
+
+function sameVisibility(
+  left: MemberRecord["profile"]["fieldVisibility"],
+  right: MemberRecord["profile"]["fieldVisibility"],
+): boolean {
+  return (["preferredName", "institutionalEmail", "biography", "researchTopics", "profileImageArtifactId"] as const)
+    .every((key) => left[key] === right[key]);
 }
 
 function isUniqueConstraintError(error: unknown): boolean {

@@ -1482,10 +1482,11 @@ invented addresses. Pending registration hashes are retained, while decided regi
 are discarded. Legacy sessions are never activated in v2; apply requires the explicit
 `--invalidate-legacy-sessions` acknowledgement and every user signs in again.
 
-The current source-only dry run is clean: 159 people, 107 reusable accounts, 5 accounts requiring
-reclaim, 10 registrations, 175 role assignments, and 33 sessions to invalidate. Applying it remains
-blocked on decision 23.1: the destination organization UUID is durable identity data and must not
-be guessed.
+The source-only dry run was clean: 159 people, 107 reusable accounts, 5 accounts requiring reclaim,
+10 registrations, 175 role assignments, and 33 sessions to invalidate. The migration has now been
+applied to the ignored local destination using its configured durable organization UUID. All 159
+people have matching member profile and membership aggregates; legacy sessions were invalidated,
+and the migration ledger, audit event, backups, counts, and SQLite integrity were verified.
 
 ## 19. Validation strategy
 
@@ -2080,7 +2081,9 @@ service composition, authorization shortcuts, copied schemas, or direct side-eff
 
 ## 23. Decisions still needed
 
-1. Is v2 single-organization only, or must organization id be present from day one?
+1. Resolved for v0alpha: each deployment serves one configured organization, while the durable
+   organization id is present in persisted records and contracts from day one. The deployment UUID
+   belongs in ignored local configuration rather than committed source.
 2. Which human roles may approve each high-risk category, and must requester and approver differ?
 3. Is two-person approval genuinely operationally available for T4 actions?
 4. Which first real connector operation provides the best end-to-end proof with the least risk?
@@ -2096,9 +2099,9 @@ service composition, authorization shortcuts, copied schemas, or direct side-eff
 11. Which remote reasoning providers and data classes are permitted?
 12. Should OpenClaw chat be embedded in the member portal, or remain a separate channel surface?
 
-Question 1 now blocks only the identity migration apply, not further dry-run validation or local
-implementation. Questions 2-6 must be answered before their corresponding approval, connector,
-login-provider, or network surfaces become live.
+Question 1 is resolved and the local legacy identity migration has been applied. Questions 2-6
+must be answered before their corresponding approval, connector, login-provider, or network
+surfaces become live.
 
 ## 24. V2 implementation status
 
@@ -2114,7 +2117,8 @@ feature family.
 | ✅ | Standalone AdminBot web shell and legacy UI map | AdminBot-only route registry and responsive shell; dark mode by default with light preference; access, sign-in, and registration review are live; role/audience grouping; unfinished surfaces remain explicitly inert and data-free; UI tests and production build |
 | ✅ | Password login, session lifecycle, and admin registration review | Enumeration-resistant password login; durable attempt limits; hashed, expiring, revocable HTTP-only cookie sessions; restoration and sign-out; server-resolved roles; recent-auth administrator decisions; atomic signup activation with `external_collaborator` default; audit/outbox evidence; connected web views |
 | ✅ | Paper workspace and public deadline board | Authenticated paper listing, creation, author/admin editing, administrator deletion, optimistic versions, Prisma persistence, atomic audit/outbox writes, timeline/filter/nudge projections, and a static provenance-labelled AoE countdown board |
+| ✅ | Authenticated member roster and profile editing | Normalized Prisma profile/membership records; migration backfill and signup activation; audience-filtered roster projections; session-bound self edits; recent-auth administrator governance changes; optimistic versions; atomic audit/outbox writes; and connected search/filter/edit UI. Authorization-role changes remain a separate future command |
 | ✅ | Public reimbursement intake and packet generation | Versioned conversation/packet contracts; bounded PDF/image receipt validation; loopback-only local-model extraction; transient receipt handling; durable anonymous rate limits; structured claimant/expense preview; and downloads of the bundled expense and trip-summary forms. Submission remains a separate, unimplemented authenticated governance action |
 | ✅ | Legacy identity migration dry run | Exact v1 schema fingerprint, immutable source backup, redacted report, deterministic mappings, explicit session invalidation, ORM-only destination writer; current source maps with zero blocking issues |
-| Pending | Apply legacy identity data | Requires the durable organization UUID from decision 23.1; source and destination are otherwise ready |
-| Pending | Members, governance, connectors, automations, and remaining workflow packs | Implement sequentially in the Phase 1-4 order |
+| ✅ | Apply legacy identity data | Durable single-organization UUID configured locally; schema migrated; 159 people, 107 reusable accounts, 10 registrations, 175 role assignments, and 159 member aggregates imported atomically; legacy sessions invalidated; ledger, audit event, backups, and SQLite integrity verified |
+| Pending | Onboarding, governance, connectors, automations, and remaining workflow packs | Implement sequentially in the Phase 1-4 order |

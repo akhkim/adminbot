@@ -11,6 +11,7 @@ import "../workflows/communications.tsp";
 import "../workflows/availability.tsp";
 import "../workflows/papers.tsp";
 import "../workflows/reimbursements.tsp";
+import "../workflows/members.tsp";
 
 using TypeSpec.Http;
 using AdminBot.Contracts.Automation;
@@ -25,6 +26,7 @@ using AdminBot.Contracts.Workflows.Communications;
 using AdminBot.Contracts.Workflows.Availability;
 using AdminBot.Contracts.Workflows.Papers;
 using AdminBot.Contracts.Workflows.Reimbursements;
+using AdminBot.Contracts.Workflows.Members;
 
 @service(#{ title: "AdminBot v2" })
 @route("/v0alpha")
@@ -159,6 +161,38 @@ interface PolicySettingsApi {
     | ErrorResponse;
 }
 
+@route("/members")
+interface MembersApi {
+  @get
+  list(): MemberRosterProjection | ErrorResponse;
+
+  @post
+  @route("/profile")
+  updateOwnProfile(@body input: UpdateOwnMemberProfileInput):
+    | MemberRosterProjection
+    | ErrorResponse;
+
+  @post
+  @route("/{personId}/governance")
+  updateGovernance(
+    @path personId: PersonId,
+    @body input: UpdateMemberGovernanceInput,
+  ): MemberRosterProjection | ErrorResponse;
+
+  @post
+  @route("/{personId}/roles")
+  replaceRoles(
+    @path personId: PersonId,
+    @body input: ReplaceMemberRolesInput,
+  ): MemberRosterProjection | ErrorResponse;
+
+  @post
+  @route("/{personId}/visibility")
+  replaceVisibility(
+    @path personId: PersonId,
+    @body input: ReplaceMemberVisibilityInput,
+  ): MemberRosterProjection | ErrorResponse;
+}
 
 @route("/capabilities")
 interface CapabilitiesApi {

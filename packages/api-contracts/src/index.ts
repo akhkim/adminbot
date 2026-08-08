@@ -22,6 +22,8 @@ export type {
   GovernedActionProjection,
   GovernanceWorkspaceProjection,
   LoginInput,
+  MemberRosterEntry,
+  MemberRosterProjection,
   Person,
   PaperProjection,
   PaperWorkspaceProjection,
@@ -44,12 +46,15 @@ export type {
   SignupProfile,
   SignupRegistrationInput,
   UpdatePaperCommand,
+  UpdateOwnMemberProfileInput,
+  UpdateMemberGovernanceInput,
 } from "./dtos.js";
 export type {
   ApiRoute,
   GovernedActionRoute,
   HttpMethod,
   PaperRoute,
+  MemberGovernanceRoute,
   RegistrationDecisionRoute,
   StaticApiRoute,
 } from "./routes.js";

@@ -11,6 +11,7 @@
     "@adminbot/api-contracts": "workspace:*",
     "@adminbot/identity": "workspace:*",
     "@adminbot/governance": "workspace:*",
+    "@adminbot/members": "workspace:*",
     "@adminbot/papers": "workspace:*",
     "@adminbot/reimbursements": "workspace:*",
     "@adminbot/persistence": "workspace:*"

@@ -110,6 +110,21 @@ enum ApprovalDecision {
   reject
 }
 
+enum MembershipTier {
+  external_collaborator
+  member
+}
+
+enum MemberLifecycleState {
+  applicant
+  accepted
+  onboarding
+  active
+  leave
+  departing
+  alumni
+}
+
 model Person {
   id             String       @id
   organizationId String       @map("organization_id")
@@ -123,10 +138,56 @@ model Person {
   roles            RoleAssignment[]
   legacyLink       LegacyIdentityLink?
   availabilityPlan AvailabilityPlan?
+  memberProfile     MemberProfile?
+  membership       Membership? @relation("MemberPerson")
+  menteeMemberships Membership[] @relation("MembershipMentor")
 
   @@unique([organizationId, id])
   @@index([organizationId, status])
   @@map("people")
+}
+
+model MemberProfile {
+  id                     String   @id
+  organizationId         String   @map("organization_id")
+  personId               String   @map("person_id")
+  preferredName          String?  @map("preferred_name")
+  institutionalEmail     String?  @map("institutional_email")
+  biography              String?
+  researchTopics         Json     @map("research_topics")
+  profileImageArtifactId String?  @map("profile_image_artifact_id")
+  fieldVisibility        Json     @map("field_visibility")
+  version                Int      @default(1)
+  createdAt              DateTime @default(now()) @map("created_at")
+  updatedAt              DateTime @updatedAt @map("updated_at")
+
+  person Person @relation(fields: [organizationId, personId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([organizationId, personId])
+  @@index([organizationId, updatedAt])
+  @@map("member_profiles")
+}
+
+model Membership {
+  id             String               @id
+  organizationId String               @map("organization_id")
+  personId       String               @map("person_id")
+  tier           MembershipTier       @default(external_collaborator)
+  lifecycle      MemberLifecycleState @default(active)
+  startDate      String?              @map("start_date")
+  endDate        String?              @map("end_date")
+  mentorId       String?              @map("mentor_id")
+  version        Int                  @default(1)
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+
+  person Person  @relation("MemberPerson", fields: [organizationId, personId], references: [organizationId, id], onDelete: Cascade)
+  mentor Person? @relation("MembershipMentor", fields: [organizationId, mentorId], references: [organizationId, id], onDelete: Restrict)
+
+  @@unique([organizationId, personId])
+  @@index([organizationId, lifecycle])
+  @@index([organizationId, mentorId])
+  @@map("memberships")
 }
 
 model AvailabilityPlan {

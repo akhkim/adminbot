@@ -32,6 +32,21 @@ enum MemberLifecycleState {
   alumni,
 }
 
+enum MemberFieldAudience {
+  self,
+  members,
+  administrators,
+  public,
+}
+
+model MemberFieldVisibility {
+  preferredName: MemberFieldAudience;
+  institutionalEmail: MemberFieldAudience;
+  biography: MemberFieldAudience;
+  researchTopics: MemberFieldAudience;
+  profileImageArtifactId: MemberFieldAudience;
+}
+
 model MemberProfile extends VersionedRecord {
   id: MemberProfileId;
   organizationId: OrganizationId;
@@ -42,7 +57,7 @@ model MemberProfile extends VersionedRecord {
   biography?: string;
   researchTopics: string[];
   profileImageArtifactId?: ArtifactId;
-  fieldVisibility: Record<"self" | "members" | "administrators" | "public">;
+  fieldVisibility: MemberFieldVisibility;
 }
 
 model Membership extends VersionedRecord {
@@ -124,8 +139,59 @@ model ChangeMembershipGovernanceCommand {
   tier?: MembershipTier;
   lifecycle?: MemberLifecycleState;
   mentorId?: PersonId;
-  roleAssignments?: RoleName[];
   reason: string;
+}
+
+model MemberRosterEntry {
+  profile: MemberProfile;
+  membership: Membership;
+  personStatus: "active" | "inactive" | "merged";
+  accountState?: AccountState;
+  roles: RoleName[];
+  mentorName?: string;
+  canEditOwnProfile: boolean;
+  canEditGovernance: boolean;
+  canManageRoles: boolean;
+  canManageVisibility: boolean;
+}
+
+model MemberRosterProjection {
+  viewerPersonId: PersonId;
+  viewerRoles: RoleName[];
+  members: MemberRosterEntry[];
+  asOf: utcDateTime;
+}
+
+model UpdateOwnMemberProfileInput {
+  expectedVersion: int32;
+  preferredName?: string | null;
+  biography?: string | null;
+  researchTopics?: string[];
+}
+
+model UpdateMemberGovernanceInput {
+  expectedProfileVersion: int32;
+  expectedMembershipVersion: int32;
+  displayName?: string;
+  institutionalEmail?: string | null;
+  tier?: MembershipTier;
+  lifecycle?: MemberLifecycleState;
+  mentorId?: PersonId | null;
+  @minLength(1) @maxLength(2000) reason: string;
+}
+
+/** Replaces the target's complete active authorization-role set. */
+model ReplaceMemberRolesInput {
+  expectedMembershipVersion: int32;
+  @minItems(1) roles: RoleName[];
+  @minLength(1) @maxLength(2000) reason: string;
+}
+
+/** Replaces the field-level roster audiences for the target profile. */
+model ReplaceMemberVisibilityInput {
+  expectedProfileVersion: int32;
+  fieldVisibility: MemberFieldVisibility;
+  @minLength(1) @maxLength(2000) reason: string;
 }
 
 model ReconcileMemberAccessCommand {

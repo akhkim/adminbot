@@ -5,6 +5,7 @@
     { "path": "packages/api-contracts" },
     { "path": "packages/ports" },
     { "path": "packages/identity" },
+    { "path": "packages/members" },
     { "path": "packages/papers" },
     { "path": "packages/reimbursements" },
     { "path": "packages/governance" },

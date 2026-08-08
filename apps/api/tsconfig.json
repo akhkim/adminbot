@@ -12,6 +12,7 @@
     { "path": "../../packages/api-contracts" },
     { "path": "../../packages/identity" },
     { "path": "../../packages/governance" },
+    { "path": "../../packages/members" },
     { "path": "../../packages/papers" },
     { "path": "../../packages/reimbursements" },
     { "path": "../../packages/persistence" }

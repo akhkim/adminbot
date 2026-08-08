@@ -123,11 +123,10 @@ export const APP_ROUTES: readonly AppRoute[] = [
     description: "Find people, responsibilities, projects, and permitted profile details.",
     audience: "member",
     group: "workspace",
-    status: "backend_pending",
+    status: "live",
     preview: "table",
     columns: ["Person", "Status", "Research branch", "Projects", "Availability"],
     legacyBehavior: "Members saw a roster; administrators could edit governance-owned fields.",
-    nextBoundary: "Login, sessions, member projections, and field-level authorization are required.",
   },
   {
     id: "availability",

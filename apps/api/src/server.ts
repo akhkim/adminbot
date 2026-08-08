@@ -23,6 +23,7 @@ import {
   type ReimbursementApplication,
 } from "./reimbursement-routes.js";
 import { createGovernanceRoutes, type GovernanceApplication } from "./governance-routes.js";
+import { createMemberRoutes, type MemberApplication } from "./member-routes.js";
 
 const MAXIMUM_JSON_BODY_BYTES = 64 * 1_024;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1"]);
@@ -35,6 +36,7 @@ export interface ApiServerOptions {
   readonly availability?: AvailabilityApplication;
   readonly reimbursements?: ReimbursementApplication;
   readonly governance?: GovernanceApplication;
+  readonly members?: MemberApplication;
   readonly allowedOrigins?: readonly string[];
   readonly secureCookies?: boolean;
   readonly onUnexpectedError?: (error: unknown, operationId?: string) => void;
@@ -62,6 +64,7 @@ export class AdminBotApiServer {
       ...(options.availability === undefined ? [] : createAvailabilityRoutes(options.sessions, options.availability)),
       ...(options.reimbursements === undefined ? [] : createReimbursementRoutes(options.reimbursements)),
       ...(options.governance === undefined ? [] : createGovernanceRoutes(options.sessions, options.governance)),
+      ...(options.members === undefined ? [] : createMemberRoutes(options.sessions, options.members)),
     ];
     const allowedOrigins = parseAllowedOrigins(options.allowedOrigins ?? []);
     this.server = createServer((request, response) => {

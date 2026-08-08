@@ -13,6 +13,7 @@ import {
   LocalReimbursementRuntime,
   ReimbursementService,
 } from "@adminbot/reimbursements";
+import { MemberRosterService } from "@adminbot/members";
 import { AdminBotApiServer } from "./server.js";
 
 export async function startFromEnvironment(
@@ -60,6 +61,10 @@ export async function startFromEnvironment(
       console.error(JSON.stringify({ event: "reimbursement.dependency_failed", operation, errorType }));
     },
   });
+  const members = new MemberRosterService({
+    transactions: persistence.transactions,
+    organizationId,
+  });
   const governance = new GovernanceService({ transactions: persistence.transactions, organizationId });
   const api = new AdminBotApiServer({
     registration,
@@ -68,6 +73,7 @@ export async function startFromEnvironment(
     papers,
     availability,
     reimbursements,
+    members,
     governance,
     allowedOrigins,
     secureCookies: parseBoolean(environment.ADMINBOT_SECURE_COOKIES, false),

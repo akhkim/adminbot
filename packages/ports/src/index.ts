@@ -364,6 +364,105 @@ export interface AvailabilityRepository {
   replace(input: ReplaceAvailabilityPlanRecord): Promise<AvailabilityPlanRecord | "not_found" | "conflict">;
 }
 
+export type MembershipTier = "external_collaborator" | "member";
+export type MemberLifecycleState =
+  | "applicant"
+  | "accepted"
+  | "onboarding"
+  | "active"
+  | "leave"
+  | "departing"
+  | "alumni";
+
+export interface MemberFieldVisibilityRecord {
+  readonly preferredName: "self" | "members" | "administrators" | "public";
+  readonly institutionalEmail: "self" | "members" | "administrators" | "public";
+  readonly biography: "self" | "members" | "administrators" | "public";
+  readonly researchTopics: "self" | "members" | "administrators" | "public";
+  readonly profileImageArtifactId: "self" | "members" | "administrators" | "public";
+}
+
+export interface MemberProfileRecord {
+  readonly id: string;
+  readonly organizationId: string;
+  readonly personId: string;
+  readonly displayName: string;
+  readonly preferredName?: string;
+  readonly institutionalEmail?: string;
+  readonly biography?: string;
+  readonly researchTopics: readonly string[];
+  readonly profileImageArtifactId?: string;
+  readonly fieldVisibility: Readonly<MemberFieldVisibilityRecord>;
+  readonly version: number;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+export interface MembershipRecord {
+  readonly id: string;
+  readonly organizationId: string;
+  readonly personId: string;
+  readonly tier: MembershipTier;
+  readonly lifecycle: MemberLifecycleState;
+  readonly startDate?: string;
+  readonly endDate?: string;
+  readonly mentorId?: string;
+  readonly mentorName?: string;
+  readonly roles: readonly AccessRoleName[];
+  readonly version: number;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+export interface MemberRecord {
+  readonly profile: MemberProfileRecord;
+  readonly membership: MembershipRecord;
+  readonly personStatus: PersonStatus;
+  readonly accountStatus?: AccountStatus;
+}
+
+export interface MemberRepository {
+  list(organizationId: string, now: Date): Promise<readonly MemberRecord[]>;
+  updateOwnProfile(input: {
+    readonly organizationId: string;
+    readonly personId: string;
+    readonly expectedVersion: number;
+    readonly preferredName?: string | null;
+    readonly biography?: string | null;
+    readonly researchTopics?: readonly string[];
+    readonly now: Date;
+  }): Promise<MemberRecord | "not_found" | "conflict">;
+  updateGovernance(input: {
+    readonly organizationId: string;
+    readonly personId: string;
+    readonly expectedProfileVersion: number;
+    readonly expectedMembershipVersion: number;
+    readonly displayName?: string;
+    readonly institutionalEmail?: string | null;
+    readonly tier?: MembershipTier;
+    readonly lifecycle?: MemberLifecycleState;
+    readonly mentorId?: string | null;
+    readonly now: Date;
+  }): Promise<MemberRecord | "not_found" | "conflict" | "mentor_not_found">;
+  replaceRoles(input: {
+    readonly organizationId: string;
+    readonly actorPersonId: string;
+    readonly personId: string;
+    readonly expectedMembershipVersion: number;
+    readonly roles: readonly AccessRoleName[];
+    readonly assignments: readonly { readonly id: string; readonly role: AccessRoleName }[];
+    readonly now: Date;
+  }): Promise<MemberRecord | "not_found" | "conflict" | "not_authorized" | "self_change" | "last_administrator" | "no_change">;
+  replaceVisibility(input: {
+    readonly organizationId: string;
+    readonly actorPersonId: string;
+    readonly personId: string;
+    readonly expectedProfileVersion: number;
+    readonly fieldVisibility: MemberFieldVisibilityRecord;
+    readonly now: Date;
+  }): Promise<MemberRecord | "not_found" | "conflict" | "not_authorized" | "no_change">;
+}
+
 /**
  * The only repository bundle a transaction callback receives. It is extended centrally as
  * vertical slices land; domain packages never create transaction/session abstractions.
@@ -374,6 +473,7 @@ export interface AdminBotUnitOfWork {
   readonly identity: IdentityRepository;
   readonly governance?: import("./governance.js").GovernanceRepository;
   readonly legacyMigration: import("./legacy-migration.js").LegacyMigrationRepository;
+  readonly members?: MemberRepository;
   readonly outbox: OutboxRepository;
   readonly papers?: PaperRepository;
   readonly rateLimits: RateLimitRepository;

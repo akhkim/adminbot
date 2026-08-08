@@ -63,6 +63,9 @@ importers:
       '@adminbot/identity':
         specifier: workspace:*
         version: link:../../packages/identity
+      '@adminbot/members':
+        specifier: workspace:*
+        version: link:../../packages/members
       '@adminbot/papers':
         specifier: workspace:*
         version: link:../../packages/papers
@@ -126,6 +129,15 @@ importers:
 
   packages/identity:
     dependencies:
+      '@adminbot/ports':
+        specifier: workspace:*
+        version: link:../ports
+
+  packages/members:
+    dependencies:
+      '@adminbot/api-contracts':
+        specifier: workspace:*
+        version: link:../api-contracts
       '@adminbot/ports':
         specifier: workspace:*
         version: link:../ports

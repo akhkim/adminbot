@@ -9,8 +9,9 @@ The repository now contains the first working identity slice: SQLite/Prisma pers
 claim and signup submission, password login and secure session lifecycle, administrator
 registration review, a loopback HTTP API, a standalone dark-mode Lit application shell, and a
 guarded read-only-first legacy identity importer. The public deadline board, authenticated paper
-workspace, member-owned availability planner, and local-only reimbursement assistant are also
-connected; unfinished legacy surfaces remain visibly marked, inert previews.
+workspace, authenticated member roster/profile editor, member-owned availability planner, and
+local-only reimbursement assistant are also connected; unfinished legacy surfaces remain visibly
+marked, inert previews.
 
 ## Current contents
 
@@ -25,6 +26,8 @@ connected; unfinished legacy surfaces remain visibly marked, inert previews.
 - `packages/ports/`: shared repository and transaction contracts.
 - `packages/persistence/`: the sole Prisma schema/client/migration and repository implementation.
 - `packages/identity/`: registration, password login, session, and administrator-review use cases.
+- `packages/members/`: authenticated roster projections, self-owned profile updates, and
+  recently-authenticated administrator governance updates.
 - `packages/reimbursements/`: bounded receipt validation, local-model intake, and versioned form
   generation with institution templates.
 - `packages/availability/`: privacy-aware capacity projections and version-checked plan replacement.

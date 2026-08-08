@@ -216,6 +216,9 @@ export class AdminBotAppShell extends LitElement {
     if (this.activeRoute.id === "settings") {
       return html`<adminbot-policy-settings></adminbot-policy-settings>`;
     }
+    if (this.activeRoute.id === "members") {
+      return html`<adminbot-member-workspace></adminbot-member-workspace>`;
+    }
     if (this.activeRoute.status === "backend_pending") {
       return renderPendingSurface(this.activeRoute);
     }
