@@ -49,6 +49,9 @@ corepack pnpm test
 corepack pnpm web:build
 ```
 
+For terminal-friendly build output, run `corepack pnpm build:interactive`. The regular
+`corepack pnpm build` command keeps plain output suitable for CI logs.
+
 Generated OpenAPI and JSON Schema files are written under ignored `.generated/`; generated
 TypeScript DTOs are written under ignored `packages/api-contracts/src/generated/`. The committed
 TypeSpec files are authoritative.

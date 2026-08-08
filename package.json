@@ -9,6 +9,7 @@
   },
   "scripts": {
     "build": "corepack pnpm contracts:generate && corepack pnpm prisma:generate && tsc --build --pretty false",
+    "build:interactive": "corepack pnpm contracts:generate && corepack pnpm prisma:generate && tsc --build --pretty true",
     "check": "corepack pnpm contracts:check && corepack pnpm prisma:validate && corepack pnpm typecheck",
     "contracts:check": "tsp compile spec --no-emit --warn-as-error",
     "contracts:format:check": "tsp format --check \"spec/**/*.tsp\"",
