@@ -27,7 +27,7 @@ marked, inert previews.
 - `packages/persistence/`: the sole Prisma schema/client/migration and repository implementation.
 - `packages/identity/`: registration, password login, session, and administrator-review use cases.
 - `packages/members/`: authenticated roster projections, self-owned profile updates, and
-  recently-authenticated administrator governance updates.
+  recently-authenticated administrator governance, RBAC, and field-visibility management.
 - `packages/reimbursements/`: bounded receipt validation, local-model intake, and versioned form
   generation with institution templates.
 - `packages/availability/`: privacy-aware capacity projections and version-checked plan replacement.

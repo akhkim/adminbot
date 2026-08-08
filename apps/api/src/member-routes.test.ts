@@ -21,11 +21,25 @@ describe("member routes", () => {
     await route?.handle({ body: { personId: "forged" }, pathname: apiRoutes.updateMemberGovernance.build({ personId: target }), query: new URLSearchParams() });
     expect(application.updateGovernance).toHaveBeenCalledWith(expect.anything(), target, { personId: "forged" });
   });
+
+  it("routes role and visibility changes to the path target", async () => {
+    const application = fakeApplication();
+    const target = "20000000-0000-4000-8000-000000000002";
+    const routes = createMemberRoutes({ authenticate: vi.fn(async () => session()) }, application);
+    await routes[3]?.handle({ body: { roles: ["member"] }, pathname: apiRoutes.replaceMemberRoles.build({ personId: target }), query: new URLSearchParams() });
+    await routes[4]?.handle({ body: { fieldVisibility: {} }, pathname: apiRoutes.replaceMemberVisibility.build({ personId: target }), query: new URLSearchParams() });
+    expect(application.replaceRoles).toHaveBeenCalledWith(expect.anything(), target, { roles: ["member"] });
+    expect(application.replaceVisibility).toHaveBeenCalledWith(expect.anything(), target, { fieldVisibility: {} });
+  });
 });
 
 function fakeApplication(): MemberApplication {
   const result = { ok: false as const, status: 403 as const, body: { code: "not_authorized" as const, message: "denied", retryable: false as const } };
-  return { list: vi.fn(async () => result), updateOwnProfile: vi.fn(async () => result), updateGovernance: vi.fn(async () => result) };
+  return {
+    list: vi.fn(async () => result), updateOwnProfile: vi.fn(async () => result),
+    updateGovernance: vi.fn(async () => result), replaceRoles: vi.fn(async () => result),
+    replaceVisibility: vi.fn(async () => result),
+  };
 }
 
 function session(): AuthenticatedHumanSession {

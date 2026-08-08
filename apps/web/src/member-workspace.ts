@@ -1,6 +1,9 @@
 import type {
   MemberRosterEntry,
   MemberRosterProjection,
+  ReplaceMemberRolesInput,
+  ReplaceMemberVisibilityInput,
+  RoleName,
   UpdateMemberGovernanceInput,
 } from "@adminbot/api-contracts";
 import { css, html, LitElement, nothing, type TemplateResult } from "lit";
@@ -30,6 +33,8 @@ export class AdminBotMemberWorkspace extends LitElement {
     .bio { margin:0; color:var(--text-muted); font-size:.76rem; line-height:1.5; } .member-actions { align-self:end; display:flex; gap:.45rem; }
     .editor { margin-top:1rem; border:1px solid var(--border); border-radius:.85rem; padding:1rem; background:var(--surface-2); }
     form { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.7rem; } label { display:grid; gap:.3rem; color:var(--text-muted); font-size:.7rem; }
+    fieldset { grid-column:1/-1; display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.55rem; border:1px solid var(--border); border-radius:.65rem; padding:.75rem; }
+    fieldset label { display:flex; align-items:center; gap:.45rem; } fieldset input { width:auto; } legend { color:var(--text-strong); font-size:.76rem; }
     label.full,.form-actions { grid-column:1/-1; } .form-actions { display:flex; gap:.5rem; }
     .status { border-left:.2rem solid var(--accent); padding:.65rem .8rem; background:var(--accent-soft); }
     .status.error { border-color:var(--danger); color:var(--danger); } .empty { border:1px dashed var(--border); border-radius:.8rem; padding:2rem; color:var(--text-muted); text-align:center; }
@@ -59,7 +64,7 @@ export class AdminBotMemberWorkspace extends LitElement {
     const members = this.filteredMembers;
     return html`
       <header><p class="eyebrow">Workspace · authenticated directory</p><h1>Lab members</h1>
-        <p class="lede">Find collaborators and maintain the fields you own. Membership tier, lifecycle, mentor, institutional email, and canonical name remain administrator-governed.</p></header>
+        <p class="lede">Find collaborators and maintain the fields you own. Administrators can inspect account state, manage membership, replace authorization roles, and control profile-field visibility.</p></header>
       ${this.notice ? html`<p class="status" role="status">${this.notice}</p>` : nothing}
       ${this.errorMessage ? html`<p class="status error" role="alert">${this.errorMessage}</p>` : nothing}
       <div class="filters">
@@ -79,7 +84,8 @@ export class AdminBotMemberWorkspace extends LitElement {
       <div class="member-head"><div><h2>${profile.preferredName || profile.displayName}</h2>${profile.preferredName ? html`<small>${profile.displayName}</small>` : nothing}</div><span class="tag">${friendly(membership.lifecycle)}</span></div>
       ${profile.institutionalEmail ? html`<a href=${`mailto:${profile.institutionalEmail}`}>${profile.institutionalEmail}</a>` : nothing}
       <p class="bio">${profile.biography || "No biography provided."}</p>
-      <div class="tags"><span class="tag">${friendly(membership.tier)}</span>${profile.researchTopics.map((topic) => html`<span class="tag">${topic}</span>`)}</div>
+      <div class="tags"><span class="tag">${friendly(membership.tier)}</span>${member.roles.map((role) => html`<span class="tag">${friendly(role)}</span>`)}${profile.researchTopics.map((topic) => html`<span class="tag">${topic}</span>`)}</div>
+      ${member.canEditGovernance ? html`<small>Identity: ${friendly(member.personStatus)} · Account: ${member.accountState ? friendly(member.accountState) : "No account"}</small>` : nothing}
       ${member.mentorName ? html`<small>Mentor: ${member.mentorName}</small>` : nothing}
       <div class="member-actions">${member.canEditOwnProfile || member.canEditGovernance ? html`<button @click=${() => { this.selectedPersonId = profile.personId; }}>Edit ${self ? "my profile" : "member"}</button>` : nothing}</div>
     </article>`;
@@ -91,6 +97,8 @@ export class AdminBotMemberWorkspace extends LitElement {
     return html`<section class="editor"><h2>Edit ${member.profile.displayName}</h2>
       ${member.canEditOwnProfile ? this.renderOwnForm(member) : nothing}
       ${member.canEditGovernance ? this.renderGovernanceForm(member) : nothing}
+      ${member.canManageRoles ? this.renderRolesForm(member) : nothing}
+      ${member.canManageVisibility ? this.renderVisibilityForm(member) : nothing}
     </section>`;
   }
 
@@ -114,6 +122,28 @@ export class AdminBotMemberWorkspace extends LitElement {
       <label>Mentor<select name="mentorId"><option value="">No mentor</option>${this.workspace?.members.filter(({ profile }) => profile.personId !== member.profile.personId).map(({ profile }) => html`<option value=${profile.personId} ?selected=${member.membership.mentorId === profile.personId}>${profile.displayName}</option>`)}</select></label>
       <label>Reason<input name="reason" required maxlength="2000" placeholder="Reason for this governance change"></label>
       <div class="form-actions"><button class="primary" type="submit" ?disabled=${this.saving}>Save governance fields</button><button type="button" @click=${this.closeEditor}>Cancel</button></div>
+    </form>`;
+  }
+
+  private renderRolesForm(member: MemberRosterEntry): TemplateResult {
+    const roles: readonly RoleName[] = ["external_collaborator", "member", "administrator", "approver", "security_operator", "auditor"];
+    return html`<form @submit=${(event: SubmitEvent) => this.saveRoles(event, member)}>
+      <h3 class="full">Authorization roles</h3>
+      <p class="muted full">This replaces the complete active role set. You cannot change your own roles or remove the final active administrator.</p>
+      <fieldset><legend>Active roles</legend>${roles.map((role) => html`<label><input type="checkbox" name="roles" value=${role} .checked=${member.roles.includes(role)}>${friendly(role)}</label>`)}</fieldset>
+      <label class="full">Reason<input name="reason" required maxlength="2000" placeholder="Reason for this role change"></label>
+      <div class="form-actions"><button class="primary" type="submit" ?disabled=${this.saving}>Replace roles</button><button type="button" @click=${this.closeEditor}>Cancel</button></div>
+    </form>`;
+  }
+
+  private renderVisibilityForm(member: MemberRosterEntry): TemplateResult {
+    const fields = ["preferredName", "institutionalEmail", "biography", "researchTopics", "profileImageArtifactId"] as const;
+    const audiences = ["self", "members", "administrators", "public"] as const;
+    return html`<form @submit=${(event: SubmitEvent) => this.saveVisibility(event, member)}>
+      <h3 class="full">Profile visibility</h3>
+      ${fields.map((fieldName) => html`<label>${friendly(fieldName)}<select name=${fieldName}>${audiences.map((audience) => html`<option value=${audience} ?selected=${member.profile.fieldVisibility[fieldName] === audience}>${friendly(audience)}</option>`)}</select></label>`)}
+      <label class="full">Reason<input name="reason" required maxlength="2000" placeholder="Reason for this visibility change"></label>
+      <div class="form-actions"><button class="primary" type="submit" ?disabled=${this.saving}>Save visibility</button><button type="button" @click=${this.closeEditor}>Cancel</button></div>
     </form>`;
   }
 
@@ -156,6 +186,31 @@ export class AdminBotMemberWorkspace extends LitElement {
       reason: field(data, "reason"),
     };
     await this.mutate(() => this.client.updateGovernance(member.profile.personId, input), "Member governance updated.");
+  }
+
+  private async saveRoles(event: SubmitEvent, member: MemberRosterEntry): Promise<void> {
+    event.preventDefault(); const data = new FormData(event.currentTarget as HTMLFormElement);
+    const input: ReplaceMemberRolesInput = {
+      expectedMembershipVersion: member.membership.version,
+      roles: data.getAll("roles").filter((value): value is RoleName => typeof value === "string") as RoleName[],
+      reason: field(data, "reason"),
+    };
+    await this.mutate(() => this.client.replaceRoles(member.profile.personId, input), "Authorization roles updated.");
+  }
+
+  private async saveVisibility(event: SubmitEvent, member: MemberRosterEntry): Promise<void> {
+    event.preventDefault(); const data = new FormData(event.currentTarget as HTMLFormElement);
+    const audience = (name: string) => field(data, name) as "self" | "members" | "administrators" | "public";
+    const input: ReplaceMemberVisibilityInput = {
+      expectedProfileVersion: member.profile.version,
+      fieldVisibility: {
+        preferredName: audience("preferredName"), institutionalEmail: audience("institutionalEmail"),
+        biography: audience("biography"), researchTopics: audience("researchTopics"),
+        profileImageArtifactId: audience("profileImageArtifactId"),
+      },
+      reason: field(data, "reason"),
+    };
+    await this.mutate(() => this.client.replaceVisibility(member.profile.personId, input), "Profile visibility updated.");
   }
 
   private async mutate(action: () => Promise<MemberRosterProjection>, notice: string): Promise<void> {

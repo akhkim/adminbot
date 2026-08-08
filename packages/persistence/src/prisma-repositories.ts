@@ -812,7 +812,7 @@ class PrismaMemberRepository implements MemberRepository {
     if (sameVisibility(parseFieldVisibility(current.fieldVisibility), input.fieldVisibility)) return "no_change" as const;
     const changed = await this.database.memberProfile.updateMany({
       where: { organizationId: input.organizationId, personId: input.personId, version: input.expectedProfileVersion },
-      data: { fieldVisibility: input.fieldVisibility, version: { increment: 1 }, updatedAt: input.now },
+      data: { fieldVisibility: { ...input.fieldVisibility }, version: { increment: 1 }, updatedAt: input.now },
     });
     if (changed.count !== 1) return "conflict" as const;
     return this.findRequired(input.organizationId, input.personId, input.now);

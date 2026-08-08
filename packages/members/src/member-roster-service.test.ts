@@ -44,6 +44,38 @@ describe("MemberRosterService", () => {
     expect(repository.updateGovernance).toHaveBeenCalledWith(expect.objectContaining({ personId: OTHER_ID, tier: "member" }));
   });
 
+  it("replaces roles only for another member through a recently authenticated administrator", async () => {
+    const { service, repository } = setup();
+    const input = { expectedMembershipVersion: 1, roles: ["member", "approver"], reason: "Approved responsibility" };
+    await expect(service.replaceRoles(actor(["administrator"], "single_factor"), OTHER_ID, input)).resolves.toMatchObject({ status: 403 });
+    await expect(service.replaceRoles(actor(["administrator"]), MEMBER_ID, input)).resolves.toMatchObject({ status: 403, body: { message: "administrators cannot change their own roles" } });
+    await expect(service.replaceRoles(actor(["administrator"]), OTHER_ID, input)).resolves.toMatchObject({ ok: true });
+    expect(repository.replaceRoles).toHaveBeenCalledWith(expect.objectContaining({
+      actorPersonId: MEMBER_ID, personId: OTHER_ID, roles: ["member", "approver"],
+    }));
+  });
+
+  it("fails closed when live role recheck or last-administrator protection rejects the change", async () => {
+    const { service, repository } = setup();
+    const input = { expectedMembershipVersion: 1, roles: ["member"], reason: "Synthetic test" };
+    repository.replaceRoles.mockResolvedValueOnce("not_authorized" as never);
+    await expect(service.replaceRoles(actor(["administrator"]), OTHER_ID, input)).resolves.toMatchObject({ status: 403, body: { message: "administrator role is no longer active" } });
+    repository.replaceRoles.mockResolvedValueOnce("last_administrator" as never);
+    await expect(service.replaceRoles(actor(["administrator"]), OTHER_ID, input)).resolves.toMatchObject({ status: 409, body: { message: "the last active administrator cannot be removed" } });
+  });
+
+  it("replaces only complete valid visibility policies", async () => {
+    const { service, repository } = setup();
+    await expect(service.replaceVisibility(actor(["administrator"]), OTHER_ID, {
+      expectedProfileVersion: 1, fieldVisibility: { biography: "public" }, reason: "Incomplete",
+    })).resolves.toMatchObject({ status: 400 });
+    const fieldVisibility = { preferredName: "members", institutionalEmail: "administrators", biography: "public", researchTopics: "members", profileImageArtifactId: "self" };
+    await expect(service.replaceVisibility(actor(["administrator"]), OTHER_ID, {
+      expectedProfileVersion: 1, fieldVisibility, reason: "Approved public biography",
+    })).resolves.toMatchObject({ ok: true });
+    expect(repository.replaceVisibility).toHaveBeenCalledWith(expect.objectContaining({ personId: OTHER_ID, fieldVisibility }));
+  });
+
   it("never trusts a target identity in the self-edit payload", async () => {
     const { service, repository } = setup();
     await expect(service.updateOwnProfile(actor(["member"]), {
@@ -63,6 +95,22 @@ describe("MemberRosterService", () => {
     expect(other?.profile.biography).toBeUndefined();
     expect(other?.profile.institutionalEmail).toBeUndefined();
   });
+
+  it("does not treat an external collaborator as a member visibility audience", async () => {
+    const { service } = setup({
+      preferredName: "Visible publicly",
+      biography: "Members only",
+      fieldVisibility: { biography: "members", institutionalEmail: "administrators", researchTopics: "members", preferredName: "public", profileImageArtifactId: "self" },
+    });
+    const result = await service.list(actor(["external_collaborator"]));
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) throw new Error("expected roster");
+    const other = result.body.members.find(({ profile }) => profile.personId === OTHER_ID);
+    expect(other?.profile.preferredName).toBe("Visible publicly");
+    expect(other?.profile.biography).toBeUndefined();
+    expect(other?.profile.researchTopics).toEqual([]);
+    expect(other?.accountState).toBeUndefined();
+  });
 });
 
 function setup(profileOverrides: Partial<MemberRecord["profile"]> = {}) {
@@ -71,6 +119,8 @@ function setup(profileOverrides: Partial<MemberRecord["profile"]> = {}) {
     list: vi.fn(async () => records),
     updateOwnProfile: vi.fn(async () => records[0] as MemberRecord),
     updateGovernance: vi.fn(async () => records[1] as MemberRecord),
+    replaceRoles: vi.fn(async () => records[1] as MemberRecord),
+    replaceVisibility: vi.fn(async () => records[1] as MemberRecord),
   };
   const unit = {
     members: repository,
@@ -99,6 +149,8 @@ function member(personId: string, profileOverrides: Partial<MemberRecord["profil
       tier: "member", lifecycle: "active", roles: ["member"],
       version: 1, createdAt: NOW, updatedAt: NOW,
     },
+    personStatus: "active",
+    accountStatus: "active",
   };
 }
 

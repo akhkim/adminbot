@@ -375,6 +375,62 @@ describe("Prisma transaction boundary", () => {
     });
   });
 
+  it("atomically replaces active roles and visibility with live administrator authorization", async () => {
+    const persistence = openTestPersistence();
+    const organizationId = "10000000-0000-4000-8000-000000000001";
+    const administratorId = "20000000-0000-4000-8000-000000000011";
+    const memberId = "20000000-0000-4000-8000-000000000012";
+    const accountId = "21000000-0000-4000-8000-000000000012";
+    const now = new Date("2026-08-08T12:00:00.000Z");
+    await persistence.transactions.write(({ legacyMigration }) => legacyMigration.importIdentity({
+      run: { id: "40000000-0000-4000-8000-000000000012", scope: "identity", sourceFingerprint: "e".repeat(64), mapperSetVersion: "roles-test-v1", redactedReport: { people: 2 }, completedAt: now },
+      people: [
+        { id: administratorId, organizationId, displayName: "Synthetic Administrator", status: "active", createdAt: now, updatedAt: now },
+        { id: memberId, organizationId, displayName: "Synthetic Member", status: "active", createdAt: now, updatedAt: now },
+      ],
+      accounts: [{ id: accountId, organizationId, personId: memberId, loginHandle: "roles@example.com", passwordHash: "synthetic-password-hash", status: "active", createdAt: now, updatedAt: now }],
+      registrations: [],
+      roles: [
+        { id: "23000000-0000-4000-8000-000000000011", organizationId, personId: administratorId, role: "administrator", validFrom: now, assignedBy: administratorId, createdAt: now, updatedAt: now },
+        { id: "23000000-0000-4000-8000-000000000012", organizationId, personId: memberId, role: "external_collaborator", validFrom: now, assignedBy: administratorId, createdAt: now, updatedAt: now },
+      ],
+      links: [
+        { legacyMemberId: "synthetic-roles-admin", personId: administratorId, importedAt: now },
+        { legacyMemberId: "synthetic-roles-member", personId: memberId, importedAt: now },
+      ],
+    }));
+    await persistence.transactions.write(({ sessions }) => sessions.createSession({
+      id: "22000000-0000-4000-8000-000000000012", accountId,
+      tokenHash: "v1:session-token:roles", now, expiresAt: new Date("2026-08-15T12:00:00.000Z"),
+    }));
+    const replaced = await persistence.transactions.write(({ members }) => {
+      if (members === undefined) throw new Error("member repository missing");
+      return members.replaceRoles({
+        organizationId, actorPersonId: administratorId, personId: memberId,
+        expectedMembershipVersion: 1, roles: ["member", "approver"],
+        assignments: [
+          { id: "23000000-0000-4000-8000-000000000013", role: "member" },
+          { id: "23000000-0000-4000-8000-000000000014", role: "approver" },
+        ],
+        now,
+      });
+    });
+    expect(replaced).toMatchObject({ membership: { version: 2, roles: ["approver", "member"] } });
+    const resolved = await persistence.transactions.read(({ sessions }) =>
+      sessions.findSession(organizationId, "v1:session-token:roles", now));
+    expect(resolved?.roles).toEqual(["approver", "member"]);
+    await expect(persistence.transactions.write(({ members }) => {
+      if (members === undefined) throw new Error("member repository missing");
+      return members.replaceRoles({ organizationId, actorPersonId: memberId, personId: administratorId, expectedMembershipVersion: 1, roles: ["member"], assignments: [{ id: "23000000-0000-4000-8000-000000000015", role: "member" }], now });
+    })).resolves.toBe("not_authorized");
+    const visibility = { preferredName: "members", institutionalEmail: "administrators", biography: "public", researchTopics: "members", profileImageArtifactId: "self" } as const;
+    const visible = await persistence.transactions.write(({ members }) => {
+      if (members === undefined) throw new Error("member repository missing");
+      return members.replaceVisibility({ organizationId, actorPersonId: administratorId, personId: memberId, expectedProfileVersion: 1, fieldVisibility: visibility, now });
+    });
+    expect(visible).toMatchObject({ profile: { version: 2, fieldVisibility: visibility } });
+  });
+
   it("persists and version-checks availability plans with their entry replacement", async () => {
     const persistence = openTestPersistence();
     const organizationId = "10000000-0000-4000-8000-000000000001";

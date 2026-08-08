@@ -256,7 +256,8 @@ function projectMember(member: MemberRecord, actor: MemberActor) {
   const administrator = actor.roles.includes("administrator");
   const visible = (field: keyof MemberRecord["profile"]["fieldVisibility"]): boolean => {
     const audience = member.profile.fieldVisibility[field] ?? "administrators";
-    return self || administrator || audience === "members" || audience === "public";
+    return self || administrator || audience === "public" ||
+      (audience === "members" && actor.roles.includes("member"));
   };
   return {
     profile: {
@@ -292,7 +293,7 @@ function projectMember(member: MemberRecord, actor: MemberActor) {
       ...(member.membership.mentorId === undefined ? {} : { mentorId: member.membership.mentorId }),
     },
     personStatus: member.personStatus,
-    ...(member.accountStatus === undefined ? {} : { accountState: member.accountStatus }),
+    ...((self || administrator) && member.accountStatus !== undefined ? { accountState: member.accountStatus } : {}),
     roles: self || administrator ? [...member.membership.roles] : [],
     ...(member.membership.mentorName === undefined ? {} : { mentorName: member.membership.mentorName }),
     canEditOwnProfile: self,
@@ -398,8 +399,9 @@ function validateVisibility(input: unknown):
   if (!record(input) || !onlyKeys(input, ["expectedProfileVersion", "fieldVisibility", "reason"]) || !positiveInt(input.expectedProfileVersion)) return invalid("visibility replacement is invalid");
   const reason = text(input.reason, 2_000);
   if (reason === undefined || !record(input.fieldVisibility) || !onlyKeys(input.fieldVisibility, VISIBILITY_FIELDS)) return invalid("complete field visibility and reason are required");
-  if (VISIBILITY_FIELDS.some((field) => !AUDIENCES.includes(input.fieldVisibility[field] as typeof AUDIENCES[number]))) return invalid("field visibility audience is invalid");
-  return { ok: true, value: { expectedProfileVersion: input.expectedProfileVersion, fieldVisibility: input.fieldVisibility as unknown as Visibility, reason } };
+  const fieldVisibility = input.fieldVisibility;
+  if (VISIBILITY_FIELDS.some((field) => !AUDIENCES.includes(fieldVisibility[field] as typeof AUDIENCES[number]))) return invalid("field visibility audience is invalid");
+  return { ok: true, value: { expectedProfileVersion: input.expectedProfileVersion, fieldVisibility: fieldVisibility as unknown as Visibility, reason } };
 }
 
 function authorizeMember(actor: MemberActor | undefined, organizationId: string): ErrorResult | undefined {

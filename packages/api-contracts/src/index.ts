@@ -48,13 +48,15 @@ export type {
   UpdatePaperCommand,
   UpdateOwnMemberProfileInput,
   UpdateMemberGovernanceInput,
+  ReplaceMemberRolesInput,
+  ReplaceMemberVisibilityInput,
 } from "./dtos.js";
 export type {
   ApiRoute,
   GovernedActionRoute,
   HttpMethod,
   PaperRoute,
-  MemberGovernanceRoute,
+  MemberTargetRoute,
   RegistrationDecisionRoute,
   StaticApiRoute,
 } from "./routes.js";

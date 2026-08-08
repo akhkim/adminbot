@@ -3,6 +3,8 @@ import {
   createApiUrl,
   type ErrorResponse,
   type MemberRosterProjection,
+  type ReplaceMemberRolesInput,
+  type ReplaceMemberVisibilityInput,
   type UpdateMemberGovernanceInput,
   type UpdateOwnMemberProfileInput,
 } from "@adminbot/api-contracts";
@@ -18,6 +20,8 @@ export interface MemberClient {
   list(): Promise<MemberRosterProjection>;
   updateOwn(input: UpdateOwnMemberProfileInput): Promise<MemberRosterProjection>;
   updateGovernance(personId: string, input: UpdateMemberGovernanceInput): Promise<MemberRosterProjection>;
+  replaceRoles(personId: string, input: ReplaceMemberRolesInput): Promise<MemberRosterProjection>;
+  replaceVisibility(personId: string, input: ReplaceMemberVisibilityInput): Promise<MemberRosterProjection>;
 }
 
 export class MemberApiClient implements MemberClient {
@@ -37,6 +41,14 @@ export class MemberApiClient implements MemberClient {
 
   updateGovernance(personId: string, input: UpdateMemberGovernanceInput): Promise<MemberRosterProjection> {
     return this.json(apiRoutes.updateMemberGovernance.build({ personId }), post(input)) as Promise<MemberRosterProjection>;
+  }
+
+  replaceRoles(personId: string, input: ReplaceMemberRolesInput): Promise<MemberRosterProjection> {
+    return this.json(apiRoutes.replaceMemberRoles.build({ personId }), post(input)) as Promise<MemberRosterProjection>;
+  }
+
+  replaceVisibility(personId: string, input: ReplaceMemberVisibilityInput): Promise<MemberRosterProjection> {
+    return this.json(apiRoutes.replaceMemberVisibility.build({ personId }), post(input)) as Promise<MemberRosterProjection>;
   }
 
   private async json(path: string, init: RequestInit): Promise<unknown> {

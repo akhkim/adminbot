@@ -8,6 +8,8 @@ export interface MemberApplication {
   list(actor: MemberActor | undefined): Promise<MemberCommandResult>;
   updateOwnProfile(actor: MemberActor | undefined, input: unknown): Promise<MemberCommandResult>;
   updateGovernance(actor: MemberActor | undefined, personId: string, input: unknown): Promise<MemberCommandResult>;
+  replaceRoles(actor: MemberActor | undefined, personId: string, input: unknown): Promise<MemberCommandResult>;
+  replaceVisibility(actor: MemberActor | undefined, personId: string, input: unknown): Promise<MemberCommandResult>;
 }
 
 export function createMemberRoutes(
@@ -43,7 +45,29 @@ export function createMemberRoutes(
         );
       },
     },
+    memberTargetHandler(apiRoutes.replaceMemberRoles, sessions, (actor, personId, input) =>
+      members.replaceRoles(actor, personId, input)),
+    memberTargetHandler(apiRoutes.replaceMemberVisibility, sessions, (actor, personId, input) =>
+      members.replaceVisibility(actor, personId, input)),
   ] satisfies readonly ApiRouteHandler[]);
+}
+
+function memberTargetHandler(
+  route: typeof apiRoutes.replaceMemberRoles | typeof apiRoutes.replaceMemberVisibility,
+  sessions: SessionAuthenticator,
+  execute: (actor: MemberActor | undefined, personId: string, input: unknown) => Promise<MemberCommandResult>,
+): ApiRouteHandler {
+  return {
+    route,
+    body: "json",
+    handle: async (context): Promise<ApiResponse> => {
+      const parameters = route.match(context.pathname);
+      if (parameters === undefined) {
+        return { status: 404, body: { code: "not_found", message: "member not found", retryable: false } };
+      }
+      return execute(toActor(await sessions.authenticate(context.sessionToken)), parameters.personId, context.body);
+    },
+  };
 }
 
 function toActor(session: AuthenticatedHumanSession | undefined): MemberActor | undefined {
