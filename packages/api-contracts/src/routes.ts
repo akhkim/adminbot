@@ -92,10 +92,22 @@ export const apiRoutes = Object.freeze({
     "CurrentPrincipalApi.getCurrentPrincipal",
     "/me",
   ),
+  converseReimbursement: staticRoute(
+    "POST",
+    "ReimbursementsApi.converse",
+    "/reimbursements/conversation",
+  ),
+  generateReimbursementPacket: staticRoute(
+    "POST",
+    "ReimbursementsApi.generatePacket",
+    "/reimbursements/packet",
+  ),
   listPapers: staticRoute("GET", "PapersApi.listPapers", "/papers"),
   createPaper: staticRoute("POST", "PapersApi.createPaper", "/papers"),
   updatePaper: paperRoute("PapersApi.updatePaper", ""),
   deletePaper: paperRoute("PapersApi.deletePaper", "/deletion"),
+  getAvailabilityWorkspace: staticRoute("GET", "AvailabilityApi.getAvailabilityWorkspace", "/availability"),
+  replaceAvailabilityPlan: staticRoute("POST", "AvailabilityApi.replaceAvailabilityPlan", "/availability"),
 });
 
 export function createApiUrl(serviceOrigin: string, path: string): URL {

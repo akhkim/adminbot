@@ -79,6 +79,24 @@ enum PaperStage {
   archived
 }
 
+enum AvailabilityEntryKind {
+  allocation
+  open_capacity
+  time_off
+  tentative
+}
+
+enum AvailabilityVisibility {
+  administrators
+  members
+  summary_only
+}
+
+enum AvailabilitySource {
+  manual
+  imported
+}
+
 model Person {
   id             String       @id
   organizationId String       @map("organization_id")
@@ -88,13 +106,56 @@ model Person {
   createdAt      DateTime     @default(now()) @map("created_at")
   updatedAt      DateTime     @updatedAt @map("updated_at")
 
-  account    Account?
-  roles      RoleAssignment[]
-  legacyLink LegacyIdentityLink?
+  account          Account?
+  roles            RoleAssignment[]
+  legacyLink       LegacyIdentityLink?
+  availabilityPlan AvailabilityPlan?
 
   @@unique([organizationId, id])
   @@index([organizationId, status])
   @@map("people")
+}
+
+model AvailabilityPlan {
+  id                 String   @id
+  organizationId     String   @map("organization_id")
+  personId           String   @map("person_id")
+  timeZone           String   @map("time_zone")
+  defaultWeeklyHours Float    @map("default_weekly_hours")
+  version            Int      @default(1)
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  person  Person              @relation(fields: [organizationId, personId], references: [organizationId, id], onDelete: Cascade)
+  entries AvailabilityEntry[]
+
+  @@unique([organizationId, personId])
+  @@index([organizationId, updatedAt])
+  @@map("availability_plans")
+}
+
+model AvailabilityEntry {
+  id                  String                 @id
+  planId              String                 @map("plan_id")
+  kind                AvailabilityEntryKind
+  startsOn            String                 @map("starts_on")
+  endsOn              String                 @map("ends_on")
+  hoursPerWeek        Float?                 @map("hours_per_week")
+  label               String?
+  color               String?
+  timeOffAvailability String?                @map("time_off_availability")
+  privateReason       String?                @map("private_reason")
+  supportingUri       String?                @map("supporting_uri")
+  visibility          AvailabilityVisibility
+  source              AvailabilitySource     @default(manual)
+  confirmedAt         DateTime               @map("confirmed_at")
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+
+  plan AvailabilityPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId, startsOn, endsOn])
+  @@map("availability_entries")
 }
 
 model Paper {
@@ -163,18 +224,18 @@ model Registration {
 model RegistrationProfile {
   registrationId  String   @id @map("registration_id")
   slackUserId     String?  @map("slack_user_id")
-  role             String?
-  affiliation      String?
-  researchBranch   String?  @map("research_branch")
-  researchTopics   Json?    @map("research_topics")
-  projects         Json?
-  hoursPerWeek     Float?   @map("hours_per_week")
-  location         String?
-  timezone         String?
-  personalWebsite  String?  @map("personal_website")
-  notes            String?
-  createdAt        DateTime @default(now()) @map("created_at")
-  updatedAt        DateTime @updatedAt @map("updated_at")
+  role            String?
+  affiliation     String?
+  researchBranch  String?  @map("research_branch")
+  researchTopics  Json?    @map("research_topics")
+  projects        Json?
+  hoursPerWeek    Float?   @map("hours_per_week")
+  location        String?
+  timezone        String?
+  personalWebsite String?  @map("personal_website")
+  notes           String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   registration Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
 
@@ -199,16 +260,16 @@ model Session {
 }
 
 model RoleAssignment {
-  id             String    @id
-  organizationId String    @map("organization_id")
-  personId       String    @map("person_id")
+  id             String     @id
+  organizationId String     @map("organization_id")
+  personId       String     @map("person_id")
   role           AccessRole
-  validFrom      DateTime  @map("valid_from")
-  validUntil     DateTime? @map("valid_until")
-  assignedBy     String    @map("assigned_by")
-  version        Int       @default(1)
-  createdAt      DateTime  @default(now()) @map("created_at")
-  updatedAt      DateTime  @updatedAt @map("updated_at")
+  validFrom      DateTime   @map("valid_from")
+  validUntil     DateTime?  @map("valid_until")
+  assignedBy     String     @map("assigned_by")
+  version        Int        @default(1)
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
 
   person Person @relation(fields: [organizationId, personId], references: [organizationId, id], onDelete: Cascade)
 
@@ -254,8 +315,8 @@ model OutboxEvent {
 }
 
 model LegacyMigrationRun {
-  id               String          @id
-  scope            String
+  id                String          @id
+  scope             String
   sourceFingerprint String          @map("source_fingerprint")
   mapperSetVersion  String          @map("mapper_set_version")
   status            MigrationStatus

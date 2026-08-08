@@ -17,6 +17,11 @@ import {
   type SessionApplication,
 } from "./session-routes.js";
 import { createPaperRoutes, type PaperApplication } from "./paper-routes.js";
+import { createAvailabilityRoutes, type AvailabilityApplication } from "./availability-routes.js";
+import {
+  createReimbursementRoutes,
+  type ReimbursementApplication,
+} from "./reimbursement-routes.js";
 
 const MAXIMUM_JSON_BODY_BYTES = 64 * 1_024;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1"]);
@@ -26,6 +31,8 @@ export interface ApiServerOptions {
   readonly registrationReview: RegistrationReviewApplication;
   readonly sessions: SessionApplication & SessionAuthenticator;
   readonly papers?: PaperApplication;
+  readonly availability?: AvailabilityApplication;
+  readonly reimbursements?: ReimbursementApplication;
   readonly allowedOrigins?: readonly string[];
   readonly secureCookies?: boolean;
   readonly onUnexpectedError?: (error: unknown, operationId?: string) => void;
@@ -50,6 +57,8 @@ export class AdminBotApiServer {
       ...createSessionRoutes(options.sessions, { secure: options.secureCookies ?? false }),
       ...createRegistrationReviewRoutes(options.sessions, options.registrationReview),
       ...(options.papers === undefined ? [] : createPaperRoutes(options.sessions, options.papers)),
+      ...(options.availability === undefined ? [] : createAvailabilityRoutes(options.sessions, options.availability)),
+      ...(options.reimbursements === undefined ? [] : createReimbursementRoutes(options.reimbursements)),
     ];
     const allowedOrigins = parseAllowedOrigins(options.allowedOrigins ?? []);
     this.server = createServer((request, response) => {
@@ -142,7 +151,7 @@ async function dispatchRequest(
       return;
     }
     try {
-      body = await readJsonBody(request);
+      body = await readJsonBody(request, route.maximumBodyBytes ?? MAXIMUM_JSON_BODY_BYTES);
     } catch (error) {
       if (!(error instanceof RequestBodyError)) throw error;
       sendJson(response, {
@@ -193,14 +202,14 @@ function handlePreflight(
   response.end();
 }
 
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
+async function readJsonBody(request: IncomingMessage, maximumBytes: number): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   let tooLarge = false;
   for await (const rawChunk of request) {
     const chunk = Buffer.isBuffer(rawChunk) ? rawChunk : Buffer.from(rawChunk);
     size += chunk.length;
-    if (size > MAXIMUM_JSON_BODY_BYTES) {
+    if (size > maximumBytes) {
       tooLarge = true;
       chunks.length = 0;
     } else if (!tooLarge) {

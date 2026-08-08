@@ -305,11 +305,71 @@ export interface PaperRepository {
   delete(organizationId: string, paperId: string, expectedVersion: number): Promise<"deleted" | "not_found" | "conflict">;
 }
 
+export type AvailabilityEntryKind = "allocation" | "open_capacity" | "time_off" | "tentative";
+export type AvailabilityVisibility = "administrators" | "members" | "summary_only";
+
+export interface AvailabilityEntryRecord {
+  readonly id: string;
+  readonly planId: string;
+  readonly kind: AvailabilityEntryKind;
+  readonly startsOn: string;
+  readonly endsOn: string;
+  readonly hoursPerWeek?: number;
+  readonly label?: string;
+  readonly color?: string;
+  readonly timeOffAvailability?: "none" | "partial";
+  readonly privateReason?: string;
+  readonly supportingUri?: string;
+  readonly visibility: AvailabilityVisibility;
+  readonly source: "manual" | "imported";
+  readonly confirmedAt: Date;
+}
+
+export interface AvailabilityPlanRecord {
+  readonly id: string;
+  readonly organizationId: string;
+  readonly personId: string;
+  readonly personName: string;
+  readonly timeZone: string;
+  readonly defaultWeeklyHours: number;
+  readonly entries: readonly AvailabilityEntryRecord[];
+  readonly version: number;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+export interface ReplaceAvailabilityPlanRecord {
+  readonly id: string;
+  readonly organizationId: string;
+  readonly personId: string;
+  readonly expectedVersion: number;
+  readonly timeZone: string;
+  readonly defaultWeeklyHours: number;
+  readonly entries: readonly Omit<AvailabilityEntryRecord, "planId">[];
+  readonly now: Date;
+}
+
+export interface AvailabilityRepository {
+  listPeople(organizationId: string): Promise<readonly { readonly personId: string; readonly personName: string }[]>;
+  find(organizationId: string, personId: string): Promise<AvailabilityPlanRecord | undefined>;
+  list(organizationId: string): Promise<readonly AvailabilityPlanRecord[]>;
+  ensure(input: {
+    readonly id: string;
+    readonly organizationId: string;
+    readonly personId: string;
+    readonly timeZone: string;
+    readonly defaultWeeklyHours: number;
+    readonly now: Date;
+  }): Promise<AvailabilityPlanRecord | "person_not_found">;
+  replace(input: ReplaceAvailabilityPlanRecord): Promise<AvailabilityPlanRecord | "not_found" | "conflict">;
+}
+
 /**
  * The only repository bundle a transaction callback receives. It is extended centrally as
  * vertical slices land; domain packages never create transaction/session abstractions.
  */
 export interface AdminBotUnitOfWork {
+  readonly availability?: AvailabilityRepository;
   readonly audit: AuditRepository;
   readonly identity: IdentityRepository;
   readonly legacyMigration: import("./legacy-migration.js").LegacyMigrationRepository;

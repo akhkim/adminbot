@@ -9,39 +9,63 @@ scalar AvailabilityPlanId extends string;
 @format("uuid")
 scalar AvailabilityEntryId extends string;
 
+enum AvailabilityEntryKind {
+  allocation,
+  openCapacity: "open_capacity",
+  timeOff: "time_off",
+  tentative,
+}
+
 model AvailabilityEntry {
   id: AvailabilityEntryId;
-  kind: "available" | "unavailable" | "leave" | "tentative";
-  startsAt: utcDateTime;
-  endsAt: utcDateTime;
-  @minValue(0) @maxValue(100) capacityPercent?: int32;
+  kind: AvailabilityEntryKind;
+  startsOn: plainDate;
+  endsOn: plainDate;
+  @minValue(0) @maxValue(168) hoursPerWeek?: float32;
   label?: string;
+  color?: string;
+  timeOffAvailability?: "none" | "partial";
+  privateReason?: string;
+  supportingUri?: url;
   visibility: "administrators" | "members" | "summary_only";
+  source: "manual" | "imported";
+  confirmedAt: utcDateTime;
 }
 
 model AvailabilityPlan extends VersionedRecord {
   id: AvailabilityPlanId;
   organizationId: OrganizationId;
   personId: PersonId;
+  personName: string;
   timeZone: string;
-  @minValue(0) @maxValue(100) defaultWeeklyCapacityPercent: int32;
+  @minValue(1) @maxValue(168) defaultWeeklyHours: float32;
   entries: AvailabilityEntry[];
 }
 
-model CapacityProjection {
+model AvailabilitySummary {
   personId: PersonId;
-  weekStarting: plainDate;
-  @minValue(0) @maxValue(100) capacityPercent: int32;
-  @minValue(0) allocatedPercent: int32;
-  availablePercent: int32;
-  visibility: "self" | "administrators" | "members_summary";
+  personName: string;
+  @minValue(0) allocatedHours: float32;
+  @minValue(0) openHours: float32;
+  away: "none" | "partial" | "full";
+  confirmedAt?: utcDateTime;
+  stale: boolean;
 }
 
-model ReplaceAvailabilityWindowCommand {
+model AvailabilityWorkspaceProjection {
+  viewerPersonId: PersonId;
+  viewerRoles: string[];
+  ownPlan: AvailabilityPlan;
+  visiblePlans: AvailabilityPlan[];
+  summaries: AvailabilitySummary[];
+  asOf: utcDateTime;
+}
+
+model ReplaceAvailabilityPlanCommand {
   planId: AvailabilityPlanId;
   expectedVersion: int32;
-  windowStartsAt: utcDateTime;
-  windowEndsAt: utcDateTime;
+  timeZone: string;
+  @minValue(1) @maxValue(168) defaultWeeklyHours: float32;
   entries: AvailabilityEntry[];
 }
 

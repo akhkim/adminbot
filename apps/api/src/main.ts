@@ -1,4 +1,5 @@
 import { pathToFileURL } from "node:url";
+import { AvailabilityWorkspaceService } from "@adminbot/availability";
 import {
   RegistrationReviewService,
   RegistrationService,
@@ -6,6 +7,11 @@ import {
 } from "@adminbot/identity";
 import { openPersistence } from "@adminbot/persistence";
 import { PaperWorkspaceService } from "@adminbot/papers";
+import {
+  bundledReimbursementHelperPath,
+  LocalReimbursementRuntime,
+  ReimbursementService,
+} from "@adminbot/reimbursements";
 import { AdminBotApiServer } from "./server.js";
 
 export async function startFromEnvironment(
@@ -36,11 +42,30 @@ export async function startFromEnvironment(
     transactions: persistence.transactions,
     organizationId,
   });
+  const availability = new AvailabilityWorkspaceService({
+    transactions: persistence.transactions,
+    organizationId,
+  });
+  const reimbursements = new ReimbursementService({
+    transactions: persistence.transactions,
+    keySecret,
+    runtime: new LocalReimbursementRuntime({
+      helperScriptPath: bundledReimbursementHelperPath(),
+      pythonCommand: environment.ADMINBOT_REIMBURSEMENT_PYTHON?.trim() || "python3",
+      environment,
+    }),
+    onDependencyError: (operation, error) => {
+      const errorType = error instanceof Error ? error.name : "UnknownError";
+      console.error(JSON.stringify({ event: "reimbursement.dependency_failed", operation, errorType }));
+    },
+  });
   const api = new AdminBotApiServer({
     registration,
     registrationReview,
     sessions,
     papers,
+    availability,
+    reimbursements,
     allowedOrigins,
     secureCookies: parseBoolean(environment.ADMINBOT_SECURE_COOKIES, false),
     onUnexpectedError: (error) => {

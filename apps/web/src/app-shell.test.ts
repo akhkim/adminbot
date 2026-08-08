@@ -45,10 +45,7 @@ describe("AdminBotAppShell", () => {
     await element.updateComplete;
 
     expect(window.location.pathname).toBe("/adminbot/reimbursements");
-    expect(element.shadowRoot?.querySelector("h1")?.textContent).toBe("Reimbursements");
-    expect(element.shadowRoot?.textContent).toContain(
-      "data and commands are not connected",
-    );
+    expect(element.shadowRoot?.querySelector("adminbot-reimbursement-app")).not.toBeNull();
     expect(document.title).toBe("Reimbursements · AdminBot");
   });
 

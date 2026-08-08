@@ -8,8 +8,9 @@ plane.
 The repository now contains the first working identity slice: SQLite/Prisma persistence, anonymous
 claim and signup submission, password login and secure session lifecycle, administrator
 registration review, a loopback HTTP API, a standalone dark-mode Lit application shell, and a
-guarded read-only-first legacy identity importer. The public deadline board and authenticated paper
-workspace are also connected; unfinished legacy surfaces remain visibly marked, inert previews.
+guarded read-only-first legacy identity importer. The public deadline board, authenticated paper
+workspace, member-owned availability planner, and local-only reimbursement assistant are also
+connected; unfinished legacy surfaces remain visibly marked, inert previews.
 
 ## Current contents
 
@@ -24,6 +25,9 @@ workspace are also connected; unfinished legacy surfaces remain visibly marked, 
 - `packages/ports/`: shared repository and transaction contracts.
 - `packages/persistence/`: the sole Prisma schema/client/migration and repository implementation.
 - `packages/identity/`: registration, password login, session, and administrator-review use cases.
+- `packages/reimbursements/`: bounded receipt validation, local-model intake, and versioned form
+  generation with institution templates.
+- `packages/availability/`: privacy-aware capacity projections and version-checked plan replacement.
 - `apps/api/`: loopback HTTP composition and transport protections.
 - `apps/web/`: standalone shell, theme, access, sign-in/session, and registration-review clients.
 - `apps/migrate/`: exact-fingerprint v1 SQLite reader and transactional identity importer.
@@ -71,6 +75,21 @@ corepack pnpm --filter @adminbot/web dev
 The web development server proxies the centralized `/v0alpha` base to the loopback API. Configure
 `ADMINBOT_WEB_ORIGINS` with the exact browser origin; origin checks and server-side authorization
 remain authoritative.
+
+Reimbursement extraction and form generation use a small Python helper. Install its isolated
+dependencies before enabling that public surface, and keep the configured model endpoint on
+loopback:
+
+```bash
+python3 -m venv .venv-reimbursements
+. .venv-reimbursements/bin/activate
+python -m pip install -r packages/reimbursements/requirements.txt
+```
+
+Set `ADMINBOT_REIMBURSEMENT_PYTHON` to that environment's Python executable when the API itself is
+not launched from the activated environment. Receipt bytes and conversation drafts are transient;
+only a keyed, address-scoped abuse-control counter is persisted. Packet generation downloads two
+files and never submits them to an institution.
 
 The legacy identity importer is dry-run by default and requires absolute paths. Apply additionally
 requires `--apply --invalidate-legacy-sessions`; it never turns v1 sessions into live v2 sessions.

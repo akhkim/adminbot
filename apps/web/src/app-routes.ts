@@ -97,10 +97,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     description: "Prepare reimbursement forms from receipts without sending private data remotely.",
     audience: "public",
     group: "public",
-    status: "backend_pending",
+    status: "live",
     preview: "composer",
     legacyBehavior: "A local-only assistant extracted receipts and generated canonical forms.",
-    nextBoundary: "The privacy broker and reimbursement workflow API must be ported first.",
   },
   {
     id: "deadlines",
@@ -139,10 +138,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     description: "Review capacity, time off, and project allocation over a selected interval.",
     audience: "member",
     group: "workspace",
-    status: "backend_pending",
+    status: "live",
     preview: "timeline",
     legacyBehavior: "A member timeline combined availability ranges, time off, and task allocation.",
-    nextBoundary: "The availability repository, projection, and self-edit policy must be ported first.",
   },
   {
     id: "papers",

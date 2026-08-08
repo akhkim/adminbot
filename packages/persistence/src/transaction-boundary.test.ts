@@ -324,6 +324,31 @@ describe("Prisma transaction boundary", () => {
       profile: { researchTopics: ["systems"] },
     });
   });
+
+  it("persists and version-checks availability plans with their entry replacement", async () => {
+    const persistence = openTestPersistence();
+    const organizationId = "10000000-0000-4000-8000-000000000001";
+    const personId = "20000000-0000-4000-8000-000000000009";
+    const now = new Date("2026-08-08T12:00:00.000Z");
+    await persistence.transactions.write(({ legacyMigration }) => legacyMigration.importIdentity({
+      run: { id: "40000000-0000-4000-8000-000000000009", scope: "identity", sourceFingerprint: "c".repeat(64), mapperSetVersion: "availability-test-v1", redactedReport: { people: 1 }, completedAt: now },
+      people: [{ id: personId, organizationId, displayName: "Synthetic Planner", status: "active", createdAt: now, updatedAt: now }], accounts: [], registrations: [], roles: [], links: [{ legacyMemberId: "synthetic-planner", personId, importedAt: now }],
+    }));
+    const ensured = await persistence.transactions.write(({ availability }) => {
+      if (availability === undefined) throw new Error("availability repository missing");
+      return availability.ensure({ id: "30000000-0000-4000-8000-000000000009", organizationId, personId, timeZone: "UTC", defaultWeeklyHours: 40, now });
+    });
+    if (ensured === "person_not_found") throw new Error("person missing");
+    const replaced = await persistence.transactions.write(({ availability }) => {
+      if (availability === undefined) throw new Error("availability repository missing");
+      return availability.replace({ id: ensured.id, organizationId, personId, expectedVersion: 1, timeZone: "Europe/London", defaultWeeklyHours: 35, now, entries: [{ id: "50000000-0000-4000-8000-000000000009", kind: "allocation", startsOn: "2026-08-01", endsOn: "2026-12-31", hoursPerWeek: 20, label: "Synthetic Project", visibility: "members", source: "manual", confirmedAt: now }] });
+    });
+    expect(replaced).toMatchObject({ version: 2, timeZone: "Europe/London", entries: [{ label: "Synthetic Project", hoursPerWeek: 20 }] });
+    await expect(persistence.transactions.write(({ availability }) => {
+      if (availability === undefined) throw new Error("availability repository missing");
+      return availability.replace({ id: ensured.id, organizationId, personId, expectedVersion: 1, timeZone: "UTC", defaultWeeklyHours: 40, now, entries: [] });
+    })).resolves.toBe("conflict");
+  });
 });
 
 function openTestPersistence(): Persistence {

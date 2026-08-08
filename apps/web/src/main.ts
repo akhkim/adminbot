@@ -1,9 +1,11 @@
 import { AdminBotAppShell } from "./app-shell.js";
+import { AdminBotAvailabilityWorkspace } from "./availability-workspace.js";
 import { AdminBotLoginApp } from "./login-app.js";
 import { AdminBotRegistrationApp } from "./registration-app.js";
 import { AdminBotRegistrationReviewApp } from "./registration-review-app.js";
 import { AdminBotDeadlineBoard } from "./deadline-board.js";
 import { AdminBotPaperWorkspace } from "./paper-workspace.js";
+import { AdminBotReimbursementApp } from "./reimbursement-app.js";
 
 if (!customElements.get("adminbot-login-app")) {
   customElements.define("adminbot-login-app", AdminBotLoginApp);
@@ -25,6 +27,14 @@ if (!customElements.get("adminbot-paper-workspace")) {
   customElements.define("adminbot-paper-workspace", AdminBotPaperWorkspace);
 }
 
+if (!customElements.get("adminbot-availability-workspace")) {
+  customElements.define("adminbot-availability-workspace", AdminBotAvailabilityWorkspace);
+}
+
 if (!customElements.get("adminbot-app")) {
   customElements.define("adminbot-app", AdminBotAppShell);
+}
+
+if (!customElements.get("adminbot-reimbursement-app")) {
+  customElements.define("adminbot-reimbursement-app", AdminBotReimbursementApp);
 }

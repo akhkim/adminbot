@@ -13,3 +13,8 @@ export {
   type SessionApplication,
 } from "./session-routes.js";
 export { createPaperRoutes, type PaperApplication } from "./paper-routes.js";
+export { createAvailabilityRoutes, type AvailabilityApplication } from "./availability-routes.js";
+export {
+  createReimbursementRoutes,
+  type ReimbursementApplication,
+} from "./reimbursement-routes.js";

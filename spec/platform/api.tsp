@@ -8,7 +8,9 @@ import "./identity.tsp";
 import "./privacy.tsp";
 import "./supporting.tsp";
 import "../workflows/communications.tsp";
+import "../workflows/availability.tsp";
 import "../workflows/papers.tsp";
+import "../workflows/reimbursements.tsp";
 
 using TypeSpec.Http;
 using AdminBot.Contracts.Automation;
@@ -19,7 +21,9 @@ using AdminBot.Contracts.Identity;
 using AdminBot.Contracts.Privacy;
 using AdminBot.Contracts.Supporting;
 using AdminBot.Contracts.Workflows.Communications;
+using AdminBot.Contracts.Workflows.Availability;
 using AdminBot.Contracts.Workflows.Papers;
+using AdminBot.Contracts.Workflows.Reimbursements;
 
 @service(#{ title: "AdminBot v2" })
 @route("/v0alpha")
@@ -111,6 +115,32 @@ interface PapersApi {
   @post
   deletePaper(@path paperId: PaperId, @body input: DeletePaperCommand):
     | void
+    | ErrorResponse;
+}
+
+@route("/availability")
+interface AvailabilityApi {
+  @get getAvailabilityWorkspace():
+    | AvailabilityWorkspaceProjection
+    | ErrorResponse;
+
+  @post replaceAvailabilityPlan(@body input: ReplaceAvailabilityPlanCommand):
+    | AvailabilityWorkspaceProjection
+    | ErrorResponse;
+}
+
+@route("/reimbursements")
+interface ReimbursementsApi {
+  @route("/conversation")
+  @post
+  converse(@body input: ReimbursementConversationInput):
+    | ReimbursementConversationResult
+    | ErrorResponse;
+
+  @route("/packet")
+  @post
+  generatePacket(@body input: GenerateReimbursementPacketInput):
+    | ReimbursementPacketResult
     | ErrorResponse;
 }
 

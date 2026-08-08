@@ -17,5 +17,6 @@ export interface ApiResponse {
 export interface ApiRouteHandler {
   readonly route: ApiRoute;
   readonly body: "json" | "none";
+  readonly maximumBodyBytes?: number;
   handle(context: ApiRequestContext): Promise<ApiResponse>;
 }

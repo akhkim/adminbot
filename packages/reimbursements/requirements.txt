@@ -1,0 +1,4 @@
+openpyxl
+Pillow
+pypdfium2
+python-docx

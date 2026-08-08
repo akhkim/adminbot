@@ -7,6 +7,7 @@ import type {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { AdminBotApiServer, type ListeningApiServer } from "./server.js";
 import type { SessionApplication } from "./session-routes.js";
+import type { ReimbursementApplication } from "./reimbursement-routes.js";
 
 const WEB_ORIGIN = "http://127.0.0.1:4173";
 const openServers: ListeningApiServer[] = [];
@@ -88,6 +89,18 @@ describe("AdminBotApiServer registration routes", () => {
     expect(malformed.status).toBe(400);
     expect(oversized.status).toBe(413);
     expect(application.submitClaim).not.toHaveBeenCalled();
+  });
+
+  it("allows the reimbursement upload budget without widening other routes", async () => {
+    const reimbursements = fakeReimbursementApplication();
+    const server = await start(fakeRegistrationApplication(), { reimbursements });
+    const response = await fetch(`${server.origin}${apiRoutes.converseReimbursement.build()}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ message: "x".repeat(70_000) }),
+    });
+    expect(response.status).toBe(200);
+    expect(reimbursements.converse).toHaveBeenCalledOnce();
   });
 
   it("delivers the opaque session credential only in a strict HTTP-only cookie", async () => {
@@ -252,6 +265,19 @@ function fakeRegistrationReviewApplication() {
 interface StartOverrides {
   readonly sessions?: ReturnType<typeof fakeSessionApplication>;
   readonly reviews?: ReturnType<typeof fakeRegistrationReviewApplication>;
+  readonly reimbursements?: ReturnType<typeof fakeReimbursementApplication>;
+}
+
+function fakeReimbursementApplication() {
+  return {
+    converse: vi.fn(async () => ({
+      ok: true as const, status: 200 as const,
+      body: { assistantMessage: "Review", draft: { expenses: [] }, missingFields: [], ready: false, receiptNames: [] },
+    })),
+    generate: vi.fn(async () => ({
+      ok: true as const, status: 200 as const, body: { artifacts: [], warnings: [] },
+    })),
+  } satisfies ReimbursementApplication;
 }
 
 async function start(
@@ -262,6 +288,7 @@ async function start(
     registration: application,
     sessions: overrides.sessions ?? fakeSessionApplication(),
     registrationReview: overrides.reviews ?? fakeRegistrationReviewApplication(),
+    ...(overrides.reimbursements === undefined ? {} : { reimbursements: overrides.reimbursements }),
     allowedOrigins: [WEB_ORIGIN],
   });
   const server = await api.listen({ port: 0 });

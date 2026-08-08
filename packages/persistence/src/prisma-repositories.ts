@@ -1,6 +1,8 @@
 import type { Prisma, PrismaClient } from "./generated/prisma/client.js";
 import type {
   AdminBotUnitOfWork,
+  AvailabilityPlanRecord,
+  AvailabilityRepository,
   AuditEventRecord,
   AuditRepository,
   IdentityRepository,
@@ -539,6 +541,83 @@ class PrismaRateLimitRepository implements RateLimitRepository {
   }
 }
 
+class PrismaAvailabilityRepository implements AvailabilityRepository {
+  constructor(private readonly database: DatabaseClient) {}
+
+  async listPeople(organizationId: string) {
+    const people = await this.database.person.findMany({
+      where: { organizationId, status: "active" },
+      select: { id: true, displayName: true },
+      orderBy: [{ displayName: "asc" }, { id: "asc" }],
+    });
+    return people.map((person) => ({ personId: person.id, personName: person.displayName }));
+  }
+
+  async find(organizationId: string, personId: string): Promise<AvailabilityPlanRecord | undefined> {
+    const row = await this.database.availabilityPlan.findUnique({
+      where: { organizationId_personId: { organizationId, personId } },
+      include: { person: { select: { displayName: true } }, entries: { orderBy: [{ startsOn: "asc" }, { id: "asc" }] } },
+    });
+    return row === null ? undefined : toAvailabilityPlan(row);
+  }
+
+  async list(organizationId: string): Promise<readonly AvailabilityPlanRecord[]> {
+    const rows = await this.database.availabilityPlan.findMany({
+      where: { organizationId },
+      include: { person: { select: { displayName: true } }, entries: { orderBy: [{ startsOn: "asc" }, { id: "asc" }] } },
+      orderBy: [{ person: { displayName: "asc" } }, { personId: "asc" }],
+    });
+    return rows.map(toAvailabilityPlan);
+  }
+
+  async ensure(input: Parameters<AvailabilityRepository["ensure"]>[0]) {
+    const person = await this.database.person.findUnique({
+      where: { organizationId_id: { organizationId: input.organizationId, id: input.personId } },
+      select: { status: true },
+    });
+    if (person === null || person.status !== "active") return "person_not_found" as const;
+    const row = await this.database.availabilityPlan.upsert({
+      where: { organizationId_personId: { organizationId: input.organizationId, personId: input.personId } },
+      create: { id: input.id, organizationId: input.organizationId, personId: input.personId, timeZone: input.timeZone, defaultWeeklyHours: input.defaultWeeklyHours, createdAt: input.now, updatedAt: input.now },
+      update: {},
+      include: { person: { select: { displayName: true } }, entries: true },
+    });
+    return toAvailabilityPlan(row);
+  }
+
+  async replace(input: Parameters<AvailabilityRepository["replace"]>[0]) {
+    const changed = await this.database.availabilityPlan.updateMany({
+      where: { id: input.id, organizationId: input.organizationId, personId: input.personId, version: input.expectedVersion },
+      data: { timeZone: input.timeZone, defaultWeeklyHours: input.defaultWeeklyHours, version: { increment: 1 }, updatedAt: input.now },
+    });
+    if (changed.count !== 1) {
+      const exists = await this.database.availabilityPlan.count({ where: { id: input.id, organizationId: input.organizationId, personId: input.personId } });
+      return exists === 0 ? "not_found" as const : "conflict" as const;
+    }
+    await this.database.availabilityEntry.deleteMany({ where: { planId: input.id } });
+    if (input.entries.length > 0) {
+      await this.database.availabilityEntry.createMany({
+        data: input.entries.map((entry) => ({
+          id: entry.id, planId: input.id, kind: entry.kind, startsOn: entry.startsOn,
+          endsOn: entry.endsOn, visibility: entry.visibility, source: entry.source,
+          confirmedAt: entry.confirmedAt, createdAt: input.now, updatedAt: input.now,
+          ...(entry.hoursPerWeek === undefined ? {} : { hoursPerWeek: entry.hoursPerWeek }),
+          ...(entry.label === undefined ? {} : { label: entry.label }),
+          ...(entry.color === undefined ? {} : { color: entry.color }),
+          ...(entry.timeOffAvailability === undefined ? {} : { timeOffAvailability: entry.timeOffAvailability }),
+          ...(entry.privateReason === undefined ? {} : { privateReason: entry.privateReason }),
+          ...(entry.supportingUri === undefined ? {} : { supportingUri: entry.supportingUri }),
+        })),
+      });
+    }
+    const row = await this.database.availabilityPlan.findUniqueOrThrow({
+      where: { id: input.id },
+      include: { person: { select: { displayName: true } }, entries: { orderBy: [{ startsOn: "asc" }, { id: "asc" }] } },
+    });
+    return toAvailabilityPlan(row);
+  }
+}
+
 class PrismaPaperRepository implements PaperRepository {
   constructor(private readonly database: DatabaseClient) {}
 
@@ -734,6 +813,7 @@ class PrismaLegacyMigrationRepository implements LegacyMigrationRepository {
 export function createUnitOfWork(database: DatabaseClient): AdminBotUnitOfWork {
   const identity = new PrismaIdentityRepository(database);
   return {
+    availability: new PrismaAvailabilityRepository(database),
     audit: new PrismaAuditRepository(database),
     identity,
     legacyMigration: new PrismaLegacyMigrationRepository(database),
@@ -742,6 +822,30 @@ export function createUnitOfWork(database: DatabaseClient): AdminBotUnitOfWork {
     rateLimits: new PrismaRateLimitRepository(database),
     registrationReviews: identity as RegistrationReviewRepository,
     sessions: identity as SessionRepository,
+  };
+}
+
+type AvailabilityPlanRow = Prisma.AvailabilityPlanGetPayload<{
+  include: { person: { select: { displayName: true } }; entries: true };
+}>;
+
+function toAvailabilityPlan(row: AvailabilityPlanRow): AvailabilityPlanRecord {
+  return {
+    id: row.id, organizationId: row.organizationId, personId: row.personId,
+    personName: row.person.displayName, timeZone: row.timeZone,
+    defaultWeeklyHours: row.defaultWeeklyHours, version: row.version,
+    createdAt: row.createdAt, updatedAt: row.updatedAt,
+    entries: row.entries.map((entry) => ({
+      id: entry.id, planId: entry.planId, kind: entry.kind,
+      startsOn: entry.startsOn, endsOn: entry.endsOn,
+      visibility: entry.visibility, source: entry.source, confirmedAt: entry.confirmedAt,
+      ...(entry.hoursPerWeek === null ? {} : { hoursPerWeek: entry.hoursPerWeek }),
+      ...(entry.label === null ? {} : { label: entry.label }),
+      ...(entry.color === null ? {} : { color: entry.color }),
+      ...(entry.timeOffAvailability === null ? {} : { timeOffAvailability: entry.timeOffAvailability as "none" | "partial" }),
+      ...(entry.privateReason === null ? {} : { privateReason: entry.privateReason }),
+      ...(entry.supportingUri === null ? {} : { supportingUri: entry.supportingUri }),
+    })),
   };
 }
 

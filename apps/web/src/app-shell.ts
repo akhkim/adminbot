@@ -193,8 +193,14 @@ export class AdminBotAppShell extends LitElement {
     if (this.activeRoute.id === "deadlines") {
       return html`<adminbot-deadline-board></adminbot-deadline-board>`;
     }
+    if (this.activeRoute.id === "reimbursements") {
+      return html`<adminbot-reimbursement-app></adminbot-reimbursement-app>`;
+    }
     if (this.activeRoute.id === "papers") {
       return html`<adminbot-paper-workspace></adminbot-paper-workspace>`;
+    }
+    if (this.activeRoute.id === "availability") {
+      return html`<adminbot-availability-workspace></adminbot-availability-workspace>`;
     }
     if (this.activeRoute.status === "backend_pending") {
       return renderPendingSurface(this.activeRoute);
