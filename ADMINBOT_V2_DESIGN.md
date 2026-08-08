@@ -807,6 +807,34 @@ interface. SQLite tables provide the initial queue and outbox, avoiding Redis or
 until measured load requires one. Identity, policy, privacy, and workflows remain modules inside
 `adminbot-api`; connectors remain packages loaded only by `adminbot-worker`.
 
+#### 6.10.1 Current private AWS deployment profile
+
+The committed `deploy/aws` profile packages the currently implemented API and static web surface;
+it does not pretend that the future worker, automation, connector, or local-model processes already
+exist. SQLite requires one host-local writer, so v0alpha uses one Amazon Linux 2023 EC2 instance and
+a separate encrypted gp3 EBS state volume instead of placing SQLite on ECS/Fargate network storage.
+
+Both Docker containers use host networking only to preserve the existing loopback boundary. The API
+listens on `127.0.0.1:8765`; an unprivileged read-only Nginx container listens on
+`127.0.0.1:8080`, serves the static UI, and proxies only `/v0alpha`. The security group has no ingress
+rules. Operators reach port 8080 through an authenticated AWS Systems Manager port-forward session;
+there is no SSH key, bastion, public load balancer, or non-loopback API bind. Host firewall rules
+deny both container user ids access to EC2 instance metadata.
+
+Terraform owns the VPC, no-ingress instance, persistent EBS volume, customer-managed rotating KMS
+key, immutable ECR repositories, least-privilege instance role, empty Secrets Manager container, and
+AWS Backup plan. It deliberately does not own a secret version: operators populate exactly the
+durable organization UUID and identity-key secret through the AWS CLI, keeping plaintext out of
+configuration, plans, state, images, user data, and logs. The KMS key, secret, and state volume use
+destruction guards. An online SQLite backup runs before the daily encrypted EBS recovery point.
+
+The API image applies committed Prisma migrations before starting and includes the local-only
+reimbursement Python environment. Both images use immutable commit-SHA tags, read-only roots,
+dropped capabilities, `no-new-privileges`, PID ceilings, and narrowly scoped writable mounts. The
+local migrated database is not uploaded automatically; transferring it to AWS remains an explicit
+write-freeze operation because it contains personal and authentication data. PostgreSQL remains the
+prerequisite for a multi-instance topology.
+
 ## 7. Domain model
 
 ### 7.1 Identity and authorization
@@ -2121,4 +2149,5 @@ feature family.
 | ✅ | Public reimbursement intake and packet generation | Versioned conversation/packet contracts; bounded PDF/image receipt validation; loopback-only local-model extraction; transient receipt handling; durable anonymous rate limits; structured claimant/expense preview; and downloads of the bundled expense and trip-summary forms. Submission remains a separate, unimplemented authenticated governance action |
 | ✅ | Legacy identity migration dry run | Exact v1 schema fingerprint, immutable source backup, redacted report, deterministic mappings, explicit session invalidation, ORM-only destination writer; current source maps with zero blocking issues |
 | ✅ | Apply legacy identity data | Durable single-organization UUID configured locally; schema migrated; 159 people, 107 reusable accounts, 10 registrations, 175 role assignments, and 159 member aggregates imported atomically; legacy sessions invalidated; ledger, audit event, backups, and SQLite integrity verified |
+| ✅ | Container and private AWS deployment packaging | Multi-stage API/web images; loopback-only proxy topology; Terraform-managed no-ingress EC2, encrypted persistent EBS, KMS, immutable ECR, SSM access, least-privilege Secrets Manager retrieval, online SQLite backups, and AWS Backup; validated locally without applying AWS resources |
 | Pending | Onboarding, governance, connectors, automations, and remaining workflow packs | Implement sequentially in the Phase 1-4 order |

@@ -1,0 +1,265 @@
+#!/bin/bash
+set -euo pipefail
+
+exec > >(tee -a /var/log/adminbot-bootstrap.log | logger -t adminbot-bootstrap -s 2>/dev/console) 2>&1
+
+dnf install --assumeyes curl docker iptables jq python3
+systemctl enable --now docker
+
+STATE_VOLUME_ID="${state_volume_id}"
+VOLUME_TOKEN="$${STATE_VOLUME_ID//-/}"
+DEVICE_LINK="/dev/disk/by-id/nvme-Amazon_Elastic_Block_Store_$${VOLUME_TOKEN}"
+DEVICE=""
+
+for _ in $(seq 1 200); do
+  if [[ -e "$${DEVICE_LINK}" ]]; then
+    DEVICE=$(readlink -f "$${DEVICE_LINK}")
+    break
+  fi
+  if [[ -b /dev/xvdf ]]; then
+    DEVICE=/dev/xvdf
+    break
+  fi
+  sleep 3
+done
+
+if [[ -z "$${DEVICE}" || ! -b "$${DEVICE}" ]]; then
+  echo "AdminBot state volume was not attached at the expected device" >&2
+  exit 1
+fi
+
+if ! blkid "$${DEVICE}" >/dev/null 2>&1; then
+  mkfs.ext4 -F "$${DEVICE}"
+fi
+
+STATE_UUID=$(blkid -s UUID -o value "$${DEVICE}")
+install -d -m 0700 /srv/adminbot
+if ! grep -q "^UUID=$${STATE_UUID} /srv/adminbot " /etc/fstab; then
+  printf 'UUID=%s /srv/adminbot ext4 defaults,nofail,nodev,nosuid 0 2\n' "$${STATE_UUID}" >> /etc/fstab
+fi
+mountpoint -q /srv/adminbot || mount /srv/adminbot
+install -d -m 0700 -o 1000 -g 1000 /srv/adminbot/state
+
+install -d -m 0755 /etc/adminbot /usr/local/libexec /usr/local/sbin
+
+cat >/etc/adminbot/runtime.conf <<'RUNTIME_CONFIG'
+ADMINBOT_API_IMAGE=${api_image}
+ADMINBOT_WEB_IMAGE=${web_image}
+ADMINBOT_AWS_REGION=${aws_region}
+ADMINBOT_ECR_REGISTRY=${ecr_registry}
+RUNTIME_CONFIG
+chmod 0600 /etc/adminbot/runtime.conf
+
+cat >/usr/local/libexec/adminbot-render-secrets <<'PYTHON'
+#!/usr/bin/python3
+import json
+import os
+import re
+import sys
+import tempfile
+
+target = "/run/adminbot/secrets.env"
+required = {"ADMINBOT_ORGANIZATION_ID", "ADMINBOT_IDENTITY_KEY_SECRET"}
+
+try:
+    value = json.load(sys.stdin)
+except (json.JSONDecodeError, UnicodeDecodeError) as error:
+    raise SystemExit("runtime secret must be a JSON object") from error
+
+if not isinstance(value, dict) or set(value) != required:
+    raise SystemExit("runtime secret must contain exactly the documented keys")
+if not re.fullmatch(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}",
+    str(value["ADMINBOT_ORGANIZATION_ID"]),
+    re.IGNORECASE,
+):
+    raise SystemExit("ADMINBOT_ORGANIZATION_ID must be a UUID")
+
+identity_key = value["ADMINBOT_IDENTITY_KEY_SECRET"]
+if not isinstance(identity_key, str) or not 32 <= len(identity_key) <= 512:
+    raise SystemExit("ADMINBOT_IDENTITY_KEY_SECRET has an invalid length")
+if any(character in identity_key for character in ("\x00", "\r", "\n")):
+    raise SystemExit("runtime secret values must be single-line strings")
+
+os.makedirs(os.path.dirname(target), mode=0o700, exist_ok=True)
+descriptor, temporary = tempfile.mkstemp(prefix="secrets.", dir=os.path.dirname(target), text=True)
+try:
+    os.fchmod(descriptor, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+        for key in sorted(required):
+            output.write(f"{key}={value[key]}\n")
+        output.flush()
+        os.fsync(output.fileno())
+    os.replace(temporary, target)
+finally:
+    if os.path.exists(temporary):
+        os.unlink(temporary)
+PYTHON
+chmod 0755 /usr/local/libexec/adminbot-render-secrets
+
+cat >/usr/local/sbin/adminbot-refresh-secrets <<'REFRESH_SECRETS'
+#!/bin/bash
+set -euo pipefail
+set +x
+
+SECRET_JSON=$(aws secretsmanager get-secret-value \
+  --region '${aws_region}' \
+  --secret-id '${secret_arn}' \
+  --query SecretString \
+  --output text)
+printf '%s' "$${SECRET_JSON}" | /usr/local/libexec/adminbot-render-secrets
+unset SECRET_JSON
+REFRESH_SECRETS
+chmod 0750 /usr/local/sbin/adminbot-refresh-secrets
+
+cat >/etc/systemd/system/adminbot-api.service <<'API_SERVICE'
+[Unit]
+Description=AdminBot API container
+After=docker.service network-online.target adminbot-metadata-firewall.service adminbot-secrets.service
+Wants=network-online.target
+Requires=docker.service adminbot-metadata-firewall.service adminbot-secrets.service
+RequiresMountsFor=/srv/adminbot/state
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm --force adminbot-api
+ExecStart=/usr/bin/docker run --rm --name adminbot-api --network host --read-only --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 256 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m --env-file /run/adminbot/secrets.env --env ADMINBOT_DATABASE_URL=file:/app/state/adminbot-v2.sqlite --env ADMINBOT_API_PORT=8765 --env ADMINBOT_WEB_ORIGINS=${web_origin} --env ADMINBOT_SECURE_COOKIES=false --volume /srv/adminbot/state:/app/state:rw ${api_image}
+ExecStop=/usr/bin/docker stop --time 30 adminbot-api
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=180
+TimeoutStopSec=45
+
+[Install]
+WantedBy=multi-user.target
+API_SERVICE
+
+cat >/etc/systemd/system/adminbot-web.service <<'WEB_SERVICE'
+[Unit]
+Description=AdminBot private web container
+After=docker.service network-online.target adminbot-api.service adminbot-metadata-firewall.service
+Wants=network-online.target
+Requires=docker.service adminbot-api.service adminbot-metadata-firewall.service
+
+[Service]
+Type=simple
+ExecStartPre=-/usr/bin/docker rm --force adminbot-web
+ExecStart=/usr/bin/docker run --rm --name adminbot-web --network host --read-only --cap-drop ALL --security-opt no-new-privileges:true --pids-limit 128 --tmpfs /tmp:rw,noexec,nosuid,nodev,size=16m --tmpfs /var/cache/nginx:rw,noexec,nosuid,nodev,size=16m --tmpfs /var/run:rw,noexec,nosuid,nodev,size=1m ${web_image}
+ExecStop=/usr/bin/docker stop --time 15 adminbot-web
+Restart=on-failure
+RestartSec=10
+TimeoutStartSec=60
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+WEB_SERVICE
+
+cat >/etc/systemd/system/adminbot-secrets.service <<'SECRETS_SERVICE'
+[Unit]
+Description=Materialize AdminBot runtime secrets from AWS Secrets Manager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/adminbot-refresh-secrets
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+SECRETS_SERVICE
+
+cat >/usr/local/sbin/adminbot-block-container-metadata <<'METADATA_FIREWALL'
+#!/bin/bash
+set -euo pipefail
+
+for user_id in 101 1000; do
+  if ! iptables --check OUTPUT --destination 169.254.169.254 --match owner --uid-owner "$${user_id}" --jump REJECT 2>/dev/null; then
+    iptables --insert OUTPUT 1 --destination 169.254.169.254 --match owner --uid-owner "$${user_id}" --jump REJECT
+  fi
+done
+METADATA_FIREWALL
+chmod 0750 /usr/local/sbin/adminbot-block-container-metadata
+
+cat >/etc/systemd/system/adminbot-metadata-firewall.service <<'METADATA_FIREWALL_SERVICE'
+[Unit]
+Description=Block host-network AdminBot containers from EC2 instance metadata
+After=network-pre.target
+Before=docker.service adminbot-api.service adminbot-web.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/adminbot-block-container-metadata
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
+METADATA_FIREWALL_SERVICE
+
+cat >/etc/systemd/system/adminbot-sqlite-backup.service <<'SQLITE_BACKUP_SERVICE'
+[Unit]
+Description=Create an application-consistent AdminBot SQLite backup
+After=adminbot-api.service
+Requires=adminbot-api.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/docker exec adminbot-api node /app/deploy/docker/backup-sqlite.mjs
+SQLITE_BACKUP_SERVICE
+
+cat >/etc/systemd/system/adminbot-sqlite-backup.timer <<'SQLITE_BACKUP_TIMER'
+[Unit]
+Description=Create AdminBot SQLite backup before the daily EBS recovery point
+
+[Timer]
+OnCalendar=*-*-* 04:45:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+Unit=adminbot-sqlite-backup.service
+
+[Install]
+WantedBy=timers.target
+SQLITE_BACKUP_TIMER
+
+cat >/usr/local/sbin/adminbot-deploy <<'DEPLOY_SCRIPT'
+#!/bin/bash
+set -euo pipefail
+
+source /etc/adminbot/runtime.conf
+/usr/local/sbin/adminbot-refresh-secrets
+
+aws ecr get-login-password --region "$${ADMINBOT_AWS_REGION}" \
+  | docker login --username AWS --password-stdin "$${ADMINBOT_ECR_REGISTRY}" >/dev/null
+
+docker pull "$${ADMINBOT_API_IMAGE}"
+docker pull "$${ADMINBOT_WEB_IMAGE}"
+systemctl daemon-reload
+systemctl enable adminbot-metadata-firewall.service adminbot-secrets.service adminbot-api.service adminbot-web.service adminbot-sqlite-backup.timer
+systemctl restart adminbot-secrets.service
+systemctl restart adminbot-api.service
+systemctl restart adminbot-web.service
+
+for _ in $(seq 1 60); do
+  if curl --fail --silent --show-error http://127.0.0.1:8080/healthz >/dev/null; then
+    echo "AdminBot deployment is healthy on loopback port 8080"
+    exit 0
+  fi
+  sleep 2
+done
+
+echo "AdminBot did not become healthy before the deployment timeout" >&2
+exit 1
+DEPLOY_SCRIPT
+chmod 0750 /usr/local/sbin/adminbot-deploy
+
+systemctl daemon-reload
+systemctl enable --now adminbot-metadata-firewall.service
+systemctl enable adminbot-secrets.service adminbot-api.service adminbot-web.service adminbot-sqlite-backup.timer
+systemctl start adminbot-sqlite-backup.timer
+
+if /usr/local/sbin/adminbot-deploy; then
+  echo "AdminBot initial deployment completed"
+else
+  echo "AdminBot is installed but awaiting images and a Secrets Manager value"
+fi

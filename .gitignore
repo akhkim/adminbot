@@ -22,3 +22,11 @@ state/
 *.sqlite-shm
 *.sqlite-wal
 packages/persistence/src/generated/
+
+# Local Terraform state, backend selection, plans, and variable values.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+deploy/aws/backend.tf
+deploy/aws/terraform.tfvars
+deploy/aws/*.tfplan

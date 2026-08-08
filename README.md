@@ -33,6 +33,9 @@ marked, inert previews.
 - `packages/availability/`: privacy-aware capacity projections and version-checked plan replacement.
 - `apps/api/`: loopback HTTP composition and transport protections.
 - `apps/web/`: standalone shell, theme, access, sign-in/session, and registration-review clients.
+- `deploy/docker/`: hardened API/web container definitions and local Linux Compose wiring.
+- `deploy/aws/`: private no-ingress EC2/EBS deployment managed by Terraform, with ECR, SSM,
+  Secrets Manager, KMS, and daily backups.
 - `apps/migrate/`: exact-fingerprint v1 SQLite reader and transactional identity importer.
 - `.legacy-reference/`: ignored local reference copy of the pre-v2 implementation. It is not part
   of commits and may be absent in a fresh clone; the previous implementation remains in Git

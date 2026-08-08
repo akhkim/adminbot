@@ -1,0 +1,10 @@
+terraform {
+  backend "s3" {
+    bucket       = "replace-with-private-terraform-state-bucket"
+    key          = "adminbot-v2/aws.tfstate"
+    region       = "eu-west-2"
+    encrypt      = true
+    kms_key_id   = "replace-with-terraform-state-kms-key-arn"
+    use_lockfile = true
+  }
+}

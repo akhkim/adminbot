@@ -1,0 +1,43 @@
+services:
+  api:
+    build:
+      context: ../..
+      target: api
+    image: adminbot-api:local
+    network_mode: host
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=256m
+    environment:
+      ADMINBOT_DATABASE_URL: file:/app/state/adminbot-v2.sqlite
+      ADMINBOT_ORGANIZATION_ID: ${ADMINBOT_ORGANIZATION_ID:?set ADMINBOT_ORGANIZATION_ID}
+      ADMINBOT_IDENTITY_KEY_SECRET: ${ADMINBOT_IDENTITY_KEY_SECRET:?set ADMINBOT_IDENTITY_KEY_SECRET}
+      ADMINBOT_API_PORT: "8765"
+      ADMINBOT_WEB_ORIGINS: http://127.0.0.1:8080
+      ADMINBOT_SECURE_COOKIES: "false"
+    volumes:
+      - adminbot-state:/app/state
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../..
+      target: web
+    image: adminbot-web:local
+    network_mode: host
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=16m
+      - /var/cache/nginx:rw,noexec,nosuid,nodev,size=16m
+      - /var/run:rw,noexec,nosuid,nodev,size=1m
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  adminbot-state:
