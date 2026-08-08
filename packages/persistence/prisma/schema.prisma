@@ -65,6 +65,20 @@ enum MigrationStatus {
   failed
 }
 
+enum PaperStage {
+  idea
+  outline
+  drafting
+  internal_review
+  submission_ready
+  submitted
+  revision
+  accepted
+  camera_ready
+  published
+  archived
+}
+
 model Person {
   id             String       @id
   organizationId String       @map("organization_id")
@@ -81,6 +95,25 @@ model Person {
   @@unique([organizationId, id])
   @@index([organizationId, status])
   @@map("people")
+}
+
+model Paper {
+  id             String     @id
+  organizationId String     @map("organization_id")
+  title          String
+  authorIds      Json       @map("author_ids")
+  stage          PaperStage @default(idea)
+  targetVenue    String?    @map("target_venue")
+  deadlineAt     DateTime?  @map("deadline_at")
+  sourceUri      String?    @map("source_uri")
+  topicTags      Json       @map("topic_tags")
+  version        Int        @default(1)
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+
+  @@index([organizationId, stage])
+  @@index([organizationId, deadlineAt])
+  @@map("papers")
 }
 
 model Account {

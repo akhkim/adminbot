@@ -30,9 +30,9 @@ model Paper extends VersionedRecord {
   authorIds: PersonId[];
   correspondingAuthorId?: PersonId;
   stage: PaperStageKind;
-  targetVenue?: string;
-  deadlineAt?: utcDateTime;
-  sourceUri?: url;
+  targetVenue?: string | null;
+  deadlineAt?: utcDateTime | null;
+  sourceUri?: url | null;
   topicTags: string[];
 }
 
@@ -69,15 +69,76 @@ model PaperReminder {
   state: "scheduled" | "proposed" | "sent" | "cancelled";
 }
 
+enum PaperTimelineItemState {
+  complete,
+  current,
+  upcoming,
+}
+
+model PaperTimelineItem {
+  stage: PaperStageKind;
+  label: string;
+  offsetStartBusinessDay: int32;
+  durationBusinessDays: int32;
+  state: PaperTimelineItemState;
+}
+
+model PaperTimeline {
+  progressPercent: int32;
+  totalEstimatedBusinessDays: int32;
+  items: PaperTimelineItem[];
+}
+
+model PaperProjection {
+  paper: Paper;
+  authorNames: string[];
+  timeline: PaperTimeline;
+}
+
+model PaperNudgeProjection {
+  paperId: PaperId;
+  title: string;
+  stage: PaperStageKind;
+  dueAt: utcDateTime;
+  recipientIds: PersonId[];
+  recipientNames: string[];
+  kind: "author_nudge" | "administrator_escalation";
+  message: string;
+}
+
+model PaperWorkspaceProjection {
+  papers: PaperProjection[];
+  nudges: PaperNudgeProjection[];
+  viewerPersonId: PersonId;
+  viewerRoles: string[];
+}
+
+model CreatePaperCommand {
+  title: string;
+  authorIds: PersonId[];
+  stage?: PaperStageKind;
+  targetVenue?: string;
+  deadlineAt?: utcDateTime;
+  sourceUri?: url;
+  topicTags?: string[];
+}
+
 model UpdatePaperCommand {
   paperId: PaperId;
   expectedVersion: int32;
   title?: string;
   authorIds?: PersonId[];
   correspondingAuthorId?: PersonId;
-  targetVenue?: string;
-  deadlineAt?: utcDateTime;
+  targetVenue?: string | null;
+  deadlineAt?: utcDateTime | null;
+  sourceUri?: url | null;
   topicTags?: string[];
+  stage?: PaperStageKind;
+}
+
+model DeletePaperCommand {
+  paperId: PaperId;
+  expectedVersion: int32;
 }
 
 model TransitionPaperStageCommand {

@@ -9,6 +9,7 @@
   "dependencies": {
     "@adminbot/api-contracts": "workspace:*",
     "@adminbot/identity": "workspace:*",
+    "@adminbot/papers": "workspace:*",
     "@adminbot/persistence": "workspace:*"
   },
   "scripts": {

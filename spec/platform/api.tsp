@@ -8,6 +8,7 @@ import "./identity.tsp";
 import "./privacy.tsp";
 import "./supporting.tsp";
 import "../workflows/communications.tsp";
+import "../workflows/papers.tsp";
 
 using TypeSpec.Http;
 using AdminBot.Contracts.Automation;
@@ -18,6 +19,7 @@ using AdminBot.Contracts.Identity;
 using AdminBot.Contracts.Privacy;
 using AdminBot.Contracts.Supporting;
 using AdminBot.Contracts.Workflows.Communications;
+using AdminBot.Contracts.Workflows.Papers;
 
 @service(#{ title: "AdminBot v2" })
 @route("/v0alpha")
@@ -89,6 +91,27 @@ interface AuthenticationApi {
 @route("/me")
 interface CurrentPrincipalApi {
   @get getCurrentPrincipal(): ResolvedIdentity | ErrorResponse;
+}
+
+@route("/papers")
+interface PapersApi {
+  @get listPapers(): PaperWorkspaceProjection | ErrorResponse;
+
+  @post createPaper(@body input: CreatePaperCommand):
+    | PaperProjection
+    | ErrorResponse;
+
+  @route("/{paperId}")
+  @post
+  updatePaper(@path paperId: PaperId, @body input: UpdatePaperCommand):
+    | PaperProjection
+    | ErrorResponse;
+
+  @route("/{paperId}/deletion")
+  @post
+  deletePaper(@path paperId: PaperId, @body input: DeletePaperCommand):
+    | void
+    | ErrorResponse;
 }
 
 @route("/capabilities")

@@ -4,6 +4,7 @@
     { "path": "packages/api-contracts" },
     { "path": "packages/ports" },
     { "path": "packages/identity" },
+    { "path": "packages/papers" },
     { "path": "packages/persistence" },
     { "path": "apps/api" },
     { "path": "apps/web" },

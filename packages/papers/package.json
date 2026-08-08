@@ -1,0 +1,19 @@
+{
+  "name": "@adminbot/papers",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@adminbot/ports": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  }
+}
