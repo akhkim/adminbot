@@ -218,6 +218,14 @@ rm -f -- "$UNIT_DIR/jinesis-adminbot-email.timer"
 systemctl --user disable --now jinesis-adminbot-openreview.timer 2>/dev/null || true
 rm -f -- "$UNIT_DIR/jinesis-adminbot-openreview.timer" \
   "$UNIT_DIR/jinesis-adminbot-openreview.service"
+
+poller_args=(
+  --root "$ROOT"
+  --env-file "$ENV_FILE"
+  --adminbot-port "$ADMINBOT_PORT"
+  --no-start
+)
+"$ROOT/deploy/aurora/install-member-sheet-poller.sh" "${poller_args[@]}"
 systemctl --user daemon-reload
 
 if [[ "$START_MODE" == "yes" ]]; then
@@ -263,6 +271,11 @@ if [[ "$START_MODE" == "yes" ]]; then
   systemctl --user enable --now \
     jinesis-adminbot.service \
     jinesis-openclaw-gateway.service
+  "$ROOT/deploy/aurora/install-member-sheet-poller.sh" \
+    --root "$ROOT" \
+    --env-file "$ENV_FILE" \
+    --adminbot-port "$ADMINBOT_PORT" \
+    --start
   # The reviewing-cycle pass is scheduled as an OpenClaw cron job, not a systemd timer,
   # so it shows up in the Control UI with its run history. Warn when its inputs are
   # missing rather than letting the job fail on a schedule.
