@@ -6,9 +6,10 @@ organization knowledge, public tools, and media publishing through one approval-
 plane.
 
 The repository now contains the first working vertical slice: SQLite/Prisma persistence, anonymous
-claim and signup submission, a loopback HTTP API, a static Lit registration UI, and a guarded
-read-only-first legacy identity importer. Governance, login/session issuance, administrator review,
-and the remaining workflow packs are not yet implemented.
+claim and signup submission, a loopback HTTP API, a standalone dark-mode Lit application shell,
+and a guarded read-only-first legacy identity importer. Registration is the only connected web
+workflow. The other legacy AdminBot surfaces are visibly marked, inert previews until their
+backend, session, and authorization slices are implemented.
 
 ## Current contents
 
@@ -24,7 +25,7 @@ and the remaining workflow packs are not yet implemented.
 - `packages/persistence/`: the sole Prisma schema/client/migration and repository implementation.
 - `packages/identity/`: registration validation, password hashing, and submission use cases.
 - `apps/api/`: loopback HTTP composition and transport protections.
-- `apps/web/`: static registration client and UI.
+- `apps/web/`: standalone AdminBot shell, centralized view routes, theme, and registration client.
 - `apps/migrate/`: exact-fingerprint v1 SQLite reader and transactional identity importer.
 - `.legacy-reference/`: ignored local reference copy of the pre-v2 implementation. It is not part
   of commits and may be absent in a fresh clone; the previous implementation remains in Git

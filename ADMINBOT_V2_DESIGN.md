@@ -664,6 +664,20 @@ the AdminBot API over a deployment-specific secure route. It does not require a 
 token. If OpenClaw chat is embedded, the service mints a privilege-capped, device-bound gateway
 credential without exposing the gateway's shared secret.
 
+The application shell is an AdminBot product, not a reduced copy of the OpenClaw control plane. It
+contains no gateway, agent, node, session-debugging, or generic configuration UI. Its route
+registry is the single source for paths, navigation groups, audience labels, port status, and
+legacy-feature descriptions. API paths remain separately centralized in `packages/api-contracts`;
+view code does not assemble versioned endpoint strings.
+
+Dark mode is the default and light mode is an explicit user preference. The browser stores only
+that non-sensitive preference. During the incremental port, a legacy surface may appear as an
+inert, content-shaped preview, but it must say that its backend is pending, issue no API request,
+render no synthetic private records, and expose no command control. A route becomes live only with
+its authenticated read model, command client, server-side authorization, and negative-path tests.
+Once session support exists, navigation is projected for the authenticated audience; hiding a
+route remains a usability measure rather than an authorization boundary.
+
 ### 6.7 External mutation sequence
 
 ```mermaid
@@ -2097,6 +2111,7 @@ feature family.
 | ✅ | SQLite persistence foundation | One Prisma schema/client, ordered migrations, repository ports, atomic unit of work, outbox/audit primitives, and integration tests |
 | ✅ | Anonymous claim/signup submission core | Strict allowlists, normalized emails, async v1-compatible scrypt, durable attempt limits, generic collision responses, and atomic registration/audit/outbox writes |
 | ✅ | Base registration API and static UI | Loopback API with origin/body protections; claim roster picker; complete signup profile; generated client calls; pending-without-session result; production UI build |
+| ✅ | Standalone AdminBot web shell and legacy UI map | AdminBot-only route registry and responsive shell; dark mode by default with light preference; registration embedded as the sole live workflow; role/audience grouping; ten backend-pending legacy surfaces rendered as explicitly inert, data-free previews; UI tests and visual production-build inspection |
 | ✅ | Legacy identity migration dry run | Exact v1 schema fingerprint, immutable source backup, redacted report, deterministic mappings, explicit session invalidation, ORM-only destination writer; current source maps with zero blocking issues |
 | Pending | Apply legacy identity data | Requires the durable organization UUID from decision 23.1; source and destination are otherwise ready |
 | Pending | Login, session lifecycle, and admin registration review | Contracts remain `v0alpha`; implementation follows migration apply and authoritative admin authorization |

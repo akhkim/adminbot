@@ -3,15 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light" />
+    <meta name="color-scheme" content="dark light" />
     <meta
       name="description"
-      content="Request access to the lab's AdminBot workspace."
+      content="AdminBot's standalone lab operations workspace."
     />
-    <title>AdminBot · Request access</title>
+    <title>AdminBot · Lab workspace</title>
+    <style>
+      html,
+      body {
+        min-height: 100%;
+        margin: 0;
+        background: #090d0b;
+      }
+    </style>
     <script type="module" src="/src/main.ts"></script>
   </head>
   <body>
-    <adminbot-registration-app></adminbot-registration-app>
+    <adminbot-app></adminbot-app>
   </body>
 </html>
