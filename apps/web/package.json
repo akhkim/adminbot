@@ -1,0 +1,21 @@
+{
+  "name": "@adminbot/web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prebuild": "corepack pnpm --filter @adminbot/api-contracts build",
+    "build": "vite build --configLoader runner",
+    "predev": "corepack pnpm --filter @adminbot/api-contracts build",
+    "dev": "vite --configLoader runner",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@adminbot/api-contracts": "workspace:*",
+    "lit": "3.3.3"
+  },
+  "devDependencies": {
+    "happy-dom": "20.11.2",
+    "vite": "8.2.1"
+  }
+}

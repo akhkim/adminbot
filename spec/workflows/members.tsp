@@ -20,8 +20,6 @@ scalar DownstreamGrantId extends string;
 enum MembershipTier {
   externalCollaborator: "external_collaborator",
   member,
-  coreMember: "core_member",
-  administrator,
 }
 
 enum MemberLifecycleState {

@@ -768,7 +768,7 @@ flowchart LR
   Browser[Browser] --> Web[Static Control UI]
   Web --> API[adminbot-api]
   Claw[OpenClaw gateway] --> API
-  API --> DB[(PostgreSQL)]
+  API --> DB[(SQLite, current release)]
   API --> Local[Local model runtime]
   API -. approved sanitized tasks .-> Remote[Remote model provider]
   Automation[adminbot-automation] --> DB
@@ -785,11 +785,11 @@ flowchart LR
 | `adminbot-automation` | Schedules, checkpoints, outbox relay, read-model projectors, polling orchestration | Uses job identities and the command bus; cannot call live connector operations directly | Slow and recurring work cannot block API requests or obtain a hidden side-effect path |
 | OpenClaw gateway | Agent loop, chat, channels, proposal/query adapter | Proposal-only service identity; no approval or execution authority | Conversational runtime can be replaced without rebuilding AdminBot policy |
 | Local model runtime | Confidential local reasoning | No database-wide access, approval authority, connector registry, or vendor secrets | Model resource management and private inference remain isolated from execution |
-| PostgreSQL | Authoritative records, execution leases, outbox, job state, audit, projections | Database roles differ per process | Independent API, worker, and automation processes need transactional concurrency and crash recovery |
+| SQLite | Authoritative records, execution leases, outbox, job state, audit, projections | One host-local database; every write uses the shared Prisma transaction boundary | The current single-host release gains real transactions, migrations, backup, and low operational overhead; PostgreSQL remains a later deployment option when replicas require it |
 | Static Control UI | Browser assets only | Holds user sessions but no shared gateway/vendor secrets; server still authorizes every request | Static hosting does not become a second backend or private-data proxy |
 
 The encrypted artifact store can begin as a local filesystem managed through the artifact service
-interface. PostgreSQL can provide the initial queue and outbox, avoiding Redis or a separate broker
+interface. SQLite tables provide the initial queue and outbox, avoiding Redis or a separate broker
 until measured load requires one. Identity, policy, privacy, and workflows remain modules inside
 `adminbot-api`; connectors remain packages loaded only by `adminbot-worker`.
 
@@ -953,7 +953,11 @@ destination policy, schema-aware redaction, and forced-private user intent all p
 Use a versioned API with command-oriented writes and narrow projections. Representative endpoints:
 
 ```text
-POST   /v0alpha/auth/registrations
+GET    /v0alpha/auth/roster
+POST   /v0alpha/auth/registrations/claims
+POST   /v0alpha/auth/registrations/signups
+GET    /v0alpha/auth/registrations
+POST   /v0alpha/auth/registrations/{id}/decision
 POST   /v0alpha/auth/sessions
 DELETE /v0alpha/auth/sessions/current
 GET    /v0alpha/me
@@ -988,6 +992,13 @@ Every write accepts a client request id. Errors return stable codes such as `not
 SQLite is sufficient for a single-host first release if all writes go through one service and
 backup/restore is tested. PostgreSQL becomes appropriate for multiple API or worker replicas.
 Design the repository interfaces so this is a deployment decision, not domain logic.
+
+The current release uses Prisma ORM 7 with the official `better-sqlite3` adapter. Domain packages
+depend on repository ports and one asynchronous unit-of-work interface; only `packages/persistence`
+imports Prisma. Handwritten SQL is prohibited in domain repositories. SQL is limited to
+Prisma-generated migration files and the read-only v1 adapter in `apps/migrate`, because the legacy
+schema is not a Prisma-owned database. This prevents every workflow from inventing an ORM,
+transaction wrapper, placeholder syntax, or SQLite lifecycle.
 
 Use explicit migrations and normalized columns for constrained/queryable fields. JSON is suitable
 for immutable versioned payloads and redacted vendor responses, not for all domain state.
@@ -1110,6 +1121,8 @@ adminbot-v2/
     scheduler/                   # schedules, job runs, leases, outbox relay
     migrate/                     # one-shot v1 import and reconciliation CLI
   packages/
+    api-contracts/               # generated DTO facade and centralized versioned route registry
+    ports/                       # implementation-neutral repositories and unit of work
     workflow-sdk/                # narrow API used by workflow packs
     connector-sdk/               # narrow API used by connector packages
     kernel/                      # actions, approvals, executions, effects, state machine
@@ -1156,9 +1169,6 @@ adminbot-v2/
     guides/                      # human-verified decision trees and handbook pointers
     policies/                    # organization policy data above immutable safety floors
     taxonomies/                  # roles, topics, venues, badge definitions, access bundles
-  db/
-    migrations/                  # ordered schema migrations only
-    seeds/                       # synthetic development data only
   deploy/
     local/                       # loopback development composition
     aurora/                      # private-host service definitions and provisioning
@@ -1184,7 +1194,6 @@ adminbot-v2/
 | `connectors/` | One vendor family's operation implementations and response verification | Workflow sequencing, approval requirements, templates, or UI | Vendor API changes remain edge-local and connectors stay least-privileged |
 | `workflows/` | Domain entities, commands, queries, actions, jobs, projections, and policy facts | Direct vendor calls, secrets, session implementation, or kernel state-machine changes | People, paper, reimbursement, and reviewing work can evolve without a monolith |
 | `content/` | Reviewed organization configuration, templates, guides, and taxonomies | Runtime state, credentials, personal records, or executable authorization code | Human policy/content edits stop requiring TypeScript branches while remaining versioned |
-| `db/` | Ordered schema migrations and synthetic seeds | Runtime fallback readers, handwritten production data, or secrets | Every deployment has one canonical schema and migration owner |
 | `deploy/` | Host-specific provisioning and composition | Product defaults that make local policy globally mandatory | Aurora, local development, and static hosting stay deployment choices |
 | `docs/` | Architecture decisions, runbooks, and workflow contracts | Live secrets or duplicated source schemas | Operations and design stay reviewable without becoming runtime authority |
 | `tooling/` | Code generation and architecture checks | Product behavior | Repetitive contract synchronization becomes mechanical rather than hand-maintained |
@@ -1297,7 +1306,14 @@ workflow, connector, or durable-event boundary. The pinned compiler emits:
 - OpenAPI 3.1 for HTTP discovery, API review, and client generation;
 - JSON Schema for runtime validation, the capability catalog, dynamic forms, action registration,
   OpenClaw tools, and fixtures;
-- implementation-language DTOs/clients through a selected generator during later build work.
+- implementation-language DTOs/clients through the pinned generator.
+
+The selected TypeScript DTO generator is `openapi-typescript`, pinned in the workspace. TypeSpec
+emits OpenAPI, the generator emits ignored TypeScript definitions inside `packages/api-contracts`,
+and both API and browser code compile against those definitions. Runtime route descriptors live in
+that same package and a conformance test checks every method, template, operation id, and error
+code against generated OpenAPI. The API mounts the `/v0alpha` base exactly once through those
+descriptors; server and UI code do not repeat endpoint literals.
 
 Handwritten TypeScript remains appropriate for behavioral ports and implementation: kernel state
 transitions, policy evaluation, authorization, repositories, transaction handling, workflow
@@ -1336,15 +1352,15 @@ payload, result, HTTP operation, OpenAPI schema, and JSON Schema are generated f
 `spec/workflows/communications.tsp` and `spec/platform/api.tsp`. No generated output is committed or
 edited manually.
 
-### 16.7 Eight parallel implementation workstreams
+### 16.7 Sequential implementation areas and ownership
 
-The `v0alpha` contracts establish ownership and vocabulary before parallel implementation; they are
-not frozen. Each agent owns the listed runtime directories and workflow contract files. Agents may
-evolve their owned contracts as legacy-parity tests expose the correct boundary. Shared-contract
-edits require an explicit small coordination change rather than being mixed silently into feature
-implementation.
+The earlier parallel-agent plan is retired. One implementer completes and validates a vertical
+slice before moving to the next area. The areas below still define directory and contract
+ownership, but they are a dependency map rather than concurrent assignments. `v0alpha` contracts
+remain hypotheses: a slice may add a missing contract or remove a superfluous one when working code
+and tests provide evidence.
 
-| Workstream | Exclusive implementation ownership | Contract ownership | Must consume, not modify | Primary legacy reference |
+| Area | Exclusive implementation ownership | Contract ownership | Must consume, not modify | Primary legacy reference |
 | --- | --- | --- | --- | --- |
 | 1. Governance and execution platform | `packages/kernel`, `policy`, `persistence`, `queue`; `apps/worker` | `spec/platform/policy.tsp`, `governance.tsp`, `connectors.tsp`, `automation.tsp` | Workflow contracts and vendor-specific connector packages | `.legacy-reference/openclaw-adminbot/extensions/adminbot/src/service-core.ts`, `service-sqlite.ts`, `composite-executor.ts` |
 | 2. Identity, privacy, API, and client shell | `packages/identity`, `authorization`, `privacy`; `apps/api`, `apps/web`; `adapters/openclaw` | `spec/common/`, `spec/platform/identity.tsp`, `authorization.tsp`, `privacy.tsp`, `capabilities.tsp`, `api.tsp` | Kernel transition internals and workflow-private modules | `.legacy-reference/openclaw-adminbot/extensions/adminbot/src/auth.ts`, `mock-service.ts`, `privacy-broker.ts`, `device-pairing-scopes.ts`; legacy UI auth/navigation |
@@ -1355,9 +1371,9 @@ implementation.
 | 7. Reimbursements and public tools | `workflows/reimbursements`, `workflows/public-tools`; owned intake/public-form adapters | `spec/workflows/reimbursements.tsp`, `public-tools.tsp` | Shared privacy, artifact, template, and delivery operations | legacy `reimbursement-workflow.ts`, reimbursement scripts, admin/guest reimbursement views, calendar/deadline artifact scripts |
 | 8. OpenReview and deadlines | `workflows/openreview`, `workflows/deadlines`; OpenReview and curated-deadline operation/import files | `spec/workflows/openreview.tsp`, `deadlines.tsp` | Papers private state; coordinate only through paper queries/events | legacy `openreview-*.ts`, `deadlines-dataset.ts`, `deadlines-web-ui.ts`, OpenReview/deadline scripts and UI |
 
-Avoid central registry files that all agents must edit. Workflow and connector manifests should be
-discovered or generated from owned entry points, so merging eight workstreams does not require
-resolving a shared handwritten list.
+Workflow and connector manifests should be discovered or generated from owned entry points. The
+sequential process does not weaken boundaries: a later area still consumes earlier public ports
+instead of reaching into implementation files.
 
 ## 17. Build plan
 
@@ -1369,7 +1385,8 @@ resolving a shared handwritten list.
 - Implement one synthetic connector and adversarial end-to-end tests.
 - Specify canonical JSON and prove payload hashing, distinct-person quorum, policy recheck, crash
   recovery, and uncertainty.
-- Bootstrap PostgreSQL roles for API, automation, and worker without adding a separate queue service.
+- Bootstrap the Prisma/SQLite schema, migrations, backup, and single transaction boundary without
+  adding a separate queue service.
 
 Exit: the kernel can safely execute a synthetic action exactly once under restarts and races.
 
@@ -1424,6 +1441,37 @@ Do not run v1 and v2 as dual writers.
 7. Reconcile in-flight or uncertain external effects manually.
 8. Start connectors disabled, verify read models and counts, then enable one operation at a time.
 9. Keep v1 read-only for a bounded audit window, then archive it securely.
+
+### 18.1 Implemented SQLite migration mechanics
+
+Migration is staged by owned domain scope; the identity stage is implemented first because the
+claim UI needs people and account ownership before member workflow records can be imported. Each
+stage is atomic and has a ledger key of scope, immutable source SHA-256, and mapper-set version.
+Running a completed stage again is a no-op. A later member or governance stage uses the stable
+legacy-member-to-person links written by identity rather than generating competing identities.
+
+The CLI requires explicit absolute source, destination, and backup-directory paths. It:
+
+1. opens v1 read-only and creates an online SQLite backup;
+2. uses that immutable backup as the actual import source;
+3. requires the exact 14-table/column fingerprint, `user_version = 0`, `application_id = 0`, and
+   `integrity_check = ok`;
+4. defaults to a dry run that reports counts and row positions but never values;
+5. backs up an existing destination before apply;
+6. writes people, accounts, registrations, role assignments, legacy links, a redacted audit event,
+   and the stage ledger in one Prisma transaction.
+
+Legacy scrypt hashes with the supported v1 parameters are retained so valid accounts can continue
+to authenticate after login is implemented. Five current credential rows use non-email placeholder
+handles; their people are imported without accounts and remain claimable instead of receiving
+invented addresses. Pending registration hashes are retained, while decided registration hashes
+are discarded. Legacy sessions are never activated in v2; apply requires the explicit
+`--invalidate-legacy-sessions` acknowledgement and every user signs in again.
+
+The current source-only dry run is clean: 159 people, 107 reusable accounts, 5 accounts requiring
+reclaim, 10 registrations, 175 role assignments, and 33 sessions to invalidate. Applying it remains
+blocked on decision 23.1: the destination organization UUID is durable identity data and must not
+be guessed.
 
 ## 19. Validation strategy
 
@@ -2011,12 +2059,12 @@ The current code also reveals why a clean-room boundary is justified: core servi
 tool adapter, and primary UI modules are large; contracts are copied between the service and UI;
 domain state is often stored as JSON payloads; background automations own separate state and effect
 rules; and some operational side effects use paths outside the general proposal worker. These are
-design inputs. A feature agent should first read its v2 TypeSpec file and workflow specification,
-then use the corresponding legacy module and tests as behavioral evidence. The expected work is to
-extract proven pure logic or rewrite it behind the new interface; agents must not transplant the v1
+design inputs. Each sequential implementation area first reads its v2 TypeSpec file and workflow specification,
+then uses the corresponding legacy module and tests as behavioral evidence. The expected work is to
+extract proven pure logic or rewrite it behind the new interface; implementations must not transplant the v1
 service composition, authorization shortcuts, copied schemas, or direct side-effect paths.
 
-## 23. Decisions needed before implementation
+## 23. Decisions still needed
 
 1. Is v2 single-organization only, or must organization id be present from day one?
 2. Which human roles may approve each high-risk category, and must requester and approver differ?
@@ -2025,8 +2073,8 @@ service composition, authorization shortcuts, copied schemas, or direct side-eff
 5. Should v2 use local passwords, institutional SSO, magic links, or a combination?
 6. Must the service run loopback-only, or is authenticated private-network access a first-class
    deployment?
-7. What backup, restore, and local-development profile will support PostgreSQL without making a
-   single-host lab deployment fragile?
+7. What measured concurrency or deployment requirement should trigger a move from the current
+   backed-up SQLite profile to PostgreSQL?
 8. Which existing workflows have active users and data that must be migrated rather than rebuilt?
 9. Which actions may be auto-approved based on an authenticated admin command or trusted inbound
    sender, and which always require a separate review gesture?
@@ -2034,6 +2082,22 @@ service composition, authorization shortcuts, copied schemas, or direct side-eff
 11. Which remote reasoning providers and data classes are permitted?
 12. Should OpenClaw chat be embedded in the member portal, or remain a separate channel surface?
 
-The recommended next step is a short product review that answers questions 1-5 and chooses the
-Phase 1 connector. Implementation should begin only after the action lifecycle, approval roles,
-and deployment trust boundary are accepted.
+Question 1 now blocks only the identity migration apply, not further dry-run validation or local
+implementation. Questions 2-6 must be answered before their corresponding approval, connector,
+login-provider, or network surfaces become live.
+
+## 24. V2 implementation status
+
+Only rows marked `✅` are complete. A completed row describes its narrow slice, not the larger
+feature family.
+
+| Status | Slice | Evidence |
+| --- | --- | --- |
+| ✅ | Contract generation and centralized API boundary | TypeSpec emits OpenAPI/JSON Schema; generated TypeScript DTOs, `/v0alpha` route descriptors, and conformance tests live in `packages/api-contracts` |
+| ✅ | SQLite persistence foundation | One Prisma schema/client, ordered migrations, repository ports, atomic unit of work, outbox/audit primitives, and integration tests |
+| ✅ | Anonymous claim/signup submission core | Strict allowlists, normalized emails, async v1-compatible scrypt, durable attempt limits, generic collision responses, and atomic registration/audit/outbox writes |
+| ✅ | Base registration API and static UI | Loopback API with origin/body protections; claim roster picker; complete signup profile; generated client calls; pending-without-session result; production UI build |
+| ✅ | Legacy identity migration dry run | Exact v1 schema fingerprint, immutable source backup, redacted report, deterministic mappings, explicit session invalidation, ORM-only destination writer; current source maps with zero blocking issues |
+| Pending | Apply legacy identity data | Requires the durable organization UUID from decision 23.1; source and destination are otherwise ready |
+| Pending | Login, session lifecycle, and admin registration review | Contracts remain `v0alpha`; implementation follows migration apply and authoritative admin authorization |
+| Pending | Members, governance, connectors, automations, and remaining workflow packs | Implement sequentially in the Phase 1-4 order |

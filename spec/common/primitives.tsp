@@ -40,6 +40,8 @@ scalar ResourceId extends string;
 scalar RoleAssignmentId extends string;
 @format("uuid")
 scalar SessionId extends string;
+@format("uuid")
+scalar DeviceId extends string;
 
 @minLength(1)
 scalar ActionType extends string;
@@ -59,6 +61,9 @@ scalar QueryName extends string;
 scalar SchemaId extends string;
 @minLength(1)
 scalar TemplateId extends string;
+
+@format("email")
+scalar EmailAddress extends string;
 
 @pattern("^[0-9a-f]{64}$")
 scalar Sha256 extends string;

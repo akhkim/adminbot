@@ -1,0 +1,19 @@
+{
+  "name": "@adminbot/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@adminbot/api-contracts": "workspace:*",
+    "@adminbot/identity": "workspace:*",
+    "@adminbot/persistence": "workspace:*"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "start": "node --env-file=../../.env dist/main.js",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  }
+}

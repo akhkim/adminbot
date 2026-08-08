@@ -8,15 +8,36 @@
     "node": ">=22.19.0"
   },
   "scripts": {
-    "check": "pnpm contracts:check",
+    "build": "corepack pnpm contracts:generate && corepack pnpm prisma:generate && tsc --build --pretty false",
+    "check": "corepack pnpm contracts:check && corepack pnpm prisma:validate && corepack pnpm typecheck",
     "contracts:check": "tsp compile spec --no-emit --warn-as-error",
     "contracts:format:check": "tsp format --check \"spec/**/*.tsp\"",
-    "contracts:generate": "tsp compile spec --warn-as-error"
+    "contracts:generate": "tsp compile spec --warn-as-error && openapi-typescript .generated/openapi/openapi.json --output packages/api-contracts/src/generated/openapi.ts",
+    "db:migrate:deploy": "prisma migrate deploy",
+    "db:migrate:dev": "prisma migrate dev",
+    "postinstall": "prisma generate",
+    "prisma:generate": "prisma generate",
+    "prisma:validate": "prisma validate",
+    "test": "corepack pnpm contracts:generate && tsc --build --pretty false && vitest run",
+    "test:watch": "vitest",
+    "typecheck": "corepack pnpm contracts:generate && tsc --build --pretty false",
+    "web:build": "corepack pnpm --filter @adminbot/web build"
+  },
+  "dependencies": {
+    "@prisma/adapter-better-sqlite3": "7.9.1",
+    "@prisma/client": "7.9.1",
+    "better-sqlite3": "13.0.1"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "7.6.13",
+    "@types/node": "24.3.0",
     "@typespec/compiler": "1.14.0",
     "@typespec/http": "1.14.0",
     "@typespec/json-schema": "1.14.0",
-    "@typespec/openapi3": "1.14.0"
+    "@typespec/openapi3": "1.14.0",
+    "openapi-typescript": "7.13.0",
+    "prisma": "7.9.1",
+    "typescript": "5.9.2",
+    "vitest": "3.2.4"
   }
 }

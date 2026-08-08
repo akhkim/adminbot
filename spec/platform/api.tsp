@@ -4,6 +4,7 @@ import "../common/errors.tsp";
 import "./automation.tsp";
 import "./capabilities.tsp";
 import "./governance.tsp";
+import "./identity.tsp";
 import "./privacy.tsp";
 import "./supporting.tsp";
 import "../workflows/communications.tsp";
@@ -13,6 +14,7 @@ using AdminBot.Contracts.Automation;
 using AdminBot.Contracts.Capabilities;
 using AdminBot.Contracts.Common;
 using AdminBot.Contracts.Governance;
+using AdminBot.Contracts.Identity;
 using AdminBot.Contracts.Privacy;
 using AdminBot.Contracts.Supporting;
 using AdminBot.Contracts.Workflows.Communications;
@@ -20,6 +22,74 @@ using AdminBot.Contracts.Workflows.Communications;
 @service(#{ title: "AdminBot v2" })
 @route("/v0alpha")
 namespace AdminBot.Api.V0Alpha;
+
+model RegistrationAcceptedResponse {
+  @statusCode statusCode: 202;
+  @body body: RegistrationSubmitted;
+}
+
+@route("/auth")
+interface AuthenticationApi {
+  @route("/roster")
+  @get
+  listClaimablePeople(): ClaimablePerson[] | ErrorResponse;
+
+  @route("/registrations/claims")
+  @post
+  submitClaim(@body input: ClaimRegistrationInput):
+    | RegistrationAcceptedResponse
+    | ErrorResponse;
+
+  @route("/registrations/signups")
+  @post
+  submitSignup(@body input: SignupRegistrationInput):
+    | RegistrationAcceptedResponse
+    | ErrorResponse;
+
+  @route("/registrations")
+  @get
+  listRegistrations(@query state?: RegistrationState):
+    | Registration[]
+    | ErrorResponse;
+
+  @route("/registrations/{registrationId}/decision")
+  @post
+  decideRegistration(
+    @path registrationId: RegistrationId,
+    @body input: RegistrationDecisionInput,
+  ): Registration | ErrorResponse;
+
+  @route("/sessions")
+  @post
+  createSession(@body input: LoginInput): SessionView | ErrorResponse;
+
+  @route("/sessions/current")
+  @get
+  getCurrentSession(): SessionView | ErrorResponse;
+
+  @route("/sessions/current")
+  @delete
+  deleteCurrentSession(): void | ErrorResponse;
+
+  @route("/password")
+  @post
+  changePassword(@body input: PasswordChangeInput): void | ErrorResponse;
+
+  @route("/email")
+  @post
+  changeEmail(@body input: EmailChangeInput): Account | ErrorResponse;
+
+  @route("/device-credentials")
+  @post
+  issueDeviceCredential(@body input: DeviceCredentialInput):
+    | DeviceCredentialReceipt
+    | ErrorResponse;
+}
+
+@route("/me")
+interface CurrentPrincipalApi {
+  @get getCurrentPrincipal(): ResolvedIdentity | ErrorResponse;
+}
 
 @route("/capabilities")
 interface CapabilitiesApi {

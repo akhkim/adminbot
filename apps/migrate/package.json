@@ -1,0 +1,17 @@
+{
+  "name": "@adminbot/migrate",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@adminbot/identity": "workspace:*",
+    "@adminbot/persistence": "workspace:*",
+    "@adminbot/ports": "workspace:*",
+    "better-sqlite3": "13.0.1"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --project tsconfig.json --noEmit"
+  }
+}

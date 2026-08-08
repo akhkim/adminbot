@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/api-contracts" },
+    { "path": "packages/ports" },
+    { "path": "packages/identity" },
+    { "path": "packages/persistence" },
+    { "path": "apps/api" },
+    { "path": "apps/web" },
+    { "path": "apps/migrate" }
+  ]
+}

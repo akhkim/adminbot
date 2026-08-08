@@ -10,8 +10,6 @@ namespace AdminBot.Contracts.Workflows.Communications;
 scalar CommunicationDraftId extends string;
 @format("uuid")
 scalar CalendarEventId extends string;
-@format("email")
-scalar EmailAddress extends string;
 
 model Recipient {
   personId?: PersonId;

@@ -6,13 +6,32 @@ using AdminBot.Contracts.Common;
 namespace AdminBot.Contracts.Identity;
 
 enum RoleName {
-  visitor,
   externalCollaborator: "external_collaborator",
   member,
-  coreMember: "core_member",
   administrator,
+  approver,
   securityOperator: "security_operator",
   auditor,
+}
+
+enum RegistrationKind {
+  claim,
+  signup,
+}
+
+enum RegistrationState {
+  submitted,
+  underReview: "under_review",
+  approved,
+  rejected,
+  withdrawn,
+}
+
+enum AccountState {
+  pending,
+  active,
+  suspended,
+  closed,
 }
 
 enum ServicePurpose {
@@ -60,8 +79,8 @@ model Account extends VersionedRecord {
   id: AccountId;
   personId: PersonId;
   organizationId: OrganizationId;
-  loginHandle: string;
-  status: "pending" | "active" | "suspended" | "closed";
+  loginHandle: EmailAddress;
+  status: AccountState;
 }
 
 model Session {
@@ -77,12 +96,107 @@ model Session {
 model Registration extends VersionedRecord {
   id: RegistrationId;
   organizationId: OrganizationId;
-  requestedLoginHandle: string;
+  kind: RegistrationKind;
+  requestedLoginHandle: EmailAddress;
   requestedDisplayName: string;
-  state: "submitted" | "under_review" | "approved" | "rejected" | "withdrawn";
+  state: RegistrationState;
   linkedPersonId?: PersonId;
+  profile?: SignupProfile;
   reviewedBy?: PersonId;
   reviewedAt?: utcDateTime;
+}
+
+/** Anonymous roster projection for a claim picker. It deliberately omits contact details. */
+model ClaimablePerson {
+  personId: PersonId;
+  displayName: string;
+}
+
+model SignupProfile {
+  displayName: string;
+  slackUserId?: string;
+  role?: string;
+  affiliation?: string;
+  researchBranch?: string;
+  researchTopics?: string[];
+  projects?: string[];
+  hoursPerWeek?: float64;
+  location?: string;
+  timezone?: string;
+  personalWebsite?: url;
+  notes?: string;
+}
+
+model ClaimRegistrationInput {
+  personId: PersonId;
+  email: EmailAddress;
+  @minLength(10) password: string;
+}
+
+model SignupRegistrationInput {
+  email: EmailAddress;
+  @minLength(10) password: string;
+  profile: SignupProfile;
+}
+
+model RegistrationSubmitted {
+  registrationId: RegistrationId;
+  state: "submitted";
+}
+
+model RegistrationDecisionInput {
+  decision: "approve" | "reject";
+  reason?: string;
+}
+
+model LoginInput {
+  email: EmailAddress;
+  @minLength(1) password: string;
+}
+
+/** Safe browser view. The opaque session credential is delivered only in an HTTP-only cookie. */
+model SessionView {
+  sessionId: SessionId;
+  expiresAt: utcDateTime;
+  authenticationLevel: AuthenticationLevel;
+  person: Person;
+  roles: RoleName[];
+}
+
+model PasswordChangeInput {
+  currentPassword: string;
+  @minLength(10) newPassword: string;
+}
+
+model EmailChangeInput {
+  currentPassword: string;
+  newEmail: EmailAddress;
+}
+
+enum GatewayScope {
+  operatorRead: "operator.read",
+  operatorWrite: "operator.write",
+  operatorApprovals: "operator.approvals",
+  operatorPairing: "operator.pairing",
+  operatorAdmin: "operator.admin",
+}
+
+model DeviceCredentialInput {
+  deviceId: DeviceId;
+  publicKey: string;
+  platform?: string;
+  deviceFamily?: string;
+  displayName?: string;
+}
+
+/** The token value is intentionally transport-only and omitted from durable/audit schemas. */
+model DeviceCredentialReceipt {
+  deviceId: DeviceId;
+  scopes: GatewayScope[];
+  expiresAt: utcDateTime;
+
+  /** Returned once to the authenticated device; never persisted in browser storage or audit. */
+  credential: string;
 }
 
 model RoleAssignment extends VersionedRecord {

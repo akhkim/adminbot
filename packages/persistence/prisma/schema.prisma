@@ -1,0 +1,255 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "esm"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum PersonStatus {
+  active
+  inactive
+  merged
+}
+
+enum AccountStatus {
+  pending
+  active
+  suspended
+  closed
+}
+
+enum RegistrationKind {
+  claim
+  signup
+}
+
+enum RegistrationStatus {
+  submitted
+  under_review
+  approved
+  rejected
+  withdrawn
+}
+
+enum SessionRevocationReason {
+  logout
+  password_changed
+  email_changed
+  account_suspended
+  legacy_migration
+  administrator
+}
+
+enum AccessRole {
+  external_collaborator
+  member
+  administrator
+  approver
+  security_operator
+  auditor
+}
+
+enum OutboxStatus {
+  pending
+  processing
+  delivered
+  failed
+}
+
+enum MigrationStatus {
+  running
+  completed
+  failed
+}
+
+model Person {
+  id             String       @id
+  organizationId String       @map("organization_id")
+  displayName    String       @map("display_name")
+  status         PersonStatus @default(active)
+  version        Int          @default(1)
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  account    Account?
+  roles      RoleAssignment[]
+  legacyLink LegacyIdentityLink?
+
+  @@unique([organizationId, id])
+  @@index([organizationId, status])
+  @@map("people")
+}
+
+model Account {
+  id             String        @id
+  organizationId String        @map("organization_id")
+  personId       String        @map("person_id")
+  loginHandle    String        @map("login_handle")
+  passwordHash   String        @map("password_hash")
+  status         AccountStatus @default(active)
+  version        Int           @default(1)
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  person   Person    @relation(fields: [organizationId, personId], references: [organizationId, id], onDelete: Restrict)
+  sessions Session[]
+
+  @@unique([organizationId, loginHandle])
+  @@unique([organizationId, personId])
+  @@index([organizationId, status])
+  @@map("accounts")
+}
+
+model Registration {
+  id                   String             @id
+  organizationId       String             @map("organization_id")
+  kind                 RegistrationKind
+  status               RegistrationStatus @default(submitted)
+  requestedLoginHandle String             @map("requested_login_handle")
+  requestedDisplayName String             @map("requested_display_name")
+  passwordHash         String?            @map("password_hash")
+  openRequestKey       String?            @unique @map("open_request_key")
+  openClaimPersonKey   String?            @unique @map("open_claim_person_key")
+  linkedPersonId       String?            @map("linked_person_id")
+  reviewedByPersonId   String?            @map("reviewed_by_person_id")
+  reviewedAt           DateTime?          @map("reviewed_at")
+  reviewReason         String?            @map("review_reason")
+  version              Int                @default(1)
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+
+  profile RegistrationProfile?
+
+  @@index([organizationId, status, createdAt])
+  @@map("registrations")
+}
+
+model RegistrationProfile {
+  registrationId  String   @id @map("registration_id")
+  slackUserId     String?  @map("slack_user_id")
+  role             String?
+  affiliation      String?
+  researchBranch   String?  @map("research_branch")
+  researchTopics   Json?    @map("research_topics")
+  projects         Json?
+  hoursPerWeek     Float?   @map("hours_per_week")
+  location         String?
+  timezone         String?
+  personalWebsite  String?  @map("personal_website")
+  notes            String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  registration Registration @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+
+  @@map("registration_profiles")
+}
+
+model Session {
+  id                    String                   @id
+  accountId             String                   @map("account_id")
+  tokenHash             String                   @unique @map("token_hash")
+  createdAt             DateTime                 @default(now()) @map("created_at")
+  expiresAt             DateTime                 @map("expires_at")
+  lastSeenAt            DateTime                 @map("last_seen_at")
+  lastReauthenticatedAt DateTime                 @map("last_reauthenticated_at")
+  revokedAt             DateTime?                @map("revoked_at")
+  revocationReason      SessionRevocationReason? @map("revocation_reason")
+
+  account Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId, expiresAt])
+  @@map("sessions")
+}
+
+model RoleAssignment {
+  id             String    @id
+  organizationId String    @map("organization_id")
+  personId       String    @map("person_id")
+  role           AccessRole
+  validFrom      DateTime  @map("valid_from")
+  validUntil     DateTime? @map("valid_until")
+  assignedBy     String    @map("assigned_by")
+  version        Int       @default(1)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  person Person @relation(fields: [organizationId, personId], references: [organizationId, id], onDelete: Cascade)
+
+  @@unique([organizationId, personId, role, validFrom])
+  @@index([organizationId, role, validUntil])
+  @@map("role_assignments")
+}
+
+model AuditEvent {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  eventType      String   @map("event_type")
+  actorId        String?  @map("actor_id")
+  subjectId      String?  @map("subject_id")
+  correlationId  String?  @map("correlation_id")
+  safeDetails    Json     @map("safe_details")
+  occurredAt     DateTime @map("occurred_at")
+
+  @@index([organizationId, occurredAt])
+  @@index([correlationId])
+  @@map("audit_events")
+}
+
+model OutboxEvent {
+  id             String       @id
+  organizationId String       @map("organization_id")
+  eventType      String       @map("event_type")
+  aggregateType  String       @map("aggregate_type")
+  aggregateId    String       @map("aggregate_id")
+  payload        Json
+  status         OutboxStatus @default(pending)
+  attempts       Int          @default(0)
+  availableAt    DateTime     @map("available_at")
+  claimedAt      DateTime?    @map("claimed_at")
+  deliveredAt    DateTime?    @map("delivered_at")
+  lastErrorCode  String?      @map("last_error_code")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  @@index([status, availableAt])
+  @@index([organizationId, aggregateType, aggregateId])
+  @@map("outbox_events")
+}
+
+model LegacyMigrationRun {
+  id               String          @id
+  scope            String
+  sourceFingerprint String          @map("source_fingerprint")
+  mapperSetVersion  String          @map("mapper_set_version")
+  status            MigrationStatus
+  redactedReport    Json            @map("redacted_report")
+  startedAt         DateTime        @map("started_at")
+  completedAt       DateTime?       @map("completed_at")
+
+  @@unique([scope, sourceFingerprint, mapperSetVersion])
+  @@map("legacy_migration_runs")
+}
+
+model LegacyIdentityLink {
+  legacyMemberId String   @id @map("legacy_member_id")
+  personId       String   @unique @map("person_id")
+  importedAt     DateTime @map("imported_at")
+
+  person Person @relation(fields: [personId], references: [id], onDelete: Restrict)
+
+  @@map("legacy_identity_links")
+}
+
+model RateLimitBucket {
+  key             String   @id
+  attemptCount    Int      @map("attempt_count")
+  windowStartedAt DateTime @map("window_started_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([updatedAt])
+  @@map("rate_limit_buckets")
+}

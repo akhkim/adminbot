@@ -4,6 +4,7 @@ namespace AdminBot.Contracts.Common;
 
 enum ErrorCode {
   notAuthenticated: "not_authenticated",
+  accountPendingApproval: "account_pending_approval",
   notAuthorized: "not_authorized",
   notFound: "not_found",
   conflict,
