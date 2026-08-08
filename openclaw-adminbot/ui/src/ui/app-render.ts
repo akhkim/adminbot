@@ -245,6 +245,9 @@ import {
 } from "./views/change-password.ts";
 import { renderChat } from "./views/chat.ts";
 import { renderCommandPalette } from "./views/command-palette.ts";
+import { renderDashboard } from "./views/dashboard.ts";
+import { renderMyWork } from "./views/my-work.ts";
+import { renderProfile } from "./views/profile.ts";
 import { getPresetById } from "./views/config-presets.ts";
 import { renderQuickSettings, type QuickSettingsChannel } from "./views/config-quick.ts";
 import { renderConfig, type ConfigProps } from "./views/config.ts";
@@ -2936,6 +2939,17 @@ export function renderApp(state: AppViewState) {
                 ${headerError ? html`<div class="pill danger">${headerError}</div>` : nothing}
               </div>
             </section>`}
+        ${state.tab === "dashboard" ? renderDashboard(state, accessRole) : nothing}
+        ${state.tab === "profile"
+          ? renderProfile(state, {
+              onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
+            })
+          : nothing}
+        ${state.tab === "myWork"
+          ? renderMyWork(state, {
+              onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
+            })
+          : nothing}
         ${state.tab === "overview"
           ? renderOverview({
               connected: state.connected,

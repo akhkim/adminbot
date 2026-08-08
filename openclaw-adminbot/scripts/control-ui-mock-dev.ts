@@ -548,6 +548,222 @@ function escapeScriptContent(script: string): string {
   return script.replaceAll("</script", "<\\/script");
 }
 
+// A signed-in student, with enough of a lab around her that the member surfaces have something to
+// show. The mock gateway speaks the chat/session RPCs but none of the AdminBot ones, so the roster,
+// papers and onboarding checklist have no source -- this seeds them directly onto the app element,
+// which is the same thing a real member session would end up doing.
+//
+// Dev-only, and deliberately a fixed cast rather than randomised output: a demo you can point at
+// twice and see the same thing is worth more than novelty.
+const MOCK_STUDENT = {
+  member: {
+    id: "mock-student-1",
+    name: "Ada Okafor",
+    email: "ada@jinesis.lab",
+    role: "PhD Student",
+    status: "active",
+    privilege_level: "member",
+    affiliation: "University of Toronto",
+    research_topics: ["multi-agent negotiation", "evaluation", "causal inference"],
+    projects: ["Negotiation Arena", "Eval Harness", "Causal Probes"],
+    hours_per_week: 40,
+    // location / timezone / slack_user_id / personal_website left blank on purpose: they are what
+    // the profile page's "fill in the blanks" form exists to collect.
+  },
+  lab: [
+    { id: "prof-zhijing", name: "Zhijing Jin", role: "Professor", privilege_level: "admin" },
+    { id: "m-noor", name: "Noor Haddad", role: "Postdoc", privilege_level: "core_member" },
+    { id: "m-kenji", name: "Kenji Watanabe", role: "Master's Student", privilege_level: "member" },
+    { id: "m-lucia", name: "Lucia Ferreira", role: "Research Assistant", privilege_level: "member" },
+  ],
+  papers: [
+    {
+      id: "paper-negotiation-arena",
+      title: "Negotiation Arena: bargaining benchmarks for LLM agents",
+      authors: ["Ada Okafor", "Noor Haddad", "Zhijing Jin"],
+      current_step: "overleaf_writing",
+      mentor_member_id: "prof-zhijing",
+      submitted_by_member_id: "mock-student-1",
+      created_at: "2026-04-02T09:00:00Z",
+      updated_at: "2026-07-28T16:12:00Z",
+    },
+    {
+      id: "paper-eval-gaps",
+      title: "What evaluation misses in multi-agent settings",
+      authors: ["Ada Okafor", "Kenji Watanabe"],
+      current_step: "submission",
+      mentor_member_id: "m-noor",
+      created_at: "2026-02-18T09:00:00Z",
+      updated_at: "2026-08-01T11:30:00Z",
+    },
+    {
+      id: "paper-causal-probes",
+      title: "Causal probes for instruction-tuned models",
+      authors: ["Lucia Ferreira", "Ada Okafor"],
+      current_step: "social_posts",
+      mentor_member_id: "prof-zhijing",
+      created_at: "2025-11-05T09:00:00Z",
+      updated_at: "2026-06-20T14:45:00Z",
+    },
+    // Not hers -- present so "my papers" is visibly a filter rather than the whole table.
+    {
+      id: "paper-not-mine",
+      title: "Scaling laws for retrieval-augmented agents",
+      authors: ["Kenji Watanabe", "Noor Haddad"],
+      current_step: "arxiv_polish",
+      created_at: "2026-03-11T09:00:00Z",
+      updated_at: "2026-07-02T10:00:00Z",
+    },
+  ],
+  onboardingSteps: [
+    ["slack", "Join the lab Slack", "Getting started", "complete"],
+    ["calendar_invite", "Accept the lab calendar invite", "Getting started", "complete"],
+    ["guidebook", "Skim the lab guidebook", "Getting started", "complete"],
+    ["compute", "Request GPU access on Aurora", "Compute access", "current"],
+    ["twitter", "Follow the lab account", "Social media", "remaining"],
+    ["intro_meeting", "Book your intro meeting with Zhijing", "Working with us", "remaining"],
+    ["reading_group", "Sign up for a reading group slot", "Working with us", "remaining"],
+  ],
+} as const;
+
+// Saving needs more than seeded state. Every AdminBot write goes over HTTP to the service with a
+// stored member session, and the mock has neither -- so `loadStoredMemberSession()` returned null,
+// profile saves short-circuited with "Sign in with your member account", and paper saves fell
+// through to a gateway tool the mock does not implement. Nothing could persist.
+//
+// So the seed installs a fake service: a member session in localStorage, plus a `fetch` shim over
+// the four routes the Control UI actually uses. Writes land in an in-memory store that the reads
+// serve back, which is exactly the contract the real service offers -- so the app's own load,
+// save, and reload path runs unmodified, and edits stick for the life of the tab.
+function createMockStudentSeedScript(): string {
+  return `
+(() => {
+  const DATA = ${JSON.stringify(MOCK_STUDENT)};
+  const steps = DATA.onboardingSteps.map(([id, label, category, status]) => ({
+    id, label, category, status, required: true,
+  }));
+  const remaining = steps.filter((step) => step.status !== "complete");
+  const onboarding = {
+    steps,
+    completed: steps.filter((step) => step.status === "complete"),
+    remaining,
+    current_step: remaining[0],
+  };
+
+  // The store the fake service reads and writes. Seeded once; every later mutation goes here.
+  const store = {
+    members: [{ ...DATA.member, onboarding }, ...DATA.lab],
+    papers: DATA.papers.map((paper) => ({ ...paper })),
+    settings: {
+      paper_escalation_business_days: 3,
+      head_professor_member_id: "prof-zhijing",
+      updated_at: "2026-07-01T00:00:00Z",
+    },
+  };
+
+  localStorage.setItem(
+    "openclaw.adminbot.session.v1",
+    JSON.stringify({ sessionToken: "mock-session-token", expiresAt: 4102444800000 }),
+  );
+
+  const json = (body, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+
+  const realFetch = globalThis.fetch.bind(globalThis);
+  globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const method = (init?.method ?? (typeof input === "object" && "method" in input ? input.method : "GET")).toUpperCase();
+    let path;
+    try {
+      path = new URL(url, location.href).pathname;
+    } catch {
+      return realFetch(input, init);
+    }
+    const body = init?.body ? JSON.parse(String(init.body)) : null;
+
+    if (path.endsWith("/lab/members") && method === "GET") return json({ members: store.members });
+    if (path.endsWith("/papers") && method === "GET") return json({ papers: store.papers });
+    if (path.endsWith("/settings") && method === "GET") return json(store.settings);
+
+    // Split rather than match: this string is emitted into a <script> from a template literal,
+    // where a regex literal's escapes are one more layer to get wrong.
+    const segments = path.split("/").filter(Boolean);
+    const last = decodeURIComponent(segments[segments.length - 1] ?? "");
+    const parent = segments.slice(0, -1).join("/");
+
+    if (method === "PUT" && parent.endsWith("lab/members")) {
+      const index = store.members.findIndex((member) => member.id === last);
+      if (index < 0) return json({ error: "not_found" }, 404);
+      // Merge, dropping keys the caller left blank so a partial edit cannot wipe a field.
+      const patch = Object.fromEntries(
+        Object.entries(body ?? {}).filter(([, value]) =>
+          Array.isArray(value) ? value.length : value !== "" && value !== undefined && value !== null,
+        ),
+      );
+      store.members[index] = { ...store.members[index], ...patch };
+      return json(store.members[index]);
+    }
+
+    if (method === "PUT" && parent.endsWith("papers")) {
+      const now = new Date(4102444800000).toISOString();
+      const index = store.papers.findIndex((paper) => paper.id === last);
+      if (index < 0) {
+        // A member filing something new: the real service creates it and stamps the author.
+        store.papers = [
+          ...store.papers,
+          { id: last, submitted_by_member_id: DATA.member.id, created_at: now, updated_at: now, ...body },
+        ];
+        return json(store.papers[store.papers.length - 1]);
+      }
+      store.papers[index] = { ...store.papers[index], ...body, updated_at: now };
+      return json(store.papers[index]);
+    }
+
+    return realFetch(input, init);
+  };
+
+  customElements.whenDefined("openclaw-app").then(() => {
+    const app = document.querySelector("openclaw-app");
+    if (!app) return;
+    app.memberId = DATA.member.id;
+    app.memberPrivilegeLevel = DATA.member.privilege_level;
+    app.adminBotOnboarding = onboarding;
+    app.registrations = [];
+    // The app's own AdminBot load already ran and bailed -- it fired before this script had a
+    // session to load with. Paint the first frame from the store directly; every load after this
+    // (including the reload each save triggers) goes through the fetch shim above and reads the
+    // same store, so what is on screen and what is "on the server" stay the same object.
+    const paint = () => {
+      app.adminBotData = {
+        ...app.adminBotData,
+        members: store.members,
+        papers: store.papers,
+        settings: store.settings,
+        proposals: [],
+        loadedAt: 4102444800000,
+      };
+      app.adminBotError = null;
+      app.adminBotLoading = false;
+      // Holding a member session sends the app down the "connect as this member" path, which asks
+      // the service for a gateway token -- a route this shim does not serve, so the connection
+      // fails and the whole shell drops to the login gate. The mock gateway is already up; just
+      // keep the flag it sets, rather than teaching the shim to mint tokens.
+      app.connected = true;
+    };
+    paint();
+    let ticks = 0;
+    const timer = setInterval(() => {
+      if (!app.adminBotData?.members?.length || !app.connected) paint();
+      if ((ticks += 1) > 40) clearInterval(timer);
+    }, 250);
+  });
+})();
+`;
+}
+
 function createMockGatewayPlugin(scenario: ControlUiMockGatewayScenario): Plugin {
   const initScript = escapeScriptContent(createControlUiMockGatewayInitScript(scenario));
   const bootstrapBody = JSON.stringify(createControlUiMockBootstrapConfig(scenario));
@@ -561,9 +777,11 @@ function createMockGatewayPlugin(scenario: ControlUiMockGatewayScenario): Plugin
     },
     name: "openclaw-control-ui-mock-gateway",
     transformIndexHtml(html) {
+      const studentScript = escapeScriptContent(createMockStudentSeedScript());
       return html.replace(
         "</head>",
-        `    <script data-openclaw-control-ui-mock-gateway>\n${initScript}\n    </script>\n  </head>`,
+        `    <script data-openclaw-control-ui-mock-gateway>\n${initScript}\n    </script>\n` +
+          `    <script data-openclaw-control-ui-mock-student>\n${studentScript}\n    </script>\n  </head>`,
       );
     },
   };
@@ -580,7 +798,8 @@ function resolveServerUrl(server: ViteDevServer, requestedHost: string): string 
   if (!address || typeof address === "string") {
     throw new Error("Control UI mock server did not expose a TCP port");
   }
-  return `http://${hostForUrl(address.address, requestedHost)}:${address.port}/chat`;
+  // The root, not /chat: it resolves to the dashboard, which is where a signed-in member lands.
+  return `http://${hostForUrl(address.address, requestedHost)}:${address.port}/`;
 }
 
 async function waitForShutdown(): Promise<void> {

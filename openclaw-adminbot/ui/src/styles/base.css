@@ -442,3 +442,17 @@ select {
 :focus:not(:focus-visible) {
   outline: none;
 }
+
+/* Visible to screen readers only: labels for controls whose purpose is clear visually but which
+   would otherwise reach assistive tech unnamed. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

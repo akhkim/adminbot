@@ -183,11 +183,26 @@ describe("renderAdminBotWelcome", () => {
     container.querySelector<HTMLButtonElement>(".adminbot-welcome__dismiss")?.click();
     expect(state.adminBotWelcomeVisible).toBe(false);
   });
+
+  it("close button hides the welcome screen even with steps still unread", () => {
+    const container = document.createElement("div");
+    const state = createState({
+      completed: [],
+      remaining: [],
+      steps: [
+        { id: "x", label: "X", status: "current", category: "Questions", required: true },
+      ],
+    });
+    render(renderAdminBotWelcome(state), container);
+
+    container.querySelector<HTMLButtonElement>('[data-testid="adminbot-welcome-close"]')?.click();
+    expect(state.adminBotWelcomeVisible).toBe(false);
+  });
 });
 
-// Reading is the only thing that completes a step, so every unread step carries an explicit
-// button and the header counts what is left.
-describe("renderAdminBotWelcome acknowledgement", () => {
+// Completion is self-attested through "Mark done"; the header counts what is finished, and
+// neither exit is gated.
+describe("renderAdminBotWelcome progress and exits", () => {
   const step = (overrides: Partial<MemberOnboarding["steps"][number]>) => ({
     id: "linkedin",
     label: "Connect on LinkedIn",
@@ -203,77 +218,53 @@ describe("renderAdminBotWelcome acknowledgement", () => {
     return container;
   }
 
-  it("offers an 'I've read this' button on every unread step", () => {
+  // The per-step acknowledgement was removed: "Mark done" is the only claim a member makes.
+  it("asks for no acknowledgement on any step", () => {
     const container = renderSteps([step({}), step({ id: "twitter", status: "remaining" })]);
-
-    const buttons = [...container.querySelectorAll(".adminbot-welcome__ack-button")];
-    expect(buttons).toHaveLength(2);
-    expect(buttons[0]?.textContent?.trim()).toBe("I've read this");
-  });
-
-  it("replaces the button with a read marker once acknowledged", () => {
-    const container = renderSteps([
-      step({ status: "complete", acknowledged_at: "2026-07-29T10:00:00Z" }),
-    ]);
-
-    expect(container.querySelector(".adminbot-welcome__ack-button")).toBeNull();
-    const marker = container.querySelector('[data-acknowledged="true"]');
-    expect(marker?.textContent?.trim()).toBe("Read");
-  });
-
-  it("asks for nothing on a step completed by an automatic grant", () => {
-    const container = renderSteps([
-      step({ id: "calendar_invite", status: "complete", required: true }),
-    ]);
 
     expect(container.querySelector(".adminbot-welcome__ack-button")).toBeNull();
     expect(container.querySelector(".adminbot-welcome__step-ack")).toBeNull();
+    expect(container.textContent).not.toContain("I've read this");
   });
 
-  it("counts progress over the steps that actually need reading", () => {
+  it("counts the steps that are done", () => {
     const container = renderSteps([
-      // Automatic grant: not a chore, so it stays out of the count entirely.
       step({ id: "calendar_invite", status: "complete" }),
-      step({ id: "linkedin", status: "complete", acknowledged_at: "2026-07-29T10:00:00Z" }),
+      step({ id: "linkedin", status: "complete" }),
       step({ id: "twitter", status: "current" }),
     ]);
 
     expect(container.querySelector(".adminbot-welcome__progress")?.textContent?.trim()).toBe(
-      "1 of 2 read",
+      "2 of 3 done",
     );
   });
 
-  // Dismissing is what hides the checklist, so it stays locked until every readable step is read.
-  it("keeps the dismiss button disabled while any step is unread", () => {
-    const container = renderSteps([
-      step({ id: "linkedin", status: "complete", acknowledged_at: "2026-07-29T10:00:00Z" }),
-      step({ id: "twitter", status: "current" }),
-    ]);
+  it("celebrates once every step is done", () => {
+    const container = renderSteps([step({ status: "complete" })]);
 
-    const dismiss = container.querySelector<HTMLButtonElement>(".adminbot-welcome__dismiss");
-    expect(dismiss?.disabled).toBe(true);
-    expect(dismiss?.getAttribute("title")).toBe('1 step(s) still need "I\'ve read this".');
+    const progress = container.querySelector(".adminbot-welcome__progress");
+    expect(progress?.getAttribute("data-complete")).toBe("true");
+    expect(progress?.textContent?.trim()).toBe("Every step is done — welcome aboard.");
   });
 
-  it("enables the dismiss button once an automatic grant is all that is left unacknowledged", () => {
+  // Someone who opened the checklist to look at it has to be able to leave it, and with nothing
+  // left to acknowledge there is no longer anything to gate leaving on.
+  it("leaves both exits open with steps still outstanding", () => {
     const container = renderSteps([
-      step({ id: "calendar_invite", status: "complete" }),
-      step({ id: "linkedin", status: "complete", acknowledged_at: "2026-07-29T10:00:00Z" }),
+      step({ id: "linkedin", status: "current" }),
+      step({ id: "twitter", status: "remaining" }),
     ]);
+
+    const close = container.querySelector<HTMLButtonElement>(
+      '[data-testid="adminbot-welcome-close"]',
+    );
+    expect(close).not.toBeNull();
+    expect(close?.disabled).toBe(false);
+    expect(close?.getAttribute("aria-label")).toBe("Close");
 
     const dismiss = container.querySelector<HTMLButtonElement>(".adminbot-welcome__dismiss");
     expect(dismiss?.disabled).toBe(false);
     expect(dismiss?.hasAttribute("title")).toBe(false);
-  });
-
-  it("celebrates once every readable step is acknowledged", () => {
-    const container = renderSteps([
-      step({ status: "complete", acknowledged_at: "2026-07-29T10:00:00Z" }),
-    ]);
-
-    const progress = container.querySelector(".adminbot-welcome__progress");
-    expect(progress?.getAttribute("data-complete")).toBe("true");
-    expect(progress?.textContent?.trim()).toBe("You've read every step — welcome aboard.");
   });
 });
 
