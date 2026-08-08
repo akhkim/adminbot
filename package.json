@@ -1,0 +1,22 @@
+{
+  "name": "adminbot-v2",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.2.2",
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "check": "pnpm contracts:check",
+    "contracts:check": "tsp compile spec --no-emit --warn-as-error",
+    "contracts:format:check": "tsp format --check \"spec/**/*.tsp\"",
+    "contracts:generate": "tsp compile spec --warn-as-error"
+  },
+  "devDependencies": {
+    "@typespec/compiler": "1.14.0",
+    "@typespec/http": "1.14.0",
+    "@typespec/json-schema": "1.14.0",
+    "@typespec/openapi3": "1.14.0"
+  }
+}

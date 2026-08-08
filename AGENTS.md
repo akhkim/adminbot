@@ -1,150 +1,93 @@
 # AGENTS.md
 
-This is the private lab-sharing repository for AdminBot. It combines a vendored/synchronized
-OpenClaw tree with the lab-specific AdminBot plugin, service composition, Control UI additions,
-deployment scripts, and a sanitized setup template.
+This repository is the contract-first AdminBot v2 rebuild. The active tree contains the design and
+language-neutral interfaces; production service code has not been implemented yet.
 
 ## Read instructions in scope
 
 - This file applies to the whole repository.
-- Before changing anything under `openclaw-adminbot/`, read
-  `openclaw-adminbot/AGENTS.md` in full and then the nearest more-specific `AGENTS.md` files.
-- In particular, `openclaw-adminbot/extensions/AGENTS.md` governs the AdminBot plugin and
-  `openclaw-adminbot/ui/AGENTS.md` governs Control UI changes.
-- The nested OpenClaw guides contain detailed upstream architecture, style, testing, docs, and
-  review rules. Do not duplicate or bypass them here.
-- If instructions conflict, preserve the security and privacy invariants in this file and follow
-  the most specific guide for implementation details.
+- Read `ADMINBOT_V2_DESIGN.md` before changing contracts or adding implementation code.
+- `.legacy-reference/` is a local, ignored, read-only reference copy of v1. Never import it from v2,
+  edit it as part of v2 work, or commit its generated/runtime files.
+- The previous implementation remains recoverable from Git history if the local reference directory
+  is unavailable.
 
 ## Repository map
 
-- `README.md`: lab-repository overview, setup, and upstream-sync policy.
-- `openclaw-adminbot/`: Node/TypeScript pnpm workspace containing OpenClaw plus the AdminBot
-  layer.
-- `openclaw-adminbot/extensions/adminbot/`: typed AdminBot plugin, local HTTP service, SQLite
-  ledger, connector executors, workflows, tests, and bundled AdminBot skills.
-- `openclaw-adminbot/start-adminbot.ts`: composition root for the loopback service and live
-  executors. `start-adminbot.mjs` is the runnable built entry point.
-- `openclaw-adminbot/ui/`: Lit Control UI, including admin/member views and auth flows.
-- `openclaw-adminbot/docs/tools/adminbot.md`: operator-facing AdminBot documentation.
-- `openclaw-adminbot/deploy/aurora/`: Aurora user-service and model/runtime provisioning.
-- `openclaw-setup/`: sanitized, shareable examples only. It is not a live OpenClaw home.
+- `spec/common/`: identifiers, shared values, paging, and stable errors.
+- `spec/platform/`: cross-cutting service, governance, privacy, connector, automation, and API
+  contracts.
+- `spec/workflows/`: workflow-owned domain, command, action, and projection contracts.
+- `.generated/`: ignored OpenAPI and JSON Schema output; never edit or commit it.
+- `ADMINBOT_V2_DESIGN.md`: canonical product and architecture specification.
+- `.legacy-reference/openclaw-adminbot/`: local v1 code for migration evidence only.
 
-## Development
+## Contract rules
 
-Run project commands from `openclaw-adminbot/`. The supported runtime is Node 22.19+ and the
-package manager is the pinned pnpm version in `package.json`.
+- TypeSpec is authoritative for data crossing process, API, queue, client, workflow, or connector
+  boundaries.
+- All current contracts are `v0alpha`. They are starting hypotheses, not promises of completeness or
+  stability. Add what implementation requires, remove definitions proven superfluous, and prefer
+  evidence from vertical slices and legacy tests over preserving an early shape.
+- Define a concept once. The API, UI, OpenClaw adapter, worker, and tests must consume generated
+  schemas/types rather than copying contracts.
+- Shared changes under `spec/common/` or governance/policy contracts require coordination with every
+  affected workstream. Workflow-local additions belong in that workflow's file.
+- Contract responsibility follows section 16.7 of `ADMINBOT_V2_DESIGN.md`. An owner may evolve its
+  files; non-owners propose or coordinate changes instead of editing a shared contract concurrently.
+- Do not put secrets, credential values, raw private fixtures, prompts, policy implementation, or
+  executable business logic in contract files.
+- TypeSpec describes valid shapes and operations. Authorization, separation of duty, state-machine
+  invariants, idempotency, and privacy decisions still require implementation and negative tests.
+- Generated output is disposable. Change TypeSpec and regenerate it.
+- Every breaking contract change must be explicit and reviewed; do not silently reuse a schema name
+  for incompatible semantics.
 
-```bash
-cd openclaw-adminbot
-pnpm install
-pnpm build
-pnpm ui:build
-node start-adminbot.mjs
-```
+## Architecture and hard boundaries
 
-- Use `pnpm ui:dev` for Control UI iteration.
-- `pnpm gateway:watch` does not rebuild `dist/control-ui`; rerun `pnpm ui:build` after UI changes.
-- Prefer targeted validation while iterating; the full workspace is large.
-- Never edit `node_modules`, generated build output, runtime databases, or generated plugin
-  registries by hand.
-
-## AdminBot architecture and hard boundaries
-
-- OpenClaw and the model may observe, reason, draft, and create typed proposals. The AdminBot
-  service owns authorization, policy, approvals, connector scopes, idempotency, execution, and
-  audit logging.
-- Every external mutation must use the proposal -> approval -> execution path. Do not add direct
-  model/tool access to Gmail, Calendar, Slack, Overleaf, social posting, reimbursements, member
-  management, or other live lab systems.
-- Approval is bound to the exact immutable payload and its hash. Preserve risk tiers, required
-  approver roles/counts, idempotency checks, and audit records when adding or changing actions.
-- Unsupported actions and unavailable/misconfigured connectors must fail closed. Do not mark an
-  action executed until its connector succeeds. Dry runs must not perform live side effects.
-- Keep the agent least-privileged. Member/admin behavior is enforced server-side through member
-  sessions and privilege-capped gateway device scopes; UI hiding is not an authorization control.
-- New members default to the least-privileged `external_collaborator` tier unless an explicit,
-  authorized choice says otherwise.
-- Keep the AdminBot service loopback-only by default. Do not weaken the non-loopback refusal,
-  gateway authentication, browser-origin checks, or device-pairing scope checks for convenience.
-- Privacy classification and sanitization must fail closed. Raw sensitive content must remain on
-  the local VM; remote reasoning may receive only content proven safe or placeholder-sanitized.
-- Vercel hosts static Control UI assets only. Do not proxy prompts, credentials, or private lab
-  data through Vercel functions, analytics, or other hosted middleware.
-- Keep business workflow guidance in the focused AdminBot skills. Keep typed action contracts,
-  security checks, and connector boundaries in code.
+- OpenClaw and models may observe, reason, draft, and create typed proposals. AdminBot owns
+  authorization, policy, approvals, connector scopes, idempotency, execution, and audit logging.
+- Every external mutation follows proposal -> policy -> approval -> execution. No workflow,
+  scheduler, adapter, UI, or model may call a live connector directly.
+- Approval is bound to the exact immutable payload, definition version, policy decision, and hash.
+- Unsupported actions and unavailable/misconfigured connectors fail closed. Dry runs have no live
+  side effects, and an action is not successful until its connector result is verified.
+- Connector workers receive a short-lived capability for one effect and operation. Long-lived vendor
+  credentials remain in a host secret manager and never enter schemas, queues, prompts, or audit
+  details.
+- Human permissions, field ownership, and approver eligibility are enforced server-side. UI hiding
+  is not authorization. New members default to `external_collaborator` unless an authorized decision
+  states otherwise.
+- Privacy classification and sanitization fail closed. Secret material is never model input; raw
+  sensitive content stays local unless a destination policy and deterministic sanitization proof
+  allow otherwise.
+- Static hosting serves Control UI assets only. It must not proxy prompts, credentials, sessions, or
+  private lab data through hosted functions or analytics.
 
 ## Secrets and state
 
-- Never commit credentials, API keys, service tokens, gateway tokens, keyrings, cookies, device
-  identities, pairing state, member sessions, logs, memory, browser data, personal workspaces, or
-  live lab records.
-- Vendor write credentials belong in the service environment or host secret manager, never in
-  prompts, skill text, source code, model-visible memory, or `openclaw-setup/`.
-- `openclaw-setup/openclaw.example.json` and `installs.json.example` must remain sanitized.
-  Preserve placeholders and remove machine-specific paths, identities, endpoints, and secrets
-  before committing changes there.
-- Runtime SQLite files belong under ignored `openclaw-adminbot/state/`. Do not commit `*.sqlite`,
-  WAL/SHM files, `.env` files, or generated runtime state.
-- Tests must use synthetic identities and data. Redact secrets and personal/lab-sensitive content
-  from fixtures, logs, screenshots, and failure output.
-
-## Change placement
-
-- AdminBot plugin production code imports through `openclaw/plugin-sdk/*` and local barrels; it
-  must not reach into OpenClaw core internals or another extension's internals.
-- Put reusable AdminBot service behavior in `extensions/adminbot/src/`; keep process wiring and
-  host-specific composition in `start-adminbot.ts` or deployment scripts.
-- Update action types, policy, schemas, persistence, executor behavior, API/UI handling, tests,
-  and docs together when changing an AdminBot action or workflow contract.
-- When changing access levels, auth, device pairing, approvals, privacy routing, or execution,
-  trace the complete server-side path and add regression tests for both allowed and denied cases.
-- Control UI uses Lit legacy decorators. Preserve the style documented in
-  `openclaw-adminbot/CONTRIBUTING.md` and `openclaw-adminbot/ui/AGENTS.md`.
+- Never commit credentials, API keys, tokens, cookies, device identities, pairing state, member
+  sessions, runtime databases, logs, memory, browser data, personal workspaces, or live lab records.
+- Tests and examples use synthetic identities and data.
+- `.env`, `.legacy-reference/`, `.generated/`, `node_modules/`, and runtime state remain ignored.
 
 ## Validation
 
-Choose the narrowest meaningful checks first, then widen according to risk:
+Run from the repository root:
 
 ```bash
-cd openclaw-adminbot
-
-# AdminBot plugin and its shared plugin contracts
-pnpm test:extension adminbot
-pnpm test:contracts:plugins
-
-# Control UI changes
-pnpm test:ui
-pnpm ui:build
-
-# Changed files / broader TypeScript work
-pnpm check:changed
-pnpm test:changed
-pnpm format:check
-
-# Full pre-PR lane when feasible
-pnpm build
-pnpm check
-pnpm test
+corepack pnpm contracts:check
+corepack pnpm contracts:generate
 ```
 
-- Add or update colocated `*.test.ts` tests for behavioral changes.
-- For connector or deployment changes, supplement unit tests with a safe dry run or documented
-  real-behavior check. Never perform a live external mutation merely to validate a change without
-  explicit authorization.
-- For security-sensitive changes, test negative paths: missing approval, wrong role, altered
-  payload, replay/idempotency, expired/revoked session, excessive scopes, unavailable connector,
-  and unsafe privacy classification as applicable.
-- UI changes should include relevant view/controller tests and a production UI build; visually
-  inspect meaningful rendering changes when possible.
+Contract changes must compile with warnings treated as errors and generate both OpenAPI 3.1 and JSON
+Schema. When implementation begins, add the narrowest relevant tests plus negative tests for
+security-sensitive paths.
 
-## Upstream synchronization and commits
+## Change discipline
 
-- This repository has no shared Git history with `openclaw/openclaw`. OpenClaw base updates arrive
-  as squashed sync commits.
-- Do not merge upstream history into this repository. Diff or rebase the AdminBot layer against an
-  upstream checkout, preserve lab-local files, and keep AdminBot changes easy to identify.
-- Keep changes focused. Do not mix an upstream sync, generated churn, unrelated cleanup, and an
-  AdminBot feature in one change.
-- Do not edit `openclaw-adminbot/CHANGELOG.md` for ordinary contributor changes unless explicitly
-  requested by a maintainer.
+- Keep contract, implementation, tests, generated-client updates, and documentation aligned.
+- Do not mix unrelated cleanup or legacy changes into feature work.
+- Cross-workflow coordination uses public commands and events, never sibling-private imports.
+- Keep services modular but avoid turning logical components into independent deployments without a
+  measured security, scaling, or reliability reason.

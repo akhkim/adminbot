@@ -1,3 +1,11 @@
 .env
 .env.*
 !.env.example
+
+# Local-only reference copy of the pre-v2 implementation.
+.legacy-reference/
+
+# Dependencies and generated contract artifacts.
+node_modules/
+.generated/
+.cache/

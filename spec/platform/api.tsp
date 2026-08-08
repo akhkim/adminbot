@@ -1,0 +1,103 @@
+import "@typespec/http";
+import "../common/primitives.tsp";
+import "../common/errors.tsp";
+import "./automation.tsp";
+import "./capabilities.tsp";
+import "./governance.tsp";
+import "./privacy.tsp";
+import "./supporting.tsp";
+import "../workflows/communications.tsp";
+
+using TypeSpec.Http;
+using AdminBot.Contracts.Automation;
+using AdminBot.Contracts.Capabilities;
+using AdminBot.Contracts.Common;
+using AdminBot.Contracts.Governance;
+using AdminBot.Contracts.Privacy;
+using AdminBot.Contracts.Supporting;
+using AdminBot.Contracts.Workflows.Communications;
+
+@service(#{ title: "AdminBot v2" })
+@route("/v0alpha")
+namespace AdminBot.Api.V0Alpha;
+
+@route("/capabilities")
+interface CapabilitiesApi {
+  @get listCapabilities(@query audience?: Audience):
+    | RegisteredCapability[]
+    | ErrorResponse;
+}
+
+@route("/commands")
+interface CommandsApi {
+  @route("/{commandName}")
+  @post
+  dispatchCommand(
+    @path commandName: CommandName,
+    @body request: CommandRequest,
+  ): CommandReceipt | ErrorResponse;
+
+  /** Typed vertical slice proving one workflow schema through the generated HTTP contract. */
+  @route("/communications.create-calendar-event")
+  @post
+  proposeCalendarEvent(
+    @header("idempotency-key") idempotencyKey: IdempotencyKey,
+    @body request: CreateCalendarEventCommand,
+  ): Action | ErrorResponse;
+}
+
+@route("/actions")
+interface ActionsApi {
+  @post proposeAction(@body proposal: ActionProposal): Action | ErrorResponse;
+
+  @route("/{actionId}")
+  @get
+  getAction(@path actionId: ActionId): Action | ErrorResponse;
+
+  @get
+  listActions(
+    @query state?: string,
+    @query cursor?: string,
+    @query limit?: int32,
+  ): Page<Action> | ErrorResponse;
+
+  @route("/{actionId}/decisions")
+  @post
+  decideAction(@path actionId: ActionId, @body input: ApprovalInput):
+    | Action
+    | ErrorResponse;
+
+  @route("/{actionId}/executions")
+  @post
+  executeAction(@path actionId: ActionId): Execution | ErrorResponse;
+
+  @route("/{actionId}/cancellations")
+  @post
+  cancelAction(@path actionId: ActionId, @body input: CancelActionInput):
+    | Action
+    | ErrorResponse;
+}
+
+model CancelActionInput {
+  reason: string;
+}
+
+@route("/reasoning/tasks")
+interface ReasoningApi {
+  @post runReasoningTask(@body task: ReasoningTask):
+    | ReasoningReceipt
+    | ErrorResponse;
+}
+
+@route("/audit/events")
+interface AuditApi {
+  @get
+  listAuditEvents(@query cursor?: string, @query limit?: int32):
+    | Page<AuditEvent>
+    | ErrorResponse;
+}
+
+@route("/jobs")
+interface JobsApi {
+  @get listJobs(@query state?: string): JobRun[] | ErrorResponse;
+}

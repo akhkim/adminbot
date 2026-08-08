@@ -1,0 +1,27 @@
+import "@typespec/http";
+import "@typespec/openapi3";
+import "@typespec/json-schema";
+
+import "./common/primitives.tsp";
+import "./common/errors.tsp";
+import "./platform/identity.tsp";
+import "./platform/authorization.tsp";
+import "./platform/privacy.tsp";
+import "./platform/capabilities.tsp";
+import "./platform/policy.tsp";
+import "./platform/governance.tsp";
+import "./platform/connectors.tsp";
+import "./platform/automation.tsp";
+import "./platform/supporting.tsp";
+import "./workflows/members.tsp";
+import "./workflows/communications.tsp";
+import "./workflows/projects.tsp";
+import "./workflows/papers.tsp";
+import "./workflows/reimbursements.tsp";
+import "./workflows/availability.tsp";
+import "./workflows/openreview.tsp";
+import "./workflows/deadlines.tsp";
+import "./workflows/organization.tsp";
+import "./workflows/public-tools.tsp";
+import "./workflows/media.tsp";
+import "./platform/api.tsp";

@@ -1,4 +1,0 @@
-# OpenReview's own client. It is the only place the venue's group/invitation
-# layout (anon group naming, per-submission message invitations, assignment
-# edges) is modelled correctly, so the bridge script uses it rather than raw HTTP.
-openreview-py
