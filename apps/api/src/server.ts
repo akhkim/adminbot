@@ -16,6 +16,7 @@ import {
   createSessionRoutes,
   type SessionApplication,
 } from "./session-routes.js";
+import { createPaperRoutes, type PaperApplication } from "./paper-routes.js";
 
 const MAXIMUM_JSON_BODY_BYTES = 64 * 1_024;
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "::1"]);
@@ -24,6 +25,7 @@ export interface ApiServerOptions {
   readonly registration: RegistrationApplication;
   readonly registrationReview: RegistrationReviewApplication;
   readonly sessions: SessionApplication & SessionAuthenticator;
+  readonly papers?: PaperApplication;
   readonly allowedOrigins?: readonly string[];
   readonly secureCookies?: boolean;
   readonly onUnexpectedError?: (error: unknown, operationId?: string) => void;
@@ -47,6 +49,7 @@ export class AdminBotApiServer {
       ...createRegistrationRoutes(options.registration),
       ...createSessionRoutes(options.sessions, { secure: options.secureCookies ?? false }),
       ...createRegistrationReviewRoutes(options.sessions, options.registrationReview),
+      ...(options.papers === undefined ? [] : createPaperRoutes(options.sessions, options.papers)),
     ];
     const allowedOrigins = parseAllowedOrigins(options.allowedOrigins ?? []);
     this.server = createServer((request, response) => {

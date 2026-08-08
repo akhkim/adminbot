@@ -8,6 +8,12 @@ export type ClaimablePerson = Schemas["AdminBot.Contracts.Identity.ClaimablePers
 export type ErrorResponse = Schemas["AdminBot.Contracts.Common.ErrorResponse"];
 export type LoginInput = Schemas["AdminBot.Contracts.Identity.LoginInput"];
 export type Person = Schemas["AdminBot.Contracts.Identity.Person"];
+export type CreatePaperCommand = Schemas["AdminBot.Contracts.Workflows.Papers.CreatePaperCommand"];
+export type DeletePaperCommand = Schemas["AdminBot.Contracts.Workflows.Papers.DeletePaperCommand"];
+export type PaperProjection = Schemas["AdminBot.Contracts.Workflows.Papers.PaperProjection"];
+export type PaperWorkspaceProjection =
+  Schemas["AdminBot.Contracts.Workflows.Papers.PaperWorkspaceProjection"];
+export type UpdatePaperCommand = Schemas["AdminBot.Contracts.Workflows.Papers.UpdatePaperCommand"];
 export type Registration = Schemas["AdminBot.Contracts.Identity.Registration"];
 export type RegistrationDecisionInput =
   Schemas["AdminBot.Contracts.Identity.RegistrationDecisionInput"];

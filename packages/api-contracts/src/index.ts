@@ -8,9 +8,13 @@ export { apiErrorCodes, isApiErrorCode, type ApiErrorCode } from "./errors.js";
 export type {
   ClaimRegistrationInput,
   ClaimablePerson,
+  CreatePaperCommand,
+  DeletePaperCommand,
   ErrorResponse,
   LoginInput,
   Person,
+  PaperProjection,
+  PaperWorkspaceProjection,
   Registration,
   RegistrationDecisionInput,
   RegistrationSubmitted,
@@ -18,10 +22,12 @@ export type {
   SessionView,
   SignupProfile,
   SignupRegistrationInput,
+  UpdatePaperCommand,
 } from "./dtos.js";
 export type {
   ApiRoute,
   HttpMethod,
+  PaperRoute,
   RegistrationDecisionRoute,
   StaticApiRoute,
 } from "./routes.js";

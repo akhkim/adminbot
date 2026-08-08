@@ -3,6 +3,15 @@ export const API_BASE_PATH = `/${API_VERSION}` as const;
 
 export type HttpMethod = "DELETE" | "GET" | "POST";
 
+export interface PaperRoute {
+  readonly method: "POST";
+  readonly operationId: "PapersApi.updatePaper" | "PapersApi.deletePaper";
+  readonly template: string;
+  build(parameters: { readonly paperId: string }): string;
+  match(pathname: string): { readonly paperId: string } | undefined;
+  matches(pathname: string): boolean;
+}
+
 export interface StaticApiRoute<
   Method extends HttpMethod = HttpMethod,
   OperationId extends string = string,
@@ -24,7 +33,7 @@ export interface RegistrationDecisionRoute {
   match(pathname: string): { readonly registrationId: string } | undefined;
 }
 
-export type ApiRoute = StaticApiRoute | RegistrationDecisionRoute;
+export type ApiRoute = StaticApiRoute | RegistrationDecisionRoute | PaperRoute;
 
 export const apiRoutes = Object.freeze({
   listClaimablePeople: staticRoute(
@@ -83,6 +92,10 @@ export const apiRoutes = Object.freeze({
     "CurrentPrincipalApi.getCurrentPrincipal",
     "/me",
   ),
+  listPapers: staticRoute("GET", "PapersApi.listPapers", "/papers"),
+  createPaper: staticRoute("POST", "PapersApi.createPaper", "/papers"),
+  updatePaper: paperRoute("PapersApi.updatePaper", ""),
+  deletePaper: paperRoute("PapersApi.deletePaper", "/deletion"),
 });
 
 export function createApiUrl(serviceOrigin: string, path: string): URL {
@@ -132,6 +145,36 @@ function registrationDecisionRoute(): RegistrationDecisionRoute {
       const registrationId = matchRegistrationDecisionPath(pathname, prefix, suffix);
       return registrationId === undefined ? undefined : { registrationId };
     },
+  });
+}
+
+function paperRoute(
+  operationId: PaperRoute["operationId"],
+  suffix: "" | "/deletion",
+): PaperRoute {
+  const prefix = `${API_BASE_PATH}/papers/`;
+  const template = `${prefix}{paperId}${suffix}`;
+  const match = (pathname: string) => {
+    if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) return undefined;
+    const encoded = pathname.slice(prefix.length, suffix.length === 0 ? undefined : -suffix.length);
+    if (encoded.length === 0 || encoded.includes("/")) return undefined;
+    try {
+      const paperId = decodeURIComponent(encoded);
+      return paperId.length === 0 ? undefined : { paperId };
+    } catch {
+      return undefined;
+    }
+  };
+  return Object.freeze({
+    method: "POST" as const,
+    operationId,
+    template,
+    build: ({ paperId }: { readonly paperId: string }) => {
+      if (paperId.length === 0) throw new Error("paperId is required");
+      return `${prefix}${encodeURIComponent(paperId)}${suffix}`;
+    },
+    match,
+    matches: (pathname: string) => match(pathname) !== undefined,
   });
 }
 

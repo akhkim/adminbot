@@ -12,3 +12,4 @@ export {
   createSessionRoutes,
   type SessionApplication,
 } from "./session-routes.js";
+export { createPaperRoutes, type PaperApplication } from "./paper-routes.js";

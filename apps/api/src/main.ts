@@ -5,6 +5,7 @@ import {
   SessionService,
 } from "@adminbot/identity";
 import { openPersistence } from "@adminbot/persistence";
+import { PaperWorkspaceService } from "@adminbot/papers";
 import { AdminBotApiServer } from "./server.js";
 
 export async function startFromEnvironment(
@@ -31,10 +32,15 @@ export async function startFromEnvironment(
     transactions: persistence.transactions,
     organizationId,
   });
+  const papers = new PaperWorkspaceService({
+    transactions: persistence.transactions,
+    organizationId,
+  });
   const api = new AdminBotApiServer({
     registration,
     registrationReview,
     sessions,
+    papers,
     allowedOrigins,
     secureCookies: parseBoolean(environment.ADMINBOT_SECURE_COOKIES, false),
     onUnexpectedError: (error) => {

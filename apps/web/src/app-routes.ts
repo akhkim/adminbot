@@ -111,10 +111,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     description: "Browse a curated, timezone-aware board of research deadlines.",
     audience: "public",
     group: "public",
-    status: "backend_pending",
+    status: "live",
     preview: "timeline",
     legacyBehavior: "A bundled deadline snapshot offered a filterable public board.",
-    nextBoundary: "The deadlines read model and snapshot provenance contract must be ported first.",
   },
   {
     id: "members",
@@ -154,10 +153,9 @@ export const APP_ROUTES: readonly AppRoute[] = [
     description: "Track papers, owners, milestones, parallel work, and publication artifacts.",
     audience: "member",
     group: "workspace",
-    status: "backend_pending",
+    status: "live",
     preview: "timeline",
     legacyBehavior: "A filterable Gantt view showed paper progress and workflow branches.",
-    nextBoundary: "The papers workflow and audience-specific read model must be ported first.",
   },
   {
     id: "registrations",

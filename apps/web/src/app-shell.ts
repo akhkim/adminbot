@@ -190,6 +190,12 @@ export class AdminBotAppShell extends LitElement {
         <adminbot-registration-review-app></adminbot-registration-review-app>
       </section>`;
     }
+    if (this.activeRoute.id === "deadlines") {
+      return html`<adminbot-deadline-board></adminbot-deadline-board>`;
+    }
+    if (this.activeRoute.id === "papers") {
+      return html`<adminbot-paper-workspace></adminbot-paper-workspace>`;
+    }
     if (this.activeRoute.status === "backend_pending") {
       return renderPendingSurface(this.activeRoute);
     }

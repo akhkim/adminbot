@@ -241,6 +241,70 @@ export interface RateLimitRepository {
   reset(keys: readonly string[]): Promise<void>;
 }
 
+export type PaperStageName =
+  | "idea"
+  | "outline"
+  | "drafting"
+  | "internal_review"
+  | "submission_ready"
+  | "submitted"
+  | "revision"
+  | "accepted"
+  | "camera_ready"
+  | "published"
+  | "archived";
+
+export interface PaperRecord {
+  readonly id: string;
+  readonly organizationId: string;
+  readonly title: string;
+  readonly authorIds: readonly string[];
+  readonly authorNames: readonly string[];
+  readonly stage: PaperStageName;
+  readonly targetVenue?: string;
+  readonly deadlineAt?: Date;
+  readonly sourceUri?: string;
+  readonly topicTags: readonly string[];
+  readonly version: number;
+  readonly createdAt: Date;
+  readonly updatedAt: Date;
+}
+
+export interface CreatePaperRecord {
+  readonly id: string;
+  readonly organizationId: string;
+  readonly title: string;
+  readonly authorIds: readonly string[];
+  readonly stage: PaperStageName;
+  readonly targetVenue?: string;
+  readonly deadlineAt?: Date;
+  readonly sourceUri?: string;
+  readonly topicTags: readonly string[];
+  readonly now: Date;
+}
+
+export interface UpdatePaperRecord {
+  readonly id: string;
+  readonly organizationId: string;
+  readonly expectedVersion: number;
+  readonly title?: string;
+  readonly authorIds?: readonly string[];
+  readonly stage?: PaperStageName;
+  readonly targetVenue?: string | null;
+  readonly deadlineAt?: Date | null;
+  readonly sourceUri?: string | null;
+  readonly topicTags?: readonly string[];
+  readonly now: Date;
+}
+
+export interface PaperRepository {
+  list(organizationId: string): Promise<readonly PaperRecord[]>;
+  find(organizationId: string, paperId: string): Promise<PaperRecord | undefined>;
+  create(input: CreatePaperRecord): Promise<PaperRecord | "authors_not_found">;
+  update(input: UpdatePaperRecord): Promise<PaperRecord | "not_found" | "conflict" | "authors_not_found">;
+  delete(organizationId: string, paperId: string, expectedVersion: number): Promise<"deleted" | "not_found" | "conflict">;
+}
+
 /**
  * The only repository bundle a transaction callback receives. It is extended centrally as
  * vertical slices land; domain packages never create transaction/session abstractions.
@@ -250,6 +314,7 @@ export interface AdminBotUnitOfWork {
   readonly identity: IdentityRepository;
   readonly legacyMigration: import("./legacy-migration.js").LegacyMigrationRepository;
   readonly outbox: OutboxRepository;
+  readonly papers?: PaperRepository;
   readonly rateLimits: RateLimitRepository;
   readonly registrationReviews: RegistrationReviewRepository;
   readonly sessions: SessionRepository;

@@ -8,8 +8,8 @@ plane.
 The repository now contains the first working identity slice: SQLite/Prisma persistence, anonymous
 claim and signup submission, password login and secure session lifecycle, administrator
 registration review, a loopback HTTP API, a standalone dark-mode Lit application shell, and a
-guarded read-only-first legacy identity importer. The other legacy AdminBot surfaces are visibly
-marked, inert previews until their backend and authorization slices are implemented.
+guarded read-only-first legacy identity importer. The public deadline board and authenticated paper
+workspace are also connected; unfinished legacy surfaces remain visibly marked, inert previews.
 
 ## Current contents
 

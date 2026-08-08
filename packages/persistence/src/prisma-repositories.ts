@@ -9,6 +9,8 @@ import type {
   LegacyMigrationRepository,
   OutboxEventRecord,
   OutboxRepository,
+  PaperRecord,
+  PaperRepository,
   RateLimitRepository,
   RegistrationReviewRepository,
   RegistrationProfileRecord,
@@ -537,6 +539,131 @@ class PrismaRateLimitRepository implements RateLimitRepository {
   }
 }
 
+class PrismaPaperRepository implements PaperRepository {
+  constructor(private readonly database: DatabaseClient) {}
+
+  async list(organizationId: string): Promise<readonly PaperRecord[]> {
+    const rows = await this.database.paper.findMany({
+      where: { organizationId },
+      orderBy: [{ deadlineAt: "asc" }, { title: "asc" }, { id: "asc" }],
+    });
+    return this.hydrate(rows);
+  }
+
+  async find(organizationId: string, paperId: string): Promise<PaperRecord | undefined> {
+    const row = await this.database.paper.findFirst({ where: { id: paperId, organizationId } });
+    return row === null ? undefined : (await this.hydrate([row]))[0];
+  }
+
+  async create(input: Parameters<PaperRepository["create"]>[0]) {
+    if (!(await this.authorsExist(input.organizationId, input.authorIds))) {
+      return "authors_not_found" as const;
+    }
+    const row = await this.database.paper.create({
+      data: {
+        id: input.id,
+        organizationId: input.organizationId,
+        title: input.title,
+        authorIds: [...input.authorIds],
+        stage: input.stage,
+        topicTags: [...input.topicTags],
+        version: 1,
+        createdAt: input.now,
+        updatedAt: input.now,
+        ...(input.targetVenue === undefined ? {} : { targetVenue: input.targetVenue }),
+        ...(input.deadlineAt === undefined ? {} : { deadlineAt: input.deadlineAt }),
+        ...(input.sourceUri === undefined ? {} : { sourceUri: input.sourceUri }),
+      },
+    });
+    return (await this.hydrate([row]))[0] as PaperRecord;
+  }
+
+  async update(input: Parameters<PaperRepository["update"]>[0]) {
+    if (
+      input.authorIds !== undefined &&
+      !(await this.authorsExist(input.organizationId, input.authorIds))
+    ) {
+      return "authors_not_found" as const;
+    }
+    const existing = await this.database.paper.findFirst({
+      where: { id: input.id, organizationId: input.organizationId },
+      select: { version: true },
+    });
+    if (existing === null) return "not_found" as const;
+    if (existing.version !== input.expectedVersion) return "conflict" as const;
+    const changed = await this.database.paper.updateMany({
+      where: {
+        id: input.id,
+        organizationId: input.organizationId,
+        version: input.expectedVersion,
+      },
+      data: {
+        ...(input.title === undefined ? {} : { title: input.title }),
+        ...(input.authorIds === undefined ? {} : { authorIds: [...input.authorIds] }),
+        ...(input.stage === undefined ? {} : { stage: input.stage }),
+        ...(input.targetVenue === undefined ? {} : { targetVenue: input.targetVenue }),
+        ...(input.deadlineAt === undefined ? {} : { deadlineAt: input.deadlineAt }),
+        ...(input.sourceUri === undefined ? {} : { sourceUri: input.sourceUri }),
+        ...(input.topicTags === undefined ? {} : { topicTags: [...input.topicTags] }),
+        version: { increment: 1 },
+        updatedAt: input.now,
+      },
+    });
+    if (changed.count !== 1) return "conflict" as const;
+    const row = await this.database.paper.findUniqueOrThrow({ where: { id: input.id } });
+    return (await this.hydrate([row]))[0] as PaperRecord;
+  }
+
+  async delete(organizationId: string, paperId: string, expectedVersion: number) {
+    const existing = await this.database.paper.findFirst({
+      where: { id: paperId, organizationId },
+      select: { version: true },
+    });
+    if (existing === null) return "not_found" as const;
+    if (existing.version !== expectedVersion) return "conflict" as const;
+    const deleted = await this.database.paper.deleteMany({
+      where: { id: paperId, organizationId, version: expectedVersion },
+    });
+    return deleted.count === 1 ? ("deleted" as const) : ("conflict" as const);
+  }
+
+  private async authorsExist(organizationId: string, authorIds: readonly string[]): Promise<boolean> {
+    const count = await this.database.person.count({
+      where: { organizationId, id: { in: [...authorIds] }, status: "active" },
+    });
+    return count === new Set(authorIds).size;
+  }
+
+  private async hydrate(
+    rows: readonly Prisma.PaperGetPayload<Record<string, never>>[],
+  ): Promise<readonly PaperRecord[]> {
+    const ids = [...new Set(rows.flatMap((row) => parseStoredStringArray(row.authorIds, "paper authors")))];
+    const people = await this.database.person.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, displayName: true },
+    });
+    const names = new Map(people.map((person) => [person.id, person.displayName]));
+    return rows.map((row) => {
+      const authorIds = parseStoredStringArray(row.authorIds, "paper authors");
+      return {
+        id: row.id,
+        organizationId: row.organizationId,
+        title: row.title,
+        authorIds,
+        authorNames: authorIds.map((id) => names.get(id) ?? id),
+        stage: row.stage,
+        topicTags: parseStoredStringArray(row.topicTags, "paper topics"),
+        version: row.version,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        ...(row.targetVenue === null ? {} : { targetVenue: row.targetVenue }),
+        ...(row.deadlineAt === null ? {} : { deadlineAt: row.deadlineAt }),
+        ...(row.sourceUri === null ? {} : { sourceUri: row.sourceUri }),
+      };
+    });
+  }
+}
+
 class PrismaLegacyMigrationRepository implements LegacyMigrationRepository {
   constructor(private readonly database: DatabaseClient) {}
 
@@ -611,6 +738,7 @@ export function createUnitOfWork(database: DatabaseClient): AdminBotUnitOfWork {
     identity,
     legacyMigration: new PrismaLegacyMigrationRepository(database),
     outbox: new PrismaOutboxRepository(database),
+    papers: new PrismaPaperRepository(database),
     rateLimits: new PrismaRateLimitRepository(database),
     registrationReviews: identity as RegistrationReviewRepository,
     sessions: identity as SessionRepository,
@@ -700,6 +828,13 @@ function toRegistrationReviewRecord(
 function parseStringArray(value: unknown): readonly string[] {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
     throw new Error("stored registration profile array is invalid");
+  }
+  return value as string[];
+}
+
+function parseStoredStringArray(value: unknown, label: string): readonly string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error(`stored ${label} are invalid`);
   }
   return value as string[];
 }
