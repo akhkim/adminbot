@@ -24,12 +24,10 @@ describe("onboarding template copy", () => {
         if (!line.trim() || !next?.trim()) {
           return;
         }
-        const opensNewBlock = next.trimStart().startsWith("- ");
+        const opensNewBlock = next.startsWith("- ");
         const isSignOffOrLabel = line.trimEnd().endsWith(",") || line.trimEnd().endsWith(":");
         const isListItem =
-          line.trimStart().startsWith("- ") ||
-          line.startsWith("Top ") ||
-          line.startsWith("Step ");
+          line.startsWith("- ") || line.startsWith("Top ") || line.startsWith("Step ");
         expect(
           opensNewBlock || isSignOffOrLabel || isListItem,
           `${template.id} wraps mid-block at line ${index + 1}: ${line.slice(-40)}`,
