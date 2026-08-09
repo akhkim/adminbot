@@ -186,7 +186,9 @@ export async function sendOnboardingGuide(
         ? "The AdminBot service is unreachable — try again in a moment."
         : result.kind === "forbidden"
           ? "Only an admin can send onboarding guides."
-          : "Couldn't send that guide — check the details and try again.";
+          : result.kind === "failed"
+            ? result.message
+            : "Couldn't send that guide — check the details and try again.";
   } finally {
     host.onboardingBusy = false;
   }

@@ -506,12 +506,21 @@ export type OnboardingGuideResult = {
  * The 422 carries the exact list of values the service is still waiting on, which is the whole
  * point of the endpoint refusing rather than sending a half-filled email; it is surfaced verbatim
  * so the form can name the fields instead of guessing.
+ *
+ * Every other non-2xx here (a Drive/Slack provisioning failure, an unexpected 500) also carries a
+ * real `error.message` from the service -- unlike the shared `mapErrorResponse` kinds, which exist
+ * to keep security-sensitive auth failures generic on purpose, there is nothing to hide about "the
+ * Slack API rejected this invite": the admin sending it needs that exact reason to act on it.
  */
 export async function sendOnboardingGuide(
   request: OnboardingGuideRequest,
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<OnboardingGuideResult> | { ok: false; kind: "missing"; missing: string[] }> {
+): Promise<
+  | AuthResult<OnboardingGuideResult>
+  | { ok: false; kind: "missing"; missing: string[] }
+  | { ok: false; kind: "failed"; message: string }
+> {
   const result = await authedJson(baseUrl, "/onboarding/guide", "POST", sessionToken, {
     template_id: request.templateId,
     name: request.name,
@@ -523,14 +532,16 @@ export async function sendOnboardingGuide(
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
-    const error = (result.body as { error?: { missing?: string[] } } | undefined)?.error;
+    const error = (result.body as { error?: { missing?: string[]; message?: string } } | undefined)
+      ?.error;
     if (result.response.status === 422 && error?.missing?.length) {
       return { ok: false, kind: "missing", missing: error.missing };
     }
     if (result.response.status === 403) {
       return { ok: false, kind: "forbidden" };
     }
-    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+    const message = error?.message?.trim() || `AdminBot returned ${result.response.status}.`;
+    return { ok: false, kind: "failed", message };
   }
   return { ok: true, value: result.body as OnboardingGuideResult };
 }

@@ -22,6 +22,10 @@ import {
   requestDevicePairing,
   resolveSharedGatewayAuthIssuer,
 } from "./dist/plugin-sdk/device-bootstrap.js";
+// resolveSlackAccount requires a loaded config (every real caller in extensions/slack/src passes
+// one); loaded once here, at the composition boundary, per the rule scripts/check-no-runtime-
+// action-load-config.mjs enforces for everything downstream of it.
+import { loadConfig } from "./dist/plugin-sdk/config-runtime.js";
 
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));
 const execFileAsync = promisify(execFile);
@@ -37,6 +41,9 @@ try {
 console.log(`AdminBot NVIDIA NIM configured: ${process.env.NVIDIA_API_KEY ? "yes" : "no"}`);
 
 const openReviewScriptPath = path.join(repoRoot, "scripts/adminbot-openreview.py");
+// Pins the process-wide config snapshot; every other loadConfig() call in this process (there are
+// several, deep in core) reuses it rather than reparsing openclaw.json.
+const openClawConfig = loadConfig({ skipPluginValidation: true });
 
 const service = createAdminBotMockService({
   databasePath: path.join(repoRoot, "state/adminbot.sqlite"),
@@ -58,12 +65,18 @@ const service = createAdminBotMockService({
     }),
   ]),
   // Slack lives in another bundled plugin, so the invite is wired here rather than imported by
-  // the AdminBot extension. Same call the hourly email automation already makes for trial invites,
-  // so the scopes and token are known to work; Slack emails the invitee as well, and the guide
-  // carries the same url so either message gets them in.
+  // the AdminBot extension -- same conversations.inviteShared call the hourly email automation
+  // makes for trial invites (scripts/adminbot-email-automation.ts inviteTrial). Slack emails the
+  // invitee as well, and the guide carries the same url so either message gets them in.
   inviteToSlackConnect: async ({ email, channelId }) => {
     const { getSlackWriteClient, resolveSlackAccount } = await import("./extensions/slack/api.js");
-    const account = await resolveSlackAccount({});
+    // resolveSlackAccount requires cfg (every other caller in extensions/slack/src passes one);
+    // an empty object here meant params.cfg was undefined, so `params.cfg.channels` inside it threw
+    // immediately on every call, before token resolution or the Slack API request ever ran. Every
+    // onboarding template requiring slack_connect_link (every external-collaborator/coauthor tier;
+    // "member" is not among them) hit this, surfaced only as "Couldn't send that guide" once the
+    // generic 500 handler swallowed the real error.
+    const account = resolveSlackAccount({ cfg: openClawConfig });
     if (!account.botToken) {
       throw new Error("Slack bot token is not configured; cannot mint a Slack Connect invite");
     }

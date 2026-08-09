@@ -13,6 +13,16 @@ function valuesFor(templateId: string): Record<string, string> {
   return Object.fromEntries((template?.required ?? []).map((token) => [token, `<${token}>`]));
 }
 
+// Everything the operator would hand-type, leaving drive_folder_link and slack_connect_link
+// unset so the sender's own provisioning path actually runs instead of finding a value already
+// there and skipping it -- the same shape the real form submits when those two fields are blank.
+function handValuesFor(templateId: string): Record<string, string> {
+  const values = valuesFor(templateId);
+  delete values.drive_folder_link;
+  delete values.slack_connect_link;
+  return values;
+}
+
 describe("onboarding template copy", () => {
   // A wrap inside a paragraph becomes a literal newline in the delivered mail and reads as broken
   // text in most clients, so the copy is stored unwrapped and this keeps it that way.
@@ -204,6 +214,59 @@ describe("onboarding sender", () => {
       email: "ada@example.com",
     });
     expect(result.ok).toBe(false);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  // Every coauthor template requires slack_connect_link, so any Slack-side failure (missing
+  // scope, bot token, channel rejection) previously reached the caller as a bare thrown
+  // exception with no indication of which provisioning call, or why. Naming it here is the
+  // production bug the operator hit: sending a coauthor guide failed with a generic message
+  // that gave no way to tell "Slack rejected this" from anything else.
+  it("names the failure when Slack Connect provisioning rejects, instead of throwing", async () => {
+    const inviteToSlackConnect = vi.fn().mockRejectedValue(new Error("missing_scope"));
+    const sendEmail = vi.fn();
+    const send = createAdminBotOnboardingSender({
+      inviteToSlackConnect,
+      sendEmail,
+    });
+
+    const result = await send({
+      template_id: "coauthor_major",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      values: handValuesFor("coauthor_major"),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.status).toBe(502);
+    expect(result.error.message).toBe("Slack Connect invite failed: missing_scope");
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("names the failure when Drive provisioning rejects, instead of throwing", async () => {
+    const provisionDriveWorkspace = vi.fn().mockRejectedValue(new Error("quotaExceeded"));
+    const sendEmail = vi.fn();
+    const send = createAdminBotOnboardingSender({
+      provisionDriveWorkspace,
+      sendEmail,
+    });
+
+    const result = await send({
+      template_id: "coauthor_minor",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      values: handValuesFor("coauthor_minor"),
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.status).toBe(502);
+    expect(result.error.message).toBe("Drive workspace provisioning failed: quotaExceeded");
     expect(sendEmail).not.toHaveBeenCalled();
   });
 

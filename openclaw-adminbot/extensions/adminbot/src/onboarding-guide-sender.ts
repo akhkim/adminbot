@@ -218,9 +218,25 @@ export function createAdminBotOnboardingSender(
           error: { status: 501, message: "Drive workspace provisioning is not configured" },
         };
       }
-      const workspace = await options.provisionDriveWorkspace({
-        folderName: driveWorkspaceFolderName(name),
-      });
+      // A rejection here (Drive quota, an invalid parent folder, an auth-profile issue) must not
+      // reach the caller as a bare thrown exception: the only place that catches it is the HTTP
+      // server's generic 500 handler, which reports whatever Error.message happens to say with no
+      // indication of which of the two provisioning calls actually failed. Naming it here is the
+      // difference between "check the details and try again" and an operator who can act on it.
+      let workspace: { folderId: string; link: string };
+      try {
+        workspace = await options.provisionDriveWorkspace({
+          folderName: driveWorkspaceFolderName(name),
+        });
+      } catch (error) {
+        return {
+          ok: false,
+          error: {
+            status: 502,
+            message: `Drive workspace provisioning failed: ${error instanceof Error ? error.message : String(error)}`,
+          },
+        };
+      }
       driveLink = workspace.link;
       values.drive_folder_link = workspace.link;
     }
@@ -232,13 +248,23 @@ export function createAdminBotOnboardingSender(
           error: { status: 501, message: "Slack Connect invites are not configured" },
         };
       }
-      const invite = await options.inviteToSlackConnect({
-        email,
-        channelId:
-          request.slack_channel_id?.trim() ||
-          options.defaultSlackChannelId?.trim() ||
-          DEFAULT_SLACK_CONNECT_CHANNEL_ID,
-      });
+      // Same reasoning as the Drive branch above: a missing bot token, a missing scope, or the
+      // channel rejecting the invite all throw here, and each has a distinct fix.
+      let invite: { url: string };
+      try {
+        invite = await options.inviteToSlackConnect({
+          email,
+          channelId:
+            request.slack_channel_id?.trim() ||
+            options.defaultSlackChannelId?.trim() ||
+            DEFAULT_SLACK_CONNECT_CHANNEL_ID,
+        });
+      } catch (error) {
+        return {
+          ok: false,
+          error: { status: 502, message: `Slack Connect invite failed: ${error instanceof Error ? error.message : String(error)}` },
+        };
+      }
       slackLink = invite.url;
       values.slack_connect_link = invite.url;
     }
