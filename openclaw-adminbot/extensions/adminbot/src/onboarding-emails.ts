@@ -328,26 +328,16 @@ If the call time doesn't work, just decline the call and the suggestion and an a
 
 Thank you for your interest in joining the Jinesis AI Research Lab with Prof. Zhijing Jin! We're excited to have you on board.
 
-To complete your onboarding as a full member, please follow these steps:
+To complete your onboarding, please complete the following:
 
-Step 1: Create your member portal account: Sign up at https://jinesis-admin.vercel.app and follow the onboarding guide in the portal.
+- You will soon receive an email asking you to create a @cs.toronto.edu email
+  - Highly Preferred format:
+    - Top 1 choice: yourFirstName@cs.toronto.edu, or yourLastName@cs.toronto.edu, e.g., david@cs.toronto.edu or smith@cs.toronto.edu
+    - Top 2 choice: {first_letter_of_first_name}{full_last_name}@cs.toronto.edu, e.g., <zjin@cs.toronto.edu>
+    - Otherwise you can pick one that you like. Our high preference is to make it very much reflect your first and last name, so we can use it for professional communications with senior external collaborators.
+- Once that is created, use that email to create your member portal account: Sign up at https://jinesis-admin.vercel.app/signup and follow the onboarding guide in the portal.
 
-Step 2: Create an email address for the Department of Computer Science (DCS) at the University of Toronto: Request your @cs.toronto.edu email through this form:
-
-Highly preferred format:
-
-- First choice: yourFirstName@cs.toronto.edu or yourLastName@cs.toronto.edu — e.g. david@cs.toronto.edu or smith@cs.toronto.edu
-- Second choice: {first_letter_of_first_name}{full_last_name}@cs.toronto.edu — e.g. zjin@cs.toronto.edu
-
-Otherwise you can pick one that you like. Our high preference is to make it very much reflect your first and last name, so we can use it for professional communications with senior external collaborators.
-
-https://forms.office.com/r/TgGWBGWLZa
-
-Step 3: Send an email to jinesis.adminbot@gmail.com with the email subject of "Create Jinesis slack access for XX@cs.toronto.edu email". Then in 1-2 days, you will receive an invitation to the full Slack workspace.
-
-An internal mentee handbook should be shared with you already in your google drive folder, if you have any questions you can refer to there first.
-
-If any of the steps does not proceed within 7 business days after you have done it, report the technical error to Andrew Kim at andrewkihyun@gmail.com.
+If any of the steps does not proceed within 7 business days after you have done it, report the technical error to akim@cs.toronto.edu
 
 Best regards,
 Jinesis AI Research Lab`,
