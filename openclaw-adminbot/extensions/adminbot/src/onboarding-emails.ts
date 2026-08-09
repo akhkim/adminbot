@@ -324,21 +324,20 @@ If the call time doesn't work, just decline the call and the suggestion and an a
     kind: "privilege",
     subject: `Welcome to the Jinesis AI Research Lab – Onboarding Steps`,
     required: ["first_name"],
-    body: `Hi${“ ${name}” if first_name != None else “”},
+    body: `Hi {first_name},
 
 Thank you for your interest in joining the Jinesis AI Research Lab with Prof. Zhijing Jin! We're excited to have you on board.
+
 To complete your onboarding, please complete the following:
 
-You will soon receive an email asking you to create a @cs.toronto.edu email
+- You will soon receive an email asking you to create a @cs.toronto.edu email
+  - Highly Preferred format:
+    - Top 1 choice: yourFirstName@cs.toronto.edu, or yourLastName@cs.toronto.edu, e.g., david@cs.toronto.edu or smith@cs.toronto.edu
+    - Top 2 choice: {first_letter_of_first_name}{full_last_name}@cs.toronto.edu, e.g., <zjin@cs.toronto.edu>
+    - Otherwise you can pick one that you like. Our high preference is to make it very much reflect your first and last name, so we can use it for professional communications with senior external collaborators.
+- Once that is created, use that email to create your member portal account: Sign up at https://jinesis-admin.vercel.app/signup and follow the onboarding guide in the portal.
 
-- Highly Preferred format: 
-  - Top 1 choice: yourFirstName@cs.toronto.edu, or yourLastName@cs.toronto.edu, e.g., david@cs.toronto.edu or smith@cs.toronto.edu
-  - Top 2 choice: {first_letter_of_first_name}{full_last_name}@cs.toronto.edu, e.g., <zjin@cs.toronto.edu>
-  - Otherwise, you can pick one that you like. Our high preference is to make it very much reflect your first and last name, so we can use it for professional communications with senior external collaborators.
-
-Once that is created, use that email to create your member portal account: Sign up at https://jinesis-admin.vercel.app/signup and follow the onboarding guide in the portal.
-
-If any of the steps do not proceed within 7 business days after you have completed them, report the technical error to akim@cs.toronto.edu
+If any of the steps does not proceed within 7 business days after you have done it, report the technical error to akim@cs.toronto.edu
 
 Best regards,
 Jinesis AI Research Lab`,
