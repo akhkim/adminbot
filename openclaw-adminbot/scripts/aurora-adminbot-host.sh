@@ -10,6 +10,9 @@ CS_USER="${CS_USER:-}"
 REF="HEAD"
 GATEWAY_PORT="18789"
 ADMINBOT_PORT="8765"
+# How many past releases `deploy` keeps around: one to reuse node_modules from (see below) and a
+# couple more as real rollback targets. Older releases are pruned at the start of every deploy.
+KEEP_RELEASES="3"
 SSH_CONNECT_TIMEOUT="10"
 # Set once in your own shell (never in this file or any committed config) to run the whole
 # flow non-interactively, e.g.: read -rs AURORA_SSH_PASSWORD; export AURORA_SSH_PASSWORD
@@ -26,6 +29,7 @@ Options:
   --ref <git-ref>        Committed revision to deploy (default: HEAD)
   --gateway-port <port>  Local and remote Gateway port (default: 18789)
   --adminbot-port <port> Local and remote AdminBot port (default: 8765)
+  --keep-releases <n>    Past releases to retain for deploy (default: 3)
 
 Non-interactive auth:
   Set AURORA_SSH_PASSWORD in your shell (never commit it) to skip every SSH
@@ -37,7 +41,8 @@ Non-interactive auth:
 Commands:
   check                  Verify VPN/DNS/SSH and Aurora prerequisites
   connect                Open SSH with Gateway/AdminBot local port forwards
-  deploy                 Clean old releases, then upload/build/install the new release
+  deploy                 Prune old releases, upload the new one, reuse node_modules from the
+                          newest surviving release if one exists, then build/install
   upload-env <file>      Install a secrets env file with mode 0600
   sync-slack-env <file>  Merge only Slack tokens into the remote env and restart Gateway
   sync-cron-jobs [db]    Sync local OpenClaw cron jobs into Aurora via Gateway RPC
@@ -87,6 +92,11 @@ while (($# > 0)); do
       ADMINBOT_PORT="$2"
       shift 2
       ;;
+    --keep-releases)
+      (($# >= 2)) || die "--keep-releases requires a value"
+      KEEP_RELEASES="$2"
+      shift 2
+      ;;
     -h | --help)
       usage
       exit 0
@@ -110,6 +120,7 @@ shift
 [[ -n "$CS_USER" ]] || die "set CS_USER or pass --user <cs-user>"
 [[ "$GATEWAY_PORT" =~ ^[0-9]+$ ]] || die "gateway port must be numeric"
 [[ "$ADMINBOT_PORT" =~ ^[0-9]+$ ]] || die "AdminBot port must be numeric"
+[[ "$KEEP_RELEASES" =~ ^[0-9]+$ && "$KEEP_RELEASES" -ge 1 ]] || die "--keep-releases must be a positive integer"
 
 TARGET="${CS_USER}@${HOST}"
 REMOTE_BASE="/h/405/${CS_USER}/services/openclaw-adminbot"
@@ -181,23 +192,34 @@ REMOTE
       printf 'note: the worktree is dirty; deploy uses committed ref %s only\n' "$REF" >&2
     fi
     git -C "$REPO_ROOT" archive --format=tar --output="$archive" "$REF"
-    "${SSH[@]}" bash -s -- "$REMOTE_BASE" "$REMOTE_CURRENT" <<'REMOTE_CLEAN'
+    # Stop services, unlink `current`, and prune to the newest KEEP_RELEASES release
+    # directories -- NOT a full wipe. Whatever `current` pointed to (the release actually
+    # running before this deploy) is resolved first and printed as the only line on stdout,
+    # captured below, so the build step can hardlink-copy its node_modules instead of every
+    # deploy installing all workspace packages from nothing. Every other command in this
+    # block is redirected to stderr so that marker line is the only thing on stdout.
+    prior_release="$("${SSH[@]}" bash -s -- "$REMOTE_BASE" "$REMOTE_CURRENT" "$KEEP_RELEASES" <<'REMOTE_CLEAN'
 set -euo pipefail
 base="$1"
 current="$2"
+keep="$3"
 expected="/h/405/$USER/services/openclaw-adminbot"
 [[ "$base" == "$expected" ]] || {
   printf 'Refusing cleanup outside expected deployment root: %s\n' "$base" >&2
   exit 1
 }
-systemctl --user stop \
-  jinesis-adminbot-sheet-poller.timer \
-  jinesis-adminbot-sheet-poller.service \
-  jinesis-adminbot-email.timer \
-  jinesis-adminbot-email.service \
-  jinesis-openclaw-gateway.service \
-  jinesis-adminbot.service 2>/dev/null || true
+{
+  systemctl --user stop \
+    jinesis-adminbot-sheet-poller.timer \
+    jinesis-adminbot-sheet-poller.service \
+    jinesis-adminbot-email.timer \
+    jinesis-adminbot-email.service \
+    jinesis-openclaw-gateway.service \
+    jinesis-adminbot.service 2>/dev/null || true
+} >&2
+prior=""
 if [[ -L "$current" ]]; then
+  prior="$(basename -- "$(readlink -f -- "$current")")"
   rm -f -- "$current"
 elif [[ -e "$current" ]]; then
   printf 'Refusing to delete non-symlink current path: %s\n' "$current" >&2
@@ -205,19 +227,29 @@ elif [[ -e "$current" ]]; then
 fi
 releases="$base/releases"
 [[ "$releases" == "$expected/releases" ]] || exit 1
-rm -rf -- "$releases"
 mkdir -p "$releases"
+{
+  cd "$releases"
+  # Newest-mtime-first; each release directory is created once by `deploy` and never
+  # touched again by anything else, so mtime order matches deploy order.
+  ls -1t 2>/dev/null | tail -n "+$((keep + 1))" | while IFS= read -r old; do
+    rm -rf -- "$old"
+  done
+} >&2
+printf '%s\n' "$prior"
 REMOTE_CLEAN
+    )"
     "${SSH[@]}" mkdir -p "$remote_release"
     "${SCP[@]}" "$archive" "${TARGET}:${remote_release}/source.tar"
 
-    "${SSH[@]}" bash -s -- "$remote_release" "$REMOTE_CURRENT" "$GATEWAY_PORT" "$ADMINBOT_PORT" <<'REMOTE'
+    "${SSH[@]}" bash -s -- "$remote_release" "$REMOTE_CURRENT" "$GATEWAY_PORT" "$ADMINBOT_PORT" "$prior_release" <<'REMOTE'
 set -euo pipefail
 export PATH=$HOME/.local/bin:$PATH
 release="$1"
 current="$2"
 gateway_port="$3"
 adminbot_port="$4"
+prior_release="${5:-}"
 cd "$release"
 tar -xf source.tar
 rm -f source.tar
@@ -233,6 +265,25 @@ node -e '
   echo "Node.js 22.19+ is required; found $(node --version)." >&2
   exit 1
 }
+
+# Reuse node_modules from the release that was actually live before this deploy, if one
+# exists, instead of every deploy linking all workspace packages from nothing. Hardlink-copy
+# (cp -al), not symlink: this release's node_modules becomes a real, independent directory
+# that `pnpm install` can freely add/remove/relink inside, and nothing it does can touch the
+# prior release's own copy (which stays untouched for as long as pruning above keeps it
+# around). `pnpm install --frozen-lockfile` still runs unconditionally afterward -- when the
+# lockfile has not changed it recognizes the tree already satisfies it and does very little;
+# when it has, it only reconciles the difference instead of starting from empty.
+if [[ -n "$prior_release" ]]; then
+  prior_node_modules="$(dirname -- "$release")/$prior_release/node_modules"
+  if [[ -d "$prior_node_modules" ]]; then
+    echo "Reusing node_modules from prior release: $prior_release"
+    if ! cp -al -- "$prior_node_modules" "$release/node_modules" 2>/dev/null; then
+      echo "warning: could not hardlink-copy node_modules from $prior_release (different filesystem?); installing from scratch" >&2
+      rm -rf -- "$release/node_modules"
+    fi
+  fi
+fi
 
 if command -v corepack >/dev/null; then
   corepack pnpm install --frozen-lockfile
