@@ -1,7 +1,9 @@
+import { Value } from "typebox/value";
 import { describe, expect, it, vi } from "vitest";
-import type { AdminBotStoredProposal } from "./contracts.js";
+import type { AdminBotEmailPayload, AdminBotStoredProposal } from "./contracts.js";
 import { createGogAdminBotExecutor, readGogSheetRows } from "./gog-executor.js";
 import { AdminBotService } from "./service-core.js";
+import { emailPayloadSchema } from "./tool-schemas.js";
 
 function proposal(
   type: AdminBotStoredProposal["type"],
@@ -50,6 +52,54 @@ describe("createGogAdminBotExecutor", () => {
       "--body",
       "The draft was approved.",
     ]);
+  });
+
+  // The wrap the operator sees mid-paragraph comes from delivering text/plain, so an approved
+  // payload may carry an html alternative. It is optional and additive: the flag appears only when
+  // the payload has one, immediately after --body and before the recipient flags, and the payload
+  // that predates the field still builds the exact command it used to.
+  it("passes an html alternative through on the send and the draft path", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+    const payload = {
+      to: "one@example.com",
+      subject: "Lab update",
+      body: "The draft was approved.",
+      body_html: "<p>The draft was approved.</p>",
+      cc: "cc@example.com",
+    } satisfies AdminBotEmailPayload;
+
+    await executor.execute(proposal("email.send", payload));
+    await executor.execute(proposal("email.draft", payload));
+
+    for (const call of run.mock.calls) {
+      const args = call[0] as string[];
+      expect(args.slice(args.indexOf("--body"))).toEqual([
+        "--body",
+        "The draft was approved.",
+        "--body-html",
+        "<p>The draft was approved.</p>",
+        "--cc",
+        "cc@example.com",
+      ]);
+    }
+    expect(run.mock.calls[1]?.[0]).toEqual(
+      expect.arrayContaining(["gmail.drafts.create", "drafts", "create"]),
+    );
+
+    // Same payload minus the new field: no --body-html anywhere.
+    const { body_html: _omitted, ...legacy } = payload;
+    run.mockClear();
+    await executor.execute(proposal("email.send", legacy));
+    expect(run.mock.calls[0]?.[0]).not.toContain("--body-html");
+
+    // The schema round-trips both shapes, and still refuses a non-string html body.
+    expect(Value.Check(emailPayloadSchema, payload)).toBe(true);
+    expect(Value.Check(emailPayloadSchema, legacy)).toBe(true);
+    expect(Value.Check(emailPayloadSchema, { ...payload, body_html: 12 })).toBe(false);
+    // An email-channel member nudge carries a discriminator alongside the email fields, so the
+    // schema must not reject what the connector already sends.
+    expect(Value.Check(emailPayloadSchema, { ...legacy, channel: "email" })).toBe(true);
   });
 
   it("maps calendar invites and cancellations with explicit notifications", async () => {

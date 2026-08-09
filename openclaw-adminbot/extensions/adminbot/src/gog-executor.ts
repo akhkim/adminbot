@@ -169,6 +169,11 @@ function buildEmailArgs(proposal: AdminBotStoredProposal, draft: boolean): strin
   const args = rootArgs(commandPath, optionalString(payload, "account"));
   args.push("gmail", ...(draft ? ["drafts", "create"] : ["send"]));
   args.push("--to", to, "--subject", subject, "--body", body);
+  // gog sends `--body` as text/plain, which the delivery path soft-wraps and the reading client
+  // then re-wraps -- the ~70-character breaks the operator sees mid-paragraph. `--body-html` adds
+  // an alternative part that is not wrapped; `--body` stays, so a text-only client still gets the
+  // canonical copy. Both the send and the draft path take it.
+  appendOptional(args, "--body-html", optionalString(payload, "body_html"));
   appendOptional(args, "--cc", recipients(payload.cc));
   appendOptional(args, "--bcc", recipients(payload.bcc));
   appendOptional(args, "--reply-to", optionalString(payload, "reply_to"));

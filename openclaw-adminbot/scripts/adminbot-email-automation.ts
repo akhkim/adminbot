@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
+import { renderEmailBodyHtml } from "../extensions/adminbot/api.js";
 import { getSlackWriteClient, resolveSlackAccount } from "../extensions/slack/api.js";
 import { loadConfig } from "../src/config/config.js";
 import type { OpenClawConfig } from "../src/config/types.openclaw.js";
@@ -452,6 +453,13 @@ class GoogleClient {
     attachments: string[] = [],
   ): Promise<unknown> {
     const args = ["gmail", "send", "--to", to, "--subject", subject, "--body", body];
+    // These bodies are model-drafted prose rather than template copy, so they carry no bullet
+    // syntax -- but they hit the same delivery wrap, which turns a drafted paragraph into ragged
+    // ~70-character lines. The renderer handles a paragraphs-only body fine.
+    const html = renderEmailBodyHtml(body);
+    if (html) {
+      args.push("--body-html", html);
+    }
     for (const attachment of attachments) args.push("--attach", attachment);
     const result = await command(GOG, this.args(args), { timeout: 60_000 });
     return parseJson(result.stdout);

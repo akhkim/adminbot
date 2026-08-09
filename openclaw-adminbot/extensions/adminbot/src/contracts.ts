@@ -441,6 +441,27 @@ export type AdminBotOpenReviewMilestoneRecord = {
   detail?: string;
 };
 
+// The `proposed_payload` an `email.draft`, `email.send`, or email-channel `member_nudge.send`
+// carries. `proposed_payload` on a proposal stays `unknown` -- the broker is type-agnostic and the
+// gog executor validates what it reads -- so this is the written-down shape of what that executor
+// accepts, and what an approver is approving.
+//
+// `body_html` is additive and optional: `body` remains the canonical copy and the only required
+// one, so every payload written before this field existed is still valid and still sends. When it
+// is present the executor adds an HTML alternative to the same message; it is part of the approved
+// payload (and therefore of `payload_hash`), so an approval can never be re-used for different
+// markup than it was granted for.
+export type AdminBotEmailPayload = {
+  to: string | string[];
+  subject: string;
+  body: string;
+  body_html?: string;
+  cc?: string | string[];
+  bcc?: string | string[];
+  reply_to?: string;
+  account?: string;
+};
+
 export type AdminBotActionProposal = {
   type: AdminBotActionType;
   risk_tier?: AdminBotRiskTier;

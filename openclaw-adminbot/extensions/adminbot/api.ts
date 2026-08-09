@@ -26,6 +26,7 @@ export type {
 export { AdminBotService, payloadHash } from "./src/service-core.js";
 export type { AdminBotActionExecutor } from "./src/service-core.js";
 export { createGogAdminBotExecutor } from "./src/gog-executor.js";
+export { renderEmailBodyHtml } from "./src/email-html.js";
 export { createAdminBotSocialExecutor } from "./src/social-executor.js";
 export { createAdminBotOverleafExecutor } from "./src/overleaf-executor.js";
 export { createAdminBotMessageExecutor } from "./src/message-executor.js";

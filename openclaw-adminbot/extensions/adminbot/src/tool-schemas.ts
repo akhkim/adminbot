@@ -105,6 +105,25 @@ export const paperReminderSchema = Type.Object(
   { additionalProperties: false },
 );
 
+// The email payload shape, mirroring AdminBotEmailPayload. `additionalProperties` stays open: an
+// email-channel `member_nudge.send` carries a `channel` discriminator alongside these fields, and a
+// schema that rejected it would fail closed on payloads the executor already handles.
+//
+// `body_html` is optional and was added after the field set was first written, so this schema
+// accepts every payload the earlier one did.
+const recipientsSchema = Type.Union([Type.String(), Type.Array(Type.String())]);
+
+export const emailPayloadSchema = Type.Object({
+  to: recipientsSchema,
+  subject: Type.String(),
+  body: Type.String(),
+  body_html: Type.Optional(Type.String()),
+  cc: Type.Optional(recipientsSchema),
+  bcc: Type.Optional(recipientsSchema),
+  reply_to: Type.Optional(Type.String()),
+  account: Type.Optional(Type.String()),
+});
+
 export const evidencePointerSchema = Type.Object(
   {
     source: Type.String(),

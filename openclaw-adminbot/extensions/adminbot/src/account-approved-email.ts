@@ -1,5 +1,6 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
+import { renderEmailBodyHtml } from "./email-html.js";
 import { resolveGogExecutable } from "./gog-executor.js";
 
 const execFile = promisify(execFileCallback);
@@ -47,6 +48,7 @@ export function createAccountApprovedEmailRunner(
     // GOG_ACCOUNT pins the sending mailbox the same way the action executor's payload `account`
     // does; without it gog falls back to whichever account it considers default.
     const account = (options.env ?? process.env).GOG_ACCOUNT?.trim();
+    const body = buildAccountApprovedEmailBody({ name, dashboardUrl });
     const args = [
       "--json",
       "--no-input",
@@ -60,7 +62,11 @@ export function createAccountApprovedEmailRunner(
       "--subject",
       ACCOUNT_APPROVED_SUBJECT,
       "--body",
-      buildAccountApprovedEmailBody({ name, dashboardUrl }),
+      body,
+      // Same reason as every other lab email: text/plain alone comes out hard-wrapped mid
+      // paragraph, and the sign-in URL is the line that suffers most from a break through it.
+      "--body-html",
+      renderEmailBodyHtml(body),
     ];
     if (options.run) {
       await options.run(args);

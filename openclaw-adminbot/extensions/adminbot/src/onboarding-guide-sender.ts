@@ -12,6 +12,7 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import type { DriveWorkspaceProvisioner } from "./drive-workspace.js";
+import { renderEmailBodyHtml } from "./email-html.js";
 import { resolveGogExecutable } from "./gog-executor.js";
 import { findOnboardingTemplate } from "./onboarding-emails.js";
 import {
@@ -54,6 +55,8 @@ export type AdminBotOnboardingSendResult = {
   template_id: string;
   subject: string;
   body: string;
+  /** HTML alternative rendered from `body`; absent only when the body renders to nothing. */
+  body_html?: string;
   sent: boolean;
   drive_folder_link?: string;
   slack_connect_link?: string;
@@ -79,7 +82,12 @@ export type AdminBotOnboardingSenderOptions = {
   /** Resolves `{zhijing_whatsapp}`; reads AdminBot settings so no phone number lives in the repo. */
   headProfessorWhatsapp?: () => string | undefined;
   defaultSlackChannelId?: string;
-  sendEmail?: (params: { to: string; subject: string; body: string }) => Promise<void>;
+  sendEmail?: (params: {
+    to: string;
+    subject: string;
+    body: string;
+    body_html?: string;
+  }) => Promise<void>;
 };
 
 /** #jinesis-with-friends-and-collaborators — where external collaborators and trials land. */
@@ -87,7 +95,17 @@ export const DEFAULT_SLACK_CONNECT_CHANNEL_ID = "C09MANEUPPZ";
 
 function gogEmailSender(env: NodeJS.ProcessEnv) {
   const gog = resolveGogExecutable(env);
-  return async ({ to, subject, body }: { to: string; subject: string; body: string }) => {
+  return async ({
+    to,
+    subject,
+    body,
+    body_html: bodyHtml,
+  }: {
+    to: string;
+    subject: string;
+    body: string;
+    body_html?: string;
+  }) => {
     const account = env.GOG_ACCOUNT?.trim();
     await execFile(
       gog,
@@ -105,10 +123,19 @@ function gogEmailSender(env: NodeJS.ProcessEnv) {
         subject,
         "--body",
         body,
+        // Without an html alternative the delivered text/plain part is wrapped for us, mid
+        // paragraph, at whatever width the encoder and the reading client agree on.
+        ...(bodyHtml ? ["--body-html", bodyHtml] : []),
       ],
       { env, maxBuffer: GOG_MAX_OUTPUT_BYTES, timeout: GOG_TIMEOUT_MS, windowsHide: true },
     );
   };
+}
+
+/** The html alternative as a spreadable field, omitted rather than empty when there is no body. */
+function htmlOf(body: string): { body_html?: string } {
+  const rendered = renderEmailBodyHtml(body);
+  return rendered ? { body_html: rendered } : {};
 }
 
 function needs(templateId: string, token: string): boolean {
@@ -173,7 +200,11 @@ export function createAdminBotOnboardingSender(
           error: { status: 422, message: "missing required values", missing: preview.missing },
         };
       }
-      return { ok: true, payload: { ...preview.guide, sent: false } };
+      // The preview shows the operator exactly what the send would produce, html included.
+      return {
+        ok: true,
+        payload: { ...preview.guide, ...htmlOf(preview.guide.body), sent: false },
+      };
     }
 
     const values = { ...base };
@@ -220,11 +251,13 @@ export function createAdminBotOnboardingSender(
       };
     }
     const guide: AdminBotComposedGuide = composed.guide;
-    await sendEmail({ to: email, subject: guide.subject, body: guide.body });
+    const html = htmlOf(guide.body);
+    await sendEmail({ to: email, subject: guide.subject, body: guide.body, ...html });
     return {
       ok: true,
       payload: {
         ...guide,
+        ...html,
         sent: true,
         ...(driveLink ? { drive_folder_link: driveLink } : {}),
         ...(slackLink ? { slack_connect_link: slackLink } : {}),
