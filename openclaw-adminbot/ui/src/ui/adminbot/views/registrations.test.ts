@@ -77,7 +77,7 @@ describe("renderAdminBotRegistrations", () => {
     await Promise.resolve();
 
     const card = container.querySelector(".adminbot-registration");
-    expect(card?.querySelector(".pill")?.textContent?.trim()).toBe("Roster claim");
+    expect(card?.querySelector(".ab-chip")?.textContent?.trim()).toBe("Roster claim");
     expect(card?.querySelector(".adminbot-registration__member")?.textContent?.trim()).toBe(
       "Ada Lovelace",
     );
@@ -94,7 +94,7 @@ describe("renderAdminBotRegistrations", () => {
     await Promise.resolve();
 
     const card = container.querySelector(".adminbot-registration");
-    expect(card?.querySelector(".pill")?.textContent?.trim()).toBe("New signup");
+    expect(card?.querySelector(".ab-chip")?.textContent?.trim()).toBe("New signup");
     expect(card?.querySelector(".adminbot-registration__member")?.textContent?.trim()).toBe(
       "Grace Hopper",
     );

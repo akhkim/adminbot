@@ -2708,7 +2708,7 @@
 
 /* A blocked item is marked where the work is, not only in the band above it. */
 .my-work-item--blocked {
-  border-left-color: var(--warning, #d97706);
+  border-left-color: var(--warn);
 }
 
 .my-work-item__head {
@@ -2851,7 +2851,7 @@
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
   border: 1px solid var(--border-strong);
-  border-left: 2px solid var(--warning, #d97706);
+  border-left: 2px solid var(--warn);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
 }
@@ -2862,7 +2862,7 @@
   width: 16px;
   height: 16px;
   margin-top: 2px;
-  color: var(--warning, #d97706);
+  color: var(--warn);
 }
 
 .my-work-blocker__icon svg {
@@ -3250,8 +3250,8 @@
 }
 
 [data-urgency="soon"] {
-  --deadline-urgency: var(--warning);
-  --deadline-urgency-subtle: var(--warning-subtle);
+  --deadline-urgency: var(--warn);
+  --deadline-urgency-subtle: var(--warn-subtle);
 }
 
 [data-urgency="planned"] {
@@ -3318,6 +3318,7 @@
 }
 
 .deadline-lead .deadline-row__link {
+  grid-column: 4;
   position: absolute;
   top: var(--space-5);
   right: var(--space-5);
@@ -3329,40 +3330,89 @@
   color: var(--muted);
 }
 
-/* ---- The calendar spine ---- */
+/* ---- Conferences ---- */
 
-.deadlines__day + .deadlines__day {
-  margin-top: var(--space-6);
+.conferences {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
 }
 
-/* The band carries the countdown for everything under it. At a whole track of workshops sharing
-   one instant, this is the difference between one deadline with sixty venues and sixty
-   deadlines. */
-.deadlines__day-head {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
-  margin: 0 0 var(--space-1);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border-strong);
+.conference {
+  border-bottom: 1px solid var(--border);
 }
 
-.deadlines__day-countdown {
+/* The whole row is the control. A conference with ninety-nine workshops behind it should not ask
+   anyone to hunt for a caret. */
+.conference__summary {
+  display: grid;
+  grid-template-columns: 12px 8.5rem 1fr auto;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-4) var(--space-2);
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.conference__summary:hover {
+  background: var(--bg-muted);
+}
+
+.conference__summary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.conference__chevron {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  justify-self: center;
+  color: var(--muted);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.conference__chevron svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.conference[data-open] .conference__chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conference__chevron {
+    transition: none;
+  }
+}
+
+/* The dot carries the urgency band for anyone who cannot separate the countdown's hues. */
+.conference__countdown {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--space-2);
   font-family: var(--mono);
-  font-size: var(--control-ui-text-md);
+  font-size: var(--control-ui-text-sm);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   color: var(--deadline-urgency);
 }
 
-/* The dot carries the urgency band for anyone who cannot separate the countdown's hues. */
-.deadlines__day-countdown::before {
+.conference__countdown::before {
   content: "";
-  align-self: center;
   width: 6px;
   height: 6px;
   flex-shrink: 0;
@@ -3370,7 +3420,43 @@
   background: var(--deadline-urgency);
 }
 
-.deadlines__day-name {
+.conference__name {
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+}
+
+.conference__counts {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.conference__panel {
+  padding: 0 var(--space-2) var(--space-5) calc(12px + var(--space-4) + var(--space-2));
+}
+
+.conference__panel[hidden] {
+  display: none;
+}
+
+/* ---- Sections inside an opened conference ---- */
+
+.deadline-section + .deadline-section {
+  margin-top: var(--space-5);
+}
+
+.deadline-section__head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-1);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.deadline-section__title {
   font-family: var(--mono);
   font-size: var(--control-ui-text-xs);
   letter-spacing: var(--tracking-label);
@@ -3378,21 +3464,20 @@
   color: var(--text-strong);
 }
 
-.deadlines__day-count {
-  margin-left: auto;
+.deadline-section__count {
   font-size: var(--control-ui-text-xs);
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
 
-.deadlines__day-shared {
-  margin: var(--space-2) 0 var(--space-1);
-  padding-left: var(--space-2);
+/* Whatever the whole section agrees on, said once instead of on every row. */
+.deadline-section__shared {
+  margin-left: auto;
   font-size: var(--control-ui-text-xs);
   color: var(--muted);
 }
 
-.deadlines__list {
+.deadline-section__list {
   margin: 0;
   padding: 0;
   list-style: none;
@@ -3402,9 +3487,9 @@
    past, and what is being scanned is the venue name. */
 .deadline-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: 8.5rem auto 1fr auto;
   align-items: baseline;
-  gap: var(--space-4);
+  gap: var(--space-3) var(--space-4);
   padding: var(--space-3) var(--space-2);
   border-bottom: 1px solid var(--border);
 }
@@ -3417,7 +3502,38 @@
   background: var(--bg-muted);
 }
 
+/* Every cell names its own column. The date is omitted whenever a whole section shares one, and
+   with implicit placement that missing child slid the name and the link one track to the left,
+   stranding the link in the middle of the row. */
+.deadline-row__countdown {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  grid-column: 1;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--deadline-urgency);
+}
+
+.deadline-row__countdown::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--deadline-urgency);
+}
+
+.deadline-row__date {
+  grid-column: 2;
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
 .deadline-row__body {
+  grid-column: 3;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -3444,12 +3560,6 @@
   text-transform: uppercase;
   color: var(--muted);
   vertical-align: 1px;
-}
-
-.deadline-row__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-3);
 }
 
 .deadline-row__note {
@@ -3479,7 +3589,243 @@
 }
 
 @media (max-width: 640px) {
-  .deadlines__day-count {
+  /* The name leads on a phone; the countdown and counts fall under it rather than competing for
+     a row that cannot hold four columns. */
+  .conference__summary {
+    grid-template-columns: 12px 1fr;
+    row-gap: var(--space-1);
+  }
+
+  .conference__countdown {
+    grid-column: 2;
+    order: 2;
+  }
+
+  .conference__name {
+    grid-column: 2;
+    order: 1;
+  }
+
+  .conference__counts {
+    grid-column: 2;
+    order: 3;
+  }
+
+  .conference__panel {
+    padding-left: var(--space-2);
+  }
+
+  .deadline-row {
+    grid-template-columns: auto 1fr auto;
+    row-gap: var(--space-1);
+  }
+
+  .deadline-row__countdown {
+    grid-area: 1 / 1;
+  }
+
+  .deadline-row__date {
+    grid-area: 1 / 2;
+  }
+
+  .deadline-row__link {
+    grid-area: 1 / 3;
+  }
+
+  .deadline-row__body {
+    grid-area: 2 / 1 / auto / -1;
+  }
+
+  .deadline-section__shared {
     margin-left: 0;
+  }
+}
+
+/* ===========================================
+   AdminBot primitives
+   ===========================================
+
+   One vocabulary for the lab's own surfaces. Before this, each AdminBot view invented its own
+   label, chip, row and empty state, so thirteen pages of one product read as thirteen products.
+   These are the patterns the profile record and the deadline board converged on, named once so
+   the rest of the surfaces inherit them instead of re-deriving them.
+
+   Everything here composes with the existing --space/--control-ui-text/--border token set; none
+   of it introduces a color that base.css does not already define. */
+
+/* The micro-label that titles a region. Mono + tracked caps reads as instrumentation rather than
+   as prose, which is what keeps a dense operator page from looking like a document. */
+.ab-eyebrow {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* A section head: title, its count, and whatever the whole section agrees on pushed to the right.
+   The shared slot is what stops a list repeating one fact on every row. */
+.ab-band {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-1);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.ab-band__title {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+
+.ab-band__count {
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.ab-band__shared {
+  margin-left: auto;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* The ruled sheet. Label at a fixed measure, value in the rest, a hairline per row -- so a column
+   of answers can be scanned in one pass and a blank reads as a gap rather than as text. */
+.ab-sheet {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
+  column-gap: var(--space-8);
+}
+
+.ab-row {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ab-row__label {
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ab-row__value {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--control-ui-text-md);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.ab-row__value--empty {
+  color: var(--muted);
+}
+
+/* The mono micro-chip. Status lives in the modifier, never in a bespoke color. */
+.ab-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ab-chip--accent {
+  border-color: var(--accent-muted);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.ab-chip--ok {
+  border-color: var(--ok-muted);
+  background: var(--ok-subtle);
+  color: var(--ok);
+}
+
+.ab-chip--warn {
+  border-color: var(--warn-muted);
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
+.ab-chip--danger {
+  border-color: var(--danger-muted);
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+/* A status dot for when a chip would be too loud -- the same four states at 6px. */
+.ab-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+}
+
+.ab-dot--accent {
+  background: var(--accent);
+}
+
+.ab-dot--ok {
+  background: var(--ok);
+}
+
+.ab-dot--warn {
+  background: var(--warn);
+}
+
+.ab-dot--danger {
+  background: var(--danger);
+}
+
+/* Tabular figures for anything that is a quantity. Counts that jitter as they tick are the single
+   most common way a dense operator UI reads as sloppy. */
+.ab-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* An empty state states the absence rather than leaving a hole. */
+.ab-empty {
+  margin: 0;
+  padding: var(--space-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+/* The card that is asking for something, as opposed to the cards that are only showing something.
+   Its whole edge carries the accent; it deliberately does not tint its own interior, because a
+   wash makes the inputs inside it read as less editable than the ones outside. */
+.ab-actionable {
+  border-color: var(--accent-muted);
+}
+
+@media (max-width: 640px) {
+  .ab-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
 }

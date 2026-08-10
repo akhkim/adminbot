@@ -126,15 +126,15 @@ function renderRegistration(props: AdminBotRegistrationsProps, registration: Mem
   return html`
     <li class="card adminbot-card adminbot-card--wide adminbot-registration">
       <div class="adminbot-registration__head">
-        <span class="pill">${kindLabel}</span>
-        <span class="adminbot-form__meta">
+        <span class="ab-chip">${kindLabel}</span>
+        <span class="adminbot-form__meta ab-num">
           ${t("adminbotRegistrations.submitted")}: ${submittedAt(registration.created_at)}
         </span>
       </div>
       ${registration.kind === "claim"
         ? renderClaimDetails(registration)
         : renderSignupDetails(registration)}
-      <div class="adminbot-form__meta">${registration.email}</div>
+      <div class="adminbot-registration__email">${registration.email}</div>
       <div class="adminbot-form__actions">
         <button
           class="btn primary"

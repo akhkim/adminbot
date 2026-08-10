@@ -824,28 +824,68 @@
   gap: var(--space-2);
 }
 
+/* The applicant is who this card is about, so their name leads it and their address sits with
+   the name rather than drifting to the bottom as one more muted line among the metadata. */
 .adminbot-registration__member {
-  font-weight: 500;
-  color: var(--text);
-  margin-top: var(--space-2);
+  margin-top: var(--space-3);
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
 }
 
+.adminbot-registration__email {
+  margin-top: 2px;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* The decision row is the point of the card; it gets air and a rule above it so approving is
+   never a click that happens to be adjacent to the last field. */
+.adminbot-registration .adminbot-form__actions {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+/* A pending registration is a record to read before deciding, so it is ruled like every other
+   record in the product rather than laid out as its own grid of loose pairs. */
 .adminbot-registration__fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--space-2);
-  margin: var(--space-3) 0 0;
+  grid-template-columns: repeat(auto-fill, minmax(min(20rem, 100%), 1fr));
+  column-gap: var(--space-8);
+  margin: var(--space-4) 0 0;
+}
+
+.adminbot-registration__field {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .adminbot-registration__field dt {
-  font-size: var(--control-ui-text-sm);
-  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .adminbot-registration__field dd {
   margin: 0;
+  min-width: 0;
   color: var(--text);
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .adminbot-registration__field {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
 }
 
 .adminbot-editor-grid {
@@ -977,6 +1017,14 @@
   color: var(--muted);
   font-size: var(--control-ui-text-sm);
   line-height: 1.5;
+}
+
+/* A card whose entire body is one meta line is a state, not a form: an empty queue, a load in
+   flight, a surface with nothing to show. Framing it stops the page reading as broken. */
+.adminbot-card > .adminbot-form__meta:only-child {
+  padding: var(--space-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
 }
 
 .adminbot-form__actions {
@@ -2027,6 +2075,17 @@
   font-weight: 600;
   letter-spacing: var(--tracking-tight);
   color: var(--text-strong);
+}
+
+/* On an AdminBot surface the leading card is the page header, so its title carries page weight.
+   Scoped to the wide card so the dense grid cards inside a panel keep their own smaller voice. */
+.adminbot-card--wide > .card-title {
+  font-size: var(--control-ui-text-xl);
+  letter-spacing: var(--tracking-tight);
+}
+
+.adminbot-card--wide > .card-title + .card-sub {
+  max-width: 60ch;
 }
 
 .card-sub {
