@@ -1,25 +1,26 @@
+// oxlint-disable max-lines -- grandfathered at 2264 lines; see docs/adr/0006-deferred-monster-splits.md
 /** Cron timer loop, execution, catch-up, and run-result state transitions. */
 import { resolveFailoverReasonFromError } from "../../agents/failover-error.js";
 import { loadSessionEntry } from "../../config/sessions/session-accessor.js";
-import type { CronConfig, CronRetryOn } from "../../config/types.cron.js";
+import type { CronConfig, CronRetryOn } from "../../config/types/cron.js";
 import { formatErrorMessage } from "../../infra/errors.js";
-import type { HeartbeatRunResult } from "../../infra/heartbeat-wake.js";
+import type { HeartbeatRunResult } from "../../infra/heartbeat/heartbeat-wake.js";
 import {
   HEARTBEAT_SKIP_CRON_IN_PROGRESS,
   isRetryableHeartbeatBusySkipReason,
-} from "../../infra/heartbeat-wake.js";
+} from "../../infra/heartbeat/heartbeat-wake.js";
 import {
   DEFAULT_AGENT_ID,
   normalizeAgentId,
   resolveAgentIdFromSessionKey,
 } from "../../routing/session-key.js";
+import { deliveryContextFromSession } from "../../shared/delivery-context.shared.js";
+import type { DeliveryContext } from "../../shared/delivery-context.types.js";
 import {
   registerActiveCronTaskRun,
   startActiveCronTaskRunSettlementGrace,
   trackActiveCronTaskRunSettlement,
 } from "../../tasks/cron-task-cancel.js";
-import { deliveryContextFromSession } from "../../utils/delivery-context.shared.js";
-import type { DeliveryContext } from "../../utils/delivery-context.types.js";
 import {
   clearCronJobActive,
   isCronActiveJobMarkerCurrent,

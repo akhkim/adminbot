@@ -32,11 +32,11 @@ import {
 import { CHANNEL_MESSAGE_ACTION_NAMES } from "../../channels/plugins/message-action-names.js";
 import type { ChannelMessageCapability } from "../../channels/plugins/message-capabilities.js";
 import type { ChannelMessageActionName } from "../../channels/plugins/types.public.js";
-import { resolveCommandSecretRefsViaGateway } from "../../cli/command-secret-gateway.js";
-import { getScopedChannelsCommandSecretTargets } from "../../cli/command-secret-targets.js";
 import { resolveMessageSecretScope } from "../../cli/message-secret-scope.js";
+import { resolveCommandSecretRefsViaGateway } from "../../cli/program/command-secret-gateway.js";
+import { getScopedChannelsCommandSecretTargets } from "../../cli/program/command-secret-targets.js";
 import { getRuntimeConfig } from "../../config/config.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   getBootEchoContextForSession,
   stripBootEchoFromOutboundText,
@@ -62,8 +62,8 @@ import {
   parseAgentSessionKey,
   parseThreadSessionSuffix,
 } from "../../routing/session-key.js";
+import { normalizeMessageChannel } from "../../shared/message-channel.js";
 import { stripFormattedReasoningMessage } from "../../shared/text/formatted-reasoning-message.js";
-import { normalizeMessageChannel } from "../../utils/message-channel.js";
 import { resolveSessionAgentId } from "../agent-scope.js";
 import { listAllChannelSupportedActions, listChannelSupportedActions } from "../channel-tools.js";
 import { stripInternalRuntimeContext } from "../internal-runtime-context.js";

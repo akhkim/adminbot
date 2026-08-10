@@ -1,5 +1,5 @@
 // Session reset policy resolves daily/idle freshness for direct, group, and thread sessions.
-import type { SessionConfig, SessionResetConfig } from "../types.base.js";
+import type { SessionConfig, SessionResetConfig } from "../types/base.js";
 import { DEFAULT_IDLE_MINUTES } from "./types.js";
 
 export type SessionResetMode = "daily" | "idle";

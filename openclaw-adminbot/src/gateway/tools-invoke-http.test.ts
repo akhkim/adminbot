@@ -3,7 +3,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { runBeforeToolCallHook as runBeforeToolCallHookType } from "../agents/agent-tools.before-tool-call.js";
+import type { runBeforeToolCallHook as runBeforeToolCallHookType } from "../agents/tools/agent-tools.before-tool-call.js";
 
 type RunBeforeToolCallHook = typeof runBeforeToolCallHookType;
 type RunBeforeToolCallHookArgs = Parameters<RunBeforeToolCallHook>[0];
@@ -31,7 +31,7 @@ vi.mock("../config/config.js", () => ({
   getRuntimeConfig: () => cfg,
 }));
 
-vi.mock("../config/io.js", () => ({
+vi.mock("../config/io/io.js", () => ({
   getRuntimeConfig: () => cfg,
 }));
 
@@ -52,7 +52,7 @@ vi.mock("../config/sessions.js", () => ({
   },
 }));
 
-vi.mock("./auth.js", () => ({
+vi.mock("./auth/auth.js", () => ({
   authorizeHttpGatewayConnect: vi.fn(async () => ({ ok: true })),
 }));
 
@@ -60,8 +60,8 @@ vi.mock("../logger.js", () => ({
   logWarn: () => {},
 }));
 
-vi.mock("../plugins/config-state.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../plugins/config-state.js")>();
+vi.mock("../plugins/config/config-state.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../plugins/config/config-state.js")>();
   return {
     ...actual,
     isTestDefaultMemorySlotDisabled: () => false,
@@ -75,7 +75,7 @@ vi.mock("../plugins/tools.js", () => ({
 
 // Perf: the real tool factory instantiates many tools per request; for these HTTP
 // routing/policy tests we only need a small set of tool names.
-vi.mock("../agents/openclaw-tools.js", () => {
+vi.mock("../agents/tools/openclaw-tools.js", () => {
   const toolInputError = (message: string) => {
     const err = new Error(message);
     err.name = "ToolInputError";
@@ -211,15 +211,15 @@ vi.mock("../agents/openclaw-tools.js", () => {
   };
 });
 
-vi.mock("../agents/agent-tools.js", () => ({
+vi.mock("../agents/tools/agent-tools.js", () => ({
   resolveToolLoopDetectionConfig: hookMocks.resolveToolLoopDetectionConfig,
 }));
 
-vi.mock("../agents/agent-tools.before-tool-call.js", () => ({
+vi.mock("../agents/tools/agent-tools.before-tool-call.js", () => ({
   runBeforeToolCallHook: hookMocks.runBeforeToolCallHook,
 }));
 
-const { authorizeHttpGatewayConnect } = await import("./auth.js");
+const { authorizeHttpGatewayConnect } = await import("./auth/auth.js");
 const { handleToolsInvokeHttpRequest } = await import("./tools-invoke-http.js");
 const { toolsInvokeHandlers } = await import("./server-methods/tools-invoke.js");
 

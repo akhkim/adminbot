@@ -117,13 +117,13 @@ const mockWebSearchProviders = vi.hoisted(() => {
   ] as const;
 });
 
-vi.mock("../plugins/web-search-providers.runtime.js", () => {
+vi.mock("../plugins/web/web-search-providers.runtime.js", () => {
   return {
     resolvePluginWebSearchProviders: () => mockWebSearchProviders,
   };
 });
 
-vi.mock("../plugins/manifest-registry.js", () => {
+vi.mock("../plugins/manifest/manifest-registry.js", () => {
   const buildSchema = () => ({
     type: "object",
     additionalProperties: false,

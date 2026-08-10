@@ -7,7 +7,7 @@ import {
   buildGatewayInstallEntrypointCandidates as resolveGatewayInstallEntrypointCandidates,
   resolveGatewayInstallEntrypoint,
 } from "../../daemon/gateway-entrypoint.js";
-import type { UpdateRunResult } from "../../infra/update-runner.js";
+import type { UpdateRunResult } from "../../infra/install/update-runner.js";
 import {
   buildInvalidConfigPostCoreUpdateResult,
   collectMissingPluginInstallPayloads,
@@ -693,7 +693,7 @@ describe("updatePluginsAfterCoreUpdate (invalid config end-to-end)", () => {
         issues: [],
         legacyIssues: [],
       } as unknown as Awaited<
-        ReturnType<typeof import("../../config/io.js").readConfigFileSnapshot>
+        ReturnType<typeof import("../../config/io/io.js").readConfigFileSnapshot>
       >,
       opts: { json: true } as never,
       timeoutMs: 1000,

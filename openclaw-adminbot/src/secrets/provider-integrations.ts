@@ -2,16 +2,22 @@
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type {
   ManualExecSecretProviderConfig,
   PluginIntegrationSecretProviderConfig,
-} from "../config/types.secrets.js";
-import { normalizePluginsConfig, type NormalizedPluginsConfig } from "../plugins/config-state.js";
+} from "../config/types/secrets.js";
+import {
+  normalizePluginsConfig,
+  type NormalizedPluginsConfig,
+} from "../plugins/config/config-state.js";
 import { shouldRejectHardlinkedPluginFiles } from "../plugins/hardlink-policy.js";
-import { isActivatedManifestOwner } from "../plugins/manifest-owner-policy.js";
-import type { PluginManifestRecord, PluginManifestRegistry } from "../plugins/manifest-registry.js";
-import type { PluginManifestSecretProviderIntegration } from "../plugins/manifest.js";
+import { isActivatedManifestOwner } from "../plugins/manifest/manifest-owner-policy.js";
+import type {
+  PluginManifestRecord,
+  PluginManifestRegistry,
+} from "../plugins/manifest/manifest-registry.js";
+import type { PluginManifestSecretProviderIntegration } from "../plugins/manifest/manifest.js";
 import { isValidSecretProviderAlias } from "./ref-contract.js";
 
 /** Secret provider preset exposed by an active trusted plugin integration. */

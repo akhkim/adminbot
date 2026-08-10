@@ -1,5 +1,5 @@
 /** Defines unsupported secret-ref surfaces and operator-facing policy messages. */
-import { GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA } from "../config/bundled-channel-config-metadata.generated.js";
+import { GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA } from "../config/channel/bundled-channel-config-metadata.generated.js";
 import { isRecord } from "../utils.js";
 
 const CORE_UNSUPPORTED_SECRETREF_SURFACE_PATTERNS = [

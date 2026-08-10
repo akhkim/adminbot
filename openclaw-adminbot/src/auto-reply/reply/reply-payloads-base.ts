@@ -1,6 +1,6 @@
 // Defines base reply payload helpers shared by delivery and dedupe logic.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { ReplyToMode } from "../../config/types.js";
+import type { ReplyToMode } from "../../config/types/types.js";
 import { hasReplyPayloadContent } from "../../interactive/payload.js";
 import { copyReplyPayloadMetadata, setReplyPayloadMetadata } from "../reply-payload.js";
 import type { OriginatingChannelType } from "../templating.js";

@@ -5,11 +5,11 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { clearConfigCache, clearRuntimeConfigSnapshot } from "../config/config.js";
 import { clearSessionStoreCacheForTest } from "../config/sessions/store.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { captureEnv } from "../test-utils/env.js";
 import { ADMIN_SCOPE, APPROVALS_SCOPE } from "./method-scopes.js";
 import { withOperatorApprovalsGatewayClient } from "./operator-approvals-client.js";
-import { startGatewayServer } from "./server.js";
+import { startGatewayServer } from "./server/server.js";
 import {
   connectGatewayClient,
   disconnectGatewayClient,

@@ -7,7 +7,7 @@ import { upsertAcpSessionMeta } from "../../acp/runtime/session-meta.js";
 import * as jsonFiles from "../../infra/json-files.js";
 import { createSuiteTempRootTracker, withTempDirSync } from "../../test-helpers/temp-dir.js";
 import type { OpenClawConfig } from "../config.js";
-import type { SessionConfig } from "../types.base.js";
+import type { SessionConfig } from "../types/base.js";
 import { resolveSessionLifecycleTimestamps } from "./lifecycle.js";
 import {
   resolveSessionFilePath,

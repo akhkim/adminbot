@@ -1,7 +1,7 @@
 // In-process gateway run loop, restart signaling, drain, and update respawn handling.
 import { randomUUID } from "node:crypto";
 import net from "node:net";
-import { clearRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
+import { clearRuntimeConfigSnapshot } from "../../config/runtime/runtime-snapshot.js";
 import {
   captureGatewayRestartTraceHandoff,
   createGatewayRestartTraceHandoffEnv,
@@ -9,7 +9,7 @@ import {
   markGatewayRestartTrace,
   startGatewayRestartTrace,
 } from "../../gateway/restart-trace.js";
-import type { startGatewayServer } from "../../gateway/server.js";
+import type { startGatewayServer } from "../../gateway/server/server.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { acquireGatewayLock } from "../../infra/gateway-lock.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";

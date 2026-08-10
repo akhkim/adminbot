@@ -7,9 +7,12 @@ import {
 } from "../../../packages/gateway-protocol/src/client-info.js";
 import { PROTOCOL_VERSION } from "../../../packages/gateway-protocol/src/index.js";
 import type { createSubsystemLogger } from "../../logging/subsystem.js";
-import type { PluginHttpRouteRegistration, PluginRegistry } from "../../plugins/registry.js";
+import type {
+  PluginHttpRouteRegistration,
+  PluginRegistry,
+} from "../../plugins/manifest/registry.js";
 import { withPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gateway-request-scope.js";
-import type { AuthorizedGatewayHttpRequest } from "../http-utils.js";
+import type { AuthorizedGatewayHttpRequest } from "../http/http-utils.js";
 import type { GatewayRequestContext, GatewayRequestOptions } from "../server-methods/types.js";
 import { resolvePluginRouteRuntimeOperatorScopes } from "./plugin-route-runtime-scopes.js";
 import {

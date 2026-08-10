@@ -1,0 +1,178 @@
+[
+  {
+    "from": "src/utils/account-id.ts",
+    "to": "src/shared/account-id.ts"
+  },
+  {
+    "from": "src/utils/boolean.ts",
+    "to": "src/shared/boolean.ts"
+  },
+  {
+    "from": "src/utils/chunk-items.ts",
+    "to": "src/shared/chunk-items.ts"
+  },
+  {
+    "from": "src/utils/cjk-chars.test.ts",
+    "to": "src/shared/cjk-chars.test.ts"
+  },
+  {
+    "from": "src/utils/cjk-chars.ts",
+    "to": "src/shared/cjk-chars.ts"
+  },
+  {
+    "from": "src/utils/conversation-target.ts",
+    "to": "src/shared/conversation-target.ts"
+  },
+  {
+    "from": "src/utils/delivery-context.shared.ts",
+    "to": "src/shared/delivery-context.shared.ts"
+  },
+  {
+    "from": "src/utils/delivery-context.test.ts",
+    "to": "src/shared/delivery-context.test.ts"
+  },
+  {
+    "from": "src/utils/delivery-context.ts",
+    "to": "src/shared/delivery-context.ts"
+  },
+  {
+    "from": "src/utils/delivery-context.types.ts",
+    "to": "src/shared/delivery-context.types.ts"
+  },
+  {
+    "from": "src/utils/directive-tags.test.ts",
+    "to": "src/shared/directive-tags.test.ts"
+  },
+  {
+    "from": "src/utils/directive-tags.ts",
+    "to": "src/shared/directive-tags.ts"
+  },
+  {
+    "from": "src/utils/fetch-timeout.test.ts",
+    "to": "src/shared/fetch-timeout.test.ts"
+  },
+  {
+    "from": "src/utils/fetch-timeout.ts",
+    "to": "src/shared/fetch-timeout.ts"
+  },
+  {
+    "from": "src/utils/mask-api-key.test.ts",
+    "to": "src/shared/mask-api-key.test.ts"
+  },
+  {
+    "from": "src/utils/mask-api-key.ts",
+    "to": "src/shared/mask-api-key.ts"
+  },
+  {
+    "from": "src/utils/message-channel-constants.ts",
+    "to": "src/shared/message-channel-constants.ts"
+  },
+  {
+    "from": "src/utils/message-channel-core.ts",
+    "to": "src/shared/message-channel-core.ts"
+  },
+  {
+    "from": "src/utils/message-channel-normalize.ts",
+    "to": "src/shared/message-channel-normalize.ts"
+  },
+  {
+    "from": "src/utils/message-channel.test.ts",
+    "to": "src/shared/message-channel.test.ts"
+  },
+  {
+    "from": "src/utils/message-channel.ts",
+    "to": "src/shared/message-channel.ts"
+  },
+  {
+    "from": "src/utils/normalize-secret-input.test.ts",
+    "to": "src/shared/normalize-secret-input.test.ts"
+  },
+  {
+    "from": "src/utils/normalize-secret-input.ts",
+    "to": "src/shared/normalize-secret-input.ts"
+  },
+  {
+    "from": "src/utils/parse-json-compat.ts",
+    "to": "src/shared/parse-json-compat.ts"
+  },
+  {
+    "from": "src/utils/provider-utils.test.ts",
+    "to": "src/shared/provider-utils.test.ts"
+  },
+  {
+    "from": "src/utils/provider-utils.ts",
+    "to": "src/shared/provider-utils.ts"
+  },
+  {
+    "from": "src/utils/queue-helpers.test.ts",
+    "to": "src/shared/queue-helpers.test.ts"
+  },
+  {
+    "from": "src/utils/queue-helpers.ts",
+    "to": "src/shared/queue-helpers.ts"
+  },
+  {
+    "from": "src/utils/reaction-level.test.ts",
+    "to": "src/shared/reaction-level.test.ts"
+  },
+  {
+    "from": "src/utils/reaction-level.ts",
+    "to": "src/shared/reaction-level.ts"
+  },
+  {
+    "from": "src/utils/run-with-concurrency.test.ts",
+    "to": "src/shared/run-with-concurrency.test.ts"
+  },
+  {
+    "from": "src/utils/run-with-concurrency.ts",
+    "to": "src/shared/run-with-concurrency.ts"
+  },
+  {
+    "from": "src/utils/safe-json.ts",
+    "to": "src/shared/safe-json.ts"
+  },
+  {
+    "from": "src/utils/shell-argv.ts",
+    "to": "src/shared/shell-argv.ts"
+  },
+  {
+    "from": "src/utils/timer-delay.test.ts",
+    "to": "src/shared/timer-delay.test.ts"
+  },
+  {
+    "from": "src/utils/timer-delay.ts",
+    "to": "src/shared/timer-delay.ts"
+  },
+  {
+    "from": "src/utils/token-format.ts",
+    "to": "src/shared/token-format.ts"
+  },
+  {
+    "from": "src/utils/transcript-tools.test.ts",
+    "to": "src/shared/transcript-tools.test.ts"
+  },
+  {
+    "from": "src/utils/transcript-tools.ts",
+    "to": "src/shared/transcript-tools.ts"
+  },
+  {
+    "from": "src/utils/usage-format.test.ts",
+    "to": "src/shared/usage-format.test.ts"
+  },
+  {
+    "from": "src/utils/usage-format.ts",
+    "to": "src/shared/usage-format.ts"
+  },
+  {
+    "from": "src/utils/utils-misc.test.ts",
+    "to": "src/shared/utils-misc.test.ts"
+  },
+  {
+    "from": "src/utils/with-timeout.ts",
+    "to": "src/shared/with-timeout.ts"
+  },
+  {
+    "from": "src/utils/zod-parse.ts",
+    "to": "src/shared/zod-parse.ts"
+  }
+]

@@ -5,8 +5,8 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import { toRepoRelativePath } from "../test-utils/repo-files.js";
-import { resolvePluginNpmProjectDir } from "./install-paths.js";
-import { resolvePluginInstallDir } from "./install.js";
+import { resolvePluginNpmProjectDir } from "./install/install-paths.js";
+import { resolvePluginInstallDir } from "./install/install.js";
 import {
   cleanupTrackedTempDirsAsync,
   makeTrackedTempDirAsync,

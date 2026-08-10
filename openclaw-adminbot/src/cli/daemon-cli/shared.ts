@@ -1,6 +1,6 @@
 // Shared Gateway service CLI helpers: status styles, env filtering, port parsing, and hints.
 import { colorize, isRich, theme } from "../../../packages/terminal-core/src/theme.js";
-import { resolveIsNixMode } from "../../config/paths.js";
+import { resolveIsNixMode } from "../../config/paths/paths.js";
 import {
   resolveGatewayLaunchAgentLabel,
   resolveGatewaySystemdServiceName,
@@ -13,7 +13,7 @@ import {
   buildPlatformServiceStartHints,
 } from "../../daemon/runtime-hints.js";
 import { parseInlineOptionToken } from "../../infra/inline-option-token.js";
-import { formatCliCommand } from "../command-format.js";
+import { formatCliCommand } from "../program/command-format.js";
 import { parsePort } from "../shared/parse-port.js";
 import { createDaemonActionContext } from "./response.js";
 

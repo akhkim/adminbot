@@ -421,7 +421,7 @@ export async function loadCompactHooksHarness(): Promise<{
   resetCompactHooksHarnessMocks();
   vi.resetModules();
 
-  vi.doMock("../../plugins/hook-runner-global.js", () => ({
+  vi.doMock("../../plugins/hooks/hook-runner-global.js", () => ({
     getGlobalHookRunner: () => hookRunner,
     getGlobalPluginRegistry: vi.fn(() => null),
     hasGlobalHooks: vi.fn(() => false),
@@ -475,7 +475,7 @@ export async function loadCompactHooksHarness(): Promise<{
     ensureSelectedAgentHarnessPlugin: vi.fn(async () => undefined),
   }));
 
-  vi.doMock("../../plugins/provider-runtime.js", () => ({
+  vi.doMock("../../plugins/providers/provider-runtime.js", () => ({
     prepareProviderRuntimeAuth: vi.fn(async () => ({ resolvedApiKey: undefined })),
     resolveProviderReasoningOutputModeWithPlugin: vi.fn(() => undefined),
     resolveProviderSystemPromptContribution: vi.fn(() => undefined),
@@ -486,7 +486,7 @@ export async function loadCompactHooksHarness(): Promise<{
     ),
   }));
 
-  vi.doMock("../provider-stream.js", () => ({
+  vi.doMock("../transport/provider-stream.js", () => ({
     registerProviderStreamForModel: registerProviderStreamForModelMock,
   }));
 
@@ -521,7 +521,7 @@ export async function loadCompactHooksHarness(): Promise<{
     generateSummary: vi.fn(async () => "summary"),
   }));
 
-  vi.doMock("../session-tool-result-guard-wrapper.js", () => ({
+  vi.doMock("../sessions/session-tool-result-guard-wrapper.js", () => ({
     guardSessionManager: guardSessionManagerMock,
   }));
 
@@ -531,11 +531,11 @@ export async function loadCompactHooksHarness(): Promise<{
     isSilentOverflowProneModel: vi.fn(() => false),
   }));
 
-  vi.doMock("../models-config.js", () => ({
+  vi.doMock("../models/models-config.js", () => ({
     ensureOpenClawModelsJson: vi.fn(async () => {}),
   }));
 
-  vi.doMock("../model-auth.js", () => ({
+  vi.doMock("../auth/model-auth.js", () => ({
     applyAuthHeaderOverride: vi.fn((model: unknown) => model),
     applyLocalNoAuthHeaderOverride: vi.fn((model: unknown) => model),
     ensureAuthProfileStoreWithoutExternalProfiles: vi.fn(() => ({})),
@@ -551,15 +551,15 @@ export async function loadCompactHooksHarness(): Promise<{
     resolveModelAuthMode: vi.fn(() => "env"),
   }));
 
-  vi.doMock("../sandbox.js", () => ({
+  vi.doMock("../sandbox/sandbox.js", () => ({
     resolveSandboxContext: resolveSandboxContextMock,
   }));
 
-  vi.doMock("../session-file-repair.js", () => ({
+  vi.doMock("../sessions/session-file-repair.js", () => ({
     repairSessionFileIfNeeded: vi.fn(async () => {}),
   }));
 
-  vi.doMock("../session-write-lock.js", () => ({
+  vi.doMock("../sessions/session-write-lock.js", () => ({
     acquireSessionWriteLock: vi.fn(async () => ({ release: vi.fn(async () => {}) })),
     resolveSessionLockMaxHoldFromTimeout: vi.fn(() => 0),
     resolveSessionWriteLockAcquireTimeoutMs: vi.fn(() => 60_000),
@@ -594,7 +594,7 @@ export async function loadCompactHooksHarness(): Promise<{
     resolveContextWindowInfo: resolveContextWindowInfoMock,
   }));
 
-  vi.doMock("../bootstrap-files.js", () => ({
+  vi.doMock("../prompt/bootstrap-files.js", () => ({
     makeBootstrapWarn: vi.fn(() => () => {}),
     resolveContextInjectionMode: vi.fn(() => "always"),
     resolveBootstrapContextForRun: vi.fn(async () => ({ contextFiles: [] })),
@@ -628,7 +628,7 @@ export async function loadCompactHooksHarness(): Promise<{
     resolveChannelMessageToolHints: vi.fn(() => undefined),
   }));
 
-  vi.doMock("../agent-tools.js", () => ({
+  vi.doMock("../tools/agent-tools.js", () => ({
     createOpenClawCodingTools: createOpenClawCodingToolsMock,
     resolveProcessToolScopeKey: ({
       scopeKey,
@@ -820,13 +820,13 @@ export async function loadCompactHooksHarness(): Promise<{
     getMachineDisplayName: vi.fn(async () => "machine"),
   }));
 
-  vi.doMock("../../config/channel-capabilities.js", () => ({
+  vi.doMock("../../config/channel/channel-capabilities.js", () => ({
     resolveChannelCapabilities: vi.fn(() => undefined),
   }));
 
-  vi.doMock("../../utils/message-channel.js", async () => {
-    const actual = await vi.importActual<typeof import("../../utils/message-channel.js")>(
-      "../../utils/message-channel.js",
+  vi.doMock("../../shared/message-channel.js", async () => {
+    const actual = await vi.importActual<typeof import("../../shared/message-channel.js")>(
+      "../../shared/message-channel.js",
     );
     return {
       ...actual,
@@ -834,7 +834,7 @@ export async function loadCompactHooksHarness(): Promise<{
     };
   });
 
-  vi.doMock("../embedded-agent-helpers.js", () => ({
+  vi.doMock("../embedded/embedded-agent-helpers.js", () => ({
     ensureSessionHeader: vi.fn(async () => {}),
     pickFallbackThinkingLevel: vi.fn((params: { message?: string; attempted?: Set<string> }) =>
       params.message?.includes("Reasoning is mandatory") && !params.attempted?.has("minimal")

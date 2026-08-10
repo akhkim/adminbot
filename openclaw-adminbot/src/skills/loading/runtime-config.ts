@@ -1,7 +1,7 @@
 // Skill runtime config helpers read the active runtime config snapshot for skill loading.
-import { getRuntimeConfigSnapshot } from "../../config/runtime-snapshot.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { coerceSecretRef } from "../../config/types.secrets.js";
+import { getRuntimeConfigSnapshot } from "../../config/runtime/runtime-snapshot.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { coerceSecretRef } from "../../config/types/secrets.js";
 
 // Raw skill secret refs must not be replaced by redacted runtime snapshots.
 function hasConfiguredSkillApiKeyRef(config?: OpenClawConfig): boolean {

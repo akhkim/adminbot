@@ -1,12 +1,12 @@
 // Coverage for resolving transcript replay policy for embedded attempts.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ProviderRuntimeModel } from "../../../plugins/provider-runtime-model.types.js";
+import type { ProviderRuntimeModel } from "../../../plugins/providers/provider-runtime-model.types.js";
 import type { AgentRuntimePlan } from "../../runtime-plan/types.js";
 import { resolveAttemptTranscriptPolicy } from "./attempt.transcript-policy.js";
 
 const resolveProviderRuntimePluginMock = vi.hoisted(() => vi.fn());
 
-vi.mock("../../../plugins/provider-hook-runtime.js", () => ({
+vi.mock("../../../plugins/providers/provider-hook-runtime.js", () => ({
   resolveProviderRuntimePlugin: resolveProviderRuntimePluginMock,
 }));
 

@@ -6,7 +6,7 @@ import {
   diagnosticErrorCategory,
   diagnosticErrorFailureKind,
   diagnosticProviderRequestIdHash,
-} from "../../../infra/diagnostic-error-metadata.js";
+} from "../../../infra/diagnostics/diagnostic-error-metadata.js";
 import {
   areDiagnosticsEnabledForProcess,
   emitTrustedDiagnosticEvent,
@@ -14,25 +14,25 @@ import {
   type DiagnosticModelCallContent,
   type DiagnosticMemoryUsage,
   emitTrustedDiagnosticEventWithPrivateData,
-} from "../../../infra/diagnostic-events.js";
+} from "../../../infra/diagnostics/diagnostic-events.js";
 import {
   cloneDiagnosticContentValue,
   type DiagnosticModelContentCapturePolicy,
-} from "../../../infra/diagnostic-llm-content.js";
+} from "../../../infra/diagnostics/diagnostic-llm-content.js";
 import {
   createChildDiagnosticTraceContext,
   freezeDiagnosticTraceContext,
   formatDiagnosticTraceparent,
   type DiagnosticTraceContext,
-} from "../../../infra/diagnostic-trace-context.js";
+} from "../../../infra/diagnostics/diagnostic-trace-context.js";
 import { markDiagnosticRunProgress } from "../../../logging/diagnostic-run-activity.js";
-import { getGlobalHookRunner } from "../../../plugins/hook-runner-global.js";
+import { getGlobalHookRunner } from "../../../plugins/hooks/hook-runner-global.js";
 import type {
   PluginHookAgentContext,
   PluginHookContextWindowSource,
   PluginHookModelCallEndedEvent,
   PluginHookModelCallStartedEvent,
-} from "../../../plugins/hook-types.js";
+} from "../../../plugins/hooks/hook-types.js";
 import type { StreamFn } from "../../runtime/index.js";
 
 export { diagnosticErrorCategory };

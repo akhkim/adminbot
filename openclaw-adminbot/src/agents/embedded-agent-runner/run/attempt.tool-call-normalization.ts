@@ -19,16 +19,19 @@ import {
   normalizeOpenAIResponsesToolCallIds,
   validateAnthropicTurns,
   validateGeminiTurns,
-} from "../../embedded-agent-helpers.js";
+} from "../../embedded/embedded-agent-helpers.js";
 import type { AgentMessage, StreamFn } from "../../runtime/index.js";
-import { sanitizeToolUseResultPairing } from "../../session-transcript-repair.js";
+import { sanitizeToolUseResultPairing } from "../../sessions/session-transcript-repair.js";
 import {
   extractToolCallsFromAssistant,
   extractToolResultIds,
   sanitizeToolCallIdsForCloudCodeAssist,
   type ToolCallIdMode,
-} from "../../tool-call-id.js";
-import { couldNormalizeToolNamePrefixToAllowedTool, normalizeToolName } from "../../tool-policy.js";
+} from "../../tools/tool-call-id.js";
+import {
+  couldNormalizeToolNamePrefixToAllowedTool,
+  normalizeToolName,
+} from "../../tools/tool-policy.js";
 import { shouldAllowProviderOwnedThinkingReplay } from "../../transcript-policy.js";
 import type { TranscriptPolicy } from "../../transcript-policy.js";
 import { wrapStreamObjectEvents } from "./stream-wrapper.js";

@@ -1,7 +1,7 @@
 // Conversation resolution tests cover channel conversation lookup and fallback rules.
 import { afterEach, describe, expect, it } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { setActivePluginRegistry } from "../plugins/runtime.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { setActivePluginRegistry } from "../plugins/runtime/runtime.js";
 import { createChannelTestPluginBase, createTestRegistry } from "../test-utils/channel-plugins.js";
 import {
   resolveChannelDefaultBindingPlacement,

@@ -11,9 +11,9 @@ import type {
   TalkConfigResponse,
   TalkProviderConfig,
   TalkRealtimeConfig,
-} from "./types.gateway.js";
-import type { OpenClawConfig } from "./types.openclaw.js";
-import { coerceSecretRef } from "./types.secrets.js";
+} from "./types/gateway.js";
+import type { OpenClawConfig } from "./types/openclaw.js";
+import { coerceSecretRef } from "./types/secrets.js";
 
 function normalizeTalkSecretInput(value: unknown): TalkProviderConfig["apiKey"] | undefined {
   if (typeof value === "string") {

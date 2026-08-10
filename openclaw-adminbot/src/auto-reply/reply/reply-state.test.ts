@@ -23,8 +23,8 @@ import {
   shouldRunPreflightCompaction,
 } from "./memory-flush.js";
 import { CURRENT_MESSAGE_MARKER } from "./mentions.js";
-import { incrementRunCompactionCount } from "./session-run-accounting.js";
-import { incrementCompactionCount } from "./session-updates.js";
+import { incrementRunCompactionCount } from "./session/session-run-accounting.js";
+import { incrementCompactionCount } from "./session/session-updates.js";
 
 const tempDirs: string[] = [];
 

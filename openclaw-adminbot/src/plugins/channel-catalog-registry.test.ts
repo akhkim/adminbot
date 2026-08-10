@@ -1,14 +1,14 @@
 // Covers channel catalog registry loading and reset behavior.
 import { importFreshModule } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PluginInstallRecord } from "../config/types.plugins.js";
+import type { PluginInstallRecord } from "../config/types/plugins.js";
 import type { PluginCandidate, PluginDiscoveryResult } from "./discovery.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
   vi.doUnmock("./discovery.js");
-  vi.doUnmock("./installed-plugin-index-record-reader.js");
+  vi.doUnmock("./install/installed-plugin-index-record-reader.js");
 });
 
 const ENV: NodeJS.ProcessEnv = { HOME: "/tmp/openclaw-test-home" };
@@ -43,7 +43,7 @@ async function loadWithMocks(params: {
   });
 
   vi.doMock("./discovery.js", () => ({ discoverOpenClawPlugins: discoverSpy }));
-  vi.doMock("./installed-plugin-index-record-reader.js", () => ({
+  vi.doMock("./install/installed-plugin-index-record-reader.js", () => ({
     loadInstalledPluginIndexInstallRecordsSync: loadRecordsSpy,
   }));
 

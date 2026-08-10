@@ -5,13 +5,13 @@ import { formatDocsLink } from "../../../packages/terminal-core/src/links.js";
 import { theme } from "../../../packages/terminal-core/src/theme.js";
 import { formatHelpExamples } from "../help-format.js";
 
-type AgentViaGatewayModule = typeof import("../../commands/agent-via-gateway.js");
+type AgentViaGatewayModule = typeof import("../../commands/agent/agent-via-gateway.js");
 type CliUtilsModule = typeof import("../cli-utils.js");
 type GlobalStateModule = typeof import("../../global-state.js");
 type RuntimeModule = typeof import("../../runtime.js");
 
 async function loadAgentCliCommand(): Promise<AgentViaGatewayModule["agentCliCommand"]> {
-  return (await import("../../commands/agent-via-gateway.js")).agentCliCommand;
+  return (await import("../../commands/agent/agent-via-gateway.js")).agentCliCommand;
 }
 
 async function loadDefaultRuntime(): Promise<RuntimeModule["defaultRuntime"]> {

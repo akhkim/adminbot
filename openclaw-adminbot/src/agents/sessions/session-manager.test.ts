@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { withOwnedSessionTranscriptWrites } from "../../config/sessions/transcript-write-context.js";
 import { isTranscriptOnlyOpenClawAssistantMessage } from "../../shared/transcript-only-openclaw-assistant.js";
 import { prepareSessionManagerForRun } from "../embedded-agent-runner/session-manager-init.js";
-import { repairSessionFileIfNeeded } from "../session-file-repair.js";
+import { repairSessionFileIfNeeded } from "./session-file-repair.js";
 import {
   CURRENT_SESSION_VERSION,
   loadEntriesFromFile,

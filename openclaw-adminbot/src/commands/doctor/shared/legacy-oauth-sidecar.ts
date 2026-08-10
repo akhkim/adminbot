@@ -9,7 +9,7 @@ import { uniqueStrings } from "@openclaw/normalization-core/string-normalization
 import { log } from "../../../agents/auth-profiles/constants.js";
 import { LEGACY_OAUTH_REF_PROVIDER } from "../../../agents/auth-profiles/legacy-oauth-ref.js";
 import type { LegacyOAuthRef } from "../../../agents/auth-profiles/legacy-oauth-ref.js";
-import { resolveOAuthDir, resolveStateDir } from "../../../config/paths.js";
+import { resolveOAuthDir, resolveStateDir } from "../../../config/paths/paths.js";
 import { loadJsonFile } from "../../../infra/json-file.js";
 
 export { isLegacyOAuthRef } from "../../../agents/auth-profiles/legacy-oauth-ref.js";

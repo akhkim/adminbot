@@ -1,6 +1,6 @@
 // Shared harness for extra-params wrapper tests.
 import type { ThinkLevel } from "../../auto-reply/thinking.shared.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { Context, Model, SimpleStreamOptions } from "../../llm/types.js";
 import type { StreamFn } from "../runtime/index.js";
 import { testing as extraParamsTesting, applyExtraParamsToAgent } from "./extra-params.js";

@@ -11,9 +11,13 @@ import {
   resolveTimestampMsToIsoString,
 } from "@openclaw/normalization-core/number-coercion";
 import { z } from "zod";
-import { resolveConfigPath, resolveGatewayLockDir, resolveStateDir } from "../config/paths.js";
+import {
+  resolveConfigPath,
+  resolveGatewayLockDir,
+  resolveStateDir,
+} from "../config/paths/paths.js";
 import { isPidAlive } from "../shared/pid-alive.js";
-import { safeParseJsonWithSchema } from "../utils/zod-parse.js";
+import { safeParseJsonWithSchema } from "../shared/zod-parse.js";
 import { isGatewayArgv, parseProcCmdline, parseWindowsCmdline } from "./gateway-process-argv.js";
 
 const DEFAULT_TIMEOUT_MS = 5000;

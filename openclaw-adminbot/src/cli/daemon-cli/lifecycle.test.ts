@@ -436,7 +436,7 @@ describe("runDaemonRestart health checks", () => {
   });
 
   it("fails restart when gateway remains unhealthy after the full timeout", async () => {
-    const { formatCliCommand } = await import("../command-format.js");
+    const { formatCliCommand } = await import("../program/command-format.js");
     const unhealthy: RestartHealthSnapshot = {
       healthy: false,
       staleGatewayPids: [],
@@ -484,7 +484,7 @@ describe("runDaemonRestart health checks", () => {
   });
 
   it("fails restart with a stopped-free message when the waiter exits early", async () => {
-    const { formatCliCommand } = await import("../command-format.js");
+    const { formatCliCommand } = await import("../program/command-format.js");
     const unhealthy: RestartHealthSnapshot = {
       healthy: false,
       staleGatewayPids: [],

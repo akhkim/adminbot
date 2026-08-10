@@ -6,10 +6,10 @@ const hoisted = vi.hoisted(() => ({
   matchesProviderContextOverflowWithPlugin: vi.fn(() => false),
 }));
 
-vi.mock("../../plugins/provider-runtime.js", async () => {
-  const actual = await vi.importActual<typeof import("../../plugins/provider-runtime.js")>(
-    "../../plugins/provider-runtime.js",
-  );
+vi.mock("../../plugins/providers/provider-runtime.js", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../plugins/providers/provider-runtime.js")
+  >("../../plugins/providers/provider-runtime.js");
   return {
     ...actual,
     classifyProviderFailoverReasonWithPlugin: hoisted.classifyProviderFailoverReasonWithPlugin,

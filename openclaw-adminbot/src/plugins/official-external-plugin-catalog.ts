@@ -10,7 +10,7 @@ import type {
   PluginManifestChannelConfig,
   PluginManifestContracts,
   PluginPackageInstall,
-} from "./manifest.js";
+} from "./manifest/manifest.js";
 
 type ManifestKey = typeof MANIFEST_KEY;
 
@@ -85,9 +85,7 @@ export type OfficialExternalPluginCatalogEntry = {
 
 type OfficialExternalProviderContract =
   | "embeddingProviders"
-  | "mediaUnderstandingProviders"
   | "memoryEmbeddingProviders"
-  | "speechProviders"
   | "webFetchProviders";
 
 const OFFICIAL_CATALOG_SOURCES = [

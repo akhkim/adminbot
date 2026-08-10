@@ -99,7 +99,7 @@ vi.mock("../../config/config.js", async () => {
   };
 });
 
-vi.mock("../../commands/agents.config.js", () => ({
+vi.mock("../../commands/agents/agents.config.js", () => ({
   applyAgentConfig: mocks.applyAgentConfig,
   findAgentEntryIndex: mocks.findAgentEntryIndex,
   listAgentEntries: mocks.listAgentEntries,
@@ -115,9 +115,9 @@ vi.mock("../../agents/agent-scope.js", () => ({
   resolveAgentWorkspaceDir: mocks.resolveAgentWorkspaceDir,
 }));
 
-vi.mock("../../agents/workspace.js", async () => {
-  const actual = await vi.importActual<typeof import("../../agents/workspace.js")>(
-    "../../agents/workspace.js",
+vi.mock("../../agents/workspace/workspace.js", async () => {
+  const actual = await vi.importActual<typeof import("../../agents/workspace/workspace.js")>(
+    "../../agents/workspace/workspace.js",
   );
   return {
     ...actual,
@@ -144,7 +144,7 @@ vi.mock("../../utils.js", async () => {
   };
 });
 
-vi.mock("../session-utils.js", () => ({
+vi.mock("../sessions/session-utils.js", () => ({
   listAgentsForGateway: mocks.listAgentsForGateway,
 }));
 

@@ -4,7 +4,7 @@
  * paths, and cross-agent OAuth refresh lock paths.
  */
 import path from "node:path";
-import { resolveStateDir } from "../../config/paths.js";
+import { resolveStateDir } from "../../config/paths/paths.js";
 import { resolveUserPath } from "../../utils.js";
 import { resolveDefaultAgentDir } from "../agent-scope-config.js";
 import {

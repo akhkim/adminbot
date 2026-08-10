@@ -4,10 +4,10 @@ import type { ModelProviderConfig } from "../../config/config.js";
 import { discoverModels } from "../agent-model-discovery.js";
 import { createProviderRuntimeTestMock } from "./model.provider-runtime.test-support.js";
 
-vi.mock("../../plugins/provider-runtime.js", async () => {
-  const actual = await vi.importActual<typeof import("../../plugins/provider-runtime.js")>(
-    "../../plugins/provider-runtime.js",
-  );
+vi.mock("../../plugins/providers/provider-runtime.js", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../plugins/providers/provider-runtime.js")
+  >("../../plugins/providers/provider-runtime.js");
   return {
     ...actual,
     applyProviderResolvedTransportWithPlugin: () => undefined,
@@ -19,7 +19,7 @@ vi.mock("../../plugins/provider-runtime.js", async () => {
   };
 });
 
-vi.mock("../model-suppression.js", () => ({
+vi.mock("../models/model-suppression.js", () => ({
   shouldSuppressBuiltInModel: ({
     provider,
     id,

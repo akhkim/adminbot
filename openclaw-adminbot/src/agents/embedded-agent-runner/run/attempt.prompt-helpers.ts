@@ -1,13 +1,13 @@
 /**
  * Builds and repairs prompt inputs for embedded-agent attempts.
  */
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import type {
   ContextEnginePromptCacheInfo,
   ContextEngineRuntimeContext,
 } from "../../../context-engine/types.js";
-import { drainPluginNextTurnInjectionContext } from "../../../plugins/host-hook-state.js";
-import { buildPluginAgentTurnPrepareContext } from "../../../plugins/host-hooks.js";
+import { drainPluginNextTurnInjectionContext } from "../../../plugins/host/host-hook-state.js";
+import { buildPluginAgentTurnPrepareContext } from "../../../plugins/host/host-hooks.js";
 import type {
   PluginAgentTurnPrepareResult,
   PluginNextTurnInjectionRecord,
@@ -17,16 +17,13 @@ import type {
 } from "../../../plugins/types.js";
 import { isCronSessionKey, isSubagentSessionKey } from "../../../routing/session-key.js";
 import { joinPresentTextSegments } from "../../../shared/text/join-segments.js";
-import { resolveProcessToolScopeKey } from "../../agent-tools.js";
-import { listActiveProcessSessionReferences } from "../../bash-process-references.js";
-import { resolveHeartbeatPromptForSystemPrompt } from "../../heartbeat-system-prompt.js";
 import { wrapPluginSystemContextSection } from "../../hook-system-context-boundary.js";
-import { buildActiveImageGenerationTaskPromptContextForSession } from "../../image-generation-task-status.js";
-import { buildActiveMusicGenerationTaskPromptContextForSession } from "../../music-generation-task-status.js";
-import { prependSystemPromptAdditionAfterCacheBoundary } from "../../system-prompt-cache-boundary.js";
-import { resolveEffectiveToolFsWorkspaceOnly } from "../../tool-fs-policy.js";
+import { resolveHeartbeatPromptForSystemPrompt } from "../../prompt/heartbeat-system-prompt.js";
+import { prependSystemPromptAdditionAfterCacheBoundary } from "../../prompt/system-prompt-cache-boundary.js";
+import { resolveProcessToolScopeKey } from "../../tools/agent-tools.js";
+import { listActiveProcessSessionReferences } from "../../tools/bash-process-references.js";
+import { resolveEffectiveToolFsWorkspaceOnly } from "../../tools/tool-fs-policy.js";
 import { derivePromptTokens, type NormalizedUsage } from "../../usage.js";
-import { buildActiveVideoGenerationTaskPromptContextForSession } from "../../video-generation-task-status.js";
 import { buildEmbeddedCompactionRuntimeContext } from "../compaction-runtime-context.js";
 import { resolveContextEngineCapabilities } from "../context-engine-capabilities.js";
 import { log } from "../logger.js";
@@ -524,24 +521,6 @@ export function prependSystemPromptAddition(params: {
   systemPromptAddition?: string;
 }): string {
   return prependSystemPromptAdditionAfterCacheBoundary(params);
-}
-
-// Per-turn media-generation task hints depend on live session state, so they must
-// be routed BELOW the system-prompt cache boundary (via prependSystemPromptAddition)
-// rather than placed in the static prepend slot — keeping them above the boundary
-// shifted the cacheable prefix turn-to-turn and broke prompt caching (#85203).
-export function resolveAttemptMediaTaskSystemPromptAddition(params: {
-  sessionKey?: string;
-  trigger?: EmbeddedRunAttemptParams["trigger"];
-}): string | undefined {
-  if (params.trigger !== "user" && params.trigger !== "manual") {
-    return undefined;
-  }
-  return joinPresentTextSegments([
-    buildActiveImageGenerationTaskPromptContextForSession(params.sessionKey),
-    buildActiveVideoGenerationTaskPromptContextForSession(params.sessionKey),
-    buildActiveMusicGenerationTaskPromptContextForSession(params.sessionKey),
-  ]);
 }
 
 type AfterTurnRuntimeContextAttempt = Pick<

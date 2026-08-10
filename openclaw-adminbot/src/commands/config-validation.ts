@@ -1,6 +1,6 @@
+import { formatPluginPackagingRuntimeOutputRecoveryHint } from "../cli/config/config-recovery-hints.js";
 // Config validation helpers shared by commands that need fail-fast config loading.
-import { formatCliCommand } from "../cli/command-format.js";
-import { formatPluginPackagingRuntimeOutputRecoveryHint } from "../cli/config-recovery-hints.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
 import {
   type ConfigFileSnapshot,
   type OpenClawConfig,
@@ -11,7 +11,7 @@ import { isPluginPackagingRuntimeOutputInvalidConfigSnapshot } from "../config/r
 import {
   buildPluginCompatibilitySnapshotNotices,
   formatPluginCompatibilityNotice,
-} from "../plugins/status.js";
+} from "../plugins/config/status.js";
 import type { RuntimeEnv } from "../runtime.js";
 
 /** Read the config file and exit through the runtime when validation fails. */

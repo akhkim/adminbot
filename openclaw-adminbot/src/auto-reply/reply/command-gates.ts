@@ -4,7 +4,7 @@ import { logVerbose } from "../../globals.js";
 import { redactIdentifier } from "../../logging/redact-identifier.js";
 import { isNativeCommandTurn, resolveCommandTurnContext } from "../command-turn-context.js";
 import type { ReplyPayload } from "../types.js";
-import type { CommandHandlerResult, HandleCommandsParams } from "./commands-types.js";
+import type { CommandHandlerResult, HandleCommandsParams } from "./commands/commands-types.js";
 
 function buildNativeCommandGateReply(text: string): CommandHandlerResult {
   return {

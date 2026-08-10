@@ -1,7 +1,7 @@
 // AdminBot setup tests cover the config mutation used by the setup wizard.
 import { describe, expect, it, vi } from "vitest";
 import { createWizardPrompter } from "../../test/helpers/wizard-prompter.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type { WizardPrompter } from "./prompts.js";
 import {
   ADMINBOT_AGENT_ID,

@@ -1,8 +1,8 @@
 /** Exercises runtime capability-provider loading from manifest-backed plugin contracts. */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { resolveInstalledPluginIndexPolicyHash } from "./installed-plugin-index-policy.js";
-import { createEmptyPluginRegistry } from "./registry.js";
+import { resolveInstalledPluginIndexPolicyHash } from "./install/installed-plugin-index-policy.js";
+import { createEmptyPluginRegistry } from "./manifest/registry.js";
 
 type MockManifestRegistry = {
   plugins: Array<Record<string, unknown>>;
@@ -45,7 +45,7 @@ const mocks = vi.hoisted(() => ({
   withBundledPluginVitestCompat: vi.fn(({ config }) => config),
 }));
 
-vi.mock("./loader.js", () => ({
+vi.mock("./runtime/loader.js", () => ({
   resolveRuntimePluginRegistry: mocks.resolveRuntimePluginRegistry,
   resolvePluginRegistryLoadCacheKey: mocks.resolvePluginRegistryLoadCacheKey,
 }));
@@ -61,18 +61,18 @@ vi.mock("./active-runtime-registry.js", () => ({
   },
 }));
 
-vi.mock("./bundled-capability-runtime.js", () => ({
+vi.mock("./install/bundled-capability-runtime.js", () => ({
   loadBundledCapabilityRuntimeRegistry: mocks.loadBundledCapabilityRuntimeRegistry,
 }));
 
-vi.mock("./manifest-registry-installed.js", () => ({
+vi.mock("./manifest/manifest-registry-installed.js", () => ({
   loadPluginManifestRegistryForInstalledIndex: mocks.loadPluginManifestRegistry,
   resolveInstalledManifestRegistryIndexFingerprint:
     mocks.resolveInstalledManifestRegistryIndexFingerprint,
 }));
 
-vi.mock("./manifest-registry.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./manifest-registry.js")>();
+vi.mock("./manifest/manifest-registry.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./manifest/manifest-registry.js")>();
   return {
     ...actual,
     loadPluginManifestRegistry: mocks.loadPluginManifestRegistry,
@@ -117,7 +117,7 @@ vi.mock("./plugin-registry.js", async (importOriginal) => {
   };
 });
 
-vi.mock("./bundled-compat.js", () => ({
+vi.mock("./install/bundled-compat.js", () => ({
   withBundledPluginEnablementCompat: mocks.withBundledPluginEnablementCompat,
   withBundledPluginVitestCompat: mocks.withBundledPluginVitestCompat,
 }));
@@ -254,15 +254,7 @@ function setBundledCapabilityFixture(
 }
 
 function expectCompatChainApplied(params: {
-  key:
-    | "memoryEmbeddingProviders"
-    | "speechProviders"
-    | "realtimeTranscriptionProviders"
-    | "realtimeVoiceProviders"
-    | "mediaUnderstandingProviders"
-    | "imageGenerationProviders"
-    | "videoGenerationProviders"
-    | "musicGenerationProviders";
+  key: "memoryEmbeddingProviders" | "musicGenerationProviders";
   contractKey: string;
   cfg: OpenClawConfig;
   enablementCompat: {

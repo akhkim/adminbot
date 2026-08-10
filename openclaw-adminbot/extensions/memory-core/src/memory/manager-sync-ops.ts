@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 2636 lines; see docs/adr/0006-deferred-monster-splits.md
 // Memory Core plugin module implements manager sync ops behavior.
 import { randomUUID } from "node:crypto";
 import fsSync from "node:fs";

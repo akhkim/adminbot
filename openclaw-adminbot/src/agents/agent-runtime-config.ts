@@ -1,9 +1,9 @@
 /** Resolves agent runtime config, including SecretRef materialization for agent command use. */
-import { getAgentRuntimeCommandSecretTargetIds } from "../cli/command-secret-targets.js";
-import { getRuntimeConfig, readConfigFileSnapshotForWrite } from "../config/io.js";
-import { setRuntimeConfigSnapshot } from "../config/runtime-snapshot.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { isSecretRef } from "../config/types.secrets.js";
+import { getAgentRuntimeCommandSecretTargetIds } from "../cli/program/command-secret-targets.js";
+import { getRuntimeConfig, readConfigFileSnapshotForWrite } from "../config/io/io.js";
+import { setRuntimeConfigSnapshot } from "../config/runtime/runtime-snapshot.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { isSecretRef } from "../config/types/secrets.js";
 import type { RuntimeEnv } from "../runtime.js";
 
 /** Loads runtime/source config and resolves command SecretRefs when the agent path needs them. */
@@ -35,7 +35,7 @@ export async function resolveAgentRuntimeConfig(
   const cfg = hasRuntimeSecretRefs
     ? (
         await (
-          await import("../cli/command-config-resolution.runtime.js")
+          await import("../cli/program/command-config-resolution.runtime.js")
         ).resolveCommandConfigWithSecrets({
           config: loadedRaw,
           commandName: "agent",

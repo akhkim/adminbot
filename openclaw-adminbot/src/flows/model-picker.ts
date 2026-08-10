@@ -2,13 +2,13 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { sortUniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import { resolveDefaultAgentDir } from "../agents/agent-scope.js";
+import { createProviderAuthChecker } from "../agents/auth/model-provider-auth.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
-import { resolveVisibleModelCatalog } from "../agents/model-catalog-visibility.js";
-import { loadModelCatalog } from "../agents/model-catalog.js";
-import type { ModelCatalogEntry } from "../agents/model-catalog.js";
-import { createModelPickerVisibleProviderPredicate } from "../agents/model-picker-visibility.js";
-import { createProviderAuthChecker } from "../agents/model-provider-auth.js";
-import { formatLiteralProviderPrefixedModelRef } from "../agents/model-ref-shared.js";
+import { resolveVisibleModelCatalog } from "../agents/models/model-catalog-visibility.js";
+import { loadModelCatalog } from "../agents/models/model-catalog.js";
+import type { ModelCatalogEntry } from "../agents/models/model-catalog.js";
+import { createModelPickerVisibleProviderPredicate } from "../agents/models/model-picker-visibility.js";
+import { formatLiteralProviderPrefixedModelRef } from "../agents/models/model-ref-shared.js";
 import {
   buildConfiguredModelCatalog,
   buildModelAliasIndex,
@@ -18,7 +18,7 @@ import {
   normalizeProviderId,
   resolveConfiguredModelRef,
   resolveModelRefFromString,
-} from "../agents/model-selection.js";
+} from "../agents/models/model-selection.js";
 import { loadStaticManifestCatalogRowsForList } from "../commands/models/list.manifest-catalog.js";
 import { formatTokenK } from "../commands/models/shared.js";
 import {
@@ -27,8 +27,8 @@ import {
   resolveAgentModelFallbackValues,
   resolveAgentModelPrimaryValue,
 } from "../config/model-input.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { resolveOwningPluginIdsForProviderRef } from "../plugins/providers.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { resolveOwningPluginIdsForProviderRef } from "../plugins/providers/providers.js";
 import type { ProviderPlugin } from "../plugins/types.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { createLazyRuntimeSurface } from "../shared/lazy-runtime.js";
@@ -36,7 +36,7 @@ import { t } from "../wizard/i18n/index.js";
 import type { WizardPrompter, WizardSelectOption } from "../wizard/prompts.js";
 import { loadPreferredProviderPickerCatalog } from "./model-picker.provider-catalog.js";
 
-export { applyPrimaryModel } from "../plugins/provider-model-primary.js";
+export { applyPrimaryModel } from "../plugins/providers/provider-model-primary.js";
 
 const KEEP_VALUE = "__keep__";
 const MANUAL_VALUE = "__manual__";
@@ -101,7 +101,7 @@ type PromptDefaultModelResult = { model?: string; config?: OpenClawConfig };
 type PromptModelAllowlistResult = { models?: string[]; scopeKeys?: string[] };
 
 async function loadModelPickerRuntime() {
-  return import("../commands/model-picker.runtime.js");
+  return import("../commands/models/model-picker.runtime.js");
 }
 
 const loadResolvedModelPickerRuntime = createLazyRuntimeSurface(

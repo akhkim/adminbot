@@ -1,8 +1,8 @@
 // Bundled health checks define built-in doctor checks for runtime readiness.
 import { asOptionalObjectRecord as readRecord } from "@openclaw/normalization-core/record-coerce";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { normalizePluginsConfig } from "../plugins/config-state.js";
-import { passesManifestOwnerBasePolicy } from "../plugins/manifest-owner-policy.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { normalizePluginsConfig } from "../plugins/config/config-state.js";
+import { passesManifestOwnerBasePolicy } from "../plugins/manifest/manifest-owner-policy.js";
 import { loadBundledPluginPublicArtifactModuleSync } from "../plugins/public-surface-loader.js";
 import { registerHealthCheck } from "./health-check-registry.js";
 

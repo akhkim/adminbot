@@ -2,7 +2,7 @@
  * Tests iOS push notification dispatch for exec approval requests.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ExecApprovalRequest, ExecApprovalResolved } from "../infra/exec-approvals.js";
+import type { ExecApprovalRequest, ExecApprovalResolved } from "../infra/exec/exec-approvals.js";
 import { createDeferred } from "./test-helpers.deferred.js";
 
 const listDevicePairingMock = vi.fn();
@@ -115,7 +115,7 @@ vi.mock("../infra/device-pairing.js", async () => {
   };
 });
 
-vi.mock("../infra/push-apns.js", () => ({
+vi.mock("../infra/diagnostics/push-apns.js", () => ({
   loadApnsRegistration: loadApnsRegistrationMock,
   loadApnsRegistrations: loadApnsRegistrationsMock,
   resolveApnsAuthConfigFromEnv: resolveApnsAuthConfigFromEnvMock,

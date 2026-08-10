@@ -1,6 +1,6 @@
 // Daemon install tests cover service install command behavior and plan handling.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ResolvedGatewayAuth } from "../../gateway/auth.js";
+import type { ResolvedGatewayAuth } from "../../gateway/auth/auth.js";
 import { captureFullEnv } from "../../test-utils/env.js";
 import { createCliRuntimeCapture } from "../test-runtime-capture.js";
 import type { DaemonActionResponse } from "./response.js";
@@ -84,7 +84,7 @@ vi.mock("../../bootstrap/node-startup-env.js", () => ({
   resolveNodeStartupTlsEnvironment: resolveNodeStartupTlsEnvironmentMock,
 }));
 
-vi.mock("../../config/io.js", () => ({
+vi.mock("../../config/io/io.js", () => ({
   loadConfig: loadConfigMock,
   readConfigFileSnapshotForWrite: vi.fn(async () => ({
     snapshot: await readConfigFileSnapshotMock(),
@@ -92,16 +92,16 @@ vi.mock("../../config/io.js", () => ({
   })),
 }));
 
-vi.mock("../../config/mutate.js", () => ({
+vi.mock("../../config/mutate/mutate.js", () => ({
   replaceConfigFile: replaceConfigFileMock,
 }));
 
-vi.mock("../../config/paths.js", () => ({
+vi.mock("../../config/paths/paths.js", () => ({
   resolveGatewayPort: resolveGatewayPortMock,
   resolveIsNixMode: resolveIsNixModeMock,
 }));
 
-vi.mock("../../commands/gateway-install-token.persist.runtime.js", () => ({
+vi.mock("../../commands/gateway/gateway-install-token.persist.runtime.js", () => ({
   readConfigFileSnapshot: readConfigFileSnapshotMock,
   readConfigFileSnapshotForWrite: vi.fn(async () => ({
     snapshot: await readConfigFileSnapshotMock(),
@@ -110,12 +110,12 @@ vi.mock("../../commands/gateway-install-token.persist.runtime.js", () => ({
   replaceConfigFile: replaceConfigFileMock,
 }));
 
-vi.mock("../../config/types.secrets.js", () => ({
+vi.mock("../../config/types/secrets.js", () => ({
   hasConfiguredSecretInput: hasConfiguredSecretInputMock,
   resolveSecretInputRef: resolveSecretInputRefMock,
 }));
 
-vi.mock("../../gateway/auth.js", () => ({
+vi.mock("../../gateway/auth/auth.js", () => ({
   resolveGatewayAuth: resolveGatewayAuthMock,
 }));
 
@@ -127,7 +127,7 @@ vi.mock("../../commands/random-token.js", () => ({
   randomToken: randomTokenMock,
 }));
 
-vi.mock("../../commands/daemon-install-helpers.js", () => ({
+vi.mock("../../commands/daemon/daemon-install-helpers.js", () => ({
   buildGatewayInstallPlan: buildGatewayInstallPlanMock,
 }));
 
@@ -160,7 +160,7 @@ vi.mock("./shared.js", () => ({
     return true;
   },
 }));
-vi.mock("../../commands/daemon-runtime.js", () => ({
+vi.mock("../../commands/daemon/daemon-runtime.js", () => ({
   DEFAULT_GATEWAY_DAEMON_RUNTIME: "node",
   isGatewayDaemonRuntime: isGatewayDaemonRuntimeMock,
 }));

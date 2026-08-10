@@ -3,15 +3,18 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { normalizeTrimmedStringList } from "@openclaw/normalization-core/string-normalization";
 import { MANIFEST_KEY } from "../compat/legacy-names.js";
-import { resolveSafeInstallDir, unscopedPackageName } from "../infra/install-safe-path.js";
-import type { NpmIntegrityDrift, NpmSpecResolution } from "../infra/install-source-utils.js";
-import { detectBundleManifestFormat } from "../plugins/bundle-manifest.js";
+import { resolveSafeInstallDir, unscopedPackageName } from "../infra/install/install-safe-path.js";
+import type {
+  NpmIntegrityDrift,
+  NpmSpecResolution,
+} from "../infra/install/install-source-utils.js";
+import { detectBundleManifestFormat } from "../plugins/install/bundle-manifest.js";
 import {
   scanPackageInstallSource,
   scanInstalledPackageDependencyTree,
   type InstallSafetyOverrides,
-} from "../plugins/install-security-scan.js";
-import { PLUGIN_MANIFEST_FILENAME } from "../plugins/manifest.js";
+} from "../plugins/install/install-security-scan.js";
+import { PLUGIN_MANIFEST_FILENAME } from "../plugins/manifest/manifest.js";
 import type { InstallPolicySource } from "../security/install-policy.js";
 import { CONFIG_DIR, resolveUserPath } from "../utils.js";
 import { parseFrontmatter } from "./frontmatter.js";

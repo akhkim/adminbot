@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuthProfileStore } from "../agents/auth-profiles.js";
-import { withTempHome } from "../config/home-env.test-harness.js";
+import type { AuthProfileStore } from "../agents/auth/auth-profiles.js";
+import { withTempHome } from "../config/env/home-env.test-harness.js";
 import {
   asConfig,
   beginSecretsRuntimeIsolationForTest,

@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   downloadClawHubGitHubSkillArchive,
   downloadClawHubSkillArchive,
@@ -23,7 +23,7 @@ import {
 } from "../../infra/clawhub.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { pathExists } from "../../infra/fs-safe.js";
-import { withExtractedArchiveRoot } from "../../infra/install-flow.js";
+import { withExtractedArchiveRoot } from "../../infra/install/install-flow.js";
 import { readJsonIfExists, tryReadJson, writeJson } from "../../infra/json-files.js";
 import {
   CLAWHUB_SKILL_ARCHIVE_ROOT_MARKERS,

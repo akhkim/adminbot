@@ -1,16 +1,16 @@
 // Archive install helpers extract and validate skill archives during installation.
 import path from "node:path";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { ArchiveLogger } from "../../infra/archive.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { pathExists } from "../../infra/fs-safe.js";
-import { withExtractedArchiveRoot } from "../../infra/install-flow.js";
-import { installPackageDir } from "../../infra/install-package-dir.js";
-import { resolveSafeInstallDir } from "../../infra/install-safe-path.js";
+import { withExtractedArchiveRoot } from "../../infra/install/install-flow.js";
+import { installPackageDir } from "../../infra/install/install-package-dir.js";
+import { resolveSafeInstallDir } from "../../infra/install/install-safe-path.js";
 import {
   evaluateSkillInstallPolicy,
   type InstallSecurityScanResult,
-} from "../../plugins/install-security-scan.js";
+} from "../../plugins/install/install-security-scan.js";
 import type { InstallPolicyOrigin, InstallPolicySource } from "../../security/install-policy.js";
 
 const VALID_SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i;

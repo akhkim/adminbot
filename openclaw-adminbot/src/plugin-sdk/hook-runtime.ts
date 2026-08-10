@@ -9,4 +9,4 @@ export * from "../hooks/message-hook-mappers.js";
 export {
   initializeGlobalHookRunner,
   resetGlobalHookRunner,
-} from "../plugins/hook-runner-global.js";
+} from "../plugins/hooks/hook-runner-global.js";

@@ -16,8 +16,9 @@ import {
   isInternalAnnounceRequesterSession,
   loadRequesterSessionEntry,
   resolveSubagentCompletionOrigin,
-} from "../agents/subagent-announce-delivery.js";
-import { resolveAnnounceOrigin } from "../agents/subagent-announce-origin.js";
+} from "../agents/subagents/subagent-announce-delivery.js";
+import { resolveAnnounceOrigin } from "../agents/subagents/subagent-announce-origin.js";
+import { INTERNAL_MESSAGE_CHANNEL } from "../shared/message-channel.js";
 import {
   assertAgentHarnessTaskRuntimeScope,
   type AgentHarnessTaskRuntimeScope,
@@ -29,7 +30,6 @@ import {
   setDetachedTaskDeliveryStatusByRunId,
 } from "../tasks/detached-task-runtime.js";
 import { listTaskRecords, type TaskRecord } from "../tasks/runtime-internal.js";
-import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel.js";
 
 export type { TaskRecord as AgentHarnessTaskRecord };
 export type { AgentHarnessTaskRuntimeScope };

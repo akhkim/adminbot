@@ -1,12 +1,12 @@
-// Resolves filesystem policy for exec and sandbox tool use.
-import { pickSandboxToolPolicy } from "../agents/sandbox-tool-policy.js";
 import { resolveSandboxConfigForAgent } from "../agents/sandbox/config.js";
+// Resolves filesystem policy for exec and sandbox tool use.
+import { pickSandboxToolPolicy } from "../agents/sandbox/sandbox-tool-policy.js";
 import { resolveSandboxToolPolicyForAgent } from "../agents/sandbox/tool-policy.js";
 import type { SandboxToolPolicy } from "../agents/sandbox/types.js";
-import { isToolAllowedByPolicies } from "../agents/tool-policy-match.js";
-import { resolveToolProfilePolicy } from "../agents/tool-policy.js";
+import { isToolAllowedByPolicies } from "../agents/tools/tool-policy-match.js";
+import { resolveToolProfilePolicy } from "../agents/tools/tool-policy.js";
 import type { OpenClawConfig } from "../config/config.js";
-import type { AgentToolsConfig, ExecToolConfig } from "../config/types.tools.js";
+import type { AgentToolsConfig, ExecToolConfig } from "../config/types/tools.js";
 
 const MUTATING_FS_TOOLS = ["write", "edit", "apply_patch"] as const;
 const RUNTIME_TOOLS = ["exec", "process"] as const;

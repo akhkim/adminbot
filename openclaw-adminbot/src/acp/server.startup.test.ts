@@ -126,16 +126,16 @@ vi.mock("../gateway/call.js", () => ({
   },
 }));
 
-vi.mock("../gateway/client-bootstrap.js", () => ({
+vi.mock("../gateway/client/client-bootstrap.js", () => ({
   resolveGatewayClientBootstrap: (params: unknown) =>
     mockState.resolveGatewayClientBootstrap(params),
 }));
 
-vi.mock("../gateway/client.js", () => ({
+vi.mock("../gateway/client/client.js", () => ({
   GatewayClient: MockGatewayClient,
 }));
 
-vi.mock("../gateway/client-start-readiness.js", () => ({
+vi.mock("../gateway/client/client-start-readiness.js", () => ({
   startGatewayClientWhenEventLoopReady: vi.fn(async (client: MockGatewayClient) => {
     client.start();
     return {

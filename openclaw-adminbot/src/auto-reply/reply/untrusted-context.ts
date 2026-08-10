@@ -1,5 +1,5 @@
 /** Appends untrusted metadata to prompt text with an instruction-safe label. */
-import { normalizeInboundTextNewlines } from "./inbound-text.js";
+import { normalizeInboundTextNewlines } from "./inbound/inbound-text.js";
 
 /** Appends untrusted context entries without treating them as commands or instructions. */
 export function appendUntrustedContext(base: string, untrusted?: string[]): string {

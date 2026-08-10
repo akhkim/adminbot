@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PluginManifestRecord } from "../plugins/manifest-registry.js";
+import type { PluginManifestRecord } from "../plugins/manifest/manifest-registry.js";
 import { asConfig, setupSecretsRuntimeSnapshotTestHooks } from "./runtime.test-support.ts";
 
 const manifestMocks = vi.hoisted(() => ({

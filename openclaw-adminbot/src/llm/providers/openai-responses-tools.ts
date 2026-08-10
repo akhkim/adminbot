@@ -1,16 +1,16 @@
 // OpenAI Responses tool helpers convert runtime tools to Responses API schemas.
 import { createHash } from "node:crypto";
 import type { Tool as OpenAITool } from "openai/resources/responses/responses.js";
-import { resolveOpenAIStrictToolSetting } from "../../agents/openai-strict-tool-setting.js";
+import { resolveOpenAIStrictToolSetting } from "../../agents/transport/openai-strict-tool-setting.js";
 import {
   projectOpenAITools,
   type OpenAIToolProjection,
-} from "../../agents/openai-tool-projection.js";
+} from "../../agents/transport/openai-tool-projection.js";
 import {
   findOpenAIStrictToolProjectionDiagnostics,
   normalizeOpenAIStrictToolParameters,
   resolveOpenAIProjectedToolsStrictToolFlag,
-} from "../../agents/openai-tool-schema.js";
+} from "../../agents/transport/openai-tool-schema.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import type { Model, Tool } from "../types.js";
 

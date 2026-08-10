@@ -1,8 +1,8 @@
 /** Session-scoped embedded LSP runtime and tool materialization for agent bundles. */
 import { spawn, type ChildProcess } from "node:child_process";
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { sanitizeHostExecEnv } from "../infra/host-env-security.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { sanitizeHostExecEnv } from "../infra/system/host-env-security.js";
 import { logDebug, logWarn } from "../logger.js";
 import {
   materializeWindowsSpawnProgram,
@@ -10,12 +10,12 @@ import {
 } from "../plugin-sdk/windows-spawn.js";
 import { setPluginToolMeta } from "../plugins/tools.js";
 import { killProcessTree } from "../process/kill-tree.js";
-import { loadEmbeddedAgentLspConfig } from "./embedded-agent-lsp.js";
+import { loadEmbeddedAgentLspConfig } from "./embedded/embedded-agent-lsp.js";
 import {
   resolveStdioMcpServerLaunchConfig,
   describeStdioMcpServerLaunchConfig,
   type StdioMcpServerLaunchConfig,
-} from "./mcp-stdio.js";
+} from "./mcp/mcp-stdio.js";
 import type { AgentToolResult } from "./runtime/index.js";
 import type { AnyAgentTool } from "./tools/common.js";
 

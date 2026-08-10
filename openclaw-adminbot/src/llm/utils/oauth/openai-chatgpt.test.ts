@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type LoginOpenAICodexOAuth =
-  typeof import("../../../plugins/provider-openai-chatgpt-oauth.js").loginOpenAICodexOAuth;
+  typeof import("../../../plugins/providers/provider-openai-chatgpt-oauth.js").loginOpenAICodexOAuth;
 
 const mocks = vi.hoisted(() => ({
   loginOpenAICodexOAuth: vi.fn<LoginOpenAICodexOAuth>(),
@@ -11,11 +11,11 @@ const mocks = vi.hoisted(() => ({
   refreshProviderOAuthCredentialWithPlugin: vi.fn(),
 }));
 
-vi.mock("../../../plugins/provider-openai-chatgpt-oauth.js", () => ({
+vi.mock("../../../plugins/providers/provider-openai-chatgpt-oauth.js", () => ({
   loginOpenAICodexOAuth: mocks.loginOpenAICodexOAuth,
 }));
 
-vi.mock("../../../plugins/provider-runtime.runtime.js", () => ({
+vi.mock("../../../plugins/providers/provider-runtime.runtime.js", () => ({
   refreshProviderOAuthCredentialWithPlugin: mocks.refreshProviderOAuthCredentialWithPlugin,
 }));
 

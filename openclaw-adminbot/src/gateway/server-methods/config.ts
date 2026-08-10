@@ -26,24 +26,24 @@ import {
   readConfigFileSnapshot,
   readConfigFileSnapshotForWrite,
   resolveConfigSnapshotHash,
-} from "../../config/io.js";
-import { createMergePatch, projectSourceOntoRuntimeShape } from "../../config/io.write-prepare.js";
+} from "../../config/io/io.js";
+import { createMergePatch, projectSourceOntoRuntimeShape } from "../../config/io/write-prepare.js";
 import { formatConfigIssueLines } from "../../config/issue-format.js";
-import { applyMergePatch } from "../../config/merge-patch.js";
-import { normalizeConfigPatchReplacePaths } from "../../config/patch-replace-paths.js";
+import { applyMergePatch } from "../../config/mutate/merge-patch.js";
+import { normalizeConfigPatchReplacePaths } from "../../config/paths/patch-replace-paths.js";
 import {
   redactConfigObject,
   redactConfigSnapshot,
   restoreRedactedValues,
-} from "../../config/redact-snapshot.js";
-import { loadGatewayRuntimeConfigSchema } from "../../config/runtime-schema.js";
-import { lookupConfigSchema, type ConfigSchemaResponse } from "../../config/schema.js";
-import type { ConfigValidationIssue, OpenClawConfig } from "../../config/types.openclaw.js";
+} from "../../config/redact/redact-snapshot.js";
+import { loadGatewayRuntimeConfigSchema } from "../../config/runtime/runtime-schema.js";
+import { lookupConfigSchema, type ConfigSchemaResponse } from "../../config/schema/schema.js";
+import type { ConfigValidationIssue, OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   validateConfigObjectRawWithPlugins,
   validateConfigObjectWithPlugins,
 } from "../../config/validation.js";
-import { isBuiltInModelProviderOverlayId } from "../../config/zod-schema.core.js";
+import { isBuiltInModelProviderOverlayId } from "../../config/zod/core.js";
 import { formatErrorMessage, toErrorObject } from "../../infra/errors.js";
 import { isPlainObject } from "../../infra/plain-object.js";
 import { isBlockedObjectKey } from "../../infra/prototype-keys.js";
@@ -57,7 +57,7 @@ import {
   formatControlPlaneActor,
   resolveControlPlaneActor,
   summarizeChangedPaths,
-} from "../control-plane-audit.js";
+} from "../control/control-plane-audit.js";
 import { resolveBaseHashParam } from "./base-hash.js";
 import {
   commitGatewayConfigWrite,

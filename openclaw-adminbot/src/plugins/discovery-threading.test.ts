@@ -12,9 +12,9 @@ vi.mock("./discovery.js", async (importOriginal) => {
   };
 });
 
-const { loadPluginManifestRegistry } = await import("./manifest-registry.js");
+const { loadPluginManifestRegistry } = await import("./manifest/manifest-registry.js");
 const { resolveInstalledPluginIndexRegistry } =
-  await import("./installed-plugin-index-registry.js");
+  await import("./install/installed-plugin-index-registry.js");
 
 const emptyDiscovery: PluginDiscoveryResult = { candidates: [], diagnostics: [] };
 

@@ -3,14 +3,14 @@ import { formatDocsLink } from "../../packages/terminal-core/src/links.js";
 import { resolveChannelDefaultAccountId } from "../channels/plugins/helpers.js";
 import { getChannelSetupPlugin } from "../channels/plugins/setup-registry.js";
 import type { ChannelSetupPlugin } from "../channels/plugins/setup-wizard-types.js";
-import { formatCliCommand } from "../cli/command-format.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
 import type {
   ChannelSetupDmPolicy,
   ChannelSetupWizardAdapter,
 } from "../commands/channel-setup/types.js";
-import type { ChannelChoice } from "../commands/onboard-types.js";
-import type { DmPolicy } from "../config/types.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { ChannelChoice } from "../commands/onboard/onboard-types.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import type { DmPolicy } from "../config/types/types.js";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../routing/session-key.js";
 import { t } from "../wizard/i18n/index.js";
 import type { WizardPrompter, WizardSelectOption } from "../wizard/prompts.js";

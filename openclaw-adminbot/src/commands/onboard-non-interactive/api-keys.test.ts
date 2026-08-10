@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveNonInteractiveApiKey } from "./api-keys.js";
 
 const resolveEnvApiKey = vi.hoisted(() => vi.fn());
-vi.mock("../../agents/model-auth.js", () => ({
+vi.mock("../../agents/auth/model-auth.js", () => ({
   resolveEnvApiKey,
 }));
 
@@ -20,7 +20,7 @@ const resolveApiKeyForProfile = vi.hoisted(() =>
     return profile?.type === "api_key" ? { apiKey: profile.key, source: "profile" } : null;
   }),
 );
-vi.mock("../../agents/auth-profiles.js", () => ({
+vi.mock("../../agents/auth/auth-profiles.js", () => ({
   ensureAuthProfileStore: vi.fn(() => authStore),
   resolveApiKeyForProfile,
   resolveAuthProfileOrder: vi.fn(() => Object.keys(authStore.profiles)),

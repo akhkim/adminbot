@@ -1,7 +1,7 @@
 // Register thread tests cover message thread command registration and option wiring.
 import { Command } from "commander";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { setActivePluginRegistry } from "../../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../../plugins/runtime/runtime.js";
 import {
   createChannelTestPluginBase,
   createTestRegistry,

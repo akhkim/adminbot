@@ -1,7 +1,7 @@
 // Gateway maintenance-state test helper.
 // Builds minimal timer/health/chat state for maintenance tests.
-import type { HealthSummary } from "../commands/health.js";
-import { createChatRunState } from "./server-chat-state.js";
+import type { HealthSummary } from "../commands/maintenance/health.js";
+import { createChatRunState } from "./server/server-chat-state.js";
 
 /** Create a Gateway maintenance-state stub with configurable health/presence versions. */
 export function createGatewayMaintenanceStateForTest(params?: {

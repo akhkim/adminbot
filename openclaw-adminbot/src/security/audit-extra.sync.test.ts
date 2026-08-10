@@ -7,7 +7,7 @@ import {
 } from "./audit-extra.summary.js";
 import { safeEqualSecret } from "./secret-equal.js";
 
-vi.mock("../plugins/web-search-credential-presence.js", () => ({
+vi.mock("../plugins/web/web-search-credential-presence.js", () => ({
   hasConfiguredWebSearchCredential: () => false,
 }));
 

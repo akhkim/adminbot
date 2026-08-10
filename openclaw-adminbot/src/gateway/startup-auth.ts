@@ -2,15 +2,15 @@
 // Merges auth overrides, resolves secret refs, validates weak secrets, and generates fallbacks.
 import crypto from "node:crypto";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { GatewayAuthConfig, GatewayTailscaleConfig } from "../config/types.gateway.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { GatewayAuthConfig, GatewayTailscaleConfig } from "../config/types/gateway.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   hasConfiguredGatewayAuthSecretInput,
   resolveGatewayPasswordSecretRefValue,
   resolveGatewayTokenSecretRefValue,
-} from "./auth-config-utils.js";
-import { assertExplicitGatewayAuthModeWhenBothConfigured } from "./auth-mode-policy.js";
-import { resolveGatewayAuth, type ResolvedGatewayAuth } from "./auth.js";
+} from "./auth/auth-config-utils.js";
+import { assertExplicitGatewayAuthModeWhenBothConfigured } from "./auth/auth-mode-policy.js";
+import { resolveGatewayAuth, type ResolvedGatewayAuth } from "./auth/auth.js";
 import {
   hasGatewayPasswordEnvCandidate,
   hasGatewayTokenEnvCandidate,

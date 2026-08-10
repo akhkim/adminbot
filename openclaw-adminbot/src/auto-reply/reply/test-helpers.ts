@@ -1,7 +1,7 @@
 /** Shared test fixtures for reply queue and typing-controller tests. */
 import { vi } from "vitest";
-import type { FollowupRun } from "./queue.js";
-import type { TypingController } from "./typing.js";
+import type { FollowupRun } from "./queue/queue.js";
+import type { TypingController } from "./queue/typing.js";
 
 /** Creates a typed mock typing controller with optional method overrides. */
 export function createMockTypingController(

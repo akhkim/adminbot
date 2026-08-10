@@ -11,13 +11,13 @@ import {
 import {
   finalizeInboundContext as finalizeCoreInboundContext,
   type FinalizeInboundContextOptions,
-} from "../../auto-reply/reply/inbound-context.js";
+} from "../../auto-reply/reply/inbound/inbound-context.js";
 import {
   normalizeInboundTextNewlines,
   sanitizeInboundSystemTags,
-} from "../../auto-reply/reply/inbound-text.js";
+} from "../../auto-reply/reply/inbound/inbound-text.js";
 import type { FinalizedMsgContext } from "../../auto-reply/templating.js";
-import type { ContextVisibilityMode } from "../../config/types.base.js";
+import type { ContextVisibilityMode } from "../../config/types/base.js";
 import { shouldIncludeSupplementalContext } from "../../security/context-visibility.js";
 import type {
   AccessFacts,

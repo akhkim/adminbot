@@ -5,4 +5,4 @@
 export {
   resolveBundledWebFetchProvidersFromPublicArtifacts,
   resolveBundledWebSearchProvidersFromPublicArtifacts,
-} from "../plugins/web-provider-public-artifacts.js";
+} from "../plugins/web/web-provider-public-artifacts.js";

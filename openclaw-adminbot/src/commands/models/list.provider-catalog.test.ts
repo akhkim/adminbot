@@ -20,13 +20,13 @@ const providerDiscoveryMocks = vi.hoisted(() => ({
   writeCachedAgentModelCatalog: vi.fn(),
 }));
 
-vi.mock("../../agents/model-catalog-state-cache.js", () => ({
+vi.mock("../../agents/models/model-catalog-state-cache.js", () => ({
   buildAgentModelCatalogCacheKey: providerDiscoveryMocks.buildAgentModelCatalogCacheKey,
   readCachedAgentModelCatalog: providerDiscoveryMocks.readCachedAgentModelCatalog,
   writeCachedAgentModelCatalog: providerDiscoveryMocks.writeCachedAgentModelCatalog,
 }));
 
-vi.mock("../../agents/models-config.js", () => ({
+vi.mock("../../agents/models/models-config.js", () => ({
   buildModelsJsonSourceFingerprint: providerDiscoveryMocks.buildModelsJsonSourceFingerprint,
 }));
 
@@ -38,7 +38,7 @@ vi.mock("../../plugins/plugin-registry.js", () => ({
   resolveProviderOwners: providerDiscoveryMocks.resolveProviderOwners,
 }));
 
-vi.mock("../../plugins/providers.js", () => ({
+vi.mock("../../plugins/providers/providers.js", () => ({
   resolveBundledProviderCompatPluginIds:
     providerDiscoveryMocks.resolveBundledProviderCompatPluginIds,
   resolveOwningPluginIdsForProvider: providerDiscoveryMocks.resolveOwningPluginIdsForProvider,
@@ -50,8 +50,9 @@ vi.mock("../../plugins/contracts/registry.js", () => ({
     providerDiscoveryMocks.resolveProviderContractPluginIdsForProviderAlias,
 }));
 
-vi.mock("../../plugins/provider-discovery.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../plugins/provider-discovery.js")>();
+vi.mock("../../plugins/providers/provider-discovery.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../plugins/providers/provider-discovery.js")>();
   return {
     ...actual,
     resolveRuntimePluginDiscoveryProviders:

@@ -1,11 +1,11 @@
 /** Verifies effective plugin id resolution across config, manifests, and activation sources. */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type { PluginMetadataSnapshot } from "./plugin-metadata-snapshot.js";
 
 const mocks = vi.hoisted(() => ({
   applyPluginAutoEnable:
-    vi.fn<typeof import("../config/plugin-auto-enable.js").applyPluginAutoEnable>(),
+    vi.fn<typeof import("../config/plugin/plugin-auto-enable.js").applyPluginAutoEnable>(),
   listExplicitlyDisabledChannelIdsForConfig: vi.fn(),
   listPotentialConfiguredChannelIds: vi.fn(),
   listExplicitConfiguredChannelIdsForConfig: vi.fn(),
@@ -14,12 +14,14 @@ const mocks = vi.hoisted(() => ({
   resolveConfiguredChannelPluginIds:
     vi.fn<typeof import("./channel-plugin-ids.js").resolveConfiguredChannelPluginIds>(),
   loadManifestMetadataSnapshot:
-    vi.fn<typeof import("./manifest-contract-eligibility.js").loadManifestMetadataSnapshot>(),
+    vi.fn<
+      typeof import("./manifest/manifest-contract-eligibility.js").loadManifestMetadataSnapshot
+    >(),
   passesManifestOwnerBasePolicy:
-    vi.fn<typeof import("./manifest-owner-policy.js").passesManifestOwnerBasePolicy>(),
+    vi.fn<typeof import("./manifest/manifest-owner-policy.js").passesManifestOwnerBasePolicy>(),
 }));
 
-vi.mock("../config/plugin-auto-enable.js", () => ({
+vi.mock("../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: (...args: Parameters<typeof mocks.applyPluginAutoEnable>) =>
     mocks.applyPluginAutoEnable(...args),
 }));
@@ -44,12 +46,12 @@ vi.mock("./channel-plugin-ids.js", () => ({
   ) => mocks.resolveConfiguredChannelPluginIds(...args),
 }));
 
-vi.mock("./manifest-contract-eligibility.js", () => ({
+vi.mock("./manifest/manifest-contract-eligibility.js", () => ({
   loadManifestMetadataSnapshot: (...args: Parameters<typeof mocks.loadManifestMetadataSnapshot>) =>
     mocks.loadManifestMetadataSnapshot(...args),
 }));
 
-vi.mock("./manifest-owner-policy.js", () => ({
+vi.mock("./manifest/manifest-owner-policy.js", () => ({
   passesManifestOwnerBasePolicy: (
     ...args: Parameters<typeof mocks.passesManifestOwnerBasePolicy>
   ) => mocks.passesManifestOwnerBasePolicy(...args),

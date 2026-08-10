@@ -8,7 +8,7 @@ import type { GetReplyOptions } from "../auto-reply/get-reply-options.types.js";
 import type { ReplyPayload } from "../auto-reply/reply-payload.js";
 import type { ReasoningLevel, ThinkLevel } from "../auto-reply/thinking.js";
 import type { SessionEntry as StoredSessionEntry } from "../config/sessions.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { streamWithPayloadPatch } from "../llm/providers/stream-wrappers/stream-payload-utils.js";
 import { streamSimple } from "../llm/stream.js";
 import type {
@@ -18,18 +18,27 @@ import type {
   Model,
   TextContent,
 } from "../llm/types.js";
-import { prepareProviderRuntimeAuth } from "../plugins/provider-runtime.js";
+import { prepareProviderRuntimeAuth } from "../plugins/providers/provider-runtime.js";
 import { discoverAuthStorage, discoverModels } from "./agent-model-discovery.js";
 import { resolveAgentWorkspaceDir, resolveSessionAgentId } from "./agent-scope.js";
 import { resolveExternalCliAuthOverlayScopeFromSelection } from "./auth-profiles/external-cli-auth-selection.js";
 import { resolveSessionAuthProfileOverride } from "./auth-profiles/session-override.js";
+import {
+  ensureAuthProfileStore,
+  ensureAuthProfileStoreWithoutExternalProfiles,
+  getApiKeyForModel,
+  requireApiKey,
+} from "./auth/model-auth.js";
 import { readBtwTranscriptMessages, resolveBtwSessionTranscriptPath } from "./btw-transcript.js";
 import { executePreparedCliRun } from "./cli-runner/execute.runtime.js";
 import { prepareCliRunContext } from "./cli-runner/prepare.runtime.js";
-import { EmbeddedBlockChunker, type BlockReplyChunking } from "./embedded-agent-block-chunker.js";
 import { resolveModelWithRegistry } from "./embedded-agent-runner/model.js";
 import { getActiveEmbeddedRunSnapshot } from "./embedded-agent-runner/runs.js";
 import { resolveEmbeddedAgentStreamFn } from "./embedded-agent-runner/stream-resolution.js";
+import {
+  EmbeddedBlockChunker,
+  type BlockReplyChunking,
+} from "./embedded/embedded-agent-block-chunker.js";
 import {
   resolveAvailableAgentHarnessPolicy,
   resolvePluginHarnessPolicyToolsAllow,
@@ -41,22 +50,16 @@ import {
   type ImageSanitizationLimits,
 } from "./image-sanitization.js";
 import {
-  ensureAuthProfileStore,
-  ensureAuthProfileStoreWithoutExternalProfiles,
-  getApiKeyForModel,
-  requireApiKey,
-} from "./model-auth.js";
-import {
   isCliRuntimeAliasForProvider,
   resolveCliRuntimeExecutionProvider,
-} from "./model-runtime-aliases.js";
-import { ensureOpenClawModelsJson } from "./models-config.js";
-import { listOpenAIAuthProfileProvidersForAgentRuntime } from "./openai-routing.js";
-import { applyPreparedRuntimeAuthToModel } from "./provider-request-config.js";
-import { registerProviderStreamForModel } from "./provider-stream.js";
-import { stripToolResultDetails } from "./session-transcript-repair.js";
+} from "./models/model-runtime-aliases.js";
+import { ensureOpenClawModelsJson } from "./models/models-config.js";
+import { stripToolResultDetails } from "./sessions/session-transcript-repair.js";
 import { resolveAgentTimeoutMs } from "./timeout.js";
-import { sanitizeImageBlocks } from "./tool-images.js";
+import { sanitizeImageBlocks } from "./tools/tool-images.js";
+import { listOpenAIAuthProfileProvidersForAgentRuntime } from "./transport/openai-routing.js";
+import { applyPreparedRuntimeAuthToModel } from "./transport/provider-request-config.js";
+import { registerProviderStreamForModel } from "./transport/provider-stream.js";
 
 function collectTextContent(content: Array<{ type?: string; text?: string }>): string {
   return content

@@ -32,7 +32,7 @@ vi.mock("../process/exec.js", () => ({ runCommandWithTimeout: mocks.runCommandWi
 vi.mock("../media/qr-terminal.ts", () => ({
   renderQrTerminal: mocks.renderTerminal,
 }));
-vi.mock("./command-secret-gateway.js", () => ({
+vi.mock("./program/command-secret-gateway.js", () => ({
   resolveCommandSecretRefsViaGateway: mocks.resolveCommandSecretRefsViaGateway,
 }));
 vi.mock("../infra/device-bootstrap.js", () => ({

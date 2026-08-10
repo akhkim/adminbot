@@ -9,7 +9,7 @@ const ensureSandboxWorkspaceForSession = vi.hoisted(() => vi.fn());
 const resolveOutboundAttachmentFromUrl = vi.hoisted(() => vi.fn());
 const resolveAgentScopedOutboundMediaAccess = vi.hoisted(() => vi.fn());
 
-vi.mock("../../agents/sandbox.js", () => ({
+vi.mock("../../agents/sandbox/sandbox.js", () => ({
   ensureSandboxWorkspaceForSession,
 }));
 

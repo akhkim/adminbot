@@ -24,8 +24,8 @@ import { readConfiguredLogTail } from "../logging/log-tail.js";
 import { parseLogLine } from "../logging/parse-log-line.js";
 import { redactSensitiveLines, resolveRedactOptions } from "../logging/redact.js";
 import { formatTimestamp } from "../logging/timestamps.js";
-import { formatCliCommand } from "./command-format.js";
-import { addGatewayClientOptions, callGatewayFromCli } from "./gateway-rpc.js";
+import { addGatewayClientOptions, callGatewayFromCli } from "./gateway-cli/gateway-rpc.js";
+import { formatCliCommand } from "./program/command-format.js";
 
 type LogsTailPayload = {
   file?: string;

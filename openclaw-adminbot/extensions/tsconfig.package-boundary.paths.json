@@ -191,24 +191,6 @@
       "@openclaw/markdown-core/*": [
         "../dist/plugin-sdk/packages/markdown-core/src/*.d.ts"
       ],
-      "@openclaw/media-generation-core": [
-        "../dist/plugin-sdk/packages/media-generation-core/src/index.d.ts"
-      ],
-      "@openclaw/media-generation-core/capability-model-ref": [
-        "../dist/plugin-sdk/packages/media-generation-core/src/capability-model-ref.d.ts"
-      ],
-      "@openclaw/media-generation-core/catalog": [
-        "../dist/plugin-sdk/packages/media-generation-core/src/catalog.d.ts"
-      ],
-      "@openclaw/media-generation-core/model-ref": [
-        "../dist/plugin-sdk/packages/media-generation-core/src/model-ref.d.ts"
-      ],
-      "@openclaw/media-generation-core/normalization": [
-        "../dist/plugin-sdk/packages/media-generation-core/src/normalization.d.ts"
-      ],
-      "@openclaw/media-generation-core/*": [
-        "../dist/plugin-sdk/packages/media-generation-core/src/*.d.ts"
-      ],
       "@openclaw/media-core": [
         "../dist/plugin-sdk/packages/media-core/src/index.d.ts"
       ],

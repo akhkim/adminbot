@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 2333 lines; see docs/adr/0006-deferred-monster-splits.md
 // WebSocket message handler validates frames, dispatches gateway RPCs, manages pairing, and reports responses.
 import { createHash } from "node:crypto";
 import fs from "node:fs";
@@ -40,8 +41,8 @@ import {
   GATEWAY_STARTUP_PENDING_CLOSE_CAUSE,
   GATEWAY_STARTUP_RETRY_AFTER_MS,
 } from "../../../../packages/gateway-protocol/src/startup-unavailable.js";
-import { getRuntimeConfig } from "../../../config/io.js";
-import { resolveStateDir } from "../../../config/paths.js";
+import { getRuntimeConfig } from "../../../config/io/io.js";
+import { resolveStateDir } from "../../../config/paths/paths.js";
 import {
   getBoundDeviceBootstrapProfile,
   getDeviceBootstrapTokenProfile,
@@ -70,11 +71,11 @@ import {
 import {
   emitTrustedSecurityEvent,
   type DiagnosticSecurityEventInput,
-} from "../../../infra/diagnostic-events.js";
+} from "../../../infra/diagnostics/diagnostic-events.js";
 import {
   createDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
-} from "../../../infra/diagnostic-trace-context.js";
+} from "../../../infra/diagnostics/diagnostic-trace-context.js";
 import {
   beginNodePairingConnect,
   finalizeNodePairingCleanupClaim,
@@ -84,7 +85,7 @@ import {
   type RequestNodePairingResult,
   updatePairedNodeMetadata,
 } from "../../../infra/node-pairing.js";
-import { upsertPresence } from "../../../infra/system-presence.js";
+import { upsertPresence } from "../../../infra/system/system-presence.js";
 import { loadVoiceWakeRoutingConfig } from "../../../infra/voicewake-routing.js";
 import { loadVoiceWakeConfig } from "../../../infra/voicewake.js";
 import { rawDataToString } from "../../../infra/ws.js";
@@ -96,18 +97,21 @@ import {
   resolveBootstrapProfileScopesForRoles,
   type DeviceBootstrapProfile,
 } from "../../../shared/device-bootstrap-profile.js";
-import { roleScopesAllow } from "../../../shared/operator-scope-compat.js";
-import { recordRemoteNodeInfo, refreshRemoteNodeBins } from "../../../skills/runtime/remote.js";
 import {
   isBrowserOperatorUiClient,
   isGatewayCliClient,
   isOperatorUiClient,
   isWebchatClient,
-} from "../../../utils/message-channel.js";
+} from "../../../shared/message-channel.js";
+import { roleScopesAllow } from "../../../shared/operator-scope-compat.js";
+import { recordRemoteNodeInfo, refreshRemoteNodeBins } from "../../../skills/runtime/remote.js";
 import { resolveRuntimeServiceVersion } from "../../../version.js";
-import { AUTH_RATE_LIMIT_SCOPE_NODE_PAIRING, type AuthRateLimiter } from "../../auth-rate-limit.js";
-import type { GatewayAuthResult, ResolvedGatewayAuth } from "../../auth.js";
-import { hasForwardedRequestHeaders, isLocalDirectRequest } from "../../auth.js";
+import {
+  AUTH_RATE_LIMIT_SCOPE_NODE_PAIRING,
+  type AuthRateLimiter,
+} from "../../auth/auth-rate-limit.js";
+import type { GatewayAuthResult, ResolvedGatewayAuth } from "../../auth/auth.js";
+import { hasForwardedRequestHeaders, isLocalDirectRequest } from "../../auth/auth.js";
 import { normalizeDeviceMetadataForAuth } from "../../device-auth.js";
 import { ADMIN_SCOPE, APPROVALS_SCOPE } from "../../method-scopes.js";
 import type { GatewayMethodRegistry } from "../../methods/registry.js";
@@ -117,12 +121,12 @@ import {
   isTrustedProxyAddress,
   resolveClientIp,
 } from "../../net.js";
-import { reconcileNodePairingOnConnect } from "../../node-connect-reconcile.js";
+import { reconcileNodePairingOnConnect } from "../../node/node-connect-reconcile.js";
 import {
   resolveNodePairingClientIpSource,
   shouldAutoApproveNodePairingFromTrustedCidrs,
-} from "../../node-pairing-auto-approve.js";
-import type { NodeReapprovalCoordinator } from "../../node-reapproval-coordinator.js";
+} from "../../node/node-pairing-auto-approve.js";
+import type { NodeReapprovalCoordinator } from "../../node/node-reapproval-coordinator.js";
 import { isOperatorApprovalRuntimeToken } from "../../operator-approval-runtime-token.js";
 import { checkBrowserOrigin } from "../../origin-check.js";
 import {
@@ -135,14 +139,7 @@ import {
 } from "../../plugin-node-capability.js";
 import { withSerializedRateLimitAttempt } from "../../rate-limit-attempt-serialization.js";
 import { parseGatewayRole } from "../../role-policy.js";
-import {
-  MAX_BUFFERED_BYTES,
-  MAX_PAYLOAD_BYTES,
-  MAX_PREAUTH_PAYLOAD_BYTES,
-  TICK_INTERVAL_MS,
-} from "../../server-constants.js";
 import type { GatewayRequestContext, GatewayRequestHandlers } from "../../server-methods/types.js";
-import { formatError } from "../../server-utils.js";
 import { formatForLog, logWs } from "../../ws-log.js";
 import { truncateCloseReason } from "../close-reason.js";
 import {
@@ -151,6 +148,13 @@ import {
   getHealthVersion,
   incrementPresenceVersion,
 } from "../health-state.js";
+import {
+  MAX_BUFFERED_BYTES,
+  MAX_PAYLOAD_BYTES,
+  MAX_PREAUTH_PAYLOAD_BYTES,
+  TICK_INTERVAL_MS,
+} from "../server-constants.js";
+import { formatError } from "../server-utils.js";
 import { resolveSharedGatewaySessionGeneration } from "../ws-shared-generation.js";
 import type { GatewayWsClient } from "../ws-types.js";
 import { resolveConnectAuthDecision, resolveConnectAuthState } from "./auth-context.js";
@@ -1865,6 +1869,16 @@ export function attachGatewayWsMessageHandler(params: GatewayWsMessageHandlerPar
           connectParams.client.mode === GATEWAY_CLIENT_MODES.BACKEND &&
           isOperatorApprovalRuntimeToken(connectParams.auth?.approvalRuntimeToken);
         clearHandshakeTimer();
+        // Resolved fresh from the pairing store rather than threaded through the auth-decision
+        // branches above: this connect may have gone through any of several paths (explicit
+        // device token, bootstrap handoff, retry, shared-secret fallback), and the paired
+        // device's own record is the one place that identity is guaranteed current regardless of
+        // which path got here. No paired device (or a device paired before ownership existed)
+        // means undefined, which callers treat as "unscoped" -- see ownerMemberId on
+        // GatewayWsClient.
+        const ownerMemberId = device?.id
+          ? ((await getPairedDevice(device.id))?.ownerMemberId ?? undefined)
+          : undefined;
         const nextClient: GatewayWsClient = {
           socket,
           connect: connectParams,
@@ -1874,6 +1888,7 @@ export function attachGatewayWsMessageHandler(params: GatewayWsMessageHandlerPar
           sharedGatewaySessionGeneration: sessionSharedGatewaySessionGeneration,
           presenceKey,
           clientIp: reportedClientIp,
+          ...(ownerMemberId ? { ownerMemberId } : {}),
           ...(isTrustedApprovalRuntime ? { internal: { approvalRuntime: true } } : {}),
           ...(Object.keys(pluginSurfaceUrls).length > 0 ? { pluginSurfaceUrls } : {}),
           ...(Object.keys(pluginNodeCapabilitySurfaces).length > 0
@@ -2266,7 +2281,7 @@ export function attachGatewayWsMessageHandler(params: GatewayWsMessageHandlerPar
       };
 
       const dispatch = (async () => {
-        const { handleGatewayRequest } = await import("../../server-methods.js");
+        const { handleGatewayRequest } = await import("../server-methods.js");
         await handleGatewayRequest({
           req,
           respond,

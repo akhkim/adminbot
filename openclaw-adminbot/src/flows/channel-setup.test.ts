@@ -1,6 +1,6 @@
 // Channel setup tests cover setup flow prompts and config output.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   makeCatalogEntry,
   makeChannelSetupEntries,
@@ -204,7 +204,7 @@ vi.mock("../commands/channel-setup/trusted-catalog.js", () => ({
     getTrustedChannelPluginCatalogEntry(channelId, params),
 }));
 
-vi.mock("../config/channel-configured.js", () => ({
+vi.mock("../config/channel/channel-configured.js", () => ({
   isChannelConfigured: (cfg?: unknown, channel?: unknown) => isChannelConfigured(cfg, channel),
 }));
 

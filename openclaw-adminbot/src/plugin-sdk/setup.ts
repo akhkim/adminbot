@@ -1,8 +1,8 @@
 // Shared setup wizard/types/helpers for plugin and channel setup surfaces.
 
 export type { OpenClawConfig } from "../config/config.js";
-export type { DmPolicy, GroupPolicy } from "../config/types.js";
-export type { SecretInput } from "../config/types.secrets.js";
+export type { DmPolicy, GroupPolicy } from "../config/types/types.js";
+export type { SecretInput } from "../config/types/secrets.js";
 export type {
   WizardMultiSelectParams,
   WizardProgress,
@@ -23,10 +23,10 @@ export type {
 } from "../channels/plugins/setup-wizard-types.js";
 
 export { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../routing/session-key.js";
-export { formatCliCommand } from "../cli/command-format.js";
+export { formatCliCommand } from "../cli/program/command-format.js";
 export { detectBinary } from "../infra/detect-binary.js";
 export { formatDocsLink } from "../../packages/terminal-core/src/links.js";
-export { hasConfiguredSecretInput, normalizeSecretInputString } from "../config/types.secrets.js";
+export { hasConfiguredSecretInput, normalizeSecretInputString } from "../config/types/secrets.js";
 export { normalizeE164, pathExists } from "../utils.js";
 
 export {

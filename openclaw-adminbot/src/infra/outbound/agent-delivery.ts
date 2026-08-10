@@ -4,15 +4,15 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.public.js";
 import type { ChannelId } from "../../channels/plugins/types.public.js";
 import type { SessionEntry } from "../../config/sessions.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { normalizeAccountId } from "../../utils/account-id.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { normalizeAccountId } from "../../shared/account-id.js";
 import {
   INTERNAL_MESSAGE_CHANNEL,
   isDeliverableMessageChannel,
   isGatewayMessageChannel,
   normalizeMessageChannel,
   type GatewayMessageChannel,
-} from "../../utils/message-channel.js";
+} from "../../shared/message-channel.js";
 import { resolveOutboundChannelPlugin } from "./channel-resolution.js";
 import { resolveOutboundSessionRoute } from "./outbound-session.js";
 import type { OutboundTargetResolution } from "./targets.js";

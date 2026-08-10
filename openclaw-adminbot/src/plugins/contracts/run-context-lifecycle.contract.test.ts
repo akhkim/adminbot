@@ -10,7 +10,8 @@ import { loadSessionStore, updateSessionStore } from "../../config/sessions.js";
 import { withTempConfig } from "../../gateway/test-temp-config.js";
 import { emitAgentEvent, resetAgentEventsForTest } from "../../infra/agent-events.js";
 import { resolvePreferredOpenClawTmpDir } from "../../infra/tmp-openclaw-dir.js";
-import { runPluginHostCleanup } from "../host-hook-cleanup.js";
+import { createPluginRecord } from "../config/status.test-helpers.js";
+import { runPluginHostCleanup } from "../host/host-hook-cleanup.js";
 import {
   clearPluginHostRuntimeState,
   getPluginRunContext,
@@ -19,10 +20,9 @@ import {
   dispatchPluginAgentEventSubscriptions,
   registerPluginSessionSchedulerJob,
   setPluginRunContext,
-} from "../host-hook-runtime.js";
-import { createEmptyPluginRegistry } from "../registry-empty.js";
-import { setActivePluginRegistry } from "../runtime.js";
-import { createPluginRecord } from "../status.test-helpers.js";
+} from "../host/host-hook-runtime.js";
+import { createEmptyPluginRegistry } from "../manifest/registry-empty.js";
+import { setActivePluginRegistry } from "../runtime/runtime.js";
 import type { OpenClawPluginApi } from "../types.js";
 
 const PLUGIN_HOST_CLEANUP_TIMEOUT_MS = 5_000;

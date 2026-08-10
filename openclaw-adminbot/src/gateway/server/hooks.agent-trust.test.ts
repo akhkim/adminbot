@@ -11,10 +11,10 @@ const loadConfigMock = vi.fn(() => ({}));
 const logHooksInfoMock = vi.fn();
 const logHooksWarnMock = vi.fn();
 
-vi.mock("../../infra/system-events.js", () => ({
+vi.mock("../../infra/system/system-events.js", () => ({
   enqueueSystemEvent: enqueueSystemEventMock,
 }));
-vi.mock("../../infra/heartbeat-wake.js", () => ({
+vi.mock("../../infra/heartbeat/heartbeat-wake.js", () => ({
   requestHeartbeat: requestHeartbeatMock,
 }));
 vi.mock("../../cron/isolated-agent.js", () => ({
@@ -30,7 +30,7 @@ vi.mock("../../config/sessions.js", () => ({
       `agent:${params.agentId}:${params.cfg?.session?.mainKey ?? "main"}`,
   ),
 }));
-vi.mock("../../config/io.js", () => ({
+vi.mock("../../config/io/io.js", () => ({
   getRuntimeConfig: loadConfigMock,
 }));
 

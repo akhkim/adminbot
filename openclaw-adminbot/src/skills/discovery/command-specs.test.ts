@@ -4,7 +4,7 @@ import { createFixtureSkillEntry } from "../test-support/test-helpers.js";
 import type { SkillEntry } from "../types.js";
 import { buildWorkspaceSkillCommandSpecs } from "./command-specs.js";
 
-vi.mock("../../plugins/bundle-commands.js", () => ({
+vi.mock("../../plugins/install/bundle-commands.js", () => ({
   loadEnabledClaudeBundleCommands: () => [],
 }));
 

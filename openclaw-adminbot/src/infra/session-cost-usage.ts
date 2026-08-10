@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 2710 lines; see docs/adr/0006-deferred-monster-splits.md
 // Persists and formats per-session cost and usage records.
 import fs from "node:fs";
 import path from "node:path";
@@ -19,16 +20,16 @@ import {
   resolveSessionTranscriptsDirForAgent,
 } from "../config/sessions/paths.js";
 import type { SessionEntry } from "../config/sessions/types.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { stripEnvelope, stripMessageIdHints } from "../shared/chat-envelope.js";
-import { runTasksWithConcurrency } from "../utils/run-with-concurrency.js";
-import { countToolResults, extractToolCallNames } from "../utils/transcript-tools.js";
+import { runTasksWithConcurrency } from "../shared/run-with-concurrency.js";
+import { countToolResults, extractToolCallNames } from "../shared/transcript-tools.js";
 import {
   estimateUsageCost,
   resolveModelCostConfig,
   resolveModelCostConfigFingerprint,
-} from "../utils/usage-format.js";
+} from "../shared/usage-format.js";
 import { formatErrorMessage } from "./errors.js";
 import { replaceFileAtomic } from "./replace-file.js";
 import type {

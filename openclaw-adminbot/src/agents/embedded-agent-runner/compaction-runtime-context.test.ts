@@ -1,8 +1,8 @@
 // Coverage for building compaction runtime context from active runner state.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
-import { addSession, resetProcessRegistryForTests } from "../bash-process-registry.js";
-import { createProcessSessionFixture } from "../bash-process-registry.test-helpers.js";
+import { addSession, resetProcessRegistryForTests } from "../tools/bash-process-registry.js";
+import { createProcessSessionFixture } from "../tools/bash-process-registry.test-helpers.js";
 import {
   buildEmbeddedCompactionRuntimeContext,
   resolveEmbeddedCompactionTarget,

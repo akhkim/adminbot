@@ -82,7 +82,7 @@ vi.mock("../../agents/auth-profiles/usage.js", () => ({
   clearAuthProfileCooldown: mocks.clearAuthProfileCooldown,
 }));
 
-vi.mock("../../plugins/provider-auth-helpers.js", () => ({
+vi.mock("../../plugins/providers/provider-auth-helpers.js", () => ({
   applyAuthProfileConfig: (
     cfg: OpenClawConfig,
     params: {
@@ -128,11 +128,11 @@ vi.mock("../../agents/agent-scope.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../../agents/workspace.js", () => ({
+vi.mock("../../agents/workspace/workspace.js", () => ({
   resolveDefaultAgentWorkspaceDir: mocks.resolveDefaultAgentWorkspaceDir,
 }));
 
-vi.mock("../../plugins/providers.runtime.js", () => ({
+vi.mock("../../plugins/providers/providers.runtime.js", () => ({
   resolvePluginProviders: mocks.resolvePluginProviders,
 }));
 
@@ -158,7 +158,7 @@ vi.mock("../../config/logging.js", () => ({
   logConfigUpdated: mocks.logConfigUpdated,
 }));
 
-vi.mock("../onboard-helpers.js", () => ({
+vi.mock("../onboard/onboard-helpers.js", () => ({
   openUrl: mocks.openUrl,
 }));
 
@@ -166,20 +166,22 @@ vi.mock("../../infra/remote-env.js", () => ({
   isRemoteEnvironment: mocks.isRemoteEnvironment,
 }));
 
-vi.mock("../../plugins/provider-oauth-flow.js", () => ({
+vi.mock("../../plugins/providers/provider-oauth-flow.js", () => ({
   createVpsAwareOAuthHandlers: vi.fn(() => ({
     onAuth: vi.fn(),
     onPrompt: vi.fn(),
   })),
 }));
 
-vi.mock("../auth-token.js", () => ({
+vi.mock("../auth/auth-token.js", () => ({
   validateAnthropicSetupToken: mocks.validateAnthropicSetupToken,
 }));
 
-vi.mock("../../plugins/provider-auth-choice-helpers.js", async (importOriginal) => {
+vi.mock("../../plugins/providers/provider-auth-choice-helpers.js", async (importOriginal) => {
   const actual =
-    await importOriginal<typeof import("../../plugins/provider-auth-choice-helpers.js")>();
+    await importOriginal<
+      typeof import("../../plugins/providers/provider-auth-choice-helpers.js")
+    >();
   const normalize = (value: string | undefined) => value?.trim().toLowerCase() ?? "";
   const isRecord = (value: unknown): value is Record<string, unknown> =>
     Boolean(value && typeof value === "object" && !Array.isArray(value));

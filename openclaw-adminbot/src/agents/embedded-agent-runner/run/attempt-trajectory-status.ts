@@ -4,7 +4,7 @@
 import {
   hasAcceptedSessionSpawn,
   type AcceptedSessionSpawn,
-} from "../../accepted-session-spawn.js";
+} from "../../subagents/accepted-session-spawn.js";
 
 type AttemptTrajectoryTerminalStatus = "success" | "error" | "interrupted";
 

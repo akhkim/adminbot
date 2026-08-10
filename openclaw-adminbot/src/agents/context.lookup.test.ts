@@ -1,7 +1,7 @@
 // Covers context-token lookup caches, catalog warmup, and provider-qualified
 // model resolution.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 type DiscoveredModel = {
   id: string;
@@ -28,14 +28,14 @@ vi.mock("../config/config.js", () => ({
   getRuntimeConfig: () => contextTestState.loadConfigImpl(),
 }));
 
-vi.mock("../config/runtime-source-projection.js", () => ({
+vi.mock("../config/runtime/runtime-source-projection.js", () => ({
   projectConfigOntoRuntimeSourceSnapshot: (config: OpenClawConfig) =>
     contextTestState.runtimeConfigSnapshot && contextTestState.runtimeConfigSourceSnapshot
       ? contextTestState.runtimeConfigSourceSnapshot
       : config,
 }));
 
-vi.mock("./model-catalog.runtime.js", () => ({
+vi.mock("./models/model-catalog.runtime.js", () => ({
   loadModelCatalog: contextTestState.loadModelCatalog,
 }));
 

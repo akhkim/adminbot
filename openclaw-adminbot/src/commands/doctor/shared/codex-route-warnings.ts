@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 3101 lines; see docs/adr/0006-deferred-monster-splits.md
 // Doctor warnings and repairs for legacy OpenAI Codex model/provider routing.
 import fs from "node:fs";
 import { AGENT_MODEL_CONFIG_KEYS } from "@openclaw/model-catalog-core/configured-model-refs";
@@ -7,15 +8,15 @@ import { normalizeOptionalLowercaseString as normalizeString } from "@openclaw/n
 import { normalizeOptionalAgentRuntimeId } from "../../../agents/agent-runtime-id.js";
 import { resolveConfiguredProviderFallback } from "../../../agents/configured-provider-fallback.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../../../agents/defaults.js";
-import { splitTrailingAuthProfile } from "../../../agents/model-ref-profile.js";
-import { normalizeConfiguredProviderCatalogModelId } from "../../../agents/model-ref-shared.js";
-import { resolveModelRuntimePolicy } from "../../../agents/model-runtime-policy.js";
-import { openAIProviderUsesCodexRuntimeByDefault } from "../../../agents/openai-routing.js";
+import { splitTrailingAuthProfile } from "../../../agents/models/model-ref-profile.js";
+import { normalizeConfiguredProviderCatalogModelId } from "../../../agents/models/model-ref-shared.js";
+import { resolveModelRuntimePolicy } from "../../../agents/models/model-runtime-policy.js";
+import { openAIProviderUsesCodexRuntimeByDefault } from "../../../agents/transport/openai-routing.js";
 import { loadSessionStore, updateSessionStore } from "../../../config/sessions/store.js";
 import { resolveAllAgentSessionStoreTargetsSync } from "../../../config/sessions/targets.js";
 import type { SessionEntry } from "../../../config/sessions/types.js";
-import type { AgentRuntimePolicyConfig } from "../../../config/types.agents-shared.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { AgentRuntimePolicyConfig } from "../../../config/types/agents-shared.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { detectWindowsSpawnCommandInlineArgs } from "../../../plugin-sdk/windows-spawn.js";
 import { normalizeAgentId } from "../../../routing/session-key.js";
 

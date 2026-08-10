@@ -21,7 +21,7 @@ vi.mock("../config/config.js", () => ({
   getRuntimeConfig: () => cfg,
 }));
 
-vi.mock("../config/io.js", () => ({
+vi.mock("../config/io/io.js", () => ({
   getRuntimeConfig: () => cfg,
 }));
 
@@ -29,7 +29,7 @@ vi.mock("../config/sessions.js", () => ({
   resolveMainSessionKey: () => "agent:main:main",
 }));
 
-vi.mock("./auth.js", () => ({
+vi.mock("./auth/auth.js", () => ({
   authorizeHttpGatewayConnect: alwaysAuthorized,
 }));
 
@@ -37,16 +37,16 @@ vi.mock("../logger.js", () => ({
   logWarn: noWarnLog,
 }));
 
-vi.mock("../agents/agent-tools.js", () => ({
+vi.mock("../agents/tools/agent-tools.js", () => ({
   resolveToolLoopDetectionConfig,
 }));
 
-vi.mock("../agents/agent-tools.before-tool-call.js", () => ({
+vi.mock("../agents/tools/agent-tools.before-tool-call.js", () => ({
   runBeforeToolCallHook,
 }));
 
-vi.mock("../plugins/config-state.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../plugins/config-state.js")>();
+vi.mock("../plugins/config/config-state.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../plugins/config/config-state.js")>();
   return {
     ...actual,
     isTestDefaultMemorySlotDisabled: disableDefaultMemorySlot,
@@ -57,7 +57,7 @@ vi.mock("../plugins/tools.js", () => ({
   getPluginToolMeta: noPluginToolMeta,
 }));
 
-vi.mock("../agents/openclaw-tools.js", () => {
+vi.mock("../agents/tools/openclaw-tools.js", () => {
   const tools = [
     {
       name: "cron",

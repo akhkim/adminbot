@@ -1,6 +1,6 @@
 /** Context-pruning planner that trims old assistant/tool content under token pressure. */
 import type { ImageContent, TextContent, ToolResultMessage } from "../../../llm/types.js";
-import { CHARS_PER_TOKEN_ESTIMATE, estimateStringChars } from "../../../utils/cjk-chars.js";
+import { CHARS_PER_TOKEN_ESTIMATE, estimateStringChars } from "../../../shared/cjk-chars.js";
 import { dropThinkingBlocks } from "../../embedded-agent-runner/thinking.js";
 import type { AgentMessage } from "../../runtime/index.js";
 import type { ExtensionContext } from "../../sessions/index.js";

@@ -4,7 +4,7 @@ import { Command } from "commander";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { stripAnsi } from "../../packages/terminal-core/src/ansi.js";
 import type { OpenClawConfig } from "../config/config.js";
-import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "../infra/exec-approvals.js";
+import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "../infra/exec/exec-approvals.js";
 import { registerExecPolicyCli } from "./exec-policy-cli.js";
 
 function hashApprovalsFile(file: ExecApprovalsFile): string {
@@ -175,9 +175,9 @@ vi.mock("../config/config.js", async () => {
   };
 });
 
-vi.mock("../infra/exec-approvals.js", async () => {
-  const actual = await vi.importActual<typeof import("../infra/exec-approvals.js")>(
-    "../infra/exec-approvals.js",
+vi.mock("../infra/exec/exec-approvals.js", async () => {
+  const actual = await vi.importActual<typeof import("../infra/exec/exec-approvals.js")>(
+    "../infra/exec/exec-approvals.js",
   );
   return {
     ...actual,

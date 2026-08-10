@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 
 const LOGIN_HINT_SENTINEL = "<<login-hint-for-provider>>";
 
-vi.mock("../provider-auth-recovery-hint.js", () => ({
+vi.mock("../auth/provider-auth-recovery-hint.js", () => ({
   buildProviderAuthRecoveryHint: (params: { provider: string }) =>
     `${LOGIN_HINT_SENTINEL}:${params.provider}`,
 }));

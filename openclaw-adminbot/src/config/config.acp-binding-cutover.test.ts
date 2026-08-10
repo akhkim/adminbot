@@ -1,6 +1,6 @@
 // Regresses ACP binding cutover config compatibility behavior.
 import { describe, expect, it } from "vitest";
-import { OpenClawSchema } from "./zod-schema.js";
+import { OpenClawSchema } from "./zod/zod-schema.js";
 
 describe("ACP binding cutover schema", () => {
   it("accepts top-level typed ACP bindings with per-agent runtime defaults", () => {

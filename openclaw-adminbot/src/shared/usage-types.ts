@@ -1,3 +1,4 @@
+// NOTE(dedupe): overlaps with src/shared/usage-format.ts — see docs/adr/0005-shared-is-the-helper-home.md
 // Usage types define shared usage accounting structures for sessions and runs.
 import type { SessionSystemPromptReport } from "../config/sessions/types.js";
 import type {

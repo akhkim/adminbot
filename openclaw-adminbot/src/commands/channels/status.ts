@@ -3,10 +3,10 @@ import { redactSensitiveUrlLikeString } from "@openclaw/net-policy/redact-sensit
 import { formatDocsLink } from "../../../packages/terminal-core/src/links.js";
 import { theme } from "../../../packages/terminal-core/src/theme.js";
 import { normalizeChannelId } from "../../channels/plugins/index.js";
-import { resolveCommandConfigWithSecrets } from "../../cli/command-config-resolution.js";
-import { formatCliCommand } from "../../cli/command-format.js";
-import { getConfiguredChannelsCommandSecretTargetIds } from "../../cli/command-secret-targets.js";
-import { parseTimeoutMsWithFallback } from "../../cli/parse-timeout.js";
+import { resolveCommandConfigWithSecrets } from "../../cli/program/command-config-resolution.js";
+import { formatCliCommand } from "../../cli/program/command-format.js";
+import { getConfiguredChannelsCommandSecretTargetIds } from "../../cli/program/command-secret-targets.js";
+import { parseTimeoutMsWithFallback } from "../../cli/program/parse-timeout.js";
 import { withProgress } from "../../cli/progress.js";
 import { readConfigFileSnapshot } from "../../config/config.js";
 import { callGateway } from "../../gateway/call.js";

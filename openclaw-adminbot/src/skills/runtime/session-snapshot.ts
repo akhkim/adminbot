@@ -1,8 +1,8 @@
 // Session snapshot helpers capture and restore runtime skill state for sessions.
 import crypto from "node:crypto";
 import { stableStringify } from "../../agents/stable-stringify.js";
-import { redactConfigObject } from "../../config/redact-snapshot.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { redactConfigObject } from "../../config/redact/redact-snapshot.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { matchesSkillFilter } from "../discovery/filter.js";
 import { buildWorkspaceSkillSnapshot } from "../loading/workspace.js";
 import { WORKSPACE_SKILLS_PROMPT_FORMAT_VERSION } from "../types.js";

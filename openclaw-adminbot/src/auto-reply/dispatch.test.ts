@@ -1,17 +1,22 @@
 /** Tests inbound dispatch hook composition, diagnostics, and dispatcher integration. */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { onDiagnosticEvent, resetDiagnosticEventsForTest } from "../infra/diagnostic-events.js";
+import {
+  onDiagnosticEvent,
+  resetDiagnosticEventsForTest,
+} from "../infra/diagnostics/diagnostic-events.js";
 import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "./reply-payload.js";
 import type { ReplyDispatchBeforeDeliver, ReplyDispatcher } from "./reply/reply-dispatcher.js";
 import { buildTestCtx } from "./reply/test-ctx.js";
 
 type DispatchReplyFromConfigFn =
-  typeof import("./reply/dispatch-from-config.js").dispatchReplyFromConfig;
-type FinalizeInboundContextFn = typeof import("./reply/inbound-context.js").finalizeInboundContext;
+  typeof import("./reply/dispatch/dispatch-from-config.js").dispatchReplyFromConfig;
+type FinalizeInboundContextFn =
+  typeof import("./reply/inbound/inbound-context.js").finalizeInboundContext;
 type DeriveInboundMessageHookContextFn =
   typeof import("../hooks/message-hook-mappers.js").deriveInboundMessageHookContext;
-type GetGlobalHookRunnerFn = typeof import("../plugins/hook-runner-global.js").getGlobalHookRunner;
+type GetGlobalHookRunnerFn =
+  typeof import("../plugins/hooks/hook-runner-global.js").getGlobalHookRunner;
 type CreateReplyDispatcherFn = typeof import("./reply/reply-dispatcher.js").createReplyDispatcher;
 type CreateReplyDispatcherWithTypingFn =
   typeof import("./reply/reply-dispatcher.js").createReplyDispatcherWithTyping;
@@ -25,12 +30,12 @@ const hoisted = vi.hoisted(() => ({
   createReplyDispatcherWithTypingMock: vi.fn(),
 }));
 
-vi.mock("./reply/dispatch-from-config.js", () => ({
+vi.mock("./reply/dispatch/dispatch-from-config.js", () => ({
   dispatchReplyFromConfig: (...args: Parameters<DispatchReplyFromConfigFn>) =>
     hoisted.dispatchReplyFromConfigMock(...args),
 }));
 
-vi.mock("./reply/inbound-context.js", () => ({
+vi.mock("./reply/inbound/inbound-context.js", () => ({
   finalizeInboundContext: (...args: Parameters<FinalizeInboundContextFn>) =>
     hoisted.finalizeInboundContextMock(...args),
 }));
@@ -49,7 +54,7 @@ vi.mock("../hooks/message-hook-mappers.js", () => ({
   }),
 }));
 
-vi.mock("../plugins/hook-runner-global.js", () => ({
+vi.mock("../plugins/hooks/hook-runner-global.js", () => ({
   getGlobalHookRunner: (...args: Parameters<GetGlobalHookRunnerFn>) =>
     hoisted.getGlobalHookRunnerMock(...args),
 }));

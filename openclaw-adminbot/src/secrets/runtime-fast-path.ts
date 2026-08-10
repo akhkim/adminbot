@@ -14,9 +14,9 @@ import {
 } from "../agents/auth-profiles/path-constants.js";
 import { resolveAuthProfileDatabasePath } from "../agents/auth-profiles/sqlite.js";
 import type { AuthProfileStore } from "../agents/auth-profiles/types.js";
-import { resolveOAuthPath } from "../config/paths.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { PluginManifestRegistry } from "../plugins/manifest-registry.js";
+import { resolveOAuthPath } from "../config/paths/paths.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import type { PluginManifestRegistry } from "../plugins/manifest/manifest-registry.js";
 import type { PluginOrigin } from "../plugins/plugin-origin.types.js";
 import { resolveUserPath } from "../utils.js";
 import { hasCredentialBearingObjectValue, hasSecretRefCandidate } from "./runtime-secret-scan.js";

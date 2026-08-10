@@ -1,11 +1,11 @@
 // Runtime bridge for plugin-provided memory embedding providers.
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { readConfiguredProviderApiId } from "./embedding-provider-config.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { readConfiguredProviderApiId } from "./embedding/embedding-provider-config.js";
 import {
   getRuntimeEmbeddingProviderAdapter,
   listRuntimeEmbeddingProviderAdapters,
   resolveRuntimeEmbeddingProviderLookupIds,
-} from "./embedding-provider-runtime-shared.js";
+} from "./embedding/embedding-provider-runtime-shared.js";
 import {
   getRegisteredMemoryEmbeddingProvider,
   listRegisteredMemoryEmbeddingProviders,

@@ -4,26 +4,34 @@ import type { IconName } from "./icons.js";
 import { normalizeLowercaseStringOrEmpty } from "./string-coerce.ts";
 
 export const TAB_GROUPS = [
+  { label: "home", tabs: ["dashboard", "profile", "myWork"] },
   { label: "chat", tabs: ["chat"] },
+  // The AdminBot surface used to be one flat group; it is now three, one per access tier
+  // (see ui/src/ui/adminbot/access.ts), least to most privileged, so the sidebar itself shows
+  // who a tool is for instead of that only being visible in the access table. A tier with no tab
+  // the viewer can see renders no section at all (app-render.ts), so a plain member never sees an
+  // empty "Admin" heading and a visitor never sees "Lab" at all.
   {
-    label: "adminbot",
+    label: "adminbotMember",
+    tabs: ["adminbotMembers", "adminbotTimeAvailability", "adminbotPapers"],
+  },
+  {
+    label: "adminbotAdmin",
     tabs: [
       "adminbot",
       "adminbotRegistrations",
-      "adminbotReimbursements",
+      "adminbotOnboarding",
       "adminbotSettings",
-      "adminbotMembers",
-      "adminbotPapers",
       "adminbotAnnouncements",
       "adminbotCvUpdates",
-      "adminbotDeadlines",
     ],
   },
+  { label: "adminbotGuest", tabs: ["adminbotReimbursements", "adminbotDeadlines"] },
   {
     label: "control",
     tabs: ["overview", "activity", "workboard", "instances", "sessions", "usage", "cron"],
   },
-  { label: "agent", tabs: ["agents", "skills", "skillWorkshop", "nodes", "dreams"] },
+  { label: "agent", tabs: ["agents", "skills", "nodes", "dreams"] },
   {
     label: "settings",
     tabs: ["config"],
@@ -32,12 +40,17 @@ export const TAB_GROUPS = [
 
 export type Tab =
   | "agents"
+  | "dashboard"
+  | "profile"
+  | "myWork"
   | "activity"
   | "adminbot"
   | "adminbotRegistrations"
+  | "adminbotOnboarding"
   | "adminbotReimbursements"
   | "adminbotSettings"
   | "adminbotMembers"
+  | "adminbotTimeAvailability"
   | "adminbotPapers"
   | "adminbotAnnouncements"
   | "adminbotCvUpdates"
@@ -50,7 +63,6 @@ export type Tab =
   | "usage"
   | "cron"
   | "skills"
-  | "skillWorkshop"
   | "nodes"
   | "chat"
   | "config"
@@ -79,12 +91,17 @@ export const SETTINGS_TABS = [
 
 const TAB_PATHS: Record<Tab, string> = {
   agents: "/agents",
+  dashboard: "/dashboard",
+  profile: "/profile",
+  myWork: "/my-work",
   activity: "/activity",
   adminbot: "/adminbot",
   adminbotRegistrations: "/adminbot/registrations",
+  adminbotOnboarding: "/adminbot/onboarding",
   adminbotReimbursements: "/adminbot/reimbursements",
   adminbotSettings: "/adminbot/settings",
   adminbotMembers: "/adminbot/members",
+  adminbotTimeAvailability: "/adminbot/time-availability",
   adminbotPapers: "/adminbot/papers",
   adminbotAnnouncements: "/adminbot/announcements",
   adminbotCvUpdates: "/adminbot/cv-updates",
@@ -97,7 +114,6 @@ const TAB_PATHS: Record<Tab, string> = {
   usage: "/usage",
   cron: "/cron",
   skills: "/skills",
-  skillWorkshop: "/skills/workshop",
   nodes: "/nodes",
   chat: "/chat",
   config: "/config",
@@ -185,8 +201,10 @@ export function tabFromPath(pathname: string, basePath = ""): Tab | null {
   if (normalized.endsWith("/index.html")) {
     normalized = "/";
   }
+  // The root is home: the dashboard for anyone signed in, and — because a visitor may not see it —
+  // the coercion in app-render turns the same resolution into the landing page for them.
   if (normalized === "/") {
-    return "chat";
+    return "dashboard";
   }
   return PATH_TO_TAB.get(normalized) ?? null;
 }
@@ -217,6 +235,12 @@ export function iconForTab(tab: Tab): IconName {
   switch (tab) {
     case "agents":
       return "folder";
+    case "dashboard":
+      return "layoutComfortable";
+    case "profile":
+      return "user";
+    case "myWork":
+      return "book";
     case "chat":
       return "messageSquare";
     case "overview":
@@ -227,12 +251,16 @@ export function iconForTab(tab: Tab): IconName {
       return "brain";
     case "adminbotRegistrations":
       return "check";
+    case "adminbotOnboarding":
+      return "send";
     case "adminbotReimbursements":
       return "fileText";
     case "adminbotSettings":
       return "settings";
     case "adminbotMembers":
       return "folder";
+    case "adminbotTimeAvailability":
+      return "clock";
     case "adminbotPapers":
       return "fileText";
     case "adminbotAnnouncements":
@@ -255,8 +283,6 @@ export function iconForTab(tab: Tab): IconName {
       return "loader";
     case "skills":
       return "zap";
-    case "skillWorkshop":
-      return "wrench";
     case "nodes":
       return "monitor";
     case "config":

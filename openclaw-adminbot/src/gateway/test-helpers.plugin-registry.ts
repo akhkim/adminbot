@@ -1,10 +1,9 @@
 // Plugin registry test helpers provide a process-wide stub registry with default
 // channel and speech providers for gateway suites.
-import type { PluginRegistry } from "../plugins/registry.js";
-import { setActivePluginRegistry } from "../plugins/runtime.js";
+import type { PluginRegistry } from "../plugins/manifest/registry.js";
+import { setActivePluginRegistry } from "../plugins/runtime/runtime.js";
 import { resolveGlobalSingleton } from "../shared/global-singleton.js";
 import { createDefaultGatewayTestChannels } from "./test-helpers.channels.js";
-import { createDefaultGatewayTestSpeechProviders } from "./test-helpers.speech.js";
 
 /**
  * Process-wide plugin registry fixture for gateway tests.
@@ -20,14 +19,7 @@ function createStubPluginRegistry(): PluginRegistry {
     providers: [],
     modelCatalogProviders: [],
     embeddingProviders: [],
-    speechProviders: createDefaultGatewayTestSpeechProviders(),
-    realtimeTranscriptionProviders: [],
-    realtimeVoiceProviders: [],
-    mediaUnderstandingProviders: [],
     transcriptSourceProviders: [],
-    imageGenerationProviders: [],
-    videoGenerationProviders: [],
-    musicGenerationProviders: [],
     webFetchProviders: [],
     webSearchProviders: [],
     migrationProviders: [],

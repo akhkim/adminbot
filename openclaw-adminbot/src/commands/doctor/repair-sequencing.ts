@@ -3,18 +3,18 @@ import { sanitizeForLog } from "../../../packages/terminal-core/src/ansi.js";
 import {
   applyPluginAutoEnable,
   materializePluginAutoEnableCandidates,
-} from "../../config/plugin-auto-enable.js";
+} from "../../config/plugin/plugin-auto-enable.js";
 import {
   collectOpenAICodexAuthProfileStoreIdMap,
   maybeMigrateAuthProfileJsonStoresToSqlite,
   maybeRepairOpenAICodexAuthConfig,
   maybeRepairOpenAICodexAuthProfileStores,
-} from "../doctor-auth-flat-profiles.js";
-import { maybeRepairLegacyOAuthSidecarProfiles } from "../doctor-auth-oauth-sidecar.js";
+} from "./doctor-auth-flat-profiles.js";
+import { maybeRepairLegacyOAuthSidecarProfiles } from "./doctor-auth-oauth-sidecar.js";
 import {
   maybeRepairManagedNpmOpenClawPeerLinks,
   maybeRepairStaleManagedNpmBundledPlugins,
-} from "../doctor-plugin-registry.js";
+} from "./doctor-plugin-registry.js";
 import { collectActiveToolSchemaProjectionWarnings } from "./shared/active-tool-schema-warnings.js";
 import { maybeRepairGroupAllowFromFallback } from "./shared/allowfrom-fallback-migration.js";
 import { maybeRepairAllowlistPolicyAllowFrom } from "./shared/allowlist-policy-repair.js";

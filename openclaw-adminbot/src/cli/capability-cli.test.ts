@@ -212,11 +212,11 @@ vi.mock("../config/config.js", () => ({
     mocks.setRuntimeConfigSnapshot as typeof import("../config/config.js").setRuntimeConfigSnapshot,
 }));
 
-vi.mock("./command-config-resolution.js", () => ({
+vi.mock("./program/command-config-resolution.js", () => ({
   resolveCommandConfigWithSecrets: mocks.resolveCommandConfigWithSecrets,
 }));
 
-vi.mock("./command-secret-targets.js", () => ({
+vi.mock("./program/command-secret-targets.js", () => ({
   getCapabilityWebFetchCommandSecretTargets: mocks.getCapabilityWebFetchCommandSecretTargets,
   getCapabilityWebSearchCommandSecretTargets: mocks.getCapabilityWebSearchCommandSecretTargets,
   getMemoryEmbeddingCommandSecretTargetIds: mocks.getMemoryEmbeddingCommandSecretTargetIds,
@@ -232,28 +232,28 @@ vi.mock("../agents/agent-scope.js", () => ({
   resolveAgentModelFallbacksOverride: () => [],
 }));
 
-vi.mock("../agents/model-catalog.js", () => ({
+vi.mock("../agents/models/model-catalog.js", () => ({
   loadModelCatalog:
-    mocks.loadModelCatalog as typeof import("../agents/model-catalog.js").loadModelCatalog,
+    mocks.loadModelCatalog as typeof import("../agents/models/model-catalog.js").loadModelCatalog,
 }));
 
-vi.mock("../agents/simple-completion-runtime.js", () => ({
+vi.mock("../agents/transport/simple-completion-runtime.js", () => ({
   prepareSimpleCompletionModelForAgent:
-    mocks.prepareSimpleCompletionModelForAgent as unknown as typeof import("../agents/simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
+    mocks.prepareSimpleCompletionModelForAgent as unknown as typeof import("../agents/transport/simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
   completeWithPreparedSimpleCompletionModel:
-    mocks.completeWithPreparedSimpleCompletionModel as unknown as typeof import("../agents/simple-completion-runtime.js").completeWithPreparedSimpleCompletionModel,
+    mocks.completeWithPreparedSimpleCompletionModel as unknown as typeof import("../agents/transport/simple-completion-runtime.js").completeWithPreparedSimpleCompletionModel,
 }));
 
-vi.mock("../agents/auth-profiles.js", () => ({
+vi.mock("../agents/auth/auth-profiles.js", () => ({
   loadAuthProfileStoreForRuntime:
-    mocks.loadAuthProfileStoreForRuntime as unknown as typeof import("../agents/auth-profiles.js").loadAuthProfileStoreForRuntime,
+    mocks.loadAuthProfileStoreForRuntime as unknown as typeof import("../agents/auth/auth-profiles.js").loadAuthProfileStoreForRuntime,
   listProfilesForProvider:
-    mocks.listProfilesForProvider as typeof import("../agents/auth-profiles.js").listProfilesForProvider,
+    mocks.listProfilesForProvider as typeof import("../agents/auth/auth-profiles.js").listProfilesForProvider,
 }));
 
-vi.mock("../agents/model-auth.js", () => ({
+vi.mock("../agents/auth/model-auth.js", () => ({
   resolveApiKeyForProvider:
-    mocks.resolveApiKeyForProvider as typeof import("../agents/model-auth.js").resolveApiKeyForProvider,
+    mocks.resolveApiKeyForProvider as typeof import("../agents/auth/model-auth.js").resolveApiKeyForProvider,
 }));
 
 vi.mock("../agents/auth-profiles/store.js", () => ({
@@ -319,9 +319,9 @@ vi.mock("../plugins/memory-embedding-providers.js", () => ({
     mocks.registerMemoryEmbeddingProvider as unknown as typeof import("../plugins/memory-embedding-providers.js").registerMemoryEmbeddingProvider,
 }));
 
-vi.mock("../plugins/embedding-provider-runtime.js", () => ({
+vi.mock("../plugins/embedding/embedding-provider-runtime.js", () => ({
   listEmbeddingProviders:
-    mocks.listEmbeddingProviders as unknown as typeof import("../plugins/embedding-provider-runtime.js").listEmbeddingProviders,
+    mocks.listEmbeddingProviders as unknown as typeof import("../plugins/embedding/embedding-provider-runtime.js").listEmbeddingProviders,
 }));
 
 vi.mock("../plugin-sdk/memory-core-bundled-runtime.js", () => ({
@@ -376,7 +376,7 @@ vi.mock("../web-fetch/runtime.js", () => ({
   resolveWebFetchDefinition: vi.fn(),
 }));
 
-vi.mock("../plugins/web-fetch-providers.runtime.js", () => ({
+vi.mock("../plugins/web/web-fetch-providers.runtime.js", () => ({
   resolvePluginWebFetchProviders: vi.fn((params: { config?: Record<string, unknown> }) => [
     {
       pluginId: "firecrawl",
@@ -406,7 +406,7 @@ vi.mock("../plugins/web-fetch-providers.runtime.js", () => ({
   ]),
 }));
 
-vi.mock("../plugins/web-search-providers.runtime.js", () => ({
+vi.mock("../plugins/web/web-search-providers.runtime.js", () => ({
   resolvePluginWebSearchProviders: vi.fn(() => [
     {
       pluginId: "tavily",
@@ -2919,7 +2919,7 @@ describe("capability cli", () => {
     });
 
     const { getCapabilityWebSearchCommandSecretTargets } =
-      await import("./command-secret-targets.js");
+      await import("./program/command-secret-targets.js");
     const scopedTargets = getCapabilityWebSearchCommandSecretTargets(unresolvedConfig as never);
     expect(mocks.resolveCommandConfigWithSecrets).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -3002,7 +3002,7 @@ describe("capability cli", () => {
     });
 
     const { getCapabilityWebSearchCommandSecretTargets } =
-      await import("./command-secret-targets.js");
+      await import("./program/command-secret-targets.js");
     const scopedTargets = getCapabilityWebSearchCommandSecretTargets(unresolvedConfig as never, {
       providerId: "firecrawl",
     });
@@ -3078,7 +3078,7 @@ describe("capability cli", () => {
     });
 
     const { getCapabilityWebFetchCommandSecretTargets } =
-      await import("./command-secret-targets.js");
+      await import("./program/command-secret-targets.js");
     expect(mocks.resolveCommandConfigWithSecrets).toHaveBeenCalledWith(
       expect.objectContaining({
         commandName: "infer web fetch",
@@ -3149,7 +3149,7 @@ describe("capability cli", () => {
     });
 
     const { getCapabilityWebFetchCommandSecretTargets } =
-      await import("./command-secret-targets.js");
+      await import("./program/command-secret-targets.js");
     const scopedTargets = getCapabilityWebFetchCommandSecretTargets(unresolvedConfig as never, {
       providerId: "firecrawl",
     });

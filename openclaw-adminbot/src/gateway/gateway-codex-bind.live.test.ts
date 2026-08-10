@@ -8,26 +8,26 @@ import { renderCatFacePngBase64 } from "../../test/helpers/live-image-probe.js";
 import { isLiveTestEnabled } from "../agents/live-test-helpers.js";
 import type { ChannelOutboundContext } from "../channels/plugins/types.public.js";
 import { clearConfigCache, clearRuntimeConfigSnapshot } from "../config/config.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import { getSessionBindingService } from "../infra/outbound/session-binding-service.js";
-import { resolveBundledPluginWorkspaceSourcePath } from "../plugins/bundled-plugin-metadata.js";
 import { pluginCommands } from "../plugins/command-registry-state.js";
-import { clearPluginLoaderCache } from "../plugins/loader.js";
+import { resolveBundledPluginWorkspaceSourcePath } from "../plugins/install/bundled-plugin-metadata.js";
+import { clearPluginLoaderCache } from "../plugins/runtime/loader.js";
 import {
   pinActivePluginChannelRegistry,
   releasePinnedPluginChannelRegistry,
   resetPluginRuntimeStateForTest,
-} from "../plugins/runtime.js";
+} from "../plugins/runtime/runtime.js";
 import { extractFirstTextBlock } from "../shared/chat-message-content.js";
 import { createTestRegistry } from "../test-utils/channel-plugins.js";
 import { sleep } from "../utils.js";
-import type { GatewayClient } from "./client.js";
+import type { GatewayClient } from "./client/client.js";
 import {
   connectTestGatewayClient,
   getFreeGatewayPort,
 } from "./gateway-cli-backend.live-helpers.js";
-import { startGatewayServer } from "./server.js";
+import { startGatewayServer } from "./server/server.js";
 
 const LIVE = isLiveTestEnabled();
 const CODEX_BIND_LIVE = isTruthyEnvValue(process.env.OPENCLAW_LIVE_CODEX_BIND);

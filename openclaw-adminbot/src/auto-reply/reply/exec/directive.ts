@@ -5,8 +5,8 @@ import {
   type ExecSecurity,
   type ExecTarget,
   normalizeExecTarget,
-} from "../../../infra/exec-approvals.js";
-import { skipDirectiveArgPrefix, takeDirectiveToken } from "../directive-parsing.js";
+} from "../../../infra/exec/exec-approvals.js";
+import { skipDirectiveArgPrefix, takeDirectiveToken } from "../directives/directive-parsing.js";
 
 /** Parsed `/exec` directive state used to override execution policy for one turn. */
 type ExecDirectiveParse = {

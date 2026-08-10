@@ -15,12 +15,12 @@ import {
   renderSystemdUnavailableHints,
 } from "../../daemon/systemd-hints.js";
 import { classifySystemdUnavailableDetail } from "../../daemon/systemd-unavailable.js";
-import { resolveControlUiLinks } from "../../gateway/control-ui-links.js";
+import { resolveControlUiLinks } from "../../gateway/control/control-ui-links.js";
 import { formatGatewayRestartHandoffDiagnostic } from "../../infra/restart-handoff.js";
 import { isWSLEnv } from "../../infra/wsl.js";
 import { defaultRuntime } from "../../runtime.js";
 import { shortenHomePath } from "../../utils.js";
-import { formatCliCommand } from "../command-format.js";
+import { formatCliCommand } from "../program/command-format.js";
 import {
   createCliStatusTextStyles,
   filterDaemonEnv,
@@ -327,9 +327,7 @@ export function printDaemonStatus(status: DaemonStatus, opts: { json: boolean; d
     isSystemdUnavailableDetail(service.runtime?.detail);
   if (systemdUnavailable) {
     const serviceEnv = service.command?.environment ?? process.env;
-    const container = Boolean(
-      resolveDaemonContainerContext(serviceEnv),
-    );
+    const container = Boolean(resolveDaemonContainerContext(serviceEnv));
     defaultRuntime.error(errorText("systemd user services unavailable."));
     for (const hint of renderSystemdUnavailableHints({
       wsl: isWSLEnv(serviceEnv),

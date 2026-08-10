@@ -1,8 +1,11 @@
 /** Tests channel plugin id resolution from config, manifests, and installed state. */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import type { InstalledPluginIndex, InstalledPluginIndexRecord } from "./installed-plugin-index.js";
-import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest-registry.js";
+import type {
+  InstalledPluginIndex,
+  InstalledPluginIndexRecord,
+} from "./install/installed-plugin-index.js";
+import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest/manifest-registry.js";
 
 const listPotentialConfiguredChannelIds = vi.hoisted(() => vi.fn());
 const listExplicitlyDisabledChannelIdsForConfig = vi.hoisted(() =>
@@ -44,8 +47,8 @@ vi.mock("../channels/config-presence.js", () => ({
   hasMeaningfulChannelConfig,
 }));
 
-vi.mock("./manifest-registry-installed.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./manifest-registry-installed.js")>();
+vi.mock("./manifest/manifest-registry-installed.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./manifest/manifest-registry-installed.js")>();
   return {
     ...actual,
     loadPluginManifestRegistryForInstalledIndex,

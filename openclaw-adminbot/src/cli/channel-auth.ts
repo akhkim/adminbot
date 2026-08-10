@@ -9,16 +9,16 @@ import {
 } from "../channels/plugins/index.js";
 import { resolveInstallableChannelPlugin } from "../commands/channel-setup/channel-plugin-resolution.js";
 import { getRuntimeConfig, readConfigFileSnapshot, type OpenClawConfig } from "../config/config.js";
-import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
+import { applyPluginAutoEnable } from "../config/plugin/plugin-auto-enable.js";
 import { callGateway } from "../gateway/call.js";
 import { setVerbose } from "../globals.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { isBlockedObjectKey } from "../infra/prototype-keys.js";
 import { defaultRuntime, type RuntimeEnv } from "../runtime.js";
-import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
-import { formatCliCommand } from "./command-format.js";
+import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../shared/message-channel.js";
 import { formatUnsupportedChannelActionMessage } from "./error-format.js";
-import { commitConfigWithPendingPluginInstalls } from "./plugins-install-record-commit.js";
+import { commitConfigWithPendingPluginInstalls } from "./plugins/plugins-install-record-commit.js";
+import { formatCliCommand } from "./program/command-format.js";
 
 type ChannelAuthOptions = {
   channel?: string;

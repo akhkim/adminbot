@@ -10,10 +10,10 @@ import {
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { normalizeConversationText } from "../../acp/conversation-id.js";
 import { normalizeAnyChannelId } from "../../channels/registry.js";
-import { resolveStateDir } from "../../config/paths.js";
+import { resolveStateDir } from "../../config/paths/paths.js";
 import { loadJsonFile } from "../../infra/json-file.js";
 import { saveJsonFile } from "../../plugin-sdk/json-store.js";
-import { getActivePluginChannelRegistryFromState } from "../../plugins/runtime-channel-state.js";
+import { getActivePluginChannelRegistryFromState } from "../../plugins/runtime/runtime-channel-state.js";
 import { normalizeConversationRef } from "./session-binding-normalization.js";
 import type {
   ConversationRef,

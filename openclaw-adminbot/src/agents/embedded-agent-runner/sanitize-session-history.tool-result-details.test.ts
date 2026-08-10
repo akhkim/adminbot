@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import { makeAgentAssistantMessage } from "../test-helpers/agent-message-fixtures.js";
 import { sanitizeSessionHistory } from "./replay-history.js";
 
-vi.mock("../../plugins/provider-runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-runtime.js", () => ({
   // Provider plugins are not part of this boundary test; the local sanitizer
   // contract should strip details before any plugin-specific behavior matters.
   resolveProviderRuntimePlugin: () => undefined,
@@ -15,7 +15,7 @@ vi.mock("../../plugins/provider-runtime.js", () => ({
   validateProviderReplayTurnsWithPlugin: () => undefined,
 }));
 
-vi.mock("../../plugins/provider-hook-runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-hook-runtime.js", () => ({
   resolveProviderRuntimePlugin: () => undefined,
 }));
 

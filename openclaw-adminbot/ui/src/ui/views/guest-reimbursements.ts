@@ -5,17 +5,18 @@
 // an explicit way back to sign-in).
 import { html } from "lit";
 import { t } from "../../i18n/index.ts";
-import { resolveAdminBotBaseUrl } from "../adminbot-auth.ts";
-import type { AppViewState } from "../app-view-state.ts";
+import { resolveAdminBotBaseUrl } from "../adminbot/auth/session.ts";
 import {
   generateGuestReimbursement,
   resetAdminBotReimbursement,
   sendGuestReimbursementMessage,
   type GuestReimbursementHost,
-} from "../controllers/adminbot.ts";
+} from "../adminbot/controllers/admin.ts";
+import { renderAdminBotReimbursements } from "../adminbot/views/reimbursements.ts";
+import type { AppViewState } from "../app-view-state.ts";
 import { normalizeBasePath } from "../navigation.ts";
+import { goToSignedOutView } from "../signed-out-view.ts";
 import { agentLogoUrl } from "./agents-utils.ts";
-import { renderAdminBotReimbursements } from "./adminbot-reimbursements.ts";
 
 // Proxies the one state slice the guest flow owns back onto the reactive app instance, so
 // controller writes still trigger a re-render without handing the controller the whole app.
@@ -57,8 +58,7 @@ export function renderGuestReimbursements(state: AppViewState) {
           class="session-link guest-reimbursements__back"
           data-testid="guest-reimbursements-back"
           @click=${() => {
-            state.guestReimbursements = false;
-            state.authGateVisible = true;
+            goToSignedOutView(state, "login");
           }}
         >
           ${t("login.guest.backToSignIn")}

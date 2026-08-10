@@ -20,10 +20,6 @@
       "types": "./dist/src/plugin-sdk/async-lock-runtime.d.ts",
       "default": "./src/async-lock-runtime.ts"
     },
-    "./browser-config": {
-      "types": "./dist/src/plugin-sdk/browser-config.d.ts",
-      "default": "./src/browser-config.ts"
-    },
     "./channel-activity-runtime": {
       "types": "./dist/src/plugin-sdk/channel-activity-runtime.d.ts",
       "default": "./src/channel-activity-runtime.ts"
@@ -228,10 +224,6 @@
       "types": "./dist/src/plugin-sdk/secret-input.d.ts",
       "default": "./src/secret-input.ts"
     },
-    "./tts-runtime": {
-      "types": "./dist/src/plugin-sdk/tts-runtime.d.ts",
-      "default": "./src/tts-runtime.ts"
-    },
     "./testing": {
       "types": "./dist/src/plugin-sdk/testing.d.ts",
       "default": "./src/testing.ts"
@@ -239,10 +231,6 @@
     "./text-runtime": {
       "types": "./dist/src/plugin-sdk/text-runtime.d.ts",
       "default": "./src/text-runtime.ts"
-    },
-    "./video-generation": {
-      "types": "./dist/src/plugin-sdk/video-generation.d.ts",
-      "default": "./src/video-generation.ts"
     },
     "./config-contracts": {
       "types": "./dist/src/plugin-sdk/config-contracts.d.ts",

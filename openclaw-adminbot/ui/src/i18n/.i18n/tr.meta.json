@@ -51,6 +51,10 @@
     "cron.quickCreate.modelHint",
     "cron.quickCreate.modelInherit",
     "cron.quickCreate.modelInheritNamed",
+    "landing.eyebrow",
+    "landing.openWithoutAccount",
+    "landing.signIn",
+    "landing.tagline",
     "login.failure.memberAuth.stepClaim",
     "login.failure.memberAuth.stepCredentials",
     "login.failure.memberAuth.summary",
@@ -164,12 +168,12 @@
     "tabs.adminbotReimbursements",
     "tabs.adminbotSettings"
   ],
-  "generatedAt": "2026-08-05T05:32:29.321Z",
+  "generatedAt": "2026-08-06T01:53:47.881Z",
   "locale": "tr",
   "model": "claude-opus-4-8",
   "provider": "anthropic",
-  "sourceHash": "53d92f53e93a49af26f36152acf23578128da6159daf2aeae7251d8bc8015dd4",
-  "totalKeys": 1561,
+  "sourceHash": "6e0fea26a4c0bb76288eb98269ba13d4540a6074cebff9c86356214b8fe61ef5",
+  "totalKeys": 1565,
   "translatedKeys": 1398,
   "workflow": 1
 }

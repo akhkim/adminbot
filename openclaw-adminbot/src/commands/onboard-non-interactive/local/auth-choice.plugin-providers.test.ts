@@ -35,16 +35,16 @@ vi.mock("../../../wizard/setup.post-install-migration.js", () => ({
   offerPostInstallMigrations,
 }));
 const resolvePreferredProviderForAuthChoice = vi.hoisted(() => vi.fn(async () => undefined));
-vi.mock("../../../plugins/provider-auth-choice-preference.js", () => ({
+vi.mock("../../../plugins/providers/provider-auth-choice-preference.js", () => ({
   resolvePreferredProviderForAuthChoice,
 }));
 const resolveManifestProviderAuthChoice = vi.hoisted(() => vi.fn(() => undefined));
-vi.mock("../../../plugins/provider-auth-choices.js", () => ({
+vi.mock("../../../plugins/providers/provider-auth-choices.js", () => ({
   resolveManifestProviderAuthChoice,
 }));
 const resolveProviderInstallCatalogEntry = vi.hoisted(() => vi.fn(() => undefined));
 const resolveDeprecatedProviderInstallCatalogEntry = vi.hoisted(() => vi.fn(() => undefined));
-vi.mock("../../../plugins/provider-install-catalog.js", () => ({
+vi.mock("../../../plugins/providers/provider-install-catalog.js", () => ({
   resolveDeprecatedProviderInstallCatalogEntry,
   resolveProviderInstallCatalogEntry,
 }));

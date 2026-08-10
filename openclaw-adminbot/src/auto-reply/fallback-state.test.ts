@@ -1,6 +1,6 @@
 /** Tests model fallback notice formatting and transition state tracking. */
 import { afterEach, describe, expect, it } from "vitest";
-import { testing as cliBackendsTesting } from "../agents/cli-backends.js";
+import { testing as cliBackendsTesting } from "../agents/cli-runner/cli-backends.js";
 import {
   buildFallbackNotice,
   resolveActiveFallbackState,

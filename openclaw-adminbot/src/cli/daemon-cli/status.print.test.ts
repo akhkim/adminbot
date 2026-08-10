@@ -1,6 +1,6 @@
 // Daemon status print tests cover user-facing service status formatting.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { formatCliCommand } from "../command-format.js";
+import { formatCliCommand } from "../program/command-format.js";
 import { printDaemonStatus } from "./status.print.js";
 
 const runtime = vi.hoisted(() => ({
@@ -30,7 +30,7 @@ vi.mock("../../../packages/terminal-core/src/theme.js", async () => {
   };
 });
 
-vi.mock("../../gateway/control-ui-links.js", () => ({
+vi.mock("../../gateway/control/control-ui-links.js", () => ({
   resolveControlUiLinks: resolveControlUiLinksMock,
 }));
 

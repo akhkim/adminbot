@@ -50,9 +50,9 @@ export {
    * deprecated-internal-config-api architecture guard.
    */
   writeConfigFile,
-} from "../config/io.js";
-export { mutateConfigFile, replaceConfigFile } from "../config/mutate.js";
-export type { ConfigWriteAfterWrite } from "../config/runtime-snapshot.js";
+} from "../config/io/io.js";
+export { mutateConfigFile, replaceConfigFile } from "../config/mutate/mutate.js";
+export type { ConfigWriteAfterWrite } from "../config/runtime/runtime-snapshot.js";
 export { logConfigUpdated } from "../config/logging.js";
 export { updateConfig } from "../commands/models/shared.js";
 export { resolveChannelModelOverride } from "../channels/model-overrides.js";
@@ -64,7 +64,7 @@ export {
   resolveChannelContextVisibilityMode,
   resolveDefaultContextVisibility,
 } from "../config/context-visibility.js";
-export { resolveMarkdownTableMode } from "../config/markdown-tables.js";
+export { resolveMarkdownTableMode } from "../config/markdown/markdown-tables.js";
 export {
   resolveChannelGroupPolicy,
   resolveChannelGroupRequireMention,
@@ -77,7 +77,7 @@ export {
   resolveDefaultGroupPolicy,
   resolveOpenProviderRuntimeGroupPolicy,
   warnMissingProviderGroupPolicyFallbackOnce,
-} from "../config/runtime-group-policy.js";
+} from "../config/runtime/runtime-group-policy.js";
 export {
   isNativeCommandsExplicitlyDisabled,
   resolveNativeCommandsEnabled,
@@ -92,7 +92,7 @@ export { resolveActiveTalkProviderConfig } from "../config/talk.js";
 export { resolveAgentMaxConcurrent } from "../config/agent-limits.js";
 export { loadCronStore, resolveCronStorePath, saveCronStore } from "../cron/store.js";
 export { applyModelOverrideToSessionEntry } from "../sessions/model-overrides.js";
-export { coerceSecretRef } from "../config/types.secrets.js";
+export { coerceSecretRef } from "../config/types/secrets.js";
 export {
   resolveConfiguredSecretInputString,
   resolveConfiguredSecretInputWithFallback,
@@ -147,7 +147,7 @@ export type {
   TtsPersonaFallbackPolicy,
   TtsPersonaPromptConfig,
   TtsProvider,
-} from "../config/types.js";
+} from "../config/types/types.js";
 export {
   clearSessionStoreCacheForTest,
   recordSessionMetaFromInbound,

@@ -1,14 +1,14 @@
 // Doctor health contribution helpers collect health checks from plugin manifests.
 import fs from "node:fs";
-import type { probeGatewayMemoryStatus } from "../commands/doctor-gateway-health.js";
-import type { DoctorOptions, DoctorPrompter } from "../commands/doctor-prompter.js";
+import type { probeGatewayMemoryStatus } from "../commands/doctor/doctor-gateway-health.js";
+import type { DoctorOptions, DoctorPrompter } from "../commands/doctor/doctor-prompter.js";
 import {
   isLegacyParentWritableUpdateDoctorPass,
   UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE_ENV,
 } from "../commands/doctor/shared/update-phase.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type { buildGatewayConnectionDetails } from "../gateway/call.js";
-import type { UpdatePostInstallDoctorResult } from "../infra/update-doctor-result.js";
+import type { UpdatePostInstallDoctorResult } from "../infra/install/update-doctor-result.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { HealthFinding } from "./health-checks.js";
 import type { FlowContribution } from "./types.js";
@@ -44,7 +44,7 @@ export type DoctorHealthFlowContext = {
   healthOk?: boolean;
   gatewayHealthAuthenticated?: boolean;
   gatewayHealthSkipped?: boolean;
-  gatewayStatus?: import("../commands/status.types.js").StatusSummary;
+  gatewayStatus?: import("../commands/status/status.types.js").StatusSummary;
   gatewayMemoryProbe?: Awaited<ReturnType<typeof probeGatewayMemoryStatus>>;
   postInstallDoctorResult?: UpdatePostInstallDoctorResult;
 };
@@ -60,17 +60,17 @@ const PRE_HEALTH_POSITIONAL_HEALTH_CHECK_IDS = new Set(["core/doctor/ui-protocol
 
 const loadAgentDefaultsModule = async () => await import("../agents/defaults.js");
 const loadAgentScopeModule = async () => await import("../agents/agent-scope.js");
-const loadCommandFormatModule = async () => await import("../cli/command-format.js");
+const loadCommandFormatModule = async () => await import("../cli/program/command-format.js");
 const loadConfigModule = async () => await import("../config/config.js");
 const loadDoctorCoreChecksModule = async () => await import("./doctor-core-checks.js");
 const loadDoctorStateIntegrityModule = async () =>
-  await import("../commands/doctor-state-integrity.js");
+  await import("../commands/doctor/doctor-state-integrity.js");
 const loadHealthCheckRegistryModule = async () => await import("./health-check-registry.js");
-const loadModelCatalogModule = async () => await import("../agents/model-catalog.js");
-const loadModelSelectionModule = async () => await import("../agents/model-selection.js");
+const loadModelCatalogModule = async () => await import("../agents/models/model-catalog.js");
+const loadModelSelectionModule = async () => await import("../agents/models/model-selection.js");
 const loadNoteModule = async () => await import("../../packages/terminal-core/src/note.js");
-const loadOnboardHelpersModule = async () => await import("../commands/onboard-helpers.js");
-const loadSecretTypesModule = async () => await import("../config/types.secrets.js");
+const loadOnboardHelpersModule = async () => await import("../commands/onboard/onboard-helpers.js");
+const loadSecretTypesModule = async () => await import("../config/types/secrets.js");
 
 function isUpdateDoctorRun(env: NodeJS.ProcessEnv | Record<string, string | undefined>): boolean {
   const value = env.OPENCLAW_UPDATE_IN_PROGRESS;
@@ -138,7 +138,7 @@ function resolvePositionalHealthCheckIds(): ReadonlySet<string> {
 
 async function runGatewayConfigHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { formatCliCommand } = await loadCommandFormatModule();
-  const { hasAmbiguousGatewayAuthModeConfig } = await import("../gateway/auth-mode-policy.js");
+  const { hasAmbiguousGatewayAuthModeConfig } = await import("../gateway/auth/auth-mode-policy.js");
   const { note } = await loadNoteModule();
   if (!ctx.cfg.gateway?.mode) {
     const lines = [
@@ -166,13 +166,13 @@ async function runGatewayConfigHealth(ctx: DoctorHealthFlowContext): Promise<voi
 
 async function runAuthProfileHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { maybeRepairLegacyFlatAuthProfileStores, maybeRepairCanonicalApiKeyFieldAlias } =
-    await import("../commands/doctor-auth-flat-profiles.js");
+    await import("../commands/doctor/doctor-auth-flat-profiles.js");
   const { maybeRepairLegacyOAuthProfileIds } =
-    await import("../commands/doctor-auth-legacy-oauth.js");
+    await import("../commands/doctor/doctor-auth-legacy-oauth.js");
   const { maybeRepairLegacyOAuthSidecarProfiles } =
-    await import("../commands/doctor-auth-oauth-sidecar.js");
+    await import("../commands/doctor/doctor-auth-oauth-sidecar.js");
   const { noteAuthProfileHealth, noteLegacyCodexProviderOverride } =
-    await import("../commands/doctor-auth.js");
+    await import("../commands/doctor/doctor-auth.js");
   const { buildGatewayConnectionDetails } = await import("../gateway/call.js");
   const { note } = await loadNoteModule();
   await maybeRepairLegacyFlatAuthProfileStores({
@@ -204,8 +204,8 @@ async function runGatewayAuthHealth(ctx: DoctorHealthFlowContext): Promise<void>
   const { resolveSecretInputRef } = await loadSecretTypesModule();
   const { buildGatewayTokenSecretRefFixHint, buildGatewayTokenSecretRefUnavailableMessage } =
     await loadDoctorCoreChecksModule();
-  const { resolveGatewayAuth } = await import("../gateway/auth.js");
-  const { resolveGatewayAuthToken } = await import("../gateway/auth-token-resolution.js");
+  const { resolveGatewayAuth } = await import("../gateway/auth/auth.js");
+  const { resolveGatewayAuthToken } = await import("../gateway/auth/auth-token-resolution.js");
   const { note } = await loadNoteModule();
   const { randomToken } = await loadOnboardHelpersModule();
   if (resolveDoctorMode(ctx.cfg) !== "local" || !ctx.sourceConfigValid) {
@@ -313,7 +313,7 @@ async function runGatewayAuthHealth(ctx: DoctorHealthFlowContext): Promise<void>
 }
 
 async function runCommandOwnerHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { noteCommandOwnerHealth } = await import("../commands/doctor-command-owner.js");
+  const { noteCommandOwnerHealth } = await import("../commands/doctor/doctor-command-owner.js");
   noteCommandOwnerHealth(ctx.cfg);
 }
 
@@ -353,13 +353,13 @@ async function runStructuredHealthRepairs(ctx: DoctorHealthFlowContext): Promise
 }
 
 async function runClaudeCliHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { noteClaudeCliHealth } = await import("../commands/doctor-claude-cli.js");
+  const { noteClaudeCliHealth } = await import("../commands/doctor/doctor-claude-cli.js");
   noteClaudeCliHealth(ctx.cfg);
 }
 
 async function runLegacyStateHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { detectLegacyStateMigrations, runLegacyStateMigrations } =
-    await import("../commands/doctor-state-migrations.js");
+    await import("../commands/doctor/doctor-state-migrations.js");
   const { note } = await loadNoteModule();
   const legacyState = await detectLegacyStateMigrations({ cfg: ctx.cfg });
   if (legacyState.preview.length === 0) {
@@ -390,7 +390,7 @@ async function runLegacyStateHealth(ctx: DoctorHealthFlowContext): Promise<void>
 
 async function runLegacyPluginManifestHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { maybeRepairLegacyPluginManifestContracts } =
-    await import("../commands/doctor-plugin-manifests.js");
+    await import("../commands/doctor/doctor-plugin-manifests.js");
   await maybeRepairLegacyPluginManifestContracts({
     config: ctx.cfg,
     env: process.env,
@@ -400,7 +400,8 @@ async function runLegacyPluginManifestHealth(ctx: DoctorHealthFlowContext): Prom
 }
 
 async function runPluginRegistryHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { maybeRepairPluginRegistryState } = await import("../commands/doctor-plugin-registry.js");
+  const { maybeRepairPluginRegistryState } =
+    await import("../commands/doctor/doctor-plugin-registry.js");
   ctx.cfg = await maybeRepairPluginRegistryState({
     config: ctx.cfg,
     env: process.env,
@@ -454,7 +455,7 @@ async function runReleaseConfiguredPluginInstallsHealth(
 }
 
 async function runDiskSpaceHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { noteDiskSpace } = await import("../commands/doctor-disk-space.js");
+  const { noteDiskSpace } = await import("../commands/doctor/doctor-disk-space.js");
   noteDiskSpace(ctx.cfg);
 }
 
@@ -481,7 +482,7 @@ async function runCodexSessionRouteHealth(ctx: DoctorHealthFlowContext): Promise
 }
 
 async function runSessionLocksHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { noteSessionLockHealth } = await import("../commands/doctor-session-locks.js");
+  const { noteSessionLockHealth } = await import("../commands/doctor/doctor-session-locks.js");
   await noteSessionLockHealth({
     shouldRepair: ctx.prompter.shouldRepair,
     config: ctx.cfg,
@@ -490,12 +491,14 @@ async function runSessionLocksHealth(ctx: DoctorHealthFlowContext): Promise<void
 }
 
 async function runSessionTranscriptsHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { noteSessionTranscriptHealth } = await import("../commands/doctor-session-transcripts.js");
+  const { noteSessionTranscriptHealth } =
+    await import("../commands/doctor/doctor-session-transcripts.js");
   await noteSessionTranscriptHealth({ shouldRepair: ctx.prompter.shouldRepair });
 }
 
 async function runSessionSnapshotsHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { noteSessionSnapshotHealth } = await import("../commands/doctor-session-snapshots.js");
+  const { noteSessionSnapshotHealth } =
+    await import("../commands/doctor/doctor-session-snapshots.js");
   await noteSessionSnapshotHealth({
     cfg: ctx.cfg,
     env: ctx.env ?? process.env,
@@ -504,7 +507,8 @@ async function runSessionSnapshotsHealth(ctx: DoctorHealthFlowContext): Promise<
 }
 
 async function runConfigAuditScrubHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { maybeScrubConfigAuditLog } = await import("../commands/doctor-config-audit-scrub.js");
+  const { maybeScrubConfigAuditLog } =
+    await import("../commands/doctor/doctor-config-audit-scrub.js");
   await maybeScrubConfigAuditLog({ shouldRepair: ctx.prompter.shouldRepair });
 }
 
@@ -521,7 +525,7 @@ async function runLegacyCronHealth(ctx: DoctorHealthFlowContext): Promise<void> 
 
 async function runSandboxHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { maybeRepairSandboxImages, maybeRepairSandboxRegistryFiles, noteSandboxScopeWarnings } =
-    await import("../commands/doctor-sandbox.js");
+    await import("../commands/doctor/doctor-sandbox.js");
   await maybeRepairSandboxRegistryFiles(ctx.prompter);
   ctx.cfg = await maybeRepairSandboxImages(ctx.cfg, ctx.runtime, ctx.prompter);
   noteSandboxScopeWarnings(ctx.cfg);
@@ -529,12 +533,12 @@ async function runSandboxHealth(ctx: DoctorHealthFlowContext): Promise<void> {
 
 async function runGatewayServicesHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { maybeRepairGatewayServiceConfig, maybeScanExtraGatewayServices } =
-    await import("../commands/doctor-gateway-services.js");
+    await import("../commands/doctor/doctor-gateway-services.js");
   const {
     noteMacLaunchAgentOverrides,
     noteMacLaunchctlGatewayEnvOverrides,
     noteMacStaleOpenClawUpdateLaunchdJobs,
-  } = await import("../commands/doctor-platform-notes.js");
+  } = await import("../commands/doctor/doctor-platform-notes.js");
   await maybeScanExtraGatewayServices(ctx.options, ctx.runtime, ctx.prompter);
   await maybeRepairGatewayServiceConfig(
     ctx.cfg,
@@ -560,21 +564,20 @@ async function runStartupChannelMaintenanceHealth(ctx: DoctorHealthFlowContext):
 }
 
 async function runSecurityHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { noteInstallPolicyHealth } = await import("../commands/doctor-install-policy.js");
-  const { noteSecurityWarnings } = await import("../commands/doctor-security.js");
+  const { noteInstallPolicyHealth } = await import("../commands/doctor/doctor-install-policy.js");
+  const { noteSecurityWarnings } = await import("../commands/doctor/doctor-security.js");
   await noteSecurityWarnings(ctx.cfg);
   await noteInstallPolicyHealth(ctx.cfg, { deep: ctx.options.deep === true, env: ctx.env });
 }
 
 async function runBrowserHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { noteChromeMcpBrowserReadiness } = await import("../commands/doctor-browser.js");
+  const { noteChromeMcpBrowserReadiness } = await import("../commands/doctor/doctor-browser.js");
   await noteChromeMcpBrowserReadiness(ctx.cfg);
 }
 
 async function runOpenAIOAuthTlsHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { noteOpenAIOAuthTlsPrerequisites } = await import(
-    "../plugins/provider-openai-chatgpt-oauth-tls.js"
-  );
+  const { noteOpenAIOAuthTlsPrerequisites } =
+    await import("../plugins/providers/provider-openai-chatgpt-oauth-tls.js");
   await noteOpenAIOAuthTlsPrerequisites({
     cfg: ctx.cfg,
     deep: ctx.options.deep === true,
@@ -787,12 +790,12 @@ async function runWorkspaceStatusHealth(ctx: DoctorHealthFlowContext): Promise<v
       // Best-effort diagnostic: doctor should keep running if daemon status is unavailable.
     }
   }
-  const { noteWorkspaceStatus } = await import("../commands/doctor-workspace-status.js");
+  const { noteWorkspaceStatus } = await import("../commands/doctor/doctor-workspace-status.js");
   noteWorkspaceStatus(ctx.cfg, { pluginVersionDrift });
 }
 
 async function runSkillsHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { maybeRepairSkillReadiness } = await import("../commands/doctor-skills.js");
+  const { maybeRepairSkillReadiness } = await import("../commands/doctor/doctor-skills.js");
   ctx.cfg = await maybeRepairSkillReadiness({
     cfg: ctx.cfg,
     prompter: ctx.prompter,
@@ -800,13 +803,13 @@ async function runSkillsHealth(ctx: DoctorHealthFlowContext): Promise<void> {
 }
 
 async function runBootstrapSizeHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { noteBootstrapFileSize } = await import("../commands/doctor-bootstrap-size.js");
+  const { noteBootstrapFileSize } = await import("../commands/doctor/doctor-bootstrap-size.js");
   await noteBootstrapFileSize(ctx.cfg);
 }
 
 async function runHeartbeatTemplateRepairHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { maybeRepairHeartbeatTemplate } =
-    await import("../commands/doctor-heartbeat-template-repair.js");
+    await import("../commands/doctor/doctor-heartbeat-template-repair.js");
   await maybeRepairHeartbeatTemplate({
     cfg: ctx.cfg,
     shouldRepair: ctx.prompter.shouldRepair,
@@ -814,7 +817,7 @@ async function runHeartbeatTemplateRepairHealth(ctx: DoctorHealthFlowContext): P
 }
 
 async function runShellCompletionHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { doctorShellCompletion } = await import("../commands/doctor-completion.js");
+  const { doctorShellCompletion } = await import("../commands/doctor/doctor-completion.js");
   await doctorShellCompletion(ctx.runtime, ctx.prompter, {
     nonInteractive: ctx.options.nonInteractive,
   });
@@ -832,7 +835,7 @@ async function runGatewayHealthChecks(ctx: DoctorHealthFlowContext): Promise<voi
     return;
   }
   const { checkGatewayHealth, probeGatewayMemoryStatus } =
-    await import("../commands/doctor-gateway-health.js");
+    await import("../commands/doctor/doctor-gateway-health.js");
   const { healthOk, authenticated, status } = await checkGatewayHealth({
     runtime: ctx.runtime,
     cfg: ctx.cfg,
@@ -852,7 +855,7 @@ async function runGatewayHealthChecks(ctx: DoctorHealthFlowContext): Promise<voi
 
 async function runWhatsappResponsivenessHealth(ctx: DoctorHealthFlowContext): Promise<void> {
   const { noteWhatsappResponsivenessHealth } =
-    await import("../commands/doctor-whatsapp-responsiveness.js");
+    await import("../commands/doctor/doctor-whatsapp-responsiveness.js");
   await noteWhatsappResponsivenessHealth({
     cfg: ctx.cfg,
     status: ctx.gatewayStatus,
@@ -862,7 +865,7 @@ async function runWhatsappResponsivenessHealth(ctx: DoctorHealthFlowContext): Pr
 
 async function runMemorySearchHealthContribution(ctx: DoctorHealthFlowContext): Promise<void> {
   const { maybeRepairMemoryRecallHealth, noteMemoryRecallHealth, noteMemorySearchHealth } =
-    await import("../commands/doctor-memory-search.js");
+    await import("../commands/doctor/doctor-memory-search.js");
   if (ctx.prompter.shouldRepair) {
     await maybeRepairMemoryRecallHealth({
       cfg: ctx.cfg,
@@ -878,7 +881,7 @@ async function runMemorySearchHealthContribution(ctx: DoctorHealthFlowContext): 
 }
 
 async function runDevicePairingHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { noteDevicePairingHealth } = await import("../commands/doctor-device-pairing.js");
+  const { noteDevicePairingHealth } = await import("../commands/doctor/doctor-device-pairing.js");
   await noteDevicePairingHealth({
     cfg: ctx.cfg,
     healthOk: ctx.healthOk ?? false,
@@ -886,7 +889,8 @@ async function runDevicePairingHealth(ctx: DoctorHealthFlowContext): Promise<voi
 }
 
 async function runGatewayDaemonHealth(ctx: DoctorHealthFlowContext): Promise<void> {
-  const { maybeRepairGatewayDaemon } = await import("../commands/doctor-gateway-daemon-flow.js");
+  const { maybeRepairGatewayDaemon } =
+    await import("../commands/doctor/doctor-gateway-daemon-flow.js");
   await maybeRepairGatewayDaemon({
     cfg: ctx.cfg,
     runtime: ctx.runtime,
@@ -962,7 +966,7 @@ async function runWorkspaceSuggestionsHealth(ctx: DoctorHealthFlowContext): Prom
   const { resolveAgentWorkspaceDir, resolveDefaultAgentId } = await loadAgentScopeModule();
   const { noteWorkspaceBackupTip } = await loadDoctorStateIntegrityModule();
   const { MEMORY_SYSTEM_PROMPT, shouldSuggestMemorySystem } =
-    await import("../commands/doctor-workspace.js");
+    await import("../commands/doctor/doctor-workspace.js");
   const { note } = await loadNoteModule();
   const workspaceDir = resolveAgentWorkspaceDir(ctx.cfg, resolveDefaultAgentId(ctx.cfg));
   noteWorkspaceBackupTip(workspaceDir);

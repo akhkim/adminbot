@@ -2,26 +2,26 @@
 import type { Command } from "commander";
 import { formatDocsLink } from "../../../packages/terminal-core/src/links.js";
 import { theme } from "../../../packages/terminal-core/src/theme.js";
-import { hasExplicitOptions } from "../command-options.js";
 import { formatHelpExamples } from "../help-format.js";
+import { hasExplicitOptions } from "./command-options.js";
 import { collectOption } from "./helpers.js";
 
-type AgentsAddModule = typeof import("../../commands/agents.commands.add.js");
-type AgentsBindModule = typeof import("../../commands/agents.commands.bind.js");
-type AgentsDeleteModule = typeof import("../../commands/agents.commands.delete.js");
-type AgentsIdentityModule = typeof import("../../commands/agents.commands.identity.js");
-type AgentsListModule = typeof import("../../commands/agents.commands.list.js");
+type AgentsAddModule = typeof import("../../commands/agents/agents.commands.add.js");
+type AgentsBindModule = typeof import("../../commands/agents/agents.commands.bind.js");
+type AgentsDeleteModule = typeof import("../../commands/agents/agents.commands.delete.js");
+type AgentsIdentityModule = typeof import("../../commands/agents/agents.commands.identity.js");
+type AgentsListModule = typeof import("../../commands/agents/agents.commands.list.js");
 type CliUtilsModule = typeof import("../cli-utils.js");
 type RuntimeModule = typeof import("../../runtime.js");
 
 let agentsBindModulePromise: Promise<AgentsBindModule> | undefined;
 
 function loadAgentsBindModule(): Promise<AgentsBindModule> {
-  return (agentsBindModulePromise ??= import("../../commands/agents.commands.bind.js"));
+  return (agentsBindModulePromise ??= import("../../commands/agents/agents.commands.bind.js"));
 }
 
 async function loadAgentsAddCommand(): Promise<AgentsAddModule["agentsAddCommand"]> {
-  return (await import("../../commands/agents.commands.add.js")).agentsAddCommand;
+  return (await import("../../commands/agents/agents.commands.add.js")).agentsAddCommand;
 }
 
 async function loadAgentsBindCommand(): Promise<AgentsBindModule["agentsBindCommand"]> {
@@ -37,17 +37,18 @@ async function loadAgentsUnbindCommand(): Promise<AgentsBindModule["agentsUnbind
 }
 
 async function loadAgentsDeleteCommand(): Promise<AgentsDeleteModule["agentsDeleteCommand"]> {
-  return (await import("../../commands/agents.commands.delete.js")).agentsDeleteCommand;
+  return (await import("../../commands/agents/agents.commands.delete.js")).agentsDeleteCommand;
 }
 
 async function loadAgentsSetIdentityCommand(): Promise<
   AgentsIdentityModule["agentsSetIdentityCommand"]
 > {
-  return (await import("../../commands/agents.commands.identity.js")).agentsSetIdentityCommand;
+  return (await import("../../commands/agents/agents.commands.identity.js"))
+    .agentsSetIdentityCommand;
 }
 
 async function loadAgentsListCommand(): Promise<AgentsListModule["agentsListCommand"]> {
-  return (await import("../../commands/agents.commands.list.js")).agentsListCommand;
+  return (await import("../../commands/agents/agents.commands.list.js")).agentsListCommand;
 }
 
 async function loadAgentsActionRuntime(): Promise<{

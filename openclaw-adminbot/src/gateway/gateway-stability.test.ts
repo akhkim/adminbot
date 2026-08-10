@@ -6,7 +6,7 @@ import {
   emitDiagnosticEvent,
   resetDiagnosticEventsForTest,
   type DiagnosticMemoryUsage,
-} from "../infra/diagnostic-events.js";
+} from "../infra/diagnostics/diagnostic-events.js";
 import {
   getDiagnosticStabilitySnapshot,
   resetDiagnosticStabilityRecorderForTest,

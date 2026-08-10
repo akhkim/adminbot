@@ -3,7 +3,7 @@ import { getRuntimeConfig } from "../../config/config.js";
 import {
   mutateConfigFile as mutateConfigFileInternal,
   replaceConfigFile as replaceConfigFileInternal,
-} from "../../config/mutate.js";
+} from "../../config/mutate/mutate.js";
 import { logWarn } from "../../logger.js";
 import { getPluginRuntimeGatewayRequestScope } from "./gateway-request-scope.js";
 import type { PluginRuntime } from "./types.js";

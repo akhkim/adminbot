@@ -1,7 +1,7 @@
 /** Shared mocked ACP connection and Gateway client helpers for translator tests. */
 import type { AgentSideConnection } from "@agentclientprotocol/sdk";
 import { vi } from "vitest";
-import type { GatewayClient } from "../gateway/client.js";
+import type { GatewayClient } from "../gateway/client/client.js";
 
 type TestAcpConnection = AgentSideConnection & {
   __requestPermissionMock: ReturnType<typeof vi.fn>;

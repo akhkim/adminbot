@@ -1,18 +1,18 @@
 // Builds plugin activation context from config, discovery, and manifests.
-import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import {
-  withBundledPluginEnablementCompat,
-  withBundledPluginVitestCompat,
-} from "./bundled-compat.js";
+import { applyPluginAutoEnable } from "../config/plugin/plugin-auto-enable.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   createPluginActivationSource,
   normalizePluginsConfig,
   type NormalizedPluginsConfig,
   type PluginActivationConfigSource,
-} from "./config-state.js";
+} from "./config/config-state.js";
 import { getCurrentPluginMetadataSnapshot } from "./current-plugin-metadata-snapshot.js";
 import type { PluginDiscoveryResult } from "./discovery.js";
+import {
+  withBundledPluginEnablementCompat,
+  withBundledPluginVitestCompat,
+} from "./install/bundled-compat.js";
 
 export type PluginActivationCompatConfig = {
   enablementPluginIds?: readonly string[];

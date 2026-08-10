@@ -9,8 +9,8 @@ import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/s
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import { tryReadJsonSync } from "../infra/json-files.js";
 import { resolveOpenClawPackageRootSync } from "../infra/openclaw-root.js";
-import { resolveBundledPluginsDir } from "../plugins/bundled-dir.js";
-import type { PluginPackageChannel } from "../plugins/manifest.js";
+import { resolveBundledPluginsDir } from "../plugins/install/bundled-dir.js";
+import type { PluginPackageChannel } from "../plugins/manifest/manifest.js";
 
 type ChannelCatalogEntryLike = {
   openclaw?: {

@@ -4,9 +4,9 @@
 import { formatErrorMessage } from "../../../infra/errors.js";
 import { createAssistantMessageEventStream } from "../../../llm/utils/event-stream.js";
 import type { StreamFn } from "../../runtime/index.js";
-import type { MutableAssistantMessageEventStream } from "../../stream-compat.js";
-import { createStreamIteratorWrapper } from "../../stream-iterator-wrapper.js";
-import { buildStreamErrorAssistantMessage } from "../../stream-message-shared.js";
+import type { MutableAssistantMessageEventStream } from "../../transport/stream-compat.js";
+import { createStreamIteratorWrapper } from "../../transport/stream-iterator-wrapper.js";
+import { buildStreamErrorAssistantMessage } from "../../transport/stream-message-shared.js";
 
 const UNHANDLED_STOP_REASON_RE = /^Unhandled stop reason:\s*(.+)$/i;
 

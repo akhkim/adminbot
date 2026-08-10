@@ -1,7 +1,7 @@
 /** Tests secrets runtime refresh failure handling for auth-profile stores. */
 import os from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { withTempHome } from "../config/home-env.test-harness.js";
+import { withTempHome } from "../config/env/home-env.test-harness.js";
 import {
   beginSecretsRuntimeIsolationForTest,
   createOpenAIFileRuntimeConfig,

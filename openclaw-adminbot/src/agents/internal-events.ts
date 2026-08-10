@@ -18,7 +18,7 @@ import {
   INTERNAL_RUNTIME_CONTEXT_BEGIN,
   INTERNAL_RUNTIME_CONTEXT_END,
 } from "./internal-runtime-context.js";
-import { wrapPromptDataBlock } from "./sanitize-for-prompt.js";
+import { wrapPromptDataBlock } from "./prompt/sanitize-for-prompt.js";
 
 type AgentTaskCompletionInternalEvent = {
   type: typeof AGENT_INTERNAL_EVENT_TYPE_TASK_COMPLETION;

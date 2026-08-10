@@ -31,7 +31,7 @@ vi.mock("./restart-stale-pids.js", () => ({
   findGatewayPidsOnPortSync: (...args: unknown[]) => findGatewayPidsOnPortSyncMock(...args),
 }));
 
-vi.mock("./windows-task-restart.js", () => ({
+vi.mock("./system/windows-task-restart.js", () => ({
   relaunchGatewayScheduledTask: (...args: unknown[]) => relaunchGatewayScheduledTaskMock(...args),
 }));
 

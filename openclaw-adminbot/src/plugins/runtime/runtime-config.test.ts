@@ -1,6 +1,6 @@
 // Runtime config tests cover plugin runtime config normalization and lookup.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 
 const getRuntimeConfigMock = vi.fn();
 const mutateConfigFileMock = vi.fn();
@@ -11,7 +11,7 @@ vi.mock("../../config/config.js", () => ({
   getRuntimeConfig: () => getRuntimeConfigMock(),
 }));
 
-vi.mock("../../config/mutate.js", () => ({
+vi.mock("../../config/mutate/mutate.js", () => ({
   mutateConfigFile: (...args: unknown[]) => mutateConfigFileMock(...args),
   replaceConfigFile: (...args: unknown[]) => replaceConfigFileMock(...args),
 }));

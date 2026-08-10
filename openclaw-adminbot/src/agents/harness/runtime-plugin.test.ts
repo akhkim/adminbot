@@ -1,6 +1,6 @@
 // Verifies plugin loading needed before agent harness selection.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 
 const mocks = vi.hoisted(() => ({
   ensurePluginRegistryLoaded: vi.fn(),
@@ -13,7 +13,7 @@ vi.mock("../../plugins/runtime/runtime-registry-loader.js", () => ({
   ensurePluginRegistryLoaded: mocks.ensurePluginRegistryLoaded,
 }));
 
-vi.mock("../../plugins/providers.js", () => ({
+vi.mock("../../plugins/providers/providers.js", () => ({
   resolveActivatableProviderOwnerPluginIds: mocks.resolveActivatableProviderOwnerPluginIds,
   resolveBundledProviderCompatPluginIds: mocks.resolveBundledProviderCompatPluginIds,
   resolveOwningPluginIdsForProvider: mocks.resolveOwningPluginIdsForProvider,

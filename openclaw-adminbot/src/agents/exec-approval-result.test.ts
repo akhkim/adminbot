@@ -34,7 +34,7 @@ describe("parseExecApprovalResultText", () => {
   it("parses denied results with the canonical colon-separated deniedReason", () => {
     // Colon-separated metadata avoids ambiguity with nested parentheses in
     // human-readable denial reasons.
-    // Producer (src/agents/bash-tools.exec-host-gateway.ts) emits a colon
+    // Producer (src/agents/tools/bash-tools.exec-host-gateway.ts) emits a colon
     // separator instead of nested parens to keep the (...)-delimited wire
     // format unambiguous. This is the format real timeouts now produce.
     const input =

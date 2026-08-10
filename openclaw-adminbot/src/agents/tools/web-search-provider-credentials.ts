@@ -3,8 +3,8 @@
  *
  * Reads config values, env-backed secret refs, and provider-specific environment variables.
  */
-import { normalizeSecretInputString, resolveSecretInputRef } from "../../config/types.secrets.js";
-import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
+import { normalizeSecretInputString, resolveSecretInputRef } from "../../config/types/secrets.js";
+import { normalizeSecretInput } from "../../shared/normalize-secret-input.js";
 
 /**
  * Resolves web-search provider credentials from config values, secret refs, or

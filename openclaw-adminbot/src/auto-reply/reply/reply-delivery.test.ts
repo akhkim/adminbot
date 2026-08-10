@@ -4,11 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "../reply-payload.js";
 import type { ReplyPayload } from "../types.js";
 import { createBlockReplyContentKey } from "./block-reply-pipeline.js";
+import type { TypingSignaler } from "./queue/typing-mode.js";
 import {
   createBlockReplyDeliveryHandler,
   normalizeReplyPayloadDirectives,
 } from "./reply-delivery.js";
-import type { TypingSignaler } from "./typing-mode.js";
 
 type BlockReplyPipelineLike = NonNullable<
   Parameters<typeof createBlockReplyDeliveryHandler>[0]["blockReplyPipeline"]

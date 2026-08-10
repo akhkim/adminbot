@@ -1,8 +1,8 @@
 // Compatibility coverage for embedded runner barrel exports and runtime ids.
 import { describe, expect, it } from "vitest";
 import { normalizeEmbeddedAgentRuntime } from "../agent-runtime-id.js";
-import * as embeddedAgentRunner from "../embedded-agent-runner.js";
-import * as embeddedAgent from "../embedded-agent.js";
+import * as embeddedAgentRunner from "../embedded/embedded-agent-runner.js";
+import * as embeddedAgent from "../embedded/embedded-agent.js";
 
 describe("embedded runner compatibility aliases", () => {
   it("keeps the embedded-agent barrel bound to the runner implementation", () => {

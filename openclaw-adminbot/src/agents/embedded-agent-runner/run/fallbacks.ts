@@ -1,7 +1,7 @@
 /**
  * Reads configured embedded-run model fallback availability.
  */
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { hasConfiguredModelFallbacks } from "../../agent-scope.js";
 
 /**

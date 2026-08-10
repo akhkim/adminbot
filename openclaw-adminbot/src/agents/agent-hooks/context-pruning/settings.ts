@@ -1,5 +1,5 @@
 /** Config normalization for cache-TTL based context pruning. */
-import { parseDurationMs } from "../../../cli/parse-duration.js";
+import { parseDurationMs } from "../../../cli/program/parse-duration.js";
 
 /** Allow/deny glob config for tool-result pruning. */
 export type ContextPruningToolMatch = {

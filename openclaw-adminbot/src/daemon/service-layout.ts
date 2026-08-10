@@ -2,7 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathExists } from "../infra/fs-safe.js";
-import { readPackageName, readPackageVersion } from "../infra/package-json.js";
+import { readPackageName, readPackageVersion } from "../infra/install/package-json.js";
 import type { GatewayServiceCommandConfig } from "./service-types.js";
 
 /** Summary of the installed gateway service command and package layout. */

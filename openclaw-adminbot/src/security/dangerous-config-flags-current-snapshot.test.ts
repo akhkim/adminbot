@@ -1,7 +1,7 @@
 // Verifies current dangerous-config snapshot output.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { resolvePluginConfigContractsById } from "../plugins/config-contracts.js";
+import { resolvePluginConfigContractsById } from "../plugins/config/config-contracts.js";
 import { getCurrentPluginMetadataSnapshot } from "../plugins/current-plugin-metadata-snapshot.js";
 import { collectEnabledInsecureOrDangerousFlags } from "./dangerous-config-flags.js";
 
@@ -9,9 +9,9 @@ vi.mock("../plugins/current-plugin-metadata-snapshot.js", () => ({
   getCurrentPluginMetadataSnapshot: vi.fn(),
 }));
 
-vi.mock("../plugins/config-contracts.js", async () => {
-  const actual = await vi.importActual<typeof import("../plugins/config-contracts.js")>(
-    "../plugins/config-contracts.js",
+vi.mock("../plugins/config/config-contracts.js", async () => {
+  const actual = await vi.importActual<typeof import("../plugins/config/config-contracts.js")>(
+    "../plugins/config/config-contracts.js",
   );
   return {
     ...actual,

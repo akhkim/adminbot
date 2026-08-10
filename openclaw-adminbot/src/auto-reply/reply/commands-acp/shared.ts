@@ -10,7 +10,7 @@ import type { AcpRuntimeError } from "../../../acp/runtime/errors.js";
 import { supportsAutomaticThreadBindingSpawn } from "../../../channels/thread-bindings-policy.js";
 import type { AcpSessionRuntimeOptions } from "../../../config/sessions/types.js";
 import { normalizeAgentId } from "../../../routing/session-key.js";
-import type { CommandHandlerResult, HandleCommandsParams } from "../commands-types.js";
+import type { CommandHandlerResult, HandleCommandsParams } from "../commands/commands-types.js";
 import { resolveAcpCommandChannel, resolveAcpCommandThreadId } from "./context.js";
 
 export const COMMAND = "/acp";

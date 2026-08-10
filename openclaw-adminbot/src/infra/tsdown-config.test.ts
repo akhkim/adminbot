@@ -147,7 +147,7 @@ describe("tsdown config", () => {
     const distGraph = requireUnifiedDistGraph();
 
     expect(entrySources(distGraph)["provider-dispatcher.runtime"]).toBe(
-      "src/auto-reply/reply/provider-dispatcher.runtime.ts",
+      "src/auto-reply/reply/providers/provider-dispatcher.runtime.ts",
     );
   });
 
@@ -155,7 +155,7 @@ describe("tsdown config", () => {
     const distGraph = requireUnifiedDistGraph();
 
     expect(entrySources(distGraph)["plugins/hook-runner-global"]).toBe(
-      "src/plugins/hook-runner-global.ts",
+      "src/plugins/hooks/hook-runner-global.ts",
     );
   });
 

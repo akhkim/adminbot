@@ -1,5 +1,5 @@
 // Audio tag helpers parse inline audio directives from message text.
-import { parseInlineDirectives } from "../utils/directive-tags.js";
+import { parseInlineDirectives } from "../shared/directive-tags.js";
 
 /**
  * Extract audio mode tag from text.

@@ -8,9 +8,9 @@ import type { Command } from "commander";
 import type { CronDeliveryPreview, CronJob } from "../../cron/types.js";
 import { parseStrictPositiveInteger } from "../../infra/parse-finite-number.js";
 import { defaultRuntime } from "../../runtime.js";
-import type { GatewayRpcOpts } from "../gateway-rpc.js";
-import { addGatewayClientOptions, callGatewayFromCli } from "../gateway-rpc.js";
-import { parseDurationMs } from "../parse-duration.js";
+import type { GatewayRpcOpts } from "../gateway-cli/gateway-rpc.js";
+import { addGatewayClientOptions, callGatewayFromCli } from "../gateway-cli/gateway-rpc.js";
+import { parseDurationMs } from "../program/parse-duration.js";
 import {
   coerceCronDeliveryPreviews,
   enrichCronJsonWithStatus,

@@ -11,10 +11,10 @@ import {
   resolveAgentWorkspaceDir,
   resolveAgentDir,
 } from "../agents/agent-scope.js";
-import { runEmbeddedAgent } from "../agents/embedded-agent.js";
-import { resolveDefaultModelForAgent } from "../agents/model-selection.js";
+import { runEmbeddedAgent } from "../agents/embedded/embedded-agent.js";
+import { resolveDefaultModelForAgent } from "../agents/models/model-selection.js";
 import { resolveAgentTimeoutMs } from "../agents/timeout.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
   extractLeadingHttpStatus,

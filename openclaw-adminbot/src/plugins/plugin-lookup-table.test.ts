@@ -1,8 +1,8 @@
 /** Tests plugin lookup table indexing for manifest-owned contribution ids. */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { resolveInstalledPluginIndexPolicyHash } from "./installed-plugin-index-policy.js";
-import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest-registry.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { resolveInstalledPluginIndexPolicyHash } from "./install/installed-plugin-index-policy.js";
+import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest/manifest-registry.js";
 import { clearLoadPluginMetadataSnapshotMemo } from "./plugin-metadata-snapshot.js";
 import type { PluginRegistrySnapshot } from "./plugin-registry.js";
 
@@ -27,8 +27,8 @@ vi.mock("../channels/config-presence.js", () => ({
     listExplicitlyDisabledChannelIdsForConfig(config),
 }));
 
-vi.mock("./manifest-registry-installed.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./manifest-registry-installed.js")>();
+vi.mock("./manifest/manifest-registry-installed.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./manifest/manifest-registry-installed.js")>();
   return {
     ...actual,
     loadPluginManifestRegistryForInstalledIndex: (params: unknown) =>

@@ -13,7 +13,7 @@ const hookMocks = vi.hoisted(() => ({
   emitAgentEvent: vi.fn(),
 }));
 
-vi.mock("../plugins/hook-runner-global.js", () => ({
+vi.mock("./hooks/hook-runner-global.js", () => ({
   getGlobalHookRunner: () => hookMocks.runner,
 }));
 
@@ -24,7 +24,7 @@ vi.mock("../infra/agent-events.js", () => ({
 import {
   handleCompactionEnd,
   handleCompactionStart,
-} from "../agents/embedded-agent-subscribe.handlers.compaction.js";
+} from "../agents/embedded/embedded-agent-subscribe.handlers.compaction.js";
 
 describe("compaction hook wiring", () => {
   beforeEach(() => {

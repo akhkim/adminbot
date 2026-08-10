@@ -2,8 +2,14 @@ import { defineToolPlugin } from "openclaw/plugin-sdk/tool-plugin";
 // AdminBot plugin entrypoint registers typed action-broker tools.
 import { Type } from "typebox";
 import {
+  createAdminBotToolHandlers,
+  defaultAdminBotConfig,
+  type AdminBotPluginConfig,
+} from "./src/adapters/openclaw/index.js";
+import {
   accessGrantSchema,
   actionTypeSchema,
+  collaboratorSubgroupSchema,
   evidencePointerSchema,
   paperArtifactsSchema,
   paperReminderSchema,
@@ -12,12 +18,7 @@ import {
   riskTierSchema,
   sensitiveInfoSchema,
   settingsSchema,
-} from "./src/tool-schemas.js";
-import {
-  createAdminBotToolHandlers,
-  defaultAdminBotConfig,
-  type AdminBotPluginConfig,
-} from "./src/tools.js";
+} from "./src/contracts/tool-schemas.js";
 
 const adminBotConfigSchema = Type.Object(
   {
@@ -287,7 +288,7 @@ export default defineToolPlugin({
             type: "string",
             enum: ["personal", "jinesis"],
             description:
-              "Named destination: personal selects the private group calendar; jinesis selects jinesis.adminbot@gmail.com.",
+              "Named destination: personal selects the private group calendar (ADMINBOT_CALENDAR_ID); jinesis selects the bot's own Google account (ADMINBOT_BOT_EMAIL).",
           }),
         ),
         emailMessageId: Type.Optional(
@@ -350,7 +351,7 @@ export default defineToolPlugin({
       name: "adminbot_upsert_lab_member",
       label: "AdminBot upsert lab member",
       description:
-        "Create or update a lab member privilege record and compute the default access profile for that privilege level.",
+        "Create or update a lab member privilege record and compute the default access profile for that privilege level. For an external collaborator, also set collaboratorSubgroup, which decides the access items (spreadsheet depth, Slack channels, Drive folders, meetings, rec letters) they get.",
       optional: true,
       parameters: Type.Object({
         id: Type.String(),
@@ -358,6 +359,7 @@ export default defineToolPlugin({
         email: Type.Optional(Type.String()),
         slackUserId: Type.Optional(Type.String()),
         privilegeLevel: Type.Optional(privilegeLevelSchema),
+        collaboratorSubgroup: Type.Optional(collaboratorSubgroupSchema),
         accessOverrides: Type.Optional(Type.Array(accessGrantSchema)),
         notes: Type.Optional(Type.String()),
         role: Type.Optional(Type.String()),

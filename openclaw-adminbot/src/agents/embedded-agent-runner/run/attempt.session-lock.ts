@@ -15,14 +15,14 @@ import {
 } from "../../../config/sessions/transcript-write-context.js";
 import { resolveGlobalSingleton } from "../../../shared/global-singleton.js";
 import { isTranscriptOnlyOpenClawAssistantMessage } from "../../../shared/transcript-only-openclaw-assistant.js";
-import { isSessionWriteLockAcquireError } from "../../session-write-lock-error.js";
-import type { acquireSessionWriteLock } from "../../session-write-lock.js";
 import type {
   CustomEntry,
   LabelEntry,
   SessionInfoEntry,
   SessionMessageEntry,
 } from "../../sessions/session-manager.js";
+import { isSessionWriteLockAcquireError } from "../../sessions/session-write-lock-error.js";
+import type { acquireSessionWriteLock } from "../../sessions/session-write-lock.js";
 import { resolveEmbeddedSessionFileKey } from "../session-file-key.js";
 
 type SessionLock = Awaited<ReturnType<typeof acquireSessionWriteLock>>;

@@ -6,7 +6,7 @@ import os from "node:os";
 import { isAcpRuntimeSpawnAvailable } from "../../acp/runtime/availability.js";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import { resolveAgentModelFallbackValues } from "../../config/model-input.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   captureCompactionCheckpointSnapshotAsync,
   cleanupCompactionCheckpointSnapshot,
@@ -15,31 +15,33 @@ import {
   resolveCompactionCheckpointTranscriptPosition,
   resolveSessionCompactionCheckpointReason,
   type CapturedCompactionCheckpointSnapshot,
-} from "../../gateway/session-compaction-checkpoints.js";
-import { resolveDiagnosticModelContentCapturePolicy } from "../../infra/diagnostic-llm-content.js";
+} from "../../gateway/sessions/session-compaction-checkpoints.js";
+import { resolveDiagnosticModelContentCapturePolicy } from "../../infra/diagnostics/diagnostic-llm-content.js";
 import {
   createDiagnosticTraceContext,
   freezeDiagnosticTraceContext,
   getActiveDiagnosticTraceContext,
-} from "../../infra/diagnostic-trace-context.js";
+} from "../../infra/diagnostics/diagnostic-trace-context.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { getMachineDisplayName } from "../../infra/machine-name.js";
 import { generateSecureToken } from "../../infra/secure-random.js";
 import { listRegisteredPluginAgentPromptGuidance } from "../../plugins/command-registry-state.js";
 import { getCurrentPluginMetadataSnapshot } from "../../plugins/current-plugin-metadata-snapshot.js";
-import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
-import { extractModelCompat } from "../../plugins/provider-model-compat.js";
-import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
+import { getGlobalHookRunner } from "../../plugins/hooks/hook-runner-global.js";
+import { extractModelCompat } from "../../plugins/providers/provider-model-compat.js";
+import type { ProviderRuntimeModel } from "../../plugins/providers/provider-runtime-model.types.js";
 import {
   prepareProviderRuntimeAuth,
   resolveProviderTextTransforms,
   transformProviderSystemPrompt,
-} from "../../plugins/provider-runtime.js";
+} from "../../plugins/providers/provider-runtime.js";
 import {
   isCronSessionKey,
   isSubagentSessionKey,
   parseAgentSessionKey,
 } from "../../routing/session-key.js";
+import { normalizeMessageChannel } from "../../shared/message-channel.js";
+import { isReasoningTagProvider } from "../../shared/provider-utils.js";
 import { resolveSkillsPromptForRun } from "../../skills/loading/workspace.js";
 import { resolveEmbeddedRunSkillEntries } from "../../skills/runtime/embedded-run-entries.js";
 import {
@@ -47,10 +49,7 @@ import {
   applySkillEnvOverridesFromSnapshot,
 } from "../../skills/runtime/env-overrides.js";
 import { resolveUserPath } from "../../utils.js";
-import { normalizeMessageChannel } from "../../utils/message-channel.js";
-import { isReasoningTagProvider } from "../../utils/provider-utils.js";
 import { createBundleLspToolRuntime } from "../agent-bundle-lsp-runtime.js";
-import { createBundleMcpToolRuntime } from "../agent-bundle-mcp-tools.js";
 import {
   consumeCompactionSafeguardCancelReason,
   setCompactionSafeguardCancelReason,
@@ -67,13 +66,13 @@ import {
   applyAgentCompactionSettingsFromConfig,
   isSilentOverflowProneModel,
 } from "../agent-settings.js";
-import { createOpenClawCodingTools, resolveProcessToolScopeKey } from "../agent-tools.js";
-import { listActiveProcessSessionReferences } from "../bash-process-references.js";
 import {
-  makeBootstrapWarn,
-  resolveBootstrapContextForRun,
-  resolveContextInjectionMode,
-} from "../bootstrap-files.js";
+  applyAuthHeaderOverride,
+  applyLocalNoAuthHeaderOverride,
+  getApiKeyForModel,
+  MissingProviderAuthError,
+  resolveModelAuthMode,
+} from "../auth/model-auth.js";
 import {
   listChannelSupportedActions,
   resolveChannelMessageToolHints,
@@ -82,52 +81,53 @@ import {
 import {
   hasMeaningfulConversationContent,
   isRealConversationMessage,
-} from "../compaction-real-conversation.js";
+} from "../compaction/compaction-real-conversation.js";
 import { resolveContextWindowInfo } from "../context-window-guard.js";
 import { formatUserTime, resolveUserTimeFormat, resolveUserTimezone } from "../date-time.js";
 import { DEFAULT_CONTEXT_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
 import { resolveOpenClawReferencePaths } from "../docs-path.js";
-import { ensureSessionHeader } from "../embedded-agent-helpers.js";
-import { pickFallbackThinkingLevel } from "../embedded-agent-helpers.js";
+import { ensureSessionHeader } from "../embedded/embedded-agent-helpers.js";
+import { pickFallbackThinkingLevel } from "../embedded/embedded-agent-helpers.js";
 import { coerceToFailoverError, describeFailoverError } from "../failover-error.js";
 import { resolveAgentHarnessPolicy } from "../harness/policy.js";
 import { ensureSelectedAgentHarnessPlugin } from "../harness/runtime-plugin.js";
-import { resolveHeartbeatPromptForSystemPrompt } from "../heartbeat-system-prompt.js";
-import {
-  applyAuthHeaderOverride,
-  applyLocalNoAuthHeaderOverride,
-  getApiKeyForModel,
-  MissingProviderAuthError,
-  resolveModelAuthMode,
-} from "../model-auth.js";
-import { isFallbackSummaryError, runWithModelFallback } from "../model-fallback.js";
-import { supportsModelTools } from "../model-tool-support.js";
-import { ensureOpenClawModelsJson } from "../models-config.js";
+import { createBundleMcpToolRuntime } from "../mcp/agent-bundle-mcp-tools.js";
+import { isFallbackSummaryError, runWithModelFallback } from "../models/model-fallback.js";
+import { supportsModelTools } from "../models/model-tool-support.js";
+import { ensureOpenClawModelsJson } from "../models/models-config.js";
 import { wrapStreamFnTextTransforms } from "../plugin-text-transforms.js";
-import { resolveAgentPromptSurfaceForSessionKey } from "../prompt-surface.js";
-import { applyPreparedRuntimeAuthToModel } from "../provider-request-config.js";
-import { registerProviderStreamForModel } from "../provider-stream.js";
+import {
+  makeBootstrapWarn,
+  resolveBootstrapContextForRun,
+  resolveContextInjectionMode,
+} from "../prompt/bootstrap-files.js";
+import { resolveHeartbeatPromptForSystemPrompt } from "../prompt/heartbeat-system-prompt.js";
+import { resolveAgentPromptSurfaceForSessionKey } from "../prompt/prompt-surface.js";
 import { collectRuntimeChannelCapabilities } from "../runtime-capabilities.js";
 import { buildAgentRuntimePlan } from "../runtime-plan/build.js";
 import type { AgentRuntimePlan } from "../runtime-plan/types.js";
 import { ensureRuntimePluginsLoaded } from "../runtime-plugins.js";
 import type { AgentMessage } from "../runtime/index.js";
-import { resolveSandboxContext } from "../sandbox.js";
-import { repairSessionFileIfNeeded } from "../session-file-repair.js";
-import { guardSessionManager } from "../session-tool-result-guard-wrapper.js";
-import { sanitizeToolUseResultPairing } from "../session-transcript-repair.js";
+import { resolveSandboxContext } from "../sandbox/sandbox.js";
+import { createAgentSession, estimateTokens, SessionManager } from "../sessions/index.js";
+import { repairSessionFileIfNeeded } from "../sessions/session-file-repair.js";
+import { guardSessionManager } from "../sessions/session-tool-result-guard-wrapper.js";
+import { sanitizeToolUseResultPairing } from "../sessions/session-transcript-repair.js";
 import {
   acquireSessionWriteLock,
   resolveSessionLockMaxHoldFromTimeout,
   resolveSessionWriteLockOptions,
-} from "../session-write-lock.js";
-import { createAgentSession, estimateTokens, SessionManager } from "../sessions/index.js";
+} from "../sessions/session-write-lock.js";
 import { detectRuntimeShell } from "../shell-utils.js";
+import { createOpenClawCodingTools, resolveProcessToolScopeKey } from "../tools/agent-tools.js";
+import { listActiveProcessSessionReferences } from "../tools/bash-process-references.js";
 import {
   filterProviderNormalizableTools,
   filterRuntimeCompatibleTools,
-} from "../tool-schema-projection.js";
-import { logRuntimeToolSchemaQuarantine } from "../tool-schema-quarantine.js";
+} from "../tools/tool-schema-projection.js";
+import { logRuntimeToolSchemaQuarantine } from "../tools/tool-schema-quarantine.js";
+import { applyPreparedRuntimeAuthToModel } from "../transport/provider-request-config.js";
+import { registerProviderStreamForModel } from "../transport/provider-stream.js";
 import {
   classifyCompactionReason,
   formatUnknownCompactionReasonDetail,

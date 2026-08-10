@@ -2,4 +2,4 @@
 export {
   countActiveDescendantRuns,
   listDescendantRunsForRequester,
-} from "../../agents/subagent-registry.js";
+} from "../../agents/subagents/subagent-registry.js";

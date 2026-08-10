@@ -4,7 +4,7 @@
  * Verifies open-provider channels fail closed when provider config is missing.
  */
 import { expect, it } from "vitest";
-import { resolveOpenProviderRuntimeGroupPolicy } from "../../../../config/runtime-group-policy.js";
+import { resolveOpenProviderRuntimeGroupPolicy } from "../../../../config/runtime/runtime-group-policy.js";
 
 export type RuntimeGroupPolicyResolver = (
   params: Parameters<typeof resolveOpenProviderRuntimeGroupPolicy>[0],

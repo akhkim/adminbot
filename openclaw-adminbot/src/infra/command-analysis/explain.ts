@@ -2,7 +2,7 @@
 // warning summaries for approval surfaces without loading the rich parser path.
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import type { CommandExplanation, CommandRisk } from "../command-explainer/types.js";
-import type { ExecCommandSegment } from "../exec-approvals-analysis.js";
+import type { ExecCommandSegment } from "../exec/exec-approvals-analysis.js";
 import { analyzeCommandForPolicy } from "./policy.js";
 import { detectCommandCarrierArgv, detectInlineEvalInSegments } from "./risks.js";
 

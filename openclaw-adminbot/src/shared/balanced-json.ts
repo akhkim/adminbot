@@ -1,3 +1,4 @@
+// NOTE(dedupe): overlaps with src/shared/safe-json.ts — see docs/adr/0005-shared-is-the-helper-home.md
 /** JSON opening delimiters supported by the balanced-fragment scanner. */
 type JsonOpeningDelimiter = "{" | "[";
 

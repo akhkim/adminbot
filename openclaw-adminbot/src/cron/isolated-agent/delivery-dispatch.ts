@@ -1,7 +1,7 @@
 /** Dispatches isolated cron output to direct delivery, mirrors, and follow-up queues. */
 import { isAudioFileName } from "@openclaw/media-core/mime";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { retireSessionMcpRuntime } from "../../agents/agent-bundle-mcp-tools.js";
+import { retireSessionMcpRuntime } from "../../agents/mcp/agent-bundle-mcp-tools.js";
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
 import {
   isSilentReplyText,
@@ -18,9 +18,8 @@ import {
   resolveMainSessionKey,
 } from "../../config/sessions/main-session.js";
 import { resolveMirroredTranscriptText } from "../../config/sessions/transcript-mirror.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { TtsAutoMode } from "../../config/types.tts.js";
-import { isSuppressedControlReplyText } from "../../gateway/control-reply-text.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { isSuppressedControlReplyText } from "../../gateway/control/control-reply-text.js";
 import { sleepWithAbort } from "../../infra/backoff.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import type {
@@ -41,7 +40,6 @@ import {
   resolveAgentIdFromSessionKey,
 } from "../../routing/session-key.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
-import { shouldAttemptTtsPayload } from "../../tts/tts-config.js";
 import { createCronExecutionId } from "../run-id.js";
 import { hasScheduledNextRunAtMs } from "../service/jobs.js";
 import type { CronJob, CronRunTelemetry } from "../types.js";
@@ -116,7 +114,6 @@ type DispatchCronDeliveryParams = {
   deliveryPayloadHasStructuredContent: boolean;
   deliveryPayloads: ReplyPayload[];
   synthesizedText?: string;
-  ttsAuto?: TtsAutoMode;
   summary?: string;
   outputText?: string;
   telemetry?: CronRunTelemetry;
@@ -190,7 +187,6 @@ const deliveryLoggerRuntimeLoader = createLazyImportLoader(
 const subagentFollowupRuntimeLoader = createLazyImportLoader(
   () => import("./subagent-followup.runtime.js"),
 );
-const ttsRuntimeLoader = createLazyImportLoader(() => import("../../tts/tts.runtime.js"));
 
 const COMPLETED_DIRECT_CRON_DELIVERIES = new Map<string, CompletedDirectCronDelivery>();
 
@@ -230,10 +226,6 @@ async function loadSubagentFollowupRuntime(): Promise<
   typeof import("./subagent-followup.runtime.js")
 > {
   return await subagentFollowupRuntimeLoader.load();
-}
-
-async function loadTtsRuntime(): Promise<typeof import("../../tts/tts.runtime.js")> {
-  return await ttsRuntimeLoader.load();
 }
 
 async function logCronDeliveryWarn(message: string): Promise<void> {
@@ -354,40 +346,6 @@ function getCompletedDirectCronDelivery(
     return undefined;
   }
   return cloneDeliveryResults(cached.results);
-}
-
-async function maybeApplyTtsToCronPayloads(params: {
-  cfg: OpenClawConfig;
-  payloads: ReplyPayload[];
-  delivery: SuccessfulDeliveryTarget;
-  agentId: string;
-  ttsAuto?: TtsAutoMode;
-}): Promise<ReplyPayload[]> {
-  if (
-    !shouldAttemptTtsPayload({
-      cfg: params.cfg,
-      ttsAuto: params.ttsAuto,
-      agentId: params.agentId,
-      channelId: params.delivery.channel,
-      accountId: params.delivery.accountId,
-    })
-  ) {
-    return params.payloads;
-  }
-  const { maybeApplyTtsToPayload } = await loadTtsRuntime();
-  return await Promise.all(
-    params.payloads.map((payload) =>
-      maybeApplyTtsToPayload({
-        payload,
-        cfg: params.cfg,
-        channel: params.delivery.channel,
-        kind: "final",
-        ttsAuto: params.ttsAuto,
-        agentId: params.agentId,
-        accountId: params.delivery.accountId,
-      }),
-    ),
-  );
 }
 
 function buildDirectCronDeliveryIdempotencyKey(params: {
@@ -892,15 +850,7 @@ export async function dispatchCronDelivery(
           ...params.telemetry,
         });
       }
-      const payloadsForDelivery = (
-        await maybeApplyTtsToCronPayloads({
-          cfg: params.cfgWithAgentDefaults,
-          payloads: normalizedPayloads,
-          delivery,
-          agentId: params.agentId,
-          ttsAuto: params.ttsAuto,
-        })
-      ).filter((p) => hasReplyPayloadContent(p, { trimText: true }));
+      const payloadsForDelivery = normalizedPayloads;
       if (payloadsForDelivery.length === 0) {
         return await finishSilentReplyDelivery();
       }

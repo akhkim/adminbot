@@ -1,7 +1,7 @@
 // Post-install migration tests cover migration prompts and command guidance.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createWizardPrompter } from "../../test/helpers/wizard-prompter.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { createNonExitingRuntime } from "../runtime.js";
 import type { WizardPrompter } from "./prompts.js";
 
@@ -18,7 +18,7 @@ const resolveManifestContractRuntimePluginResolution = vi.hoisted(() =>
     bundledCompatPluginIds: [] as string[],
   })),
 );
-vi.mock("../plugins/manifest-contract-runtime.js", () => ({
+vi.mock("../plugins/manifest/manifest-contract-runtime.js", () => ({
   resolveManifestContractRuntimePluginResolution,
 }));
 
@@ -33,7 +33,7 @@ const createMigrationLogger = vi.hoisted(() =>
 vi.mock("../commands/migrate/context.js", () => ({ createMigrationLogger }));
 
 const resolveStateDir = vi.hoisted(() => vi.fn(() => "/tmp/state"));
-vi.mock("../config/paths.js", () => ({ resolveStateDir }));
+vi.mock("../config/paths/paths.js", () => ({ resolveStateDir }));
 
 const migrateDefaultCommand = vi.hoisted(() =>
   vi.fn(async (_runtime: unknown, _opts: { provider: string }) => undefined),

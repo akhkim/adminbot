@@ -17,7 +17,7 @@ const loadBundledPluginPublicSurfaceModuleSync = vi.hoisted(() => vi.fn());
 const tryLoadActivatedBundledPluginPublicSurfaceModuleSync = vi.hoisted(() => vi.fn());
 const resolveOpenClawPackageRootSync = vi.hoisted(() => vi.fn());
 
-vi.mock("../plugins/manifest-registry.js", () => ({
+vi.mock("../plugins/manifest/manifest-registry.js", () => ({
   loadPluginManifestRegistry,
 }));
 

@@ -14,7 +14,7 @@ import { getChannelPlugin, normalizeChannelId } from "../../channels/plugins/ind
 import { createReplyPrefixContext } from "../../channels/reply-prefix.js";
 import { createOutboundSendDeps, type CliDeps } from "../../cli/outbound-send-deps.js";
 import type { SessionEntry } from "../../config/sessions.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import {
   resolveAgentDeliveryPlanWithSessionRoute,
@@ -31,14 +31,16 @@ import {
 } from "../../infra/outbound/payloads.js";
 import type { OutboundSessionContext } from "../../infra/outbound/session-context.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../../runtime.js";
-import { isInternalMessageChannel } from "../../utils/message-channel.js";
-import type { MessagingToolSend } from "../embedded-agent-messaging.types.js";
+import { isInternalMessageChannel } from "../../shared/message-channel.js";
 import type { EmbeddedAgentRunMeta } from "../embedded-agent-runner/types.js";
+import type { MessagingToolSend } from "../embedded/embedded-agent-messaging.types.js";
 import { isNestedAgentLane } from "../lanes.js";
 import { isAgentRunRestartAbortReason } from "../run-termination.js";
 import type { AgentCommandOpts, AgentCommandResultMetaOverrides } from "./types.js";
 
-type RunResult = Awaited<ReturnType<(typeof import("../embedded-agent.js"))["runEmbeddedAgent"]>>;
+type RunResult = Awaited<
+  ReturnType<(typeof import("../embedded/embedded-agent.js"))["runEmbeddedAgent"]>
+>;
 type DurableSendResult = Awaited<ReturnType<typeof sendDurableMessageBatch>>;
 
 function createRestartOnlyAbortSignal(source: AbortSignal | undefined): {
@@ -672,7 +674,7 @@ export async function deliverAgentCommandResult(
   // `--deliver` path. Without it, relative reply media paths reach the
   // outbound loader unresolved and `assertLocalMediaAllowed` fails with
   // "Local media path is not under an allowed directory". Mirrors the
-  // normalizer wiring in `src/auto-reply/reply/agent-runner.ts`.
+  // normalizer wiring in `src/auto-reply/reply/agent/agent-runner.ts`.
   const mediaNormalizedReplyPayloads =
     deliver && !deliveryStatus && !isInternalMessageChannel(deliveryChannel)
       ? await normalizeReplyMediaPathsForDelivery({

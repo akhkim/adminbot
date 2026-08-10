@@ -62,7 +62,7 @@ vi.mock("node:child_process", async () => {
   );
 });
 
-vi.mock("../config/paths.js", () => ({
+vi.mock("../config/paths/paths.js", () => ({
   resolveGatewayPort: () => mockResolveGatewayPort(),
 }));
 
@@ -80,7 +80,7 @@ vi.mock("../logging/subsystem.js", () => ({
 
 vi.mock("./gateway-processes.js", () => ({}));
 
-vi.mock("./windows-port-pids.js", () => ({
+vi.mock("./system/windows-port-pids.js", () => ({
   readWindowsListeningPidsOnPortSync: (port: number, timeoutMs?: number) =>
     mockReadWindowsListeningPids(port, timeoutMs),
   readWindowsListeningPidsResultSync: (port: number, timeoutMs?: number) =>
@@ -91,7 +91,7 @@ vi.mock("./windows-port-pids.js", () => ({
     mockReadWindowsProcessArgsResult(pid, timeoutMs),
 }));
 
-vi.mock("./windows-install-roots.js", () => ({
+vi.mock("./system/windows-install-roots.js", () => ({
   getWindowsInstallRoots: () => ({
     systemRoot: "C:\\Windows",
     programFiles: "C:\\Program Files",

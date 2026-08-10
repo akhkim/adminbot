@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { CONTROL_UI_BOOTSTRAP_CONFIG_PATH } from "../../../../src/gateway/control-ui-contract.js";
+import { CONTROL_UI_BOOTSTRAP_CONFIG_PATH } from "../../../../src/gateway/control/control-ui-contract.js";
 import { resolveUiHourCycleOptions, setUiTimeFormatPreference } from "../format.ts";
 import { loadControlUiBootstrapConfig } from "./control-ui-bootstrap.ts";
 

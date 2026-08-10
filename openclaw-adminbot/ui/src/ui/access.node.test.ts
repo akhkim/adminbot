@@ -7,7 +7,7 @@ import {
   resolveAccessRole,
   resolveAccessibleTab,
   visibleTabsForRole,
-} from "./access.ts";
+} from "./adminbot/access.ts";
 import { TAB_GROUPS, type Tab } from "./navigation.ts";
 
 const ALL_TABS = TAB_GROUPS.flatMap((group) => group.tabs) as readonly Tab[];
@@ -50,7 +50,6 @@ describe("resolveAccessRole", () => {
 
   it("gives governance levels admin and everything else member", () => {
     expect(resolveAccessRole({ signedIn: true, privilegeLevel: "admin" })).toBe("admin");
-    expect(resolveAccessRole({ signedIn: true, privilegeLevel: "core_member" })).toBe("admin");
     expect(resolveAccessRole({ signedIn: true, privilegeLevel: "member" })).toBe("member");
     expect(resolveAccessRole({ signedIn: true, privilegeLevel: "trial" })).toBe("member");
     expect(resolveAccessRole({ signedIn: true, privilegeLevel: "external_collaborator" })).toBe(
@@ -70,12 +69,16 @@ describe("visibleTabsForRole", () => {
     ]);
   });
 
-  it("adds the roster, the paper list and chat for a member", () => {
+  it("adds the roster, availability, paper list, and chat for a member", () => {
     expect(visibleTabsForRole(ALL_TABS, "member")).toEqual([
+      "dashboard",
+      "profile",
+      "myWork",
       "chat",
-      "adminbotReimbursements",
       "adminbotMembers",
+      "adminbotTimeAvailability",
       "adminbotPapers",
+      "adminbotReimbursements",
       "adminbotDeadlines",
     ]);
   });
@@ -120,7 +123,7 @@ describe("resolveAccessibleTab", () => {
   // rendering a privileged panel with no data behind it.
   it("falls back to the role's default when the tab is out of reach", () => {
     expect(resolveAccessibleTab("config", "anonymous")).toBe("adminbotDeadlines");
-    expect(resolveAccessibleTab("adminbotSettings", "member")).toBe("chat");
+    expect(resolveAccessibleTab("adminbotSettings", "member")).toBe("dashboard");
     expect(canAccessTab(defaultTabForRole("anonymous"), "anonymous")).toBe(true);
     expect(canAccessTab(defaultTabForRole("member"), "member")).toBe(true);
   });

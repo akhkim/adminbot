@@ -6,7 +6,7 @@ import {
 import type { MsgContext } from "../../auto-reply/templating.js";
 import { getLoadedChannelPlugin, listChannelPlugins } from "../../channels/plugins/index.js";
 import { normalizeSessionKeyPreservingOpaquePeerIds } from "../../sessions/session-key-utils.js";
-import { normalizeMessageChannel } from "../../utils/message-channel.js";
+import { normalizeMessageChannel } from "../../shared/message-channel.js";
 
 // Candidate channels come from context and key shape because explicit keys may be prefixed.
 function resolveExplicitSessionKeyNormalizerCandidates(

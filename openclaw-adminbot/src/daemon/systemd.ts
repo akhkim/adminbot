@@ -5,18 +5,18 @@ import os from "node:os";
 import path from "node:path";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
-import { resolveStateDir } from "../config/paths.js";
 import {
   isUnresolvedShellReference,
   readStateDirDotEnvFromStateDir,
-} from "../config/state-dir-dotenv.js";
+} from "../config/env/state-dir-dotenv.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import { formatErrorMessage } from "../infra/errors.js";
-import { normalizeEnvVarKey } from "../infra/host-env-security.js";
 import {
   parseStrictInteger,
   parseStrictNonNegativeInteger,
   parseStrictPositiveInteger,
 } from "../infra/parse-finite-number.js";
+import { normalizeEnvVarKey } from "../infra/system/host-env-security.js";
 import { splitArgsPreservingQuotes } from "./arg-split.js";
 import {
   LEGACY_GATEWAY_SYSTEMD_SERVICE_NAMES,

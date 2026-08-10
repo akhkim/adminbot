@@ -5,7 +5,7 @@ import {
   mergeMissing,
   type LegacyConfigMigrationSpec,
   type LegacyConfigRule,
-} from "../../../config/legacy.shared.js";
+} from "../../../config/legacy/legacy.shared.js";
 import { isBlockedObjectKey } from "../../../infra/prototype-keys.js";
 
 const LEGACY_TTS_PROVIDER_KEYS = ["openai", "elevenlabs", "microsoft", "edge"] as const;

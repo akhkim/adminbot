@@ -3,9 +3,9 @@
  */
 import { normalizeFastMode } from "../auto-reply/thinking.shared.js";
 import type { SessionEntry } from "../config/sessions.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { resolveAgentConfig } from "./agent-scope.js";
-import { modelKey } from "./model-ref-shared.js";
+import { modelKey } from "./models/model-ref-shared.js";
 
 // Resolves effective fast-mode state from session, agent, model config, then
 // default. Callers keep the source for diagnostics and prompt explanations.

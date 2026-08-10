@@ -1,6 +1,6 @@
 // Shared model fixtures for embedded runner model resolution tests.
 import { vi } from "vitest";
-import type { ModelDefinitionConfig } from "../../config/types.js";
+import type { ModelDefinitionConfig } from "../../config/types/types.js";
 
 type DiscoverModelsMock = typeof import("../agent-model-discovery.js").discoverModels;
 

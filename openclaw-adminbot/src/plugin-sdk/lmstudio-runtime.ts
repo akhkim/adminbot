@@ -3,7 +3,7 @@ import type {
   ModelDefinitionConfig,
   ModelProviderConfig,
   OpenClawConfig,
-} from "../config/types.js";
+} from "../config/types/types.js";
 import {
   createLazyFacadeValue as createLazyFacadeRuntimeValue,
   loadBundledPluginPublicSurfaceModuleSync,

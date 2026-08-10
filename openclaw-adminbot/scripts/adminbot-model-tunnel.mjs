@@ -9,7 +9,20 @@ import net from "node:net";
 
 const listenHost = process.env.ADMINBOT_TUNNEL_LISTEN_HOST ?? "127.0.0.1";
 const listenPort = Number(process.env.ADMINBOT_TUNNEL_LISTEN_PORT ?? 8000);
-const targetHost = process.env.ADMINBOT_TUNNEL_TARGET_HOST ?? "100.113.227.5";
+// The tailnet address of the vLLM host. Deliberately has no default: it identifies one specific
+// machine, and a baked-in address would silently relay private traffic to whatever now answers it.
+// ADMINBOT_TUNNEL_TARGET_HOST is the old name for the same setting and is still accepted.
+const targetHost = (
+  process.env.ADMINBOT_TUNNEL_TARGET ??
+  process.env.ADMINBOT_TUNNEL_TARGET_HOST ??
+  ""
+).trim();
+if (!targetHost) {
+  console.error(
+    "ADMINBOT_TUNNEL_TARGET is not set — the tunnel has no vLLM host to forward to. Set it to the tailnet address of the model server.",
+  );
+  process.exit(1);
+}
 const targetPort = Number(process.env.ADMINBOT_TUNNEL_TARGET_PORT ?? 8000);
 
 const server = net.createServer((client) => {

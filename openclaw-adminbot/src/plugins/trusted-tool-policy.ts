@@ -1,6 +1,6 @@
 // Resolves trusted tool policy for plugins from runtime config.
 import { getRuntimeConfig } from "../config/config.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { isPlainObject } from "../utils.js";
 import type {
   PluginHookBeforeToolCallEvent,
@@ -8,14 +8,14 @@ import type {
   PluginHookToolContext,
   PluginHookToolInputKind,
   PluginHookToolKind,
-} from "./hook-types.js";
-import { getPluginSessionExtensionStateSync } from "./host-hook-state.js";
-import type { PluginJsonValue, PluginTrustedToolPolicyRegistration } from "./host-hooks.js";
+} from "./hooks/hook-types.js";
+import { getPluginSessionExtensionStateSync } from "./host/host-hook-state.js";
+import type { PluginJsonValue, PluginTrustedToolPolicyRegistration } from "./host/host-hooks.js";
 import type {
   PluginRegistry,
   PluginTrustedToolPolicyRegistryRegistration,
-} from "./registry-types.js";
-import { getActivePluginRegistry } from "./runtime.js";
+} from "./manifest/registry-types.js";
+import { getActivePluginRegistry } from "./runtime/runtime.js";
 
 type TrustedPolicyRegistration = PluginTrustedToolPolicyRegistryRegistration;
 

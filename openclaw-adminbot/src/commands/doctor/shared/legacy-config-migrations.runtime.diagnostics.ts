@@ -4,7 +4,7 @@ import {
   getRecord,
   type LegacyConfigMigrationSpec,
   type LegacyConfigRule,
-} from "../../../config/legacy.shared.js";
+} from "../../../config/legacy/legacy.shared.js";
 
 function isLegacyMemoryPressureBundleConfig(value: unknown): boolean {
   return typeof value === "boolean" || getRecord(value) !== null;

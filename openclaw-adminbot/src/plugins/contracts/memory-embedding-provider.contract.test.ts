@@ -4,11 +4,11 @@ import {
   registerVirtualTestPlugin,
 } from "openclaw/plugin-sdk/plugin-test-contracts";
 import { describe, expect, it } from "vitest";
+import { createPluginRecord } from "../config/status.test-helpers.js";
 import {
   getRegisteredMemoryEmbeddingProvider,
   type MemoryEmbeddingBatchOptions,
 } from "../memory-embedding-providers.js";
-import { createPluginRecord } from "../status.test-helpers.js";
 
 describe("memory embedding provider registration", () => {
   it("rejects non-memory plugins that did not declare the capability contract", () => {

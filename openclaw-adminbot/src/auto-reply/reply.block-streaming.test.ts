@@ -1,8 +1,8 @@
 /** Tests block streaming behavior for auto-reply output delivery. */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { withFastReplyConfig } from "./reply/get-reply-fast-path.js";
-import { loadGetReplyModuleForTest } from "./reply/get-reply.test-loader.js";
+import { withFastReplyConfig } from "./reply/get-reply/get-reply-fast-path.js";
+import { loadGetReplyModuleForTest } from "./reply/get-reply/get-reply.test-loader.js";
 import { createMockTypingController } from "./reply/reply.test-helpers.js";
 import type { MsgContext } from "./templating.js";
 
@@ -25,9 +25,9 @@ vi.mock("../agents/agent-scope.js", async () => {
     resolveAgentSkillsFilter: vi.fn(() => undefined),
   };
 });
-vi.mock("../agents/model-selection.js", async () => {
-  const actual = await vi.importActual<typeof import("../agents/model-selection.js")>(
-    "../agents/model-selection.js",
+vi.mock("../agents/models/model-selection.js", async () => {
+  const actual = await vi.importActual<typeof import("../agents/models/model-selection.js")>(
+    "../agents/models/model-selection.js",
   );
   return {
     ...actual,
@@ -37,7 +37,7 @@ vi.mock("../agents/model-selection.js", async () => {
 vi.mock("../agents/timeout.js", () => ({
   resolveAgentTimeoutMs: vi.fn(() => 60_000),
 }));
-vi.mock("../agents/workspace.js", () => ({
+vi.mock("../agents/workspace/workspace.js", () => ({
   DEFAULT_AGENT_WORKSPACE_DIR: "/tmp/workspace",
   ensureAgentWorkspace: vi.fn(async () => ({ dir: "/tmp/workspace" })),
 }));
@@ -53,40 +53,40 @@ vi.mock("../runtime.js", () => ({
 vi.mock("./command-auth.js", () => ({
   resolveCommandAuthorization: vi.fn(() => ({ isAuthorizedSender: true })),
 }));
-vi.mock("./reply/directive-handling.defaults.js", () => ({
+vi.mock("./reply/directives/directive-handling.defaults.js", () => ({
   resolveDefaultModel: vi.fn(() => ({
     defaultProvider: "anthropic",
     defaultModel: "claude-opus-4-6",
     aliasIndex: new Map(),
   })),
 }));
-vi.mock("./reply/inbound-context.js", () => ({
+vi.mock("./reply/inbound/inbound-context.js", () => ({
   finalizeInboundContext: vi.fn((ctx: unknown) => ctx),
 }));
-vi.mock("./reply/session-reset-model.runtime.js", () => ({
+vi.mock("./reply/session/session-reset-model.runtime.js", () => ({
   applyResetModelOverride: vi.fn(async () => undefined),
 }));
 vi.mock("./reply/stage-sandbox-media.runtime.js", () => ({
   stageSandboxMedia: vi.fn(async () => undefined),
 }));
-vi.mock("./reply/typing.js", () => ({
+vi.mock("./reply/queue/typing.js", () => ({
   createTypingController: vi.fn(() => createMockTypingController()),
 }));
 
-vi.mock("./reply/get-reply-directives.js", () => ({
+vi.mock("./reply/get-reply/get-reply-directives.js", () => ({
   resolveReplyDirectives: (...args: unknown[]) => mocks.resolveReplyDirectives(...args),
 }));
-vi.mock("./reply/get-reply-inline-actions.js", () => ({
+vi.mock("./reply/get-reply/get-reply-inline-actions.js", () => ({
   handleInlineActions: (...args: unknown[]) => mocks.handleInlineActions(...args),
 }));
-vi.mock("./reply/session.js", () => ({
+vi.mock("./reply/session/session.js", () => ({
   initSessionState: (...args: unknown[]) => mocks.initSessionState(...args),
 }));
-vi.mock("./reply/get-reply-run.js", () => ({
+vi.mock("./reply/get-reply/get-reply-run.js", () => ({
   runPreparedReply: (...args: unknown[]) => mocks.runPreparedReply(...args),
 }));
 
-let getReplyFromConfig: typeof import("./reply/get-reply.js").getReplyFromConfig;
+let getReplyFromConfig: typeof import("./reply/get-reply/get-reply.js").getReplyFromConfig;
 
 async function loadFreshGetReplyModuleForTest() {
   ({ getReplyFromConfig } = await loadGetReplyModuleForTest({ cacheKey: import.meta.url }));

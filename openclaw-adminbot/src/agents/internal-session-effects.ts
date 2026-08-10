@@ -3,7 +3,7 @@
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 
 /** Resolves the private transcript path for an internal session-effect run. */
 export function resolveInternalSessionEffectsTranscriptPath(runId: string): string {

@@ -1,5 +1,5 @@
 /** Shared option types for the migrate command family. */
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { MigrationPlan } from "../../plugins/types.js";
 
 /** Embedded migration mode that returns config patch details instead of persisting them. */

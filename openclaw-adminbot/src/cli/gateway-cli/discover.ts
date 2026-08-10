@@ -2,7 +2,7 @@
 import { colorize, theme } from "../../../packages/terminal-core/src/theme.js";
 import type { GatewayBonjourBeacon } from "../../infra/bonjour-discovery.js";
 import { buildGatewayDiscoveryTarget } from "../../infra/gateway-discovery-targets.js";
-import { parseTimeoutMsWithFallback } from "../parse-timeout.js";
+import { parseTimeoutMsWithFallback } from "../program/parse-timeout.js";
 
 export type GatewayDiscoverOpts = {
   timeout?: string;

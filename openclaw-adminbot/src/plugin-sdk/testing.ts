@@ -29,7 +29,7 @@ export {
   spyRuntimeLogs,
 } from "../cli/test-runtime-capture.js";
 export type { CliMockOutputRuntime, CliRuntimeCapture } from "../cli/test-runtime-capture.js";
-export { setDefaultChannelPluginRegistryForTests } from "../commands/channel-test-registry.js";
+export { setDefaultChannelPluginRegistryForTests } from "../commands/channels/channel-test-registry.js";
 export type { ChannelAccountSnapshot } from "../channels/plugins/types.public.js";
 export type { ChannelGatewayContext } from "../channels/plugins/types.adapters.js";
 export type { OpenClawConfig } from "../config/config.js";
@@ -41,7 +41,7 @@ export {
   createEmptyPluginRegistry,
   createPluginRegistry,
   type PluginRecord,
-} from "../plugins/registry.js";
+} from "../plugins/manifest/registry.js";
 export {
   providerContractLoadError,
   pluginRegistrationContractRegistry,
@@ -49,57 +49,52 @@ export {
   resolveWebFetchProviderContractEntriesForPluginId,
   resolveWebSearchProviderContractEntriesForPluginId,
 } from "../plugins/contracts/registry.js";
-export { loadPluginManifestRegistry } from "../plugins/manifest-registry.js";
+export { loadPluginManifestRegistry } from "../plugins/manifest/manifest-registry.js";
 export { parseMinHostVersionRequirement } from "../plugins/min-host-version.js";
-export { resolveBundledExplicitProviderContractsFromPublicArtifacts } from "../plugins/provider-contract-public-artifacts.js";
+export { resolveBundledExplicitProviderContractsFromPublicArtifacts } from "../plugins/providers/provider-contract-public-artifacts.js";
 export {
   expectAugmentedCodexCatalog,
   expectedAugmentedOpenaiCodexCatalogEntriesWithGpt55,
   expectedOpenaiPluginCodexCatalogEntriesWithGpt55,
   expectCodexMissingAuthHint,
-} from "../plugins/provider-runtime.test-support.js";
+} from "../plugins/providers/provider-runtime.test-support.js";
 export {
   initializeGlobalHookRunner,
   resetGlobalHookRunner,
-} from "../plugins/hook-runner-global.js";
-export { addTestHook } from "../plugins/hooks.test-helpers.js";
+} from "../plugins/hooks/hook-runner-global.js";
+export { addTestHook } from "../plugins/hooks/hooks.test-helpers.js";
 export {
   assertUniqueValues,
   BUNDLED_RUNTIME_SIDECAR_PATHS,
-} from "../plugins/runtime-sidecar-paths.js";
-export { createPluginRecord } from "../plugins/status.test-helpers.js";
+} from "../plugins/runtime/runtime-sidecar-paths.js";
+export { createPluginRecord } from "../plugins/config/status.test-helpers.js";
 export {
   resolveBundledExplicitWebFetchProvidersFromPublicArtifacts,
   resolveBundledExplicitWebSearchProvidersFromPublicArtifacts,
-} from "../plugins/web-provider-public-artifacts.explicit.js";
+} from "../plugins/web/web-provider-public-artifacts.explicit.js";
 export {
   getActivePluginRegistry,
   releasePinnedPluginChannelRegistry,
   resetPluginRuntimeStateForTest,
   setActivePluginRegistry,
-} from "../plugins/runtime.js";
+} from "../plugins/runtime/runtime.js";
 export {
   listImportedBundledPluginFacadeIds,
   resetFacadeRuntimeStateForTest,
 } from "./facade-runtime.js";
 export { capturePluginRegistration } from "../plugins/captured-registration.js";
-export { runProviderCatalog } from "../plugins/provider-discovery.js";
+export { runProviderCatalog } from "../plugins/providers/provider-discovery.js";
 export {
   buildProviderPluginMethodChoice,
   resolveProviderModelPickerEntries,
   resolveProviderWizardOptions,
   setProviderWizardProvidersResolverForTest,
-} from "../plugins/provider-wizard.js";
-export { resolveProviderPluginChoice } from "../plugins/provider-auth-choice.runtime.js";
+} from "../plugins/providers/provider-wizard.js";
+export { resolveProviderPluginChoice } from "../plugins/providers/provider-auth-choice.runtime.js";
 export type { PluginRuntime } from "../plugins/runtime/types.js";
-export type { PluginHookRegistration } from "../plugins/hook-types.js";
+export type { PluginHookRegistration } from "../plugins/hooks/hook-types.js";
 export type { RuntimeEnv } from "../runtime.js";
 export type { MockFn } from "../test-utils/vitest-mock-fn.js";
-export {
-  createAuthCaptureJsonFetch,
-  createRequestCaptureJsonFetch,
-  installPinnedHostnameTestHooks,
-} from "../media-understanding/audio.test-helpers.ts";
 export {
   createSingleUserPromptMessage,
   extractNonEmptyAssistantText,
@@ -113,8 +108,8 @@ export {
   makeAgentAssistantMessage,
   makeAgentUserMessage,
 } from "../agents/test-helpers/agent-message-fixtures.js";
-export { collectProviderApiKeys } from "../agents/live-auth-keys.js";
-export { isModelNotFoundErrorMessage } from "../agents/live-model-errors.js";
+export { collectProviderApiKeys } from "../agents/auth/live-auth-keys.js";
+export { isModelNotFoundErrorMessage } from "../agents/models/live-model-errors.js";
 export {
   isAuthErrorMessage,
   isBillingErrorMessage,
@@ -126,39 +121,12 @@ export { maybeLoadShellEnvForGenerationProviders } from "../test-utils/generatio
 export { testing, testing as __testing } from "../acp/control-plane/manager.js";
 export { testing as acpManagerTesting } from "../acp/control-plane/manager.js";
 export { runAcpRuntimeAdapterContract } from "../acp/runtime/adapter-contract.testkit.js";
-export { handleAcpCommand } from "../auto-reply/reply/commands-acp.js";
-export { buildCommandTestParams } from "../auto-reply/reply/commands-spawn.test-harness.js";
-export { peekSystemEvents, resetSystemEventsForTest } from "../infra/system-events.js";
+export { handleAcpCommand } from "../auto-reply/reply/commands/commands-acp.js";
+export { buildCommandTestParams } from "../auto-reply/reply/commands/commands-spawn.test-harness.js";
+export { peekSystemEvents, resetSystemEventsForTest } from "../infra/system/system-events.js";
 export { isTruthyEnvValue } from "../infra/env.js";
-export { getShellEnvAppliedKeys } from "../infra/shell-env.js";
+export { getShellEnvAppliedKeys } from "../infra/system/shell-env.js";
 export { encodePngRgba, fillPixel } from "../media/png-encode.js";
-export {
-  parseLiveCsvFilter as parseCsvFilter,
-  parseProviderModelMap,
-  redactLiveApiKey,
-} from "../media-generation/live-test-helpers.js";
-export {
-  DEFAULT_LIVE_MUSIC_MODELS,
-  resolveConfiguredLiveMusicModels,
-  resolveLiveMusicAuthStore,
-} from "../music-generation/live-test-helpers.js";
-export {
-  canRunBufferBackedImageToVideoLiveLane,
-  canRunBufferBackedVideoToVideoLiveLane,
-  DEFAULT_LIVE_VIDEO_MODELS,
-  resolveConfiguredLiveVideoModels,
-  resolveLiveVideoAuthStore,
-  resolveLiveVideoResolution,
-} from "../video-generation/live-test-helpers.js";
-export { normalizeVideoGenerationDuration } from "../video-generation/duration-support.js";
-export { parseVideoGenerationModelRef } from "../video-generation/model-ref.js";
-export type {
-  GeneratedVideoAsset,
-  VideoGenerationMode,
-  VideoGenerationModeCapabilities,
-  VideoGenerationProvider,
-  VideoGenerationRequest,
-} from "../video-generation/types.js";
 export { jsonResponse, requestBodyText, requestUrl } from "../test-helpers/http.js";
 export { mockPinnedHostnameResolution } from "../test-helpers/ssrf.js";
 export { createOutboundTestPlugin, createTestRegistry } from "../test-utils/channel-plugins.js";
@@ -205,7 +173,7 @@ export {
   selectFirstWizardOption,
   type WizardPrompter,
 } from "../test-utils/plugin-setup-wizard.js";
-export { createMockPluginRegistry } from "../plugins/hooks.test-helpers.js";
+export { createMockPluginRegistry } from "../plugins/hooks/hooks.test-helpers.js";
 export { buildPluginApi } from "../plugins/api-builder.js";
 export {
   createCapturedPluginRegistration,

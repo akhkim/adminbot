@@ -7,8 +7,8 @@ import { listChatChannels } from "../channels/chat-meta.js";
 import { normalizeChannelMeta } from "../channels/plugins/meta-normalization.js";
 import type { ChannelPlugin } from "../channels/plugins/types.plugin.js";
 import type { ChannelMeta } from "../channels/plugins/types.public.js";
-import { GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA } from "../config/bundled-channel-config-metadata.generated.js";
-import type { PluginDiagnostic } from "./manifest-types.js";
+import { GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA } from "../config/channel/bundled-channel-config-metadata.generated.js";
+import type { PluginDiagnostic } from "./manifest/manifest-types.js";
 import { pushPluginValidationDiagnostic } from "./validation-diagnostics.js";
 
 function resolveBundledChannelMeta(id: string): ChannelMeta | undefined {

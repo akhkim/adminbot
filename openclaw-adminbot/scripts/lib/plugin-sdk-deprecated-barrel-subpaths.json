@@ -8,7 +8,6 @@
   "conversation-runtime",
   "hook-runtime",
   "infra-runtime",
-  "media-runtime",
   "plugin-runtime",
   "security-runtime",
   "text-runtime"

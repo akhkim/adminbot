@@ -2,9 +2,9 @@
  * Tests live helper utilities for gateway CLI backend probes.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { testing as cliBackendsTesting } from "../agents/cli-backends.js";
+import { testing as cliBackendsTesting } from "../agents/cli-runner/cli-backends.js";
 
-vi.mock("./client-start-readiness.js", () => ({
+vi.mock("./client/client-start-readiness.js", () => ({
   startGatewayClientWhenEventLoopReady: async (client: { start: () => void }) => {
     client.start();
     return { ready: true, aborted: false, elapsedMs: 0, maxDriftMs: 0, checks: 0 };

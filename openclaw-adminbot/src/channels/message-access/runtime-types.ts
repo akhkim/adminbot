@@ -3,7 +3,7 @@
  *
  * Defines identity descriptors, resolver inputs, route access, and resolved access results.
  */
-import type { AccessGroupConfig } from "../../config/types.access-groups.js";
+import type { AccessGroupConfig } from "../../config/types/access-groups.js";
 import type {
   AccessGroupMembershipFact,
   AccessGraphGate,

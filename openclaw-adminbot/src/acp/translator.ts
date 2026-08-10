@@ -36,8 +36,8 @@ import { toAcpSessionLineageMeta } from "@openclaw/acp-core/session-lineage-meta
 import { timestampMsToIsoString } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { EventFrame } from "../../packages/gateway-protocol/src/index.js";
-import type { GatewayClient } from "../gateway/client.js";
-import type { GatewaySessionRow, SessionsListResult } from "../gateway/session-utils.js";
+import type { GatewayClient } from "../gateway/client/client.js";
+import type { GatewaySessionRow, SessionsListResult } from "../gateway/sessions/session-utils.js";
 import {
   createFixedWindowRateLimiter,
   resolveFixedWindowRateLimitInteger,

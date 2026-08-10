@@ -2,13 +2,13 @@
  * Normalizes and logs provider-specific tool schemas at runtime.
  */
 import type { TSchema } from "typebox";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { ProviderRuntimePluginHandle } from "../../plugins/provider-hook-runtime.js";
-import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { ProviderRuntimePluginHandle } from "../../plugins/providers/provider-hook-runtime.js";
+import type { ProviderRuntimeModel } from "../../plugins/providers/provider-runtime-model.types.js";
 import {
   inspectProviderToolSchemasWithPlugin,
   normalizeProviderToolSchemasWithPlugin,
-} from "../../plugins/provider-runtime.js";
+} from "../../plugins/providers/provider-runtime.js";
 import type { ProviderToolSchemaDiagnostic } from "../../plugins/types.js";
 import type { AgentTool } from "../runtime/index.js";
 import type { AnyAgentTool } from "../tools/common.js";

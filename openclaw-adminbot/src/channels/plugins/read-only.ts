@@ -12,8 +12,8 @@ import {
 } from "@openclaw/normalization-core/string-normalization";
 import { sanitizeForLog } from "../../../packages/terminal-core/src/ansi.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
-import { resolveRuntimeConfigCacheKey } from "../../config/runtime-snapshot.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { resolveRuntimeConfigCacheKey } from "../../config/runtime/runtime-snapshot.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { isBlockedObjectKey } from "../../infra/prototype-keys.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
@@ -22,19 +22,19 @@ import {
   listConfiguredChannelIdsForReadOnlyScope,
   resolveDiscoverableScopedChannelPluginIds,
 } from "../../plugins/channel-plugin-ids.js";
-import {
-  channelPluginIdBelongsToManifest,
-  resolveSetupChannelRegistration,
-} from "../../plugins/loader-channel-setup.js";
-import type { PluginManifestRecord } from "../../plugins/manifest-registry.js";
-import type { PluginDiagnostic } from "../../plugins/manifest-types.js";
+import type { PluginManifestRecord } from "../../plugins/manifest/manifest-registry.js";
+import type { PluginDiagnostic } from "../../plugins/manifest/manifest-types.js";
 import { registerPluginMetadataProcessMemoLifecycleClear } from "../../plugins/plugin-metadata-lifecycle.js";
 import { resolvePluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.js";
 import {
   getCachedPluginModuleLoader,
   type PluginModuleLoaderCache,
 } from "../../plugins/plugin-module-loader-cache.js";
-import { getActivePluginChannelRegistryVersion } from "../../plugins/runtime.js";
+import {
+  channelPluginIdBelongsToManifest,
+  resolveSetupChannelRegistration,
+} from "../../plugins/runtime/loader-channel-setup.js";
+import { getActivePluginChannelRegistryVersion } from "../../plugins/runtime/runtime.js";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../../routing/session-key.js";
 import { getBundledChannelSetupPlugin } from "./bundled.js";
 import {
@@ -47,8 +47,8 @@ import { listChannelPlugins } from "./registry.js";
 import type { ChannelPlugin } from "./types.plugin.js";
 
 const SOURCE_PLUGIN_LOADER_MODULE_CANDIDATES = [
-  "../../plugins/loader.js",
-  "../../plugins/loader.ts",
+  "../../plugins/runtime/loader.js",
+  "../../plugins/runtime/loader.ts",
 ] as const;
 const BUILT_PLUGIN_LOADER_MODULE_CANDIDATES = [
   "plugins/loader.js",

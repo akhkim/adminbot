@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createPluginMetadataSnapshot,
   makeRegistry,
-} from "../config/plugin-auto-enable.test-helpers.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+} from "../config/plugin/plugin-auto-enable.test-helpers.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   clearCurrentPluginMetadataSnapshot,
   setCurrentPluginMetadataSnapshot,
@@ -18,7 +18,7 @@ const applyPluginAutoEnableMock = vi.hoisted(() =>
   })),
 );
 
-vi.mock("../config/plugin-auto-enable.js", () => ({
+vi.mock("../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: applyPluginAutoEnableMock,
 }));
 

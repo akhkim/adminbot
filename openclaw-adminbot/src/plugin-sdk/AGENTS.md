@@ -5,12 +5,9 @@ can affect bundled plugins and third-party plugins.
 
 ## Source Of Truth
 
-- Docs:
-  - `docs/plugins/sdk-overview.md`
-  - `docs/plugins/sdk-entrypoints.md`
-  - `docs/plugins/sdk-runtime.md`
-  - `docs/plugins/sdk-migration.md`
-  - `docs/plugins/architecture.md`
+The upstream `docs/plugins/*` guides were removed with the deep clean; the
+definition files below are the surviving source of truth.
+
 - Definition files:
   - `package.json`
   - `scripts/lib/plugin-sdk-entrypoints.json`
@@ -70,16 +67,12 @@ can affect bundled plugins and third-party plugins.
 
 - If you touch SDK seams that affect lazy loading, hot channel entrypoints, or
   bundled plugin import topology, run `pnpm build`.
-- If the change can alter bundled channel startup cost, also run the isolated
-  entrypoint profiler for the affected plugin:
-  `OPENCLAW_LOCAL_CHECK=0 node scripts/profile-extension-memory.mjs --extension <id> --skip-combined --concurrency 1`
 
 ## Expanding The Boundary
 
 - SDK surface is too large. Do not add compat barrels, aliases, or fallback exports for convenience. Replace old entrypoints when cleaner.
 - Public third-party API is the only compat exception: document/version breaks, migrate ALL bundled/internal plugins first, then aggressively deprecate unused exports.
 - When adding or changing a public subpath, keep these aligned:
-  - docs in `docs/plugins/*`
   - `scripts/lib/plugin-sdk-entrypoints.json`
   - `src/plugin-sdk/entrypoints.ts`
   - `package.json` exports

@@ -6,19 +6,19 @@
 import crypto from "node:crypto";
 import { callGateway } from "../../gateway/call.js";
 import { annotateInterSessionPromptText } from "../../sessions/input-provenance.js";
-import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
-import { retireSessionMcpRuntimeForSessionKey } from "../agent-bundle-mcp-tools.js";
+import { INTERNAL_MESSAGE_CHANNEL } from "../../shared/message-channel.js";
 import { resolveNestedAgentLaneForSession } from "../lanes.js";
+import { retireSessionMcpRuntimeForSessionKey } from "../mcp/agent-bundle-mcp-tools.js";
 import { waitForAgentRunAndReadUpdatedAssistantReply } from "../run-wait.js";
 
 export { readLatestAssistantReply } from "../run-wait.js";
 
 type GatewayCaller = typeof callGateway;
-type AgentCommandRunner = typeof import("../../commands/agent.js").agentCommandFromIngress;
+type AgentCommandRunner = typeof import("../../commands/agent/agent.js").agentCommandFromIngress;
 
 const defaultAgentStepDeps = {
   agentCommandFromIngress: (async (...args) => {
-    const { agentCommandFromIngress } = await import("../../commands/agent.js");
+    const { agentCommandFromIngress } = await import("../../commands/agent/agent.js");
     return await agentCommandFromIngress(...args);
   }) as AgentCommandRunner,
   callGateway,

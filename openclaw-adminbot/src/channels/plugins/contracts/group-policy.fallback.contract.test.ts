@@ -1,6 +1,6 @@
 // Group policy fallback contract tests cover default group policy behavior for channel plugins.
 import { describe, expect, it } from "vitest";
-import { resolveOpenProviderRuntimeGroupPolicy } from "../../../config/runtime-group-policy.js";
+import { resolveOpenProviderRuntimeGroupPolicy } from "../../../config/runtime/runtime-group-policy.js";
 import { installChannelRuntimeGroupPolicyFallbackSuite } from "./test-helpers/group-policy-contract-suites.js";
 import {
   resolveZaloRuntimeGroupPolicy,

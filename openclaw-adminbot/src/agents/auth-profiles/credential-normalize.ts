@@ -1,4 +1,4 @@
-import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
+import { normalizeSecretInput } from "../../shared/normalize-secret-input.js";
 import type { AuthProfileCredential } from "./types.js";
 
 // Upsert paths normalize literal secret strings but preserve SecretRef-backed

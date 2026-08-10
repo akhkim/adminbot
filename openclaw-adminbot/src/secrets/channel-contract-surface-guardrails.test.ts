@@ -28,13 +28,13 @@ const CORE_SECRET_SURFACE_GUARDS = [
     ],
   },
   {
-    path: "src/cli/command-secret-targets.ts",
+    path: "src/cli/program/command-secret-targets.ts",
     forbiddenPatterns: [
       /plugins\.entries\.(?:brave|google|exa|xai|moonshot|perplexity|firecrawl|tavily|minimax)\.config\.web(?:Search|Fetch)\.apiKey/,
     ],
   },
   {
-    path: "src/config/markdown-tables.ts",
+    path: "src/config/markdown/markdown-tables.ts",
     forbiddenPatterns: [/["']signal["']/, /["']whatsapp["']/, /["']mattermost["']/],
   },
   {

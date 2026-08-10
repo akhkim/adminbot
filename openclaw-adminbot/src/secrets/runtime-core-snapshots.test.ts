@@ -1,13 +1,13 @@
 /** Tests core secrets runtime snapshot preparation and activation behavior. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ensureAuthProfileStore } from "../agents/auth-profiles.js";
+import { ensureAuthProfileStore } from "../agents/auth/auth-profiles.js";
 import {
   getRuntimeConfig,
   clearConfigCache,
   clearRuntimeConfigSnapshot,
 } from "../config/config.js";
-import { createEmptyPluginRegistry } from "../plugins/registry.js";
-import { setActivePluginRegistry } from "../plugins/runtime.js";
+import { createEmptyPluginRegistry } from "../plugins/manifest/registry.js";
+import { setActivePluginRegistry } from "../plugins/runtime/runtime.js";
 import { captureEnv, withEnvAsync } from "../test-utils/env.js";
 import {
   activateSecretsRuntimeSnapshot,
@@ -27,11 +27,11 @@ const { resolveExternalAuthProfilesWithPluginsMock, resolvePluginWebSearchProvid
     resolvePluginWebSearchProvidersMock: vi.fn(() => buildTestWebSearchProviders()),
   }));
 
-vi.mock("../plugins/web-search-providers.runtime.js", () => ({
+vi.mock("../plugins/web/web-search-providers.runtime.js", () => ({
   resolvePluginWebSearchProviders: resolvePluginWebSearchProvidersMock,
 }));
 
-vi.mock("../plugins/provider-runtime.js", () => ({
+vi.mock("../plugins/providers/provider-runtime.js", () => ({
   resolveExternalAuthProfilesWithPlugins: resolveExternalAuthProfilesWithPluginsMock,
 }));
 

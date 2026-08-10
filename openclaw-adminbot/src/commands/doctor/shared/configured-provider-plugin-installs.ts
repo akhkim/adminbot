@@ -1,13 +1,13 @@
 // Resolves official provider plugins implied by configured auth and model selections.
 import { collectConfiguredModelRefs } from "@openclaw/model-catalog-core/configured-model-refs";
 import { normalizeNullableString as normalizeId } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import {
   resolveOfficialExternalProviderContractPluginIds,
   resolveOfficialExternalProviderPluginIds,
   resolveOfficialExternalProviderPluginIdsForEnv,
 } from "../../../plugins/official-external-plugin-catalog.js";
-import { resolveProviderInstallCatalogEntries } from "../../../plugins/provider-install-catalog.js";
+import { resolveProviderInstallCatalogEntries } from "../../../plugins/providers/provider-install-catalog.js";
 import { asObjectRecord } from "./object.js";
 
 function collectConfiguredProviderIds(cfg: OpenClawConfig): Set<string> {
@@ -48,38 +48,13 @@ function collectConfiguredProviderIds(cfg: OpenClawConfig): Set<string> {
   return ids;
 }
 
-function collectConfiguredMediaProviderIds(cfg: OpenClawConfig): Set<string> {
-  const ids = new Set<string>();
-  const add = (value: unknown) => {
-    const id = normalizeId(value);
-    if (id) {
-      ids.add(id.toLowerCase());
-    }
-  };
-  const addModels = (value: unknown) => {
-    if (!Array.isArray(value)) {
-      return;
-    }
-    for (const model of value) {
-      add(asObjectRecord(model)?.provider);
-    }
-  };
-  const media = cfg.tools?.media;
-  addModels(media?.models);
-  addModels(media?.image?.models);
-  addModels(media?.audio?.models);
-  addModels(media?.video?.models);
-  return ids;
-}
-
 /** Lists external provider plugins implied by configured auth profiles and model refs. */
 export function collectConfiguredProviderPluginIds(params: {
   cfg: OpenClawConfig;
   env?: NodeJS.ProcessEnv;
 }): string[] {
   const configuredProviderIds = collectConfiguredProviderIds(params.cfg);
-  const configuredMediaProviderIds = collectConfiguredMediaProviderIds(params.cfg);
-  const selectedProviderIds = new Set([...configuredProviderIds, ...configuredMediaProviderIds]);
+  const selectedProviderIds = new Set(configuredProviderIds);
   const pluginIds = new Set(
     resolveOfficialExternalProviderPluginIds({
       providerIds: selectedProviderIds,
@@ -91,13 +66,7 @@ export function collectConfiguredProviderPluginIds(params: {
     pluginIds.add(pluginId);
   }
   for (const pluginId of resolveOfficialExternalProviderContractPluginIds({
-    contract: "mediaUnderstandingProviders",
-    providerIds: configuredMediaProviderIds,
-  })) {
-    pluginIds.add(pluginId);
-  }
-  for (const pluginId of resolveOfficialExternalProviderContractPluginIds({
-    contract: "speechProviders",
+    contract: "embeddingProviders",
     providerIds: configuredProviderIds,
   })) {
     pluginIds.add(pluginId);

@@ -8,7 +8,6 @@ import {
   resolveRepoRootPath,
   sharedVitestConfig,
 } from "./vitest.shared.config.ts";
-import { getUnitFastTestFiles } from "./vitest.unit-fast-paths.mjs";
 
 function normalizePathPattern(value: string): string {
   return value.replaceAll("\\", "/");
@@ -91,79 +90,9 @@ export function resolveVitestIsolation(
   return false;
 }
 
+// Group order only decides which lane Vitest starts first when both run.
 const SCOPED_PROJECT_GROUP_ORDER_BY_NAME = new Map(
-  [
-    "acp",
-    "agents",
-    "agents-core",
-    "agents-embedded-agent",
-    "agents-support",
-    "agents-tools",
-    "auto-reply",
-    "auto-reply-core",
-    "auto-reply-reply",
-    "auto-reply-top-level",
-    "boundary",
-    "bundled",
-    "channels",
-    "cli",
-    "commands",
-    "commands-light",
-    "cron",
-    "daemon",
-    "extension-active-memory",
-    "extension-acpx",
-    "extension-channels",
-    "extension-codex",
-    "extension-diffs",
-    "extension-discord",
-    "extension-feishu",
-    "extension-imessage",
-    "extension-irc",
-    "extension-line",
-    "extension-mattermost",
-    "extension-matrix",
-    "extension-media",
-    "extension-memory",
-    "extension-messaging",
-    "extension-msteams",
-    "extension-provider-openai",
-    "extension-providers",
-    "extension-signal",
-    "extension-slack",
-    "extension-telegram",
-    "extension-voice-call",
-    "extension-whatsapp",
-    "extension-zalo",
-    "extensions",
-    "gateway",
-    "hooks",
-    "infra",
-    "logging",
-    "media",
-    "media-understanding",
-    "plugin-sdk",
-    "plugin-sdk-light",
-    "plugins",
-    "process",
-    "runtime-config",
-    "secrets",
-    "shared-core",
-    "tasks",
-    "tooling-docker",
-    "tooling-isolated",
-    "tooling",
-    "tui",
-    "ui",
-    "ui-e2e",
-    "unit-fast",
-    "unit-security",
-    "unit-src",
-    "unit-support",
-    "unit-ui",
-    "utils",
-    "wizard",
-  ].map((name, index) => [name, index + 10]),
+  ["node", "openclaw", "ui"].map((name, index) => [name, index + 10]),
 );
 
 function hashFallbackScopedProjectGroupOrder(key: string): number {
@@ -209,7 +138,6 @@ export function createScopedVitestConfig(
     fileParallelism?: boolean;
     pool?: "forks" | "threads";
     passWithNoTests?: boolean;
-    excludeUnitFastTests?: boolean;
     setupFiles?: string[];
     useNonIsolatedRunner?: boolean;
   },
@@ -223,10 +151,8 @@ export function createScopedVitestConfig(
   const cliInclude = narrowIncludePatternsForCli(include, options?.argv, {
     scopedDir,
   });
-  const unitFastExcludePatterns =
-    options?.excludeUnitFastTests === false ? [] : getUnitFastTestFiles();
   const exclude = relativizeScopedPatterns(
-    [...(baseTest.exclude ?? []), ...unitFastExcludePatterns, ...(options?.exclude ?? [])],
+    [...(baseTest.exclude ?? []), ...(options?.exclude ?? [])],
     scopedDir,
   );
   const scopedCliInclude = cliInclude ? relativizeScopedPatterns(cliInclude, scopedDir) : null;

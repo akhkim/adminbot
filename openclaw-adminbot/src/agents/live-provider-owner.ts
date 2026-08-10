@@ -5,8 +5,8 @@
  * same plugin owner without repeating manifest/provider resolution work.
  */
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { resolveOwningPluginIdsForProviderRef } from "../plugins/providers.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { resolveOwningPluginIdsForProviderRef } from "../plugins/providers/providers.js";
 
 type LiveProviderOwnerContext = {
   config?: OpenClawConfig;

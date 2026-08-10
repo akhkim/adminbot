@@ -1,9 +1,9 @@
 // Start-time service repair: rebuilds stale service definitions before starting Gateway.
-import { buildGatewayInstallPlan } from "../../commands/daemon-install-helpers.js";
-import { DEFAULT_GATEWAY_DAEMON_RUNTIME } from "../../commands/daemon-runtime.js";
-import { resolveGatewayInstallToken } from "../../commands/gateway-install-token.js";
-import { readConfigFileSnapshotForWrite } from "../../config/io.js";
-import { resolveGatewayPort } from "../../config/paths.js";
+import { buildGatewayInstallPlan } from "../../commands/daemon/daemon-install-helpers.js";
+import { DEFAULT_GATEWAY_DAEMON_RUNTIME } from "../../commands/daemon/daemon-runtime.js";
+import { resolveGatewayInstallToken } from "../../commands/gateway/gateway-install-token.js";
+import { readConfigFileSnapshotForWrite } from "../../config/io/io.js";
+import { resolveGatewayPort } from "../../config/paths/paths.js";
 import { OPENCLAW_WRAPPER_ENV_KEY, resolveOpenClawWrapperPath } from "../../daemon/program-args.js";
 import type { GatewayServiceEnv } from "../../daemon/service-types.js";
 import type {

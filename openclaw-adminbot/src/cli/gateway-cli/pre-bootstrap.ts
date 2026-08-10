@@ -1,6 +1,6 @@
 // Gateway startup checks that must run before shared CLI bootstrap can migrate state.
 import { ALLOW_OLDER_BINARY_DESTRUCTIVE_ACTIONS_ENV } from "../../config/future-version-guard.js";
-import type { ConfigFileSnapshot } from "../../config/types.js";
+import type { ConfigFileSnapshot } from "../../config/types/types.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import type { GatewayRunPreBootstrapOptions } from "./future-config-guard.js";
 import { enforceGatewayRunFutureConfigGuard } from "./future-config-guard.js";
@@ -31,7 +31,7 @@ let gatewayRunTargetSelectedByConfig = false;
 
 async function pinGatewayRunRuntimePaths(): Promise<void> {
   const [{ pinRuntimePaths }, { pinConfigDir }] = await Promise.all([
-    import("../../config/paths.js"),
+    import("../../config/paths/paths.js"),
     import("../../utils.js"),
   ]);
   pinRuntimePaths(process.env);
@@ -193,7 +193,7 @@ async function isSameGatewayRunConfigSnapshot(
   current: ConfigFileSnapshot,
   options: { allowPathChange?: boolean } = {},
 ): Promise<boolean> {
-  const { hashRuntimeConfigValue } = await import("../../config/runtime-snapshot.js");
+  const { hashRuntimeConfigValue } = await import("../../config/runtime/runtime-snapshot.js");
   return (
     (options.allowPathChange || current.path === expected.path) &&
     current.exists === expected.exists &&
@@ -267,10 +267,10 @@ async function guardGatewayRunSelectedConfig(
     { resolveConfigDir },
   ] = await Promise.all([
     import("node:path"),
-    import("../../config/env-vars.js"),
+    import("../../config/env/env-vars.js"),
     import("../../infra/dotenv-global.js"),
     import("../../infra/env.js"),
-    import("../../config/paths.js"),
+    import("../../config/paths/paths.js"),
     import("../../utils.js"),
   ]);
   const invocationDestructiveOverride = resolveInvocationDestructiveOverride();
@@ -489,10 +489,10 @@ export async function applyFinalGatewayRunConfigEnv(params: {
     { normalizeStateDirEnv },
     { clearShellEnvAppliedKeys },
   ] = await Promise.all([
-    import("../../config/env-vars.js"),
+    import("../../config/env/env-vars.js"),
     import("../../infra/env.js"),
-    import("../../config/paths.js"),
-    import("../../infra/shell-env.js"),
+    import("../../config/paths/paths.js"),
+    import("../../infra/system/shell-env.js"),
   ]);
   const finalConfigEnv = collectConfigRuntimeEnvVars(params.snapshot.sourceConfig);
   if (
@@ -547,10 +547,10 @@ export async function reloadTrustedGatewayRunEnvironment(params: {
     { resolveConfigDir },
   ] = await Promise.all([
     import("node:path"),
-    import("../../config/env-vars.js"),
+    import("../../config/env/env-vars.js"),
     import("../../infra/dotenv-global.js"),
     import("../../infra/env.js"),
-    import("../../config/paths.js"),
+    import("../../config/paths/paths.js"),
     import("../../utils.js"),
   ]);
   const envBeforeReload = { ...process.env };

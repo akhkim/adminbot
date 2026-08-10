@@ -1,18 +1,18 @@
 // Gateway service installer: writes config defaults, resolves credentials, and installs service definitions.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { resolveNodeStartupTlsEnvironment } from "../../bootstrap/node-startup-env.js";
-import { buildGatewayInstallPlan } from "../../commands/daemon-install-helpers.js";
+import { buildGatewayInstallPlan } from "../../commands/daemon/daemon-install-helpers.js";
 import {
   DEFAULT_GATEWAY_DAEMON_RUNTIME,
   isGatewayDaemonRuntime,
   type GatewayDaemonRuntime,
-} from "../../commands/daemon-runtime.js";
-import { resolveGatewayInstallToken } from "../../commands/gateway-install-token.js";
+} from "../../commands/daemon/daemon-runtime.js";
+import { resolveGatewayInstallToken } from "../../commands/gateway/gateway-install-token.js";
 import { resolveFutureConfigActionBlock } from "../../config/future-version-guard.js";
-import { readConfigFileSnapshotForWrite } from "../../config/io.js";
-import { replaceConfigFile } from "../../config/mutate.js";
-import { resolveGatewayPort } from "../../config/paths.js";
-import type { OpenClawConfig } from "../../config/types.js";
+import { readConfigFileSnapshotForWrite } from "../../config/io/io.js";
+import { replaceConfigFile } from "../../config/mutate/mutate.js";
+import { resolveGatewayPort } from "../../config/paths/paths.js";
+import type { OpenClawConfig } from "../../config/types/types.js";
 import { OPENCLAW_WRAPPER_ENV_KEY, resolveOpenClawWrapperPath } from "../../daemon/program-args.js";
 import { readEmbeddedGatewayToken } from "../../daemon/service-audit.js";
 import { resolveGatewayService } from "../../daemon/service.js";
@@ -22,10 +22,10 @@ import {
   isDangerousHostEnvOverrideVarName,
   isDangerousHostEnvVarName,
   normalizeEnvVarKey,
-} from "../../infra/host-env-security.js";
+} from "../../infra/system/host-env-security.js";
 import { defaultRuntime } from "../../runtime.js";
-import { formatCliCommand } from "../command-format.js";
 import { formatInvalidConfigPort, formatInvalidPortOption } from "../error-format.js";
+import { formatCliCommand } from "../program/command-format.js";
 import { buildDaemonServiceSnapshot, installDaemonServiceAndEmit } from "./response.js";
 import {
   createDaemonInstallActionContext,

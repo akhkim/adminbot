@@ -10,8 +10,8 @@ import {
 } from "../../agents/agent-run-terminal-outcome.js";
 import { normalizeBlockedLivenessWaitStatus } from "../../shared/agent-liveness.js";
 import { isNonTerminalAgentRunStatus } from "../../shared/agent-run-status.js";
-import { setSafeTimeout } from "../../utils/timer-delay.js";
-import type { DedupeEntry } from "../server-shared.js";
+import { setSafeTimeout } from "../../shared/timer-delay.js";
+import type { DedupeEntry } from "../server/server-shared.js";
 
 export type AgentWaitTerminalSnapshot = {
   status: "ok" | "error" | "timeout";

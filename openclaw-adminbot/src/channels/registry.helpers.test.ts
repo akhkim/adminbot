@@ -1,12 +1,12 @@
 // Registry helper tests cover channel registry fixtures and lookup helpers.
 import { afterEach, describe, expect, it } from "vitest";
-import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
+import { createEmptyPluginRegistry } from "../plugins/manifest/registry-empty.js";
 import {
   pinActivePluginChannelRegistry,
   getActivePluginChannelRegistryVersion,
   resetPluginRuntimeStateForTest,
   setActivePluginRegistry,
-} from "../plugins/runtime.js";
+} from "../plugins/runtime/runtime.js";
 import { createTestRegistry } from "../test-utils/channel-plugins.js";
 import { listChatChannels } from "./chat-meta.js";
 import { normalizeAnyChannelId as normalizeAnyChannelIdLight } from "./registry-normalize.js";

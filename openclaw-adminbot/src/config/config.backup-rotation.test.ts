@@ -14,7 +14,7 @@ import {
   resolveConfigPathFromTempState,
 } from "./config.backup-rotation.test-helpers.js";
 import { withTempHome } from "./test-helpers.js";
-import type { OpenClawConfig } from "./types.js";
+import type { OpenClawConfig } from "./types/types.js";
 
 async function expectRegularFile(filePath: string): Promise<void> {
   expect((await fs.stat(filePath)).isFile()).toBe(true);

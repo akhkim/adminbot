@@ -5,19 +5,17 @@ assembly, and contract enforcement.
 
 ## Public Contracts
 
-- Docs:
-  - `docs/plugins/architecture.md`
-  - `docs/plugins/manifest.md`
-  - `docs/plugins/sdk-overview.md`
-  - `docs/plugins/sdk-entrypoints.md`
+The upstream `docs/plugins/*` guides were removed with the deep clean; the
+definition files below are the surviving source of truth.
+
 - Definition files:
   - `src/plugins/types.ts`
   - `src/plugins/runtime/types.ts`
   - `src/plugins/contracts/registry.ts`
   - `src/plugins/public-surface-loader.ts`
   - `src/plugins/public-surface-runtime.ts`
-  - `src/plugins/provider-public-artifacts.ts`
-  - `src/plugins/web-provider-public-artifacts.ts`
+  - `src/plugins/providers/provider-public-artifacts.ts`
+  - `src/plugins/web/web-provider-public-artifacts.ts`
 
 ## Boundary Rules
 
@@ -41,8 +39,8 @@ assembly, and contract enforcement.
 - If a plugin exposes separate light and heavy runtime surfaces, keep discovery,
   inventory, and setup-state checks on the light path until actual execution
   needs the heavy module.
-- If a loader or registry change affects plugin authors, update the public SDK,
-  docs, and contract tests instead of relying on incidental internals.
+- If a loader or registry change affects plugin authors, update the public SDK
+  and contract tests instead of relying on incidental internals.
 - Prefer explicit activation planning from manifest/descriptor ownership over
   “load everything in this scope” behavior. Broad registry materialization
   should be the exception, not the design center.
@@ -81,6 +79,3 @@ assembly, and contract enforcement.
 
 - If you touch loader, registry, activation, or public-artifact code that can
   change bundled plugin import fanout, run `pnpm build`.
-- If the change can alter bundled plugin startup cost, re-profile the affected
-  plugin entrypoint with:
-  `OPENCLAW_LOCAL_CHECK=0 node scripts/profile-extension-memory.mjs --extension <id> --skip-combined --concurrency 1`

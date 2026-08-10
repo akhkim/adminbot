@@ -8,14 +8,14 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { resolveAgentDir } from "../agents/agent-scope.js";
 import { createConfigIO, resetConfigRuntimeState } from "../config/config.js";
 import type { MemoryEmbeddingProviderAdapter } from "../plugins/memory-embedding-providers.js";
-import { startOpenAiCompatGatewayServer } from "./openai-compatible-http.test-helpers.js";
+import { startOpenAiCompatGatewayServer } from "./protocol/openai-compatible-http.test-helpers.js";
 import { getFreePort, installGatewayTestHooks, testState } from "./test-helpers.js";
 
 installGatewayTestHooks({ scope: "suite" });
 
 const WRITE_SCOPE_HEADER = { "x-openclaw-scopes": "operator.write" };
 
-let startGatewayServer: typeof import("./server.js").startGatewayServer;
+let startGatewayServer: typeof import("./server/server.js").startGatewayServer;
 let createEmbeddingProviderMock: ReturnType<
   typeof vi.fn<
     (options: { provider: string; model: string; agentDir?: string }) => Promise<{
@@ -30,7 +30,7 @@ let createEmbeddingProviderMock: ReturnType<
 >;
 let clearMemoryEmbeddingProviders: typeof import("../plugins/memory-embedding-providers.js").clearMemoryEmbeddingProviders;
 let registerMemoryEmbeddingProvider: typeof import("../plugins/memory-embedding-providers.js").registerMemoryEmbeddingProvider;
-let clearEmbeddingProviders: typeof import("../plugins/embedding-providers.js").clearEmbeddingProviders;
+let clearEmbeddingProviders: typeof import("../plugins/embedding/embedding-providers.js").clearEmbeddingProviders;
 let enabledServer: Awaited<ReturnType<typeof startOpenAiCompatGatewayServer>>;
 let genericEmbeddingServer: { baseUrl: string; close: () => Promise<void> };
 let enabledPort: number;
@@ -102,7 +102,7 @@ async function startGenericEmbeddingServer(): Promise<{
 beforeAll(async () => {
   ({ clearMemoryEmbeddingProviders, registerMemoryEmbeddingProvider } =
     await import("../plugins/memory-embedding-providers.js"));
-  ({ clearEmbeddingProviders } = await import("../plugins/embedding-providers.js"));
+  ({ clearEmbeddingProviders } = await import("../plugins/embedding/embedding-providers.js"));
   createEmbeddingProviderMock = vi.fn(
     async (options: { provider: string; model: string; agentDir?: string }) => ({
       provider: {
@@ -134,7 +134,7 @@ beforeAll(async () => {
     },
   };
   registerMemoryEmbeddingProvider(openAiAdapter);
-  ({ startGatewayServer } = await import("./server.js"));
+  ({ startGatewayServer } = await import("./server/server.js"));
   enabledPort = await getFreePort();
   enabledServer = await startOpenAiCompatGatewayServer({
     startGatewayServer,

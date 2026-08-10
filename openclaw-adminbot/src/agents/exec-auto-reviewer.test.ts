@@ -149,9 +149,9 @@ describe("createModelExecAutoReviewer", () => {
       reviewer: { model: { primary: "openrouter/anthropic/claude-sonnet-4-6" } },
       deps: {
         prepareSimpleCompletionModelForAgent:
-          prepare as unknown as typeof import("./simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
+          prepare as unknown as typeof import("./transport/simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
         completeWithPreparedSimpleCompletionModel:
-          complete as unknown as typeof import("./simple-completion-runtime.js").completeWithPreparedSimpleCompletionModel,
+          complete as unknown as typeof import("./transport/simple-completion-runtime.js").completeWithPreparedSimpleCompletionModel,
       },
     });
 
@@ -211,9 +211,9 @@ describe("createModelExecAutoReviewer", () => {
       cfg: {},
       deps: {
         prepareSimpleCompletionModelForAgent:
-          prepare as unknown as typeof import("./simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
+          prepare as unknown as typeof import("./transport/simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
         completeWithPreparedSimpleCompletionModel:
-          complete as unknown as typeof import("./simple-completion-runtime.js").completeWithPreparedSimpleCompletionModel,
+          complete as unknown as typeof import("./transport/simple-completion-runtime.js").completeWithPreparedSimpleCompletionModel,
       },
     });
 
@@ -237,7 +237,7 @@ describe("createModelExecAutoReviewer", () => {
       deps: {
         prepareSimpleCompletionModelForAgent: vi.fn(async () => ({
           error: "missing API key",
-        })) as unknown as typeof import("./simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
+        })) as unknown as typeof import("./transport/simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
       },
     });
 
@@ -268,9 +268,9 @@ describe("createModelExecAutoReviewer", () => {
           },
           model: { provider: "atlassian-aigw", id: "gpt-5.4-nano", api: "openai-responses" },
           auth: { apiKey: "key", mode: "env" },
-        })) as unknown as typeof import("./simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
+        })) as unknown as typeof import("./transport/simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
         completeWithPreparedSimpleCompletionModel:
-          complete as unknown as typeof import("./simple-completion-runtime.js").completeWithPreparedSimpleCompletionModel,
+          complete as unknown as typeof import("./transport/simple-completion-runtime.js").completeWithPreparedSimpleCompletionModel,
       },
     });
 
@@ -296,7 +296,7 @@ describe("createModelExecAutoReviewer", () => {
         reviewer: { timeoutMs: 5_000 },
         deps: {
           prepareSimpleCompletionModelForAgent:
-            prepare as unknown as typeof import("./simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
+            prepare as unknown as typeof import("./transport/simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
         },
       });
 
@@ -370,9 +370,9 @@ describe("createModelExecAutoReviewer", () => {
         reviewer: { timeoutMs: 5_000 },
         deps: {
           prepareSimpleCompletionModelForAgent:
-            prepare as unknown as typeof import("./simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
+            prepare as unknown as typeof import("./transport/simple-completion-runtime.js").prepareSimpleCompletionModelForAgent,
           completeWithPreparedSimpleCompletionModel:
-            complete as unknown as typeof import("./simple-completion-runtime.js").completeWithPreparedSimpleCompletionModel,
+            complete as unknown as typeof import("./transport/simple-completion-runtime.js").completeWithPreparedSimpleCompletionModel,
         },
       });
 

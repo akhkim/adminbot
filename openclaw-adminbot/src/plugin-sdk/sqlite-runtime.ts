@@ -4,4 +4,4 @@ export {
   ensureOpenClawAgentDatabaseSchema,
   resolveOpenClawAgentSqlitePath,
 } from "../state/openclaw-agent-db.js";
-export { runSqliteImmediateTransactionSync } from "../infra/sqlite-transaction.js";
+export { runSqliteImmediateTransactionSync } from "../infra/state/sqlite-transaction.js";

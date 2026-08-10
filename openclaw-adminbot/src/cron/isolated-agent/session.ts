@@ -1,6 +1,6 @@
 /** Resolves session rollover and carried state for isolated cron runs. */
 import crypto from "node:crypto";
-import { clearBootstrapSnapshotOnSessionRollover } from "../../agents/bootstrap-cache.js";
+import { clearBootstrapSnapshotOnSessionRollover } from "../../agents/prompt/bootstrap-cache.js";
 import { resolveSessionLifecycleTimestamps } from "../../config/sessions/lifecycle.js";
 import { hasSessionAutoModelFallbackProvenance } from "../../config/sessions/model-override-provenance.js";
 import { resolveStorePath } from "../../config/sessions/paths.js";
@@ -10,7 +10,7 @@ import {
 } from "../../config/sessions/reset-policy.js";
 import { loadSessionStore } from "../../config/sessions/store-load.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 
 const FRESH_CRON_CARRIED_PREFERENCE_FIELDS = [
   "heartbeatTaskState",

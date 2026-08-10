@@ -16,6 +16,12 @@ const CONTROL_CACHE_LIMIT = 3;
 // Minimal app-shell files to precache.
 const PRECACHE_URLS = ["./"];
 
+// A hashed asset must never resolve to the index.html SPA fallback: a missing
+// hash served as text/html would be cached and later executed as a JS module,
+// crashing the app on reload until the cache is cleared. Guard reads and writes.
+const isHtmlResponse = (response) =>
+  (response.headers.get("content-type") || "").includes("text/html");
+
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS)));
   self.skipWaiting();
@@ -66,20 +72,24 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Cache-first for hashed assets; network-first for HTML/other.
+  // Cache-first for hashed assets; network-first for HTML/other. Reading across
+  // all retained build caches lets open tabs still load their prior-build
+  // chunks, but a cached HTML fallback is ignored so a poisoned entry can never
+  // be served as a module — it self-heals on the next load.
   if (url.pathname.includes("/assets/")) {
     event.respondWith(
-      caches.match(event.request).then(
-        (cached) =>
-          cached ||
-          fetch(event.request).then((response) => {
-            if (response.ok) {
-              const clone = response.clone();
-              void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-            }
-            return response;
-          }),
-      ),
+      caches.match(event.request).then((cached) => {
+        if (cached && !isHtmlResponse(cached)) {
+          return cached;
+        }
+        return fetch(event.request).then((response) => {
+          if (response.ok && !isHtmlResponse(response)) {
+            const clone = response.clone();
+            void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        });
+      }),
     );
   } else {
     event.respondWith(

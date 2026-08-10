@@ -15,17 +15,17 @@ export {
   type ResolvedMemorySearchConfig,
   type ResolvedMemorySearchSyncConfig,
 } from "../agents/memory-search.js";
-export { parseDurationMs } from "../cli/parse-duration.js";
+export { parseDurationMs } from "../cli/program/parse-duration.js";
 export { loadConfig } from "../config/config.js";
 export type { OpenClawConfig } from "../config/config.js";
-export { resolveStateDir } from "../config/paths.js";
+export { resolveStateDir } from "../config/paths/paths.js";
 export { resolveSessionTranscriptsDirForAgent } from "../config/sessions/paths.js";
 export {
   hasConfiguredSecretInput,
   normalizeResolvedSecretInputString,
   type SecretInput,
-} from "../config/types.secrets.js";
-export type { SessionSendPolicyConfig } from "../config/types.base.js";
+} from "../config/types/secrets.js";
+export type { SessionSendPolicyConfig } from "../config/types/base.js";
 export type {
   MemoryBackend,
   MemoryCitationsMode,
@@ -33,15 +33,15 @@ export type {
   MemoryQmdIndexPath,
   MemoryQmdMcporterConfig,
   MemoryQmdSearchMode,
-} from "../config/types.memory.js";
-export type { MemorySearchConfig } from "../config/types.tools.js";
+} from "../config/types/memory.js";
+export type { MemorySearchConfig } from "../config/types/tools.js";
 export { root } from "../infra/fs-safe.js";
 export { createSubsystemLogger } from "../logging/subsystem.js";
 export { detectMime } from "@openclaw/media-core/mime";
 export { onSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 export { resolveGlobalSingleton } from "../shared/global-singleton.js";
-export { runTasksWithConcurrency } from "../utils/run-with-concurrency.js";
-export { splitShellArgs } from "../utils/shell-argv.js";
+export { runTasksWithConcurrency } from "../shared/run-with-concurrency.js";
+export { splitShellArgs } from "../shared/shell-argv.js";
 export {
   resolveUserPath,
   shortenHomeInString,

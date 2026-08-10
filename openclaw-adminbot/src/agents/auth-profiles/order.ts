@@ -7,11 +7,11 @@ import {
   findNormalizedProviderValue,
   normalizeProviderId,
 } from "@openclaw/model-catalog-core/provider-id";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   type ProviderAuthAliasLookupParams,
   resolveProviderIdForAuth,
-} from "../provider-auth-aliases.js";
+} from "../auth/provider-auth-aliases.js";
 import {
   evaluateStoredCredentialEligibility,
   type AuthCredentialReasonCode,

@@ -2,7 +2,7 @@
 import {
   areDiagnosticsEnabledForProcess,
   emitInternalDiagnosticEvent as emitDiagnosticEvent,
-} from "../infra/diagnostic-events.js";
+} from "../infra/diagnostics/diagnostic-events.js";
 import { createSubsystemLogger } from "./subsystem.js";
 
 // Shared diagnostic logger and queue-activity event helpers.

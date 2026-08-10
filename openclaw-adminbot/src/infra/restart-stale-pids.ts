@@ -4,12 +4,12 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { uniqueValues } from "@openclaw/normalization-core/string-normalization";
-import { resolveGatewayPort } from "../config/paths.js";
+import { resolveGatewayPort } from "../config/paths/paths.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { isGatewayArgv, parseProcCmdline } from "./gateway-process-argv.js";
 import { parseStrictPositiveInteger } from "./parse-finite-number.js";
 import { resolveLsofCommandSync } from "./ports-lsof.js";
-import { getWindowsInstallRoots } from "./windows-install-roots.js";
+import { getWindowsInstallRoots } from "./system/windows-install-roots.js";
 import {
   readWindowsListeningPidsOnPortSync,
   readWindowsListeningPidsResultSync,
@@ -17,7 +17,7 @@ import {
   readWindowsProcessArgsSync,
   type WindowsProcessArgsResult,
   type WindowsListeningPidsResult,
-} from "./windows-port-pids.js";
+} from "./system/windows-port-pids.js";
 
 const SPAWN_TIMEOUT_MS = 2000;
 const STALE_SIGTERM_WAIT_MS = 600;

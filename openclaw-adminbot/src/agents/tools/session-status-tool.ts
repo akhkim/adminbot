@@ -20,10 +20,10 @@ import {
   type SessionEntry,
   updateSessionStore,
 } from "../../config/sessions.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { triggerSessionPatchHook } from "../../gateway/session-patch-hooks.js";
-import { resolveSessionModelIdentityRef } from "../../gateway/session-utils.js";
-import { loadManifestMetadataSnapshot } from "../../plugins/manifest-contract-eligibility.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { triggerSessionPatchHook } from "../../gateway/sessions/session-patch-hooks.js";
+import { resolveSessionModelIdentityRef } from "../../gateway/sessions/session-utils.js";
+import { loadManifestMetadataSnapshot } from "../../plugins/manifest/manifest-contract-eligibility.js";
 import {
   buildAgentMainSessionKey,
   DEFAULT_AGENT_ID,
@@ -31,32 +31,28 @@ import {
   resolveAgentIdFromSessionKey,
 } from "../../routing/session-key.js";
 import { applyModelOverrideToSessionEntry } from "../../sessions/model-overrides.js";
-import { createLazyImportLoader } from "../../shared/lazy-promise.js";
-import type { BuildStatusTextParams } from "../../status/status-text.types.js";
-import { buildTaskStatusSnapshotForRelatedSessionKeyForOwner } from "../../tasks/task-owner-access.js";
-import { formatTaskStatusDetail, formatTaskStatusTitle } from "../../tasks/task-status.js";
 import {
   deliveryContextFromSession,
   normalizeDeliveryContext,
   type DeliveryContext,
-} from "../../utils/delivery-context.shared.js";
+} from "../../shared/delivery-context.shared.js";
+import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import {
   isDeliverableMessageChannel,
   normalizeMessageChannel,
-} from "../../utils/message-channel.js";
-import { loadModelCatalog } from "../model-catalog.js";
+} from "../../shared/message-channel.js";
+import type { BuildStatusTextParams } from "../../status/status-text.types.js";
+import { buildTaskStatusSnapshotForRelatedSessionKeyForOwner } from "../../tasks/task-owner-access.js";
+import { formatTaskStatusDetail, formatTaskStatusTitle } from "../../tasks/task-status.js";
+import { loadModelCatalog } from "../models/model-catalog.js";
 import {
   buildModelAliasIndex,
   modelKey,
   resolveDefaultModelForAgent,
   resolveModelRefFromString,
   resolveThinkingDefaultWithRuntimeCatalog,
-} from "../model-selection.js";
-import { createModelVisibilityPolicy } from "../model-visibility-policy.js";
-import {
-  describeSessionStatusTool,
-  SESSION_STATUS_TOOL_DISPLAY_SUMMARY,
-} from "../tool-description-presets.js";
+} from "../models/model-selection.js";
+import { createModelVisibilityPolicy } from "../models/model-visibility-policy.js";
 import type { AnyAgentTool } from "./common.js";
 import { normalizeToolModelOverride, readStringParam } from "./common.js";
 import {
@@ -70,6 +66,10 @@ import {
   resolveVisibleSessionReference,
   shouldResolveSessionIdInput,
 } from "./sessions-helpers.js";
+import {
+  describeSessionStatusTool,
+  SESSION_STATUS_TOOL_DISPLAY_SUMMARY,
+} from "./tool-description-presets.js";
 
 const SessionStatusToolSchema = Type.Object({
   sessionKey: Type.Optional(Type.String()),

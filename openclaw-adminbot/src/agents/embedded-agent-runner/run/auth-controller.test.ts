@@ -1,7 +1,7 @@
 // Coverage for embedded run auth initialization and runtime credential refresh.
 import type { Model } from "openclaw/plugin-sdk/llm";
 import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
-import type { AuthProfileStore } from "../../auth-profiles.js";
+import type { AuthProfileStore } from "../../auth/auth-profiles.js";
 import { FailoverError } from "../../failover-error.js";
 import type { RuntimeAuthState } from "./helpers.js";
 
@@ -10,18 +10,20 @@ const mocks = vi.hoisted(() => ({
   getApiKeyForModel: vi.fn(),
 }));
 
-vi.mock("../../../plugins/provider-runtime.js", async () => {
-  const actual = await vi.importActual<typeof import("../../../plugins/provider-runtime.js")>(
-    "../../../plugins/provider-runtime.js",
-  );
+vi.mock("../../../plugins/providers/provider-runtime.js", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../../plugins/providers/provider-runtime.js")
+  >("../../../plugins/providers/provider-runtime.js");
   return {
     ...actual,
     prepareProviderRuntimeAuth: mocks.prepareProviderRuntimeAuth,
   };
 });
 
-vi.mock("../../model-auth.js", async () => {
-  const actual = await vi.importActual<typeof import("../../model-auth.js")>("../../model-auth.js");
+vi.mock("../../auth/model-auth.js", async () => {
+  const actual = await vi.importActual<typeof import("../../auth/model-auth.js")>(
+    "../../auth/model-auth.js",
+  );
   return {
     ...actual,
     getApiKeyForModel: mocks.getApiKeyForModel,

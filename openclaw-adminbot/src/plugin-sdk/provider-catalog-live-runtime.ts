@@ -1,4 +1,4 @@
-import { isNonSecretApiKeyMarker } from "../agents/model-auth-markers.js";
+import { isNonSecretApiKeyMarker } from "../agents/auth/model-auth-markers.js";
 import {
   clearLiveCatalogCacheForTests,
   getCachedLiveCatalogValue,

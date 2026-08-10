@@ -1,7 +1,7 @@
 // Gateway reload settings resolver.
 // Normalizes reload mode and debounce config for watcher/reload handlers.
-import type { GatewayReloadMode } from "../config/types.gateway.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { GatewayReloadMode } from "../config/types/gateway.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 type GatewayReloadSettings = {
   mode: GatewayReloadMode;

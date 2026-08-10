@@ -1,7 +1,7 @@
 // QA runner runtime helpers expose plugin QA scenarios through the CLI command surface.
 import type { Command } from "commander";
-import type { PluginManifestRecord } from "../plugins/manifest-registry.js";
-import { loadPluginManifestRegistry } from "../plugins/manifest-registry.js";
+import type { PluginManifestRecord } from "../plugins/manifest/manifest-registry.js";
+import { loadPluginManifestRegistry } from "../plugins/manifest/manifest-registry.js";
 import {
   loadBundledPluginPublicSurfaceModuleSync,
   tryLoadActivatedBundledPluginPublicSurfaceModuleSync,

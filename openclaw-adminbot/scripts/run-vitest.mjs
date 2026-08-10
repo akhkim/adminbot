@@ -5,8 +5,6 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { isUiTestTarget, isUnitUiTestTarget } from "../test/vitest/vitest.ui-paths.mjs";
-import { boundaryTestFiles } from "../test/vitest/vitest.unit-paths.mjs";
 import { resolveLocalVitestEnv } from "./lib/vitest-local-scheduling.mjs";
 import { spawnPnpmRunner } from "./pnpm-runner.mjs";
 import {
@@ -23,39 +21,9 @@ const SUPPRESSED_VITEST_STDERR_PATTERNS = ["[PLUGIN_TIMINGS]"];
 export const DEFAULT_VITEST_NO_OUTPUT_TIMEOUT_MS = 120_000;
 /** Default heartbeat interval while waiting on silent Vitest output. */
 export const DEFAULT_VITEST_NO_OUTPUT_HEARTBEAT_MS = 30_000;
-/** Longer watchdog timeout for known long-running Vitest configs. */
-export const DEFAULT_LONG_RUNNING_VITEST_NO_OUTPUT_TIMEOUT_MS = 300_000;
-/** Extra-long watchdog timeout for broad configs that can stay silent on macOS. */
-export const DEFAULT_EXTRA_LONG_RUNNING_VITEST_NO_OUTPUT_TIMEOUT_MS = 2_400_000;
 const VITEST_NO_OUTPUT_TIMEOUT_ENV_KEY = "OPENCLAW_VITEST_NO_OUTPUT_TIMEOUT_MS";
 const VITEST_NO_OUTPUT_HEARTBEAT_ENV_KEY = "OPENCLAW_VITEST_NO_OUTPUT_HEARTBEAT_MS";
 const UI_VITEST_CONFIG = "test/vitest/vitest.ui.config.ts";
-const UNIT_UI_VITEST_CONFIG = "test/vitest/vitest.unit-ui.config.ts";
-const TOOLING_DOCKER_VITEST_CONFIG = "test/vitest/vitest.tooling-docker.config.ts";
-const TOOLING_VITEST_CONFIG = "test/vitest/vitest.tooling.config.ts";
-const GATEWAY_CORE_VITEST_CONFIG = "test/vitest/vitest.gateway-core.config.ts";
-const GATEWAY_VITEST_CONFIG = "test/vitest/vitest.gateway.config.ts";
-const VITEST_CONFIG_NO_OUTPUT_TIMEOUT_MS = new Map([
-  ["test/vitest/vitest.e2e.config.ts", DEFAULT_LONG_RUNNING_VITEST_NO_OUTPUT_TIMEOUT_MS],
-  [GATEWAY_VITEST_CONFIG, DEFAULT_LONG_RUNNING_VITEST_NO_OUTPUT_TIMEOUT_MS],
-  ["test/vitest/vitest.ui-e2e.config.ts", DEFAULT_LONG_RUNNING_VITEST_NO_OUTPUT_TIMEOUT_MS],
-  ["test/vitest/vitest.full-agentic.config.ts", DEFAULT_LONG_RUNNING_VITEST_NO_OUTPUT_TIMEOUT_MS],
-  [
-    "test/vitest/vitest.full-core-contracts.config.ts",
-    DEFAULT_LONG_RUNNING_VITEST_NO_OUTPUT_TIMEOUT_MS,
-  ],
-  [
-    "test/vitest/vitest.contracts-plugin.config.ts",
-    DEFAULT_EXTRA_LONG_RUNNING_VITEST_NO_OUTPUT_TIMEOUT_MS,
-  ],
-  ["test/vitest/vitest.infra.config.ts", DEFAULT_EXTRA_LONG_RUNNING_VITEST_NO_OUTPUT_TIMEOUT_MS],
-  [GATEWAY_CORE_VITEST_CONFIG, DEFAULT_EXTRA_LONG_RUNNING_VITEST_NO_OUTPUT_TIMEOUT_MS],
-]);
-const TOOLING_EXCLUDED_TESTS = new Set([
-  ...boundaryTestFiles,
-  "test/scripts/docker-build-helper.test.ts",
-  "test/scripts/openclaw-e2e-instance.test.ts",
-]);
 const EXPLICIT_FILE_TARGET_RE = /\.(?:[cm]?[jt]sx?)$/u;
 const EXPLICIT_TEST_FILE_RE = /\.(?:test|e2e|live)\.(?:[cm]?[jt]sx?)$/u;
 const GLOB_PATTERN_CHARS_RE = /[*?[\]{}]/u;
@@ -358,7 +326,7 @@ export function resolveRunVitestSpawnEnv(env = process.env, argv = []) {
   if (explicitMode !== "run" && !isTruthyEnvValue(env.CI)) {
     return env;
   }
-  const defaultTimeoutMs = resolveDefaultVitestNoOutputTimeoutMs(argv);
+  const defaultTimeoutMs = DEFAULT_VITEST_NO_OUTPUT_TIMEOUT_MS;
   const hasTimeout = Object.hasOwn(env, VITEST_NO_OUTPUT_TIMEOUT_ENV_KEY);
   const timeoutMs = hasTimeout
     ? parsePositiveInt(env[VITEST_NO_OUTPUT_TIMEOUT_ENV_KEY])
@@ -371,42 +339,6 @@ export function resolveRunVitestSpawnEnv(env = process.env, argv = []) {
       ? { [VITEST_NO_OUTPUT_HEARTBEAT_ENV_KEY]: String(DEFAULT_VITEST_NO_OUTPUT_HEARTBEAT_MS) }
       : {}),
   };
-}
-
-/**
- * Chooses the default watchdog timeout from the selected Vitest config.
- */
-export function resolveDefaultVitestNoOutputTimeoutMs(argv = []) {
-  const config = resolveVitestConfigArg(argv);
-  return config === null
-    ? DEFAULT_VITEST_NO_OUTPUT_TIMEOUT_MS
-    : (resolveVitestConfigNoOutputTimeoutMs(config) ?? DEFAULT_VITEST_NO_OUTPUT_TIMEOUT_MS);
-}
-
-function resolveVitestConfigArg(argv) {
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
-    if (arg === "--") {
-      return null;
-    }
-    if (arg === "--config" || arg === "-c") {
-      return argv[index + 1] ?? null;
-    }
-    if (arg.startsWith("--config=")) {
-      return arg.slice("--config=".length);
-    }
-  }
-  return null;
-}
-
-function resolveVitestConfigNoOutputTimeoutMs(config) {
-  const normalized = path.normalize(config).replaceAll(path.sep, "/").replace(/^\.\//u, "");
-  for (const [candidate, timeoutMs] of VITEST_CONFIG_NO_OUTPUT_TIMEOUT_MS) {
-    if (normalized === candidate || normalized.endsWith(`/${candidate}`)) {
-      return timeoutMs;
-    }
-  }
-  return null;
 }
 
 /**
@@ -746,14 +678,12 @@ function withImplicitVitestConfig(argv, config) {
   return ["--config", config, ...argv];
 }
 
-function isToolingTestTarget(target) {
+// The Control UI needs jsdom, so its specs only run under the ui lane. Everything
+// else is served by the node lane the root config already selects.
+function isUiTestTarget(target) {
   return (
-    target.startsWith("test/") && target.endsWith(".test.ts") && !TOOLING_EXCLUDED_TESTS.has(target)
+    target.startsWith("ui/src/") && target.endsWith(".test.ts") && !target.endsWith(".e2e.test.ts")
   );
-}
-
-function isToolingDockerTestTarget(target) {
-  return target === "test/scripts/docker-build-helper.test.ts";
 }
 
 /**
@@ -766,22 +696,10 @@ export function resolveImplicitVitestArgs(argv, cwd = process.cwd()) {
   const testTargets = argv
     .filter((arg) => !arg.startsWith("-") && arg.endsWith(".test.ts"))
     .map((arg) => toRepoRelativeArg(arg, cwd));
-  if (testTargets.length > 0 && testTargets.every(isToolingDockerTestTarget)) {
-    return withImplicitVitestConfig(argv, TOOLING_DOCKER_VITEST_CONFIG);
+  if (testTargets.length > 0 && testTargets.every(isUiTestTarget)) {
+    return withImplicitVitestConfig(argv, UI_VITEST_CONFIG);
   }
-  if (testTargets.length > 0 && testTargets.every(isToolingTestTarget)) {
-    return withImplicitVitestConfig(argv, TOOLING_VITEST_CONFIG);
-  }
-  if (testTargets.length === 0 || !testTargets.every(isUnitUiTestTarget)) {
-    if (
-      testTargets.length > 0 &&
-      testTargets.every((target) => isUiTestTarget(target) && !isUnitUiTestTarget(target))
-    ) {
-      return withImplicitVitestConfig(argv, UI_VITEST_CONFIG);
-    }
-    return argv;
-  }
-  return withImplicitVitestConfig(argv, UNIT_UI_VITEST_CONFIG);
+  return argv;
 }
 
 function spawnVitestProcess({ pnpmArgs, spawnParams }) {

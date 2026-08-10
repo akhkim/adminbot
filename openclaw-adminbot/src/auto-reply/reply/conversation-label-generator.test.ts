@@ -18,11 +18,11 @@ vi.mock("../../llm/stream.js", async () => {
   };
 });
 
-vi.mock("../../agents/model-auth.js", () => ({ requireApiKey }));
+vi.mock("../../agents/auth/model-auth.js", () => ({ requireApiKey }));
 
 vi.mock("../../globals.js", () => ({ logVerbose }));
 
-vi.mock("../../agents/model-selection.js", () => ({
+vi.mock("../../agents/models/model-selection.js", () => ({
   resolveDefaultModelForAgent,
 }));
 
@@ -30,7 +30,7 @@ vi.mock("../../agents/embedded-agent-runner/model.js", () => ({
   resolveModelAsync,
 }));
 
-vi.mock("../../agents/simple-completion-transport.js", () => ({
+vi.mock("../../agents/transport/simple-completion-transport.js", () => ({
   prepareModelForSimpleCompletion,
 }));
 

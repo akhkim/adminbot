@@ -10,12 +10,12 @@ const serviceInstall = vi.hoisted(() => vi.fn(async () => {}));
 const ensureSystemdUserLingerNonInteractive = vi.hoisted(() => vi.fn(async () => {}));
 const isSystemdUserServiceAvailable = vi.hoisted(() => vi.fn(async () => true));
 
-vi.mock("../../daemon-install-helpers.js", () => ({
+vi.mock("../../daemon/daemon-install-helpers.js", () => ({
   buildGatewayInstallPlan,
   gatewayInstallErrorHint,
 }));
 
-vi.mock("../../gateway-install-token.js", () => ({
+vi.mock("../../gateway/gateway-install-token.js", () => ({
   resolveGatewayInstallToken,
 }));
 
@@ -29,7 +29,7 @@ vi.mock("../../../daemon/systemd.js", () => ({
   isSystemdUserServiceAvailable,
 }));
 
-vi.mock("../../daemon-runtime.js", () => ({
+vi.mock("../../daemon/daemon-runtime.js", () => ({
   DEFAULT_GATEWAY_DAEMON_RUNTIME: "node",
   isGatewayDaemonRuntime: vi.fn(() => true),
 }));

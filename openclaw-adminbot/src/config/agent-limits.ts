@@ -1,5 +1,5 @@
 // Resolves per-agent runtime limits from config.
-import type { OpenClawConfig } from "./types.js";
+import type { OpenClawConfig } from "./types/types.js";
 
 /** Default maximum concurrent top-level agent runs. */
 export const DEFAULT_AGENT_MAX_CONCURRENT = 4;

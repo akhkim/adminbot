@@ -9,14 +9,14 @@ import { resolveCliArgvInvocation } from "./argv-invocation.js";
 import { runChannelLogin, runChannelLogout } from "./channel-auth.js";
 import { formatCliChannelOptions } from "./channel-options.js";
 import { runCommandWithRuntime } from "./cli-utils.js";
-import { hasExplicitOptions } from "./command-options.js";
 import { formatHelpExamples } from "./help-format.js";
+import { hasExplicitOptions } from "./program/command-options.js";
 import { applyParentDefaultHelpAction } from "./program/parent-default-help.js";
 import { normalizeWindowsArgv } from "./windows-argv.js";
 
-type ChannelsCommandsModule = typeof import("../commands/channels.js");
+type ChannelsCommandsModule = typeof import("../commands/channels/channels.js");
 type BundledPackageChannelMetadataModule =
-  typeof import("../plugins/bundled-package-channel-metadata.js");
+  typeof import("../plugins/install/bundled-package-channel-metadata.js");
 
 const optionNamesRemove = ["channel", "account", "delete"] as const;
 
@@ -25,11 +25,11 @@ type RegisterChannelsCliOptions = {
 };
 
 const channelsCommandsLoader = createLazyImportLoader<ChannelsCommandsModule>(
-  () => import("../commands/channels.js"),
+  () => import("../commands/channels/channels.js"),
 );
 const bundledPackageChannelMetadataLoader =
   createLazyImportLoader<BundledPackageChannelMetadataModule>(
-    () => import("../plugins/bundled-package-channel-metadata.js"),
+    () => import("../plugins/install/bundled-package-channel-metadata.js"),
   );
 
 function loadChannelsCommands(): Promise<ChannelsCommandsModule> {

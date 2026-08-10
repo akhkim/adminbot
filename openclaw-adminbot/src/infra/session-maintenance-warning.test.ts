@@ -79,17 +79,17 @@ describe("deliverSessionMaintenanceWarning", () => {
     vi.doMock("../agents/agent-scope.js", () => ({
       resolveSessionAgentId: mocks.resolveSessionAgentId,
     }));
-    vi.doMock("../utils/message-channel.js", () => ({
+    vi.doMock("../shared/message-channel.js", () => ({
       normalizeMessageChannel: mocks.normalizeMessageChannel,
       isDeliverableMessageChannel: mocks.isDeliverableMessageChannel,
     }));
-    vi.doMock("../utils/delivery-context.shared.js", () => ({
+    vi.doMock("../shared/delivery-context.shared.js", () => ({
       deliveryContextFromSession: mocks.deliveryContextFromSession,
     }));
     vi.doMock("./outbound/deliver-runtime.js", () => ({
       deliverOutboundPayloads: mocks.deliverOutboundPayloads,
     }));
-    vi.doMock("./system-events.js", () => ({
+    vi.doMock("./system/system-events.js", () => ({
       enqueueSystemEvent: mocks.enqueueSystemEvent,
     }));
     ({

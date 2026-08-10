@@ -8,7 +8,7 @@ import { listChannelSetupPlugins } from "../channels/plugins/setup-registry.js";
 import type { ChannelSetupPlugin } from "../channels/plugins/setup-wizard-types.js";
 import type { ChannelMeta } from "../channels/plugins/types.core.js";
 import { formatChannelPrimerLine, formatChannelSelectionLine } from "../channels/registry.js";
-import { formatCliCommand } from "../cli/command-format.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
 import { resolveChannelSetupEntries } from "../commands/channel-setup/discovery.js";
 import { shouldShowChannelInSetup } from "../commands/channel-setup/discovery.js";
 import { resolveChannelSetupWizardAdapterForPlugin } from "../commands/channel-setup/registry.js";
@@ -17,14 +17,14 @@ import type {
   ChannelSetupStatus,
   SetupChannelsOptions,
 } from "../commands/channel-setup/types.js";
-import type { ChannelChoice } from "../commands/onboard-types.js";
-import { isChannelConfigured } from "../config/channel-configured.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { ChannelChoice } from "../commands/onboard/onboard-types.js";
+import { isChannelConfigured } from "../config/channel/channel-configured.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   findBundledPluginSourceInMap,
   resolveBundledPluginSources,
   type BundledPluginSource,
-} from "../plugins/bundled-sources.js";
+} from "../plugins/install/bundled-sources.js";
 import { t, wizardT } from "../wizard/i18n/index.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import type { FlowContribution } from "./types.js";

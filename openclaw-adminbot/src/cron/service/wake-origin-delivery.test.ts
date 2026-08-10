@@ -11,7 +11,7 @@
 // delivery context natively in timer.ts (resolveMainSessionCronDeliveryContext)
 // and are covered there.
 import { describe, expect, it, vi } from "vitest";
-import type { DeliveryContext } from "../../utils/delivery-context.types.js";
+import type { DeliveryContext } from "../../shared/delivery-context.types.js";
 import type { CronServiceState } from "./state.js";
 import { wake } from "./wake.js";
 

@@ -1,8 +1,8 @@
 // AdminBot setup writes the dedicated agent, plugin config, and optional Slack route.
-import { applyAgentBindings } from "../commands/agents.bindings.js";
-import { applyAgentConfig } from "../commands/agents.config.js";
-import type { AgentRouteBinding } from "../config/types.agents.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { applyAgentBindings } from "../commands/agents/agents.bindings.js";
+import { applyAgentConfig } from "../commands/agents/agents.config.js";
+import type { AgentRouteBinding } from "../config/types/agents.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { t } from "./i18n/index.js";
 import type { WizardPrompter } from "./prompts.js";
 

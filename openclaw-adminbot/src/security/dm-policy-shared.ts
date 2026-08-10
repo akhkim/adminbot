@@ -6,7 +6,7 @@ import { resolveDmAllowAuditState } from "../channels/message-access/dm-allow-st
 import { resolveChannelIngressEffectiveAllowFromLists } from "../channels/message-access/effective-allow-from.js";
 import { readChannelIngressStoreAllowFromForDmPolicy } from "../channels/message-access/store-allow-from.js";
 import type { ChannelId } from "../channels/plugins/channel-id.types.js";
-import type { GroupPolicy } from "../config/types.base.js";
+import type { GroupPolicy } from "../config/types/base.js";
 import { evaluateMatchedGroupAccessForPolicy } from "../plugin-sdk/group-access.js";
 
 /**

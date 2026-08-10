@@ -1,7 +1,7 @@
 // Gateway WebSocket connection tests cover handshake auth, shared sessions, and message-handler attachment.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ResolvedGatewayAuth } from "../auth.js";
-import { MAX_BUFFERED_BYTES } from "../server-constants.js";
+import type { ResolvedGatewayAuth } from "../auth/auth.js";
+import { MAX_BUFFERED_BYTES } from "./server-constants.js";
 import {
   attachGatewayWsForTest,
   createGatewayWsTestRequestContext,
@@ -20,7 +20,7 @@ const { attachGatewayWsMessageHandlerMock, broadcastPresenceSnapshotMock, upsert
 vi.mock("./ws-connection/message-handler.js", () => ({
   attachGatewayWsMessageHandler: attachGatewayWsMessageHandlerMock,
 }));
-vi.mock("../../infra/system-presence.js", () => ({
+vi.mock("../../infra/system/system-presence.js", () => ({
   upsertPresence: upsertPresenceMock,
 }));
 vi.mock("./presence-events.js", () => ({

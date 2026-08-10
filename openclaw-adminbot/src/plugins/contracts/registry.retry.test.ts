@@ -83,10 +83,10 @@ describe("plugin contract registry scoped retries", () => {
         }),
       );
 
-    vi.doMock("../bundled-capability-runtime.js", () => ({
+    vi.doMock("../install/bundled-capability-runtime.js", () => ({
       loadBundledCapabilityRuntimeRegistry,
     }));
-    vi.doMock("../provider-contract-public-artifacts.js", () => ({
+    vi.doMock("../providers/provider-contract-public-artifacts.js", () => ({
       resolveBundledExplicitProviderContractsFromPublicArtifacts: () => null,
     }));
 
@@ -150,10 +150,10 @@ describe("plugin contract registry scoped retries", () => {
         }),
       );
 
-    vi.doMock("../bundled-capability-runtime.js", () => ({
+    vi.doMock("../install/bundled-capability-runtime.js", () => ({
       loadBundledCapabilityRuntimeRegistry,
     }));
-    vi.doMock("../web-provider-public-artifacts.explicit.js", () => ({
+    vi.doMock("../web/web-provider-public-artifacts.explicit.js", () => ({
       resolveBundledExplicitWebSearchProvidersFromPublicArtifacts: () => null,
     }));
 
@@ -192,10 +192,10 @@ describe("plugin contract registry scoped retries", () => {
       }),
     );
 
-    vi.doMock("../bundled-capability-runtime.js", () => ({
+    vi.doMock("../install/bundled-capability-runtime.js", () => ({
       loadBundledCapabilityRuntimeRegistry,
     }));
-    vi.doMock("../provider-contract-public-artifacts.js", () => ({
+    vi.doMock("../providers/provider-contract-public-artifacts.js", () => ({
       resolveBundledExplicitProviderContractsFromPublicArtifacts: () => null,
     }));
 
@@ -244,10 +244,10 @@ describe("plugin contract registry scoped retries", () => {
       },
     ]);
 
-    vi.doMock("../bundled-capability-runtime.js", () => ({
+    vi.doMock("../install/bundled-capability-runtime.js", () => ({
       loadBundledCapabilityRuntimeRegistry,
     }));
-    vi.doMock("../provider-contract-public-artifacts.js", () => ({
+    vi.doMock("../providers/provider-contract-public-artifacts.js", () => ({
       resolveBundledExplicitProviderContractsFromPublicArtifacts,
     }));
 
@@ -288,10 +288,10 @@ describe("plugin contract registry scoped retries", () => {
       },
     ]);
 
-    vi.doMock("../bundled-capability-runtime.js", () => ({
+    vi.doMock("../install/bundled-capability-runtime.js", () => ({
       loadBundledCapabilityRuntimeRegistry,
     }));
-    vi.doMock("../web-provider-public-artifacts.explicit.js", () => ({
+    vi.doMock("../web/web-provider-public-artifacts.explicit.js", () => ({
       resolveBundledExplicitWebSearchProvidersFromPublicArtifacts,
     }));
 
@@ -360,7 +360,7 @@ describe("plugin contract registry scoped retries", () => {
         }),
       );
 
-    vi.doMock("../bundled-capability-runtime.js", () => ({
+    vi.doMock("../install/bundled-capability-runtime.js", () => ({
       loadBundledCapabilityRuntimeRegistry,
     }));
 

@@ -60,7 +60,7 @@ case "$task" in
   reminders-preview)
     # The reminder pass reads matches.json, which the match step produces. Without it the script
     # dies on a bare KeyError traceback in the run summary, which says nothing about what to do.
-    if [[ ! -f "$REPO_ROOT/extensions/adminbot/deadlines/matches.json" ]]; then
+    if [[ ! -f "$REPO_ROOT/extensions/adminbot/content/deadlines/matches.json" ]]; then
       printf 'deadline reminders: matches.json is missing.\n' >&2
       printf 'Run the "refresh deadline matches" tool first; it needs ADMINBOT_ONGOING_SHEET_ID\n' >&2
       printf 'and ADMINBOT_READY_SHEET_ID in %s.\n' "$ADMINBOT_ENV_FILE" >&2

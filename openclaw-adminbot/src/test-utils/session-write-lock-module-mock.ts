@@ -1,5 +1,5 @@
 // Typed mock facade for session write-lock module tests.
-import type * as SessionWriteLockModule from "../agents/session-write-lock.js";
+import type * as SessionWriteLockModule from "../agents/sessions/session-write-lock.js";
 
 type SessionWriteLockModuleShape = typeof SessionWriteLockModule;
 

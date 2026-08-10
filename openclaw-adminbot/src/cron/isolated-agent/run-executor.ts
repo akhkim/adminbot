@@ -1,13 +1,13 @@
 /** Executes isolated cron prompts with model fallbacks and interim-ack retries. */
 import { createHash } from "node:crypto";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { BootstrapContextMode } from "../../agents/bootstrap-files.js";
-import { resolveCliRuntimeExecutionProvider } from "../../agents/model-runtime-aliases.js";
-import { wrapUntrustedPromptDataBlock } from "../../agents/sanitize-for-prompt.js";
-import { normalizeToolName } from "../../agents/tool-policy.js";
+import { resolveCliRuntimeExecutionProvider } from "../../agents/models/model-runtime-aliases.js";
+import type { BootstrapContextMode } from "../../agents/prompt/bootstrap-files.js";
+import { wrapUntrustedPromptDataBlock } from "../../agents/prompt/sanitize-for-prompt.js";
+import { normalizeToolName } from "../../agents/tools/tool-policy.js";
 import type { ThinkLevel, VerboseLevel } from "../../auto-reply/thinking.js";
-import type { AgentDefaultsConfig } from "../../config/types.agent-defaults.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { AgentDefaultsConfig } from "../../config/types/agent-defaults.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { SourceDeliveryPlan } from "../../infra/outbound/source-delivery-plan.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import type { SkillSnapshot } from "../../skills/types.js";

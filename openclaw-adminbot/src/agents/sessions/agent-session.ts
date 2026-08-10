@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- deferred split, see docs/adr/0006-deferred-monster-splits.md
 /**
  * AgentSession - Core abstraction for agent lifecycle and session management.
  *

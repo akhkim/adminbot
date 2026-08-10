@@ -13,8 +13,8 @@ import {
   toClientToolDefinitions,
   toToolDefinitions,
 } from "./agent-tool-definition-adapter.js";
-import { wrapToolWithBeforeToolCallHook } from "./agent-tools.before-tool-call.js";
 import type { ClientToolDefinition } from "./embedded-agent-runner/run/params.js";
+import { wrapToolWithBeforeToolCallHook } from "./tools/agent-tools.before-tool-call.js";
 
 type ToolExecute = ReturnType<typeof toToolDefinitions>[number]["execute"];
 const extensionContext = {} as Parameters<ToolExecute>[4];

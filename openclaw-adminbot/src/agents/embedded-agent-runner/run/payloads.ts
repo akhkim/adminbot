@@ -20,12 +20,12 @@ import { parseReplyDirectives } from "../../../auto-reply/reply/reply-directives
 import type { ReasoningLevel, ThinkLevel, VerboseLevel } from "../../../auto-reply/thinking.js";
 import { isSilentReplyPayloadText, SILENT_REPLY_TOKEN } from "../../../auto-reply/tokens.js";
 import { formatToolAggregate } from "../../../auto-reply/tool-meta.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { hasReplyPayloadContent } from "../../../interactive/payload.js";
 import type { AssistantMessage } from "../../../llm/types.js";
 import { isCronSessionKey } from "../../../routing/session-key.js";
 import { extractAssistantTextForPhase } from "../../../shared/chat-message-content.js";
-import { parseInlineDirectives } from "../../../utils/directive-tags.js";
+import { parseInlineDirectives } from "../../../shared/directive-tags.js";
 import {
   BILLING_ERROR_USER_MESSAGE,
   formatAssistantErrorText,
@@ -34,15 +34,15 @@ import {
   getApiErrorPayloadFingerprint,
   isRawApiErrorPayload,
   normalizeTextForComparison,
-} from "../../embedded-agent-helpers.js";
-import type { MessagingToolSourceReplyPayload } from "../../embedded-agent-messaging.types.js";
-import type { ToolResultFormat } from "../../embedded-agent-subscribe.shared-types.js";
+} from "../../embedded/embedded-agent-helpers.js";
+import type { MessagingToolSourceReplyPayload } from "../../embedded/embedded-agent-messaging.types.js";
+import type { ToolResultFormat } from "../../embedded/embedded-agent-subscribe.shared-types.js";
 import {
   extractAssistantThinking,
   extractAssistantVisibleText,
-} from "../../embedded-agent-utils.js";
-import { isExecLikeToolName, type ToolErrorSummary } from "../../tool-error-summary.js";
-import { isLikelyMutatingToolName } from "../../tool-mutation.js";
+} from "../../embedded/embedded-agent-utils.js";
+import { isExecLikeToolName, type ToolErrorSummary } from "../../tools/tool-error-summary.js";
+import { isLikelyMutatingToolName } from "../../tools/tool-mutation.js";
 
 type ToolMetaEntry = { toolName: string; meta?: string };
 type ToolErrorWarningPolicy = {

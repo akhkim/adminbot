@@ -1,7 +1,10 @@
 // Chutes OAuth tests cover OAuth endpoints, local callback handling, and fetch preconnect behavior.
 import net from "node:net";
 import { describe, expect, it, vi } from "vitest";
-import { CHUTES_TOKEN_ENDPOINT, CHUTES_USERINFO_ENDPOINT } from "../agents/chutes-oauth.js";
+import {
+  CHUTES_TOKEN_ENDPOINT,
+  CHUTES_USERINFO_ENDPOINT,
+} from "../agents/transport/chutes-oauth.js";
 import { withFetchPreconnect } from "../test-utils/fetch-mock.js";
 import { loginChutes } from "./chutes-oauth.js";
 

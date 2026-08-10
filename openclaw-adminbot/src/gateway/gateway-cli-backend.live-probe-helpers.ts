@@ -5,7 +5,7 @@ import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/st
 import { renderCatFacePngBase64 } from "../../test/helpers/live-image-probe.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import { parseStrictPositiveInteger } from "../infra/parse-finite-number.js";
-import type { GatewayClient } from "./client.js";
+import type { GatewayClient } from "./client/client.js";
 import {
   shouldRetryCliCronMcpProbeReply,
   type BootstrapWorkspaceContext,
@@ -19,7 +19,7 @@ import {
   runOpenClawCliJson,
   type CronListJob,
 } from "./live-agent-probes.js";
-import { getActiveMcpLoopbackRuntime } from "./mcp-http.js";
+import { getActiveMcpLoopbackRuntime } from "./protocol/mcp-http.js";
 import { extractPayloadText } from "./test-helpers.agent-results.js";
 
 // CI Docker live lanes can see repeated cancelled cron tool calls before a job

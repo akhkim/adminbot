@@ -8,12 +8,12 @@ import {
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { collectConfiguredAgentHarnessRuntimes } from "../agents/harness-runtimes.js";
-import { splitTrailingAuthProfile } from "../agents/model-ref-profile.js";
+import { splitTrailingAuthProfile } from "../agents/models/model-ref-profile.js";
 import {
   listExplicitlyDisabledChannelIdsForConfig,
   listPotentialConfiguredChannelIds,
 } from "../channels/config-presence.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   DEFAULT_MEMORY_DREAMING_PLUGIN_ID,
   resolveMemoryDreamingConfig,
@@ -22,22 +22,21 @@ import {
 } from "../memory-host-sdk/dreaming.js";
 import { planManifestModelCatalogRows } from "../model-catalog/manifest-planner.js";
 import { hasExplicitChannelConfig } from "./channel-presence-policy.js";
-import { collectPluginConfigContractMatches } from "./config-contracts.js";
-import { normalizePluginsConfigWithResolver } from "./config-normalization-shared.js";
-import { resolveEffectivePluginActivationState } from "./config-state.js";
+import { collectPluginConfigContractMatches } from "./config/config-contracts.js";
+import { normalizePluginsConfigWithResolver } from "./config/config-normalization-shared.js";
+import { resolveEffectivePluginActivationState } from "./config/config-state.js";
 import { isPluginEnabledByDefaultForPlatform } from "./default-enablement.js";
-import { resolveConfiguredGenericEmbeddingProviderId } from "./embedding-provider-config.js";
-import {
-  collectConfiguredSpeechProviderIds,
-  normalizeConfiguredSpeechProviderIdForStartup,
-} from "./gateway-startup-speech-providers.js";
-import { hashJson } from "./installed-plugin-index-hash.js";
+import { resolveConfiguredGenericEmbeddingProviderId } from "./embedding/embedding-provider-config.js";
+import { hashJson } from "./install/installed-plugin-index-hash.js";
 import {
   createInstalledPluginIndexScopeLookup,
   type InstalledPluginIndexScopeLookup,
-} from "./installed-plugin-index-scope-lookup.js";
-import type { InstalledPluginIndex, InstalledPluginIndexRecord } from "./installed-plugin-index.js";
-import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest-registry.js";
+} from "./install/installed-plugin-index-scope-lookup.js";
+import type {
+  InstalledPluginIndex,
+  InstalledPluginIndexRecord,
+} from "./install/installed-plugin-index.js";
+import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest/manifest-registry.js";
 import {
   isPluginMetadataSnapshotCompatible,
   resolvePluginMetadataSnapshot,
@@ -58,16 +57,6 @@ export type GatewayStartupPluginPlan = {
 };
 
 type NormalizedPluginsConfig = ReturnType<typeof normalizePluginsConfigWithRegistry>;
-type GenerationProviderContractKey =
-  | "imageGenerationProviders"
-  | "videoGenerationProviders"
-  | "musicGenerationProviders";
-type VoiceProviderContractKey =
-  | "speechProviders"
-  | "realtimeTranscriptionProviders"
-  | "realtimeVoiceProviders";
-type ConfiguredGenerationProviderIds = Record<GenerationProviderContractKey, ReadonlySet<string>>;
-type ConfiguredVoiceProviderIds = Record<VoiceProviderContractKey, ReadonlySet<string>>;
 const CORE_BUILT_IN_MODEL_APIS = new Set([
   "anthropic-messages",
   "azure-openai-responses",
@@ -346,19 +335,6 @@ function addConfiguredActivationPathPluginIds(
   }
 }
 
-function manifestOwnsConfiguredSpeechProvider(params: {
-  manifest: PluginManifestRecord | undefined;
-  configuredSpeechProviderIds: ReadonlySet<string>;
-}): boolean {
-  if (params.configuredSpeechProviderIds.size === 0) {
-    return false;
-  }
-  return (params.manifest?.contracts?.speechProviders ?? []).some((providerId) => {
-    const normalized = normalizeConfiguredSpeechProviderIdForStartup(providerId);
-    return normalized ? params.configuredSpeechProviderIds.has(normalized) : false;
-  });
-}
-
 function collectConfiguredWebSearchProviderIds(config: OpenClawConfig): ReadonlySet<string> {
   const search = config.tools?.web?.search;
   if (search?.enabled === false || typeof search?.provider !== "string") {
@@ -417,17 +393,6 @@ function listModelProviderRefParts(value: unknown): Array<{ providerId: string; 
     .filter((entry): entry is { providerId: string; modelId: string } =>
       Boolean(entry?.providerId && entry.modelId),
     );
-}
-
-function collectModelProviderIds(value: unknown): ReadonlySet<string> {
-  return new Set(
-    listModelProviderRefs(value)
-      .map((ref) => {
-        const slashIndex = ref.indexOf("/");
-        return slashIndex > 0 ? normalizeProviderId(ref.slice(0, slashIndex)) : "";
-      })
-      .filter((providerId): providerId is string => Boolean(providerId)),
-  );
 }
 
 type ManifestModelProviderLookup = {
@@ -532,26 +497,6 @@ function manifestOwnsConfiguredModelProvider(params: {
   return (params.manifest?.providers ?? []).some((providerId) => {
     return params.configuredModelProviderIds.has(normalizeProviderId(providerId));
   });
-}
-
-function collectConfiguredGenerationProviderIds(
-  config: OpenClawConfig,
-): ConfiguredGenerationProviderIds {
-  const defaults = config.agents?.defaults;
-  return {
-    imageGenerationProviders: collectModelProviderIds(defaults?.imageGenerationModel),
-    videoGenerationProviders: collectModelProviderIds(defaults?.videoGenerationModel),
-    musicGenerationProviders: collectModelProviderIds(defaults?.musicGenerationModel),
-  };
-}
-
-function collectConfiguredVoiceProviderIds(config: OpenClawConfig): ConfiguredVoiceProviderIds {
-  const providerIds = collectModelProviderIds(config.agents?.defaults?.voiceModel);
-  return {
-    speechProviders: providerIds,
-    realtimeTranscriptionProviders: providerIds,
-    realtimeVoiceProviders: providerIds,
-  };
 }
 
 // Explicit memory provider startup pulls plugin-owned providers into Gateway
@@ -852,17 +797,8 @@ function collectConfigValidationChannelIds(params: {
 
 function collectConfiguredProviderIds(config: OpenClawConfig): string[] {
   const configuredWebSearchProviderIds = collectConfiguredWebSearchProviderIds(config);
-  const configuredGenerationProviderIds = collectConfiguredGenerationProviderIds(config);
-  const configuredVoiceProviderIds = collectConfiguredVoiceProviderIds(config);
   return sortUniquePluginIds([
-    ...collectConfiguredSpeechProviderIds(config),
     ...configuredWebSearchProviderIds,
-    ...configuredGenerationProviderIds.imageGenerationProviders,
-    ...configuredGenerationProviderIds.videoGenerationProviders,
-    ...configuredGenerationProviderIds.musicGenerationProviders,
-    ...configuredVoiceProviderIds.speechProviders,
-    ...configuredVoiceProviderIds.realtimeTranscriptionProviders,
-    ...configuredVoiceProviderIds.realtimeVoiceProviders,
     ...collectConfiguredMemoryEmbeddingProviderIds(config),
   ]);
 }
@@ -1256,56 +1192,6 @@ export function isMetadataSnapshotScopedForGatewayStartup(params: {
   return expectedPluginIds.every((pluginId) => snapshotPluginIdSet.has(pluginId));
 }
 
-function manifestOwnsConfiguredGenerationProvider(params: {
-  manifest: PluginManifestRecord | undefined;
-  configuredGenerationProviderIds: ConfiguredGenerationProviderIds;
-}): boolean {
-  for (const contractKey of [
-    "imageGenerationProviders",
-    "videoGenerationProviders",
-    "musicGenerationProviders",
-  ] as const) {
-    const configuredProviderIds = params.configuredGenerationProviderIds[contractKey];
-    if (configuredProviderIds.size === 0) {
-      continue;
-    }
-    if (
-      (params.manifest?.contracts?.[contractKey] ?? []).some((providerId) => {
-        const normalized = normalizeOptionalLowercaseString(providerId);
-        return normalized ? configuredProviderIds.has(normalized) : false;
-      })
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function manifestOwnsConfiguredVoiceProvider(params: {
-  manifest: PluginManifestRecord | undefined;
-  configuredVoiceProviderIds: ConfiguredVoiceProviderIds;
-}): boolean {
-  for (const contractKey of [
-    "speechProviders",
-    "realtimeTranscriptionProviders",
-    "realtimeVoiceProviders",
-  ] as const) {
-    const configuredProviderIds = params.configuredVoiceProviderIds[contractKey];
-    if (configuredProviderIds.size === 0) {
-      continue;
-    }
-    if (
-      (params.manifest?.contracts?.[contractKey] ?? []).some((providerId) => {
-        const normalized = normalizeOptionalLowercaseString(providerId);
-        return normalized ? configuredProviderIds.has(normalized) : false;
-      })
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
 function manifestOwnsConfiguredMemoryEmbeddingProvider(params: {
   manifest: PluginManifestRecord | undefined;
   configuredMemoryEmbeddingProviderIds: ReadonlySet<string>;
@@ -1321,104 +1207,6 @@ function manifestOwnsConfiguredMemoryEmbeddingProvider(params: {
     const normalized = normalizeOptionalLowercaseString(providerId);
     return normalized ? params.configuredMemoryEmbeddingProviderIds.has(normalized) : false;
   });
-}
-
-function canStartConfiguredGenerationProviderPlugin(params: {
-  plugin: InstalledPluginIndexRecord;
-  manifest: PluginManifestRecord | undefined;
-  config: OpenClawConfig;
-  pluginsConfig: ReturnType<typeof normalizePluginsConfigWithRegistry>;
-  activationSource: {
-    plugins: ReturnType<typeof normalizePluginsConfigWithRegistry>;
-    rootConfig?: OpenClawConfig;
-  };
-  configuredGenerationProviderIds: ConfiguredGenerationProviderIds;
-  platform?: NodeJS.Platform;
-}): boolean {
-  if (
-    !manifestOwnsConfiguredGenerationProvider({
-      manifest: params.manifest,
-      configuredGenerationProviderIds: params.configuredGenerationProviderIds,
-    })
-  ) {
-    return false;
-  }
-  if (!params.pluginsConfig.enabled || !params.activationSource.plugins.enabled) {
-    return false;
-  }
-  if (
-    params.pluginsConfig.deny.includes(params.plugin.pluginId) ||
-    params.activationSource.plugins.deny.includes(params.plugin.pluginId)
-  ) {
-    return false;
-  }
-  if (
-    params.pluginsConfig.entries[params.plugin.pluginId]?.enabled === false ||
-    params.activationSource.plugins.entries[params.plugin.pluginId]?.enabled === false
-  ) {
-    return false;
-  }
-  const activationState = resolveEffectivePluginActivationState({
-    id: params.plugin.pluginId,
-    origin: params.plugin.origin,
-    config: params.pluginsConfig,
-    rootConfig: params.config,
-    enabledByDefault: isPluginEnabledByDefaultForPlatform(params.plugin, params.platform),
-    activationSource: params.activationSource,
-  });
-  return (
-    activationState.enabled &&
-    (params.plugin.origin === "bundled" || activationState.explicitlyEnabled)
-  );
-}
-
-function canStartConfiguredVoiceProviderPlugin(params: {
-  plugin: InstalledPluginIndexRecord;
-  manifest: PluginManifestRecord | undefined;
-  config: OpenClawConfig;
-  pluginsConfig: ReturnType<typeof normalizePluginsConfigWithRegistry>;
-  activationSource: {
-    plugins: ReturnType<typeof normalizePluginsConfigWithRegistry>;
-    rootConfig?: OpenClawConfig;
-  };
-  configuredVoiceProviderIds: ConfiguredVoiceProviderIds;
-  platform?: NodeJS.Platform;
-}): boolean {
-  if (
-    !manifestOwnsConfiguredVoiceProvider({
-      manifest: params.manifest,
-      configuredVoiceProviderIds: params.configuredVoiceProviderIds,
-    })
-  ) {
-    return false;
-  }
-  if (!params.pluginsConfig.enabled || !params.activationSource.plugins.enabled) {
-    return false;
-  }
-  if (
-    params.pluginsConfig.deny.includes(params.plugin.pluginId) ||
-    params.activationSource.plugins.deny.includes(params.plugin.pluginId)
-  ) {
-    return false;
-  }
-  if (
-    params.pluginsConfig.entries[params.plugin.pluginId]?.enabled === false ||
-    params.activationSource.plugins.entries[params.plugin.pluginId]?.enabled === false
-  ) {
-    return false;
-  }
-  const activationState = resolveEffectivePluginActivationState({
-    id: params.plugin.pluginId,
-    origin: params.plugin.origin,
-    config: params.pluginsConfig,
-    rootConfig: params.config,
-    enabledByDefault: isPluginEnabledByDefaultForPlatform(params.plugin, params.platform),
-    activationSource: params.activationSource,
-  });
-  return (
-    activationState.enabled &&
-    (params.plugin.origin === "bundled" || activationState.explicitlyEnabled)
-  );
 }
 
 function canStartConfiguredMemoryEmbeddingProviderPlugin(params: {
@@ -1570,52 +1358,6 @@ function canStartRequiredAgentHarnessPlugin(params: {
     activationSource: params.activationSource,
   });
   return activationState.enabled || params.plugin.origin === "bundled";
-}
-
-function canStartConfiguredSpeechProviderPlugin(params: {
-  plugin: InstalledPluginIndexRecord;
-  manifest: PluginManifestRecord | undefined;
-  config: OpenClawConfig;
-  pluginsConfig: ReturnType<typeof normalizePluginsConfigWithRegistry>;
-  activationSource: {
-    plugins: ReturnType<typeof normalizePluginsConfigWithRegistry>;
-    rootConfig?: OpenClawConfig;
-  };
-  configuredSpeechProviderIds: ReadonlySet<string>;
-  platform?: NodeJS.Platform;
-}): boolean {
-  if (
-    !manifestOwnsConfiguredSpeechProvider({
-      manifest: params.manifest,
-      configuredSpeechProviderIds: params.configuredSpeechProviderIds,
-    })
-  ) {
-    return false;
-  }
-  if (
-    params.pluginsConfig.deny.includes(params.plugin.pluginId) ||
-    params.activationSource.plugins.deny.includes(params.plugin.pluginId)
-  ) {
-    return false;
-  }
-  if (
-    params.pluginsConfig.entries[params.plugin.pluginId]?.enabled === false ||
-    params.activationSource.plugins.entries[params.plugin.pluginId]?.enabled === false
-  ) {
-    return false;
-  }
-  if (params.plugin.origin === "bundled") {
-    return true;
-  }
-  const activationState = resolveEffectivePluginActivationState({
-    id: params.plugin.pluginId,
-    origin: params.plugin.origin,
-    config: params.pluginsConfig,
-    rootConfig: params.config,
-    enabledByDefault: isPluginEnabledByDefaultForPlatform(params.plugin, params.platform),
-    activationSource: params.activationSource,
-  });
-  return activationState.enabled && activationState.explicitlyEnabled;
 }
 
 function canStartConfiguredWebSearchProviderPlugin(params: {
@@ -1986,16 +1728,12 @@ export function resolveGatewayStartupPluginPlanFromRegistry(params: {
   const requiredAgentHarnessRuntimes = new Set(
     collectConfiguredAgentHarnessRuntimes(activationSourceConfig),
   );
-  const configuredSpeechProviderIds = collectConfiguredSpeechProviderIds(activationSourceConfig);
   const configuredWebSearchProviderIds =
     collectConfiguredWebSearchProviderIds(activationSourceConfig);
   const configuredModelProviderIds = collectConfiguredAgentModelProviderIds(
     activationSourceConfig,
     params.manifestRegistry,
   );
-  const configuredGenerationProviderIds =
-    collectConfiguredGenerationProviderIds(activationSourceConfig);
-  const configuredVoiceProviderIds = collectConfiguredVoiceProviderIds(activationSourceConfig);
   const configuredMemoryEmbeddingProviderIds =
     collectConfiguredMemoryEmbeddingProviderIds(activationSourceConfig);
   const normalizePluginId = createPluginRegistryIdNormalizer(params.index, {
@@ -2089,20 +1827,6 @@ export function resolveGatewayStartupPluginPlanFromRegistry(params: {
       continue;
     }
     if (
-      canStartConfiguredSpeechProviderPlugin({
-        plugin,
-        manifest,
-        config: params.config,
-        pluginsConfig,
-        activationSource,
-        configuredSpeechProviderIds,
-        platform: params.platform,
-      })
-    ) {
-      pluginIds.push(plugin.pluginId);
-      continue;
-    }
-    if (
       canStartConfiguredWebSearchProviderPlugin({
         plugin,
         manifest,
@@ -2124,34 +1848,6 @@ export function resolveGatewayStartupPluginPlanFromRegistry(params: {
         pluginsConfig,
         activationSource,
         configuredModelProviderIds,
-        platform: params.platform,
-      })
-    ) {
-      pluginIds.push(plugin.pluginId);
-      continue;
-    }
-    if (
-      canStartConfiguredGenerationProviderPlugin({
-        plugin,
-        manifest,
-        config: params.config,
-        pluginsConfig,
-        activationSource,
-        configuredGenerationProviderIds,
-        platform: params.platform,
-      })
-    ) {
-      pluginIds.push(plugin.pluginId);
-      continue;
-    }
-    if (
-      canStartConfiguredVoiceProviderPlugin({
-        plugin,
-        manifest,
-        config: params.config,
-        pluginsConfig,
-        activationSource,
-        configuredVoiceProviderIds,
         platform: params.platform,
       })
     ) {

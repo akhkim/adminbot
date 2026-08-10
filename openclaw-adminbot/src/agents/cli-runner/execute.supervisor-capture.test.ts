@@ -8,10 +8,10 @@ import {
   markMcpLoopbackToolCallStarted,
   recordMcpLoopbackToolCallResult as recordMcpLoopbackToolCallResultForHandle,
   resolveMcpLoopbackYieldContext,
-} from "../../gateway/mcp-http.loopback-runtime.js";
+} from "../../gateway/protocol/mcp-http.loopback-runtime.js";
 import { onAgentEvent, resetAgentEventsForTest } from "../../infra/agent-events.js";
 import type { getProcessSupervisor } from "../../process/supervisor/index.js";
-import { createManagedRun, supervisorSpawnMock } from "../cli-runner.test-support.js";
+import { createManagedRun, supervisorSpawnMock } from "./cli-runner.test-support.js";
 import { getCliMessagingDeliveryEvidence } from "./delivery-evidence.js";
 import { executePreparedCliRun } from "./execute.js";
 import type { PreparedCliRunContext } from "./types.js";

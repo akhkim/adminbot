@@ -1,12 +1,12 @@
 // Gateway E2E harness starts test gateway processes and HTTP probes.
 import { request as httpRequest } from "node:http";
 import path from "node:path";
-import { GatewayClient } from "../../src/gateway/client.js";
+import { GatewayClient } from "../../src/gateway/client/client.js";
 import { connectGatewayClient } from "../../src/gateway/test-helpers.e2e.js";
 import { loadOrCreateDeviceIdentity } from "../../src/infra/device-identity.js";
 import { extractFirstTextBlock } from "../../src/shared/chat-message-content.js";
+import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../../src/shared/message-channel.js";
 import { sleep } from "../../src/utils.js";
-import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../../src/utils/message-channel.js";
 import { createOpenClawTestInstance, type OpenClawTestInstance } from "./openclaw-test-instance.js";
 
 export { extractFirstTextBlock };

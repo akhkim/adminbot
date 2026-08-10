@@ -13,9 +13,25 @@ import {
   signOutMember as signOutMemberInternal,
   submitChangePassword as submitChangePasswordInternal,
   submitMemberAuth as submitMemberAuthInternal,
-} from "./adminbot-auth-flow.ts";
-import type { MemberOnboarding, MemberRegistration, RosterMember } from "./adminbot-auth.ts";
-import type { RegistrationsLoadError } from "./adminbot-registrations.ts";
+} from "./adminbot/auth/flow.ts";
+import type {
+  MemberOnboarding,
+  MemberRegistration,
+  RosterMember,
+} from "./adminbot/auth/session.ts";
+import {
+  createEmptyAdminBotDashboardData,
+  createEmptyAdminBotMemberNudgeState,
+  createEmptyAdminBotReimbursementState,
+  type AdminBotCvScanResult,
+  type AdminBotDashboardData,
+  type AdminBotMemberNudgeState,
+  type AdminBotReimbursementState,
+  sendOnboardingGuide as sendOnboardingGuideController,
+} from "./adminbot/controllers/admin.ts";
+import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
+import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
+import type { ProfileAccountCheck } from "./adminbot/views/profile-account-check.ts";
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
   handleChannelConfigSave as handleChannelConfigSaveInternal,
@@ -56,11 +72,7 @@ import {
 } from "./app-lifecycle.ts";
 import { initNativeBridge } from "./app-native-bridge.ts";
 import { createChatSession as createChatSessionInternal } from "./app-render.helpers.ts";
-import {
-  loadSkillWorkshopMode,
-  loadSkillWorkshopUseCurrentChatForRevisions,
-  renderApp,
-} from "./app-render.ts";
+import { renderApp } from "./app-render.ts";
 import {
   exportLogs as exportLogsInternal,
   handleActivityScroll as handleActivityScrollInternal,
@@ -90,33 +102,9 @@ import type { AppViewState } from "./app-view-state.ts";
 import { normalizeAssistantIdentity } from "./assistant-identity.ts";
 import { restoreChatComposerState } from "./chat/composer-persistence.ts";
 import { exportChatMarkdown } from "./chat/export.ts";
-import {
-  reconcileRealtimeTalkCatalogSelection,
-  type RealtimeTalkCatalogProvider,
-} from "./chat/realtime-talk-catalog.ts";
-import {
-  createRealtimeTalkConversationState,
-  updateRealtimeTalkConversation,
-  type RealtimeTalkConversationEntry,
-  type RealtimeTalkConversationState,
-} from "./chat/realtime-talk-conversation.ts";
-import {
-  RealtimeTalkSession,
-  type RealtimeTalkLaunchOptions,
-  type RealtimeTalkStatus,
-} from "./chat/realtime-talk.ts";
 import type { ChatRunUiStatus } from "./chat/run-lifecycle.ts";
 import type { ChatMessageCache } from "./chat/session-message-cache.ts";
 import type { ChatSideResult } from "./chat/side-result.ts";
-import {
-  createEmptyAdminBotDashboardData,
-  createEmptyAdminBotMemberNudgeState,
-  createEmptyAdminBotReimbursementState,
-  type AdminBotDashboardData,
-  type AdminBotCvScanResult,
-  type AdminBotMemberNudgeState,
-  type AdminBotReimbursementState,
-} from "./controllers/adminbot.ts";
 import {
   loadToolsEffective as loadToolsEffectiveInternal,
   refreshVisibleToolsEffectiveForCurrentSession as refreshVisibleToolsEffectiveForCurrentSessionInternal,
@@ -135,10 +123,6 @@ import {
   type ExecApprovalRequest,
 } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
-import {
-  loadSkillWorkshopProposals,
-  type SkillWorkshopState,
-} from "./controllers/skill-workshop.ts";
 import type {
   ClawHubSearchResult,
   ClawHubSkillSecurityVerdict,
@@ -191,6 +175,9 @@ import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.
 declare global {
   interface Window {
     __OPENCLAW_CONTROL_UI_BASE_PATH__?: string;
+    // Set by a statically hosted deployment's index.html: the gateway this page connects to by
+    // default, since such a page is not served by its gateway and cannot derive one.
+    __OPENCLAW_CONTROL_UI_GATEWAY_URL__?: string;
   }
 }
 
@@ -251,6 +238,16 @@ export class OpenClawApp extends LitElement {
   @state() loginPendingNotice = false;
   @state() guestReimbursements = false;
   @state() authGateVisible = false;
+  @state() onboardingTemplateId = "interview_invite";
+  @state() onboardingName = "";
+  @state() onboardingEmail = "";
+  @state() onboardingValues: Record<string, string> = {};
+  @state() onboardingBusy = false;
+  @state() onboardingError: string | null = null;
+  @state() onboardingMissing: string[] = [];
+  @state() onboardingResult:
+    | import("./adminbot/controllers/admin.ts").AdminBotOnboardingResult
+    | null = null;
   @state() rosterMembers: RosterMember[] = [];
   @state() rosterLoading = false;
   @state() rosterError: RosterError = null;
@@ -277,7 +274,7 @@ export class OpenClawApp extends LitElement {
   @state() memberPrivilegeLevel: string | null = null;
   @state() memberId: string | null = null;
   @state() adminBotOnboarding: MemberOnboarding | null = null;
-  @state() adminBotWelcomeVisible = false;
+  @state() adminBotOnboardingAcknowledged = true;
   @state() adminBotOnboardingBusyStepId: string | null = null;
   @state() adminBotOnboardingError: string | null = null;
   @state() tab: Tab = "chat";
@@ -378,26 +375,6 @@ export class OpenClawApp extends LitElement {
   @state() chatQueueBySession: Record<string, ChatQueueItem[]> = {};
   @state() chatMessagesBySession: ChatMessageCache = new Map();
   @state() chatAttachments: ChatAttachment[] = [];
-  @state() realtimeTalkActive = false;
-  @state() realtimeTalkStatus: RealtimeTalkStatus = "idle";
-  @state() realtimeTalkDetail: string | null = null;
-  @state() realtimeTalkTranscript: string | null = null;
-  @state() realtimeTalkConversation: RealtimeTalkConversationEntry[] = [];
-  @state() realtimeTalkOptionsOpen = false;
-  @state() realtimeTalkCatalogProviders: RealtimeTalkCatalogProvider[] | null = null;
-  @state() realtimeTalkOptions = {
-    provider: "",
-    model: "",
-    voice: "",
-    transport: "",
-    vadThreshold: "",
-    silenceDurationMs: "",
-    prefixPaddingMs: "",
-    reasoningEffort: "",
-  };
-  private realtimeTalkSession: RealtimeTalkSession | null = null;
-  private realtimeTalkConversationState: RealtimeTalkConversationState =
-    createRealtimeTalkConversationState();
   private nativeBridgeCleanup: (() => void) | null = null;
   @state() chatManualRefreshInFlight = false;
   @state() chatHeaderControlsHidden = false;
@@ -528,6 +505,7 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLoading = false;
   @state() adminBotError: string | null = null;
   @state() adminBotData: AdminBotDashboardData = createEmptyAdminBotDashboardData();
+  @state() adminBotTimeAvailabilityMemberId = "";
   @state() adminBotBusyActionId: string | null = null;
   @state() adminBotNotice: { kind: "success" | "error"; text: string } | null = null;
   @state() adminBotReimbursement: AdminBotReimbursementState =
@@ -535,6 +513,11 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMemberNudge: AdminBotMemberNudgeState = createEmptyAdminBotMemberNudgeState();
   @state() adminBotCvScan: AdminBotCvScanResult | null = null;
   @state() adminBotCvScanning = false;
+  @state() myWorkBlockerDraft: BlockerDraft | null = null;
+  @state() myWorkBlockers: Blocker[] = [];
+  @state() myWorkProjectDraft: string | null = null;
+  @state() profileEditingSection: "basics" | null = null;
+  @state() profileAccountChecks: Record<string, ProfileAccountCheck> = {};
   @state() registrations: MemberRegistration[] = [];
   @state() registrationsLoading = false;
   @state() registrationsError: RegistrationsLoadError | null = null;
@@ -727,25 +710,6 @@ export class OpenClawApp extends LitElement {
   @state() skillCardContentKeys: Record<string, string> = {};
   @state() skillCardLoadingKey: string | null = null;
   @state() skillCardErrors: Record<string, string> = {};
-  @state() skillWorkshopLoading = false;
-  @state() skillWorkshopAgentId: string | null = null;
-  @state() skillWorkshopLoaded = false;
-  @state() skillWorkshopError: string | null = null;
-  @state() skillWorkshopInspectingKey: string | null = null;
-  @state() skillWorkshopProposals: SkillWorkshopState["skillWorkshopProposals"] = [];
-  @state() skillWorkshopSelectedKey: string | null = null;
-  @state() skillWorkshopActionBusy: SkillWorkshopState["skillWorkshopActionBusy"] = null;
-  @state() skillWorkshopActionNotice: SkillWorkshopState["skillWorkshopActionNotice"] = null;
-  skillWorkshopActionNoticeTimer: ReturnType<typeof globalThis.setTimeout> | number | null = null;
-  @state() skillWorkshopRevisionKey: string | null = null;
-  @state() skillWorkshopRevisionDraft = "";
-  @state() skillWorkshopStatusFilter: SkillWorkshopState["skillWorkshopStatusFilter"] = "pending";
-  @state() skillWorkshopQuery = "";
-  @state() skillWorkshopFilePreviewKey: string | null = null;
-  @state() skillWorkshopFilePreviewQuery = "";
-  @state() skillWorkshopQueueWidth = 360;
-  @state() skillWorkshopMode: SkillWorkshopState["skillWorkshopMode"] = loadSkillWorkshopMode();
-  @state() skillWorkshopUseCurrentChatForRevisions = loadSkillWorkshopUseCurrentChatForRevisions();
 
   @state() healthLoading = false;
   @state() healthResult: HealthSummary | null = null;
@@ -832,18 +796,13 @@ export class OpenClawApp extends LitElement {
       return;
     }
     const openComposerDetails = this.querySelectorAll<HTMLDetailsElement>(
-      ".chat-controls__inline-select[open], .agent-chat__talk-select[open], .agent-chat__talk-options-advanced[open]",
+      ".chat-controls__inline-select[open]",
     );
     if (openComposerDetails.length > 0) {
       e.preventDefault();
       openComposerDetails.forEach((details) => {
         details.open = false;
       });
-      return;
-    }
-    if (this.realtimeTalkOptionsOpen) {
-      e.preventDefault();
-      this.realtimeTalkOptionsOpen = false;
       return;
     }
     if (!this.chatMobileControlsOpen) {
@@ -854,23 +813,13 @@ export class OpenClawApp extends LitElement {
   };
   private chatMobileControlsPointerdownHandler = (e: Event) => {
     const path = e.composedPath();
-    this.querySelectorAll<HTMLDetailsElement>(
-      ".chat-controls__inline-select[open], .agent-chat__talk-select[open], .agent-chat__talk-options-advanced[open]",
-    ).forEach((details) => {
-      if (!path.includes(details)) {
-        details.open = false;
-      }
-    });
-    if (this.realtimeTalkOptionsOpen) {
-      const insideTalkOptions = Array.from(
-        this.querySelectorAll(
-          ".agent-chat__talk-options, [aria-label='Talk settings'], [aria-label='Talk options']",
-        ),
-      ).some((node) => path.includes(node));
-      if (!insideTalkOptions) {
-        this.realtimeTalkOptionsOpen = false;
-      }
-    }
+    this.querySelectorAll<HTMLDetailsElement>(".chat-controls__inline-select[open]").forEach(
+      (details) => {
+        if (!path.includes(details)) {
+          details.open = false;
+        }
+      },
+    );
     if (this.chatSessionPickerOpen) {
       const insidePicker = Array.from(this.querySelectorAll(".chat-controls__session-picker")).some(
         (node) => path.includes(node),
@@ -974,12 +923,6 @@ export class OpenClawApp extends LitElement {
     // Some render callbacks assign tab directly while preparing nested panel state.
     if (changed.has("tab") && this.tab !== "chat" && this.chatMobileControlsOpen) {
       this.setChatMobileControlsOpen(false);
-    }
-    if (
-      this.tab === "skillWorkshop" &&
-      (changed.has("sessionKey") || changed.has("assistantAgentId"))
-    ) {
-      void loadSkillWorkshopProposals(this, { force: true });
     }
     if (!changed.has("sessionKey") || this.agentsPanel !== "tools") {
       return;
@@ -1321,133 +1264,6 @@ export class OpenClawApp extends LitElement {
     );
   }
 
-  updateRealtimeTalkOptions(next: Partial<typeof this.realtimeTalkOptions>) {
-    this.realtimeTalkOptions = { ...this.realtimeTalkOptions, ...next };
-  }
-
-  async fetchRealtimeTalkCatalog() {
-    if (!this.client || !this.connected) {
-      return;
-    }
-    this.realtimeTalkCatalogProviders = null;
-    try {
-      const result = await this.client.request<{
-        realtime?: { providers?: RealtimeTalkCatalogProvider[] };
-      }>("talk.catalog", {});
-      const providers = result?.realtime?.providers ?? [];
-      this.realtimeTalkCatalogProviders = providers;
-      const update = reconcileRealtimeTalkCatalogSelection({
-        providers,
-        selection: this.realtimeTalkOptions,
-      });
-      if (update) {
-        this.updateRealtimeTalkOptions(update);
-      }
-    } catch {
-      this.realtimeTalkCatalogProviders = null;
-    }
-  }
-
-  private buildRealtimeTalkLaunchOptions(): RealtimeTalkLaunchOptions {
-    const options = this.realtimeTalkOptions ?? {
-      provider: "",
-      model: "",
-      voice: "",
-      transport: "",
-      vadThreshold: "",
-      silenceDurationMs: "",
-      prefixPaddingMs: "",
-      reasoningEffort: "",
-    };
-    const text = (value: string) => value.trim() || undefined;
-    const number = (value: string) => {
-      const trimmed = value.trim();
-      if (!trimmed) {
-        return undefined;
-      }
-      const parsed = Number(trimmed);
-      return Number.isFinite(parsed) ? parsed : undefined;
-    };
-    const transport = text(options.transport) as RealtimeTalkLaunchOptions["transport"] | undefined;
-    return {
-      provider: text(options.provider),
-      model: text(options.model),
-      voice: text(options.voice),
-      transport,
-      vadThreshold: number(options.vadThreshold),
-      silenceDurationMs: number(options.silenceDurationMs),
-      prefixPaddingMs: number(options.prefixPaddingMs),
-      reasoningEffort: text(options.reasoningEffort),
-    };
-  }
-
-  async toggleRealtimeTalk() {
-    if (this.realtimeTalkSession) {
-      if (this.realtimeTalkStatus === "error") {
-        this.realtimeTalkSession.stop();
-        this.realtimeTalkSession = null;
-      } else {
-        this.realtimeTalkSession.stop();
-        this.realtimeTalkSession = null;
-        this.realtimeTalkActive = false;
-        this.realtimeTalkStatus = "idle";
-        this.realtimeTalkDetail = null;
-        this.realtimeTalkTranscript = null;
-        this.resetRealtimeTalkConversation();
-        return;
-      }
-    }
-    if (!this.client || !this.connected) {
-      this.lastError = "Gateway not connected";
-      this.chatError = this.lastError;
-      return;
-    }
-    this.realtimeTalkActive = true;
-    this.realtimeTalkStatus = "connecting";
-    this.realtimeTalkDetail = null;
-    this.realtimeTalkTranscript = null;
-    this.resetRealtimeTalkConversation();
-    const session = new RealtimeTalkSession(
-      this.client,
-      this.sessionKey,
-      {
-        onStatus: (status, detail) => {
-          this.realtimeTalkStatus = status;
-          this.realtimeTalkDetail = detail ?? null;
-          if (status === "idle" || status === "error") {
-            this.realtimeTalkActive = status !== "idle";
-          }
-        },
-        onTranscript: (entry) => {
-          this.realtimeTalkTranscript = `${entry.role === "user" ? "You" : "OpenClaw"}: ${entry.text}`;
-          this.realtimeTalkConversationState = updateRealtimeTalkConversation(
-            this.realtimeTalkConversationState,
-            entry,
-          );
-          this.realtimeTalkConversation = this.realtimeTalkConversationState.entries;
-        },
-      },
-      this.buildRealtimeTalkLaunchOptions(),
-    );
-    this.realtimeTalkSession = session;
-    try {
-      await session.start();
-    } catch (error) {
-      session.stop();
-      if (this.realtimeTalkSession === session) {
-        this.realtimeTalkSession = null;
-      }
-      this.realtimeTalkActive = false;
-      this.realtimeTalkStatus = "error";
-      this.realtimeTalkDetail = error instanceof Error ? error.message : String(error);
-    }
-  }
-
-  resetRealtimeTalkConversation() {
-    this.realtimeTalkConversationState = createRealtimeTalkConversationState();
-    this.realtimeTalkConversation = [];
-  }
-
   async steerQueuedChatMessage(id: string) {
     await steerQueuedChatMessageInternal(
       this as unknown as Parameters<typeof steerQueuedChatMessageInternal>[0],
@@ -1582,6 +1398,13 @@ export class OpenClawApp extends LitElement {
     } finally {
       this.execApprovalBusy = false;
     }
+  }
+
+  sendOnboardingGuide(options: { preview: boolean }): Promise<void> {
+    return sendOnboardingGuideController(
+      this as unknown as Parameters<typeof sendOnboardingGuideController>[0],
+      options,
+    );
   }
 
   handleGatewayUrlConfirm() {

@@ -1,12 +1,15 @@
 // Model pricing cache tests protect provider/model normalization, manifest
 // metadata lookup, fetch preconnect behavior, cache refresh, and logging.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { modelKey } from "../agents/model-selection.js";
-import type { normalizeProviderModelIdWithRuntime } from "../agents/provider-model-normalization.runtime.js";
+import { modelKey } from "../agents/models/model-selection.js";
+import type { normalizeProviderModelIdWithRuntime } from "../agents/transport/provider-model-normalization.runtime.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { resetLogger, setLoggerOverride } from "../logging/logger.js";
 import { loggingState } from "../logging/state.js";
-import type { PluginManifestRecord, PluginManifestRegistry } from "../plugins/manifest-registry.js";
+import type {
+  PluginManifestRecord,
+  PluginManifestRegistry,
+} from "../plugins/manifest/manifest-registry.js";
 import { withFetchPreconnect } from "../test-utils/fetch-mock.js";
 
 const normalizeProviderModelIdWithRuntimeMock = vi.hoisted(() =>
@@ -26,12 +29,13 @@ const pluginManifestRegistryMocks = vi.hoisted(() => ({
   listOpenClawPluginManifestMetadata: vi.fn(),
 }));
 
-vi.mock("../agents/provider-model-normalization.runtime.js", () => {
+vi.mock("../agents/transport/provider-model-normalization.runtime.js", () => {
   return { normalizeProviderModelIdWithRuntime: normalizeProviderModelIdWithRuntimeMock };
 });
 
-vi.mock("../plugins/manifest-registry-installed.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../plugins/manifest-registry-installed.js")>();
+vi.mock("../plugins/manifest/manifest-registry-installed.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../plugins/manifest/manifest-registry-installed.js")>();
   return {
     ...actual,
     loadPluginManifestRegistryForInstalledIndex: (
@@ -46,8 +50,9 @@ vi.mock("../plugins/manifest-registry-installed.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../plugins/manifest-metadata-scan.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../plugins/manifest-metadata-scan.js")>();
+vi.mock("../plugins/manifest/manifest-metadata-scan.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../plugins/manifest/manifest-metadata-scan.js")>();
   return {
     ...actual,
     listOpenClawPluginManifestMetadata: (

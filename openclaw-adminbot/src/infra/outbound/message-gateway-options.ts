@@ -1,12 +1,12 @@
-// Gateway option normalization hides transport URL details for backend/managed
-// gateway clients and clamps timeout values.
-import { resolveTimerTimeoutMs } from "../../shared/number-coercion.js";
 import {
   GATEWAY_CLIENT_MODES,
   GATEWAY_CLIENT_NAMES,
   type GatewayClientMode,
   type GatewayClientName,
-} from "../../utils/message-channel.js";
+} from "../../shared/message-channel.js";
+// Gateway option normalization hides transport URL details for backend/managed
+// gateway clients and clamps timeout values.
+import { resolveTimerTimeoutMs } from "../../shared/number-coercion.js";
 
 /** Raw gateway options accepted by outbound message senders. */
 export type OutboundMessageGatewayOptionsInput = {

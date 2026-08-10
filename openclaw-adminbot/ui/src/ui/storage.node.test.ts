@@ -39,6 +39,27 @@ function setControlUiBasePath(value: string | undefined) {
   });
 }
 
+function setDeclaredGatewayUrl(value: string | undefined) {
+  if (typeof window === "undefined") {
+    vi.stubGlobal(
+      "window",
+      value == null
+        ? ({} as Window & typeof globalThis)
+        : ({ __OPENCLAW_CONTROL_UI_GATEWAY_URL__: value } as Window & typeof globalThis),
+    );
+    return;
+  }
+  if (value == null) {
+    delete window["__OPENCLAW_CONTROL_UI_GATEWAY_URL__"];
+    return;
+  }
+  Object.defineProperty(window, "__OPENCLAW_CONTROL_UI_GATEWAY_URL__", {
+    value,
+    writable: true,
+    configurable: true,
+  });
+}
+
 function expectedGatewayUrl(basePath: string): string {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   return `${proto}://${location.host}${basePath}`;
@@ -81,14 +102,74 @@ describe("loadSettings default gateway URL derivation", () => {
     expect(loadSettings().chatAutoScroll).toBe("near-bottom");
   });
 
-  it("defaults the hosted Jinesis Control UI to the local Gateway", () => {
+  // A statically hosted Control UI is not served by its gateway, so it declares one on the page.
+  // Without this it defaulted to loopback, dialled the visitor's own machine, failed, and then made
+  // them confirm a gateway change before the app worked at all.
+  it("defaults to the gateway URL the page declares", () => {
     setTestLocation({
       protocol: "https:",
-      host: "jinesis-admin.vercel.app",
+      host: "hosted-ui.example",
+      pathname: "/",
+    });
+    setDeclaredGatewayUrl("wss://gateway.example.ts.net");
+
+    expect(loadSettings().gatewayUrl).toBe("wss://gateway.example.ts.net");
+  });
+
+  it("falls back to the page origin when no gateway is declared", () => {
+    setTestLocation({
+      protocol: "https:",
+      host: "hosted-ui.example",
       pathname: "/",
     });
 
+    expect(loadSettings().gatewayUrl).toBe("wss://hosted-ui.example");
+  });
+
+  // Browsers poisoned by the old loopback default (or by a sign-in that adopted one) would keep
+  // failing on every later load; the declared gateway replaces a stored URL this page cannot reach.
+  it("heals a stored loopback URL that this page cannot reach", () => {
+    setTestLocation({
+      protocol: "https:",
+      host: "hosted-ui.example",
+      pathname: "/",
+    });
+    setDeclaredGatewayUrl("wss://gateway.example.ts.net");
+    localStorage.setItem(
+      "openclaw.control.settings.v1",
+      JSON.stringify({ gatewayUrl: "ws://127.0.0.1:18789", theme: "claw" }),
+    );
+
+    expect(loadSettings().gatewayUrl).toBe("wss://gateway.example.ts.net");
+  });
+
+  it("keeps a stored loopback URL when the page is itself on loopback", () => {
+    setTestLocation({
+      protocol: "http:",
+      host: "127.0.0.1:18789",
+      pathname: "/",
+    });
+    localStorage.setItem(
+      "openclaw.control.settings.v1",
+      JSON.stringify({ gatewayUrl: "ws://127.0.0.1:18789", theme: "claw" }),
+    );
+
     expect(loadSettings().gatewayUrl).toBe("ws://127.0.0.1:18789");
+  });
+
+  it("keeps a stored remote URL the visitor chose", () => {
+    setTestLocation({
+      protocol: "https:",
+      host: "hosted-ui.example",
+      pathname: "/",
+    });
+    setDeclaredGatewayUrl("wss://gateway.example.ts.net");
+    localStorage.setItem(
+      "openclaw.control.settings.v1",
+      JSON.stringify({ gatewayUrl: "wss://chosen.example.ts.net", theme: "claw" }),
+    );
+
+    expect(loadSettings().gatewayUrl).toBe("wss://chosen.example.ts.net");
   });
 
   it("infers base path from nested pathname when configured base path is not set", () => {

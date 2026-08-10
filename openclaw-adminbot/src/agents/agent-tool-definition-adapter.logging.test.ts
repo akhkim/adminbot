@@ -18,9 +18,9 @@ vi.mock("../logger.js", () => ({
 }));
 
 let toToolDefinitions: typeof import("./agent-tool-definition-adapter.js").toToolDefinitions;
-let BeforeToolCallBlockedError: typeof import("./agent-tools.before-tool-call.js").BeforeToolCallBlockedError;
-let wrapToolParamValidation: typeof import("./agent-tools.params.js").wrapToolParamValidation;
-let REQUIRED_PARAM_GROUPS: typeof import("./agent-tools.params.js").REQUIRED_PARAM_GROUPS;
+let BeforeToolCallBlockedError: typeof import("./tools/agent-tools.before-tool-call.js").BeforeToolCallBlockedError;
+let wrapToolParamValidation: typeof import("./tools/agent-tools.params.js").wrapToolParamValidation;
+let REQUIRED_PARAM_GROUPS: typeof import("./tools/agent-tools.params.js").REQUIRED_PARAM_GROUPS;
 let logError: typeof import("../logger.js").logError;
 
 type ToolExecute = ReturnType<
@@ -35,8 +35,9 @@ function firstLogErrorMessage(): unknown {
 describe("agent tool definition adapter logging", () => {
   beforeAll(async () => {
     ({ toToolDefinitions } = await import("./agent-tool-definition-adapter.js"));
-    ({ BeforeToolCallBlockedError } = await import("./agent-tools.before-tool-call.js"));
-    ({ wrapToolParamValidation, REQUIRED_PARAM_GROUPS } = await import("./agent-tools.params.js"));
+    ({ BeforeToolCallBlockedError } = await import("./tools/agent-tools.before-tool-call.js"));
+    ({ wrapToolParamValidation, REQUIRED_PARAM_GROUPS } =
+      await import("./tools/agent-tools.params.js"));
     ({ logError } = await import("../logger.js"));
   });
 

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { AdminBotLabMember } from "../../extensions/adminbot/src/contracts.js";
-import { AdminBotService } from "../../extensions/adminbot/src/service-core.js";
+import type { AdminBotLabMember } from "../../extensions/adminbot/src/contracts/actions.js";
+import { AdminBotService } from "../../extensions/adminbot/src/kernel/service.js";
 import {
   parseArgs,
   shouldSkip,

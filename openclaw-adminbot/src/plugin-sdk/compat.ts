@@ -35,7 +35,7 @@ if (shouldWarnCompatImport) {
   );
 }
 
-export { emptyPluginConfigSchema } from "../plugins/config-schema.js";
+export { emptyPluginConfigSchema } from "../plugins/config/config-schema.js";
 export type {
   MemoryPluginCapability,
   MemoryPluginPublicArtifact,
@@ -47,8 +47,8 @@ export {
   delegateCompactionToRuntime,
 } from "../context-engine/delegate.js";
 export { registerContextEngine } from "../context-engine/registry.js";
-export type { DiagnosticEventPayload } from "../infra/diagnostic-events.js";
-export { onDiagnosticEvent } from "../infra/diagnostic-events.js";
+export type { DiagnosticEventPayload } from "../infra/diagnostics/diagnostic-events.js";
+export { onDiagnosticEvent } from "../infra/diagnostics/diagnostic-events.js";
 export { optionalStringEnum, stringEnum } from "../agents/schema/typebox.js";
 export {
   applyAuthProfileConfig,
@@ -57,7 +57,7 @@ export {
   writeOAuthCredentials,
   type ApiKeyStorageOptions,
   type WriteOAuthCredentialsOptions,
-} from "../plugins/provider-auth-helpers.js";
+} from "../plugins/providers/provider-auth-helpers.js";
 
 export { createAccountStatusSink } from "./channel-lifecycle.core.js";
 export { createPluginRuntimeStore } from "./runtime-store.js";

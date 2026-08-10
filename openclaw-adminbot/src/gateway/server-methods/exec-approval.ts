@@ -17,20 +17,20 @@ import {
   sanitizeExecApprovalDisplayText,
   sanitizeExecApprovalDisplayTextWithStatus,
   sanitizeExecApprovalWarningText,
-} from "../../infra/exec-approval-command-display.js";
-import type { ExecApprovalForwarder } from "../../infra/exec-approval-forwarder.js";
+} from "../../infra/exec/exec-approval-command-display.js";
+import type { ExecApprovalForwarder } from "../../infra/exec/exec-approval-forwarder.js";
 import {
   DEFAULT_EXEC_APPROVAL_TIMEOUT_MS,
   normalizeExecApprovalUnavailableDecisions,
   resolveExecApprovalRequestAllowedDecisions,
   type ExecApprovalRequest,
   type ExecApprovalResolved,
-} from "../../infra/exec-approvals.js";
+} from "../../infra/exec/exec-approvals.js";
 import {
   buildSystemRunApprovalBinding,
   buildSystemRunApprovalEnvBinding,
-} from "../../infra/system-run-approval-binding.js";
-import { resolveSystemRunApprovalRequestContext } from "../../infra/system-run-approval-context.js";
+} from "../../infra/system/system-run-approval-binding.js";
+import { resolveSystemRunApprovalRequestContext } from "../../infra/system/system-run-approval-context.js";
 import type { ExecApprovalManager } from "../exec-approval-manager.js";
 import {
   handleApprovalWaitDecision,

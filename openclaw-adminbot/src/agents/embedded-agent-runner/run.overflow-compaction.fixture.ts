@@ -1,4 +1,4 @@
-import { isCoreToolNameReplaySafe } from "../tool-replay-safety.js";
+import { isCoreToolNameReplaySafe } from "../tools/tool-replay-safety.js";
 /**
  * Test fixtures for embedded-run overflow compaction scenarios.
  */

@@ -10,8 +10,8 @@ export {
   projectRecentChatDisplayMessages,
   resolveEffectiveChatHistoryMaxChars,
 } from "../../gateway/chat-display-projection.js";
-export { augmentChatHistoryWithCliSessionImports } from "../../gateway/cli-session-history.js";
-export { getMaxChatHistoryMessagesBytes } from "../../gateway/server-constants.js";
+export { augmentChatHistoryWithCliSessionImports } from "../../gateway/client/cli-session-history.js";
+export { getMaxChatHistoryMessagesBytes } from "../../gateway/server/server-constants.js";
 export {
   augmentChatHistoryWithCanvasBlocks,
   CHAT_HISTORY_MAX_SINGLE_MESSAGE_BYTES,
@@ -21,12 +21,12 @@ export {
 export {
   capArrayByJsonBytes,
   readSessionMessagesAsync,
-} from "../../gateway/session-transcript-readers.js";
+} from "../../gateway/sessions/session-transcript-readers.js";
 export {
   listSessionsFromStoreAsync,
   loadCombinedSessionStoreForGateway,
   loadSessionEntry,
   resolveSessionModelRef,
-} from "../../gateway/session-utils.js";
-export { resolveSessionKeyFromResolveParams } from "../../gateway/sessions-resolve.js";
-export type { SessionsListResult } from "../../gateway/session-utils.types.js";
+} from "../../gateway/sessions/session-utils.js";
+export { resolveSessionKeyFromResolveParams } from "../../gateway/sessions/sessions-resolve.js";
+export type { SessionsListResult } from "../../gateway/sessions/session-utils.types.js";

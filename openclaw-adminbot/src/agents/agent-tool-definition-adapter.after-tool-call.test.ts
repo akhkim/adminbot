@@ -32,11 +32,11 @@ const hookMocks = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock("../plugins/hook-runner-global.js", () => ({
+vi.mock("../plugins/hooks/hook-runner-global.js", () => ({
   getGlobalHookRunner: () => hookMocks.runner,
 }));
 
-vi.mock("./agent-tools.before-tool-call.js", () => ({
+vi.mock("./tools/agent-tools.before-tool-call.js", () => ({
   BeforeToolCallBlockedError: hookMocks.BeforeToolCallBlockedError,
   buildBlockedToolResult: ({ reason }: { reason: string }) => ({
     content: [{ type: "text", text: reason }],

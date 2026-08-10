@@ -5,9 +5,9 @@
  */
 
 /** @deprecated Import from `openclaw/plugin-sdk/runtime` instead. */
-export { resolveCommandSecretRefsViaGateway } from "../cli/command-secret-gateway.js";
+export { resolveCommandSecretRefsViaGateway } from "../cli/program/command-secret-gateway.js";
 /** @deprecated Import from `openclaw/plugin-sdk/runtime` instead. */
-export { getChannelsCommandSecretTargetIds } from "../cli/command-secret-targets.js";
+export { getChannelsCommandSecretTargetIds } from "../cli/program/command-secret-targets.js";
 /** @deprecated Import from `openclaw/plugin-sdk/secret-ref-runtime` instead. */
 export { resolveSecretRefValues } from "../secrets/resolve.js";
 /** @deprecated Import from `openclaw/plugin-sdk/secret-ref-runtime` instead. */

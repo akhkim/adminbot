@@ -4,13 +4,13 @@ import os from "node:os";
 import path from "node:path";
 import { MAX_DATE_TIMESTAMP_MS } from "@openclaw/normalization-core/number-coercion";
 import { describe, expect, it, vi } from "vitest";
-import { resolveAgentCredentialMapFromStore } from "./agent-auth-credentials.js";
-import { addEnvBackedAgentCredentials } from "./agent-auth-discovery-core.js";
 import { discoverAuthStorage } from "./agent-model-discovery.js";
-import type { AuthProfileStore } from "./auth-profiles.js";
 import { writePersistedAuthProfileStoreRaw } from "./auth-profiles/sqlite.js";
+import { resolveAgentCredentialMapFromStore } from "./auth/agent-auth-credentials.js";
+import { addEnvBackedAgentCredentials } from "./auth/agent-auth-discovery-core.js";
+import type { AuthProfileStore } from "./auth/auth-profiles.js";
 
-vi.mock("./model-auth-env-vars.js", () => ({
+vi.mock("./auth/model-auth-env-vars.js", () => ({
   listProviderEnvAuthLookupKeys: () => ["mistral", "workspace-cloud"],
   resolveProviderEnvApiKeyCandidates: () => ({
     mistral: ["MISTRAL_API_KEY"],
@@ -41,7 +41,7 @@ vi.mock("./model-auth-env-vars.js", () => ({
   }),
 }));
 
-vi.mock("./model-auth-env.js", () => ({
+vi.mock("./auth/model-auth-env.js", () => ({
   resolveEnvApiKey: (
     provider: string,
     env: NodeJS.ProcessEnv,

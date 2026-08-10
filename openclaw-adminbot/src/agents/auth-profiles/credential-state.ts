@@ -4,7 +4,7 @@
  * auth selection, refresh, health, and doctor flows.
  */
 import { MAX_DATE_TIMESTAMP_MS } from "@openclaw/normalization-core/number-coercion";
-import { coerceSecretRef, normalizeSecretInputString } from "../../config/types.secrets.js";
+import { coerceSecretRef, normalizeSecretInputString } from "../../config/types/secrets.js";
 import type { AuthProfileCredential, OAuthCredential } from "./types.js";
 
 /** Reason code for why a stored auth credential can or cannot be used. */

@@ -1,7 +1,7 @@
 /**
  * Public SDK facade for Anthropic Vertex implicit provider discovery and config helpers.
  */
-import type { ModelProviderConfig } from "../config/types.js";
+import type { ModelProviderConfig } from "../config/types/types.js";
 import { loadBundledPluginPublicSurfaceModuleSync } from "./facade-runtime.js";
 
 type FacadeModule = {

@@ -10,11 +10,11 @@ import {
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { CHANNEL_MESSAGE_ACTION_NAMES } from "../channels/plugins/message-action-names.js";
 import type { ChannelMessageActionName } from "../channels/plugins/types.public.js";
-import { resolveCommandConfigWithSecrets } from "../cli/command-config-resolution.js";
-import { formatCliCommand } from "../cli/command-format.js";
-import { getScopedChannelsCommandSecretTargets } from "../cli/command-secret-targets.js";
 import { resolveMessageSecretScope } from "../cli/message-secret-scope.js";
 import { createOutboundSendDeps, type CliDeps } from "../cli/outbound-send-deps.js";
+import { resolveCommandConfigWithSecrets } from "../cli/program/command-config-resolution.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
+import { getScopedChannelsCommandSecretTargets } from "../cli/program/command-secret-targets.js";
 import { withProgress } from "../cli/progress.js";
 import { getRuntimeConfig } from "../config/config.js";
 import type { OutboundSendDeps } from "../infra/outbound/deliver.js";

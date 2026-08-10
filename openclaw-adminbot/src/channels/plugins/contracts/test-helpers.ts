@@ -4,7 +4,7 @@
  * Provides reusable outbound send mocks and inbound/dispatch contract assertions.
  */
 import { expect, type Mock } from "vitest";
-import type { DispatchFromConfigResult } from "../../../auto-reply/reply/dispatch-from-config.types.js";
+import type { DispatchFromConfigResult } from "../../../auto-reply/reply/dispatch/dispatch-from-config.types.js";
 import type { MsgContext } from "../../../auto-reply/templating.js";
 import { normalizeChatType } from "../../chat-type.js";
 import { resolveConversationLabel } from "../../conversation-label.js";

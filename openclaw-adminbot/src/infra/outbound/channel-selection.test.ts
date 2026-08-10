@@ -23,7 +23,7 @@ vi.mock("../../channels/plugins/index.js", () => ({
   listChannelPlugins: mocks.listChannelPlugins,
 }));
 
-vi.mock("../../utils/message-channel.js", () => ({
+vi.mock("../../shared/message-channel.js", () => ({
   listDeliverableMessageChannels: () => deliverableChannelIds,
   isDeliverableMessageChannel: (value: string) => deliverableChannelIds.includes(value),
   normalizeMessageChannel: (value?: string | null) =>

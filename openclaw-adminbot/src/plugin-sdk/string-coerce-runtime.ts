@@ -25,7 +25,7 @@ export {
   parseStrictNonNegativeInteger,
   parseStrictPositiveInteger,
 } from "../../packages/normalization-core/src/number-coercion.js";
-export { asBoolean, parseBooleanValue } from "../utils/boolean.js";
+export { asBoolean, parseBooleanValue } from "../shared/boolean.js";
 export {
   asRecord,
   asNullableRecord,

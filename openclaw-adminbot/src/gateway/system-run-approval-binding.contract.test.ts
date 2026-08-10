@@ -5,9 +5,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
-import type { ExecApprovalRequestPayload } from "../infra/exec-approvals.js";
-import { buildSystemRunApprovalBinding } from "../infra/system-run-approval-binding.js";
-import { evaluateSystemRunApprovalMatch } from "./node-invoke-system-run-approval-match.js";
+import type { ExecApprovalRequestPayload } from "../infra/exec/exec-approvals.js";
+import { buildSystemRunApprovalBinding } from "../infra/system/system-run-approval-binding.js";
+import { evaluateSystemRunApprovalMatch } from "./node/node-invoke-system-run-approval-match.js";
 
 type FixtureCase = {
   name: string;

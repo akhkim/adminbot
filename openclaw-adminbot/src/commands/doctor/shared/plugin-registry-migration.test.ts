@@ -7,8 +7,8 @@ import {
   readPersistedInstalledPluginIndex,
   resolveInstalledPluginIndexStorePath,
   writePersistedInstalledPluginIndex,
-} from "../../../plugins/installed-plugin-index-store.js";
-import type { InstalledPluginIndex } from "../../../plugins/installed-plugin-index.js";
+} from "../../../plugins/install/installed-plugin-index-store.js";
+import type { InstalledPluginIndex } from "../../../plugins/install/installed-plugin-index.js";
 import {
   cleanupTrackedTempDirs,
   makeTrackedTempDir,

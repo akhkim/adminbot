@@ -19,18 +19,18 @@ import type {
 import { formatErrorMessage } from "../../../infra/errors.js";
 import type { Model } from "../../../llm/types.js";
 import type { PluginMetadataSnapshot } from "../../../plugins/plugin-metadata-snapshot.js";
-import type { EmbeddedContextFile } from "../../embedded-agent-helpers.js";
+import type { EmbeddedContextFile } from "../../embedded/embedded-agent-helpers.js";
 import type {
   MessagingToolSend,
   MessagingToolSourceReplyPayload,
-} from "../../embedded-agent-messaging.types.js";
+} from "../../embedded/embedded-agent-messaging.types.js";
 import type { AgentMessage } from "../../runtime/index.js";
-import type { WorkspaceBootstrapFile } from "../../workspace.js";
+import type { WorkspaceBootstrapFile } from "../../workspace/workspace.js";
 
 type SubscribeEmbeddedAgentSessionFn =
-  typeof import("../../embedded-agent-subscribe.js").subscribeEmbeddedAgentSession;
+  typeof import("../../embedded/embedded-agent-subscribe.js").subscribeEmbeddedAgentSession;
 type AcquireSessionWriteLockFn =
-  typeof import("../../session-write-lock.js").acquireSessionWriteLock;
+  typeof import("../../sessions/session-write-lock.js").acquireSessionWriteLock;
 type ShouldPreemptivelyCompactBeforePromptFn =
   typeof import("./preemptive-compaction.js").shouldPreemptivelyCompactBeforePrompt;
 
@@ -328,30 +328,30 @@ vi.mock("../../sessions/index.js", () => {
   };
 });
 
-vi.mock("../../subagent-spawn.js", () => ({
+vi.mock("../../subagents/subagent-spawn.js", () => ({
   SUBAGENT_SPAWN_MODES: ["run", "session"],
   spawnSubagentDirect: (...args: unknown[]) => hoisted.spawnSubagentDirectMock(...args),
 }));
 
-vi.mock("../../sandbox.js", () => ({
+vi.mock("../../sandbox/sandbox.js", () => ({
   resolveSandboxContext: (...args: unknown[]) => hoisted.resolveSandboxContextMock(...args),
 }));
 
-vi.mock("../../session-tool-result-guard-wrapper.js", () => ({
+vi.mock("../../sessions/session-tool-result-guard-wrapper.js", () => ({
   guardSessionManager: (sessionManager: unknown) => sessionManager,
 }));
 
-vi.mock("../../embedded-agent-subscribe.js", () => ({
+vi.mock("../../embedded/embedded-agent-subscribe.js", () => ({
   subscribeEmbeddedAgentSession: (params: Parameters<SubscribeEmbeddedAgentSessionFn>[0]) =>
     hoisted.subscribeEmbeddedAgentSessionMock(params),
 }));
 
-vi.mock("../../../plugins/hook-runner-global.js", () => ({
+vi.mock("../../../plugins/hooks/hook-runner-global.js", () => ({
   getGlobalHookRunner: hoisted.getGlobalHookRunnerMock,
   initializeGlobalHookRunner: hoisted.initializeGlobalHookRunnerMock,
 }));
 
-vi.mock("../../../plugins/provider-runtime.js", () => ({
+vi.mock("../../../plugins/providers/provider-runtime.js", () => ({
   resolveProviderReasoningOutputModeWithPlugin: () => undefined,
   resolveProviderSystemPromptContribution: () => undefined,
   resolveProviderTextTransforms: () => undefined,
@@ -377,9 +377,9 @@ vi.mock("../../../tts/tts.js", () => ({
   buildTtsSystemPromptHint: () => undefined,
 }));
 
-vi.mock("../../bootstrap-files.js", async () => {
-  const actual = await vi.importActual<typeof import("../../bootstrap-files.js")>(
-    "../../bootstrap-files.js",
+vi.mock("../../prompt/bootstrap-files.js", async () => {
+  const actual = await vi.importActual<typeof import("../../prompt/bootstrap-files.js")>(
+    "../../prompt/bootstrap-files.js",
   );
   return {
     ...actual,
@@ -466,7 +466,7 @@ vi.mock("../tool-schema-runtime.js", () => ({
   normalizeProviderToolSchemas: ({ tools }: { tools: unknown[] }) => tools,
 }));
 
-vi.mock("../../session-file-repair.js", () => ({
+vi.mock("../../sessions/session-file-repair.js", () => ({
   repairSessionFileIfNeeded: async () => ({ repaired: false, droppedLines: 0 }),
 }));
 
@@ -479,7 +479,7 @@ vi.mock("../session-manager-init.js", () => ({
   prepareSessionManagerForRun: async () => {},
 }));
 
-vi.mock("../../session-write-lock.js", () => ({
+vi.mock("../../sessions/session-write-lock.js", () => ({
   acquireSessionWriteLock: (params: Parameters<AcquireSessionWriteLockFn>[0]) =>
     hoisted.acquireSessionWriteLockMock(params),
   resolveSessionWriteLockAcquireTimeoutMs: () => 60000,
@@ -521,7 +521,7 @@ vi.mock("./images.js", () => ({
     (hoisted.detectAndLoadPromptImagesMock as (...args: unknown[]) => unknown)(...args),
 }));
 
-vi.mock("../../system-prompt-params.js", () => ({
+vi.mock("../../prompt/system-prompt-params.js", () => ({
   buildSystemPromptParams: () => ({
     runtimeInfo: {},
     userTimezone: "UTC",
@@ -530,7 +530,7 @@ vi.mock("../../system-prompt-params.js", () => ({
   }),
 }));
 
-vi.mock("../../system-prompt-report.js", () => ({
+vi.mock("../../prompt/system-prompt-report.js", () => ({
   buildSystemPromptReport: () => undefined,
 }));
 
@@ -579,7 +579,7 @@ vi.mock("../extra-params.js", async () => {
   };
 });
 
-vi.mock("../../anthropic-payload-log.js", () => ({
+vi.mock("../../transport/anthropic-payload-log.js", () => ({
   createAnthropicPayloadLogger: () => undefined,
 }));
 
@@ -587,7 +587,7 @@ vi.mock("../../cache-trace.js", () => ({
   createCacheTrace: () => undefined,
 }));
 
-vi.mock("../../agent-tools.js", () => ({
+vi.mock("../../tools/agent-tools.js", () => ({
   createOpenClawCodingTools: (options?: { workspaceDir?: string; spawnWorkspaceDir?: string }) =>
     hoisted.createOpenClawCodingToolsMock(options),
   resolveProcessToolScopeKey: ({
@@ -604,7 +604,7 @@ vi.mock("../../agent-tools.js", () => ({
   resolveToolLoopDetectionConfig: () => undefined,
 }));
 
-vi.mock("../../agent-bundle-mcp-tools.js", () => ({
+vi.mock("../../mcp/agent-bundle-mcp-tools.js", () => ({
   createBundleMcpToolRuntime: async () => undefined,
   getOrCreateSessionMcpRuntime: async () => undefined,
   materializeBundleMcpToolsForRun: async () => undefined,
@@ -620,7 +620,7 @@ vi.mock("../../../image-generation/runtime.js", () => ({
   listRuntimeImageGenerationProviders: () => [],
 }));
 
-vi.mock("../../model-selection.js", () => ({
+vi.mock("../../models/model-selection.js", () => ({
   findNormalizedProviderValue: <T>(entries: Record<string, T> | undefined, provider: string) => {
     if (!entries) {
       return undefined;
@@ -637,7 +637,7 @@ vi.mock("../../model-selection.js", () => ({
   resolveDefaultModelForAgent: () => ({ provider: "openai", model: "gpt-test" }),
 }));
 
-vi.mock("../../anthropic-vertex-stream.js", () => ({
+vi.mock("../../transport/anthropic-vertex-stream.js", () => ({
   createAnthropicVertexStreamFnForModel: vi.fn(),
 }));
 
@@ -645,15 +645,15 @@ vi.mock("../../custom-api-registry.js", () => ({
   ensureCustomApiRegistered: () => {},
 }));
 
-vi.mock("../../model-auth.js", () => ({
+vi.mock("../../auth/model-auth.js", () => ({
   resolveModelAuthMode: () => undefined,
 }));
 
-vi.mock("../../model-tool-support.js", () => ({
+vi.mock("../../models/model-tool-support.js", () => ({
   supportsModelTools: (...args: unknown[]) => hoisted.supportsModelToolsMock(...args),
 }));
 
-vi.mock("../../provider-stream.js", () => ({
+vi.mock("../../transport/provider-stream.js", () => ({
   registerProviderStreamForModel: vi.fn(),
 }));
 
@@ -675,19 +675,19 @@ vi.mock("../../sandbox/runtime-status.js", () => ({
   }),
 }));
 
-vi.mock("../../tool-call-id.js", async (importOriginal) => {
-  return await importOriginal<typeof import("../../tool-call-id.js")>();
+vi.mock("../../tools/tool-call-id.js", async (importOriginal) => {
+  return await importOriginal<typeof import("../../tools/tool-call-id.js")>();
 });
 
-vi.mock("../../tool-fs-policy.js", () => ({
+vi.mock("../../tools/tool-fs-policy.js", () => ({
   createToolFsPolicy: (params: { workspaceOnly?: boolean }) => ({
     workspaceOnly: params.workspaceOnly === true,
   }),
   resolveEffectiveToolFsWorkspaceOnly: () => false,
 }));
 
-vi.mock("../../tool-policy.js", async (importOriginal) => {
-  return await importOriginal<typeof import("../../tool-policy.js")>();
+vi.mock("../../tools/tool-policy.js", async (importOriginal) => {
+  return await importOriginal<typeof import("../../tools/tool-policy.js")>();
 });
 
 vi.mock("../../transcript-policy.js", () => ({

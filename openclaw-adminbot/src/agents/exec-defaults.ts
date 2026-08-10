@@ -2,7 +2,7 @@
  * Resolves default exec tool settings from session and config context.
  */
 import type { SessionEntry } from "../config/sessions.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   loadExecApprovals,
   type ExecAsk,
@@ -19,10 +19,13 @@ import {
   resolveExecModeFromPolicy,
   resolveExecModePolicy,
   resolveExecPolicyForMode,
-} from "../infra/exec-approvals.js";
+} from "../infra/exec/exec-approvals.js";
 import { resolveAgentConfig, resolveSessionAgentId } from "./agent-scope.js";
-import { isRequestedExecTargetAllowed, resolveExecTarget } from "./bash-tools.exec-runtime.js";
 import { resolveSandboxRuntimeStatus } from "./sandbox/runtime-status.js";
+import {
+  isRequestedExecTargetAllowed,
+  resolveExecTarget,
+} from "./tools/bash-tools.exec-runtime.js";
 
 // Resolved exec config layers come from global config, agent config, legacy
 // session fields, and per-call overrides.

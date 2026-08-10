@@ -2,7 +2,7 @@
 // verification, and requester-spawned access checks.
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
-import { GatewayClientRequestError } from "../../gateway/client.js";
+import { GatewayClientRequestError } from "../../gateway/client/client.js";
 const callGatewayMock = vi.fn();
 vi.mock("../../gateway/call.js", () => ({
   callGateway: (opts: unknown) => callGatewayMock(opts),

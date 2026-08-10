@@ -22,7 +22,7 @@ export type {
   SandboxSshConfig,
   SshSandboxSession,
   SshSandboxSettings,
-} from "../agents/sandbox.js";
+} from "../agents/sandbox/sandbox.js";
 export type { OpenClawConfig } from "../config/config.js";
 
 export {
@@ -48,7 +48,7 @@ export {
   sanitizeEnvVars,
   shellEscape,
   uploadDirectoryToSshTarget,
-} from "../agents/sandbox.js";
+} from "../agents/sandbox/sandbox.js";
 
 export {
   runPluginCommandWithTimeout,

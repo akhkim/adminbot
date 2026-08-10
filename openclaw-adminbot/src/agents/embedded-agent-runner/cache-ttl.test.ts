@@ -1,10 +1,10 @@
 // Cache-TTL eligibility coverage for native and provider-routed model families.
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../plugins/provider-runtime.js", async () => {
-  const actual = await vi.importActual<typeof import("../../plugins/provider-runtime.js")>(
-    "../../plugins/provider-runtime.js",
-  );
+vi.mock("../../plugins/providers/provider-runtime.js", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../plugins/providers/provider-runtime.js")
+  >("../../plugins/providers/provider-runtime.js");
   return {
     ...actual,
     resolveProviderCacheTtlEligibility: (params: {

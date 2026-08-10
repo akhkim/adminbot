@@ -4,7 +4,7 @@ import {
   providerContractLoadError,
   resolveProviderContractProvidersForPluginIds,
 } from "../../plugins/contracts/registry.js";
-import { resolveBundledExplicitProviderContractsFromPublicArtifacts } from "../../plugins/provider-contract-public-artifacts.js";
+import { resolveBundledExplicitProviderContractsFromPublicArtifacts } from "../../plugins/providers/provider-contract-public-artifacts.js";
 import type { ProviderPlugin } from "../provider-model-shared.js";
 import { installProviderPluginContractSuite } from "./provider-contract-suites.js";
 

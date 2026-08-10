@@ -5,7 +5,6 @@ import path from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { registerResolvedAgentDir } from "../agents/agent-dir-registry.js";
 import { resolveAgentConfig } from "../agents/agent-scope.js";
-import { loadAuthProfileStoreForSecretsRuntime } from "../agents/auth-profiles.js";
 import { AUTH_STORE_VERSION } from "../agents/auth-profiles/constants.js";
 import {
   coercePersistedAuthProfileStore,
@@ -16,15 +15,16 @@ import {
   resolveAuthProfileDatabasePath,
 } from "../agents/auth-profiles/sqlite.js";
 import { saveAuthProfileStore } from "../agents/auth-profiles/store.js";
-import { normalizeProviderId } from "../agents/model-selection.js";
+import { loadAuthProfileStoreForSecretsRuntime } from "../agents/auth/auth-profiles.js";
+import { normalizeProviderId } from "../agents/models/model-selection.js";
 import {
   replaceConfigFile,
   resolveStateDir,
   type ConfigFileSnapshot,
   type OpenClawConfig,
 } from "../config/config.js";
-import type { ConfigWriteOptions } from "../config/io.js";
-import { coerceSecretRef, type SecretProviderConfig } from "../config/types.secrets.js";
+import type { ConfigWriteOptions } from "../config/io/io.js";
+import { coerceSecretRef, type SecretProviderConfig } from "../config/types/secrets.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { resolveConfigDir, resolveUserPath } from "../utils.js";
 import { iterateAuthProfileCredentials } from "./auth-profiles-scan.js";

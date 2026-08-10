@@ -28,7 +28,7 @@ function createModuleLoader<T>(load: () => Promise<T>): () => Promise<T> {
 }
 
 const loadCommitmentsCommands = createModuleLoader(() => import("../../commands/commitments.js"));
-const loadTasksCommands = createModuleLoader(() => import("../../commands/tasks.js"));
+const loadTasksCommands = createModuleLoader(() => import("../../commands/maintenance/tasks.js"));
 const loadFlowsCommands = createModuleLoader(() => import("../../commands/flows.js"));
 
 function addSessionsListOptions(command: Command): Command {
@@ -59,7 +59,7 @@ function mergeSessionsListOptions(
 
 async function runSessionsListCli(opts: SessionsListCliOptions): Promise<void> {
   setVerbose(Boolean(opts.verbose));
-  const { sessionsCommand } = await import("../../commands/sessions.js");
+  const { sessionsCommand } = await import("../../commands/sessions/sessions.js");
   await sessionsCommand(
     {
       json: Boolean(opts.json),
@@ -142,7 +142,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
     )
     .action(async (opts) => {
       await runWithVerboseAndTimeout(opts, async ({ verbose, timeoutMs }) => {
-        const { statusCommand } = await import("../../commands/status.js");
+        const { statusCommand } = await import("../../commands/status/status.js");
         await statusCommand(
           {
             json: Boolean(opts.json),
@@ -171,7 +171,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
     )
     .action(async (opts) => {
       await runWithVerboseAndTimeout(opts, async ({ verbose, timeoutMs }) => {
-        const { healthCommand } = await import("../../commands/health.js");
+        const { healthCommand } = await import("../../commands/maintenance/health.js");
         await healthCommand(
           {
             json: Boolean(opts.json),
@@ -270,7 +270,8 @@ export function registerStatusHealthSessionsCommands(program: Command) {
           }
         | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
-        const { sessionsCleanupCommand } = await import("../../commands/sessions-cleanup.js");
+        const { sessionsCleanupCommand } =
+          await import("../../commands/sessions/sessions-cleanup.js");
         await sessionsCleanupCommand(
           {
             store: (opts.store as string | undefined) ?? parentOpts?.store,
@@ -306,7 +307,7 @@ export function registerStatusHealthSessionsCommands(program: Command) {
           }
         | undefined;
       await runCommandWithRuntime(defaultRuntime, async () => {
-        const { sessionsTailCommand } = await import("../../commands/sessions-tail.js");
+        const { sessionsTailCommand } = await import("../../commands/sessions/sessions-tail.js");
         await sessionsTailCommand(
           {
             sessionKey: opts.sessionKey as string | undefined,

@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const resolveRuntimePluginRegistryMock =
-  vi.fn<typeof import("./loader.js").resolveRuntimePluginRegistry>();
+  vi.fn<typeof import("./runtime/loader.js").resolveRuntimePluginRegistry>();
 const getLoadedRuntimePluginRegistryMock =
   vi.fn<typeof import("./active-runtime-registry.js").getLoadedRuntimePluginRegistry>();
 const ensureStandaloneRuntimePluginRegistryLoadedMock = vi.hoisted(() =>
@@ -11,7 +11,7 @@ const ensureStandaloneRuntimePluginRegistryLoadedMock = vi.hoisted(() =>
   >(),
 );
 const applyPluginAutoEnableMock =
-  vi.fn<typeof import("../config/plugin-auto-enable.js").applyPluginAutoEnable>();
+  vi.fn<typeof import("../config/plugin/plugin-auto-enable.js").applyPluginAutoEnable>();
 const getMemoryRuntimeMock = vi.fn<typeof import("./memory-state.js").getMemoryRuntime>();
 const resolveAgentWorkspaceDirMock =
   vi.fn<typeof import("../agents/agent-scope.js").resolveAgentWorkspaceDir>();
@@ -19,7 +19,7 @@ const resolveDefaultAgentIdMock = vi.fn<
   typeof import("../agents/agent-scope.js").resolveDefaultAgentId
 >(() => "default");
 
-vi.mock("../config/plugin-auto-enable.js", () => ({
+vi.mock("../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: applyPluginAutoEnableMock,
 }));
 
@@ -28,7 +28,7 @@ vi.mock("../agents/agent-scope.js", () => ({
   resolveDefaultAgentId: resolveDefaultAgentIdMock,
 }));
 
-vi.mock("./loader.js", () => ({
+vi.mock("./runtime/loader.js", () => ({
   resolveRuntimePluginRegistry: resolveRuntimePluginRegistryMock,
 }));
 

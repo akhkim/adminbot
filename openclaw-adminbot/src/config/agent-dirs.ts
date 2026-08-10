@@ -5,8 +5,8 @@ import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/st
 import { resolveRequiredHomeDir } from "../infra/home-dir.js";
 import { DEFAULT_AGENT_ID, normalizeAgentId } from "../routing/session-key.js";
 import { resolveUserPath } from "../utils.js";
-import { resolveStateDir } from "./paths.js";
-import type { OpenClawConfig } from "./types.js";
+import { resolveStateDir } from "./paths/paths.js";
+import type { OpenClawConfig } from "./types/types.js";
 
 type DuplicateAgentDir = {
   agentDir: string;

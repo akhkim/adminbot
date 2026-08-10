@@ -2,24 +2,27 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { resolveDefaultAgentDir } from "../agents/agent-scope-config.js";
 import { hasAuthProfileForProvider } from "../agents/tools/model-config.helpers.js";
-import type { SecretInputMode } from "../commands/onboard-types.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { SecretInputMode } from "../commands/onboard/onboard-types.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   DEFAULT_SECRET_PROVIDER_ALIAS,
   type SecretInput,
   type SecretRef,
   hasConfiguredSecretInput,
   normalizeSecretInputString,
-} from "../config/types.secrets.js";
-import { normalizePluginsConfig, resolveEffectiveEnableState } from "../plugins/config-state.js";
+} from "../config/types/secrets.js";
+import {
+  normalizePluginsConfig,
+  resolveEffectiveEnableState,
+} from "../plugins/config/config-state.js";
 import { enablePluginInConfig } from "../plugins/enable.js";
 import type { PluginWebSearchProviderEntry } from "../plugins/types.js";
 import {
   resolveWebSearchInstallCatalogEntries,
   type WebSearchInstallCatalogEntry,
-} from "../plugins/web-search-install-catalog.js";
-import { resolvePluginWebSearchProviders } from "../plugins/web-search-providers.runtime.js";
-import { sortWebSearchProviders } from "../plugins/web-search-providers.shared.js";
+} from "../plugins/web/web-search-install-catalog.js";
+import { resolvePluginWebSearchProviders } from "../plugins/web/web-search-providers.runtime.js";
+import { sortWebSearchProviders } from "../plugins/web/web-search-providers.shared.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { resolveWebSearchProviderId } from "../web-search/runtime.js";
 import { t } from "../wizard/i18n/index.js";

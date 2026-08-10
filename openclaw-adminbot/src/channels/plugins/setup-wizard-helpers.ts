@@ -8,10 +8,10 @@ import {
   normalizeStringEntries,
   uniqueStrings,
 } from "@openclaw/normalization-core/string-normalization";
-import type { DmPolicy, GroupPolicy } from "../../config/types.base.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { SecretInput } from "../../config/types.secrets.js";
-import { resolveSecretInputModeForEnvSelection } from "../../plugins/provider-auth-mode.js";
+import type { DmPolicy, GroupPolicy } from "../../config/types/base.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { SecretInput } from "../../config/types/secrets.js";
+import { resolveSecretInputModeForEnvSelection } from "../../plugins/providers/provider-auth-mode.js";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../../routing/session-key.js";
 import type { WizardPrompter } from "../../wizard/prompts.js";
 import { resolveChannelDmAllowFrom, resolveChannelDmPolicy } from "./dm-access.js";
@@ -29,11 +29,13 @@ import type {
 } from "./setup-wizard-types.js";
 
 let providerAuthInputPromise:
-  | Promise<Pick<typeof import("../../plugins/provider-auth-ref.js"), "promptSecretRefForSetup">>
+  | Promise<
+      Pick<typeof import("../../plugins/providers/provider-auth-ref.js"), "promptSecretRefForSetup">
+    >
   | undefined;
 
 function loadProviderAuthInput() {
-  providerAuthInputPromise ??= import("../../plugins/provider-auth-ref.js");
+  providerAuthInputPromise ??= import("../../plugins/providers/provider-auth-ref.js");
   return providerAuthInputPromise;
 }
 

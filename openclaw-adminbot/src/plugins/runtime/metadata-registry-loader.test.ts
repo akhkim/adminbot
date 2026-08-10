@@ -1,6 +1,6 @@
 // Metadata registry loader tests cover metadata-only plugin registry assembly.
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PluginLoadOptions } from "../loader.js";
+import type { PluginLoadOptions } from "./loader.js";
 
 const loadConfigMock = vi.fn();
 const applyPluginAutoEnableMock = vi.fn();
@@ -13,11 +13,11 @@ vi.mock("../../config/config.js", () => ({
   loadConfig: () => loadConfigMock(),
 }));
 
-vi.mock("../../config/plugin-auto-enable.js", () => ({
+vi.mock("../../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: (...args: unknown[]) => applyPluginAutoEnableMock(...args),
 }));
 
-vi.mock("../loader.js", () => ({
+vi.mock("./loader.js", () => ({
   loadOpenClawPlugins: (...args: unknown[]) => loadOpenClawPluginsMock(...args),
 }));
 

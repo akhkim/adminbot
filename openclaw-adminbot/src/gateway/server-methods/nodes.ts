@@ -24,9 +24,18 @@ import {
   validateNodePairVerifyParams,
   validateNodeRenameParams,
 } from "../../../packages/gateway-protocol/src/index.js";
-import { getRuntimeConfig } from "../../config/io.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { getRuntimeConfig } from "../../config/io/io.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { listDevicePairing } from "../../infra/device-pairing.js";
+import {
+  clearApnsRegistrationIfCurrent,
+  loadApnsRegistration,
+  sendApnsAlert,
+  sendApnsBackgroundWake,
+  shouldClearStoredApnsRegistration,
+  resolveApnsAuthConfigFromEnv,
+  resolveApnsRelayConfigFromEnv,
+} from "../../infra/diagnostics/push-apns.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import {
   approveNodePairing,
@@ -37,34 +46,25 @@ import {
   requestNodePairing,
   verifyNodeToken,
 } from "../../infra/node-pairing.js";
-import {
-  clearApnsRegistrationIfCurrent,
-  loadApnsRegistration,
-  sendApnsAlert,
-  sendApnsBackgroundWake,
-  shouldClearStoredApnsRegistration,
-  resolveApnsAuthConfigFromEnv,
-  resolveApnsRelayConfigFromEnv,
-} from "../../infra/push-apns.js";
 import type { NodeListNode } from "../../shared/node-list-types.js";
 import {
   recordRemoteNodeInfo,
   refreshRemoteNodeBins,
   removeRemoteNodeInfo,
 } from "../../skills/runtime/remote.js";
-import { createKnownNodeCatalog, getKnownNode, listKnownNodes } from "../node-catalog.js";
+import { createKnownNodeCatalog, getKnownNode, listKnownNodes } from "../node/node-catalog.js";
 import {
   isForegroundRestrictedPluginNodeCommand,
   isNodeCommandAllowed,
   normalizeDeclaredNodeCommands,
   resolveNodeCommandAllowlist,
-} from "../node-command-policy.js";
-import { applyPluginNodeInvokePolicy } from "../node-invoke-plugin-policy.js";
-import { sanitizeNodeInvokeParamsForForwarding } from "../node-invoke-sanitize.js";
-import type { NodeSession } from "../node-registry.js";
+} from "../node/node-command-policy.js";
+import { applyPluginNodeInvokePolicy } from "../node/node-invoke-plugin-policy.js";
+import { sanitizeNodeInvokeParamsForForwarding } from "../node/node-invoke-sanitize.js";
+import type { NodeSession } from "../node/node-registry.js";
 import { ADMIN_SCOPE, PAIRING_SCOPE } from "../operator-scopes.js";
 import { refreshClientPluginNodeCapability } from "../plugin-node-capability.js";
-import type { NodeEventContext } from "../server-node-events-types.js";
+import type { NodeEventContext } from "../server/server-node-events-types.js";
 import {
   NODE_WAKE_RECONNECT_POLL_MS,
   NODE_WAKE_RECONNECT_RETRY_WAIT_MS,
@@ -1436,7 +1436,7 @@ export const nodeHandlers: GatewayRequestHandlers = {
           ? JSON.stringify(p.payload)
           : null;
     await respondUnavailableOnThrow(respond, async () => {
-      const { handleNodeEvent } = await import("../server-node-events.js");
+      const { handleNodeEvent } = await import("../server/server-node-events.js");
       const nodeId = client?.connect?.device?.id ?? client?.connect?.client?.id ?? "node";
       const nodeContext: NodeEventContext = {
         deps: context.deps,

@@ -29,7 +29,7 @@ const mocks = vi.hoisted(() => ({
   shouldClearStoredApnsRegistration: vi.fn(() => false),
 }));
 
-vi.mock("../../infra/push-apns.js", () => mocks);
+vi.mock("../../infra/diagnostics/push-apns.js", () => mocks);
 
 import { testing as wakeTesting } from "./nodes-wake-state.js";
 import { maybeWakeNodeWithApns } from "./nodes.js";

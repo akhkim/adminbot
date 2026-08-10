@@ -1,5 +1,4 @@
-// Runs oxlint with local heavy-check policy, sparse-checkout filtering, and
-// plugin package-boundary artifact preparation when needed.
+// Runs oxlint with local heavy-check policy and sparse-checkout filtering.
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -12,19 +11,6 @@ import {
 import { createManagedCommandInvocation, runManagedCommand } from "./lib/managed-child-process.mjs";
 
 const oxlintPath = path.resolve("node_modules", ".bin", "oxlint");
-const PREPARE_EXTENSION_BOUNDARY_ARGS = [
-  path.resolve("scripts", "prepare-extension-package-boundary-artifacts.mjs"),
-];
-const OXLINT_PREPARE_SKIP_FLAGS = new Set([
-  "--help",
-  "-h",
-  "--version",
-  "-V",
-  "--print-config",
-  "--rules",
-  "--init",
-  "--lsp",
-]);
 const OXLINT_VALUE_FLAGS = new Set([
   "--config",
   "--deny",
@@ -55,13 +41,6 @@ function addOxlintFormatArg(args, value) {
   const separatorIndex = args.indexOf("--");
   const insertIndex = separatorIndex === -1 ? args.length : separatorIndex;
   args.splice(insertIndex, 0, "--format", value);
-}
-
-/**
- * Returns whether oxlint args need package-boundary declaration artifacts first.
- */
-export function shouldPrepareExtensionPackageBoundaryArtifacts(args) {
-  return !args.some((arg) => OXLINT_PREPARE_SKIP_FLAGS.has(arg));
 }
 
 /**
@@ -194,31 +173,6 @@ function hasTrackedPath({ cwd, target }) {
   return result.status === 0 && result.stdout.trim().length > 0;
 }
 
-async function prepareExtensionPackageBoundaryArtifacts(env) {
-  const releaseArtifactsLock = acquireLocalHeavyCheckLockSync({
-    cwd: process.cwd(),
-    env,
-    toolName: "extension-package-boundary-artifacts",
-    lockName: "extension-package-boundary-artifacts",
-  });
-
-  try {
-    const status = await runManagedCommand({
-      bin: process.execPath,
-      args: PREPARE_EXTENSION_BOUNDARY_ARGS,
-      env,
-    });
-
-    if (status !== 0) {
-      throw new Error(
-        `prepare-extension-package-boundary-artifacts failed with exit code ${status}`,
-      );
-    }
-  } finally {
-    releaseArtifactsLock();
-  }
-}
-
 /**
  * Applies wrapper policy and runs oxlint with the final argument list.
  */
@@ -263,13 +217,6 @@ export async function main(argv = process.argv.slice(2), runtimeEnv = process.en
         : () => {};
 
   try {
-    if (
-      env.OPENCLAW_OXLINT_SKIP_PREPARE !== "1" &&
-      shouldPrepareExtensionPackageBoundaryArtifacts(finalArgs)
-    ) {
-      await prepareExtensionPackageBoundaryArtifacts(env);
-    }
-
     const status = await runManagedCommand({
       bin: oxlintPath,
       args: finalArgs,

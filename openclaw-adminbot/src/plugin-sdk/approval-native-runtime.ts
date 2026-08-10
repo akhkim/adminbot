@@ -21,10 +21,10 @@ export {
   resolveExecApprovalSessionTarget,
   type ApprovalRequestSessionConversation,
   type ExecApprovalSessionTarget,
-} from "../infra/exec-approval-session-target.js";
-export { buildChannelApprovalNativeTargetKey } from "../infra/approval-native-target-key.js";
+} from "../infra/exec/exec-approval-session-target.js";
+export { buildChannelApprovalNativeTargetKey } from "../infra/approvals/approval-native-target-key.js";
 export {
   doesApprovalRequestMatchChannelAccount,
   resolveApprovalRequestAccountId,
   resolveApprovalRequestChannelAccountId,
-} from "../infra/approval-request-account-binding.js";
+} from "../infra/approvals/approval-request-account-binding.js";

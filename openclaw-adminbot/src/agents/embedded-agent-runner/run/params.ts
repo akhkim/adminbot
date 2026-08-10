@@ -10,25 +10,25 @@ import type { ReplyOperation } from "../../../auto-reply/reply/reply-run-registr
 import type { ReasoningLevel, ThinkLevel, VerboseLevel } from "../../../auto-reply/thinking.js";
 import type { ChatType } from "../../../channels/chat-type.js";
 import type { InboundEventKind } from "../../../channels/inbound-event/kind.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import type { ImageContent } from "../../../llm/types.js";
 import type { PromptImageOrderEntry } from "../../../media/prompt-image-order.js";
 import type { CommandQueueEnqueueFn } from "../../../process/command-queue.types.js";
 import type { InputProvenance } from "../../../sessions/input-provenance.js";
 import type { UserTurnTranscriptRecorder } from "../../../sessions/user-turn-transcript.types.js";
 import type { SkillSnapshot } from "../../../skills/types.js";
-import type { ExecElevatedDefaults, ExecToolDefaults } from "../../bash-tools.exec-types.js";
 import type { AgentStreamParams, ClientToolDefinition } from "../../command/shared-types.js";
-import type { BlockReplyPayload } from "../../embedded-agent-payloads.js";
+import type { BlockReplyPayload } from "../../embedded/embedded-agent-payloads.js";
 import type {
   BlockReplyChunking,
   ToolProgressDetailMode,
   ToolResultFormat,
-} from "../../embedded-agent-subscribe.shared-types.js";
+} from "../../embedded/embedded-agent-subscribe.shared-types.js";
 import type { AgentInternalEvent } from "../../internal-events.js";
+import type { SilentReplyPromptMode } from "../../prompt/system-prompt.types.js";
+import type { PromptMode } from "../../prompt/system-prompt.types.js";
 import type { AgentMessage } from "../../runtime/index.js";
-import type { SilentReplyPromptMode } from "../../system-prompt.types.js";
-import type { PromptMode } from "../../system-prompt.types.js";
+import type { ExecElevatedDefaults, ExecToolDefaults } from "../../tools/bash-tools.exec-types.js";
 import type { EmbeddedAgentExecutionPhase } from "../execution-phase.js";
 import type { AuthProfileFailurePolicy } from "./auth-profile-failure-policy.types.js";
 export type { ClientToolDefinition } from "../../command/shared-types.js";

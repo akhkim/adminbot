@@ -1,5 +1,5 @@
 // Guards config writes that are disallowed in Nix-managed installs.
-import { resolveIsNixMode } from "./paths.js";
+import { resolveIsNixMode } from "./paths/paths.js";
 
 /** Agent-first Nix install docs shown when runtime config writes are blocked. */
 export const NIX_OPENCLAW_AGENT_FIRST_URL = "https://github.com/openclaw/nix-openclaw#quick-start";

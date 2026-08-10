@@ -8,8 +8,8 @@ import type { EventFrame } from "../../packages/gateway-protocol/src/index.js";
 import {
   listCliRuntimeModelBackendBindings,
   resolveCliBackendLiveTest,
-} from "../agents/cli-backends.js";
-import { parseModelRef } from "../agents/model-selection.js";
+} from "../agents/cli-runner/cli-backends.js";
+import { parseModelRef } from "../agents/models/model-selection.js";
 import {
   loadOrCreateDeviceIdentity,
   publicKeyRawBase64UrlFromPem,
@@ -21,10 +21,10 @@ import {
   requestDevicePairing,
 } from "../infra/device-pairing.js";
 import { isTruthyEnvValue } from "../infra/env.js";
+import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../shared/message-channel.js";
 import { getFreePortBlockWithPermissionFallback } from "../test-utils/ports.js";
-import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
-import { startGatewayClientWhenEventLoopReady } from "./client-start-readiness.js";
-import { GatewayClient, type GatewayClientOptions } from "./client.js";
+import { startGatewayClientWhenEventLoopReady } from "./client/client-start-readiness.js";
+import { GatewayClient, type GatewayClientOptions } from "./client/client.js";
 
 // Aggregate docker live runs can contend on startup enough that the gateway
 // websocket handshake needs a wider budget than the single-provider reruns.

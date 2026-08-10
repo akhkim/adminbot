@@ -378,7 +378,6 @@ their privilege level:
 - `external_collaborator`
 - `trial`
 - `member`
-- `core_member`
 - `admin`
 
 The service computes default access grants for Slack, Google Drive, Overleaf,
@@ -560,8 +559,7 @@ member research branches and topics. The capabilities table reads the roster
 rather than the schedule, so it still answers "can the lab do X" for members who
 have not recorded any availability yet.
 
-Time-off _reasons_ are visible lab-wide only to `admin` and `core_member`
-sessions. Everyone else sees that a person is away or partly away, without why.
+Time-off _reasons_ are visible lab-wide only to `admin` sessions. Everyone else sees that a person is away or partly away, without why.
 A member always sees their own reasons. Why someone is away — an internship, a
 hard semester — is personal, so the lab-wide default is the less revealing one.
 

@@ -68,7 +68,7 @@ const hasAuthProfileForProvider = vi.hoisted(() =>
   >(() => false),
 );
 
-vi.mock("../commands/onboard-helpers.js", () => ({
+vi.mock("../commands/onboard/onboard-helpers.js", () => ({
   detectBrowserOpenSupport: vi.fn(async () => ({ ok: false })),
   formatControlUiSshHint: vi.fn(() => "ssh hint"),
   openUrl: vi.fn(async () => false),
@@ -80,29 +80,29 @@ vi.mock("../commands/onboard-helpers.js", () => ({
   waitForGatewayReachable,
 }));
 
-vi.mock("../commands/daemon-install-helpers.js", () => ({
+vi.mock("../commands/daemon/daemon-install-helpers.js", () => ({
   buildGatewayInstallPlan,
   gatewayInstallErrorHint: vi.fn(() => "hint"),
 }));
 
-vi.mock("../commands/gateway-install-token.js", () => ({
+vi.mock("../commands/gateway/gateway-install-token.js", () => ({
   resolveGatewayInstallToken,
 }));
 
-vi.mock("../commands/daemon-runtime.js", () => ({
+vi.mock("../commands/daemon/daemon-runtime.js", () => ({
   DEFAULT_GATEWAY_DAEMON_RUNTIME: "node",
   GATEWAY_DAEMON_RUNTIME_OPTIONS: [{ value: "node", label: "Node" }],
 }));
 
-vi.mock("../commands/health-format.js", () => ({
+vi.mock("../commands/maintenance/health-format.js", () => ({
   formatHealthCheckFailure: vi.fn(() => "health failed"),
 }));
 
-vi.mock("../commands/health.js", () => ({
+vi.mock("../commands/maintenance/health.js", () => ({
   healthCommand,
 }));
 
-vi.mock("../commands/onboard-search.js", () => ({
+vi.mock("../commands/onboard/onboard-search.js", () => ({
   listSearchProviderOptions: () => [],
   resolveSearchProviderOptions: () => [],
   hasExistingKey,

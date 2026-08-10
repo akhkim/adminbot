@@ -18,19 +18,19 @@ import {
 } from "../agents/auth-profiles/store.js";
 import type { AuthProfileStore } from "../agents/auth-profiles/types.js";
 import type { AuthProfileCredential } from "../agents/auth-profiles/types.js";
+import { resolveEnvApiKey } from "../agents/auth/model-auth-env.js";
 import {
   COPILOT_INTEGRATION_ID,
   buildCopilotIdeHeaders,
-} from "../agents/copilot-dynamic-headers.js";
-import { resolveEnvApiKey } from "../agents/model-auth-env.js";
+} from "../agents/transport/copilot-dynamic-headers.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import { loadJsonFile, saveJsonFile } from "../infra/json-file.js";
 import { resolveProviderEndpoint } from "./provider-model-shared.js";
 
 export type { OpenClawConfig } from "../config/config.js";
-export type { SecretInput } from "../config/types.secrets.js";
-export type { SecretInputMode } from "../plugins/provider-auth-types.js";
+export type { SecretInput } from "../config/types/secrets.js";
+export type { SecretInputMode } from "../plugins/providers/provider-auth-types.js";
 export type { ProviderAuthResult } from "../plugins/types.js";
 export type { ProviderAuthContext } from "../plugins/types.js";
 export type { AuthProfileStore, OAuthCredential } from "../agents/auth-profiles/types.js";
@@ -47,11 +47,11 @@ export {
   upsertAuthProfile,
   upsertAuthProfileWithLock,
 } from "../agents/auth-profiles/profiles.js";
-export { resolveEnvApiKey } from "../agents/model-auth-env.js";
+export { resolveEnvApiKey } from "../agents/auth/model-auth-env.js";
 export {
   readClaudeCliCredentialsCached,
   readCodexCliCredentialsCached,
-} from "../agents/cli-credentials.js";
+} from "../agents/cli-runner/cli-credentials.js";
 export { suggestOAuthProfileIdForLegacyDefault } from "../agents/auth-profiles/repair.js";
 export {
   CUSTOM_LOCAL_AUTH_MARKER,
@@ -60,24 +60,24 @@ export {
   isNonSecretApiKeyMarker,
   resolveOAuthApiKeyMarker,
   resolveNonEnvSecretRefApiKeyMarker,
-} from "../agents/model-auth-markers.js";
+} from "../agents/auth/model-auth-markers.js";
 export {
   formatApiKeyPreview,
   normalizeApiKeyInput,
   validateApiKeyInput,
-} from "../plugins/provider-auth-input.js";
+} from "../plugins/providers/provider-auth-input.js";
 export {
   ensureApiKeyFromEnvOrPrompt,
   ensureApiKeyFromOptionEnvOrPrompt,
   normalizeSecretInputModeInput,
   promptSecretRefForSetup,
   resolveSecretInputModeForEnvSelection,
-} from "../plugins/provider-auth-input.js";
-export { normalizeApiKeyConfig } from "../agents/models-config.providers.secrets.js";
+} from "../plugins/providers/provider-auth-input.js";
+export { normalizeApiKeyConfig } from "../agents/models/models-config.providers.secrets.js";
 export {
   buildTokenProfileId,
   validateAnthropicSetupToken,
-} from "../plugins/provider-auth-token.js";
+} from "../plugins/providers/provider-auth-token.js";
 export {
   applyAuthProfileConfig,
   buildApiKeyCredential,
@@ -85,16 +85,16 @@ export {
   writeOAuthCredentials,
   type ApiKeyStorageOptions,
   type WriteOAuthCredentialsOptions,
-} from "../plugins/provider-auth-helpers.js";
-export { createProviderApiKeyAuthMethod } from "../plugins/provider-api-key-auth.js";
-export { coerceSecretRef, hasConfiguredSecretInput } from "../config/types.secrets.js";
+} from "../plugins/providers/provider-auth-helpers.js";
+export { createProviderApiKeyAuthMethod } from "../plugins/providers/provider-api-key-auth.js";
+export { coerceSecretRef, hasConfiguredSecretInput } from "../config/types/secrets.js";
 export { resolveDefaultSecretProviderAlias } from "../secrets/ref-contract.js";
 export { resolveRequiredHomeDir } from "../infra/home-dir.js";
 export { resolveOpenClawAgentDir } from "./agent-dir-compat.js";
 export {
   normalizeOptionalSecretInput,
   normalizeSecretInput,
-} from "../utils/normalize-secret-input.js";
+} from "../shared/normalize-secret-input.js";
 export {
   listKnownProviderAuthEnvVarNames,
   omitEnvKeysCaseInsensitive,
@@ -124,7 +124,7 @@ export {
   COPILOT_INTEGRATION_ID,
   COPILOT_USER_AGENT,
   buildCopilotIdeHeaders,
-} from "../agents/copilot-dynamic-headers.js";
+} from "../agents/transport/copilot-dynamic-headers.js";
 
 const COPILOT_TOKEN_URL = "https://api.github.com/copilot_internal/v2/token";
 

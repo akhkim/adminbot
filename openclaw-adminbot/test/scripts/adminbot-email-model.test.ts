@@ -3,8 +3,16 @@ import { AdminBotEmailModel, gmailOneHourQuery } from "../../scripts/adminbot-em
 
 describe("AdminBot email model", () => {
   it("queries an exact one-hour Gmail epoch window", () => {
-    expect(gmailOneHourQuery(new Date("2026-07-18T12:00:00Z"))).toBe(
-      "in:inbox after:1784372400 before:1784376001 -from:jinesis.adminbot@gmail.com",
+    // The mailbox to exclude is deployment configuration, so the fixture supplies it rather than
+    // the query naming a real account.
+    expect(
+      gmailOneHourQuery(new Date("2026-07-18T12:00:00Z"), {
+        ADMINBOT_BOT_EMAIL: "adminbot@example.com",
+      }),
+    ).toBe("in:inbox after:1784372400 before:1784376001 -from:adminbot@example.com");
+    // Unconfigured, it refuses rather than build a query that matches the bot's own sends.
+    expect(() => gmailOneHourQuery(new Date("2026-07-18T12:00:00Z"), {})).toThrow(
+      /ADMINBOT_BOT_EMAIL/u,
     );
   });
 

@@ -1,9 +1,9 @@
 // Verifies optional plugin tool registration and absence handling.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_PLUGIN_TOOLS_ALLOWLIST_ENTRY } from "../agents/tool-policy.js";
+import { DEFAULT_PLUGIN_TOOLS_ALLOWLIST_ENTRY } from "../agents/tools/tool-policy.js";
 import { resetLogger, setLoggerOverride } from "../logging/logger.js";
 import { loggingState } from "../logging/state.js";
-import { resolveInstalledPluginIndexPolicyHash } from "./installed-plugin-index-policy.js";
+import { resolveInstalledPluginIndexPolicyHash } from "./install/installed-plugin-index-policy.js";
 
 type MockRegistryToolEntry = {
   pluginId: string;
@@ -18,7 +18,7 @@ const loadOpenClawPluginsMock = vi.fn();
 const resolveRuntimePluginRegistryMock = vi.fn();
 const applyPluginAutoEnableMock = vi.fn();
 
-vi.mock("./loader.js", () => ({
+vi.mock("./runtime/loader.js", () => ({
   loadOpenClawPlugins: (params: unknown) => loadOpenClawPluginsMock(params),
   resolveCompatibleRuntimePluginRegistry: (params: unknown) =>
     resolveRuntimePluginRegistryMock(params),
@@ -26,7 +26,7 @@ vi.mock("./loader.js", () => ({
   resolveRuntimePluginRegistry: (params: unknown) => resolveRuntimePluginRegistryMock(params),
 }));
 
-vi.mock("../config/plugin-auto-enable.js", () => ({
+vi.mock("../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: (params: unknown) => applyPluginAutoEnableMock(params),
 }));
 
@@ -35,10 +35,10 @@ let ensureStandalonePluginToolRegistryLoaded: typeof import("./tools.js").ensure
 let buildPluginToolMetadataKey: typeof import("./tools.js").buildPluginToolMetadataKey;
 let getPluginToolMeta: typeof import("./tools.js").getPluginToolMeta;
 let resetPluginToolFactoryCache: typeof import("./tools.js").resetPluginToolFactoryCache;
-let getActivePluginRegistry: typeof import("./runtime.js").getActivePluginRegistry;
-let pinActivePluginChannelRegistry: typeof import("./runtime.js").pinActivePluginChannelRegistry;
-let resetPluginRuntimeStateForTest: typeof import("./runtime.js").resetPluginRuntimeStateForTest;
-let setActivePluginRegistry: typeof import("./runtime.js").setActivePluginRegistry;
+let getActivePluginRegistry: typeof import("./runtime/runtime.js").getActivePluginRegistry;
+let pinActivePluginChannelRegistry: typeof import("./runtime/runtime.js").pinActivePluginChannelRegistry;
+let resetPluginRuntimeStateForTest: typeof import("./runtime/runtime.js").resetPluginRuntimeStateForTest;
+let setActivePluginRegistry: typeof import("./runtime/runtime.js").setActivePluginRegistry;
 let clearCurrentPluginMetadataSnapshot: typeof import("./current-plugin-metadata-snapshot.js").clearCurrentPluginMetadataSnapshot;
 let setCurrentPluginMetadataSnapshot: typeof import("./current-plugin-metadata-snapshot.js").setCurrentPluginMetadataSnapshot;
 let getPluginRuntimeGatewayRequestScope: typeof import("./runtime/gateway-request-scope.js").getPluginRuntimeGatewayRequestScope;
@@ -483,7 +483,7 @@ describe("resolvePluginTools optional tools", () => {
       pinActivePluginChannelRegistry,
       resetPluginRuntimeStateForTest,
       setActivePluginRegistry,
-    } = await import("./runtime.js"));
+    } = await import("./runtime/runtime.js"));
     ({ getPluginRuntimeGatewayRequestScope, withPluginRuntimeGatewayRequestScope } =
       await import("./runtime/gateway-request-scope.js"));
     ({ clearCurrentPluginMetadataSnapshot, setCurrentPluginMetadataSnapshot } =
@@ -1701,7 +1701,8 @@ describe("resolvePluginTools optional tools", () => {
       "gateway-bindable",
       "/tmp",
     );
-    const { loadManifestContractSnapshot } = await import("./manifest-contract-eligibility.js");
+    const { loadManifestContractSnapshot } =
+      await import("./manifest/manifest-contract-eligibility.js");
     const snapshot = loadManifestContractSnapshot({ config, workspaceDir: "/tmp" });
     const optionalToolMetadata = snapshot.plugins.find((plugin) => plugin.id === "multi")
       ?.toolMetadata?.optional_tool;

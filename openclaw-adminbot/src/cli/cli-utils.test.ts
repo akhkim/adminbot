@@ -3,8 +3,8 @@ import { Command } from "commander";
 import { describe, expect, it, vi } from "vitest";
 import { runCommandWithRuntime } from "./cli-utils.js";
 import { registerDnsCli } from "./dns-cli.js";
-import { parseByteSize } from "./parse-bytes.js";
-import { parseDurationMs } from "./parse-duration.js";
+import { parseByteSize } from "./program/parse-bytes.js";
+import { parseDurationMs } from "./program/parse-duration.js";
 import {
   shouldSkipRespawnForArgv,
   shouldSkipStartupEnvironmentRespawnForArgv,

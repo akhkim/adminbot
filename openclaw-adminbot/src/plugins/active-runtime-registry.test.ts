@@ -1,10 +1,10 @@
 // Covers active runtime plugin registry state and reset behavior.
 import { afterEach, describe, expect, it } from "vitest";
 import { getLoadedRuntimePluginRegistry } from "./active-runtime-registry.js";
-import { testing, clearPluginLoaderCache } from "./loader.js";
-import { createEmptyPluginRegistry } from "./registry-empty.js";
-import type { PluginRegistry } from "./registry-types.js";
-import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "./runtime.js";
+import { createEmptyPluginRegistry } from "./manifest/registry-empty.js";
+import type { PluginRegistry } from "./manifest/registry-types.js";
+import { testing, clearPluginLoaderCache } from "./runtime/loader.js";
+import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "./runtime/runtime.js";
 
 afterEach(() => {
   clearPluginLoaderCache();

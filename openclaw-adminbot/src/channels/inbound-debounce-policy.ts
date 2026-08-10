@@ -11,7 +11,7 @@ import {
   resolveInboundDebounceMs,
   type InboundDebounceCreateParams,
 } from "../auto-reply/inbound-debounce.js";
-import type { OpenClawConfig } from "../config/types.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 
 /** Returns true when an inbound text event is safe to debounce before dispatch. */
 export function shouldDebounceTextInbound(params: {

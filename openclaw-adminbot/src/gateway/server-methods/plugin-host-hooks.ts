@@ -12,8 +12,8 @@ import {
 } from "../../../packages/gateway-protocol/src/index.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
-import { isPluginJsonValue } from "../../plugins/host-hooks.js";
-import { getActivePluginRegistry } from "../../plugins/runtime.js";
+import { isPluginJsonValue } from "../../plugins/host/host-hooks.js";
+import { getActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import {
   validateJsonSchemaValue,
   type JsonSchemaValidationError,

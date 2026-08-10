@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getToolTerminalPresentation } from "../tool-terminal-presentation.js";
+import { getToolTerminalPresentation } from "./tool-terminal-presentation.js";
 import { createWebFetchTool, sanitizeWebFetchUrl } from "./web-fetch.js";
 
 describe("sanitizeWebFetchUrl", () => {

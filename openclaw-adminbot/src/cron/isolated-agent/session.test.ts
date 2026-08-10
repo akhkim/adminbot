@@ -17,7 +17,7 @@ vi.mock("../../config/sessions/reset-policy.js", () => ({
   resolveSessionResetPolicy: vi.fn().mockReturnValue({ mode: "idle", idleMinutes: 60 }),
 }));
 
-vi.mock("../../agents/bootstrap-cache.js", () => ({
+vi.mock("../../agents/prompt/bootstrap-cache.js", () => ({
   clearBootstrapSnapshot: vi.fn(),
   clearBootstrapSnapshotOnSessionRollover: vi.fn(({ sessionKey, previousSessionId }) => {
     if (sessionKey && previousSessionId) {
@@ -26,7 +26,7 @@ vi.mock("../../agents/bootstrap-cache.js", () => ({
   }),
 }));
 
-import { clearBootstrapSnapshot } from "../../agents/bootstrap-cache.js";
+import { clearBootstrapSnapshot } from "../../agents/prompt/bootstrap-cache.js";
 import { evaluateSessionFreshness } from "../../config/sessions/reset-policy.js";
 import { loadSessionStore } from "../../config/sessions/store-load.js";
 import { resolveCronSession } from "./session.js";

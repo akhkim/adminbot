@@ -1,26 +1,13 @@
 // Plugin runtime entrypoint assembles runtime helpers available to activated plugins.
 import { getRuntimeConfig } from "../../config/config.js";
-import { resolveStateDir } from "../../config/paths.js";
-import {
-  generateImage as generateRuntimeImage,
-  listRuntimeImageGenerationProviders,
-} from "../../image-generation/runtime.js";
-import {
-  generateMusic as generateRuntimeMusic,
-  listRuntimeMusicGenerationProviders,
-} from "../../music-generation/runtime.js";
+import { resolveStateDir } from "../../config/paths/paths.js";
 import { RequestScopedSubagentRuntimeError } from "../../plugin-sdk/error-runtime.js";
 import {
   createLazyRuntimeMethod,
-  createLazyRuntimeMethodBinder,
   createLazyRuntimeModule,
   createLazyRuntimeSurface,
 } from "../../shared/lazy-runtime.js";
 import { VERSION } from "../../version.js";
-import {
-  generateVideo as generateRuntimeVideo,
-  listRuntimeVideoGenerationProviders,
-} from "../../video-generation/runtime.js";
 import { listWebSearchProviders, runWebSearch } from "../../web-search/runtime.js";
 import { gatewaySubagentState } from "./gateway-bindings.js";
 import { createRuntimeAgent } from "./runtime-agent.js";
@@ -42,62 +29,9 @@ export {
   setGatewaySubagentRuntime,
 } from "./gateway-bindings.js";
 
-const loadTtsRuntime = createLazyRuntimeModule(() => import("../../tts/tts.js"));
-const loadMediaUnderstandingRuntime = createLazyRuntimeModule(
-  () => import("../../media-understanding/runtime.js"),
-);
 const loadModelAuthRuntime = createLazyRuntimeModule(
   () => import("./runtime-model-auth.runtime.js"),
 );
-
-function createRuntimeTts(): PluginRuntime["tts"] {
-  const bindTtsRuntime = createLazyRuntimeMethodBinder(loadTtsRuntime);
-  return {
-    textToSpeech: bindTtsRuntime((runtime) => runtime.textToSpeech),
-    textToSpeechStream: bindTtsRuntime((runtime) => runtime.textToSpeechStream),
-    textToSpeechTelephony: bindTtsRuntime((runtime) => runtime.textToSpeechTelephony),
-    listVoices: bindTtsRuntime((runtime) => runtime.listSpeechVoices),
-  };
-}
-
-function createRuntimeMediaUnderstandingFacade(): PluginRuntime["mediaUnderstanding"] {
-  const bindMediaUnderstandingRuntime = createLazyRuntimeMethodBinder(
-    loadMediaUnderstandingRuntime,
-  );
-  return {
-    runFile: bindMediaUnderstandingRuntime((runtime) => runtime.runMediaUnderstandingFile),
-    describeImageFile: bindMediaUnderstandingRuntime((runtime) => runtime.describeImageFile),
-    describeImageFileWithModel: bindMediaUnderstandingRuntime(
-      (runtime) => runtime.describeImageFileWithModel,
-    ),
-    extractStructuredWithModel: bindMediaUnderstandingRuntime(
-      (runtime) => runtime.extractStructuredWithModel,
-    ),
-    describeVideoFile: bindMediaUnderstandingRuntime((runtime) => runtime.describeVideoFile),
-    transcribeAudioFile: bindMediaUnderstandingRuntime((runtime) => runtime.transcribeAudioFile),
-  };
-}
-
-function createRuntimeImageGeneration(): PluginRuntime["imageGeneration"] {
-  return {
-    generate: (params) => generateRuntimeImage(params),
-    listProviders: (params) => listRuntimeImageGenerationProviders(params),
-  };
-}
-
-function createRuntimeVideoGeneration(): PluginRuntime["videoGeneration"] {
-  return {
-    generate: (params) => generateRuntimeVideo(params),
-    listProviders: (params) => listRuntimeVideoGenerationProviders(params),
-  };
-}
-
-function createRuntimeMusicGeneration(): PluginRuntime["musicGeneration"] {
-  return {
-    generate: (params) => generateRuntimeMusic(params),
-    listProviders: (params) => listRuntimeMusicGenerationProviders(params),
-  };
-}
 
 function createRuntimeLlmFacade(): PluginRuntime["llm"] {
   const loadLlm = createLazyRuntimeSurface(
@@ -224,7 +158,6 @@ function createLateBindingNodes(allowGatewayBinding = false): PluginRuntime["nod
 }
 
 export function createPluginRuntime(_options: CreatePluginRuntimeOptions = {}): PluginRuntime {
-  const mediaUnderstanding = createRuntimeMediaUnderstandingFacade();
   const taskFlow = createRuntimeTaskFlow();
   const tasks = createRuntimeTasks({
     legacyTaskFlow: taskFlow,
@@ -265,40 +198,10 @@ export function createPluginRuntime(_options: CreatePluginRuntimeOptions = {}): 
     },
     tasks,
     taskFlow,
-  } satisfies Omit<
-    PluginRuntime,
-    | "tts"
-    | "mediaUnderstanding"
-    | "stt"
-    | "modelAuth"
-    | "imageGeneration"
-    | "videoGeneration"
-    | "musicGeneration"
-    | "llm"
-  > &
-    Partial<
-      Pick<
-        PluginRuntime,
-        | "tts"
-        | "mediaUnderstanding"
-        | "stt"
-        | "modelAuth"
-        | "imageGeneration"
-        | "videoGeneration"
-        | "musicGeneration"
-        | "llm"
-      >
-    >;
+  } satisfies Omit<PluginRuntime, "modelAuth" | "llm"> &
+    Partial<Pick<PluginRuntime, "modelAuth" | "llm">>;
 
-  defineCachedValue(runtime, "tts", createRuntimeTts);
-  defineCachedValue(runtime, "mediaUnderstanding", () => mediaUnderstanding);
-  defineCachedValue(runtime, "stt", () => ({
-    transcribeAudioFile: mediaUnderstanding.transcribeAudioFile,
-  }));
   defineCachedValue(runtime, "modelAuth", createRuntimeModelAuth);
-  defineCachedValue(runtime, "imageGeneration", createRuntimeImageGeneration);
-  defineCachedValue(runtime, "videoGeneration", createRuntimeVideoGeneration);
-  defineCachedValue(runtime, "musicGeneration", createRuntimeMusicGeneration);
   defineCachedValue(runtime, "llm", createRuntimeLlmFacade);
 
   return runtime as unknown as PluginRuntime;

@@ -9,7 +9,7 @@ const { getSessionMock, getFinishedSessionMock, killProcessTreeMock } = vi.hoist
   killProcessTreeMock: vi.fn(),
 }));
 
-vi.mock("../../agents/bash-process-registry.js", () => ({
+vi.mock("../../agents/tools/bash-process-registry.js", () => ({
   getSession: getSessionMock,
   getFinishedSession: getFinishedSessionMock,
   markExited: vi.fn(),
@@ -137,7 +137,7 @@ describe("handleBashChatCommand stop", () => {
   });
 
   it("uses the canonical target session for elevated sandbox explanation", async () => {
-    const sandboxRuntime = await import("../../agents/sandbox.js");
+    const sandboxRuntime = await import("../../agents/sandbox/sandbox.js");
     const resolveSandboxRuntimeStatusSpy = vi
       .spyOn(sandboxRuntime, "resolveSandboxRuntimeStatus")
       .mockReturnValue({

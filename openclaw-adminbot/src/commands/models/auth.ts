@@ -22,10 +22,6 @@ import {
   resolveDefaultAgentId,
 } from "../../agents/agent-scope.js";
 import {
-  externalCliDiscoveryForProviderAuth,
-  removeProviderAuthProfilesWithLock,
-} from "../../agents/auth-profiles.js";
-import {
   listProfilesForProvider,
   promoteAuthProfileInOrder,
   upsertAuthProfileWithLock,
@@ -33,24 +29,29 @@ import {
 import { loadAuthProfileStoreForRuntime } from "../../agents/auth-profiles/store.js";
 import type { AuthProfileCredential } from "../../agents/auth-profiles/types.js";
 import { clearAuthProfileCooldown } from "../../agents/auth-profiles/usage.js";
-import { normalizeProviderId } from "../../agents/model-selection-normalize.js";
-import { resolveProviderIdForAuth } from "../../agents/provider-auth-aliases.js";
-import { resolveDefaultAgentWorkspaceDir } from "../../agents/workspace.js";
-import { formatCliCommand } from "../../cli/command-format.js";
-import { parseDurationMs } from "../../cli/parse-duration.js";
+import {
+  externalCliDiscoveryForProviderAuth,
+  removeProviderAuthProfilesWithLock,
+} from "../../agents/auth/auth-profiles.js";
+import { resolveProviderIdForAuth } from "../../agents/auth/provider-auth-aliases.js";
+import { normalizeProviderId } from "../../agents/models/model-selection-normalize.js";
+import { resolveDefaultAgentWorkspaceDir } from "../../agents/workspace/workspace.js";
+import { formatCliCommand } from "../../cli/program/command-format.js";
+import { parseDurationMs } from "../../cli/program/parse-duration.js";
 import { logConfigUpdated } from "../../config/logging.js";
 import { normalizeAgentModelRefForConfig } from "../../config/model-input.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { isRemoteEnvironment } from "../../infra/remote-env.js";
 import {
   applyProviderAuthConfigPatch,
   applyDefaultModel,
   pickAuthMethod,
   restorePriorAgentsDefaultsModelUnlessOptIn,
   resolveProviderMatch,
-} from "../../plugins/provider-auth-choice-helpers.js";
-import { applyAuthProfileConfig } from "../../plugins/provider-auth-helpers.js";
-import { createVpsAwareOAuthHandlers } from "../../plugins/provider-oauth-flow.js";
-import { resolvePluginProviders } from "../../plugins/providers.runtime.js";
+} from "../../plugins/providers/provider-auth-choice-helpers.js";
+import { applyAuthProfileConfig } from "../../plugins/providers/provider-auth-helpers.js";
+import { createVpsAwareOAuthHandlers } from "../../plugins/providers/provider-oauth-flow.js";
+import { resolvePluginProviders } from "../../plugins/providers/providers.runtime.js";
 import {
   resolvePluginSetupProvider,
   resolvePluginSetupRegistry,
@@ -61,12 +62,11 @@ import type {
   ProviderPlugin,
 } from "../../plugins/types.js";
 import type { RuntimeEnv } from "../../runtime.js";
-import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
+import { normalizeSecretInput } from "../../shared/normalize-secret-input.js";
 import { createClackPrompter } from "../../wizard/clack-prompter.js";
-import { validateAnthropicSetupToken } from "../auth-token.js";
+import { validateAnthropicSetupToken } from "../auth/auth-token.js";
 import { repairCodexRuntimePluginInstallForModelSelection } from "../codex-runtime-plugin-install.js";
 import { repairCopilotRuntimePluginInstallForModelSelection } from "../copilot-runtime-plugin-install.js";
-import { isRemoteEnvironment } from "../../infra/remote-env.js";
 import { loadValidConfigOrThrow, resolveKnownAgentId, updateConfig } from "./shared.js";
 
 type UpsertAuthProfileParams = Parameters<typeof upsertAuthProfileWithLock>[0];
@@ -554,7 +554,7 @@ async function runProviderAuthMethod(params: {
     allowSecretRefPrompt: false,
     isRemote: isRemoteEnvironment(),
     openUrl: async (url) => {
-      const { openUrl } = await import("../onboard-helpers.js");
+      const { openUrl } = await import("../onboard/onboard-helpers.js");
       await openUrl(url);
     },
     oauth: {

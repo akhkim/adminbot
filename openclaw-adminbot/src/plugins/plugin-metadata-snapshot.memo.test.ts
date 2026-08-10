@@ -8,13 +8,13 @@ import {
   clearCurrentPluginMetadataSnapshot,
   setCurrentPluginMetadataSnapshot,
 } from "./current-plugin-metadata-snapshot.js";
-import { resolveInstalledPluginIndexPolicyHash } from "./installed-plugin-index-policy.js";
-import { writePersistedInstalledPluginIndexSync } from "./installed-plugin-index-store.js";
+import { resolveInstalledPluginIndexPolicyHash } from "./install/installed-plugin-index-policy.js";
+import { writePersistedInstalledPluginIndexSync } from "./install/installed-plugin-index-store.js";
 import type {
   InstalledPluginIndex,
   InstalledPluginInstallRecordInfo,
-} from "./installed-plugin-index.js";
-import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest-registry.js";
+} from "./install/installed-plugin-index.js";
+import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest/manifest-registry.js";
 import { clearPluginMetadataLifecycleCaches } from "./plugin-metadata-lifecycle.js";
 import {
   clearLoadPluginMetadataSnapshotMemo,
@@ -34,8 +34,8 @@ vi.mock("./plugin-registry.js", async (importOriginal) => {
   };
 });
 
-vi.mock("./manifest-registry-installed.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./manifest-registry-installed.js")>();
+vi.mock("./manifest/manifest-registry-installed.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./manifest/manifest-registry-installed.js")>();
   return {
     ...actual,
     loadPluginManifestRegistryForInstalledIndex: (params: unknown) =>

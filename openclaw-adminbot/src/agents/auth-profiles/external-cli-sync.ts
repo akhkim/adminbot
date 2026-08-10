@@ -8,7 +8,7 @@ import {
   readClaudeCliCredentialsCached,
   readCodexCliCredentialsCached,
   readMiniMaxCliCredentialsCached,
-} from "../cli-credentials.js";
+} from "../cli-runner/cli-credentials.js";
 import {
   CLAUDE_CLI_PROFILE_ID,
   EXTERNAL_CLI_SYNC_TTL_MS,

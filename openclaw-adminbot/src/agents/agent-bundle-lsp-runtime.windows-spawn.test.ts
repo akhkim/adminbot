@@ -12,7 +12,7 @@ vi.mock("../plugin-sdk/windows-spawn.js", () => ({
   materializeWindowsSpawnProgram: materializeWindowsSpawnProgramMock,
 }));
 
-vi.mock("../infra/host-env-security.js", () => ({
+vi.mock("../infra/system/host-env-security.js", () => ({
   sanitizeHostExecEnv: sanitizeHostExecEnvMock,
 }));
 
@@ -30,7 +30,7 @@ vi.mock("../process/kill-tree.js", () => ({
   killProcessTree: vi.fn(),
 }));
 
-vi.mock("./embedded-agent-lsp.js", () => ({
+vi.mock("./embedded/embedded-agent-lsp.js", () => ({
   loadEmbeddedAgentLspConfig: vi.fn().mockReturnValue({ lspServers: {}, diagnostics: [] }),
 }));
 

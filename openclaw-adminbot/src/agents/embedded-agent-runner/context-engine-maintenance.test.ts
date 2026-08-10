@@ -1,7 +1,7 @@
 // Coverage for deferred context-engine maintenance and transcript rewrite hooks.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContextEngineRuntimeContext } from "../../context-engine/types.js";
-import { peekSystemEvents, resetSystemEventsForTest } from "../../infra/system-events.js";
+import { peekSystemEvents, resetSystemEventsForTest } from "../../infra/system/system-events.js";
 import {
   enqueueCommandInLane,
   markGatewayDraining,

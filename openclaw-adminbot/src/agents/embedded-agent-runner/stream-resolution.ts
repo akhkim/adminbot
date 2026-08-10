@@ -3,10 +3,10 @@
  */
 import { getApiProvider } from "../../llm/api-registry.js";
 import { streamSimple } from "../../llm/stream.js";
-import { createAnthropicVertexStreamFnForModel } from "../anthropic-vertex-stream.js";
-import { createBoundaryAwareStreamFnForModel } from "../provider-transport-stream.js";
+import { stripSystemPromptCacheBoundary } from "../prompt/system-prompt-cache-boundary.js";
 import type { StreamFn } from "../runtime/index.js";
-import { stripSystemPromptCacheBoundary } from "../system-prompt-cache-boundary.js";
+import { createAnthropicVertexStreamFnForModel } from "../transport/anthropic-vertex-stream.js";
+import { createBoundaryAwareStreamFnForModel } from "../transport/provider-transport-stream.js";
 import type { EmbeddedRunAttemptParams } from "./run/types.js";
 
 let embeddedAgentBaseStreamFnCache = new WeakMap<object, StreamFn | undefined>();

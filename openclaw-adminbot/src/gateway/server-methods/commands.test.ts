@@ -169,7 +169,7 @@ vi.mock("../../plugins/commands.js", () => ({
     },
   ]),
 }));
-vi.mock("../../plugins/runtime.js", () => ({
+vi.mock("../../plugins/runtime/runtime.js", () => ({
   getActivePluginGatewayCommandRegistry: vi.fn(() => runtimeMocks.gatewayRegistry),
 }));
 vi.mock("../../config/config.js", () => ({

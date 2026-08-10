@@ -44,12 +44,12 @@ vi.mock("../security/fix.js", () => ({
   fixSecurityFootguns: () => mocks.fixSecurityFootguns(),
 }));
 
-vi.mock("./command-secret-gateway.js", () => ({
+vi.mock("./program/command-secret-gateway.js", () => ({
   resolveCommandSecretRefsViaGateway: (opts: unknown) =>
     mocks.resolveCommandSecretRefsViaGateway(opts),
 }));
 
-vi.mock("./command-secret-targets.js", () => ({
+vi.mock("./program/command-secret-targets.js", () => ({
   getSecurityAuditCommandSecretTargetIds: () => mocks.getSecurityAuditCommandSecretTargetIds(),
 }));
 

@@ -18,14 +18,14 @@ export function getOAuthProviderRuntimeMocks() {
   return oauthProviderRuntimeMocks;
 }
 
-vi.mock("../cli-credentials.js", () => ({
+vi.mock("../cli-runner/cli-credentials.js", () => ({
   readClaudeCliCredentialsCached: () => null,
   readCodexCliCredentialsCached: () => null,
   readMiniMaxCliCredentialsCached: () => null,
   resetCliCredentialCachesForTest: () => undefined,
 }));
 
-vi.mock("../../plugins/provider-runtime.runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-runtime.runtime.js", () => ({
   formatProviderAuthProfileApiKeyWithPlugin: (params: { context?: { access?: string } }) =>
     oauthProviderRuntimeMocks.formatProviderAuthProfileApiKeyWithPluginMock() ??
     params?.context?.access,

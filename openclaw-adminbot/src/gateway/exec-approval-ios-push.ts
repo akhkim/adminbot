@@ -1,15 +1,13 @@
 // Gateway iOS exec-approval push delivery.
 // Sends APNs request/resolution wakes to paired operator devices.
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
-import { getRuntimeConfig } from "../config/io.js";
+import { getRuntimeConfig } from "../config/io/io.js";
 import {
   hasEffectivePairedDeviceRole,
   listDevicePairing,
   type DeviceAuthToken,
   type PairedDevice,
 } from "../infra/device-pairing.js";
-import { formatErrorMessage } from "../infra/errors.js";
-import type { ExecApprovalRequest, ExecApprovalResolved } from "../infra/exec-approvals.js";
 import {
   clearApnsRegistrationIfCurrent,
   loadApnsRegistrations,
@@ -21,7 +19,9 @@ import {
   type ApnsAuthConfig,
   type ApnsRegistration,
   type ApnsRelayConfig,
-} from "../infra/push-apns.js";
+} from "../infra/diagnostics/push-apns.js";
+import { formatErrorMessage } from "../infra/errors.js";
+import type { ExecApprovalRequest, ExecApprovalResolved } from "../infra/exec/exec-approvals.js";
 import { roleScopesAllow } from "../shared/operator-scope-compat.js";
 
 // iOS exec-approval push delivery targets paired operator devices with APNs

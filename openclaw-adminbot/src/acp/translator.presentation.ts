@@ -11,7 +11,7 @@ import {
 import { timestampMsToIsoString } from "@openclaw/normalization-core/number-coercion";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { BASE_THINKING_LEVELS } from "../auto-reply/thinking.shared.js";
-import type { GatewaySessionRow } from "../gateway/session-utils.js";
+import type { GatewaySessionRow } from "../gateway/sessions/session-utils.js";
 
 /** ACP config option ids exposed to compatible ACP clients. */
 export const ACP_THOUGHT_LEVEL_CONFIG_ID = "thought_level";

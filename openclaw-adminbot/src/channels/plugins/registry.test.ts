@@ -1,8 +1,11 @@
 // Registry tests cover channel plugin registry installation, lookup, and reset behavior.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
-import type { PluginRegistry } from "../../plugins/registry.js";
-import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../../plugins/runtime.js";
+import { createEmptyPluginRegistry } from "../../plugins/manifest/registry-empty.js";
+import type { PluginRegistry } from "../../plugins/manifest/registry.js";
+import {
+  resetPluginRuntimeStateForTest,
+  setActivePluginRegistry,
+} from "../../plugins/runtime/runtime.js";
 import { getChannelPlugin, listChannelPlugins } from "./registry.js";
 
 vi.mock("./bundled.js", () => ({

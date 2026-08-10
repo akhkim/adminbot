@@ -3,11 +3,11 @@ import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalLowercaseString,
 } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../config/types.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import { listChatCommands, listChatCommandsForConfig } from "./commands-registry-list.js";
 import { normalizeCommandBody } from "./commands-registry-normalize.js";
 import type { CommandNormalizeOptions } from "./commands-registry.types.js";
-import { isAbortTrigger } from "./reply/abort-primitives.js";
+import { isAbortTrigger } from "./reply/queue/abort-primitives.js";
 import { stripInboundMetadata } from "./reply/strip-inbound-meta.js";
 
 /** Returns true when text starts with a configured control command alias. */

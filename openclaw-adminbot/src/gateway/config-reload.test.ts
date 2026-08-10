@@ -9,12 +9,12 @@ import type {
   ConfigWriteNotification,
   OpenClawConfig,
 } from "../config/config.js";
-import type { PluginInstallRecord } from "../config/types.plugins.js";
+import type { PluginInstallRecord } from "../config/types/plugins.js";
 import {
   pinActivePluginChannelRegistry,
   resetPluginRuntimeStateForTest,
   setActivePluginRegistry,
-} from "../plugins/runtime.js";
+} from "../plugins/runtime/runtime.js";
 import {
   getSkillsSnapshotVersion,
   resetSkillsRefreshStateForTest,

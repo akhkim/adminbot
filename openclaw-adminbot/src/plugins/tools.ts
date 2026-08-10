@@ -5,25 +5,28 @@ import {
   uniqueStrings,
 } from "@openclaw/normalization-core/string-normalization";
 import { compileGlobPatterns, matchesAnyGlobPattern } from "../agents/glob-pattern.js";
-import { DEFAULT_PLUGIN_TOOLS_ALLOWLIST_ENTRY, normalizeToolName } from "../agents/tool-policy.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
+import {
+  DEFAULT_PLUGIN_TOOLS_ALLOWLIST_ENTRY,
+  normalizeToolName,
+} from "../agents/tools/tool-policy.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getLoadedRuntimePluginRegistry } from "./active-runtime-registry.js";
-import { applyTestPluginDefaults, normalizePluginsConfig } from "./config-state.js";
-import type { PluginLoadOptions } from "./loader.js";
+import { applyTestPluginDefaults, normalizePluginsConfig } from "./config/config-state.js";
 import {
   isManifestPluginAvailableForControlPlane,
   loadManifestContractSnapshot,
-} from "./manifest-contract-eligibility.js";
-import type { PluginManifestRecord } from "./manifest-registry.js";
-import { hasManifestToolAvailability } from "./manifest-tool-availability.js";
+} from "./manifest/manifest-contract-eligibility.js";
+import type { PluginManifestRecord } from "./manifest/manifest-registry.js";
+import { hasManifestToolAvailability } from "./manifest/manifest-tool-availability.js";
+import type { PluginRegistry, PluginToolRegistration } from "./manifest/registry-types.js";
 import type { PluginMetadataManifestView } from "./plugin-metadata-snapshot.types.js";
-import type { PluginRegistry, PluginToolRegistration } from "./registry-types.js";
 import { withPluginRuntimePluginScope } from "./runtime/gateway-request-scope.js";
 import {
   buildPluginRuntimeLoadOptions,
   resolvePluginRuntimeLoadContext,
 } from "./runtime/load-context.js";
+import type { PluginLoadOptions } from "./runtime/loader.js";
 import { ensureStandaloneRuntimePluginRegistryLoaded } from "./runtime/standalone-runtime-registry-loader.js";
 import { findUndeclaredPluginToolNames } from "./tool-contracts.js";
 import {

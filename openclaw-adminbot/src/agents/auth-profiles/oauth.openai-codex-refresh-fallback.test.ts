@@ -22,7 +22,7 @@ import {
 } from "./store.js";
 import type { AuthProfileStore, OAuthCredential } from "./types.js";
 let resolveApiKeyForProfile: typeof import("./oauth.js").resolveApiKeyForProfile;
-let resolveApiKeyForProvider: typeof import("../model-auth.js").resolveApiKeyForProvider;
+let resolveApiKeyForProvider: typeof import("../auth/model-auth.js").resolveApiKeyForProvider;
 let markAuthProfileSuccess: typeof import("./profiles.js").markAuthProfileSuccess;
 type GetOAuthApiKey = typeof import("../../llm/oauth.js").getOAuthApiKey;
 
@@ -50,7 +50,7 @@ const {
   buildProviderAuthDoctorHintWithPluginMock: vi.fn(async () => undefined),
 }));
 
-vi.mock("../cli-credentials.js", () => ({
+vi.mock("../cli-runner/cli-credentials.js", () => ({
   readClaudeCliCredentialsCached: () => null,
   readCodexCliCredentialsCached: readCodexCliCredentialsCachedMock,
   readMiniMaxCliCredentialsCached: () => null,
@@ -65,13 +65,13 @@ vi.mock("../../llm/oauth.js", () => ({
   ],
 }));
 
-vi.mock("../../plugins/provider-runtime.runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-runtime.runtime.js", () => ({
   refreshProviderOAuthCredentialWithPlugin: refreshProviderOAuthCredentialWithPluginMock,
   formatProviderAuthProfileApiKeyWithPlugin: formatProviderAuthProfileApiKeyWithPluginMock,
   buildProviderAuthDoctorHintWithPlugin: buildProviderAuthDoctorHintWithPluginMock,
 }));
 
-vi.mock("../../plugins/provider-runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-runtime.js", () => ({
   buildProviderMissingAuthMessageWithPlugin: () => undefined,
   resolveExternalAuthProfilesWithPlugins: () => [],
   resolveProviderSyntheticAuthWithPlugin: () => undefined,
@@ -80,9 +80,9 @@ vi.mock("../../plugins/provider-runtime.js", () => ({
 
 afterAll(() => {
   vi.doUnmock("../../llm/oauth.js");
-  vi.doUnmock("../cli-credentials.js");
-  vi.doUnmock("../../plugins/provider-runtime.runtime.js");
-  vi.doUnmock("../../plugins/provider-runtime.js");
+  vi.doUnmock("../cli-runner/cli-credentials.js");
+  vi.doUnmock("../../plugins/providers/provider-runtime.runtime.js");
+  vi.doUnmock("../../plugins/providers/provider-runtime.js");
 });
 
 async function readPersistedStore(agentDir: string): Promise<AuthProfileStore> {
@@ -147,7 +147,7 @@ describe("resolveApiKeyForProfile openai refresh fallback", () => {
   beforeAll(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-codex-refresh-fallback-"));
     ({ resolveApiKeyForProfile } = await import("./oauth.js"));
-    ({ resolveApiKeyForProvider } = await import("../model-auth.js"));
+    ({ resolveApiKeyForProvider } = await import("../auth/model-auth.js"));
     ({ markAuthProfileSuccess } = await import("./profiles.js"));
   });
 

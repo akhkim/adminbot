@@ -7,8 +7,8 @@ import {
   emitDaemonInstallRuntimeWarning,
   resolveDaemonInstallRuntimeInputs,
   resolveDaemonNodeBinDir,
-} from "./daemon-install-plan.shared.js";
-import type { DaemonInstallWarnFn } from "./daemon-install-runtime-warning.js";
+} from "./daemon/daemon-install-plan.shared.js";
+import type { DaemonInstallWarnFn } from "./daemon/daemon-install-runtime-warning.js";
 import type { NodeDaemonRuntime } from "./node-daemon-runtime.js";
 
 type NodeInstallPlan = {

@@ -11,12 +11,12 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 import { Type } from "typebox";
 import { isRestartEnabled } from "../../config/commands.flags.js";
-import { parseConfigJson5, resolveConfigSnapshotHash } from "../../config/io.js";
-import { applyMergePatch } from "../../config/merge-patch.js";
-import { normalizeConfigPatchReplacePaths } from "../../config/patch-replace-paths.js";
+import { parseConfigJson5, resolveConfigSnapshotHash } from "../../config/io/io.js";
+import { applyMergePatch } from "../../config/mutate/merge-patch.js";
+import { normalizeConfigPatchReplacePaths } from "../../config/paths/patch-replace-paths.js";
 import { extractDeliveryInfo } from "../../config/sessions.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { GatewayClientRequestError } from "../../gateway/client.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { GatewayClientRequestError } from "../../gateway/client/client.js";
 import {
   buildRestartSuccessContinuation,
   formatDoctorNonInteractiveHint,

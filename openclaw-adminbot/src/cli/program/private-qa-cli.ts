@@ -4,11 +4,29 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { resolveOpenClawPackageRootSync } from "../../infra/openclaw-root.js";
 
-const PRIVATE_QA_DIST_RELATIVE_PATH = path.join("dist", "plugin-sdk", "qa-lab.js");
 const SOURCE_CHECKOUT_MARKER_RELATIVE_PATHS = [".git", "pnpm-workspace.yaml"] as const;
 
-/** Return true when private QA CLI routes should be exposed. */
-export function isPrivateQaCliEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+// Computed lazily (not at module scope) so merely importing this file never runs `path.join`.
+// This module is reachable from the Control UI bundle via tool-display -> logging/config ->
+// cli/argv -> subcli-descriptors, where `node:path` is stubbed for the browser: a top-level call
+// here used to throw the moment the module was evaluated, before isPrivateQaCliEnabled ever ran,
+// which aborted the whole bundle and left `openclaw-app` unregistered.
+function privateQaDistRelativePath(): string {
+  return path.join("dist", "plugin-sdk", "qa-lab.js");
+}
+
+/**
+ * Return true when private QA CLI routes should be exposed.
+ *
+ * `subcli-descriptors.ts` calls this with no argument at module scope
+ * (`SUB_CLI_DESCRIPTORS = filterPrivateQaItems(...)`), and that module is reachable from the
+ * Control UI bundle -- `process` does not exist in a browser, so the default parameter must not
+ * dereference it unconditionally, or importing this file at all throws "process is not defined"
+ * before any real caller ever runs.
+ */
+export function isPrivateQaCliEnabled(
+  env: NodeJS.ProcessEnv = typeof process === "undefined" ? {} : process.env,
+): boolean {
   return env.OPENCLAW_ENABLE_PRIVATE_QA_CLI === "1";
 }
 
@@ -34,7 +52,7 @@ function resolvePrivateQaSourceModuleSpecifier(params?: {
     return null;
   }
   const existsSync = params?.existsSync ?? fs.existsSync;
-  const sourceModulePath = path.join(packageRoot, PRIVATE_QA_DIST_RELATIVE_PATH);
+  const sourceModulePath = path.join(packageRoot, privateQaDistRelativePath());
   const hasSourceCheckoutMarker = SOURCE_CHECKOUT_MARKER_RELATIVE_PATHS.some((relativePath) =>
     existsSync(path.join(packageRoot, relativePath)),
   );

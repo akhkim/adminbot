@@ -1,5 +1,5 @@
 // Defines task registry records, statuses, delivery state, and parser helpers.
-import type { DeliveryContext } from "../utils/delivery-context.types.js";
+import type { DeliveryContext } from "../shared/delivery-context.types.js";
 
 /** Runtime family that owns a task run lifecycle. */
 export type TaskRuntime = "subagent" | "acp" | "cli" | "cron";

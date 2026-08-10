@@ -3,25 +3,31 @@ import fs from "node:fs";
 import path from "node:path";
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import { resolveIsNixMode } from "../config/paths.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { resolveIsNixMode } from "../config/paths/paths.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   getActiveDiagnosticsTimelineSpan,
   measureDiagnosticsTimelineSpanSync,
-} from "../infra/diagnostics-timeline.js";
+} from "../infra/diagnostics/diagnostics-timeline.js";
 import { resolveUserPath } from "../utils.js";
 import { resolveCompatibilityHostVersion } from "../version.js";
 import { getCurrentPluginMetadataSnapshot } from "./current-plugin-metadata-snapshot.js";
-import { resolveDefaultPluginNpmDir, resolvePluginNpmProjectsDir } from "./install-paths.js";
-import { hashJson } from "./installed-plugin-index-hash.js";
-import { resolveInstalledPluginIndexPolicyHash } from "./installed-plugin-index-policy.js";
-import { readPersistedInstalledPluginIndexSync } from "./installed-plugin-index-store.js";
-import type { InstalledPluginIndex } from "./installed-plugin-index.js";
+import {
+  resolveDefaultPluginNpmDir,
+  resolvePluginNpmProjectsDir,
+} from "./install/install-paths.js";
+import { hashJson } from "./install/installed-plugin-index-hash.js";
+import { resolveInstalledPluginIndexPolicyHash } from "./install/installed-plugin-index-policy.js";
+import { readPersistedInstalledPluginIndexSync } from "./install/installed-plugin-index-store.js";
+import type { InstalledPluginIndex } from "./install/installed-plugin-index.js";
 import {
   loadPluginManifestRegistryForInstalledIndex,
   resolveInstalledManifestRegistryIndexFingerprint,
-} from "./manifest-registry-installed.js";
-import { loadPluginManifestRegistry, type PluginManifestRecord } from "./manifest-registry.js";
+} from "./manifest/manifest-registry-installed.js";
+import {
+  loadPluginManifestRegistry,
+  type PluginManifestRecord,
+} from "./manifest/manifest-registry.js";
 import { resolvePluginControlPlaneFingerprint } from "./plugin-control-plane-context.js";
 import { registerPluginMetadataProcessMemoLifecycleClear } from "./plugin-metadata-lifecycle.js";
 import type {

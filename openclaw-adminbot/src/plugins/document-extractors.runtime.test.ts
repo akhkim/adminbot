@@ -55,7 +55,7 @@ vi.mock("./plugin-metadata-snapshot.js", () => ({
   ),
 }));
 
-vi.mock("./manifest-registry.js", () => ({
+vi.mock("./manifest/manifest-registry.js", () => ({
   resolveManifestContractOwnerPluginId: vi.fn(() => undefined),
 }));
 

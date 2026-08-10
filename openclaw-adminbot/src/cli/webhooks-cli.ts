@@ -22,7 +22,7 @@ import {
 } from "../hooks/gmail.js";
 import { parseStrictPositiveInteger } from "../infra/parse-finite-number.js";
 import { defaultRuntime } from "../runtime.js";
-import { formatCliCommand } from "./command-format.js";
+import { formatCliCommand } from "./program/command-format.js";
 
 /** Register webhook-related subcommands on the root Commander program. */
 export function registerWebhooksCli(program: Command) {

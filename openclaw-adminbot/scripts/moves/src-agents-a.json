@@ -1,0 +1,1102 @@
+[
+  {
+    "from": "src/agents/agent-auth-credentials.ts",
+    "to": "src/agents/auth/agent-auth-credentials.ts"
+  },
+  {
+    "from": "src/agents/agent-auth-discovery-core.ts",
+    "to": "src/agents/auth/agent-auth-discovery-core.ts"
+  },
+  {
+    "from": "src/agents/agent-auth-discovery.external-cli.test.ts",
+    "to": "src/agents/auth/agent-auth-discovery.external-cli.test.ts"
+  },
+  {
+    "from": "src/agents/agent-auth-discovery.ts",
+    "to": "src/agents/auth/agent-auth-discovery.ts"
+  },
+  {
+    "from": "src/agents/agent-bundle-mcp-materialize.ts",
+    "to": "src/agents/mcp/agent-bundle-mcp-materialize.ts"
+  },
+  {
+    "from": "src/agents/agent-bundle-mcp-names.test.ts",
+    "to": "src/agents/mcp/agent-bundle-mcp-names.test.ts"
+  },
+  {
+    "from": "src/agents/agent-bundle-mcp-names.ts",
+    "to": "src/agents/mcp/agent-bundle-mcp-names.ts"
+  },
+  {
+    "from": "src/agents/agent-bundle-mcp-runtime.test.ts",
+    "to": "src/agents/mcp/agent-bundle-mcp-runtime.test.ts"
+  },
+  {
+    "from": "src/agents/agent-bundle-mcp-runtime.ts",
+    "to": "src/agents/mcp/agent-bundle-mcp-runtime.ts"
+  },
+  {
+    "from": "src/agents/agent-bundle-mcp-test-harness.ts",
+    "to": "src/agents/mcp/agent-bundle-mcp-test-harness.ts"
+  },
+  {
+    "from": "src/agents/agent-bundle-mcp-tools.ts",
+    "to": "src/agents/mcp/agent-bundle-mcp-tools.ts"
+  },
+  {
+    "from": "src/agents/agent-bundle-mcp-types.ts",
+    "to": "src/agents/mcp/agent-bundle-mcp-types.ts"
+  },
+  {
+    "from": "src/agents/anthropic-payload-log.test.ts",
+    "to": "src/agents/transport/anthropic-payload-log.test.ts"
+  },
+  {
+    "from": "src/agents/anthropic-payload-log.ts",
+    "to": "src/agents/transport/anthropic-payload-log.ts"
+  },
+  {
+    "from": "src/agents/anthropic-payload-policy.test.ts",
+    "to": "src/agents/transport/anthropic-payload-policy.test.ts"
+  },
+  {
+    "from": "src/agents/anthropic-payload-policy.ts",
+    "to": "src/agents/transport/anthropic-payload-policy.ts"
+  },
+  {
+    "from": "src/agents/anthropic-tool-projection.ts",
+    "to": "src/agents/transport/anthropic-tool-projection.ts"
+  },
+  {
+    "from": "src/agents/anthropic-transport-stream.live.test.ts",
+    "to": "src/agents/transport/anthropic-transport-stream.live.test.ts"
+  },
+  {
+    "from": "src/agents/anthropic-transport-stream.test.ts",
+    "to": "src/agents/transport/anthropic-transport-stream.test.ts"
+  },
+  {
+    "from": "src/agents/anthropic-transport-stream.ts",
+    "to": "src/agents/transport/anthropic-transport-stream.ts"
+  },
+  {
+    "from": "src/agents/anthropic-vertex-stream.test.ts",
+    "to": "src/agents/transport/anthropic-vertex-stream.test.ts"
+  },
+  {
+    "from": "src/agents/anthropic-vertex-stream.ts",
+    "to": "src/agents/transport/anthropic-vertex-stream.ts"
+  },
+  {
+    "from": "src/agents/anthropic.setup-token.live.test.ts",
+    "to": "src/agents/transport/anthropic.setup-token.live.test.ts"
+  },
+  {
+    "from": "src/agents/api-key-rotation.test.ts",
+    "to": "src/agents/auth/api-key-rotation.test.ts"
+  },
+  {
+    "from": "src/agents/api-key-rotation.ts",
+    "to": "src/agents/auth/api-key-rotation.ts"
+  },
+  {
+    "from": "src/agents/auth-health.test.ts",
+    "to": "src/agents/auth/auth-health.test.ts"
+  },
+  {
+    "from": "src/agents/auth-health.ts",
+    "to": "src/agents/auth/auth-health.ts"
+  },
+  {
+    "from": "src/agents/auth-profile-runtime-contract.test.ts",
+    "to": "src/agents/auth/auth-profile-runtime-contract.test.ts"
+  },
+  {
+    "from": "src/agents/auth-profiles.chutes.test.ts",
+    "to": "src/agents/auth/auth-profiles.chutes.test.ts"
+  },
+  {
+    "from": "src/agents/auth-profiles.cooldown-auto-expiry.test.ts",
+    "to": "src/agents/auth/auth-profiles.cooldown-auto-expiry.test.ts"
+  },
+  {
+    "from": "src/agents/auth-profiles.doctor.test.ts",
+    "to": "src/agents/auth/auth-profiles.doctor.test.ts"
+  },
+  {
+    "from": "src/agents/auth-profiles.external-cli-scope.test.ts",
+    "to": "src/agents/auth/auth-profiles.external-cli-scope.test.ts"
+  },
+  {
+    "from": "src/agents/auth-profiles.external-cli-sync.test.ts",
+    "to": "src/agents/auth/auth-profiles.external-cli-sync.test.ts"
+  },
+  {
+    "from": "src/agents/auth-profiles.getsoonestcooldownexpiry.test.ts",
+    "to": "src/agents/auth/auth-profiles.getsoonestcooldownexpiry.test.ts"
+  },
+  {
+    "from": "src/agents/auth-profiles.markauthprofilefailure.test.ts",
+    "to": "src/agents/auth/auth-profiles.markauthprofilefailure.test.ts"
+  },
+  {
+    "from": "src/agents/auth-profiles.readonly-sync.test.ts",
+    "to": "src/agents/auth/auth-profiles.readonly-sync.test.ts"
+  },
+  {
+    "from": "src/agents/auth-profiles.resolve-auth-profile-order.does-not-prioritize-lastgood-round-robin-ordering.test.ts",
+    "to": "src/agents/auth/auth-profiles.resolve-auth-profile-order.does-not-prioritize-lastgood-round-robin-ordering.test.ts"
+  },
+  {
+    "from": "src/agents/auth-profiles.runtime.ts",
+    "to": "src/agents/auth/auth-profiles.runtime.ts"
+  },
+  {
+    "from": "src/agents/auth-profiles.sqlite-store.test.ts",
+    "to": "src/agents/auth/auth-profiles.sqlite-store.test.ts"
+  },
+  {
+    "from": "src/agents/auth-profiles.ts",
+    "to": "src/agents/auth/auth-profiles.ts"
+  },
+  {
+    "from": "src/agents/bundle-mcp-config.test.ts",
+    "to": "src/agents/mcp/bundle-mcp-config.test.ts"
+  },
+  {
+    "from": "src/agents/bundle-mcp-config.ts",
+    "to": "src/agents/mcp/bundle-mcp-config.ts"
+  },
+  {
+    "from": "src/agents/bundle-mcp-shared.test-harness.ts",
+    "to": "src/agents/mcp/bundle-mcp-shared.test-harness.ts"
+  },
+  {
+    "from": "src/agents/bundle-mcp.test-harness.ts",
+    "to": "src/agents/mcp/bundle-mcp.test-harness.ts"
+  },
+  {
+    "from": "src/agents/chutes-oauth.flow.test.ts",
+    "to": "src/agents/transport/chutes-oauth.flow.test.ts"
+  },
+  {
+    "from": "src/agents/chutes-oauth.test.ts",
+    "to": "src/agents/transport/chutes-oauth.test.ts"
+  },
+  {
+    "from": "src/agents/chutes-oauth.ts",
+    "to": "src/agents/transport/chutes-oauth.ts"
+  },
+  {
+    "from": "src/agents/cli-auth-epoch.test.ts",
+    "to": "src/agents/auth/cli-auth-epoch.test.ts"
+  },
+  {
+    "from": "src/agents/cli-auth-epoch.ts",
+    "to": "src/agents/auth/cli-auth-epoch.ts"
+  },
+  {
+    "from": "src/agents/codex-mcp-config.test.ts",
+    "to": "src/agents/mcp/codex-mcp-config.test.ts"
+  },
+  {
+    "from": "src/agents/codex-mcp-config.ts",
+    "to": "src/agents/mcp/codex-mcp-config.ts"
+  },
+  {
+    "from": "src/agents/codex-mcp-config.types.ts",
+    "to": "src/agents/mcp/codex-mcp-config.types.ts"
+  },
+  {
+    "from": "src/agents/codex-native-web-search-core.ts",
+    "to": "src/agents/transport/codex-native-web-search-core.ts"
+  },
+  {
+    "from": "src/agents/codex-native-web-search.shared.ts",
+    "to": "src/agents/transport/codex-native-web-search.shared.ts"
+  },
+  {
+    "from": "src/agents/codex-native-web-search.test.ts",
+    "to": "src/agents/transport/codex-native-web-search.test.ts"
+  },
+  {
+    "from": "src/agents/codex-native-web-search.ts",
+    "to": "src/agents/transport/codex-native-web-search.ts"
+  },
+  {
+    "from": "src/agents/copilot-dynamic-headers.ts",
+    "to": "src/agents/transport/copilot-dynamic-headers.ts"
+  },
+  {
+    "from": "src/agents/copilot-routing.test.ts",
+    "to": "src/agents/transport/copilot-routing.test.ts"
+  },
+  {
+    "from": "src/agents/copilot-routing.ts",
+    "to": "src/agents/transport/copilot-routing.ts"
+  },
+  {
+    "from": "src/agents/deepseek-text-filter.test.ts",
+    "to": "src/agents/transport/deepseek-text-filter.test.ts"
+  },
+  {
+    "from": "src/agents/deepseek-text-filter.ts",
+    "to": "src/agents/transport/deepseek-text-filter.ts"
+  },
+  {
+    "from": "src/agents/github-copilot-token.test.ts",
+    "to": "src/agents/auth/github-copilot-token.test.ts"
+  },
+  {
+    "from": "src/agents/github-copilot-token.ts",
+    "to": "src/agents/auth/github-copilot-token.ts"
+  },
+  {
+    "from": "src/agents/gog-keyring-password.test.ts",
+    "to": "src/agents/auth/gog-keyring-password.test.ts"
+  },
+  {
+    "from": "src/agents/gog-keyring-password.ts",
+    "to": "src/agents/auth/gog-keyring-password.ts"
+  },
+  {
+    "from": "src/agents/google-gemini-switch.live.test.ts",
+    "to": "src/agents/transport/google-gemini-switch.live.test.ts"
+  },
+  {
+    "from": "src/agents/google-simple-completion-stream.test.ts",
+    "to": "src/agents/transport/google-simple-completion-stream.test.ts"
+  },
+  {
+    "from": "src/agents/google-simple-completion-stream.ts",
+    "to": "src/agents/transport/google-simple-completion-stream.ts"
+  },
+  {
+    "from": "src/agents/gpt5-prompt-overlay.ts",
+    "to": "src/agents/transport/gpt5-prompt-overlay.ts"
+  },
+  {
+    "from": "src/agents/live-auth-keys.test.ts",
+    "to": "src/agents/auth/live-auth-keys.test.ts"
+  },
+  {
+    "from": "src/agents/live-auth-keys.ts",
+    "to": "src/agents/auth/live-auth-keys.ts"
+  },
+  {
+    "from": "src/agents/live-model-dynamic-candidates.test.ts",
+    "to": "src/agents/models/live-model-dynamic-candidates.test.ts"
+  },
+  {
+    "from": "src/agents/live-model-dynamic-candidates.ts",
+    "to": "src/agents/models/live-model-dynamic-candidates.ts"
+  },
+  {
+    "from": "src/agents/live-model-errors.test.ts",
+    "to": "src/agents/models/live-model-errors.test.ts"
+  },
+  {
+    "from": "src/agents/live-model-errors.ts",
+    "to": "src/agents/models/live-model-errors.ts"
+  },
+  {
+    "from": "src/agents/live-model-filter.test.ts",
+    "to": "src/agents/models/live-model-filter.test.ts"
+  },
+  {
+    "from": "src/agents/live-model-filter.ts",
+    "to": "src/agents/models/live-model-filter.ts"
+  },
+  {
+    "from": "src/agents/live-model-switch-error.ts",
+    "to": "src/agents/models/live-model-switch-error.ts"
+  },
+  {
+    "from": "src/agents/live-model-switch.test.ts",
+    "to": "src/agents/models/live-model-switch.test.ts"
+  },
+  {
+    "from": "src/agents/live-model-switch.ts",
+    "to": "src/agents/models/live-model-switch.ts"
+  },
+  {
+    "from": "src/agents/live-model-turn-probes.test.ts",
+    "to": "src/agents/models/live-model-turn-probes.test.ts"
+  },
+  {
+    "from": "src/agents/live-model-turn-probes.ts",
+    "to": "src/agents/models/live-model-turn-probes.ts"
+  },
+  {
+    "from": "src/agents/local-model-lean.test.ts",
+    "to": "src/agents/models/local-model-lean.test.ts"
+  },
+  {
+    "from": "src/agents/local-model-lean.ts",
+    "to": "src/agents/models/local-model-lean.ts"
+  },
+  {
+    "from": "src/agents/mcp-config-shared.ts",
+    "to": "src/agents/mcp/mcp-config-shared.ts"
+  },
+  {
+    "from": "src/agents/mcp-http-fetch.test.ts",
+    "to": "src/agents/mcp/mcp-http-fetch.test.ts"
+  },
+  {
+    "from": "src/agents/mcp-http-fetch.ts",
+    "to": "src/agents/mcp/mcp-http-fetch.ts"
+  },
+  {
+    "from": "src/agents/mcp-http.ts",
+    "to": "src/agents/mcp/mcp-http.ts"
+  },
+  {
+    "from": "src/agents/mcp-oauth.test.ts",
+    "to": "src/agents/mcp/mcp-oauth.test.ts"
+  },
+  {
+    "from": "src/agents/mcp-oauth.ts",
+    "to": "src/agents/mcp/mcp-oauth.ts"
+  },
+  {
+    "from": "src/agents/mcp-stdio-transport.test.ts",
+    "to": "src/agents/mcp/mcp-stdio-transport.test.ts"
+  },
+  {
+    "from": "src/agents/mcp-stdio-transport.ts",
+    "to": "src/agents/mcp/mcp-stdio-transport.ts"
+  },
+  {
+    "from": "src/agents/mcp-stdio.ts",
+    "to": "src/agents/mcp/mcp-stdio.ts"
+  },
+  {
+    "from": "src/agents/mcp-transport-config.test.ts",
+    "to": "src/agents/mcp/mcp-transport-config.test.ts"
+  },
+  {
+    "from": "src/agents/mcp-transport-config.ts",
+    "to": "src/agents/mcp/mcp-transport-config.ts"
+  },
+  {
+    "from": "src/agents/mcp-transport.test.ts",
+    "to": "src/agents/mcp/mcp-transport.test.ts"
+  },
+  {
+    "from": "src/agents/mcp-transport.ts",
+    "to": "src/agents/mcp/mcp-transport.ts"
+  },
+  {
+    "from": "src/agents/model-alias-lines.ts",
+    "to": "src/agents/models/model-alias-lines.ts"
+  },
+  {
+    "from": "src/agents/model-allowlist-entry.ts",
+    "to": "src/agents/models/model-allowlist-entry.ts"
+  },
+  {
+    "from": "src/agents/model-auth-env-vars.ts",
+    "to": "src/agents/auth/model-auth-env-vars.ts"
+  },
+  {
+    "from": "src/agents/model-auth-env.provider-aliases.test.ts",
+    "to": "src/agents/auth/model-auth-env.provider-aliases.test.ts"
+  },
+  {
+    "from": "src/agents/model-auth-env.ts",
+    "to": "src/agents/auth/model-auth-env.ts"
+  },
+  {
+    "from": "src/agents/model-auth-label.test.ts",
+    "to": "src/agents/auth/model-auth-label.test.ts"
+  },
+  {
+    "from": "src/agents/model-auth-label.ts",
+    "to": "src/agents/auth/model-auth-label.ts"
+  },
+  {
+    "from": "src/agents/model-auth-markers.test.ts",
+    "to": "src/agents/auth/model-auth-markers.test.ts"
+  },
+  {
+    "from": "src/agents/model-auth-markers.ts",
+    "to": "src/agents/auth/model-auth-markers.ts"
+  },
+  {
+    "from": "src/agents/model-auth-runtime-shared.ts",
+    "to": "src/agents/auth/model-auth-runtime-shared.ts"
+  },
+  {
+    "from": "src/agents/model-auth.profiles.test.ts",
+    "to": "src/agents/auth/model-auth.profiles.test.ts"
+  },
+  {
+    "from": "src/agents/model-auth.test.ts",
+    "to": "src/agents/auth/model-auth.test.ts"
+  },
+  {
+    "from": "src/agents/model-auth.ts",
+    "to": "src/agents/auth/model-auth.ts"
+  },
+  {
+    "from": "src/agents/model-auth.workspace-plugin.test.ts",
+    "to": "src/agents/auth/model-auth.workspace-plugin.test.ts"
+  },
+  {
+    "from": "src/agents/model-catalog-browse.test.ts",
+    "to": "src/agents/models/model-catalog-browse.test.ts"
+  },
+  {
+    "from": "src/agents/model-catalog-browse.ts",
+    "to": "src/agents/models/model-catalog-browse.ts"
+  },
+  {
+    "from": "src/agents/model-catalog-lookup.ts",
+    "to": "src/agents/models/model-catalog-lookup.ts"
+  },
+  {
+    "from": "src/agents/model-catalog-scope.test.ts",
+    "to": "src/agents/models/model-catalog-scope.test.ts"
+  },
+  {
+    "from": "src/agents/model-catalog-scope.ts",
+    "to": "src/agents/models/model-catalog-scope.ts"
+  },
+  {
+    "from": "src/agents/model-catalog-state-cache.test.ts",
+    "to": "src/agents/models/model-catalog-state-cache.test.ts"
+  },
+  {
+    "from": "src/agents/model-catalog-state-cache.ts",
+    "to": "src/agents/models/model-catalog-state-cache.ts"
+  },
+  {
+    "from": "src/agents/model-catalog-visibility.test.ts",
+    "to": "src/agents/models/model-catalog-visibility.test.ts"
+  },
+  {
+    "from": "src/agents/model-catalog-visibility.ts",
+    "to": "src/agents/models/model-catalog-visibility.ts"
+  },
+  {
+    "from": "src/agents/model-catalog.runtime.ts",
+    "to": "src/agents/models/model-catalog.runtime.ts"
+  },
+  {
+    "from": "src/agents/model-catalog.test.ts",
+    "to": "src/agents/models/model-catalog.test.ts"
+  },
+  {
+    "from": "src/agents/model-catalog.ts",
+    "to": "src/agents/models/model-catalog.ts"
+  },
+  {
+    "from": "src/agents/model-catalog.types.ts",
+    "to": "src/agents/models/model-catalog.types.ts"
+  },
+  {
+    "from": "src/agents/model-compat.test.ts",
+    "to": "src/agents/models/model-compat.test.ts"
+  },
+  {
+    "from": "src/agents/model-discovery-context.ts",
+    "to": "src/agents/models/model-discovery-context.ts"
+  },
+  {
+    "from": "src/agents/model-fallback-auth.runtime.ts",
+    "to": "src/agents/models/model-fallback-auth.runtime.ts"
+  },
+  {
+    "from": "src/agents/model-fallback-observation.ts",
+    "to": "src/agents/models/model-fallback-observation.ts"
+  },
+  {
+    "from": "src/agents/model-fallback.probe.test.ts",
+    "to": "src/agents/models/model-fallback.probe.test.ts"
+  },
+  {
+    "from": "src/agents/model-fallback.run-embedded.e2e.test.ts",
+    "to": "src/agents/models/model-fallback.run-embedded.e2e.test.ts"
+  },
+  {
+    "from": "src/agents/model-fallback.test.ts",
+    "to": "src/agents/models/model-fallback.test.ts"
+  },
+  {
+    "from": "src/agents/model-fallback.ts",
+    "to": "src/agents/models/model-fallback.ts"
+  },
+  {
+    "from": "src/agents/model-fallback.types.ts",
+    "to": "src/agents/models/model-fallback.types.ts"
+  },
+  {
+    "from": "src/agents/model-max-tokens-params.ts",
+    "to": "src/agents/models/model-max-tokens-params.ts"
+  },
+  {
+    "from": "src/agents/model-picker-visibility.ts",
+    "to": "src/agents/models/model-picker-visibility.ts"
+  },
+  {
+    "from": "src/agents/model-provider-auth-state.ts",
+    "to": "src/agents/auth/model-provider-auth-state.ts"
+  },
+  {
+    "from": "src/agents/model-provider-auth.test.ts",
+    "to": "src/agents/auth/model-provider-auth.test.ts"
+  },
+  {
+    "from": "src/agents/model-provider-auth.ts",
+    "to": "src/agents/auth/model-provider-auth.ts"
+  },
+  {
+    "from": "src/agents/model-provider-auth.worker.test.ts",
+    "to": "src/agents/auth/model-provider-auth.worker.test.ts"
+  },
+  {
+    "from": "src/agents/model-provider-auth.worker.ts",
+    "to": "src/agents/auth/model-provider-auth.worker.ts"
+  },
+  {
+    "from": "src/agents/model-ref-profile.test.ts",
+    "to": "src/agents/models/model-ref-profile.test.ts"
+  },
+  {
+    "from": "src/agents/model-ref-profile.ts",
+    "to": "src/agents/models/model-ref-profile.ts"
+  },
+  {
+    "from": "src/agents/model-ref-shared.test.ts",
+    "to": "src/agents/models/model-ref-shared.test.ts"
+  },
+  {
+    "from": "src/agents/model-ref-shared.ts",
+    "to": "src/agents/models/model-ref-shared.ts"
+  },
+  {
+    "from": "src/agents/model-registry-loader.ts",
+    "to": "src/agents/models/model-registry-loader.ts"
+  },
+  {
+    "from": "src/agents/model-runtime-aliases.test.ts",
+    "to": "src/agents/models/model-runtime-aliases.test.ts"
+  },
+  {
+    "from": "src/agents/model-runtime-aliases.ts",
+    "to": "src/agents/models/model-runtime-aliases.ts"
+  },
+  {
+    "from": "src/agents/model-runtime-policy.test.ts",
+    "to": "src/agents/models/model-runtime-policy.test.ts"
+  },
+  {
+    "from": "src/agents/model-runtime-policy.ts",
+    "to": "src/agents/models/model-runtime-policy.ts"
+  },
+  {
+    "from": "src/agents/model-scan.test.ts",
+    "to": "src/agents/models/model-scan.test.ts"
+  },
+  {
+    "from": "src/agents/model-scan.ts",
+    "to": "src/agents/models/model-scan.ts"
+  },
+  {
+    "from": "src/agents/model-selection-cli.test.ts",
+    "to": "src/agents/models/model-selection-cli.test.ts"
+  },
+  {
+    "from": "src/agents/model-selection-cli.ts",
+    "to": "src/agents/models/model-selection-cli.ts"
+  },
+  {
+    "from": "src/agents/model-selection-display.test.ts",
+    "to": "src/agents/models/model-selection-display.test.ts"
+  },
+  {
+    "from": "src/agents/model-selection-display.ts",
+    "to": "src/agents/models/model-selection-display.ts"
+  },
+  {
+    "from": "src/agents/model-selection-manifest-workspace.test.ts",
+    "to": "src/agents/models/model-selection-manifest-workspace.test.ts"
+  },
+  {
+    "from": "src/agents/model-selection-normalize.ts",
+    "to": "src/agents/models/model-selection-normalize.ts"
+  },
+  {
+    "from": "src/agents/model-selection-resolve.test.ts",
+    "to": "src/agents/models/model-selection-resolve.test.ts"
+  },
+  {
+    "from": "src/agents/model-selection-resolve.ts",
+    "to": "src/agents/models/model-selection-resolve.ts"
+  },
+  {
+    "from": "src/agents/model-selection-shared.ts",
+    "to": "src/agents/models/model-selection-shared.ts"
+  },
+  {
+    "from": "src/agents/model-selection.plugin-runtime.test.ts",
+    "to": "src/agents/models/model-selection.plugin-runtime.test.ts"
+  },
+  {
+    "from": "src/agents/model-selection.test.ts",
+    "to": "src/agents/models/model-selection.test.ts"
+  },
+  {
+    "from": "src/agents/model-selection.ts",
+    "to": "src/agents/models/model-selection.ts"
+  },
+  {
+    "from": "src/agents/model-suppression.runtime.ts",
+    "to": "src/agents/models/model-suppression.runtime.ts"
+  },
+  {
+    "from": "src/agents/model-suppression.test.ts",
+    "to": "src/agents/models/model-suppression.test.ts"
+  },
+  {
+    "from": "src/agents/model-suppression.ts",
+    "to": "src/agents/models/model-suppression.ts"
+  },
+  {
+    "from": "src/agents/model-thinking-default.ts",
+    "to": "src/agents/models/model-thinking-default.ts"
+  },
+  {
+    "from": "src/agents/model-tool-support.test.ts",
+    "to": "src/agents/models/model-tool-support.test.ts"
+  },
+  {
+    "from": "src/agents/model-tool-support.ts",
+    "to": "src/agents/models/model-tool-support.ts"
+  },
+  {
+    "from": "src/agents/model-transport-debug.ts",
+    "to": "src/agents/models/model-transport-debug.ts"
+  },
+  {
+    "from": "src/agents/model-transport-url.test.ts",
+    "to": "src/agents/models/model-transport-url.test.ts"
+  },
+  {
+    "from": "src/agents/model-transport-url.ts",
+    "to": "src/agents/models/model-transport-url.ts"
+  },
+  {
+    "from": "src/agents/model-visibility-policy.ts",
+    "to": "src/agents/models/model-visibility-policy.ts"
+  },
+  {
+    "from": "src/agents/models-config-state.ts",
+    "to": "src/agents/models/models-config-state.ts"
+  },
+  {
+    "from": "src/agents/models-config.applies-config-env-vars.test.ts",
+    "to": "src/agents/models/models-config.applies-config-env-vars.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.e2e-harness.ts",
+    "to": "src/agents/models/models-config.e2e-harness.ts"
+  },
+  {
+    "from": "src/agents/models-config.file-mode.test.ts",
+    "to": "src/agents/models/models-config.file-mode.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.merge.test.ts",
+    "to": "src/agents/models/models-config.merge.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.merge.ts",
+    "to": "src/agents/models/models-config.merge.ts"
+  },
+  {
+    "from": "src/agents/models-config.plan.ts",
+    "to": "src/agents/models/models-config.plan.ts"
+  },
+  {
+    "from": "src/agents/models-config.preserves-explicit-reasoning-override.test.ts",
+    "to": "src/agents/models/models-config.preserves-explicit-reasoning-override.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.auth-aliases.test.ts",
+    "to": "src/agents/models/models-config.providers.auth-aliases.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.auth-provenance.test.ts",
+    "to": "src/agents/models/models-config.providers.auth-provenance.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.cloudflare-ai-gateway.test.ts",
+    "to": "src/agents/models/models-config.providers.cloudflare-ai-gateway.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.google-antigravity.test.ts",
+    "to": "src/agents/models/models-config.providers.google-antigravity.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.implicit.discovery-scope.test.ts",
+    "to": "src/agents/models/models-config.providers.implicit.discovery-scope.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.implicit.ts",
+    "to": "src/agents/models/models-config.providers.implicit.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.live-filter.test.ts",
+    "to": "src/agents/models/models-config.providers.live-filter.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.minimax.test.ts",
+    "to": "src/agents/models/models-config.providers.minimax.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.moonshot.test.ts",
+    "to": "src/agents/models/models-config.providers.moonshot.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.normalize-keys.test.ts",
+    "to": "src/agents/models/models-config.providers.normalize-keys.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.normalize.ts",
+    "to": "src/agents/models/models-config.providers.normalize.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.nvidia.test.ts",
+    "to": "src/agents/models/models-config.providers.nvidia.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.policy.lookup.test.ts",
+    "to": "src/agents/models/models-config.providers.policy.lookup.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.policy.lookup.ts",
+    "to": "src/agents/models/models-config.providers.policy.lookup.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.policy.runtime.ts",
+    "to": "src/agents/models/models-config.providers.policy.runtime.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.policy.test.ts",
+    "to": "src/agents/models/models-config.providers.policy.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.policy.ts",
+    "to": "src/agents/models/models-config.providers.policy.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.secret-helpers.ts",
+    "to": "src/agents/models/models-config.providers.secret-helpers.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.secrets.bedrock-apikey.test.ts",
+    "to": "src/agents/models/models-config.providers.secrets.bedrock-apikey.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.secrets.ts",
+    "to": "src/agents/models/models-config.providers.secrets.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.source-managed.ts",
+    "to": "src/agents/models/models-config.providers.source-managed.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.stepfun.test.ts",
+    "to": "src/agents/models/models-config.providers.stepfun.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.ts",
+    "to": "src/agents/models/models-config.providers.ts"
+  },
+  {
+    "from": "src/agents/models-config.providers.vercel-ai-gateway.test.ts",
+    "to": "src/agents/models/models-config.providers.vercel-ai-gateway.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.runtime-source-snapshot.test.ts",
+    "to": "src/agents/models/models-config.runtime-source-snapshot.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.runtime.ts",
+    "to": "src/agents/models/models-config.runtime.ts"
+  },
+  {
+    "from": "src/agents/models-config.skips-writing-models-json-no-env-token.test.ts",
+    "to": "src/agents/models/models-config.skips-writing-models-json-no-env-token.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.test-utils.ts",
+    "to": "src/agents/models/models-config.test-utils.ts"
+  },
+  {
+    "from": "src/agents/models-config.ts",
+    "to": "src/agents/models/models-config.ts"
+  },
+  {
+    "from": "src/agents/models-config.uses-first-github-copilot-profile-env-tokens.test.ts",
+    "to": "src/agents/models/models-config.uses-first-github-copilot-profile-env-tokens.test.ts"
+  },
+  {
+    "from": "src/agents/models-config.write-serialization.test.ts",
+    "to": "src/agents/models/models-config.write-serialization.test.ts"
+  },
+  {
+    "from": "src/agents/models.profiles.live.test.ts",
+    "to": "src/agents/models/models.profiles.live.test.ts"
+  },
+  {
+    "from": "src/agents/openai-compatible-conversation-turn.test.ts",
+    "to": "src/agents/transport/openai-compatible-conversation-turn.test.ts"
+  },
+  {
+    "from": "src/agents/openai-compatible-conversation-turn.ts",
+    "to": "src/agents/transport/openai-compatible-conversation-turn.ts"
+  },
+  {
+    "from": "src/agents/openai-completions-compat.test.ts",
+    "to": "src/agents/transport/openai-completions-compat.test.ts"
+  },
+  {
+    "from": "src/agents/openai-completions-compat.ts",
+    "to": "src/agents/transport/openai-completions-compat.ts"
+  },
+  {
+    "from": "src/agents/openai-completions-string-content.ts",
+    "to": "src/agents/transport/openai-completions-string-content.ts"
+  },
+  {
+    "from": "src/agents/openai-reasoning-compat.live.test.ts",
+    "to": "src/agents/transport/openai-reasoning-compat.live.test.ts"
+  },
+  {
+    "from": "src/agents/openai-reasoning-compat.ts",
+    "to": "src/agents/transport/openai-reasoning-compat.ts"
+  },
+  {
+    "from": "src/agents/openai-reasoning-effort.test.ts",
+    "to": "src/agents/transport/openai-reasoning-effort.test.ts"
+  },
+  {
+    "from": "src/agents/openai-reasoning-effort.ts",
+    "to": "src/agents/transport/openai-reasoning-effort.ts"
+  },
+  {
+    "from": "src/agents/openai-responses-payload-policy.test.ts",
+    "to": "src/agents/transport/openai-responses-payload-policy.test.ts"
+  },
+  {
+    "from": "src/agents/openai-responses-payload-policy.ts",
+    "to": "src/agents/transport/openai-responses-payload-policy.ts"
+  },
+  {
+    "from": "src/agents/openai-responses-replay.ts",
+    "to": "src/agents/transport/openai-responses-replay.ts"
+  },
+  {
+    "from": "src/agents/openai-responses.reasoning-replay.test.ts",
+    "to": "src/agents/transport/openai-responses.reasoning-replay.test.ts"
+  },
+  {
+    "from": "src/agents/openai-routing.test.ts",
+    "to": "src/agents/transport/openai-routing.test.ts"
+  },
+  {
+    "from": "src/agents/openai-routing.ts",
+    "to": "src/agents/transport/openai-routing.ts"
+  },
+  {
+    "from": "src/agents/openai-strict-tool-setting.ts",
+    "to": "src/agents/transport/openai-strict-tool-setting.ts"
+  },
+  {
+    "from": "src/agents/openai-text-verbosity.ts",
+    "to": "src/agents/transport/openai-text-verbosity.ts"
+  },
+  {
+    "from": "src/agents/openai-thinking-contract.test.ts",
+    "to": "src/agents/transport/openai-thinking-contract.test.ts"
+  },
+  {
+    "from": "src/agents/openai-tool-projection.live.test.ts",
+    "to": "src/agents/transport/openai-tool-projection.live.test.ts"
+  },
+  {
+    "from": "src/agents/openai-tool-projection.test.ts",
+    "to": "src/agents/transport/openai-tool-projection.test.ts"
+  },
+  {
+    "from": "src/agents/openai-tool-projection.ts",
+    "to": "src/agents/transport/openai-tool-projection.ts"
+  },
+  {
+    "from": "src/agents/openai-tool-schema.test.ts",
+    "to": "src/agents/transport/openai-tool-schema.test.ts"
+  },
+  {
+    "from": "src/agents/openai-tool-schema.ts",
+    "to": "src/agents/transport/openai-tool-schema.ts"
+  },
+  {
+    "from": "src/agents/openai-transport-stream.test.ts",
+    "to": "src/agents/transport/openai-transport-stream.test.ts"
+  },
+  {
+    "from": "src/agents/openai-transport-stream.ts",
+    "to": "src/agents/transport/openai-transport-stream.ts"
+  },
+  {
+    "from": "src/agents/provider-api-families.test.ts",
+    "to": "src/agents/transport/provider-api-families.test.ts"
+  },
+  {
+    "from": "src/agents/provider-api-families.ts",
+    "to": "src/agents/transport/provider-api-families.ts"
+  },
+  {
+    "from": "src/agents/provider-attribution.test.ts",
+    "to": "src/agents/transport/provider-attribution.test.ts"
+  },
+  {
+    "from": "src/agents/provider-attribution.ts",
+    "to": "src/agents/transport/provider-attribution.ts"
+  },
+  {
+    "from": "src/agents/provider-auth-aliases.test.ts",
+    "to": "src/agents/auth/provider-auth-aliases.test.ts"
+  },
+  {
+    "from": "src/agents/provider-auth-aliases.ts",
+    "to": "src/agents/auth/provider-auth-aliases.ts"
+  },
+  {
+    "from": "src/agents/provider-auth-recovery-hint.ts",
+    "to": "src/agents/auth/provider-auth-recovery-hint.ts"
+  },
+  {
+    "from": "src/agents/provider-headers.live.test.ts",
+    "to": "src/agents/transport/provider-headers.live.test.ts"
+  },
+  {
+    "from": "src/agents/provider-http-errors.test.ts",
+    "to": "src/agents/transport/provider-http-errors.test.ts"
+  },
+  {
+    "from": "src/agents/provider-http-errors.ts",
+    "to": "src/agents/transport/provider-http-errors.ts"
+  },
+  {
+    "from": "src/agents/provider-local-service.test.ts",
+    "to": "src/agents/transport/provider-local-service.test.ts"
+  },
+  {
+    "from": "src/agents/provider-local-service.ts",
+    "to": "src/agents/transport/provider-local-service.ts"
+  },
+  {
+    "from": "src/agents/provider-model-normalization.runtime.ts",
+    "to": "src/agents/transport/provider-model-normalization.runtime.ts"
+  },
+  {
+    "from": "src/agents/provider-request-config.test.ts",
+    "to": "src/agents/transport/provider-request-config.test.ts"
+  },
+  {
+    "from": "src/agents/provider-request-config.ts",
+    "to": "src/agents/transport/provider-request-config.ts"
+  },
+  {
+    "from": "src/agents/provider-stream.ts",
+    "to": "src/agents/transport/provider-stream.ts"
+  },
+  {
+    "from": "src/agents/provider-transport-fetch.test.ts",
+    "to": "src/agents/transport/provider-transport-fetch.test.ts"
+  },
+  {
+    "from": "src/agents/provider-transport-fetch.ts",
+    "to": "src/agents/transport/provider-transport-fetch.ts"
+  },
+  {
+    "from": "src/agents/provider-transport-stream.test.ts",
+    "to": "src/agents/transport/provider-transport-stream.test.ts"
+  },
+  {
+    "from": "src/agents/provider-transport-stream.ts",
+    "to": "src/agents/transport/provider-transport-stream.ts"
+  },
+  {
+    "from": "src/agents/replay-turn-classification.ts",
+    "to": "src/agents/transport/replay-turn-classification.ts"
+  },
+  {
+    "from": "src/agents/responses-image-payload-sanitizer.test.ts",
+    "to": "src/agents/transport/responses-image-payload-sanitizer.test.ts"
+  },
+  {
+    "from": "src/agents/responses-image-payload-sanitizer.ts",
+    "to": "src/agents/transport/responses-image-payload-sanitizer.ts"
+  },
+  {
+    "from": "src/agents/simple-completion-runtime.selection.test.ts",
+    "to": "src/agents/transport/simple-completion-runtime.selection.test.ts"
+  },
+  {
+    "from": "src/agents/simple-completion-runtime.test.ts",
+    "to": "src/agents/transport/simple-completion-runtime.test.ts"
+  },
+  {
+    "from": "src/agents/simple-completion-runtime.ts",
+    "to": "src/agents/transport/simple-completion-runtime.ts"
+  },
+  {
+    "from": "src/agents/simple-completion-transport.test.ts",
+    "to": "src/agents/transport/simple-completion-transport.test.ts"
+  },
+  {
+    "from": "src/agents/simple-completion-transport.ts",
+    "to": "src/agents/transport/simple-completion-transport.ts"
+  },
+  {
+    "from": "src/agents/stream-compat.ts",
+    "to": "src/agents/transport/stream-compat.ts"
+  },
+  {
+    "from": "src/agents/stream-iterator-wrapper.ts",
+    "to": "src/agents/transport/stream-iterator-wrapper.ts"
+  },
+  {
+    "from": "src/agents/stream-message-shared.test.ts",
+    "to": "src/agents/transport/stream-message-shared.test.ts"
+  },
+  {
+    "from": "src/agents/stream-message-shared.ts",
+    "to": "src/agents/transport/stream-message-shared.ts"
+  },
+  {
+    "from": "src/agents/transport-message-transform.test.ts",
+    "to": "src/agents/transport/transport-message-transform.test.ts"
+  },
+  {
+    "from": "src/agents/transport-message-transform.ts",
+    "to": "src/agents/transport/transport-message-transform.ts"
+  },
+  {
+    "from": "src/agents/transport-params-runtime-contract.test.ts",
+    "to": "src/agents/transport/transport-params-runtime-contract.test.ts"
+  },
+  {
+    "from": "src/agents/transport-stream-shared.test.ts",
+    "to": "src/agents/transport/transport-stream-shared.test.ts"
+  },
+  {
+    "from": "src/agents/transport-stream-shared.ts",
+    "to": "src/agents/transport/transport-stream-shared.ts"
+  }
+]

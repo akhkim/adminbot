@@ -8,22 +8,22 @@ import type {
   SessionSystemPromptReport,
 } from "../../../config/sessions/types.js";
 import type { ContextEngine, ContextEnginePromptCacheInfo } from "../../../context-engine/types.js";
-import type { DiagnosticTraceContext } from "../../../infra/diagnostic-trace-context.js";
+import type { DiagnosticTraceContext } from "../../../infra/diagnostics/diagnostic-trace-context.js";
 import type { AssistantMessage, Model } from "../../../llm/types.js";
-import type { PluginHookBeforeAgentStartResult } from "../../../plugins/hook-before-agent-start.types.js";
+import type { PluginHookBeforeAgentStartResult } from "../../../plugins/hooks/hook-before-agent-start.types.js";
 import type { AgentHarnessTaskRuntimeScope } from "../../../tasks/agent-harness-task-runtime-scope.js";
-import type { AcceptedSessionSpawn } from "../../accepted-session-spawn.js";
-import type { ToolOutcomeObserver } from "../../agent-tools.before-tool-call.js";
 import type { AuthProfileStore } from "../../auth-profiles/types.js";
 import type {
   MessagingToolSend,
   MessagingToolSourceReplyPayload,
-} from "../../embedded-agent-messaging.types.js";
+} from "../../embedded/embedded-agent-messaging.types.js";
 import type { AgentRunTimeoutPhase } from "../../run-timeout-attribution.js";
 import type { AgentRuntimePlan } from "../../runtime-plan/types.js";
 import type { AgentMessage } from "../../runtime/index.js";
 import type { AuthStorage, ModelRegistry } from "../../sessions/index.js";
-import type { ToolErrorSummary } from "../../tool-error-summary.js";
+import type { AcceptedSessionSpawn } from "../../subagents/accepted-session-spawn.js";
+import type { ToolOutcomeObserver } from "../../tools/agent-tools.before-tool-call.js";
+import type { ToolErrorSummary } from "../../tools/tool-error-summary.js";
 import type { NormalizedUsage } from "../../usage.js";
 import type { EmbeddedRunReplayMetadata, EmbeddedRunReplayState } from "../replay-state.js";
 import type { EmbeddedRunLivenessState } from "../types.js";

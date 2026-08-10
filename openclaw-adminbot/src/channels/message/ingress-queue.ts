@@ -10,7 +10,7 @@ import {
   executeSqliteQuerySync,
   executeSqliteQueryTakeFirstSync,
   getNodeSqliteKysely,
-} from "../../infra/kysely-sync.js";
+} from "../../infra/state/kysely-sync.js";
 import type {
   ChannelIngressEvents,
   DB as OpenClawStateKyselyDatabase,

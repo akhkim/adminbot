@@ -5,14 +5,14 @@ import { DEFAULT_CONTEXT_TOKENS } from "../../agents/defaults.js";
 import {
   shouldSuppressBuiltInModel,
   shouldSuppressBuiltInModelFromManifest,
-} from "../../agents/model-suppression.js";
-import type { ModelDefinitionConfig, ModelProviderConfig } from "../../config/types.models.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+} from "../../agents/models/model-suppression.js";
+import type { ModelDefinitionConfig, ModelProviderConfig } from "../../config/types/models.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { ModelRegistry } from "../../llm/model-registry.js";
 import type { Model } from "../../llm/types.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.types.js";
-import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
-import { normalizeProviderResolvedModelWithPlugin } from "../../plugins/provider-runtime.js";
+import type { ProviderRuntimeModel } from "../../plugins/providers/provider-runtime-model.types.js";
+import { normalizeProviderResolvedModelWithPlugin } from "../../plugins/providers/provider-runtime.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import type { ModelListAuthIndex } from "./list.auth-index.js";
 import type { ListRowModel } from "./list.model-row.js";
@@ -22,7 +22,7 @@ import { canonicalizeModelCatalogProviderAlias } from "./provider-aliases.js";
 import { isLocalBaseUrl, modelKey } from "./shared.js";
 
 type ConfiguredByKey = Map<string, ConfiguredEntry>;
-type ModelCatalogModule = typeof import("../../agents/model-catalog.js");
+type ModelCatalogModule = typeof import("../../agents/models/model-catalog.js");
 type ModelResolverModule = typeof import("../../agents/embedded-agent-runner/model.js");
 type ProviderCatalogModule = typeof import("./list.provider-catalog.js");
 
@@ -46,7 +46,7 @@ export type RowBuilderContext = {
 };
 
 const modelCatalogModuleLoader = createLazyImportLoader<ModelCatalogModule>(
-  () => import("../../agents/model-catalog.js"),
+  () => import("../../agents/models/model-catalog.js"),
 );
 const modelResolverModuleLoader = createLazyImportLoader<ModelResolverModule>(
   () => import("../../agents/embedded-agent-runner/model.js"),

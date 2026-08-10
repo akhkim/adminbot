@@ -2,7 +2,7 @@
 import type { Command } from "commander";
 import { formatDocsLink } from "../../../packages/terminal-core/src/links.js";
 import { theme } from "../../../packages/terminal-core/src/theme.js";
-import { CONFIGURE_WIZARD_SECTIONS } from "../../commands/configure.shared.js";
+import { CONFIGURE_WIZARD_SECTIONS } from "../../commands/configure/configure.shared.js";
 import { runCommandWithRuntime } from "../cli-utils.js";
 
 /** Register the interactive `configure` command and section filter flag. */
@@ -25,7 +25,7 @@ export function registerConfigureCommand(program: Command): void {
       const { defaultRuntime } = await import("../../runtime.js");
       await runCommandWithRuntime(defaultRuntime, async () => {
         const { configureCommandFromSectionsArg } =
-          await import("../../commands/configure.commands.js");
+          await import("../../commands/configure/configure.commands.js");
         await configureCommandFromSectionsArg(opts.section, defaultRuntime);
       });
     });

@@ -1,0 +1,1182 @@
+[
+  {
+    "from": "src/plugins/bundle-claude-inspect.test.ts",
+    "to": "src/plugins/install/bundle-claude-inspect.test.ts"
+  },
+  {
+    "from": "src/plugins/bundle-commands.test.ts",
+    "to": "src/plugins/install/bundle-commands.test.ts"
+  },
+  {
+    "from": "src/plugins/bundle-commands.ts",
+    "to": "src/plugins/install/bundle-commands.ts"
+  },
+  {
+    "from": "src/plugins/bundle-config-shared.ts",
+    "to": "src/plugins/install/bundle-config-shared.ts"
+  },
+  {
+    "from": "src/plugins/bundle-lsp.ts",
+    "to": "src/plugins/install/bundle-lsp.ts"
+  },
+  {
+    "from": "src/plugins/bundle-manifest.test.ts",
+    "to": "src/plugins/install/bundle-manifest.test.ts"
+  },
+  {
+    "from": "src/plugins/bundle-manifest.ts",
+    "to": "src/plugins/install/bundle-manifest.ts"
+  },
+  {
+    "from": "src/plugins/bundle-mcp.test-support.ts",
+    "to": "src/plugins/install/bundle-mcp.test-support.ts"
+  },
+  {
+    "from": "src/plugins/bundle-mcp.test.ts",
+    "to": "src/plugins/install/bundle-mcp.test.ts"
+  },
+  {
+    "from": "src/plugins/bundle-mcp.ts",
+    "to": "src/plugins/install/bundle-mcp.ts"
+  },
+  {
+    "from": "src/plugins/bundled-capability-metadata.test.ts",
+    "to": "src/plugins/install/bundled-capability-metadata.test.ts"
+  },
+  {
+    "from": "src/plugins/bundled-capability-runtime.test.ts",
+    "to": "src/plugins/install/bundled-capability-runtime.test.ts"
+  },
+  {
+    "from": "src/plugins/bundled-capability-runtime.ts",
+    "to": "src/plugins/install/bundled-capability-runtime.ts"
+  },
+  {
+    "from": "src/plugins/bundled-channel-config-metadata.ts",
+    "to": "src/plugins/install/bundled-channel-config-metadata.ts"
+  },
+  {
+    "from": "src/plugins/bundled-channel-runtime.test.ts",
+    "to": "src/plugins/install/bundled-channel-runtime.test.ts"
+  },
+  {
+    "from": "src/plugins/bundled-channel-runtime.ts",
+    "to": "src/plugins/install/bundled-channel-runtime.ts"
+  },
+  {
+    "from": "src/plugins/bundled-compat.test.ts",
+    "to": "src/plugins/install/bundled-compat.test.ts"
+  },
+  {
+    "from": "src/plugins/bundled-compat.ts",
+    "to": "src/plugins/install/bundled-compat.ts"
+  },
+  {
+    "from": "src/plugins/bundled-dir.test.ts",
+    "to": "src/plugins/install/bundled-dir.test.ts"
+  },
+  {
+    "from": "src/plugins/bundled-dir.ts",
+    "to": "src/plugins/install/bundled-dir.ts"
+  },
+  {
+    "from": "src/plugins/bundled-load-path-aliases.ts",
+    "to": "src/plugins/install/bundled-load-path-aliases.ts"
+  },
+  {
+    "from": "src/plugins/bundled-manifest-contract-plugins.ts",
+    "to": "src/plugins/install/bundled-manifest-contract-plugins.ts"
+  },
+  {
+    "from": "src/plugins/bundled-package-channel-metadata.test.ts",
+    "to": "src/plugins/install/bundled-package-channel-metadata.test.ts"
+  },
+  {
+    "from": "src/plugins/bundled-package-channel-metadata.ts",
+    "to": "src/plugins/install/bundled-package-channel-metadata.ts"
+  },
+  {
+    "from": "src/plugins/bundled-plugin-metadata.test.ts",
+    "to": "src/plugins/install/bundled-plugin-metadata.test.ts"
+  },
+  {
+    "from": "src/plugins/bundled-plugin-metadata.ts",
+    "to": "src/plugins/install/bundled-plugin-metadata.ts"
+  },
+  {
+    "from": "src/plugins/bundled-plugin-naming.test.ts",
+    "to": "src/plugins/install/bundled-plugin-naming.test.ts"
+  },
+  {
+    "from": "src/plugins/bundled-plugin-scan.ts",
+    "to": "src/plugins/install/bundled-plugin-scan.ts"
+  },
+  {
+    "from": "src/plugins/bundled-source-overlays.ts",
+    "to": "src/plugins/install/bundled-source-overlays.ts"
+  },
+  {
+    "from": "src/plugins/bundled-sources.test.ts",
+    "to": "src/plugins/install/bundled-sources.test.ts"
+  },
+  {
+    "from": "src/plugins/bundled-sources.ts",
+    "to": "src/plugins/install/bundled-sources.ts"
+  },
+  {
+    "from": "src/plugins/config-activation-shared.ts",
+    "to": "src/plugins/config/config-activation-shared.ts"
+  },
+  {
+    "from": "src/plugins/config-contract-matches.ts",
+    "to": "src/plugins/config/config-contract-matches.ts"
+  },
+  {
+    "from": "src/plugins/config-contracts.test.ts",
+    "to": "src/plugins/config/config-contracts.test.ts"
+  },
+  {
+    "from": "src/plugins/config-contracts.ts",
+    "to": "src/plugins/config/config-contracts.ts"
+  },
+  {
+    "from": "src/plugins/config-normalization-shared.ts",
+    "to": "src/plugins/config/config-normalization-shared.ts"
+  },
+  {
+    "from": "src/plugins/config-policy.test.ts",
+    "to": "src/plugins/config/config-policy.test.ts"
+  },
+  {
+    "from": "src/plugins/config-policy.ts",
+    "to": "src/plugins/config/config-policy.ts"
+  },
+  {
+    "from": "src/plugins/config-schema.test.ts",
+    "to": "src/plugins/config/config-schema.test.ts"
+  },
+  {
+    "from": "src/plugins/config-schema.ts",
+    "to": "src/plugins/config/config-schema.ts"
+  },
+  {
+    "from": "src/plugins/config-state.test.ts",
+    "to": "src/plugins/config/config-state.test.ts"
+  },
+  {
+    "from": "src/plugins/config-state.ts",
+    "to": "src/plugins/config/config-state.ts"
+  },
+  {
+    "from": "src/plugins/embedding-provider-config.ts",
+    "to": "src/plugins/embedding/embedding-provider-config.ts"
+  },
+  {
+    "from": "src/plugins/embedding-provider-runtime-shared.ts",
+    "to": "src/plugins/embedding/embedding-provider-runtime-shared.ts"
+  },
+  {
+    "from": "src/plugins/embedding-provider-runtime.test.ts",
+    "to": "src/plugins/embedding/embedding-provider-runtime.test.ts"
+  },
+  {
+    "from": "src/plugins/embedding-provider-runtime.ts",
+    "to": "src/plugins/embedding/embedding-provider-runtime.ts"
+  },
+  {
+    "from": "src/plugins/embedding-provider-types.ts",
+    "to": "src/plugins/embedding/embedding-provider-types.ts"
+  },
+  {
+    "from": "src/plugins/embedding-providers.test.ts",
+    "to": "src/plugins/embedding/embedding-providers.test.ts"
+  },
+  {
+    "from": "src/plugins/embedding-providers.ts",
+    "to": "src/plugins/embedding/embedding-providers.ts"
+  },
+  {
+    "from": "src/plugins/hook-agent-context.test.ts",
+    "to": "src/plugins/hooks/hook-agent-context.test.ts"
+  },
+  {
+    "from": "src/plugins/hook-agent-context.ts",
+    "to": "src/plugins/hooks/hook-agent-context.ts"
+  },
+  {
+    "from": "src/plugins/hook-before-agent-start.types.ts",
+    "to": "src/plugins/hooks/hook-before-agent-start.types.ts"
+  },
+  {
+    "from": "src/plugins/hook-before-tool-call-result.ts",
+    "to": "src/plugins/hooks/hook-before-tool-call-result.ts"
+  },
+  {
+    "from": "src/plugins/hook-decision-types.test.ts",
+    "to": "src/plugins/hooks/hook-decision-types.test.ts"
+  },
+  {
+    "from": "src/plugins/hook-decision-types.ts",
+    "to": "src/plugins/hooks/hook-decision-types.ts"
+  },
+  {
+    "from": "src/plugins/hook-lifecycle-gates.test.ts",
+    "to": "src/plugins/hooks/hook-lifecycle-gates.test.ts"
+  },
+  {
+    "from": "src/plugins/hook-message.types.ts",
+    "to": "src/plugins/hooks/hook-message.types.ts"
+  },
+  {
+    "from": "src/plugins/hook-registry.types.ts",
+    "to": "src/plugins/hooks/hook-registry.types.ts"
+  },
+  {
+    "from": "src/plugins/hook-resolve-exec-env.test.ts",
+    "to": "src/plugins/hooks/hook-resolve-exec-env.test.ts"
+  },
+  {
+    "from": "src/plugins/hook-runner-global.compose.test.ts",
+    "to": "src/plugins/hooks/hook-runner-global.compose.test.ts"
+  },
+  {
+    "from": "src/plugins/hook-runner-global.test.ts",
+    "to": "src/plugins/hooks/hook-runner-global.test.ts"
+  },
+  {
+    "from": "src/plugins/hook-runner-global.ts",
+    "to": "src/plugins/hooks/hook-runner-global.ts"
+  },
+  {
+    "from": "src/plugins/hook-types.ts",
+    "to": "src/plugins/hooks/hook-types.ts"
+  },
+  {
+    "from": "src/plugins/hooks.before-agent-finalize.test.ts",
+    "to": "src/plugins/hooks/hooks.before-agent-finalize.test.ts"
+  },
+  {
+    "from": "src/plugins/hooks.before-agent-reply.test.ts",
+    "to": "src/plugins/hooks/hooks.before-agent-reply.test.ts"
+  },
+  {
+    "from": "src/plugins/hooks.before-agent-start.test.ts",
+    "to": "src/plugins/hooks/hooks.before-agent-start.test.ts"
+  },
+  {
+    "from": "src/plugins/hooks.before-install.test.ts",
+    "to": "src/plugins/hooks/hooks.before-install.test.ts"
+  },
+  {
+    "from": "src/plugins/hooks.before-tool-call.test.ts",
+    "to": "src/plugins/hooks/hooks.before-tool-call.test.ts"
+  },
+  {
+    "from": "src/plugins/hooks.compaction-timeout.test.ts",
+    "to": "src/plugins/hooks/hooks.compaction-timeout.test.ts"
+  },
+  {
+    "from": "src/plugins/hooks.correlation.test.ts",
+    "to": "src/plugins/hooks/hooks.correlation.test.ts"
+  },
+  {
+    "from": "src/plugins/hooks.model-override-wiring.test.ts",
+    "to": "src/plugins/hooks/hooks.model-override-wiring.test.ts"
+  },
+  {
+    "from": "src/plugins/hooks.phase-hooks.test.ts",
+    "to": "src/plugins/hooks/hooks.phase-hooks.test.ts"
+  },
+  {
+    "from": "src/plugins/hooks.security.test.ts",
+    "to": "src/plugins/hooks/hooks.security.test.ts"
+  },
+  {
+    "from": "src/plugins/hooks.sync-only.test.ts",
+    "to": "src/plugins/hooks/hooks.sync-only.test.ts"
+  },
+  {
+    "from": "src/plugins/hooks.test-helpers.ts",
+    "to": "src/plugins/hooks/hooks.test-helpers.ts"
+  },
+  {
+    "from": "src/plugins/hooks.ts",
+    "to": "src/plugins/hooks/hooks.ts"
+  },
+  {
+    "from": "src/plugins/host-hook-attachments.ts",
+    "to": "src/plugins/host/host-hook-attachments.ts"
+  },
+  {
+    "from": "src/plugins/host-hook-cleanup-timeout.test.ts",
+    "to": "src/plugins/host/host-hook-cleanup-timeout.test.ts"
+  },
+  {
+    "from": "src/plugins/host-hook-cleanup-timeout.ts",
+    "to": "src/plugins/host/host-hook-cleanup-timeout.ts"
+  },
+  {
+    "from": "src/plugins/host-hook-cleanup.config.test.ts",
+    "to": "src/plugins/host/host-hook-cleanup.config.test.ts"
+  },
+  {
+    "from": "src/plugins/host-hook-cleanup.session-store.test.ts",
+    "to": "src/plugins/host/host-hook-cleanup.session-store.test.ts"
+  },
+  {
+    "from": "src/plugins/host-hook-cleanup.ts",
+    "to": "src/plugins/host/host-hook-cleanup.ts"
+  },
+  {
+    "from": "src/plugins/host-hook-json.ts",
+    "to": "src/plugins/host/host-hook-json.ts"
+  },
+  {
+    "from": "src/plugins/host-hook-runtime.ts",
+    "to": "src/plugins/host/host-hook-runtime.ts"
+  },
+  {
+    "from": "src/plugins/host-hook-scheduled-turns.ts",
+    "to": "src/plugins/host/host-hook-scheduled-turns.ts"
+  },
+  {
+    "from": "src/plugins/host-hook-state.ts",
+    "to": "src/plugins/host/host-hook-state.ts"
+  },
+  {
+    "from": "src/plugins/host-hook-turn-types.ts",
+    "to": "src/plugins/host/host-hook-turn-types.ts"
+  },
+  {
+    "from": "src/plugins/host-hooks.ts",
+    "to": "src/plugins/host/host-hooks.ts"
+  },
+  {
+    "from": "src/plugins/host-tool-param-parsers.test.ts",
+    "to": "src/plugins/host/host-tool-param-parsers.test.ts"
+  },
+  {
+    "from": "src/plugins/host-tool-param-parsers.ts",
+    "to": "src/plugins/host/host-tool-param-parsers.ts"
+  },
+  {
+    "from": "src/plugins/install-channel-specs.ts",
+    "to": "src/plugins/install/install-channel-specs.ts"
+  },
+  {
+    "from": "src/plugins/install-overrides.test.ts",
+    "to": "src/plugins/install/install-overrides.test.ts"
+  },
+  {
+    "from": "src/plugins/install-overrides.ts",
+    "to": "src/plugins/install/install-overrides.ts"
+  },
+  {
+    "from": "src/plugins/install-paths.ts",
+    "to": "src/plugins/install/install-paths.ts"
+  },
+  {
+    "from": "src/plugins/install-policy-context.ts",
+    "to": "src/plugins/install/install-policy-context.ts"
+  },
+  {
+    "from": "src/plugins/install-security-scan.runtime.ts",
+    "to": "src/plugins/install/install-security-scan.runtime.ts"
+  },
+  {
+    "from": "src/plugins/install-security-scan.ts",
+    "to": "src/plugins/install/install-security-scan.ts"
+  },
+  {
+    "from": "src/plugins/install-security-scan.types.ts",
+    "to": "src/plugins/install/install-security-scan.types.ts"
+  },
+  {
+    "from": "src/plugins/install-source-info.test.ts",
+    "to": "src/plugins/install/install-source-info.test.ts"
+  },
+  {
+    "from": "src/plugins/install-source-info.ts",
+    "to": "src/plugins/install/install-source-info.ts"
+  },
+  {
+    "from": "src/plugins/install.npm-spec.e2e.test.ts",
+    "to": "src/plugins/install/install.npm-spec.e2e.test.ts"
+  },
+  {
+    "from": "src/plugins/install.npm-spec.test.ts",
+    "to": "src/plugins/install/install.npm-spec.test.ts"
+  },
+  {
+    "from": "src/plugins/install.path.test.ts",
+    "to": "src/plugins/install/install.path.test.ts"
+  },
+  {
+    "from": "src/plugins/install.runtime.ts",
+    "to": "src/plugins/install/install.runtime.ts"
+  },
+  {
+    "from": "src/plugins/install.test.ts",
+    "to": "src/plugins/install/install.test.ts"
+  },
+  {
+    "from": "src/plugins/install.ts",
+    "to": "src/plugins/install/install.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-config-path-scope.ts",
+    "to": "src/plugins/install/installed-plugin-index-config-path-scope.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-hash.ts",
+    "to": "src/plugins/install/installed-plugin-index-hash.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-install-records.ts",
+    "to": "src/plugins/install/installed-plugin-index-install-records.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-invalidation.ts",
+    "to": "src/plugins/install/installed-plugin-index-invalidation.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-manifest.ts",
+    "to": "src/plugins/install/installed-plugin-index-manifest.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-policy.ts",
+    "to": "src/plugins/install/installed-plugin-index-policy.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-record-builder.ts",
+    "to": "src/plugins/install/installed-plugin-index-record-builder.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-record-cache.ts",
+    "to": "src/plugins/install/installed-plugin-index-record-cache.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-record-reader.ts",
+    "to": "src/plugins/install/installed-plugin-index-record-reader.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-records.test.ts",
+    "to": "src/plugins/install/installed-plugin-index-records.test.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-records.ts",
+    "to": "src/plugins/install/installed-plugin-index-records.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-registry.ts",
+    "to": "src/plugins/install/installed-plugin-index-registry.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-scope-lookup.ts",
+    "to": "src/plugins/install/installed-plugin-index-scope-lookup.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-store-path.ts",
+    "to": "src/plugins/install/installed-plugin-index-store-path.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-store.test.ts",
+    "to": "src/plugins/install/installed-plugin-index-store.test.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-store.ts",
+    "to": "src/plugins/install/installed-plugin-index-store.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index-types.ts",
+    "to": "src/plugins/install/installed-plugin-index-types.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index.test.ts",
+    "to": "src/plugins/install/installed-plugin-index.test.ts"
+  },
+  {
+    "from": "src/plugins/installed-plugin-index.ts",
+    "to": "src/plugins/install/installed-plugin-index.ts"
+  },
+  {
+    "from": "src/plugins/interactive-binding-helpers.ts",
+    "to": "src/plugins/config/interactive-binding-helpers.ts"
+  },
+  {
+    "from": "src/plugins/interactive-contract.test-helpers.ts",
+    "to": "src/plugins/config/interactive-contract.test-helpers.ts"
+  },
+  {
+    "from": "src/plugins/interactive-registry.ts",
+    "to": "src/plugins/config/interactive-registry.ts"
+  },
+  {
+    "from": "src/plugins/interactive-shared.ts",
+    "to": "src/plugins/config/interactive-shared.ts"
+  },
+  {
+    "from": "src/plugins/interactive-state.ts",
+    "to": "src/plugins/config/interactive-state.ts"
+  },
+  {
+    "from": "src/plugins/interactive.test.ts",
+    "to": "src/plugins/config/interactive.test.ts"
+  },
+  {
+    "from": "src/plugins/interactive.ts",
+    "to": "src/plugins/config/interactive.ts"
+  },
+  {
+    "from": "src/plugins/loader-cache-state.test.ts",
+    "to": "src/plugins/runtime/loader-cache-state.test.ts"
+  },
+  {
+    "from": "src/plugins/loader-cache-state.ts",
+    "to": "src/plugins/runtime/loader-cache-state.ts"
+  },
+  {
+    "from": "src/plugins/loader-channel-setup.ts",
+    "to": "src/plugins/runtime/loader-channel-setup.ts"
+  },
+  {
+    "from": "src/plugins/loader-provenance.ts",
+    "to": "src/plugins/runtime/loader-provenance.ts"
+  },
+  {
+    "from": "src/plugins/loader-records.test.ts",
+    "to": "src/plugins/runtime/loader-records.test.ts"
+  },
+  {
+    "from": "src/plugins/loader-records.ts",
+    "to": "src/plugins/runtime/loader-records.ts"
+  },
+  {
+    "from": "src/plugins/loader-sdk-import-guardrails.test.ts",
+    "to": "src/plugins/runtime/loader-sdk-import-guardrails.test.ts"
+  },
+  {
+    "from": "src/plugins/loader.bundle.test.ts",
+    "to": "src/plugins/runtime/loader.bundle.test.ts"
+  },
+  {
+    "from": "src/plugins/loader.cli-metadata.test.ts",
+    "to": "src/plugins/runtime/loader.cli-metadata.test.ts"
+  },
+  {
+    "from": "src/plugins/loader.git-path-regression.test.ts",
+    "to": "src/plugins/runtime/loader.git-path-regression.test.ts"
+  },
+  {
+    "from": "src/plugins/loader.hook-runner-live-view.test.ts",
+    "to": "src/plugins/runtime/loader.hook-runner-live-view.test.ts"
+  },
+  {
+    "from": "src/plugins/loader.native-module-loader.test.ts",
+    "to": "src/plugins/runtime/loader.native-module-loader.test.ts"
+  },
+  {
+    "from": "src/plugins/loader.prefer-over.test.ts",
+    "to": "src/plugins/runtime/loader.prefer-over.test.ts"
+  },
+  {
+    "from": "src/plugins/loader.runtime-registry.test.ts",
+    "to": "src/plugins/runtime/loader.runtime-registry.test.ts"
+  },
+  {
+    "from": "src/plugins/loader.test-fixtures.ts",
+    "to": "src/plugins/runtime/loader.test-fixtures.ts"
+  },
+  {
+    "from": "src/plugins/loader.test.ts",
+    "to": "src/plugins/runtime/loader.test.ts"
+  },
+  {
+    "from": "src/plugins/loader.ts",
+    "to": "src/plugins/runtime/loader.ts"
+  },
+  {
+    "from": "src/plugins/manifest-command-aliases.runtime.ts",
+    "to": "src/plugins/manifest/manifest-command-aliases.runtime.ts"
+  },
+  {
+    "from": "src/plugins/manifest-command-aliases.test.ts",
+    "to": "src/plugins/manifest/manifest-command-aliases.test.ts"
+  },
+  {
+    "from": "src/plugins/manifest-command-aliases.ts",
+    "to": "src/plugins/manifest/manifest-command-aliases.ts"
+  },
+  {
+    "from": "src/plugins/manifest-contract-eligibility.test.ts",
+    "to": "src/plugins/manifest/manifest-contract-eligibility.test.ts"
+  },
+  {
+    "from": "src/plugins/manifest-contract-eligibility.ts",
+    "to": "src/plugins/manifest/manifest-contract-eligibility.ts"
+  },
+  {
+    "from": "src/plugins/manifest-contract-runtime.test.ts",
+    "to": "src/plugins/manifest/manifest-contract-runtime.test.ts"
+  },
+  {
+    "from": "src/plugins/manifest-contract-runtime.ts",
+    "to": "src/plugins/manifest/manifest-contract-runtime.ts"
+  },
+  {
+    "from": "src/plugins/manifest-contribution-ids.ts",
+    "to": "src/plugins/manifest/manifest-contribution-ids.ts"
+  },
+  {
+    "from": "src/plugins/manifest-metadata-scan.test.ts",
+    "to": "src/plugins/manifest/manifest-metadata-scan.test.ts"
+  },
+  {
+    "from": "src/plugins/manifest-metadata-scan.ts",
+    "to": "src/plugins/manifest/manifest-metadata-scan.ts"
+  },
+  {
+    "from": "src/plugins/manifest-model-catalog.test.ts",
+    "to": "src/plugins/manifest/manifest-model-catalog.test.ts"
+  },
+  {
+    "from": "src/plugins/manifest-model-id-normalization.test.ts",
+    "to": "src/plugins/manifest/manifest-model-id-normalization.test.ts"
+  },
+  {
+    "from": "src/plugins/manifest-model-id-normalization.ts",
+    "to": "src/plugins/manifest/manifest-model-id-normalization.ts"
+  },
+  {
+    "from": "src/plugins/manifest-model-suppression.test.ts",
+    "to": "src/plugins/manifest/manifest-model-suppression.test.ts"
+  },
+  {
+    "from": "src/plugins/manifest-model-suppression.ts",
+    "to": "src/plugins/manifest/manifest-model-suppression.ts"
+  },
+  {
+    "from": "src/plugins/manifest-owner-policy.test.ts",
+    "to": "src/plugins/manifest/manifest-owner-policy.test.ts"
+  },
+  {
+    "from": "src/plugins/manifest-owner-policy.ts",
+    "to": "src/plugins/manifest/manifest-owner-policy.ts"
+  },
+  {
+    "from": "src/plugins/manifest-registry-installed.test.ts",
+    "to": "src/plugins/manifest/manifest-registry-installed.test.ts"
+  },
+  {
+    "from": "src/plugins/manifest-registry-installed.ts",
+    "to": "src/plugins/manifest/manifest-registry-installed.ts"
+  },
+  {
+    "from": "src/plugins/manifest-registry.test.ts",
+    "to": "src/plugins/manifest/manifest-registry.test.ts"
+  },
+  {
+    "from": "src/plugins/manifest-registry.ts",
+    "to": "src/plugins/manifest/manifest-registry.ts"
+  },
+  {
+    "from": "src/plugins/manifest-tool-availability.ts",
+    "to": "src/plugins/manifest/manifest-tool-availability.ts"
+  },
+  {
+    "from": "src/plugins/manifest-types.ts",
+    "to": "src/plugins/manifest/manifest-types.ts"
+  },
+  {
+    "from": "src/plugins/manifest.json5-tolerance.test.ts",
+    "to": "src/plugins/manifest/manifest.json5-tolerance.test.ts"
+  },
+  {
+    "from": "src/plugins/manifest.ts",
+    "to": "src/plugins/manifest/manifest.ts"
+  },
+  {
+    "from": "src/plugins/provider-api-key-auth.runtime.ts",
+    "to": "src/plugins/providers/provider-api-key-auth.runtime.ts"
+  },
+  {
+    "from": "src/plugins/provider-api-key-auth.ts",
+    "to": "src/plugins/providers/provider-api-key-auth.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-choice-helpers.test.ts",
+    "to": "src/plugins/providers/provider-auth-choice-helpers.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-choice-helpers.ts",
+    "to": "src/plugins/providers/provider-auth-choice-helpers.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-choice-preference.ts",
+    "to": "src/plugins/providers/provider-auth-choice-preference.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-choice.runtime.ts",
+    "to": "src/plugins/providers/provider-auth-choice.runtime.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-choice.test.ts",
+    "to": "src/plugins/providers/provider-auth-choice.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-choice.ts",
+    "to": "src/plugins/providers/provider-auth-choice.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-choices.test.ts",
+    "to": "src/plugins/providers/provider-auth-choices.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-choices.ts",
+    "to": "src/plugins/providers/provider-auth-choices.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-env-trust.test.ts",
+    "to": "src/plugins/providers/provider-auth-env-trust.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-helpers.ts",
+    "to": "src/plugins/providers/provider-auth-helpers.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-input.test.ts",
+    "to": "src/plugins/providers/provider-auth-input.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-input.ts",
+    "to": "src/plugins/providers/provider-auth-input.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-mode.ts",
+    "to": "src/plugins/providers/provider-auth-mode.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-ref.ts",
+    "to": "src/plugins/providers/provider-auth-ref.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-token.ts",
+    "to": "src/plugins/providers/provider-auth-token.ts"
+  },
+  {
+    "from": "src/plugins/provider-auth-types.ts",
+    "to": "src/plugins/providers/provider-auth-types.ts"
+  },
+  {
+    "from": "src/plugins/provider-catalog-result.ts",
+    "to": "src/plugins/providers/provider-catalog-result.ts"
+  },
+  {
+    "from": "src/plugins/provider-catalog-unified-text.ts",
+    "to": "src/plugins/providers/provider-catalog-unified-text.ts"
+  },
+  {
+    "from": "src/plugins/provider-catalog.test.ts",
+    "to": "src/plugins/providers/provider-catalog.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-catalog.ts",
+    "to": "src/plugins/providers/provider-catalog.ts"
+  },
+  {
+    "from": "src/plugins/provider-claude-thinking.ts",
+    "to": "src/plugins/providers/provider-claude-thinking.ts"
+  },
+  {
+    "from": "src/plugins/provider-config-context.types.ts",
+    "to": "src/plugins/providers/provider-config-context.types.ts"
+  },
+  {
+    "from": "src/plugins/provider-config-owner.ts",
+    "to": "src/plugins/providers/provider-config-owner.ts"
+  },
+  {
+    "from": "src/plugins/provider-contract-public-artifacts.ts",
+    "to": "src/plugins/providers/provider-contract-public-artifacts.ts"
+  },
+  {
+    "from": "src/plugins/provider-discovery.runtime.test.ts",
+    "to": "src/plugins/providers/provider-discovery.runtime.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-discovery.runtime.ts",
+    "to": "src/plugins/providers/provider-discovery.runtime.ts"
+  },
+  {
+    "from": "src/plugins/provider-discovery.test.ts",
+    "to": "src/plugins/providers/provider-discovery.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-discovery.ts",
+    "to": "src/plugins/providers/provider-discovery.ts"
+  },
+  {
+    "from": "src/plugins/provider-external-auth.types.ts",
+    "to": "src/plugins/providers/provider-external-auth.types.ts"
+  },
+  {
+    "from": "src/plugins/provider-hook-runtime.ts",
+    "to": "src/plugins/providers/provider-hook-runtime.ts"
+  },
+  {
+    "from": "src/plugins/provider-install-catalog.test.ts",
+    "to": "src/plugins/providers/provider-install-catalog.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-install-catalog.ts",
+    "to": "src/plugins/providers/provider-install-catalog.ts"
+  },
+  {
+    "from": "src/plugins/provider-model-compat.ts",
+    "to": "src/plugins/providers/provider-model-compat.ts"
+  },
+  {
+    "from": "src/plugins/provider-model-helpers.test.ts",
+    "to": "src/plugins/providers/provider-model-helpers.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-model-helpers.ts",
+    "to": "src/plugins/providers/provider-model-helpers.ts"
+  },
+  {
+    "from": "src/plugins/provider-model-primary.test.ts",
+    "to": "src/plugins/providers/provider-model-primary.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-model-primary.ts",
+    "to": "src/plugins/providers/provider-model-primary.ts"
+  },
+  {
+    "from": "src/plugins/provider-oauth-flow.ts",
+    "to": "src/plugins/providers/provider-oauth-flow.ts"
+  },
+  {
+    "from": "src/plugins/provider-openai-chatgpt-oauth-tls.ts",
+    "to": "src/plugins/providers/provider-openai-chatgpt-oauth-tls.ts"
+  },
+  {
+    "from": "src/plugins/provider-openai-chatgpt-oauth.test.ts",
+    "to": "src/plugins/providers/provider-openai-chatgpt-oauth.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-openai-chatgpt-oauth.ts",
+    "to": "src/plugins/providers/provider-openai-chatgpt-oauth.ts"
+  },
+  {
+    "from": "src/plugins/provider-public-artifacts.test.ts",
+    "to": "src/plugins/providers/provider-public-artifacts.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-public-artifacts.ts",
+    "to": "src/plugins/providers/provider-public-artifacts.ts"
+  },
+  {
+    "from": "src/plugins/provider-registry-shared.test.ts",
+    "to": "src/plugins/providers/provider-registry-shared.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-registry-shared.ts",
+    "to": "src/plugins/providers/provider-registry-shared.ts"
+  },
+  {
+    "from": "src/plugins/provider-replay-helpers.test.ts",
+    "to": "src/plugins/providers/provider-replay-helpers.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-replay-helpers.ts",
+    "to": "src/plugins/providers/provider-replay-helpers.ts"
+  },
+  {
+    "from": "src/plugins/provider-runtime-model.types.ts",
+    "to": "src/plugins/providers/provider-runtime-model.types.ts"
+  },
+  {
+    "from": "src/plugins/provider-runtime.runtime.ts",
+    "to": "src/plugins/providers/provider-runtime.runtime.ts"
+  },
+  {
+    "from": "src/plugins/provider-runtime.synthetic-auth-discovery.test.ts",
+    "to": "src/plugins/providers/provider-runtime.synthetic-auth-discovery.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-runtime.test-support.ts",
+    "to": "src/plugins/providers/provider-runtime.test-support.ts"
+  },
+  {
+    "from": "src/plugins/provider-runtime.test.ts",
+    "to": "src/plugins/providers/provider-runtime.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-runtime.ts",
+    "to": "src/plugins/providers/provider-runtime.ts"
+  },
+  {
+    "from": "src/plugins/provider-self-hosted-setup.test.ts",
+    "to": "src/plugins/providers/provider-self-hosted-setup.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-self-hosted-setup.ts",
+    "to": "src/plugins/providers/provider-self-hosted-setup.ts"
+  },
+  {
+    "from": "src/plugins/provider-thinking.ts",
+    "to": "src/plugins/providers/provider-thinking.ts"
+  },
+  {
+    "from": "src/plugins/provider-thinking.types.ts",
+    "to": "src/plugins/providers/provider-thinking.types.ts"
+  },
+  {
+    "from": "src/plugins/provider-validation.test.ts",
+    "to": "src/plugins/providers/provider-validation.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-validation.ts",
+    "to": "src/plugins/providers/provider-validation.ts"
+  },
+  {
+    "from": "src/plugins/provider-wizard.test.ts",
+    "to": "src/plugins/providers/provider-wizard.test.ts"
+  },
+  {
+    "from": "src/plugins/provider-wizard.ts",
+    "to": "src/plugins/providers/provider-wizard.ts"
+  },
+  {
+    "from": "src/plugins/providers.runtime.consult-current-snapshot.test.ts",
+    "to": "src/plugins/providers/providers.runtime.consult-current-snapshot.test.ts"
+  },
+  {
+    "from": "src/plugins/providers.runtime.ts",
+    "to": "src/plugins/providers/providers.runtime.ts"
+  },
+  {
+    "from": "src/plugins/providers.setup-trust.test.ts",
+    "to": "src/plugins/providers/providers.setup-trust.test.ts"
+  },
+  {
+    "from": "src/plugins/providers.test.ts",
+    "to": "src/plugins/providers/providers.test.ts"
+  },
+  {
+    "from": "src/plugins/providers.ts",
+    "to": "src/plugins/providers/providers.ts"
+  },
+  {
+    "from": "src/plugins/registry-empty.ts",
+    "to": "src/plugins/manifest/registry-empty.ts"
+  },
+  {
+    "from": "src/plugins/registry-lifecycle.ts",
+    "to": "src/plugins/manifest/registry-lifecycle.ts"
+  },
+  {
+    "from": "src/plugins/registry-types.ts",
+    "to": "src/plugins/manifest/registry-types.ts"
+  },
+  {
+    "from": "src/plugins/registry.channel-guard.test.ts",
+    "to": "src/plugins/manifest/registry.channel-guard.test.ts"
+  },
+  {
+    "from": "src/plugins/registry.control-ui.test.ts",
+    "to": "src/plugins/manifest/registry.control-ui.test.ts"
+  },
+  {
+    "from": "src/plugins/registry.dual-kind-memory-gate.test.ts",
+    "to": "src/plugins/manifest/registry.dual-kind-memory-gate.test.ts"
+  },
+  {
+    "from": "src/plugins/registry.provider-like.test.ts",
+    "to": "src/plugins/manifest/registry.provider-like.test.ts"
+  },
+  {
+    "from": "src/plugins/registry.runtime-config.test.ts",
+    "to": "src/plugins/manifest/registry.runtime-config.test.ts"
+  },
+  {
+    "from": "src/plugins/registry.ts",
+    "to": "src/plugins/manifest/registry.ts"
+  },
+  {
+    "from": "src/plugins/runtime-channel-state.ts",
+    "to": "src/plugins/runtime/runtime-channel-state.ts"
+  },
+  {
+    "from": "src/plugins/runtime-live-state-guardrails.test.ts",
+    "to": "src/plugins/runtime/runtime-live-state-guardrails.test.ts"
+  },
+  {
+    "from": "src/plugins/runtime-plugin-boundary.whatsapp.test.ts",
+    "to": "src/plugins/runtime/runtime-plugin-boundary.whatsapp.test.ts"
+  },
+  {
+    "from": "src/plugins/runtime-plugins.runtime.ts",
+    "to": "src/plugins/runtime/runtime-plugins.runtime.ts"
+  },
+  {
+    "from": "src/plugins/runtime-registry-boundary.test.ts",
+    "to": "src/plugins/runtime/runtime-registry-boundary.test.ts"
+  },
+  {
+    "from": "src/plugins/runtime-sidecar-paths-baseline.ts",
+    "to": "src/plugins/runtime/runtime-sidecar-paths-baseline.ts"
+  },
+  {
+    "from": "src/plugins/runtime-sidecar-paths.ts",
+    "to": "src/plugins/runtime/runtime-sidecar-paths.ts"
+  },
+  {
+    "from": "src/plugins/runtime-state.ts",
+    "to": "src/plugins/runtime/runtime-state.ts"
+  },
+  {
+    "from": "src/plugins/runtime-workspace-state.test.ts",
+    "to": "src/plugins/runtime/runtime-workspace-state.test.ts"
+  },
+  {
+    "from": "src/plugins/runtime-workspace-state.ts",
+    "to": "src/plugins/runtime/runtime-workspace-state.ts"
+  },
+  {
+    "from": "src/plugins/runtime.channel-pin.test.ts",
+    "to": "src/plugins/runtime/runtime.channel-pin.test.ts"
+  },
+  {
+    "from": "src/plugins/runtime.test.ts",
+    "to": "src/plugins/runtime/runtime.test.ts"
+  },
+  {
+    "from": "src/plugins/runtime.ts",
+    "to": "src/plugins/runtime/runtime.ts"
+  },
+  {
+    "from": "src/plugins/status-dependencies-core.ts",
+    "to": "src/plugins/config/status-dependencies-core.ts"
+  },
+  {
+    "from": "src/plugins/status-snapshot.ts",
+    "to": "src/plugins/config/status-snapshot.ts"
+  },
+  {
+    "from": "src/plugins/status.compatibility.integration.test.ts",
+    "to": "src/plugins/config/status.compatibility.integration.test.ts"
+  },
+  {
+    "from": "src/plugins/status.registry-snapshot.test.ts",
+    "to": "src/plugins/config/status.registry-snapshot.test.ts"
+  },
+  {
+    "from": "src/plugins/status.test-helpers.ts",
+    "to": "src/plugins/config/status.test-helpers.ts"
+  },
+  {
+    "from": "src/plugins/status.test.ts",
+    "to": "src/plugins/config/status.test.ts"
+  },
+  {
+    "from": "src/plugins/status.ts",
+    "to": "src/plugins/config/status.ts"
+  },
+  {
+    "from": "src/plugins/web-content-extractor-public-artifacts.ts",
+    "to": "src/plugins/web/web-content-extractor-public-artifacts.ts"
+  },
+  {
+    "from": "src/plugins/web-content-extractor-types.ts",
+    "to": "src/plugins/web/web-content-extractor-types.ts"
+  },
+  {
+    "from": "src/plugins/web-content-extractors.runtime.test.ts",
+    "to": "src/plugins/web/web-content-extractors.runtime.test.ts"
+  },
+  {
+    "from": "src/plugins/web-content-extractors.runtime.ts",
+    "to": "src/plugins/web/web-content-extractors.runtime.ts"
+  },
+  {
+    "from": "src/plugins/web-fetch-providers.runtime.test.ts",
+    "to": "src/plugins/web/web-fetch-providers.runtime.test.ts"
+  },
+  {
+    "from": "src/plugins/web-fetch-providers.runtime.ts",
+    "to": "src/plugins/web/web-fetch-providers.runtime.ts"
+  },
+  {
+    "from": "src/plugins/web-fetch-providers.shared.ts",
+    "to": "src/plugins/web/web-fetch-providers.shared.ts"
+  },
+  {
+    "from": "src/plugins/web-provider-public-artifacts.explicit-fast-path.test.ts",
+    "to": "src/plugins/web/web-provider-public-artifacts.explicit-fast-path.test.ts"
+  },
+  {
+    "from": "src/plugins/web-provider-public-artifacts.explicit.ts",
+    "to": "src/plugins/web/web-provider-public-artifacts.explicit.ts"
+  },
+  {
+    "from": "src/plugins/web-provider-public-artifacts.fallback.test.ts",
+    "to": "src/plugins/web/web-provider-public-artifacts.fallback.test.ts"
+  },
+  {
+    "from": "src/plugins/web-provider-public-artifacts.test.ts",
+    "to": "src/plugins/web/web-provider-public-artifacts.test.ts"
+  },
+  {
+    "from": "src/plugins/web-provider-public-artifacts.ts",
+    "to": "src/plugins/web/web-provider-public-artifacts.ts"
+  },
+  {
+    "from": "src/plugins/web-provider-resolution-candidates.test.ts",
+    "to": "src/plugins/web/web-provider-resolution-candidates.test.ts"
+  },
+  {
+    "from": "src/plugins/web-provider-resolution-shared.ts",
+    "to": "src/plugins/web/web-provider-resolution-shared.ts"
+  },
+  {
+    "from": "src/plugins/web-provider-runtime-shared.test.ts",
+    "to": "src/plugins/web/web-provider-runtime-shared.test.ts"
+  },
+  {
+    "from": "src/plugins/web-provider-runtime-shared.ts",
+    "to": "src/plugins/web/web-provider-runtime-shared.ts"
+  },
+  {
+    "from": "src/plugins/web-provider-types.ts",
+    "to": "src/plugins/web/web-provider-types.ts"
+  },
+  {
+    "from": "src/plugins/web-search-credential-presence.test.ts",
+    "to": "src/plugins/web/web-search-credential-presence.test.ts"
+  },
+  {
+    "from": "src/plugins/web-search-credential-presence.ts",
+    "to": "src/plugins/web/web-search-credential-presence.ts"
+  },
+  {
+    "from": "src/plugins/web-search-install-catalog.test.ts",
+    "to": "src/plugins/web/web-search-install-catalog.test.ts"
+  },
+  {
+    "from": "src/plugins/web-search-install-catalog.ts",
+    "to": "src/plugins/web/web-search-install-catalog.ts"
+  },
+  {
+    "from": "src/plugins/web-search-providers.runtime.test.ts",
+    "to": "src/plugins/web/web-search-providers.runtime.test.ts"
+  },
+  {
+    "from": "src/plugins/web-search-providers.runtime.ts",
+    "to": "src/plugins/web/web-search-providers.runtime.ts"
+  },
+  {
+    "from": "src/plugins/web-search-providers.shared.ts",
+    "to": "src/plugins/web/web-search-providers.shared.ts"
+  }
+]

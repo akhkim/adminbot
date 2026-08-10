@@ -1,3 +1,4 @@
+// NOTE(dedupe): overlaps with src/shared/usage-format.ts — see docs/adr/0005-shared-is-the-helper-home.md
 // Usage aggregate helpers accumulate token, cost, and latency usage totals.
 type LatencyTotalsLike = {
   count: number;

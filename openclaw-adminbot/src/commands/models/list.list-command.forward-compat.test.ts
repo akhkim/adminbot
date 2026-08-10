@@ -216,7 +216,7 @@ function installModelsListCommandForwardCompatMocks() {
     (provider === "openai" || provider === "azure-openai-responses") &&
     id === "gpt-5.3-codex-spark";
 
-  vi.doMock("../../agents/model-suppression.js", () => ({
+  vi.doMock("../../agents/models/model-suppression.js", () => ({
     shouldSuppressBuiltInModel: suppressOpenAiSpark,
     shouldSuppressBuiltInModelFromManifest: suppressOpenAiSpark,
     createManifestBuiltInModelSuppressor: vi.fn(
@@ -300,7 +300,7 @@ function installModelsListCommandForwardCompatMocks() {
     resolveSessionAgentIds: vi.fn(() => ({ defaultAgentId: "main", sessionAgentId: "main" })),
   }));
 
-  vi.doMock("../../agents/model-catalog.js", () => ({
+  vi.doMock("../../agents/models/model-catalog.js", () => ({
     loadModelCatalog: mocks.loadModelCatalog,
   }));
 
@@ -308,16 +308,16 @@ function installModelsListCommandForwardCompatMocks() {
     resolveModelWithRegistry: mocks.resolveModelWithRegistry,
   }));
 
-  vi.doMock("../../agents/model-auth.js", () => ({
+  vi.doMock("../../agents/auth/model-auth.js", () => ({
     hasUsableCustomProviderApiKey: vi.fn().mockReturnValue(false),
     hasSyntheticLocalProviderAuthConfig: vi.fn().mockReturnValue(false),
   }));
 
-  vi.doMock("../../plugins/installed-plugin-index-store.js", () => ({
+  vi.doMock("../../plugins/install/installed-plugin-index-store.js", () => ({
     readPersistedInstalledPluginIndexSync: mocks.readPersistedInstalledPluginIndexSync,
   }));
 
-  vi.doMock("../../plugins/manifest-contract-eligibility.js", () => ({
+  vi.doMock("../../plugins/manifest/manifest-contract-eligibility.js", () => ({
     loadManifestMetadataSnapshot: mocks.loadManifestMetadataSnapshot,
   }));
 

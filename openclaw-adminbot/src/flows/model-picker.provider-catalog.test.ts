@@ -1,7 +1,7 @@
 // Model picker provider catalog tests cover catalog-driven provider options.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ModelDefinitionConfig } from "../config/types.models.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { ModelDefinitionConfig } from "../config/types/models.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type { ProviderPlugin } from "../plugins/types.js";
 
 function textModel(id: string, name: string): ModelDefinitionConfig {
@@ -64,10 +64,10 @@ const providerCatalogListMocks = vi.hoisted(() => ({
   resolveProviderCatalogPluginIdsForFilter: vi.fn(async () => ["nvidia"]),
 }));
 
-vi.mock("../plugins/provider-discovery.js", () => providerDiscoveryMocks);
-vi.mock("../plugins/providers.runtime.js", () => providersRuntimeMocks);
+vi.mock("../plugins/providers/provider-discovery.js", () => providerDiscoveryMocks);
+vi.mock("../plugins/providers/providers.runtime.js", () => providersRuntimeMocks);
 vi.mock("../commands/models/list.provider-catalog.js", () => providerCatalogListMocks);
-vi.mock("../agents/auth-profiles.js", () => ({
+vi.mock("../agents/auth/auth-profiles.js", () => ({
   ensureAuthProfileStoreWithoutExternalProfiles: vi.fn(() => ({ profiles: {} })),
 }));
 

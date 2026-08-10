@@ -5,7 +5,7 @@ import {
   type ProxylineHandle,
   type ProxylineUndiciOptions,
 } from "@openclaw/proxyline";
-import type { ProxyConfig } from "../../../config/zod-schema.proxy.js";
+import type { ProxyConfig } from "../../../config/zod/proxy.js";
 
 type ProxyLoopbackMode = NonNullable<NonNullable<ProxyConfig>["loopbackMode"]>;
 import { isLoopbackIpAddress } from "@openclaw/net-policy/ip";

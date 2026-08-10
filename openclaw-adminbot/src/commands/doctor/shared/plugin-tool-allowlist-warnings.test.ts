@@ -1,6 +1,6 @@
 // Plugin tool allowlist warning tests cover doctor warnings for stale tool allowlists.
 import { describe, expect, it } from "vitest";
-import type { PluginManifestRegistry } from "../../../plugins/manifest-registry.js";
+import type { PluginManifestRegistry } from "../../../plugins/manifest/manifest-registry.js";
 import { collectPluginToolAllowlistWarnings } from "./plugin-tool-allowlist-warnings.js";
 
 const manifestRegistry: PluginManifestRegistry = {

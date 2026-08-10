@@ -8,8 +8,8 @@ import {
   openRootFileSync,
 } from "../infra/boundary-file-read.js";
 import { resolveRootPath, resolveRootPathSync } from "../infra/boundary-path.js";
-import type { PluginDiagnostic } from "./manifest-types.js";
-import { getPackageManifestMetadata, type PackageManifest } from "./manifest.js";
+import type { PluginDiagnostic } from "./manifest/manifest-types.js";
+import { getPackageManifestMetadata, type PackageManifest } from "./manifest/manifest.js";
 import {
   isTypeScriptPackageEntry,
   listBuiltRuntimeEntryCandidates,

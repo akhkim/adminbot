@@ -3,7 +3,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { areBundledPluginsDisabled } from "../plugins/bundled-dir.js";
+import { areBundledPluginsDisabled } from "../plugins/install/bundled-dir.js";
 import {
   PUBLIC_SURFACE_SOURCE_EXTENSIONS,
   normalizeBundledPluginArtifactSubpath,

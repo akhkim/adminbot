@@ -1,6 +1,6 @@
 // Hooks token reuse repair tests cover doctor repairs for reused gateway hook tokens.
 import { describe, expect, it } from "vitest";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { repairHooksTokenReuseGatewayAuth } from "./hooks-token-reuse-repair.js";
 
 const ROTATED_HOOKS_TOKEN = "rotated-hooks-token-1234567890";

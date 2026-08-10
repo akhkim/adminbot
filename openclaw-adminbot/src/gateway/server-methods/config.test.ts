@@ -28,7 +28,7 @@ vi.mock("node:child_process", async () => {
   });
 });
 
-vi.mock("../../config/runtime-schema.js", () => ({
+vi.mock("../../config/runtime/runtime-schema.js", () => ({
   loadGatewayRuntimeConfigSchema: loadGatewayRuntimeConfigSchemaMock,
 }));
 

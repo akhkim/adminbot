@@ -28,7 +28,7 @@ describe("AdminBot calendar extraction", () => {
 
     await expect(
       model.calendar({
-        from: "zjin@cs.toronto.edu",
+        from: "pi@example.edu",
         subject: "Create event",
         body: "Add an event called Test on July 30, 2026.",
       }),

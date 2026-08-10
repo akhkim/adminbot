@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { adminBotMemberRoles } from "../../extensions/adminbot/src/contracts.js";
+import { adminBotMemberRoles } from "../../extensions/adminbot/src/contracts/actions.js";
 import {
   careerStageFromNotes,
   normalizeExistingRole,

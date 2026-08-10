@@ -12,37 +12,37 @@ import {
 } from "../../../packages/gateway-protocol/src/index.js";
 import { loadSessionStore, updateSessionStore, type SessionEntry } from "../../config/sessions.js";
 import { APPROVALS_SCOPE, READ_SCOPE, WRITE_SCOPE } from "../../gateway/operator-scopes.js";
-import { buildGatewaySessionRow } from "../../gateway/session-utils.js";
+import { buildGatewaySessionRow } from "../../gateway/sessions/session-utils.js";
 import { withTempConfig } from "../../gateway/test-temp-config.js";
 import { emitAgentEvent, resetAgentEventsForTest } from "../../infra/agent-events.js";
 import { resolvePreferredOpenClawTmpDir } from "../../infra/tmp-openclaw-dir.js";
 import { withEnvAsync } from "../../test-utils/env.js";
 import { executePluginCommand, validatePluginCommandDefinition } from "../commands.js";
-import { createHookRunner } from "../hooks.js";
+import { createPluginRecord } from "../config/status.test-helpers.js";
+import { createHookRunner } from "../hooks/hooks.js";
 import {
   cleanupReplacedPluginHostRegistry,
   clearPluginOwnedSessionState,
   runPluginHostCleanup,
-} from "../host-hook-cleanup.js";
+} from "../host/host-hook-cleanup.js";
 import {
   clearPluginHostRuntimeState,
   getPluginRunContext,
   listPluginSessionSchedulerJobs,
   setPluginRunContext,
-} from "../host-hook-runtime.js";
+} from "../host/host-hook-runtime.js";
 import {
   drainPluginNextTurnInjections,
   enqueuePluginNextTurnInjection,
   patchPluginSessionExtension,
   projectPluginSessionExtensions,
   projectPluginSessionExtensionsSync,
-} from "../host-hook-state.js";
-import { buildPluginAgentTurnPrepareContext, isPluginJsonValue } from "../host-hooks.js";
-import { createEmptyPluginRegistry } from "../registry-empty.js";
-import { createPluginRegistry } from "../registry.js";
-import { setActivePluginRegistry } from "../runtime.js";
+} from "../host/host-hook-state.js";
+import { buildPluginAgentTurnPrepareContext, isPluginJsonValue } from "../host/host-hooks.js";
+import { createEmptyPluginRegistry } from "../manifest/registry-empty.js";
+import { createPluginRegistry } from "../manifest/registry.js";
+import { setActivePluginRegistry } from "../runtime/runtime.js";
 import type { PluginRuntime } from "../runtime/types.js";
-import { createPluginRecord } from "../status.test-helpers.js";
 import { runTrustedToolPolicies } from "../trusted-tool-policy.js";
 import { registerHostHookFixture, registerTrustedHostHookFixture } from "./host-hook-fixture.js";
 

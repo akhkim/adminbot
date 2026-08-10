@@ -15,16 +15,16 @@ import {
   withOwnedSessionTranscriptWrites,
 } from "../../../config/sessions/transcript-write-context.js";
 import { appendExactAssistantMessageToSessionTranscript } from "../../../config/sessions/transcript.js";
-import { guardSessionManager } from "../../session-tool-result-guard-wrapper.js";
+import { SessionManager } from "../../sessions/session-manager.js";
+import { guardSessionManager } from "../../sessions/session-tool-result-guard-wrapper.js";
 import {
   SessionWriteLockStaleError,
   SessionWriteLockTimeoutError,
-} from "../../session-write-lock-error.js";
+} from "../../sessions/session-write-lock-error.js";
 import {
   acquireSessionWriteLock,
   resetSessionWriteLockStateForTest,
-} from "../../session-write-lock.js";
-import { SessionManager } from "../../sessions/session-manager.js";
+} from "../../sessions/session-write-lock.js";
 import {
   acquireEmbeddedAttemptSessionFileOwner,
   createEmbeddedAttemptSessionLockController,

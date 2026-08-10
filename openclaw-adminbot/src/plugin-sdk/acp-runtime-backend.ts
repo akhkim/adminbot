@@ -32,13 +32,13 @@ export type {
 } from "@openclaw/acp-core/runtime/types";
 
 let dispatchAcpRuntimePromise: Promise<
-  typeof import("../auto-reply/reply/dispatch-acp.runtime.js")
+  typeof import("../auto-reply/reply/dispatch/dispatch-acp.runtime.js")
 > | null = null;
 
 function loadDispatchAcpRuntime() {
   // ACP dispatch pulls in session/media/manager code; cache the dynamic import so
   // startup-loaded plugin surfaces stay light and concurrent hooks share one load.
-  dispatchAcpRuntimePromise ??= import("../auto-reply/reply/dispatch-acp.runtime.js");
+  dispatchAcpRuntimePromise ??= import("../auto-reply/reply/dispatch/dispatch-acp.runtime.js");
   return dispatchAcpRuntimePromise;
 }
 
@@ -82,9 +82,6 @@ export async function tryDispatchAcpReplyHook(
     toolsAllow: event.toolsAllow,
     images: event.images,
     abortSignal: ctx.abortSignal,
-    inboundAudio: event.inboundAudio,
-    sessionTtsAuto: event.sessionTtsAuto,
-    ttsChannel: event.ttsChannel,
     suppressUserDelivery: event.suppressUserDelivery,
     suppressReplyLifecycle: event.suppressReplyLifecycle === true || event.sendPolicy === "deny",
     sourceReplyDeliveryMode: event.sourceReplyDeliveryMode,

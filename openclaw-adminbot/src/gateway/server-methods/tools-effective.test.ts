@@ -2,7 +2,7 @@
 // caching behavior, delivery context, and policy filtering.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ErrorCodes } from "../../../packages/gateway-protocol/src/index.js";
-import type { McpToolCatalog, SessionMcpRuntime } from "../../agents/agent-bundle-mcp-types.js";
+import type { McpToolCatalog, SessionMcpRuntime } from "../../agents/mcp/agent-bundle-mcp-types.js";
 import { testing, toolsEffectiveHandlers } from "./tools-effective.js";
 
 const runtimeMocks = vi.hoisted(() => ({

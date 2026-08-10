@@ -1080,6 +1080,25 @@ function listPublishablePluginPackageDirs() {
     .toSorted((left, right) => left.localeCompare(right));
 }
 
+// The npm release machinery was cut down to the two plugins that still publish,
+// so only dirs that actually track an npm-shrinkwrap.json can be checked. The
+// repo root no longer has one; selecting it made the guard fail on any root
+// package.json or lockfile edit.
+function tracksShrinkwrap(packageDir) {
+  return existsSync(shrinkwrapPathForPackage(packageDir));
+}
+
+function withTrackedShrinkwrapsOnly(packageDirs) {
+  return packageDirs.filter((packageDir) => tracksShrinkwrap(packageDir));
+}
+
+function allShrinkwrapPackageDirs() {
+  return withTrackedShrinkwrapsOnly([
+    ROOT_DIR,
+    ...listPublishablePluginPackageDirs().map((dir) => path.resolve(ROOT_DIR, dir)),
+  ]);
+}
+
 function shrinkwrapPackageDirsForChangedPaths(changedPaths) {
   const packageDirs = new Set();
   const publishablePluginPackageDirs = new Set(listPublishablePluginPackageDirs());
@@ -1117,20 +1136,10 @@ function shrinkwrapPackageDirsForChangedPaths(changedPaths) {
     }
   }
 
-  if (hasAmbiguousDependencyPolicyChange) {
-    return [
-      ROOT_DIR,
-      ...listPublishablePluginPackageDirs().map((dir) => path.resolve(ROOT_DIR, dir)),
-    ];
+  if (hasAmbiguousDependencyPolicyChange || hasLockfileChange) {
+    return allShrinkwrapPackageDirs();
   }
-
-  if (hasLockfileChange) {
-    return [
-      ROOT_DIR,
-      ...listPublishablePluginPackageDirs().map((dir) => path.resolve(ROOT_DIR, dir)),
-    ];
-  }
-  return [...packageDirs].toSorted((left, right) =>
+  return withTrackedShrinkwrapsOnly([...packageDirs]).toSorted((left, right) =>
     packageLabel(left).localeCompare(packageLabel(right)),
   );
 }

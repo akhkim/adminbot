@@ -10,8 +10,8 @@ import {
   resolveThreadBindingSpawnPolicy,
   supportsAutomaticThreadBindingSpawn,
 } from "../channels/thread-bindings-policy.js";
-import { resolveChannelCapabilities } from "../config/channel-capabilities.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { resolveChannelCapabilities } from "../config/channel/channel-capabilities.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { resolveChannelPromptCapabilities } from "./channel-tools.js";
 
 const THREAD_BOUND_SUBAGENT_SPAWN_CAPABILITY = "threadbound-subagent-spawn";

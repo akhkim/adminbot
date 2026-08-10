@@ -23,6 +23,7 @@ import {
 import { buildDeviceAuthPayload } from "../../../src/gateway/device-auth.js";
 import { clearDeviceAuthToken, loadDeviceAuthToken, storeDeviceAuthToken } from "./device-auth.ts";
 import { loadOrCreateDeviceIdentity, signDevicePayload } from "./device-identity.ts";
+import { isLoopbackGatewayHost } from "./loopback-host.ts";
 import { generateUUID } from "./uuid.ts";
 
 export type GatewayEventFrame = {
@@ -138,27 +139,10 @@ export function isNonRecoverableAuthError(error: GatewayErrorInfo | undefined): 
   );
 }
 
-function isLoopbackIPv4Host(host: string): boolean {
-  const octets = host.split(".");
-  if (octets.length !== 4 || octets[0] !== "127") {
-    return false;
-  }
-  return octets.every((octet) => {
-    if (!/^\d+$/.test(octet)) {
-      return false;
-    }
-    const value = Number(octet);
-    return value >= 0 && value <= 255;
-  });
-}
-
 function isTrustedRetryEndpoint(url: string): boolean {
   try {
     const gatewayUrl = new URL(url, window.location.href);
-    const host = gatewayUrl.hostname.trim().toLowerCase();
-    const isLoopbackHost = host === "localhost" || host === "::1" || host === "[::1]";
-    const isLoopbackIPv4 = isLoopbackIPv4Host(host);
-    if (isLoopbackHost || isLoopbackIPv4) {
+    if (isLoopbackGatewayHost(gatewayUrl.hostname)) {
       return true;
     }
     const pageUrl = new URL(window.location.href);
@@ -220,7 +204,7 @@ export const CONTROL_UI_OPERATOR_SCOPES = [
 // requesting more than the member is allowed would leave them unable to pair. Plain members get
 // read only — which is what denies them operator.write (and therefore tools.invoke) at the gateway.
 export function resolveMemberOperatorScopes(privilegeLevel: string | null | undefined): string[] {
-  const privileged = privilegeLevel === "admin" || privilegeLevel === "core_member";
+  const privileged = privilegeLevel === "admin";
   return privileged ? [...CONTROL_UI_OPERATOR_SCOPES] : ["operator.read"];
 }
 

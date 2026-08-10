@@ -11,12 +11,12 @@ import type { PromptImageOrderEntry } from "../../../media/prompt-image-order.js
 import { loadWebMedia } from "../../../media/web-media.js";
 import { resolveUserPath } from "../../../utils.js";
 import type { ImageSanitizationLimits } from "../../image-sanitization.js";
+import type { SandboxFsBridge } from "../../sandbox/fs-bridge.js";
 import {
   createSandboxBridgeReadFile,
   resolveSandboxedBridgeMediaPath,
-} from "../../sandbox-media-paths.js";
-import type { SandboxFsBridge } from "../../sandbox/fs-bridge.js";
-import { sanitizeImageBlocks } from "../../tool-images.js";
+} from "../../sandbox/sandbox-media-paths.js";
+import { sanitizeImageBlocks } from "../../tools/tool-images.js";
 import { log } from "../logger.js";
 
 /**

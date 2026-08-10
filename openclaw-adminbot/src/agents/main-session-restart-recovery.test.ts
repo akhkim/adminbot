@@ -25,7 +25,7 @@ import {
   recoverStartupOrphanedMainSessions,
   recoverRestartAbortedMainSessions,
 } from "./main-session-restart-recovery.js";
-import type { SessionLockInspection } from "./session-write-lock.js";
+import type { SessionLockInspection } from "./sessions/session-write-lock.js";
 
 vi.mock("../gateway/call.js", () => ({
   callGateway: vi.fn(async () => ({ runId: "run-resumed" })),

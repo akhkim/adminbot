@@ -5,14 +5,14 @@ import {
   hasConfiguredControlUiAllowedOrigins,
   isGatewayNonLoopbackBindMode,
   resolveGatewayPortWithDefault,
-} from "../../../config/gateway-control-ui-origins.js";
+} from "../../../config/gateway/gateway-control-ui-origins.js";
 import {
   defineLegacyConfigMigration,
   getRecord,
   type LegacyConfigMigrationSpec,
   type LegacyConfigRule,
-} from "../../../config/legacy.shared.js";
-import { DEFAULT_GATEWAY_PORT } from "../../../config/paths.js";
+} from "../../../config/legacy/legacy.shared.js";
+import { DEFAULT_GATEWAY_PORT } from "../../../config/paths/paths.js";
 
 const GATEWAY_BIND_RULE: LegacyConfigRule = {
   path: ["gateway", "bind"],

@@ -4,7 +4,7 @@ import type {
   ChannelConfigRuntimeSchema,
   ChannelConfigSchema,
 } from "../../../src/channels/plugins/types.plugin.js";
-import { listBundledPluginMetadata } from "../../../src/plugins/bundled-plugin-metadata.js";
+import { listBundledPluginMetadata } from "../../../src/plugins/install/bundled-plugin-metadata.js";
 
 // Shared bundled channel config runtime maps for config contract tests.
 

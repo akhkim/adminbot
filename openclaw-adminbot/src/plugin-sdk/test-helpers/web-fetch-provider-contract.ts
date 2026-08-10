@@ -6,7 +6,7 @@ import {
   pluginRegistrationContractRegistry,
   resolveWebFetchProviderContractEntriesForPluginId,
 } from "../../plugins/contracts/registry.js";
-import { resolveBundledExplicitWebFetchProvidersFromPublicArtifacts } from "../../plugins/web-provider-public-artifacts.explicit.js";
+import { resolveBundledExplicitWebFetchProvidersFromPublicArtifacts } from "../../plugins/web/web-provider-public-artifacts.explicit.js";
 import type { WebFetchProviderPlugin } from "../provider-web-fetch-contract.js";
 import { installWebFetchProviderContractSuite } from "./provider-contract-suites.js";
 

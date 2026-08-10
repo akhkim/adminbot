@@ -26,14 +26,14 @@ import {
   createInboundDebouncer,
   resolveInboundDebounceMs,
 } from "../../auto-reply/inbound-debounce.js";
-import { dispatchReplyFromConfig } from "../../auto-reply/reply/dispatch-from-config.js";
-import { finalizeInboundContext } from "../../auto-reply/reply/inbound-context.js";
+import { dispatchReplyFromConfig } from "../../auto-reply/reply/dispatch/dispatch-from-config.js";
+import { finalizeInboundContext } from "../../auto-reply/reply/inbound/inbound-context.js";
 import {
   buildMentionRegexes,
   matchesMentionPatterns,
   matchesMentionWithExplicit,
 } from "../../auto-reply/reply/mentions.js";
-import { dispatchReplyWithBufferedBlockDispatcher } from "../../auto-reply/reply/provider-dispatcher.js";
+import { dispatchReplyWithBufferedBlockDispatcher } from "../../auto-reply/reply/providers/provider-dispatcher.js";
 import { createReplyDispatcherWithTyping } from "../../auto-reply/reply/reply-dispatcher.js";
 import {
   createAckReactionHandle,
@@ -62,7 +62,7 @@ import {
   resolveChannelGroupPolicy,
   resolveChannelGroupRequireMention,
 } from "../../config/group-policy.js";
-import { resolveMarkdownTableMode } from "../../config/markdown-tables.js";
+import { resolveMarkdownTableMode } from "../../config/markdown/markdown-tables.js";
 import {
   recordSessionMetaFromInbound,
   resolveStorePath,

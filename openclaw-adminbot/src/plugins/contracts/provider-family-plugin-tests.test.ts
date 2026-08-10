@@ -4,7 +4,7 @@ import { basename, resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { expectNoReaddirSyncDuring } from "../../test-utils/fs-scan-assertions.js";
 import { listGitTrackedFiles, toRepoRelativePath } from "../../test-utils/repo-files.js";
-import { loadPluginManifestRegistry } from "../manifest-registry.js";
+import { loadPluginManifestRegistry } from "../manifest/manifest-registry.js";
 
 type SharedFamilyHookKind = "replay" | "stream" | "tool-compat";
 

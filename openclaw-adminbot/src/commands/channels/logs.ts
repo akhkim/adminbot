@@ -7,7 +7,7 @@ import { parseStrictPositiveInteger } from "../../infra/parse-finite-number.js";
 import { getResolvedLoggerSettings } from "../../logging.js";
 import { resolveLogFile } from "../../logging/log-tail.js";
 import { parseLogLine } from "../../logging/parse-log-line.js";
-import { listManifestChannelContributionIds } from "../../plugins/manifest-contribution-ids.js";
+import { listManifestChannelContributionIds } from "../../plugins/manifest/manifest-contribution-ids.js";
 import { defaultRuntime, type RuntimeEnv, writeRuntimeJson } from "../../runtime.js";
 
 export type ChannelsLogsOptions = {

@@ -7,8 +7,8 @@ import {
 } from "../agents/harness/native-hook-relay.js";
 import { callGateway } from "../gateway/call.js";
 import { ADMIN_SCOPE } from "../gateway/method-scopes.js";
-import { setSafeTimeout } from "../utils/timer-delay.js";
-import { parseTimeoutMsWithFallback } from "./parse-timeout.js";
+import { setSafeTimeout } from "../shared/timer-delay.js";
+import { parseTimeoutMsWithFallback } from "./program/parse-timeout.js";
 
 const MAX_NATIVE_HOOK_STDIN_BYTES = 1024 * 1024;
 

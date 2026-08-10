@@ -1,13 +1,17 @@
+// oxlint-disable max-lines -- grandfathered at 2467 lines; see docs/adr/0006-deferred-monster-splits.md
 /** Updates installed plugins across npm, ClawHub, marketplace, Git, and bundled bridge sources. */
 import path from "node:path";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { PluginInstallRecord } from "../config/types.plugins.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import type { PluginInstallRecord } from "../config/types/plugins.js";
 import { parseClawHubPluginSpec } from "../infra/clawhub-spec.js";
 import { satisfiesPluginApiRange } from "../infra/clawhub.js";
-import { unscopedPackageName } from "../infra/install-safe-path.js";
-import type { NpmSpecResolution } from "../infra/install-source-utils.js";
-import { createNpmMetadataEnv, resolveNpmSpecMetadata } from "../infra/install-source-utils.js";
+import { unscopedPackageName } from "../infra/install/install-safe-path.js";
+import type { NpmSpecResolution } from "../infra/install/install-source-utils.js";
+import {
+  createNpmMetadataEnv,
+  resolveNpmSpecMetadata,
+} from "../infra/install/install-source-utils.js";
 import {
   compareOpenClawReleaseVersions,
   isExactSemverVersion,
@@ -15,22 +19,21 @@ import {
   isPrereleaseSemverVersion,
   isPrereleaseResolutionAllowed,
   parseRegistryNpmSpec,
-} from "../infra/npm-registry-spec.js";
+} from "../infra/install/npm-registry-spec.js";
 import {
   expectedIntegrityForUpdate,
   installedPackageNeedsOpenClawPeerLinkRepair,
   readInstalledPackagePeerDependencies,
   readInstalledPackageVersion,
-} from "../infra/package-update-utils.js";
+} from "../infra/install/package-update-utils.js";
+import type { UpdateChannel } from "../infra/install/update-channels.js";
 import { compareComparableSemver, parseComparableSemver } from "../infra/semver-compare.js";
-import type { UpdateChannel } from "../infra/update-channels.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { resolveUserPath } from "../utils.js";
 import { resolveCompatibilityHostVersion } from "../version.js";
-import { resolveBundledPluginSources } from "./bundled-sources.js";
 import { buildClawHubPluginInstallRecordFields } from "./clawhub-install-records.js";
 import { CLAWHUB_INSTALL_ERROR_CODE, installPluginFromClawHub } from "./clawhub.js";
-import { normalizePluginsConfig, resolveEffectiveEnableState } from "./config-state.js";
+import { normalizePluginsConfig, resolveEffectiveEnableState } from "./config/config-state.js";
 import {
   getExternalizedBundledPluginLegacyPathSuffix,
   getExternalizedBundledPluginClawHubSpec,
@@ -41,15 +44,16 @@ import {
   type ExternalizedBundledPluginBridge,
 } from "./externalized-bundled-plugins.js";
 import { installPluginFromGitSpec } from "./git-install.js";
+import { resolveBundledPluginSources } from "./install/bundled-sources.js";
 import {
   resolveClawHubInstallSpecsForUpdateChannel,
   resolveNpmInstallSpecsForUpdateChannel,
-} from "./install-channel-specs.js";
+} from "./install/install-channel-specs.js";
 import {
   installPluginFromNpmSpec,
   PLUGIN_INSTALL_ERROR_CODE,
   resolvePluginInstallDir,
-} from "./install.js";
+} from "./install/install.js";
 import {
   buildNpmResolutionInstallFields,
   recordPluginInstall,

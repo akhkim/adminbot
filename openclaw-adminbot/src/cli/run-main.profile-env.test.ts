@@ -51,7 +51,7 @@ vi.mock("../infra/runtime-guard.js", () => ({
   assertSupportedRuntime: vi.fn(),
 }));
 
-vi.mock("../infra/path-env.js", () => ({
+vi.mock("../infra/system/path-env.js", () => ({
   ensureOpenClawCliOnPath: vi.fn(),
 }));
 

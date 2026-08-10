@@ -2,6 +2,8 @@
 // reads/writes, identity merging, and safe deletion for operator clients.
 import fs from "node:fs/promises";
 import path from "node:path";
+import "../../infra/fs-safe-defaults.js";
+import { movePathToTrash } from "@openclaw/fs-safe/advanced";
 import { normalizeOptionalString as resolveOptionalStringParam } from "@openclaw/normalization-core/string-coerce";
 import {
   ErrorCodes,
@@ -36,19 +38,18 @@ import {
   isWorkspaceSetupCompleted,
   resolveWorkspaceAttestationPaths,
   shouldRemoveWorkspaceAttestation,
-} from "../../agents/workspace.js";
-import { applyAgentConfig } from "../../commands/agents.config.js";
+} from "../../agents/workspace/workspace.js";
+import { applyAgentConfig } from "../../commands/agents/agents.config.js";
 import {
   purgeAgentSessionStoreEntries,
   resolveSessionTranscriptsDirForAgent,
 } from "../../config/sessions.js";
-import type { IdentityConfig } from "../../config/types.base.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { IdentityConfig } from "../../config/types/base.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { root, FsSafeError, type ReadResult } from "../../infra/fs-safe.js";
-import { movePathToTrash } from "../../plugin-sdk/browser-maintenance.js";
 import { DEFAULT_AGENT_ID, normalizeAgentId } from "../../routing/session-key.js";
 import { resolveUserPath } from "../../utils.js";
-import { listAgentsForGateway } from "../session-utils.js";
+import { listAgentsForGateway } from "../sessions/session-utils.js";
 import {
   AgentConfigPreconditionError,
   createAgentConfigEntry,

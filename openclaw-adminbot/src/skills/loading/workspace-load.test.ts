@@ -4,18 +4,18 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { resetLogger, setLoggerOverride } from "../../logging/logger.js";
 import { loggingState } from "../../logging/state.js";
 import {
   clearCurrentPluginMetadataSnapshot,
   setCurrentPluginMetadataSnapshot,
 } from "../../plugins/current-plugin-metadata-snapshot.js";
-import { resolveInstalledPluginIndexPolicyHash } from "../../plugins/installed-plugin-index-policy.js";
+import { resolveInstalledPluginIndexPolicyHash } from "../../plugins/install/installed-plugin-index-policy.js";
 import type {
   PluginManifestRecord,
   PluginManifestRegistry,
-} from "../../plugins/manifest-registry.js";
+} from "../../plugins/manifest/manifest-registry.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.js";
 import { writeSkill, writeWorkspaceSkills } from "../test-support/e2e-test-helpers.js";
 import {
@@ -27,7 +27,7 @@ import { writePluginWithSkill } from "../test-support/skill-plugin-fixtures.test
 import { readSkillFrontmatterSafe } from "./local-loader.js";
 import { loadWorkspaceSkillEntries } from "./workspace.js";
 
-vi.mock("../../plugins/manifest-registry.js", async () => {
+vi.mock("../../plugins/manifest/manifest-registry.js", async () => {
   const fsLocal = await import("node:fs");
   const pathLocal = await import("node:path");
   return {

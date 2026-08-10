@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import { getRuntimeConfig, writeConfigFile } from "../config/config.js";
-import { withTempHome } from "../config/home-env.test-harness.js";
+import { withTempHome } from "../config/env/home-env.test-harness.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import {
   asConfig,

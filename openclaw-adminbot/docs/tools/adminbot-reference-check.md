@@ -108,13 +108,13 @@ still appears in the run report for a human to read. Adding the key turns the fu
 
 ## Configuration
 
-| Variable                          | Default                                                | Purpose                                                                    |
-| --------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------- |
-| `SEMANTIC_SCHOLAR_API_KEY`        | unset                                                  | Enables the trusted provider and the `fabricated` verdict on empty results |
-| `ADMINBOT_REFERENCE_CHECK_VENUES` | `EMNLP/2026/Conference,aclweb.org/ACL/ARR/2026/August` | Comma-separated venue ids                                                  |
-| `ADMINBOT_ZHIJING_EMAIL`          | `zjin@cs.toronto.edu`                                  | Address cc'd on every warning                                              |
-| `ADMINBOT_REFERENCE_MAX_ENTRIES`  | `200`                                                  | Per-paper entry cap                                                        |
-| `ADMINBOT_REFERENCE_CHECK_JSON`   | unset                                                  | Write the full result set to this path                                     |
+| Variable                          | Default                                                | Purpose                                                                          |
+| --------------------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `SEMANTIC_SCHOLAR_API_KEY`        | unset                                                  | Enables the trusted provider and the `fabricated` verdict on empty results       |
+| `ADMINBOT_REFERENCE_CHECK_VENUES` | `EMNLP/2026/Conference,aclweb.org/ACL/ARR/2026/August` | Comma-separated venue ids                                                        |
+| `ADMINBOT_REPORT_EMAIL`           | **required, no default**                               | Address cc'd on every warning (old name `ADMINBOT_ZHIJING_EMAIL` still accepted) |
+| `ADMINBOT_REFERENCE_MAX_ENTRIES`  | `200`                                                  | Per-paper entry cap                                                              |
+| `ADMINBOT_REFERENCE_CHECK_JSON`   | unset                                                  | Write the full result set to this path                                           |
 
 `OPENREVIEW_USERNAME`/`OPENREVIEW_PASSWORD`, `ADMINBOT_LOCAL_BASE_URL`/`ADMINBOT_LOCAL_MODEL`/
 `VLLM_API_KEY`, and `ADMINBOT_SERVICE_TOKEN` come from the usual env file.

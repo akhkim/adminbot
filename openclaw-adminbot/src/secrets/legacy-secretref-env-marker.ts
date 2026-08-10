@@ -1,10 +1,10 @@
 /** Detects legacy SecretRef env markers in config values. */
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   LEGACY_SECRETREF_ENV_MARKER_PREFIX,
   parseLegacySecretRefEnvMarker,
   type SecretRef,
-} from "../config/types.secrets.js";
+} from "../config/types/secrets.js";
 import { setPathExistingStrict } from "./path-utils.js";
 import {
   discoverConfigSecretTargets,

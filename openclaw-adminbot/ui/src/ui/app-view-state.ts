@@ -1,25 +1,21 @@
 // Control UI module implements app view state behavior.
 import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
-import type { ChatAbortOptions, ChatSendOptions } from "./app-chat.ts";
-import type { EventLogEntry } from "./app-events.ts";
-import type { CompactionStatus, FallbackStatus } from "./app-tool-stream.ts";
-import type { ChatInputHistoryKeyInput, ChatInputHistoryKeyResult } from "./chat/input-history.ts";
-import type { RealtimeTalkCatalogProvider } from "./chat/realtime-talk-catalog.ts";
-import type { RealtimeTalkConversationEntry } from "./chat/realtime-talk-conversation.ts";
-import type { RealtimeTalkStatus } from "./chat/realtime-talk.ts";
-import type { ChatRunUiStatus } from "./chat/run-lifecycle.ts";
-import type { ChatMessageCache } from "./chat/session-message-cache.ts";
-import type { ChatSideResult } from "./chat/side-result.ts";
 import type {
   AdminBotDashboardData,
   AdminBotMemberNudgeState,
   AdminBotReimbursementState,
-} from "./controllers/adminbot.ts";
+} from "./adminbot/controllers/admin.ts";
+import type { ChatAbortOptions, ChatSendOptions } from "./app-chat.ts";
+import type { EventLogEntry } from "./app-events.ts";
+import type { CompactionStatus, FallbackStatus } from "./app-tool-stream.ts";
+import type { ChatInputHistoryKeyInput, ChatInputHistoryKeyResult } from "./chat/input-history.ts";
+import type { ChatRunUiStatus } from "./chat/run-lifecycle.ts";
+import type { ChatMessageCache } from "./chat/session-message-cache.ts";
+import type { ChatSideResult } from "./chat/side-result.ts";
 import type { CronModelSuggestionsState, CronState } from "./controllers/cron.ts";
 import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
-import type { SkillWorkshopState } from "./controllers/skill-workshop.ts";
 import type {
   ClawHubSearchResult,
   ClawHubSkillSecurityVerdict,
@@ -68,10 +64,10 @@ export type AppViewState = {
   memberEmail: string;
   memberPassword: string;
   memberPasswordConfirm: string;
-  loginMode: import("./adminbot-auth-flow.ts").LoginMode;
+  loginMode: import("./adminbot/auth/flow.ts").LoginMode;
   loginShowMemberPassword: boolean;
   memberAuthBusy: boolean;
-  memberAuthFailure: import("./adminbot-auth-flow.ts").MemberAuthFailure | null;
+  memberAuthFailure: import("./adminbot/auth/flow.ts").MemberAuthFailure | null;
   memberFormError: string | null;
   loginPendingNotice: boolean;
   // Shows the reimbursement tool standalone, from the login screen, with no session. The
@@ -81,9 +77,19 @@ export type AppViewState = {
   // Whether the sign-in gate is on screen. A visitor browses the public shell until they ask for
   // it, so the gate is a surface they open rather than a wall they start behind.
   authGateVisible: boolean;
-  rosterMembers: import("./adminbot-auth.ts").RosterMember[];
+  // Onboarding tab: the form is driven by the selected template's required placeholders.
+  onboardingTemplateId?: string;
+  onboardingName?: string;
+  onboardingEmail?: string;
+  onboardingValues?: Record<string, string>;
+  onboardingBusy?: boolean;
+  onboardingError?: string | null;
+  onboardingMissing?: string[];
+  onboardingResult?: import("./adminbot/controllers/admin.ts").AdminBotOnboardingResult | null;
+  sendOnboardingGuide?: (options: { preview: boolean }) => Promise<void>;
+  rosterMembers: import("./adminbot/auth/session.ts").RosterMember[];
   rosterLoading: boolean;
-  rosterError: import("./adminbot-auth-flow.ts").RosterError;
+  rosterError: import("./adminbot/auth/flow.ts").RosterError;
   rosterFilter: string;
   selectedMemberId: string | null;
   memberName: string;
@@ -115,10 +121,10 @@ export type AppViewState = {
   // self-edit row and sort it first. Null in break-glass gateway-token-only
   // access, where no row is "mine".
   memberId: string | null;
-  // Signed-in member's onboarding checklist (null until loaded/if unavailable) and whether the
-  // full-screen welcome overlay showing it is currently visible.
-  adminBotOnboarding: import("./adminbot-auth.ts").MemberOnboarding | null;
-  adminBotWelcomeVisible: boolean;
+  // Signed-in member's onboarding checklist (null until loaded/if unavailable), and whether they
+  // have explicitly acknowledged the dashboard's standing warning card for it in this browser.
+  adminBotOnboarding: import("./adminbot/auth/session.ts").MemberOnboarding | null;
+  adminBotOnboardingAcknowledged: boolean;
   adminBotOnboardingBusyStepId: string | null;
   adminBotOnboardingError: string | null;
   submitMemberAuth: () => Promise<void>;
@@ -211,13 +217,6 @@ export type AppViewState = {
   chatInputHistoryItems: string[] | null;
   chatInputHistoryIndex: number;
   chatDraftBeforeHistory: string | null;
-  realtimeTalkActive: boolean;
-  realtimeTalkStatus: RealtimeTalkStatus;
-  realtimeTalkDetail: string | null;
-  realtimeTalkTranscript: string | null;
-  realtimeTalkConversation: RealtimeTalkConversationEntry[];
-  realtimeTalkOptionsOpen: boolean;
-  realtimeTalkCatalogProviders: RealtimeTalkCatalogProvider[] | null;
   realtimeTalkOptions: {
     provider: string;
     model: string;
@@ -346,15 +345,28 @@ export type AppViewState = {
   adminBotLoading: boolean;
   adminBotError: string | null;
   adminBotData: AdminBotDashboardData;
+  adminBotTimeAvailabilityMemberId: string;
   adminBotBusyActionId: string | null;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
-  adminBotCvScan: import("./controllers/adminbot.ts").AdminBotCvScanResult | null;
+  adminBotCvScan: import("./adminbot/controllers/admin.ts").AdminBotCvScanResult | null;
   adminBotCvScanning: boolean;
-  registrations: import("./adminbot-auth.ts").MemberRegistration[];
+  // Prototype-only: blockers a member raises from My Projects & Papers. Held in the browser
+  // because the AdminBot service has no blocker route yet -- see views/my-work.ts.
+  myWorkBlockerDraft: import("./adminbot/views/my-work.ts").BlockerDraft | null;
+  myWorkBlockers: import("./adminbot/views/my-work.ts").Blocker[];
+  // Non-null while the "add a project" field is open; holds what has been typed.
+  myWorkProjectDraft: string | null;
+  // Which profile section is in edit mode, if any.
+  profileEditingSection: "basics" | null;
+  profileAccountChecks: Record<
+    string,
+    import("./adminbot/views/profile-account-check.ts").ProfileAccountCheck
+  >;
+  registrations: import("./adminbot/auth/session.ts").MemberRegistration[];
   registrationsLoading: boolean;
-  registrationsError: import("./adminbot-registrations.ts").RegistrationsLoadError | null;
+  registrationsError: import("./adminbot/data/registrations.ts").RegistrationsLoadError | null;
   registrationsBusyId: string | null;
   registrationsNotice: { kind: "success" | "error"; text: string } | null;
   toolsCatalogLoading: boolean;
@@ -644,4 +656,4 @@ export type AppViewState = {
     handleWebPushSubscribe: () => Promise<void>;
     handleWebPushUnsubscribe: () => Promise<void>;
     handleWebPushTest: () => Promise<void>;
-  } & SkillWorkshopState;
+  };

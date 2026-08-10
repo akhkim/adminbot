@@ -1,7 +1,7 @@
 // Model probe target tests cover selecting provider/model targets for probing.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuthProfileStore } from "../../agents/auth-profiles.js";
-import type { ModelCatalogEntry } from "../../agents/model-catalog.js";
+import type { AuthProfileStore } from "../../agents/auth/auth-profiles.js";
+import type { ModelCatalogEntry } from "../../agents/models/model-catalog.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { withEnvAsync } from "../../test-utils/env.js";
 
@@ -17,10 +17,10 @@ const resolveAuthProfileEligibilityMock = vi.fn(() => ({
 }));
 const resolveSecretRefStringMock = vi.fn(async () => "resolved-secret");
 
-vi.mock("../../agents/model-catalog.js", () => ({
+vi.mock("../../agents/models/model-catalog.js", () => ({
   loadModelCatalog: loadModelCatalogMock,
 }));
-vi.mock("../../agents/model-auth.js", () => ({
+vi.mock("../../agents/auth/model-auth.js", () => ({
   hasUsableCustomProviderApiKey: (cfg: OpenClawConfig, provider: string) => {
     const raw = cfg.models?.providers?.[provider]?.apiKey;
     return typeof raw === "string" && raw.trim().length > 0 && raw !== "ollama-local";
@@ -48,7 +48,7 @@ vi.mock("../../agents/model-auth.js", () => ({
     return source ? { source, value: process.env[source] } : null;
   },
 }));
-vi.mock("../../agents/model-selection.js", () => {
+vi.mock("../../agents/models/model-selection.js", () => {
   const normalizeProviderId = (value: string) =>
     value.trim().toLowerCase() === "z.ai" || value.trim().toLowerCase() === "z-ai"
       ? "zai"
@@ -75,7 +75,7 @@ vi.mock("./shared.js", () => ({
   formatMs: (ms: number) => `${ms}ms`,
 }));
 
-vi.mock("../../agents/auth-profiles.js", () => ({
+vi.mock("../../agents/auth/auth-profiles.js", () => ({
   externalCliDiscoveryScoped: (params: Record<string, unknown> = {}) => ({
     mode: "scoped",
     ...params,

@@ -37,7 +37,7 @@ const {
   runtimeErrors,
 } = mocks;
 
-vi.mock("./gateway-rpc.js", () => ({
+vi.mock("./gateway-cli/gateway-rpc.js", () => ({
   addGatewayClientOptions: (cmd: Command) => cmd,
   callGatewayFromCli: (method: string, opts: unknown, params?: unknown, extra?: unknown) =>
     mocks.callGatewayFromCli(method, opts, params, extra),

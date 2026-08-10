@@ -27,21 +27,21 @@ const mocks = vi.hoisted(() => ({
   resolveProfileUnusableUntilForDisplay: vi.fn(),
 }));
 
-vi.mock("../../config/plugin-auto-enable.js", () => ({
+vi.mock("../../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: mocks.applyPluginAutoEnable,
   materializePluginAutoEnableCandidates: mocks.materializePluginAutoEnableCandidates,
 }));
 
-vi.mock("../doctor-plugin-registry.js", () => ({
+vi.mock("./doctor-plugin-registry.js", () => ({
   maybeRepairManagedNpmOpenClawPeerLinks: mocks.maybeRepairManagedNpmOpenClawPeerLinks,
   maybeRepairStaleManagedNpmBundledPlugins: mocks.maybeRepairStaleManagedNpmBundledPlugins,
 }));
 
-vi.mock("../doctor-auth-oauth-sidecar.js", () => ({
+vi.mock("./doctor-auth-oauth-sidecar.js", () => ({
   maybeRepairLegacyOAuthSidecarProfiles: mocks.maybeRepairLegacyOAuthSidecarProfiles,
 }));
 
-vi.mock("../doctor-auth-flat-profiles.js", () => ({
+vi.mock("./doctor-auth-flat-profiles.js", () => ({
   collectOpenAICodexAuthProfileStoreIdMap: vi.fn(() => new Map()),
   maybeMigrateAuthProfileJsonStoresToSqlite: mocks.maybeMigrateAuthProfileJsonStoresToSqlite,
   maybeRepairOpenAICodexAuthConfig: mocks.maybeRepairOpenAICodexAuthConfig,
@@ -52,7 +52,7 @@ vi.mock("./shared/missing-configured-plugin-install.js", () => ({
   repairMissingConfiguredPluginInstalls: mocks.repairMissingConfiguredPluginInstalls,
 }));
 
-vi.mock("../../agents/auth-profiles.js", () => ({
+vi.mock("../../agents/auth/auth-profiles.js", () => ({
   ensureAuthProfileStore: mocks.ensureAuthProfileStore,
   resolveAuthProfileOrder: mocks.resolveAuthProfileOrder,
   resolveProfileUnusableUntilForDisplay: mocks.resolveProfileUnusableUntilForDisplay,
@@ -62,8 +62,8 @@ vi.mock("../../agents/auth-profiles/credential-state.js", () => ({
   evaluateStoredCredentialEligibility: mocks.evaluateStoredCredentialEligibility,
 }));
 
-vi.mock("../../plugins/installed-plugin-index.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../plugins/installed-plugin-index.js")>()),
+vi.mock("../../plugins/install/installed-plugin-index.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/install/installed-plugin-index.js")>()),
   getInstalledPluginRecord: mocks.getInstalledPluginRecord,
   isInstalledPluginEnabled: mocks.isInstalledPluginEnabled,
   loadInstalledPluginIndex: mocks.loadInstalledPluginIndex,

@@ -5,15 +5,9 @@ third-party plugins see.
 
 ## Public Contracts
 
-- Docs:
-  - `docs/plugins/building-plugins.md`
-  - `docs/plugins/architecture.md`
-  - `docs/plugins/sdk-overview.md`
-  - `docs/plugins/sdk-entrypoints.md`
-  - `docs/plugins/sdk-runtime.md`
-  - `docs/plugins/sdk-channel-plugins.md`
-  - `docs/plugins/sdk-provider-plugins.md`
-  - `docs/plugins/manifest.md`
+The upstream `docs/plugins/*` guides were removed with the deep clean; the
+definition files below are the surviving source of truth.
+
 - Definition files:
   - `src/plugin-sdk/plugin-entry.ts`
   - `src/plugin-sdk/core.ts`
@@ -26,8 +20,8 @@ third-party plugins see.
 
 - Extension production code should import from `openclaw/plugin-sdk/*` and its
   own local barrels such as `./api.ts` and `./runtime-api.ts`.
-- Do not import core internals from `src/**`, `src/channels/**`,
-  `src/plugin-sdk-internal/**`, or another extension's `src/**`.
+- Do not import core internals from `src/**`, `src/channels/**`, or another
+  extension's `src/**`.
 - Do not use relative imports that escape the current extension package root.
 - Keep plugin metadata accurate in `openclaw.plugin.json` and the package
   `openclaw` block so discovery and setup work without executing plugin code.
@@ -69,7 +63,7 @@ third-party plugins see.
   make a plugin “available”. Plugin availability should come from manifest
   ownership plus targeted activation.
 - When core needs plugin-owned static data on a hot path, expose a lightweight
-  top-level artifact such as `gateway-auth-api.ts`, `message-tool-api.ts`, or a
+  top-level artifact such as `message-tool-api.ts`, `channel-api.ts`, or a
   similarly narrow `*-api.ts`. Reuse the same local helper from the artifact and
   the full plugin so fast paths do not drift from runtime behavior.
 

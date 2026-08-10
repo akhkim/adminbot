@@ -1,6 +1,6 @@
 // Gmail hook ops helpers run Gmail setup and watcher support commands.
 import { spawn } from "node:child_process";
-import { formatCliCommand } from "../cli/command-format.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
 import {
   getRuntimeConfig,
   type OpenClawConfig,

@@ -18,7 +18,7 @@ const tempDirs: string[] = [];
 vi.mock("../../plugins/channel-catalog-registry.js", () => ({
   listChannelCatalogEntries: listChannelCatalogEntriesMock,
 }));
-vi.mock("../../plugins/bundled-source-overlays.js", () => ({
+vi.mock("../../plugins/install/bundled-source-overlays.js", () => ({
   isBundledSourceOverlayPath: isBundledSourceOverlayPathMock,
 }));
 

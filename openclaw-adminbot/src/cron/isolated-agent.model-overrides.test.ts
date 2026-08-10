@@ -2,12 +2,15 @@
 import "./isolated-agent.mocks.js";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { runEmbeddedAgent } from "../agents/embedded-agent.js";
-import { loadModelCatalog } from "../agents/model-catalog.js";
+import { runEmbeddedAgent } from "../agents/embedded/embedded-agent.js";
+import { loadModelCatalog } from "../agents/models/model-catalog.js";
 import { BASE_THINKING_LEVELS } from "../auto-reply/thinking.shared.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { PluginProviderRegistration } from "../plugins/registry.js";
-import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import type { PluginProviderRegistration } from "../plugins/manifest/registry.js";
+import {
+  resetPluginRuntimeStateForTest,
+  setActivePluginRegistry,
+} from "../plugins/runtime/runtime.js";
 import { createTestRegistry } from "../test-utils/channel-plugins.js";
 import {
   DEFAULT_AGENT_TURN_PAYLOAD,

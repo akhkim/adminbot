@@ -1,6 +1,6 @@
 // Non-interactive auth-choice inference tests cover core and plugin-defined CLI auth flags.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OnboardOptions } from "../../onboard-types.js";
+import type { OnboardOptions } from "../../onboard/onboard-types.js";
 import { inferAuthChoiceFromFlags } from "./auth-choice-inference.js";
 
 const resolveProviderOnboardAuthFlags = vi.hoisted(() =>
@@ -13,7 +13,7 @@ const resolveProviderOnboardAuthFlags = vi.hoisted(() =>
   >(() => []),
 );
 
-vi.mock("../../../plugins/provider-auth-choices.js", () => ({
+vi.mock("../../../plugins/providers/provider-auth-choices.js", () => ({
   resolveProviderOnboardAuthFlags,
 }));
 

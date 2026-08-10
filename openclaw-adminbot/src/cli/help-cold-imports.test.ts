@@ -54,7 +54,7 @@ vi.mock("../runtime.js", () => {
   };
 });
 
-vi.mock("../commands/doctor.js", () => {
+vi.mock("../commands/doctor/doctor.js", () => {
   loaded.mark("doctor-command");
   return { doctorCommand: vi.fn(async () => {}) };
 });
@@ -74,12 +74,12 @@ vi.mock("../commands/uninstall.js", () => {
   return { uninstallCommand: vi.fn(async () => {}) };
 });
 
-vi.mock("../commands/status.js", () => {
+vi.mock("../commands/status/status.js", () => {
   loaded.mark("status-command");
   return { statusCommand: vi.fn(async () => {}) };
 });
 
-vi.mock("../commands/health.js", () => {
+vi.mock("../commands/maintenance/health.js", () => {
   loaded.mark("health-command");
   return {
     formatHealthChannelLines: vi.fn(() => []),
@@ -87,12 +87,12 @@ vi.mock("../commands/health.js", () => {
   };
 });
 
-vi.mock("../commands/sessions.js", () => {
+vi.mock("../commands/sessions/sessions.js", () => {
   loaded.mark("sessions-command");
   return { sessionsCommand: vi.fn(async () => {}) };
 });
 
-vi.mock("../commands/sessions-cleanup.js", () => {
+vi.mock("../commands/sessions/sessions-cleanup.js", () => {
   loaded.mark("sessions-cleanup-command");
   return { sessionsCleanupCommand: vi.fn(async () => {}) };
 });
@@ -110,7 +110,7 @@ vi.mock("../commands/commitments.js", () => {
   };
 });
 
-vi.mock("../commands/tasks.js", () => {
+vi.mock("../commands/maintenance/tasks.js", () => {
   loaded.mark("tasks-command");
   return {
     tasksAuditCommand: vi.fn(async () => {}),
@@ -131,17 +131,17 @@ vi.mock("../commands/flows.js", () => {
   };
 });
 
-vi.mock("../commands/configure.commands.js", () => {
+vi.mock("../commands/configure/configure.commands.js", () => {
   loaded.mark("configure-command");
   return { configureCommandFromSectionsArg: vi.fn(async () => {}) };
 });
 
-vi.mock("../commands/configure.wizard.js", () => {
+vi.mock("../commands/configure/configure.wizard.js", () => {
   loaded.mark("configure-wizard");
   return { runConfigureWizard: vi.fn(async () => {}) };
 });
 
-vi.mock("../commands/onboard.js", () => {
+vi.mock("../commands/onboard/onboard.js", () => {
   loaded.mark("onboard-command");
   return { setupWizardCommand: vi.fn(async () => {}) };
 });
@@ -151,17 +151,17 @@ vi.mock("../commands/setup.js", () => {
   return { setupCommand: vi.fn(async () => {}) };
 });
 
-vi.mock("../commands/agent-via-gateway.js", () => {
+vi.mock("../commands/agent/agent-via-gateway.js", () => {
   loaded.mark("agent-via-gateway-command");
   return { agentCliCommand: vi.fn(async () => {}) };
 });
 
-vi.mock("../commands/agents.commands.add.js", () => {
+vi.mock("../commands/agents/agents.commands.add.js", () => {
   loaded.mark("agents-add-command");
   return { agentsAddCommand: vi.fn(async () => {}) };
 });
 
-vi.mock("../commands/agents.commands.bind.js", () => {
+vi.mock("../commands/agents/agents.commands.bind.js", () => {
   loaded.mark("agents-bind-command");
   return {
     agentsBindingsCommand: vi.fn(async () => {}),
@@ -170,17 +170,17 @@ vi.mock("../commands/agents.commands.bind.js", () => {
   };
 });
 
-vi.mock("../commands/agents.commands.delete.js", () => {
+vi.mock("../commands/agents/agents.commands.delete.js", () => {
   loaded.mark("agents-delete-command");
   return { agentsDeleteCommand: vi.fn(async () => {}) };
 });
 
-vi.mock("../commands/agents.commands.identity.js", () => {
+vi.mock("../commands/agents/agents.commands.identity.js", () => {
   loaded.mark("agents-identity-command");
   return { agentsSetIdentityCommand: vi.fn(async () => {}) };
 });
 
-vi.mock("../commands/agents.commands.list.js", () => {
+vi.mock("../commands/agents/agents.commands.list.js", () => {
   loaded.mark("agents-list-command");
   return { agentsListCommand: vi.fn(async () => {}) };
 });

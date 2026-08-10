@@ -1,0 +1,1290 @@
+[
+  {
+    "from": "src/gateway/auth-config-utils.ts",
+    "to": "src/gateway/auth/auth-config-utils.ts"
+  },
+  {
+    "from": "src/gateway/auth-install-policy.ts",
+    "to": "src/gateway/auth/auth-install-policy.ts"
+  },
+  {
+    "from": "src/gateway/auth-mode-policy.test.ts",
+    "to": "src/gateway/auth/auth-mode-policy.test.ts"
+  },
+  {
+    "from": "src/gateway/auth-mode-policy.ts",
+    "to": "src/gateway/auth/auth-mode-policy.ts"
+  },
+  {
+    "from": "src/gateway/auth-rate-limit.test.ts",
+    "to": "src/gateway/auth/auth-rate-limit.test.ts"
+  },
+  {
+    "from": "src/gateway/auth-rate-limit.ts",
+    "to": "src/gateway/auth/auth-rate-limit.ts"
+  },
+  {
+    "from": "src/gateway/auth-resolve.ts",
+    "to": "src/gateway/auth/auth-resolve.ts"
+  },
+  {
+    "from": "src/gateway/auth-surface-resolution.test.ts",
+    "to": "src/gateway/auth/auth-surface-resolution.test.ts"
+  },
+  {
+    "from": "src/gateway/auth-surface-resolution.ts",
+    "to": "src/gateway/auth/auth-surface-resolution.ts"
+  },
+  {
+    "from": "src/gateway/auth-token-resolution.ts",
+    "to": "src/gateway/auth/auth-token-resolution.ts"
+  },
+  {
+    "from": "src/gateway/auth-token-source-conflict.ts",
+    "to": "src/gateway/auth/auth-token-source-conflict.ts"
+  },
+  {
+    "from": "src/gateway/auth.test.ts",
+    "to": "src/gateway/auth/auth.test.ts"
+  },
+  {
+    "from": "src/gateway/auth.ts",
+    "to": "src/gateway/auth/auth.ts"
+  },
+  {
+    "from": "src/gateway/cli-session-history.claude.ts",
+    "to": "src/gateway/client/cli-session-history.claude.ts"
+  },
+  {
+    "from": "src/gateway/cli-session-history.merge.ts",
+    "to": "src/gateway/client/cli-session-history.merge.ts"
+  },
+  {
+    "from": "src/gateway/cli-session-history.test.ts",
+    "to": "src/gateway/client/cli-session-history.test.ts"
+  },
+  {
+    "from": "src/gateway/cli-session-history.ts",
+    "to": "src/gateway/client/cli-session-history.ts"
+  },
+  {
+    "from": "src/gateway/client-bootstrap.test.ts",
+    "to": "src/gateway/client/client-bootstrap.test.ts"
+  },
+  {
+    "from": "src/gateway/client-bootstrap.ts",
+    "to": "src/gateway/client/client-bootstrap.ts"
+  },
+  {
+    "from": "src/gateway/client-callsites.guard.test.ts",
+    "to": "src/gateway/client/client-callsites.guard.test.ts"
+  },
+  {
+    "from": "src/gateway/client-start-readiness.test.ts",
+    "to": "src/gateway/client/client-start-readiness.test.ts"
+  },
+  {
+    "from": "src/gateway/client-start-readiness.ts",
+    "to": "src/gateway/client/client-start-readiness.ts"
+  },
+  {
+    "from": "src/gateway/client.test.ts",
+    "to": "src/gateway/client/client.test.ts"
+  },
+  {
+    "from": "src/gateway/client.ts",
+    "to": "src/gateway/client/client.ts"
+  },
+  {
+    "from": "src/gateway/client.watchdog.test.ts",
+    "to": "src/gateway/client/client.watchdog.test.ts"
+  },
+  {
+    "from": "src/gateway/control-plane-audit.ts",
+    "to": "src/gateway/control/control-plane-audit.ts"
+  },
+  {
+    "from": "src/gateway/control-plane-rate-limit.test.ts",
+    "to": "src/gateway/control/control-plane-rate-limit.test.ts"
+  },
+  {
+    "from": "src/gateway/control-plane-rate-limit.ts",
+    "to": "src/gateway/control/control-plane-rate-limit.ts"
+  },
+  {
+    "from": "src/gateway/control-reply-text.ts",
+    "to": "src/gateway/control/control-reply-text.ts"
+  },
+  {
+    "from": "src/gateway/control-ui-contract.ts",
+    "to": "src/gateway/control/control-ui-contract.ts"
+  },
+  {
+    "from": "src/gateway/control-ui-csp.test.ts",
+    "to": "src/gateway/control/control-ui-csp.test.ts"
+  },
+  {
+    "from": "src/gateway/control-ui-csp.ts",
+    "to": "src/gateway/control/control-ui-csp.ts"
+  },
+  {
+    "from": "src/gateway/control-ui-http-utils.ts",
+    "to": "src/gateway/control/control-ui-http-utils.ts"
+  },
+  {
+    "from": "src/gateway/control-ui-links.ts",
+    "to": "src/gateway/control/control-ui-links.ts"
+  },
+  {
+    "from": "src/gateway/control-ui-routing.test.ts",
+    "to": "src/gateway/control/control-ui-routing.test.ts"
+  },
+  {
+    "from": "src/gateway/control-ui-routing.ts",
+    "to": "src/gateway/control/control-ui-routing.ts"
+  },
+  {
+    "from": "src/gateway/control-ui-shared.ts",
+    "to": "src/gateway/control/control-ui-shared.ts"
+  },
+  {
+    "from": "src/gateway/control-ui.auto-root.http.test.ts",
+    "to": "src/gateway/control/control-ui.auto-root.http.test.ts"
+  },
+  {
+    "from": "src/gateway/control-ui.http.test.ts",
+    "to": "src/gateway/control/control-ui.http.test.ts"
+  },
+  {
+    "from": "src/gateway/control-ui.ts",
+    "to": "src/gateway/control/control-ui.ts"
+  },
+  {
+    "from": "src/gateway/hooks-mapping.test.ts",
+    "to": "src/gateway/hooks/hooks-mapping.test.ts"
+  },
+  {
+    "from": "src/gateway/hooks-mapping.ts",
+    "to": "src/gateway/hooks/hooks-mapping.ts"
+  },
+  {
+    "from": "src/gateway/hooks-policy.ts",
+    "to": "src/gateway/hooks/hooks-policy.ts"
+  },
+  {
+    "from": "src/gateway/hooks-test-helpers.ts",
+    "to": "src/gateway/hooks/hooks-test-helpers.ts"
+  },
+  {
+    "from": "src/gateway/hooks.test.ts",
+    "to": "src/gateway/hooks/hooks.test.ts"
+  },
+  {
+    "from": "src/gateway/hooks.ts",
+    "to": "src/gateway/hooks/hooks.ts"
+  },
+  {
+    "from": "src/gateway/hooks.types.ts",
+    "to": "src/gateway/hooks/hooks.types.ts"
+  },
+  {
+    "from": "src/gateway/http-auth-utils.ts",
+    "to": "src/gateway/http/http-auth-utils.ts"
+  },
+  {
+    "from": "src/gateway/http-common.fuzz.test.ts",
+    "to": "src/gateway/http/http-common.fuzz.test.ts"
+  },
+  {
+    "from": "src/gateway/http-common.test.ts",
+    "to": "src/gateway/http/http-common.test.ts"
+  },
+  {
+    "from": "src/gateway/http-common.ts",
+    "to": "src/gateway/http/http-common.ts"
+  },
+  {
+    "from": "src/gateway/http-endpoint-helpers.test.ts",
+    "to": "src/gateway/http/http-endpoint-helpers.test.ts"
+  },
+  {
+    "from": "src/gateway/http-endpoint-helpers.ts",
+    "to": "src/gateway/http/http-endpoint-helpers.ts"
+  },
+  {
+    "from": "src/gateway/http-utils.authorize-request.test.ts",
+    "to": "src/gateway/http/http-utils.authorize-request.test.ts"
+  },
+  {
+    "from": "src/gateway/http-utils.model-override.test.ts",
+    "to": "src/gateway/http/http-utils.model-override.test.ts"
+  },
+  {
+    "from": "src/gateway/http-utils.request-context.test.ts",
+    "to": "src/gateway/http/http-utils.request-context.test.ts"
+  },
+  {
+    "from": "src/gateway/http-utils.ts",
+    "to": "src/gateway/http/http-utils.ts"
+  },
+  {
+    "from": "src/gateway/mcp-http.handlers.ts",
+    "to": "src/gateway/protocol/mcp-http.handlers.ts"
+  },
+  {
+    "from": "src/gateway/mcp-http.loopback-runtime.ts",
+    "to": "src/gateway/protocol/mcp-http.loopback-runtime.ts"
+  },
+  {
+    "from": "src/gateway/mcp-http.protocol.ts",
+    "to": "src/gateway/protocol/mcp-http.protocol.ts"
+  },
+  {
+    "from": "src/gateway/mcp-http.request.ts",
+    "to": "src/gateway/protocol/mcp-http.request.ts"
+  },
+  {
+    "from": "src/gateway/mcp-http.runtime.ts",
+    "to": "src/gateway/protocol/mcp-http.runtime.ts"
+  },
+  {
+    "from": "src/gateway/mcp-http.schema.ts",
+    "to": "src/gateway/protocol/mcp-http.schema.ts"
+  },
+  {
+    "from": "src/gateway/mcp-http.test.ts",
+    "to": "src/gateway/protocol/mcp-http.test.ts"
+  },
+  {
+    "from": "src/gateway/mcp-http.ts",
+    "to": "src/gateway/protocol/mcp-http.ts"
+  },
+  {
+    "from": "src/gateway/node-catalog.test.ts",
+    "to": "src/gateway/node/node-catalog.test.ts"
+  },
+  {
+    "from": "src/gateway/node-catalog.ts",
+    "to": "src/gateway/node/node-catalog.ts"
+  },
+  {
+    "from": "src/gateway/node-command-policy.test.ts",
+    "to": "src/gateway/node/node-command-policy.test.ts"
+  },
+  {
+    "from": "src/gateway/node-command-policy.ts",
+    "to": "src/gateway/node/node-command-policy.ts"
+  },
+  {
+    "from": "src/gateway/node-connect-reconcile.test.ts",
+    "to": "src/gateway/node/node-connect-reconcile.test.ts"
+  },
+  {
+    "from": "src/gateway/node-connect-reconcile.ts",
+    "to": "src/gateway/node/node-connect-reconcile.ts"
+  },
+  {
+    "from": "src/gateway/node-invoke-plugin-policy.test.ts",
+    "to": "src/gateway/node/node-invoke-plugin-policy.test.ts"
+  },
+  {
+    "from": "src/gateway/node-invoke-plugin-policy.ts",
+    "to": "src/gateway/node/node-invoke-plugin-policy.ts"
+  },
+  {
+    "from": "src/gateway/node-invoke-sanitize.ts",
+    "to": "src/gateway/node/node-invoke-sanitize.ts"
+  },
+  {
+    "from": "src/gateway/node-invoke-system-run-approval-errors.ts",
+    "to": "src/gateway/node/node-invoke-system-run-approval-errors.ts"
+  },
+  {
+    "from": "src/gateway/node-invoke-system-run-approval-match.test.ts",
+    "to": "src/gateway/node/node-invoke-system-run-approval-match.test.ts"
+  },
+  {
+    "from": "src/gateway/node-invoke-system-run-approval-match.ts",
+    "to": "src/gateway/node/node-invoke-system-run-approval-match.ts"
+  },
+  {
+    "from": "src/gateway/node-invoke-system-run-approval.test.ts",
+    "to": "src/gateway/node/node-invoke-system-run-approval.test.ts"
+  },
+  {
+    "from": "src/gateway/node-invoke-system-run-approval.ts",
+    "to": "src/gateway/node/node-invoke-system-run-approval.ts"
+  },
+  {
+    "from": "src/gateway/node-pairing-auto-approve.test.ts",
+    "to": "src/gateway/node/node-pairing-auto-approve.test.ts"
+  },
+  {
+    "from": "src/gateway/node-pairing-auto-approve.ts",
+    "to": "src/gateway/node/node-pairing-auto-approve.ts"
+  },
+  {
+    "from": "src/gateway/node-pending-work.test.ts",
+    "to": "src/gateway/node/node-pending-work.test.ts"
+  },
+  {
+    "from": "src/gateway/node-pending-work.ts",
+    "to": "src/gateway/node/node-pending-work.ts"
+  },
+  {
+    "from": "src/gateway/node-reapproval-coordinator.test.ts",
+    "to": "src/gateway/node/node-reapproval-coordinator.test.ts"
+  },
+  {
+    "from": "src/gateway/node-reapproval-coordinator.ts",
+    "to": "src/gateway/node/node-reapproval-coordinator.ts"
+  },
+  {
+    "from": "src/gateway/node-registry.test.ts",
+    "to": "src/gateway/node/node-registry.test.ts"
+  },
+  {
+    "from": "src/gateway/node-registry.ts",
+    "to": "src/gateway/node/node-registry.ts"
+  },
+  {
+    "from": "src/gateway/openai-compat-errors.ts",
+    "to": "src/gateway/protocol/openai-compat-errors.ts"
+  },
+  {
+    "from": "src/gateway/openai-compatible-http.test-helpers.ts",
+    "to": "src/gateway/protocol/openai-compatible-http.test-helpers.ts"
+  },
+  {
+    "from": "src/gateway/openai-http.test.ts",
+    "to": "src/gateway/protocol/openai-http.test.ts"
+  },
+  {
+    "from": "src/gateway/openai-http.ts",
+    "to": "src/gateway/protocol/openai-http.ts"
+  },
+  {
+    "from": "src/gateway/openai-http.usage.test.ts",
+    "to": "src/gateway/protocol/openai-http.usage.test.ts"
+  },
+  {
+    "from": "src/gateway/openai-tool-choice.ts",
+    "to": "src/gateway/protocol/openai-tool-choice.ts"
+  },
+  {
+    "from": "src/gateway/openresponses-file-content.ts",
+    "to": "src/gateway/protocol/openresponses-file-content.ts"
+  },
+  {
+    "from": "src/gateway/openresponses-http.server.file-only.test.ts",
+    "to": "src/gateway/protocol/openresponses-http.server.file-only.test.ts"
+  },
+  {
+    "from": "src/gateway/openresponses-http.test.ts",
+    "to": "src/gateway/protocol/openresponses-http.test.ts"
+  },
+  {
+    "from": "src/gateway/openresponses-http.ts",
+    "to": "src/gateway/protocol/openresponses-http.ts"
+  },
+  {
+    "from": "src/gateway/openresponses-parity.test.ts",
+    "to": "src/gateway/protocol/openresponses-parity.test.ts"
+  },
+  {
+    "from": "src/gateway/openresponses-phase.test.ts",
+    "to": "src/gateway/protocol/openresponses-phase.test.ts"
+  },
+  {
+    "from": "src/gateway/openresponses-prompt.ts",
+    "to": "src/gateway/protocol/openresponses-prompt.ts"
+  },
+  {
+    "from": "src/gateway/openresponses-shape.ts",
+    "to": "src/gateway/protocol/openresponses-shape.ts"
+  },
+  {
+    "from": "src/gateway/server-aux-handlers.test.ts",
+    "to": "src/gateway/server/server-aux-handlers.test.ts"
+  },
+  {
+    "from": "src/gateway/server-aux-handlers.ts",
+    "to": "src/gateway/server/server-aux-handlers.ts"
+  },
+  {
+    "from": "src/gateway/server-aux-methods.ts",
+    "to": "src/gateway/server/server-aux-methods.ts"
+  },
+  {
+    "from": "src/gateway/server-broadcast-types.ts",
+    "to": "src/gateway/server/server-broadcast-types.ts"
+  },
+  {
+    "from": "src/gateway/server-broadcast.ts",
+    "to": "src/gateway/server/server-broadcast.ts"
+  },
+  {
+    "from": "src/gateway/server-channel-runtime.types.ts",
+    "to": "src/gateway/server/server-channel-runtime.types.ts"
+  },
+  {
+    "from": "src/gateway/server-channels.approval-bootstrap.test.ts",
+    "to": "src/gateway/server/server-channels.approval-bootstrap.test.ts"
+  },
+  {
+    "from": "src/gateway/server-channels.test.ts",
+    "to": "src/gateway/server/server-channels.test.ts"
+  },
+  {
+    "from": "src/gateway/server-channels.ts",
+    "to": "src/gateway/server/server-channels.ts"
+  },
+  {
+    "from": "src/gateway/server-chat-state.ts",
+    "to": "src/gateway/server/server-chat-state.ts"
+  },
+  {
+    "from": "src/gateway/server-chat.agent-events.test.ts",
+    "to": "src/gateway/server/server-chat.agent-events.test.ts"
+  },
+  {
+    "from": "src/gateway/server-chat.load-gateway-session-row.runtime.ts",
+    "to": "src/gateway/server/server-chat.load-gateway-session-row.runtime.ts"
+  },
+  {
+    "from": "src/gateway/server-chat.persist-session-lifecycle.runtime.ts",
+    "to": "src/gateway/server/server-chat.persist-session-lifecycle.runtime.ts"
+  },
+  {
+    "from": "src/gateway/server-chat.stream-text-merge.test.ts",
+    "to": "src/gateway/server/server-chat.stream-text-merge.test.ts"
+  },
+  {
+    "from": "src/gateway/server-chat.ts",
+    "to": "src/gateway/server/server-chat.ts"
+  },
+  {
+    "from": "src/gateway/server-close.runtime.ts",
+    "to": "src/gateway/server/server-close.runtime.ts"
+  },
+  {
+    "from": "src/gateway/server-close.test.ts",
+    "to": "src/gateway/server/server-close.test.ts"
+  },
+  {
+    "from": "src/gateway/server-close.ts",
+    "to": "src/gateway/server/server-close.ts"
+  },
+  {
+    "from": "src/gateway/server-constants.ts",
+    "to": "src/gateway/server/server-constants.ts"
+  },
+  {
+    "from": "src/gateway/server-control-ui-root.resolve.test.ts",
+    "to": "src/gateway/server/server-control-ui-root.resolve.test.ts"
+  },
+  {
+    "from": "src/gateway/server-control-ui-root.ts",
+    "to": "src/gateway/server/server-control-ui-root.ts"
+  },
+  {
+    "from": "src/gateway/server-cron-lazy.test.ts",
+    "to": "src/gateway/server/server-cron-lazy.test.ts"
+  },
+  {
+    "from": "src/gateway/server-cron-lazy.ts",
+    "to": "src/gateway/server/server-cron-lazy.ts"
+  },
+  {
+    "from": "src/gateway/server-cron-notifications.test.ts",
+    "to": "src/gateway/server/server-cron-notifications.test.ts"
+  },
+  {
+    "from": "src/gateway/server-cron-notifications.ts",
+    "to": "src/gateway/server/server-cron-notifications.ts"
+  },
+  {
+    "from": "src/gateway/server-cron.test.ts",
+    "to": "src/gateway/server/server-cron.test.ts"
+  },
+  {
+    "from": "src/gateway/server-cron.ts",
+    "to": "src/gateway/server/server-cron.ts"
+  },
+  {
+    "from": "src/gateway/server-discovery-runtime.test.ts",
+    "to": "src/gateway/server/server-discovery-runtime.test.ts"
+  },
+  {
+    "from": "src/gateway/server-discovery-runtime.ts",
+    "to": "src/gateway/server/server-discovery-runtime.ts"
+  },
+  {
+    "from": "src/gateway/server-discovery.test.ts",
+    "to": "src/gateway/server/server-discovery.test.ts"
+  },
+  {
+    "from": "src/gateway/server-discovery.ts",
+    "to": "src/gateway/server/server-discovery.ts"
+  },
+  {
+    "from": "src/gateway/server-http.hooks-request-timeout.test.ts",
+    "to": "src/gateway/server/server-http.hooks-request-timeout.test.ts"
+  },
+  {
+    "from": "src/gateway/server-http.probe.test.ts",
+    "to": "src/gateway/server/server-http.probe.test.ts"
+  },
+  {
+    "from": "src/gateway/server-http.request-trace.test.ts",
+    "to": "src/gateway/server/server-http.request-trace.test.ts"
+  },
+  {
+    "from": "src/gateway/server-http.stages.test.ts",
+    "to": "src/gateway/server/server-http.stages.test.ts"
+  },
+  {
+    "from": "src/gateway/server-http.test-harness.ts",
+    "to": "src/gateway/server/server-http.test-harness.ts"
+  },
+  {
+    "from": "src/gateway/server-http.ts",
+    "to": "src/gateway/server/server-http.ts"
+  },
+  {
+    "from": "src/gateway/server-import-boundary.test.ts",
+    "to": "src/gateway/server/server-import-boundary.test.ts"
+  },
+  {
+    "from": "src/gateway/server-json.ts",
+    "to": "src/gateway/server/server-json.ts"
+  },
+  {
+    "from": "src/gateway/server-lanes.test.ts",
+    "to": "src/gateway/server/server-lanes.test.ts"
+  },
+  {
+    "from": "src/gateway/server-lanes.ts",
+    "to": "src/gateway/server/server-lanes.ts"
+  },
+  {
+    "from": "src/gateway/server-live-state.ts",
+    "to": "src/gateway/server/server-live-state.ts"
+  },
+  {
+    "from": "src/gateway/server-maintenance.test.ts",
+    "to": "src/gateway/server/server-maintenance.test.ts"
+  },
+  {
+    "from": "src/gateway/server-maintenance.ts",
+    "to": "src/gateway/server/server-maintenance.ts"
+  },
+  {
+    "from": "src/gateway/server-methods-list.test.ts",
+    "to": "src/gateway/server/server-methods-list.test.ts"
+  },
+  {
+    "from": "src/gateway/server-methods-list.ts",
+    "to": "src/gateway/server/server-methods-list.ts"
+  },
+  {
+    "from": "src/gateway/server-methods.authorization.test.ts",
+    "to": "src/gateway/server/server-methods.authorization.test.ts"
+  },
+  {
+    "from": "src/gateway/server-methods.control-plane-rate-limit.test.ts",
+    "to": "src/gateway/server/server-methods.control-plane-rate-limit.test.ts"
+  },
+  {
+    "from": "src/gateway/server-methods.ts",
+    "to": "src/gateway/server/server-methods.ts"
+  },
+  {
+    "from": "src/gateway/server-model-catalog.test.ts",
+    "to": "src/gateway/server/server-model-catalog.test.ts"
+  },
+  {
+    "from": "src/gateway/server-model-catalog.ts",
+    "to": "src/gateway/server/server-model-catalog.ts"
+  },
+  {
+    "from": "src/gateway/server-network-runtime.e2e.test.ts",
+    "to": "src/gateway/server/server-network-runtime.e2e.test.ts"
+  },
+  {
+    "from": "src/gateway/server-network-runtime.test.ts",
+    "to": "src/gateway/server/server-network-runtime.test.ts"
+  },
+  {
+    "from": "src/gateway/server-network-runtime.ts",
+    "to": "src/gateway/server/server-network-runtime.ts"
+  },
+  {
+    "from": "src/gateway/server-node-events-types.ts",
+    "to": "src/gateway/server/server-node-events-types.ts"
+  },
+  {
+    "from": "src/gateway/server-node-events.runtime.ts",
+    "to": "src/gateway/server/server-node-events.runtime.ts"
+  },
+  {
+    "from": "src/gateway/server-node-events.test.ts",
+    "to": "src/gateway/server/server-node-events.test.ts"
+  },
+  {
+    "from": "src/gateway/server-node-events.ts",
+    "to": "src/gateway/server/server-node-events.ts"
+  },
+  {
+    "from": "src/gateway/server-node-session-runtime.ts",
+    "to": "src/gateway/server/server-node-session-runtime.ts"
+  },
+  {
+    "from": "src/gateway/server-node-subscriptions.ts",
+    "to": "src/gateway/server/server-node-subscriptions.ts"
+  },
+  {
+    "from": "src/gateway/server-plugin-bootstrap.ts",
+    "to": "src/gateway/server/server-plugin-bootstrap.ts"
+  },
+  {
+    "from": "src/gateway/server-plugins.lifecycle.test.ts",
+    "to": "src/gateway/server/server-plugins.lifecycle.test.ts"
+  },
+  {
+    "from": "src/gateway/server-plugins.subagent-ended-hook.test.ts",
+    "to": "src/gateway/server/server-plugins.subagent-ended-hook.test.ts"
+  },
+  {
+    "from": "src/gateway/server-plugins.test.ts",
+    "to": "src/gateway/server/server-plugins.test.ts"
+  },
+  {
+    "from": "src/gateway/server-plugins.ts",
+    "to": "src/gateway/server/server-plugins.ts"
+  },
+  {
+    "from": "src/gateway/server-reload-handlers.test.ts",
+    "to": "src/gateway/server/server-reload-handlers.test.ts"
+  },
+  {
+    "from": "src/gateway/server-reload-handlers.ts",
+    "to": "src/gateway/server/server-reload-handlers.ts"
+  },
+  {
+    "from": "src/gateway/server-request-context.test.ts",
+    "to": "src/gateway/server/server-request-context.test.ts"
+  },
+  {
+    "from": "src/gateway/server-request-context.ts",
+    "to": "src/gateway/server/server-request-context.ts"
+  },
+  {
+    "from": "src/gateway/server-restart-deferral.test.ts",
+    "to": "src/gateway/server/server-restart-deferral.test.ts"
+  },
+  {
+    "from": "src/gateway/server-restart-sentinel.test.ts",
+    "to": "src/gateway/server/server-restart-sentinel.test.ts"
+  },
+  {
+    "from": "src/gateway/server-restart-sentinel.ts",
+    "to": "src/gateway/server/server-restart-sentinel.ts"
+  },
+  {
+    "from": "src/gateway/server-runtime-config.test.ts",
+    "to": "src/gateway/server/server-runtime-config.test.ts"
+  },
+  {
+    "from": "src/gateway/server-runtime-config.ts",
+    "to": "src/gateway/server/server-runtime-config.ts"
+  },
+  {
+    "from": "src/gateway/server-runtime-handles.ts",
+    "to": "src/gateway/server/server-runtime-handles.ts"
+  },
+  {
+    "from": "src/gateway/server-runtime-service-shared.ts",
+    "to": "src/gateway/server/server-runtime-service-shared.ts"
+  },
+  {
+    "from": "src/gateway/server-runtime-services.test.ts",
+    "to": "src/gateway/server/server-runtime-services.test.ts"
+  },
+  {
+    "from": "src/gateway/server-runtime-services.ts",
+    "to": "src/gateway/server/server-runtime-services.ts"
+  },
+  {
+    "from": "src/gateway/server-runtime-startup-services.ts",
+    "to": "src/gateway/server/server-runtime-startup-services.ts"
+  },
+  {
+    "from": "src/gateway/server-runtime-state.test.ts",
+    "to": "src/gateway/server/server-runtime-state.test.ts"
+  },
+  {
+    "from": "src/gateway/server-runtime-state.ts",
+    "to": "src/gateway/server/server-runtime-state.ts"
+  },
+  {
+    "from": "src/gateway/server-runtime-subscriptions.ts",
+    "to": "src/gateway/server/server-runtime-subscriptions.ts"
+  },
+  {
+    "from": "src/gateway/server-session-events.test.ts",
+    "to": "src/gateway/server/server-session-events.test.ts"
+  },
+  {
+    "from": "src/gateway/server-session-events.ts",
+    "to": "src/gateway/server/server-session-events.ts"
+  },
+  {
+    "from": "src/gateway/server-session-key.test.ts",
+    "to": "src/gateway/server/server-session-key.test.ts"
+  },
+  {
+    "from": "src/gateway/server-session-key.ts",
+    "to": "src/gateway/server/server-session-key.ts"
+  },
+  {
+    "from": "src/gateway/server-shared-auth-generation.ts",
+    "to": "src/gateway/server/server-shared-auth-generation.ts"
+  },
+  {
+    "from": "src/gateway/server-shared.ts",
+    "to": "src/gateway/server/server-shared.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-config.recovery.test.ts",
+    "to": "src/gateway/server/server-startup-config.recovery.test.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-config.secrets.test.ts",
+    "to": "src/gateway/server/server-startup-config.secrets.test.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-config.ts",
+    "to": "src/gateway/server/server-startup-config.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-early.test.ts",
+    "to": "src/gateway/server/server-startup-early.test.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-early.ts",
+    "to": "src/gateway/server/server-startup-early.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-log.test.ts",
+    "to": "src/gateway/server/server-startup-log.test.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-log.ts",
+    "to": "src/gateway/server/server-startup-log.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-memory.test.ts",
+    "to": "src/gateway/server/server-startup-memory.test.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-memory.ts",
+    "to": "src/gateway/server/server-startup-memory.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-plugins.test.ts",
+    "to": "src/gateway/server/server-startup-plugins.test.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-plugins.ts",
+    "to": "src/gateway/server/server-startup-plugins.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-post-attach.test.ts",
+    "to": "src/gateway/server/server-startup-post-attach.test.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-post-attach.ts",
+    "to": "src/gateway/server/server-startup-post-attach.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-session-migration.test.ts",
+    "to": "src/gateway/server/server-startup-session-migration.test.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-session-migration.ts",
+    "to": "src/gateway/server/server-startup-session-migration.ts"
+  },
+  {
+    "from": "src/gateway/server-startup-web-fetch-bind.test.ts",
+    "to": "src/gateway/server/server-startup-web-fetch-bind.test.ts"
+  },
+  {
+    "from": "src/gateway/server-startup.test.ts",
+    "to": "src/gateway/server/server-startup.test.ts"
+  },
+  {
+    "from": "src/gateway/server-tailscale.test.ts",
+    "to": "src/gateway/server/server-tailscale.test.ts"
+  },
+  {
+    "from": "src/gateway/server-tailscale.ts",
+    "to": "src/gateway/server/server-tailscale.ts"
+  },
+  {
+    "from": "src/gateway/server-talk-nodes.test.ts",
+    "to": "src/gateway/server/server-talk-nodes.test.ts"
+  },
+  {
+    "from": "src/gateway/server-talk-nodes.ts",
+    "to": "src/gateway/server/server-talk-nodes.ts"
+  },
+  {
+    "from": "src/gateway/server-utils.ts",
+    "to": "src/gateway/server/server-utils.ts"
+  },
+  {
+    "from": "src/gateway/server-wizard-sessions.ts",
+    "to": "src/gateway/server/server-wizard-sessions.ts"
+  },
+  {
+    "from": "src/gateway/server-ws-runtime.ts",
+    "to": "src/gateway/server/server-ws-runtime.ts"
+  },
+  {
+    "from": "src/gateway/server.agent.gateway-server-agent-a.test.ts",
+    "to": "src/gateway/server/server.agent.gateway-server-agent-a.test.ts"
+  },
+  {
+    "from": "src/gateway/server.agent.gateway-server-agent-b.test.ts",
+    "to": "src/gateway/server/server.agent.gateway-server-agent-b.test.ts"
+  },
+  {
+    "from": "src/gateway/server.agent.gateway-server-agent.mocks.ts",
+    "to": "src/gateway/server/server.agent.gateway-server-agent.mocks.ts"
+  },
+  {
+    "from": "src/gateway/server.agent.subagent-delivery-context.test.ts",
+    "to": "src/gateway/server/server.agent.subagent-delivery-context.test.ts"
+  },
+  {
+    "from": "src/gateway/server.auth.compat-baseline.test.ts",
+    "to": "src/gateway/server/server.auth.compat-baseline.test.ts"
+  },
+  {
+    "from": "src/gateway/server.auth.control-ui.suite.ts",
+    "to": "src/gateway/server/server.auth.control-ui.suite.ts"
+  },
+  {
+    "from": "src/gateway/server.auth.control-ui.test.ts",
+    "to": "src/gateway/server/server.auth.control-ui.test.ts"
+  },
+  {
+    "from": "src/gateway/server.auth.default-token.suite.ts",
+    "to": "src/gateway/server/server.auth.default-token.suite.ts"
+  },
+  {
+    "from": "src/gateway/server.auth.default-token.test.ts",
+    "to": "src/gateway/server/server.auth.default-token.test.ts"
+  },
+  {
+    "from": "src/gateway/server.auth.modes.suite.ts",
+    "to": "src/gateway/server/server.auth.modes.suite.ts"
+  },
+  {
+    "from": "src/gateway/server.auth.modes.test.ts",
+    "to": "src/gateway/server/server.auth.modes.test.ts"
+  },
+  {
+    "from": "src/gateway/server.auth.shared.ts",
+    "to": "src/gateway/server/server.auth.shared.ts"
+  },
+  {
+    "from": "src/gateway/server.channels.test.ts",
+    "to": "src/gateway/server/server.channels.test.ts"
+  },
+  {
+    "from": "src/gateway/server.chat.gateway-server-chat-b.test.ts",
+    "to": "src/gateway/server/server.chat.gateway-server-chat-b.test.ts"
+  },
+  {
+    "from": "src/gateway/server.chat.gateway-server-chat.test.ts",
+    "to": "src/gateway/server/server.chat.gateway-server-chat.test.ts"
+  },
+  {
+    "from": "src/gateway/server.config-patch.test.ts",
+    "to": "src/gateway/server/server.config-patch.test.ts"
+  },
+  {
+    "from": "src/gateway/server.control-ui-root.test.ts",
+    "to": "src/gateway/server/server.control-ui-root.test.ts"
+  },
+  {
+    "from": "src/gateway/server.cron.test.ts",
+    "to": "src/gateway/server/server.cron.test.ts"
+  },
+  {
+    "from": "src/gateway/server.device-pair-approve-authz.test.ts",
+    "to": "src/gateway/server/server.device-pair-approve-authz.test.ts"
+  },
+  {
+    "from": "src/gateway/server.device-pair-approve-supersede.test.ts",
+    "to": "src/gateway/server/server.device-pair-approve-supersede.test.ts"
+  },
+  {
+    "from": "src/gateway/server.device-token-rotate-authz.test.ts",
+    "to": "src/gateway/server/server.device-token-rotate-authz.test.ts"
+  },
+  {
+    "from": "src/gateway/server.e2e-registry-helpers.ts",
+    "to": "src/gateway/server/server.e2e-registry-helpers.ts"
+  },
+  {
+    "from": "src/gateway/server.e2e-ws-harness.ts",
+    "to": "src/gateway/server/server.e2e-ws-harness.ts"
+  },
+  {
+    "from": "src/gateway/server.health.test.ts",
+    "to": "src/gateway/server/server.health.test.ts"
+  },
+  {
+    "from": "src/gateway/server.hooks.test.ts",
+    "to": "src/gateway/server/server.hooks.test.ts"
+  },
+  {
+    "from": "src/gateway/server.impl.ts",
+    "to": "src/gateway/server/server.impl.ts"
+  },
+  {
+    "from": "src/gateway/server.ios-client-id.test.ts",
+    "to": "src/gateway/server/server.ios-client-id.test.ts"
+  },
+  {
+    "from": "src/gateway/server.lazy.test.ts",
+    "to": "src/gateway/server/server.lazy.test.ts"
+  },
+  {
+    "from": "src/gateway/server.minimal-channel-pin.test.ts",
+    "to": "src/gateway/server/server.minimal-channel-pin.test.ts"
+  },
+  {
+    "from": "src/gateway/server.models-voicewake-misc.test.ts",
+    "to": "src/gateway/server/server.models-voicewake-misc.test.ts"
+  },
+  {
+    "from": "src/gateway/server.node-invoke-approval-bypass.test.ts",
+    "to": "src/gateway/server/server.node-invoke-approval-bypass.test.ts"
+  },
+  {
+    "from": "src/gateway/server.node-pairing-authz.test.ts",
+    "to": "src/gateway/server/server.node-pairing-authz.test.ts"
+  },
+  {
+    "from": "src/gateway/server.node-pairing-auto-approve.test.ts",
+    "to": "src/gateway/server/server.node-pairing-auto-approve.test.ts"
+  },
+  {
+    "from": "src/gateway/server.node-pairing-rate-limit.test.ts",
+    "to": "src/gateway/server/server.node-pairing-rate-limit.test.ts"
+  },
+  {
+    "from": "src/gateway/server.node-version-mismatch.test.ts",
+    "to": "src/gateway/server/server.node-version-mismatch.test.ts"
+  },
+  {
+    "from": "src/gateway/server.plugin-http-auth.test.ts",
+    "to": "src/gateway/server/server.plugin-http-auth.test.ts"
+  },
+  {
+    "from": "src/gateway/server.plugin-node-capability-auth.test.ts",
+    "to": "src/gateway/server/server.plugin-node-capability-auth.test.ts"
+  },
+  {
+    "from": "src/gateway/server.preauth-bootstrap-token-rate-limit.test.ts",
+    "to": "src/gateway/server/server.preauth-bootstrap-token-rate-limit.test.ts"
+  },
+  {
+    "from": "src/gateway/server.preauth-hardening.test.ts",
+    "to": "src/gateway/server/server.preauth-hardening.test.ts"
+  },
+  {
+    "from": "src/gateway/server.roles-allowlist-update.test.ts",
+    "to": "src/gateway/server/server.roles-allowlist-update.test.ts"
+  },
+  {
+    "from": "src/gateway/server.sessions-send.test.ts",
+    "to": "src/gateway/server/server.sessions-send.test.ts"
+  },
+  {
+    "from": "src/gateway/server.sessions.compaction.test.ts",
+    "to": "src/gateway/server/server.sessions.compaction.test.ts"
+  },
+  {
+    "from": "src/gateway/server.sessions.create.test.ts",
+    "to": "src/gateway/server/server.sessions.create.test.ts"
+  },
+  {
+    "from": "src/gateway/server.sessions.delete-lifecycle.test.ts",
+    "to": "src/gateway/server/server.sessions.delete-lifecycle.test.ts"
+  },
+  {
+    "from": "src/gateway/server.sessions.list-changed.test.ts",
+    "to": "src/gateway/server/server.sessions.list-changed.test.ts"
+  },
+  {
+    "from": "src/gateway/server.sessions.permissions-hooks.test.ts",
+    "to": "src/gateway/server/server.sessions.permissions-hooks.test.ts"
+  },
+  {
+    "from": "src/gateway/server.sessions.preview-resolve.test.ts",
+    "to": "src/gateway/server/server.sessions.preview-resolve.test.ts"
+  },
+  {
+    "from": "src/gateway/server.sessions.reset-cleanup.test.ts",
+    "to": "src/gateway/server/server.sessions.reset-cleanup.test.ts"
+  },
+  {
+    "from": "src/gateway/server.sessions.reset-hooks.test.ts",
+    "to": "src/gateway/server/server.sessions.reset-hooks.test.ts"
+  },
+  {
+    "from": "src/gateway/server.sessions.reset-models.test.ts",
+    "to": "src/gateway/server/server.sessions.reset-models.test.ts"
+  },
+  {
+    "from": "src/gateway/server.sessions.store-rpc.test.ts",
+    "to": "src/gateway/server/server.sessions.store-rpc.test.ts"
+  },
+  {
+    "from": "src/gateway/server.sessions.thinking-e2e.test.ts",
+    "to": "src/gateway/server/server.sessions.thinking-e2e.test.ts"
+  },
+  {
+    "from": "src/gateway/server.shared-auth-rotation.test.ts",
+    "to": "src/gateway/server/server.shared-auth-rotation.test.ts"
+  },
+  {
+    "from": "src/gateway/server.shared-token-hot-reload.test.ts",
+    "to": "src/gateway/server/server.shared-token-hot-reload.test.ts"
+  },
+  {
+    "from": "src/gateway/server.shared-token-session-rotation.test.ts",
+    "to": "src/gateway/server/server.shared-token-session-rotation.test.ts"
+  },
+  {
+    "from": "src/gateway/server.silent-scope-upgrade-reconnect.poc.test.ts",
+    "to": "src/gateway/server/server.silent-scope-upgrade-reconnect.poc.test.ts"
+  },
+  {
+    "from": "src/gateway/server.startup-matrix-migration.integration.test.ts",
+    "to": "src/gateway/server/server.startup-matrix-migration.integration.test.ts"
+  },
+  {
+    "from": "src/gateway/server.startup-websocket-race.test.ts",
+    "to": "src/gateway/server/server.startup-websocket-race.test.ts"
+  },
+  {
+    "from": "src/gateway/server.tools-catalog.test.ts",
+    "to": "src/gateway/server/server.tools-catalog.test.ts"
+  },
+  {
+    "from": "src/gateway/server.ts",
+    "to": "src/gateway/server/server.ts"
+  },
+  {
+    "from": "src/gateway/session-archive.fs.ts",
+    "to": "src/gateway/sessions/session-archive.fs.ts"
+  },
+  {
+    "from": "src/gateway/session-archive.imports.test.ts",
+    "to": "src/gateway/sessions/session-archive.imports.test.ts"
+  },
+  {
+    "from": "src/gateway/session-archive.runtime.ts",
+    "to": "src/gateway/sessions/session-archive.runtime.ts"
+  },
+  {
+    "from": "src/gateway/session-child-sessions.test.ts",
+    "to": "src/gateway/sessions/session-child-sessions.test.ts"
+  },
+  {
+    "from": "src/gateway/session-child-sessions.ts",
+    "to": "src/gateway/sessions/session-child-sessions.ts"
+  },
+  {
+    "from": "src/gateway/session-compaction-checkpoints.test.ts",
+    "to": "src/gateway/sessions/session-compaction-checkpoints.test.ts"
+  },
+  {
+    "from": "src/gateway/session-compaction-checkpoints.ts",
+    "to": "src/gateway/sessions/session-compaction-checkpoints.ts"
+  },
+  {
+    "from": "src/gateway/session-history-state.test.ts",
+    "to": "src/gateway/sessions/session-history-state.test.ts"
+  },
+  {
+    "from": "src/gateway/session-history-state.ts",
+    "to": "src/gateway/sessions/session-history-state.ts"
+  },
+  {
+    "from": "src/gateway/session-kill-http.test.ts",
+    "to": "src/gateway/sessions/session-kill-http.test.ts"
+  },
+  {
+    "from": "src/gateway/session-kill-http.ts",
+    "to": "src/gateway/sessions/session-kill-http.ts"
+  },
+  {
+    "from": "src/gateway/session-lifecycle-state.test.ts",
+    "to": "src/gateway/sessions/session-lifecycle-state.test.ts"
+  },
+  {
+    "from": "src/gateway/session-lifecycle-state.ts",
+    "to": "src/gateway/sessions/session-lifecycle-state.ts"
+  },
+  {
+    "from": "src/gateway/session-message-events.test.ts",
+    "to": "src/gateway/sessions/session-message-events.test.ts"
+  },
+  {
+    "from": "src/gateway/session-patch-hooks.ts",
+    "to": "src/gateway/sessions/session-patch-hooks.ts"
+  },
+  {
+    "from": "src/gateway/session-preview.test-helpers.ts",
+    "to": "src/gateway/sessions/session-preview.test-helpers.ts"
+  },
+  {
+    "from": "src/gateway/session-reset-service.ts",
+    "to": "src/gateway/sessions/session-reset-service.ts"
+  },
+  {
+    "from": "src/gateway/session-store-key.ts",
+    "to": "src/gateway/sessions/session-store-key.ts"
+  },
+  {
+    "from": "src/gateway/session-subagent-reactivation.runtime.ts",
+    "to": "src/gateway/sessions/session-subagent-reactivation.runtime.ts"
+  },
+  {
+    "from": "src/gateway/session-subagent-reactivation.test.ts",
+    "to": "src/gateway/sessions/session-subagent-reactivation.test.ts"
+  },
+  {
+    "from": "src/gateway/session-subagent-reactivation.ts",
+    "to": "src/gateway/sessions/session-subagent-reactivation.ts"
+  },
+  {
+    "from": "src/gateway/session-transcript-files.fs.archive-cleanup.test.ts",
+    "to": "src/gateway/sessions/session-transcript-files.fs.archive-cleanup.test.ts"
+  },
+  {
+    "from": "src/gateway/session-transcript-files.fs.archive-events.test.ts",
+    "to": "src/gateway/sessions/session-transcript-files.fs.archive-events.test.ts"
+  },
+  {
+    "from": "src/gateway/session-transcript-files.fs.ts",
+    "to": "src/gateway/sessions/session-transcript-files.fs.ts"
+  },
+  {
+    "from": "src/gateway/session-transcript-index.fs.ts",
+    "to": "src/gateway/sessions/session-transcript-index.fs.ts"
+  },
+  {
+    "from": "src/gateway/session-transcript-key.test.ts",
+    "to": "src/gateway/sessions/session-transcript-key.test.ts"
+  },
+  {
+    "from": "src/gateway/session-transcript-key.ts",
+    "to": "src/gateway/sessions/session-transcript-key.ts"
+  },
+  {
+    "from": "src/gateway/session-transcript-path.ts",
+    "to": "src/gateway/sessions/session-transcript-path.ts"
+  },
+  {
+    "from": "src/gateway/session-transcript-readers.test.ts",
+    "to": "src/gateway/sessions/session-transcript-readers.test.ts"
+  },
+  {
+    "from": "src/gateway/session-transcript-readers.ts",
+    "to": "src/gateway/sessions/session-transcript-readers.ts"
+  },
+  {
+    "from": "src/gateway/session-utils.fs.test.ts",
+    "to": "src/gateway/sessions/session-utils.fs.test.ts"
+  },
+  {
+    "from": "src/gateway/session-utils.fs.ts",
+    "to": "src/gateway/sessions/session-utils.fs.ts"
+  },
+  {
+    "from": "src/gateway/session-utils.perf.test.ts",
+    "to": "src/gateway/sessions/session-utils.perf.test.ts"
+  },
+  {
+    "from": "src/gateway/session-utils.plugin-runtime.test.ts",
+    "to": "src/gateway/sessions/session-utils.plugin-runtime.test.ts"
+  },
+  {
+    "from": "src/gateway/session-utils.search.test.ts",
+    "to": "src/gateway/sessions/session-utils.search.test.ts"
+  },
+  {
+    "from": "src/gateway/session-utils.single-row-cache.test.ts",
+    "to": "src/gateway/sessions/session-utils.single-row-cache.test.ts"
+  },
+  {
+    "from": "src/gateway/session-utils.subagent.test.ts",
+    "to": "src/gateway/sessions/session-utils.subagent.test.ts"
+  },
+  {
+    "from": "src/gateway/session-utils.telegram-recreate.test.ts",
+    "to": "src/gateway/sessions/session-utils.telegram-recreate.test.ts"
+  },
+  {
+    "from": "src/gateway/session-utils.test.ts",
+    "to": "src/gateway/sessions/session-utils.test.ts"
+  },
+  {
+    "from": "src/gateway/session-utils.ts",
+    "to": "src/gateway/sessions/session-utils.ts"
+  },
+  {
+    "from": "src/gateway/session-utils.types.ts",
+    "to": "src/gateway/sessions/session-utils.types.ts"
+  },
+  {
+    "from": "src/gateway/sessions-history-http.revocation.test.ts",
+    "to": "src/gateway/sessions/sessions-history-http.revocation.test.ts"
+  },
+  {
+    "from": "src/gateway/sessions-history-http.test.ts",
+    "to": "src/gateway/sessions/sessions-history-http.test.ts"
+  },
+  {
+    "from": "src/gateway/sessions-history-http.ts",
+    "to": "src/gateway/sessions/sessions-history-http.ts"
+  },
+  {
+    "from": "src/gateway/sessions-patch.test.ts",
+    "to": "src/gateway/sessions/sessions-patch.test.ts"
+  },
+  {
+    "from": "src/gateway/sessions-patch.ts",
+    "to": "src/gateway/sessions/sessions-patch.ts"
+  },
+  {
+    "from": "src/gateway/sessions-resolve-store.test.ts",
+    "to": "src/gateway/sessions/sessions-resolve-store.test.ts"
+  },
+  {
+    "from": "src/gateway/sessions-resolve.test.ts",
+    "to": "src/gateway/sessions/sessions-resolve.test.ts"
+  },
+  {
+    "from": "src/gateway/sessions-resolve.ts",
+    "to": "src/gateway/sessions/sessions-resolve.ts"
+  }
+]

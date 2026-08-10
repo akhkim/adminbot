@@ -4,14 +4,17 @@ import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/s
 import type { ChannelMessageAdapterShape } from "../../channels/message/types.js";
 import { getChannelPlugin, getLoadedChannelPlugin } from "../../channels/plugins/index.js";
 import type { ChannelPlugin } from "../../channels/plugins/types.plugin.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { getActivePluginChannelRegistry, getActivePluginRegistry } from "../../plugins/runtime.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import {
+  getActivePluginChannelRegistry,
+  getActivePluginRegistry,
+} from "../../plugins/runtime/runtime.js";
 import {
   INTERNAL_MESSAGE_CHANNEL,
   isDeliverableMessageChannel,
   normalizeMessageChannel,
   type DeliverableMessageChannel,
-} from "../../utils/message-channel.js";
+} from "../../shared/message-channel.js";
 import {
   bootstrapOutboundChannelPlugin,
   resetOutboundChannelBootstrapStateForTests,

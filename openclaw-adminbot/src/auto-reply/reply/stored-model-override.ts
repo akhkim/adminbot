@@ -5,7 +5,7 @@ import {
   modelKey,
   normalizeModelRef,
   resolvePersistedOverrideModelRef,
-} from "../../agents/model-selection.js";
+} from "../../agents/models/model-selection.js";
 import { resolveSessionParentSessionKey } from "../../channels/plugins/session-conversation.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
 

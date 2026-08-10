@@ -1,16 +1,19 @@
 // Tests reply plumbing helpers that connect payloads, routes, and delivery modes.
 import { afterEach, describe, expect, it } from "vitest";
-import type { SubagentRunRecord } from "../../agents/subagent-registry.js";
+import type { SubagentRunRecord } from "../../agents/subagents/subagent-registry.js";
 import type { ChannelPlugin } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { formatDurationCompact } from "../../infra/format-time/format-duration.js";
-import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../../plugins/runtime.js";
+import {
+  resetPluginRuntimeStateForTest,
+  setActivePluginRegistry,
+} from "../../plugins/runtime/runtime.js";
 import {
   createChannelTestPluginBase,
   createTestRegistry,
 } from "../../test-utils/channel-plugins.js";
 import type { TemplateContext } from "../templating.js";
-import { buildThreadingToolContext } from "./agent-runner-utils.js";
+import { buildThreadingToolContext } from "./agent/agent-runner-utils.js";
 import { applyReplyThreading } from "./reply-payloads.js";
 import {
   formatRunLabel,

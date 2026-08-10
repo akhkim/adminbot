@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { resolveUserPath } from "../utils.js";
-import { isSafeExecutableValue } from "./exec-safety.js";
+import { isSafeExecutableValue } from "./exec/exec-safety.js";
 
 // Binary detection accepts safe executable names or explicit paths and avoids
 // shell evaluation when probing PATH.

@@ -6,9 +6,10 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
+import { renderEmailBodyHtml } from "../extensions/adminbot/api.js";
 import { getSlackWriteClient, resolveSlackAccount } from "../extensions/slack/api.js";
 import { loadConfig } from "../src/config/config.js";
-import type { OpenClawConfig } from "../src/config/types.openclaw.js";
+import type { OpenClawConfig } from "../src/config/types/openclaw.js";
 import { resolveSecretInputString } from "../src/secrets/resolve-secret-input-string.js";
 import { downloadLinkedDriveFiles } from "./adminbot-drive-download.js";
 import {
@@ -20,12 +21,40 @@ import {
 } from "./adminbot-email-model.js";
 
 const execFileAsync = promisify(execFile);
-const ACCOUNT = "jinesis.adminbot@gmail.com";
-const JINESIS_CALENDAR = "jinesis.lab@gmail.com";
-const ADMIN_RECIPIENT = "andrewkihyun@gmail.com";
-const SLACK_CHANNEL = "C09MANEUPPZ";
-const ONBOARDING_SENDERS = new Set(["zjin@cs.toronto.edu", "zjin.admin@cs.toronto.edu"]);
-const PRIVILEGED_SENDERS = new Set([...ONBOARDING_SENDERS, "andrewkihyun@gmail.com"]);
+// Every address, calendar and channel below identifies a specific workspace, so it is deployment
+// configuration and not a tracked constant. They are read through functions rather than at module
+// load: this file is imported for its pure classifiers too, and a top-level throw would take those
+// down on a box that only ever runs the tests.
+function requireEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`${name} is not set — the email automation cannot run without it`);
+  }
+  return value;
+}
+
+/** The mailbox the automation reads and sends as. */
+const botEmail = () => requireEnv("ADMINBOT_BOT_EMAIL");
+/** The shared lab calendar events are written to and read access is granted on. */
+const jinesisCalendar = () => requireEnv("ADMINBOT_LAB_EMAIL");
+/** Where reimbursement and error reports go; the first configured contact address. */
+const adminRecipient = () =>
+  addressList("ADMINBOT_CONTACT_EMAILS")[0] ?? requireEnv("ADMINBOT_CONTACT_EMAILS");
+/** The Slack Connect channel onboarding invites land in. */
+const slackChannel = () => requireEnv("ADMINBOT_ONBOARDING_CHANNEL_ID");
+
+function addressList(name: string): string[] {
+  return (process.env[name] ?? "")
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+// Unset means nobody is privileged, not everybody: an unconfigured deployment must classify every
+// sender as untrusted rather than hand a stranger the onboarding path.
+const onboardingSenders = () => new Set(addressList("ADMINBOT_ONBOARDING_SENDERS"));
+const privilegedSenders = () =>
+  new Set([...onboardingSenders(), ...addressList("ADMINBOT_CONTACT_EMAILS")]);
 const APPLICATION_FORM =
   "https://docs.google.com/forms/d/e/1FAIpQLSdyRYBiLPFUaaUC5v4ATIUwQpYPgmjRja33qwZFvH6BoIRCAA/viewform";
 const DCS_FORM = "https://forms.office.com/r/TgGWBGWLZa";
@@ -201,7 +230,7 @@ export function authorizeClassification(
     };
   }
   if (classification.category === "onboarding_instruction") {
-    if (!ONBOARDING_SENDERS.has(sender)) {
+    if (!onboardingSenders().has(sender)) {
       return {
         ...classification,
         category: "unknown",
@@ -221,7 +250,7 @@ export function authorizeClassification(
     classification.category === "calendar_event" ||
     classification.category === "reimbursement" ||
     classification.category === "talk_entry";
-  if (privilegedCategory && !PRIVILEGED_SENDERS.has(sender)) {
+  if (privilegedCategory && !privilegedSenders().has(sender)) {
     return {
       ...classification,
       category: "unknown",
@@ -400,7 +429,7 @@ class StateStore {
 
 class GoogleClient {
   private args(args: string[]): string[] {
-    return [...args, "--account", ACCOUNT, "--json", "--no-input"];
+    return [...args, "--account", botEmail(), "--json", "--no-input"];
   }
 
   async search(): Promise<EmailMessage[]> {
@@ -452,6 +481,13 @@ class GoogleClient {
     attachments: string[] = [],
   ): Promise<unknown> {
     const args = ["gmail", "send", "--to", to, "--subject", subject, "--body", body];
+    // These bodies are model-drafted prose rather than template copy, so they carry no bullet
+    // syntax -- but they hit the same delivery wrap, which turns a drafted paragraph into ragged
+    // ~70-character lines. The renderer handles a paragraphs-only body fine.
+    const html = renderEmailBodyHtml(body);
+    if (html) {
+      args.push("--body-html", html);
+    }
     for (const attachment of attachments) args.push("--attach", attachment);
     const result = await command(GOG, this.args(args), { timeout: 60_000 });
     return parseJson(result.stdout);
@@ -471,7 +507,7 @@ class GoogleClient {
     const args = [
       "calendar",
       "create",
-      JINESIS_CALENDAR,
+      jinesisCalendar(),
       "--summary",
       event.summary,
       "--from",
@@ -496,7 +532,7 @@ class GoogleClient {
         "acl",
         "insert",
         "--params",
-        JSON.stringify({ calendarId: JINESIS_CALENDAR, sendNotifications: true }),
+        JSON.stringify({ calendarId: jinesisCalendar(), sendNotifications: true }),
         "--json",
         JSON.stringify({ role: "reader", scope: { type: "user", value: email } }),
       ],
@@ -722,7 +758,7 @@ async function inviteTrial(email: string): Promise<unknown> {
   const account = await resolveEmailAutomationSlackAccount();
   if (!account.botToken) throw new Error("Slack bot token is not configured");
   return getSlackWriteClient(account.botToken).apiCall("conversations.inviteShared", {
-    channel: SLACK_CHANNEL,
+    channel: slackChannel(),
     emails: [email],
     external_limited: true,
   });
@@ -738,7 +774,7 @@ async function inviteFullMember(email: string): Promise<unknown> {
   return client.apiCall("admin.users.invite", {
     team_id: teamId,
     email,
-    channel_ids: [SLACK_CHANNEL],
+    channel_ids: [slackChannel()],
   });
 }
 
@@ -798,12 +834,12 @@ async function processMessage(
           requiredFacts: [
             `The recipient is ${email}.`,
             `Create a @cs.toronto.edu account through ${DCS_FORM}.`,
-            `Send the new @cs.toronto.edu address from this same mailbox — reply to this thread, or email ${ACCOUNT} — before the full Slack invitation is sent.`,
+            `Send the new @cs.toronto.edu address from this same mailbox — reply to this thread, or email ${botEmail()} — before the full Slack invitation is sent.`,
             "The Slack invitation is issued automatically on that reply; no lab admin has to be emailed.",
             `Create a member account at ${CONTROL_UI_URL} and work through the onboarding guide there.`,
             "Calendar access is part of onboarding.",
           ],
-          requiredVerbatim: [DCS_FORM, "@cs.toronto.edu", ACCOUNT, CONTROL_UI_ORIGIN],
+          requiredVerbatim: [DCS_FORM, "@cs.toronto.edu", botEmail(), CONTROL_UI_ORIGIN],
         });
         const sent = await state.effect(message.id, "direct_instructions", () =>
           google.send(email, draft.subject, draft.body),
@@ -837,10 +873,10 @@ async function processMessage(
             "Explain the remaining department-account dependency and ask for a reply in this thread after the address is ready.",
           requiredFacts: [
             "The department sends the account-creation instructions.",
-            `The candidate must send the new @cs.toronto.edu address from this same mailbox, in this thread or to ${ACCOUNT}.`,
+            `The candidate must send the new @cs.toronto.edu address from this same mailbox, in this thread or to ${botEmail()}.`,
             "The full Slack invitation is issued automatically after that reply; no lab admin has to be emailed.",
           ],
-          requiredVerbatim: ["@cs.toronto.edu", ACCOUNT],
+          requiredVerbatim: ["@cs.toronto.edu", botEmail()],
         });
         await state.effect(message.id, "request_dcs_email", () =>
           google.reply(message.id, draft.body),
@@ -869,7 +905,7 @@ async function processMessage(
       if (!event) throw new Error("calendar request is missing a parseable event title or date");
       await state.effect(message.id, "calendar_create", () => google.createEvent(event));
     } else if (classification.category === "talk_entry") {
-      if (!PRIVILEGED_SENDERS.has(normalizeAddress(message.from))) {
+      if (!privilegedSenders().has(normalizeAddress(message.from))) {
         throw new Error("talk-entry automation requires a trusted sender; queued for review");
       }
       const talk = await extractTalk(message, model);
@@ -882,15 +918,15 @@ async function processMessage(
         requiredFacts: [
           `Deliver this exact LaTeX line: ${latex}`,
           `The source thread subject is ${message.subject}.`,
-          `The recipient is ${ADMIN_RECIPIENT}.`,
+          `The recipient is ${adminRecipient()}.`,
         ],
         requiredVerbatim: [latex],
       });
       await state.effect(message.id, "send_talk_entry", () =>
-        google.send(ADMIN_RECIPIENT, draft.subject, draft.body),
+        google.send(adminRecipient(), draft.subject, draft.body),
       );
     } else if (classification.category === "reimbursement") {
-      if (!PRIVILEGED_SENDERS.has(normalizeAddress(message.from))) {
+      if (!privilegedSenders().has(normalizeAddress(message.from))) {
         throw new Error("reimbursement automation requires a trusted sender; queued for review");
       }
       const directory = fs.mkdtempSync(path.join(os.tmpdir(), "adminbot-reimbursement-"));
@@ -903,11 +939,11 @@ async function processMessage(
           `The source thread subject is ${message.subject}.`,
           "The completed Compute Expense Form, completed Trip Summary Form, and all supporting receipt files are attached.",
           "Funding source and signature fields were intentionally left for human review.",
-          `The recipient is ${ADMIN_RECIPIENT}.`,
+          `The recipient is ${adminRecipient()}.`,
         ],
       });
       await state.effect(message.id, "send_reimbursement", () =>
-        google.send(ADMIN_RECIPIENT, draft.subject, draft.body, files),
+        google.send(adminRecipient(), draft.subject, draft.body, files),
       );
     }
     await state.effect(message.id, "mark_read", () => google.markRead(message.id));
@@ -931,7 +967,7 @@ async function processMessage(
 }
 export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   loadDotEnv(path.join(os.homedir(), ".openclaw", ".env"));
-  process.env.GOG_ACCOUNT = ACCOUNT;
+  process.env.GOG_ACCOUNT = botEmail();
   const databasePath =
     process.env.ADMINBOT_DB_PATH ??
     path.join(os.homedir(), ".openclaw", "state", "adminbot.sqlite");

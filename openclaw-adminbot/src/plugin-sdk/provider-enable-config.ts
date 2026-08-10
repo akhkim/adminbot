@@ -1,5 +1,5 @@
 // Provider enable config helpers update provider allowlists and config enablement state.
-import { ensurePluginAllowlisted } from "../config/plugins-allowlist.js";
+import { ensurePluginAllowlisted } from "../config/plugin/plugins-allowlist.js";
 
 type ProviderPluginConfig = {
   /** Whether this plugin entry is enabled in the persisted plugin registry. */

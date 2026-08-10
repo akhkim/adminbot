@@ -1,10 +1,10 @@
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 /**
  * Declarative channel setup wizard contract.
  *
  * Defines status, credentials, prompts, group access, and finalization types for setup flows.
  */
-import type { DmPolicy } from "../../config/types.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { DmPolicy } from "../../config/types/types.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import type { WizardPrompter } from "../../wizard/prompts.js";
 import type { ChannelAccessPolicy } from "./setup-group-access.js";

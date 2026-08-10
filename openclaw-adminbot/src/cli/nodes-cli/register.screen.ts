@@ -2,13 +2,13 @@
 import type { Command } from "commander";
 import { defaultRuntime } from "../../runtime.js";
 import { shortenHomePath } from "../../utils.js";
+import { parseDurationMs } from "../program/parse-duration.js";
+import { runNodesCommand } from "./cli-utils.js";
 import {
   parseScreenRecordPayload,
   screenRecordTempPath,
   writeScreenRecordToFile,
-} from "../nodes-screen.js";
-import { parseDurationMs } from "../parse-duration.js";
-import { runNodesCommand } from "./cli-utils.js";
+} from "./nodes-screen.js";
 import {
   buildNodeInvokeParams,
   callGatewayCli,

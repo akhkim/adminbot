@@ -25,11 +25,11 @@ const secretsRuntimePluginMocks = vi.hoisted(() => ({
 
 // Mock plugin-provided auth/web surfaces so auth integration tests only cover
 // the configured stores and fixtures they explicitly install.
-vi.mock("../plugins/web-search-providers.runtime.js", () => ({
+vi.mock("../plugins/web/web-search-providers.runtime.js", () => ({
   resolvePluginWebSearchProviders: secretsRuntimePluginMocks.resolvePluginWebSearchProvidersMock,
 }));
 
-vi.mock("../plugins/provider-runtime.js", () => ({
+vi.mock("../plugins/providers/provider-runtime.js", () => ({
   resolveExternalAuthProfilesWithPlugins:
     secretsRuntimePluginMocks.resolveExternalAuthProfilesWithPluginsMock,
 }));

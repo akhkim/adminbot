@@ -5,8 +5,8 @@ import {
   setReplyPayloadMetadata,
   type ReplyPayload,
 } from "../auto-reply/reply-payload.js";
-import type { PluginHookReplyPayload } from "./hook-types.js";
-import { createHookRunnerWithRegistry } from "./hooks.test-helpers.js";
+import type { PluginHookReplyPayload } from "./hooks/hook-types.js";
+import { createHookRunnerWithRegistry } from "./hooks/hooks.test-helpers.js";
 
 const replyPayloadSendingEvent = {
   payload: { text: "hello" } satisfies ReplyPayload,

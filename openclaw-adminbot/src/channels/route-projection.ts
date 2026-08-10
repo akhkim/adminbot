@@ -3,18 +3,15 @@ import type {
   ConversationRef,
   SessionBindingRecord,
 } from "../infra/outbound/session-binding-service.js";
-import {
-  normalizeChannelRouteRef,
-  type ChannelRouteRef,
-} from "../plugin-sdk/channel-route.js";
+import { normalizeChannelRouteRef, type ChannelRouteRef } from "../plugin-sdk/channel-route.js";
 import {
   normalizeConversationTargetParams,
   type ConversationTargetParams,
-} from "../utils/conversation-target.js";
+} from "../shared/conversation-target.js";
 import {
   deliveryContextFromChannelRoute,
   type DeliveryContext,
-} from "../utils/delivery-context.shared.js";
+} from "../shared/delivery-context.shared.js";
 import { getChannelPlugin, normalizeChannelId } from "./plugins/registry.js";
 
 /** Formats a conversation id into a deliverable target, using channel hooks before generic fallback. */

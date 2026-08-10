@@ -2,8 +2,8 @@
 // agent tools that route through the local gateway client.
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CallGatewayOptions } from "../../gateway/call.js";
-import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { createEmptyPluginRegistry } from "../../plugins/manifest/registry-empty.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import { callGatewayTool, readGatewayCallOptions, resolveGatewayOptions } from "./gateway.js";
 
 const mocks = vi.hoisted(() => ({

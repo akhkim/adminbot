@@ -2,7 +2,7 @@
 import type { Command } from "commander";
 import { formatDocsLink } from "../../../packages/terminal-core/src/links.js";
 import { colorize, isRich, theme } from "../../../packages/terminal-core/src/theme.js";
-import type { HealthSummary } from "../../commands/health.js";
+import type { HealthSummary } from "../../commands/maintenance/health.js";
 import { parseStrictPositiveInteger } from "../../infra/parse-finite-number.js";
 import type { CostUsageSummary } from "../../infra/session-cost-usage.js";
 import type {
@@ -16,20 +16,22 @@ import type {
 import type { WriteDiagnosticSupportExportResult } from "../../logging/diagnostic-support-export.js";
 import { defaultRuntime } from "../../runtime.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
-import { inheritOptionFromParent } from "../command-options.js";
 import { addGatewayServiceCommands } from "../daemon-cli/register-service-commands.js";
 import { formatHelpExamples } from "../help-format.js";
+import { inheritOptionFromParent } from "../program/command-options.js";
 import type { GatewayRpcOpts } from "./call.js";
 import type { GatewayDiscoverOpts } from "./discover.js";
 import { addGatewayRunCommand } from "./run-command.js";
 
 const configModuleLoader = createLazyImportLoader(
-  () => import("../../config/read-best-effort-config.runtime.js"),
+  () => import("../../config/runtime/read-best-effort-config.runtime.js"),
 );
 const gatewayStatusModuleLoader = createLazyImportLoader(
-  () => import("../../commands/gateway-status.js"),
+  () => import("../../commands/gateway/gateway-status.js"),
 );
-const gatewayHealthModuleLoader = createLazyImportLoader(() => import("../../commands/health.js"));
+const gatewayHealthModuleLoader = createLazyImportLoader(
+  () => import("../../commands/maintenance/health.js"),
+);
 const bonjourDiscoveryModuleLoader = createLazyImportLoader(
   () => import("../../infra/bonjour-discovery.js"),
 );
@@ -37,7 +39,9 @@ const wideAreaDnsModuleLoader = createLazyImportLoader(() => import("../../infra
 const healthStyleModuleLoader = createLazyImportLoader(
   () => import("../../../packages/terminal-core/src/health-style.js"),
 );
-const usageFormatModuleLoader = createLazyImportLoader(() => import("../../utils/usage-format.js"));
+const usageFormatModuleLoader = createLazyImportLoader(
+  () => import("../../shared/usage-format.js"),
+);
 const stabilityBundleModuleLoader = createLazyImportLoader(
   () => import("../../logging/diagnostic-stability-bundle.js"),
 );

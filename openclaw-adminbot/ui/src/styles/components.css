@@ -4,14 +4,14 @@
    Login Gate
    =========================================== */
 
+/* A column, so the signed-out header can sit in flow at the top and the card centre itself in the
+   height left over — see `.signed-out-topbar` in layout.css. */
 .login-gate {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--bg);
-  padding: var(--space-8) var(--space-6);
   padding-bottom: max(var(--space-8), env(safe-area-inset-bottom));
 }
 
@@ -23,11 +23,16 @@
 }
 
 .login-gate__card {
-  width: min(440px, 100%);
+  box-sizing: border-box;
+  width: 100%;
+  /* The 440px form plus its gutters, so the fields keep their width and still clear the edges on a
+     narrow screen. Auto margins centre it in whatever height the header leaves behind. */
+  max-width: calc(440px + 2 * var(--space-6));
+  margin: auto;
+  padding: var(--space-8) var(--space-6);
   background: transparent;
   border: 0;
   border-radius: 0;
-  padding: 0;
   animation: rise var(--duration-slow) var(--ease-out) backwards;
 }
 
@@ -467,19 +472,8 @@
 }
 
 /* ===========================================
-   AdminBot Onboarding Welcome
+   Onboarding Checklist (dashboard warning card)
    =========================================== */
-
-.adminbot-welcome {
-  align-items: flex-start;
-  overflow-y: auto;
-  padding-top: var(--space-10);
-  padding-bottom: var(--space-10);
-}
-
-.adminbot-welcome__card {
-  width: min(640px, 100%);
-}
 
 .adminbot-welcome__category {
   margin-bottom: var(--space-6);
@@ -632,10 +626,6 @@
 
 .adminbot-welcome__step-link {
   text-decoration: none;
-}
-
-.adminbot-welcome__dismiss {
-  width: 100%;
 }
 
 /* ===========================================
@@ -818,6 +808,171 @@
   grid-column: 1 / -1;
 }
 
+.adminbot-time-availability {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.adminbot-time-availability__controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr);
+  gap: var(--space-3);
+  max-width: 520px;
+}
+
+.adminbot-time-availability__report {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.adminbot-time-availability__report-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.adminbot-time-availability__empty {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+  text-align: center;
+}
+
+.adminbot-time-chart-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
+}
+
+.adminbot-time-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4) 0;
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-time-chart__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.adminbot-time-chart__legend i,
+.adminbot-time-allocation-table__task {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.adminbot-time-chart {
+  display: block;
+  width: 100%;
+  min-width: 760px;
+  height: auto;
+}
+
+.adminbot-time-chart__grid {
+  stroke: #2a2e35;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.adminbot-time-chart__axis {
+  stroke: #9aa0aa;
+  stroke-width: 1.5;
+}
+
+.adminbot-time-chart__capacity-line {
+  stroke: #f7615d;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+  opacity: 0.6;
+}
+
+.adminbot-time-chart__axis-label {
+  fill: #9aa0aa;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.adminbot-time-chart__axis-label--timeline {
+  font-size: 11px;
+}
+
+.adminbot-time-chart__segment {
+  stroke: none;
+}
+
+.adminbot-time-chart__total {
+  fill: #9aa0aa;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.adminbot-time-chart__total--near {
+  fill: #fbbf24;
+}
+
+.adminbot-time-chart__total--over {
+  fill: #f87171;
+}
+
+.adminbot-time-chart__capacity-note {
+  padding: 0 var(--space-4) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-time-allocation-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.adminbot-time-allocation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-time-allocation-table th,
+.adminbot-time-allocation-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.adminbot-time-allocation-table th {
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.adminbot-time-allocation-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.adminbot-time-allocation-table td:first-child {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.adminbot-time-allocation-table__task {
+  display: inline-block;
+}
+
 .adminbot-registrations {
   list-style: none;
   margin: 0;
@@ -834,28 +989,68 @@
   gap: var(--space-2);
 }
 
+/* The applicant is who this card is about, so their name leads it and their address sits with
+   the name rather than drifting to the bottom as one more muted line among the metadata. */
 .adminbot-registration__member {
-  font-weight: 500;
-  color: var(--text);
-  margin-top: var(--space-2);
+  margin-top: var(--space-3);
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
 }
 
+.adminbot-registration__email {
+  margin-top: 2px;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+/* The decision row is the point of the card; it gets air and a rule above it so approving is
+   never a click that happens to be adjacent to the last field. */
+.adminbot-registration .adminbot-form__actions {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+/* A pending registration is a record to read before deciding, so it is ruled like every other
+   record in the product rather than laid out as its own grid of loose pairs. */
 .adminbot-registration__fields {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: var(--space-2);
-  margin: var(--space-3) 0 0;
+  grid-template-columns: repeat(auto-fill, minmax(min(20rem, 100%), 1fr));
+  column-gap: var(--space-8);
+  margin: var(--space-4) 0 0;
+}
+
+.adminbot-registration__field {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .adminbot-registration__field dt {
-  font-size: var(--control-ui-text-sm);
-  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--muted);
 }
 
 .adminbot-registration__field dd {
   margin: 0;
+  min-width: 0;
   color: var(--text);
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .adminbot-registration__field {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
 }
 
 .adminbot-editor-grid {
@@ -989,6 +1184,14 @@
   line-height: 1.5;
 }
 
+/* A card whose entire body is one meta line is a state, not a form: an empty queue, a load in
+   flight, a surface with nothing to show. Framing it stops the page reading as broken. */
+.adminbot-card > .adminbot-form__meta:only-child {
+  padding: var(--space-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+}
+
 .adminbot-form__actions {
   display: flex;
   align-items: center;
@@ -1063,6 +1266,38 @@
   font-size: var(--control-ui-text-sm);
   font-variant-numeric: tabular-nums;
   line-height: 1.45;
+}
+
+/* The approval gate reads as state, not as one more grey fact in the meta row. Unmet it is
+   simply the count; met, it is the last thing standing between a proposal and a real Slack
+   message, email or payout, so it takes the warning colour and says so on hover.
+   PRODUCT.md: the gate is meant to be visible, never hidden behind a button that reads instant. */
+.adminbot-action__gate {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.adminbot-action__gate::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+
+.adminbot-action__gate[data-armed] {
+  border-color: var(--warn-muted);
+  background: var(--warn-subtle);
+  color: var(--warn);
 }
 
 .adminbot-hash {
@@ -1526,11 +1761,41 @@
   color: var(--ok);
 }
 
+/* A status is a state, a tag is a label, and the two were styled identically -- so in the roster
+   an alumnus and an active member looked the same, and a status looked like a research topic. The
+   leading dot marks the whole class as state; colour is spent only on the states that are not the
+   unremarkable default.
+   Vocabulary: active | part_time | on_leave | alumni | external (contracts/actions.ts). */
+.adminbot-status::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+
 .adminbot-status--on_leave,
 .adminbot-status--part_time {
   border-color: var(--warn-muted);
   background: var(--warn-subtle);
   color: var(--warn);
+}
+
+/* Someone who has left. Recessed rather than coloured: it is not a condition to act on, but the
+   roster must never read them as present. */
+.adminbot-status--alumni {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--muted);
+}
+
+/* On the roster but not of the lab. */
+.adminbot-status--external {
+  border-color: var(--accent-muted);
+  background: var(--accent-subtle);
+  color: var(--accent);
 }
 
 .adminbot-contact-item {
@@ -2037,6 +2302,17 @@
   font-weight: 600;
   letter-spacing: var(--tracking-tight);
   color: var(--text-strong);
+}
+
+/* On an AdminBot surface the leading card is the page header, so its title carries page weight.
+   Scoped to the wide card so the dense grid cards inside a panel keep their own smaller voice. */
+.adminbot-card--wide > .card-title {
+  font-size: var(--control-ui-text-xl);
+  letter-spacing: var(--tracking-tight);
+}
+
+.adminbot-card--wide > .card-title + .card-sub {
+  max-width: 60ch;
 }
 
 .card-sub {

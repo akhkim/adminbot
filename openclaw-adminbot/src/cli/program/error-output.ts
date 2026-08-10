@@ -2,7 +2,7 @@
 import { formatDocsLink } from "../../../packages/terminal-core/src/links.js";
 import { theme } from "../../../packages/terminal-core/src/theme.js";
 import { getCommandPathWithRootOptions } from "../argv.js";
-import { formatCliCommand } from "../command-format.js";
+import { formatCliCommand } from "./command-format.js";
 import { formatCliCommandSuggestions } from "./command-suggestions.js";
 
 type FormatCliParseErrorOptions = {

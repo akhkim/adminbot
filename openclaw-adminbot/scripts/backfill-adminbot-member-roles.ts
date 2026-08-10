@@ -1,6 +1,6 @@
 // Fills in the `role` field on roster records that predate the role vocabulary.
 //
-// `role` is now a closed list (adminBotMemberRoles in contracts.ts), but 158 imported profiles were
+// `role` is now a closed list (adminBotMemberRoles in contracts/actions.ts), but 158 imported profiles were
 // written before it existed and left it empty. The information is not lost — most of them carry a
 // "Career stage:" line on their notes, put there by the quick-start survey importer — so this maps
 // that line onto the vocabulary rather than asking 100 people to re-enter what they already told us.
@@ -12,8 +12,8 @@ import path from "node:path";
 import {
   adminBotMemberRoles,
   type AdminBotMemberRole,
-} from "../extensions/adminbot/src/contracts.js";
-import { createAdminBotSqliteService } from "../extensions/adminbot/src/service-sqlite.js";
+} from "../extensions/adminbot/src/contracts/actions.js";
+import { createAdminBotSqliteService } from "../extensions/adminbot/src/persistence/sqlite.js";
 
 // Career stage as the survey recorded it -> the role it means. Keys are matched lowercased and
 // trimmed. A combined stage ("PhD / MSc", "PhD Mentee / MSc") takes the senior half: it describes

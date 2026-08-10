@@ -11,10 +11,13 @@ import {
   loadOrCreateDeviceIdentity,
   publicKeyRawBase64UrlFromPem,
 } from "../../infra/device-identity.js";
-import { getLastHeartbeatEvent } from "../../infra/heartbeat-events.js";
-import { setHeartbeatsEnabled } from "../../infra/heartbeat-runner.js";
-import { enqueueSystemEvent, isSystemEventContextChanged } from "../../infra/system-events.js";
-import { listSystemPresence, updateSystemPresence } from "../../infra/system-presence.js";
+import { getLastHeartbeatEvent } from "../../infra/heartbeat/heartbeat-events.js";
+import { setHeartbeatsEnabled } from "../../infra/heartbeat/heartbeat-runner.js";
+import {
+  enqueueSystemEvent,
+  isSystemEventContextChanged,
+} from "../../infra/system/system-events.js";
+import { listSystemPresence, updateSystemPresence } from "../../infra/system/system-presence.js";
 import { broadcastPresenceSnapshot } from "../server/presence-events.js";
 import type { GatewayRequestHandlers } from "./types.js";
 

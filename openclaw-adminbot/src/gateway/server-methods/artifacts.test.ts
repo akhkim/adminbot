@@ -15,17 +15,19 @@ vi.mock("../../tasks/task-status-access.js", () => ({
   getTaskSessionLookupByIdForStatus: hoisted.getTaskSessionLookupByIdForStatus,
 }));
 
-vi.mock("../session-utils.js", async () => {
-  const actual = await vi.importActual<typeof import("../session-utils.js")>("../session-utils.js");
+vi.mock("../sessions/session-utils.js", async () => {
+  const actual = await vi.importActual<typeof import("../sessions/session-utils.js")>(
+    "../sessions/session-utils.js",
+  );
   return {
     ...actual,
     loadSessionEntry: hoisted.loadSessionEntry,
   };
 });
 
-vi.mock("../session-transcript-readers.js", async () => {
-  const actual = await vi.importActual<typeof import("../session-transcript-readers.js")>(
-    "../session-transcript-readers.js",
+vi.mock("../sessions/session-transcript-readers.js", async () => {
+  const actual = await vi.importActual<typeof import("../sessions/session-transcript-readers.js")>(
+    "../sessions/session-transcript-readers.js",
   );
   return {
     ...actual,
@@ -33,9 +35,9 @@ vi.mock("../session-transcript-readers.js", async () => {
   };
 });
 
-vi.mock("../server-session-key.js", async () => {
-  const actual = await vi.importActual<typeof import("../server-session-key.js")>(
-    "../server-session-key.js",
+vi.mock("../server/server-session-key.js", async () => {
+  const actual = await vi.importActual<typeof import("../server/server-session-key.js")>(
+    "../server/server-session-key.js",
   );
   return {
     ...actual,

@@ -1,9 +1,9 @@
+import type { PluginInstallRecord } from "../config/types/plugins.js";
 // Detects plugin version drift between config, manifests, and installs.
-import type { OpenClawConfig } from "../config/types.js";
-import type { PluginInstallRecord } from "../config/types.plugins.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import { parseClawHubPluginSpec } from "../infra/clawhub-spec.js";
-import { parseRegistryNpmSpec } from "../infra/npm-registry-spec.js";
-import { normalizePluginsConfig, resolveEffectiveEnableState } from "./config-state.js";
+import { parseRegistryNpmSpec } from "../infra/install/npm-registry-spec.js";
+import { normalizePluginsConfig, resolveEffectiveEnableState } from "./config/config-state.js";
 import {
   resolveTrustedSourceLinkedOfficialClawHubInstall,
   resolveTrustedSourceLinkedOfficialNpmSpec,

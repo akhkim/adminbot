@@ -3,17 +3,17 @@ import {
   type ActiveRuntimePluginRegistrySurface,
   getLoadedRuntimePluginRegistry,
 } from "../active-runtime-registry.js";
+import type { PluginRegistry } from "../manifest/registry-types.js";
 import {
   loadOpenClawPlugins,
   resolvePluginRegistryLoadCacheKey,
   type PluginLoadOptions,
-} from "../loader.js";
-import type { PluginRegistry } from "../registry-types.js";
+} from "./loader.js";
 import {
   pinActivePluginChannelRegistry,
   pinActivePluginHttpRouteRegistry,
   setActivePluginRegistry,
-} from "../runtime.js";
+} from "./runtime.js";
 
 function resolveRuntimeSubagentMode(
   loadOptions: PluginLoadOptions,

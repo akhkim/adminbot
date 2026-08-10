@@ -4,9 +4,9 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import type { PluginInstallRecord } from "../config/types.plugins.js";
-import { writePersistedInstalledPluginIndex } from "../plugins/installed-plugin-index-store.js";
-import type { InstalledPluginIndex } from "../plugins/installed-plugin-index.js";
+import type { PluginInstallRecord } from "../config/types/plugins.js";
+import { writePersistedInstalledPluginIndex } from "../plugins/install/installed-plugin-index-store.js";
+import type { InstalledPluginIndex } from "../plugins/install/installed-plugin-index.js";
 import { createPathResolutionEnv, withEnvAsync } from "../test-utils/env.js";
 
 type CollectPluginsTrustFindings =
@@ -54,11 +54,11 @@ const readInstalledPackageVersionMock = vi.hoisted(() =>
   }),
 );
 
-vi.mock("../infra/package-update-utils.js", () => ({
+vi.mock("../infra/install/package-update-utils.js", () => ({
   readInstalledPackageVersion: readInstalledPackageVersionMock,
 }));
 
-vi.mock("../plugins/config-state.js", () => ({
+vi.mock("../plugins/config/config-state.js", () => ({
   normalizePluginId: (id: string) => id,
   resolveEffectiveEnableState: (params: {
     config?: {
@@ -139,17 +139,17 @@ vi.mock("../agents/sandbox/tool-policy.js", () => ({
   resolveSandboxToolPolicyForAgent: () => undefined,
 }));
 
-vi.mock("../agents/tool-policy-match.js", () => ({
+vi.mock("../agents/tools/tool-policy-match.js", () => ({
   isToolAllowedByPolicies: (_tool: string, policies: unknown[]) =>
     policies.every((policy) => policy == null),
 }));
 
-vi.mock("../agents/tool-policy.js", () => ({
+vi.mock("../agents/tools/tool-policy.js", () => ({
   resolveToolProfilePolicy: (profile: unknown) =>
     profile === "coding" || profile === "minimal" ? {} : undefined,
 }));
 
-vi.mock("../agents/sandbox-tool-policy.js", () => ({
+vi.mock("../agents/sandbox/sandbox-tool-policy.js", () => ({
   pickSandboxToolPolicy: () => undefined,
 }));
 

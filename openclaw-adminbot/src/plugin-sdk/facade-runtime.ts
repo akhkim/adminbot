@@ -2,7 +2,10 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { areBundledPluginsDisabled, resolveBundledPluginsDir } from "../plugins/bundled-dir.js";
+import {
+  areBundledPluginsDisabled,
+  resolveBundledPluginsDir,
+} from "../plugins/install/bundled-dir.js";
 import {
   getCachedPluginSourceModuleLoader,
   type PluginModuleLoaderCache,

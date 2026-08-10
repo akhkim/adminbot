@@ -1,19 +1,19 @@
 /** Discovers agent models and auth storage with provider/plugin normalization hooks. */
 import path from "node:path";
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type { Model } from "../llm/types.js";
-import { normalizeModelCompat } from "../plugins/provider-model-compat.js";
+import { normalizeModelCompat } from "../plugins/providers/provider-model-compat.js";
 import {
   applyProviderResolvedTransportWithPlugin,
   normalizeProviderResolvedModelWithPlugin,
-} from "../plugins/provider-runtime.js";
+} from "../plugins/providers/provider-runtime.js";
 import { isRecord } from "../utils.js";
 import {
   resolveAgentCredentialsForDiscovery,
   type DiscoverAuthStorageOptions,
-} from "./agent-auth-discovery.js";
-import { resolveModelPluginMetadataSnapshot } from "./model-discovery-context.js";
+} from "./auth/agent-auth-discovery.js";
+import { resolveModelPluginMetadataSnapshot } from "./models/model-discovery-context.js";
 import type { PluginModelCatalogMetadataSnapshot } from "./plugin-model-catalog.js";
 import {
   AuthStorage,
@@ -177,4 +177,4 @@ export {
   addEnvBackedAgentCredentials,
   resolveAgentCredentialsForDiscovery,
   type DiscoverAuthStorageOptions,
-} from "./agent-auth-discovery.js";
+} from "./auth/agent-auth-discovery.js";

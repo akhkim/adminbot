@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Generate extensions/adminbot/src/deadlines-web-ui.ts from the self-contained
-board template extensions/adminbot/deadlines/deadlines-board.html.
+Generate extensions/adminbot/src/workflows/deadlines/board.ts from the self-contained
+board template extensions/adminbot/content/deadlines/deadlines-board.html.
 
 `renderDeadlinesWebUi(items)` returns the board HTML with the embedded dataset
 replaced at render time from DEADLINE_VENUES (see mock-service.ts GET /deadlines).
@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from adminbot_deadlines import DEADLINES_DIR, REPO_ROOT
 
 BOARD = os.path.join(DEADLINES_DIR, "deadlines-board.html")
-OUT = os.path.join(REPO_ROOT, "extensions", "adminbot", "src", "deadlines-web-ui.ts")
+OUT = os.path.join(REPO_ROOT, "extensions", "adminbot", "src", "workflows", "deadlines", "board.ts")
 
 
 def main():
@@ -24,7 +24,7 @@ def main():
         raise SystemExit("board template has no `const DATA = ...;` line to replace")
     # escape for a TS template literal: backslash, then backtick, then ${ (keep placeholder literal)
     esc = board.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
-    ts = ("// Generated from extensions/adminbot/deadlines/deadlines-board.html by\n"
+    ts = ("// Generated from extensions/adminbot/content/deadlines/deadlines-board.html by\n"
           "// scripts/adminbot-deadline-web-ui-gen.py. Do not hand-edit; regenerate instead.\n"
           "// Renders the self-contained live deadline countdown board (Output 0).\n\n"
           "const TEMPLATE = `" + esc + "`;\n\n"

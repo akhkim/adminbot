@@ -1,5 +1,5 @@
 // Defines plugin approval request/resolution payloads and actions.
-import type { ExecApprovalDecision } from "./exec-approvals.js";
+import type { ExecApprovalDecision } from "./exec/exec-approvals.js";
 
 // Plugin approval types and renderers mirror exec approval decisions while
 // keeping plugin-facing request text and action metadata separate.

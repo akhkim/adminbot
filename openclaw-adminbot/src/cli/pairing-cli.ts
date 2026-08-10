@@ -12,7 +12,7 @@ import { listPairingChannels, notifyPairingApproved } from "../channels/plugins/
 import {
   formatCommandOwnerFromChannelSender,
   hasConfiguredCommandOwners,
-} from "../commands/doctor-command-owner.js";
+} from "../commands/doctor/doctor-command-owner.js";
 import {
   getRuntimeConfig,
   readConfigFileSnapshotForWrite,
@@ -22,7 +22,7 @@ import { resolvePairingIdLabel } from "../pairing/pairing-labels.js";
 import { approveChannelPairingCode, listChannelPairingRequests } from "../pairing/pairing-store.js";
 import type { PairingChannel } from "../pairing/pairing-store.types.js";
 import { defaultRuntime } from "../runtime.js";
-import { formatCliCommand } from "./command-format.js";
+import { formatCliCommand } from "./program/command-format.js";
 
 /** Parse channel, allowing extension channels not in core registry. */
 function parseChannel(raw: unknown, channels: PairingChannel[]): PairingChannel {

@@ -1,6 +1,6 @@
 // Gateway known-weak credential guard.
 // Rejects published placeholder auth values before the gateway starts.
-import type { ResolvedGatewayAuth } from "./auth.js";
+import type { ResolvedGatewayAuth } from "./auth/auth.js";
 
 export const KNOWN_WEAK_GATEWAY_TOKEN_PLACEHOLDERS = [
   "change-me-to-a-long-random-token",

@@ -13,7 +13,7 @@ import {
   type SessionNotification,
 } from "@agentclientprotocol/sdk";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { ensureOpenClawCliOnPath } from "../infra/path-env.js";
+import { ensureOpenClawCliOnPath } from "../infra/system/path-env.js";
 import {
   buildAcpClientStripKeys,
   resolveAcpClientSpawnEnv,

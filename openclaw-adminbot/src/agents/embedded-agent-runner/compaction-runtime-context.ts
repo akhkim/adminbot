@@ -4,24 +4,24 @@
 import type { SourceReplyDeliveryMode } from "../../auto-reply/get-reply-options.types.js";
 import type { ReasoningLevel, ThinkLevel } from "../../auto-reply/thinking.js";
 import type { ChatType } from "../../channels/chat-type.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { SkillSnapshot } from "../../skills/types.js";
 import { normalizeOptionalAgentRuntimeId } from "../agent-runtime-id.js";
-import {
-  listActiveProcessSessionReferences,
-  type ActiveProcessSessionReference,
-} from "../bash-process-references.js";
-import type { ExecElevatedDefaults } from "../bash-tools.js";
 import { DEFAULT_PROVIDER } from "../defaults.js";
 import {
   buildModelAliasIndex,
   inferUniqueProviderFromConfiguredModels,
   resolveModelRefFromString,
-} from "../model-selection-shared.js";
+} from "../models/model-selection-shared.js";
+import {
+  listActiveProcessSessionReferences,
+  type ActiveProcessSessionReference,
+} from "../tools/bash-process-references.js";
+import type { ExecElevatedDefaults } from "../tools/bash-tools.js";
 import {
   openAIProviderUsesCodexRuntimeByDefault,
   resolveSelectedOpenAIRuntimeProvider,
-} from "../openai-routing.js";
+} from "../transport/openai-routing.js";
 
 type EmbeddedCompactionRuntimeContext = {
   sessionKey?: string;

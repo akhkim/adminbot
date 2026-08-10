@@ -3,11 +3,11 @@ import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/st
 import {
   resolveSessionStoreAgentId,
   resolveSessionStoreKey,
-} from "../../gateway/session-store-key.js";
+} from "../../gateway/sessions/session-store-key.js";
 import { requiresFoldedSessionKeyAliasProof } from "../../sessions/session-key-utils.js";
-import { deliveryContextFromSession } from "../../utils/delivery-context.shared.js";
-import { getRuntimeConfig } from "../io.js";
-import type { OpenClawConfig } from "../types.openclaw.js";
+import { deliveryContextFromSession } from "../../shared/delivery-context.shared.js";
+import { getRuntimeConfig } from "../io/io.js";
+import type { OpenClawConfig } from "../types/openclaw.js";
 import { resolveStorePath } from "./paths.js";
 import {
   foldedSessionKeyAliasCandidates,

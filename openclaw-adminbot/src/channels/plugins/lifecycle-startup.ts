@@ -3,7 +3,7 @@
  *
  * Invokes optional plugin lifecycle hooks without blocking unrelated channels.
  */
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { listChannelPlugins } from "./registry.js";
 
 type ChannelStartupLogger = {

@@ -1,7 +1,7 @@
 // Config-flow step tests cover doctor repair step ordering and mutation planning.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../../config/config.js";
-import type { DoctorConfigPreflightResult } from "../../doctor-config-preflight.js";
+import type { DoctorConfigPreflightResult } from "../doctor-config-preflight.js";
 
 const { migrateLegacyConfigMock, stripUnknownConfigKeysMock } = vi.hoisted(() => ({
   migrateLegacyConfigMock: vi.fn(),
@@ -12,7 +12,7 @@ vi.mock("./legacy-config-migrate.js", () => ({
   migrateLegacyConfig: migrateLegacyConfigMock,
 }));
 
-vi.mock("../../doctor-config-analysis.js", () => ({
+vi.mock("../doctor-config-analysis.js", () => ({
   stripUnknownConfigKeys: stripUnknownConfigKeysMock,
 }));
 

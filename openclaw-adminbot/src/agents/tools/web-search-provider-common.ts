@@ -4,10 +4,10 @@
  * Handles provider config, credential normalization, guarded endpoint calls, caching, and filters.
  */
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { normalizeResolvedSecretInputString } from "../../config/types.secrets.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { normalizeResolvedSecretInputString } from "../../config/types/secrets.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
-import { normalizeSecretInput } from "../../utils/normalize-secret-input.js";
+import { normalizeSecretInput } from "../../shared/normalize-secret-input.js";
 import {
   DEFAULT_CACHE_TTL_MINUTES,
   DEFAULT_TIMEOUT_SECONDS,

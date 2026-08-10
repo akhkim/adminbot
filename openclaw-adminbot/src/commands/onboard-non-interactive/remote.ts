@@ -5,13 +5,13 @@
  * same config commit path as local onboarding.
  */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { formatCliCommand } from "../../cli/command-format.js";
+import { formatCliCommand } from "../../cli/program/command-format.js";
 import { logConfigUpdated } from "../../config/logging.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../../runtime.js";
-import { applySkipBootstrapConfig } from "../onboard-config.js";
-import { applyWizardMetadata } from "../onboard-helpers.js";
-import type { OnboardOptions } from "../onboard-types.js";
+import { applySkipBootstrapConfig } from "../onboard/onboard-config.js";
+import { applyWizardMetadata } from "../onboard/onboard-helpers.js";
+import type { OnboardOptions } from "../onboard/onboard-types.js";
 import { commitNonInteractiveOnboardConfig } from "./config-write.js";
 
 /** Runs non-interactive setup for clients that connect to an existing remote gateway. */

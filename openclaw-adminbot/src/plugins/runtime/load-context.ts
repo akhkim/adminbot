@@ -1,9 +1,9 @@
 // Plugin runtime load context helpers resolve agent and workspace facts for runtime activation.
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import { getRuntimeConfig } from "../../config/config.js";
-import { applyPluginAutoEnable } from "../../config/plugin-auto-enable.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { PluginInstallRecord } from "../../config/types.plugins.js";
+import { applyPluginAutoEnable } from "../../config/plugin/plugin-auto-enable.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { PluginInstallRecord } from "../../config/types/plugins.js";
 import { createSubsystemLogger } from "../../logging.js";
 import { resolvePluginActivationSourceConfig } from "../activation-source-config.js";
 import {
@@ -11,11 +11,11 @@ import {
   isReusableCurrentPluginMetadataSnapshot,
   setCurrentPluginMetadataSnapshot,
 } from "../current-plugin-metadata-snapshot.js";
-import { extractPluginInstallRecordsFromInstalledPluginIndex } from "../installed-plugin-index-install-records.js";
-import type { PluginLoadOptions } from "../loader.js";
-import type { PluginManifestRegistry } from "../manifest-registry.js";
+import { extractPluginInstallRecordsFromInstalledPluginIndex } from "../install/installed-plugin-index-install-records.js";
+import type { PluginManifestRegistry } from "../manifest/manifest-registry.js";
 import { resolvePluginMetadataSnapshot } from "../plugin-metadata-snapshot.js";
 import type { PluginLogger } from "../types.js";
+import type { PluginLoadOptions } from "./loader.js";
 
 const log = createSubsystemLogger("plugins");
 

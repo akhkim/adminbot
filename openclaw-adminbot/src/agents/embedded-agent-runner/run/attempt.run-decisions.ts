@@ -5,8 +5,8 @@ import type { OpenClawConfig } from "../../../config/config.js";
 import {
   resolveSessionLockMaxHoldFromTimeout,
   resolveSessionWriteLockOptions,
-} from "../../session-write-lock.js";
-import { UNKNOWN_TOOL_THRESHOLD } from "../../tool-loop-detection.js";
+} from "../../sessions/session-write-lock.js";
+import { UNKNOWN_TOOL_THRESHOLD } from "../../tools/tool-loop-detection.js";
 import type { EmbeddedRunAttemptParams } from "./types.js";
 
 /**

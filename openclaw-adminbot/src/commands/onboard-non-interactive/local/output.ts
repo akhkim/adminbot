@@ -5,7 +5,7 @@
  * are kept here so local and remote setup report failures consistently.
  */
 import { type RuntimeEnv, writeRuntimeJson } from "../../../runtime.js";
-import type { OnboardOptions } from "../../onboard-types.js";
+import type { OnboardOptions } from "../../onboard/onboard-types.js";
 
 /** Structured daemon/service details attached to gateway health failures. */
 export type GatewayHealthFailureDiagnostics = {

@@ -10,12 +10,12 @@ import {
   supportsAutomaticThreadBindingSpawn,
 } from "../../channels/thread-bindings-policy.js";
 import { getRuntimeConfig } from "../../config/config.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { callGateway } from "../../gateway/call.js";
 import { resolveSnakeCaseParamKey } from "../../param-key.js";
+import { normalizeDeliveryContext } from "../../shared/delivery-context.shared.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
-import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
-import type { GatewayMessageChannel } from "../../utils/message-channel.js";
+import type { GatewayMessageChannel } from "../../shared/message-channel.js";
 import {
   findAcpUnsupportedInheritedToolAllow,
   findAcpUnsupportedInheritedToolDeny,
@@ -24,20 +24,15 @@ import {
 } from "../inherited-tool-deny.js";
 import { optionalStringEnum } from "../schema/typebox.js";
 import type { SpawnedToolContext } from "../spawned-context.js";
-import { resolveAcpSessionsSpawnImageAttachments } from "../subagent-attachments.js";
-import { registerSubagentRun } from "../subagent-registry.js";
-import { resolveSubagentSpawnOwnership } from "../subagent-spawn-ownership.js";
+import { resolveAcpSessionsSpawnImageAttachments } from "../subagents/subagent-attachments.js";
+import { registerSubagentRun } from "../subagents/subagent-registry.js";
+import { resolveSubagentSpawnOwnership } from "../subagents/subagent-spawn-ownership.js";
 import {
   SUBAGENT_SPAWN_CONTEXT_MODES,
   SUBAGENT_SPAWN_MODES,
   spawnSubagentDirect,
-} from "../subagent-spawn.js";
-import { normalizeSubagentTaskName } from "../subagent-task-name.js";
-import {
-  describeSessionsSpawnTool,
-  SESSIONS_SPAWN_SUBAGENT_TOOL_DISPLAY_SUMMARY,
-  SESSIONS_SPAWN_TOOL_DISPLAY_SUMMARY,
-} from "../tool-description-presets.js";
+} from "../subagents/subagent-spawn.js";
+import { normalizeSubagentTaskName } from "../subagents/subagent-task-name.js";
 import type { AnyAgentTool } from "./common.js";
 import {
   jsonResult,
@@ -45,6 +40,11 @@ import {
   readStringParam,
   ToolInputError,
 } from "./common.js";
+import {
+  describeSessionsSpawnTool,
+  SESSIONS_SPAWN_SUBAGENT_TOOL_DISPLAY_SUMMARY,
+  SESSIONS_SPAWN_TOOL_DISPLAY_SUMMARY,
+} from "./tool-description-presets.js";
 
 const SESSIONS_SPAWN_RUNTIMES = ["subagent", "acp"] as const;
 const SESSIONS_SPAWN_SANDBOX_MODES = ["inherit", "require"] as const;
@@ -65,10 +65,10 @@ const UNSUPPORTED_SESSIONS_SPAWN_TIMEOUT_PARAM_KEYS = [
   "timeoutSeconds",
 ] as const;
 
-type AcpSpawnModule = typeof import("../acp-spawn.js");
+type AcpSpawnModule = typeof import("../acp/acp-spawn.js");
 
 const acpSpawnModuleLoader = createLazyImportLoader<AcpSpawnModule>(
-  () => import("../acp-spawn.js"),
+  () => import("../acp/acp-spawn.js"),
 );
 
 async function loadAcpSpawnModule(): Promise<AcpSpawnModule> {

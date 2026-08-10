@@ -11,7 +11,7 @@ import {
 import { listDevicePairing } from "../../infra/device-pairing.js";
 import { listNodePairing } from "../../infra/node-pairing.js";
 import type { NodeListNode } from "../../shared/node-list-types.js";
-import { createKnownNodeCatalog, listKnownNodes } from "../node-catalog.js";
+import { createKnownNodeCatalog, listKnownNodes } from "../node/node-catalog.js";
 import { respondInvalidParams, respondUnavailableOnThrow } from "./nodes.helpers.js";
 import type { GatewayRequestContext, GatewayRequestHandlers } from "./types.js";
 

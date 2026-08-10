@@ -4,8 +4,8 @@
  * Resolves default accounts, pairing hints, delimited entries, and DM security policy views.
  */
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
-import { formatCliCommand } from "../../cli/command-format.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { formatCliCommand } from "../../cli/program/command-format.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { DEFAULT_ACCOUNT_ID } from "../../routing/session-key.js";
 import type { ChannelSecurityDmPolicy } from "./types.core.js";
 import type { ChannelPlugin } from "./types.plugin.js";

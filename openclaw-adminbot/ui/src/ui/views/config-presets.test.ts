@@ -1,6 +1,6 @@
 // Control UI tests cover config presets behavior.
 import { describe, expect, it } from "vitest";
-import { OpenClawSchema } from "../../../../src/config/zod-schema.js";
+import { OpenClawSchema } from "../../../../src/config/zod/zod-schema.js";
 import { CONFIG_PRESETS, detectActivePreset } from "./config-presets.ts";
 
 describe("detectActivePreset", () => {

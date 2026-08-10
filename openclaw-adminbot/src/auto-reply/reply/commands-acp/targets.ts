@@ -3,7 +3,7 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import { callGateway } from "../../../gateway/call.js";
 import { resolveEffectiveResetTargetSessionKey } from "../acp-reset-target.js";
 import { resolveRequesterSessionKey } from "../commands-subagents/shared.js";
-import type { HandleCommandsParams } from "../commands-types.js";
+import type { HandleCommandsParams } from "../commands/commands-types.js";
 import { resolveAcpCommandBindingContext } from "./context.js";
 import { SESSION_ID_RE } from "./shared.js";
 

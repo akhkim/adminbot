@@ -3,14 +3,14 @@
  * Exercises provider-family fallbacks, plugin replay hooks, and policy caching.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { resolveProviderRuntimePlugin } from "../plugins/provider-hook-runtime.js";
-import type { ProviderRuntimeModel } from "../plugins/provider-runtime-model.types.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { resolveProviderRuntimePlugin } from "../plugins/providers/provider-hook-runtime.js";
+import type { ProviderRuntimeModel } from "../plugins/providers/provider-runtime-model.types.js";
 
-vi.mock("../plugins/provider-hook-runtime.js", async () => {
+vi.mock("../plugins/providers/provider-hook-runtime.js", async () => {
   const replayHelpers = await vi.importActual<
-    typeof import("../plugins/provider-replay-helpers.js")
-  >("../plugins/provider-replay-helpers.js");
+    typeof import("../plugins/providers/provider-replay-helpers.js")
+  >("../plugins/providers/provider-replay-helpers.js");
   return {
     resolveProviderRuntimePlugin: vi.fn(({ provider }: { provider?: string }) => {
       if (

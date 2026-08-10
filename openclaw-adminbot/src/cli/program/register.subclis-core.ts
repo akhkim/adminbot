@@ -2,16 +2,16 @@
 import type { Command } from "commander";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { resolveCliArgvInvocation } from "../argv-invocation.js";
-import { resolveCliCommandPathPolicy } from "../command-path-policy.js";
-import {
-  shouldEagerRegisterSubcommands,
-  shouldRegisterPrimarySubcommandOnly,
-} from "../command-registration-policy.js";
 import {
   buildCommandGroupEntries,
   defineImportedProgramCommandGroupSpecs,
   type CommandGroupDescriptorSpec,
 } from "./command-group-descriptors.js";
+import { resolveCliCommandPathPolicy } from "./command-path-policy.js";
+import {
+  shouldEagerRegisterSubcommands,
+  shouldRegisterPrimarySubcommandOnly,
+} from "./command-registration-policy.js";
 import { removeCommandByName } from "./command-tree.js";
 import { loadPrivateQaCliModule } from "./private-qa-cli.js";
 import {
@@ -98,12 +98,12 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = [
     },
     {
       commandNames: ["gateway"],
-      loadModule: () => import("../gateway-cli.js"),
+      loadModule: () => import("../gateway-cli/gateway-cli.js"),
       exportName: "registerGatewayCli",
     },
     {
       commandNames: ["daemon"],
-      loadModule: () => import("../daemon-cli.js"),
+      loadModule: () => import("../daemon-cli/daemon-cli.js"),
       exportName: "registerDaemonCli",
     },
     {
@@ -122,11 +122,6 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = [
       exportName: "registerModelsCli",
     },
     {
-      commandNames: ["infer", "capability"],
-      loadModule: () => import("../capability-cli.js"),
-      exportName: "registerCapabilityCli",
-    },
-    {
       commandNames: ["approvals"],
       loadModule: () => import("../exec-approvals-cli.js"),
       exportName: "registerExecApprovalsCli",
@@ -140,30 +135,25 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = [
   {
     commandNames: ["nodes"],
     register: async (program, argv) => {
-      const mod = await import("../nodes-cli.js");
+      const mod = await import("../nodes-cli/nodes-cli.js");
       await mod.registerNodesCli(program, argv);
     },
   },
   ...defineImportedProgramCommandGroupSpecs([
     {
       commandNames: ["devices"],
-      loadModule: () => import("../devices-cli.js"),
+      loadModule: () => import("../devices/devices-cli.js"),
       exportName: "registerDevicesCli",
     },
     {
       commandNames: ["node"],
-      loadModule: () => import("../node-cli.js"),
+      loadModule: () => import("../node-cli/node-cli.js"),
       exportName: "registerNodeCli",
     },
     {
       commandNames: ["sandbox"],
       loadModule: () => import("../sandbox-cli.js"),
       exportName: "registerSandboxCli",
-    },
-    {
-      commandNames: ["tui", "terminal", "chat"],
-      loadModule: () => import("../tui-cli.js"),
-      exportName: "registerTuiCli",
     },
     {
       commandNames: ["cron"],
@@ -184,11 +174,6 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = [
       commandNames: ["qa"],
       loadModule: loadPrivateQaCliModule,
       exportName: "registerQaLabCli",
-    },
-    {
-      commandNames: ["proxy"],
-      loadModule: () => import("../proxy-cli.js"),
-      exportName: "registerProxyCli",
     },
     {
       commandNames: ["hooks"],
@@ -232,7 +217,7 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = [
         program,
         argv,
         async () => {
-          const mod = await import("../plugins-cli.js");
+          const mod = await import("../plugins/plugins-cli.js");
           mod.registerPluginsCli(program);
         },
         "after",
@@ -266,12 +251,12 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = [
     },
     {
       commandNames: ["skills"],
-      loadModule: () => import("../skills-cli.js"),
+      loadModule: () => import("../skills/skills-cli.js"),
       exportName: "registerSkillsCli",
     },
     {
       commandNames: ["update"],
-      loadModule: () => import("../update-cli.js"),
+      loadModule: () => import("../update-cli/update-cli.js"),
       exportName: "registerUpdateCli",
     },
   ]),

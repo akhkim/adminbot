@@ -220,7 +220,7 @@ vi.mock("./probe.js", () => ({
   probeGatewayStatus: (opts: unknown) => callGatewayStatusProbe(opts),
 }));
 
-vi.mock("../../plugins/installed-plugin-index-record-reader.js", () => ({
+vi.mock("../../plugins/install/installed-plugin-index-record-reader.js", () => ({
   loadInstalledPluginIndexInstallRecords: (params?: {
     env?: NodeJS.ProcessEnv;
     stateDir?: string;

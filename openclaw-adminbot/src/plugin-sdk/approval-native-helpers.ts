@@ -6,19 +6,19 @@ import {
 import type {
   ExecApprovalForwardingConfig,
   ExecApprovalForwardingMode,
-} from "../config/types.approvals.js";
-import { doesApprovalRequestMatchChannelAccount } from "../infra/approval-request-account-binding.js";
-import { matchesApprovalRequestFilters } from "../infra/approval-request-filters.js";
+} from "../config/types/approvals.js";
+import { doesApprovalRequestMatchChannelAccount } from "../infra/approvals/approval-request-account-binding.js";
+import { matchesApprovalRequestFilters } from "../infra/approvals/approval-request-filters.js";
 import {
   getExecApprovalReplyMetadata,
   type ExecApprovalReplyMetadata,
-} from "../infra/exec-approval-reply.js";
-import type { ExecApprovalSessionTarget } from "../infra/exec-approval-session-target.js";
+} from "../infra/exec/exec-approval-reply.js";
+import type { ExecApprovalSessionTarget } from "../infra/exec/exec-approval-session-target.js";
 import {
   resolveApprovalRequestOriginTarget,
   resolveApprovalRequestSessionTarget,
-} from "../infra/exec-approval-session-target.js";
-import type { ExecApprovalRequest } from "../infra/exec-approvals.js";
+} from "../infra/exec/exec-approval-session-target.js";
+import type { ExecApprovalRequest } from "../infra/exec/exec-approvals.js";
 import type { PluginApprovalRequest } from "../infra/plugin-approvals.js";
 import { normalizeAccountId } from "../routing/session-key.js";
 import type { ChannelApprovalCapability, ChannelOutboundPayloadHint } from "./channel-contract.js";

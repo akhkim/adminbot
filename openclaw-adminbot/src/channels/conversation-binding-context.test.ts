@@ -1,7 +1,7 @@
 // Conversation binding context tests cover how bound channel conversations resolve agent context.
 import { afterEach, describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { setActivePluginRegistry } from "../plugins/runtime.js";
+import { setActivePluginRegistry } from "../plugins/runtime/runtime.js";
 import { createChannelTestPluginBase, createTestRegistry } from "../test-utils/channel-plugins.js";
 import { resolveConversationBindingContext } from "./conversation-binding-context.js";
 

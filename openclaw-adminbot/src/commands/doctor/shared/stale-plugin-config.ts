@@ -2,11 +2,11 @@
 import { sanitizeForLog } from "../../../../packages/terminal-core/src/ansi.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../../agents/agent-scope.js";
 import { CHANNEL_IDS } from "../../../channels/ids.js";
-import { shouldSuppressMissingCodexPluginDiagnostics } from "../../../config/codex-plugin-diagnostics.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { normalizePluginId } from "../../../plugins/config-state.js";
-import { loadInstalledPluginIndexInstallRecordsSync } from "../../../plugins/installed-plugin-index-records.js";
-import { loadManifestMetadataSnapshot } from "../../../plugins/manifest-contract-eligibility.js";
+import { shouldSuppressMissingCodexPluginDiagnostics } from "../../../config/plugin/codex-plugin-diagnostics.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import { normalizePluginId } from "../../../plugins/config/config-state.js";
+import { loadInstalledPluginIndexInstallRecordsSync } from "../../../plugins/install/installed-plugin-index-records.js";
+import { loadManifestMetadataSnapshot } from "../../../plugins/manifest/manifest-contract-eligibility.js";
 import { defaultSlotIdForKey, type PluginSlotKey } from "../../../plugins/slots.js";
 import { asObjectRecord } from "./object.js";
 

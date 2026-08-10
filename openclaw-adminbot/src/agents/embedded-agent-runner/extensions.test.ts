@@ -8,14 +8,14 @@ import compactionSafeguardExtension from "../agent-hooks/compaction-safeguard.js
 import contextPruningExtension from "../agent-hooks/context-pruning.js";
 import { buildEmbeddedExtensionFactories } from "./extensions.js";
 
-vi.mock("../../plugins/provider-runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-runtime.js", () => ({
   // Plugin-owned cache-TTL decisions are mocked out here; extension selection
   // tests assert the core default wiring only.
   resolveProviderCacheTtlEligibility: () => undefined,
   resolveProviderRuntimePlugin: () => undefined,
 }));
 
-vi.mock("../../plugins/provider-hook-runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-hook-runtime.js", () => ({
   resolveProviderRuntimePlugin: () => undefined,
 }));
 

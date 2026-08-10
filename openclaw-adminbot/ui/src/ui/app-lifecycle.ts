@@ -4,7 +4,7 @@ import {
   loadMemberPrivilege,
   type MemberAuthHost,
   resumeMemberSession,
-} from "./adminbot-auth-flow.ts";
+} from "./adminbot/auth/flow.ts";
 import { connectGateway } from "./app-gateway.ts";
 import {
   startLogsPolling,
@@ -32,6 +32,7 @@ import { startControlUiResponsivenessObserver } from "./control-ui-performance.t
 import { loadControlUiBootstrapConfig } from "./controllers/control-ui-bootstrap.ts";
 import { stopWorkboardLifecycleRefresh, stopWorkboardPolling } from "./controllers/workboard.ts";
 import type { Tab } from "./navigation.ts";
+import { syncSignedOutViewWithLocation } from "./signed-out-view.ts";
 import type { ChatQueueItem } from "./ui-types.ts";
 
 const CHAT_COMPOSER_DRAFT_PERSIST_DELAY_MS = 200;
@@ -72,12 +73,6 @@ type LifecycleHost = {
   chatComposerPersistTimer?: ReturnType<typeof globalThis.setTimeout> | number | null;
   chatComposerPersistSnapshot?: PendingChatComposerPersistSnapshot | null;
   pendingGatewayUrl?: string | null;
-  realtimeTalkSession?: { stop: () => void } | null;
-  realtimeTalkActive?: boolean;
-  realtimeTalkStatus?: string;
-  realtimeTalkDetail?: string | null;
-  realtimeTalkTranscript?: string | null;
-  realtimeTalkConversation?: unknown[];
   resetRealtimeTalkConversation?: () => void;
   chatLoading: boolean;
   chatMessages: unknown[];
@@ -98,6 +93,8 @@ type LifecycleHost = {
   controlUiResponsivenessObserver?: { disconnect: () => void } | null;
   controlUiBootstrapReady?: Promise<void> | null;
   popStateHandler: () => void;
+  authGateVisible?: boolean;
+  guestReimbursements?: boolean;
   topbarObserver: ResizeObserver | null;
 };
 
@@ -110,6 +107,9 @@ export function handleConnected(host: LifecycleHost) {
     { applyIdentity: false },
   );
   syncTabWithLocation(host as unknown as Parameters<typeof syncTabWithLocation>[0], true);
+  // Signed-out surfaces live in the URL too, so a reload or a shared link reopens the one the
+  // visitor was on instead of dropping them back on the landing page.
+  syncSignedOutViewWithLocation(host);
   const hasPendingGatewaySwitch =
     typeof host.pendingGatewayUrl === "string" && host.pendingGatewayUrl.trim();
   if (!hasPendingGatewaySwitch && restoreChatComposerState(host, { preserveCurrent: true })) {
@@ -243,13 +243,6 @@ export function handleDisconnected(host: LifecycleHost) {
   host.chatScrollTimeout = null;
   clearHostGlobalTimeout(host.sessionsChangedReloadTimer);
   host.sessionsChangedReloadTimer = null;
-  host.realtimeTalkSession?.stop();
-  host.realtimeTalkSession = null;
-  host.realtimeTalkActive = false;
-  host.realtimeTalkStatus = "idle";
-  host.realtimeTalkDetail = null;
-  host.realtimeTalkTranscript = null;
-  host.resetRealtimeTalkConversation?.();
   host.client?.stop();
   host.client = null;
   host.connected = false;

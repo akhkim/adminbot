@@ -3,7 +3,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AGENT_RUN_ABORTED_ERROR } from "../../agents/run-termination.js";
-import type { DedupeEntry } from "../server-shared.js";
+import type { DedupeEntry } from "../server/server-shared.js";
 import {
   testing,
   readTerminalSnapshotFromGatewayDedupe,

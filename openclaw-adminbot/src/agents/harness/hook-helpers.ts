@@ -5,9 +5,9 @@
  * while isolating hook failures from the runtime path.
  */
 import { createSubsystemLogger } from "../../logging/subsystem.js";
-import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
-import { consumeAdjustedParamsForToolCall } from "../agent-tools.before-tool-call.js";
+import { getGlobalHookRunner } from "../../plugins/hooks/hook-runner-global.js";
 import type { AgentMessage } from "../runtime/index.js";
+import { consumeAdjustedParamsForToolCall } from "../tools/agent-tools.before-tool-call.js";
 
 const log = createSubsystemLogger("agents/harness");
 

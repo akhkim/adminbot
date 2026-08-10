@@ -1,3 +1,4 @@
+import { normalizeDeliveryContext } from "../../shared/delivery-context.shared.js";
 // Runtime task helpers expose task-flow operations to activated plugin runtimes.
 import { listTasksForFlowId } from "../../tasks/runtime-internal.js";
 import {
@@ -20,7 +21,6 @@ import {
   listTasksForRelatedSessionKeyForOwner,
   resolveTaskForLookupTokenForOwner,
 } from "../../tasks/task-owner-access.js";
-import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
 import type { PluginRuntimeTaskFlow } from "./runtime-taskflow.types.js";
 import type {
   BoundTaskFlowsRuntime,

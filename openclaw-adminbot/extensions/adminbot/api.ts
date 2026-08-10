@@ -22,43 +22,47 @@ export type {
   AdminBotRiskTier,
   AdminBotSensitiveInfoRecord,
   AdminBotStoredProposal,
-} from "./src/contracts.js";
-export { AdminBotService, payloadHash } from "./src/service-core.js";
-export type { AdminBotActionExecutor } from "./src/service-core.js";
-export { createGogAdminBotExecutor } from "./src/gog-executor.js";
-export { createAdminBotSocialExecutor } from "./src/social-executor.js";
-export { createAdminBotOverleafExecutor } from "./src/overleaf-executor.js";
-export { createAdminBotMessageExecutor } from "./src/message-executor.js";
-export { createAdminBotOpenReviewExecutor } from "./src/openreview-executor.js";
-export type { AdminBotOpenReviewExecutorOptions } from "./src/openreview-executor.js";
+} from "./src/contracts/actions.js";
+export { AdminBotService, payloadHash } from "./src/kernel/service.js";
+export type { AdminBotActionExecutor } from "./src/kernel/service.js";
+export { createGogAdminBotExecutor } from "./src/connectors/gog.js";
+export { renderEmailBodyHtml } from "./src/connectors/email-html.js";
+export { createAdminBotSocialExecutor } from "./src/connectors/social.js";
+export { createAdminBotOverleafExecutor } from "./src/connectors/overleaf.js";
+export { createAdminBotMessageExecutor } from "./src/connectors/message.js";
+export { createAdminBotOpenReviewExecutor } from "./src/connectors/openreview.js";
+export type { AdminBotOpenReviewExecutorOptions } from "./src/connectors/openreview.js";
 export type {
   AdminBotOpenReviewWorkflow,
   AdminBotOpenReviewRunResult,
-} from "./src/openreview-workflow.js";
-export { createCompositeAdminBotExecutor } from "./src/composite-executor.js";
-export { createAdminBotSqliteService, AdminBotSqliteStore } from "./src/service-sqlite.js";
+} from "./src/workflows/papers/openreview-workflow.js";
+export { createCompositeAdminBotExecutor } from "./src/connectors/composite.js";
+export { createAdminBotSqliteService, AdminBotSqliteStore } from "./src/persistence/sqlite.js";
 export {
   createAdminBotMockService,
   type DevicePairingApprover,
   type DevicePairingApproval,
   type DeviceTokenIssuer,
   type DeviceTokenIssuance,
-} from "./src/mock-service.js";
-export { createAdminBotSensitiveInfoDocument } from "./src/sensitive-info-doc.js";
+} from "./src/api/server.js";
+export { createAdminBotSensitiveInfoDocument } from "./src/privacy/sensitive-info-doc.js";
 export {
   createAdminBotPrivacyBroker,
   defaultAdminBotPrivacyBrokerConfig,
-} from "./src/privacy-broker.js";
-export type { AdminBotPrivacyBroker, AdminBotPrivacyBrokerConfig } from "./src/privacy-broker.js";
-export { createAdminBotReimbursementWorkflow } from "./src/reimbursement-workflow.js";
+} from "./src/privacy/broker.js";
+export type { AdminBotPrivacyBroker, AdminBotPrivacyBrokerConfig } from "./src/privacy/broker.js";
+export { createAdminBotReimbursementWorkflow } from "./src/workflows/reimbursements/workflow.js";
 export type {
   AdminBotReimbursementRequest,
   AdminBotReimbursementWorkflow,
   AdminBotReimbursementWorkflowOptions,
-} from "./src/reimbursement-workflow.js";
-export type { AdminBotSensitiveInfoDocument } from "./src/sensitive-info-doc.js";
-export type { AdminBotPaperSocialPayload, AdminBotSocialPlatform } from "./src/social-posting.js";
+} from "./src/workflows/reimbursements/workflow.js";
+export type { AdminBotSensitiveInfoDocument } from "./src/privacy/sensitive-info-doc.js";
+export type {
+  AdminBotPaperSocialPayload,
+  AdminBotSocialPlatform,
+} from "./src/workflows/papers/social-posting.js";
 export type {
   AdminBotOverleafEditMode,
   AdminBotOverleafEditPayload,
-} from "./src/overleaf-editing.js";
+} from "./src/workflows/papers/overleaf-editing.js";

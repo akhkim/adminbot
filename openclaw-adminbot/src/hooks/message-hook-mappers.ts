@@ -4,18 +4,18 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 import type { FinalizedMsgContext } from "../auto-reply/templating.js";
 import { getChannelPlugin, normalizeChannelId } from "../channels/plugins/index.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   freezeDiagnosticTraceContext,
   type DiagnosticTraceContext,
-} from "../infra/diagnostic-trace-context.js";
+} from "../infra/diagnostics/diagnostic-trace-context.js";
 import type {
   PluginHookInboundClaimContext,
   PluginHookInboundClaimEvent,
   PluginHookMessageContext,
   PluginHookMessageReceivedEvent,
   PluginHookMessageSentEvent,
-} from "../plugins/hook-message.types.js";
+} from "../plugins/hooks/hook-message.types.js";
 import type {
   MessagePreprocessedHookContext,
   MessageReceivedHookContext,

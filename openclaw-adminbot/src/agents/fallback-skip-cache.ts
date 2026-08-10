@@ -15,7 +15,7 @@
  * `resetFallbackSkipCacheForTest()`.
  */
 
-import { modelKey } from "./model-selection-normalize.js";
+import { modelKey } from "./models/model-selection-normalize.js";
 
 /**
  * Default time-to-live for a skip marker. Disabled by default so existing

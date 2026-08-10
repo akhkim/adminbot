@@ -3,7 +3,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ErrorCodes } from "../../../packages/gateway-protocol/src/index.js";
-import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
+import { createEmptyPluginRegistry } from "../../plugins/manifest/registry-empty.js";
 import {
   ensureStandalonePluginToolRegistryLoaded,
   resolvePluginTools,
@@ -40,8 +40,8 @@ vi.mock("../../plugins/tools.js", () => ({
 }));
 
 const getActivePluginRegistryMock = vi.hoisted(() => vi.fn<() => unknown>(() => null));
-vi.mock("../../plugins/runtime.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../plugins/runtime.js")>();
+vi.mock("../../plugins/runtime/runtime.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../plugins/runtime/runtime.js")>();
   return {
     ...actual,
     getActivePluginRegistry: () =>

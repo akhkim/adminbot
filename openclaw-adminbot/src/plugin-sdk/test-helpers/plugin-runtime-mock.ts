@@ -3,7 +3,7 @@ import { vi } from "vitest";
 import {
   normalizeInboundTextNewlines,
   sanitizeInboundSystemTags,
-} from "../../auto-reply/reply/inbound-text.js";
+} from "../../auto-reply/reply/inbound/inbound-text.js";
 import {
   implicitMentionKindWhen,
   resolveInboundMentionDecision,
@@ -482,43 +482,9 @@ export function createPluginRuntimeMock(overrides: DeepPartial<PluginRuntime> = 
       getImageMetadata: vi.fn() as unknown as PluginRuntime["media"]["getImageMetadata"],
       resizeToJpeg: vi.fn() as unknown as PluginRuntime["media"]["resizeToJpeg"],
     },
-    tts: {
-      textToSpeech: vi.fn() as unknown as PluginRuntime["tts"]["textToSpeech"],
-      textToSpeechStream: vi.fn() as unknown as PluginRuntime["tts"]["textToSpeechStream"],
-      textToSpeechTelephony: vi.fn() as unknown as PluginRuntime["tts"]["textToSpeechTelephony"],
-      listVoices: vi.fn() as unknown as PluginRuntime["tts"]["listVoices"],
-    },
-    mediaUnderstanding: {
-      runFile: vi.fn() as unknown as PluginRuntime["mediaUnderstanding"]["runFile"],
-      describeImageFile:
-        vi.fn() as unknown as PluginRuntime["mediaUnderstanding"]["describeImageFile"],
-      describeImageFileWithModel:
-        vi.fn() as unknown as PluginRuntime["mediaUnderstanding"]["describeImageFileWithModel"],
-      extractStructuredWithModel:
-        vi.fn() as unknown as PluginRuntime["mediaUnderstanding"]["extractStructuredWithModel"],
-      describeVideoFile:
-        vi.fn() as unknown as PluginRuntime["mediaUnderstanding"]["describeVideoFile"],
-      transcribeAudioFile:
-        vi.fn() as unknown as PluginRuntime["mediaUnderstanding"]["transcribeAudioFile"],
-    },
-    imageGeneration: {
-      generate: vi.fn() as unknown as PluginRuntime["imageGeneration"]["generate"],
-      listProviders: vi.fn() as unknown as PluginRuntime["imageGeneration"]["listProviders"],
-    },
-    musicGeneration: {
-      generate: vi.fn() as unknown as PluginRuntime["musicGeneration"]["generate"],
-      listProviders: vi.fn() as unknown as PluginRuntime["musicGeneration"]["listProviders"],
-    },
-    videoGeneration: {
-      generate: vi.fn() as unknown as PluginRuntime["videoGeneration"]["generate"],
-      listProviders: vi.fn() as unknown as PluginRuntime["videoGeneration"]["listProviders"],
-    },
     webSearch: {
       listProviders: vi.fn() as unknown as PluginRuntime["webSearch"]["listProviders"],
       search: vi.fn() as unknown as PluginRuntime["webSearch"]["search"],
-    },
-    stt: {
-      transcribeAudioFile: vi.fn() as unknown as PluginRuntime["stt"]["transcribeAudioFile"],
     },
     channel: {
       text: {

@@ -1,6 +1,6 @@
 // Live session model switch tests cover model changes during isolated cron runs.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
+import { LiveSessionModelSwitchError } from "../../agents/models/live-model-switch-error.js";
 import {
   clearFastTestEnv,
   loadRunCronIsolatedAgentTurn,

@@ -1,16 +1,16 @@
 /**
  * Plans which core, bundle MCP, and bundle LSP tools an attempt should build.
  */
-import { TOOL_NAME_SEPARATOR } from "../../agent-bundle-mcp-names.js";
-import type { OpenClawCodingToolConstructionPlan } from "../../agent-tools.js";
-import { isToolAllowedByPolicyName } from "../../tool-policy-match.js";
+import { TOOL_NAME_SEPARATOR } from "../../mcp/agent-bundle-mcp-names.js";
+import type { OpenClawCodingToolConstructionPlan } from "../../tools/agent-tools.js";
+import { isToolAllowedByPolicyName } from "../../tools/tool-policy-match.js";
 import {
   buildPluginToolGroups,
   expandPolicyWithPluginGroups,
   expandToolGroups,
   normalizeToolList,
   normalizeToolName,
-} from "../../tool-policy.js";
+} from "../../tools/tool-policy.js";
 
 const BASE_CODING_TOOL_FACTORY_NAMES = new Set(["edit", "read", "write"]);
 

@@ -13,7 +13,7 @@ const { storeDeviceAuthToken } = await import("../infra/device-auth-store.js");
 const { loadOrCreateDeviceIdentity, publicKeyRawBase64UrlFromPem } =
   await import("../infra/device-identity.js");
 const { approveDevicePairing, requestDevicePairing } = await import("../infra/device-pairing.js");
-await import("./server.js");
+await import("./server/server.js");
 
 let gatewayHarness: Awaited<ReturnType<typeof createGatewaySuiteHarness>>;
 

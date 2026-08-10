@@ -13,7 +13,7 @@ const forbiddenOllamaFacadeFiles = [
   "src/plugin-sdk/ollama-runtime.ts",
 ] as const;
 const genericCoreFixtureFiles = [
-  "src/commands/auth-choice.apply.plugin-provider.test.ts",
+  "src/commands/auth/auth-choice.apply.plugin-provider.test.ts",
   "src/plugins/contracts/memory-embedding-provider.contract.test.ts",
   "src/plugins/discovery.test.ts",
   "src/plugins/contracts/tts-contract-suites.ts",

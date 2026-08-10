@@ -1,7 +1,10 @@
 // Cron delivery tests cover delivery execution and status recording.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { ChannelPlugin } from "../channels/plugins/types.public.js";
-import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
+import {
+  resetPluginRuntimeStateForTest,
+  setActivePluginRegistry,
+} from "../plugins/runtime/runtime.js";
 import { createChannelTestPluginBase, createTestRegistry } from "../test-utils/channel-plugins.js";
 import { resolveCronDeliveryPlan, resolveFailureDestination } from "./delivery-plan.js";
 import { makeCronJob } from "./delivery.test-helpers.js";

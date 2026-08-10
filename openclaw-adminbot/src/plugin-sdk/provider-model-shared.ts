@@ -14,7 +14,7 @@ import {
   buildStrictAnthropicReplayPolicy,
   resolveTaggedReasoningOutputMode,
   sanitizeGoogleGeminiReplayHistory,
-} from "../plugins/provider-replay-helpers.js";
+} from "../plugins/providers/provider-replay-helpers.js";
 import type { ProviderPlugin } from "../plugins/types.js";
 import type {
   ProviderReasoningOutputModeContext,
@@ -25,7 +25,7 @@ import type {
 export type {
   ModelApi,
   ModelProviderDeclarationConfig as ModelProviderConfig,
-} from "../config/types.models.js";
+} from "../config/types/models.js";
 export {
   resolveClaudeFable5ModelIdentity,
   resolveClaudeModelIdentity,
@@ -43,11 +43,11 @@ export type {
   BedrockDiscoveryConfig,
   ModelCompatConfig,
   ModelDefinitionConfig,
-} from "../config/types.models.js";
+} from "../config/types/models.js";
 export type {
   ProviderEndpointClass,
   ProviderEndpointResolution,
-} from "../agents/provider-attribution.js";
+} from "../agents/transport/provider-attribution.js";
 export type {
   ProviderPlugin,
   UnifiedModelCatalogProviderContext,
@@ -66,8 +66,8 @@ export {
   resolveGpt5PromptOverlayMode,
   resolveGpt5SystemPromptContribution,
   type Gpt5PromptOverlayMode,
-} from "../agents/gpt5-prompt-overlay.js";
-export { resolveProviderEndpoint } from "../agents/provider-attribution.js";
+} from "../agents/transport/gpt5-prompt-overlay.js";
+export { resolveProviderEndpoint } from "../agents/transport/provider-attribution.js";
 export {
   applyModelCompatPatch,
   hasToolSchemaProfile,
@@ -75,7 +75,7 @@ export {
   normalizeModelCompat,
   resolveUnsupportedToolSchemaKeywords,
   resolveToolCallArgumentsEncoding,
-} from "../plugins/provider-model-compat.js";
+} from "../plugins/providers/provider-model-compat.js";
 export {
   buildAnthropicReplayPolicyForModel,
   buildGoogleGeminiReplayPolicy,
@@ -104,13 +104,13 @@ export {
 export {
   cloneFirstTemplateModel,
   matchesExactOrPrefix,
-} from "../plugins/provider-model-helpers.js";
+} from "../plugins/providers/provider-model-helpers.js";
 import { normalizeOptionalLowercaseString } from "../../packages/normalization-core/src/string-coerce.js";
 
 export {
   isClaudeAdaptiveThinkingDefaultModelId,
   resolveClaudeThinkingProfile,
-} from "../plugins/provider-claude-thinking.js";
+} from "../plugins/providers/provider-claude-thinking.js";
 
 function getModelProviderHint(modelId: string): string | null {
   const trimmed = normalizeOptionalLowercaseString(modelId);

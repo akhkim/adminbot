@@ -7,14 +7,14 @@ import type {
   SessionsListParams,
   SessionsResolveParams,
 } from "../../../packages/gateway-protocol/src/index.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { CallGatewayOptions } from "../../gateway/call.js";
 import type {
   ReadSessionMessagesAsyncOptions,
   SessionTranscriptReadScope,
-} from "../../gateway/session-transcript-readers.js";
-import type { SessionsListResult } from "../../gateway/session-utils.types.js";
-import type { SessionsResolveResult } from "../../gateway/sessions-resolve.js";
+} from "../../gateway/sessions/session-transcript-readers.js";
+import type { SessionsListResult } from "../../gateway/sessions/session-utils.types.js";
+import type { SessionsResolveResult } from "../../gateway/sessions/sessions-resolve.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { readPositiveIntegerParam } from "./common.js";
 

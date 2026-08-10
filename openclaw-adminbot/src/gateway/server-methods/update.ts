@@ -10,36 +10,42 @@ import {
 import { isRestartEnabled } from "../../config/commands.flags.js";
 import { readConfigFileSnapshot } from "../../config/config.js";
 import { extractDeliveryInfo } from "../../config/sessions.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { GATEWAY_SERVICE_KIND, GATEWAY_SERVICE_MARKER } from "../../daemon/constants.js";
-import { resolveOpenClawPackageRoot } from "../../infra/openclaw-root.js";
-import { readPackageVersion } from "../../infra/package-json.js";
-import { type RestartSentinelPayload, writeRestartSentinel } from "../../infra/restart-sentinel.js";
-import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
-import { detectRespawnSupervisor } from "../../infra/supervisor-markers.js";
-import { normalizeUpdateChannel } from "../../infra/update-channels.js";
-import { CONTROL_PLANE_UPDATE_HANDOFF_STARTED_REASON } from "../../infra/update-control-plane-sentinel.js";
+import { readPackageVersion } from "../../infra/install/package-json.js";
+import { normalizeUpdateChannel } from "../../infra/install/update-channels.js";
+import { CONTROL_PLANE_UPDATE_HANDOFF_STARTED_REASON } from "../../infra/install/update-control-plane-sentinel.js";
 import {
   buildManagedServiceHandoffUnavailableMessage,
   formatManagedServiceUpdateCommand,
   startManagedServiceUpdateHandoff,
-} from "../../infra/update-managed-service-handoff.js";
-import type { PreUpdateConfigRestoreInput } from "../../infra/update-post-core-context.js";
+} from "../../infra/install/update-managed-service-handoff.js";
+import type { PreUpdateConfigRestoreInput } from "../../infra/install/update-post-core-context.js";
 import {
   foldPostCoreFinalizeIntoResult,
   runPostCoreFinalizeAfterGatewayUpdate,
-} from "../../infra/update-post-core-finalize.js";
+} from "../../infra/install/update-post-core-finalize.js";
 import {
   buildUpdateRestartSentinelPayload,
   type UpdateRestartSentinelMeta,
-} from "../../infra/update-restart-sentinel-payload.js";
-import { resolveUpdateInstallSurface, runGatewayUpdate } from "../../infra/update-runner.js";
-import { formatControlPlaneActor, resolveControlPlaneActor } from "../control-plane-audit.js";
+} from "../../infra/install/update-restart-sentinel-payload.js";
+import {
+  resolveUpdateInstallSurface,
+  runGatewayUpdate,
+} from "../../infra/install/update-runner.js";
+import { resolveOpenClawPackageRoot } from "../../infra/openclaw-root.js";
+import { type RestartSentinelPayload, writeRestartSentinel } from "../../infra/restart-sentinel.js";
+import { scheduleGatewaySigusr1Restart } from "../../infra/restart.js";
+import { detectRespawnSupervisor } from "../../infra/supervisor-markers.js";
+import {
+  formatControlPlaneActor,
+  resolveControlPlaneActor,
+} from "../control/control-plane-audit.js";
 import {
   getLatestUpdateRestartSentinel,
   recordLatestUpdateRestartSentinel,
   refreshLatestUpdateRestartSentinel,
-} from "../server-restart-sentinel.js";
+} from "../server/server-restart-sentinel.js";
 import { parseRestartRequestParams } from "./restart-request.js";
 import type { GatewayRequestHandlers } from "./types.js";
 import { assertValidParams } from "./validation.js";

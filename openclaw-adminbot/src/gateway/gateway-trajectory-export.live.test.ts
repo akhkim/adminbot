@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { EventFrame } from "../../packages/gateway-protocol/src/index.js";
 import { isLiveTestEnabled } from "../agents/live-test-helpers.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { GatewayClient } from "./client.js";
+import { GatewayClient } from "./client/client.js";
 import {
   connectTestGatewayClient,
   createBootstrapWorkspace,
@@ -437,7 +437,7 @@ describeLive("gateway live trajectory export", () => {
     "exports a combined runtime and transcript trajectory bundle through the live gateway",
     async () => {
       const { clearRuntimeConfigSnapshot } = await import("../config/config.js");
-      const { startGatewayServer } = await import("./server.js");
+      const { startGatewayServer } = await import("./server/server.js");
 
       const previousEnv = snapshotEnv();
       const tempDir = await fs.mkdtemp(path.join(process.cwd(), ".tmp-openclaw-trajectory-live-"));

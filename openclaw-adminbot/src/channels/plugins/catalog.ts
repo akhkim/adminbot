@@ -10,18 +10,24 @@ import {
   uniqueStrings,
 } from "@openclaw/normalization-core/string-normalization";
 import { MANIFEST_KEY } from "../../compat/legacy-names.js";
-import type { PluginInstallRecord } from "../../config/types.plugins.js";
+import type { PluginInstallRecord } from "../../config/types/plugins.js";
+import {
+  isPrereleaseSemverVersion,
+  parseRegistryNpmSpec,
+} from "../../infra/install/npm-registry-spec.js";
 import { tryReadJsonSync } from "../../infra/json-files.js";
-import { isPrereleaseSemverVersion, parseRegistryNpmSpec } from "../../infra/npm-registry-spec.js";
 import { resolveOpenClawPackageRootSync } from "../../infra/openclaw-root.js";
 import { listChannelCatalogEntries } from "../../plugins/channel-catalog-registry.js";
 import type { PluginDiscoveryResult } from "../../plugins/discovery.js";
 import {
   describePluginInstallSource,
   type PluginInstallSourceInfo,
-} from "../../plugins/install-source-info.js";
-import type { OpenClawPackageManifest } from "../../plugins/manifest.js";
-import type { PluginPackageChannel, PluginPackageInstall } from "../../plugins/manifest.js";
+} from "../../plugins/install/install-source-info.js";
+import type { OpenClawPackageManifest } from "../../plugins/manifest/manifest.js";
+import type {
+  PluginPackageChannel,
+  PluginPackageInstall,
+} from "../../plugins/manifest/manifest.js";
 import { listOfficialExternalChannelCatalogEntries } from "../../plugins/official-external-plugin-catalog.js";
 import type { PluginOrigin } from "../../plugins/plugin-origin.types.js";
 import { isRecord, resolveConfigDir, resolveUserPath } from "../../utils.js";

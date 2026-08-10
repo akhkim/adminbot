@@ -55,4 +55,4 @@ export type {
   TtsConfig,
   TtsModelOverrideConfig,
   TtsProvider,
-} from "../config/types.js";
+} from "../config/types/types.js";

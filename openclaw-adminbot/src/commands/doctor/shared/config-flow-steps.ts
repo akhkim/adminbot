@@ -1,8 +1,8 @@
 // Doctor config-flow steps for legacy compatibility and unknown-key cleanup.
 import { formatConfigIssueLines } from "../../../config/issue-format.js";
-import { protectActiveAuthProfileConfig } from "../../doctor-auth-profile-config.js";
-import { stripUnknownConfigKeys } from "../../doctor-config-analysis.js";
-import type { DoctorConfigPreflightResult } from "../../doctor-config-preflight.js";
+import { protectActiveAuthProfileConfig } from "../doctor-auth-profile-config.js";
+import { stripUnknownConfigKeys } from "../doctor-config-analysis.js";
+import type { DoctorConfigPreflightResult } from "../doctor-config-preflight.js";
 import type { DoctorConfigMutationState } from "./config-mutation-state.js";
 import { migrateLegacyConfig } from "./legacy-config-migrate.js";
 

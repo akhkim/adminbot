@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import type { AuthProfileStore } from "../agents/auth-profiles.js";
+import type { AuthProfileStore } from "../agents/auth/auth-profiles.js";
 import type { OpenClawConfig } from "../config/config.js";
 import type {
   PluginOrigin,
@@ -13,7 +13,7 @@ import type {
 import { getPath, setPathCreateStrict } from "./path-utils.js";
 import { canonicalizeSecretTargetCoverageId } from "./target-registry-test-helpers.js";
 
-vi.mock("../plugins/installed-plugin-index-records.js", () => ({
+vi.mock("../plugins/install/installed-plugin-index-records.js", () => ({
   loadInstalledPluginIndexInstallRecordsSync: () => ({}),
 }));
 
@@ -155,7 +155,7 @@ const COVERAGE_WEB_FETCH_PROVIDERS = new Map(
   ].map((provider) => [provider.pluginId, provider]),
 );
 
-vi.mock("../plugins/web-provider-public-artifacts.explicit.js", () => ({
+vi.mock("../plugins/web/web-provider-public-artifacts.explicit.js", () => ({
   loadBundledWebFetchProviderEntriesFromDir: (params: { pluginId: string }) => {
     const provider = COVERAGE_WEB_FETCH_PROVIDERS.get(params.pluginId);
     return provider ? [provider] : null;

@@ -1,9 +1,9 @@
 // Maintains channel catalog entries advertised by plugins.
 import { normalizeOptionalString as resolveOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { PluginInstallRecord } from "../config/types.plugins.js";
+import type { PluginInstallRecord } from "../config/types/plugins.js";
 import { discoverOpenClawPlugins, type PluginDiscoveryResult } from "./discovery.js";
-import { loadInstalledPluginIndexInstallRecordsSync } from "./installed-plugin-index-record-reader.js";
-import type { PluginPackageChannel, PluginPackageInstall } from "./manifest.js";
+import { loadInstalledPluginIndexInstallRecordsSync } from "./install/installed-plugin-index-record-reader.js";
+import type { PluginPackageChannel, PluginPackageInstall } from "./manifest/manifest.js";
 import type { PluginOrigin } from "./plugin-origin.types.js";
 
 export type PluginChannelCatalogEntry = {

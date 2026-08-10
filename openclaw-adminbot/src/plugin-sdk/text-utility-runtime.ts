@@ -21,5 +21,5 @@ export {
   sliceUtf16Safe,
   truncateUtf16Safe,
 } from "../utils.js";
-export { fetchWithTimeout } from "../utils/fetch-timeout.js";
-export { withTimeout } from "../utils/with-timeout.js";
+export { fetchWithTimeout } from "../shared/fetch-timeout.js";
+export { withTimeout } from "../shared/with-timeout.js";

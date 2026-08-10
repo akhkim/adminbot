@@ -1,16 +1,16 @@
 // Covers miscellaneous config schema defaults and validation cases.
 import { describe, expect, it } from "vitest";
+import { readConfigFileSnapshot } from "./config.js";
+import { findLegacyConfigIssues } from "./legacy/legacy.js";
 import {
   getConfigValueAtPath,
   parseConfigPath,
   setConfigValueAtPath,
   unsetConfigValueAtPath,
-} from "./config-paths.js";
-import { readConfigFileSnapshot } from "./config.js";
-import { findLegacyConfigIssues } from "./legacy.js";
+} from "./paths/config-paths.js";
 import { buildWebSearchProviderConfig, withTempHome, writeOpenClawConfig } from "./test-helpers.js";
 import { validateConfigObject, validateConfigObjectRaw } from "./validation.js";
-import { OpenClawSchema } from "./zod-schema.js";
+import { OpenClawSchema } from "./zod/zod-schema.js";
 
 const nonBooleanConfigCases = [
   {

@@ -6,7 +6,7 @@ import path from "node:path";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { jsonResult } from "../../agents/tools/common.js";
 import type { ChannelPlugin } from "../../channels/plugins/types.js";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import { createTestRegistry } from "../../test-utils/channel-plugins.js";
 import type { GatewayRequestContext } from "./types.js";
 
@@ -81,14 +81,14 @@ vi.mock("../../agents/agent-scope.js", () => ({
   resolveAgentWorkspaceDir: () => TEST_AGENT_WORKSPACE,
 }));
 
-vi.mock("../../config/plugin-auto-enable.js", () => ({
+vi.mock("../../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: ({ config, env }: { config: unknown; env?: unknown }) =>
     mocks.applyPluginAutoEnable({ config, env }),
 }));
 
-vi.mock("../../config/runtime-snapshot.js", async () => {
-  const actual = await vi.importActual<typeof import("../../config/runtime-snapshot.js")>(
-    "../../config/runtime-snapshot.js",
+vi.mock("../../config/runtime/runtime-snapshot.js", async () => {
+  const actual = await vi.importActual<typeof import("../../config/runtime/runtime-snapshot.js")>(
+    "../../config/runtime/runtime-snapshot.js",
   );
   return {
     ...actual,
@@ -97,7 +97,7 @@ vi.mock("../../config/runtime-snapshot.js", async () => {
   };
 });
 
-vi.mock("../../plugins/loader.js", () => ({
+vi.mock("../../plugins/runtime/loader.js", () => ({
   loadOpenClawPlugins: mocks.loadOpenClawPlugins,
   resolveRuntimePluginRegistry: vi.fn(),
 }));

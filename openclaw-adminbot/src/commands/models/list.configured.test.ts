@@ -9,7 +9,7 @@ const emptyPluginMetadataSnapshot = vi.hoisted(() => ({
   plugins: [],
 }));
 
-vi.mock("../../agents/provider-model-normalization.runtime.js", () => ({
+vi.mock("../../agents/transport/provider-model-normalization.runtime.js", () => ({
   normalizeProviderModelIdWithRuntime: vi.fn(() => {
     throw new Error("runtime model normalization should not load for models list entries");
   }),

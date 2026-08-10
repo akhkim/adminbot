@@ -7,10 +7,10 @@ import type { ChannelPlugin } from "../channels/plugins/types.plugin.js";
 import { inspectReadOnlyChannelAccount } from "../channels/read-only-account-inspect.js";
 import { resolveNativeSkillsEnabled } from "../config/commands.js";
 import type { OpenClawConfig } from "../config/config.js";
-import type { AgentToolsConfig } from "../config/types.tools.js";
-import { readInstalledPackageVersion } from "../infra/package-update-utils.js";
-import { normalizePluginsConfig } from "../plugins/config-state.js";
-import { loadInstalledPluginIndexInstallRecords } from "../plugins/installed-plugin-index-record-reader.js";
+import type { AgentToolsConfig } from "../config/types/tools.js";
+import { readInstalledPackageVersion } from "../infra/install/package-update-utils.js";
+import { normalizePluginsConfig } from "../plugins/config/config-state.js";
+import { loadInstalledPluginIndexInstallRecords } from "../plugins/install/installed-plugin-index-record-reader.js";
 import {
   createPluginRegistryIdNormalizer,
   loadPluginRegistrySnapshot,
@@ -21,11 +21,11 @@ import { shouldIgnoreInstalledPluginDirName } from "./installed-plugin-dirs.js";
 type SandboxToolPolicy = import("../agents/sandbox/types.js").SandboxToolPolicy;
 
 type PluginTrustPolicyDeps = {
-  isToolAllowedByPolicies: typeof import("../agents/tool-policy-match.js").isToolAllowedByPolicies;
-  pickSandboxToolPolicy: typeof import("../agents/sandbox-tool-policy.js").pickSandboxToolPolicy;
+  isToolAllowedByPolicies: typeof import("../agents/tools/tool-policy-match.js").isToolAllowedByPolicies;
+  pickSandboxToolPolicy: typeof import("../agents/sandbox/sandbox-tool-policy.js").pickSandboxToolPolicy;
   resolveSandboxConfigForAgent: typeof import("../agents/sandbox/config.js").resolveSandboxConfigForAgent;
   resolveSandboxToolPolicyForAgent: typeof import("../agents/sandbox/tool-policy.js").resolveSandboxToolPolicyForAgent;
-  resolveToolProfilePolicy: typeof import("../agents/tool-policy.js").resolveToolProfilePolicy;
+  resolveToolProfilePolicy: typeof import("../agents/tools/tool-policy.js").resolveToolProfilePolicy;
 };
 
 let pluginTrustPolicyDepsPromise: Promise<PluginTrustPolicyDeps> | undefined;
@@ -35,9 +35,9 @@ async function loadPluginTrustPolicyDeps(): Promise<PluginTrustPolicyDeps> {
   pluginTrustPolicyDepsPromise ??= Promise.all([
     import("../agents/sandbox/config.js"),
     import("../agents/sandbox/tool-policy.js"),
-    import("../agents/tool-policy-match.js"),
-    import("../agents/tool-policy.js"),
-    import("../agents/sandbox-tool-policy.js"),
+    import("../agents/tools/tool-policy-match.js"),
+    import("../agents/tools/tool-policy.js"),
+    import("../agents/sandbox/sandbox-tool-policy.js"),
   ]).then(([sandboxConfig, sandboxToolPolicy, toolPolicyMatch, toolPolicy, auditToolPolicy]) => ({
     isToolAllowedByPolicies: toolPolicyMatch.isToolAllowedByPolicies,
     pickSandboxToolPolicy: auditToolPolicy.pickSandboxToolPolicy,

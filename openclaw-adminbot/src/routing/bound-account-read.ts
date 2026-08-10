@@ -1,8 +1,8 @@
 // Bound account read helpers extract account bindings from channel records.
 import { normalizeChatType, type ChatType } from "../channels/chat-type.js";
 import { listRouteBindings } from "../config/bindings.js";
-import type { AgentRouteBinding } from "../config/types.agents.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { AgentRouteBinding } from "../config/types/agents.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   normalizeRouteBindingChannelId,
   normalizeRouteBindingId,

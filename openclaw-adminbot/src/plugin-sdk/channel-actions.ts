@@ -24,7 +24,7 @@ export {
 } from "../agents/tools/common.js";
 export type { ActionGate } from "../agents/tools/common.js";
 export { withNormalizedTimestamp } from "../agents/date-time.js";
-export { assertMediaNotDataUrl } from "../agents/sandbox-paths.js";
+export { assertMediaNotDataUrl } from "../agents/sandbox/sandbox-paths.js";
 export { resolvePollMaxSelections } from "../polls.js";
 export {
   optionalFiniteNumberSchema,

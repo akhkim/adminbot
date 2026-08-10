@@ -8,11 +8,11 @@ import type {
 import type {
   ToolOutcomeObserver,
   wrapToolWithBeforeToolCallHook as WrapToolWithBeforeToolCallHookType,
-} from "../agent-tools.before-tool-call.js";
+} from "../tools/agent-tools.before-tool-call.js";
 import type {
   recordToolCallOutcome as RecordToolCallOutcomeType,
   recordToolCall as RecordToolCallType,
-} from "../tool-loop-detection.js";
+} from "../tools/tool-loop-detection.js";
 import type { PostCompactionLoopPersistedError as PostCompactionLoopPersistedErrorType } from "./post-compaction-loop-guard.js";
 import {
   makeAttemptResult,
@@ -103,8 +103,8 @@ describe("post-compaction loop guard wired into runEmbeddedAgent", () => {
     // the runner. The runner imports both modules through its own graph.
     ({ diagnosticSessionStates, getDiagnosticSessionState } =
       await import("../../logging/diagnostic-session-state.js"));
-    ({ recordToolCall, recordToolCallOutcome } = await import("../tool-loop-detection.js"));
-    ({ wrapToolWithBeforeToolCallHook } = await import("../agent-tools.before-tool-call.js"));
+    ({ recordToolCall, recordToolCallOutcome } = await import("../tools/tool-loop-detection.js"));
+    ({ wrapToolWithBeforeToolCallHook } = await import("../tools/agent-tools.before-tool-call.js"));
     ({ PostCompactionLoopPersistedError } = await import("./post-compaction-loop-guard.js"));
   });
 

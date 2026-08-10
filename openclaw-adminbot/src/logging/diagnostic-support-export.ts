@@ -3,9 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
-import { parseConfigJson5 } from "../config/io.js";
-import { resolveConfigPath, resolveStateDir } from "../config/paths.js";
-import { redactConfigObject } from "../config/redact-snapshot.js";
+import { parseConfigJson5 } from "../config/io/io.js";
+import { resolveConfigPath, resolveStateDir } from "../config/paths/paths.js";
+import { redactConfigObject } from "../config/redact/redact-snapshot.js";
 import { resolveHomeRelativePath } from "../infra/home-dir.js";
 import { VERSION } from "../version.js";
 import {

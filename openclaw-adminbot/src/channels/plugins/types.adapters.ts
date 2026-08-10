@@ -4,13 +4,13 @@
  * Defines approval, setup, config, outbound, directory, and messaging adapter surfaces.
  */
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
-import type { LegacyConfigRule } from "../../config/legacy.shared.js";
-import type { AgentBinding } from "../../config/types.agents.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { GroupToolPolicyConfig } from "../../config/types.tools.js";
-import type { ChannelApprovalNativeRuntimeAdapter } from "../../infra/approval-handler-runtime-types.js";
-import type { ChannelApprovalKind } from "../../infra/approval-types.js";
-import type { ExecApprovalRequest, ExecApprovalResolved } from "../../infra/exec-approvals.js";
+import type { LegacyConfigRule } from "../../config/legacy/legacy.shared.js";
+import type { AgentBinding } from "../../config/types/agents.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { GroupToolPolicyConfig } from "../../config/types/tools.js";
+import type { ChannelApprovalNativeRuntimeAdapter } from "../../infra/approvals/approval-handler-runtime-types.js";
+import type { ChannelApprovalKind } from "../../infra/approvals/approval-types.js";
+import type { ExecApprovalRequest, ExecApprovalResolved } from "../../infra/exec/exec-approvals.js";
 import type {
   PluginApprovalRequest,
   PluginApprovalResolved,
@@ -47,7 +47,7 @@ import type {
 export type { ChannelPairingAdapter } from "./pairing.types.js";
 
 type ConfiguredBindingRule = AgentBinding;
-export type { ChannelApprovalKind } from "../../infra/approval-types.js";
+export type { ChannelApprovalKind } from "../../infra/approvals/approval-types.js";
 
 export type ChannelActionAvailabilityState =
   | { kind: "enabled" }

@@ -1,0 +1,134 @@
+[
+  {
+    "from": "src/config/types.ts",
+    "to": "src/config/types/types.ts"
+  },
+  {
+    "from": "src/config/zod-schema.agent-defaults.test.ts",
+    "to": "src/config/zod/agent-defaults.test.ts"
+  },
+  {
+    "from": "src/config/zod-schema.agent-defaults.ts",
+    "to": "src/config/zod/agent-defaults.ts"
+  },
+  {
+    "from": "src/config/zod-schema.agent-model.ts",
+    "to": "src/config/zod/agent-model.ts"
+  },
+  {
+    "from": "src/config/zod-schema.agent-runtime.ts",
+    "to": "src/config/zod/agent-runtime.ts"
+  },
+  {
+    "from": "src/config/zod-schema.agents.ts",
+    "to": "src/config/zod/agents.ts"
+  },
+  {
+    "from": "src/config/zod-schema.allowdeny.ts",
+    "to": "src/config/zod/allowdeny.ts"
+  },
+  {
+    "from": "src/config/zod-schema.approvals.ts",
+    "to": "src/config/zod/approvals.ts"
+  },
+  {
+    "from": "src/config/zod-schema.channels-config.ts",
+    "to": "src/config/zod/channels-config.ts"
+  },
+  {
+    "from": "src/config/zod-schema.channels.ts",
+    "to": "src/config/zod/channels.ts"
+  },
+  {
+    "from": "src/config/zod-schema.core.ts",
+    "to": "src/config/zod/core.ts"
+  },
+  {
+    "from": "src/config/zod-schema.cron-retention.test.ts",
+    "to": "src/config/zod/cron-retention.test.ts"
+  },
+  {
+    "from": "src/config/zod-schema.hooks.ts",
+    "to": "src/config/zod/hooks.ts"
+  },
+  {
+    "from": "src/config/zod-schema.installs.ts",
+    "to": "src/config/zod/installs.ts"
+  },
+  {
+    "from": "src/config/zod-schema.logging-levels.test.ts",
+    "to": "src/config/zod/logging-levels.test.ts"
+  },
+  {
+    "from": "src/config/zod-schema.markdown-tables.test.ts",
+    "to": "src/config/zod/markdown-tables.test.ts"
+  },
+  {
+    "from": "src/config/zod-schema.models.test.ts",
+    "to": "src/config/zod/models.test.ts"
+  },
+  {
+    "from": "src/config/zod-schema.post-compaction-guard.test.ts",
+    "to": "src/config/zod/post-compaction-guard.test.ts"
+  },
+  {
+    "from": "src/config/zod-schema.providers-core.ts",
+    "to": "src/config/zod/providers-core.ts"
+  },
+  {
+    "from": "src/config/zod-schema.providers-googlechat.ts",
+    "to": "src/config/zod/providers-googlechat.ts"
+  },
+  {
+    "from": "src/config/zod-schema.providers-whatsapp.test.ts",
+    "to": "src/config/zod/providers-whatsapp.test.ts"
+  },
+  {
+    "from": "src/config/zod-schema.providers-whatsapp.ts",
+    "to": "src/config/zod/providers-whatsapp.ts"
+  },
+  {
+    "from": "src/config/zod-schema.providers.lazy-runtime.test.ts",
+    "to": "src/config/zod/providers.lazy-runtime.test.ts"
+  },
+  {
+    "from": "src/config/zod-schema.proxy.test.ts",
+    "to": "src/config/zod/proxy.test.ts"
+  },
+  {
+    "from": "src/config/zod-schema.proxy.ts",
+    "to": "src/config/zod/proxy.ts"
+  },
+  {
+    "from": "src/config/zod-schema.secret-input-validation.ts",
+    "to": "src/config/zod/secret-input-validation.ts"
+  },
+  {
+    "from": "src/config/zod-schema.sensitive.ts",
+    "to": "src/config/zod/sensitive.ts"
+  },
+  {
+    "from": "src/config/zod-schema.session-maintenance-extensions.test.ts",
+    "to": "src/config/zod/session-maintenance-extensions.test.ts"
+  },
+  {
+    "from": "src/config/zod-schema.session.ts",
+    "to": "src/config/zod/session.ts"
+  },
+  {
+    "from": "src/config/zod-schema.startup-import.test.ts",
+    "to": "src/config/zod/startup-import.test.ts"
+  },
+  {
+    "from": "src/config/zod-schema.ts",
+    "to": "src/config/zod/zod-schema.ts"
+  },
+  {
+    "from": "src/config/zod-schema.typing-mode.test.ts",
+    "to": "src/config/zod/typing-mode.test.ts"
+  },
+  {
+    "from": "src/config/zod-schema.visible-replies.test.ts",
+    "to": "src/config/zod/visible-replies.test.ts"
+  }
+]

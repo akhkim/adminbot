@@ -1,6 +1,6 @@
 // Tracks session metadata mutations made by command handlers during a turn.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { HandleCommandsParams } from "./commands-types.js";
+import type { HandleCommandsParams } from "./commands/commands-types.js";
 
 export type CommandSessionMetadataChange = {
   sessionKey: string;

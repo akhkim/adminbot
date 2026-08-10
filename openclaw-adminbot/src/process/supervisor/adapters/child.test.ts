@@ -27,7 +27,7 @@ vi.mock("../../kill-tree.js", () => ({
   signalProcessTree: signalProcessTreeMock,
 }));
 
-vi.mock("../../../infra/windows-encoding.js", () => ({
+vi.mock("../../../infra/system/windows-encoding.js", () => ({
   createWindowsOutputDecoder: createWindowsOutputDecoderMock,
 }));
 

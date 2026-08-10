@@ -1,0 +1,1974 @@
+[
+  {
+    "from": "src/agents/accepted-session-spawn.ts",
+    "to": "src/agents/subagents/accepted-session-spawn.ts"
+  },
+  {
+    "from": "src/agents/acp-binding-architecture.guardrail.test.ts",
+    "to": "src/agents/acp/acp-binding-architecture.guardrail.test.ts"
+  },
+  {
+    "from": "src/agents/acp-runtime-overlay.ts",
+    "to": "src/agents/acp/acp-runtime-overlay.ts"
+  },
+  {
+    "from": "src/agents/acp-spawn-parent-stream.test.ts",
+    "to": "src/agents/acp/acp-spawn-parent-stream.test.ts"
+  },
+  {
+    "from": "src/agents/acp-spawn-parent-stream.ts",
+    "to": "src/agents/acp/acp-spawn-parent-stream.ts"
+  },
+  {
+    "from": "src/agents/acp-spawn.test.ts",
+    "to": "src/agents/acp/acp-spawn.test.ts"
+  },
+  {
+    "from": "src/agents/acp-spawn.ts",
+    "to": "src/agents/acp/acp-spawn.ts"
+  },
+  {
+    "from": "src/agents/agent-tools-agent-config.exec.test.ts",
+    "to": "src/agents/tools/agent-tools-agent-config.exec.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools-agent-config.test.ts",
+    "to": "src/agents/tools/agent-tools-agent-config.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools-parameter-schema.ts",
+    "to": "src/agents/tools/agent-tools-parameter-schema.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.abort.ts",
+    "to": "src/agents/tools/agent-tools.abort.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.availability.test.ts",
+    "to": "src/agents/tools/agent-tools.availability.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.before-tool-call.e2e.test.ts",
+    "to": "src/agents/tools/agent-tools.before-tool-call.e2e.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.before-tool-call.embedded-mode.test.ts",
+    "to": "src/agents/tools/agent-tools.before-tool-call.embedded-mode.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.before-tool-call.integration.e2e.test.ts",
+    "to": "src/agents/tools/agent-tools.before-tool-call.integration.e2e.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.before-tool-call.runtime.ts",
+    "to": "src/agents/tools/agent-tools.before-tool-call.runtime.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.before-tool-call.state.ts",
+    "to": "src/agents/tools/agent-tools.before-tool-call.state.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.before-tool-call.ts",
+    "to": "src/agents/tools/agent-tools.before-tool-call.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.create-openclaw-coding-tools.adds-claude-style-aliases-schemas-without-dropping-g.test.ts",
+    "to": "src/agents/tools/agent-tools.create-openclaw-coding-tools.adds-claude-style-aliases-schemas-without-dropping-g.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.create-openclaw-coding-tools.test.ts",
+    "to": "src/agents/tools/agent-tools.create-openclaw-coding-tools.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.cron-scope.test.ts",
+    "to": "src/agents/tools/agent-tools.cron-scope.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.deferred-followup-guidance.test.ts",
+    "to": "src/agents/tools/agent-tools.deferred-followup-guidance.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.deferred-followup.ts",
+    "to": "src/agents/tools/agent-tools.deferred-followup.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.message-provider-policy.test.ts",
+    "to": "src/agents/tools/agent-tools.message-provider-policy.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.message-provider-policy.ts",
+    "to": "src/agents/tools/agent-tools.message-provider-policy.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.model-provider-collision.test.ts",
+    "to": "src/agents/tools/agent-tools.model-provider-collision.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.params.test.ts",
+    "to": "src/agents/tools/agent-tools.params.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.params.ts",
+    "to": "src/agents/tools/agent-tools.params.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.policy.test.ts",
+    "to": "src/agents/tools/agent-tools.policy.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.policy.ts",
+    "to": "src/agents/tools/agent-tools.policy.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.read.arg-value-suffix.test.ts",
+    "to": "src/agents/tools/agent-tools.read.arg-value-suffix.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.read.host-edit-access.test.ts",
+    "to": "src/agents/tools/agent-tools.read.host-edit-access.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.read.host-tilde-expansion.test.ts",
+    "to": "src/agents/tools/agent-tools.read.host-tilde-expansion.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.read.ts",
+    "to": "src/agents/tools/agent-tools.read.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.read.workspace-root-guard.test.ts",
+    "to": "src/agents/tools/agent-tools.read.workspace-root-guard.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.safe-bins.test.ts",
+    "to": "src/agents/tools/agent-tools.safe-bins.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.sandbox-mounted-paths.workspace-only.test.ts",
+    "to": "src/agents/tools/agent-tools.sandbox-mounted-paths.workspace-only.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.schema.test.ts",
+    "to": "src/agents/tools/agent-tools.schema.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.schema.ts",
+    "to": "src/agents/tools/agent-tools.schema.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.ts",
+    "to": "src/agents/tools/agent-tools.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.types.ts",
+    "to": "src/agents/tools/agent-tools.types.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.workspace-only-false.test.ts",
+    "to": "src/agents/tools/agent-tools.workspace-only-false.test.ts"
+  },
+  {
+    "from": "src/agents/agent-tools.workspace-paths.test.ts",
+    "to": "src/agents/tools/agent-tools.workspace-paths.test.ts"
+  },
+  {
+    "from": "src/agents/apply-patch-paths.test.ts",
+    "to": "src/agents/tools/apply-patch-paths.test.ts"
+  },
+  {
+    "from": "src/agents/apply-patch-paths.ts",
+    "to": "src/agents/tools/apply-patch-paths.ts"
+  },
+  {
+    "from": "src/agents/apply-patch-update.ts",
+    "to": "src/agents/tools/apply-patch-update.ts"
+  },
+  {
+    "from": "src/agents/apply-patch.test.ts",
+    "to": "src/agents/tools/apply-patch.test.ts"
+  },
+  {
+    "from": "src/agents/apply-patch.ts",
+    "to": "src/agents/tools/apply-patch.ts"
+  },
+  {
+    "from": "src/agents/bash-process-references.ts",
+    "to": "src/agents/tools/bash-process-references.ts"
+  },
+  {
+    "from": "src/agents/bash-process-registry.test-helpers.ts",
+    "to": "src/agents/tools/bash-process-registry.test-helpers.ts"
+  },
+  {
+    "from": "src/agents/bash-process-registry.test.ts",
+    "to": "src/agents/tools/bash-process-registry.test.ts"
+  },
+  {
+    "from": "src/agents/bash-process-registry.ts",
+    "to": "src/agents/tools/bash-process-registry.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.build-docker-exec-args.test.ts",
+    "to": "src/agents/tools/bash-tools.build-docker-exec-args.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.descriptions.ts",
+    "to": "src/agents/tools/bash-tools.descriptions.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-approval-followup-state.ts",
+    "to": "src/agents/tools/bash-tools.exec-approval-followup-state.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-approval-followup.test.ts",
+    "to": "src/agents/tools/bash-tools.exec-approval-followup.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-approval-followup.ts",
+    "to": "src/agents/tools/bash-tools.exec-approval-followup.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-approval-request.runtime.ts",
+    "to": "src/agents/tools/bash-tools.exec-approval-request.runtime.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-approval-request.test.ts",
+    "to": "src/agents/tools/bash-tools.exec-approval-request.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-approval-request.ts",
+    "to": "src/agents/tools/bash-tools.exec-approval-request.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-foreground-failures.test.ts",
+    "to": "src/agents/tools/bash-tools.exec-foreground-failures.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-gateway-approval.e2e.test.ts",
+    "to": "src/agents/tools/bash-tools.exec-gateway-approval.e2e.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-host-gateway.test.ts",
+    "to": "src/agents/tools/bash-tools.exec-host-gateway.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-host-gateway.ts",
+    "to": "src/agents/tools/bash-tools.exec-host-gateway.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-host-node-phases.ts",
+    "to": "src/agents/tools/bash-tools.exec-host-node-phases.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-host-node.test.ts",
+    "to": "src/agents/tools/bash-tools.exec-host-node.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-host-node.ts",
+    "to": "src/agents/tools/bash-tools.exec-host-node.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-host-node.types.ts",
+    "to": "src/agents/tools/bash-tools.exec-host-node.types.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-host-shared.test.ts",
+    "to": "src/agents/tools/bash-tools.exec-host-shared.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-host-shared.ts",
+    "to": "src/agents/tools/bash-tools.exec-host-shared.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-output.ts",
+    "to": "src/agents/tools/bash-tools.exec-output.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-runtime.pty-fallback.test.ts",
+    "to": "src/agents/tools/bash-tools.exec-runtime.pty-fallback.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-runtime.test.ts",
+    "to": "src/agents/tools/bash-tools.exec-runtime.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-runtime.ts",
+    "to": "src/agents/tools/bash-tools.exec-runtime.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec-types.ts",
+    "to": "src/agents/tools/bash-tools.exec-types.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec.approval-id.test.ts",
+    "to": "src/agents/tools/bash-tools.exec.approval-id.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec.background-abort.test.ts",
+    "to": "src/agents/tools/bash-tools.exec.background-abort.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec.path.test.ts",
+    "to": "src/agents/tools/bash-tools.exec.path.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec.pty.test.ts",
+    "to": "src/agents/tools/bash-tools.exec.pty.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec.resolve-env-hook.test.ts",
+    "to": "src/agents/tools/bash-tools.exec.resolve-env-hook.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec.script-preflight.test.ts",
+    "to": "src/agents/tools/bash-tools.exec.script-preflight.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec.security-floor.test.ts",
+    "to": "src/agents/tools/bash-tools.exec.security-floor.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.exec.ts",
+    "to": "src/agents/tools/bash-tools.exec.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.process-send-keys.test.ts",
+    "to": "src/agents/tools/bash-tools.process-send-keys.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.process-send-keys.ts",
+    "to": "src/agents/tools/bash-tools.process-send-keys.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.process.input-hints.test.ts",
+    "to": "src/agents/tools/bash-tools.process.input-hints.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.process.poll-timeout.test.ts",
+    "to": "src/agents/tools/bash-tools.process.poll-timeout.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.process.supervisor.test.ts",
+    "to": "src/agents/tools/bash-tools.process.supervisor.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.process.ts",
+    "to": "src/agents/tools/bash-tools.process.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.schemas.ts",
+    "to": "src/agents/tools/bash-tools.schemas.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.shared.test.ts",
+    "to": "src/agents/tools/bash-tools.shared.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.shared.ts",
+    "to": "src/agents/tools/bash-tools.shared.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.test.ts",
+    "to": "src/agents/tools/bash-tools.test.ts"
+  },
+  {
+    "from": "src/agents/bash-tools.ts",
+    "to": "src/agents/tools/bash-tools.ts"
+  },
+  {
+    "from": "src/agents/bootstrap-budget.test.ts",
+    "to": "src/agents/prompt/bootstrap-budget.test.ts"
+  },
+  {
+    "from": "src/agents/bootstrap-budget.ts",
+    "to": "src/agents/prompt/bootstrap-budget.ts"
+  },
+  {
+    "from": "src/agents/bootstrap-cache.test.ts",
+    "to": "src/agents/prompt/bootstrap-cache.test.ts"
+  },
+  {
+    "from": "src/agents/bootstrap-cache.ts",
+    "to": "src/agents/prompt/bootstrap-cache.ts"
+  },
+  {
+    "from": "src/agents/bootstrap-files.test.ts",
+    "to": "src/agents/prompt/bootstrap-files.test.ts"
+  },
+  {
+    "from": "src/agents/bootstrap-files.ts",
+    "to": "src/agents/prompt/bootstrap-files.ts"
+  },
+  {
+    "from": "src/agents/bootstrap-hooks.test.ts",
+    "to": "src/agents/prompt/bootstrap-hooks.test.ts"
+  },
+  {
+    "from": "src/agents/bootstrap-hooks.ts",
+    "to": "src/agents/prompt/bootstrap-hooks.ts"
+  },
+  {
+    "from": "src/agents/bootstrap-mode.test.ts",
+    "to": "src/agents/prompt/bootstrap-mode.test.ts"
+  },
+  {
+    "from": "src/agents/bootstrap-mode.ts",
+    "to": "src/agents/prompt/bootstrap-mode.ts"
+  },
+  {
+    "from": "src/agents/bootstrap-prompt.ts",
+    "to": "src/agents/prompt/bootstrap-prompt.ts"
+  },
+  {
+    "from": "src/agents/channel-tool-metadata.test.ts",
+    "to": "src/agents/tools/channel-tool-metadata.test.ts"
+  },
+  {
+    "from": "src/agents/channel-tool-metadata.ts",
+    "to": "src/agents/tools/channel-tool-metadata.ts"
+  },
+  {
+    "from": "src/agents/cli-backends.test.ts",
+    "to": "src/agents/cli-runner/cli-backends.test.ts"
+  },
+  {
+    "from": "src/agents/cli-backends.ts",
+    "to": "src/agents/cli-runner/cli-backends.ts"
+  },
+  {
+    "from": "src/agents/cli-credentials.test.ts",
+    "to": "src/agents/cli-runner/cli-credentials.test.ts"
+  },
+  {
+    "from": "src/agents/cli-credentials.ts",
+    "to": "src/agents/cli-runner/cli-credentials.ts"
+  },
+  {
+    "from": "src/agents/cli-output.test.ts",
+    "to": "src/agents/cli-runner/cli-output.test.ts"
+  },
+  {
+    "from": "src/agents/cli-output.ts",
+    "to": "src/agents/cli-runner/cli-output.ts"
+  },
+  {
+    "from": "src/agents/cli-runner.before-agent-reply-cron.test.ts",
+    "to": "src/agents/cli-runner/cli-runner.before-agent-reply-cron.test.ts"
+  },
+  {
+    "from": "src/agents/cli-runner.binding-flush.test.ts",
+    "to": "src/agents/cli-runner/cli-runner.binding-flush.test.ts"
+  },
+  {
+    "from": "src/agents/cli-runner.context-engine.test.ts",
+    "to": "src/agents/cli-runner/cli-runner.context-engine.test.ts"
+  },
+  {
+    "from": "src/agents/cli-runner.helpers.test.ts",
+    "to": "src/agents/cli-runner/cli-runner.helpers.test.ts"
+  },
+  {
+    "from": "src/agents/cli-runner.reliability.test.ts",
+    "to": "src/agents/cli-runner/cli-runner.reliability.test.ts"
+  },
+  {
+    "from": "src/agents/cli-runner.runtime.ts",
+    "to": "src/agents/cli-runner/cli-runner.runtime.ts"
+  },
+  {
+    "from": "src/agents/cli-runner.spawn.test.ts",
+    "to": "src/agents/cli-runner/cli-runner.spawn.test.ts"
+  },
+  {
+    "from": "src/agents/cli-runner.test-support.ts",
+    "to": "src/agents/cli-runner/cli-runner.test-support.ts"
+  },
+  {
+    "from": "src/agents/cli-runner.ts",
+    "to": "src/agents/cli-runner/cli-runner.ts"
+  },
+  {
+    "from": "src/agents/cli-session.test.ts",
+    "to": "src/agents/cli-runner/cli-session.test.ts"
+  },
+  {
+    "from": "src/agents/cli-session.ts",
+    "to": "src/agents/cli-runner/cli-session.ts"
+  },
+  {
+    "from": "src/agents/cli-watchdog-defaults.ts",
+    "to": "src/agents/cli-runner/cli-watchdog-defaults.ts"
+  },
+  {
+    "from": "src/agents/code-mode-control-tools.ts",
+    "to": "src/agents/tools/code-mode-control-tools.ts"
+  },
+  {
+    "from": "src/agents/code-mode-json.ts",
+    "to": "src/agents/tools/code-mode-json.ts"
+  },
+  {
+    "from": "src/agents/code-mode-namespaces.ts",
+    "to": "src/agents/tools/code-mode-namespaces.ts"
+  },
+  {
+    "from": "src/agents/code-mode.test.ts",
+    "to": "src/agents/tools/code-mode.test.ts"
+  },
+  {
+    "from": "src/agents/code-mode.ts",
+    "to": "src/agents/tools/code-mode.ts"
+  },
+  {
+    "from": "src/agents/code-mode.worker.ts",
+    "to": "src/agents/tools/code-mode.worker.ts"
+  },
+  {
+    "from": "src/agents/compaction-partial-summary.test.ts",
+    "to": "src/agents/compaction/compaction-partial-summary.test.ts"
+  },
+  {
+    "from": "src/agents/compaction-planning-worker.test.ts",
+    "to": "src/agents/compaction/compaction-planning-worker.test.ts"
+  },
+  {
+    "from": "src/agents/compaction-planning-worker.ts",
+    "to": "src/agents/compaction/compaction-planning-worker.ts"
+  },
+  {
+    "from": "src/agents/compaction-planning.ts",
+    "to": "src/agents/compaction/compaction-planning.ts"
+  },
+  {
+    "from": "src/agents/compaction-planning.worker.ts",
+    "to": "src/agents/compaction/compaction-planning.worker.ts"
+  },
+  {
+    "from": "src/agents/compaction-real-conversation.ts",
+    "to": "src/agents/compaction/compaction-real-conversation.ts"
+  },
+  {
+    "from": "src/agents/compaction-usage.ts",
+    "to": "src/agents/compaction/compaction-usage.ts"
+  },
+  {
+    "from": "src/agents/compaction.identifier-policy.test.ts",
+    "to": "src/agents/compaction/compaction.identifier-policy.test.ts"
+  },
+  {
+    "from": "src/agents/compaction.identifier-preservation.test.ts",
+    "to": "src/agents/compaction/compaction.identifier-preservation.test.ts"
+  },
+  {
+    "from": "src/agents/compaction.retry.test.ts",
+    "to": "src/agents/compaction/compaction.retry.test.ts"
+  },
+  {
+    "from": "src/agents/compaction.summarize-fallback.test.ts",
+    "to": "src/agents/compaction/compaction.summarize-fallback.test.ts"
+  },
+  {
+    "from": "src/agents/compaction.test.ts",
+    "to": "src/agents/compaction/compaction.test.ts"
+  },
+  {
+    "from": "src/agents/compaction.token-sanitize.test.ts",
+    "to": "src/agents/compaction/compaction.token-sanitize.test.ts"
+  },
+  {
+    "from": "src/agents/compaction.tool-result-details.test.ts",
+    "to": "src/agents/compaction/compaction.tool-result-details.test.ts"
+  },
+  {
+    "from": "src/agents/compaction.ts",
+    "to": "src/agents/compaction/compaction.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-block-chunker.test.ts",
+    "to": "src/agents/embedded/embedded-agent-block-chunker.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-block-chunker.ts",
+    "to": "src/agents/embedded/embedded-agent-block-chunker.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-error-observation.test.ts",
+    "to": "src/agents/embedded/embedded-agent-error-observation.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-error-observation.ts",
+    "to": "src/agents/embedded/embedded-agent-error-observation.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-helpers.buildbootstrapcontextfiles.test.ts",
+    "to": "src/agents/embedded/embedded-agent-helpers.buildbootstrapcontextfiles.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-helpers.formatassistanterrortext.test.ts",
+    "to": "src/agents/embedded/embedded-agent-helpers.formatassistanterrortext.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-helpers.isbillingerrormessage.test.ts",
+    "to": "src/agents/embedded/embedded-agent-helpers.isbillingerrormessage.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-helpers.sanitizeuserfacingtext.test.ts",
+    "to": "src/agents/embedded/embedded-agent-helpers.sanitizeuserfacingtext.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-helpers.ts",
+    "to": "src/agents/embedded/embedded-agent-helpers.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-helpers.validate-turns.test.ts",
+    "to": "src/agents/embedded/embedded-agent-helpers.validate-turns.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-lsp.ts",
+    "to": "src/agents/embedded/embedded-agent-lsp.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-mcp.ts",
+    "to": "src/agents/embedded/embedded-agent-mcp.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-message-tool-source-reply.test.ts",
+    "to": "src/agents/embedded/embedded-agent-message-tool-source-reply.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-message-tool-source-reply.ts",
+    "to": "src/agents/embedded/embedded-agent-message-tool-source-reply.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-messaging.ts",
+    "to": "src/agents/embedded/embedded-agent-messaging.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-messaging.types.ts",
+    "to": "src/agents/embedded/embedded-agent-messaging.types.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-payloads.ts",
+    "to": "src/agents/embedded/embedded-agent-payloads.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner-extraparams-moonshot.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner-extraparams-moonshot.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner-extraparams-openrouter.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner-extraparams-openrouter.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner-extraparams-resolve.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner-extraparams-resolve.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner-extraparams.live.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner-extraparams.live.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner-extraparams.test-support.ts",
+    "to": "src/agents/embedded/embedded-agent-runner-extraparams.test-support.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner-extraparams.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner-extraparams.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.anthropic-tool-replay.live.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.anthropic-tool-replay.live.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.buildembeddedsandboxinfo.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.buildembeddedsandboxinfo.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.cache.live.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.cache.live.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.compaction-safety-timeout.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.compaction-safety-timeout.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.e2e.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.e2e.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.extensions.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.extensions.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.guard.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.guard.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.guard.waitforidle-before-flush.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.guard.waitforidle-before-flush.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.limithistoryturns.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.limithistoryturns.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.openai-tool-id-preservation.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.openai-tool-id-preservation.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.resolvesessionagentids.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.resolvesessionagentids.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.run-embedded-agent.auth-profile-rotation.e2e.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.run-embedded-agent.auth-profile-rotation.e2e.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.sanitize-session-history.policy.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.sanitize-session-history.policy.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.sanitize-session-history.test-harness.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.sanitize-session-history.test-harness.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.sanitize-session-history.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.sanitize-session-history.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.splitsdktools.test.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.splitsdktools.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-runner.ts",
+    "to": "src/agents/embedded/embedded-agent-runner.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.before-terminal-delivery.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.before-terminal-delivery.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.block-reply-rejections.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.block-reply-rejections.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.code-span-awareness.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.code-span-awareness.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.compaction-test-helpers.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.compaction-test-helpers.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.e2e-harness.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.e2e-harness.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.handlers.compaction.runtime.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.handlers.compaction.runtime.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.handlers.compaction.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.handlers.compaction.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.handlers.compaction.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.handlers.compaction.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.handlers.lifecycle.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.handlers.lifecycle.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.handlers.lifecycle.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.handlers.lifecycle.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.handlers.messages.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.handlers.messages.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.handlers.messages.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.handlers.messages.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.handlers.tools.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.handlers.tools.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.handlers.tools.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.handlers.tools.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.handlers.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.handlers.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.handlers.types.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.handlers.types.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.lifecycle-billing-error.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.lifecycle-billing-error.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.openai-responses.test-helpers.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.openai-responses.test-helpers.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.promise.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.promise.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.raw-stream.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.raw-stream.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.reply-tags.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.reply-tags.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.shared-types.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.shared-types.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.calls-onblockreplyflush-before-tool-execution-start-preserve.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.calls-onblockreplyflush-before-tool-execution-start-preserve.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.does-not-append-text-end-content-is.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.does-not-append-text-end-content-is.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.does-not-call-onblockreplyflush-callback-is-not.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.does-not-call-onblockreplyflush-callback-is-not.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.does-not-duplicate-text-end-repeats-full.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.does-not-duplicate-text-end-repeats-full.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.does-not-emit-duplicate-block-replies-text.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.does-not-emit-duplicate-block-replies-text.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.emits-block-replies-text-end-does-not.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.emits-block-replies-text-end-does-not.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.emits-reasoning-as-separate-message-enabled.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.emits-reasoning-as-separate-message-enabled.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.filters-final-suppresses-output-without-start-tag.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.filters-final-suppresses-output-without-start-tag.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.includes-canvas-action-metadata-tool-summaries.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.includes-canvas-action-metadata-tool-summaries.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.keeps-assistanttexts-final-answer-block-replies-are.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.keeps-assistanttexts-final-answer-block-replies-are.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.keeps-indented-fenced-blocks-intact.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.keeps-indented-fenced-blocks-intact.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.reopens-fenced-blocks-splitting-inside-them.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.reopens-fenced-blocks-splitting-inside-them.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.splits-long-single-line-fenced-blocks-reopen.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.splits-long-single-line-fenced-blocks-reopen.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.streams-soft-chunks-paragraph-preference.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.streams-soft-chunks-paragraph-preference.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.subscribeembeddedagentsession.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.subscribeembeddedagentsession.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.suppresses-commentary-phase-output.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.suppresses-commentary-phase-output.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.suppresses-message-end-block-replies-message-tool.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.suppresses-message-end-block-replies-message-tool.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.subscribe-embedded-agent-session.waits-multiple-compaction-retries-before-resolving.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.subscribe-embedded-agent-session.waits-multiple-compaction-retries-before-resolving.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.tool-text-diagnostics.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.tool-text-diagnostics.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.tools.extract.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.tools.extract.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.tools.reconcile-thread.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.tools.reconcile-thread.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.tools.test.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.tools.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.tools.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.tools.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-subscribe.types.ts",
+    "to": "src/agents/embedded/embedded-agent-subscribe.types.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-utils.strip-model-special-tokens.test.ts",
+    "to": "src/agents/embedded/embedded-agent-utils.strip-model-special-tokens.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-utils.test.ts",
+    "to": "src/agents/embedded/embedded-agent-utils.test.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent-utils.ts",
+    "to": "src/agents/embedded/embedded-agent-utils.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent.runtime.ts",
+    "to": "src/agents/embedded/embedded-agent.runtime.ts"
+  },
+  {
+    "from": "src/agents/embedded-agent.ts",
+    "to": "src/agents/embedded/embedded-agent.ts"
+  },
+  {
+    "from": "src/agents/heartbeat-system-prompt.test.ts",
+    "to": "src/agents/prompt/heartbeat-system-prompt.test.ts"
+  },
+  {
+    "from": "src/agents/heartbeat-system-prompt.ts",
+    "to": "src/agents/prompt/heartbeat-system-prompt.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.agents.test.ts",
+    "to": "src/agents/tools/openclaw-tools.agents.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.camera.test.ts",
+    "to": "src/agents/tools/openclaw-tools.camera.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.factory-policy.ts",
+    "to": "src/agents/tools/openclaw-tools.factory-policy.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.generation.test-support.ts",
+    "to": "src/agents/tools/openclaw-tools.generation.test-support.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.nodes-workspace-guard.test.ts",
+    "to": "src/agents/tools/openclaw-tools.nodes-workspace-guard.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.nodes-workspace-guard.ts",
+    "to": "src/agents/tools/openclaw-tools.nodes-workspace-guard.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.pdf-registration.test.ts",
+    "to": "src/agents/tools/openclaw-tools.pdf-registration.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.plugin-context.test.ts",
+    "to": "src/agents/tools/openclaw-tools.plugin-context.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.plugin-context.ts",
+    "to": "src/agents/tools/openclaw-tools.plugin-context.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.registration.ts",
+    "to": "src/agents/tools/openclaw-tools.registration.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.runtime.ts",
+    "to": "src/agents/tools/openclaw-tools.runtime.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.session-status.test.ts",
+    "to": "src/agents/tools/openclaw-tools.session-status.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.sessions-visibility.test.ts",
+    "to": "src/agents/tools/openclaw-tools.sessions-visibility.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.sessions.test.ts",
+    "to": "src/agents/tools/openclaw-tools.sessions.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.subagents.scope.test.ts",
+    "to": "src/agents/tools/openclaw-tools.subagents.scope.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.subagents.sessions-spawn-applies-thinking-default.test.ts",
+    "to": "src/agents/tools/openclaw-tools.subagents.sessions-spawn-applies-thinking-default.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.subagents.sessions-spawn.allowlist.test.ts",
+    "to": "src/agents/tools/openclaw-tools.subagents.sessions-spawn.allowlist.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.subagents.sessions-spawn.cron-note.test.ts",
+    "to": "src/agents/tools/openclaw-tools.subagents.sessions-spawn.cron-note.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.subagents.sessions-spawn.lifecycle.test.ts",
+    "to": "src/agents/tools/openclaw-tools.subagents.sessions-spawn.lifecycle.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.subagents.sessions-spawn.model.test.ts",
+    "to": "src/agents/tools/openclaw-tools.subagents.sessions-spawn.model.test.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.subagents.sessions-spawn.test-harness.ts",
+    "to": "src/agents/tools/openclaw-tools.subagents.sessions-spawn.test-harness.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.subagents.test-harness.ts",
+    "to": "src/agents/tools/openclaw-tools.subagents.test-harness.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.ts",
+    "to": "src/agents/tools/openclaw-tools.ts"
+  },
+  {
+    "from": "src/agents/openclaw-tools.update-plan.test.ts",
+    "to": "src/agents/tools/openclaw-tools.update-plan.test.ts"
+  },
+  {
+    "from": "src/agents/prompt-cache-stability.ts",
+    "to": "src/agents/prompt/prompt-cache-stability.ts"
+  },
+  {
+    "from": "src/agents/prompt-composition.test.ts",
+    "to": "src/agents/prompt/prompt-composition.test.ts"
+  },
+  {
+    "from": "src/agents/prompt-overlay-runtime-contract.test.ts",
+    "to": "src/agents/prompt/prompt-overlay-runtime-contract.test.ts"
+  },
+  {
+    "from": "src/agents/prompt-surface.ts",
+    "to": "src/agents/prompt/prompt-surface.ts"
+  },
+  {
+    "from": "src/agents/sandbox-agent-config.agent-specific-sandbox-config.e2e.test.ts",
+    "to": "src/agents/sandbox/sandbox-agent-config.agent-specific-sandbox-config.e2e.test.ts"
+  },
+  {
+    "from": "src/agents/sandbox-create-args.test.ts",
+    "to": "src/agents/sandbox/sandbox-create-args.test.ts"
+  },
+  {
+    "from": "src/agents/sandbox-explain.test.ts",
+    "to": "src/agents/sandbox/sandbox-explain.test.ts"
+  },
+  {
+    "from": "src/agents/sandbox-media-paths.test.ts",
+    "to": "src/agents/sandbox/sandbox-media-paths.test.ts"
+  },
+  {
+    "from": "src/agents/sandbox-media-paths.ts",
+    "to": "src/agents/sandbox/sandbox-media-paths.ts"
+  },
+  {
+    "from": "src/agents/sandbox-merge.test.ts",
+    "to": "src/agents/sandbox/sandbox-merge.test.ts"
+  },
+  {
+    "from": "src/agents/sandbox-paths.test.ts",
+    "to": "src/agents/sandbox/sandbox-paths.test.ts"
+  },
+  {
+    "from": "src/agents/sandbox-paths.ts",
+    "to": "src/agents/sandbox/sandbox-paths.ts"
+  },
+  {
+    "from": "src/agents/sandbox-paths.windows-drive-resolve.test.ts",
+    "to": "src/agents/sandbox/sandbox-paths.windows-drive-resolve.test.ts"
+  },
+  {
+    "from": "src/agents/sandbox-tool-policy.test.ts",
+    "to": "src/agents/sandbox/sandbox-tool-policy.test.ts"
+  },
+  {
+    "from": "src/agents/sandbox-tool-policy.ts",
+    "to": "src/agents/sandbox/sandbox-tool-policy.ts"
+  },
+  {
+    "from": "src/agents/sandbox.resolveSandboxContext.test.ts",
+    "to": "src/agents/sandbox/sandbox.resolveSandboxContext.test.ts"
+  },
+  {
+    "from": "src/agents/sandbox.ts",
+    "to": "src/agents/sandbox/sandbox.ts"
+  },
+  {
+    "from": "src/agents/sanitize-for-prompt.test.ts",
+    "to": "src/agents/prompt/sanitize-for-prompt.test.ts"
+  },
+  {
+    "from": "src/agents/sanitize-for-prompt.ts",
+    "to": "src/agents/prompt/sanitize-for-prompt.ts"
+  },
+  {
+    "from": "src/agents/session-agent-binding.ts",
+    "to": "src/agents/sessions/session-agent-binding.ts"
+  },
+  {
+    "from": "src/agents/session-async-task-status.ts",
+    "to": "src/agents/sessions/session-async-task-status.ts"
+  },
+  {
+    "from": "src/agents/session-dirs.ts",
+    "to": "src/agents/sessions/session-dirs.ts"
+  },
+  {
+    "from": "src/agents/session-file-repair.test.ts",
+    "to": "src/agents/sessions/session-file-repair.test.ts"
+  },
+  {
+    "from": "src/agents/session-file-repair.ts",
+    "to": "src/agents/sessions/session-file-repair.ts"
+  },
+  {
+    "from": "src/agents/session-raw-append-message.ts",
+    "to": "src/agents/sessions/session-raw-append-message.ts"
+  },
+  {
+    "from": "src/agents/session-runtime-compat.ts",
+    "to": "src/agents/sessions/session-runtime-compat.ts"
+  },
+  {
+    "from": "src/agents/session-slug.test.ts",
+    "to": "src/agents/sessions/session-slug.test.ts"
+  },
+  {
+    "from": "src/agents/session-slug.ts",
+    "to": "src/agents/sessions/session-slug.ts"
+  },
+  {
+    "from": "src/agents/session-suspension.test.ts",
+    "to": "src/agents/sessions/session-suspension.test.ts"
+  },
+  {
+    "from": "src/agents/session-suspension.ts",
+    "to": "src/agents/sessions/session-suspension.ts"
+  },
+  {
+    "from": "src/agents/session-tool-result-guard-wrapper.ts",
+    "to": "src/agents/sessions/session-tool-result-guard-wrapper.ts"
+  },
+  {
+    "from": "src/agents/session-tool-result-guard.test.ts",
+    "to": "src/agents/sessions/session-tool-result-guard.test.ts"
+  },
+  {
+    "from": "src/agents/session-tool-result-guard.tool-result-persist-hook.test.ts",
+    "to": "src/agents/sessions/session-tool-result-guard.tool-result-persist-hook.test.ts"
+  },
+  {
+    "from": "src/agents/session-tool-result-guard.transcript-events.test.ts",
+    "to": "src/agents/sessions/session-tool-result-guard.transcript-events.test.ts"
+  },
+  {
+    "from": "src/agents/session-tool-result-guard.ts",
+    "to": "src/agents/sessions/session-tool-result-guard.ts"
+  },
+  {
+    "from": "src/agents/session-tool-result-state.ts",
+    "to": "src/agents/sessions/session-tool-result-state.ts"
+  },
+  {
+    "from": "src/agents/session-transcript-repair.attachments.test.ts",
+    "to": "src/agents/sessions/session-transcript-repair.attachments.test.ts"
+  },
+  {
+    "from": "src/agents/session-transcript-repair.test.ts",
+    "to": "src/agents/sessions/session-transcript-repair.test.ts"
+  },
+  {
+    "from": "src/agents/session-transcript-repair.ts",
+    "to": "src/agents/sessions/session-transcript-repair.ts"
+  },
+  {
+    "from": "src/agents/session-write-lock-error.ts",
+    "to": "src/agents/sessions/session-write-lock-error.ts"
+  },
+  {
+    "from": "src/agents/session-write-lock.test.ts",
+    "to": "src/agents/sessions/session-write-lock.test.ts"
+  },
+  {
+    "from": "src/agents/session-write-lock.ts",
+    "to": "src/agents/sessions/session-write-lock.ts"
+  },
+  {
+    "from": "src/agents/spawn-requester-origin.test.ts",
+    "to": "src/agents/subagents/spawn-requester-origin.test.ts"
+  },
+  {
+    "from": "src/agents/spawn-requester-origin.ts",
+    "to": "src/agents/subagents/spawn-requester-origin.ts"
+  },
+  {
+    "from": "src/agents/subagent-active-context.test.ts",
+    "to": "src/agents/subagents/subagent-active-context.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-active-context.ts",
+    "to": "src/agents/subagents/subagent-active-context.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce-capture.ts",
+    "to": "src/agents/subagents/subagent-announce-capture.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce-delivery.runtime.ts",
+    "to": "src/agents/subagents/subagent-announce-delivery.runtime.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce-delivery.test.ts",
+    "to": "src/agents/subagents/subagent-announce-delivery.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce-delivery.ts",
+    "to": "src/agents/subagents/subagent-announce-delivery.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce-dispatch.test.ts",
+    "to": "src/agents/subagents/subagent-announce-dispatch.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce-dispatch.ts",
+    "to": "src/agents/subagents/subagent-announce-dispatch.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce-origin.ts",
+    "to": "src/agents/subagents/subagent-announce-origin.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce-output.test.ts",
+    "to": "src/agents/subagents/subagent-announce-output.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce-output.ts",
+    "to": "src/agents/subagents/subagent-announce-output.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce.capture-completion-reply.test.ts",
+    "to": "src/agents/subagents/subagent-announce.capture-completion-reply.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce.format.e2e.test.ts",
+    "to": "src/agents/subagents/subagent-announce.format.e2e.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce.live.test.ts",
+    "to": "src/agents/subagents/subagent-announce.live.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce.registry.runtime.ts",
+    "to": "src/agents/subagents/subagent-announce.registry.runtime.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce.runtime.ts",
+    "to": "src/agents/subagents/subagent-announce.runtime.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce.test-support.ts",
+    "to": "src/agents/subagents/subagent-announce.test-support.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce.test.ts",
+    "to": "src/agents/subagents/subagent-announce.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce.timeout.test.ts",
+    "to": "src/agents/subagents/subagent-announce.timeout.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-announce.ts",
+    "to": "src/agents/subagents/subagent-announce.ts"
+  },
+  {
+    "from": "src/agents/subagent-attachments.ts",
+    "to": "src/agents/subagents/subagent-attachments.ts"
+  },
+  {
+    "from": "src/agents/subagent-capabilities.test.ts",
+    "to": "src/agents/subagents/subagent-capabilities.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-capabilities.ts",
+    "to": "src/agents/subagents/subagent-capabilities.ts"
+  },
+  {
+    "from": "src/agents/subagent-control.runtime.ts",
+    "to": "src/agents/subagents/subagent-control.runtime.ts"
+  },
+  {
+    "from": "src/agents/subagent-control.test.ts",
+    "to": "src/agents/subagents/subagent-control.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-control.ts",
+    "to": "src/agents/subagents/subagent-control.ts"
+  },
+  {
+    "from": "src/agents/subagent-delivery-state.test.ts",
+    "to": "src/agents/subagents/subagent-delivery-state.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-delivery-state.ts",
+    "to": "src/agents/subagents/subagent-delivery-state.ts"
+  },
+  {
+    "from": "src/agents/subagent-depth.test.ts",
+    "to": "src/agents/subagents/subagent-depth.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-depth.ts",
+    "to": "src/agents/subagents/subagent-depth.ts"
+  },
+  {
+    "from": "src/agents/subagent-initial-user-message.test.ts",
+    "to": "src/agents/subagents/subagent-initial-user-message.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-initial-user-message.ts",
+    "to": "src/agents/subagents/subagent-initial-user-message.ts"
+  },
+  {
+    "from": "src/agents/subagent-lifecycle-events.ts",
+    "to": "src/agents/subagents/subagent-lifecycle-events.ts"
+  },
+  {
+    "from": "src/agents/subagent-list.test.ts",
+    "to": "src/agents/subagents/subagent-list.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-list.ts",
+    "to": "src/agents/subagents/subagent-list.ts"
+  },
+  {
+    "from": "src/agents/subagent-orphan-recovery.test.ts",
+    "to": "src/agents/subagents/subagent-orphan-recovery.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-orphan-recovery.ts",
+    "to": "src/agents/subagents/subagent-orphan-recovery.ts"
+  },
+  {
+    "from": "src/agents/subagent-recovery-state.ts",
+    "to": "src/agents/subagents/subagent-recovery-state.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-announce-read.ts",
+    "to": "src/agents/subagents/subagent-registry-announce-read.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-cleanup.test.ts",
+    "to": "src/agents/subagents/subagent-registry-cleanup.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-cleanup.ts",
+    "to": "src/agents/subagents/subagent-registry-cleanup.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-completion.test.ts",
+    "to": "src/agents/subagents/subagent-registry-completion.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-completion.ts",
+    "to": "src/agents/subagents/subagent-registry-completion.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-helpers.test.ts",
+    "to": "src/agents/subagents/subagent-registry-helpers.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-helpers.ts",
+    "to": "src/agents/subagents/subagent-registry-helpers.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-lifecycle.test.ts",
+    "to": "src/agents/subagents/subagent-registry-lifecycle.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-lifecycle.ts",
+    "to": "src/agents/subagents/subagent-registry-lifecycle.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-maintenance.ts",
+    "to": "src/agents/subagents/subagent-registry-maintenance.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-memory.ts",
+    "to": "src/agents/subagents/subagent-registry-memory.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-queries.test.ts",
+    "to": "src/agents/subagents/subagent-registry-queries.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-queries.ts",
+    "to": "src/agents/subagents/subagent-registry-queries.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-read-context.test.ts",
+    "to": "src/agents/subagents/subagent-registry-read-context.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-read.ts",
+    "to": "src/agents/subagents/subagent-registry-read.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-run-manager.ts",
+    "to": "src/agents/subagents/subagent-registry-run-manager.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-runtime.ts",
+    "to": "src/agents/subagents/subagent-registry-runtime.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-state.test.ts",
+    "to": "src/agents/subagents/subagent-registry-state.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-state.ts",
+    "to": "src/agents/subagents/subagent-registry-state.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry-steer-runtime.ts",
+    "to": "src/agents/subagents/subagent-registry-steer-runtime.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.announce-loop-guard.test.ts",
+    "to": "src/agents/subagents/subagent-registry.announce-loop-guard.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.archive.e2e.test.ts",
+    "to": "src/agents/subagents/subagent-registry.archive.e2e.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.lifecycle-retry-grace.e2e.test.ts",
+    "to": "src/agents/subagents/subagent-registry.lifecycle-retry-grace.e2e.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.mocks.shared.ts",
+    "to": "src/agents/subagents/subagent-registry.mocks.shared.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.nested.e2e.test.ts",
+    "to": "src/agents/subagents/subagent-registry.nested.e2e.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.persistence.resume.test.ts",
+    "to": "src/agents/subagents/subagent-registry.persistence.resume.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.persistence.test-support.ts",
+    "to": "src/agents/subagents/subagent-registry.persistence.test-support.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.persistence.test.ts",
+    "to": "src/agents/subagents/subagent-registry.persistence.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.runtime.ts",
+    "to": "src/agents/subagents/subagent-registry.runtime.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.steer-restart.test.ts",
+    "to": "src/agents/subagents/subagent-registry.steer-restart.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.store.sqlite.test.ts",
+    "to": "src/agents/subagents/subagent-registry.store.sqlite.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.store.sqlite.ts",
+    "to": "src/agents/subagents/subagent-registry.store.sqlite.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.store.ts",
+    "to": "src/agents/subagents/subagent-registry.store.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.test-helpers.ts",
+    "to": "src/agents/subagents/subagent-registry.test-helpers.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.test.ts",
+    "to": "src/agents/subagents/subagent-registry.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.ts",
+    "to": "src/agents/subagents/subagent-registry.ts"
+  },
+  {
+    "from": "src/agents/subagent-registry.types.ts",
+    "to": "src/agents/subagents/subagent-registry.types.ts"
+  },
+  {
+    "from": "src/agents/subagent-requester-store-key.ts",
+    "to": "src/agents/subagents/subagent-requester-store-key.ts"
+  },
+  {
+    "from": "src/agents/subagent-run-liveness.test.ts",
+    "to": "src/agents/subagents/subagent-run-liveness.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-run-liveness.ts",
+    "to": "src/agents/subagents/subagent-run-liveness.ts"
+  },
+  {
+    "from": "src/agents/subagent-run-timeout.test.ts",
+    "to": "src/agents/subagents/subagent-run-timeout.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-run-timeout.ts",
+    "to": "src/agents/subagents/subagent-run-timeout.ts"
+  },
+  {
+    "from": "src/agents/subagent-session-cleanup.ts",
+    "to": "src/agents/subagents/subagent-session-cleanup.ts"
+  },
+  {
+    "from": "src/agents/subagent-session-metrics.ts",
+    "to": "src/agents/subagents/subagent-session-metrics.ts"
+  },
+  {
+    "from": "src/agents/subagent-session-reconciliation.ts",
+    "to": "src/agents/subagents/subagent-session-reconciliation.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn-accepted-note.ts",
+    "to": "src/agents/subagents/subagent-spawn-accepted-note.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn-ownership.ts",
+    "to": "src/agents/subagents/subagent-spawn-ownership.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn-plan.ts",
+    "to": "src/agents/subagents/subagent-spawn-plan.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn-thinking.ts",
+    "to": "src/agents/subagents/subagent-spawn-thinking.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn.attachments.test.ts",
+    "to": "src/agents/subagents/subagent-spawn.attachments.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn.context.test.ts",
+    "to": "src/agents/subagents/subagent-spawn.context.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn.depth-limits.test.ts",
+    "to": "src/agents/subagents/subagent-spawn.depth-limits.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn.mode-session-diagnostics.test.ts",
+    "to": "src/agents/subagents/subagent-spawn.mode-session-diagnostics.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn.model-session.test.ts",
+    "to": "src/agents/subagents/subagent-spawn.model-session.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn.runtime.ts",
+    "to": "src/agents/subagents/subagent-spawn.runtime.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn.test-helpers.ts",
+    "to": "src/agents/subagents/subagent-spawn.test-helpers.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn.test.ts",
+    "to": "src/agents/subagents/subagent-spawn.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn.thread-binding.test.ts",
+    "to": "src/agents/subagents/subagent-spawn.thread-binding.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn.ts",
+    "to": "src/agents/subagents/subagent-spawn.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn.types.ts",
+    "to": "src/agents/subagents/subagent-spawn.types.ts"
+  },
+  {
+    "from": "src/agents/subagent-spawn.workspace.test.ts",
+    "to": "src/agents/subagents/subagent-spawn.workspace.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-system-prompt.ts",
+    "to": "src/agents/subagents/subagent-system-prompt.ts"
+  },
+  {
+    "from": "src/agents/subagent-target-policy.test.ts",
+    "to": "src/agents/subagents/subagent-target-policy.test.ts"
+  },
+  {
+    "from": "src/agents/subagent-target-policy.ts",
+    "to": "src/agents/subagents/subagent-target-policy.ts"
+  },
+  {
+    "from": "src/agents/subagent-task-name.ts",
+    "to": "src/agents/subagents/subagent-task-name.ts"
+  },
+  {
+    "from": "src/agents/subagent-yield-output.ts",
+    "to": "src/agents/subagents/subagent-yield-output.ts"
+  },
+  {
+    "from": "src/agents/system-prompt-cache-boundary.test.ts",
+    "to": "src/agents/prompt/system-prompt-cache-boundary.test.ts"
+  },
+  {
+    "from": "src/agents/system-prompt-cache-boundary.ts",
+    "to": "src/agents/prompt/system-prompt-cache-boundary.ts"
+  },
+  {
+    "from": "src/agents/system-prompt-config.test.ts",
+    "to": "src/agents/prompt/system-prompt-config.test.ts"
+  },
+  {
+    "from": "src/agents/system-prompt-config.ts",
+    "to": "src/agents/prompt/system-prompt-config.ts"
+  },
+  {
+    "from": "src/agents/system-prompt-contribution.ts",
+    "to": "src/agents/prompt/system-prompt-contribution.ts"
+  },
+  {
+    "from": "src/agents/system-prompt-params.test.ts",
+    "to": "src/agents/prompt/system-prompt-params.test.ts"
+  },
+  {
+    "from": "src/agents/system-prompt-params.ts",
+    "to": "src/agents/prompt/system-prompt-params.ts"
+  },
+  {
+    "from": "src/agents/system-prompt-report.test.ts",
+    "to": "src/agents/prompt/system-prompt-report.test.ts"
+  },
+  {
+    "from": "src/agents/system-prompt-report.ts",
+    "to": "src/agents/prompt/system-prompt-report.ts"
+  },
+  {
+    "from": "src/agents/system-prompt-stability.test.ts",
+    "to": "src/agents/prompt/system-prompt-stability.test.ts"
+  },
+  {
+    "from": "src/agents/system-prompt.memory.test.ts",
+    "to": "src/agents/prompt/system-prompt.memory.test.ts"
+  },
+  {
+    "from": "src/agents/system-prompt.test.ts",
+    "to": "src/agents/prompt/system-prompt.test.ts"
+  },
+  {
+    "from": "src/agents/system-prompt.ts",
+    "to": "src/agents/prompt/system-prompt.ts"
+  },
+  {
+    "from": "src/agents/system-prompt.types.ts",
+    "to": "src/agents/prompt/system-prompt.types.ts"
+  },
+  {
+    "from": "src/agents/tool-allowlist-guard.test.ts",
+    "to": "src/agents/tools/tool-allowlist-guard.test.ts"
+  },
+  {
+    "from": "src/agents/tool-allowlist-guard.ts",
+    "to": "src/agents/tools/tool-allowlist-guard.ts"
+  },
+  {
+    "from": "src/agents/tool-call-id.test.ts",
+    "to": "src/agents/tools/tool-call-id.test.ts"
+  },
+  {
+    "from": "src/agents/tool-call-id.ts",
+    "to": "src/agents/tools/tool-call-id.ts"
+  },
+  {
+    "from": "src/agents/tool-call-shared.ts",
+    "to": "src/agents/tools/tool-call-shared.ts"
+  },
+  {
+    "from": "src/agents/tool-catalog.test.ts",
+    "to": "src/agents/tools/tool-catalog.test.ts"
+  },
+  {
+    "from": "src/agents/tool-catalog.ts",
+    "to": "src/agents/tools/tool-catalog.ts"
+  },
+  {
+    "from": "src/agents/tool-description-presets.ts",
+    "to": "src/agents/tools/tool-description-presets.ts"
+  },
+  {
+    "from": "src/agents/tool-description-summary.ts",
+    "to": "src/agents/tools/tool-description-summary.ts"
+  },
+  {
+    "from": "src/agents/tool-display-common.ts",
+    "to": "src/agents/tools/tool-display-common.ts"
+  },
+  {
+    "from": "src/agents/tool-display-config.ts",
+    "to": "src/agents/tools/tool-display-config.ts"
+  },
+  {
+    "from": "src/agents/tool-display-exec-shell.ts",
+    "to": "src/agents/tools/tool-display-exec-shell.ts"
+  },
+  {
+    "from": "src/agents/tool-display-exec.ts",
+    "to": "src/agents/tools/tool-display-exec.ts"
+  },
+  {
+    "from": "src/agents/tool-display.test.ts",
+    "to": "src/agents/tools/tool-display.test.ts"
+  },
+  {
+    "from": "src/agents/tool-display.ts",
+    "to": "src/agents/tools/tool-display.ts"
+  },
+  {
+    "from": "src/agents/tool-error-summary.ts",
+    "to": "src/agents/tools/tool-error-summary.ts"
+  },
+  {
+    "from": "src/agents/tool-fs-policy.test.ts",
+    "to": "src/agents/tools/tool-fs-policy.test.ts"
+  },
+  {
+    "from": "src/agents/tool-fs-policy.ts",
+    "to": "src/agents/tools/tool-fs-policy.ts"
+  },
+  {
+    "from": "src/agents/tool-fs-policy.types.ts",
+    "to": "src/agents/tools/tool-fs-policy.types.ts"
+  },
+  {
+    "from": "src/agents/tool-images.test.ts",
+    "to": "src/agents/tools/tool-images.test.ts"
+  },
+  {
+    "from": "src/agents/tool-images.ts",
+    "to": "src/agents/tools/tool-images.ts"
+  },
+  {
+    "from": "src/agents/tool-loop-detection-config.ts",
+    "to": "src/agents/tools/tool-loop-detection-config.ts"
+  },
+  {
+    "from": "src/agents/tool-loop-detection.test.ts",
+    "to": "src/agents/tools/tool-loop-detection.test.ts"
+  },
+  {
+    "from": "src/agents/tool-loop-detection.ts",
+    "to": "src/agents/tools/tool-loop-detection.ts"
+  },
+  {
+    "from": "src/agents/tool-mutation.test.ts",
+    "to": "src/agents/tools/tool-mutation.test.ts"
+  },
+  {
+    "from": "src/agents/tool-mutation.ts",
+    "to": "src/agents/tools/tool-mutation.ts"
+  },
+  {
+    "from": "src/agents/tool-policy-audit.ts",
+    "to": "src/agents/tools/tool-policy-audit.ts"
+  },
+  {
+    "from": "src/agents/tool-policy-declared-context.ts",
+    "to": "src/agents/tools/tool-policy-declared-context.ts"
+  },
+  {
+    "from": "src/agents/tool-policy-match.ts",
+    "to": "src/agents/tools/tool-policy-match.ts"
+  },
+  {
+    "from": "src/agents/tool-policy-pipeline.test.ts",
+    "to": "src/agents/tools/tool-policy-pipeline.test.ts"
+  },
+  {
+    "from": "src/agents/tool-policy-pipeline.ts",
+    "to": "src/agents/tools/tool-policy-pipeline.ts"
+  },
+  {
+    "from": "src/agents/tool-policy-shared.ts",
+    "to": "src/agents/tools/tool-policy-shared.ts"
+  },
+  {
+    "from": "src/agents/tool-policy.plugin-only-allowlist.test.ts",
+    "to": "src/agents/tools/tool-policy.plugin-only-allowlist.test.ts"
+  },
+  {
+    "from": "src/agents/tool-policy.test.ts",
+    "to": "src/agents/tools/tool-policy.test.ts"
+  },
+  {
+    "from": "src/agents/tool-policy.ts",
+    "to": "src/agents/tools/tool-policy.ts"
+  },
+  {
+    "from": "src/agents/tool-replay-repair.live.test.ts",
+    "to": "src/agents/tools/tool-replay-repair.live.test.ts"
+  },
+  {
+    "from": "src/agents/tool-replay-safety.test.ts",
+    "to": "src/agents/tools/tool-replay-safety.test.ts"
+  },
+  {
+    "from": "src/agents/tool-replay-safety.ts",
+    "to": "src/agents/tools/tool-replay-safety.ts"
+  },
+  {
+    "from": "src/agents/tool-result-error.ts",
+    "to": "src/agents/tools/tool-result-error.ts"
+  },
+  {
+    "from": "src/agents/tool-schema-json-projection.ts",
+    "to": "src/agents/tools/tool-schema-json-projection.ts"
+  },
+  {
+    "from": "src/agents/tool-schema-projection.test.ts",
+    "to": "src/agents/tools/tool-schema-projection.test.ts"
+  },
+  {
+    "from": "src/agents/tool-schema-projection.ts",
+    "to": "src/agents/tools/tool-schema-projection.ts"
+  },
+  {
+    "from": "src/agents/tool-schema-quarantine-health.ts",
+    "to": "src/agents/tools/tool-schema-quarantine-health.ts"
+  },
+  {
+    "from": "src/agents/tool-schema-quarantine.test.ts",
+    "to": "src/agents/tools/tool-schema-quarantine.test.ts"
+  },
+  {
+    "from": "src/agents/tool-schema-quarantine.ts",
+    "to": "src/agents/tools/tool-schema-quarantine.ts"
+  },
+  {
+    "from": "src/agents/tool-search.test.ts",
+    "to": "src/agents/tools/tool-search.test.ts"
+  },
+  {
+    "from": "src/agents/tool-search.ts",
+    "to": "src/agents/tools/tool-search.ts"
+  },
+  {
+    "from": "src/agents/tool-terminal-presentation.ts",
+    "to": "src/agents/tools/tool-terminal-presentation.ts"
+  },
+  {
+    "from": "src/agents/tools-effective-inventory-build.ts",
+    "to": "src/agents/tools/tools-effective-inventory-build.ts"
+  },
+  {
+    "from": "src/agents/tools-effective-inventory-groups.ts",
+    "to": "src/agents/tools/tools-effective-inventory-groups.ts"
+  },
+  {
+    "from": "src/agents/tools-effective-inventory.test.ts",
+    "to": "src/agents/tools/tools-effective-inventory.test.ts"
+  },
+  {
+    "from": "src/agents/tools-effective-inventory.ts",
+    "to": "src/agents/tools/tools-effective-inventory.ts"
+  },
+  {
+    "from": "src/agents/tools-effective-inventory.types.ts",
+    "to": "src/agents/tools/tools-effective-inventory.types.ts"
+  },
+  {
+    "from": "src/agents/tools-effective-mcp-inventory.ts",
+    "to": "src/agents/tools/tools-effective-mcp-inventory.ts"
+  },
+  {
+    "from": "src/agents/web-search-tool-policy.ts",
+    "to": "src/agents/tools/web-search-tool-policy.ts"
+  },
+  {
+    "from": "src/agents/workspace-default.ts",
+    "to": "src/agents/workspace/workspace-default.ts"
+  },
+  {
+    "from": "src/agents/workspace-dir.ts",
+    "to": "src/agents/workspace/workspace-dir.ts"
+  },
+  {
+    "from": "src/agents/workspace-dirs.ts",
+    "to": "src/agents/workspace/workspace-dirs.ts"
+  },
+  {
+    "from": "src/agents/workspace-run.test.ts",
+    "to": "src/agents/workspace/workspace-run.test.ts"
+  },
+  {
+    "from": "src/agents/workspace-run.ts",
+    "to": "src/agents/workspace/workspace-run.ts"
+  },
+  {
+    "from": "src/agents/workspace-templates.test.ts",
+    "to": "src/agents/workspace/workspace-templates.test.ts"
+  },
+  {
+    "from": "src/agents/workspace-templates.ts",
+    "to": "src/agents/workspace/workspace-templates.ts"
+  },
+  {
+    "from": "src/agents/workspace.bootstrap-cache.test.ts",
+    "to": "src/agents/workspace/workspace.bootstrap-cache.test.ts"
+  },
+  {
+    "from": "src/agents/workspace.defaults.test.ts",
+    "to": "src/agents/workspace/workspace.defaults.test.ts"
+  },
+  {
+    "from": "src/agents/workspace.load-extra-bootstrap-files.test.ts",
+    "to": "src/agents/workspace/workspace.load-extra-bootstrap-files.test.ts"
+  },
+  {
+    "from": "src/agents/workspace.test.ts",
+    "to": "src/agents/workspace/workspace.test.ts"
+  },
+  {
+    "from": "src/agents/workspace.ts",
+    "to": "src/agents/workspace/workspace.ts"
+  }
+]

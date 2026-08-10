@@ -5,9 +5,9 @@ import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import {
   canonicalizeSpawnedByForAgent,
   resolveStoredSessionKeyForAgentStore,
-} from "../../gateway/session-store-key.js";
+} from "../../gateway/sessions/session-store-key.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
-import type { OpenClawConfig } from "../types.openclaw.js";
+import type { OpenClawConfig } from "../types/openclaw.js";
 import { resolveStorePath } from "./paths.js";
 import { listSessionEntries } from "./session-accessor.js";
 import {

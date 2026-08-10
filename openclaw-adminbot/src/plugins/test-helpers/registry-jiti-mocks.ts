@@ -14,13 +14,13 @@ vi.mock("../discovery.js", () => ({
   ) => registryJitiMocks.discoverOpenClawPlugins(...args),
 }));
 
-vi.mock("../manifest-registry.js", () => ({
+vi.mock("../manifest/manifest-registry.js", () => ({
   loadPluginManifestRegistry: (
     ...args: Parameters<typeof registryJitiMocks.loadPluginManifestRegistry>
   ) => registryJitiMocks.loadPluginManifestRegistry(...args),
 }));
 
-vi.mock("../manifest-registry-installed.js", () => ({
+vi.mock("../manifest/manifest-registry-installed.js", () => ({
   loadPluginManifestRegistryForInstalledIndex: (
     ...args: Parameters<typeof registryJitiMocks.loadPluginManifestRegistry>
   ) => registryJitiMocks.loadPluginManifestRegistry(...args),

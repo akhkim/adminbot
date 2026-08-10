@@ -1,15 +1,9 @@
 // Test helpers for captured plugin registration and manifest setup.
 import { createCapturedPluginRegistration } from "../plugins/captured-registration.js";
 import type {
-  ImageGenerationProviderPlugin,
-  MediaUnderstandingProviderPlugin,
-  MusicGenerationProviderPlugin,
   OpenClawPluginApi,
   ProviderPlugin,
-  RealtimeTranscriptionProviderPlugin,
-  SpeechProviderPlugin,
   UnifiedModelCatalogProviderPlugin,
-  VideoGenerationProviderPlugin,
 } from "../plugins/types.js";
 
 /** Captured registration helpers for provider plugin tests. */
@@ -21,12 +15,6 @@ type RegistrablePlugin = {
 
 export type RegisteredProviderCollections = {
   providers: ProviderPlugin[];
-  realtimeTranscriptionProviders: RealtimeTranscriptionProviderPlugin[];
-  speechProviders: SpeechProviderPlugin[];
-  mediaProviders: MediaUnderstandingProviderPlugin[];
-  imageProviders: ImageGenerationProviderPlugin[];
-  musicProviders: MusicGenerationProviderPlugin[];
-  videoProviders: VideoGenerationProviderPlugin[];
   modelCatalogProviders: UnifiedModelCatalogProviderPlugin[];
 };
 
@@ -56,12 +44,6 @@ export async function registerProviderPlugin(params: {
   params.plugin.register(captured.api);
   return {
     providers: captured.providers,
-    realtimeTranscriptionProviders: captured.realtimeTranscriptionProviders,
-    speechProviders: captured.speechProviders,
-    mediaProviders: captured.mediaUnderstandingProviders,
-    imageProviders: captured.imageGenerationProviders,
-    musicProviders: captured.musicGenerationProviders,
-    videoProviders: captured.videoGenerationProviders,
     modelCatalogProviders: captured.modelCatalogProviders,
   };
 }

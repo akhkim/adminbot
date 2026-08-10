@@ -2,10 +2,10 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { resolveRegistryUpdateChannel } from "../infra/update-channels.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { resolveRegistryUpdateChannel } from "../infra/install/update-channels.js";
 import type { PluginEnableResult } from "../plugins/enable.js";
-import { resolveNpmInstallSpecsForUpdateChannel } from "../plugins/install-channel-specs.js";
+import { resolveNpmInstallSpecsForUpdateChannel } from "../plugins/install/install-channel-specs.js";
 import { withTempDir } from "../test-helpers/temp-dir.js";
 import { VERSION } from "../version.js";
 
@@ -19,12 +19,12 @@ function expectedNpmInstallSpec(spec: string): string {
 const resolveBundledInstallPlanForCatalogEntry = vi.hoisted(() =>
   vi.fn<(...args: unknown[]) => unknown>(() => undefined),
 );
-vi.mock("../cli/plugin-install-plan.js", () => ({
+vi.mock("../cli/plugins/plugin-install-plan.js", () => ({
   resolveBundledInstallPlanForCatalogEntry,
 }));
 
 const refreshPluginRegistryAfterConfigMutation = vi.hoisted(() => vi.fn(async () => undefined));
-vi.mock("../cli/plugins-registry-refresh.js", () => ({
+vi.mock("../cli/plugins/plugins-registry-refresh.js", () => ({
   refreshPluginRegistryAfterConfigMutation,
 }));
 
@@ -32,14 +32,14 @@ const resolveBundledPluginSources = vi.hoisted(() => vi.fn(() => new Map()));
 const findBundledPluginSourceInMap = vi.hoisted(() =>
   vi.fn<(...args: unknown[]) => { localPath: string } | undefined>(() => undefined),
 );
-vi.mock("../plugins/bundled-sources.js", () => ({
+vi.mock("../plugins/install/bundled-sources.js", () => ({
   resolveBundledPluginSources,
   findBundledPluginSourceInMap,
 }));
 
 const installPluginFromNpmSpec = vi.hoisted(() => vi.fn());
 const installPluginFromNpmPackArchive = vi.hoisted(() => vi.fn());
-vi.mock("../plugins/install.js", () => ({
+vi.mock("../plugins/install/install.js", () => ({
   installPluginFromNpmSpec,
   installPluginFromNpmPackArchive,
 }));
@@ -101,7 +101,7 @@ vi.mock("../plugins/installs.js", () => ({
 }));
 
 const withTimeout = vi.hoisted(() => vi.fn(async <T>(promise: Promise<T>) => await promise));
-vi.mock("../utils/with-timeout.js", () => ({
+vi.mock("../shared/with-timeout.js", () => ({
   withTimeout,
 }));
 

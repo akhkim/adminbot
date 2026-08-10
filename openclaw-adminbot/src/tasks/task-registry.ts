@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 2481 lines; see docs/adr/0006-deferred-monster-splits.md
 // Coordinates task registry creation, updates, delivery state, and snapshots.
 import crypto from "node:crypto";
 import { createRequire } from "node:module";
@@ -8,15 +9,15 @@ import {
   type AgentRunTerminalOutcome,
 } from "../agents/agent-run-terminal-outcome.js";
 import { shouldRouteCompletionThroughRequesterSession } from "../auto-reply/reply/completion-delivery-policy.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { onAgentEvent } from "../infra/agent-events.js";
 import { formatErrorMessage } from "../infra/errors.js";
-import { requestHeartbeat } from "../infra/heartbeat-wake.js";
-import { enqueueSystemEvent } from "../infra/system-events.js";
+import { requestHeartbeat } from "../infra/heartbeat/heartbeat-wake.js";
+import { enqueueSystemEvent } from "../infra/system/system-events.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { normalizeAgentId, parseAgentSessionKey } from "../routing/session-key.js";
-import { normalizeDeliveryContext } from "../utils/delivery-context.shared.js";
-import { isDeliverableMessageChannel } from "../utils/message-channel.js";
+import { normalizeDeliveryContext } from "../shared/delivery-context.shared.js";
+import { isDeliverableMessageChannel } from "../shared/message-channel.js";
 import { isChildlessCodexNativeSubagentTask } from "./codex-native-subagent-task.js";
 import { cancelActiveCronTaskRun } from "./cron-task-cancel.js";
 import {

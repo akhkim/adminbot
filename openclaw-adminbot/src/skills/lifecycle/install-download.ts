@@ -9,9 +9,9 @@ import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/s
 import { isWindowsDrivePath } from "../../infra/archive-path.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { root as fsRoot } from "../../infra/fs-safe.js";
-import { assertCanonicalPathWithinBase } from "../../infra/install-safe-path.js";
+import { assertCanonicalPathWithinBase } from "../../infra/install/install-safe-path.js";
 import { fetchWithSsrFGuard } from "../../infra/net/fetch-guard.js";
-import { isWithinDir } from "../../infra/path-safety.js";
+import { isWithinDir } from "../../infra/system/path-safety.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { ensureDir, resolveUserPath } from "../../utils.js";
 import { resolveSkillToolsRootDir } from "../runtime/tools-dir.js";

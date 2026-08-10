@@ -1,11 +1,11 @@
 // Skill environment override helpers expose safe env vars requested by active skills.
 import { sanitizeEnvVars, validateEnvVarValue } from "../../agents/sandbox/sanitize-env-vars.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { normalizeResolvedSecretInputString } from "../../config/types.secrets.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { normalizeResolvedSecretInputString } from "../../config/types/secrets.js";
 import {
   isDangerousHostEnvOverrideVarName,
   isDangerousHostEnvVarName,
-} from "../../infra/host-env-security.js";
+} from "../../infra/system/host-env-security.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { resolveSkillConfig } from "../loading/config.js";
 import { resolveSkillKey } from "../loading/frontmatter.js";

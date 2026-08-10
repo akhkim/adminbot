@@ -2,7 +2,7 @@
 import type {
   DiagnosticSessionActiveWorkKind,
   DiagnosticSessionState,
-} from "../infra/diagnostic-events.js";
+} from "../infra/diagnostics/diagnostic-events.js";
 
 type DiagnosticSessionRecoverySkipReason =
   | "active_embedded_run"

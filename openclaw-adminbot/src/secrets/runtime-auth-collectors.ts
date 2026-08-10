@@ -1,7 +1,7 @@
 /** Collects auth-profile and OAuth secret refs for runtime preparation. */
 import { assertNoOAuthSecretRefPolicyViolations } from "../agents/auth-profiles/policy.js";
 import type { AuthProfileCredential, AuthProfileStore } from "../agents/auth-profiles/types.js";
-import { resolveSecretInputRef } from "../config/types.secrets.js";
+import { resolveSecretInputRef } from "../config/types/secrets.js";
 import {
   pushAssignment,
   pushWarning,

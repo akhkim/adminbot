@@ -4,7 +4,7 @@ Aurora is a private AIS sandbox node, not an Internet-facing server. It is
 reachable only from the CS VPN or the on-campus network:
 
 ```bash
-ssh aurora.ais.sandbox -l <cs-user>
+ssh <aurora-host> -l <cs-user>
 ```
 
 AdminBot does not need a GPU to remain online. Run the Gateway, AdminBot API,
@@ -27,8 +27,8 @@ Browser / local OpenClaw UI
                                              +-- hourly systemd email timer
 ```
 
-Both services remain loopback-only. Do not bind the AdminBot API to
-`10.63.12.33` or expose port 8765 publicly.
+Both services remain loopback-only. Do not bind the AdminBot API to the host's
+private lab address or expose port 8765 publicly.
 
 ## Prerequisites on Aurora
 
@@ -115,7 +115,8 @@ scripts/aurora-adminbot-host.sh --user <cs-user> auth-gog
 ```
 
 The command uses gog's remote/manual OAuth mode. Open the printed URL locally,
-approve `jinesis.adminbot@gmail.com`, then paste the resulting redirect URL
+approve the AdminBot Google account (`GOG_ACCOUNT` in `adminbot.env`), then
+paste the resulting redirect URL
 back into the SSH session.
 
 Calendar event creation uses gog. Calendar ACL changes ("See all events") use
@@ -123,7 +124,7 @@ the separate `gws` CLI, so also authenticate `gws` on Aurora and confirm:
 
 ```bash
 gws auth status
-gws calendar acl list --params '{"calendarId":"jinesis.lab@gmail.com"}'
+gws calendar acl list --params "{\"calendarId\":\"$ADMINBOT_LAB_EMAIL\"}"
 ```
 
 ## 5. Start and verify
@@ -145,6 +146,51 @@ scripts/aurora-adminbot-host.sh --user <cs-user> logs gateway
 scripts/aurora-adminbot-host.sh --user <cs-user> logs email
 ```
 
+## Optional Google Sheet member poller
+
+Aurora can poll one Google Sheet tab every minute and import safe member-profile changes through
+the loopback AdminBot API. Add these values to
+`~/.config/jinesis-adminbot/adminbot.env`, then rerun the normal `start` command:
+
+```bash
+ADMINBOT_MEMBER_SHEET_ID=1AbC...
+ADMINBOT_MEMBER_SHEET_RANGE='Members!A:Z'
+
+scripts/aurora-adminbot-host.sh --user <cs-user> start
+```
+
+The tab must contain an `AdminBot ID` column whose values exactly match existing roster member
+IDs. It may contain these spreadsheet-owned columns:
+
+- `Name`, `Slack User ID`, `Role`, `Research Branch`, `Research Topics`, `Projects`
+- `Hours Per Week`, `Location`, `Affiliation`, `Timezone`
+- `Personal Website`, `OpenReview ID`, `Notes`, `Availability Doc URL`
+
+Separate `Research Topics` and `Projects` entries with commas, semicolons, or newlines. Blank cells
+mean “leave the database value unchanged.” Unknown IDs, duplicate IDs, missing IDs, invalid hours,
+and service validation failures fail the poll without creating or deleting members.
+
+Columns such as `Email`, `Privilege Level`, `Status`, `Collaborator Subgroup`, and
+`Access Overrides` are read-only from this poller's perspective and are ignored. The AdminBot
+service independently rejects them for the poller's service credential.
+
+Before enabling the timer, the installer runs one dry pass that reads both the Sheet and AdminBot
+but writes nothing. Inspect recurring runs with:
+
+```bash
+scripts/aurora-adminbot-host.sh --user <cs-user> logs sheet-poller
+systemctl --user status jinesis-adminbot-sheet-poller.timer
+```
+
+To test the configured mapping manually without changing the database:
+
+```bash
+set -a
+. ~/.config/jinesis-adminbot/adminbot.env
+set +a
+node_modules/.bin/tsx scripts/adminbot-member-sheet-poller.ts --dry-run
+```
+
 ## 6. Connect to the hosted services
 
 ```bash
@@ -158,7 +204,7 @@ Keep that SSH session open. Local applications can then use:
 
 The Gateway requires `OPENCLAW_GATEWAY_TOKEN`.
 
-The Vercel-hosted UI cannot directly reach Aurora's private `10.63.0.0/16`
+The Vercel-hosted UI cannot directly reach Aurora's private lab-network
 address. An SSH tunnel works for the operator's browser only. Multi-user remote
 access requires a CSLab-approved HTTPS/WSS reverse proxy or approved private
 network ingress. Ask Eugenia before installing Tailscale, Docker, a public

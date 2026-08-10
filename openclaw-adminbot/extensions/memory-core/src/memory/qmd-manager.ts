@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 3480 lines; see docs/adr/0006-deferred-monster-splits.md
 // Memory Core plugin module implements qmd manager behavior.
 import crypto from "node:crypto";
 import fsSync from "node:fs";

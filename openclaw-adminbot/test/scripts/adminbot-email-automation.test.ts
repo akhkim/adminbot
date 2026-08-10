@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   authorizeClassification,
   formatTalkLatex,
@@ -6,7 +6,7 @@ import {
   type EmailMessage,
 } from "../../scripts/adminbot-email-automation.js";
 import type { ModelClassification } from "../../scripts/adminbot-email-model.js";
-import type { OpenClawConfig } from "../../src/config/types.openclaw.js";
+import type { OpenClawConfig } from "../../src/config/types/openclaw.js";
 
 const message = (overrides: Partial<EmailMessage> = {}): EmailMessage => ({
   id: "m1",
@@ -28,6 +28,16 @@ const classification = (overrides: Partial<ModelClassification> = {}): ModelClas
   ...overrides,
 });
 
+// The privileged-sender allowlist is deployment configuration; without it nobody is privileged.
+// Set here so the authorization tests exercise a configured deployment.
+beforeAll(() => {
+  vi.stubEnv("ADMINBOT_ONBOARDING_SENDERS", "pi@example.edu,pi.admin@example.edu");
+  vi.stubEnv("ADMINBOT_CONTACT_EMAILS", "ops@example.com");
+});
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("adminbot email automation", () => {
   it("accepts high-confidence student outreach for LLM-guided handling", () => {
     expect(authorizeClassification(message(), classification()).category).toBe("student_reachout");
@@ -42,16 +52,14 @@ describe("adminbot email automation", () => {
       candidateName: "Candidate",
     });
     expect(authorizeClassification(message(), direct).category).toBe("unknown");
-    expect(authorizeClassification(message({ from: "zjin@cs.toronto.edu" }), direct)).toMatchObject(
-      {
-        category: "onboarding_instruction",
-        decision: "direct",
-        candidateEmail: "candidate@example.com",
-      },
+    expect(authorizeClassification(message({ from: "pi@example.edu" }), direct)).toMatchObject({
+      category: "onboarding_instruction",
+      decision: "direct",
+      candidateEmail: "candidate@example.com",
+    });
+    expect(authorizeClassification(message({ from: "ops@example.com" }), direct).category).toBe(
+      "unknown",
     );
-    expect(
-      authorizeClassification(message({ from: "andrewkihyun@gmail.com" }), direct).category,
-    ).toBe("unknown");
   });
 
   it("recognizes only tracked candidate followups", () => {

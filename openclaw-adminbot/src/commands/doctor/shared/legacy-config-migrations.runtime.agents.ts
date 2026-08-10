@@ -1,10 +1,10 @@
 // Legacy runtime agent config migrations for memory, heartbeat, sandbox, and runtime policy keys.
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
-import { isKnownCoreToolId } from "../../../agents/tool-catalog.js";
-import { isToolAllowedByPolicyName } from "../../../agents/tool-policy-match.js";
-import { resolveToolProfilePolicy } from "../../../agents/tool-policy-shared.js";
-import { expandToolGroups, mergeAlsoAllowPolicy } from "../../../agents/tool-policy.js";
+import { isKnownCoreToolId } from "../../../agents/tools/tool-catalog.js";
+import { isToolAllowedByPolicyName } from "../../../agents/tools/tool-policy-match.js";
+import { resolveToolProfilePolicy } from "../../../agents/tools/tool-policy-shared.js";
+import { expandToolGroups, mergeAlsoAllowPolicy } from "../../../agents/tools/tool-policy.js";
 import {
   defineLegacyConfigMigration,
   ensureRecord,
@@ -12,7 +12,7 @@ import {
   mergeMissing,
   type LegacyConfigMigrationSpec,
   type LegacyConfigRule,
-} from "../../../config/legacy.shared.js";
+} from "../../../config/legacy/legacy.shared.js";
 import { isBlockedObjectKey } from "../../../infra/prototype-keys.js";
 import { listLegacyRuntimeModelProviderAliases } from "./legacy-runtime-model-providers.js";
 

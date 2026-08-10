@@ -10,7 +10,7 @@ import {
   clearRuntimeAuthProfileStoreSnapshots,
   replaceRuntimeAuthProfileStoreSnapshots,
   saveAuthProfileStore,
-} from "../auth-profiles.js";
+} from "../auth/auth-profiles.js";
 import {
   PLUGIN_MODEL_CATALOG_FILE,
   PLUGIN_MODEL_CATALOG_GENERATED_BY,
@@ -23,9 +23,9 @@ const resolveBundledProviderStaticCatalogModelMock = vi.hoisted(() => vi.fn());
 const resolveRuntimeSyntheticAuthProviderRefsMock = vi.hoisted(() => vi.fn((): string[] => []));
 const resolveRuntimeExternalAuthProviderRefsMock = vi.hoisted(() => vi.fn((): string[] => []));
 
-vi.mock("../model-suppression.js", () => {
+vi.mock("../models/model-suppression.js", () => {
   // Mirrors the canonical manifest-driven suppression in
-  // extensions/qwen/openclaw.plugin.json and src/plugins/manifest-model-suppression.ts.
+  // extensions/qwen/openclaw.plugin.json and src/plugins/manifest/manifest-model-suppression.ts.
   function isQwenCodingPlanBaseUrl(value: string | undefined): boolean {
     const trimmed = value?.trim();
     if (!trimmed) {
@@ -165,9 +165,12 @@ vi.mock("./openrouter-model-capabilities.js", () => ({
 }));
 
 import type { OpenClawConfig, OpenClawConfigInput } from "../../config/config.js";
-import { COPILOT_INTEGRATION_ID, buildCopilotIdeHeaders } from "../copilot-dynamic-headers.js";
-import { getModelProviderLocalService } from "../provider-local-service.js";
-import { getModelProviderRequestTransport } from "../provider-request-config.js";
+import {
+  COPILOT_INTEGRATION_ID,
+  buildCopilotIdeHeaders,
+} from "../transport/copilot-dynamic-headers.js";
+import { getModelProviderLocalService } from "../transport/provider-local-service.js";
+import { getModelProviderRequestTransport } from "../transport/provider-request-config.js";
 import { buildForwardCompatTemplate } from "./model.forward-compat.test-support.js";
 import {
   buildInlineProviderModels,

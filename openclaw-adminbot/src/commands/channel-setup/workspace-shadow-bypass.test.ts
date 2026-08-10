@@ -8,7 +8,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PluginManifestRecord } from "../../plugins/manifest-registry.js";
+import type { PluginManifestRecord } from "../../plugins/manifest/manifest-registry.js";
 
 // ---------------------------------------------------------------------------
 // Mocks (hoisted to module top level)
@@ -39,7 +39,7 @@ vi.mock("../../channels/registry.js", () => ({
   listChatChannels: () => listChatChannels(),
   normalizeAnyChannelId: (channelId?: string) => channelId?.trim().toLowerCase() ?? null,
 }));
-vi.mock("../../plugins/manifest-registry.js", () => ({
+vi.mock("../../plugins/manifest/manifest-registry.js", () => ({
   loadPluginManifestRegistry: (...a: unknown[]) => loadPluginManifestRegistry(...a),
 }));
 vi.mock("../../plugins/plugin-registry.js", () => ({
@@ -50,10 +50,10 @@ vi.mock("../../plugins/plugin-registry.js", () => ({
     loadPluginRegistrySnapshotWithMetadata(...args),
   listPluginContributionIds: (...args: unknown[]) => listPluginContributionIds(...args),
 }));
-vi.mock("../../config/plugin-auto-enable.js", () => ({
+vi.mock("../../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: (a: unknown) => applyPluginAutoEnable(a as { config: unknown }),
 }));
-vi.mock("../../plugins/loader.js", () => ({
+vi.mock("../../plugins/runtime/loader.js", () => ({
   loadOpenClawPlugins: vi.fn(),
 }));
 

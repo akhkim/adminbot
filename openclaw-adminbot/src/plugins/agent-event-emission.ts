@@ -6,7 +6,7 @@ import {
   type PluginAgentEventEmitParams,
   type PluginAgentEventEmitResult,
   type PluginJsonValue,
-} from "./host-hooks.js";
+} from "./host/host-hooks.js";
 import type { PluginOrigin } from "./plugin-origin.types.js";
 
 const HOST_OWNED_AGENT_EVENT_STREAMS = new Set<string>([

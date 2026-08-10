@@ -1,6 +1,6 @@
 // Codex runtime plugin auto-install/repair helpers for OpenAI model selections.
-import { modelSelectionShouldEnsureCodexPlugin } from "../agents/openai-routing.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { modelSelectionShouldEnsureCodexPlugin } from "../agents/transport/openai-routing.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   createRuntimePluginModelSelectionHelpers,
   type RuntimePluginInstallResult,

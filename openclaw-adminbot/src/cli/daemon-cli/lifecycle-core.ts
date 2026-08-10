@@ -3,7 +3,7 @@ import type { Writable } from "node:stream";
 import { readBestEffortConfig, readConfigFileSnapshot } from "../../config/config.js";
 import { resolveFutureConfigActionBlock } from "../../config/future-version-guard.js";
 import { formatConfigIssueLines } from "../../config/issue-format.js";
-import { resolveIsNixMode } from "../../config/paths.js";
+import { resolveIsNixMode } from "../../config/paths/paths.js";
 import { isPluginPackagingRuntimeOutputInvalidConfigSnapshot } from "../../config/recovery-policy.js";
 import { checkTokenDrift } from "../../daemon/service-audit.js";
 import type { GatewayServiceRestartResult } from "../../daemon/service-types.js";
@@ -20,11 +20,11 @@ import {
 } from "../../infra/restart.js";
 import { isWSL } from "../../infra/wsl.js";
 import { defaultRuntime } from "../../runtime.js";
-import { formatCliCommand } from "../command-format.js";
 import {
   formatInvalidConfigRecoveryHint,
   formatPluginPackagingRuntimeOutputRecoveryHint,
-} from "../config-recovery-hints.js";
+} from "../config/config-recovery-hints.js";
+import { formatCliCommand } from "../program/command-format.js";
 import { resolveGatewayTokenForDriftCheck } from "./gateway-token-drift.js";
 import {
   buildDaemonServiceSnapshot,

@@ -7,4 +7,4 @@ export {
   resolveDefaultGroupPolicy,
   resolveOpenProviderRuntimeGroupPolicy,
   warnMissingProviderGroupPolicyFallbackOnce,
-} from "../config/runtime-group-policy.js";
+} from "../config/runtime/runtime-group-policy.js";

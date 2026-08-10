@@ -6,7 +6,7 @@ export type { ChannelMessageActionContext } from "../channels/plugins/types.publ
 export type { PluginRuntime } from "../plugins/runtime/types.js";
 export type { OpenClawPluginApi } from "../plugins/types.js";
 
-export { emptyPluginConfigSchema } from "../plugins/config-schema.js";
+export { emptyPluginConfigSchema } from "../plugins/config/config-schema.js";
 
 export { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../routing/session-key.js";
 

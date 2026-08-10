@@ -72,11 +72,11 @@ vi.mock("../../config/sessions/main-session.js", () => ({
   resolveMainSessionKey: vi.fn(() => "global"),
 }));
 
-vi.mock("../../agents/subagent-registry-read.js", () => ({
+vi.mock("../../agents/subagents/subagent-registry-read.js", () => ({
   countActiveDescendantRuns: countActiveDescendantRunsMock,
 }));
 
-vi.mock("../../agents/agent-bundle-mcp-tools.js", () => ({
+vi.mock("../../agents/mcp/agent-bundle-mcp-tools.js", () => ({
   retireSessionMcpRuntime: retireSessionMcpRuntimeMock,
 }));
 
@@ -119,7 +119,7 @@ vi.mock("../../logger.js", () => ({
   logError: vi.fn(),
 }));
 
-vi.mock("../../infra/system-events.js", () => ({
+vi.mock("../../infra/system/system-events.js", () => ({
   enqueueSystemEvent: vi.fn(),
 }));
 
@@ -137,9 +137,9 @@ vi.mock("./subagent-followup.runtime.js", () => ({
   waitForDescendantSubagentSummary: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { retireSessionMcpRuntime } from "../../agents/agent-bundle-mcp-tools.js";
+import { retireSessionMcpRuntime } from "../../agents/mcp/agent-bundle-mcp-tools.js";
 // Import after mocks
-import { countActiveDescendantRuns } from "../../agents/subagent-registry-read.js";
+import { countActiveDescendantRuns } from "../../agents/subagents/subagent-registry-read.js";
 import { appendAssistantMessageToSessionTranscript } from "../../config/sessions/transcript.runtime.js";
 import { callGateway } from "../../gateway/call.runtime.js";
 import { deliverOutboundPayloads } from "../../infra/outbound/deliver.js";
@@ -148,7 +148,7 @@ import {
   resolveOutboundSessionRoute,
 } from "../../infra/outbound/outbound-session.js";
 import { buildOutboundSessionContext } from "../../infra/outbound/session-context.js";
-import { enqueueSystemEvent } from "../../infra/system-events.js";
+import { enqueueSystemEvent } from "../../infra/system/system-events.js";
 import { shouldEnqueueCronMainSummary } from "../heartbeat-policy.js";
 import {
   dispatchCronDelivery,

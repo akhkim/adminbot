@@ -2,7 +2,7 @@
  * @deprecated Public SDK subpath has no bundled extension production imports.
  * Prefer vendor-neutral memory-host SDK subpaths for new plugin code.
  */
-import type { OpenClawConfig } from "../config/types.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import { createPluginStateKeyedStore } from "../plugin-state/plugin-state-store.js";
 import {
   createLazyFacadeObjectValue,

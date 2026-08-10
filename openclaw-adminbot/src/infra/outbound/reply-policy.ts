@@ -2,7 +2,7 @@
 // multi-payload outbound delivery.
 import { isSingleUseReplyToMode } from "../../auto-reply/reply/reply-reference.js";
 import type { ReplyPayload } from "../../auto-reply/types.js";
-import type { ReplyToMode } from "../../config/types.js";
+import type { ReplyToMode } from "../../config/types/types.js";
 
 /** Per-payload reply target override passed to outbound channel adapters. */
 export type ReplyToOverride = {

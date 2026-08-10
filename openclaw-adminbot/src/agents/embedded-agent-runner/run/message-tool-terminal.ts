@@ -2,7 +2,7 @@ import type { SourceReplyDeliveryMode } from "../../../auto-reply/get-reply-opti
 /**
  * Detects message-tool-only sends that delivered a visible source reply.
  */
-import { isDeliveredMessageToolOnlySourceReplyResult } from "../../embedded-agent-message-tool-source-reply.js";
+import { isDeliveredMessageToolOnlySourceReplyResult } from "../../embedded/embedded-agent-message-tool-source-reply.js";
 import type { AfterToolCallContext, AfterToolCallResult, Agent } from "../../runtime/index.js";
 
 function argsRecordForToolCall(context: AfterToolCallContext): Record<string, unknown> {

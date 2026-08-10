@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { loadSessionStore } from "../../config/sessions.js";
-import type { EmbeddedAgentRunResult } from "../embedded-agent.js";
+import type { EmbeddedAgentRunResult } from "../embedded/embedded-agent.js";
 import {
   clearCliSessionInStore,
   recordCliCompactionInStore,
@@ -19,7 +19,7 @@ const sessionStoreMocks = vi.hoisted(() => ({
   updateSessionStore: vi.fn(),
 }));
 
-vi.mock("../model-selection.js", () => ({
+vi.mock("../models/model-selection.js", () => ({
   isCliProvider: (provider: string, cfg?: OpenClawConfig) =>
     Object.hasOwn(cfg?.agents?.defaults?.cliBackends ?? {}, provider),
   normalizeProviderId: (provider: string) => provider.trim().toLowerCase(),
@@ -41,7 +41,7 @@ type MockUsageFormatConfig = {
   };
 };
 
-vi.mock("../../utils/usage-format.js", () => ({
+vi.mock("../../shared/usage-format.js", () => ({
   estimateUsageCost: (params: { usage?: { input?: number; output?: number }; cost?: MockCost }) => {
     if (!params.usage || !params.cost) {
       return undefined;

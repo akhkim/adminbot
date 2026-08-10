@@ -1,5 +1,5 @@
 // Applies security visibility policy to context and account data.
-import type { ContextVisibilityMode } from "../config/types.base.js";
+import type { ContextVisibilityMode } from "../config/types/base.js";
 
 /** Supplemental context classes that can be hidden independently from the main message. */
 export type ContextVisibilityKind = "history" | "thread" | "quote" | "forwarded";

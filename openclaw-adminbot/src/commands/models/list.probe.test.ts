@@ -6,7 +6,7 @@ let probeModule: typeof import("./list.probe.js");
 
 describe("mapFailoverReasonToProbeStatus", () => {
   beforeAll(async () => {
-    vi.doMock("../../agents/embedded-agent.js", () => {
+    vi.doMock("../../agents/embedded/embedded-agent.js", () => {
       throw new Error("embedded-agent should stay lazy for probe imports");
     });
     try {
@@ -15,7 +15,7 @@ describe("mapFailoverReasonToProbeStatus", () => {
         `./list.probe.js?scope=${Math.random().toString(36).slice(2)}`,
       );
     } finally {
-      vi.doUnmock("../../agents/embedded-agent.js");
+      vi.doUnmock("../../agents/embedded/embedded-agent.js");
     }
   });
 
@@ -43,8 +43,8 @@ describe("mapFailoverReasonToProbeStatus", () => {
 describe("runAuthProbes", () => {
   it("runs Codex auth probes through raw OpenClaw model-run mode", async () => {
     const runEmbeddedAgent = vi.fn(async () => ({ text: "OK" }));
-    vi.doMock("../../agents/embedded-agent.js", () => ({ runEmbeddedAgent }));
-    vi.doMock("../../agents/auth-profiles.js", () => ({
+    vi.doMock("../../agents/embedded/embedded-agent.js", () => ({ runEmbeddedAgent }));
+    vi.doMock("../../agents/auth/auth-profiles.js", () => ({
       externalCliDiscoveryScoped: () => undefined,
       ensureAuthProfileStore: () => ({
         version: 1,
@@ -64,11 +64,11 @@ describe("runAuthProbes", () => {
       resolveAuthProfileEligibility: () => ({ eligible: true }),
       resolveAuthProfileOrder: () => ["openai:profile"],
     }));
-    vi.doMock("../../agents/model-auth.js", () => ({
+    vi.doMock("../../agents/auth/model-auth.js", () => ({
       hasUsableCustomProviderApiKey: () => false,
       resolveEnvApiKey: () => null,
     }));
-    vi.doMock("../../agents/model-catalog.js", () => ({
+    vi.doMock("../../agents/models/model-catalog.js", () => ({
       loadModelCatalog: async () => [{ provider: "openai", id: "gpt-5.5" }],
     }));
     try {
@@ -102,10 +102,10 @@ describe("runAuthProbes", () => {
         }),
       );
     } finally {
-      vi.doUnmock("../../agents/embedded-agent.js");
-      vi.doUnmock("../../agents/auth-profiles.js");
-      vi.doUnmock("../../agents/model-auth.js");
-      vi.doUnmock("../../agents/model-catalog.js");
+      vi.doUnmock("../../agents/embedded/embedded-agent.js");
+      vi.doUnmock("../../agents/auth/auth-profiles.js");
+      vi.doUnmock("../../agents/auth/model-auth.js");
+      vi.doUnmock("../../agents/models/model-catalog.js");
     }
   });
 });

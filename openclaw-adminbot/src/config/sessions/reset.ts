@@ -4,8 +4,8 @@ import {
   normalizeOptionalLowercaseString,
 } from "@openclaw/normalization-core/string-coerce";
 import { resolveLoadedSessionThreadInfo } from "../../channels/plugins/session-thread-info-loaded.js";
-import { normalizeMessageChannel } from "../../utils/message-channel.js";
-import type { SessionConfig, SessionResetConfig } from "../types.base.js";
+import { normalizeMessageChannel } from "../../shared/message-channel.js";
+import type { SessionConfig, SessionResetConfig } from "../types/base.js";
 /** Public reset policy exports plus helpers that classify direct, group, and thread sessions. */
 export {
   DEFAULT_RESET_AT_HOUR,

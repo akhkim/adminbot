@@ -43,6 +43,7 @@
     "eslint/no-new-wrappers": "error",
     "eslint/no-else-return": "error",
     "eslint/no-lonely-if": "error",
+    "eslint/max-lines": ["error", { "max": 2200 }],
     "eslint/no-case-declarations": "error",
     "eslint/default-case-last": "error",
     "eslint/default-param-last": "error",
@@ -207,17 +208,9 @@
   "ignorePatterns": [
     "dist/",
     "dist-runtime/",
-    "docs/_layouts/",
-    "extensions/diffs/assets/viewer-runtime.js",
-    "extensions/diffs-language-pack/assets/viewer-runtime.js",
-    "extensions/canvas/src/host/a2ui/a2ui.bundle.js",
     "node_modules/",
-    "patches/",
     "pnpm-lock.yaml",
-    "skills/**",
     "src/auto-reply/reply/export-html/template.js",
-    "src/canvas-host/a2ui/a2ui.bundle.js",
-    "vendor/",
     "**/.cache/**",
     "**/.openclaw-runtime-deps-copy-*/**",
     "**/build/**",
@@ -239,6 +232,22 @@
       ],
       "rules": {
         "typescript/no-explicit-any": "off"
+      }
+    },
+    {
+      // Test files are read top-down as a list of independent cases, so length
+      // costs far less than it does in a source module whose parts interact.
+      // Exempting them keeps the max-lines ratchet a signal about production
+      // code: without this, 34 of the 40 grandfathered files were tests and the
+      // inventory said nothing about the source debt ADR-0006 governs.
+      "files": [
+        "**/*.test.ts",
+        "**/*.test-harness.ts",
+        "**/*.test-helpers.ts",
+        "**/*.test-support.ts"
+      ],
+      "rules": {
+        "eslint/max-lines": "off"
       }
     }
   ]

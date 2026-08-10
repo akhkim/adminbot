@@ -4,7 +4,7 @@ import type {
   AgentToolResultMiddlewareOptions,
   AgentToolResultMiddlewareRuntime,
 } from "./agent-tool-result-middleware-types.js";
-import { getActivePluginRegistry } from "./runtime.js";
+import { getActivePluginRegistry } from "./runtime/runtime.js";
 
 export const AGENT_TOOL_RESULT_MIDDLEWARE_RUNTIMES = [
   "openclaw",

@@ -7,16 +7,16 @@ import {
   buildControlUiLaunchUrl,
   resolveControlUiLaunchUrl,
 } from "../../config/control-ui-launch-url.js";
-import type { OpenClawConfig } from "../../config/types.js";
-import { resolveControlUiLinks } from "../../gateway/control-ui-links.js";
+import type { OpenClawConfig } from "../../config/types/types.js";
+import { resolveControlUiLinks } from "../../gateway/control/control-ui-links.js";
 import { formatDurationPrecise } from "../../infra/format-time/format-duration.ts";
 import {
   normalizeUpdateChannel,
   resolveUpdateChannelDisplay,
-} from "../../infra/update-channels.js";
-import { formatGitInstallLabel, type UpdateCheckResult } from "../../infra/update-check.js";
+} from "../../infra/install/update-channels.js";
+import { formatGitInstallLabel, type UpdateCheckResult } from "../../infra/install/update-check.js";
 import { VERSION } from "../../version.js";
-import { formatUpdateOneLiner, resolveUpdateAvailability } from "../status.update.js";
+import { formatUpdateOneLiner, resolveUpdateAvailability } from "../status/status.update.js";
 
 export { formatTimeAgo } from "../../infra/format-time/format-relative.ts";
 

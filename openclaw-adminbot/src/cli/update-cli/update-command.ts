@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- deferred split, see docs/adr/0006-deferred-monster-splits.md
 // Main update implementation for source checkouts, package installs, finalization, and restart handoff.
 import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -13,8 +14,8 @@ import { theme } from "../../../packages/terminal-core/src/theme.js";
 import {
   checkShellCompletionStatus,
   ensureCompletionCacheExists,
-} from "../../commands/doctor-completion.js";
-import { doctorCommand } from "../../commands/doctor.js";
+} from "../../commands/doctor/doctor-completion.js";
+import { doctorCommand } from "../../commands/doctor/doctor.js";
 import {
   UPDATE_DEFER_CONFIGURED_PLUGIN_INSTALL_REPAIR_ENV,
   UPDATE_PARENT_SUPPORTS_DOCTOR_CONFIG_WRITE_ENV,
@@ -27,13 +28,13 @@ import {
   readConfigFileSnapshot,
   resolveGatewayPort,
 } from "../../config/config.js";
-import { resolveConfigEnvVars } from "../../config/env-substitution.js";
+import { resolveConfigEnvVars } from "../../config/env/env-substitution.js";
 import { resolveConfigIncludes } from "../../config/includes.js";
 import { formatConfigIssueLines } from "../../config/issue-format.js";
-import { asResolvedSourceConfig, asRuntimeConfig } from "../../config/materialize.js";
-import { CONFIG_PATH, resolveIncludeRoots } from "../../config/paths.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { PluginInstallRecord } from "../../config/types.plugins.js";
+import { asResolvedSourceConfig, asRuntimeConfig } from "../../config/mutate/materialize.js";
+import { CONFIG_PATH, resolveIncludeRoots } from "../../config/paths/paths.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { PluginInstallRecord } from "../../config/types/plugins.js";
 import {
   GATEWAY_SERVICE_KIND,
   GATEWAY_SERVICE_MARKER,
@@ -51,39 +52,35 @@ import {
 } from "../../daemon/service.js";
 import { createLowDiskSpaceWarning } from "../../infra/disk-space.js";
 import { pathExists } from "../../infra/fs-safe.js";
-import { readJsonIfExists, writeJson } from "../../infra/json-files.js";
 import {
   markPackagePostInstallDoctorAdvisory,
   runGlobalPackageUpdateSteps,
-} from "../../infra/package-update-steps.js";
-import { parseStrictPositiveInteger } from "../../infra/parse-finite-number.js";
-import { getSelfAndAncestorPidsSync } from "../../infra/restart-stale-pids.js";
-import { nodeVersionSatisfiesEngine } from "../../infra/runtime-guard.js";
+} from "../../infra/install/package-update-steps.js";
 import {
   channelToNpmTag,
   DEFAULT_GIT_CHANNEL,
   DEFAULT_PACKAGE_CHANNEL,
   normalizeUpdateChannel,
   UPDATE_EFFECTIVE_CHANNEL_ENV,
-} from "../../infra/update-channels.js";
+} from "../../infra/install/update-channels.js";
 import {
   compareSemverStrings,
   fetchNpmPackageTargetStatus,
   resolveNpmChannelTag,
   checkUpdateStatus,
-} from "../../infra/update-check.js";
+} from "../../infra/install/update-check.js";
 import {
   buildControlPlaneUpdateRestartHealthPendingResult,
   markControlPlaneUpdateRestartSentinelFailure,
   readControlPlaneUpdateSentinelMeta,
   writeControlPlaneUpdateRestartSentinel,
   type ControlPlaneUpdateSentinelMetaFile,
-} from "../../infra/update-control-plane-sentinel.js";
+} from "../../infra/install/update-control-plane-sentinel.js";
 import {
   consumeUpdatePostInstallDoctorResult,
   createUpdatePostInstallDoctorResultPath,
   UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH_ENV,
-} from "../../infra/update-doctor-result.js";
+} from "../../infra/install/update-doctor-result.js";
 import {
   canResolveRegistryVersionForPackageTarget,
   createGlobalInstallEnv,
@@ -93,20 +90,27 @@ import {
   resolveGlobalInstallSpec,
   resolvePnpmGlobalDirFromGlobalRoot,
   type ResolvedGlobalInstallTarget,
-} from "../../infra/update-global.js";
-import { cleanupStaleManagedServiceUpdateHandoffs } from "../../infra/update-managed-service-handoff-cleanup.js";
+} from "../../infra/install/update-global.js";
+import { cleanupStaleManagedServiceUpdateHandoffs } from "../../infra/install/update-managed-service-handoff-cleanup.js";
 import {
   POST_CORE_UPDATE_SOURCE_CONFIG_PATH_ENV,
   type PreUpdateConfigRestoreInput,
-} from "../../infra/update-post-core-context.js";
-import { runGatewayUpdate, type UpdateRunResult } from "../../infra/update-runner.js";
-import { normalizePluginsConfig, resolveEffectiveEnableState } from "../../plugins/config-state.js";
+} from "../../infra/install/update-post-core-context.js";
+import { runGatewayUpdate, type UpdateRunResult } from "../../infra/install/update-runner.js";
+import { readJsonIfExists, writeJson } from "../../infra/json-files.js";
+import { parseStrictPositiveInteger } from "../../infra/parse-finite-number.js";
+import { getSelfAndAncestorPidsSync } from "../../infra/restart-stale-pids.js";
+import { nodeVersionSatisfiesEngine } from "../../infra/runtime-guard.js";
+import {
+  normalizePluginsConfig,
+  resolveEffectiveEnableState,
+} from "../../plugins/config/config-state.js";
 import {
   loadInstalledPluginIndexInstallRecords,
   writePersistedInstalledPluginIndexInstallRecords,
   withoutPluginInstallRecords,
   withPluginInstallRecords,
-} from "../../plugins/installed-plugin-index-records.js";
+} from "../../plugins/install/installed-plugin-index-records.js";
 import {
   resolveTrustedSourceLinkedOfficialClawHubSpec,
   resolveTrustedSourceLinkedOfficialNpmSpec,
@@ -122,9 +126,7 @@ import { defaultRuntime } from "../../runtime.js";
 import { resolveUserPath } from "../../utils.js";
 import { VERSION } from "../../version.js";
 import { replaceCliName, resolveCliName } from "../cli-name.js";
-import { formatCliCommand } from "../command-format.js";
-import { installCompletion } from "../completion-runtime.js";
-import { runDaemonInstall, runDaemonRestart } from "../daemon-cli.js";
+import { runDaemonInstall, runDaemonRestart } from "../daemon-cli/daemon-cli.js";
 import { recoverInstalledLaunchAgent } from "../daemon-cli/launchd-recovery.js";
 import {
   renderRestartDiagnostics,
@@ -132,9 +134,11 @@ import {
   waitForGatewayHealthyRestart,
   type GatewayRestartSnapshot,
 } from "../daemon-cli/restart-health.js";
-import { commitPluginInstallRecordsWithConfig } from "../plugins-install-record-commit.js";
-import { listPersistedBundledPluginLocationBridges } from "../plugins-location-bridges.js";
-import { refreshPluginRegistryAfterConfigMutation } from "../plugins-registry-refresh.js";
+import { commitPluginInstallRecordsWithConfig } from "../plugins/plugins-install-record-commit.js";
+import { listPersistedBundledPluginLocationBridges } from "../plugins/plugins-location-bridges.js";
+import { refreshPluginRegistryAfterConfigMutation } from "../plugins/plugins-registry-refresh.js";
+import { formatCliCommand } from "../program/command-format.js";
+import { installCompletion } from "../program/completion-runtime.js";
 import {
   convergenceWarningsToOutcomes,
   runPostCorePluginConvergence,

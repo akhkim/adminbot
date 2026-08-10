@@ -7,8 +7,12 @@ import {
   GATEWAY_EVENT_UPDATE_AVAILABLE,
   type GatewayUpdateAvailableEventPayload,
 } from "../../../src/gateway/events.js";
-import { recoverFromRejectedDeviceToken } from "./adminbot-auth-flow.ts";
-import { loadStoredMemberSession, pairDevice, resolveAdminBotBaseUrl } from "./adminbot-auth.ts";
+import { recoverFromRejectedDeviceToken } from "./adminbot/auth/flow.ts";
+import {
+  loadStoredMemberSession,
+  pairDevice,
+  resolveAdminBotBaseUrl,
+} from "./adminbot/auth/session.ts";
 import {
   clearPendingQueueItemsForRun,
   createChatSessionsLoadOverrides,
@@ -211,6 +215,60 @@ const PENDING_UPDATE_HANDOFF_REASONS = new Set([
   UPDATE_RESTART_HEALTH_PENDING_REASON,
 ]);
 const lastSeqGapReconnectAt = new WeakMap<GatewayHost, number>();
+// Abnormal WebSocket close: no close frame, so no code and no reason from the peer.
+const ABNORMAL_CLOSE_CODE = 1006;
+const ABNORMAL_CLOSE_RECOVERY_ATTEMPTS = 4;
+// GatewayBrowserClient backs off 0.8s -> 15s, so four attempts land inside this window.
+const ABNORMAL_CLOSE_RECOVERY_WINDOW_MS = 45_000;
+// A connection that never reached hello gets a much smaller budget: one backoff retry (0.8s), which
+// covers a funnel that dropped the upgrade, without sitting silently on a URL that will never work.
+const ABNORMAL_CLOSE_FIRST_CONNECT_ATTEMPTS = 1;
+const ABNORMAL_CLOSE_FIRST_CONNECT_WINDOW_MS = 5_000;
+const abnormalCloseRecovery = new WeakMap<GatewayHost, { attempts: number; startedAtMs: number }>();
+
+// A reverse proxy or Tailscale funnel drops a healthy connection as a 1006 with no reason, and it
+// does it to the opening upgrade as readily as to an idle established socket. GatewayBrowserClient
+// schedules its own backoff reconnect for either, so painting the fatal "Could not connect" panel
+// on the first close hides a connection that is about to come back and pushes the user into a
+// manual reload — which is exactly what makes a member's sign-in look like it failed when the
+// retry behind the panel would have succeeded. Stay quiet for a bounded number of attempts, then
+// let the normal error path run so a genuinely dead gateway is still reported.
+//
+// The budget is smaller before hello: a bad URL, a wrong scheme, or a gateway that is simply down
+// also presents as a bare 1006 there, and those must surface in about a second rather than sit
+// behind a long silent retry loop.
+function shouldAwaitAbnormalCloseReconnect(
+  host: GatewayHost,
+  info: {
+    code: number;
+    error: GatewayErrorInfo | undefined;
+    established: boolean;
+    shuttingDown: boolean;
+  },
+): boolean {
+  if (
+    info.code !== ABNORMAL_CLOSE_CODE ||
+    info.error ||
+    // An announced restart already owns the message and its own reconnect expectation.
+    info.shuttingDown
+  ) {
+    return false;
+  }
+  const maxAttempts = info.established
+    ? ABNORMAL_CLOSE_RECOVERY_ATTEMPTS
+    : ABNORMAL_CLOSE_FIRST_CONNECT_ATTEMPTS;
+  const windowMs = info.established
+    ? ABNORMAL_CLOSE_RECOVERY_WINDOW_MS
+    : ABNORMAL_CLOSE_FIRST_CONNECT_WINDOW_MS;
+  const now = Date.now();
+  const previous = abnormalCloseRecovery.get(host);
+  const withinWindow = previous !== undefined && now - previous.startedAtMs <= windowMs;
+  const next = withinWindow
+    ? { attempts: previous.attempts + 1, startedAtMs: previous.startedAtMs }
+    : { attempts: 1, startedAtMs: now };
+  abnormalCloseRecovery.set(host, next);
+  return next.attempts <= maxAttempts;
+}
 
 function enqueueApprovalRequest(host: GatewayHost, entry: ExecApprovalRequest | null) {
   if (!entry) {
@@ -840,13 +898,26 @@ function maybeAutoApproveDevicePairing(
   return true;
 }
 
-// Handles a connect rejected because the gateway won't accept this device's token. Recovery falls
-// back to the member session's shared gateway token, which re-pairs the device and gets a fresh
-// gateway-issued token, so a token the gateway can't verify never strands a signed-in member at
-// "Auth did not match". Attempted once per connected session (the flag clears on hello) so a
-// deployment that rejects both credentials still surfaces the error instead of looping.
+// Connect failures a signed-in member's browser can fix by getting itself a new gateway credential.
+// AUTH_TOKEN_MISSING is the tokenless case: sign-in clears the shared token on the assumption a
+// device token was minted, so when minting failed the browser connects with no auth at all and the
+// gateway closes it as "gateway token missing". AUTH_DEVICE_TOKEN_MISMATCH is the token-we-hold-is-
+// rejected case. Both dead-end into an endless retry unless the credential itself is replaced.
+const MEMBER_DEVICE_TOKEN_RECOVERABLE_CODES = new Set<string>([
+  ConnectErrorDetailCodes.AUTH_TOKEN_MISSING,
+  ConnectErrorDetailCodes.AUTH_DEVICE_TOKEN_MISMATCH,
+]);
+
+// Handles a connect the gateway refused for want of an acceptable credential. Recovery re-mints the
+// member's device token (falling back to the session's shared gateway token), so a member is never
+// stranded at a raw "unauthorized" screen with no action to take. Attempted once per connected
+// session (the flag clears on hello) so a deployment that rejects every credential still surfaces
+// the error instead of looping.
 function maybeRecoverRejectedDeviceToken(host: GatewayHost, client: GatewayBrowserClient): boolean {
-  if (host.deviceTokenRecoveryAttempted) {
+  // Recovery needs a member session to mint or fetch a replacement. An operator connecting with a
+  // hand-entered token has none, and for them the gateway's own message is the useful one — so bail
+  // before burning the once-per-session attempt.
+  if (host.deviceTokenRecoveryAttempted || !loadStoredMemberSession()) {
     return false;
   }
   host.deviceTokenRecoveryAttempted = true;
@@ -873,6 +944,7 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
   const reconnectReason = options?.reason ?? "initial";
   if (reconnectReason === "initial") {
     lastSeqGapReconnectAt.delete(host);
+    abnormalCloseRecovery.delete(host);
   }
   shutdownHost.pendingShutdownMessage = null;
   shutdownHost.resumeChatQueueAfterReconnect = false;
@@ -917,6 +989,8 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
       shutdownHost.pendingShutdownMessage = null;
       host.connected = true;
       host.deviceTokenRecoveryAttempted = false;
+      // The connection came back, so the abnormal-close budget starts over.
+      abnormalCloseRecovery.delete(host);
       host.lastError = null;
       host.lastErrorCode = null;
       host.chatError = null;
@@ -1038,9 +1112,22 @@ export function connectGateway(host: GatewayHost, options?: ConnectGatewayOption
         return;
       }
       if (
-        host.lastErrorCode === ConnectErrorDetailCodes.AUTH_DEVICE_TOKEN_MISMATCH &&
+        host.lastErrorCode &&
+        MEMBER_DEVICE_TOKEN_RECOVERABLE_CODES.has(host.lastErrorCode) &&
         maybeRecoverRejectedDeviceToken(host, client)
       ) {
+        return;
+      }
+      if (
+        shouldAwaitAbnormalCloseReconnect(host, {
+          code,
+          error,
+          established: Boolean(host.hello),
+          shuttingDown: Boolean(shutdownHost.pendingShutdownMessage),
+        })
+      ) {
+        host.lastError = null;
+        host.lastErrorCode = null;
         return;
       }
       if (code !== 1012) {

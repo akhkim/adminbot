@@ -1,8 +1,8 @@
 // Register agent tests cover agent command registration and option wiring.
 import { Command } from "commander";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { registerAgentsCommands } from "./register.agent.js";
 import { registerAgentTurnCommand } from "./register.agent-turn.js";
+import { registerAgentsCommands } from "./register.agent.js";
 
 const mocks = vi.hoisted(() => ({
   agentCliCommandMock: vi.fn(),
@@ -32,29 +32,29 @@ const agentsUnbindCommandMock = mocks.agentsUnbindCommandMock;
 const setVerboseMock = mocks.setVerboseMock;
 const runtime = mocks.runtime;
 
-vi.mock("../../commands/agent-via-gateway.js", () => ({
+vi.mock("../../commands/agent/agent-via-gateway.js", () => ({
   agentCliCommand: mocks.agentCliCommandMock,
 }));
 
-vi.mock("../../commands/agents.commands.add.js", () => ({
+vi.mock("../../commands/agents/agents.commands.add.js", () => ({
   agentsAddCommand: mocks.agentsAddCommandMock,
 }));
 
-vi.mock("../../commands/agents.commands.bind.js", () => ({
+vi.mock("../../commands/agents/agents.commands.bind.js", () => ({
   agentsBindingsCommand: mocks.agentsBindingsCommandMock,
   agentsBindCommand: mocks.agentsBindCommandMock,
   agentsUnbindCommand: mocks.agentsUnbindCommandMock,
 }));
 
-vi.mock("../../commands/agents.commands.delete.js", () => ({
+vi.mock("../../commands/agents/agents.commands.delete.js", () => ({
   agentsDeleteCommand: mocks.agentsDeleteCommandMock,
 }));
 
-vi.mock("../../commands/agents.commands.identity.js", () => ({
+vi.mock("../../commands/agents/agents.commands.identity.js", () => ({
   agentsSetIdentityCommand: mocks.agentsSetIdentityCommandMock,
 }));
 
-vi.mock("../../commands/agents.commands.list.js", () => ({
+vi.mock("../../commands/agents/agents.commands.list.js", () => ({
   agentsListCommand: mocks.agentsListCommandMock,
 }));
 

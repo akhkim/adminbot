@@ -1,7 +1,7 @@
 // Run main tests cover CLI main entrypoint behavior and process error handling.
 import { describe, expect, it } from "vitest";
-import type { PluginManifestCommandAliasRegistry } from "../plugins/manifest-command-aliases.js";
-import { resolveGatewayRunPreBootstrapOptions } from "./gateway-run-argv.js";
+import type { PluginManifestCommandAliasRegistry } from "../plugins/manifest/manifest-command-aliases.js";
+import { resolveGatewayRunPreBootstrapOptions } from "./gateway-cli/gateway-run-argv.js";
 import {
   resolvePrecomputedSubcommandHelpFastPath,
   rewriteUpdateFlagArgv,

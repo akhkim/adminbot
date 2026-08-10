@@ -1,15 +1,15 @@
 // Runtime registry loader tests cover plugin runtime assembly and activation boundaries.
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createEmptyPluginRegistry } from "../registry.js";
+import { createEmptyPluginRegistry } from "../manifest/registry.js";
 
 const mocks = vi.hoisted(() => ({
-  loadOpenClawPlugins: vi.fn<typeof import("../loader.js").loadOpenClawPlugins>(),
+  loadOpenClawPlugins: vi.fn<typeof import("./loader.js").loadOpenClawPlugins>(),
   resolveCompatibleRuntimePluginRegistry:
-    vi.fn<typeof import("../loader.js").resolveCompatibleRuntimePluginRegistry>(),
-  resolveRuntimePluginRegistry: vi.fn<typeof import("../loader.js").resolveRuntimePluginRegistry>(),
-  getActivePluginRegistry: vi.fn<typeof import("../runtime.js").getActivePluginRegistry>(),
+    vi.fn<typeof import("./loader.js").resolveCompatibleRuntimePluginRegistry>(),
+  resolveRuntimePluginRegistry: vi.fn<typeof import("./loader.js").resolveRuntimePluginRegistry>(),
+  getActivePluginRegistry: vi.fn<typeof import("./runtime.js").getActivePluginRegistry>(),
   getActivePluginRegistryWorkspaceDir:
-    vi.fn<typeof import("../runtime.js").getActivePluginRegistryWorkspaceDir>(),
+    vi.fn<typeof import("./runtime.js").getActivePluginRegistryWorkspaceDir>(),
   resolveConfiguredChannelPluginIds:
     vi.fn<typeof import("../channel-plugin-ids.js").resolveConfiguredChannelPluginIds>(),
   resolveDiscoverableScopedChannelPluginIds:
@@ -19,7 +19,7 @@ const mocks = vi.hoisted(() => ({
   resolveEffectivePluginIds:
     vi.fn<typeof import("../effective-plugin-ids.js").resolveEffectivePluginIds>(),
   applyPluginAutoEnable:
-    vi.fn<typeof import("../../config/plugin-auto-enable.js").applyPluginAutoEnable>(),
+    vi.fn<typeof import("../../config/plugin/plugin-auto-enable.js").applyPluginAutoEnable>(),
   resolvePluginMetadataSnapshot:
     vi.fn<typeof import("../plugin-metadata-snapshot.js").resolvePluginMetadataSnapshot>(),
   resolveAgentWorkspaceDir: vi.fn<
@@ -66,7 +66,7 @@ function pluginEntries(config: Record<string, unknown>) {
   return requireRecord(pluginsConfig(config).entries, "plugin entries");
 }
 
-vi.mock("../loader.js", () => ({
+vi.mock("./loader.js", () => ({
   loadOpenClawPlugins: (...args: Parameters<typeof mocks.loadOpenClawPlugins>) =>
     mocks.loadOpenClawPlugins(...args),
   resolveCompatibleRuntimePluginRegistry: (
@@ -76,7 +76,7 @@ vi.mock("../loader.js", () => ({
     mocks.resolveRuntimePluginRegistry(...args),
 }));
 
-vi.mock("../runtime.js", () => ({
+vi.mock("./runtime.js", () => ({
   getActivePluginChannelRegistry: () => null,
   getActivePluginHttpRouteRegistry: () => null,
   getActivePluginRegistry: (...args: Parameters<typeof mocks.getActivePluginRegistry>) =>
@@ -102,7 +102,7 @@ vi.mock("../effective-plugin-ids.js", () => ({
     mocks.resolveEffectivePluginIds(...args),
 }));
 
-vi.mock("../../config/plugin-auto-enable.js", () => ({
+vi.mock("../../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: (...args: Parameters<typeof mocks.applyPluginAutoEnable>) =>
     mocks.applyPluginAutoEnable(...args),
 }));

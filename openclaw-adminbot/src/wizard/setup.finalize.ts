@@ -1,23 +1,22 @@
 // Setup finalize helpers write onboarding output and follow-up state.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { restoreTerminalState } from "../../packages/terminal-core/src/restore.js";
 import { resolveDefaultAgentDir } from "../agents/agent-scope-config.js";
-import { describeCodexNativeWebSearch } from "../agents/codex-native-web-search.shared.js";
 import { hasAuthProfileForProvider } from "../agents/tools/model-config.helpers.js";
-import { DEFAULT_BOOTSTRAP_FILENAME } from "../agents/workspace.js";
-import { formatCliCommand } from "../cli/command-format.js";
+import { describeCodexNativeWebSearch } from "../agents/transport/codex-native-web-search.shared.js";
+import { DEFAULT_BOOTSTRAP_FILENAME } from "../agents/workspace/workspace.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
 import {
   buildGatewayInstallPlan,
   gatewayInstallErrorHint,
-} from "../commands/daemon-install-helpers.js";
+} from "../commands/daemon/daemon-install-helpers.js";
 import {
   DEFAULT_GATEWAY_DAEMON_RUNTIME,
   GATEWAY_DAEMON_RUNTIME_OPTIONS,
-} from "../commands/daemon-runtime.js";
-import { resolveGatewayInstallToken } from "../commands/gateway-install-token.js";
-import { formatHealthCheckFailure } from "../commands/health-format.js";
-import { healthCommand } from "../commands/health.js";
+} from "../commands/daemon/daemon-runtime.js";
+import { resolveGatewayInstallToken } from "../commands/gateway/gateway-install-token.js";
+import { formatHealthCheckFailure } from "../commands/maintenance/health-format.js";
+import { healthCommand } from "../commands/maintenance/health.js";
 import {
   detectBrowserOpenSupport,
   formatControlUiSshHint,
@@ -25,19 +24,18 @@ import {
   probeGatewayReachable,
   waitForGatewayReachable,
   resolveControlUiLinks,
-} from "../commands/onboard-helpers.js";
-import type { OnboardOptions } from "../commands/onboard-types.js";
+} from "../commands/onboard/onboard-helpers.js";
+import type { OnboardOptions } from "../commands/onboard/onboard-types.js";
 import {
   buildControlUiLaunchUrl,
   resolveControlUiLaunchUrl,
 } from "../config/control-ui-launch-url.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { describeGatewayServiceRestart, resolveGatewayService } from "../daemon/service.js";
 import { isSystemdUserServiceAvailable } from "../daemon/systemd.js";
 import { ensureControlUiAssetsBuilt } from "../infra/control-ui-assets.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import type { RuntimeEnv } from "../runtime.js";
-import { launchTuiCli } from "../tui/tui-launch.js";
 import { resolveUserPath } from "../utils.js";
 import { listConfiguredWebSearchProviders } from "../web-search/runtime.js";
 import { t } from "./i18n/index.js";
@@ -57,10 +55,9 @@ type FinalizeOnboardingOptions = {
   runtime: RuntimeEnv;
 };
 
-type OnboardSearchModule = typeof import("../commands/onboard-search.js");
+type OnboardSearchModule = typeof import("../commands/onboard/onboard-search.js");
 
 let onboardSearchModulePromise: Promise<OnboardSearchModule> | undefined;
-const HATCH_TUI_TIMEOUT_MS = 5 * 60 * 1000;
 
 async function showControlUiDashboardNote(params: {
   prompter: WizardPrompter;
@@ -120,7 +117,7 @@ function getLocalizedGatewayDaemonRuntimeOptions() {
 }
 
 function loadOnboardSearchModule(): Promise<OnboardSearchModule> {
-  onboardSearchModulePromise ??= import("../commands/onboard-search.js");
+  onboardSearchModulePromise ??= import("../commands/onboard/onboard-search.js");
   return onboardSearchModulePromise;
 }
 
@@ -534,8 +531,8 @@ export async function finalizeSetupWizard(
       await prompter.note(tokenNotes.join("\n"), "Token");
     }
 
-    const hatchOptions: { value: "tui" | "web" | "later"; label: string }[] = [
-      { value: "tui", label: t("wizard.finalize.terminalHatch") },
+    // The terminal hatch launched the TUI, which no longer ships.
+    const hatchOptions: { value: "web" | "later"; label: string }[] = [
       ...(gatewayProbe.ok
         ? [{ value: "web" as const, label: t("wizard.finalize.browserHatch") }]
         : []),
@@ -545,23 +542,10 @@ export async function finalizeSetupWizard(
     hatchChoice = await prompter.select({
       message: t("wizard.finalize.hatchPrompt"),
       options: hatchOptions,
-      initialValue: "tui",
+      initialValue: gatewayProbe.ok ? "web" : "later",
     });
 
-    if (hatchChoice === "tui") {
-      restoreTerminalState("pre-setup tui", { resumeStdinIfPaused: false });
-      try {
-        await launchTuiCli({
-          local: true,
-          deliver: false,
-          message: hasBootstrap ? t("wizard.finalize.bootstrapHatchMessage") : undefined,
-          timeoutMs: HATCH_TUI_TIMEOUT_MS,
-        });
-      } finally {
-        restoreTerminalState("post-setup tui", { resumeStdinIfPaused: false });
-      }
-      launchedTui = true;
-    } else if (hatchChoice === "web") {
+    if (hatchChoice === "web") {
       const dashboard = await showControlUiDashboardNote({
         prompter,
         settings,

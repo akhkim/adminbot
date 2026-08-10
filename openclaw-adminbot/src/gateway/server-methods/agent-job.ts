@@ -6,7 +6,7 @@ import {
   type AgentRunTerminalOutcome,
 } from "../../agents/agent-run-terminal-outcome.js";
 import { onAgentEvent } from "../../infra/agent-events.js";
-import { setSafeTimeout } from "../../utils/timer-delay.js";
+import { setSafeTimeout } from "../../shared/timer-delay.js";
 import type { AgentWaitTerminalSnapshot } from "./agent-wait-dedupe.js";
 
 const AGENT_RUN_CACHE_TTL_MS = 10 * 60_000;

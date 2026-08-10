@@ -1,7 +1,7 @@
 // Gateway service command registration shared by `gateway` and legacy `daemon` CLIs.
 import type { Command } from "commander";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
-import { inheritOptionFromParent } from "../command-options.js";
+import { inheritOptionFromParent } from "../program/command-options.js";
 import type { DaemonInstallOptions, DaemonLifecycleOptions, GatewayRpcOpts } from "./types.js";
 
 const daemonInstallModuleLoader = createLazyImportLoader(() => import("./install.runtime.js"));

@@ -10,45 +10,33 @@ import {
 } from "../../context-engine/host-compat.js";
 import { ensureContextEnginesInitialized } from "../../context-engine/init.js";
 import { resolveContextEngine } from "../../context-engine/registry.js";
-import { ensureMcpLoopbackServer } from "../../gateway/mcp-http.js";
+import { ensureMcpLoopbackServer } from "../../gateway/protocol/mcp-http.js";
 import {
   createMcpLoopbackServerConfig,
   getActiveMcpLoopbackRuntime,
   resolveMcpLoopbackBearerToken,
-} from "../../gateway/mcp-http.loopback-runtime.js";
-import { resolveMcpLoopbackScopedTools } from "../../gateway/mcp-http.runtime.js";
+} from "../../gateway/protocol/mcp-http.loopback-runtime.js";
+import { resolveMcpLoopbackScopedTools } from "../../gateway/protocol/mcp-http.runtime.js";
 import { isClaudeCliProvider } from "../../plugin-sdk/anthropic-cli.js";
 import type {
   CliBackendAuthEpochMode,
   CliBackendPreparedExecution,
 } from "../../plugins/cli-backend.types.js";
-import { buildAgentHookContextChannelFields } from "../../plugins/hook-agent-context.js";
-import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
+import { buildAgentHookContextChannelFields } from "../../plugins/hooks/hook-agent-context.js";
+import { getGlobalHookRunner } from "../../plugins/hooks/hook-runner-global.js";
 import { isSubagentSessionKey } from "../../routing/session-key.js";
 import { annotateInterSessionPromptText } from "../../sessions/input-provenance.js";
+import { normalizeMessageChannel } from "../../shared/message-channel.js";
 import { resolveSkillsPromptForRun } from "../../skills/loading/workspace.js";
 import { resolveEmbeddedRunSkillEntries } from "../../skills/runtime/embedded-run-entries.js";
 import { resolveUserPath } from "../../utils.js";
-import { normalizeMessageChannel } from "../../utils/message-channel.js";
 import { resolveAgentDir, resolveSessionAgentIds } from "../agent-scope.js";
 import { externalCliDiscoveryForProviderAuth } from "../auth-profiles/external-cli-discovery.js";
 import { resolveApiKeyForProfile } from "../auth-profiles/oauth.js";
 import { resolveAuthProfileOrder } from "../auth-profiles/order.js";
 import { loadAuthProfileStoreForRuntime } from "../auth-profiles/store.js";
 import type { AuthProfileCredential, AuthProfileStore } from "../auth-profiles/types.js";
-import {
-  buildBootstrapInjectionStats,
-  buildBootstrapPromptWarning,
-  buildBootstrapTruncationReportMeta,
-  analyzeBootstrapBudget,
-} from "../bootstrap-budget.js";
-import {
-  makeBootstrapWarn as makeBootstrapWarnImpl,
-  resolveBootstrapContextForRun as resolveBootstrapContextForRunImpl,
-} from "../bootstrap-files.js";
-import { CLI_AUTH_EPOCH_VERSION, resolveCliAuthEpoch } from "../cli-auth-epoch.js";
-import { resolveCliBackendConfig } from "../cli-backends.js";
-import { hashCliSessionText, resolveCliSessionReuse } from "../cli-session.js";
+import { CLI_AUTH_EPOCH_VERSION, resolveCliAuthEpoch } from "../auth/cli-auth-epoch.js";
 import {
   claudeCliSessionTranscriptHasContent,
   claudeCliSessionTranscriptHasOrphanedToolUse,
@@ -56,32 +44,44 @@ import {
 import { resolveContextWindowInfo } from "../context-window-guard.js";
 import { resolveContextTokensForModel } from "../context.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../defaults.js";
-import {
-  resolveBootstrapMaxChars,
-  resolveBootstrapPromptTruncationWarningMode,
-  resolveBootstrapTotalMaxChars,
-} from "../embedded-agent-helpers.js";
 import { resolvePromptBuildHookResult } from "../embedded-agent-runner/run/attempt.prompt-helpers.js";
-import {
-  prependSystemPromptAddition,
-  resolveAttemptMediaTaskSystemPromptAddition,
-} from "../embedded-agent-runner/run/attempt.prompt-helpers.js";
+import {} from "../embedded-agent-runner/run/attempt.prompt-helpers.js";
 import { composeSystemPromptWithHookContext } from "../embedded-agent-runner/run/attempt.thread-helpers.js";
 import { buildCurrentInboundPrompt } from "../embedded-agent-runner/run/runtime-context-prompt.js";
 import {
   mapSandboxSkillEntriesForPrompt,
   resolveSandboxSkillRuntimeInputs,
 } from "../embedded-agent-runner/sandbox-skills.js";
-import { resolveHeartbeatPromptForSystemPrompt } from "../heartbeat-system-prompt.js";
+import {
+  resolveBootstrapMaxChars,
+  resolveBootstrapPromptTruncationWarningMode,
+  resolveBootstrapTotalMaxChars,
+} from "../embedded/embedded-agent-helpers.js";
 import { applyPluginTextReplacements } from "../plugin-text-transforms.js";
+import {
+  buildBootstrapInjectionStats,
+  buildBootstrapPromptWarning,
+  buildBootstrapTruncationReportMeta,
+  analyzeBootstrapBudget,
+} from "../prompt/bootstrap-budget.js";
+import {
+  makeBootstrapWarn as makeBootstrapWarnImpl,
+  resolveBootstrapContextForRun as resolveBootstrapContextForRunImpl,
+} from "../prompt/bootstrap-files.js";
+import { resolveHeartbeatPromptForSystemPrompt } from "../prompt/heartbeat-system-prompt.js";
+import { ensureSystemPromptCacheBoundary } from "../prompt/system-prompt-cache-boundary.js";
+import { buildSystemPromptReport } from "../prompt/system-prompt-report.js";
+import {
+  appendModelIdentitySystemPrompt,
+  buildModelIdentityPromptLine,
+} from "../prompt/system-prompt.js";
 import { collectRuntimeChannelCapabilities } from "../runtime-capabilities.js";
-import { ensureSandboxWorkspaceForSession } from "../sandbox.js";
-import { ensureSystemPromptCacheBoundary } from "../system-prompt-cache-boundary.js";
-import { buildSystemPromptReport } from "../system-prompt-report.js";
-import { appendModelIdentitySystemPrompt, buildModelIdentityPromptLine } from "../system-prompt.js";
-import { redactRunIdentifier, resolveRunWorkspaceDir } from "../workspace-run.js";
+import { ensureSandboxWorkspaceForSession } from "../sandbox/sandbox.js";
+import { redactRunIdentifier, resolveRunWorkspaceDir } from "../workspace/workspace-run.js";
 import { prepareCliBundleMcpConfig } from "./bundle-mcp.js";
 import { prepareClaudeCliSkillsPlugin } from "./claude-skills-plugin.js";
+import { resolveCliBackendConfig } from "./cli-backends.js";
+import { hashCliSessionText, resolveCliSessionReuse } from "./cli-session.js";
 import { buildCliAgentSystemPrompt, normalizeCliModel } from "./helpers.js";
 import { cliBackendLog } from "./log.js";
 import {
@@ -758,16 +758,6 @@ export async function prepareCliRunContext(
           prependSystemContext: hookResult.prependSystemContext,
           appendSystemContext: hookResult.appendSystemContext,
         }) ?? systemPrompt;
-      const mediaTaskSystemPromptAddition = resolveAttemptMediaTaskSystemPromptAddition({
-        sessionKey: params.sessionKey,
-        trigger: params.trigger,
-      });
-      if (mediaTaskSystemPromptAddition) {
-        systemPrompt = prependSystemPromptAddition({
-          systemPrompt: ensureSystemPromptCacheBoundary(systemPrompt),
-          systemPromptAddition: mediaTaskSystemPromptAddition,
-        });
-      }
     } catch (error) {
       cliBackendLog.warn(`cli prompt-build hook preparation failed: ${String(error)}`);
     }

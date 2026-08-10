@@ -7,7 +7,7 @@ import {
   resolveWebProviderConfig,
   resolveWebProviderDefinition,
 } from "../../packages/web-content-core/src/provider-runtime-shared.js";
-import type { OpenClawConfig } from "../config/types.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import { logVerbose } from "../globals.js";
 import type {
   PluginWebFetchProviderEntry,
@@ -16,8 +16,8 @@ import type {
 import {
   resolvePluginWebFetchProviders,
   resolveRuntimeWebFetchProviders,
-} from "../plugins/web-fetch-providers.runtime.js";
-import { sortWebFetchProvidersForAutoDetect } from "../plugins/web-fetch-providers.shared.js";
+} from "../plugins/web/web-fetch-providers.runtime.js";
+import { sortWebFetchProvidersForAutoDetect } from "../plugins/web/web-fetch-providers.shared.js";
 import { getActiveRuntimeWebToolsMetadata } from "../secrets/runtime-web-tools-state.js";
 import type { RuntimeWebFetchMetadata } from "../secrets/runtime-web-tools.types.js";
 

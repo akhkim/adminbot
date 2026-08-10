@@ -6,8 +6,8 @@ import {
   legacyModelKey,
   modelKey,
   resolveModelRefFromString,
-} from "../../agents/model-selection.js";
-import { formatCliCommand } from "../../cli/command-format.js";
+} from "../../agents/models/model-selection.js";
+import { formatCliCommand } from "../../cli/program/command-format.js";
 import {
   type OpenClawConfig,
   readConfigFileSnapshot,
@@ -15,8 +15,8 @@ import {
 } from "../../config/config.js";
 import { formatConfigIssueLines } from "../../config/issue-format.js";
 import { normalizeAgentModelRefForConfig, toAgentModelListLike } from "../../config/model-input.js";
-import type { AgentModelEntryConfig } from "../../config/types.agent-defaults.js";
-import type { AgentModelConfig } from "../../config/types.agents-shared.js";
+import type { AgentModelEntryConfig } from "../../config/types/agent-defaults.js";
+import type { AgentModelConfig } from "../../config/types/agents-shared.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
 import { canonicalizeModelCatalogProviderRef } from "./provider-aliases.js";
 export { normalizeAlias } from "./alias-name.js";

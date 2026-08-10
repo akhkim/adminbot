@@ -6,14 +6,14 @@
  */
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { isCloudflareOrHtmlErrorPage } from "../shared/assistant-error-format.js";
+import { isAnthropicBillingError, isApiKeyRateLimitError } from "./auth/live-auth-keys.js";
 import {
   isAuthErrorMessage,
   isBillingErrorMessage,
   isRateLimitErrorMessage,
   isTimeoutErrorMessage,
 } from "./embedded-agent-helpers/failover-matches.js";
-import { isAnthropicBillingError, isApiKeyRateLimitError } from "./live-auth-keys.js";
-import { isModelNotFoundErrorMessage } from "./live-model-errors.js";
+import { isModelNotFoundErrorMessage } from "./models/live-model-errors.js";
 
 type LiveProviderDriftReason =
   | "auth"

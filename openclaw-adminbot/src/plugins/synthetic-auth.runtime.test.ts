@@ -31,7 +31,7 @@ const pluginRegistryMocks = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock("./runtime-state.js", () => ({
+vi.mock("./runtime/runtime-state.js", () => ({
   getPluginRegistryState,
 }));
 
@@ -40,7 +40,7 @@ vi.mock("./plugin-registry.js", () => ({
     pluginRegistryMocks.loadPluginRegistrySnapshotWithMetadata,
 }));
 
-vi.mock("./manifest-registry-installed.js", () => ({
+vi.mock("./manifest/manifest-registry-installed.js", () => ({
   loadPluginManifestRegistryForInstalledIndex:
     pluginRegistryMocks.loadPluginManifestRegistryForInstalledIndex,
 }));

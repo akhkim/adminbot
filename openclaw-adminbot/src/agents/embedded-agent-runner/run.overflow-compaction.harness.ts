@@ -8,7 +8,7 @@ import { formatErrorMessage } from "../../infra/errors.js";
 import type {
   PluginHookBeforeAgentFinalizeEvent,
   PluginHookBeforeAgentFinalizeResult,
-} from "../../plugins/hook-types.js";
+} from "../../plugins/hooks/hook-types.js";
 import type {
   PluginHookAgentContext,
   PluginHookBeforeAgentReplyResult,
@@ -503,7 +503,7 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
   resetRunOverflowCompactionHarnessMocks();
   vi.resetModules();
 
-  vi.doMock("../../plugins/hook-runner-global.js", () => ({
+  vi.doMock("../../plugins/hooks/hook-runner-global.js", () => ({
     getGlobalHookRunner: vi.fn(() => mockedGlobalHookRunner),
     initializeGlobalHookRunner: vi.fn(),
   }));
@@ -531,7 +531,7 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     buildAgentRuntimePlan: mockedBuildAgentRuntimePlan,
   }));
 
-  vi.doMock("../model-runtime-aliases.js", () => ({
+  vi.doMock("../models/model-runtime-aliases.js", () => ({
     isCliRuntimeAliasForProvider: ({
       runtime,
       provider,
@@ -566,7 +566,7 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     },
   }));
 
-  vi.doMock("../../plugins/provider-runtime.js", () => ({
+  vi.doMock("../../plugins/providers/provider-runtime.js", () => ({
     prepareProviderRuntimeAuth: mockedPrepareProviderRuntimeAuth,
     resolveProviderCapabilitiesWithPlugin: vi.fn(() => ({})),
     resolveProviderAuthProfileId: vi.fn(() => undefined),
@@ -574,7 +574,7 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     wrapProviderStreamFn: vi.fn((_cfg: unknown, _model: unknown, fn: unknown) => fn),
   }));
 
-  vi.doMock("../auth-profiles.js", () => ({
+  vi.doMock("../auth/auth-profiles.js", () => ({
     isProfileInCooldown: vi.fn(() => false),
     markAuthProfileFailure: mockedMarkAuthProfileFailure,
     markAuthProfileSuccess: mockedMarkAuthProfileSuccess,
@@ -596,8 +596,10 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     ),
   }));
 
-  vi.doMock("../cli-backends.js", async () => {
-    const actual = await vi.importActual<typeof import("../cli-backends.js")>("../cli-backends.js");
+  vi.doMock("../cli-runner/cli-backends.js", async () => {
+    const actual = await vi.importActual<typeof import("../cli-runner/cli-backends.js")>(
+      "../cli-runner/cli-backends.js",
+    );
     type ResolveBindingParams = Parameters<typeof actual.resolveCliRuntimeModelBackendBinding>[0];
     type ProviderCheckParams = Parameters<typeof actual.isCliRuntimeModelBackendForProvider>[0];
     const claudeBinding = {
@@ -633,7 +635,7 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     };
   });
 
-  vi.doMock("../workspace-run.js", () => ({
+  vi.doMock("../workspace/workspace-run.js", () => ({
     resolveRunWorkspaceDir: vi.fn((params: { workspaceDir: string }) => ({
       workspaceDir: params.workspaceDir,
       usedFallback: false,
@@ -643,7 +645,7 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     redactRunIdentifier: vi.fn((value?: string) => value ?? ""),
   }));
 
-  vi.doMock("../embedded-agent-helpers.js", () => ({
+  vi.doMock("../embedded/embedded-agent-helpers.js", () => ({
     formatBillingErrorMessage: mockedFormatBillingErrorMessage,
     classifyFailoverReason: mockedClassifyFailoverReason,
     classifyAssistantFailoverReason: mockedClassifyAssistantFailoverReason,
@@ -683,7 +685,7 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     resolveModelAsync: mockedResolveModelAsync,
   }));
 
-  vi.doMock("../model-auth.js", () => ({
+  vi.doMock("../auth/model-auth.js", () => ({
     applyAuthHeaderOverride: vi.fn((model: unknown) => model),
     applyLocalNoAuthHeaderOverride: vi.fn((model: unknown) => model),
     ensureAuthProfileStore: mockedEnsureAuthProfileStore,
@@ -694,7 +696,7 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     shouldPreferExplicitConfigApiKeyAuth: mockedShouldPreferExplicitConfigApiKeyAuth,
   }));
 
-  vi.doMock("../models-config.js", () => ({
+  vi.doMock("../models/models-config.js", () => ({
     ensureOpenClawModelsJson: vi.fn(async () => {}),
   }));
 
@@ -706,7 +708,7 @@ export async function loadRunOverflowCompactionHarness(): Promise<{
     resolveContextWindowInfo: mockedResolveContextWindowInfo,
   }));
 
-  vi.doMock("../../utils/message-channel.js", () => ({
+  vi.doMock("../../shared/message-channel.js", () => ({
     isMarkdownCapableMessageChannel: vi.fn(() => true),
   }));
 

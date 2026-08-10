@@ -20,7 +20,7 @@ import type {
   AgentToolResult,
   AgentToolUpdateCallback,
 } from "../runtime/index.js";
-import { sanitizeToolResultImages } from "../tool-images.js";
+import { sanitizeToolResultImages } from "./tool-images.js";
 
 export type AgentToolWithMeta<TParameters extends TSchema, TResult> = AgentTool<
   TParameters,

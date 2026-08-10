@@ -3,19 +3,19 @@
 
 import { findNormalizedProviderKey } from "@openclaw/model-catalog-core/provider-id";
 import { resolvePrimaryStringValue } from "../../packages/normalization-core/src/string-coerce.js";
-import { ensureStaticModelAllowlistEntry } from "../agents/model-allowlist-entry.js";
-import { normalizeConfiguredProviderCatalogModelId } from "../agents/model-ref-shared.js";
+import { ensureStaticModelAllowlistEntry } from "../agents/models/model-allowlist-entry.js";
+import { normalizeConfiguredProviderCatalogModelId } from "../agents/models/model-ref-shared.js";
 import {
   normalizeAgentModelMapForConfig,
   normalizeAgentModelRefForConfig,
 } from "../config/model-input.js";
-import type { AgentModelEntryConfig } from "../config/types.agent-defaults.js";
+import type { AgentModelEntryConfig } from "../config/types/agent-defaults.js";
 import type {
   ModelApi,
   ModelDefinitionConfig,
   ModelProviderConfig,
-} from "../config/types.models.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+} from "../config/types/models.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 export type { OpenClawConfig, ModelApi, ModelDefinitionConfig, ModelProviderConfig };
 export {

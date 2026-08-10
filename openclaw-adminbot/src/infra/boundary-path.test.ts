@@ -4,7 +4,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { withTempDir } from "../test-helpers/temp-dir.js";
 import { resolveRootPath, resolveRootPathSync } from "./boundary-path.js";
-import { isPathInside } from "./path-guards.js";
+import { isPathInside } from "./system/path-guards.js";
 
 function createSeededRandom(seed: number): () => number {
   let state = seed >>> 0;

@@ -11,16 +11,16 @@ import { listAgentIds, resolveAgentDir, resolveDefaultAgentId } from "../agents/
 import { AUTH_STORE_VERSION } from "../agents/auth-profiles/constants.js";
 import { loadPersistedAuthProfileStore } from "../agents/auth-profiles/persisted.js";
 import type { AuthProfileStore } from "../agents/auth-profiles/types.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type {
   ManualExecSecretProviderConfig,
   SecretProviderConfig,
   SecretRef,
   SecretRefSource,
-} from "../config/types.secrets.js";
-import { isSafeExecutableValue } from "../infra/exec-safety.js";
+} from "../config/types/secrets.js";
+import { isSafeExecutableValue } from "../infra/exec/exec-safety.js";
 import { parseStrictPositiveInteger } from "../infra/parse-finite-number.js";
-import { loadPluginManifestRegistry } from "../plugins/manifest-registry.js";
+import { loadPluginManifestRegistry } from "../plugins/manifest/manifest-registry.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { runSecretsApply, type SecretsApplyResult } from "./apply.js";
 import { createSecretsConfigIO } from "./config-io.js";

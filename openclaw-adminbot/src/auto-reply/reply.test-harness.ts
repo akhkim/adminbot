@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, vi, type Mock } from "vitest";
 import { withEnvAsync } from "../test-utils/env.js";
-import { withFastReplyConfig } from "./reply/get-reply-fast-path.js";
+import { withFastReplyConfig } from "./reply/get-reply/get-reply-fast-path.js";
 
 type ReplyRuntimeMocks = {
   runEmbeddedAgent: Mock;
@@ -24,7 +24,7 @@ const replyRuntimeMockState = vi.hoisted(() => ({
   } as ReplyRuntimeMocks,
 }));
 
-vi.mock("../agents/embedded-agent.js", () => ({
+vi.mock("../agents/embedded/embedded-agent.js", () => ({
   abortEmbeddedAgentRun: vi.fn().mockReturnValue(false),
   runEmbeddedAgent: (...args: unknown[]) => replyRuntimeMockState.mocks.runEmbeddedAgent(...args),
   queueEmbeddedAgentMessage: vi.fn().mockReturnValue(false),
@@ -33,7 +33,7 @@ vi.mock("../agents/embedded-agent.js", () => ({
   isEmbeddedAgentRunStreaming: vi.fn().mockReturnValue(false),
 }));
 
-vi.mock("../agents/model-catalog.runtime.js", () => ({
+vi.mock("../agents/models/model-catalog.runtime.js", () => ({
   loadModelCatalog: (...args: unknown[]) => replyRuntimeMockState.mocks.loadModelCatalog(...args),
 }));
 
@@ -56,7 +56,7 @@ vi.mock("../plugins/runtime/runtime-web-channel-plugin.js", () => ({
   readWebSelfId: (...args: unknown[]) => replyRuntimeMockState.mocks.readWebSelfId(...args),
 }));
 
-vi.mock("../agents/embedded-agent.runtime.js", () => ({
+vi.mock("../agents/embedded/embedded-agent.runtime.js", () => ({
   abortEmbeddedAgentRun: vi.fn().mockReturnValue(false),
   isEmbeddedAgentRunActive: vi.fn().mockReturnValue(false),
   isEmbeddedAgentRunStreaming: vi.fn().mockReturnValue(false),
@@ -65,7 +65,7 @@ vi.mock("../agents/embedded-agent.runtime.js", () => ({
   waitForEmbeddedAgentRunEnd: vi.fn(async () => undefined),
 }));
 
-vi.mock("./reply/agent-runner.runtime.js", () => ({
+vi.mock("./reply/agent/agent-runner.runtime.js", () => ({
   runReplyAgent: async (params: {
     commandBody: string;
     followupRun: {

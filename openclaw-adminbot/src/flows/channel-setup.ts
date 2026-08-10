@@ -7,7 +7,7 @@ import type {
   ChannelSetupPlugin,
   ChannelSetupWizardAdapter,
 } from "../channels/plugins/setup-wizard-types.js";
-import { formatCliCommand } from "../cli/command-format.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
 import {
   resolveChannelSetupEntries,
   shouldShowChannelInSetup,
@@ -28,12 +28,12 @@ import type {
   ChannelOnboardingPostWriteHook,
   SetupChannelsOptions,
 } from "../commands/channel-setup/types.js";
-import type { ChannelChoice } from "../commands/onboard-types.js";
-import { isChannelConfigured } from "../config/channel-configured.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { ChannelChoice } from "../commands/onboard/onboard-types.js";
+import { isChannelConfigured } from "../config/channel/channel-configured.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
-import { resolveBundledPluginSources } from "../plugins/bundled-sources.js";
 import { enableExplicitlySelectedPluginInConfig } from "../plugins/enable.js";
+import { resolveBundledPluginSources } from "../plugins/install/bundled-sources.js";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../routing/session-key.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { t } from "../wizard/i18n/index.js";

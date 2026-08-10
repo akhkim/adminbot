@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../types.openclaw.js";
+import type { OpenClawConfig } from "../types/openclaw.js";
 import { purgeAgentSessionStoreEntries } from "./cleanup-service.js";
 
 const sessionAccessorMocks = vi.hoisted(() => ({

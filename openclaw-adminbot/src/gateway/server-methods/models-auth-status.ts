@@ -3,6 +3,7 @@
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
 import { resolveDefaultAgentDir } from "../../agents/agent-scope.js";
+import type { AuthCredentialReasonCode } from "../../agents/auth-profiles/credential-state.js";
 import {
   type AuthHealthSummary,
   type AuthProfileHealthStatus,
@@ -10,7 +11,7 @@ import {
   type AuthProviderHealthStatus,
   buildAuthHealthSummary,
   formatRemainingShort,
-} from "../../agents/auth-health.js";
+} from "../../agents/auth/auth-health.js";
 import {
   clearRuntimeAuthProfileStoreSnapshots,
   ensureAuthProfileStore,
@@ -19,22 +20,24 @@ import {
   listProfilesForProvider,
   removeProviderAuthProfilesWithLock,
   resolvePersistedAuthProfileOwnerAgentDir,
-} from "../../agents/auth-profiles.js";
-import type { AuthCredentialReasonCode } from "../../agents/auth-profiles/credential-state.js";
+} from "../../agents/auth/auth-profiles.js";
 import {
   clearCurrentProviderAuthState,
   warmCurrentProviderAuthStateOffMainThread,
-} from "../../agents/model-provider-auth.js";
-import { resolveProviderIdForAuth } from "../../agents/provider-auth-aliases.js";
+} from "../../agents/auth/model-provider-auth.js";
+import { resolveProviderIdForAuth } from "../../agents/auth/provider-auth-aliases.js";
 import type { OpenClawConfig } from "../../config/config.js";
-import { isSecretRef } from "../../config/types.secrets.js";
-import { loadProviderUsageSummary } from "../../infra/provider-usage.load.js";
-import { PROVIDER_LABELS, resolveUsageProviderId } from "../../infra/provider-usage.shared.js";
+import { isSecretRef } from "../../config/types/secrets.js";
+import { loadProviderUsageSummary } from "../../infra/providers/provider-usage.load.js";
+import {
+  PROVIDER_LABELS,
+  resolveUsageProviderId,
+} from "../../infra/providers/provider-usage.shared.js";
 import type {
   ProviderUsageSnapshot,
   UsageProviderId,
   UsageWindow,
-} from "../../infra/provider-usage.types.js";
+} from "../../infra/providers/provider-usage.types.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { refreshActiveSecretsRuntimeSnapshot } from "../../secrets/runtime.js";
 import { asDateTimestampMs } from "../../shared/number-coercion.js";

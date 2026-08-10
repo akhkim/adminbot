@@ -1,6 +1,6 @@
 // LLM slug generator tests cover generated hook names and collision behavior.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 const runEmbeddedAgentMock = vi.fn();
 
@@ -17,7 +17,7 @@ vi.mock("../agents/agent-scope.js", () => ({
   }),
 }));
 
-vi.mock("../agents/embedded-agent.js", () => ({
+vi.mock("../agents/embedded/embedded-agent.js", () => ({
   runEmbeddedAgent: (...args: unknown[]) => runEmbeddedAgentMock(...args),
 }));
 

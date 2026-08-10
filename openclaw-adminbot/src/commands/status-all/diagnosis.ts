@@ -23,12 +23,12 @@ import {
 import {
   formatPluginCompatibilityNotice,
   type PluginCompatibilityNotice,
-} from "../../plugins/status.js";
+} from "../../plugins/config/status.js";
 import {
   formatUpdateRestartActionLines,
   formatUpdateRestartStatusValue,
-} from "../status-update-restart.ts";
-import type { NodeOnlyGatewayInfo } from "../status.node-mode.js";
+} from "../status/status-update-restart.js";
+import type { NodeOnlyGatewayInfo } from "../status/status.node-mode.js";
 import { formatTimeAgo, redactSecrets } from "./format.js";
 import { readFileTailLines, summarizeLogTail } from "./gateway.js";
 

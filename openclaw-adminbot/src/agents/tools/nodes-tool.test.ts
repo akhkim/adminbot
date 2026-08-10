@@ -59,7 +59,7 @@ vi.mock("./nodes-utils.js", () => ({
   resolveNode: nodeUtilsMocks.resolveNode,
 }));
 
-vi.mock("../../cli/nodes-camera.js", () => ({
+vi.mock("../../cli/nodes-cli/nodes-camera.js", () => ({
   cameraTempPath: nodesCameraMocks.cameraTempPath,
   parseCameraClipPayload: nodesCameraMocks.parseCameraClipPayload,
   parseCameraSnapPayload: nodesCameraMocks.parseCameraSnapPayload,
@@ -67,7 +67,7 @@ vi.mock("../../cli/nodes-camera.js", () => ({
   writeCameraPayloadToFile: nodesCameraMocks.writeCameraPayloadToFile,
 }));
 
-vi.mock("../../cli/nodes-screen.js", () => ({
+vi.mock("../../cli/nodes-cli/nodes-screen.js", () => ({
   parseScreenRecordPayload: screenMocks.parseScreenRecordPayload,
   screenRecordTempPath: screenMocks.screenRecordTempPath,
   writeScreenRecordToFile: screenMocks.writeScreenRecordToFile,

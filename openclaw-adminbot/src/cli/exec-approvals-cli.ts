@@ -12,16 +12,16 @@ import { formatErrorMessage } from "../infra/errors.js";
 import {
   collectExecPolicyScopeSnapshots,
   type ExecPolicyScopeSnapshot,
-} from "../infra/exec-approvals-effective.js";
+} from "../infra/exec/exec-approvals-effective.js";
 import {
   readExecApprovalsSnapshot,
   saveExecApprovals,
   type ExecApprovalsAgent,
   type ExecApprovalsFile,
-} from "../infra/exec-approvals.js";
+} from "../infra/exec/exec-approvals.js";
 import { formatTimeAgo } from "../infra/format-time/format-relative.ts";
 import { defaultRuntime } from "../runtime.js";
-import { callGatewayFromCli } from "./gateway-rpc.js";
+import { callGatewayFromCli } from "./gateway-cli/gateway-rpc.js";
 import { nodesCallOpts, resolveNodeId } from "./nodes-cli/rpc.js";
 import type { NodesRpcOpts } from "./nodes-cli/types.js";
 import { applyParentDefaultHelpAction } from "./program/parent-default-help.js";

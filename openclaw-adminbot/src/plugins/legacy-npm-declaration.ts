@@ -1,9 +1,9 @@
 /** Reads legacy npm plugin declaration files left by early plugin installs. */
 import path from "node:path";
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
+import { parseRegistryNpmSpec } from "../infra/install/npm-registry-spec.js";
 import { tryReadJsonSync } from "../infra/json-files.js";
-import { parseRegistryNpmSpec } from "../infra/npm-registry-spec.js";
-import { validatePluginId } from "./install-paths.js";
+import { validatePluginId } from "./install/install-paths.js";
 
 /** Legacy declaration filename used by early npm-backed plugin installs. */
 export const LEGACY_NPM_DECLARATION_FILE = "openclaw.extension.json";

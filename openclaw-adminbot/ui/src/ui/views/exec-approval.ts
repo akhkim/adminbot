@@ -1,6 +1,6 @@
 // Control UI view renders exec approval screen content.
 import { html, nothing } from "lit";
-import { formatApprovalDisplayPath } from "../../../../src/infra/approval-display-paths.ts";
+import { formatApprovalDisplayPath } from "../../../../src/infra/approvals/approval-display-paths.js";
 import { t } from "../../i18n/index.ts";
 import type { AppViewState } from "../app-view-state.ts";
 import "../components/modal-dialog.ts";
@@ -256,11 +256,7 @@ export function renderExecApprovalPrompt(state: AppViewState) {
             <div id=${titleId} class="exec-approval-title">${title}</div>
             <div id=${descriptionId} class="exec-approval-sub">${pending}</div>
           </div>
-          ${queueCount > 1
-            ? html`<div class="exec-approval-queue">
-                ${pending}
-              </div>`
-            : nothing}
+          ${queueCount > 1 ? html`<div class="exec-approval-queue">${pending}</div>` : nothing}
         </div>
         ${renderApprovalQueueList(state.execApprovalQueue)}
         ${isSecret

@@ -1,6 +1,6 @@
 /** Runtime type contracts for mention-pattern matching helpers. */
 import type { ResolveMentionPatternPolicyParams } from "../../channels/mention-pattern-policy.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 
 /** Options for building mention regexes without binding config/agent id. */
 export type BuildMentionRegexesOptions = Omit<ResolveMentionPatternPolicyParams, "cfg" | "agentId">;

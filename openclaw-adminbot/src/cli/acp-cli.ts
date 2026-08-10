@@ -7,8 +7,8 @@ import { serveAcpGateway } from "../acp/server.js";
 import { normalizeAcpProvenanceMode } from "../acp/types.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { defaultRuntime } from "../runtime.js";
-import { inheritOptionFromParent } from "./command-options.js";
-import { resolveGatewayAuthOptions } from "./gateway-secret-options.js";
+import { resolveGatewayAuthOptions } from "./gateway-cli/gateway-secret-options.js";
+import { inheritOptionFromParent } from "./program/command-options.js";
 
 export function registerAcpCli(program: Command) {
   const acp = program.command("acp").description("Run an ACP bridge backed by the Gateway");

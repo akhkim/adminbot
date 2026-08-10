@@ -82,7 +82,7 @@ vi.mock("./outbound-session.js", () => ({
   resolveOutboundSessionRoute: mocks.resolveOutboundSessionRoute,
 }));
 
-vi.mock("../../utils/message-channel.js", () => ({
+vi.mock("../../shared/message-channel.js", () => ({
   INTERNAL_MESSAGE_CHANNEL: "webchat",
   isDeliverableMessageChannel: (channel: string) => ["directchat", "workspace"].includes(channel),
   isGatewayMessageChannel: (channel: string) =>

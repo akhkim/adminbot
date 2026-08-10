@@ -1,7 +1,7 @@
 // Covers agent directory resolution across config and environment overrides.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { findDuplicateAgentDirs } from "./agent-dirs.js";
-import type { OpenClawConfig } from "./types.js";
+import type { OpenClawConfig } from "./types/types.js";
 
 afterEach(() => {
   vi.unstubAllEnvs();

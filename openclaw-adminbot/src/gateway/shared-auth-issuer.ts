@@ -4,8 +4,8 @@
 // from a browser-family device as a legacy credential, and rejects a stale generation after the
 // shared secret rotates. Tokens issued outside the Gateway process (a plugin service that pairs a
 // device from its own session) therefore need the same value the Gateway would have stamped.
-import { getRuntimeConfig } from "../config/io.js";
-import { resolveGatewayAuth } from "./auth-resolve.js";
+import { getRuntimeConfig } from "../config/io/io.js";
+import { resolveGatewayAuth } from "./auth/auth-resolve.js";
 import { resolveSharedGatewaySessionGeneration } from "./server/ws-shared-generation.js";
 
 /** Issuer stamp binding a device token to the Gateway's current shared-auth generation. */

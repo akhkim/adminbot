@@ -89,18 +89,37 @@ function updateHashFromFiles(
   sourceRootDir: string = rootDir,
 ): void {
   for (const file of files.toSorted()) {
+    // Some listed sources belong to plugins a given fork may not bundle. A missing file
+    // contributes nothing to the digest instead of throwing: deleting it still changes
+    // the signature once (correctly invalidating the cache) and is stable thereafter.
+    if (!existsSync(file)) {
+      continue;
+    }
     hash.update(`${path.relative(sourceRootDir, file)}\0`);
     hash.update(readFileSync(file));
     hash.update("\0");
   }
 }
 
+// The `browser` plugin is not bundled in every fork of this repo. When it is absent
+// there is no `browser` command to precompute help for, so the browser lane degrades to
+// an empty signature and empty help text rather than failing the whole build.
+function browserCliEntryPath(sourceRootDir: string = rootDir): string {
+  return path.join(sourceRootDir, "extensions/browser/src/cli/browser-cli.ts");
+}
+
+function hasBrowserCli(sourceRootDir: string = rootDir): boolean {
+  return existsSync(browserCliEntryPath(sourceRootDir));
+}
+
 function resolveBrowserHelpSourceSignature(sourceRootDir: string = rootDir): string {
   const hash = createHash("sha1");
   const browserCliDir = path.join(sourceRootDir, "extensions/browser/src/cli");
-  const browserCliFiles = readdirSync(browserCliDir)
-    .filter((entry) => entry.endsWith(".ts"))
-    .map((entry) => path.join(browserCliDir, entry));
+  const browserCliFiles = existsSync(browserCliDir)
+    ? readdirSync(browserCliDir)
+        .filter((entry) => entry.endsWith(".ts"))
+        .map((entry) => path.join(browserCliDir, entry))
+    : [];
   updateHashFromFiles(hash, browserCliFiles, sourceRootDir);
   updateHashFromFiles(
     hash,
@@ -165,11 +184,11 @@ function resolveSubcommandHelpSourceSignature(sourceRootDir: string = rootDir): 
       path.join(sourceRootDir, "src/cli/help-format.ts"),
       path.join(sourceRootDir, "src/cli/daemon-cli/register-service-commands.ts"),
       path.join(sourceRootDir, "src/cli/program/register.maintenance.ts"),
-      path.join(sourceRootDir, "src/cli/gateway-cli.ts"),
+      path.join(sourceRootDir, "src/cli/gateway-cli/gateway-cli.ts"),
       path.join(sourceRootDir, "src/cli/gateway-cli/register.ts"),
       path.join(sourceRootDir, "src/cli/gateway-cli/run-command.ts"),
       path.join(sourceRootDir, "src/cli/models-cli.ts"),
-      path.join(sourceRootDir, "src/cli/plugins-cli.ts"),
+      path.join(sourceRootDir, "src/cli/plugins/plugins-cli.ts"),
       path.join(sourceRootDir, "packages/terminal-core/src/links.ts"),
       path.join(sourceRootDir, "packages/terminal-core/src/theme.ts"),
     ],
@@ -545,9 +564,10 @@ function renderSourceRootHelpText(
 async function renderSourceBrowserHelpText(
   renderContext: RootHelpRenderContext = createIsolatedRootHelpRenderContext(),
 ): Promise<string> {
-  const browserCliUrl = pathToFileURL(
-    path.join(rootDir, "extensions/browser/src/cli/browser-cli.ts"),
-  ).href;
+  if (!hasBrowserCli()) {
+    return "";
+  }
+  const browserCliUrl = pathToFileURL(browserCliEntryPath()).href;
   const helpUrl = pathToFileURL(path.join(rootDir, "src/cli/program/help.ts")).href;
   const contextUrl = pathToFileURL(path.join(rootDir, "src/cli/program/context.ts")).href;
   const inlineModule = [
@@ -684,7 +704,9 @@ export async function writeCliStartupMetadata(options?: {
       existing.subcommandHelpSourceSignature === subcommandHelpSourceSignature &&
       existing.channelCatalogSignature === channelCatalog.signature &&
       typeof existing.browserHelpText === "string" &&
-      existing.browserHelpText.length > 0 &&
+      // Only require non-empty browser help when the browser plugin is actually present;
+      // otherwise this clause would defeat the cache on every run.
+      (existing.browserHelpText.length > 0 || !hasBrowserCli(resolvedSourceRootDir)) &&
       typeof existing.secretsHelpText === "string" &&
       existing.secretsHelpText.length > 0 &&
       typeof existing.nodesHelpText === "string" &&

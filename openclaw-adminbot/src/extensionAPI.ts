@@ -23,14 +23,14 @@ if (shouldWarnExtensionApiImport) {
 export { resolveAgentDir, resolveAgentWorkspaceDir } from "./agents/agent-scope.js";
 export { DEFAULT_MODEL, DEFAULT_PROVIDER } from "./agents/defaults.js";
 export { resolveAgentIdentity } from "./agents/identity.js";
-export { resolveThinkingDefault } from "./agents/model-selection.js";
+export { resolveThinkingDefault } from "./agents/models/model-selection.js";
 export {
   runEmbeddedAgent,
   /** @deprecated Use runEmbeddedAgent. */
   runEmbeddedAgent as runEmbeddedPiAgent,
-} from "./agents/embedded-agent.js";
+} from "./agents/embedded/embedded-agent.js";
 export { resolveAgentTimeoutMs } from "./agents/timeout.js";
-export { ensureAgentWorkspace } from "./agents/workspace.js";
+export { ensureAgentWorkspace } from "./agents/workspace/workspace.js";
 export {
   resolveStorePath,
   loadSessionStore,

@@ -9,7 +9,7 @@ import {
 } from "../agents/auth-profiles/store.js";
 import type { AuthProfileStore } from "../agents/auth-profiles/types.js";
 import type { OpenClawConfig } from "../config/config.js";
-import type { PluginWebSearchProviderEntry } from "../plugins/web-provider-types.js";
+import type { PluginWebSearchProviderEntry } from "../plugins/web/web-provider-types.js";
 import {
   createWebSearchTestProvider,
   type WebSearchTestProviderParams,
@@ -54,7 +54,7 @@ vi.mock("../plugins/plugin-registry-contributions.js", () => ({
   resolveManifestContractOwnerPluginId: resolveManifestContractOwnerPluginIdMock,
 }));
 
-vi.mock("../plugins/web-search-providers.runtime.js", () => ({
+vi.mock("../plugins/web/web-search-providers.runtime.js", () => ({
   resolvePluginWebSearchProviders: resolvePluginWebSearchProvidersMock,
   resolveRuntimeWebSearchProviders: resolveRuntimeWebSearchProvidersMock,
 }));

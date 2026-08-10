@@ -45,7 +45,7 @@ const commandSecretState = vi.hoisted(() => ({
 
 const tempRoots = new Set<string>();
 
-vi.mock("../../../cli/command-secret-gateway.js", () => ({
+vi.mock("../../../cli/program/command-secret-gateway.js", () => ({
   resolveCommandSecretRefsViaGateway: vi.fn(async (params: { config: OpenClawConfig }) => ({
     resolvedConfig: commandSecretState.resolvedConfig ?? params.config,
     diagnostics: commandSecretState.diagnostics,
@@ -54,7 +54,7 @@ vi.mock("../../../cli/command-secret-gateway.js", () => ({
   })),
 }));
 
-vi.mock("../../../cli/command-secret-targets.js", () => ({
+vi.mock("../../../cli/program/command-secret-targets.js", () => ({
   getConfiguredChannelsCommandSecretTargetIds: vi.fn(() => commandSecretState.targetIds),
 }));
 
@@ -408,7 +408,7 @@ describe("doctor preview warnings", () => {
     ];
 
     const { resolveCommandSecretRefsViaGateway } =
-      await import("../../../cli/command-secret-gateway.js");
+      await import("../../../cli/program/command-secret-gateway.js");
     const notes = await collectDoctorPreviewNotes({
       cfg: rawConfig,
       doctorFixCommand: "openclaw doctor --fix",
@@ -435,7 +435,7 @@ describe("doctor preview warnings", () => {
   it("allows doctor preview to opt into local exec SecretRef resolution", async () => {
     commandSecretState.targetIds = new Set(["channels.telegram.botToken"]);
     const { resolveCommandSecretRefsViaGateway } =
-      await import("../../../cli/command-secret-gateway.js");
+      await import("../../../cli/program/command-secret-gateway.js");
 
     await collectDoctorPreviewNotes({
       cfg: {

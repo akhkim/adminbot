@@ -5,7 +5,7 @@ import { uniqueStrings } from "../../../packages/normalization-core/src/string-n
 import {
   assertUniqueValues,
   BUNDLED_RUNTIME_SIDECAR_PATHS,
-} from "../../plugins/runtime-sidecar-paths.js";
+} from "../../plugins/runtime/runtime-sidecar-paths.js";
 
 export function getPublicArtifactBasename(relativePath: string): string {
   return relativePath.split("/").at(-1) ?? relativePath;

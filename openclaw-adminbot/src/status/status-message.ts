@@ -5,21 +5,21 @@ import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
+import { resolveModelAuthMode } from "../agents/auth/model-auth.js";
 import { resolveContextTokensForModel } from "../agents/context.js";
 import { DEFAULT_CONTEXT_TOKENS, DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { resolveExtraParams } from "../agents/embedded-agent-runner/extra-params.js";
-import { resolveModelAuthMode } from "../agents/model-auth.js";
 import {
   areRuntimeModelRefsEquivalent,
   shouldPreferActiveRuntimeAliasAuthLabel,
-} from "../agents/model-runtime-aliases.js";
+} from "../agents/models/model-runtime-aliases.js";
 import {
   buildModelAliasIndex,
   resolveConfiguredModelRef,
   resolveModelRefFromString,
-} from "../agents/model-selection.js";
-import { resolveOpenAITextVerbosity } from "../agents/openai-text-verbosity.js";
-import { resolveSandboxRuntimeStatus } from "../agents/sandbox.js";
+} from "../agents/models/model-selection.js";
+import { resolveSandboxRuntimeStatus } from "../agents/sandbox/sandbox.js";
+import { resolveOpenAITextVerbosity } from "../agents/transport/openai-text-verbosity.js";
 import {
   formatProviderModelRef,
   resolveSelectedAndActiveModel,
@@ -43,24 +43,18 @@ import {
 } from "../config/sessions.js";
 import { resolveSessionLifecycleTimestamps } from "../config/sessions/lifecycle.js";
 import { hasSessionAutoModelFallbackProvenance } from "../config/sessions/model-override-provenance.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { readRecentSessionUsageFromTranscript } from "../gateway/session-transcript-readers.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { readRecentSessionUsageFromTranscript } from "../gateway/sessions/session-transcript-readers.js";
 import { formatDurationCompact } from "../infra/format-time/format-duration.ts";
 import { formatTimeAgo } from "../infra/format-time/format-relative.ts";
 import { resolveCommitHash } from "../infra/git-commit.js";
-import {
-  findDecisionReason,
-  summarizeDecisionReason,
-} from "../media-understanding/runner.entries.js";
-import type { MediaUnderstandingDecision } from "../media-understanding/types.js";
 import { resolveAgentIdFromSessionKey } from "../routing/session-key.js";
-import { resolveStatusTtsSnapshot } from "../tts/status-config.js";
 import {
   estimateUsageCost,
   formatTokenCount,
   formatUsd,
   resolveModelCostConfig,
-} from "../utils/usage-format.js";
+} from "../shared/usage-format.js";
 import { VERSION } from "../version.js";
 import { resolveAgentRuntimeLabel } from "./agent-runtime-label.js";
 import { resolveActiveFallbackState } from "./fallback-notice-state.js";
@@ -104,7 +98,6 @@ export type StatusArgs = {
   timeLine?: string;
   uptimeLine?: string;
   queue?: QueueStatus;
-  mediaDecisions?: ReadonlyArray<MediaUnderstandingDecision>;
   subagentsLine?: string;
   taskLine?: string;
   pluginHealthLine?: string;
@@ -401,92 +394,6 @@ const formatCacheLine = (
       : 0;
 
   return `🗄️ Cache: ${hitRate}% hit · ${cachedLabel} cached, ${newLabel} new`;
-};
-
-const formatMediaUnderstandingLine = (decisions?: ReadonlyArray<MediaUnderstandingDecision>) => {
-  if (!decisions || decisions.length === 0) {
-    return null;
-  }
-  const parts = decisions
-    .map((decision) => {
-      const count = decision.attachments.length;
-      const countLabel = count > 1 ? ` x${count}` : "";
-      if (decision.outcome === "success") {
-        const chosen = decision.attachments.find((entry) => entry.chosen)?.chosen;
-        const provider = chosen?.provider?.trim();
-        const model = chosen?.model?.trim();
-        const modelLabel = provider ? (model ? `${provider}/${model}` : provider) : null;
-        return `${decision.capability}${countLabel} ok${modelLabel ? ` (${modelLabel})` : ""}`;
-      }
-      if (decision.outcome === "no-attachment") {
-        return `${decision.capability} none`;
-      }
-      if (decision.outcome === "disabled") {
-        return `${decision.capability} off`;
-      }
-      if (decision.outcome === "scope-deny") {
-        return `${decision.capability} denied`;
-      }
-      if (decision.outcome === "skipped") {
-        const reason = findDecisionReason(decision);
-        const shortReason = summarizeDecisionReason(reason);
-        return `${decision.capability} skipped${shortReason ? ` (${shortReason})` : ""}`;
-      }
-      if (decision.outcome === "failed") {
-        const reason = findDecisionReason(decision, "failed");
-        const shortReason = summarizeDecisionReason(reason);
-        return `${decision.capability} failed${shortReason ? ` (${shortReason})` : ""}`;
-      }
-      return null;
-    })
-    .filter((part): part is string => part != null);
-  if (parts.length === 0) {
-    return null;
-  }
-  if (parts.every((part) => part.endsWith(" none"))) {
-    return null;
-  }
-  return `📎 Media: ${parts.join(" · ")}`;
-};
-
-const formatVoiceModeLine = (
-  config?: OpenClawConfig,
-  sessionEntry?: SessionEntry,
-  agentId?: string,
-): string | null => {
-  if (!config) {
-    return null;
-  }
-  const snapshot = resolveStatusTtsSnapshot({
-    cfg: config,
-    sessionAuto: sessionEntry?.ttsAuto,
-    agentId,
-  });
-  if (!snapshot) {
-    return null;
-  }
-  const parts = [`🔊 Voice: ${snapshot.autoMode}`, `provider=${snapshot.provider}`];
-  if (snapshot.persona) {
-    parts.push(`persona=${snapshot.persona}`);
-  }
-  if (snapshot.displayName) {
-    parts.push(`name=${snapshot.displayName}`);
-  }
-  if (snapshot.model) {
-    parts.push(`model=${snapshot.model}`);
-  }
-  if (snapshot.voice) {
-    parts.push(`voice=${snapshot.voice}`);
-  }
-  if (snapshot.baseUrl) {
-    parts.push(
-      snapshot.customBaseUrl
-        ? `endpoint=custom(${snapshot.baseUrl})`
-        : `endpoint=${snapshot.baseUrl}`,
-    );
-  }
-  parts.push(`limit=${snapshot.maxLength}`, `summary=${snapshot.summarize ? "on" : "off"}`);
-  return parts.join(" · ");
 };
 
 function resolveChannelModelNote(params: {
@@ -1088,8 +995,6 @@ export function buildStatusMessage(args: StatusArgs): string {
   const costLine = costLabel ? `💵 Cost: ${costLabel}` : null;
   const usageCostLine =
     usagePair && costLine ? `${usagePair} · ${costLine}` : (usagePair ?? costLine);
-  const mediaLine = formatMediaUnderstandingLine(args.mediaDecisions);
-  const voiceLine = formatVoiceModeLine(args.config, args.sessionEntry, args.agentId);
 
   return [
     versionLine,
@@ -1101,7 +1006,6 @@ export function buildStatusMessage(args: StatusArgs): string {
     usageCostLine,
     cacheLine,
     `📚 ${contextLine}`,
-    mediaLine,
     args.usageLine,
     `🧵 ${sessionLine}`,
     args.subagentsLine,
@@ -1110,7 +1014,6 @@ export function buildStatusMessage(args: StatusArgs): string {
     `⚙️ ${optionsLine}`,
     args.pluginHealthLine,
     pluginStatusLine ? `🧩 ${pluginStatusLine}` : null,
-    voiceLine,
     activationLine,
   ]
     .filter((line): line is string => Boolean(line))

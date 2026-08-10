@@ -1,21 +1,26 @@
 // Gateway-scoped tool resolution for HTTP and loopback tool surfaces.
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import {
+  isSubagentEnvelopeSession,
+  resolveSubagentCapabilityStore,
+} from "../agents/subagents/subagent-capabilities.js";
+import {
   resolveEffectiveToolPolicy,
   resolveGroupToolPolicy,
   resolveInheritedToolPolicyForSession,
   resolveSubagentToolPolicyForSession,
-} from "../agents/agent-tools.policy.js";
-import { createOpenClawTools } from "../agents/openclaw-tools.js";
+} from "../agents/tools/agent-tools.policy.js";
+import type { AnyAgentTool } from "../agents/tools/common.js";
 import {
-  isSubagentEnvelopeSession,
-  resolveSubagentCapabilityStore,
-} from "../agents/subagent-capabilities.js";
-import { buildDeclaredToolAllowlistContext } from "../agents/tool-policy-declared-context.js";
+  replaceWithEffectiveCronCreatorToolAllowlist,
+  type CronCreatorToolAllowlistEntry,
+} from "../agents/tools/cron-tool.js";
+import { createOpenClawTools } from "../agents/tools/openclaw-tools.js";
+import { buildDeclaredToolAllowlistContext } from "../agents/tools/tool-policy-declared-context.js";
 import {
   applyToolPolicyPipeline,
   buildDefaultToolPolicyPipelineSteps,
-} from "../agents/tool-policy-pipeline.js";
+} from "../agents/tools/tool-policy-pipeline.js";
 import {
   collectExplicitAllowlist,
   collectExplicitDenylist,
@@ -23,15 +28,10 @@ import {
   mergeAlsoAllowPolicy,
   replaceWithEffectiveToolAllowlist,
   resolveToolProfilePolicy,
-} from "../agents/tool-policy.js";
-import type { AnyAgentTool } from "../agents/tools/common.js";
-import {
-  replaceWithEffectiveCronCreatorToolAllowlist,
-  type CronCreatorToolAllowlistEntry,
-} from "../agents/tools/cron-tool.js";
+} from "../agents/tools/tool-policy.js";
 import type { SourceReplyDeliveryMode } from "../auto-reply/get-reply-options.types.js";
 import type { InboundEventKind } from "../channels/inbound-event/kind.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { logWarn } from "../logger.js";
 import { getPluginToolMeta } from "../plugins/tools.js";
 import {

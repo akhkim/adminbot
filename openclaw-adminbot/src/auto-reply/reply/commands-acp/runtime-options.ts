@@ -13,7 +13,7 @@ import {
 } from "../../../acp/control-plane/runtime-options.js";
 import { findLatestTaskForRelatedSessionKeyForOwner } from "../../../tasks/task-owner-access.js";
 import { sanitizeTaskStatusText } from "../../../tasks/task-status.js";
-import type { CommandHandlerResult, HandleCommandsParams } from "../commands-types.js";
+import type { CommandHandlerResult, HandleCommandsParams } from "../commands/commands-types.js";
 import {
   ACP_CWD_USAGE,
   ACP_MODEL_USAGE,

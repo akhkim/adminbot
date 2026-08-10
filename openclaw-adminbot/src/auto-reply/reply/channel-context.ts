@@ -3,8 +3,8 @@ import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { getActivePluginChannelRegistry } from "../../plugins/runtime.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { getActivePluginChannelRegistry } from "../../plugins/runtime/runtime.js";
 
 type CommandSurfaceParams = {
   ctx: {

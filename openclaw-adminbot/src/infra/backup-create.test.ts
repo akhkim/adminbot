@@ -5,7 +5,7 @@ import path from "node:path";
 import * as tar from "tar";
 import { describe, expect, it, vi } from "vitest";
 import { saveAuthProfileStore } from "../agents/auth-profiles/store.js";
-import { backupVerifyCommand } from "../commands/backup-verify.js";
+import { backupVerifyCommand } from "../commands/maintenance/backup-verify.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { closeOpenClawAgentDatabasesForTest } from "../state/openclaw-agent-db.js";
 import {

@@ -5,7 +5,7 @@ import {
 } from "../../../packages/gateway-protocol/src/client-info.js";
 import { callGateway } from "../../gateway/call.js";
 import type { OperatorScope } from "../../gateway/method-scopes.js";
-import { parseTimeoutMsWithFallback } from "../parse-timeout.js";
+import { parseTimeoutMsWithFallback } from "../program/parse-timeout.js";
 import { withProgress } from "../progress.js";
 import type { NodesRpcOpts } from "./types.js";
 

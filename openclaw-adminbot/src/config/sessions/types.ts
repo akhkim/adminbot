@@ -11,9 +11,9 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import type { ChatType } from "../../channels/chat-type.js";
 import type { ChannelId } from "../../channels/plugins/channel-id.types.js";
 import type { ChannelRouteRef } from "../../plugin-sdk/channel-route.js";
+import type { DeliveryContext } from "../../shared/delivery-context.types.js";
 import type { Skill } from "../../skills/loading/skill-contract.js";
-import type { DeliveryContext } from "../../utils/delivery-context.types.js";
-import type { TtsAutoMode } from "../types.tts.js";
+import type { TtsAutoMode } from "../types/tts.js";
 import { rewriteSessionFileForNewSessionId } from "./session-file-rotation.js";
 
 export type SessionScope = "per-sender" | "global";
@@ -254,6 +254,14 @@ export type SessionEntry = {
   inheritedToolAllow?: string[];
   /** Plugin id that created this session through api.runtime.subagent. */
   pluginOwnerId?: string;
+  /**
+   * Identity (e.g. AdminBot member id) that created this session, stamped from
+   * GatewayClient.ownerMemberId at sessions.create time. Undefined means either the
+   * connection had no paired-device identity (shared-secret/CLI use) or the session
+   * predates this field -- both are treated as unscoped, not owned by nobody.
+   * See canRequesterAccessSession in gateway/server-methods/session-ownership.ts.
+   */
+  ownerMemberId?: string;
   systemSent?: boolean;
   abortedLastRun?: boolean;
   /** Interrupted run generations whose late lifecycle events must be ignored. */

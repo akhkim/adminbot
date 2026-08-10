@@ -1,12 +1,15 @@
 // Trajectory metadata tests cover metadata capture and normalization.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { REDACTED_SENTINEL } from "../config/redact-snapshot.js";
+import { REDACTED_SENTINEL } from "../config/redact/redact-snapshot.js";
 import {
   redactPathForSupport,
   type SupportRedactionContext,
 } from "../logging/diagnostic-support-redaction.js";
-import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
-import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
+import { createEmptyPluginRegistry } from "../plugins/manifest/registry-empty.js";
+import {
+  resetPluginRuntimeStateForTest,
+  setActivePluginRegistry,
+} from "../plugins/runtime/runtime.js";
 import type { SkillSnapshot } from "../skills/types.js";
 
 type ResolvedSkillEntry = NonNullable<SkillSnapshot["resolvedSkills"]>[number];

@@ -68,7 +68,7 @@ export {
   writeCache,
 } from "../agents/tools/web-shared.js";
 export { enablePluginInConfig } from "../plugins/enable.js";
-export { formatCliCommand } from "../cli/command-format.js";
+export { formatCliCommand } from "../cli/program/command-format.js";
 export { wrapWebContent } from "../security/external-content.js";
 export type {
   WebSearchCredentialResolutionSource,

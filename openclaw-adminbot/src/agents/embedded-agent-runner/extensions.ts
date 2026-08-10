@@ -2,8 +2,8 @@
  * Builds extension factories available to embedded-agent runtime sessions.
  */
 import { randomUUID } from "node:crypto";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { ProviderRuntimeModel } from "../../plugins/providers/provider-runtime-model.types.js";
 import { setCompactionSafeguardRuntime } from "../agent-hooks/compaction-safeguard-runtime.js";
 import compactionSafeguardExtension from "../agent-hooks/compaction-safeguard.js";
 import contextPruningExtension from "../agent-hooks/context-pruning.js";
@@ -11,16 +11,16 @@ import { setContextPruningRuntime } from "../agent-hooks/context-pruning/runtime
 import { computeEffectiveSettings } from "../agent-hooks/context-pruning/settings.js";
 import { makeToolPrunablePredicate } from "../agent-hooks/context-pruning/tools.js";
 import { resolveEffectiveCompactionMode } from "../agent-settings.js";
-import {
-  finalizeToolTerminalPresentation,
-  peekAdjustedParamsForToolCall,
-} from "../agent-tools.before-tool-call.js";
 import { resolveContextWindowInfo } from "../context-window-guard.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../defaults.js";
 import { createAgentToolResultMiddlewareRunner } from "../harness/tool-result-middleware.js";
 import type { AgentToolResult } from "../runtime/index.js";
 import type { ExtensionFactory, SessionManager } from "../sessions/index.js";
-import { isToolResultError } from "../tool-result-error.js";
+import {
+  finalizeToolTerminalPresentation,
+  peekAdjustedParamsForToolCall,
+} from "../tools/agent-tools.before-tool-call.js";
+import { isToolResultError } from "../tools/tool-result-error.js";
 import { resolveTranscriptPolicy } from "../transcript-policy.js";
 import { isCacheTtlEligibleProvider, readLastCacheTtlTimestamp } from "./cache-ttl.js";
 import { recordEmbeddedToolSendReceipt } from "./tool-send-receipts.js";

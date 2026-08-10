@@ -1,6 +1,6 @@
 // Model scan tests cover provider scan behavior and discovered model output.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ModelScanResult } from "../../agents/model-scan.js";
+import type { ModelScanResult } from "../../agents/models/model-scan.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import { withEnvAsync } from "../../test-utils/env.js";
 
@@ -14,11 +14,11 @@ vi.mock("./load-config.js", () => ({
   loadModelsConfig: mocks.loadModelsConfig,
 }));
 
-vi.mock("../../agents/model-auth.js", () => ({
+vi.mock("../../agents/auth/model-auth.js", () => ({
   resolveApiKeyForProvider: mocks.resolveApiKeyForProvider,
 }));
 
-vi.mock("../../agents/model-scan.js", () => ({
+vi.mock("../../agents/models/model-scan.js", () => ({
   scanOpenRouterModels: mocks.scanOpenRouterModels,
 }));
 

@@ -2,7 +2,7 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionEntry } from "../config/sessions.js";
 import { INTERNAL_RUNTIME_CONTEXT_BEGIN, INTERNAL_RUNTIME_CONTEXT_END } from "./internal-events.js";
-import { LiveSessionModelSwitchError } from "./live-model-switch-error.js";
+import { LiveSessionModelSwitchError } from "./models/live-model-switch-error.js";
 import { createAgentRunRestartAbortError } from "./run-termination.js";
 
 const state = vi.hoisted(() => ({
@@ -71,7 +71,7 @@ const state = vi.hoisted(() => ({
   resolvedSessionKeyMock: undefined as string | undefined,
 }));
 
-vi.mock("./model-fallback.js", () => ({
+vi.mock("./models/model-fallback.js", () => ({
   runWithModelFallback: (params: unknown) => state.runWithModelFallbackMock(params),
 }));
 
@@ -208,18 +208,18 @@ vi.mock("../auto-reply/thinking.js", () => ({
   supportsXHighThinking: () => false,
 }));
 
-vi.mock("../cli/command-format.js", () => ({
+vi.mock("../cli/program/command-format.js", () => ({
   formatCliCommand: (cmd: string) => cmd,
 }));
 
-vi.mock("../cli/command-secret-gateway.js", () => ({
+vi.mock("../cli/program/command-secret-gateway.js", () => ({
   resolveCommandSecretRefsViaGateway: async (params: { config: unknown }) => ({
     resolvedConfig: params.config,
     diagnostics: [],
   }),
 }));
 
-vi.mock("../cli/command-secret-targets.js", () => ({
+vi.mock("../cli/program/command-secret-targets.js", () => ({
   getAgentRuntimeCommandSecretTargetIds: () => [],
 }));
 
@@ -227,7 +227,7 @@ vi.mock("../cli/deps.js", () => ({
   createDefaultDeps: () => ({}),
 }));
 
-vi.mock("../config/io.js", () => ({
+vi.mock("../config/io/io.js", () => ({
   getRuntimeConfig: () => state.runtimeConfigMock ?? state.defaultRuntimeConfig,
   readConfigFileSnapshotForWrite: async () => ({
     snapshot: { valid: false },
@@ -244,7 +244,7 @@ vi.mock("./agent-runtime-config.js", () => {
   };
 });
 
-vi.mock("../config/runtime-snapshot.js", () => ({
+vi.mock("../config/runtime/runtime-snapshot.js", () => ({
   setRuntimeConfigSnapshot: vi.fn(),
 }));
 
@@ -366,7 +366,7 @@ vi.mock("../trajectory/runtime.js", () => ({
   }),
 }));
 
-vi.mock("../utils/message-channel.js", () => ({
+vi.mock("../shared/message-channel.js", () => ({
   INTERNAL_MESSAGE_CHANNEL: "internal",
   isDeliverableMessageChannel: (value: string) => value !== "internal",
   normalizeMessageChannel: (value?: string | null) => value?.trim().toLowerCase() || undefined,
@@ -398,7 +398,7 @@ vi.mock("./agent-scope.js", () => ({
   resolveAgentWorkspaceDir: () => "/tmp/workspace",
 }));
 
-vi.mock("./auth-profiles.js", () => ({
+vi.mock("./auth/auth-profiles.js", () => ({
   ensureAuthProfileStore: () => ({ profiles: {} }),
 }));
 
@@ -420,11 +420,11 @@ vi.mock("./lanes.js", () => ({
   AGENT_LANE_SUBAGENT: "subagent",
 }));
 
-vi.mock("./model-catalog.js", () => ({
+vi.mock("./models/model-catalog.js", () => ({
   loadManifestModelCatalog: state.loadManifestModelCatalogMock,
 }));
 
-vi.mock("./model-selection.js", () => {
+vi.mock("./models/model-selection.js", () => {
   const normalizeProviderId = (provider: string) => provider.trim().toLowerCase();
   const buildAllowedModelSet = ({
     cfg,
@@ -661,7 +661,7 @@ vi.mock("./model-selection.js", () => {
   };
 });
 
-vi.mock("./model-visibility-policy.js", () => ({
+vi.mock("./models/model-visibility-policy.js", () => ({
   createModelVisibilityPolicy: ({
     cfg,
     catalog,
@@ -724,7 +724,7 @@ vi.mock("./model-visibility-policy.js", () => ({
   },
 }));
 
-vi.mock("./provider-auth-aliases.js", () => ({
+vi.mock("./auth/provider-auth-aliases.js", () => ({
   resolveProviderAuthAliasMap: () => ({}),
   resolveProviderIdForAuth: (provider: string) =>
     provider.trim().toLowerCase() === "codex-cli" ? "openai" : provider.trim().toLowerCase(),
@@ -791,7 +791,7 @@ vi.mock("./timeout.js", () => ({
       : 30_000,
 }));
 
-vi.mock("./workspace.js", () => ({
+vi.mock("./workspace/workspace.js", () => ({
   ensureAgentWorkspace: async () => ({ dir: "/tmp/workspace" }),
 }));
 

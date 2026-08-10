@@ -5,7 +5,7 @@
  */
 import path from "node:path";
 import { parseStrictNonNegativeInteger } from "../../infra/parse-finite-number.js";
-import { isPathInside } from "../../infra/path-guards.js";
+import { isPathInside } from "../../infra/system/path-guards.js";
 import type {
   SandboxBackendCommandParams,
   SandboxBackendCommandResult,

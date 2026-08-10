@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { FIELD_HELP } from "./schema.help.js";
+import { FIELD_HELP } from "./schema/help.js";
 import { describeTalkSilenceTimeoutDefaults } from "./talk-defaults.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");

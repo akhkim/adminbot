@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 2857 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders workboard screen content.
 import { html, nothing, type TemplateResult } from "lit";
 import { ref } from "lit/directives/ref.js";

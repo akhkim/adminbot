@@ -49,11 +49,11 @@ export { isCronSessionKey, parseSessionKey, resolveSessionDisplayName, resolveSe
 // Real AdminBot privilege gates the Gateway-RPC admin surfaces (Add/Edit member,
 // settings, approvals). Default to the safe read-only "general" mode whenever
 // privilege is unknown/loading so a plain member never briefly sees admin
-// controls; only admin/core_member get the editable "admin" mode.
+// controls; only `admin` gets the editable "admin" mode.
 export function resolveAdminBotMode(
   privilegeLevel: string | null,
-): import("./controllers/adminbot.ts").AdminBotLoadMode {
-  return privilegeLevel === "admin" || privilegeLevel === "core_member" ? "admin" : "general";
+): import("./adminbot/controllers/admin.ts").AdminBotLoadMode {
+  return privilegeLevel === "admin" ? "admin" : "general";
 }
 
 type SessionDefaultsSnapshot = {
@@ -188,8 +188,6 @@ function resetChatStateForSessionSwitch(state: AppViewState, sessionKey: string)
   state.chatAvatarSource = null;
   state.chatAvatarStatus = null;
   state.chatAvatarReason = null;
-  state.realtimeTalkTranscript = null;
-  state.resetRealtimeTalkConversation?.();
   state.chatQueue = restoreChatQueueForSession(state, sessionKey);
   restoreChatComposerState(state);
   host.resetChatInputHistoryNavigation();
@@ -710,22 +708,6 @@ export function switchChatSessionAndWait(
     switchChatSessionInternal(state, nextSessionKey, { awaitInitialLoad: true }) ??
     Promise.resolve()
   );
-}
-
-export function dismissRealtimeTalkError(state: AppViewState) {
-  if (state.realtimeTalkStatus !== "error") {
-    return;
-  }
-  const talkHost = state as unknown as {
-    realtimeTalkSession?: { stop(): void } | null;
-  };
-  talkHost.realtimeTalkSession?.stop();
-  talkHost.realtimeTalkSession = null;
-  state.realtimeTalkActive = false;
-  state.realtimeTalkStatus = "idle";
-  state.realtimeTalkDetail = null;
-  state.realtimeTalkTranscript = null;
-  state.resetRealtimeTalkConversation?.();
 }
 
 export function dismissChatError(state: AppViewState) {

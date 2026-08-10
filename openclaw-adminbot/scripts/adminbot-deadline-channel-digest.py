@@ -4,7 +4,7 @@ AdminBot deadline digest (Output 1).
 
 Posts a short "upcoming deadlines" summary to #jinesis-active. Schedule it
 weekly via OpenClaw cron. Reads the same dataset as Outputs 0/2
-(extensions/adminbot/deadlines/venues.json). Times are AoE (UTC-12).
+(extensions/adminbot/content/deadlines/venues.json). Times are AoE (UTC-12).
 
 Dry-run by default (prints the message). Use --send to post.
 

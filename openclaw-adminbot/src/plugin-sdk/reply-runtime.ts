@@ -27,12 +27,12 @@ export {
   stripHeartbeatToken,
 } from "../auto-reply/heartbeat.js";
 export { resolveHeartbeatReplyPayload } from "../auto-reply/heartbeat-reply-payload.js";
-export { getReplyFromConfig } from "../auto-reply/reply/get-reply.js";
+export { getReplyFromConfig } from "../auto-reply/reply/get-reply/get-reply.js";
 export { HEARTBEAT_TOKEN, isSilentReplyText, SILENT_REPLY_TOKEN } from "../auto-reply/tokens.js";
-export { isAbortRequestText } from "../auto-reply/reply/abort.js";
+export { isAbortRequestText } from "../auto-reply/reply/queue/abort.js";
 export { isBtwRequestText } from "../auto-reply/reply/btw-command.js";
-export { resetInboundDedupe } from "../auto-reply/reply/inbound-dedupe.js";
-export { finalizeInboundContext } from "../auto-reply/reply/inbound-context.js";
+export { resetInboundDedupe } from "../auto-reply/reply/inbound/inbound-dedupe.js";
+export { finalizeInboundContext } from "../auto-reply/reply/inbound/inbound-context.js";
 export {
   createInboundDebouncer,
   resolveInboundDebounceMs,
@@ -40,7 +40,7 @@ export {
 export {
   dispatchReplyWithBufferedBlockDispatcher,
   dispatchReplyWithDispatcher,
-} from "../auto-reply/reply/provider-dispatcher.js";
+} from "../auto-reply/reply/providers/provider-dispatcher.js";
 export {
   createReplyDispatcher,
   createReplyDispatcherWithTyping,

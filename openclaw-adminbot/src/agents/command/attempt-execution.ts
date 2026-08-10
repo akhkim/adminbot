@@ -9,7 +9,7 @@ import type { ThinkLevel, VerboseLevel } from "../../auto-reply/thinking.js";
 import { persistSessionTranscriptTurn } from "../../config/sessions/session-accessor.js";
 import { readTailAssistantTextFromSessionTranscript } from "../../config/sessions/transcript.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   injectTimestamp,
   timestampOptsFromConfig,
@@ -25,26 +25,26 @@ import {
   preparePersistedUserTurnMessageForTranscriptWrite,
   type PersistedUserTurnMessage,
 } from "../../sessions/user-turn-transcript.js";
+import { resolveMessageChannel } from "../../shared/message-channel.js";
 import { buildWorkspaceSkillSnapshot } from "../../skills/loading/workspace.js";
 import { resolveUserPath } from "../../utils.js";
-import { resolveMessageChannel } from "../../utils/message-channel.js";
 import { resolveAuthProfileOrder } from "../auth-profiles/order.js";
 import { ensureAuthProfileStore } from "../auth-profiles/store.js";
-import { resolveBootstrapWarningSignaturesSeen } from "../bootstrap-budget.js";
-import { resolveCliBackendConfig } from "../cli-backends.js";
-import { runCliAgent } from "../cli-runner.js";
-import { getCliSessionBinding } from "../cli-session.js";
-import { runEmbeddedAgent, type EmbeddedAgentRunResult } from "../embedded-agent.js";
+import { resolveCliBackendConfig } from "../cli-runner/cli-backends.js";
+import { runCliAgent } from "../cli-runner/cli-runner.js";
+import { getCliSessionBinding } from "../cli-runner/cli-session.js";
+import { runEmbeddedAgent, type EmbeddedAgentRunResult } from "../embedded/embedded-agent.js";
 import { FailoverError } from "../failover-error.js";
 import { runAgentHarnessBeforeMessageWriteHook } from "../harness/hook-helpers.js";
 import { resolveAvailableAgentHarnessPolicy } from "../harness/selection.js";
-import { resolveCliRuntimeExecutionProvider } from "../model-runtime-aliases.js";
-import { isCliProvider } from "../model-selection.js";
-import { resolveOpenAIRuntimeProvider } from "../openai-routing.js";
+import { resolveCliRuntimeExecutionProvider } from "../models/model-runtime-aliases.js";
+import { isCliProvider } from "../models/model-selection.js";
+import { resolveBootstrapWarningSignaturesSeen } from "../prompt/bootstrap-budget.js";
 import { resolveAgentRunAbortLifecycleFields } from "../run-termination.js";
 import { buildAgentRuntimeAuthPlan } from "../runtime-plan/auth.js";
 import type { AgentMessage } from "../runtime/index.js";
-import { buildUsageWithNoCost } from "../stream-message-shared.js";
+import { resolveOpenAIRuntimeProvider } from "../transport/openai-routing.js";
+import { buildUsageWithNoCost } from "../transport/stream-message-shared.js";
 import {
   buildClaudeCliFallbackContextPrelude,
   claudeCliSessionTranscriptHasContent,

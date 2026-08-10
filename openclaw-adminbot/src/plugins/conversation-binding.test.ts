@@ -7,8 +7,8 @@ import type {
   SessionBindingAdapter,
   SessionBindingRecord,
 } from "../infra/outbound/session-binding-service.js";
-import { createEmptyPluginRegistry } from "./registry-empty.js";
-import type { PluginRegistry } from "./registry.js";
+import { createEmptyPluginRegistry } from "./manifest/registry-empty.js";
+import type { PluginRegistry } from "./manifest/registry.js";
 import { cleanupTrackedTempDirs, makeTrackedTempDir } from "./test-helpers/fs-fixtures.js";
 
 const tempDirs: string[] = [];
@@ -145,8 +145,9 @@ vi.mock("../infra/json-files.js", async () => {
   };
 });
 
-vi.mock("./runtime.js", async () => {
-  const actual = await vi.importActual<typeof import("./runtime.js")>("./runtime.js");
+vi.mock("./runtime/runtime.js", async () => {
+  const actual =
+    await vi.importActual<typeof import("./runtime/runtime.js")>("./runtime/runtime.js");
   return {
     ...actual,
     getActivePluginRegistry: () => pluginRuntimeState.registry,
@@ -166,7 +167,7 @@ let requestPluginConversationBinding: typeof import("./conversation-binding.js")
 let resolvePluginConversationBindingApproval: typeof import("./conversation-binding.js").resolvePluginConversationBindingApproval;
 let registerSessionBindingAdapter: typeof import("../infra/outbound/session-binding-service.js").registerSessionBindingAdapter;
 let unregisterSessionBindingAdapter: typeof import("../infra/outbound/session-binding-service.js").unregisterSessionBindingAdapter;
-let setActivePluginRegistry: typeof import("./runtime.js").setActivePluginRegistry;
+let setActivePluginRegistry: typeof import("./runtime/runtime.js").setActivePluginRegistry;
 
 type PluginBindingRequest = Awaited<ReturnType<typeof requestPluginConversationBinding>>;
 type PluginBindingRequestInput = Parameters<typeof requestPluginConversationBinding>[0];
@@ -218,7 +219,7 @@ beforeAll(async () => {
   } = await import("./conversation-binding.js"));
   ({ registerSessionBindingAdapter, unregisterSessionBindingAdapter } =
     await import("../infra/outbound/session-binding-service.js"));
-  ({ setActivePluginRegistry } = await import("./runtime.js"));
+  ({ setActivePluginRegistry } = await import("./runtime/runtime.js"));
 });
 
 function createDiscordCodexBindRequest(

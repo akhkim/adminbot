@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { setRuntimeAuthProfileStoreSnapshot } from "../agents/auth-profiles/runtime-snapshots.js";
-import { getRuntimeConfigSnapshotRefreshHandler } from "../config/runtime-snapshot.js";
+import { getRuntimeConfigSnapshotRefreshHandler } from "../config/runtime/runtime-snapshot.js";
 import { activateSecretsRuntimeSnapshot, getActiveSecretsRuntimeSnapshot } from "./runtime.js";
 import {
   asConfig,

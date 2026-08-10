@@ -5,8 +5,8 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolveSandboxPath } from "../sandbox-paths.js";
 import type { SandboxFsBridge, SandboxFsStat, SandboxResolvedPath } from "../sandbox/fs-bridge.js";
+import { resolveSandboxPath } from "../sandbox/sandbox-paths.js";
 
 /** Creates a sandbox fs bridge from a caller-provided path resolver. */
 export function createSandboxFsBridgeFromResolver(

@@ -7,8 +7,8 @@ import {
   SignalConfigSchema,
   SlackConfigSchema,
   TelegramConfigSchema,
-} from "./zod-schema.providers-core.js";
-import { WhatsAppConfigSchema } from "./zod-schema.providers-whatsapp.js";
+} from "./zod/providers-core.js";
+import { WhatsAppConfigSchema } from "./zod/providers-whatsapp.js";
 
 function expectSchemaAllowlistIssue(
   schema: {

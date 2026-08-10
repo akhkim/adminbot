@@ -4,8 +4,8 @@ import { normalizeChatType } from "../../channels/chat-type.js";
 import { getChannelPlugin } from "../../channels/plugins/index.js";
 import type { ChannelThreadingAdapter } from "../../channels/plugins/types.core.js";
 import { normalizeAnyChannelId } from "../../channels/registry.js";
-import type { ReplyToMode } from "../../config/types.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { ReplyToMode } from "../../config/types/types.js";
 import { DEFAULT_ACCOUNT_ID } from "../../routing/account-id.js";
 import {
   copyReplyPayloadMetadata,

@@ -9,11 +9,6 @@ import {
   resolveAgentWorkspaceDir,
   resolveDefaultAgentId,
 } from "../../agents/agent-scope.js";
-import {
-  buildAuthHealthSummary,
-  DEFAULT_OAUTH_WARN_MS,
-  formatRemainingShort,
-} from "../../agents/auth-health.js";
 import { evaluateStoredCredentialEligibility } from "../../agents/auth-profiles/credential-state.js";
 import {
   resolveAuthProfileEligibility,
@@ -24,11 +19,20 @@ import { ensureAuthProfileStoreWithoutExternalProfiles as ensureAuthProfileStore
 import type { AuthProfileCredential } from "../../agents/auth-profiles/types.js";
 import { resolveProfileUnusableUntilForDisplay } from "../../agents/auth-profiles/usage.js";
 import {
+  buildAuthHealthSummary,
+  DEFAULT_OAUTH_WARN_MS,
+  formatRemainingShort,
+} from "../../agents/auth/auth-health.js";
+import {
   listProviderEnvAuthLookupKeys,
   resolveProviderEnvAuthLookupMaps,
-} from "../../agents/model-auth-env-vars.js";
-import { resolveEnvApiKey, resolveUsableCustomProviderApiKey } from "../../agents/model-auth.js";
-import { resolveCliRuntimeExecutionProvider } from "../../agents/model-runtime-aliases.js";
+} from "../../agents/auth/model-auth-env-vars.js";
+import {
+  resolveEnvApiKey,
+  resolveUsableCustomProviderApiKey,
+} from "../../agents/auth/model-auth.js";
+import { resolveProviderIdForAuth } from "../../agents/auth/provider-auth-aliases.js";
+import { resolveCliRuntimeExecutionProvider } from "../../agents/models/model-runtime-aliases.js";
 import {
   buildModelAliasIndex,
   isCliProvider,
@@ -36,14 +40,13 @@ import {
   normalizeProviderId,
   resolveConfiguredModelRef,
   resolveModelRefFromString,
-} from "../../agents/model-selection.js";
+} from "../../agents/models/model-selection.js";
 import {
   OPENAI_CODEX_PROVIDER_ID,
   OPENAI_PROVIDER_ID,
   openAIProviderUsesCodexRuntimeByDefault,
-} from "../../agents/openai-routing.js";
-import { resolveProviderIdForAuth } from "../../agents/provider-auth-aliases.js";
-import { resolveDefaultAgentWorkspaceDir } from "../../agents/workspace.js";
+} from "../../agents/transport/openai-routing.js";
+import { resolveDefaultAgentWorkspaceDir } from "../../agents/workspace/workspace.js";
 import { createConfigIO } from "../../config/config.js";
 import {
   resolveAgentModelFallbackValues,
@@ -53,17 +56,20 @@ import {
   parseStrictFiniteNumber,
   parseStrictPositiveInteger,
 } from "../../infra/parse-finite-number.js";
-import { getShellEnvAppliedKeys, shouldEnableShellEnvFallback } from "../../infra/shell-env.js";
+import {
+  getShellEnvAppliedKeys,
+  shouldEnableShellEnvFallback,
+} from "../../infra/system/shell-env.js";
 import {
   captureCurrentPluginMetadataSnapshotState,
   getCurrentPluginMetadataSnapshot,
   restoreCurrentPluginMetadataSnapshotState,
   setCurrentPluginMetadataSnapshot,
 } from "../../plugins/current-plugin-metadata-snapshot.js";
-import { loadManifestMetadataSnapshot } from "../../plugins/manifest-contract-eligibility.js";
+import { loadManifestMetadataSnapshot } from "../../plugins/manifest/manifest-contract-eligibility.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.types.js";
-import type { ProviderSyntheticAuthResult } from "../../plugins/provider-external-auth.types.js";
-import { resolveProviderSyntheticAuthWithPlugin } from "../../plugins/provider-runtime.js";
+import type { ProviderSyntheticAuthResult } from "../../plugins/providers/provider-external-auth.types.js";
+import { resolveProviderSyntheticAuthWithPlugin } from "../../plugins/providers/provider-runtime.js";
 import { resolveRuntimeSyntheticAuthProviderRefs } from "../../plugins/synthetic-auth.runtime.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../../runtime.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
@@ -80,7 +86,7 @@ import {
   resolveKnownAgentId,
 } from "./shared.js";
 
-type ProviderUsageRuntime = typeof import("../../infra/provider-usage.js");
+type ProviderUsageRuntime = typeof import("../../infra/providers/provider-usage.js");
 type ProgressRuntime = typeof import("../../cli/progress.js");
 
 function resolveEnvAgentDirOverride(env: NodeJS.ProcessEnv = process.env): string | undefined {
@@ -91,7 +97,7 @@ type TerminalTableRuntime = typeof import("../../../packages/terminal-core/src/t
 type ListProbeRuntime = typeof import("./list.probe.js");
 
 const providerUsageRuntimeLoader = createLazyImportLoader<ProviderUsageRuntime>(
-  () => import("../../infra/provider-usage.js"),
+  () => import("../../infra/providers/provider-usage.js"),
 );
 const progressRuntimeLoader = createLazyImportLoader<ProgressRuntime>(
   () => import("../../cli/progress.js"),
@@ -1232,7 +1238,7 @@ export async function modelsStatusCommand(
 
     if (missingProvidersInUse.length > 0) {
       const { buildProviderAuthRecoveryHint } =
-        await import("../../agents/provider-auth-recovery-hint.js");
+        await import("../../agents/auth/provider-auth-recovery-hint.js");
       runtime.log("");
       runtime.log(colorize(rich, theme.heading, "Missing auth"));
       for (const provider of missingProvidersInUse) {

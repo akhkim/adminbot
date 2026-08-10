@@ -1,7 +1,7 @@
 // Setup gateway config tests cover gateway prompt choices and config output.
 import { describe, expect, it, vi } from "vitest";
 import { createWizardPrompter as buildWizardPrompter } from "../../test/helpers/wizard-prompter.js";
-import { DEFAULT_DANGEROUS_NODE_COMMANDS } from "../gateway/node-command-policy.js";
+import { DEFAULT_DANGEROUS_NODE_COMMANDS } from "../gateway/node/node-command-policy.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { WizardPrompter, WizardSelectParams } from "./prompts.js";
 
@@ -10,8 +10,8 @@ const mocks = vi.hoisted(() => ({
   getTailnetHostname: vi.fn(),
 }));
 
-vi.mock("../commands/onboard-helpers.js", async (importActual) => {
-  const actual = await importActual<typeof import("../commands/onboard-helpers.js")>();
+vi.mock("../commands/onboard/onboard-helpers.js", async (importActual) => {
+  const actual = await importActual<typeof import("../commands/onboard/onboard-helpers.js")>();
   return {
     ...actual,
     randomToken: mocks.randomToken,

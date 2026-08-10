@@ -3,15 +3,14 @@ import { normalizeNullableString as normalizeId } from "@openclaw/normalization-
 import { collectConfiguredAgentHarnessRuntimes } from "../../../agents/harness-runtimes.js";
 import { listPotentialConfiguredChannelPresenceSignals } from "../../../channels/config-presence.js";
 import { normalizeChatChannelId } from "../../../channels/registry.js";
-import { isChannelConfigured } from "../../../config/channel-configured.js";
-import { detectPluginAutoEnableCandidates } from "../../../config/plugin-auto-enable.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import { isChannelConfigured } from "../../../config/channel/channel-configured.js";
+import { detectPluginAutoEnableCandidates } from "../../../config/plugin/plugin-auto-enable.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { compareOpenClawVersions } from "../../../config/version.js";
 import {
   createDeferredConfiguredPluginRepairDoctorResult,
   type UpdatePostInstallDoctorResult,
-} from "../../../infra/update-doctor-result.js";
-import { collectConfiguredSpeechProviderIds } from "../../../plugins/gateway-startup-speech-providers.js";
+} from "../../../infra/install/update-doctor-result.js";
 import {
   getOfficialExternalPluginCatalogEntry,
   resolveOfficialExternalProviderContractPluginIds,
@@ -20,7 +19,7 @@ import {
 import {
   resolveWebSearchInstallCatalogEntriesForEnv,
   resolveWebSearchInstallCatalogEntry,
-} from "../../../plugins/web-search-install-catalog.js";
+} from "../../../plugins/web/web-search-install-catalog.js";
 import { VERSION } from "../../../version.js";
 import { collectConfiguredProviderPluginIds } from "./configured-provider-plugin-installs.js";
 import { repairMissingPluginInstallsForIds } from "./missing-configured-plugin-install.js";
@@ -204,13 +203,6 @@ function collectEnvWebFetchPluginIds(cfg: OpenClawConfig, env: NodeJS.ProcessEnv
   });
 }
 
-function collectSpeechPluginIds(cfg: OpenClawConfig): string[] {
-  return resolveOfficialExternalProviderContractPluginIds({
-    contract: "speechProviders",
-    providerIds: collectConfiguredSpeechProviderIds(cfg),
-  });
-}
-
 function collectAcpRuntimePluginIds(cfg: OpenClawConfig): string[] {
   const acp = asObjectRecord(cfg.acp);
   if (!acp) {
@@ -312,9 +304,6 @@ export function collectReleaseConfiguredPluginIds(params: {
     addEligiblePluginId(params.cfg, pluginIds, pluginId);
   }
   for (const pluginId of collectEnvWebFetchPluginIds(params.cfg, env)) {
-    addEligiblePluginId(params.cfg, pluginIds, pluginId);
-  }
-  for (const pluginId of collectSpeechPluginIds(params.cfg)) {
     addEligiblePluginId(params.cfg, pluginIds, pluginId);
   }
   for (const pluginId of collectAcpRuntimePluginIds(params.cfg)) {

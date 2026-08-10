@@ -6,11 +6,11 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import type { DeviceIdentity } from "../infra/device-identity.js";
-import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
-import { setActivePluginRegistry } from "../plugins/runtime.js";
+import { createEmptyPluginRegistry } from "../plugins/manifest/registry-empty.js";
+import { setActivePluginRegistry } from "../plugins/runtime/runtime.js";
 import type { DeviceAuthEntry } from "../shared/device-auth.js";
+import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../shared/message-channel.js";
 import { captureEnv } from "../test-utils/env.js";
-import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import {
   loadConfigMock as getRuntimeConfig,
   pickPrimaryLanIPv4Mock as pickPrimaryLanIPv4,
@@ -149,7 +149,7 @@ function startStubGatewayClient() {
   }
 }
 
-vi.mock("./client.js", () => ({
+vi.mock("./client/client.js", () => ({
   describeGatewayCloseCode: (code: number) => {
     if (code === 1000) {
       return "normal closure";

@@ -3,7 +3,7 @@ import {
   defineLegacyConfigMigration,
   type LegacyConfigMigrationSpec,
   type LegacyConfigRule,
-} from "../../../config/legacy.shared.js";
+} from "../../../config/legacy/legacy.shared.js";
 import {
   isKnownCliMcpTypeAlias,
   resolveOpenClawMcpTransportAlias,

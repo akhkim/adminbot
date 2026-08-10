@@ -1,19 +1,19 @@
 /** Shared Vitest module mocks for isolated-agent cron tests. */
 import { vi } from "vitest";
 
-vi.mock("../agents/embedded-agent.js", () => ({
+vi.mock("../agents/embedded/embedded-agent.js", () => ({
   abortEmbeddedAgentRun: vi.fn().mockReturnValue(false),
   runEmbeddedAgent: vi.fn(),
   resolveEmbeddedSessionLane: (key: string) => `session:${key.trim() || "main"}`,
 }));
 
-vi.mock("../agents/model-catalog.js", () => ({
+vi.mock("../agents/models/model-catalog.js", () => ({
   loadModelCatalog: vi.fn(),
 }));
 
-vi.mock("../agents/model-selection.js", async () => {
-  const actual = await vi.importActual<typeof import("../agents/model-selection.js")>(
-    "../agents/model-selection.js",
+vi.mock("../agents/models/model-selection.js", async () => {
+  const actual = await vi.importActual<typeof import("../agents/models/model-selection.js")>(
+    "../agents/models/model-selection.js",
   );
   return {
     ...actual,
@@ -21,11 +21,11 @@ vi.mock("../agents/model-selection.js", async () => {
   };
 });
 
-vi.mock("../agents/subagent-announce.js", () => ({
+vi.mock("../agents/subagents/subagent-announce.js", () => ({
   runSubagentAnnounceFlow: vi.fn(),
 }));
 
-vi.mock("../plugins/runtime-plugins.runtime.js", () => ({
+vi.mock("../plugins/runtime/runtime-plugins.runtime.js", () => ({
   ensureRuntimePluginsLoaded: vi.fn(),
 }));
 

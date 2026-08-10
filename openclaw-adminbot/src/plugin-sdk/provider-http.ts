@@ -16,31 +16,8 @@ export {
   readProviderJsonResponse,
   readResponseTextLimited,
   truncateErrorDetail,
-} from "../agents/provider-http-errors.js";
-export {
-  buildAudioTranscriptionFormData,
-  createProviderOperationDeadline,
-  createProviderOperationTimeoutResolver,
-  fetchProviderDownloadResponse,
-  fetchProviderOperationResponse,
-  fetchWithTimeout,
-  fetchWithTimeoutGuarded,
-  normalizeBaseUrl,
-  pollProviderOperationJson,
-  postJsonRequest,
-  postMultipartRequest,
-  postTranscriptionRequest,
-  resolveProviderOperationTimeoutMs,
-  resolveProviderHttpRequestConfig,
-  resolveAudioTranscriptionUploadFileName,
-  requireTranscriptionText,
-  sanitizeConfiguredModelProviderRequest,
-  waitProviderOperationPollInterval,
-} from "../media-understanding/shared.js";
-export type {
-  ProviderOperationDeadline,
-  ProviderOperationTimeoutMs,
-} from "../media-understanding/shared.js";
+} from "../agents/transport/provider-http-errors.js";
+export { fetchWithTimeoutGuarded } from "../infra/net/provider-fetch.js";
 export {
   executeProviderOperationWithRetry,
   providerOperationRetryConfig,
@@ -62,16 +39,16 @@ export type {
   ProviderRequestPolicyInput,
   ProviderRequestPolicyResolution,
   ProviderRequestTransport,
-} from "../agents/provider-attribution.js";
+} from "../agents/transport/provider-attribution.js";
 export type {
   ProviderRequestAuthOverride,
   ProviderRequestProxyOverride,
   ProviderRequestTlsOverride,
   ProviderRequestTransportOverrides,
-} from "../agents/provider-request-config.js";
-export { resolveProviderRequestHeaders } from "../agents/provider-request-config.js";
+} from "../agents/transport/provider-request-config.js";
+export { resolveProviderRequestHeaders } from "../agents/transport/provider-request-config.js";
 export {
   resolveProviderEndpoint,
   resolveProviderRequestCapabilities,
   resolveProviderRequestPolicy,
-} from "../agents/provider-attribution.js";
+} from "../agents/transport/provider-attribution.js";

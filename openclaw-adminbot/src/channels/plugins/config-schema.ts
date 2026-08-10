@@ -4,7 +4,7 @@
  * Builds common zod/JSON schema shapes and parses runtime config issues for channel plugins.
  */
 import { z, type ZodRawShape, type ZodTypeAny } from "zod";
-import { DmPolicySchema } from "../../config/zod-schema.core.js";
+import { DmPolicySchema } from "../../config/zod/core.js";
 import { validateJsonSchemaValue } from "../../plugins/schema-validator.js";
 import type { JsonSchemaObject } from "../../shared/json-schema.types.js";
 import { parseConfigPathArrayIndex } from "../../shared/path-array-index.js";

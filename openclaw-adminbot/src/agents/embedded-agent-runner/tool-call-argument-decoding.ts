@@ -4,7 +4,7 @@
 import { streamSimple } from "../../llm/stream.js";
 import { visitObjectContentBlocks } from "../../shared/message-content-blocks.js";
 import type { StreamFn } from "../runtime/index.js";
-import type { MutableAssistantMessageEventStream } from "../stream-compat.js";
+import type { MutableAssistantMessageEventStream } from "../transport/stream-compat.js";
 
 /**
  * Decodes HTML entities inside streamed tool-call arguments before downstream execution.

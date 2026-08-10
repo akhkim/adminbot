@@ -4,8 +4,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { NodeRegistry } from "../../gateway/node-registry.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { NodeRegistry } from "../../gateway/node/node-registry.js";
 import { getSkillsSnapshotVersion, resetSkillsRefreshForTest } from "./refresh.js";
 import {
   getRemoteSkillEligibility,

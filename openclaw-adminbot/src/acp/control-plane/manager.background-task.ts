@@ -1,6 +1,7 @@
 /** Mirrors child ACP turns into detached-task status for requester-facing progress. */
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { logVerbose } from "../../globals.js";
+import type { DeliveryContext } from "../../shared/delivery-context.js";
 import {
   createRunningTaskRun,
   completeTaskRunByRunId,
@@ -8,7 +9,6 @@ import {
   startTaskRunByRunId,
 } from "../../tasks/detached-task-runtime.js";
 import { resolveRequiredCompletionTerminalResult } from "../../tasks/task-completion-contract.js";
-import type { DeliveryContext } from "../../utils/delivery-context.js";
 import { AcpRuntimeError } from "../runtime/errors.js";
 import type { AcpSessionManagerDeps } from "./manager.types.js";
 import { normalizeText } from "./runtime-options.js";

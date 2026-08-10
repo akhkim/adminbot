@@ -797,13 +797,6 @@
       "kind": "html-attribute",
       "name": "placeholder",
       "path": "ui/src/ui/views/adminbot.ts",
-      "text": "Research scientist"
-    },
-    {
-      "count": 1,
-      "kind": "html-attribute",
-      "name": "placeholder",
-      "path": "ui/src/ui/views/adminbot.ts",
       "text": "robotics, world models"
     },
     {
@@ -1302,6 +1295,13 @@
       "name": "text",
       "path": "ui/src/ui/views/adminbot.ts",
       "text": "none"
+    },
+    {
+      "count": 2,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/adminbot.ts",
+      "text": "Not set"
     },
     {
       "count": 1,
@@ -4899,20 +4899,6 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/deadlines.ts",
-      "text": "· NeurIPS 2026 workshop"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/deadlines.ts",
-      "text": "/deadlines"
-    },
-    {
-      "count": 1,
-      "kind": "html-text",
-      "name": "text",
-      "path": "ui/src/ui/views/deadlines.ts",
       "text": "No upcoming deadlines."
     },
     {
@@ -4920,7 +4906,7 @@
       "kind": "html-text",
       "name": "text",
       "path": "ui/src/ui/views/deadlines.ts",
-      "text": "Upcoming conference &amp; workshop deadlines (times AoE, UTC&#8209;12). For the full live per&#8209;second countdown board, open the AdminBot service at"
+      "text": "Upcoming conference &amp; workshop deadlines (times AoE, UTC&#8209;12). Countdowns update live every second."
     },
     {
       "count": 1,
@@ -5236,6 +5222,20 @@
       "name": "text",
       "path": "ui/src/ui/views/exec-approval.ts",
       "text": "Submit"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/landing.ts",
+      "text": "Jinesis"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/landing.ts",
+      "text": "Lab"
     },
     {
       "count": 1,
@@ -5866,6 +5866,20 @@
       "name": "text",
       "path": "ui/src/ui/views/sessions.ts",
       "text": "Previous"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/signed-out-header.ts",
+      "text": "Jinesis"
+    },
+    {
+      "count": 1,
+      "kind": "html-text",
+      "name": "text",
+      "path": "ui/src/ui/views/signed-out-header.ts",
+      "text": "Lab"
     },
     {
       "count": 1,

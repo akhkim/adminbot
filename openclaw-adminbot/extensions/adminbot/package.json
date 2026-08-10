@@ -13,7 +13,8 @@
   },
   "openclaw": {
     "extensions": [
-      "./index.ts"
+      "./index.ts",
+      "./host/main.ts"
     ]
   }
 }

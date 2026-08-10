@@ -4,7 +4,7 @@ import { describe, expectTypeOf, it } from "vitest";
 import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import type { FailoverReason } from "../embedded-agent-helpers/types.js";
-import type { PromptMode } from "../system-prompt.types.js";
+import type { PromptMode } from "../prompt/system-prompt.types.js";
 import type { buildAgentRuntimeDeliveryPlan, buildAgentRuntimePlan } from "./build.js";
 import type {
   AgentRuntimeFailoverReason,

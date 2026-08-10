@@ -11,12 +11,12 @@ import {
 import {
   buildInboundMetaSystemPrompt,
   buildInboundUserContextPrefix,
-} from "../../../src/auto-reply/reply/inbound-meta.js";
+} from "../../../src/auto-reply/reply/inbound/inbound-meta.js";
 import { buildReplyPromptBodies } from "../../../src/auto-reply/reply/prompt-prelude.js";
 import type { TemplateContext } from "../../../src/auto-reply/templating.js";
 import { SILENT_REPLY_TOKEN } from "../../../src/auto-reply/tokens.js";
 import { normalizeChatType } from "../../../src/channels/chat-type.js";
-import type { OpenClawConfig } from "../../../src/config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../src/config/types/openclaw.js";
 import type {
   AnyAgentTool,
   EmbeddedRunAttemptParams,

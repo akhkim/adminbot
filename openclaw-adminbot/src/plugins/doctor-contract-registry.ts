@@ -4,14 +4,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { asNullableRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeTrimmedStringList } from "@openclaw/normalization-core/string-normalization";
-import type { LegacyConfigRule } from "../config/legacy.shared.js";
-import type { OpenClawConfig } from "../config/types.js";
+import type { LegacyConfigRule } from "../config/legacy/legacy.shared.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import type {
   OpenKeyedStoreOptions,
   PluginStateKeyedStore,
 } from "../plugin-state/plugin-state-store.js";
 import type { DoctorSessionRouteStateOwner } from "./doctor-session-route-state-owner-types.js";
-import type { PluginManifestRegistry } from "./manifest-registry.js";
+import type { PluginManifestRegistry } from "./manifest/manifest-registry.js";
 import {
   createPluginModuleLoaderCache,
   getCachedPluginModuleLoader,

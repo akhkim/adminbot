@@ -1155,6 +1155,63 @@ describe("connectGateway", () => {
     client.emitHello();
     expect(host.lastError).toBeNull();
 
+    // The shutdown message is spent, so this is now an ordinary abnormal close of an established
+    // connection: the client reconnects itself and the fatal panel stays down.
+    client.emitClose({ code: 1006 });
+    expect(host.lastError).toBeNull();
+  });
+
+  // Tailscale funnel / reverse proxies drop an idle-but-healthy connection as a bare 1006. The
+  // client already schedules its own backoff reconnect, so showing "Could not connect" straight
+  // away hid a connection that was about to come back and forced a manual page reload.
+  it("waits out abnormal closes of an established connection before reporting them", () => {
+    const host = createHost();
+
+    connectGateway(host);
+    const client = requireGatewayClient();
+    client.emitHello();
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      client.emitClose({ code: 1006 });
+      expect(host.lastError).toBeNull();
+      expect(host.connected).toBe(false);
+    }
+
+    // Budget spent: a gateway that never comes back is still reported instead of retrying forever.
+    client.emitClose({ code: 1006 });
+    expect(host.lastError).toBe("disconnected (1006): no reason");
+  });
+
+  it("clears the abnormal-close budget once the connection is back", () => {
+    const host = createHost();
+
+    connectGateway(host);
+    const client = requireGatewayClient();
+    client.emitHello();
+
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      client.emitClose({ code: 1006 });
+    }
+    client.emitHello();
+    expect(host.lastError).toBeNull();
+
+    client.emitClose({ code: 1006 });
+    expect(host.lastError).toBeNull();
+  });
+
+  // A member signing in gets a brand-new connection, so a funnel that drops the opening upgrade
+  // surfaced as a fatal panel over a connect the client was already retrying.
+  it("gives an abnormal close on the initial connect one retry before reporting it", () => {
+    const host = createHost();
+
+    connectGateway(host);
+    const client = requireGatewayClient();
+
+    client.emitClose({ code: 1006 });
+    expect(host.lastError).toBeNull();
+
+    // Budget spent: a bad URL, a wrong scheme, or a gateway that is down still reports quickly
+    // rather than retrying silently forever.
     client.emitClose({ code: 1006 });
     expect(host.lastError).toBe("disconnected (1006): no reason");
   });

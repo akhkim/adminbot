@@ -1,9 +1,9 @@
 // Defines plugin metadata snapshot types used by gateway and diagnostics.
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type { PluginDiscoveryResult } from "./discovery.js";
-import type { InstalledPluginIndex } from "./installed-plugin-index-types.js";
-import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest-registry.js";
-import type { PluginDiagnostic } from "./manifest-types.js";
+import type { InstalledPluginIndex } from "./install/installed-plugin-index-types.js";
+import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest/manifest-registry.js";
+import type { PluginDiagnostic } from "./manifest/manifest-types.js";
 import type { PluginRegistrySnapshotSource } from "./plugin-registry-snapshot.types.js";
 
 export type PluginMetadataSnapshotPluginIdScope = {

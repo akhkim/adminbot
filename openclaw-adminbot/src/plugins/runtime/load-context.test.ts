@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const loadConfigMock = vi.fn<typeof import("../../config/config.js").loadConfig>();
 const applyPluginAutoEnableMock =
-  vi.fn<typeof import("../../config/plugin-auto-enable.js").applyPluginAutoEnable>();
+  vi.fn<typeof import("../../config/plugin/plugin-auto-enable.js").applyPluginAutoEnable>();
 const resolveAgentWorkspaceDirMock = vi.fn<
   typeof import("../../agents/agent-scope.js").resolveAgentWorkspaceDir
 >(() => "/resolved-workspace");
@@ -27,15 +27,15 @@ const clearCurrentPluginMetadataSnapshotMock = vi.fn();
 
 let resolvePluginRuntimeLoadContext: typeof import("./load-context.js").resolvePluginRuntimeLoadContext;
 let buildPluginRuntimeLoadOptions: typeof import("./load-context.js").buildPluginRuntimeLoadOptions;
-let clearRuntimeConfigSnapshot: typeof import("../../config/runtime-snapshot.js").clearRuntimeConfigSnapshot;
-let setRuntimeConfigSnapshot: typeof import("../../config/runtime-snapshot.js").setRuntimeConfigSnapshot;
+let clearRuntimeConfigSnapshot: typeof import("../../config/runtime/runtime-snapshot.js").clearRuntimeConfigSnapshot;
+let setRuntimeConfigSnapshot: typeof import("../../config/runtime/runtime-snapshot.js").setRuntimeConfigSnapshot;
 
 vi.mock("../../config/config.js", () => ({
   getRuntimeConfig: loadConfigMock,
   loadConfig: loadConfigMock,
 }));
 
-vi.mock("../../config/plugin-auto-enable.js", () => ({
+vi.mock("../../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: applyPluginAutoEnableMock,
 }));
 
@@ -62,7 +62,7 @@ describe("resolvePluginRuntimeLoadContext", () => {
   beforeEach(async () => {
     vi.resetModules();
     ({ clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } =
-      await import("../../config/runtime-snapshot.js"));
+      await import("../../config/runtime/runtime-snapshot.js"));
     ({ resolvePluginRuntimeLoadContext, buildPluginRuntimeLoadOptions } =
       await import("./load-context.js"));
     loadConfigMock.mockReset();

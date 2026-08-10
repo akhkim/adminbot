@@ -1,7 +1,7 @@
 // Official plugin setup helpers install and configure bundled onboarding plugins.
 import { ensureOnboardingPluginInstalled } from "../commands/onboarding-plugin-install.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { PluginPackageInstall } from "../plugins/manifest.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import type { PluginPackageInstall } from "../plugins/manifest/manifest.js";
 import {
   getOfficialExternalPluginCatalogManifest,
   listOfficialExternalPluginCatalogEntries,

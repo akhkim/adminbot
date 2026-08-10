@@ -3,8 +3,8 @@
  * These types describe credential payloads, runtime selection state, and repair
  * results consumed by providers, sessions, doctor, and plugin-facing seams.
  */
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { SecretRef } from "../../config/types.secrets.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { SecretRef } from "../../config/types/secrets.js";
 import type { LegacyOAuthRef } from "./legacy-oauth-ref.js";
 
 /** Provider identifier recorded on auth profile credentials. */

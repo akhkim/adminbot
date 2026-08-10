@@ -23,7 +23,7 @@ afterEach(() => {
   vi.restoreAllMocks();
   vi.resetModules();
   vi.doUnmock("jiti");
-  vi.doUnmock("./bundled-dir.js");
+  vi.doUnmock("./install/bundled-dir.js");
   vi.doUnmock("./native-module-require.js");
   vi.doUnmock("./public-surface-runtime.js");
   vi.doUnmock("node:module");
@@ -48,8 +48,8 @@ describe("bundled plugin public surface loader", () => {
     fs.writeFileSync(modulePath, 'export const marker = "built";\n', "utf8");
 
     const resolveBundledPluginPublicSurfacePath = vi.fn(() => modulePath);
-    vi.doMock("./bundled-dir.js", async (importOriginal) => {
-      const actual = await importOriginal<typeof import("./bundled-dir.js")>();
+    vi.doMock("./install/bundled-dir.js", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("./install/bundled-dir.js")>();
       return {
         ...actual,
         resolveBundledPluginsDir: () => bundledPluginsDir,

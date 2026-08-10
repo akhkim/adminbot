@@ -33,11 +33,11 @@ vi.mock("node:child_process", async () => {
 
 const installPluginFromNpmSpec = vi.fn();
 const applyPluginAutoEnable = vi.fn();
-vi.mock("../../plugins/install.js", () => ({
+vi.mock("../../plugins/install/install.js", () => ({
   installPluginFromNpmSpec: (...args: unknown[]) => installPluginFromNpmSpec(...args),
 }));
 
-vi.mock("../../config/plugin-auto-enable.js", () => ({
+vi.mock("../../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: (...args: unknown[]) => applyPluginAutoEnable(...args),
 }));
 
@@ -55,11 +55,11 @@ vi.mock("../../channels/plugins/catalog.js", () => {
 });
 
 const loadPluginManifestRegistry = vi.fn();
-vi.mock("../../plugins/manifest-registry.js", () => ({
+vi.mock("../../plugins/manifest/manifest-registry.js", () => ({
   loadPluginManifestRegistry: (...args: unknown[]) => loadPluginManifestRegistry(...args),
 }));
 
-vi.mock("../../plugins/bundled-sources.js", () => ({
+vi.mock("../../plugins/install/bundled-sources.js", () => ({
   findBundledPluginSourceInMap: ({
     bundled,
     lookup,
@@ -84,7 +84,7 @@ vi.mock("../../plugins/bundled-sources.js", () => ({
   resolveBundledPluginSources: (...args: unknown[]) => resolveBundledPluginSources(...args),
 }));
 
-vi.mock("../../plugins/loader.js", () => ({
+vi.mock("../../plugins/runtime/loader.js", () => ({
   loadOpenClawPlugins: vi.fn(),
 }));
 
@@ -96,13 +96,11 @@ vi.mock("../../plugins/discovery.js", () => ({
 import fs from "node:fs";
 import type { ChannelPluginCatalogEntry } from "../../channels/plugins/catalog.js";
 import type { OpenClawConfig } from "../../config/config.js";
-import { loadOpenClawPlugins } from "../../plugins/loader.js";
-import type { PluginManifestRecord } from "../../plugins/manifest-registry.js";
+import type { PluginManifestRecord } from "../../plugins/manifest/manifest-registry.js";
+import { createEmptyPluginRegistry } from "../../plugins/manifest/registry.js";
 import { clearPluginMetadataLifecycleCaches } from "../../plugins/plugin-metadata-lifecycle.js";
-import { createEmptyPluginRegistry } from "../../plugins/registry.js";
-import {
-  setActivePluginRegistry,
-} from "../../plugins/runtime.js";
+import { loadOpenClawPlugins } from "../../plugins/runtime/loader.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import type { WizardPrompter } from "../../wizard/prompts.js";
 import { makePrompter, makeRuntime } from "../setup/__tests__/test-utils.js";
 import {

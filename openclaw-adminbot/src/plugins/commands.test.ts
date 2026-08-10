@@ -13,10 +13,10 @@ import {
   matchPluginCommand,
   registerPluginCommand,
 } from "./commands.js";
-import { createPluginRegistry } from "./registry.js";
-import { setActivePluginRegistry } from "./runtime.js";
+import { createBundledPluginRecord } from "./config/status.test-helpers.js";
+import { createPluginRegistry } from "./manifest/registry.js";
+import { setActivePluginRegistry } from "./runtime/runtime.js";
 import type { PluginRuntime } from "./runtime/types.js";
-import { createBundledPluginRecord } from "./status.test-helpers.js";
 
 const completionMocks = vi.hoisted(() => ({
   prepareSimpleCompletionModelForAgent: vi.fn(),
@@ -24,7 +24,7 @@ const completionMocks = vi.hoisted(() => ({
   resolveSimpleCompletionSelectionForAgent: vi.fn(),
 }));
 
-vi.mock("../agents/simple-completion-runtime.js", () => ({
+vi.mock("../agents/transport/simple-completion-runtime.js", () => ({
   prepareSimpleCompletionModelForAgent: completionMocks.prepareSimpleCompletionModelForAgent,
   completeWithPreparedSimpleCompletionModel:
     completionMocks.completeWithPreparedSimpleCompletionModel,

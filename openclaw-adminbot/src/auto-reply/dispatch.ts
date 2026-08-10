@@ -1,19 +1,19 @@
 /** Auto-reply dispatch orchestration, hook composition, and foreground delivery fencing. */
 import { normalizeChatType } from "../channels/chat-type.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   deriveInboundMessageHookContext,
   toPluginMessageContext,
 } from "../hooks/message-hook-mappers.js";
-import { isDiagnosticsEnabled } from "../infra/diagnostic-events.js";
+import { isDiagnosticsEnabled } from "../infra/diagnostics/diagnostic-events.js";
 import {
   measureDiagnosticsTimelineSpan,
   measureDiagnosticsTimelineSpanSync,
-} from "../infra/diagnostics-timeline.js";
+} from "../infra/diagnostics/diagnostics-timeline.js";
 import { isOutboundDeliveryError } from "../infra/outbound/deliver-types.js";
 import { logMessageReceived } from "../logging/diagnostic.js";
 import { hasOutboundReplyContent } from "../plugin-sdk/reply-payload.js";
-import { getGlobalHookRunner } from "../plugins/hook-runner-global.js";
+import { getGlobalHookRunner } from "../plugins/hooks/hook-runner-global.js";
 import type { SilentReplyConversationType } from "../shared/silent-reply-policy.js";
 import {
   resolveCommandTurnContext,
@@ -22,10 +22,10 @@ import {
 import { withReplyDispatcher } from "./dispatch-dispatcher.js";
 import { copyReplyPayloadMetadata } from "./reply-payload.js";
 import type { CommandSessionMetadataChange } from "./reply/command-session-metadata.js";
-import { dispatchReplyFromConfig } from "./reply/dispatch-from-config.js";
-import type { DispatchFromConfigResult } from "./reply/dispatch-from-config.types.js";
-import type { GetReplyFromConfig } from "./reply/get-reply.types.js";
-import { finalizeInboundContext } from "./reply/inbound-context.js";
+import { dispatchReplyFromConfig } from "./reply/dispatch/dispatch-from-config.js";
+import type { DispatchFromConfigResult } from "./reply/dispatch/dispatch-from-config.types.js";
+import type { GetReplyFromConfig } from "./reply/get-reply/get-reply.types.js";
+import { finalizeInboundContext } from "./reply/inbound/inbound-context.js";
 import {
   createReplyDispatcher,
   createReplyDispatcherWithTyping,

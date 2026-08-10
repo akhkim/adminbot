@@ -20,7 +20,7 @@ import {
 import {
   resolveAcpSpawnRuntimePolicyError,
   resolveRuntimeCwdForAcpSpawn,
-} from "../../../agents/acp-spawn.js";
+} from "../../../agents/acp/acp-spawn.js";
 import { resolveSpawnedWorkspaceInheritance } from "../../../agents/spawned-context.js";
 import { getChannelPlugin, normalizeChannelId } from "../../../channels/plugins/index.js";
 import {
@@ -38,7 +38,7 @@ import {
 } from "../../../channels/thread-bindings-policy.js";
 import { updateSessionEntry } from "../../../config/sessions/session-accessor.js";
 import type { SessionAcpMeta } from "../../../config/sessions/types.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
 import { normalizeConversationRef } from "../../../infra/outbound/session-binding-normalization.js";
 import {
@@ -49,7 +49,7 @@ import {
   type SessionBindingService,
 } from "../../../infra/outbound/session-binding-service.js";
 import type { ReplyPayload } from "../../types.js";
-import type { CommandHandlerResult, HandleCommandsParams } from "../commands-types.js";
+import type { CommandHandlerResult, HandleCommandsParams } from "../commands/commands-types.js";
 import {
   resolveAcpCommandAccountId,
   resolveAcpCommandBindingContext,

@@ -2,9 +2,9 @@
  * Repairs malformed tool-call arguments in embedded-agent stream results.
  */
 import { extractBalancedJsonPrefix } from "../../../shared/balanced-json.js";
-import { normalizeProviderId } from "../../model-selection.js";
+import { normalizeProviderId } from "../../models/model-selection.js";
 import type { StreamFn } from "../../runtime/index.js";
-import type { MutableAssistantMessageEventStream } from "../../stream-compat.js";
+import type { MutableAssistantMessageEventStream } from "../../transport/stream-compat.js";
 import { log } from "../logger.js";
 import {
   createHtmlEntityToolCallArgumentDecodingWrapper,

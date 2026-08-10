@@ -8,45 +8,44 @@ import {
   listPotentialConfiguredChannelIds,
 } from "../../../channels/config-presence.js";
 import { listRawChannelPluginCatalogEntries } from "../../../channels/plugins/catalog.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import type { PluginInstallRecord } from "../../../config/types.plugins.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import type { PluginInstallRecord } from "../../../config/types/plugins.js";
 import { parseClawHubPluginSpec } from "../../../infra/clawhub-spec.js";
 import {
   compareOpenClawReleaseVersions,
   isOpenClawOrgNpmSpec,
   parseRegistryNpmSpec,
-} from "../../../infra/npm-registry-spec.js";
+} from "../../../infra/install/npm-registry-spec.js";
 import {
   normalizeUpdateChannel,
   resolveRegistryUpdateChannel,
   type UpdateChannel,
-} from "../../../infra/update-channels.js";
+} from "../../../infra/install/update-channels.js";
 import { resolveConfiguredChannelPresencePolicy } from "../../../plugins/channel-plugin-ids.js";
 import { buildClawHubPluginInstallRecordFields } from "../../../plugins/clawhub-install-records.js";
 import { CLAWHUB_INSTALL_ERROR_CODE, installPluginFromClawHub } from "../../../plugins/clawhub.js";
 import { collectConfiguredMemoryEmbeddingProviderIds } from "../../../plugins/gateway-startup-plugin-ids.js";
-import { collectConfiguredSpeechProviderIds } from "../../../plugins/gateway-startup-speech-providers.js";
 import {
   resolveClawHubInstallSpecsForUpdateChannel,
   resolveNpmInstallSpecsForUpdateChannel,
-} from "../../../plugins/install-channel-specs.js";
+} from "../../../plugins/install/install-channel-specs.js";
 import {
   resolveDefaultPluginNpmDir,
   resolveDefaultPluginExtensionsDir,
   resolvePluginNpmPackageDir,
   resolvePluginInstallDir,
-} from "../../../plugins/install-paths.js";
-import { installPluginFromNpmSpec } from "../../../plugins/install.js";
-import { loadInstalledPluginIndexInstallRecords } from "../../../plugins/installed-plugin-index-records.js";
-import { writePersistedInstalledPluginIndexInstallRecords } from "../../../plugins/installed-plugin-index-records.js";
-import { loadInstalledPluginIndex } from "../../../plugins/installed-plugin-index.js";
+} from "../../../plugins/install/install-paths.js";
+import { installPluginFromNpmSpec } from "../../../plugins/install/install.js";
+import { loadInstalledPluginIndexInstallRecords } from "../../../plugins/install/installed-plugin-index-records.js";
+import { writePersistedInstalledPluginIndexInstallRecords } from "../../../plugins/install/installed-plugin-index-records.js";
+import { loadInstalledPluginIndex } from "../../../plugins/install/installed-plugin-index.js";
 import {
   buildNpmResolutionInstallFields,
   resolveNpmInstallRecordSpec,
 } from "../../../plugins/installs.js";
 import { readLegacyNpmPluginDeclaration } from "../../../plugins/legacy-npm-declaration.js";
-import { loadManifestMetadataSnapshot } from "../../../plugins/manifest-contract-eligibility.js";
-import type { PluginPackageInstall } from "../../../plugins/manifest.js";
+import { loadManifestMetadataSnapshot } from "../../../plugins/manifest/manifest-contract-eligibility.js";
+import type { PluginPackageInstall } from "../../../plugins/manifest/manifest.js";
 import {
   listOfficialExternalPluginCatalogEntries,
   resolveOfficialExternalProviderContractPluginIds,
@@ -56,12 +55,12 @@ import {
   resolveOfficialExternalPluginLabel,
 } from "../../../plugins/official-external-plugin-catalog.js";
 import type { PluginMetadataSnapshot } from "../../../plugins/plugin-metadata-snapshot.types.js";
-import { resolveProviderInstallCatalogEntries } from "../../../plugins/provider-install-catalog.js";
+import { resolveProviderInstallCatalogEntries } from "../../../plugins/providers/provider-install-catalog.js";
 import { updateNpmInstalledPlugins } from "../../../plugins/update.js";
 import {
   resolveWebSearchInstallCatalogEntriesForEnv,
   resolveWebSearchInstallCatalogEntry,
-} from "../../../plugins/web-search-install-catalog.js";
+} from "../../../plugins/web/web-search-install-catalog.js";
 import { resolveUserPath } from "../../../utils.js";
 import { VERSION } from "../../../version.js";
 import { collectConfiguredProviderPluginIds } from "./configured-provider-plugin-installs.js";
@@ -159,15 +158,6 @@ function addConfiguredMemoryEmbeddingProviderPluginIds(
   }
 }
 
-function addConfiguredSpeechProviderPluginIds(ids: Set<string>, cfg: OpenClawConfig): void {
-  for (const pluginId of resolveOfficialExternalProviderContractPluginIds({
-    contract: "speechProviders",
-    providerIds: collectConfiguredSpeechProviderIds(cfg),
-  })) {
-    ids.add(pluginId);
-  }
-}
-
 function addConfiguredWebFetchProviderPluginIds(ids: Set<string>, cfg: OpenClawConfig): void {
   const webFetch = cfg.tools?.web?.fetch;
   if (webFetch?.enabled === false) {
@@ -232,7 +222,6 @@ function collectConfiguredPluginIds(cfg: OpenClawConfig, env?: NodeJS.ProcessEnv
     ids.add(pluginId);
   }
   addConfiguredMemoryEmbeddingProviderPluginIds(ids, cfg);
-  addConfiguredSpeechProviderPluginIds(ids, cfg);
   addConfiguredWebFetchProviderPluginIds(ids, cfg);
   addEnvWebFetchProviderPluginIds(ids, cfg, env);
   return ids;

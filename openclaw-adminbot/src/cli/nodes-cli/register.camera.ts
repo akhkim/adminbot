@@ -7,6 +7,8 @@ import type { Command } from "commander";
 import { getTerminalTableWidth, renderTable } from "../../../packages/terminal-core/src/table.js";
 import { defaultRuntime } from "../../runtime.js";
 import { shortenHomePath } from "../../utils.js";
+import { parseDurationMs } from "../program/parse-duration.js";
+import { getNodesTheme, runNodesCommand } from "./cli-utils.js";
 import {
   type CameraFacing,
   cameraTempPath,
@@ -14,9 +16,7 @@ import {
   parseCameraSnapPayload,
   writeCameraPayloadToFile,
   writeCameraClipPayloadToFile,
-} from "../nodes-camera.js";
-import { parseDurationMs } from "../parse-duration.js";
-import { getNodesTheme, runNodesCommand } from "./cli-utils.js";
+} from "./nodes-camera.js";
 import {
   buildNodeInvokeParams,
   callGatewayCli,

@@ -9,13 +9,13 @@ import type {
 import { formatErrorMessage } from "../../infra/errors.js";
 import { emitSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
 import type { AgentMessage } from "../runtime/index.js";
-import { getRawSessionAppendMessage } from "../session-raw-append-message.js";
+import { SessionManager } from "../sessions/index.js";
+import { getRawSessionAppendMessage } from "../sessions/session-raw-append-message.js";
 import {
   acquireSessionWriteLock,
   type SessionWriteLockAcquireTimeoutConfig,
   resolveSessionWriteLockOptions,
-} from "../session-write-lock.js";
-import { SessionManager } from "../sessions/index.js";
+} from "../sessions/session-write-lock.js";
 import { log } from "./logger.js";
 import {
   readTranscriptFileState,

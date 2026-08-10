@@ -24,10 +24,10 @@ export { resolveMemorySearchConfig } from "../agents/memory-search.js";
 export { parseNonNegativeByteSize } from "../config/byte-size.js";
 export { getRuntimeConfig, loadConfig } from "../config/config.js";
 export type { OpenClawConfig } from "../config/config.js";
-export { resolveStateDir } from "../config/paths.js";
+export { resolveStateDir } from "../config/paths/paths.js";
 export { resolveSessionTranscriptsDirForAgent } from "../config/sessions/paths.js";
-export type { MemoryCitationsMode } from "../config/types.memory.js";
-export { emptyPluginConfigSchema } from "../plugins/config-schema.js";
+export type { MemoryCitationsMode } from "../config/types/memory.js";
+export { emptyPluginConfigSchema } from "../plugins/config/config-schema.js";
 export type {
   MemoryCorpusGetResult,
   MemoryCorpusSearchResult,

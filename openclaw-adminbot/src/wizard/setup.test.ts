@@ -5,22 +5,22 @@ import path from "node:path";
 import type { ProviderPlugin } from "openclaw/plugin-sdk/provider-model-shared";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createWizardPrompter as buildWizardPrompter } from "../../test/helpers/wizard-prompter.js";
-import { DEFAULT_BOOTSTRAP_FILENAME } from "../agents/workspace.js";
-import type { PluginCompatibilityNotice } from "../plugins/status.js";
+import { DEFAULT_BOOTSTRAP_FILENAME } from "../agents/workspace/workspace.js";
+import type { PluginCompatibilityNotice } from "../plugins/config/status.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { WizardPrompter, WizardSelectParams } from "./prompts.js";
 import { runSetupWizard } from "./setup.js";
 
 type ResolveProviderPluginChoice =
-  typeof import("../plugins/provider-auth-choice.runtime.js").resolveProviderPluginChoice;
+  typeof import("../plugins/providers/provider-auth-choice.runtime.js").resolveProviderPluginChoice;
 type ResolvePluginProvidersRuntime =
-  typeof import("../plugins/provider-auth-choice.runtime.js").resolvePluginProviders;
+  typeof import("../plugins/providers/provider-auth-choice.runtime.js").resolvePluginProviders;
 type ResolvePluginSetupProvider =
-  typeof import("../plugins/provider-auth-choice.runtime.js").resolvePluginSetupProvider;
+  typeof import("../plugins/providers/provider-auth-choice.runtime.js").resolvePluginSetupProvider;
 type ResolveManifestProviderAuthChoice =
-  typeof import("../plugins/provider-auth-choices.js").resolveManifestProviderAuthChoice;
-type PromptDefaultModel = typeof import("../commands/model-picker.js").promptDefaultModel;
-type ApplyAuthChoice = typeof import("../commands/auth-choice.js").applyAuthChoice;
+  typeof import("../plugins/providers/provider-auth-choices.js").resolveManifestProviderAuthChoice;
+type PromptDefaultModel = typeof import("../commands/models/model-picker.js").promptDefaultModel;
+type ApplyAuthChoice = typeof import("../commands/auth/auth-choice.js").applyAuthChoice;
 
 const ensureAuthProfileStore = vi.hoisted(() => vi.fn(() => ({ profiles: {} })));
 const promptAuthChoiceGrouped = vi.hoisted(() => vi.fn(async () => "skip"));
@@ -198,33 +198,33 @@ function expectMockCallArgNotNull(
   }
 }
 
-vi.mock("../commands/onboard-channels.js", () => ({
+vi.mock("../commands/onboard/onboard-channels.js", () => ({
   setupChannels,
 }));
 
-vi.mock("../commands/onboard-skills.js", () => ({
+vi.mock("../commands/onboard/onboard-skills.js", () => ({
   setupSkills,
 }));
 
-vi.mock("../agents/auth-profiles.js", () => ({
+vi.mock("../agents/auth/auth-profiles.js", () => ({
   ensureAuthProfileStore,
 }));
 
-vi.mock("../agents/auth-profiles.runtime.js", () => ({
+vi.mock("../agents/auth/auth-profiles.runtime.js", () => ({
   ensureAuthProfileStore,
 }));
 
-vi.mock("../commands/auth-choice-prompt.js", () => ({
+vi.mock("../commands/auth/auth-choice-prompt.js", () => ({
   promptAuthChoiceGrouped,
 }));
 
-vi.mock("../commands/auth-choice.js", () => ({
+vi.mock("../commands/auth/auth-choice.js", () => ({
   applyAuthChoice,
   resolvePreferredProviderForAuthChoice,
   warnIfModelConfigLooksOff,
 }));
 
-vi.mock("../plugins/provider-auth-choices.js", () => ({
+vi.mock("../plugins/providers/provider-auth-choices.js", () => ({
   resolveManifestProviderAuthChoice,
 }));
 
@@ -232,25 +232,25 @@ vi.mock("../plugins/setup-registry.js", () => ({
   resolvePluginSetupProvider,
 }));
 
-vi.mock("../plugins/provider-auth-choice.runtime.js", () => ({
+vi.mock("../plugins/providers/provider-auth-choice.runtime.js", () => ({
   resolveProviderPluginChoice,
   resolvePluginProviders: resolvePluginProvidersRuntime,
 }));
 
-vi.mock("../commands/model-picker.js", () => ({
+vi.mock("../commands/models/model-picker.js", () => ({
   applyPrimaryModel,
   promptDefaultModel,
 }));
 
-vi.mock("../commands/onboard-custom.js", () => ({
+vi.mock("../commands/onboard/onboard-custom.js", () => ({
   promptCustomApiConfig,
 }));
 
-vi.mock("../commands/health.js", () => ({
+vi.mock("../commands/maintenance/health.js", () => ({
   healthCommand,
 }));
 
-vi.mock("../commands/onboard-hooks.js", () => ({
+vi.mock("../commands/onboard/onboard-hooks.js", () => ({
   setupInternalHooks,
 }));
 
@@ -266,7 +266,7 @@ vi.mock("../config/config.js", () => ({
   replaceConfigFile,
 }));
 
-vi.mock("../commands/onboard-helpers.js", () => ({
+vi.mock("../commands/onboard/onboard-helpers.js", () => ({
   DEFAULT_WORKSPACE: "/tmp/openclaw-workspace",
   applyWizardMetadata: (cfg: unknown) => cfg,
   summarizeExistingConfig: () => "summary",
@@ -303,7 +303,7 @@ vi.mock("../infra/control-ui-assets.js", () => ({
   ensureControlUiAssetsBuilt,
 }));
 
-vi.mock("../plugins/status.js", () => ({
+vi.mock("../plugins/config/status.js", () => ({
   buildPluginCompatibilitySnapshotNotices,
   formatPluginCompatibilityNotice,
 }));

@@ -32,7 +32,7 @@ vi.mock("../config/config.js", () => ({
   loadConfig: () => testConfig,
 }));
 
-vi.mock("../config/plugin-auto-enable.js", () => ({
+vi.mock("../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable,
 }));
 
@@ -44,7 +44,7 @@ const resolveCommandConfigWithSecrets = vi.hoisted(() =>
   })),
 );
 
-vi.mock("../cli/command-config-resolution.js", () => ({
+vi.mock("../cli/program/command-config-resolution.js", () => ({
   resolveCommandConfigWithSecrets: async (opts: {
     autoEnable?: boolean;
     config: unknown;
@@ -75,7 +75,7 @@ const getScopedChannelsCommandSecretTargets = vi.hoisted(() =>
   })),
 );
 
-vi.mock("../cli/command-secret-targets.js", () => ({
+vi.mock("../cli/program/command-secret-targets.js", () => ({
   getScopedChannelsCommandSecretTargets,
 }));
 

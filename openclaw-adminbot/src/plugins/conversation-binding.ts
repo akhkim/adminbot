@@ -26,7 +26,7 @@ import type {
   PluginConversationBindingRequestParams,
   PluginConversationBindingRequestResult,
 } from "./conversation-binding.types.js";
-import { getActivePluginRegistry } from "./runtime.js";
+import { getActivePluginRegistry } from "./runtime/runtime.js";
 
 const log = createSubsystemLogger("plugins/binding");
 

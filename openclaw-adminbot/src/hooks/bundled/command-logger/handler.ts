@@ -26,7 +26,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { resolveStateDir } from "../../../config/paths.js";
+import { resolveStateDir } from "../../../config/paths/paths.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
 import { appendRegularFile } from "../../../infra/fs-safe.js";
 import { createSubsystemLogger } from "../../../logging/subsystem.js";

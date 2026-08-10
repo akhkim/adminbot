@@ -8,13 +8,13 @@ import {
   resetDiagnosticEventsForTest,
   type DiagnosticEventMetadata,
   type DiagnosticEventPayload,
-} from "../../infra/diagnostic-events.js";
+} from "../../infra/diagnostics/diagnostic-events.js";
 import {
   getActiveDiagnosticTraceContext,
   resetDiagnosticTraceContextForTest,
   runWithDiagnosticTraceContext,
   type DiagnosticTraceContext,
-} from "../../infra/diagnostic-trace-context.js";
+} from "../../infra/diagnostics/diagnostic-trace-context.js";
 import type { EmbeddedRunAttemptResult } from "../embedded-agent-runner/run/types.js";
 import { createOpenClawAgentHarness } from "./builtin-openclaw.js";
 import { runAgentHarnessLifecycleAttempt } from "./lifecycle.js";

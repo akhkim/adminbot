@@ -29,29 +29,29 @@ vi.mock("../../llm/oauth.js", () => ({
   getOAuthProviders: () => [{ id: "anthropic" }, { id: "openai" }],
 }));
 
-vi.mock("../cli-credentials.js", () => ({
+vi.mock("../cli-runner/cli-credentials.js", () => ({
   readClaudeCliCredentialsCached: () => null,
   readCodexCliCredentialsCached: () => null,
   readMiniMaxCliCredentialsCached: () => null,
   resetCliCredentialCachesForTest: () => undefined,
 }));
 
-vi.mock("../../plugins/provider-runtime.runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-runtime.runtime.js", () => ({
   buildProviderAuthDoctorHintWithPlugin: async () => null,
   formatProviderAuthProfileApiKeyWithPlugin: async (params: { context?: { access?: string } }) =>
     params.context?.access,
   refreshProviderOAuthCredentialWithPlugin: async () => null,
 }));
 
-vi.mock("../../plugins/provider-runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-runtime.js", () => ({
   resolveExternalAuthProfilesWithPlugins: () => [],
 }));
 
 afterAll(() => {
   vi.doUnmock("../../llm/oauth.js");
-  vi.doUnmock("../cli-credentials.js");
-  vi.doUnmock("../../plugins/provider-runtime.runtime.js");
-  vi.doUnmock("../../plugins/provider-runtime.js");
+  vi.doUnmock("../cli-runner/cli-credentials.js");
+  vi.doUnmock("../../plugins/providers/provider-runtime.runtime.js");
+  vi.doUnmock("../../plugins/providers/provider-runtime.js");
 });
 
 function createUsableOAuthExpiry(): number {

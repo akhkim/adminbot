@@ -10,12 +10,12 @@ const mocks = vi.hoisted(() => ({
   shouldSuppressBuiltInModelFromManifest: vi.fn(() => false),
 }));
 
-vi.mock("../../agents/model-suppression.js", () => ({
+vi.mock("../../agents/models/model-suppression.js", () => ({
   shouldSuppressBuiltInModel: mocks.shouldSuppressBuiltInModel,
   shouldSuppressBuiltInModelFromManifest: mocks.shouldSuppressBuiltInModelFromManifest,
 }));
 
-vi.mock("../../plugins/provider-runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-runtime.js", () => ({
   normalizeProviderResolvedModelWithPlugin: mocks.normalizeProviderResolvedModelWithPlugin,
 }));
 

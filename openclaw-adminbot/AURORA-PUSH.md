@@ -10,7 +10,7 @@ dirty tree" rule holds.
 ## 1. Deploy the release
 
 ```bash
-cd /home/akhkim/openclaw-adminbot
+cd <path-to-your-clone>
 read -rs AURORA_SSH_PASSWORD; export AURORA_SSH_PASSWORD   # avoids a prompt per SSH/SCP call
 scripts/aurora-adminbot-host.sh --user <cs-user> --ref cb927f8a579 deploy
 ```
@@ -27,17 +27,17 @@ scripts/aurora-adminbot-host.sh --user <cs-user> sync-cron-jobs
 
 Sends all three local jobs, rewriting the repo path to the remote release path:
 
-| Job | Schedule | Notes |
-| --- | --- | --- |
-| `adminbot-email-automation` | `7 * * * *` | Recreated this session; the previous job had vanished |
-| `adminbot-openreview` | `15 0,6,12,18 * * *` | Now green locally after the env-file fix |
-| `tool: hallucinated reference check` | disabled | Run-on-command; scoped to 2 papers/venue (a full sweep exceeds the 60 min cap) |
-| `tool: deadline calendar — preview` | disabled | Run-on-command; writes nothing |
-| `tool: deadline calendar — conferences` | disabled | Run-on-command; **writes to the lab calendar** |
-| `tool: deadline calendar — all venues` | disabled | Run-on-command; **writes ~100 events** |
-| `tool: refresh deadline venues` | disabled | Run-on-command |
-| `tool: refresh deadline matches` | disabled | Run-on-command; needs the two sheet ids |
-| `tool: deadline reminders — preview` | disabled | Run-on-command; needs matches.json first |
+| Job                                     | Schedule             | Notes                                                                          |
+| --------------------------------------- | -------------------- | ------------------------------------------------------------------------------ |
+| `adminbot-email-automation`             | `7 * * * *`          | Recreated this session; the previous job had vanished                          |
+| `adminbot-openreview`                   | `15 0,6,12,18 * * *` | Now green locally after the env-file fix                                       |
+| `tool: hallucinated reference check`    | disabled             | Run-on-command; scoped to 2 papers/venue (a full sweep exceeds the 60 min cap) |
+| `tool: deadline calendar — preview`     | disabled             | Run-on-command; writes nothing                                                 |
+| `tool: deadline calendar — conferences` | disabled             | Run-on-command; **writes to the lab calendar**                                 |
+| `tool: deadline calendar — all venues`  | disabled             | Run-on-command; **writes ~100 events**                                         |
+| `tool: refresh deadline venues`         | disabled             | Run-on-command                                                                 |
+| `tool: refresh deadline matches`        | disabled             | Run-on-command; needs the two sheet ids                                        |
+| `tool: deadline reminders — preview`    | disabled             | Run-on-command; needs matches.json first                                       |
 
 The seven `tool:` jobs are what populates **Tasks & Tools → Run on command**. They are disabled, so
 they never fire on their own; the sync preserves that. Until this step runs they exist only on this
@@ -50,7 +50,7 @@ scripts/aurora-adminbot-host.sh --user <cs-user> sync-adminbot-data
 ```
 
 The conference/stage backfill from the mentee survey was written to the **local** AdminBot
-database. jinesis-admin.vercel.app reads *Aurora's* AdminBot, so until this runs the site still
+database. jinesis-admin.vercel.app reads _Aurora's_ AdminBot, so until this runs the site still
 shows the old 37 papers with "Unspecified" conferences. The command snapshots with VACUUM INTO,
 stops the service, backs up the old database with a timestamp, and swaps atomically.
 
@@ -64,7 +64,7 @@ render a single lane. The announcements conference filter is client-side and alr
 ## 3. Verify
 
 ```bash
-ssh <cs-user>@aurora.ais.sandbox
+ssh "<cs-user>@$AURORA_HOST"
 systemctl --user status jinesis-adminbot.service jinesis-openclaw-gateway.service jinesis-vllm.service
 set -a; . ~/.config/jinesis-adminbot/adminbot.env; set +a
 curl -H "Authorization: Bearer $VLLM_API_KEY" http://127.0.0.1:8000/v1/models   # expect Qwen3.5-122B
@@ -93,17 +93,19 @@ print('schedule days:', t['total_estimated_business_days']); \
 Commits `4fcc6f1d329..cb927f8a579` on `codex/adminbot-gog-update`:
 
 **New**
+
 - `scripts/adminbot-reference-check.mjs`, `scripts/lib/reference-verifier.mjs`,
   `scripts/adminbot-pdf-references.py` — reference checker
 - `scripts/adminbot-email-cron.sh`, `scripts/lib/adminbot-cron-env.sh` — cron wrappers
 - `test/scripts/reference-verifier.test.ts`, `docs/tools/adminbot-reference-check.md`
 
 **Changed**
+
 - `scripts/adminbot-openreview.py` — `author-submissions` command
 - `scripts/adminbot-openreview-cron.sh` — env-file resolution
 - `scripts/adminbot-email-automation.ts` + its SKILL — onboarding wording
 - `ui/**` — papers timeline editing, Tasks & Tools, announcements filter (already on Vercel)
-- `extensions/adminbot/deadlines/**`, `ui/src/ui/deadlines-data.ts`,
+- `extensions/adminbot/content/deadlines/**`, `ui/src/ui/deadlines-data.ts`,
   `scripts/adminbot-deadline-*.py` — the arian-branch merge, 78 → 106 venues
 - `docs/deploy/aurora-runtime-bootstrap.md`
 

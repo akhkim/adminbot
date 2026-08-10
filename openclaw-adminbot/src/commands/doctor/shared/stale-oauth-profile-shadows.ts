@@ -20,8 +20,8 @@ import { resolveAuthStorePath } from "../../../agents/auth-profiles/paths.js";
 import { loadPersistedAuthProfileStore } from "../../../agents/auth-profiles/persisted.js";
 import { updateAuthProfileStoreWithLock } from "../../../agents/auth-profiles/store.js";
 import type { AuthProfileStore, OAuthCredential } from "../../../agents/auth-profiles/types.js";
-import { resolveStateDir } from "../../../config/paths.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import { resolveStateDir } from "../../../config/paths/paths.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { shortenHomePath } from "../../../utils.js";
 
 type StaleOAuthProfileShadow = {

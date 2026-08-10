@@ -25,7 +25,7 @@ const pluginRegistryMocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("../../plugins/manifest-registry-installed.js", () => ({
+vi.mock("../../plugins/manifest/manifest-registry-installed.js", () => ({
   loadPluginManifestRegistryForInstalledIndex:
     pluginRegistryMocks.loadPluginManifestRegistryForInstalledIndex,
 }));
@@ -40,7 +40,7 @@ vi.mock("../../plugins/plugin-metadata-snapshot.js", () => ({
   loadPluginMetadataSnapshot: pluginRegistryMocks.loadPluginMetadataSnapshot,
 }));
 
-import { resetProviderAuthAliasMapCacheForTest } from "../provider-auth-aliases.js";
+import { resetProviderAuthAliasMapCacheForTest } from "../auth/provider-auth-aliases.js";
 import { buildAgentRuntimeAuthPlan } from "./auth.js";
 
 describe("buildAgentRuntimeAuthPlan", () => {

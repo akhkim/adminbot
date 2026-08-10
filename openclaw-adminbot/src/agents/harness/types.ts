@@ -16,7 +16,7 @@ export type AgentHarnessAttemptParams =
 export type AgentHarnessAttemptResult =
   import("../embedded-agent-runner/run/types.js").EmbeddedRunAttemptResult;
 export type AgentHarnessSideQuestionParams = {
-  cfg: import("../../config/types.openclaw.js").OpenClawConfig;
+  cfg: import("../../config/types/openclaw.js").OpenClawConfig;
   agentDir: string;
   provider: string;
   model: string;
@@ -28,7 +28,7 @@ export type AgentHarnessSideQuestionParams = {
   storePath?: string;
   resolvedThinkLevel?: import("../../auto-reply/thinking.js").ThinkLevel;
   resolvedReasoningLevel: import("../../auto-reply/thinking.js").ReasoningLevel;
-  blockReplyChunking?: import("../embedded-agent-block-chunker.js").BlockReplyChunking;
+  blockReplyChunking?: import("../embedded/embedded-agent-block-chunker.js").BlockReplyChunking;
   resolvedBlockStreamingBreak?: "text_end" | "message_end";
   opts?: import("../../auto-reply/get-reply-options.types.js").GetReplyOptions;
   isNewSession: boolean;

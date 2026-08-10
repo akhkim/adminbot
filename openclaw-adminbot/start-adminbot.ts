@@ -1,55 +1,29 @@
-import os from "node:os";
+/**
+ * AdminBot service launcher — source run (`pnpm adminbot:dev`).
+ *
+ * Resolves modules from source; the composition itself lives in
+ * extensions/adminbot/host/main.ts so this and start-adminbot.mjs cannot drift.
+ */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createCompositeAdminBotExecutor } from "./extensions/adminbot/src/composite-executor.ts";
-import { createAdminBotCvScanDeps } from "./extensions/adminbot/src/cv-scan.ts";
-import { createGogAdminBotExecutor } from "./extensions/adminbot/src/gog-executor.ts";
-import { createAdminBotMessageExecutor } from "./extensions/adminbot/src/message-executor.ts";
-import { createAdminBotMockService } from "./extensions/adminbot/src/mock-service.ts";
-import { createAdminBotOverleafExecutor } from "./extensions/adminbot/src/overleaf-executor.ts";
-import { createAdminBotReimbursementWorkflow } from "./extensions/adminbot/src/reimbursement-workflow.ts";
-import { createAdminBotSocialExecutor } from "./extensions/adminbot/src/social-executor.ts";
+import { startAdminBotHost } from "./extensions/adminbot/host/main.ts";
 import { runEmailAutomation } from "./scripts/adminbot-email-automation.ts";
+import {
+  approveDevicePairing,
+  ensureDeviceToken,
+  requestDevicePairing,
+  resolveSharedGatewayAuthIssuer,
+} from "./src/plugin-sdk/device-bootstrap.ts";
 
-const repoRoot = path.dirname(fileURLToPath(import.meta.url));
-loadOpenClawEnv();
-console.log(`AdminBot NVIDIA NIM configured: ${process.env.NVIDIA_API_KEY ? "yes" : "no"}`);
-const service = createAdminBotMockService({
-  databasePath: path.join(repoRoot, "state/adminbot.sqlite"),
-  auditRetentionDays: 30,
-  executor: createCompositeAdminBotExecutor([
-    createAdminBotOverleafExecutor(),
-    createAdminBotSocialExecutor(),
-    createAdminBotMessageExecutor({
-      command: process.execPath,
-      commandArgsPrefix: [path.join(repoRoot, "openclaw.mjs")],
-    }),
-    createGogAdminBotExecutor(),
-  ]),
-  cvScanDeps: createAdminBotCvScanDeps({
-    extractScriptPath: path.join(repoRoot, "scripts/adminbot-cv-extract.py"),
-  }),
-  sensitiveInfoPath: path.join(os.homedir(), ".openclaw/adminbot-sensitive-information.md"),
-  emailAutomationRunner: runEmailAutomation,
-  reimbursementWorkflow: createAdminBotReimbursementWorkflow({
-    formScriptPath: path.join(repoRoot, "scripts/adminbot-reimbursement-from-email.py"),
-  }),
+await startAdminBotHost({
+  repoRoot: path.dirname(fileURLToPath(import.meta.url)),
+  runEmailAutomation,
+  devicePairing: {
+    approveDevicePairing,
+    ensureDeviceToken,
+    requestDevicePairing,
+    resolveSharedGatewayAuthIssuer,
+  },
+  // Slack lives in another plugin and is only present in a built run, so a source run has no
+  // Slack Connect invite. Sending one is an operator action, not part of the boot path.
 });
-
-await service.listen(8765, "127.0.0.1");
-console.log(
-  "AdminBot service with live gog/social/overleaf/message execution running on http://127.0.0.1:8765",
-);
-
-// Keep the service alive even when launched detached without an interactive stdin.
-setInterval(() => {}, 2 ** 31 - 1);
-
-function loadOpenClawEnv(): void {
-  try {
-    process.loadEnvFile(path.join(os.homedir(), ".openclaw/.env"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw error;
-    }
-  }
-}

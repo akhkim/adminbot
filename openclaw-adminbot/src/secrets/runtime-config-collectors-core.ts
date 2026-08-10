@@ -1,13 +1,6 @@
 /** Collects core config secret refs during runtime preparation. */
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { MediaUnderstandingModelConfig } from "../config/types.tools.js";
-import {
-  resolveConfiguredMediaEntryCapabilities,
-  resolveEffectiveMediaEntryCapabilities,
-} from "../media-understanding/entry-capabilities.js";
-import { buildMediaUnderstandingCapabilityRegistry } from "../media-understanding/provider-capability-registry.js";
-import { collectTtsApiKeyAssignments } from "./runtime-config-collectors-tts.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { evaluateGatewayAuthSurfaceStates } from "./runtime-gateway-auth-surfaces.js";
 import {
   collectSecretInputAssignment,
@@ -413,147 +406,6 @@ function collectProviderRequestAssignments(params: {
   }
 }
 
-function collectMediaRequestAssignments(params: {
-  config: OpenClawConfig;
-  defaults: SecretDefaults | undefined;
-  context: ResolverContext;
-}): void {
-  const tools = isRecord(params.config.tools) ? params.config.tools : undefined;
-  const media = isRecord(tools?.media) ? tools.media : undefined;
-  if (!media) {
-    return;
-  }
-
-  let providerRegistry: ReturnType<typeof buildMediaUnderstandingCapabilityRegistry> | undefined;
-  const getProviderRegistry = () => {
-    providerRegistry ??= buildMediaUnderstandingCapabilityRegistry(params.config);
-    return providerRegistry;
-  };
-  const capabilityKeys = ["audio", "image", "video"] as const;
-  const isCapabilityEnabled = (capability: (typeof capabilityKeys)[number]) =>
-    (isRecord(media[capability]) ? media[capability] : undefined)?.enabled !== false;
-
-  const collectModelAssignments = (
-    models: unknown,
-    pathPrefix: string,
-    resolveActivity: (rawModel: Record<string, unknown>) => {
-      active: boolean;
-      inactiveReason: string;
-    },
-  ) => {
-    if (!Array.isArray(models)) {
-      return;
-    }
-    models.forEach((rawModel, index) => {
-      if (!isRecord(rawModel) || !isRecord(rawModel.request)) {
-        return;
-      }
-      const { active, inactiveReason } = resolveActivity(rawModel);
-      collectProviderRequestAssignments({
-        request: rawModel.request,
-        pathPrefix: `${pathPrefix}.${index}.request`,
-        defaults: params.defaults,
-        context: params.context,
-        active,
-        inactiveReason,
-      });
-    });
-  };
-
-  collectModelAssignments(media.models, "tools.media.models", (rawModel) => {
-    const entry = rawModel as MediaUnderstandingModelConfig;
-    const configuredCapabilities = resolveConfiguredMediaEntryCapabilities(entry);
-    // Shared models are active only for enabled capabilities; when the config omits explicit
-    // capabilities, provider metadata is the contract for which media sections can use it.
-    const capabilities =
-      configuredCapabilities ??
-      resolveEffectiveMediaEntryCapabilities({
-        entry,
-        source: "shared",
-        providerRegistry: getProviderRegistry(),
-      });
-    if (!capabilities || capabilities.length === 0) {
-      return {
-        active: false,
-        inactiveReason:
-          "shared media model does not declare capabilities and none could be inferred from its provider.",
-      };
-    }
-    return {
-      active: capabilities.some((capability) => isCapabilityEnabled(capability)),
-      inactiveReason: `all configured media capabilities for this shared model are disabled: ${capabilities.join(", ")}.`,
-    };
-  });
-
-  for (const capability of capabilityKeys) {
-    const section = isRecord(media[capability]) ? media[capability] : undefined;
-    const active = isCapabilityEnabled(capability);
-    const inactiveReason = `${capability} media understanding is disabled.`;
-    if (section && isRecord(section.request)) {
-      collectProviderRequestAssignments({
-        request: section.request,
-        pathPrefix: `tools.media.${capability}.request`,
-        defaults: params.defaults,
-        context: params.context,
-        active,
-        inactiveReason,
-      });
-    }
-    collectModelAssignments(section?.models, `tools.media.${capability}.models`, (rawModel) => ({
-      active:
-        active &&
-        (() => {
-          const entry = rawModel as MediaUnderstandingModelConfig;
-          const configuredCapabilities = resolveConfiguredMediaEntryCapabilities(entry);
-          return configuredCapabilities ? configuredCapabilities.includes(capability) : true;
-        })(),
-      inactiveReason: active
-        ? `${capability} media model is filtered out by its configured capabilities.`
-        : inactiveReason,
-    }));
-  }
-}
-
-function collectMessagesTtsAssignments(params: {
-  config: OpenClawConfig;
-  defaults: SecretDefaults | undefined;
-  context: ResolverContext;
-}): void {
-  const messages = params.config.messages as Record<string, unknown> | undefined;
-  if (!isRecord(messages) || !isRecord(messages.tts)) {
-    return;
-  }
-  collectTtsApiKeyAssignments({
-    tts: messages.tts,
-    pathPrefix: "messages.tts",
-    defaults: params.defaults,
-    context: params.context,
-  });
-}
-
-function collectAgentTtsAssignments(params: {
-  config: OpenClawConfig;
-  defaults: SecretDefaults | undefined;
-  context: ResolverContext;
-}): void {
-  const agents = params.config.agents as Record<string, unknown> | undefined;
-  const list = agents?.list;
-  if (!Array.isArray(list)) {
-    return;
-  }
-  for (const [index, entry] of list.entries()) {
-    if (!isRecord(entry) || !isRecord(entry.tts)) {
-      continue;
-    }
-    collectTtsApiKeyAssignments({
-      tts: entry.tts,
-      pathPrefix: `agents.list.${index}.tts`,
-      defaults: params.defaults,
-      context: params.context,
-    });
-  }
-}
-
 function collectCronAssignments(params: {
   config: OpenClawConfig;
   defaults: SecretDefaults | undefined;
@@ -690,8 +542,5 @@ export function collectCoreConfigAssignments(params: {
   collectTalkAssignments(params);
   collectGatewayAssignments(params);
   collectSandboxSshAssignments(params);
-  collectMessagesTtsAssignments(params);
-  collectAgentTtsAssignments(params);
   collectCronAssignments(params);
-  collectMediaRequestAssignments(params);
 }

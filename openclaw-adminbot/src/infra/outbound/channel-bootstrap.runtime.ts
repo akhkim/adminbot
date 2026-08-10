@@ -1,17 +1,17 @@
 // Outbound channel bootstrap lazily loads runtime plugins for selected channels
 // when only setup-shell metadata is active.
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
-import { applyPluginAutoEnable } from "../../config/plugin-auto-enable.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { resolveRuntimePluginRegistry } from "../../plugins/loader.js";
-import type { PluginChannelRegistration } from "../../plugins/registry-types.js";
+import { applyPluginAutoEnable } from "../../config/plugin/plugin-auto-enable.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { PluginChannelRegistration } from "../../plugins/manifest/registry-types.js";
+import { resolveRuntimePluginRegistry } from "../../plugins/runtime/loader.js";
 import {
   getActivePluginChannelRegistry,
   getActivePluginChannelRegistryVersion,
   getActivePluginRegistry,
   getActivePluginRegistryVersion,
-} from "../../plugins/runtime.js";
-import type { DeliverableMessageChannel } from "../../utils/message-channel.js";
+} from "../../plugins/runtime/runtime.js";
+import type { DeliverableMessageChannel } from "../../shared/message-channel.js";
 
 const bootstrapAttempts = new Set<string>();
 

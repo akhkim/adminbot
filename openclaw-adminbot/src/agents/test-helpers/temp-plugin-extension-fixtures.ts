@@ -6,9 +6,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { clearPluginLoaderCache } from "../../plugins/loader.js";
-import { createEmptyPluginRegistry } from "../../plugins/registry.js";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { createEmptyPluginRegistry } from "../../plugins/manifest/registry.js";
+import { clearPluginLoaderCache } from "../../plugins/runtime/loader.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 
 const EMPTY_PLUGIN_SCHEMA = { type: "object", additionalProperties: false, properties: {} };
 

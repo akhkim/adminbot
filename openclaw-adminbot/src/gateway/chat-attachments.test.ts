@@ -24,7 +24,7 @@ vi.mock("../media/store.js", async (importOriginal) => {
 });
 
 import { MAX_IMAGE_BYTES } from "@openclaw/media-core/constants";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   type ChatAttachment,
   DEFAULT_CHAT_ATTACHMENT_MAX_MB,

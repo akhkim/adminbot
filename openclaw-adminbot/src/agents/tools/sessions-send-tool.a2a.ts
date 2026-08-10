@@ -7,7 +7,7 @@ import crypto from "node:crypto";
 import type { CallGatewayOptions } from "../../gateway/call.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
-import type { GatewayMessageChannel } from "../../utils/message-channel.js";
+import type { GatewayMessageChannel } from "../../shared/message-channel.js";
 import { resolveNestedAgentLaneForSession } from "../lanes.js";
 import {
   type AssistantReplySnapshot,

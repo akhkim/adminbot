@@ -1589,16 +1589,1649 @@
 }
 
 /* ===========================================
+   Signed-out header (landing + sign-in gate)
+   ===========================================
+   In flow rather than floating, so both hosts lay out as a column and the thing below centres in
+   whatever height the bar leaves behind — no magic offset to keep in sync. Sticky on top of that,
+   because the sign-up form is long enough to scroll and the way back out has to stay reachable from
+   the bottom of it.
+
+   Unruled and unfilled: both surfaces behind it are single uninterrupted fields, so the bar earns
+   its separation from the inset instead of a border. The inset is deliberately generous — the
+   action should never sit against the viewport edge. */
+
+.signed-out-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  box-sizing: border-box;
+  padding: var(--space-5) clamp(var(--space-5), 4vw, var(--space-10));
+  padding-top: max(var(--space-5), env(safe-area-inset-top));
+  background: var(--bg);
+}
+
+/* Small and quiet on the landing page, where the hero wordmark is the mark that matters; on the
+   gate it is the only mark, which is why it keeps the same two-weight treatment. */
+.signed-out-topbar__brand {
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+.signed-out-topbar__brand-tail {
+  margin-left: 0.2em;
+  font-weight: 300;
+  color: var(--muted);
+}
+
+.signed-out-topbar__action {
+  flex-shrink: 0;
+  gap: 8px;
+  height: var(--control-h-lg);
+  padding: 0 var(--space-5);
+}
+
+.signed-out-topbar__icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+}
+
+@media (max-width: 480px) {
+  .signed-out-topbar {
+    padding: var(--space-4);
+    padding-top: max(var(--space-4), env(safe-area-inset-top));
+  }
+}
+
+/* ===========================================
+   Dashboard (home, signed in)
+   ===========================================
+   Two bands: what is waiting on you, then where to go. The attention stack is the loud one, so the
+   shortcut grid below it stays deliberately flat -- no cards competing with cards. */
+
+.dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-12);
+  max-width: 62rem;
+}
+
+.dashboard__section-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0 0 var(--space-5);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The count is the whole reason the band has a heading; without something waiting it is absent. */
+.dashboard__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  color: var(--accent-foreground);
+  font-family: var(--font-body);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-normal);
+}
+
+.dashboard__stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.dashboard__empty {
+  margin: 0;
+  padding: var(--space-6);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-xl);
+  color: var(--muted);
+  font-size: var(--control-ui-text-md);
+}
+
+/* The onboarding checklist, moved here from a first-login popup: a standing warning rather than
+   one card among several, so it gets its own border treatment (danger, not the attention stack's
+   accent edge) and sits above everything else on the page until acknowledged. */
+.dashboard-onboarding {
+  padding: var(--space-6);
+  border: 1px solid var(--danger-muted);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+}
+
+/* The one mark of severity, on the heading rather than as a wash over the whole card: a tint
+   behind the acknowledge button made the control read as part of the warning instead of as the
+   way out of it. */
+.dashboard-onboarding__title::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: var(--space-2);
+  vertical-align: 0.2em;
+  border-radius: var(--radius-full);
+  background: var(--danger);
+}
+
+.dashboard-onboarding__header {
+  margin-bottom: var(--space-5);
+}
+
+.dashboard-onboarding__title {
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.dashboard-onboarding__sub {
+  margin-top: var(--space-1);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.dashboard-onboarding__acknowledge {
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+/* Every card in this stack is something waiting on the viewer, so the accent edge that used to
+   run down all of them marked nothing -- it was decoration wearing the costume of a signal. The
+   card's own border carries it, and the accent is spent where it does distinguish: the action. */
+.dashboard-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  transition: border-color var(--duration-fast) var(--ease-out);
+}
+
+.dashboard-card:hover {
+  border-color: var(--border-hover);
+}
+
+.dashboard-card__body {
+  min-width: 0;
+}
+
+.dashboard-card__title {
+  margin: 0;
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+}
+
+.dashboard-card__summary {
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.dashboard-card__steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboard-card__step {
+  padding: 3px var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  background: var(--bg);
+  font-size: var(--control-ui-text-xs);
+  color: var(--text);
+}
+
+.dashboard-card__step--more {
+  color: var(--muted);
+}
+
+.dashboard-card__action {
+  flex-shrink: 0;
+}
+
+.dashboard__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--space-3);
+}
+
+/* Summary of a page the member owns. One number worth opening the page for, then the door. */
+.dashboard-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-accent);
+}
+
+.dashboard-summary__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dashboard-summary__icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+}
+
+.dashboard-summary__icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dashboard-summary__headline {
+  margin: 0;
+  font-size: var(--control-ui-text-xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+}
+
+.dashboard-summary__detail {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.dashboard-summary__action {
+  margin-top: var(--space-3);
+}
+
+/* Overview rows: enough of each page to decide whether to open it, never enough to replace it. */
+.dashboard-summary__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: var(--space-2);
+}
+
+.dashboard-summary__badge {
+  padding: 3px var(--space-3);
+  border: 1px solid var(--accent-muted);
+  border-radius: var(--radius-full);
+  background: var(--accent-subtle);
+  font-size: var(--control-ui-text-xs);
+  color: var(--text-strong);
+}
+
+.dashboard-summary__badge--more {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--muted);
+}
+
+.dashboard-summary__line {
+  margin: var(--space-3) 0 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.dashboard-summary__line--warn {
+  color: var(--text);
+}
+
+.dashboard-summary__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dashboard-summary__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 34px;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--control-ui-text-sm);
+}
+
+.dashboard-summary__row--paper {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.dashboard-summary__row-label {
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-summary__bar {
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.dashboard-summary__bar-fill {
+  display: block;
+  height: 100%;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+
+.dashboard-summary__row-value {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  text-align: right;
+}
+
+.dashboard-summary__row-step {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.dashboard-summary__more {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* ===========================================
+   My Profile
+   =========================================== */
+
+.profile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 62rem;
+}
+
+.my-work {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  max-width: 62rem;
+}
+
+/* ===========================================
+   Identity card
+   =========================================== */
+
+.profile__hero {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+}
+
+.profile__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 80px;
+  height: 80px;
+  border-radius: var(--radius-full);
+  background: linear-gradient(160deg, var(--accent-subtle), var(--bg-muted));
+  border: 1px solid var(--accent-muted);
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-xl);
+  font-weight: 600;
+}
+
+.profile__avatar--photo {
+  object-fit: cover;
+  padding: 0;
+}
+
+/* The picture is the control. The pencil is hidden until the pointer (or keyboard focus) is on it,
+   so the header stays a header until you mean to change something. */
+.profile__avatar-slot {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+}
+
+.profile__avatar-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-full);
+  background: rgba(9, 9, 11, 0.68);
+  color: var(--text-strong);
+  opacity: 0;
+  transition: opacity var(--duration-fast) var(--ease-out);
+}
+
+.profile__avatar-slot:hover .profile__avatar-overlay,
+.profile__avatar-slot:focus-within .profile__avatar-overlay {
+  opacity: 1;
+}
+
+.profile__avatar-slot:focus-within {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.profile__avatar-overlay svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile__avatar-overlay {
+    transition: none;
+  }
+}
+
+.profile__identity-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.profile__identity-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.profile__name {
+  font-size: var(--control-ui-text-2xl);
+  font-weight: 650;
+  line-height: 1.15;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+}
+
+.profile__role-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--space-3);
+  border: 1px solid var(--accent-muted);
+  border-radius: var(--radius-full);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+}
+
+.profile__email {
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.profile__links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.profile__link {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+
+.profile__link:hover,
+.profile__link:focus-visible {
+  color: var(--text);
+  border-bottom-color: var(--border-hover);
+}
+
+/* The CV is the one link people come here for, so it is the one that looks like a link. */
+.profile__link--strong {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.profile__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.profile__badges-empty {
+  margin: var(--space-2) 0 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.profile-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--panel);
+  font-size: var(--control-ui-text-xs);
+  color: var(--text-strong);
+}
+
+.profile-badge__icon {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  color: var(--accent);
+}
+
+.profile-badge__icon svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+}
+
+/* The completion ledger: the number, then one tick per required field, grouped the way the record
+   below is grouped. The ticks are what a ring could not do -- they say which run of fields is
+   thin, so the meter is a diagnosis rather than a score. */
+.profile__completeness {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  margin-left: auto;
+  padding-left: var(--space-5);
+  border-left: 1px solid var(--border);
+}
+
+.profile__completeness-copy {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.profile__completeness-percent {
+  font-size: var(--control-ui-text-2xl);
+  font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+
+.profile__completeness-label {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Group gaps are wider than tick gaps, so the four runs read as four runs without a label each. */
+.profile__ledger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.profile__ledger-group {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.profile__tick {
+  width: 10px;
+  height: 4px;
+  border-radius: 1px;
+  transition: background-color var(--duration-normal) var(--ease-out);
+}
+
+.profile__tick--filled {
+  background: var(--accent);
+}
+
+.profile__tick--blank {
+  background: var(--border-strong);
+}
+
+/* Nothing outstanding: the ledger stops using the "waiting on you" color and reads as a receipt. */
+.profile__completeness--done .profile__tick--filled {
+  background: var(--ok);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile__tick {
+    transition: none;
+  }
+}
+
+/* Once the hero wraps, the ledger is below the identity rather than beside it, so the rule that
+   separated the two columns has to become the one that separates the two rows. */
+@media (max-width: 640px) {
+  .profile__completeness {
+    align-items: flex-start;
+    width: 100%;
+    margin-left: 0;
+    padding-left: 0;
+    padding-top: var(--space-4);
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* ===========================================
+   Section cards
+   =========================================== */
+
+.profile__section {
+  padding: var(--space-6);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+}
+
+/* The one section asking for something rather than just showing it. Its whole edge carries the
+   accent, without the accent wash it used to sit on: the wash tinted every input inside the card,
+   which made the controls the member is supposed to type into read as less editable than the ones
+   in the plain card below. */
+.profile__section--highlight {
+  border-color: var(--accent-muted);
+}
+
+.profile__section-title,
+.my-work__section-title {
+  margin: 0 0 var(--space-4);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.profile__section-sub {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.profile__empty,
+.my-work__empty {
+  margin: 0;
+  padding: var(--space-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* ===========================================
+   Field groups -- shared by the read-only view and both forms
+   =========================================== */
+
+.profile__fields,
+.profile__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+.profile__field-group + .profile__field-group {
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+/* The read view's rows already rule themselves, so the group's own rule lands a hairline directly
+   under the previous group's last row and reads as a printing error. Spacing alone separates them
+   there; the forms, whose rows carry no rules, keep the border. */
+.profile__fields .profile__field-group + .profile__field-group {
+  border-top: none;
+}
+
+.profile__group-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+
+.profile__group-icon {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+}
+
+.profile__group-icon svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* min() rather than a bare 22rem: auto-fill honours the minimum even when it is wider than the
+   container, so a bare track floor overflows every viewport narrower than one column. */
+.profile__field-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
+  column-gap: var(--space-8);
+}
+
+.profile__form .profile__field-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
+  gap: var(--space-4);
+  /* Top-aligned: bottom-aligning a row that contains a three-line textarea drops every short
+     field in that row to the textarea's floor and tears a hole under their labels. */
+  align-items: start;
+}
+
+/* The record reads as a ruled sheet rather than a grid of stacked label/value pairs: label left at
+   a fixed measure, answer right, a hairline under each row. Nineteen facts scan down the answer
+   column in one pass, and a blank is visible as a gap in that column instead of as a line of text
+   that has to be read to discover it says nothing. */
+.profile-field {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.profile-field__label {
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.profile-field__value {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--control-ui-text-md);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+/* A blank is information too, so it is stated rather than left as an empty row. */
+.profile-field__value--empty {
+  color: var(--muted);
+}
+
+/* A required field with no answer is the one blank worth interrupting the column for. */
+.profile-field__owed {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--accent-muted);
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+/* Under the label rather than beside it once there is no room for two columns. */
+@media (max-width: 640px) {
+  .profile-field {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+.profile__form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile__form-label {
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.profile__optional {
+  margin-left: 6px;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-normal);
+  text-transform: none;
+}
+
+/* The required dot. Sits on the label's baseline row rather than after the text so a two-line
+   label does not push it onto a line of its own. */
+.profile__mandatory {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-left: 5px;
+  vertical-align: 0.35em;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+
+.profile__upload {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border);
+}
+
+.profile__upload-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.profile__upload-preview {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-muted);
+  object-fit: cover;
+}
+
+.profile__upload-preview--empty {
+  display: inline-block;
+}
+
+.profile__upload-button {
+  cursor: pointer;
+}
+
+.profile__upload-hint {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* ===========================================
+   Suggestions
+   =========================================== */
+
+/* Advice, not the task. These used to be boxed cards the same weight as the sections above them,
+   which gave an optional guidebook pointer the same visual claim as the required fields. They are
+   ruled rows now -- present, readable, and clearly the least urgent thing on the page. */
+.profile__suggestions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  gap: var(--space-5) var(--space-8);
+}
+
+/* Separated by space rather than by rules. A top rule plus :first-child only lines up in a single
+   column: at two columns the second card is not the first child, so it drew a rule its neighbour
+   did not have, and the row looked broken rather than divided. */
+.profile-suggestion {
+  padding: 0;
+}
+
+.profile-suggestion__title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+/* An onboarding step carries the checklist's own word for where it stands; a guidebook pointer
+   carries none, which is the difference between the lab waiting on you and a suggestion. */
+.profile-suggestion__status {
+  flex-shrink: 0;
+}
+
+.profile-suggestion__status:not(:empty) {
+  border-color: var(--accent-muted);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.profile-suggestion__body {
+  margin: var(--space-1) 0 var(--space-3);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.profile-suggestion__link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  font-size: var(--control-ui-text-sm);
+  text-decoration: none;
+}
+
+.profile-suggestion__link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.profile-suggestion__icon {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+}
+
+.profile-suggestion__icon svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+}
+
+/* ===========================================
+   My Projects & Papers
+   =========================================== */
+
+.profile__section-head,
+.my-work__section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.profile__section-head .profile__section-title,
+.my-work__section-head .my-work__section-title {
+  margin-bottom: 0;
+}
+
+.profile__edit-icon {
+  display: inline-flex;
+  width: 13px;
+  height: 13px;
+  margin-right: 6px;
+}
+
+.profile__edit-icon svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.profile__form-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.profile__autosave-hint {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.profile__account-check {
+  font-size: var(--control-ui-text-xs);
+}
+
+.profile__account-check--checking {
+  color: var(--muted);
+}
+
+.profile__account-check--verified {
+  color: var(--ok-muted, var(--muted));
+}
+
+.profile__account-check--not-found {
+  color: var(--danger-muted, var(--muted));
+}
+
+.profile__toast {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: 60;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated, var(--bg-accent));
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  animation: profile-toast-in 0.18s var(--ease-out, ease-out);
+}
+
+.profile__toast--success {
+  border-color: var(--ok-muted);
+  background: var(--ok-subtle);
+}
+
+.profile__toast--error {
+  border-color: var(--danger-muted);
+  background: var(--danger-subtle);
+}
+
+@keyframes profile-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Says which fields the form deliberately omits, so their absence reads as a rule rather than an
+   oversight. */
+.profile__managed {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.profile-field--locked .profile-field__label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.profile-field__lock {
+  display: inline-flex;
+  width: 11px;
+  height: 11px;
+  color: var(--muted);
+}
+
+.profile-field__lock svg {
+  width: 11px;
+  height: 11px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+}
+
+.my-work__items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.my-work-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-lg);
+  background: var(--bg-accent);
+}
+
+/* A blocked item is marked where the work is, not only in the band above it. */
+.my-work-item--blocked {
+  border-left-color: var(--warn);
+}
+
+.my-work-item__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.my-work-item__copy {
+  min-width: 0;
+}
+
+.my-work-item__title {
+  margin: 0;
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.my-work-item__meta {
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.my-work-item__report {
+  flex-shrink: 0;
+}
+
+.my-work-item__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.my-work-item__bar {
+  flex: 1;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+/* Scaled, not resized: this bar animates when a member advances a step, and transitioning width
+   relayouts the row on every frame of it. transform stays on the compositor. */
+.my-work-item__fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform-origin: left center;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .my-work-item__fill {
+    transition: none;
+  }
+}
+
+.my-work-item__step {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.my-work-item__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.my-work-item__step-picker select {
+  min-width: 12rem;
+}
+
+.my-work__blockers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.my-work-paper {
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-accent);
+}
+
+.my-work-paper__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-5);
+}
+
+.my-work-paper__copy {
+  min-width: 0;
+}
+
+.my-work-paper__title {
+  margin: 0;
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.my-work-paper__meta {
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.my-work-paper__report {
+  flex-shrink: 0;
+}
+
+.my-work-blocker-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(100%, 26rem);
+  flex-shrink: 0;
+}
+
+.my-work-blocker-form__text {
+  width: 100%;
+  resize: vertical;
+}
+
+.my-work-blocker-form__reviewer {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.my-work-blocker-form__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+/* Blockers sit above the work they block: the whole point is that they are what you look at. */
+.my-work-blocker {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-strong);
+  border-left: 2px solid var(--warn);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+.my-work-blocker__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--warn);
+}
+
+.my-work-blocker__icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.my-work-blocker__copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.my-work-blocker__text {
+  margin: 0;
+  font-size: var(--control-ui-text-md);
+  color: var(--text);
+}
+
+.my-work-blocker__meta {
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.my-work-blocker__status {
+  flex-shrink: 0;
+}
+
+.my-work__notice {
+  margin: var(--space-3) 0 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .my-work-paper__head {
+    flex-direction: column;
+  }
+}
+
+.dashboard-shortcut {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.dashboard-shortcut:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+}
+
+.dashboard-shortcut:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.dashboard-shortcut__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--muted);
+}
+
+/* The shared icon set ships unstyled paths, so each surface states its own stroke — same values as
+   `.nav-item__icon svg`, since these are the same glyphs at the same size. */
+.dashboard-shortcut__icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.dashboard-shortcut__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dashboard-shortcut__title {
+  font-size: var(--control-ui-text-md);
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.dashboard-shortcut__sub {
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+@media (max-width: 720px) {
+  .dashboard-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* ===========================================
+   Landing (visitor, no session)
+   ===========================================
+   The one place in the app that gets to breathe. Everything else here is a dense operations
+   dashboard, so the landing earns its weight from space and type rather than from new colour: the
+   wordmark is the whole hero, and the ruled backdrop echoes the ledgers the lab actually runs on
+   (the deadline board, the reimbursement table) instead of decorating with a gradient. */
+
+.landing {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* Hairline ledger rules, faded out at the edges so they never compete with the wordmark. */
+.landing__rules {
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    var(--border) 0,
+    var(--border) 1px,
+    transparent 1px,
+    transparent 72px
+  );
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 0%, transparent 100%);
+  -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.landing__inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Auto margins centre the hero in whatever height the header leaves behind. */
+  margin: auto;
+  padding: var(--space-10) var(--space-6) var(--space-16);
+  max-width: 44rem;
+  text-align: center;
+  animation: landing-rise 520ms var(--ease-out) both;
+}
+
+@keyframes landing-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+}
+
+.landing__eyebrow {
+  margin: 0 0 var(--space-6);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.landing__wordmark {
+  margin: 0;
+  font-size: clamp(2.75rem, 9vw, 5.5rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-tighter);
+  color: var(--text-strong);
+}
+
+/* The mark is the type treatment: one word, two weights of attention, no logo needed. */
+.landing__wordmark-tail {
+  margin-left: 0.28em;
+  font-weight: 300;
+  color: var(--muted);
+}
+
+.landing__tagline {
+  margin: var(--space-6) 0 0;
+  max-width: 34rem;
+  font-size: var(--control-ui-text-lg);
+  line-height: 1.6;
+  color: var(--muted-strong);
+}
+
+/* Mathematical rhythm: the action row sits one full step below the tagline, and the two CTAs
+   share the same height/radius so weight comes only from fill vs. outline, never from size. */
+.landing__actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-10);
+}
+
+.landing__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-h-lg);
+  padding: 0 var(--space-7);
+  border-radius: var(--radius-lg);
+  font-size: var(--control-ui-text-md);
+  font-weight: 500;
+  text-decoration: none;
+  transition:
+    transform 200ms var(--ease-out),
+    box-shadow 200ms var(--ease-out),
+    border-color 200ms var(--ease-out),
+    background-color 200ms var(--ease-out);
+}
+
+.landing__cta:hover {
+  transform: translateY(-1px);
+}
+
+.landing__cta.primary {
+  box-shadow: var(--shadow-sm);
+}
+
+.landing__cta.primary:hover {
+  box-shadow: var(--shadow-md);
+}
+
+/* The secondary path is a real button, not a text link — same footprint as sign-in, so choosing
+   the free path never reads as the lesser affordance, only the quieter one. */
+.landing__cta--guest {
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  background: transparent;
+}
+
+.landing__cta--guest:hover,
+.landing__cta--guest:focus-visible {
+  border-color: var(--accent);
+  color: var(--text-strong);
+  background: var(--accent-subtle);
+}
+
+.landing__cta-icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+}
+
+.landing__cta-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing__inner {
+    animation: none;
+  }
+
+  .landing__cta {
+    transition: none;
+  }
+
+  .landing__cta:hover {
+    transform: none;
+  }
+}
+
+@media (max-width: 30rem) {
+  .landing__actions {
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    max-width: 20rem;
+  }
+
+  .landing__cta {
+    justify-content: center;
+  }
+}
+
+/* ===========================================
    Public shell (no session)
    ===========================================
-   A visitor gets the same sidebar language as the signed-in shell, but a plain two-column flex
-   layout rather than the dashboard grid: none of the grid's other areas (topbar, chat rail) exist
-   without a gateway behind them. */
+   A visitor gets the same sidebar language as the signed-in shell, plus a slim topbar carrying the
+   sign-in action, but a plain flex layout rather than the dashboard grid: none of the grid's other
+   areas (chat rail, status) exist without a gateway behind them. */
 
 .app-shell--public {
   display: flex;
+  flex-direction: column;
   min-height: 100vh;
   background: var(--bg);
+}
+
+.public-shell-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* The public topbar carries nothing but the sign-in action, so push it to the right edge. */
+.topbar--public .topnav-shell__actions {
+  margin-left: auto;
+}
+
+.public-signin {
+  gap: 8px;
+}
+
+.public-signin__icon {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
 }
 
 .sidebar--public {
@@ -1626,7 +3259,7 @@
 }
 
 @media (max-width: 720px) {
-  .app-shell--public {
+  .public-shell-body {
     flex-direction: column;
   }
 
@@ -1635,5 +3268,604 @@
     max-width: none;
     border-right: none;
     border-bottom: 1px solid var(--border);
+  }
+}
+
+/* ===========================================
+   Deadline board
+   =========================================== */
+
+.deadlines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 62rem;
+}
+
+/* Urgency is one variable resolved per row, so every part of a row -- countdown, dot, lead panel
+   edge -- speaks with one voice and the scale lives in the token set rather than in each rule. */
+[data-urgency="critical"] {
+  --deadline-urgency: var(--danger);
+  --deadline-urgency-subtle: var(--danger-subtle);
+}
+
+[data-urgency="soon"] {
+  --deadline-urgency: var(--warn);
+  --deadline-urgency-subtle: var(--warn-subtle);
+}
+
+[data-urgency="planned"] {
+  --deadline-urgency: var(--accent);
+  --deadline-urgency-subtle: var(--accent-subtle);
+}
+
+[data-urgency="distant"] {
+  --deadline-urgency: var(--muted);
+  --deadline-urgency-subtle: transparent;
+}
+
+/* ---- The one that is actually running ---- */
+
+.deadline-lead {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-1) var(--space-5);
+  padding: var(--space-6);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+}
+
+.deadline-lead__eyebrow {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The number is the page. At this size the seconds column visibly ticks, which is the whole
+   argument for a live countdown over a printed date. */
+.deadline-lead__countdown {
+  grid-column: 1;
+  margin: var(--space-2) 0 0;
+  font-family: var(--mono);
+  font-size: clamp(2rem, 6vw, 3.25rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--deadline-urgency);
+}
+
+.deadline-lead__name {
+  grid-column: 1 / -1;
+  margin: var(--space-4) 0 0;
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.deadline-lead__date {
+  grid-column: 1 / -1;
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.deadline-lead .deadline-row__link {
+  grid-column: 4;
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-5);
+}
+
+.deadlines__intro {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+/* ---- Conferences ---- */
+
+.conferences {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.conference {
+  border-bottom: 1px solid var(--border);
+}
+
+/* The whole row is the control. A conference with ninety-nine workshops behind it should not ask
+   anyone to hunt for a caret. */
+.conference__summary {
+  display: grid;
+  grid-template-columns: 12px 8.5rem 1fr auto;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-4) var(--space-2);
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.conference__summary:hover {
+  background: var(--bg-muted);
+}
+
+.conference__summary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.conference__chevron {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  justify-self: center;
+  color: var(--muted);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.conference__chevron svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.conference[data-open] .conference__chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conference__chevron {
+    transition: none;
+  }
+}
+
+/* The dot carries the urgency band for anyone who cannot separate the countdown's hues. */
+.conference__countdown {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--deadline-urgency);
+}
+
+.conference__countdown::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--deadline-urgency);
+}
+
+.conference__name {
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+}
+
+.conference__counts {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.conference__panel {
+  padding: 0 var(--space-2) var(--space-5) calc(12px + var(--space-4) + var(--space-2));
+}
+
+.conference__panel[hidden] {
+  display: none;
+}
+
+/* ---- Sections inside an opened conference ---- */
+
+.deadline-section + .deadline-section {
+  margin-top: var(--space-5);
+}
+
+.deadline-section__head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-1);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.deadline-section__title {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+
+.deadline-section__count {
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+/* Whatever the whole section agrees on, said once instead of on every row. */
+.deadline-section__shared {
+  margin-left: auto;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.deadline-section__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Ruled rows rather than a stack of bordered cards: a hundred cards is a hundred boxes to look
+   past, and what is being scanned is the venue name. */
+.deadline-row {
+  display: grid;
+  grid-template-columns: 8.5rem auto 1fr auto;
+  align-items: baseline;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.deadline-row:last-child {
+  border-bottom: none;
+}
+
+.deadline-row:hover {
+  background: var(--bg-muted);
+}
+
+/* Every cell names its own column. The date is omitted whenever a whole section shares one, and
+   with implicit placement that missing child slid the name and the link one track to the left,
+   stranding the link in the middle of the row. */
+.deadline-row__countdown {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  grid-column: 1;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--deadline-urgency);
+}
+
+.deadline-row__countdown::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--deadline-urgency);
+}
+
+.deadline-row__date {
+  grid-column: 2;
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.deadline-row__body {
+  grid-column: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.deadline-row__name {
+  font-size: var(--control-ui-text-md);
+  color: var(--text);
+}
+
+/* Which deadline this is -- a commitment and a submission for one venue are different dates, and
+   the old list showed only the name, so the two were indistinguishable. */
+.deadline-row__label {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+  vertical-align: 1px;
+}
+
+.deadline-row__note {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.deadline-row__link {
+  color: var(--muted);
+  font-size: var(--control-ui-text-md);
+  text-decoration: none;
+  line-height: 1;
+}
+
+.deadline-row__link:hover,
+.deadline-row__link:focus-visible {
+  color: var(--accent);
+}
+
+.deadlines__empty {
+  margin: 0;
+  padding: var(--space-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  /* The name leads on a phone; the countdown and counts fall under it rather than competing for
+     a row that cannot hold four columns. */
+  .conference__summary {
+    grid-template-columns: 12px 1fr;
+    row-gap: var(--space-1);
+  }
+
+  .conference__countdown {
+    grid-column: 2;
+    order: 2;
+  }
+
+  .conference__name {
+    grid-column: 2;
+    order: 1;
+  }
+
+  .conference__counts {
+    grid-column: 2;
+    order: 3;
+  }
+
+  .conference__panel {
+    padding-left: var(--space-2);
+  }
+
+  .deadline-row {
+    grid-template-columns: auto 1fr auto;
+    row-gap: var(--space-1);
+  }
+
+  .deadline-row__countdown {
+    grid-area: 1 / 1;
+  }
+
+  .deadline-row__date {
+    grid-area: 1 / 2;
+  }
+
+  .deadline-row__link {
+    grid-area: 1 / 3;
+  }
+
+  .deadline-row__body {
+    grid-area: 2 / 1 / auto / -1;
+  }
+
+  .deadline-section__shared {
+    margin-left: 0;
+  }
+}
+
+/* ===========================================
+   AdminBot primitives
+   ===========================================
+
+   One vocabulary for the lab's own surfaces. Before this, each AdminBot view invented its own
+   label, chip, row and empty state, so thirteen pages of one product read as thirteen products.
+   These are the patterns the profile record and the deadline board converged on, named once so
+   the rest of the surfaces inherit them instead of re-deriving them.
+
+   Everything here composes with the existing --space/--control-ui-text/--border token set; none
+   of it introduces a color that base.css does not already define. */
+
+/* The micro-label that titles a region. Mono + tracked caps reads as instrumentation rather than
+   as prose, which is what keeps a dense operator page from looking like a document. */
+.ab-eyebrow {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* A section head: title, its count, and whatever the whole section agrees on pushed to the right.
+   The shared slot is what stops a list repeating one fact on every row. */
+.ab-band {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-1);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.ab-band__title {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+
+.ab-band__count {
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.ab-band__shared {
+  margin-left: auto;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* The ruled sheet. Label at a fixed measure, value in the rest, a hairline per row -- so a column
+   of answers can be scanned in one pass and a blank reads as a gap rather than as text. */
+.ab-sheet {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
+  column-gap: var(--space-8);
+}
+
+.ab-row {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ab-row__label {
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-wide);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.ab-row__value {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--control-ui-text-md);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.ab-row__value--empty {
+  color: var(--muted);
+}
+
+/* The mono micro-chip. Status lives in the modifier, never in a bespoke color. */
+.ab-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ab-chip--accent {
+  border-color: var(--accent-muted);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.ab-chip--ok {
+  border-color: var(--ok-muted);
+  background: var(--ok-subtle);
+  color: var(--ok);
+}
+
+.ab-chip--warn {
+  border-color: var(--warn-muted);
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
+.ab-chip--danger {
+  border-color: var(--danger-muted);
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+/* A status dot for when a chip would be too loud -- the same four states at 6px. */
+.ab-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+}
+
+.ab-dot--accent {
+  background: var(--accent);
+}
+
+.ab-dot--ok {
+  background: var(--ok);
+}
+
+.ab-dot--warn {
+  background: var(--warn);
+}
+
+.ab-dot--danger {
+  background: var(--danger);
+}
+
+/* Tabular figures for anything that is a quantity. Counts that jitter as they tick are the single
+   most common way a dense operator UI reads as sloppy. */
+.ab-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* An empty state states the absence rather than leaving a hole. */
+.ab-empty {
+  margin: 0;
+  padding: var(--space-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+/* The card that is asking for something, as opposed to the cards that are only showing something.
+   Its whole edge carries the accent; it deliberately does not tint its own interior, because a
+   wash makes the inputs inside it read as less editable than the ones outside. */
+.ab-actionable {
+  border-color: var(--accent-muted);
+}
+
+@media (max-width: 640px) {
+  .ab-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
 }

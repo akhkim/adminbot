@@ -3,7 +3,7 @@
  * Keeps discovery loads, config backoff, and token cache reset behavior
  * shared across module reloads and runtime seams.
  */
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { createLazyImportLoader, type LazyPromiseLoader } from "../shared/lazy-promise.js";
 import {
   MODEL_CONFIGURED_CONTEXT_TOKEN_CACHE,
@@ -22,7 +22,7 @@ type ContextWindowRuntimeState = {
   nextConfigLoadAttemptAtMs: number;
   // Released gateways may still import this stable runtime path after an
   // in-place dist rebuild. Keep the loader until that upgrade path retires.
-  modelsConfigRuntimeLoader: LazyPromiseLoader<typeof import("./models-config.runtime.js")>;
+  modelsConfigRuntimeLoader: LazyPromiseLoader<typeof import("./models/models-config.runtime.js")>;
 };
 
 /** Shared mutable state for context-window resolution and model discovery. */
@@ -43,7 +43,9 @@ export const CONTEXT_WINDOW_RUNTIME_STATE = (() => {
       configuredConfig: undefined,
       configLoadFailures: 0,
       nextConfigLoadAttemptAtMs: 0,
-      modelsConfigRuntimeLoader: createLazyImportLoader(() => import("./models-config.runtime.js")),
+      modelsConfigRuntimeLoader: createLazyImportLoader(
+        () => import("./models/models-config.runtime.js"),
+      ),
     };
     globalState[CONTEXT_WINDOW_RUNTIME_STATE_KEY] = state as ContextWindowRuntimeState;
   } else {
@@ -58,7 +60,7 @@ export const CONTEXT_WINDOW_RUNTIME_STATE = (() => {
       state.loadGeneration = null;
     }
     state.modelsConfigRuntimeLoader ??= createLazyImportLoader(
-      () => import("./models-config.runtime.js"),
+      () => import("./models/models-config.runtime.js"),
     );
   }
   return state as ContextWindowRuntimeState;

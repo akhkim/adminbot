@@ -21,7 +21,10 @@ const CHANNEL_REGISTRY_WHY =
 const CHANNEL_REGISTRY_FIX =
   "keep the seam behind a lazy getter/runtime boundary so import stays cold and the first real lookup loads once.";
 const HOT_RUNTIME_IMPORT_CASES = [
-  ["src/config/markdown-tables.ts", () => import("../../config/markdown-tables.js")],
+  [
+    "src/config/markdown/markdown-tables.ts",
+    () => import("../../config/markdown/markdown-tables.js"),
+  ],
   [
     "src/plugin-sdk/approval-handler-adapter-runtime.ts",
     () => import("../../plugin-sdk/approval-handler-adapter-runtime.js"),
@@ -45,10 +48,9 @@ function mockChannelRegistry() {
       listChannelPlugins,
     };
   });
-  vi.doMock("../../plugins/runtime.js", async () => {
-    const actual = await vi.importActual<typeof import("../../plugins/runtime.js")>(
-      "../../plugins/runtime.js",
-    );
+  vi.doMock("../runtime/runtime.js", async () => {
+    const actual =
+      await vi.importActual<typeof import("../runtime/runtime.js")>("../runtime/runtime.js");
     return {
       ...actual,
       getActivePluginChannelRegistryVersion,
@@ -71,7 +73,7 @@ afterEach(() => {
   vi.resetModules();
   vi.restoreAllMocks();
   vi.doUnmock("../../channels/plugins/registry.js");
-  vi.doUnmock("../../plugins/runtime.js");
+  vi.doUnmock("../runtime/runtime.js");
 });
 
 describe("runtime import side-effect contracts", () => {
@@ -82,9 +84,9 @@ describe("runtime import side-effect contracts", () => {
 
   it("keeps markdown table defaults lazy and memoized after import", async () => {
     mockChannelRegistry();
-    const markdownTables = await import("../../config/markdown-tables.js");
+    const markdownTables = await import("../../config/markdown/markdown-tables.js");
 
-    expectNoChannelRegistryDuringImport("src/config/markdown-tables.ts");
+    expectNoChannelRegistryDuringImport("src/config/markdown/markdown-tables.ts");
 
     expect(markdownTables.DEFAULT_TABLE_MODES.get("signal")).toBe("bullets");
     expect(getActivePluginChannelRegistryVersion).toHaveBeenCalled();

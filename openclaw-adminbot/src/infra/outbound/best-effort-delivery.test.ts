@@ -6,7 +6,7 @@ import {
   shouldDowngradeDeliveryToSessionOnly,
 } from "./best-effort-delivery.js";
 
-vi.mock("../../utils/message-channel.js", () => ({
+vi.mock("../../shared/message-channel.js", () => ({
   INTERNAL_MESSAGE_CHANNEL: "webchat",
   isDeliverableMessageChannel: (value: string) => ["alpha", "richchat"].includes(value),
   normalizeMessageChannel: (value?: string | null) =>

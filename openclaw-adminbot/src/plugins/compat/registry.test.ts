@@ -121,7 +121,7 @@ const knownDeprecatedSurfaceMarkers = [
   },
   {
     code: "plugin-install-config-ledger",
-    file: "src/config/plugin-install-config-migration.ts",
+    file: "src/config/plugin/plugin-install-config-migration.ts",
     marker: "stripShippedPluginInstallConfigRecords",
   },
   {
@@ -161,12 +161,12 @@ const knownDeprecatedSurfaceMarkers = [
   },
   {
     code: "legacy-deactivate-hook-alias",
-    file: "src/plugins/hook-types.ts",
+    file: "src/plugins/hooks/hook-types.ts",
     marker: "@deprecated Use gateway_stop",
   },
   {
     code: "legacy-subagent-spawning-hook",
-    file: "src/plugins/hook-types.ts",
+    file: "src/plugins/hooks/hook-types.ts",
     marker: "@deprecated Core prepares thread-bound subagent bindings",
   },
   {

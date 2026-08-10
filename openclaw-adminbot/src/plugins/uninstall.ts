@@ -2,13 +2,13 @@
 import { realpathSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { PluginInstallRecord } from "../config/types.plugins.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import type { PluginInstallRecord } from "../config/types/plugins.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import {
   readOpenClawManagedNpmRootOverrides,
   syncManagedNpmRootPeerDependencies,
-} from "../infra/npm-managed-root.js";
+} from "../infra/install/npm-managed-root.js";
 import { createSafeNpmInstallEnv } from "../infra/safe-package-install.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import {
@@ -16,7 +16,7 @@ import {
   resolveDefaultPluginNpmDir,
   resolvePluginInstallDir,
   resolvePluginNpmProjectsDir,
-} from "./install-paths.js";
+} from "./install/install-paths.js";
 import { relinkOpenClawPeerDependenciesInManagedNpmRoot } from "./plugin-peer-link.js";
 import { defaultSlotIdForKey } from "./slots.js";
 

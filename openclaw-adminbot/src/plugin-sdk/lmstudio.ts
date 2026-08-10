@@ -1,7 +1,7 @@
 /**
  * Public SDK facade for LM Studio provider config, discovery, and auth helpers.
  */
-import type { OpenClawConfig } from "../config/types.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import type {
   ProviderAuthMethodNonInteractiveContext,
   ProviderAuthResult,
@@ -73,7 +73,7 @@ type FacadeModule = {
   ) => Promise<OpenClawConfig | null>;
   discoverLmstudioProvider: (
     ctx: ProviderCatalogContext,
-  ) => Promise<{ provider: import("../config/types.js").ModelProviderConfig } | null>;
+  ) => Promise<{ provider: import("../config/types/types.js").ModelProviderConfig } | null>;
   prepareLmstudioDynamicModels: (
     ctx: ProviderPrepareDynamicModelContext,
   ) => Promise<ProviderRuntimeModel[]>;

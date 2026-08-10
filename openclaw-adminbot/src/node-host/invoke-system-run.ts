@@ -1,8 +1,8 @@
 /** Policy and execution pipeline for approved node-host system.run requests. */
 import crypto from "node:crypto";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { GatewayClient } from "../gateway/client.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import type { GatewayClient } from "../gateway/client/client.js";
 import {
   describeInterpreterInlineEval,
   type InterpreterInlineEvalHit,
@@ -27,22 +27,29 @@ import {
   type ExecSegmentSatisfiedBy,
   type ExecSecurity,
   type SkillBinTrustEntry,
-} from "../infra/exec-approvals.js";
-import type { ExecAuthorizationPlan } from "../infra/exec-authorization-plan.js";
-import type { ExecAutoReviewer } from "../infra/exec-auto-review.js";
-import type { ExecHostRequest, ExecHostResponse, ExecHostRunResult } from "../infra/exec-host.js";
-import { resolveExecSafeBinRuntimePolicy } from "../infra/exec-safe-bin-runtime-policy.js";
+} from "../infra/exec/exec-approvals.js";
+import type { ExecAuthorizationPlan } from "../infra/exec/exec-authorization-plan.js";
+import type { ExecAutoReviewer } from "../infra/exec/exec-auto-review.js";
+import type {
+  ExecHostRequest,
+  ExecHostResponse,
+  ExecHostRunResult,
+} from "../infra/exec/exec-host.js";
+import { resolveExecSafeBinRuntimePolicy } from "../infra/exec/exec-safe-bin-runtime-policy.js";
 import {
   extractEnvAssignmentKeysFromDispatchWrappers,
   isShellWrapperInvocation,
   resolveShellWrapperTransportArgv,
-} from "../infra/exec-wrapper-resolution.js";
+} from "../infra/exec/exec-wrapper-resolution.js";
 import {
   inspectHostExecEnvOverrides,
   sanitizeSystemRunEnvOverrides,
-} from "../infra/host-env-security.js";
-import { normalizeSystemRunApprovalPlan } from "../infra/system-run-approval-binding.js";
-import { formatExecCommand, resolveSystemRunCommandRequest } from "../infra/system-run-command.js";
+} from "../infra/system/host-env-security.js";
+import { normalizeSystemRunApprovalPlan } from "../infra/system/system-run-approval-binding.js";
+import {
+  formatExecCommand,
+  resolveSystemRunCommandRequest,
+} from "../infra/system/system-run-command.js";
 import { logWarn } from "../logger.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import { evaluateSystemRunPolicy, resolveExecApprovalDecision } from "./exec-policy.js";
@@ -97,7 +104,7 @@ type SystemRunParsePhase = {
   shellWrapperInvocation: boolean;
   commandText: string;
   commandPreview: string | null;
-  approvalPlan: import("../infra/exec-approvals.js").SystemRunApprovalPlan | null;
+  approvalPlan: import("../infra/exec/exec-approvals.js").SystemRunApprovalPlan | null;
   agentId: string | undefined;
   sessionKey: string;
   runId: string;

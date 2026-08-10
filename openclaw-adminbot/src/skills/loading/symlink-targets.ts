@@ -3,8 +3,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { isPathInside } from "../../infra/path-guards.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { isPathInside } from "../../infra/system/path-guards.js";
 import { resolveUserPath } from "../../utils.js";
 
 export function resolveAllowedSkillSymlinkTargetRealPaths(config?: OpenClawConfig): string[] {

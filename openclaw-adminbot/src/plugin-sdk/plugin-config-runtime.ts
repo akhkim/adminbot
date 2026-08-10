@@ -1,7 +1,10 @@
 // Plugin config runtime helpers load and normalize plugin-owned configuration at execution time.
-import type { OpenClawConfig } from "../config/types.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 
-export { normalizePluginsConfig, resolveEffectiveEnableState } from "../plugins/config-state.js";
+export {
+  normalizePluginsConfig,
+  resolveEffectiveEnableState,
+} from "../plugins/config/config-state.js";
 
 /** Requires an already-resolved runtime config at plugin runtime boundaries. */
 export function requireRuntimeConfig(config: OpenClawConfig, context: string): OpenClawConfig {

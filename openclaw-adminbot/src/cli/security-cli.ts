@@ -7,15 +7,15 @@ import type { Command } from "commander";
 import { formatDocsLink } from "../../packages/terminal-core/src/links.js";
 import { isRich, theme } from "../../packages/terminal-core/src/theme.js";
 import { getRuntimeConfig } from "../config/config.js";
-import type { GatewayAuthMode } from "../config/types.gateway.js";
+import type { GatewayAuthMode } from "../config/types/gateway.js";
 import { defaultRuntime } from "../runtime.js";
 import { runSecurityAudit } from "../security/audit.js";
 import { fixSecurityFootguns } from "../security/fix.js";
 import { shortenHomeInString, shortenHomePath } from "../utils.js";
-import { formatCliCommand } from "./command-format.js";
-import { resolveCommandSecretRefsViaGateway } from "./command-secret-gateway.js";
-import { getSecurityAuditCommandSecretTargetIds } from "./command-secret-targets.js";
 import { formatHelpExamples } from "./help-format.js";
+import { formatCliCommand } from "./program/command-format.js";
+import { resolveCommandSecretRefsViaGateway } from "./program/command-secret-gateway.js";
+import { getSecurityAuditCommandSecretTargetIds } from "./program/command-secret-targets.js";
 
 type SecurityAuditOptions = {
   json?: boolean;

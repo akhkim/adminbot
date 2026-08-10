@@ -6,14 +6,14 @@ import {
 import type { ChannelId } from "../channels/plugins/channel-id.types.js";
 import { resolveAccountEntry } from "../routing/account-lookup.js";
 import { normalizeAccountId } from "../routing/session-key.js";
-import { normalizeMessageChannel } from "../utils/message-channel-core.js";
-import type { OpenClawConfig } from "./types.openclaw.js";
+import { normalizeMessageChannel } from "../shared/message-channel-core.js";
+import type { OpenClawConfig } from "./types/openclaw.js";
 import {
   parseToolsBySenderTypedKey,
   type GroupToolPolicyBySenderConfig,
   type GroupToolPolicyConfig,
   type ToolsBySenderKeyType,
-} from "./types.tools.js";
+} from "./types/tools.js";
 
 type GroupPolicyChannel = ChannelId;
 

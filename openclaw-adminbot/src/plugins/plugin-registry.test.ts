@@ -11,11 +11,12 @@ import type { PluginCandidate } from "./discovery.js";
 import {
   readPersistedInstalledPluginIndex,
   writePersistedInstalledPluginIndex,
-} from "./installed-plugin-index-store.js";
+} from "./install/installed-plugin-index-store.js";
 import {
   resolveInstalledPluginIndexPolicyHash,
   type InstalledPluginIndex,
-} from "./installed-plugin-index.js";
+} from "./install/installed-plugin-index.js";
+import { resolvePluginPath } from "./manifest/registry.js";
 import { loadPluginLookUpTable } from "./plugin-lookup-table.js";
 import { clearPluginMetadataLifecycleCaches } from "./plugin-metadata-lifecycle.js";
 import {
@@ -39,7 +40,6 @@ import {
   resolveProviderOwners,
   resolveSetupProviderOwners,
 } from "./plugin-registry.js";
-import { resolvePluginPath } from "./registry.js";
 import { cleanupTrackedTempDirs, makeTrackedTempDir } from "./test-helpers/fs-fixtures.js";
 
 const tempDirs: string[] = [];

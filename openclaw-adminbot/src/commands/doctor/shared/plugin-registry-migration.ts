@@ -4,9 +4,9 @@ import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
 import {
   extractShippedPluginInstallConfigRecords,
   stripShippedPluginInstallConfigRecords,
-} from "../../../config/plugin-install-config-migration.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { loadInstalledPluginIndexInstallRecords } from "../../../plugins/installed-plugin-index-records.js";
+} from "../../../config/plugin/plugin-install-config-migration.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import { loadInstalledPluginIndexInstallRecords } from "../../../plugins/install/installed-plugin-index-records.js";
 import {
   inspectPersistedInstalledPluginIndex,
   readPersistedInstalledPluginIndexSync,
@@ -14,15 +14,15 @@ import {
   writePersistedInstalledPluginIndex,
   type InstalledPluginIndexStoreInspection,
   type InstalledPluginIndexStoreOptions,
-} from "../../../plugins/installed-plugin-index-store.js";
+} from "../../../plugins/install/installed-plugin-index-store.js";
 import {
   loadInstalledPluginIndex,
   type InstalledPluginIndex,
   type InstalledPluginIndexRecord,
   type LoadInstalledPluginIndexParams,
-} from "../../../plugins/installed-plugin-index.js";
-import { loadPluginManifestRegistryForInstalledIndex } from "../../../plugins/manifest-registry-installed.js";
-import type { PluginManifestRecord } from "../../../plugins/manifest-registry.js";
+} from "../../../plugins/install/installed-plugin-index.js";
+import { loadPluginManifestRegistryForInstalledIndex } from "../../../plugins/manifest/manifest-registry-installed.js";
+import type { PluginManifestRecord } from "../../../plugins/manifest/manifest-registry.js";
 
 export const DISABLE_PLUGIN_REGISTRY_MIGRATION_ENV = "OPENCLAW_DISABLE_PLUGIN_REGISTRY_MIGRATION";
 export const FORCE_PLUGIN_REGISTRY_MIGRATION_ENV = "OPENCLAW_FORCE_PLUGIN_REGISTRY_MIGRATION";

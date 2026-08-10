@@ -19,9 +19,9 @@ import {
   normalizeStateDirEnv,
   resolveGatewayPort,
   resolveStateDir,
-} from "../../config/paths.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { hasConfiguredSecretInput } from "../../config/types.secrets.js";
+} from "../../config/paths/paths.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { hasConfiguredSecretInput } from "../../config/types/secrets.js";
 import { GATEWAY_SERVICE_RUNTIME_PID_ENV } from "../../daemon/constants.js";
 import {
   defaultGatewayBindMode,
@@ -41,8 +41,8 @@ import { setConsoleSubsystemFilter, setConsoleTimestampPrefix } from "../../logg
 import { withDiagnosticPhase } from "../../logging/diagnostic-phase.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { defaultRuntime } from "../../runtime.js";
-import { formatCliCommand } from "../command-format.js";
 import { formatInvalidConfigPort, formatInvalidPortOption } from "../error-format.js";
+import { formatCliCommand } from "../program/command-format.js";
 import { withProgress } from "../progress.js";
 import { parsePort } from "../shared/parse-port.js";
 import {
@@ -304,12 +304,12 @@ type GatewayRunShellEnvFallbackPlan =
 async function resolveGatewayRunShellEnvFallbackPlan(
   cfg: OpenClawConfig,
 ): Promise<GatewayRunShellEnvFallbackPlan> {
-  const { createConfigRuntimeEnv } = await import("../../config/env-vars.js");
+  const { createConfigRuntimeEnv } = await import("../../config/env/env-vars.js");
   const {
     resolveShellEnvFallbackTimeoutMs,
     shouldDeferShellEnvFallback,
     shouldEnableShellEnvFallback,
-  } = await import("../../infra/shell-env.js");
+  } = await import("../../infra/system/shell-env.js");
   const planEnv = createConfigRuntimeEnv(cfg, process.env);
   const enabled =
     (shouldEnableShellEnvFallback(planEnv) || cfg.env?.shellEnv?.enabled === true) &&
@@ -317,7 +317,8 @@ async function resolveGatewayRunShellEnvFallbackPlan(
   if (!enabled) {
     return { enabled: false };
   }
-  const { resolveShellEnvExpectedKeys } = await import("../../config/shell-env-expected-keys.js");
+  const { resolveShellEnvExpectedKeys } =
+    await import("../../config/env/shell-env-expected-keys.js");
   return {
     enabled: true,
     expectedKeys: resolveShellEnvExpectedKeys(planEnv),
@@ -328,7 +329,7 @@ async function resolveGatewayRunShellEnvFallbackPlan(
 async function loadGatewayRunShellEnvFallback(
   plan: Extract<GatewayRunShellEnvFallbackPlan, { enabled: true }>,
 ): Promise<Record<string, string>> {
-  const { loadShellEnvFallback } = await import("../../infra/shell-env.js");
+  const { loadShellEnvFallback } = await import("../../infra/system/shell-env.js");
   const valuesBeforeLoad = new Map(plan.expectedKeys.map((key) => [key, process.env[key]]));
   loadShellEnvFallback({
     enabled: true,
@@ -357,7 +358,7 @@ async function clearGatewayRunShellEnvFallback(
       delete process.env[key];
     }
   }
-  const { clearShellEnvAppliedKeys } = await import("../../infra/shell-env.js");
+  const { clearShellEnvAppliedKeys } = await import("../../infra/system/shell-env.js");
   clearShellEnvAppliedKeys(keys);
 }
 
@@ -613,7 +614,7 @@ export async function runGatewayCommand(opts: GatewayRunOpts, hooks: GatewayRunR
   const { startGatewayServer } = await startupTrace.measure("cli.server-import", () =>
     withProgress(
       { label: "Loading gateway modules…", indeterminate: true },
-      async () => import("../../gateway/server.js"),
+      async () => import("../../gateway/server/server.js"),
     ),
   );
 
@@ -850,7 +851,7 @@ export async function runGatewayCommand(opts: GatewayRunOpts, hooks: GatewayRunR
           ...(passwordRaw ? { password: passwordRaw } : {}),
         }
       : undefined;
-  const { resolveGatewayAuth } = await import("../../gateway/auth.js");
+  const { resolveGatewayAuth } = await import("../../gateway/auth/auth.js");
   const resolvedAuth = await startupTrace.measure("cli.auth-resolve", () =>
     resolveGatewayAuth({
       authConfig: cfg.gateway?.auth,

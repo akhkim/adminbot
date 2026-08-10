@@ -14,7 +14,7 @@ import {
   requestHeartbeat,
   resetHeartbeatWakeStateForTests,
   setHeartbeatWakeHandler,
-} from "../../infra/heartbeat-wake.js";
+} from "../../infra/heartbeat/heartbeat-wake.js";
 import * as jsonFiles from "../../infra/json-files.js";
 import * as execModule from "../../process/exec.js";
 import { onSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
@@ -382,7 +382,7 @@ describe("plugin runtime command execution", () => {
     // The wrappers should not forward agentDir or store from plugin callers.
     // We verify this by checking the wrapper functions exist and are not the
     // raw implementations (they are wrapped, not direct references).
-    const { getApiKeyForModel: rawGetApiKey } = await import("../../agents/model-auth.js");
+    const { getApiKeyForModel: rawGetApiKey } = await import("../../agents/auth/model-auth.js");
     const runtime = createPluginRuntime();
     // Wrappers should NOT be the same reference as the raw functions
     expect(runtime.modelAuth.getApiKeyForModel).not.toBe(rawGetApiKey);

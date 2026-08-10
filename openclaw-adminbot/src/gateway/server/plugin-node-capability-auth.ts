@@ -1,12 +1,12 @@
 // Plugin node capability auth lets node-issued route capabilities supplement normal bearer gateway auth.
 import type { IncomingMessage } from "node:http";
-import type { AuthRateLimiter } from "../auth-rate-limit.js";
+import type { AuthRateLimiter } from "../auth/auth-rate-limit.js";
 import {
   authorizeHttpGatewayConnect,
   type GatewayAuthResult,
   type ResolvedGatewayAuth,
-} from "../auth.js";
-import { getBearerToken, resolveHttpBrowserOriginPolicy } from "../http-auth-utils.js";
+} from "../auth/auth.js";
+import { getBearerToken, resolveHttpBrowserOriginPolicy } from "../http/http-auth-utils.js";
 import {
   hasAuthorizedPluginNodeCapability,
   type PluginNodeCapabilitySurface,

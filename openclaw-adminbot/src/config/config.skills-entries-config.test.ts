@@ -1,6 +1,6 @@
 // Covers skills entry config parsing and defaults.
 import { describe, expect, it } from "vitest";
-import { OpenClawSchema } from "./zod-schema.js";
+import { OpenClawSchema } from "./zod/zod-schema.js";
 
 describe("skills entries config schema", () => {
   it("accepts custom fields under config", () => {

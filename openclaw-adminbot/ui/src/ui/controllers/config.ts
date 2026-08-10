@@ -1,5 +1,5 @@
 // Control UI controller manages config gateway state.
-import { applyMergePatch } from "../../../../src/config/merge-patch.ts";
+import { applyMergePatch } from "../../../../src/config/mutate/merge-patch.js";
 import type { GatewayBrowserClient } from "../gateway.ts";
 import type { ConfigSchemaResponse, ConfigSnapshot, ConfigUiHints } from "../types.ts";
 import type { JsonSchema } from "../views/config-form.shared.ts";

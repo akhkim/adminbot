@@ -5,21 +5,12 @@
  */
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import {
-  ensureBrowserControlAuth,
-  resolveBrowserControlAuth,
-} from "../../plugin-sdk/browser-control-auth.js";
-import {
-  DEFAULT_BROWSER_EVALUATE_ENABLED,
-  resolveBrowserConfig,
-} from "../../plugin-sdk/browser-profiles.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { defaultRuntime } from "../../runtime.js";
 import type { SkillEligibilityContext } from "../../skills/types.js";
 import { resolveUserPath } from "../../utils.js";
-import { DEFAULT_AGENT_WORKSPACE_DIR } from "../workspace.js";
+import { DEFAULT_AGENT_WORKSPACE_DIR } from "../workspace/workspace.js";
 import { getSandboxBackendWorkdirResolver, requireSandboxBackendFactory } from "./backend.js";
-import { ensureSandboxBrowser } from "./browser.js";
 import { resolveSandboxConfigForAgent } from "./config.js";
 import { SANDBOX_STATE_DIR } from "./constants.js";
 import { createSandboxFsBridge } from "./fs-bridge.js";
@@ -246,47 +237,13 @@ export async function resolveSandboxContext(params: {
     configLabelKind: backend.configLabelKind ?? "Image",
   });
 
-  const resolvedBrowserConfig = resolvedCfg.browser.enabled
-    ? resolveBrowserConfig(params.config?.browser, params.config)
-    : undefined;
-  const evaluateEnabled =
-    resolvedBrowserConfig?.evaluateEnabled ?? DEFAULT_BROWSER_EVALUATE_ENABLED;
-
-  const bridgeAuth = cfg.browser.enabled
-    ? await (async () => {
-        // Sandbox browser bridge server runs on a loopback TCP port; always wire up
-        // the same auth that loopback browser clients will send (token/password).
-        const cfgForAuth =
-          params.config ?? (await import("../../config/config.js")).getRuntimeConfig();
-        let browserAuth = resolveBrowserControlAuth(cfgForAuth);
-        try {
-          const ensured = await ensureBrowserControlAuth({ cfg: cfgForAuth });
-          browserAuth = ensured.auth;
-        } catch (error) {
-          const message = error instanceof Error ? error.message : JSON.stringify(error);
-          defaultRuntime.error?.(`Sandbox browser auth ensure failed: ${message}`);
-        }
-        return browserAuth;
-      })()
-    : undefined;
-  if (resolvedCfg.browser.enabled && backend.capabilities?.browser !== true) {
-    throw new Error(
-      `Sandbox backend "${resolvedCfg.backend}" does not support browser sandboxes yet.`,
-    );
+  // Sandbox browser support came from the browser plugin, which this fork does not ship. The
+  // config flag can still be set, so fail loudly rather than silently handing back a sandbox with
+  // no browser.
+  if (resolvedCfg.browser.enabled) {
+    throw new Error("Sandbox browser support is not available: no browser plugin is installed.");
   }
-  const browser =
-    resolvedCfg.browser.enabled && backend.capabilities?.browser === true
-      ? await ensureSandboxBrowser({
-          scopeKey,
-          workspaceDir,
-          agentWorkspaceDir,
-          skillsWorkspaceDir,
-          cfg: resolvedCfg,
-          evaluateEnabled,
-          bridgeAuth,
-          ssrfPolicy: resolvedBrowserConfig?.ssrfPolicy,
-        })
-      : null;
+  const browser = null;
 
   const sandboxContext: SandboxContext = {
     enabled: true,

@@ -1,7 +1,7 @@
 // Server runtime-state test helper builds minimal gateway runtime state with a
 // configurable plugin registry.
-import { createEmptyPluginRegistry } from "../plugins/registry.js";
-import { createGatewayRuntimeState } from "./server-runtime-state.js";
+import { createEmptyPluginRegistry } from "../plugins/manifest/registry.js";
+import { createGatewayRuntimeState } from "./server/server-runtime-state.js";
 
 /**
  * Runtime-state fixture factory for gateway server tests.

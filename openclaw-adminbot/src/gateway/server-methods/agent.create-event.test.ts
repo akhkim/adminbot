@@ -32,7 +32,7 @@ vi.mock("../../config/config.js", () => ({
   getRuntimeConfig: configMocks.getRuntimeConfig,
 }));
 
-vi.mock("../../commands/agent.js", () => ({
+vi.mock("../../commands/agent/agent.js", () => ({
   agentCommandFromIngress: agentIngressMocks.agentCommandFromIngress,
 }));
 

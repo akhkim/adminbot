@@ -11,7 +11,7 @@ import { listAcpSessionEntries } from "../../../acp/runtime/session-meta.js";
 import type { SessionEntry } from "../../../config/sessions/types.js";
 import type { SessionAcpMeta } from "../../../config/sessions/types.js";
 import { getSessionBindingService } from "../../../infra/outbound/session-binding-service.js";
-import type { CommandHandlerResult, HandleCommandsParams } from "../commands-types.js";
+import type { CommandHandlerResult, HandleCommandsParams } from "../commands/commands-types.js";
 import { resolveAcpCommandBindingContext } from "./context.js";
 import { resolveAcpInstallCommandHint } from "./install-hints.js";
 import {

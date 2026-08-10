@@ -1,14 +1,14 @@
 // Legacy model runtime config migrations for stale model refs, compat fields, and catalog data.
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
-import { splitTrailingAuthProfile } from "../../../agents/model-ref-profile.js";
+import { splitTrailingAuthProfile } from "../../../agents/models/model-ref-profile.js";
 import {
   defineLegacyConfigMigration,
   ensureRecord,
   getRecord,
   type LegacyConfigMigrationSpec,
   type LegacyConfigRule,
-} from "../../../config/legacy.shared.js";
-import { isModelThinkingFormat, type ModelDefinitionConfig } from "../../../config/types.models.js";
+} from "../../../config/legacy/legacy.shared.js";
+import { isModelThinkingFormat, type ModelDefinitionConfig } from "../../../config/types/models.js";
 import { isLegacyModelsAddCodexMetadataModel } from "./legacy-models-add-metadata.js";
 
 const STALE_CONTEXT_WINDOW_FIXES: Record<string, { stale: number; correct: number }> = {

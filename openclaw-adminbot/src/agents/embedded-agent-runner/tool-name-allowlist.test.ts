@@ -7,7 +7,7 @@ import {
   addClientToolsToToolSearchCatalog,
   applyToolSearchCatalog,
   TOOL_SEARCH_CODE_MODE_TOOL_NAME,
-} from "../tool-search.js";
+} from "../tools/tool-search.js";
 import type { ClientToolDefinition } from "./run/params.js";
 import {
   collectAllowedToolNames,

@@ -1,10 +1,10 @@
 // Update method tests cover update.run/status, restart sentinel metadata,
 // managed-service handoff, restart scheduling, and delivery context preservation.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ConfigFileSnapshot, OpenClawConfig } from "../../config/types.openclaw.js";
+import type { ConfigFileSnapshot, OpenClawConfig } from "../../config/types/openclaw.js";
+import type { UpdateInstallSurface, UpdateRunResult } from "../../infra/install/update-runner.js";
 import type { RestartSentinelPayload } from "../../infra/restart-sentinel.js";
 import type { RespawnSupervisor } from "../../infra/supervisor-markers.js";
-import type { UpdateInstallSurface, UpdateRunResult } from "../../infra/update-runner.js";
 
 // Capture the sentinel payload written during update.run
 let capturedPayload: RestartSentinelPayload | undefined;
@@ -37,7 +37,7 @@ const scheduleGatewaySigusr1RestartMock = vi.fn(() => ({ scheduled: true }));
 
 type PostCoreFinalizeOutcome = Awaited<
   ReturnType<
-    typeof import("../../infra/update-post-core-finalize.js").runPostCoreFinalizeAfterGatewayUpdate
+    typeof import("../../infra/install/update-post-core-finalize.js").runPostCoreFinalizeAfterGatewayUpdate
   >
 >;
 const runPostCoreFinalizeAfterGatewayUpdateMock = vi.fn<() => Promise<PostCoreFinalizeOutcome>>(
@@ -105,7 +105,7 @@ vi.mock("../../infra/restart.js", () => ({
   scheduleGatewaySigusr1Restart: scheduleGatewaySigusr1RestartMock,
 }));
 
-vi.mock("../../infra/package-json.js", () => ({
+vi.mock("../../infra/install/package-json.js", () => ({
   readPackageVersion: readPackageVersionMock,
 }));
 
@@ -113,21 +113,21 @@ vi.mock("../../infra/supervisor-markers.js", () => ({
   detectRespawnSupervisor: detectRespawnSupervisorMock,
 }));
 
-vi.mock("../../infra/update-channels.js", () => ({
+vi.mock("../../infra/install/update-channels.js", () => ({
   normalizeUpdateChannel: normalizeUpdateChannelMock,
 }));
 
-vi.mock("../../infra/update-runner.js", () => ({
+vi.mock("../../infra/install/update-runner.js", () => ({
   resolveUpdateInstallSurface: resolveUpdateInstallSurfaceMock,
   runGatewayUpdate: runGatewayUpdateMock,
 }));
 
 // Keep the real `foldPostCoreFinalizeIntoResult` so the restart-gate behavior on
 // finalize failure is exercised; only stub the subprocess-spawning finalizer.
-vi.mock("../../infra/update-post-core-finalize.js", async () => {
-  const actual = await vi.importActual<typeof import("../../infra/update-post-core-finalize.js")>(
-    "../../infra/update-post-core-finalize.js",
-  );
+vi.mock("../../infra/install/update-post-core-finalize.js", async () => {
+  const actual = await vi.importActual<
+    typeof import("../../infra/install/update-post-core-finalize.js")
+  >("../../infra/install/update-post-core-finalize.js");
   return {
     ...actual,
     runPostCoreFinalizeAfterGatewayUpdate: runPostCoreFinalizeAfterGatewayUpdateMock,
@@ -139,7 +139,7 @@ vi.mock("../../../packages/gateway-protocol/src/index.js", () => ({
   validateUpdateRunParams: () => true,
 }));
 
-vi.mock("../server-restart-sentinel.js", () => ({
+vi.mock("../server/server-restart-sentinel.js", () => ({
   getLatestUpdateRestartSentinel: getLatestUpdateRestartSentinelMock,
   recordLatestUpdateRestartSentinel: recordLatestUpdateRestartSentinelMock,
   refreshLatestUpdateRestartSentinel: refreshLatestUpdateRestartSentinelMock,
@@ -154,7 +154,7 @@ vi.mock("./restart-request.js", () => ({
   }),
 }));
 
-vi.mock("../../infra/update-managed-service-handoff.js", () => ({
+vi.mock("../../infra/install/update-managed-service-handoff.js", () => ({
   startManagedServiceUpdateHandoff: startManagedServiceUpdateHandoffMock,
   formatManagedServiceUpdateCommand: (params?: {
     timeoutMs?: number;

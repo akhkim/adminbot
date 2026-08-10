@@ -2,15 +2,15 @@
  * Builds tool-search execution plans from allowlists and available controls.
  */
 import { getPluginToolMeta } from "../../../plugins/tools.js";
-import { isToolAllowedByPolicyName } from "../../tool-policy-match.js";
-import { normalizeToolName } from "../../tool-policy.js";
+import { isToolAllowedByPolicyName } from "../../tools/tool-policy-match.js";
+import { normalizeToolName } from "../../tools/tool-policy.js";
 import {
   collectUniqueCatalogToolNames,
   TOOL_CALL_RAW_TOOL_NAME,
   TOOL_DESCRIBE_RAW_TOOL_NAME,
   TOOL_SEARCH_CODE_MODE_TOOL_NAME,
   TOOL_SEARCH_RAW_TOOL_NAME,
-} from "../../tool-search.js";
+} from "../../tools/tool-search.js";
 import { collectAllowedToolNames } from "../tool-name-allowlist.js";
 
 /** Tool-search control tools that may be auto-added when tool search is enabled. */

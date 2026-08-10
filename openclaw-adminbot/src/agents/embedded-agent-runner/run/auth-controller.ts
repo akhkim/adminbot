@@ -4,31 +4,31 @@
 import type { ThinkLevel } from "../../../auto-reply/thinking.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
 import type { Model } from "../../../llm/types.js";
-import { prepareProviderRuntimeAuth } from "../../../plugins/provider-runtime.js";
+import { prepareProviderRuntimeAuth } from "../../../plugins/providers/provider-runtime.js";
+import { formatAuthProfileFailureMessage } from "../../auth-profiles/failure-copy.js";
 import {
   type AuthProfileStore,
   isProfileInCooldown,
   resolveProfilesUnavailableReason,
   resolveSubscriptionAuthModeForProfiles,
-} from "../../auth-profiles.js";
-import { formatAuthProfileFailureMessage } from "../../auth-profiles/failure-copy.js";
-import {
-  classifyFailoverReason,
-  isFailoverErrorMessage,
-  type FailoverReason,
-} from "../../embedded-agent-helpers.js";
-import { FailoverError, resolveFailoverStatus } from "../../failover-error.js";
-import { shouldAllowCooldownProbeForReason } from "../../failover-policy.js";
+} from "../../auth/auth-profiles.js";
 import {
   getApiKeyForModel,
   MissingProviderAuthError,
   type ResolvedProviderAuth,
-} from "../../model-auth.js";
+} from "../../auth/model-auth.js";
+import {
+  classifyFailoverReason,
+  isFailoverErrorMessage,
+  type FailoverReason,
+} from "../../embedded/embedded-agent-helpers.js";
+import { FailoverError, resolveFailoverStatus } from "../../failover-error.js";
+import { shouldAllowCooldownProbeForReason } from "../../failover-policy.js";
+import { clampRuntimeAuthRefreshDelayMs } from "../../runtime-auth-refresh.js";
 import {
   applyPreparedRuntimeAuthToModel,
   type ModelProviderRequestTransportOverrides,
-} from "../../provider-request-config.js";
-import { clampRuntimeAuthRefreshDelayMs } from "../../runtime-auth-refresh.js";
+} from "../../transport/provider-request-config.js";
 import {
   RUNTIME_AUTH_REFRESH_MARGIN_MS,
   RUNTIME_AUTH_REFRESH_MIN_DELAY_MS,

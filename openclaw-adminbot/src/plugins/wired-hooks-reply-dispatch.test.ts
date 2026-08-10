@@ -1,7 +1,7 @@
 // Covers wired plugin hook dispatch before replies.
 import { describe, expect, it, vi } from "vitest";
 import { buildTestCtx } from "../auto-reply/reply/test-ctx.js";
-import { createHookRunnerWithRegistry } from "./hooks.test-helpers.js";
+import { createHookRunnerWithRegistry } from "./hooks/hooks.test-helpers.js";
 
 const replyDispatchEvent = {
   ctx: buildTestCtx({ SessionKey: "agent:test:session", BodyForAgent: "hello" }),

@@ -38,7 +38,7 @@ vi.mock("../../runtime.js", async () => ({
   defaultRuntime: mocks.defaultRuntime,
 }));
 
-vi.mock("../../commands/gateway-status.js", () => ({
+vi.mock("../../commands/gateway/gateway-status.js", () => ({
   gatewayStatusCommand: (opts: unknown, runtime: unknown) =>
     mocks.gatewayStatusCommand(opts, runtime),
 }));
@@ -67,11 +67,11 @@ vi.mock("../daemon-cli/register-service-commands.js", () => ({
   addGatewayServiceCommands: () => undefined,
 }));
 
-vi.mock("../../commands/health.js", () => ({
+vi.mock("../../commands/maintenance/health.js", () => ({
   formatHealthChannelLines: () => [],
 }));
 
-vi.mock("../../config/read-best-effort-config.runtime.js", () => ({
+vi.mock("../../config/runtime/read-best-effort-config.runtime.js", () => ({
   readBestEffortConfig: async () => ({}),
   readSourceConfigBestEffort: async () => ({}),
 }));
@@ -102,7 +102,7 @@ vi.mock("../../../packages/terminal-core/src/theme.js", () => ({
   },
 }));
 
-vi.mock("../../utils/usage-format.js", () => ({
+vi.mock("../../shared/usage-format.js", () => ({
   formatTokenCount: () => "0",
   formatUsd: () => "$0.00",
 }));

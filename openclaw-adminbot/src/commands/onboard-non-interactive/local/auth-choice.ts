@@ -5,27 +5,27 @@
  * setup when applicable, and applies built-in custom provider config.
  */
 import type { ApiKeyCredential } from "../../../agents/auth-profiles/types.js";
-import { formatCliCommand } from "../../../cli/command-format.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import type { SecretInput } from "../../../config/types.secrets.js";
+import { formatCliCommand } from "../../../cli/program/command-format.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import type { SecretInput } from "../../../config/types/secrets.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
-import { resolveManifestDeprecatedProviderAuthChoice } from "../../../plugins/provider-auth-choices.js";
+import { resolveManifestDeprecatedProviderAuthChoice } from "../../../plugins/providers/provider-auth-choices.js";
 import type { RuntimeEnv } from "../../../runtime.js";
 import { resolveDefaultSecretProviderAlias } from "../../../secrets/ref-contract.js";
 import {
   formatDeprecatedNonInteractiveAuthChoiceError,
   isDeprecatedAuthChoice,
   resolveDeprecatedAuthChoiceReplacement,
-} from "../../auth-choice-legacy.js";
-import { normalizeSecretInputModeInput } from "../../auth-choice.apply-helpers.js";
-import { normalizeApiKeyTokenProviderAuthChoice } from "../../auth-choice.apply.api-providers.js";
+} from "../../auth/auth-choice-legacy.js";
+import { normalizeSecretInputModeInput } from "../../auth/auth-choice.apply-helpers.js";
+import { normalizeApiKeyTokenProviderAuthChoice } from "../../auth/auth-choice.apply.api-providers.js";
 import {
   applyCustomApiConfig,
   CustomApiError,
   parseNonInteractiveCustomApiFlags,
   resolveCustomProviderId,
-} from "../../onboard-custom-config.js";
-import type { AuthChoice, OnboardOptions } from "../../onboard-types.js";
+} from "../../onboard/onboard-custom-config.js";
+import type { AuthChoice, OnboardOptions } from "../../onboard/onboard-types.js";
 import { resolveNonInteractiveApiKey } from "../api-keys.js";
 import { applyNonInteractivePluginProviderChoice } from "./auth-choice.plugin-providers.js";
 

@@ -9,7 +9,7 @@ const { dispatchGatewayMethodInProcessRaw } = vi.hoisted(() => ({
   dispatchGatewayMethodInProcessRaw: vi.fn(),
 }));
 
-vi.mock("../gateway/server-plugins.js", () => ({
+vi.mock("../gateway/server/server-plugins.js", () => ({
   dispatchGatewayMethodInProcessRaw,
 }));
 

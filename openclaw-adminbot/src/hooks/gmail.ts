@@ -10,7 +10,7 @@ import {
   resolveGatewayPort,
 } from "../config/config.js";
 import { resolveExecutable } from "../infra/executable-path.js";
-import { getWindowsInstallRoots } from "../infra/windows-install-roots.js";
+import { getWindowsInstallRoots } from "../infra/system/windows-install-roots.js";
 
 export const DEFAULT_GMAIL_LABEL = "INBOX";
 export const DEFAULT_GMAIL_TOPIC = "gog-gmail-watch";

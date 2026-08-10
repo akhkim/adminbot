@@ -6,8 +6,8 @@
 import type { AssistantMessageEvent } from "../llm/types.js";
 import type { PluginTextReplacement, PluginTextTransforms } from "../plugins/cli-backend.types.js";
 import type { StreamFn } from "./runtime/index.js";
-import type { MutableAssistantMessageEventStream } from "./stream-compat.js";
-import { createStreamIteratorWrapper } from "./stream-iterator-wrapper.js";
+import type { MutableAssistantMessageEventStream } from "./transport/stream-compat.js";
+import { createStreamIteratorWrapper } from "./transport/stream-iterator-wrapper.js";
 
 // Applies plugin-defined text replacement transforms to stream input/output.
 // Used by provider/CLI plugins that need compatibility rewrites at boundaries.

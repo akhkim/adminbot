@@ -10,8 +10,8 @@ import { cleanupTempDirs, makeTempRepoRoot, writeJsonFile } from "../../test/hel
 // returned dir). The
 // precedence policy (source vs dist-runtime vs dist, VITEST/tsx source-first,
 // isSourceCheckoutRoot detection, etc.) is exercised in
-// src/plugins/bundled-dir.test.ts and is intentionally not re-tested here.
-vi.mock("../plugins/bundled-dir.js", () => ({
+// src/plugins/install/bundled-dir.test.ts and is intentionally not re-tested here.
+vi.mock("../plugins/install/bundled-dir.js", () => ({
   resolveBundledPluginsDir: vi.fn(),
   resolveSourceCheckoutDependencyDiagnostic: vi.fn(() => null),
 }));
@@ -32,7 +32,7 @@ vi.mock("../infra/openclaw-root.js", () => ({
     opts.cwd ?? null,
 }));
 
-import { resolveBundledPluginsDir } from "../plugins/bundled-dir.js";
+import { resolveBundledPluginsDir } from "../plugins/install/bundled-dir.js";
 import { listBundledChannelCatalogEntries } from "./bundled-channel-catalog-read.js";
 
 const tempDirs: string[] = [];

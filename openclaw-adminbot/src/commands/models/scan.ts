@@ -5,9 +5,9 @@ import {
   stylePromptMessage,
   stylePromptTitle,
 } from "../../../packages/terminal-core/src/prompt-style.js";
-import { resolveApiKeyForProvider } from "../../agents/model-auth.js";
-import { type ModelScanResult, scanOpenRouterModels } from "../../agents/model-scan.js";
-import { formatCliCommand } from "../../cli/command-format.js";
+import { resolveApiKeyForProvider } from "../../agents/auth/model-auth.js";
+import { type ModelScanResult, scanOpenRouterModels } from "../../agents/models/model-scan.js";
+import { formatCliCommand } from "../../cli/program/command-format.js";
 import { withProgressTotals } from "../../cli/progress.js";
 import { logConfigUpdated } from "../../config/logging.js";
 import { toAgentModelListLike } from "../../config/model-input.js";

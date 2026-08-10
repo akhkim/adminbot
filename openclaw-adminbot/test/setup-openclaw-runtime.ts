@@ -7,7 +7,7 @@ import type {
 } from "../src/channels/plugins/types.js";
 import type { OpenClawConfig } from "../src/config/config.js";
 import type { OutboundSendDeps } from "../src/infra/outbound/deliver.js";
-import type { PluginRegistry } from "../src/plugins/registry.js";
+import type { PluginRegistry } from "../src/plugins/manifest/registry.js";
 import { installSharedTestSetup } from "./setup.shared.js";
 
 installSharedTestSetup();
@@ -20,18 +20,18 @@ type WorkerRuntimeState = {
   materializedDefaultPluginRegistry: PluginRegistry | null;
 };
 type WorkerPluginRuntimeHelpers = {
-  resetPluginRuntimeStateForTest: typeof import("../src/plugins/runtime.js").resetPluginRuntimeStateForTest;
-  setActivePluginRegistry: typeof import("../src/plugins/runtime.js").setActivePluginRegistry;
+  resetPluginRuntimeStateForTest: typeof import("../src/plugins/runtime/runtime.js").resetPluginRuntimeStateForTest;
+  setActivePluginRegistry: typeof import("../src/plugins/runtime/runtime.js").setActivePluginRegistry;
 };
 type WorkerCleanupHelpers = {
   clearSessionStoreCaches: typeof import("../src/config/sessions/store-cache.js").clearSessionStoreCaches;
   drainFileLockStateForTest: typeof import("../src/infra/file-lock.js").drainFileLockStateForTest;
   drainSessionStoreWriterQueuesForTest: typeof import("../src/config/sessions/store-writer-state.js").drainSessionStoreWriterQueuesForTest;
-  drainSessionWriteLockStateForTest: typeof import("../src/agents/session-write-lock.js").drainSessionWriteLockStateForTest;
+  drainSessionWriteLockStateForTest: typeof import("../src/agents/sessions/session-write-lock.js").drainSessionWriteLockStateForTest;
   resetContextWindowCacheForTest: typeof import("../src/agents/context-runtime-state.js").resetContextWindowCacheForTest;
   resetFileLockStateForTest: typeof import("../src/infra/file-lock.js").resetFileLockStateForTest;
-  resetModelsJsonReadyCacheForTest: typeof import("../src/agents/models-config-state.js").resetModelsJsonReadyCacheForTest;
-  resetSessionWriteLockStateForTest: typeof import("../src/agents/session-write-lock.js").resetSessionWriteLockStateForTest;
+  resetModelsJsonReadyCacheForTest: typeof import("../src/agents/models/models-config-state.js").resetModelsJsonReadyCacheForTest;
+  resetSessionWriteLockStateForTest: typeof import("../src/agents/sessions/session-write-lock.js").resetSessionWriteLockStateForTest;
 };
 
 type ReplyToModeResolver = NonNullable<
@@ -55,7 +55,7 @@ function loadWorkerPluginRuntimeHelpers(): Promise<WorkerPluginRuntimeHelpers> {
   const globalState = globalThis as typeof globalThis & {
     [WORKER_PLUGIN_RUNTIME_HELPERS]?: Promise<WorkerPluginRuntimeHelpers>;
   };
-  globalState[WORKER_PLUGIN_RUNTIME_HELPERS] ??= import("../src/plugins/runtime.js").then(
+  globalState[WORKER_PLUGIN_RUNTIME_HELPERS] ??= import("../src/plugins/runtime/runtime.js").then(
     (pluginRuntime) => ({
       resetPluginRuntimeStateForTest: pluginRuntime.resetPluginRuntimeStateForTest,
       setActivePluginRegistry: pluginRuntime.setActivePluginRegistry,
@@ -72,11 +72,11 @@ function loadWorkerCleanupHelpers(): Promise<WorkerCleanupHelpers> {
     vi.importActual<typeof import("../src/agents/context-runtime-state.js")>(
       "../src/agents/context-runtime-state.js",
     ),
-    vi.importActual<typeof import("../src/agents/models-config-state.js")>(
-      "../src/agents/models-config-state.js",
+    vi.importActual<typeof import("../src/agents/models/models-config-state.js")>(
+      "../src/agents/models/models-config-state.js",
     ),
-    vi.importActual<typeof import("../src/agents/session-write-lock.js")>(
-      "../src/agents/session-write-lock.js",
+    vi.importActual<typeof import("../src/agents/sessions/session-write-lock.js")>(
+      "../src/agents/sessions/session-write-lock.js",
     ),
     vi.importActual<typeof import("../src/config/sessions/store-cache.js")>(
       "../src/config/sessions/store-cache.js",

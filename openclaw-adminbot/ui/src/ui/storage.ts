@@ -6,8 +6,6 @@ const LOCAL_ASSISTANT_IDENTITY_KEY = "openclaw.control.assistant.v1";
 const LEGACY_TOKEN_SESSION_KEY = "openclaw.control.token.v1";
 const TOKEN_SESSION_KEY_PREFIX = "openclaw.control.token.v1:";
 const MAX_SCOPED_SESSION_ENTRIES = 10;
-const JINESIS_HOSTED_CONTROL_UI_HOST = "jinesis-admin.vercel.app";
-const LOCAL_GATEWAY_URL = "ws://127.0.0.1:18789";
 
 function settingsKeyForGateway(gatewayUrl: string): string {
   return `${SETTINGS_KEY_PREFIX}${normalizeGatewayTokenScope(gatewayUrl)}`;
@@ -28,6 +26,7 @@ type PersistedUiSettings = Omit<UiSettings, "token" | "sessionKey" | "lastActive
 import { isSupportedLocale } from "../i18n/index.ts";
 import { getSafeLocalStorage, getSafeSessionStorage } from "../local-storage.ts";
 import { parseImportedCustomTheme, type ImportedCustomTheme } from "./custom-theme.ts";
+import { isLoopbackGatewayHost } from "./loopback-host.ts";
 import { inferBasePathFromPathname, normalizeBasePath } from "./navigation.ts";
 import { normalizeOptionalString } from "./string-coerce.ts";
 import { parseThemeSelection, type ThemeMode, type ThemeName } from "./theme.ts";
@@ -117,6 +116,17 @@ function formatHostWithPort(hostname: string, port: string): string {
   return `${normalizedHost}:${port}`;
 }
 
+// A statically hosted Control UI is not served by its gateway, so neither the page origin nor a
+// loopback guess is a usable default. Such a deployment declares its gateway on the page itself
+// (see scripts/vercel-postbuild-index.mjs); read it here so a first visit connects straight away
+// instead of dialling a dead address and then asking the visitor to confirm a URL change.
+function declaredGatewayUrl(): string | undefined {
+  if (typeof window === "undefined") {
+    return undefined;
+  }
+  return normalizeOptionalString(window["__OPENCLAW_CONTROL_UI_GATEWAY_URL__"]) || undefined;
+}
+
 function deriveDefaultGatewayUrl(): { pageUrl: string; effectiveUrl: string } {
   const proto = location.protocol === "https:" ? "wss" : "ws";
   const configured =
@@ -126,14 +136,35 @@ function deriveDefaultGatewayUrl(): { pageUrl: string; effectiveUrl: string } {
     ? normalizeBasePath(configured)
     : inferBasePathFromPathname(location.pathname);
   const pageUrl = `${proto}://${location.host}${basePath}`;
-  if (location.hostname === JINESIS_HOSTED_CONTROL_UI_HOST) {
-    return { pageUrl, effectiveUrl: LOCAL_GATEWAY_URL };
+  const declared = declaredGatewayUrl();
+  if (declared) {
+    return { pageUrl, effectiveUrl: declared };
   }
   if (!isViteDevPage()) {
     return { pageUrl, effectiveUrl: pageUrl };
   }
   const effectiveUrl = `${proto}://${formatHostWithPort(location.hostname, "18789")}`;
   return { pageUrl, effectiveUrl };
+}
+
+// Heals a persisted gateway URL that this page cannot reach. A loopback address only works for a
+// browser on the gateway host, so once one was stored by a page served from anywhere else it made
+// every later load fail before the visitor could do anything about it. Prefer the deployment's own
+// default in that case; any other stored URL is a deliberate choice and is left alone.
+function preferReachableGatewayUrl(storedUrl: string, defaultUrl: string): string {
+  if (typeof location === "undefined" || isLoopbackGatewayHost(location.hostname)) {
+    return storedUrl;
+  }
+  try {
+    if (!isLoopbackGatewayHost(new URL(storedUrl).hostname)) {
+      return storedUrl;
+    }
+  } catch {
+    return storedUrl;
+  }
+  return isLoopbackGatewayHost(new URL(defaultUrl, location.href).hostname)
+    ? storedUrl
+    : defaultUrl;
 }
 
 function getSessionStorage(): Storage | null {
@@ -274,7 +305,10 @@ export function loadSettings(): UiSettings {
     }
     const parsed = JSON.parse(raw) as PersistedUiSettings;
     const parsedGatewayUrl = normalizeOptionalString(parsed.gatewayUrl) ?? defaults.gatewayUrl;
-    const gatewayUrl = parsedGatewayUrl === pageDerivedUrl ? defaultUrl : parsedGatewayUrl;
+    const gatewayUrl =
+      parsedGatewayUrl === pageDerivedUrl
+        ? defaultUrl
+        : preferReachableGatewayUrl(parsedGatewayUrl, defaultUrl);
     const scopedSessionSelection = resolveScopedSessionSelection(gatewayUrl, parsed, defaults);
     const customTheme = parseImportedCustomTheme((parsed as { customTheme?: unknown }).customTheme);
     const { theme, mode } = parseThemeSelection(

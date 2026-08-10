@@ -56,7 +56,7 @@ export function registerMaintenanceCommands(program: Command) {
         await runCommandWithRuntime(
           defaultRuntime,
           async () => {
-            const { runDoctorLintCli } = await import("../../commands/doctor-lint.js");
+            const { runDoctorLintCli } = await import("../../commands/doctor/doctor-lint.js");
             const exitCode = await runDoctorLintCli(defaultRuntime, {
               json: Boolean(opts.json),
               severityMin: typeof opts.severityMin === "string" ? opts.severityMin : undefined,
@@ -81,7 +81,7 @@ export function registerMaintenanceCommands(program: Command) {
         return;
       }
       await runCommandWithRuntime(defaultRuntime, async () => {
-        const { doctorCommand } = await import("../../commands/doctor.js");
+        const { doctorCommand } = await import("../../commands/doctor/doctor.js");
         await doctorCommand(defaultRuntime, {
           workspaceSuggestions: opts.workspaceSuggestions,
           yes: Boolean(opts.yes),

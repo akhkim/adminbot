@@ -9,7 +9,7 @@ import {
 } from "../plugin-sdk/agent-harness.js";
 import { listAgentToolResultMiddlewares } from "../plugins/agent-tool-result-middleware.js";
 import { listCodexAppServerExtensionFactories } from "../plugins/codex-app-server-extension-factory.js";
-import { loadOpenClawPlugins } from "../plugins/loader.js";
+import { loadOpenClawPlugins } from "../plugins/runtime/loader.js";
 import {
   cleanupTempPluginTestEnvironment,
   createTempPluginDir,

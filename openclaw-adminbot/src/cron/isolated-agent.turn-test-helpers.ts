@@ -2,7 +2,7 @@
 import "./isolated-agent.mocks.js";
 import fs from "node:fs/promises";
 import { expect, vi } from "vitest";
-import { runEmbeddedAgent } from "../agents/embedded-agent.js";
+import { runEmbeddedAgent } from "../agents/embedded/embedded-agent.js";
 import type { CliDeps } from "../cli/deps.js";
 import { runCronIsolatedAgentTurn } from "./isolated-agent.js";
 import {

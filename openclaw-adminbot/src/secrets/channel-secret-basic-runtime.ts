@@ -1,5 +1,5 @@
 /** Basic channel secret runtime helpers for account/root credential collection. */
-import { coerceSecretRef } from "../config/types.secrets.js";
+import { coerceSecretRef } from "../config/types/secrets.js";
 import {
   collectSecretInputAssignment,
   hasOwnProperty,

@@ -1,7 +1,7 @@
 // Shutdown drain tests protect bounded session_end hook emission for tracked
 // active sessions during gateway shutdown and restart.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 // Regression coverage for #57790: the bounded shutdown drain must fire a
 // typed `session_end` for every session the tracker has noted, must skip
@@ -24,11 +24,11 @@ const getGlobalHookRunnerMock = vi.fn(() => ({
   runSessionStart: vi.fn(async () => undefined),
 }));
 
-vi.mock("../plugins/hook-runner-global.js", () => ({
+vi.mock("../plugins/hooks/hook-runner-global.js", () => ({
   getGlobalHookRunner: getGlobalHookRunnerMock,
 }));
 
-vi.mock("./session-transcript-files.fs.js", () => ({
+vi.mock("./sessions/session-transcript-files.fs.js", () => ({
   extractGeneratedTranscriptSessionId: vi.fn(() => undefined),
   resolveStableSessionEndTranscript: vi.fn(() => ({
     sessionFile: undefined,
@@ -37,7 +37,7 @@ vi.mock("./session-transcript-files.fs.js", () => ({
   archiveSessionTranscriptsDetailed: vi.fn(() => []),
 }));
 
-vi.mock("../auto-reply/reply/session-hooks.js", () => ({
+vi.mock("../auto-reply/reply/session/session-hooks.js", () => ({
   buildSessionEndHookPayload: vi.fn(
     (params: { sessionId: string; reason: string; sessionKey: string }) => ({
       event: { sessionId: params.sessionId, reason: params.reason, sessionKey: params.sessionKey },
@@ -51,7 +51,7 @@ const {
   drainActiveSessionsForShutdown,
   emitGatewaySessionEndPluginHook,
   emitGatewaySessionStartPluginHook,
-} = await import("./session-reset-service.js");
+} = await import("./sessions/session-reset-service.js");
 const { clearActiveSessionsForShutdownTracker, listActiveSessionsForShutdown } =
   await import("./active-sessions-shutdown-tracker.js");
 

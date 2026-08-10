@@ -1,23 +1,27 @@
+import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
+import { resolveSenderToolPolicy } from "../../agents/sender-tool-policy.js";
+import {
+  isSubagentEnvelopeSession,
+  resolveSubagentCapabilityStore,
+} from "../../agents/subagents/subagent-capabilities.js";
 // Skill tool dispatch routes runtime skill tool calls through the active session context.
 import {
   resolveEffectiveToolPolicy,
   resolveGroupToolPolicy,
   resolveInheritedToolPolicyForSession,
   resolveSubagentToolPolicyForSession,
-} from "../../agents/agent-tools.policy.js";
-import type { AnyAgentTool } from "../../agents/agent-tools.types.js";
-import { createOpenClawTools } from "../../agents/openclaw-tools.runtime.js";
-import { resolveSandboxRuntimeStatus } from "../../agents/sandbox/runtime-status.js";
-import { resolveSenderToolPolicy } from "../../agents/sender-tool-policy.js";
+} from "../../agents/tools/agent-tools.policy.js";
+import type { AnyAgentTool } from "../../agents/tools/agent-tools.types.js";
 import {
-  isSubagentEnvelopeSession,
-  resolveSubagentCapabilityStore,
-} from "../../agents/subagent-capabilities.js";
-import { buildDeclaredToolAllowlistContext } from "../../agents/tool-policy-declared-context.js";
+  replaceWithEffectiveCronCreatorToolAllowlist,
+  type CronCreatorToolAllowlistEntry,
+} from "../../agents/tools/cron-tool.js";
+import { createOpenClawTools } from "../../agents/tools/openclaw-tools.runtime.js";
+import { buildDeclaredToolAllowlistContext } from "../../agents/tools/tool-policy-declared-context.js";
 import {
   applyToolPolicyPipeline,
   buildDefaultToolPolicyPipelineSteps,
-} from "../../agents/tool-policy-pipeline.js";
+} from "../../agents/tools/tool-policy-pipeline.js";
 import {
   collectExplicitDenylist,
   collectExplicitAllowlist,
@@ -25,16 +29,12 @@ import {
   mergeAlsoAllowPolicy,
   replaceWithEffectiveToolAllowlist,
   resolveToolProfilePolicy,
-} from "../../agents/tool-policy.js";
-import {
-  replaceWithEffectiveCronCreatorToolAllowlist,
-  type CronCreatorToolAllowlistEntry,
-} from "../../agents/tools/cron-tool.js";
+} from "../../agents/tools/tool-policy.js";
 import type { SessionEntry } from "../../config/sessions.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { logVerbose } from "../../globals.js";
 import { getPluginToolMeta } from "../../plugins/tools.js";
-import { resolveGatewayMessageChannel } from "../../utils/message-channel.js";
+import { resolveGatewayMessageChannel } from "../../shared/message-channel.js";
 import type { SkillCommandSpec } from "../types.js";
 
 type SkillDispatchMessageContext = {

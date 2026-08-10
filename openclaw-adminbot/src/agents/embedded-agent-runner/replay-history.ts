@@ -3,12 +3,12 @@
  */
 import { stripInternalMetadataForDisplay } from "../../auto-reply/reply/display-text-sanitize.js";
 import { isSilentReplyPayloadText, SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { ProviderRuntimeModel } from "../../plugins/providers/provider-runtime-model.types.js";
 import {
   sanitizeProviderReplayHistoryWithPlugin,
   validateProviderReplayTurnsWithPlugin,
-} from "../../plugins/provider-runtime.js";
+} from "../../plugins/providers/provider-runtime.js";
 import type {
   ProviderReplaySessionEntry,
   ProviderReplaySessionState,
@@ -19,7 +19,7 @@ import {
   normalizeInputProvenance,
 } from "../../sessions/input-provenance.js";
 import { isTranscriptOnlyOpenClawAssistantMessage } from "../../shared/transcript-only-openclaw-assistant.js";
-import { stripStaleAssistantUsageBeforeLatestCompaction } from "../compaction-usage.js";
+import { stripStaleAssistantUsageBeforeLatestCompaction } from "../compaction/compaction-usage.js";
 import {
   downgradeOpenAIFunctionCallReasoningPairs,
   downgradeOpenAIReasoningBlocks,
@@ -28,24 +28,24 @@ import {
   sanitizeSessionMessagesImages,
   validateAnthropicTurns,
   validateGeminiTurns,
-} from "../embedded-agent-helpers.js";
+} from "../embedded/embedded-agent-helpers.js";
 import { resolveImageSanitizationLimits } from "../image-sanitization.js";
-import { isReasoningOnlyLengthAssistantTurn } from "../replay-turn-classification.js";
 import type { AgentMessage } from "../runtime/index.js";
+import type { SessionManager } from "../sessions/index.js";
 import {
   sanitizeToolCallInputs,
   sanitizeToolUseResultPairing,
   stripToolResultDetails,
-} from "../session-transcript-repair.js";
-import type { SessionManager } from "../sessions/index.js";
-import { STREAM_ERROR_FALLBACK_TEXT } from "../stream-message-shared.js";
-import { sanitizeToolCallIdsForCloudCodeAssist } from "../tool-call-id.js";
+} from "../sessions/session-transcript-repair.js";
+import { sanitizeToolCallIdsForCloudCodeAssist } from "../tools/tool-call-id.js";
 import type { TranscriptPolicy } from "../transcript-policy.js";
 import {
   providerRequiresSignedThinking,
   resolveTranscriptPolicy,
   shouldAllowProviderOwnedThinkingReplay,
 } from "../transcript-policy.js";
+import { isReasoningOnlyLengthAssistantTurn } from "../transport/replay-turn-classification.js";
+import { STREAM_ERROR_FALLBACK_TEXT } from "../transport/stream-message-shared.js";
 import {
   makeZeroUsageSnapshot,
   normalizeUsage,

@@ -1,5 +1,5 @@
 // Splits oxlint into resource-aware shards with heartbeat and timeout handling.
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -250,43 +250,27 @@ export async function main(extraArgs = process.argv.slice(2), runtimeEnv = proce
   const selectedShards = filterOxlintShards(shards, shardArgs.only);
 
   try {
-    const prepareResult = spawnSync(
-      process.execPath,
-      [path.resolve("scripts", "prepare-extension-package-boundary-artifacts.mjs")],
-      {
-        stdio: "inherit",
-        env,
-      },
-    );
-
-    if (prepareResult.error) {
-      throw prepareResult.error;
-    }
-    if ((prepareResult.status ?? 1) !== 0) {
-      process.exitCode = prepareResult.status ?? 1;
-    } else {
-      const shardConcurrency = resolveOxlintShardConcurrency({
-        env,
-        platform: process.platform,
-        splitCore: shardArgs.splitCore,
-      });
-      const results =
-        shardConcurrency <= 1
-          ? await runShardsSerial({
-              entries: selectedShards,
-              env,
-              extraArgs: shardArgs.oxlintArgs,
-              runner,
-            })
-          : await runShardsParallel({
-              concurrency: Math.min(shardConcurrency, selectedShards.length),
-              entries: selectedShards,
-              env,
-              extraArgs: shardArgs.oxlintArgs,
-              runner,
-            });
-      process.exitCode = results.find((status) => status !== 0) ?? 0;
-    }
+    const shardConcurrency = resolveOxlintShardConcurrency({
+      env,
+      platform: process.platform,
+      splitCore: shardArgs.splitCore,
+    });
+    const results =
+      shardConcurrency <= 1
+        ? await runShardsSerial({
+            entries: selectedShards,
+            env,
+            extraArgs: shardArgs.oxlintArgs,
+            runner,
+          })
+        : await runShardsParallel({
+            concurrency: Math.min(shardConcurrency, selectedShards.length),
+            entries: selectedShards,
+            env,
+            extraArgs: shardArgs.oxlintArgs,
+            runner,
+          });
+    process.exitCode = results.find((status) => status !== 0) ?? 0;
   } finally {
     releaseLock();
   }

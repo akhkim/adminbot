@@ -19,7 +19,7 @@ vi.mock("../../config/sessions/delivery-info.js", () => ({
   extractDeliveryInfo: extractDeliveryInfoMock,
 }));
 
-import { GatewayClientRequestError } from "../../gateway/client.js";
+import { GatewayClientRequestError } from "../../gateway/client/client.js";
 import { buildAgentPeerSessionKey } from "../../routing/session-key.js";
 import { createCronTool } from "./cron-tool.js";
 

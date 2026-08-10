@@ -7,9 +7,9 @@ import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import {
   resolveEffectiveToolFsRootExpansionAllowed,
   resolveEffectiveToolFsWorkspaceOnly,
-} from "../agents/tool-fs-policy.js";
-import { resolveStateDir } from "../config/paths.js";
-import type { OpenClawConfig } from "../config/types.js";
+} from "../agents/tools/tool-fs-policy.js";
+import { resolveStateDir } from "../config/paths/paths.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import { safeFileURLToPath } from "../infra/local-file-access.js";
 import { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
 import { resolveConfigDir, resolveUserPath } from "../utils.js";

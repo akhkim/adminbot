@@ -8,16 +8,15 @@ import fs from "node:fs";
 import path from "node:path";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import { sanitizeTerminalText } from "../../packages/terminal-core/src/safe-text.js";
-import { resolveBundledInstallPlanForCatalogEntry } from "../cli/plugin-install-plan.js";
+import { resolveBundledInstallPlanForCatalogEntry } from "../cli/plugins/plugin-install-plan.js";
 import { assertConfigWriteAllowedInCurrentMode } from "../config/nix-mode-write-guard.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { parseClawHubPluginSpec } from "../infra/clawhub-spec.js";
-import { isOpenClawOrgNpmSpec, parseRegistryNpmSpec } from "../infra/npm-registry-spec.js";
-import { normalizeUpdateChannel, resolveRegistryUpdateChannel } from "../infra/update-channels.js";
+import { isOpenClawOrgNpmSpec, parseRegistryNpmSpec } from "../infra/install/npm-registry-spec.js";
 import {
-  findBundledPluginSourceInMap,
-  resolveBundledPluginSources,
-} from "../plugins/bundled-sources.js";
+  normalizeUpdateChannel,
+  resolveRegistryUpdateChannel,
+} from "../infra/install/update-channels.js";
 import { CLAWHUB_INSTALL_ERROR_CODE } from "../plugins/clawhub-error-codes.js";
 import { buildClawHubPluginInstallRecordFields } from "../plugins/clawhub-install-records.js";
 import {
@@ -25,29 +24,33 @@ import {
   type PluginEnableResult,
 } from "../plugins/enable.js";
 import {
+  findBundledPluginSourceInMap,
+  resolveBundledPluginSources,
+} from "../plugins/install/bundled-sources.js";
+import {
   resolveClawHubInstallSpecsForUpdateChannel,
   resolveNpmInstallSpecsForUpdateChannel,
-} from "../plugins/install-channel-specs.js";
+} from "../plugins/install/install-channel-specs.js";
 import {
   type PluginInstallOverride,
   resolvePluginInstallOverride,
   PLUGIN_INSTALL_OVERRIDES_ENV,
   ALLOW_PLUGIN_INSTALL_OVERRIDES_ENV,
-} from "../plugins/install-overrides.js";
-import { resolveDefaultPluginExtensionsDir } from "../plugins/install-paths.js";
+} from "../plugins/install/install-overrides.js";
+import { resolveDefaultPluginExtensionsDir } from "../plugins/install/install-paths.js";
 import {
   installPluginFromNpmSpec,
   installPluginFromNpmPackArchive,
   type InstallPluginResult,
-} from "../plugins/install.js";
+} from "../plugins/install/install.js";
 import {
   buildNpmResolutionInstallFields,
   recordPluginInstall,
   resolveNpmInstallRecordSpec,
 } from "../plugins/installs.js";
-import type { PluginPackageInstall } from "../plugins/manifest.js";
+import type { PluginPackageInstall } from "../plugins/manifest/manifest.js";
 import type { RuntimeEnv } from "../runtime.js";
-import { withTimeout } from "../utils/with-timeout.js";
+import { withTimeout } from "../shared/with-timeout.js";
 import { VERSION } from "../version.js";
 import { t } from "../wizard/i18n/index.js";
 import type { WizardPrompter } from "../wizard/prompts.js";

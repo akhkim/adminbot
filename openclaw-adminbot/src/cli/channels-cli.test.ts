@@ -1,7 +1,7 @@
 // Channels CLI tests cover channel command registration and option parsing.
 import { Command } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PluginPackageChannel } from "../plugins/manifest.js";
+import type { PluginPackageChannel } from "../plugins/manifest/manifest.js";
 import { mockProcessPlatform } from "../test-utils/vitest-spies.js";
 import { registerChannelsCli } from "./channels-cli.js";
 
@@ -9,7 +9,7 @@ const listBundledPackageChannelMetadataMock = vi.hoisted(() =>
   vi.fn<() => readonly PluginPackageChannel[]>(() => []),
 );
 
-vi.mock("../plugins/bundled-package-channel-metadata.js", () => ({
+vi.mock("../plugins/install/bundled-package-channel-metadata.js", () => ({
   listBundledPackageChannelMetadata: listBundledPackageChannelMetadataMock,
 }));
 

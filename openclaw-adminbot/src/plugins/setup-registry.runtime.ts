@@ -1,13 +1,13 @@
 /** Runtime lookup helpers for plugin setup CLI backend descriptors. */
 import { createRequire } from "node:module";
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { isInstalledPluginEnabled } from "./installed-plugin-index.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { isInstalledPluginEnabled } from "./install/installed-plugin-index.js";
 import {
   resolvePluginMetadataSnapshot,
   type PluginMetadataSnapshot,
 } from "./plugin-metadata-snapshot.js";
-import { getActivePluginRegistryWorkspaceDirFromState } from "./runtime-state.js";
+import { getActivePluginRegistryWorkspaceDirFromState } from "./runtime/runtime-state.js";
 
 type SetupRegistryRuntimeModule = Pick<
   typeof import("./setup-registry.js"),

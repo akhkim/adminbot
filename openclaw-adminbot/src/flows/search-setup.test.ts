@@ -104,7 +104,7 @@ const mockGrokProvider = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../plugins/web-search-providers.runtime.js", () => ({
+vi.mock("../plugins/web/web-search-providers.runtime.js", () => ({
   resolvePluginWebSearchProviders: () => [mockGrokProvider],
 }));
 

@@ -5,25 +5,25 @@ import {
   normalizeGatewayTokenInput,
   randomToken,
   validateGatewayPasswordInput,
-} from "../commands/onboard-helpers.js";
-import type { GatewayAuthChoice, SecretInputMode } from "../commands/onboard-types.js";
+} from "../commands/onboard/onboard-helpers.js";
+import type { GatewayAuthChoice, SecretInputMode } from "../commands/onboard/onboard-types.js";
 import type { GatewayBindMode, GatewayTailscaleMode, OpenClawConfig } from "../config/config.js";
-import { ensureControlUiAllowedOriginsForNonLoopbackBind } from "../config/gateway-control-ui-origins.js";
+import { ensureControlUiAllowedOriginsForNonLoopbackBind } from "../config/gateway/gateway-control-ui-origins.js";
 import {
   normalizeSecretInputString,
   resolveSecretInputRef,
   type SecretInput,
-} from "../config/types.secrets.js";
+} from "../config/types/secrets.js";
 import {
   maybeAddTailnetOriginToControlUiAllowedOrigins,
   TAILSCALE_EXPOSURE_OPTIONS,
 } from "../gateway/gateway-config-prompts.shared.js";
-import { DEFAULT_DANGEROUS_NODE_COMMANDS } from "../gateway/node-command-policy.js";
+import { DEFAULT_DANGEROUS_NODE_COMMANDS } from "../gateway/node/node-command-policy.js";
 import { findTailscaleBinary } from "../infra/tailscale.js";
-import { resolveSecretInputModeForEnvSelection } from "../plugins/provider-auth-mode.js";
-import { promptSecretRefForSetup } from "../plugins/provider-auth-ref.js";
+import { resolveSecretInputModeForEnvSelection } from "../plugins/providers/provider-auth-mode.js";
+import { promptSecretRefForSetup } from "../plugins/providers/provider-auth-ref.js";
 import type { RuntimeEnv } from "../runtime.js";
-import { maskApiKey } from "../utils/mask-api-key.js";
+import { maskApiKey } from "../shared/mask-api-key.js";
 import { t } from "./i18n/index.js";
 import type { WizardPrompter } from "./prompts.js";
 import { resolveSetupSecretInputString } from "./setup.secret-input.js";

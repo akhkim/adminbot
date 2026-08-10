@@ -21,11 +21,11 @@ import {
 type RouteArgParser<TArgs> = (argv: string[]) => TArgs | null;
 
 type ParsedRouteArgs<TParse extends RouteArgParser<unknown>> = Exclude<ReturnType<TParse>, null>;
-type AgentsListCommandModule = typeof import("../../commands/agents.commands.list.js");
-type ConfigCliModule = typeof import("../config-cli.js");
+type AgentsListCommandModule = typeof import("../../commands/agents/agents.commands.list.js");
+type ConfigCliModule = typeof import("../config/config-cli.js");
 type ModelsListCommandModule = typeof import("../../commands/models/list.list-command.js");
 type ModelsStatusCommandModule = typeof import("../../commands/models/list.status-command.js");
-type TasksJsonCommandModule = typeof import("../../commands/tasks-json.js");
+type TasksJsonCommandModule = typeof import("../../commands/maintenance/tasks-json.js");
 
 /** Typed parsed route definition that binds one parser to its runner. */
 export type RoutedCommandDefinition<TParse extends RouteArgParser<unknown>> = {
@@ -45,9 +45,11 @@ function defineRoutedCommand<TParse extends RouteArgParser<unknown>>(
   return definition;
 }
 
-const configCliLoader = createLazyImportLoader<ConfigCliModule>(() => import("../config-cli.js"));
+const configCliLoader = createLazyImportLoader<ConfigCliModule>(
+  () => import("../config/config-cli.js"),
+);
 const agentsListCommandLoader = createLazyImportLoader<AgentsListCommandModule>(
-  () => import("../../commands/agents.commands.list.js"),
+  () => import("../../commands/agents/agents.commands.list.js"),
 );
 const modelsListCommandLoader = createLazyImportLoader<ModelsListCommandModule>(
   () => import("../../commands/models/list.list-command.js"),
@@ -56,7 +58,7 @@ const modelsStatusCommandLoader = createLazyImportLoader<ModelsStatusCommandModu
   () => import("../../commands/models/list.status-command.js"),
 );
 const tasksJsonCommandLoader = createLazyImportLoader<TasksJsonCommandModule>(
-  () => import("../../commands/tasks-json.js"),
+  () => import("../../commands/maintenance/tasks-json.js"),
 );
 
 function loadConfigCli(): Promise<ConfigCliModule> {
@@ -84,7 +86,7 @@ export const routedCommandDefinitions = {
   health: defineRoutedCommand({
     parseArgs: parseHealthRouteArgs,
     runParsedArgs: async (args) => {
-      const { healthCommand } = await import("../../commands/health.js");
+      const { healthCommand } = await import("../../commands/maintenance/health.js");
       await healthCommand(args, defaultRuntime);
     },
   }),
@@ -92,7 +94,7 @@ export const routedCommandDefinitions = {
     parseArgs: parseStatusRouteArgs,
     runParsedArgs: async (args) => {
       if (args.json) {
-        const { statusJsonCommand } = await import("../../commands/status-json.js");
+        const { statusJsonCommand } = await import("../../commands/status/status-json.js");
         await statusJsonCommand(
           {
             deep: args.deep,
@@ -104,7 +106,7 @@ export const routedCommandDefinitions = {
         );
         return;
       }
-      const { statusCommand } = await import("../../commands/status.js");
+      const { statusCommand } = await import("../../commands/status/status.js");
       await statusCommand(args, defaultRuntime);
     },
   }),
@@ -118,7 +120,7 @@ export const routedCommandDefinitions = {
   sessions: defineRoutedCommand({
     parseArgs: parseSessionsRouteArgs,
     runParsedArgs: async (args) => {
-      const { sessionsCommand } = await import("../../commands/sessions.js");
+      const { sessionsCommand } = await import("../../commands/sessions/sessions.js");
       await sessionsCommand(args, defaultRuntime);
     },
   }),
@@ -188,7 +190,7 @@ export const routedCommandDefinitions = {
   "plugins-list": defineRoutedCommand({
     parseArgs: parsePluginsListRouteArgs,
     runParsedArgs: async (args) => {
-      const { runPluginsListCommand } = await import("../plugins-list-command.js");
+      const { runPluginsListCommand } = await import("../plugins/plugins-list-command.js");
       await runPluginsListCommand(args, defaultRuntime);
     },
   }),

@@ -5,7 +5,7 @@ import {
   getRecord,
   type LegacyConfigMigrationSpec,
   type LegacyConfigRule,
-} from "../../../config/legacy.shared.js";
+} from "../../../config/legacy/legacy.shared.js";
 
 function hasOwnKey(target: Record<string, unknown>, key: string): boolean {
   return Object.hasOwn(target, key);

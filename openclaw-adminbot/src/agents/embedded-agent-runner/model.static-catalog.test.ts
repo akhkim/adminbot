@@ -14,34 +14,34 @@ const providerMocks = vi.hoisted(() => ({
   runProviderStaticCatalog: vi.fn(),
 }));
 
-vi.mock("../../plugins/manifest-metadata-scan.js", () => ({
+vi.mock("../../plugins/manifest/manifest-metadata-scan.js", () => ({
   listOpenClawPluginManifestMetadata: manifestMocks.listOpenClawPluginManifestMetadata,
 }));
 
-vi.mock("../../plugins/manifest.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../plugins/manifest.js")>()),
+vi.mock("../../plugins/manifest/manifest.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/manifest/manifest.js")>()),
   loadPluginManifest: manifestMocks.loadPluginManifest,
 }));
 
-vi.mock("../../plugins/manifest-registry.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../plugins/manifest-registry.js")>()),
+vi.mock("../../plugins/manifest/manifest-registry.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/manifest/manifest-registry.js")>()),
   loadPluginManifestRegistry: manifestMocks.loadPluginManifestRegistry,
 }));
 
-vi.mock("../../plugins/providers.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../plugins/providers.js")>()),
+vi.mock("../../plugins/providers/providers.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/providers/providers.js")>()),
   resolveBundledProviderCompatPluginIds: providerMocks.resolveBundledProviderCompatPluginIds,
   resolveOwningPluginIdsForProviderRef: providerMocks.resolveOwningPluginIdsForProviderRef,
 }));
 
-vi.mock("../../plugins/provider-discovery.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../plugins/provider-discovery.js")>()),
+vi.mock("../../plugins/providers/provider-discovery.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../plugins/providers/provider-discovery.js")>()),
   normalizePluginDiscoveryResult: providerMocks.normalizePluginDiscoveryResult,
   resolveRuntimePluginDiscoveryProviders: providerMocks.resolveRuntimePluginDiscoveryProviders,
   runProviderStaticCatalog: providerMocks.runProviderStaticCatalog,
 }));
 
-import { getModelProviderRequestTransport } from "../provider-request-config.js";
+import { getModelProviderRequestTransport } from "../transport/provider-request-config.js";
 import {
   createBundledProviderStaticCatalogContextResolver,
   createBundledProviderStaticCatalogModelResolver,

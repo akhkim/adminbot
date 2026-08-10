@@ -31,7 +31,24 @@ const VENUES = (
   .split(",")
   .map((v) => v.trim())
   .filter(Boolean);
-const ZHIJING_EMAIL = process.env.ADMINBOT_ZHIJING_EMAIL || "zjin@cs.toronto.edu";
+// Where the report is cc'd. It names a real person, so there is deliberately no default: a baked-in
+// address would quietly cc a stranger on a deployment that forgot to configure one.
+// ADMINBOT_ZHIJING_EMAIL is the old name for the same setting and is still accepted.
+function requireEnv(name, alias, purpose) {
+  const value = (process.env[name] ?? (alias ? process.env[alias] : undefined))?.trim();
+  if (!value) {
+    console.error(`reference check: ${name} is not set — ${purpose}`);
+    process.exit(1);
+  }
+  return value;
+}
+
+const REPORT_EMAIL = requireEnv(
+  "ADMINBOT_REPORT_EMAIL",
+  "ADMINBOT_ZHIJING_EMAIL",
+  "there is no address to cc the reference report to",
+);
+const CONTACT_EMAIL = (process.env.GOG_ACCOUNT ?? process.env.ADMINBOT_BOT_EMAIL)?.trim();
 const ADMINBOT_PORT = process.env.ADMINBOT_PORT || "8765";
 const PYTHON = process.env.ADMINBOT_PYTHON || "/usr/bin/python3";
 // Entries per paper handed to the verifier. Bibliographies run 40-80 entries; the cap bounds a
@@ -197,8 +214,8 @@ async function proposeEmail(submission, findings, venue) {
     summary: `Warn the authors of "${submission.title}" about ${
       findings.filter((f) => f.severity === "critical").length
     } unverifiable reference(s)`,
-    target: { authors: submission.authors, cc: [ZHIJING_EMAIL], venue, number: submission.number },
-    proposed_payload: { subject, body, cc: [ZHIJING_EMAIL] },
+    target: { authors: submission.authors, cc: [REPORT_EMAIL], venue, number: submission.number },
+    proposed_payload: { subject, body, cc: [REPORT_EMAIL] },
     rationale:
       "Automated reference verification found references with no matching published record. " +
       "Zhijing is cc'd because the mail goes to co-authors under her name.",
@@ -274,7 +291,7 @@ async function main() {
 
   const lookup = createLookup({
     apiKey: process.env.SEMANTIC_SCHOLAR_API_KEY,
-    contactEmail: process.env.GOG_ACCOUNT || "jinesis.adminbot@gmail.com",
+    contactEmail: CONTACT_EMAIL,
   });
   log(`reference check: provider=${lookup.provider} propose=${propose} venues=${VENUES.length}`);
   if (!lookup.trustedAbsence) {

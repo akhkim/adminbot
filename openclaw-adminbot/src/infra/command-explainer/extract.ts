@@ -10,14 +10,14 @@ import {
   detectShellWrapperThroughCarrierArgv,
   SOURCE_EXECUTABLES,
 } from "../command-analysis/risks.js";
-import { normalizeExecutableToken } from "../exec-wrapper-resolution.js";
+import { normalizeExecutableToken } from "../exec/exec-wrapper-resolution.js";
 import {
   extractShellWrapperCommand,
   extractShellWrapperInlineCommand,
   isShellWrapperExecutable,
   POSIX_SHELL_WRAPPERS,
   resolveShellWrapperTransportArgv,
-} from "../shell-wrapper-resolution.js";
+} from "../system/shell-wrapper-resolution.js";
 import { parseBashForCommandExplanation } from "./tree-sitter-runtime.js";
 import type {
   CommandContext,

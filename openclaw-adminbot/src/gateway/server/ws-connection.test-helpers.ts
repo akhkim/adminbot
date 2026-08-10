@@ -4,7 +4,7 @@
 import { EventEmitter } from "node:events";
 import { expect, vi } from "vitest";
 import type { WebSocketServer } from "ws";
-import type { ResolvedGatewayAuth } from "../auth.js";
+import type { ResolvedGatewayAuth } from "../auth/auth.js";
 import type { attachGatewayWsConnectionHandler } from "./ws-connection.js";
 
 type AttachGatewayWsConnectionParams = Parameters<typeof attachGatewayWsConnectionHandler>[0];

@@ -6,7 +6,7 @@ import { asFiniteNumber } from "../../../packages/normalization-core/src/number-
 import { normalizeOptionalString } from "../../../packages/normalization-core/src/string-coerce.js";
 import { normalizeUniqueTrimmedStringList } from "../../../packages/normalization-core/src/string-normalization.js";
 import { parseClawHubPluginSpec } from "../../infra/clawhub-spec.js";
-import { parseRegistryNpmSpec } from "../../infra/npm-registry-spec.js";
+import { parseRegistryNpmSpec } from "../../infra/install/npm-registry-spec.js";
 import { isBlockedObjectKey } from "../../infra/prototype-keys.js";
 import { isRecord } from "../../utils.js";
 import type {

@@ -3,7 +3,7 @@
  *
  * Normalizes plugin manifest channel declarations into runtime/UI channel metadata.
  */
-import type { PluginPackageChannel } from "../../plugins/manifest.js";
+import type { PluginPackageChannel } from "../../plugins/manifest/manifest.js";
 import { resolveChannelExposure } from "./exposure.js";
 import type { ChannelMeta } from "./types.core.js";
 

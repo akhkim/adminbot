@@ -6,13 +6,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
-} from "../../config/runtime-snapshot.js";
+} from "../../config/runtime/runtime-snapshot.js";
 import { fetchWithSsrFGuard } from "../../infra/net/fetch-guard.js";
 import { TEST_UNDICI_RUNTIME_DEPS_KEY } from "../../infra/net/undici-runtime.js";
 import * as activationCheck from "../../plugin-sdk/facade-activation-check.runtime.js";
 import * as facadeRuntime from "../../plugin-sdk/facade-runtime.js";
 
-vi.mock("../../config/plugin-auto-enable.js", () => ({
+vi.mock("../../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: ({ config }: { config?: unknown }) => ({
     config: config ?? {},
     autoEnabledReasons: {},

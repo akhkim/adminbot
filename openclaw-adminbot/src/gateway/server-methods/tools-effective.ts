@@ -7,13 +7,13 @@ import {
   formatValidationErrors,
   validateToolsEffectiveParams,
 } from "../../../packages/gateway-protocol/src/index.js";
-import { buildEffectiveToolInventoryGroups } from "../../agents/tools-effective-inventory-groups.js";
+import { buildEffectiveToolInventoryGroups } from "../../agents/tools/tools-effective-inventory-groups.js";
 import type {
   EffectiveToolInventoryNotice,
   EffectiveToolInventoryResult,
-} from "../../agents/tools-effective-inventory.types.js";
-import { buildRuntimeCompatibleMcpToolInventory } from "../../agents/tools-effective-mcp-inventory.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+} from "../../agents/tools/tools-effective-inventory.types.js";
+import { buildRuntimeCompatibleMcpToolInventory } from "../../agents/tools/tools-effective-mcp-inventory.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { toErrorObject } from "../../infra/errors.js";
 import { logDebug, logWarn } from "../../logger.js";
 import { stringifyRouteThreadId } from "../../plugin-sdk/channel-route.js";

@@ -1,7 +1,7 @@
 /**
  * Shared probe primitives for plugin-load profiling.
  *
- * All plugin-load probes — across `src/plugins/loader.ts` and
+ * All plugin-load probes — across `src/plugins/runtime/loader.ts` and
  * `src/plugin-sdk/channel-entry-contract.ts`
  * — emit a single line per measurement to stderr in the form:
  *

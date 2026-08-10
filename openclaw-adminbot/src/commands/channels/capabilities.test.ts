@@ -44,7 +44,7 @@ vi.mock("../../config/config.js", async () => {
   };
 });
 
-vi.mock("../../cli/plugins-registry-refresh.js", () => ({
+vi.mock("../../cli/plugins/plugins-registry-refresh.js", () => ({
   refreshPluginRegistryAfterConfigMutation: mocks.refreshPluginRegistryAfterConfigMutation,
 }));
 

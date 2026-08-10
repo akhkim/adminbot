@@ -1,6 +1,6 @@
 // Active tool schema warning tests cover doctor warnings for active tool schema drift.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { createOpenClawCodingTools } from "../../../agents/agent-tools.js";
+import type { createOpenClawCodingTools } from "../../../agents/tools/agent-tools.js";
 import type { AnyAgentTool } from "../../../agents/tools/common.js";
 
 const toolState = vi.hoisted(() => ({
@@ -27,7 +27,7 @@ vi.mock("../../../agents/embedded-agent-runner/model.js", () => ({
   resolveModel: (...args: unknown[]) => toolState.resolveModel(...args),
 }));
 
-vi.mock("../../../agents/agent-tools.js", () => ({
+vi.mock("../../../agents/tools/agent-tools.js", () => ({
   createOpenClawCodingTools: (options?: Parameters<typeof createOpenClawCodingTools>[0]) => {
     toolState.createTools(options);
     if (toolState.throwError) {

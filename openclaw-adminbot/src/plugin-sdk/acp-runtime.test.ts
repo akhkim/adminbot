@@ -7,7 +7,7 @@ const { bypassMock, dispatchMock } = vi.hoisted(() => ({
   dispatchMock: vi.fn(),
 }));
 
-vi.mock("../auto-reply/reply/dispatch-acp.runtime.js", () => ({
+vi.mock("../auto-reply/reply/dispatch/dispatch-acp.runtime.js", () => ({
   shouldBypassAcpDispatchForCommand: bypassMock,
   tryDispatchAcpReply: dispatchMock,
 }));

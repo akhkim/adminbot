@@ -8,8 +8,8 @@ import {
   resolveAgentModelFallbackValues,
   resolveAgentModelPrimaryValue,
 } from "../../config/model-input.js";
-import type { AgentModelConfig } from "../../config/types.agents-shared.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { AgentModelConfig } from "../../config/types/agents-shared.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 
 /** Provider/profile ids that may need external CLI auth discovery. */
 export type ExternalCliAuthScope = {

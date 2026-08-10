@@ -1,18 +1,18 @@
-// Summarizes extra security audit findings for user-facing output.
-import { resolveProviderToolPolicy } from "../agents/agent-tools.policy.js";
-import { parseModelRef } from "../agents/model-selection-normalize.js";
+import { parseModelRef } from "../agents/models/model-selection-normalize.js";
 import { resolveSandboxConfigForAgent } from "../agents/sandbox/config.js";
+import { pickSandboxToolPolicy } from "../agents/sandbox/sandbox-tool-policy.js";
 import { resolveSandboxToolPolicyForAgent } from "../agents/sandbox/tool-policy.js";
 import type { SandboxToolPolicy } from "../agents/sandbox/types.js";
-import { isToolAllowedByPolicies } from "../agents/tool-policy-match.js";
-import { resolveToolProfilePolicy } from "../agents/tool-policy.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { AgentToolsConfig } from "../config/types.tools.js";
+// Summarizes extra security audit findings for user-facing output.
+import { resolveProviderToolPolicy } from "../agents/tools/agent-tools.policy.js";
+import { isToolAllowedByPolicies } from "../agents/tools/tool-policy-match.js";
+import { resolveToolProfilePolicy } from "../agents/tools/tool-policy.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import type { AgentToolsConfig } from "../config/types/tools.js";
 import { hasConfiguredInternalHooks } from "../hooks/configured.js";
-import { hasConfiguredWebSearchCredential } from "../plugins/web-search-credential-presence.js";
+import { hasConfiguredWebSearchCredential } from "../plugins/web/web-search-credential-presence.js";
 import { inferParamBFromIdOrName } from "../shared/model-param-b.js";
 import { collectAuditModelRefs } from "./audit-model-refs.js";
-import { pickSandboxToolPolicy } from "../agents/sandbox-tool-policy.js";
 
 /** Lightweight audit finding shape used by summary-only audit helpers. */
 export type SecurityAuditFinding = {

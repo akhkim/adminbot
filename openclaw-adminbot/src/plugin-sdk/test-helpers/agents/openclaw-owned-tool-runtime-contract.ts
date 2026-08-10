@@ -1,20 +1,20 @@
 // OpenClaw-owned tool runtime contract helpers mock agent tool runtimes in SDK tests.
 import { vi } from "vitest";
-import { resetAdjustedParamsByToolCallIdForTests } from "../../../agents/agent-tools.before-tool-call.state.js";
 import type { AgentToolResult } from "../../../agents/runtime/index.js";
-import { setToolTerminalPresentation } from "../../../agents/tool-terminal-presentation.js";
+import { resetAdjustedParamsByToolCallIdForTests } from "../../../agents/tools/agent-tools.before-tool-call.state.js";
 import type { AnyAgentTool } from "../../../agents/tools/common.js";
+import { setToolTerminalPresentation } from "../../../agents/tools/tool-terminal-presentation.js";
 import type { AgentToolResultMiddlewareEvent } from "../../../plugins/agent-tool-result-middleware-types.js";
 import {
   initializeGlobalHookRunner,
   resetGlobalHookRunner,
-} from "../../../plugins/hook-runner-global.js";
-import { createMockPluginRegistry } from "../../../plugins/hooks.test-helpers.js";
-import { createEmptyPluginRegistry } from "../../../plugins/registry-empty.js";
+} from "../../../plugins/hooks/hook-runner-global.js";
+import { createMockPluginRegistry } from "../../../plugins/hooks/hooks.test-helpers.js";
+import { createEmptyPluginRegistry } from "../../../plugins/manifest/registry-empty.js";
 import {
   resetPluginRuntimeStateForTest,
   setActivePluginRegistry,
-} from "../../../plugins/runtime.js";
+} from "../../../plugins/runtime/runtime.js";
 
 export function textToolResult(
   text: string,

@@ -21,8 +21,8 @@ export {
   ReplyRuntimeConfigSchemaShape,
   requireAllowlistAllowFrom,
   requireOpenAllowFrom,
-} from "../config/zod-schema.core.js";
-export { ToolPolicySchema } from "../config/zod-schema.agent-runtime.js";
+} from "../config/zod/core.js";
+export { ToolPolicySchema } from "../config/zod/agent-runtime.js";
 export {
   DiscordConfigSchema,
   IMessageConfigSchema,
@@ -30,6 +30,6 @@ export {
   SignalConfigSchema,
   SlackConfigSchema,
   TelegramConfigSchema,
-} from "../config/zod-schema.providers-core.js";
-export { GoogleChatConfigSchema } from "../config/zod-schema.providers-googlechat.js";
-export { WhatsAppConfigSchema } from "../config/zod-schema.providers-whatsapp.js";
+} from "../config/zod/providers-core.js";
+export { GoogleChatConfigSchema } from "../config/zod/providers-googlechat.js";
+export { WhatsAppConfigSchema } from "../config/zod/providers-whatsapp.js";

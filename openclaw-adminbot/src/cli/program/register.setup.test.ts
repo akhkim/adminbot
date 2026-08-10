@@ -31,7 +31,7 @@ vi.mock("../../commands/setup.js", () => ({
   setupCommand: mocks.setupCommandMock,
 }));
 
-vi.mock("../../commands/onboard.js", () => ({
+vi.mock("../../commands/onboard/onboard.js", () => ({
   setupWizardCommand: mocks.setupWizardCommandMock,
 }));
 

@@ -1,12 +1,12 @@
 // Command-explainer formatting converts parsed executable spans into approval
 // UI highlight ranges, omitting shells whose parsing semantics differ.
-import type { ExecApprovalCommandSpan } from "../exec-approvals.js";
-import { normalizeExecutableToken } from "../exec-wrapper-tokens.js";
+import type { ExecApprovalCommandSpan } from "../exec/exec-approvals.js";
+import { normalizeExecutableToken } from "../exec/exec-wrapper-tokens.js";
 import {
   isShellWrapperExecutable,
   POSIX_SHELL_WRAPPERS,
   resolveShellWrapperTransportArgv,
-} from "../shell-wrapper-resolution.js";
+} from "../system/shell-wrapper-resolution.js";
 import type { CommandExplanation } from "./types.js";
 
 const POSIX_COMMAND_HIGHLIGHT_SHELLS: ReadonlySet<string> = POSIX_SHELL_WRAPPERS;

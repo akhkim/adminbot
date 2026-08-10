@@ -6,21 +6,24 @@ import {
   sortUniqueStrings,
   uniqueStrings,
 } from "@openclaw/normalization-core/string-normalization";
-import { sanitizeServerName, TOOL_NAME_SEPARATOR } from "../../../agents/agent-bundle-mcp-names.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../../../agents/defaults.js";
 import { compileGlobPatterns, matchesAnyGlobPattern } from "../../../agents/glob-pattern.js";
-import { parseModelRef } from "../../../agents/model-selection-normalize.js";
+import {
+  sanitizeServerName,
+  TOOL_NAME_SEPARATOR,
+} from "../../../agents/mcp/agent-bundle-mcp-names.js";
+import { parseModelRef } from "../../../agents/models/model-selection-normalize.js";
 import {
   mergeAlsoAllowPolicy,
   normalizeToolName,
   resolveToolProfilePolicy,
-} from "../../../agents/tool-policy.js";
+} from "../../../agents/tools/tool-policy.js";
 import { resolveAgentModelPrimaryValue } from "../../../config/model-input.js";
-import type { AgentModelConfig } from "../../../config/types.agents-shared.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { normalizePluginId } from "../../../plugins/config-state.js";
-import { loadManifestMetadataSnapshot } from "../../../plugins/manifest-contract-eligibility.js";
-import type { PluginManifestRegistry } from "../../../plugins/manifest-registry.js";
+import type { AgentModelConfig } from "../../../config/types/agents-shared.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import { normalizePluginId } from "../../../plugins/config/config-state.js";
+import { loadManifestMetadataSnapshot } from "../../../plugins/manifest/manifest-contract-eligibility.js";
+import type { PluginManifestRegistry } from "../../../plugins/manifest/manifest-registry.js";
 
 type ToolAllowlistSource = {
   label: string;

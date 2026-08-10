@@ -5,8 +5,8 @@
  */
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { getRuntimeConfig } from "../../config/config.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { coerceSecretRef } from "../../config/types.secrets.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { coerceSecretRef } from "../../config/types/secrets.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import {
   getOAuthApiKey,
@@ -17,11 +17,11 @@ import {
 import {
   formatProviderAuthProfileApiKeyWithPlugin,
   refreshProviderOAuthCredentialWithPlugin,
-} from "../../plugins/provider-runtime.runtime.js";
+} from "../../plugins/providers/provider-runtime.runtime.js";
 import { resolveSecretRefString, type SecretRefResolveCache } from "../../secrets/resolve.js";
-import { normalizeOptionalSecretInput } from "../../utils/normalize-secret-input.js";
-import { refreshChutesTokens } from "../chutes-oauth.js";
-import { resolveProviderIdForAuth } from "../provider-auth-aliases.js";
+import { normalizeOptionalSecretInput } from "../../shared/normalize-secret-input.js";
+import { resolveProviderIdForAuth } from "../auth/provider-auth-aliases.js";
+import { refreshChutesTokens } from "../transport/chutes-oauth.js";
 import { log } from "./constants.js";
 import { resolveTokenExpiryState } from "./credential-state.js";
 import { formatAuthDoctorHint } from "./doctor.js";

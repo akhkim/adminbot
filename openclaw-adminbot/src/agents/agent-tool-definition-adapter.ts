@@ -7,7 +7,11 @@ import { createHash } from "node:crypto";
 import { logDebug, logError } from "../logger.js";
 import { redactToolDetail } from "../logging/redact.js";
 import { isPlainObject } from "../utils.js";
-import type { HookContext } from "./agent-tools.before-tool-call.js";
+import { sanitizeForConsole } from "./console-sanitize.js";
+import type { ClientToolDefinition } from "./embedded-agent-runner/run/params.js";
+import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "./runtime/index.js";
+import type { ToolDefinition } from "./sessions/index.js";
+import type { HookContext } from "./tools/agent-tools.before-tool-call.js";
 import {
   buildBlockedToolResult,
   isToolWrappedWithBeforeToolCallHook,
@@ -15,18 +19,14 @@ import {
   recordAdjustedParamsForToolCall,
   recordStructuredReplayTrustForToolCall,
   runBeforeToolCallHook,
-} from "./agent-tools.before-tool-call.js";
+} from "./tools/agent-tools.before-tool-call.js";
 import {
   getCodeModeExecBeforeHookMetadata,
   normalizeCodeModeExecBeforeHookParams,
   reconcileCodeModeExecBeforeHookParams,
-} from "./code-mode-control-tools.js";
-import { sanitizeForConsole } from "./console-sanitize.js";
-import type { ClientToolDefinition } from "./embedded-agent-runner/run/params.js";
-import type { AgentTool, AgentToolResult, AgentToolUpdateCallback } from "./runtime/index.js";
-import type { ToolDefinition } from "./sessions/index.js";
-import { normalizeToolName } from "./tool-policy.js";
+} from "./tools/code-mode-control-tools.js";
 import { jsonResult, payloadTextResult } from "./tools/common.js";
+import { normalizeToolName } from "./tools/tool-policy.js";
 
 type AnyAgentTool = AgentTool;
 type BeforeToolCallPreparingTool = AnyAgentTool & {

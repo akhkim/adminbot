@@ -6,7 +6,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveStorePath } from "../../config/sessions/paths.js";
 import { loadSessionStore, upsertSessionEntry } from "../../config/sessions/store.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { createCreateGoalTool, createGetGoalTool } from "./goal-tools.js";
 
 async function createStoreConfig(): Promise<{ config: OpenClawConfig; template: string }> {

@@ -31,11 +31,11 @@ The tool can resolve calendar details directly from trusted Google sources:
   `proposedPayload.calendar_id`. If a calendar URL is accidentally passed as
   `sourceUrl`, the tool treats it as the destination for compatibility.
 - When the user says "personal calendar", pass `calendarName: "personal"`.
-  This selects
-  `a716d3228cbb947fbf5716598420b8a2ee5e05df9d2505cadcc6455881a985f9@group.calendar.google.com`
-  in the `America/Toronto` timezone.
+  This selects the private group calendar named by `ADMINBOT_CALENDAR_ID`, in
+  the `America/Toronto` timezone. Unset, no `calendar_id` is proposed.
 - When the user says "Jinesis calendar", pass `calendarName: "jinesis"`.
-  This selects `jinesis.adminbot@gmail.com` in the `America/Toronto` timezone.
+  This selects the bot's own Google account, named by `ADMINBOT_BOT_EMAIL`, in
+  the `America/Toronto` timezone. Unset, no `calendar_id` is proposed.
 - Prefer any exact start/end time stated in the user's text, a trusted source,
   or an attached image. Transcribe image times into an RFC3339 `timeWindow`
   with an explicit offset. Use an all-day range only when no time is stated.

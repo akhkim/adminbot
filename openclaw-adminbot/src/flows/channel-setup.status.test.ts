@@ -13,7 +13,8 @@ type ResolveChannelSetupEntries =
 type FormatChannelPrimerLine = typeof import("../channels/registry.js").formatChannelPrimerLine;
 type FormatChannelSelectionLine =
   typeof import("../channels/registry.js").formatChannelSelectionLine;
-type IsChannelConfigured = typeof import("../config/channel-configured.js").isChannelConfigured;
+type IsChannelConfigured =
+  typeof import("../config/channel/channel-configured.js").isChannelConfigured;
 type NoteChannelPrimerChannels = Parameters<
   typeof import("./channel-setup.status.js").noteChannelPrimer
 >[1];
@@ -57,7 +58,7 @@ vi.mock("../commands/channel-setup/discovery.js", () => ({
     meta.showInSetup !== false && meta.exposure?.setup !== false,
 }));
 
-vi.mock("../config/channel-configured.js", () => ({
+vi.mock("../config/channel/channel-configured.js", () => ({
   isChannelConfigured: (
     cfg: Parameters<IsChannelConfigured>[0],
     channelId: Parameters<IsChannelConfigured>[1],
@@ -70,7 +71,7 @@ vi.mock("../config/channel-configured.js", () => ({
 // "install plugin to enable" vs "bundled · enable to use". For these tests
 // we want the installable-catalog branch unconditionally, so we stub the
 // bundled lookup to "nothing is bundled".
-vi.mock("../plugins/bundled-sources.js", () => ({
+vi.mock("../plugins/install/bundled-sources.js", () => ({
   resolveBundledPluginSources: () => new Map(),
   findBundledPluginSourceInMap: () => undefined,
 }));

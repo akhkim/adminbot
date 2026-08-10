@@ -1,6 +1,6 @@
 // Bundled plugin root helpers resolve plugin root paths for contract test fixtures.
 import { relative, resolve } from "node:path";
-import { loadPluginManifestRegistry } from "../../manifest-registry.js";
+import { loadPluginManifestRegistry } from "../../manifest/manifest-registry.js";
 
 const sourceExtensionsDir = resolve(process.cwd(), "extensions");
 const bundledPluginRoots = new Map(

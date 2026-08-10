@@ -31,7 +31,7 @@ let listMarketplacePlugins: typeof import("./marketplace.js").listMarketplacePlu
 let resolveMarketplaceInstallShortcut: typeof import("./marketplace.js").resolveMarketplaceInstallShortcut;
 const tempOutsideDirs: string[] = [];
 
-vi.mock("./install.js", () => ({
+vi.mock("./install/install.js", () => ({
   installPluginFromPath: (...args: unknown[]) => installPluginFromPathMock(...args),
 }));
 

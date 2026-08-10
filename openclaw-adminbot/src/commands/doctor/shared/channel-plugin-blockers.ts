@@ -2,21 +2,21 @@
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { sanitizeForLog } from "../../../../packages/terminal-core/src/ansi.js";
 import { listExplicitlyDisabledChannelIdsForConfig } from "../../../channels/config-presence.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import {
   hasExplicitChannelConfig,
   listExplicitConfiguredChannelIdsForConfig,
   resolveConfiguredChannelPresencePolicy,
 } from "../../../plugins/channel-plugin-ids.js";
-import { normalizePluginsConfig } from "../../../plugins/config-state.js";
+import { normalizePluginsConfig } from "../../../plugins/config/config-state.js";
 import { isPluginEnabledByDefaultForPlatform } from "../../../plugins/default-enablement.js";
 import {
   hasExplicitManifestOwnerTrust,
   isActivatedManifestOwner,
   resolveManifestOwnerBasePolicyBlock,
   type ManifestOwnerBasePolicyBlockReason,
-} from "../../../plugins/manifest-owner-policy.js";
-import type { PluginManifestRecord } from "../../../plugins/manifest-registry.js";
+} from "../../../plugins/manifest/manifest-owner-policy.js";
+import type { PluginManifestRecord } from "../../../plugins/manifest/manifest-registry.js";
 import { loadPluginManifestRegistryForPluginRegistry } from "../../../plugins/plugin-registry.js";
 import { isSafeChannelEnvVarTriggerName } from "../../../secrets/channel-env-var-names.js";
 

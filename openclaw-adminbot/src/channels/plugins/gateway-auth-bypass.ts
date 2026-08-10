@@ -3,7 +3,7 @@
  *
  * Reads optional public artifacts that declare unauthenticated Gateway callback paths.
  */
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { loadBundledPluginPublicArtifactModuleSync } from "../../plugins/public-surface-loader.js";
 
 /**

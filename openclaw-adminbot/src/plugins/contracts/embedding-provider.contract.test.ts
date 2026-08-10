@@ -5,7 +5,7 @@ import {
   registerVirtualTestPlugin,
 } from "openclaw/plugin-sdk/plugin-test-contracts";
 import { describe, expect, it } from "vitest";
-import { getRegisteredEmbeddingProvider } from "../embedding-providers.js";
+import { getRegisteredEmbeddingProvider } from "../embedding/embedding-providers.js";
 
 describe("embedding provider registration", () => {
   it("keeps public SDK helpers read-only so plugins cannot bypass manifest ownership", () => {

@@ -70,7 +70,7 @@ export { stripMarkdown } from "../shared/text/strip-markdown.js";
 /** Terminal-safe text sanitizer for CLI-facing plugin output. */
 export { sanitizeTerminalText } from "../../packages/terminal-core/src/safe-text.js";
 /** System-message marker helpers for preserving generated status lines. */
-export { SYSTEM_MARK, hasSystemMark, prefixSystemMessage } from "../infra/system-message.ts";
+export { SYSTEM_MARK, hasSystemMark, prefixSystemMessage } from "../infra/system/system-message.js";
 /** Inline directive stripping helpers for display and delivery boundaries. */
 export {
   stripInlineDirectiveTagsForDelivery,
@@ -78,6 +78,6 @@ export {
   stripInlineDirectiveTagsFromMessageForDisplay,
   type DisplayMessageWithContent,
   type InlineDirectiveParseResult,
-} from "../utils/directive-tags.js";
+} from "../shared/directive-tags.js";
 /** Generic item chunker for plugin payload planning. */
-export { chunkItems } from "../utils/chunk-items.js";
+export { chunkItems } from "../shared/chunk-items.js";

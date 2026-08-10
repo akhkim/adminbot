@@ -23,7 +23,7 @@ import { registerOAuthProvider, resetOAuthProviders } from "../../llm/utils/oaut
 import type { OAuthProviderInterface } from "../../llm/utils/oauth/types.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { getAgentDir } from "../config.js";
-import { resolveModelPluginMetadataSnapshot } from "../model-discovery-context.js";
+import { resolveModelPluginMetadataSnapshot } from "../models/model-discovery-context.js";
 import {
   filterGeneratedPluginModelCatalogProviders,
   isGeneratedPluginModelCatalog,

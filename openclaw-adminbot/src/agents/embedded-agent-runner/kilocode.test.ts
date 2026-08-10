@@ -1,7 +1,7 @@
 // Coverage for Kilocode-specific cache-TTL eligibility.
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("../../plugins/provider-runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-runtime.js", () => ({
   // Keep this file on built-in Kilocode rules; provider plugin overrides are
   // covered by the generic cache-ttl tests.
   resolveProviderCacheTtlEligibility: () => undefined,

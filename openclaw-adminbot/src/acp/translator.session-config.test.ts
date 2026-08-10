@@ -1,7 +1,7 @@
 /** Tests ACP setSessionMode and setSessionConfigOption Gateway bridge behavior. */
 import { createInMemorySessionStore } from "@openclaw/acp-core/session";
 import { describe, expect, it, vi } from "vitest";
-import type { GatewayClient } from "../gateway/client.js";
+import type { GatewayClient } from "../gateway/client/client.js";
 import {
   createLoadSessionRequest,
   createSetSessionModeRequest,

@@ -5,11 +5,11 @@ import {
   normalizeOptionalLowercaseString,
 } from "@openclaw/normalization-core/string-coerce";
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
-import type { GatewayAuthConfig } from "../config/types.gateway.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { hasConfiguredSecretInput } from "../config/types.secrets.js";
-import { resolveGatewayAuth } from "../gateway/auth-resolve.js";
-import { resolveGatewayAuthTokenSourceConflict } from "../gateway/auth-token-source-conflict.js";
+import type { GatewayAuthConfig } from "../config/types/gateway.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { hasConfiguredSecretInput } from "../config/types/secrets.js";
+import { resolveGatewayAuth } from "../gateway/auth/auth-resolve.js";
+import { resolveGatewayAuthTokenSourceConflict } from "../gateway/auth/auth-token-source-conflict.js";
 import { parseStrictNonNegativeInteger } from "../infra/parse-finite-number.js";
 import type { SecurityAuditFinding } from "./audit.types.js";
 import { collectCoreInsecureOrDangerousFlags } from "./core-dangerous-config-flags.js";

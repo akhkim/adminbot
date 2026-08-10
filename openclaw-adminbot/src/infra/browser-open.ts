@@ -2,7 +2,7 @@
 import path from "node:path";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { detectBinary } from "./detect-binary.js";
-import { getWindowsInstallRoots } from "./windows-install-roots.js";
+import { getWindowsInstallRoots } from "./system/windows-install-roots.js";
 import { isWSL } from "./wsl.js";
 
 // Browser opening is best-effort and platform-specific; callers get a resolved

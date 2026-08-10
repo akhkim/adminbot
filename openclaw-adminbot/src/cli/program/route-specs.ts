@@ -1,8 +1,8 @@
 // Preparsed route specs for commands implemented outside Commander action registration.
 import { hasFlag } from "../argv.js";
-import { cliCommandCatalog, type CliCommandCatalogEntry } from "../command-catalog.js";
-import { matchesCommandPath } from "../command-path-matches.js";
-import { resolveCliCommandPathPolicy } from "../command-path-policy.js";
+import { cliCommandCatalog, type CliCommandCatalogEntry } from "./command-catalog.js";
+import { matchesCommandPath } from "./command-path-matches.js";
+import { resolveCliCommandPathPolicy } from "./command-path-policy.js";
 import {
   routedCommandDefinitions,
   type AnyRoutedCommandDefinition,

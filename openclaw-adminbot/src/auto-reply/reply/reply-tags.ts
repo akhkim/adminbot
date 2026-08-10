@@ -1,5 +1,5 @@
 // Parses inline reply tags that affect delivery, routing, and model behavior.
-import { parseInlineDirectives } from "../../utils/directive-tags.js";
+import { parseInlineDirectives } from "../../shared/directive-tags.js";
 
 /** Extracts inline reply-target tags from outbound reply text. */
 export function extractReplyToTag(

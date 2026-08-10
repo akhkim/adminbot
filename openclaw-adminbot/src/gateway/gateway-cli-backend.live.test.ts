@@ -4,10 +4,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { resolveCliBackendConfig, resolveCliBackendLiveTest } from "../agents/cli-backends.js";
+import {
+  resolveCliBackendConfig,
+  resolveCliBackendLiveTest,
+} from "../agents/cli-runner/cli-backends.js";
 import { isLiveTestEnabled } from "../agents/live-test-helpers.js";
 import { shouldSkipLiveProviderDrift } from "../agents/live-test-provider-drift.js";
-import { parseModelRef } from "../agents/model-selection.js";
+import { parseModelRef } from "../agents/models/model-selection.js";
 import { clearRuntimeConfigSnapshot, type OpenClawConfig } from "../config/config.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import {
@@ -39,7 +42,7 @@ import {
   verifyCliCronMcpLoopbackPreflight,
   verifyCliCronMcpProbe,
 } from "./gateway-cli-backend.live-probe-helpers.js";
-import { startGatewayServer } from "./server.js";
+import { startGatewayServer } from "./server/server.js";
 import { extractPayloadText } from "./test-helpers.agent-results.js";
 
 const LIVE = isLiveTestEnabled();

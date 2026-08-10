@@ -1,6 +1,6 @@
 // Documents how failover reasons map to cooldown probe slot decisions.
 import { describe, expect, it } from "vitest";
-import type { FailoverReason } from "./embedded-agent-helpers.js";
+import type { FailoverReason } from "./embedded/embedded-agent-helpers.js";
 import {
   shouldAllowCooldownProbeForReason,
   shouldPreserveTransientCooldownProbeSlot,

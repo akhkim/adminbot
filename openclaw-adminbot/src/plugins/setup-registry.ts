@@ -7,10 +7,10 @@ import {
   normalizeStringEntries,
   normalizeUniqueStringEntries,
 } from "@openclaw/normalization-core/string-normalization";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { buildPluginApi } from "./api-builder.js";
-import { collectPluginConfigContractMatches } from "./config-contracts.js";
-import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest-registry.js";
+import { collectPluginConfigContractMatches } from "./config/config-contracts.js";
+import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest/manifest-registry.js";
 import {
   createPluginModuleLoaderCache,
   getCachedPluginModuleLoader,

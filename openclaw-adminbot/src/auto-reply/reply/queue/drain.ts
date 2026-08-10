@@ -22,7 +22,7 @@ import {
   removeQueuedItemsByRef,
   previewQueueSummaryPrompt,
   waitForQueueDebounce,
-} from "../../../utils/queue-helpers.js";
+} from "../../../shared/queue-helpers.js";
 import { isRoutableChannel } from "../route-reply.js";
 import { FOLLOWUP_QUEUES } from "./state.js";
 import {

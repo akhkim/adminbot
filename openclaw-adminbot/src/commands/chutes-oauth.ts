@@ -2,13 +2,13 @@
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { ChutesOAuthAppConfig } from "../agents/chutes-oauth.js";
+import type { ChutesOAuthAppConfig } from "../agents/transport/chutes-oauth.js";
 import {
   CHUTES_AUTHORIZE_ENDPOINT,
   exchangeChutesCodeForTokens,
   generateChutesPkce,
   parseOAuthCallbackInput,
-} from "../agents/chutes-oauth.js";
+} from "../agents/transport/chutes-oauth.js";
 import { isLoopbackHost } from "../gateway/net.js";
 import type { OAuthCredentials } from "../llm/oauth.js";
 

@@ -1,6 +1,6 @@
 // Tests prompt prelude construction for sender, routing, and context metadata.
 import { describe, expect, it } from "vitest";
-import { finalizeInboundContext } from "./inbound-context.js";
+import { finalizeInboundContext } from "./inbound/inbound-context.js";
 import { buildReplyPromptEnvelope } from "./prompt-prelude.js";
 
 describe("buildReplyPromptEnvelope", () => {
