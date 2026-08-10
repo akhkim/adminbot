@@ -1,9 +1,9 @@
 /** Resolves synthetic and external auth provider refs from active runtime state or persisted manifests. */
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
-import { loadPluginManifestRegistryForInstalledIndex } from "./manifest-registry-installed.js";
+import { loadPluginManifestRegistryForInstalledIndex } from "./manifest/manifest-registry-installed.js";
 import { loadPluginRegistrySnapshotWithMetadata } from "./plugin-registry.js";
 import type { LoadPluginRegistryParams, PluginRegistrySnapshot } from "./plugin-registry.js";
-import { getPluginRegistryState } from "./runtime-state.js";
+import { getPluginRegistryState } from "./runtime/runtime-state.js";
 
 function uniqueProviderRefs(values: readonly string[]): string[] {
   const seen = new Set<string>();

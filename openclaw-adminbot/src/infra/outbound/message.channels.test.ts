@@ -2,12 +2,12 @@
 // structured payloads, and channel capability interactions.
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChannelOutboundAdapter, ChannelPlugin } from "../../channels/plugins/types.js";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
+import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../../shared/message-channel.js";
 import {
   createChannelTestPluginBase,
   createTestRegistry,
 } from "../../test-utils/channel-plugins.js";
-import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../../utils/message-channel.js";
 
 const setRegistry = (registry: ReturnType<typeof createTestRegistry>) => {
   setActivePluginRegistry(registry);

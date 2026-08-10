@@ -40,6 +40,10 @@ export type DevicePairingPendingRequest = {
   remoteIp?: string;
   silent?: boolean;
   isRepair?: boolean;
+  // Opaque caller-supplied identity (e.g. an AdminBot member id) this device is being paired on
+  // behalf of. Core does not interpret it -- it is stored and handed back so a caller that DOES
+  // have an identity system (AdminBot) can scope sessions to it later.
+  ownerMemberId?: string;
   ts: number;
 };
 
@@ -106,6 +110,8 @@ export type PairedDevice = {
   approvedAtMs: number;
   lastSeenAtMs?: number;
   lastSeenReason?: string;
+  // See DevicePairingPendingRequest.ownerMemberId.
+  ownerMemberId?: string;
 };
 
 /** Metadata fields a device may refresh without changing approval or token state. */
@@ -406,6 +412,7 @@ function buildPendingDevicePairingRequest(params: {
     remoteIp: params.req.remoteIp,
     silent: params.req.silent,
     isRepair: params.isRepair,
+    ownerMemberId: params.req.ownerMemberId,
     ts: Date.now(),
   };
 }
@@ -492,6 +499,9 @@ function buildApprovedPairedDevice(params: {
     approvedAtMs: params.now,
     lastSeenAtMs: params.accessMetadata?.lastSeenAtMs ?? params.existing?.lastSeenAtMs,
     lastSeenReason: params.accessMetadata?.lastSeenReason ?? params.existing?.lastSeenReason,
+    // A re-pairing/repair approval carries the caller's current identity; fall back to whatever
+    // was already on file so a re-approval with no identity attached never erases a known owner.
+    ownerMemberId: params.pending.ownerMemberId ?? params.existing?.ownerMemberId,
   };
 }
 
@@ -978,7 +988,12 @@ export async function verifyDeviceToken(params: {
   scopes: string[];
   requiredSharedGatewaySessionGeneration?: string;
   baseDir?: string;
-}): Promise<{ ok: boolean; reason?: string; issuer?: DeviceAuthToken["issuer"] }> {
+}): Promise<{
+  ok: boolean;
+  reason?: string;
+  issuer?: DeviceAuthToken["issuer"];
+  ownerMemberId?: string;
+}> {
   return await withLock(async () => {
     const state = await loadState(params.baseDir);
     const device = getPairedDeviceFromState(state, params.deviceId);
@@ -1034,7 +1049,11 @@ export async function verifyDeviceToken(params: {
     device.lastSeenReason = "device-token-auth";
     state.pairedByDeviceId[device.deviceId] = device;
     await persistState(state, params.baseDir, "paired");
-    return entry.issuer ? { ok: true, issuer: entry.issuer } : { ok: true };
+    return {
+      ok: true,
+      ...(entry.issuer ? { issuer: entry.issuer } : {}),
+      ...(device.ownerMemberId ? { ownerMemberId: device.ownerMemberId } : {}),
+    };
   });
 }
 
@@ -1044,6 +1063,11 @@ export async function ensureDeviceToken(params: {
   role: string;
   scopes: string[];
   issuer?: DeviceAuthToken["issuer"];
+  // Backfills ownership on an already-paired device (one paired before this field existed, or a
+  // stale value from before the caller's identity system knew who it belonged to). Applied even
+  // on the "reuse the existing token" fast path below, so a member who paired before this
+  // existed still gets scoped correctly on their very next login rather than staying unowned.
+  ownerMemberId?: string;
   baseDir?: string;
 }): Promise<DeviceAuthToken | null> {
   return await withLock(async () => {
@@ -1058,6 +1082,11 @@ export async function ensureDeviceToken(params: {
       return null;
     }
     const { device, role, tokens, existing } = context;
+    if (params.ownerMemberId && device.ownerMemberId !== params.ownerMemberId) {
+      device.ownerMemberId = params.ownerMemberId;
+      state.pairedByDeviceId[device.deviceId] = device;
+      await persistState(state, params.baseDir, "paired");
+    }
     const approvedScopes = resolveApprovedDeviceScopeBaseline(device);
     if (
       !scopesWithinApprovedDeviceBaseline({

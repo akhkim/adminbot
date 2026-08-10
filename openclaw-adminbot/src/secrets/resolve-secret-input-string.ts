@@ -1,10 +1,10 @@
 /** Resolves inline string or SecretRef inputs into normalized secret strings. */
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   normalizeSecretInputString,
   resolveSecretInputRef,
   type SecretRef,
-} from "../config/types.secrets.js";
+} from "../config/types/secrets.js";
 import { resolveSecretRefString } from "./resolve.js";
 
 type SecretDefaults = NonNullable<OpenClawConfig["secrets"]>["defaults"];

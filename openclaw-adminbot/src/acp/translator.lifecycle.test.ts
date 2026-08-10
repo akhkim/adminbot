@@ -10,8 +10,8 @@ import type {
 import { PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
 import { createInMemorySessionStore } from "@openclaw/acp-core/session";
 import { describe, expect, it, vi } from "vitest";
-import type { GatewayClient } from "../gateway/client.js";
-import type { GatewaySessionRow } from "../gateway/session-utils.js";
+import type { GatewayClient } from "../gateway/client/client.js";
+import type { GatewaySessionRow } from "../gateway/sessions/session-utils.js";
 import { AcpGatewayAgent } from "./translator.js";
 import { createAcpConnection, createAcpGateway } from "./translator.test-helpers.js";
 

@@ -1,13 +1,13 @@
 // Core command registry that lazily imports command groups based on parsed argv.
 import type { Command } from "commander";
 import { resolveCliArgvInvocation } from "../argv-invocation.js";
-import { shouldRegisterPrimaryCommandOnly } from "../command-registration-policy.js";
 import {
   buildCommandGroupEntries,
   defineImportedCommandGroupSpec,
   defineImportedProgramCommandGroupSpecs,
   type CommandGroupDescriptorSpec,
 } from "./command-group-descriptors.js";
+import { shouldRegisterPrimaryCommandOnly } from "./command-registration-policy.js";
 import type { ProgramContext } from "./context.js";
 import {
   getCoreCliCommandDescriptors,
@@ -53,11 +53,6 @@ const coreEntrySpecs: readonly CommandGroupDescriptorSpec<
   ...withProgramOnlySpecs(
     defineImportedProgramCommandGroupSpecs([
       {
-        commandNames: ["crestodian"],
-        loadModule: () => import("./register.crestodian.js"),
-        exportName: "registerCrestodianCommand",
-      },
-      {
         commandNames: ["setup"],
         loadModule: () => import("./register.setup.js"),
         exportName: "registerSetupCommand",
@@ -74,7 +69,7 @@ const coreEntrySpecs: readonly CommandGroupDescriptorSpec<
       },
       {
         commandNames: ["config"],
-        loadModule: () => import("../config-cli.js"),
+        loadModule: () => import("../config/config-cli.js"),
         exportName: "registerConfigCli",
       },
       {
@@ -103,11 +98,6 @@ const coreEntrySpecs: readonly CommandGroupDescriptorSpec<
   ),
   ...withProgramOnlySpecs(
     defineImportedProgramCommandGroupSpecs([
-      {
-        commandNames: ["mcp"],
-        loadModule: () => import("../mcp-cli.js"),
-        exportName: "registerMcpCli",
-      },
       {
         commandNames: ["transcripts"],
         loadModule: () => import("./register.transcripts.js"),

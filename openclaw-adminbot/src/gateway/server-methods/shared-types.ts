@@ -5,10 +5,10 @@ import type {
   ErrorShape,
   RequestFrame,
 } from "../../../packages/gateway-protocol/src/index.js";
-import type { ModelCatalogEntry } from "../../agents/model-catalog.types.js";
+import type { ModelCatalogEntry } from "../../agents/models/model-catalog.types.js";
 import type { CliDeps } from "../../cli/deps.types.js";
-import type { HealthSummary } from "../../commands/health.types.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { HealthSummary } from "../../commands/maintenance/health.types.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { CronServiceContract } from "../../cron/service-contract.js";
 import type { PluginApprovalRequestPayload } from "../../infra/plugin-approvals.js";
 import type { createSubsystemLogger } from "../../logging/subsystem.js";
@@ -16,18 +16,21 @@ import type { WizardSession } from "../../wizard/session.js";
 import type { ChatAbortControllerEntry } from "../chat-abort.js";
 import type { ExecApprovalManager, ExecApprovalRecord } from "../exec-approval-manager.js";
 import type { GatewayMethodRegistryView } from "../methods/descriptor.js";
-import type { NodeRegistry } from "../node-registry.js";
+import type { NodeRegistry } from "../node/node-registry.js";
 import type { PluginNodeCapabilitySurface } from "../plugin-node-capability.js";
-import type { GatewayBroadcastFn, GatewayBroadcastToConnIdsFn } from "../server-broadcast-types.js";
-import type { ChannelRuntimeSnapshot } from "../server-channel-runtime.types.js";
+import type { GatewayEventLoopHealth } from "../server/event-loop-health.js";
+import type {
+  GatewayBroadcastFn,
+  GatewayBroadcastToConnIdsFn,
+} from "../server/server-broadcast-types.js";
+import type { ChannelRuntimeSnapshot } from "../server/server-channel-runtime.types.js";
 import type {
   BufferedAgentEvent,
   ChatAbortMarker,
   ChatRunEntry,
   ChatRunRegistration,
-} from "../server-chat-state.js";
-import type { DedupeEntry } from "../server-shared.js";
-import type { GatewayEventLoopHealth } from "../server/event-loop-health.js";
+} from "../server/server-chat-state.js";
+import type { DedupeEntry } from "../server/server-shared.js";
 
 /**
  * Shared gateway request types used by every server-method module.
@@ -43,6 +46,8 @@ export type GatewayClient = {
   pluginNodeCapabilitySurfaces?: Record<string, PluginNodeCapabilitySurface>;
   pluginNodeCapabilities?: Record<string, { capability: string; expiresAtMs: number }>;
   isDeviceTokenAuth?: boolean;
+  // See GatewayWsClient.ownerMemberId (ws-types.ts) -- same field, narrowed view.
+  ownerMemberId?: string;
   internal?: {
     allowModelOverride?: boolean;
     approvalRuntime?: boolean;
@@ -142,7 +147,7 @@ export type GatewayRequestContext = {
     accountId?: string,
   ) => void;
   wizardRunner: (
-    opts: import("../../commands/onboard-types.js").OnboardOptions,
+    opts: import("../../commands/onboard/onboard-types.js").OnboardOptions,
     runtime: import("../../runtime.js").RuntimeEnv,
     prompter: import("../../wizard/prompts.js").WizardPrompter,
   ) => Promise<void>;

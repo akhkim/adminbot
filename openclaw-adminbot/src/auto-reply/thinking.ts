@@ -1,6 +1,6 @@
 // Thinking/reasoning level catalog helpers for auto-reply model controls.
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
-import { resolveClaudeThinkingProfile } from "../plugins/provider-claude-thinking.js";
+import { resolveClaudeThinkingProfile } from "../plugins/providers/provider-claude-thinking.js";
 import {
   BASE_THINKING_LEVELS,
   normalizeThinkLevel,
@@ -42,8 +42,8 @@ import {
   resolveProviderDefaultThinkingLevel,
   resolveProviderThinkingProfile,
   resolveProviderXHighThinking,
-} from "../plugins/provider-thinking.js";
-import type { ProviderThinkingProfile } from "../plugins/provider-thinking.types.js";
+} from "../plugins/providers/provider-thinking.js";
+import type { ProviderThinkingProfile } from "../plugins/providers/provider-thinking.types.js";
 
 /** UI-facing thinking level option. */
 export type ThinkingLevelOption = {

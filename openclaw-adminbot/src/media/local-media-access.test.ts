@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import { assertLocalMediaAllowed, LocalMediaAccessError } from "./local-media-access.js";
 
 const { hoistedRoots } = vi.hoisted(() => ({ hoistedRoots: [] as string[] }));

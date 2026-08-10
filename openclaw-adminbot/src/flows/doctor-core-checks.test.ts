@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type { SkillStatusEntry } from "../skills/discovery/status.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import {
@@ -25,7 +25,7 @@ const mocks = vi.hoisted(() => ({
   loadModelCatalog: vi.fn(async () => []),
 }));
 
-vi.mock("../agents/model-catalog.js", () => ({
+vi.mock("../agents/models/model-catalog.js", () => ({
   loadModelCatalog: mocks.loadModelCatalog,
 }));
 

@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { execFile } from "node:child_process";
+import os from "node:os";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
@@ -88,7 +90,9 @@ await run(
 console.log("NO_REPLY");
 
 function findGoogleCli() {
-  return process.env.GWS_BIN?.trim() || "/home/akhkim/.npm-global/bin/gws";
+  // The systemd unit's PATH misses the npm global bin dir, so resolve it under $HOME rather than
+  // relying on a bare lookup that ENOENTs there.
+  return process.env.GWS_BIN?.trim() || path.join(os.homedir(), ".npm-global", "bin", "gws");
 }
 
 function normalizeExecutableOverride(value) {

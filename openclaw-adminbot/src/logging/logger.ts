@@ -3,18 +3,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { Logger as TsLogger } from "tslog";
-import type { OpenClawConfig } from "../config/types.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import {
   emitDiagnosticEvent,
   emitDiagnosticEventWithTrustedTraceContext,
-} from "../infra/diagnostic-events.js";
+} from "../infra/diagnostics/diagnostic-events.js";
 import {
   getActiveDiagnosticTraceContext,
   isValidDiagnosticSpanId,
   isValidDiagnosticTraceFlags,
   isValidDiagnosticTraceId,
   type DiagnosticTraceContext,
-} from "../infra/diagnostic-trace-context.js";
+} from "../infra/diagnostics/diagnostic-trace-context.js";
 import { expandHomePrefix } from "../infra/home-dir.js";
 import { isBlockedObjectKey } from "../infra/prototype-keys.js";
 import { appendRegularFileSync } from "../infra/regular-file.js";

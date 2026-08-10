@@ -6,7 +6,7 @@ import dotenv from "dotenv";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveConfigDir } from "../utils.js";
 import { resolveRequiredHomeDir } from "./home-dir.js";
-import { normalizeEnvVarKey } from "./host-env-security.js";
+import { normalizeEnvVarKey } from "./system/host-env-security.js";
 
 // Global dotenv loading imports operator-level gateway env files without
 // overriding variables already present in the process environment.

@@ -9,12 +9,12 @@ import type {
   ChannelResolveKind,
   ChannelResolveResult,
 } from "../../channels/plugins/types.adapters.js";
-import { resolveCommandConfigWithSecrets } from "../../cli/command-config-resolution.js";
-import { formatCliCommand } from "../../cli/command-format.js";
-import { getChannelsCommandSecretTargetIds } from "../../cli/command-secret-targets.js";
 import { formatUnsupportedChannelActionMessage } from "../../cli/error-format.js";
-import { commitConfigWithPendingPluginInstalls } from "../../cli/plugins-install-record-commit.js";
-import { refreshPluginRegistryAfterConfigMutation } from "../../cli/plugins-registry-refresh.js";
+import { commitConfigWithPendingPluginInstalls } from "../../cli/plugins/plugins-install-record-commit.js";
+import { refreshPluginRegistryAfterConfigMutation } from "../../cli/plugins/plugins-registry-refresh.js";
+import { resolveCommandConfigWithSecrets } from "../../cli/program/command-config-resolution.js";
+import { formatCliCommand } from "../../cli/program/command-format.js";
+import { getChannelsCommandSecretTargetIds } from "../../cli/program/command-secret-targets.js";
 import {
   getRuntimeConfig,
   readConfigFileSnapshot,

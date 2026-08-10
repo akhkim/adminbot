@@ -7,72 +7,26 @@ import fs from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
 import { pathToFileURL } from "node:url";
-import { pluginSdkEntrypoints } from "./lib/plugin-sdk-entries.mjs";
 import { resolvePnpmRunner } from "./pnpm-runner.mjs";
 
 const nodeBin = process.execPath;
-const WINDOWS_BUILD_MAX_OLD_SPACE_MB = 8192;
 const BUILD_CACHE_VERSION = 3;
-const PLUGIN_SDK_DTS_CACHE_INPUTS = [
-  "package.json",
-  "pnpm-lock.yaml",
-  "npm-shrinkwrap.json",
-  "packages/plugin-sdk/package.json",
-  "packages/llm-core/package.json",
-  "packages/markdown-core/package.json",
-  "packages/media-core/package.json",
-  "packages/media-understanding-common/package.json",
-  "packages/terminal-core/package.json",
-  "packages/acp-core/package.json",
-  "packages/model-catalog-core/package.json",
-  "packages/normalization-core/package.json",
-  "packages/web-content-core/package.json",
-  "packages/memory-host-sdk/package.json",
-  "tsconfig.json",
-  "tsconfig.plugin-sdk.dts.json",
-  "src/plugin-sdk",
-  "packages/llm-core/src",
-  "packages/markdown-core/src",
-  "packages/media-core/src",
-  "packages/media-generation-core/src",
-  "packages/model-catalog-core/src",
-  "packages/memory-host-sdk/src",
-  "packages/normalization-core/src",
-  "packages/acp-core/src",
-  "packages/media-understanding-common/src",
-  "packages/terminal-core/src",
-  "packages/web-content-core/src",
-  "src/types",
-  "src/video-generation/dashscope-compatible.ts",
-  "src/video-generation/types.ts",
-];
-const PLUGIN_SDK_ENTRY_DTS_CACHE_ENV = ["OPENCLAW_BUILD_PRIVATE_QA"];
-const PLUGIN_SDK_ENTRY_DTS_CACHE_INPUTS = [
-  "scripts/write-plugin-sdk-entry-dts.ts",
-  "scripts/lib/plugin-sdk-entries.mjs",
-  "scripts/lib/plugin-sdk-entrypoints.json",
-  "scripts/lib/plugin-sdk-private-local-only-subpaths.json",
-  "scripts/lib/plugin-sdk-deprecated-public-subpaths.json",
-  "scripts/lib/plugin-sdk-deprecated-barrel-subpaths.json",
-  ...PLUGIN_SDK_DTS_CACHE_INPUTS,
-];
-const PLUGIN_SDK_ENTRY_DTS_CACHE_OUTPUTS = [
-  { path: "dist/plugin-sdk", extensions: [".d.ts"], recursive: false },
-  "dist/plugin-sdk/webhook-path.js",
-  "dist/plugin-sdk/.boundary-entry-shims.stamp",
-  ...pluginSdkEntrypoints.map((entry) => `packages/plugin-sdk/dist/src/plugin-sdk/${entry}.d.ts`),
-];
-const PNPM_STEP_NODE_FALLBACKS = new Map([
-  ["plugins:assets:build", ["scripts/bundled-plugin-assets.mjs", "--phase", "build"]],
-  [
-    "build:plugin-sdk:dts",
-    ["scripts/run-tsgo.mjs", "-p", "tsconfig.plugin-sdk.dts.json", "--declaration", "true"],
-  ],
-  ["plugins:assets:copy", ["scripts/bundled-plugin-assets.mjs", "--phase", "copy"]],
-  ["ui:build", ["scripts/ui.js", "build"]],
-]);
+const PNPM_STEP_NODE_FALLBACKS = new Map([["ui:build", ["scripts/ui.js", "build"]]]);
+// The `plugins:assets:build`/`plugins:assets:copy` phases are deliberately absent.
+// They dispatched to `scripts/bundled-plugin-assets.mjs`, which only ran commands a
+// bundled plugin declared under `openclaw.assetScripts` in its package.json. The one
+// plugin that ever declared them (canvas) is not part of this fork, so the phases were
+// already no-ops before the script was removed; keeping the invocations only made
+// `pnpm build` fail on a missing package script.
+//
+// The `build:plugin-sdk:dts` / `write-plugin-sdk-entry-dts` / `check-plugin-sdk-exports`
+// phases are absent for the same reason: they were the npm-publish packaging pipeline,
+// which this fork does not run. `scripts/write-plugin-sdk-entry-dts.ts` and
+// `scripts/check-plugin-sdk-exports.mjs` no longer exist, and tsdown already emits the
+// declarations they used to assemble (`dist/plugin-sdk/*.d.ts`, `webhook-path.js`), so
+// the only thing the phases still produced was a failure on a missing package script.
+// `build:docker` has skipped this trio since 49b248a3334.
 export const BUILD_ALL_STEPS = [
-  { label: "plugins:assets:build", kind: "pnpm", pnpmArgs: ["plugins:assets:build"] },
   { label: "tsdown", kind: "node", args: ["scripts/tsdown-build.mjs"] },
   {
     label: "check-cli-bootstrap-imports",
@@ -85,37 +39,6 @@ export const BUILD_ALL_STEPS = [
     label: "runtime-postbuild-stamp",
     kind: "node",
     args: ["scripts/runtime-postbuild-stamp.mjs"],
-  },
-  {
-    label: "build:plugin-sdk:dts",
-    kind: "pnpm",
-    pnpmArgs: ["build:plugin-sdk:dts"],
-    windowsNodeOptions: `--max-old-space-size=${WINDOWS_BUILD_MAX_OLD_SPACE_MB}`,
-    cache: {
-      inputs: PLUGIN_SDK_DTS_CACHE_INPUTS,
-      outputs: ["dist/plugin-sdk/.tsbuildinfo", "dist/plugin-sdk/packages", "dist/plugin-sdk/src"],
-    },
-  },
-  {
-    label: "write-plugin-sdk-entry-dts",
-    kind: "node",
-    args: ["--experimental-strip-types", "scripts/write-plugin-sdk-entry-dts.ts"],
-    cache: {
-      env: PLUGIN_SDK_ENTRY_DTS_CACHE_ENV,
-      inputs: PLUGIN_SDK_ENTRY_DTS_CACHE_INPUTS,
-      outputs: PLUGIN_SDK_ENTRY_DTS_CACHE_OUTPUTS,
-      restore: "always",
-    },
-  },
-  {
-    label: "check-plugin-sdk-exports",
-    kind: "node",
-    args: ["scripts/check-plugin-sdk-exports.mjs"],
-  },
-  {
-    label: "plugins:assets:copy",
-    kind: "pnpm",
-    pnpmArgs: ["plugins:assets:copy"],
   },
   {
     label: "copy-hook-metadata",
@@ -165,16 +88,11 @@ export const BUILD_ALL_STEPS = [
 export const BUILD_ALL_PROFILES = {
   full: BUILD_ALL_STEPS.map((step) => step.label),
   ciArtifacts: [
-    "plugins:assets:build",
     "tsdown",
     "check-cli-bootstrap-imports",
     "runtime-postbuild",
     "build-stamp",
     "runtime-postbuild-stamp",
-    "build:plugin-sdk:dts",
-    "write-plugin-sdk-entry-dts",
-    "check-plugin-sdk-exports",
-    "plugins:assets:copy",
     "copy-hook-metadata",
     "copy-export-html-templates",
     "ui:build",
@@ -190,7 +108,6 @@ export const BUILD_ALL_PROFILES = {
     "runtime-postbuild-stamp",
   ],
   qaRuntime: [
-    "plugins:assets:build",
     "tsdown",
     "check-cli-bootstrap-imports",
     "runtime-postbuild",

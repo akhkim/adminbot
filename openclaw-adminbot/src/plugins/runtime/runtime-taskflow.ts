@@ -1,3 +1,4 @@
+import { normalizeDeliveryContext } from "../../shared/delivery-context.shared.js";
 // Runtime task-flow helpers adapt plugin task descriptors into executable task flows.
 import {
   cancelFlowByIdForOwner,
@@ -21,7 +22,6 @@ import {
   setFlowWaiting,
 } from "../../tasks/task-flow-runtime-internal.js";
 import type { TaskDeliveryState } from "../../tasks/task-registry.types.js";
-import { normalizeDeliveryContext } from "../../utils/delivery-context.shared.js";
 import type {
   BoundTaskFlowRuntime,
   ManagedTaskFlowMutationResult,

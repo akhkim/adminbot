@@ -1,0 +1,1254 @@
+[
+  {
+    "from": "src/infra/approval-display-paths.test.ts",
+    "to": "src/infra/approvals/approval-display-paths.test.ts"
+  },
+  {
+    "from": "src/infra/approval-display-paths.ts",
+    "to": "src/infra/approvals/approval-display-paths.ts"
+  },
+  {
+    "from": "src/infra/approval-errors.test.ts",
+    "to": "src/infra/approvals/approval-errors.test.ts"
+  },
+  {
+    "from": "src/infra/approval-errors.ts",
+    "to": "src/infra/approvals/approval-errors.ts"
+  },
+  {
+    "from": "src/infra/approval-gateway-resolver.test.ts",
+    "to": "src/infra/approvals/approval-gateway-resolver.test.ts"
+  },
+  {
+    "from": "src/infra/approval-gateway-resolver.ts",
+    "to": "src/infra/approvals/approval-gateway-resolver.ts"
+  },
+  {
+    "from": "src/infra/approval-handler-adapter-runtime.ts",
+    "to": "src/infra/approvals/approval-handler-adapter-runtime.ts"
+  },
+  {
+    "from": "src/infra/approval-handler-bootstrap.test.ts",
+    "to": "src/infra/approvals/approval-handler-bootstrap.test.ts"
+  },
+  {
+    "from": "src/infra/approval-handler-bootstrap.ts",
+    "to": "src/infra/approvals/approval-handler-bootstrap.ts"
+  },
+  {
+    "from": "src/infra/approval-handler-runtime-types.ts",
+    "to": "src/infra/approvals/approval-handler-runtime-types.ts"
+  },
+  {
+    "from": "src/infra/approval-handler-runtime.test.ts",
+    "to": "src/infra/approvals/approval-handler-runtime.test.ts"
+  },
+  {
+    "from": "src/infra/approval-handler-runtime.ts",
+    "to": "src/infra/approvals/approval-handler-runtime.ts"
+  },
+  {
+    "from": "src/infra/approval-handler.test-helpers.ts",
+    "to": "src/infra/approvals/approval-handler.test-helpers.ts"
+  },
+  {
+    "from": "src/infra/approval-native-delivery.test.ts",
+    "to": "src/infra/approvals/approval-native-delivery.test.ts"
+  },
+  {
+    "from": "src/infra/approval-native-delivery.ts",
+    "to": "src/infra/approvals/approval-native-delivery.ts"
+  },
+  {
+    "from": "src/infra/approval-native-route-coordinator.test.ts",
+    "to": "src/infra/approvals/approval-native-route-coordinator.test.ts"
+  },
+  {
+    "from": "src/infra/approval-native-route-coordinator.ts",
+    "to": "src/infra/approvals/approval-native-route-coordinator.ts"
+  },
+  {
+    "from": "src/infra/approval-native-route-notice.test.ts",
+    "to": "src/infra/approvals/approval-native-route-notice.test.ts"
+  },
+  {
+    "from": "src/infra/approval-native-route-notice.ts",
+    "to": "src/infra/approvals/approval-native-route-notice.ts"
+  },
+  {
+    "from": "src/infra/approval-native-runtime-types.ts",
+    "to": "src/infra/approvals/approval-native-runtime-types.ts"
+  },
+  {
+    "from": "src/infra/approval-native-runtime.test.ts",
+    "to": "src/infra/approvals/approval-native-runtime.test.ts"
+  },
+  {
+    "from": "src/infra/approval-native-runtime.ts",
+    "to": "src/infra/approvals/approval-native-runtime.ts"
+  },
+  {
+    "from": "src/infra/approval-native-target-key.test.ts",
+    "to": "src/infra/approvals/approval-native-target-key.test.ts"
+  },
+  {
+    "from": "src/infra/approval-native-target-key.ts",
+    "to": "src/infra/approvals/approval-native-target-key.ts"
+  },
+  {
+    "from": "src/infra/approval-request-account-binding.ts",
+    "to": "src/infra/approvals/approval-request-account-binding.ts"
+  },
+  {
+    "from": "src/infra/approval-request-filters.test.ts",
+    "to": "src/infra/approvals/approval-request-filters.test.ts"
+  },
+  {
+    "from": "src/infra/approval-request-filters.ts",
+    "to": "src/infra/approvals/approval-request-filters.ts"
+  },
+  {
+    "from": "src/infra/approval-turn-source.test.ts",
+    "to": "src/infra/approvals/approval-turn-source.test.ts"
+  },
+  {
+    "from": "src/infra/approval-turn-source.ts",
+    "to": "src/infra/approvals/approval-turn-source.ts"
+  },
+  {
+    "from": "src/infra/approval-types.ts",
+    "to": "src/infra/approvals/approval-types.ts"
+  },
+  {
+    "from": "src/infra/approval-view-model.test.ts",
+    "to": "src/infra/approvals/approval-view-model.test.ts"
+  },
+  {
+    "from": "src/infra/approval-view-model.ts",
+    "to": "src/infra/approvals/approval-view-model.ts"
+  },
+  {
+    "from": "src/infra/approval-view-model.types.ts",
+    "to": "src/infra/approvals/approval-view-model.types.ts"
+  },
+  {
+    "from": "src/infra/diagnostic-error-metadata.test.ts",
+    "to": "src/infra/diagnostics/diagnostic-error-metadata.test.ts"
+  },
+  {
+    "from": "src/infra/diagnostic-error-metadata.ts",
+    "to": "src/infra/diagnostics/diagnostic-error-metadata.ts"
+  },
+  {
+    "from": "src/infra/diagnostic-events.test.ts",
+    "to": "src/infra/diagnostics/diagnostic-events.test.ts"
+  },
+  {
+    "from": "src/infra/diagnostic-events.ts",
+    "to": "src/infra/diagnostics/diagnostic-events.ts"
+  },
+  {
+    "from": "src/infra/diagnostic-flags.test.ts",
+    "to": "src/infra/diagnostics/diagnostic-flags.test.ts"
+  },
+  {
+    "from": "src/infra/diagnostic-flags.ts",
+    "to": "src/infra/diagnostics/diagnostic-flags.ts"
+  },
+  {
+    "from": "src/infra/diagnostic-llm-content.test.ts",
+    "to": "src/infra/diagnostics/diagnostic-llm-content.test.ts"
+  },
+  {
+    "from": "src/infra/diagnostic-llm-content.ts",
+    "to": "src/infra/diagnostics/diagnostic-llm-content.ts"
+  },
+  {
+    "from": "src/infra/diagnostic-trace-context.test.ts",
+    "to": "src/infra/diagnostics/diagnostic-trace-context.test.ts"
+  },
+  {
+    "from": "src/infra/diagnostic-trace-context.ts",
+    "to": "src/infra/diagnostics/diagnostic-trace-context.ts"
+  },
+  {
+    "from": "src/infra/diagnostics-timeline.test.ts",
+    "to": "src/infra/diagnostics/diagnostics-timeline.test.ts"
+  },
+  {
+    "from": "src/infra/diagnostics-timeline.ts",
+    "to": "src/infra/diagnostics/diagnostics-timeline.ts"
+  },
+  {
+    "from": "src/infra/exec-allow-always-persistence.test.ts",
+    "to": "src/infra/exec/exec-allow-always-persistence.test.ts"
+  },
+  {
+    "from": "src/infra/exec-allowlist-matching.test.ts",
+    "to": "src/infra/exec/exec-allowlist-matching.test.ts"
+  },
+  {
+    "from": "src/infra/exec-allowlist-pattern.test.ts",
+    "to": "src/infra/exec/exec-allowlist-pattern.test.ts"
+  },
+  {
+    "from": "src/infra/exec-allowlist-pattern.ts",
+    "to": "src/infra/exec/exec-allowlist-pattern.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-channel-runtime.test.ts",
+    "to": "src/infra/exec/exec-approval-channel-runtime.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-channel-runtime.ts",
+    "to": "src/infra/exec/exec-approval-channel-runtime.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-channel-runtime.types.ts",
+    "to": "src/infra/exec/exec-approval-channel-runtime.types.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-command-display.test.ts",
+    "to": "src/infra/exec/exec-approval-command-display.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-command-display.ts",
+    "to": "src/infra/exec/exec-approval-command-display.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-forwarder.runtime.ts",
+    "to": "src/infra/exec/exec-approval-forwarder.runtime.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-forwarder.test.ts",
+    "to": "src/infra/exec/exec-approval-forwarder.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-forwarder.ts",
+    "to": "src/infra/exec/exec-approval-forwarder.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-reply.test.ts",
+    "to": "src/infra/exec/exec-approval-reply.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-reply.ts",
+    "to": "src/infra/exec/exec-approval-reply.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-session-target.test.ts",
+    "to": "src/infra/exec/exec-approval-session-target.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-session-target.ts",
+    "to": "src/infra/exec/exec-approval-session-target.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-surface.test.ts",
+    "to": "src/infra/exec/exec-approval-surface.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approval-surface.ts",
+    "to": "src/infra/exec/exec-approval-surface.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals-allow-always.test.ts",
+    "to": "src/infra/exec/exec-approvals-allow-always.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals-allowlist.ts",
+    "to": "src/infra/exec/exec-approvals-allowlist.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals-analysis.test.ts",
+    "to": "src/infra/exec/exec-approvals-analysis.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals-analysis.ts",
+    "to": "src/infra/exec/exec-approvals-analysis.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals-config.test.ts",
+    "to": "src/infra/exec/exec-approvals-config.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals-effective.ts",
+    "to": "src/infra/exec/exec-approvals-effective.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals-parity.test.ts",
+    "to": "src/infra/exec/exec-approvals-parity.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals-policy.test.ts",
+    "to": "src/infra/exec/exec-approvals-policy.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals-safe-bins.test.ts",
+    "to": "src/infra/exec/exec-approvals-safe-bins.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals-store.test.ts",
+    "to": "src/infra/exec/exec-approvals-store.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals-test-helpers.ts",
+    "to": "src/infra/exec/exec-approvals-test-helpers.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals.test.ts",
+    "to": "src/infra/exec/exec-approvals.test.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals.ts",
+    "to": "src/infra/exec/exec-approvals.ts"
+  },
+  {
+    "from": "src/infra/exec-approvals.types.ts",
+    "to": "src/infra/exec/exec-approvals.types.ts"
+  },
+  {
+    "from": "src/infra/exec-argv-analysis.ts",
+    "to": "src/infra/exec/exec-argv-analysis.ts"
+  },
+  {
+    "from": "src/infra/exec-authorization-allowlist.test.ts",
+    "to": "src/infra/exec/exec-authorization-allowlist.test.ts"
+  },
+  {
+    "from": "src/infra/exec-authorization-plan.test.ts",
+    "to": "src/infra/exec/exec-authorization-plan.test.ts"
+  },
+  {
+    "from": "src/infra/exec-authorization-plan.ts",
+    "to": "src/infra/exec/exec-authorization-plan.ts"
+  },
+  {
+    "from": "src/infra/exec-authorization-render.test.ts",
+    "to": "src/infra/exec/exec-authorization-render.test.ts"
+  },
+  {
+    "from": "src/infra/exec-authorization-render.ts",
+    "to": "src/infra/exec/exec-authorization-render.ts"
+  },
+  {
+    "from": "src/infra/exec-auto-review.test.ts",
+    "to": "src/infra/exec/exec-auto-review.test.ts"
+  },
+  {
+    "from": "src/infra/exec-auto-review.ts",
+    "to": "src/infra/exec/exec-auto-review.ts"
+  },
+  {
+    "from": "src/infra/exec-command-analysis-types.ts",
+    "to": "src/infra/exec/exec-command-analysis-types.ts"
+  },
+  {
+    "from": "src/infra/exec-command-resolution.test.ts",
+    "to": "src/infra/exec/exec-command-resolution.test.ts"
+  },
+  {
+    "from": "src/infra/exec-command-resolution.ts",
+    "to": "src/infra/exec/exec-command-resolution.ts"
+  },
+  {
+    "from": "src/infra/exec-control-command-guard.ts",
+    "to": "src/infra/exec/exec-control-command-guard.ts"
+  },
+  {
+    "from": "src/infra/exec-host.test.ts",
+    "to": "src/infra/exec/exec-host.test.ts"
+  },
+  {
+    "from": "src/infra/exec-host.ts",
+    "to": "src/infra/exec/exec-host.ts"
+  },
+  {
+    "from": "src/infra/exec-safe-bin-policy-profiles.ts",
+    "to": "src/infra/exec/exec-safe-bin-policy-profiles.ts"
+  },
+  {
+    "from": "src/infra/exec-safe-bin-policy-validator.ts",
+    "to": "src/infra/exec/exec-safe-bin-policy-validator.ts"
+  },
+  {
+    "from": "src/infra/exec-safe-bin-policy.test.ts",
+    "to": "src/infra/exec/exec-safe-bin-policy.test.ts"
+  },
+  {
+    "from": "src/infra/exec-safe-bin-policy.ts",
+    "to": "src/infra/exec/exec-safe-bin-policy.ts"
+  },
+  {
+    "from": "src/infra/exec-safe-bin-runtime-policy.test.ts",
+    "to": "src/infra/exec/exec-safe-bin-runtime-policy.test.ts"
+  },
+  {
+    "from": "src/infra/exec-safe-bin-runtime-policy.ts",
+    "to": "src/infra/exec/exec-safe-bin-runtime-policy.ts"
+  },
+  {
+    "from": "src/infra/exec-safe-bin-semantics.test.ts",
+    "to": "src/infra/exec/exec-safe-bin-semantics.test.ts"
+  },
+  {
+    "from": "src/infra/exec-safe-bin-semantics.ts",
+    "to": "src/infra/exec/exec-safe-bin-semantics.ts"
+  },
+  {
+    "from": "src/infra/exec-safe-bin-trust.test.ts",
+    "to": "src/infra/exec/exec-safe-bin-trust.test.ts"
+  },
+  {
+    "from": "src/infra/exec-safe-bin-trust.ts",
+    "to": "src/infra/exec/exec-safe-bin-trust.ts"
+  },
+  {
+    "from": "src/infra/exec-safe-builtins.test.ts",
+    "to": "src/infra/exec/exec-safe-builtins.test.ts"
+  },
+  {
+    "from": "src/infra/exec-safe-builtins.ts",
+    "to": "src/infra/exec/exec-safe-builtins.ts"
+  },
+  {
+    "from": "src/infra/exec-safety.test.ts",
+    "to": "src/infra/exec/exec-safety.test.ts"
+  },
+  {
+    "from": "src/infra/exec-safety.ts",
+    "to": "src/infra/exec/exec-safety.ts"
+  },
+  {
+    "from": "src/infra/exec-wrapper-resolution.test.ts",
+    "to": "src/infra/exec/exec-wrapper-resolution.test.ts"
+  },
+  {
+    "from": "src/infra/exec-wrapper-resolution.ts",
+    "to": "src/infra/exec/exec-wrapper-resolution.ts"
+  },
+  {
+    "from": "src/infra/exec-wrapper-tokens.ts",
+    "to": "src/infra/exec/exec-wrapper-tokens.ts"
+  },
+  {
+    "from": "src/infra/exec-wrapper-trust-plan.test.ts",
+    "to": "src/infra/exec/exec-wrapper-trust-plan.test.ts"
+  },
+  {
+    "from": "src/infra/exec-wrapper-trust-plan.ts",
+    "to": "src/infra/exec/exec-wrapper-trust-plan.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-active-hours.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-active-hours.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-active-hours.ts",
+    "to": "src/infra/heartbeat/heartbeat-active-hours.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-cooldown.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-cooldown.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-cooldown.ts",
+    "to": "src/infra/heartbeat/heartbeat-cooldown.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-events-filter.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-events-filter.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-events-filter.ts",
+    "to": "src/infra/heartbeat/heartbeat-events-filter.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-events.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-events.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-events.ts",
+    "to": "src/infra/heartbeat/heartbeat-events.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-reason.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-reason.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-reason.ts",
+    "to": "src/infra/heartbeat/heartbeat-reason.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.active-hours-schedule.e2e.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.active-hours-schedule.e2e.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.commitments.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.commitments.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.ghost-reminder.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.ghost-reminder.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.isolated-key-stability.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.isolated-key-stability.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.isolated-session-mirror.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.isolated-session-mirror.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.model-override.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.model-override.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.respects-ackmaxchars-heartbeat-acks.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.respects-ackmaxchars-heartbeat-acks.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.response-prefix-template.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.response-prefix-template.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.returns-default-unset.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.returns-default-unset.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.runtime.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.runtime.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.scheduler.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.scheduler.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.sender-prefers-delivery-target.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.sender-prefers-delivery-target.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.skips-busy-session-lane.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.skips-busy-session-lane.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.subagent-session-guard.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.subagent-session-guard.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.test-harness.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.test-harness.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.test-utils.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.test-utils.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.timeout-warning.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.timeout-warning.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.tool-response.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.tool-response.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.transcript-prune.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.transcript-prune.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-runner.typing.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-runner.typing.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-schedule.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-schedule.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-schedule.ts",
+    "to": "src/infra/heartbeat/heartbeat-schedule.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-summary.ts",
+    "to": "src/infra/heartbeat/heartbeat-summary.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-typing.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-typing.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-typing.ts",
+    "to": "src/infra/heartbeat/heartbeat-typing.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-visibility.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-visibility.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-visibility.ts",
+    "to": "src/infra/heartbeat/heartbeat-visibility.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-wake.test.ts",
+    "to": "src/infra/heartbeat/heartbeat-wake.test.ts"
+  },
+  {
+    "from": "src/infra/heartbeat-wake.ts",
+    "to": "src/infra/heartbeat/heartbeat-wake.ts"
+  },
+  {
+    "from": "src/infra/host-env-security-policy.d.ts",
+    "to": "src/infra/system/host-env-security-policy.d.ts"
+  },
+  {
+    "from": "src/infra/host-env-security-policy.js",
+    "to": "src/infra/system/host-env-security-policy.js"
+  },
+  {
+    "from": "src/infra/host-env-security-policy.json",
+    "to": "src/infra/system/host-env-security-policy.json"
+  },
+  {
+    "from": "src/infra/host-env-security.policy-parity.test.ts",
+    "to": "src/infra/system/host-env-security.policy-parity.test.ts"
+  },
+  {
+    "from": "src/infra/host-env-security.reported-baseline.json",
+    "to": "src/infra/system/host-env-security.reported-baseline.json"
+  },
+  {
+    "from": "src/infra/host-env-security.reported-baseline.test.ts",
+    "to": "src/infra/system/host-env-security.reported-baseline.test.ts"
+  },
+  {
+    "from": "src/infra/host-env-security.test.ts",
+    "to": "src/infra/system/host-env-security.test.ts"
+  },
+  {
+    "from": "src/infra/host-env-security.ts",
+    "to": "src/infra/system/host-env-security.ts"
+  },
+  {
+    "from": "src/infra/install-flow.test.ts",
+    "to": "src/infra/install/install-flow.test.ts"
+  },
+  {
+    "from": "src/infra/install-flow.ts",
+    "to": "src/infra/install/install-flow.ts"
+  },
+  {
+    "from": "src/infra/install-from-npm-spec.test.ts",
+    "to": "src/infra/install/install-from-npm-spec.test.ts"
+  },
+  {
+    "from": "src/infra/install-from-npm-spec.ts",
+    "to": "src/infra/install/install-from-npm-spec.ts"
+  },
+  {
+    "from": "src/infra/install-mode-options.test.ts",
+    "to": "src/infra/install/install-mode-options.test.ts"
+  },
+  {
+    "from": "src/infra/install-mode-options.ts",
+    "to": "src/infra/install/install-mode-options.ts"
+  },
+  {
+    "from": "src/infra/install-package-dir.test.ts",
+    "to": "src/infra/install/install-package-dir.test.ts"
+  },
+  {
+    "from": "src/infra/install-package-dir.ts",
+    "to": "src/infra/install/install-package-dir.ts"
+  },
+  {
+    "from": "src/infra/install-safe-path.test.ts",
+    "to": "src/infra/install/install-safe-path.test.ts"
+  },
+  {
+    "from": "src/infra/install-safe-path.ts",
+    "to": "src/infra/install/install-safe-path.ts"
+  },
+  {
+    "from": "src/infra/install-source-utils.test.ts",
+    "to": "src/infra/install/install-source-utils.test.ts"
+  },
+  {
+    "from": "src/infra/install-source-utils.ts",
+    "to": "src/infra/install/install-source-utils.ts"
+  },
+  {
+    "from": "src/infra/install-target.test.ts",
+    "to": "src/infra/install/install-target.test.ts"
+  },
+  {
+    "from": "src/infra/install-target.ts",
+    "to": "src/infra/install/install-target.ts"
+  },
+  {
+    "from": "src/infra/kysely-node-sqlite.test.ts",
+    "to": "src/infra/state/kysely-node-sqlite.test.ts"
+  },
+  {
+    "from": "src/infra/kysely-node-sqlite.ts",
+    "to": "src/infra/state/kysely-node-sqlite.ts"
+  },
+  {
+    "from": "src/infra/kysely-sync.test.ts",
+    "to": "src/infra/state/kysely-sync.test.ts"
+  },
+  {
+    "from": "src/infra/kysely-sync.ts",
+    "to": "src/infra/state/kysely-sync.ts"
+  },
+  {
+    "from": "src/infra/kysely-sync.types.test.ts",
+    "to": "src/infra/state/kysely-sync.types.test.ts"
+  },
+  {
+    "from": "src/infra/npm-install-env.test.ts",
+    "to": "src/infra/install/npm-install-env.test.ts"
+  },
+  {
+    "from": "src/infra/npm-install-env.ts",
+    "to": "src/infra/install/npm-install-env.ts"
+  },
+  {
+    "from": "src/infra/npm-integrity.test.ts",
+    "to": "src/infra/install/npm-integrity.test.ts"
+  },
+  {
+    "from": "src/infra/npm-integrity.ts",
+    "to": "src/infra/install/npm-integrity.ts"
+  },
+  {
+    "from": "src/infra/npm-managed-root.test.ts",
+    "to": "src/infra/install/npm-managed-root.test.ts"
+  },
+  {
+    "from": "src/infra/npm-managed-root.ts",
+    "to": "src/infra/install/npm-managed-root.ts"
+  },
+  {
+    "from": "src/infra/npm-pack-install.test.ts",
+    "to": "src/infra/install/npm-pack-install.test.ts"
+  },
+  {
+    "from": "src/infra/npm-pack-install.ts",
+    "to": "src/infra/install/npm-pack-install.ts"
+  },
+  {
+    "from": "src/infra/npm-registry-spec.test.ts",
+    "to": "src/infra/install/npm-registry-spec.test.ts"
+  },
+  {
+    "from": "src/infra/npm-registry-spec.ts",
+    "to": "src/infra/install/npm-registry-spec.ts"
+  },
+  {
+    "from": "src/infra/package-dist-inventory.test.ts",
+    "to": "src/infra/install/package-dist-inventory.test.ts"
+  },
+  {
+    "from": "src/infra/package-dist-inventory.ts",
+    "to": "src/infra/install/package-dist-inventory.ts"
+  },
+  {
+    "from": "src/infra/package-json.test.ts",
+    "to": "src/infra/install/package-json.test.ts"
+  },
+  {
+    "from": "src/infra/package-json.ts",
+    "to": "src/infra/install/package-json.ts"
+  },
+  {
+    "from": "src/infra/package-tag.test.ts",
+    "to": "src/infra/install/package-tag.test.ts"
+  },
+  {
+    "from": "src/infra/package-tag.ts",
+    "to": "src/infra/install/package-tag.ts"
+  },
+  {
+    "from": "src/infra/package-update-steps.test.ts",
+    "to": "src/infra/install/package-update-steps.test.ts"
+  },
+  {
+    "from": "src/infra/package-update-steps.ts",
+    "to": "src/infra/install/package-update-steps.ts"
+  },
+  {
+    "from": "src/infra/package-update-utils.ts",
+    "to": "src/infra/install/package-update-utils.ts"
+  },
+  {
+    "from": "src/infra/path-alias-guards.test.ts",
+    "to": "src/infra/system/path-alias-guards.test.ts"
+  },
+  {
+    "from": "src/infra/path-alias-guards.ts",
+    "to": "src/infra/system/path-alias-guards.ts"
+  },
+  {
+    "from": "src/infra/path-env.test.ts",
+    "to": "src/infra/system/path-env.test.ts"
+  },
+  {
+    "from": "src/infra/path-env.ts",
+    "to": "src/infra/system/path-env.ts"
+  },
+  {
+    "from": "src/infra/path-guards.test.ts",
+    "to": "src/infra/system/path-guards.test.ts"
+  },
+  {
+    "from": "src/infra/path-guards.ts",
+    "to": "src/infra/system/path-guards.ts"
+  },
+  {
+    "from": "src/infra/path-prepend.test.ts",
+    "to": "src/infra/system/path-prepend.test.ts"
+  },
+  {
+    "from": "src/infra/path-prepend.ts",
+    "to": "src/infra/system/path-prepend.ts"
+  },
+  {
+    "from": "src/infra/path-safety.test.ts",
+    "to": "src/infra/system/path-safety.test.ts"
+  },
+  {
+    "from": "src/infra/path-safety.ts",
+    "to": "src/infra/system/path-safety.ts"
+  },
+  {
+    "from": "src/infra/provider-usage-plugin-runtime.test-mocks.ts",
+    "to": "src/infra/providers/provider-usage-plugin-runtime.test-mocks.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.auth.normalizes-keys.test.ts",
+    "to": "src/infra/providers/provider-usage.auth.normalizes-keys.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.auth.plugin.test.ts",
+    "to": "src/infra/providers/provider-usage.auth.plugin.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.auth.ts",
+    "to": "src/infra/providers/provider-usage.auth.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.claude.test.ts",
+    "to": "src/infra/providers/provider-usage.fetch.claude.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.claude.ts",
+    "to": "src/infra/providers/provider-usage.fetch.claude.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.codex.test.ts",
+    "to": "src/infra/providers/provider-usage.fetch.codex.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.codex.ts",
+    "to": "src/infra/providers/provider-usage.fetch.codex.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.deepseek.test.ts",
+    "to": "src/infra/providers/provider-usage.fetch.deepseek.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.deepseek.ts",
+    "to": "src/infra/providers/provider-usage.fetch.deepseek.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.gemini.test.ts",
+    "to": "src/infra/providers/provider-usage.fetch.gemini.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.gemini.ts",
+    "to": "src/infra/providers/provider-usage.fetch.gemini.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.minimax.test.ts",
+    "to": "src/infra/providers/provider-usage.fetch.minimax.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.minimax.ts",
+    "to": "src/infra/providers/provider-usage.fetch.minimax.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.shared.test.ts",
+    "to": "src/infra/providers/provider-usage.fetch.shared.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.shared.ts",
+    "to": "src/infra/providers/provider-usage.fetch.shared.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.ts",
+    "to": "src/infra/providers/provider-usage.fetch.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.zai.test.ts",
+    "to": "src/infra/providers/provider-usage.fetch.zai.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.fetch.zai.ts",
+    "to": "src/infra/providers/provider-usage.fetch.zai.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.format.test.ts",
+    "to": "src/infra/providers/provider-usage.format.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.format.ts",
+    "to": "src/infra/providers/provider-usage.format.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.load.plugin.test.ts",
+    "to": "src/infra/providers/provider-usage.load.plugin.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.load.test.ts",
+    "to": "src/infra/providers/provider-usage.load.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.load.ts",
+    "to": "src/infra/providers/provider-usage.load.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.shared.test.ts",
+    "to": "src/infra/providers/provider-usage.shared.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.shared.ts",
+    "to": "src/infra/providers/provider-usage.shared.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.test-support.ts",
+    "to": "src/infra/providers/provider-usage.test-support.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.test.ts",
+    "to": "src/infra/providers/provider-usage.test.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.ts",
+    "to": "src/infra/providers/provider-usage.ts"
+  },
+  {
+    "from": "src/infra/provider-usage.types.ts",
+    "to": "src/infra/providers/provider-usage.types.ts"
+  },
+  {
+    "from": "src/infra/push-apns-http2.live.test.ts",
+    "to": "src/infra/diagnostics/push-apns-http2.live.test.ts"
+  },
+  {
+    "from": "src/infra/push-apns-http2.test.ts",
+    "to": "src/infra/diagnostics/push-apns-http2.test.ts"
+  },
+  {
+    "from": "src/infra/push-apns-http2.ts",
+    "to": "src/infra/diagnostics/push-apns-http2.ts"
+  },
+  {
+    "from": "src/infra/push-apns.auth.test.ts",
+    "to": "src/infra/diagnostics/push-apns.auth.test.ts"
+  },
+  {
+    "from": "src/infra/push-apns.relay.test.ts",
+    "to": "src/infra/diagnostics/push-apns.relay.test.ts"
+  },
+  {
+    "from": "src/infra/push-apns.relay.ts",
+    "to": "src/infra/diagnostics/push-apns.relay.ts"
+  },
+  {
+    "from": "src/infra/push-apns.store.test.ts",
+    "to": "src/infra/diagnostics/push-apns.store.test.ts"
+  },
+  {
+    "from": "src/infra/push-apns.test.ts",
+    "to": "src/infra/diagnostics/push-apns.test.ts"
+  },
+  {
+    "from": "src/infra/push-apns.ts",
+    "to": "src/infra/diagnostics/push-apns.ts"
+  },
+  {
+    "from": "src/infra/push-web.test.ts",
+    "to": "src/infra/diagnostics/push-web.test.ts"
+  },
+  {
+    "from": "src/infra/push-web.ts",
+    "to": "src/infra/diagnostics/push-web.ts"
+  },
+  {
+    "from": "src/infra/shell-env.test.ts",
+    "to": "src/infra/system/shell-env.test.ts"
+  },
+  {
+    "from": "src/infra/shell-env.ts",
+    "to": "src/infra/system/shell-env.ts"
+  },
+  {
+    "from": "src/infra/shell-inline-command.test.ts",
+    "to": "src/infra/system/shell-inline-command.test.ts"
+  },
+  {
+    "from": "src/infra/shell-inline-command.ts",
+    "to": "src/infra/system/shell-inline-command.ts"
+  },
+  {
+    "from": "src/infra/shell-wrapper-resolution.ts",
+    "to": "src/infra/system/shell-wrapper-resolution.ts"
+  },
+  {
+    "from": "src/infra/sqlite-files.ts",
+    "to": "src/infra/state/sqlite-files.ts"
+  },
+  {
+    "from": "src/infra/sqlite-pragma.test-support.ts",
+    "to": "src/infra/state/sqlite-pragma.test-support.ts"
+  },
+  {
+    "from": "src/infra/sqlite-transaction.test.ts",
+    "to": "src/infra/state/sqlite-transaction.test.ts"
+  },
+  {
+    "from": "src/infra/sqlite-transaction.ts",
+    "to": "src/infra/state/sqlite-transaction.ts"
+  },
+  {
+    "from": "src/infra/sqlite-wal.test.ts",
+    "to": "src/infra/state/sqlite-wal.test.ts"
+  },
+  {
+    "from": "src/infra/sqlite-wal.ts",
+    "to": "src/infra/state/sqlite-wal.ts"
+  },
+  {
+    "from": "src/infra/state-migrations.debug-proxy.ts",
+    "to": "src/infra/state/state-migrations.debug-proxy.ts"
+  },
+  {
+    "from": "src/infra/state-migrations.fs.test.ts",
+    "to": "src/infra/state/state-migrations.fs.test.ts"
+  },
+  {
+    "from": "src/infra/state-migrations.fs.ts",
+    "to": "src/infra/state/state-migrations.fs.ts"
+  },
+  {
+    "from": "src/infra/state-migrations.orphan-keys.test.ts",
+    "to": "src/infra/state/state-migrations.orphan-keys.test.ts"
+  },
+  {
+    "from": "src/infra/state-migrations.session-roundtrip.test.ts",
+    "to": "src/infra/state/state-migrations.session-roundtrip.test.ts"
+  },
+  {
+    "from": "src/infra/state-migrations.state-dir.test.ts",
+    "to": "src/infra/state/state-migrations.state-dir.test.ts"
+  },
+  {
+    "from": "src/infra/state-migrations.test.ts",
+    "to": "src/infra/state/state-migrations.test.ts"
+  },
+  {
+    "from": "src/infra/state-migrations.ts",
+    "to": "src/infra/state/state-migrations.ts"
+  },
+  {
+    "from": "src/infra/system-events.test.ts",
+    "to": "src/infra/system/system-events.test.ts"
+  },
+  {
+    "from": "src/infra/system-events.ts",
+    "to": "src/infra/system/system-events.ts"
+  },
+  {
+    "from": "src/infra/system-message.test.ts",
+    "to": "src/infra/system/system-message.test.ts"
+  },
+  {
+    "from": "src/infra/system-message.ts",
+    "to": "src/infra/system/system-message.ts"
+  },
+  {
+    "from": "src/infra/system-presence.test.ts",
+    "to": "src/infra/system/system-presence.test.ts"
+  },
+  {
+    "from": "src/infra/system-presence.ts",
+    "to": "src/infra/system/system-presence.ts"
+  },
+  {
+    "from": "src/infra/system-presence.version.test.ts",
+    "to": "src/infra/system/system-presence.version.test.ts"
+  },
+  {
+    "from": "src/infra/system-run-approval-binding.test.ts",
+    "to": "src/infra/system/system-run-approval-binding.test.ts"
+  },
+  {
+    "from": "src/infra/system-run-approval-binding.ts",
+    "to": "src/infra/system/system-run-approval-binding.ts"
+  },
+  {
+    "from": "src/infra/system-run-approval-context.test.ts",
+    "to": "src/infra/system/system-run-approval-context.test.ts"
+  },
+  {
+    "from": "src/infra/system-run-approval-context.ts",
+    "to": "src/infra/system/system-run-approval-context.ts"
+  },
+  {
+    "from": "src/infra/system-run-approval-mismatch.contract.test.ts",
+    "to": "src/infra/system/system-run-approval-mismatch.contract.test.ts"
+  },
+  {
+    "from": "src/infra/system-run-command.contract.test.ts",
+    "to": "src/infra/system/system-run-command.contract.test.ts"
+  },
+  {
+    "from": "src/infra/system-run-command.test.ts",
+    "to": "src/infra/system/system-run-command.test.ts"
+  },
+  {
+    "from": "src/infra/system-run-command.ts",
+    "to": "src/infra/system/system-run-command.ts"
+  },
+  {
+    "from": "src/infra/system-run-normalize.test.ts",
+    "to": "src/infra/system/system-run-normalize.test.ts"
+  },
+  {
+    "from": "src/infra/system-run-normalize.ts",
+    "to": "src/infra/system/system-run-normalize.ts"
+  },
+  {
+    "from": "src/infra/update-channels.test.ts",
+    "to": "src/infra/install/update-channels.test.ts"
+  },
+  {
+    "from": "src/infra/update-channels.ts",
+    "to": "src/infra/install/update-channels.ts"
+  },
+  {
+    "from": "src/infra/update-check.test.ts",
+    "to": "src/infra/install/update-check.test.ts"
+  },
+  {
+    "from": "src/infra/update-check.ts",
+    "to": "src/infra/install/update-check.ts"
+  },
+  {
+    "from": "src/infra/update-control-plane-sentinel.ts",
+    "to": "src/infra/install/update-control-plane-sentinel.ts"
+  },
+  {
+    "from": "src/infra/update-doctor-result.test.ts",
+    "to": "src/infra/install/update-doctor-result.test.ts"
+  },
+  {
+    "from": "src/infra/update-doctor-result.ts",
+    "to": "src/infra/install/update-doctor-result.ts"
+  },
+  {
+    "from": "src/infra/update-global.test.ts",
+    "to": "src/infra/install/update-global.test.ts"
+  },
+  {
+    "from": "src/infra/update-global.ts",
+    "to": "src/infra/install/update-global.ts"
+  },
+  {
+    "from": "src/infra/update-managed-service-handoff-cleanup.ts",
+    "to": "src/infra/install/update-managed-service-handoff-cleanup.ts"
+  },
+  {
+    "from": "src/infra/update-managed-service-handoff.test.ts",
+    "to": "src/infra/install/update-managed-service-handoff.test.ts"
+  },
+  {
+    "from": "src/infra/update-managed-service-handoff.ts",
+    "to": "src/infra/install/update-managed-service-handoff.ts"
+  },
+  {
+    "from": "src/infra/update-package-manager.test.ts",
+    "to": "src/infra/install/update-package-manager.test.ts"
+  },
+  {
+    "from": "src/infra/update-package-manager.ts",
+    "to": "src/infra/install/update-package-manager.ts"
+  },
+  {
+    "from": "src/infra/update-post-core-context.ts",
+    "to": "src/infra/install/update-post-core-context.ts"
+  },
+  {
+    "from": "src/infra/update-post-core-finalize.test.ts",
+    "to": "src/infra/install/update-post-core-finalize.test.ts"
+  },
+  {
+    "from": "src/infra/update-post-core-finalize.ts",
+    "to": "src/infra/install/update-post-core-finalize.ts"
+  },
+  {
+    "from": "src/infra/update-restart-sentinel-payload.ts",
+    "to": "src/infra/install/update-restart-sentinel-payload.ts"
+  },
+  {
+    "from": "src/infra/update-runner.test.ts",
+    "to": "src/infra/install/update-runner.test.ts"
+  },
+  {
+    "from": "src/infra/update-runner.ts",
+    "to": "src/infra/install/update-runner.ts"
+  },
+  {
+    "from": "src/infra/update-startup.test.ts",
+    "to": "src/infra/install/update-startup.test.ts"
+  },
+  {
+    "from": "src/infra/update-startup.ts",
+    "to": "src/infra/install/update-startup.ts"
+  },
+  {
+    "from": "src/infra/windows-encoding.test.ts",
+    "to": "src/infra/system/windows-encoding.test.ts"
+  },
+  {
+    "from": "src/infra/windows-encoding.ts",
+    "to": "src/infra/system/windows-encoding.ts"
+  },
+  {
+    "from": "src/infra/windows-install-roots.test.ts",
+    "to": "src/infra/system/windows-install-roots.test.ts"
+  },
+  {
+    "from": "src/infra/windows-install-roots.ts",
+    "to": "src/infra/system/windows-install-roots.ts"
+  },
+  {
+    "from": "src/infra/windows-port-pids.ts",
+    "to": "src/infra/system/windows-port-pids.ts"
+  },
+  {
+    "from": "src/infra/windows-shell-command.ts",
+    "to": "src/infra/system/windows-shell-command.ts"
+  },
+  {
+    "from": "src/infra/windows-task-restart.test.ts",
+    "to": "src/infra/system/windows-task-restart.test.ts"
+  },
+  {
+    "from": "src/infra/windows-task-restart.ts",
+    "to": "src/infra/system/windows-task-restart.ts"
+  }
+]

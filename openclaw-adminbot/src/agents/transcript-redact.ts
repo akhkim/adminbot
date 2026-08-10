@@ -7,7 +7,7 @@ import {
   sanitizeInlineImageBase64,
   sanitizeInlineImageDataUrlForStorage,
 } from "@openclaw/media-core/inline-image-data-url";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { readLoggingConfig } from "../logging/config.js";
 import {
   getDefaultRedactPatterns,

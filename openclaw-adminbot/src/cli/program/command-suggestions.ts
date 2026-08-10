@@ -1,4 +1,4 @@
-import { formatCliCommand } from "../command-format.js";
+import { formatCliCommand } from "./command-format.js";
 import { getCoreCliCommandNames } from "./core-command-descriptors.js";
 import { getSubCliEntries } from "./subcli-descriptors.js";
 

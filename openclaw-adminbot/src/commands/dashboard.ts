@@ -4,17 +4,17 @@ import {
   buildControlUiLaunchUrl,
   resolveControlUiLaunchUrl,
 } from "../config/control-ui-launch-url.js";
-import { resolveGatewayAuthToken } from "../gateway/auth-token-resolution.js";
+import { resolveGatewayAuthToken } from "../gateway/auth/auth-token-resolution.js";
 import { copyToClipboard } from "../infra/clipboard.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { defaultRuntime } from "../runtime.js";
-import { ensureGatewayReadyForOperation } from "./gateway-readiness.js";
+import { ensureGatewayReadyForOperation } from "./gateway/gateway-readiness.js";
 import {
   detectBrowserOpenSupport,
   formatControlUiSshHint,
   openUrl,
   resolveControlUiLinks,
-} from "./onboard-helpers.js";
+} from "./onboard/onboard-helpers.js";
 
 type DashboardOptions = {
   noOpen?: boolean;

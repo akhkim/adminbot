@@ -6,11 +6,11 @@ import { isChannelVisibleInSetup } from "../../channels/plugins/exposure.js";
 import { normalizeChannelMeta } from "../../channels/plugins/meta-normalization.js";
 import type { ChannelPlugin } from "../../channels/plugins/types.plugin.js";
 import type { ChannelMeta } from "../../channels/plugins/types.public.js";
-import { isStaticallyChannelConfigured } from "../../config/channel-configured-shared.js";
-import { applyPluginAutoEnable } from "../../config/plugin-auto-enable.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { listManifestChannelContributionIds } from "../../plugins/manifest-contribution-ids.js";
-import type { ChannelChoice } from "../onboard-types.js";
+import { isStaticallyChannelConfigured } from "../../config/channel/channel-configured-shared.js";
+import { applyPluginAutoEnable } from "../../config/plugin/plugin-auto-enable.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { listManifestChannelContributionIds } from "../../plugins/manifest/manifest-contribution-ids.js";
+import type { ChannelChoice } from "../onboard/onboard-types.js";
 import {
   listSetupDiscoveryChannelPluginCatalogEntries,
   listTrustedChannelPluginCatalogEntries,

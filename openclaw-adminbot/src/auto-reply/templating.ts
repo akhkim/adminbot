@@ -1,9 +1,5 @@
 /** Shared inbound message context types used by prompt templating and reply dispatch. */
 import type { InboundEventKind } from "../channels/inbound-event/kind.js";
-import type {
-  MediaUnderstandingDecision,
-  MediaUnderstandingOutput,
-} from "../media-understanding/types.js";
 import type { InputProvenance } from "../sessions/input-provenance.js";
 import type { CommandTurnContext } from "./command-turn-context.js";
 import type { CommandArgs } from "./commands-args.types.js";
@@ -208,15 +204,11 @@ export type MsgContext = {
   /** True when current-turn sticker media is present in MediaPaths. */
   StickerMediaIncluded?: boolean;
   /** Skip automatic understanding for the current sticker because its cached description is used. */
-  SkipStickerMediaUnderstanding?: boolean;
   OutputDir?: string;
   OutputBase?: string;
   /** Remote host for SCP when media lives on a different machine (e.g., openclaw@192.168.64.3). */
   MediaRemoteHost?: string;
   Transcript?: string;
-  MediaUnderstanding?: MediaUnderstandingOutput[];
-  MediaUnderstandingDecisions?: MediaUnderstandingDecision[];
-  LinkUnderstanding?: string[];
   Prompt?: string;
   MaxChars?: number;
   ChatType?: string;

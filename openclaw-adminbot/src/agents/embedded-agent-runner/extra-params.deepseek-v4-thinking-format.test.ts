@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createLlmStreamSimpleMock } from "../../../test/helpers/agents/llm-stream-simple-mock.js";
-import type { ModelCompatConfig } from "../../config/types.models.js";
+import type { ModelCompatConfig } from "../../config/types/models.js";
 import type { Model } from "../../llm/types.js";
 
 vi.mock("../../llm/stream.js", () => createLlmStreamSimpleMock());

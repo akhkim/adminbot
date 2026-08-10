@@ -1,6 +1,6 @@
 // Channel doctor tests cover shared channel health checks and repair hints.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { normalizeResolvedSecretInputString } from "../../../config/types.secrets.js";
+import { normalizeResolvedSecretInputString } from "../../../config/types/secrets.js";
 import {
   collectChannelDoctorCompatibilityMutations,
   collectChannelDoctorEmptyAllowlistExtraWarnings,

@@ -14,7 +14,7 @@ import type { GatewayClient, GatewayRequestContext } from "./types.js";
 
 const hasApprovalTurnSourceRouteMock = vi.hoisted(() => vi.fn(() => true));
 
-vi.mock("../../infra/approval-turn-source.js", () => ({
+vi.mock("../../infra/approvals/approval-turn-source.js", () => ({
   hasApprovalTurnSourceRoute: hasApprovalTurnSourceRouteMock,
 }));
 

@@ -21,10 +21,10 @@ import {
   resolveCompactionCheckpointTranscriptPosition,
   resolveSessionCompactionCheckpointReason,
   type CapturedCompactionCheckpointSnapshot,
-} from "../../gateway/session-compaction-checkpoints.js";
+} from "../../gateway/sessions/session-compaction-checkpoints.js";
 import { formatErrorMessage } from "../../infra/errors.js";
-import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
-import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
+import { getGlobalHookRunner } from "../../plugins/hooks/hook-runner-global.js";
+import type { ProviderRuntimeModel } from "../../plugins/providers/provider-runtime-model.types.js";
 import { enqueueCommandInLane } from "../../process/command-queue.js";
 import { parseAgentSessionKey } from "../../routing/session-key.js";
 import { resolveUserPath } from "../../utils.js";
@@ -36,8 +36,8 @@ import { isRecoverableNativeHarnessBindingFailure } from "../harness/compaction-
 import { maybeCompactAgentHarnessSession } from "../harness/compaction.js";
 import { resolveAgentHarnessPolicy } from "../harness/policy.js";
 import { ensureSelectedAgentHarnessPlugin } from "../harness/runtime-plugin.js";
-import { isOpenAIProvider } from "../openai-routing.js";
 import { ensureRuntimePluginsLoaded } from "../runtime-plugins.js";
+import { isOpenAIProvider } from "../transport/openai-routing.js";
 import { DEFERRED_CONTEXT_ENGINE_COMPACTION_REASON } from "./compact-reasons.js";
 import type { CompactEmbeddedAgentSessionParams } from "./compact.types.js";
 import { asCompactionHookRunner, runPostCompactionSideEffects } from "./compaction-hooks.js";

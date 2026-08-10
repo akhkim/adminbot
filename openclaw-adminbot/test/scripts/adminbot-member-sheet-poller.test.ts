@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { AdminBotLabMember } from "../../extensions/adminbot/src/contracts.js";
+import type { AdminBotLabMember } from "../../extensions/adminbot/src/contracts/actions.js";
 import { parseMemberSheet, pollMemberSheet } from "../../scripts/adminbot-member-sheet-poller.js";
 
 const member = (overrides: Partial<AdminBotLabMember> & { id: string }): AdminBotLabMember =>

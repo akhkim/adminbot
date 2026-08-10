@@ -9,9 +9,9 @@ import {
   hasPendingPluginInstallRecords,
   stripPendingPluginInstallRecords,
   unchangedPendingPluginInstallRecordIds,
-} from "../../cli/plugins-install-record-commit.js";
+} from "../../cli/plugins/plugins-install-record-commit.js";
 import { replaceConfigFile } from "../../config/config.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 
 /** Commits a non-interactive onboard config update with pending plugin records handled first. */
 export async function commitNonInteractiveOnboardConfig(params: {

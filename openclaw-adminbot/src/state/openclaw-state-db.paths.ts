@@ -2,7 +2,7 @@
 import os from "node:os";
 import path from "node:path";
 import { isMainThread, threadId } from "node:worker_threads";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import { parseStrictNonNegativeInteger } from "../infra/parse-finite-number.js";
 
 /**

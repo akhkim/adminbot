@@ -6,7 +6,7 @@ import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
 } from "../../packages/normalization-core/src/string-coerce.js";
-import { normalizeOptionalSecretInput } from "../utils/normalize-secret-input.js";
+import { normalizeOptionalSecretInput } from "../shared/normalize-secret-input.js";
 
 const GCLOUD_DEFAULT_ADC_PATH = join(
   homedir(),

@@ -2127,19 +2127,19 @@ describe("plugin sdk alias helpers", () => {
       auto: resolvePluginLoaderModuleConfig({
         modulePath: sourcePluginEntry,
         argv1: path.join(fixture.root, "openclaw.mjs"),
-        moduleUrl: pathToFileURL(path.join(fixture.root, "src/plugins/loader.ts")).href,
+        moduleUrl: pathToFileURL(path.join(fixture.root, "src/plugins/runtime/loader.ts")).href,
         pluginSdkResolution: "auto",
       }),
       dist: resolvePluginLoaderModuleConfig({
         modulePath: sourcePluginEntry,
         argv1: path.join(fixture.root, "openclaw.mjs"),
-        moduleUrl: pathToFileURL(path.join(fixture.root, "src/plugins/loader.ts")).href,
+        moduleUrl: pathToFileURL(path.join(fixture.root, "src/plugins/runtime/loader.ts")).href,
         pluginSdkResolution: "dist",
       }),
       distAgain: resolvePluginLoaderModuleConfig({
         modulePath: sourcePluginEntry,
         argv1: path.join(fixture.root, "openclaw.mjs"),
-        moduleUrl: pathToFileURL(path.join(fixture.root, "src/plugins/loader.ts")).href,
+        moduleUrl: pathToFileURL(path.join(fixture.root, "src/plugins/runtime/loader.ts")).href,
         pluginSdkResolution: "dist",
       }),
     }));

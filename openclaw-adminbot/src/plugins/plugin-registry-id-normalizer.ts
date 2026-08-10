@@ -1,7 +1,7 @@
 // Normalizes plugin registry identifiers from installed index records.
-import type { InstalledPluginIndex } from "./installed-plugin-index.js";
-import { loadPluginManifestRegistryForInstalledIndex } from "./manifest-registry-installed.js";
-import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest-registry.js";
+import type { InstalledPluginIndex } from "./install/installed-plugin-index.js";
+import { loadPluginManifestRegistryForInstalledIndex } from "./manifest/manifest-registry-installed.js";
+import type { PluginManifestRecord, PluginManifestRegistry } from "./manifest/manifest-registry.js";
 
 /** Inputs used to resolve aliases for installed plugin ids. */
 export type PluginRegistryIdNormalizerOptions = {

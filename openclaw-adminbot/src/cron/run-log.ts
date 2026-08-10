@@ -5,8 +5,8 @@ import {
   normalizeStringifiedOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
 import { uniqueValues } from "@openclaw/normalization-core/string-normalization";
-import { parseByteSize } from "../cli/parse-bytes.js";
-import type { CronConfig } from "../config/types.cron.js";
+import { parseByteSize } from "../cli/program/parse-bytes.js";
+import type { CronConfig } from "../config/types/cron.js";
 import {
   openOpenClawStateDatabase,
   runOpenClawStateWriteTransaction,

@@ -1,0 +1,650 @@
+[
+  {
+    "from": "src/config/bundled-channel-config-metadata.generated.ts",
+    "to": "src/config/channel/bundled-channel-config-metadata.generated.ts"
+  },
+  {
+    "from": "src/config/bundled-channel-config-runtime.test.ts",
+    "to": "src/config/channel/bundled-channel-config-runtime.test.ts"
+  },
+  {
+    "from": "src/config/channel-capabilities.test.ts",
+    "to": "src/config/channel/channel-capabilities.test.ts"
+  },
+  {
+    "from": "src/config/channel-capabilities.ts",
+    "to": "src/config/channel/channel-capabilities.ts"
+  },
+  {
+    "from": "src/config/channel-compat-normalization.ts",
+    "to": "src/config/channel/channel-compat-normalization.ts"
+  },
+  {
+    "from": "src/config/channel-config-metadata.ts",
+    "to": "src/config/channel/channel-config-metadata.ts"
+  },
+  {
+    "from": "src/config/channel-configured-shared.ts",
+    "to": "src/config/channel/channel-configured-shared.ts"
+  },
+  {
+    "from": "src/config/channel-configured.test.ts",
+    "to": "src/config/channel/channel-configured.test.ts"
+  },
+  {
+    "from": "src/config/channel-configured.ts",
+    "to": "src/config/channel/channel-configured.ts"
+  },
+  {
+    "from": "src/config/codex-plugin-diagnostics.ts",
+    "to": "src/config/plugin/codex-plugin-diagnostics.ts"
+  },
+  {
+    "from": "src/config/config-env-vars.ts",
+    "to": "src/config/env/config-env-vars.ts"
+  },
+  {
+    "from": "src/config/config-paths.ts",
+    "to": "src/config/paths/config-paths.ts"
+  },
+  {
+    "from": "src/config/env-preserve.test.ts",
+    "to": "src/config/env/env-preserve.test.ts"
+  },
+  {
+    "from": "src/config/env-preserve.ts",
+    "to": "src/config/env/env-preserve.ts"
+  },
+  {
+    "from": "src/config/env-substitution.test.ts",
+    "to": "src/config/env/env-substitution.test.ts"
+  },
+  {
+    "from": "src/config/env-substitution.ts",
+    "to": "src/config/env/env-substitution.ts"
+  },
+  {
+    "from": "src/config/env-vars.ts",
+    "to": "src/config/env/env-vars.ts"
+  },
+  {
+    "from": "src/config/gateway-control-ui-origins.test.ts",
+    "to": "src/config/gateway/gateway-control-ui-origins.test.ts"
+  },
+  {
+    "from": "src/config/gateway-control-ui-origins.ts",
+    "to": "src/config/gateway/gateway-control-ui-origins.ts"
+  },
+  {
+    "from": "src/config/gateway-dispatch-config.test.ts",
+    "to": "src/config/gateway/gateway-dispatch-config.test.ts"
+  },
+  {
+    "from": "src/config/gateway-dispatch-config.ts",
+    "to": "src/config/gateway/gateway-dispatch-config.ts"
+  },
+  {
+    "from": "src/config/home-env.test-harness.ts",
+    "to": "src/config/env/home-env.test-harness.ts"
+  },
+  {
+    "from": "src/config/io.audit.test.ts",
+    "to": "src/config/io/audit.test.ts"
+  },
+  {
+    "from": "src/config/io.audit.ts",
+    "to": "src/config/io/audit.ts"
+  },
+  {
+    "from": "src/config/io.best-effort.test.ts",
+    "to": "src/config/io/best-effort.test.ts"
+  },
+  {
+    "from": "src/config/io.clobber-snapshot.test.ts",
+    "to": "src/config/io/clobber-snapshot.test.ts"
+  },
+  {
+    "from": "src/config/io.clobber-snapshot.ts",
+    "to": "src/config/io/clobber-snapshot.ts"
+  },
+  {
+    "from": "src/config/io.compat.test.ts",
+    "to": "src/config/io/compat.test.ts"
+  },
+  {
+    "from": "src/config/io.eacces.test.ts",
+    "to": "src/config/io/eacces.test.ts"
+  },
+  {
+    "from": "src/config/io.invalid-config.test.ts",
+    "to": "src/config/io/invalid-config.test.ts"
+  },
+  {
+    "from": "src/config/io.invalid-config.ts",
+    "to": "src/config/io/invalid-config.ts"
+  },
+  {
+    "from": "src/config/io.meta.test.ts",
+    "to": "src/config/io/meta.test.ts"
+  },
+  {
+    "from": "src/config/io.meta.ts",
+    "to": "src/config/io/meta.ts"
+  },
+  {
+    "from": "src/config/io.observe-recovery.test.ts",
+    "to": "src/config/io/observe-recovery.test.ts"
+  },
+  {
+    "from": "src/config/io.observe-recovery.ts",
+    "to": "src/config/io/observe-recovery.ts"
+  },
+  {
+    "from": "src/config/io.observe-suspicious.ts",
+    "to": "src/config/io/observe-suspicious.ts"
+  },
+  {
+    "from": "src/config/io.owner-display-secret.test.ts",
+    "to": "src/config/io/owner-display-secret.test.ts"
+  },
+  {
+    "from": "src/config/io.owner-display-secret.ts",
+    "to": "src/config/io/owner-display-secret.ts"
+  },
+  {
+    "from": "src/config/io.parse.test.ts",
+    "to": "src/config/io/parse.test.ts"
+  },
+  {
+    "from": "src/config/io.runtime-snapshot-write.test.ts",
+    "to": "src/config/io/runtime-snapshot-write.test.ts"
+  },
+  {
+    "from": "src/config/io.shell-env-expected-keys.test.ts",
+    "to": "src/config/io/shell-env-expected-keys.test.ts"
+  },
+  {
+    "from": "src/config/io.shell-env-fallback.test.ts",
+    "to": "src/config/io/shell-env-fallback.test.ts"
+  },
+  {
+    "from": "src/config/io.ts",
+    "to": "src/config/io/io.ts"
+  },
+  {
+    "from": "src/config/io.write-config.test.ts",
+    "to": "src/config/io/write-config.test.ts"
+  },
+  {
+    "from": "src/config/io.write-prepare.test.ts",
+    "to": "src/config/io/write-prepare.test.ts"
+  },
+  {
+    "from": "src/config/io.write-prepare.ts",
+    "to": "src/config/io/write-prepare.ts"
+  },
+  {
+    "from": "src/config/legacy-config-detection.test-support.ts",
+    "to": "src/config/legacy/legacy-config-detection.test-support.ts"
+  },
+  {
+    "from": "src/config/legacy.shared.test.ts",
+    "to": "src/config/legacy/legacy.shared.test.ts"
+  },
+  {
+    "from": "src/config/legacy.shared.ts",
+    "to": "src/config/legacy/legacy.shared.ts"
+  },
+  {
+    "from": "src/config/legacy.ts",
+    "to": "src/config/legacy/legacy.ts"
+  },
+  {
+    "from": "src/config/load-channel-config-surface.test.ts",
+    "to": "src/config/channel/load-channel-config-surface.test.ts"
+  },
+  {
+    "from": "src/config/markdown-tables.test.ts",
+    "to": "src/config/markdown/markdown-tables.test.ts"
+  },
+  {
+    "from": "src/config/markdown-tables.ts",
+    "to": "src/config/markdown/markdown-tables.ts"
+  },
+  {
+    "from": "src/config/markdown-tables.types.ts",
+    "to": "src/config/markdown/markdown-tables.types.ts"
+  },
+  {
+    "from": "src/config/materialize.ts",
+    "to": "src/config/mutate/materialize.ts"
+  },
+  {
+    "from": "src/config/merge-patch.proto-pollution.test.ts",
+    "to": "src/config/mutate/merge-patch.proto-pollution.test.ts"
+  },
+  {
+    "from": "src/config/merge-patch.test.ts",
+    "to": "src/config/mutate/merge-patch.test.ts"
+  },
+  {
+    "from": "src/config/merge-patch.ts",
+    "to": "src/config/mutate/merge-patch.ts"
+  },
+  {
+    "from": "src/config/mutate.test.ts",
+    "to": "src/config/mutate/mutate.test.ts"
+  },
+  {
+    "from": "src/config/mutate.ts",
+    "to": "src/config/mutate/mutate.ts"
+  },
+  {
+    "from": "src/config/mutation-conflict.ts",
+    "to": "src/config/mutate/mutation-conflict.ts"
+  },
+  {
+    "from": "src/config/normalize-paths.test.ts",
+    "to": "src/config/paths/normalize-paths.test.ts"
+  },
+  {
+    "from": "src/config/normalize-paths.ts",
+    "to": "src/config/paths/normalize-paths.ts"
+  },
+  {
+    "from": "src/config/patch-replace-paths.ts",
+    "to": "src/config/paths/patch-replace-paths.ts"
+  },
+  {
+    "from": "src/config/paths.test.ts",
+    "to": "src/config/paths/paths.test.ts"
+  },
+  {
+    "from": "src/config/paths.ts",
+    "to": "src/config/paths/paths.ts"
+  },
+  {
+    "from": "src/config/plugin-auto-enable.apply.ts",
+    "to": "src/config/plugin/plugin-auto-enable.apply.ts"
+  },
+  {
+    "from": "src/config/plugin-auto-enable.channels.test.ts",
+    "to": "src/config/plugin/plugin-auto-enable.channels.test.ts"
+  },
+  {
+    "from": "src/config/plugin-auto-enable.core.test.ts",
+    "to": "src/config/plugin/plugin-auto-enable.core.test.ts"
+  },
+  {
+    "from": "src/config/plugin-auto-enable.detect.ts",
+    "to": "src/config/plugin/plugin-auto-enable.detect.ts"
+  },
+  {
+    "from": "src/config/plugin-auto-enable.model-support.test.ts",
+    "to": "src/config/plugin/plugin-auto-enable.model-support.test.ts"
+  },
+  {
+    "from": "src/config/plugin-auto-enable.prefer-over.test.ts",
+    "to": "src/config/plugin/plugin-auto-enable.prefer-over.test.ts"
+  },
+  {
+    "from": "src/config/plugin-auto-enable.prefer-over.ts",
+    "to": "src/config/plugin/plugin-auto-enable.prefer-over.ts"
+  },
+  {
+    "from": "src/config/plugin-auto-enable.providers.test.ts",
+    "to": "src/config/plugin/plugin-auto-enable.providers.test.ts"
+  },
+  {
+    "from": "src/config/plugin-auto-enable.shared.ts",
+    "to": "src/config/plugin/plugin-auto-enable.shared.ts"
+  },
+  {
+    "from": "src/config/plugin-auto-enable.test-helpers.ts",
+    "to": "src/config/plugin/plugin-auto-enable.test-helpers.ts"
+  },
+  {
+    "from": "src/config/plugin-auto-enable.ts",
+    "to": "src/config/plugin/plugin-auto-enable.ts"
+  },
+  {
+    "from": "src/config/plugin-auto-enable.types.ts",
+    "to": "src/config/plugin/plugin-auto-enable.types.ts"
+  },
+  {
+    "from": "src/config/plugin-install-config-migration.ts",
+    "to": "src/config/plugin/plugin-install-config-migration.ts"
+  },
+  {
+    "from": "src/config/plugin-web-search-config.test.ts",
+    "to": "src/config/plugin/plugin-web-search-config.test.ts"
+  },
+  {
+    "from": "src/config/plugin-web-search-config.ts",
+    "to": "src/config/plugin/plugin-web-search-config.ts"
+  },
+  {
+    "from": "src/config/plugins-allowlist.ts",
+    "to": "src/config/plugin/plugins-allowlist.ts"
+  },
+  {
+    "from": "src/config/plugins-runtime-boundary.test.ts",
+    "to": "src/config/plugin/plugins-runtime-boundary.test.ts"
+  },
+  {
+    "from": "src/config/read-best-effort-config.runtime.ts",
+    "to": "src/config/runtime/read-best-effort-config.runtime.ts"
+  },
+  {
+    "from": "src/config/redact-snapshot.raw.test.ts",
+    "to": "src/config/redact/raw.test.ts"
+  },
+  {
+    "from": "src/config/redact-snapshot.raw.ts",
+    "to": "src/config/redact/raw.ts"
+  },
+  {
+    "from": "src/config/redact-snapshot.restore.test.ts",
+    "to": "src/config/redact/restore.test.ts"
+  },
+  {
+    "from": "src/config/redact-snapshot.schema.test.ts",
+    "to": "src/config/redact/schema.test.ts"
+  },
+  {
+    "from": "src/config/redact-snapshot.secret-ref.ts",
+    "to": "src/config/redact/secret-ref.ts"
+  },
+  {
+    "from": "src/config/redact-snapshot.test-helpers.ts",
+    "to": "src/config/redact/redact-snapshot.test-helpers.ts"
+  },
+  {
+    "from": "src/config/redact-snapshot.test.ts",
+    "to": "src/config/redact/redact-snapshot.test.ts"
+  },
+  {
+    "from": "src/config/redact-snapshot.ts",
+    "to": "src/config/redact/redact-snapshot.ts"
+  },
+  {
+    "from": "src/config/runtime-group-policy.test.ts",
+    "to": "src/config/runtime/runtime-group-policy.test.ts"
+  },
+  {
+    "from": "src/config/runtime-group-policy.ts",
+    "to": "src/config/runtime/runtime-group-policy.ts"
+  },
+  {
+    "from": "src/config/runtime-overrides.test.ts",
+    "to": "src/config/runtime/runtime-overrides.test.ts"
+  },
+  {
+    "from": "src/config/runtime-overrides.ts",
+    "to": "src/config/runtime/runtime-overrides.ts"
+  },
+  {
+    "from": "src/config/runtime-schema.test.ts",
+    "to": "src/config/runtime/runtime-schema.test.ts"
+  },
+  {
+    "from": "src/config/runtime-schema.ts",
+    "to": "src/config/runtime/runtime-schema.ts"
+  },
+  {
+    "from": "src/config/runtime-snapshot.test.ts",
+    "to": "src/config/runtime/runtime-snapshot.test.ts"
+  },
+  {
+    "from": "src/config/runtime-snapshot.ts",
+    "to": "src/config/runtime/runtime-snapshot.ts"
+  },
+  {
+    "from": "src/config/runtime-source-projection.ts",
+    "to": "src/config/runtime/runtime-source-projection.ts"
+  },
+  {
+    "from": "src/config/schema-base.ts",
+    "to": "src/config/schema/schema-base.ts"
+  },
+  {
+    "from": "src/config/schema.base.generated.test.ts",
+    "to": "src/config/schema/base.generated.test.ts"
+  },
+  {
+    "from": "src/config/schema.help.quality.test.ts",
+    "to": "src/config/schema/help.quality.test.ts"
+  },
+  {
+    "from": "src/config/schema.help.ts",
+    "to": "src/config/schema/help.ts"
+  },
+  {
+    "from": "src/config/schema.hints.test.ts",
+    "to": "src/config/schema/hints.test.ts"
+  },
+  {
+    "from": "src/config/schema.hints.ts",
+    "to": "src/config/schema/hints.ts"
+  },
+  {
+    "from": "src/config/schema.labels.ts",
+    "to": "src/config/schema/labels.ts"
+  },
+  {
+    "from": "src/config/schema.shared.test.ts",
+    "to": "src/config/schema/shared.test.ts"
+  },
+  {
+    "from": "src/config/schema.shared.ts",
+    "to": "src/config/schema/shared.ts"
+  },
+  {
+    "from": "src/config/schema.tags.ts",
+    "to": "src/config/schema/tags.ts"
+  },
+  {
+    "from": "src/config/schema.test.ts",
+    "to": "src/config/schema/schema.test.ts"
+  },
+  {
+    "from": "src/config/schema.ts",
+    "to": "src/config/schema/schema.ts"
+  },
+  {
+    "from": "src/config/sensitive-paths.ts",
+    "to": "src/config/paths/sensitive-paths.ts"
+  },
+  {
+    "from": "src/config/shell-env-expected-keys.ts",
+    "to": "src/config/env/shell-env-expected-keys.ts"
+  },
+  {
+    "from": "src/config/state-dir-dotenv.test.ts",
+    "to": "src/config/env/state-dir-dotenv.test.ts"
+  },
+  {
+    "from": "src/config/state-dir-dotenv.ts",
+    "to": "src/config/env/state-dir-dotenv.ts"
+  },
+  {
+    "from": "src/config/types.access-groups.ts",
+    "to": "src/config/types/access-groups.ts"
+  },
+  {
+    "from": "src/config/types.acp.ts",
+    "to": "src/config/types/acp.ts"
+  },
+  {
+    "from": "src/config/types.agent-defaults.ts",
+    "to": "src/config/types/agent-defaults.ts"
+  },
+  {
+    "from": "src/config/types.agents-shared.ts",
+    "to": "src/config/types/agents-shared.ts"
+  },
+  {
+    "from": "src/config/types.agents.ts",
+    "to": "src/config/types/agents.ts"
+  },
+  {
+    "from": "src/config/types.approvals.ts",
+    "to": "src/config/types/approvals.ts"
+  },
+  {
+    "from": "src/config/types.auth.ts",
+    "to": "src/config/types/auth.ts"
+  },
+  {
+    "from": "src/config/types.base.ts",
+    "to": "src/config/types/base.ts"
+  },
+  {
+    "from": "src/config/types.bot-loop-protection.ts",
+    "to": "src/config/types/bot-loop-protection.ts"
+  },
+  {
+    "from": "src/config/types.browser.ts",
+    "to": "src/config/types/browser.ts"
+  },
+  {
+    "from": "src/config/types.channel-health.ts",
+    "to": "src/config/types/channel-health.ts"
+  },
+  {
+    "from": "src/config/types.channel-messaging-common.ts",
+    "to": "src/config/types/channel-messaging-common.ts"
+  },
+  {
+    "from": "src/config/types.channels.ts",
+    "to": "src/config/types/channels.ts"
+  },
+  {
+    "from": "src/config/types.cli.ts",
+    "to": "src/config/types/cli.ts"
+  },
+  {
+    "from": "src/config/types.commitments.ts",
+    "to": "src/config/types/commitments.ts"
+  },
+  {
+    "from": "src/config/types.crestodian.ts",
+    "to": "src/config/types/crestodian.ts"
+  },
+  {
+    "from": "src/config/types.cron.ts",
+    "to": "src/config/types/cron.ts"
+  },
+  {
+    "from": "src/config/types.discord.ts",
+    "to": "src/config/types/discord.ts"
+  },
+  {
+    "from": "src/config/types.gateway.ts",
+    "to": "src/config/types/gateway.ts"
+  },
+  {
+    "from": "src/config/types.googlechat.ts",
+    "to": "src/config/types/googlechat.ts"
+  },
+  {
+    "from": "src/config/types.hooks.ts",
+    "to": "src/config/types/hooks.ts"
+  },
+  {
+    "from": "src/config/types.imessage.ts",
+    "to": "src/config/types/imessage.ts"
+  },
+  {
+    "from": "src/config/types.installs.ts",
+    "to": "src/config/types/installs.ts"
+  },
+  {
+    "from": "src/config/types.irc.ts",
+    "to": "src/config/types/irc.ts"
+  },
+  {
+    "from": "src/config/types.mcp.ts",
+    "to": "src/config/types/mcp.ts"
+  },
+  {
+    "from": "src/config/types.memory.ts",
+    "to": "src/config/types/memory.ts"
+  },
+  {
+    "from": "src/config/types.messages.ts",
+    "to": "src/config/types/messages.ts"
+  },
+  {
+    "from": "src/config/types.models.ts",
+    "to": "src/config/types/models.ts"
+  },
+  {
+    "from": "src/config/types.msteams.ts",
+    "to": "src/config/types/msteams.ts"
+  },
+  {
+    "from": "src/config/types.node-host.ts",
+    "to": "src/config/types/node-host.ts"
+  },
+  {
+    "from": "src/config/types.openclaw.ts",
+    "to": "src/config/types/openclaw.ts"
+  },
+  {
+    "from": "src/config/types.plugins.ts",
+    "to": "src/config/types/plugins.ts"
+  },
+  {
+    "from": "src/config/types.provider-request.ts",
+    "to": "src/config/types/provider-request.ts"
+  },
+  {
+    "from": "src/config/types.queue.ts",
+    "to": "src/config/types/queue.ts"
+  },
+  {
+    "from": "src/config/types.sandbox.ts",
+    "to": "src/config/types/sandbox.ts"
+  },
+  {
+    "from": "src/config/types.secrets.resolution.test.ts",
+    "to": "src/config/types/secrets.resolution.test.ts"
+  },
+  {
+    "from": "src/config/types.secrets.test.ts",
+    "to": "src/config/types/secrets.test.ts"
+  },
+  {
+    "from": "src/config/types.secrets.ts",
+    "to": "src/config/types/secrets.ts"
+  },
+  {
+    "from": "src/config/types.signal.ts",
+    "to": "src/config/types/signal.ts"
+  },
+  {
+    "from": "src/config/types.skills.ts",
+    "to": "src/config/types/skills.ts"
+  },
+  {
+    "from": "src/config/types.slack.ts",
+    "to": "src/config/types/slack.ts"
+  },
+  {
+    "from": "src/config/types.telegram.ts",
+    "to": "src/config/types/telegram.ts"
+  },
+  {
+    "from": "src/config/types.tools.ts",
+    "to": "src/config/types/tools.ts"
+  },
+  {
+    "from": "src/config/types.tts.ts",
+    "to": "src/config/types/tts.ts"
+  },
+  {
+    "from": "src/config/types.whatsapp.ts",
+    "to": "src/config/types/whatsapp.ts"
+  }
+]

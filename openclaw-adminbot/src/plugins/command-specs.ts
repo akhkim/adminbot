@@ -2,10 +2,10 @@
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { getLoadedChannelPlugin } from "../channels/plugins/index.js";
 import { resolveReadOnlyChannelCommandDefaults } from "../channels/plugins/read-only-command-defaults.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { pluginCommandSupportsChannel } from "./command-registration.js";
 import { pluginCommands } from "./command-registry-state.js";
-import type { PluginCommandRegistration } from "./registry-types.js";
+import type { PluginCommandRegistration } from "./manifest/registry-types.js";
 import type { OpenClawPluginCommandDefinition } from "./types.js";
 
 type PluginCommandSpecOptions = {

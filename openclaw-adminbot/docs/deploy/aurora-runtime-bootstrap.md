@@ -18,7 +18,7 @@ anything else.
 From a CS VPN or on-campus shell, connect to Aurora and run:
 
 ```bash
-ssh aurora.ais.sandbox -l <cs-user>
+ssh <aurora-host> -l <cs-user>
 
 /h/405/<cs-user>/services/openclaw-adminbot/current/deploy/aurora/bootstrap-runtime.sh \
   --root /h/405/<cs-user>/services/openclaw-adminbot/current \

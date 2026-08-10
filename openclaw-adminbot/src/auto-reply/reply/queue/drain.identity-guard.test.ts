@@ -33,12 +33,12 @@ import {
   enqueueFollowupRun,
   getFollowupQueueDepth,
   scheduleFollowupDrain,
-} from "../queue.js";
+} from "./queue.js";
 import {
   createDeferred,
   createQueueTestRun as createRun,
   installQueueRuntimeErrorSilencer,
-} from "../queue.test-helpers.js";
+} from "./queue.test-helpers.js";
 import { FOLLOWUP_QUEUES } from "./state.js";
 import type { FollowupRun, QueueSettings } from "./types.js";
 

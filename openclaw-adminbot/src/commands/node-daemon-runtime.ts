@@ -3,7 +3,7 @@ import {
   DEFAULT_GATEWAY_DAEMON_RUNTIME,
   isGatewayDaemonRuntime,
   type GatewayDaemonRuntime,
-} from "./daemon-runtime.js";
+} from "./daemon/daemon-runtime.js";
 
 /** Runtime id accepted by Node daemon install/start helpers. */
 export type NodeDaemonRuntime = GatewayDaemonRuntime;

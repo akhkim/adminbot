@@ -1,6 +1,6 @@
 // Doctor scanner for empty allowlist policies across configured channels and accounts.
 import type { ChannelDoctorEmptyAllowlistAccountContext } from "../../../channels/plugins/types.adapters.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import {
   getDoctorChannelCapabilities,
   resolveDoctorChannelAccountIds,

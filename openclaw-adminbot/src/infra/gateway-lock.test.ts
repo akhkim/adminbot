@@ -7,7 +7,7 @@ import net from "node:net";
 import path from "node:path";
 import { setTimeout as nativeSleep } from "node:timers/promises";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveConfigPath, resolveStateDir } from "../config/paths.js";
+import { resolveConfigPath, resolveStateDir } from "../config/paths/paths.js";
 import { createSuiteTempRootTracker } from "../test-helpers/temp-dir.js";
 import { acquireGatewayLock, GatewayLockError, type GatewayLockOptions } from "./gateway-lock.js";
 

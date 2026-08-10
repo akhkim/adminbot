@@ -1,10 +1,10 @@
 /** Manifest-backed model catalog row loaders for `openclaw models list`. */
 import { normalizeModelCatalogProviderId } from "@openclaw/model-catalog-core/model-catalog-refs";
 import type { NormalizedModelCatalogRow } from "@openclaw/model-catalog-core/model-catalog-types";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { planManifestModelCatalogRows } from "../../model-catalog/index.js";
-import { loadManifestMetadataSnapshot } from "../../plugins/manifest-contract-eligibility.js";
-import type { PluginManifestRegistry } from "../../plugins/manifest-registry.js";
+import { loadManifestMetadataSnapshot } from "../../plugins/manifest/manifest-contract-eligibility.js";
+import type { PluginManifestRegistry } from "../../plugins/manifest/manifest-registry.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.types.js";
 import {
   getPluginRecord,

@@ -4,9 +4,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { resolveDefaultAgentId } from "../agents/agent-scope.js";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import type { SessionScope } from "../config/sessions.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { normalizeAgentId, normalizeMainKey } from "../routing/session-key.js";
 
 type GatewayAgentListRow = {

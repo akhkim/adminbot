@@ -6,11 +6,11 @@ import {
   clampTimerTimeoutMs,
   MAX_TIMER_TIMEOUT_MS,
 } from "@openclaw/normalization-core/number-coercion";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { onLlmRequestActivity } from "../../../shared/llm-request-activity.js";
 import type { StreamFn } from "../../runtime/index.js";
-import type { MutableAssistantMessageEventStream } from "../../stream-compat.js";
-import { createStreamIteratorWrapper } from "../../stream-iterator-wrapper.js";
+import type { MutableAssistantMessageEventStream } from "../../transport/stream-compat.js";
+import { createStreamIteratorWrapper } from "../../transport/stream-iterator-wrapper.js";
 import type { EmbeddedRunTrigger } from "./params.js";
 
 /**

@@ -3,7 +3,7 @@ import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalLowercaseString,
 } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { consumeRootOptionToken } from "../infra/cli-root-options.js";
 import {
   resolveManifestCommandAliasOwnerInRegistry,
@@ -11,14 +11,14 @@ import {
   type PluginManifestCommandAliasRecord,
   type PluginManifestCommandAliasRegistry,
   type PluginManifestToolOwnerRecord,
-} from "../plugins/manifest-command-aliases.js";
+} from "../plugins/manifest/manifest-command-aliases.js";
 import { resolveCliArgvInvocation } from "./argv-invocation.js";
 import { hasFlag } from "./argv.js";
 import {
   resolveCliCommandPathPolicy,
   resolveCliNetworkProxyPolicy,
-} from "./command-path-policy.js";
-import { isReservedNonPluginCommandRoot } from "./command-registration-policy.js";
+} from "./program/command-path-policy.js";
+import { isReservedNonPluginCommandRoot } from "./program/command-registration-policy.js";
 import { getCoreCliParentDefaultHelpCommands } from "./program/core-command-descriptors.js";
 import { getSubCliParentDefaultHelpCommands } from "./program/subcli-descriptors.js";
 

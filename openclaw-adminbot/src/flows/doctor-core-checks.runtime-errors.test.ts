@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   resolveDefaultModelForAgent: vi.fn(() => ({ provider: "openai", model: "gpt-5.5" })),
 }));
 
-vi.mock("../agents/model-catalog.js", () => ({
+vi.mock("../agents/models/model-catalog.js", () => ({
   findModelInCatalog: (
     catalog: Array<{ provider?: string; id?: string }>,
     provider: string,
@@ -21,20 +21,20 @@ vi.mock("../agents/model-catalog.js", () => ({
   loadModelCatalog: mocks.loadModelCatalog,
 }));
 
-vi.mock("../agents/model-selection.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../agents/model-selection.js")>()),
+vi.mock("../agents/models/model-selection.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../agents/models/model-selection.js")>()),
   resolveDefaultModelForAgent: mocks.resolveDefaultModelForAgent,
 }));
 
-vi.mock("../agents/agent-bundle-mcp-tools.js", () => ({
+vi.mock("../agents/mcp/agent-bundle-mcp-tools.js", () => ({
   createBundleMcpToolRuntime: mocks.createBundleMcpToolRuntime,
 }));
 
-vi.mock("../agents/agent-tools.js", () => ({
+vi.mock("../agents/tools/agent-tools.js", () => ({
   createOpenClawCodingTools: mocks.createOpenClawCodingTools,
 }));
 
-vi.mock("../plugins/provider-runtime.js", () => ({
+vi.mock("../plugins/providers/provider-runtime.js", () => ({
   inspectProviderToolSchemasWithPlugin: () => [],
   normalizeProviderToolSchemasWithPlugin: mocks.normalizeProviderToolSchemasWithPlugin,
 }));

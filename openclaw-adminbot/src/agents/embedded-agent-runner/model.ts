@@ -3,11 +3,11 @@
  */
 import { finiteSecondsToTimerSafeMilliseconds } from "@openclaw/normalization-core/number-coercion";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
-import type { ModelCompatConfig, ModelMediaInputConfig } from "../../config/types.models.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { ModelCompatConfig, ModelMediaInputConfig } from "../../config/types/models.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { ModelRegistry as CoreModelRegistry } from "../../llm/model-registry.js";
 import type { Api, Model } from "../../llm/types.js";
-import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
+import type { ProviderRuntimeModel } from "../../plugins/providers/provider-runtime-model.types.js";
 import {
   applyProviderResolvedTransportWithPlugin,
   buildProviderUnknownModelHintWithPlugin,
@@ -16,34 +16,34 @@ import {
   runProviderDynamicModel,
   normalizeProviderResolvedModelWithPlugin,
   shouldPreferProviderRuntimeResolvedModel,
-} from "../../plugins/provider-runtime.js";
+} from "../../plugins/providers/provider-runtime.js";
 import { discoverAuthStorage, discoverModels } from "../agent-model-discovery.js";
 import { resolveDefaultAgentDir } from "../agent-scope.js";
-import { ensureAuthProfileStore, resolveAuthProfileOrder } from "../auth-profiles.js";
 import type { AuthProfileCredential } from "../auth-profiles/types.js";
+import { ensureAuthProfileStore, resolveAuthProfileOrder } from "../auth/auth-profiles.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../defaults.js";
 import { resolveAgentHarnessPolicy } from "../harness/policy.js";
-import { resolveModelWorkspaceDir } from "../model-discovery-context.js";
-import { modelKey, normalizeStaticProviderModelId } from "../model-ref-shared.js";
-import { findNormalizedProviderValue, normalizeProviderId } from "../model-selection.js";
+import { resolveModelWorkspaceDir } from "../models/model-discovery-context.js";
+import { modelKey, normalizeStaticProviderModelId } from "../models/model-ref-shared.js";
+import { findNormalizedProviderValue, normalizeProviderId } from "../models/model-selection.js";
 import {
   buildSuppressedBuiltInModelError,
   shouldSuppressBuiltInModel,
   shouldUnconditionallySuppress,
-} from "../model-suppression.js";
-import { listOpenAIAuthProfileProvidersForAgentRuntime } from "../openai-routing.js";
-import { attachModelProviderLocalService } from "../provider-local-service.js";
-import {
-  attachModelProviderRequestTransport,
-  resolveProviderRequestConfig,
-  sanitizeConfiguredModelProviderRequest,
-} from "../provider-request-config.js";
+} from "../models/model-suppression.js";
 import {
   AuthStorage as AgentAuthStorageClass,
   ModelRegistry as AgentModelRegistryClass,
   type AuthStorage,
   type ModelRegistry,
 } from "../sessions/index.js";
+import { listOpenAIAuthProfileProvidersForAgentRuntime } from "../transport/openai-routing.js";
+import { attachModelProviderLocalService } from "../transport/provider-local-service.js";
+import {
+  attachModelProviderRequestTransport,
+  resolveProviderRequestConfig,
+  sanitizeConfiguredModelProviderRequest,
+} from "../transport/provider-request-config.js";
 import { discoverCachedAgentStores } from "./model-discovery-cache.js";
 import {
   buildInlineProviderModels,

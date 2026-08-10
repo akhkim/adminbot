@@ -2,7 +2,7 @@
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import { defaultRuntime } from "../../runtime.js";
 import {
   createChannelTestPluginBase,

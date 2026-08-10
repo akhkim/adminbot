@@ -1,9 +1,9 @@
 // Stale plugin config tests cover doctor cleanup and warnings for obsolete plugin config.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../../config/config.js";
-import type { PluginInstallRecord } from "../../../config/types.plugins.js";
-import type { PluginManifestRecord } from "../../../plugins/manifest-registry.js";
-import * as manifestRegistry from "../../../plugins/manifest-registry.js";
+import type { PluginInstallRecord } from "../../../config/types/plugins.js";
+import type { PluginManifestRecord } from "../../../plugins/manifest/manifest-registry.js";
+import * as manifestRegistry from "../../../plugins/manifest/manifest-registry.js";
 import {
   collectStalePluginConfigWarnings,
   maybeRepairStalePluginConfig,
@@ -16,8 +16,10 @@ const installedPluginIndexMocks = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock("../../../plugins/installed-plugin-index-records.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../plugins/installed-plugin-index-records.js")>()),
+vi.mock("../../../plugins/install/installed-plugin-index-records.js", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("../../../plugins/install/installed-plugin-index-records.js")
+  >()),
   loadInstalledPluginIndexInstallRecordsSync:
     installedPluginIndexMocks.loadInstalledPluginIndexInstallRecordsSync,
 }));

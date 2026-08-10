@@ -1,5 +1,5 @@
 // Redaction snapshot hints list config UI hints used by redaction tests.
-import type { ConfigUiHints } from "../../../src/config/schema.js";
+import type { ConfigUiHints } from "../../../src/config/schema/schema.js";
 
 // Keep this fixture minimal so redaction tests exercise the hint-matching
 // behavior they care about without paying to build the full config schema graph.

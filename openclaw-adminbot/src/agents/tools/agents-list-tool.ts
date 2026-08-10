@@ -13,8 +13,8 @@ import {
 import { resolveModelAgentRuntimeMetadata } from "../agent-runtime-metadata.js";
 import { listAgentIds } from "../agent-scope-config.js";
 import { resolveAgentConfig, resolveAgentEffectiveModelPrimary } from "../agent-scope.js";
-import { resolveDefaultModelForAgent } from "../model-selection.js";
-import { resolveSubagentAllowedTargetIds } from "../subagent-target-policy.js";
+import { resolveDefaultModelForAgent } from "../models/model-selection.js";
+import { resolveSubagentAllowedTargetIds } from "../subagents/subagent-target-policy.js";
 import type { AnyAgentTool } from "./common.js";
 import { jsonResult } from "./common.js";
 import { resolveInternalSessionKey, resolveMainSessionAlias } from "./sessions-helpers.js";

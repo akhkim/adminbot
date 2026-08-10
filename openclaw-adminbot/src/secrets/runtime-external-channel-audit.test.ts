@@ -2,7 +2,7 @@
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import type { PluginManifestRecord } from "../plugins/manifest-registry.js";
+import type { PluginManifestRecord } from "../plugins/manifest/manifest-registry.js";
 import type { PluginOrigin } from "../plugins/plugin-origin.types.js";
 import { getPath } from "./path-utils.js";
 

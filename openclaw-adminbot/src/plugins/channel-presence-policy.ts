@@ -8,14 +8,14 @@ import {
   listPotentialConfiguredChannelPresenceSignals,
   type ChannelPresenceSignalSource,
 } from "../channels/config-presence.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { isSafeChannelEnvVarTriggerName } from "../secrets/channel-env-var-names.js";
 import { resolveManifestActivationPluginIds } from "./activation-planner.js";
 import {
   createPluginActivationSource,
   normalizePluginsConfig,
   resolveEffectivePluginActivationState,
-} from "./config-state.js";
+} from "./config/config-state.js";
 import { isPluginEnabledByDefaultForPlatform } from "./default-enablement.js";
 import {
   hasExplicitManifestOwnerTrust,
@@ -23,8 +23,8 @@ import {
   isBundledManifestOwner,
   passesManifestOwnerBasePolicy,
   resolveManifestOwnerBasePolicyBlock,
-} from "./manifest-owner-policy.js";
-import type { PluginManifestRecord } from "./manifest-registry.js";
+} from "./manifest/manifest-owner-policy.js";
+import type { PluginManifestRecord } from "./manifest/manifest-registry.js";
 import { loadPluginManifestRegistryForPluginRegistry } from "./plugin-registry-contributions.js";
 
 const IGNORED_CHANNEL_CONFIG_KEYS = new Set(["defaults", "modelByChannel"]);

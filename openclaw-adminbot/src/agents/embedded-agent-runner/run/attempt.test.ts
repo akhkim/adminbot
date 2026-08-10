@@ -6,11 +6,11 @@ vi.mock("../context-engine-capabilities.js", () => ({
   resolveContextEngineCapabilities: async () => ({ llm: undefined }),
 }));
 import type { OpenClawConfig } from "../../../config/config.js";
-import { addSession, resetProcessRegistryForTests } from "../../bash-process-registry.js";
-import { createProcessSessionFixture } from "../../bash-process-registry.test-helpers.js";
 import { wrapPluginSystemContextSection } from "../../hook-system-context-boundary.js";
-import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "../../system-prompt-cache-boundary.js";
-import { buildAgentSystemPrompt } from "../../system-prompt.js";
+import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "../../prompt/system-prompt-cache-boundary.js";
+import { buildAgentSystemPrompt } from "../../prompt/system-prompt.js";
+import { addSession, resetProcessRegistryForTests } from "../../tools/bash-process-registry.js";
+import { createProcessSessionFixture } from "../../tools/bash-process-registry.test-helpers.js";
 import {
   resetEmbeddedAgentBaseStreamFnCacheForTest,
   resolveEmbeddedAgentBaseStreamFn,

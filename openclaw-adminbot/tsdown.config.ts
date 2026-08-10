@@ -254,49 +254,40 @@ function buildCoreDistEntries(): Record<string, string> {
     index: "src/index.ts",
     entry: "src/entry.ts",
     // Ensure this module is bundled as an entry so legacy CLI shims can resolve its exports.
-    "cli/daemon-cli": "src/cli/daemon-cli.ts",
+    "cli/daemon-cli": "src/cli/daemon-cli/daemon-cli.ts",
     // Keep long-lived lazy runtime boundaries on stable filenames so rebuilt
     // dist/ trees do not strand already-running gateways on stale hashed chunks.
-    "agents/auth-profiles.runtime": "src/agents/auth-profiles.runtime.ts",
-    "agents/model-catalog.runtime": "src/agents/model-catalog.runtime.ts",
-    "agents/models-config.runtime": "src/agents/models-config.runtime.ts",
-    "agents/code-mode.worker": "src/agents/code-mode.worker.ts",
-    "agents/compaction-planning.worker": "src/agents/compaction-planning.worker.ts",
-    "agents/model-provider-auth.worker": "src/agents/model-provider-auth.worker.ts",
+    "agents/auth-profiles.runtime": "src/agents/auth/auth-profiles.runtime.ts",
+    "agents/model-catalog.runtime": "src/agents/models/model-catalog.runtime.ts",
+    "agents/models-config.runtime": "src/agents/models/models-config.runtime.ts",
+    "agents/code-mode.worker": "src/agents/tools/code-mode.worker.ts",
+    "agents/compaction-planning.worker": "src/agents/compaction/compaction-planning.worker.ts",
+    "agents/model-provider-auth.worker": "src/agents/auth/model-provider-auth.worker.ts",
     "acp/control-plane/manager": "src/acp/control-plane/manager.ts",
     "cli/gateway-lifecycle.runtime": "src/cli/gateway-cli/lifecycle.runtime.ts",
-    "provider-dispatcher.runtime": "src/auto-reply/reply/provider-dispatcher.runtime.ts",
-    "server-close.runtime": "src/gateway/server-close.runtime.ts",
-    "plugins/hook-runner-global": "src/plugins/hook-runner-global.ts",
+    "provider-dispatcher.runtime": "src/auto-reply/reply/providers/provider-dispatcher.runtime.ts",
+    "server-close.runtime": "src/gateway/server/server-close.runtime.ts",
+    "plugins/hook-runner-global": "src/plugins/hooks/hook-runner-global.ts",
     "plugins/memory-state": "src/plugins/memory-state.ts",
     "plugins/synthetic-auth.runtime": "src/plugins/synthetic-auth.runtime.ts",
-    "subagent-registry.runtime": "src/agents/subagent-registry.runtime.ts",
+    "subagent-registry.runtime": "src/agents/subagents/subagent-registry.runtime.ts",
     "task-registry-control.runtime": "src/tasks/task-registry-control.runtime.ts",
-    "link-understanding/apply.runtime": "src/link-understanding/apply.runtime.ts",
-    "media-understanding/apply.runtime": "src/media-understanding/apply.runtime.ts",
     "commands/doctor/shared/plugin-registry-migration":
       "src/commands/doctor/shared/plugin-registry-migration.ts",
-    "commands/status.summary.runtime": "src/commands/status.summary.runtime.ts",
+    "commands/status.summary.runtime": "src/commands/status/status.summary.runtime.ts",
     "infra/boundary-file-read": "src/infra/boundary-file-read.ts",
-    "plugins/provider-discovery.runtime": "src/plugins/provider-discovery.runtime.ts",
-    "plugins/provider-runtime.runtime": "src/plugins/provider-runtime.runtime.ts",
+    "plugins/provider-discovery.runtime": "src/plugins/providers/provider-discovery.runtime.ts",
+    "plugins/provider-runtime.runtime": "src/plugins/providers/provider-runtime.runtime.ts",
     "web-fetch/runtime": "src/web-fetch/runtime.ts",
     "plugins/public-surface-runtime": "src/plugins/public-surface-runtime.ts",
-    "plugins/loader": "src/plugins/loader.ts",
+    "plugins/loader": "src/plugins/runtime/loader.ts",
     "plugins/sdk-alias": "src/plugins/sdk-alias.ts",
     "facade-activation-check.runtime": "src/plugin-sdk/facade-activation-check.runtime.ts",
     extensionAPI: "src/extensionAPI.ts",
     "infra/warning-filter": "src/infra/warning-filter.ts",
-    "telegram-ingress-worker.runtime": bundledPluginFile(
-      "telegram",
-      "src/telegram-ingress-worker.runtime.ts",
-    ),
-    "telegram/audit": bundledPluginFile("telegram", "src/audit.ts"),
-    "telegram/token": bundledPluginFile("telegram", "src/token.ts"),
     "plugins/build-smoke-entry": "src/plugins/build-smoke-entry.ts",
     "plugins/runtime/index": "src/plugins/runtime/index.ts",
     "llm-slug-generator": "src/hooks/llm-slug-generator.ts",
-    "mcp/plugin-tools-serve": "src/mcp/plugin-tools-serve.ts",
   };
 }
 
@@ -304,20 +295,17 @@ function buildDockerE2eHarnessEntries(): Record<string, string> {
   return {
     // Mounted Docker harnesses run against the npm tarball image, so any
     // internal module they assert must have a stable package dist entry.
-    "agents/agent-bundle-mcp-materialize": "src/agents/agent-bundle-mcp-materialize.ts",
-    "agents/agent-bundle-mcp-runtime": "src/agents/agent-bundle-mcp-runtime.ts",
+    "agents/agent-bundle-mcp-materialize": "src/agents/mcp/agent-bundle-mcp-materialize.ts",
+    "agents/agent-bundle-mcp-runtime": "src/agents/mcp/agent-bundle-mcp-runtime.ts",
     "agents/embedded-agent-runner/effective-tool-policy":
       "src/agents/embedded-agent-runner/effective-tool-policy.ts",
     "agents/embedded-agent-runner/tool-split": "src/agents/embedded-agent-runner/tool-split.ts",
     "agents/embedded-agent-runner/run/runtime-context-prompt":
       "src/agents/embedded-agent-runner/run/runtime-context-prompt.ts",
-    "auto-reply/reply/commands-crestodian": "src/auto-reply/reply/commands-crestodian.ts",
     "cli/run-main": "src/cli/run-main.ts",
     "commitments/runtime": "src/commitments/runtime.ts",
     "commitments/store": "src/commitments/store.ts",
     "config/config": "src/config/config.ts",
-    "crestodian/crestodian": "src/crestodian/crestodian.ts",
-    "crestodian/rescue-message": "src/crestodian/rescue-message.ts",
     "gateway/protocol/index": "packages/gateway-protocol/src/index.ts",
     "infra/errors": "src/infra/errors.ts",
     "infra/ws": "src/infra/ws.ts",
@@ -391,32 +379,6 @@ function buildNetPolicyDistEntries(): Record<string, string> {
     ipv4: "packages/net-policy/src/ipv4.ts",
     "redact-sensitive-url": "packages/net-policy/src/redact-sensitive-url.ts",
     "url-userinfo": "packages/net-policy/src/url-userinfo.ts",
-  };
-}
-
-function buildMediaGenerationCoreDistEntries(): Record<string, string> {
-  return {
-    index: "packages/media-generation-core/src/index.ts",
-    "capability-model-ref": "packages/media-generation-core/src/capability-model-ref.ts",
-    catalog: "packages/media-generation-core/src/catalog.ts",
-    "model-ref": "packages/media-generation-core/src/model-ref.ts",
-    normalization: "packages/media-generation-core/src/normalization.ts",
-  };
-}
-
-function buildMediaUnderstandingCoreDistEntries(): Record<string, string> {
-  return {
-    index: "packages/media-understanding-common/src/index.ts",
-    "active-model": "packages/media-understanding-common/src/active-model.ts",
-    defaults: "packages/media-understanding-common/src/defaults.ts",
-    errors: "packages/media-understanding-common/src/errors.ts",
-    format: "packages/media-understanding-common/src/format.ts",
-    "openai-compatible-video": "packages/media-understanding-common/src/openai-compatible-video.ts",
-    "output-extract": "packages/media-understanding-common/src/output-extract.ts",
-    "provider-id": "packages/media-understanding-common/src/provider-id.ts",
-    "provider-supports": "packages/media-understanding-common/src/provider-supports.ts",
-    types: "packages/media-understanding-common/src/types.ts",
-    video: "packages/media-understanding-common/src/video.ts",
   };
 }
 
@@ -518,15 +480,6 @@ function buildWebContentCoreDistEntries(): Record<string, string> {
   return {
     index: "packages/web-content-core/src/index.ts",
     "provider-runtime-shared": "packages/web-content-core/src/provider-runtime-shared.ts",
-  };
-}
-
-function buildSpeechCoreDistEntries(): Record<string, string> {
-  return {
-    api: "packages/speech-core/api.ts",
-    "runtime-api": "packages/speech-core/runtime-api.ts",
-    speaker: "packages/speech-core/speaker.ts",
-    "voice-models": "packages/speech-core/voice-models.ts",
   };
 }
 
@@ -711,18 +664,6 @@ export default defineConfig([
   nodeWorkspacePackageBuildConfig({
     clean: true,
     dts: RUN_NODE_SKIP_DTS_BUILD ? false : undefined,
-    entry: buildMediaGenerationCoreDistEntries(),
-    outDir: tsdownPackageOutputRoot("media-generation-core"),
-  }),
-  nodeWorkspacePackageBuildConfig({
-    clean: true,
-    dts: RUN_NODE_SKIP_DTS_BUILD ? false : undefined,
-    entry: buildMediaUnderstandingCoreDistEntries(),
-    outDir: tsdownPackageOutputRoot("media-understanding-common"),
-  }),
-  nodeWorkspacePackageBuildConfig({
-    clean: true,
-    dts: RUN_NODE_SKIP_DTS_BUILD ? false : undefined,
     entry: buildMarkdownCoreDistEntries(),
     outDir: tsdownPackageOutputRoot("markdown-core"),
     deps: {
@@ -761,15 +702,6 @@ export default defineConfig([
     dts: RUN_NODE_SKIP_DTS_BUILD ? false : undefined,
     entry: buildWebContentCoreDistEntries(),
     outDir: "packages/web-content-core/dist",
-  }),
-  nodeWorkspacePackageBuildConfig({
-    clean: true,
-    dts: RUN_NODE_SKIP_DTS_BUILD ? false : undefined,
-    entry: buildSpeechCoreDistEntries(),
-    outDir: tsdownPackageOutputRoot("speech-core"),
-    deps: {
-      neverBundle: shouldExternalizeSpeechCoreDependency,
-    },
   }),
   nodeWorkspacePackageBuildConfig({
     clean: true,

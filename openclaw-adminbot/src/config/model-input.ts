@@ -10,7 +10,7 @@ import {
   normalizeOptionalString,
   resolvePrimaryStringValue,
 } from "@openclaw/normalization-core/string-coerce";
-import type { AgentModelConfig, AgentToolModelConfig } from "./types.agents-shared.js";
+import type { AgentModelConfig, AgentToolModelConfig } from "./types/agents-shared.js";
 
 type AgentModelListLike = {
   primary?: string;

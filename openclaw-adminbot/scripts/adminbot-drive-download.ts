@@ -1,10 +1,19 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
-const ACCOUNT = "jinesis.adminbot@gmail.com";
+
+/** The Google account Drive is read as. Names a real mailbox, so it is deployment configuration. */
+function account(): string {
+  const value = process.env.ADMINBOT_BOT_EMAIL?.trim();
+  if (!value) {
+    throw new Error("ADMINBOT_BOT_EMAIL is not set — Drive downloads have no account to read as");
+  }
+  return value;
+}
 
 export function driveFileIds(text: string): string[] {
   const ids: string[] = [];
@@ -22,9 +31,10 @@ export function driveFileIds(text: string): string[] {
 }
 
 export async function downloadLinkedDriveFiles(text: string, directory: string): Promise<string[]> {
-  const gog =
-    process.env.GOG_BIN ??
-    (fs.existsSync("/home/akhkim/.local/bin/gog") ? "/home/akhkim/.local/bin/gog" : "gog");
+  // The service's systemd unit runs with a minimal PATH that misses the per-user install dir, so
+  // fall back to it under $HOME before giving up on a bare lookup.
+  const userGog = path.join(os.homedir(), ".local", "bin", "gog");
+  const gog = process.env.GOG_BIN ?? (fs.existsSync(userGog) ? userGog : "gog");
   const files: string[] = [];
   for (const fileId of driveFileIds(text)) {
     const before = new Set(fs.readdirSync(directory));
@@ -38,7 +48,7 @@ export async function downloadLinkedDriveFiles(text: string, directory: string):
         directory,
         "--overwrite",
         "--account",
-        ACCOUNT,
+        account(),
         "--json",
         "--results-only",
         "--no-input",

@@ -2,13 +2,16 @@
 // detecting stale channel runtime state against live gateway snapshots.
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
 import type { ChannelAccountSnapshot } from "../../channels/plugins/types.public.js";
-import type { ChannelHealthSummary, HealthSummary } from "../../commands/health.types.js";
-import { getStatusSummary } from "../../commands/status.js";
+import type {
+  ChannelHealthSummary,
+  HealthSummary,
+} from "../../commands/maintenance/health.types.js";
+import { getStatusSummary } from "../../commands/status/status.js";
 import { listContextEngineQuarantines } from "../../context-engine/registry.js";
 import { getGatewayModelPricingHealth } from "../model-pricing-cache-state.js";
-import type { ChannelRuntimeSnapshot } from "../server-channel-runtime.types.js";
-import { HEALTH_REFRESH_INTERVAL_MS } from "../server-constants.js";
-import { formatError } from "../server-utils.js";
+import type { ChannelRuntimeSnapshot } from "../server/server-channel-runtime.types.js";
+import { HEALTH_REFRESH_INTERVAL_MS } from "../server/server-constants.js";
+import { formatError } from "../server/server-utils.js";
 import { formatForLog } from "../ws-log.js";
 import type { GatewayRequestHandlers } from "./types.js";
 

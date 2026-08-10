@@ -8,11 +8,11 @@ import type { GetReplyOptions } from "../../auto-reply/get-reply-options.types.j
 import {
   dispatchReplyFromConfig,
   type DispatchFromConfigResult,
-} from "../../auto-reply/reply/dispatch-from-config.js";
-import type { DispatchReplyWithBufferedBlockDispatcher } from "../../auto-reply/reply/provider-dispatcher.types.js";
+} from "../../auto-reply/reply/dispatch/dispatch-from-config.js";
+import type { DispatchReplyWithBufferedBlockDispatcher } from "../../auto-reply/reply/providers/provider-dispatcher.types.js";
 import type { ReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.types.js";
 import type { FinalizedMsgContext } from "../../auto-reply/templating.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   normalizeOutboundReplyPayload,
   type OutboundReplyPayload,

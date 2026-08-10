@@ -4,9 +4,9 @@ import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
 import {
   buildConfiguredModelCatalog,
   resolveConfiguredModelRef,
-} from "../agents/model-selection.js";
+} from "../agents/models/model-selection.js";
 import { getChannelPlugin, getLoadedChannelPlugin } from "../channels/plugins/index.js";
-import type { OpenClawConfig } from "../config/types.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import type { SkillCommandSpec } from "../skills/types.js";
 import { listChatCommands, listChatCommandsForConfig } from "./commands-registry-list.js";
 import { normalizeCommandBody } from "./commands-registry-normalize.js";

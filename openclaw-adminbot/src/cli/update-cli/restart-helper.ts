@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { DEFAULT_GATEWAY_PORT } from "../../config/paths.js";
+import { DEFAULT_GATEWAY_PORT } from "../../config/paths/paths.js";
 import { quoteCmdScriptArg } from "../../daemon/cmd-argv.js";
 import {
   resolveGatewayLaunchAgentLabel,

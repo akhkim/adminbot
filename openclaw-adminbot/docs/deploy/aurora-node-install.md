@@ -14,7 +14,7 @@ installs `node`, `npm`, `npx`, and `corepack` under `~/.local/bin` without sudo.
 Verify it:
 
 ```bash
-ssh aurora.ais.sandbox -l <cs-user> \
+ssh <aurora-host> -l <cs-user> \
   'PATH="$HOME/.local/bin:$PATH" node --version'
 ```
 

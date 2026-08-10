@@ -7,7 +7,7 @@ import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   resolveTargetPrefixedChannel,
   stripTargetKindPrefix,
@@ -17,7 +17,7 @@ import {
 import { resolveConversationIdFromTargets } from "../infra/outbound/conversation-id.js";
 import { normalizeConversationTargetRef } from "../infra/outbound/session-binding-normalization.js";
 import { stringifyRouteThreadId } from "../plugin-sdk/channel-route.js";
-import { getActivePluginChannelRegistry } from "../plugins/runtime.js";
+import { getActivePluginChannelRegistry } from "../plugins/runtime/runtime.js";
 import { getLoadedChannelPlugin, normalizeChannelId } from "./plugins/index.js";
 import { resolveExplicitDeliveryTargetCompat } from "./plugins/target-parsing-loaded.js";
 import {

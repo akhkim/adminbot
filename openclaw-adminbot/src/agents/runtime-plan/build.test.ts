@@ -8,18 +8,18 @@ import {
   prepareProviderExtraParams,
   resolveProviderFollowupFallbackRoute,
   type ProviderRuntimePluginHandle,
-} from "../../plugins/provider-hook-runtime.js";
+} from "../../plugins/providers/provider-hook-runtime.js";
 import { buildAgentRuntimeDeliveryPlan, buildAgentRuntimePlan } from "./build.js";
 
 const manifestMocks = vi.hoisted(() => ({
   loadManifestMetadataSnapshot: vi.fn(() => ({}) as never),
 }));
 
-vi.mock("../../plugins/manifest-contract-eligibility.js", () => ({
+vi.mock("../../plugins/manifest/manifest-contract-eligibility.js", () => ({
   loadManifestMetadataSnapshot: manifestMocks.loadManifestMetadataSnapshot,
 }));
 
-vi.mock("../../plugins/provider-hook-runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-hook-runtime.js", () => ({
   clearProviderRuntimePluginCacheForTest: vi.fn(),
   testing: {
     clearProviderRuntimePluginCacheForTest: vi.fn(),

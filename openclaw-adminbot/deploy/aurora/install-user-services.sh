@@ -155,12 +155,7 @@ EnvironmentFile=$ENV_FILE
 Environment=XDG_CACHE_HOME=$CACHE_ROOT
 Environment=NODE_ENV=production
 Environment=PYTHONPATH=$REIMBURSEMENT_LIBS
-# --import tsx: extensions/slack has no build step of its own, so start-adminbot.mjs's
-# ".js"-suffixed import of extensions/slack/api.js only resolves (to the sibling .ts) under a
-# TypeScript-aware loader. Plain node throws ERR_MODULE_NOT_FOUND on that import, which is why
-# every onboarding send needing a Slack Connect invite failed. tsx registers the same loader the
-# jinesis-adminbot-email service already runs under; dist/**/*.js imports are unaffected.
-ExecStart=$NODE_BIN --import tsx $ROOT/start-adminbot.mjs
+ExecStart=$NODE_BIN $ROOT/start-adminbot.mjs
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=30
@@ -266,7 +261,7 @@ if [[ "$START_MODE" == "yes" ]]; then
         die "Slack socket mode is enabled but SLACK_APP_TOKEN is missing from $ENV_FILE"
     fi
   fi
-  "${GOG_BIN:-gog}" gmail labels list --account jinesis.adminbot@gmail.com --json --no-input >/dev/null ||
+  "${GOG_BIN:-gog}" gmail labels list --account "${GOG_ACCOUNT:?set GOG_ACCOUNT in adminbot.env}" --json --no-input >/dev/null ||
     die "gog authentication is not ready on Aurora"
   curl --fail --silent --show-error --max-time 10 \
     -H "Authorization: Bearer $VLLM_API_KEY" \

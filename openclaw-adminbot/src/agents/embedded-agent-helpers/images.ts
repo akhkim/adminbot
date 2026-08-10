@@ -3,9 +3,9 @@
  */
 import type { ImageSanitizationLimits } from "../image-sanitization.js";
 import type { AgentMessage, AgentToolResult } from "../runtime/index.js";
-import type { ToolCallIdMode } from "../tool-call-id.js";
-import { sanitizeToolCallIdsForCloudCodeAssist } from "../tool-call-id.js";
-import { sanitizeContentBlocksImages } from "../tool-images.js";
+import type { ToolCallIdMode } from "../tools/tool-call-id.js";
+import { sanitizeToolCallIdsForCloudCodeAssist } from "../tools/tool-call-id.js";
+import { sanitizeContentBlocksImages } from "../tools/tool-images.js";
 import { stripThoughtSignatures } from "./bootstrap.js";
 
 type ContentBlock = AgentToolResult<unknown>["content"][number];

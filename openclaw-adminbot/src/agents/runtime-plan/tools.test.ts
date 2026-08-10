@@ -11,12 +11,12 @@ import { getPluginToolMeta, setPluginToolMeta } from "../../plugins/tools.js";
 import {
   isToolWrappedWithBeforeToolCallHook,
   wrapToolWithBeforeToolCallHook,
-} from "../agent-tools.before-tool-call.js";
-import type { RuntimeToolSchemaDiagnostic } from "../tool-schema-projection.js";
+} from "../tools/agent-tools.before-tool-call.js";
+import type { RuntimeToolSchemaDiagnostic } from "../tools/tool-schema-projection.js";
 import {
   getToolTerminalPresentation,
   setToolTerminalPresentation,
-} from "../tool-terminal-presentation.js";
+} from "../tools/tool-terminal-presentation.js";
 import { logAgentRuntimeToolDiagnostics, normalizeAgentRuntimeTools } from "./tools.js";
 import type { AgentRuntimePlan } from "./types.js";
 

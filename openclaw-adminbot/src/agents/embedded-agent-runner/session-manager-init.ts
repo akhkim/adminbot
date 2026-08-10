@@ -3,7 +3,7 @@
  */
 import fs from "node:fs/promises";
 import { serializeJsonlLine, writeJsonlLines } from "../../config/sessions/transcript-jsonl.js";
-import { invalidateSessionFileRepairCache } from "../session-file-repair.js";
+import { invalidateSessionFileRepairCache } from "../sessions/session-file-repair.js";
 
 type SessionHeaderEntry = {
   type: "session";

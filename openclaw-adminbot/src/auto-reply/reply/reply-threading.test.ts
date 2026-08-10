@@ -1,7 +1,7 @@
 // Tests reply-to threading mode resolution across global and plugin config.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import { createTestRegistry } from "../../test-utils/channel-plugins.js";
 import {
   resolveConfiguredReplyToMode,

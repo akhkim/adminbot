@@ -2,13 +2,13 @@
 import { asDateTimestampMs } from "../../packages/normalization-core/src/number-coercion.js";
 import { buildAuthProfileId } from "../agents/auth-profiles/identity.js";
 import type { AuthProfileCredential } from "../agents/auth-profiles/types.js";
-import { normalizeConfiguredProviderCatalogModelId } from "../agents/model-ref-shared.js";
+import { normalizeConfiguredProviderCatalogModelId } from "../agents/models/model-ref-shared.js";
 import {
   normalizeAgentModelMapForConfig,
   normalizeAgentModelRefForConfig,
 } from "../config/model-input.js";
-import type { ModelProviderConfig } from "../config/types.models.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { ModelProviderConfig } from "../config/types/models.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type { ProviderAuthResult } from "../plugins/types.js";
 
 function normalizeAgentModelConfigForAuthResult(value: unknown): unknown {

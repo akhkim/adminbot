@@ -16,20 +16,16 @@ import {
   resolveStorePath,
 } from "../../config/sessions.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { callGateway } from "../../gateway/call.js";
-import { readSessionTitleFieldsFromTranscriptAsync } from "../../gateway/session-transcript-readers.js";
-import { deriveSessionTitle } from "../../gateway/session-utils.js";
+import { readSessionTitleFieldsFromTranscriptAsync } from "../../gateway/sessions/session-transcript-readers.js";
+import { deriveSessionTitle } from "../../gateway/sessions/session-utils.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
-import { deliveryContextFromSession } from "../../utils/delivery-context.shared.js";
+import { deliveryContextFromSession } from "../../shared/delivery-context.shared.js";
 import {
   optionalNonNegativeIntegerSchema,
   optionalPositiveIntegerSchema,
 } from "../schema/typebox.js";
-import {
-  describeSessionsListTool,
-  SESSIONS_LIST_TOOL_DISPLAY_SUMMARY,
-} from "../tool-description-presets.js";
 import type { AnyAgentTool } from "./common.js";
 import {
   jsonResult,
@@ -51,6 +47,10 @@ import {
   type SessionRunStatus,
   stripToolMessages,
 } from "./sessions-helpers.js";
+import {
+  describeSessionsListTool,
+  SESSIONS_LIST_TOOL_DISPLAY_SUMMARY,
+} from "./tool-description-presets.js";
 
 const SessionsListToolSchema = Type.Object({
   kinds: Type.Optional(Type.Array(Type.String())),

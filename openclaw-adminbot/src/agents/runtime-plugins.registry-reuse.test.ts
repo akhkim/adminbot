@@ -1,20 +1,23 @@
 // Verifies runtime plugin loading can reuse a compatible gateway startup registry.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
-import type { PluginRegistry } from "../plugins/registry-types.js";
-import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
+import { createEmptyPluginRegistry } from "../plugins/manifest/registry-empty.js";
+import type { PluginRegistry } from "../plugins/manifest/registry-types.js";
+import {
+  resetPluginRuntimeStateForTest,
+  setActivePluginRegistry,
+} from "../plugins/runtime/runtime.js";
 
 const mocks = vi.hoisted(() => ({
   getCurrentPluginMetadataSnapshot: vi.fn(),
-  loadOpenClawPlugins: vi.fn<typeof import("../plugins/loader.js").loadOpenClawPlugins>(),
+  loadOpenClawPlugins: vi.fn<typeof import("../plugins/runtime/loader.js").loadOpenClawPlugins>(),
 }));
 
 vi.mock("../plugins/current-plugin-metadata-snapshot.js", () => ({
   getCurrentPluginMetadataSnapshot: mocks.getCurrentPluginMetadataSnapshot,
 }));
 
-vi.mock("../plugins/loader.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../plugins/loader.js")>();
+vi.mock("../plugins/runtime/loader.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../plugins/runtime/loader.js")>();
   return {
     ...actual,
     loadOpenClawPlugins: (...args: Parameters<typeof mocks.loadOpenClawPlugins>) =>
@@ -24,7 +27,7 @@ vi.mock("../plugins/loader.js", async (importOriginal) => {
 
 const [{ ensureRuntimePluginsLoaded }, { clearPluginLoaderCache, testing }] = await Promise.all([
   import("./runtime-plugins.js"),
-  import("../plugins/loader.js"),
+  import("../plugins/runtime/loader.js"),
 ]);
 
 function createRegistryWithPlugin(pluginId: string): PluginRegistry {

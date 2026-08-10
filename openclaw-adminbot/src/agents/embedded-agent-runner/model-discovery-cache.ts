@@ -3,7 +3,7 @@
  */
 import { statSync } from "node:fs";
 import path from "node:path";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.types.js";
 import {
   resolveRuntimeExternalAuthProviderRefs,
@@ -12,7 +12,7 @@ import {
 import { discoverAuthStorage, discoverModels } from "../agent-model-discovery.js";
 import { resolveDefaultAgentDir } from "../agent-scope.js";
 import { hasAnyRuntimeAuthProfileStoreSource } from "../auth-profiles/runtime-snapshots.js";
-import { resolveModelPluginMetadataSnapshot } from "../model-discovery-context.js";
+import { resolveModelPluginMetadataSnapshot } from "../models/model-discovery-context.js";
 import { listPluginModelCatalogFiles } from "../plugin-model-catalog.js";
 import type { AuthStorage, ModelRegistry } from "../sessions/index.js";
 

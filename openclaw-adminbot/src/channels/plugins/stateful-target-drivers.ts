@@ -3,7 +3,7 @@
  *
  * Stores lifecycle drivers for binding targets that carry mutable external session state.
  */
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type {
   ConfiguredBindingResolution,
   StatefulBindingTargetDescriptor,

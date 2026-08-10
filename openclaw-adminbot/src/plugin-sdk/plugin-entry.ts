@@ -1,6 +1,6 @@
 // Plugin entry contracts define the manifest-facing hooks implemented by plugin packages.
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { emptyPluginConfigSchema } from "../plugins/config-schema.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { emptyPluginConfigSchema } from "../plugins/config/config-schema.js";
 import { createCachedLazyValueGetter } from "./lazy-value.js";
 
 export type AnyAgentTool = import("../plugins/types.js").AnyAgentTool;
@@ -8,8 +8,6 @@ export type AgentHarness = import("../plugins/types.js").AgentHarness;
 export type AgentPromptGuidance = import("../plugins/types.js").AgentPromptGuidance;
 export type AgentPromptGuidanceEntry = import("../plugins/types.js").AgentPromptGuidanceEntry;
 export type AgentPromptSurfaceKind = import("../plugins/types.js").AgentPromptSurfaceKind;
-export type MediaUnderstandingProviderPlugin =
-  import("../plugins/types.js").MediaUnderstandingProviderPlugin;
 export type TranscriptSourceProvider = import("../plugins/types.js").TranscriptSourceProvider;
 export type MigrationApplyResult = import("../plugins/types.js").MigrationApplyResult;
 export type MigrationDetection = import("../plugins/types.js").MigrationDetection;
@@ -105,8 +103,6 @@ export type ProviderReplayPolicy = import("../plugins/types.js").ProviderReplayP
 export type ProviderReplayPolicyContext = import("../plugins/types.js").ProviderReplayPolicyContext;
 export type ProviderReplaySessionEntry = import("../plugins/types.js").ProviderReplaySessionEntry;
 export type ProviderReplaySessionState = import("../plugins/types.js").ProviderReplaySessionState;
-export type RealtimeTranscriptionProviderPlugin =
-  import("../plugins/types.js").RealtimeTranscriptionProviderPlugin;
 export type ProviderResolvedUsageAuth = import("../plugins/types.js").ProviderResolvedUsageAuth;
 export type ProviderUsageAuthToken = import("../plugins/types.js").ProviderUsageAuthToken;
 export type ProviderResolveDynamicModelContext =
@@ -138,7 +134,6 @@ export type OpenClawGatewayDiscoveryAdvertiseContext =
   import("../plugins/types.js").OpenClawGatewayDiscoveryAdvertiseContext;
 export type OpenClawGatewayDiscoveryService =
   import("../plugins/types.js").OpenClawGatewayDiscoveryService;
-export type SpeechProviderPlugin = import("../plugins/types.js").SpeechProviderPlugin;
 export type PluginCommandContext = import("../plugins/types.js").PluginCommandContext;
 export type PluginCommandResult = import("../plugins/types.js").PluginCommandResult;
 export type PluginAgentEventEmitParams = import("../plugins/types.js").PluginAgentEventEmitParams;
@@ -200,8 +195,8 @@ export type {
   PluginHookInboundClaimContext,
   PluginHookInboundClaimEvent,
   PluginHookInboundClaimResult,
-} from "../plugins/hook-types.js";
-export type { ProviderRuntimeModel } from "../plugins/provider-runtime-model.types.js";
+} from "../plugins/hooks/hook-types.js";
+export type { ProviderRuntimeModel } from "../plugins/providers/provider-runtime-model.types.js";
 export type {
   UnifiedModelCatalogEntry,
   UnifiedModelCatalogKind,
@@ -213,7 +208,7 @@ export {
   buildJsonPluginConfigSchema,
   buildPluginConfigSchema,
   emptyPluginConfigSchema,
-} from "../plugins/config-schema.js";
+} from "../plugins/config/config-schema.js";
 
 /** Options for a plugin entry that registers providers, tools, commands, or services. */
 type DefinePluginEntryOptions = {

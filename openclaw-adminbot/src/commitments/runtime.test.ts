@@ -19,7 +19,7 @@ const DEFAULT_COMMITMENT_EXTRACTION_QUEUE_MAX_ITEMS = 64;
 const runEmbeddedAgentMock = vi.hoisted(() => vi.fn());
 const resolveDefaultModelMock = vi.hoisted(() => vi.fn());
 
-vi.mock("../agents/embedded-agent.js", () => ({
+vi.mock("../agents/embedded/embedded-agent.js", () => ({
   runEmbeddedAgent: runEmbeddedAgentMock,
 }));
 

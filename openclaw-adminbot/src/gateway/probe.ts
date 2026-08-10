@@ -6,13 +6,13 @@ import {
   GATEWAY_CLIENT_MODES,
   GATEWAY_CLIENT_NAMES,
 } from "../../packages/gateway-protocol/src/client-info.js";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import { loadDeviceAuthToken } from "../infra/device-auth-store.js";
 import { formatErrorMessage } from "../infra/errors.js";
-import type { SystemPresence } from "../infra/system-presence.js";
-import { MAX_SAFE_TIMEOUT_DELAY_MS, resolveSafeTimeoutDelayMs } from "../utils/timer-delay.js";
-import { startGatewayClientWhenEventLoopReady } from "./client-start-readiness.js";
-import { GatewayClient, GatewayClientRequestError } from "./client.js";
+import type { SystemPresence } from "../infra/system/system-presence.js";
+import { MAX_SAFE_TIMEOUT_DELAY_MS, resolveSafeTimeoutDelayMs } from "../shared/timer-delay.js";
+import { startGatewayClientWhenEventLoopReady } from "./client/client-start-readiness.js";
+import { GatewayClient, GatewayClientRequestError } from "./client/client.js";
 import { READ_SCOPE } from "./method-scopes.js";
 
 export type GatewayProbeAuth = {

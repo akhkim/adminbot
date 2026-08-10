@@ -7,7 +7,7 @@ import {
   removeWorkspaceAttestationPaths,
   resetCleanupCommandMocks,
   silenceCleanupCommandRuntime,
-} from "./cleanup-command.test-support.js";
+} from "./maintenance/cleanup-command.test-support.js";
 
 const { uninstallCommand } = await import("./uninstall.js");
 

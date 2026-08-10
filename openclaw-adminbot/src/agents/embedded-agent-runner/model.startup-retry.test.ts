@@ -34,7 +34,7 @@ vi.mock("../agent-model-discovery.js", () => ({
   discoverModels: discoverModelsMock,
 }));
 
-vi.mock("../../plugins/provider-runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-runtime.js", () => ({
   applyProviderResolvedTransportWithPlugin: () => undefined,
   buildProviderUnknownModelHintWithPlugin: () => undefined,
   normalizeProviderResolvedModelWithPlugin: () => undefined,

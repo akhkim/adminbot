@@ -7,7 +7,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { resetProviderAuthAliasMapCacheForTest } from "../provider-auth-aliases.js";
+import { resetProviderAuthAliasMapCacheForTest } from "../auth/provider-auth-aliases.js";
 import { saveAuthProfileStore } from "./store.js";
 import type { AuthProfileStore } from "./types.js";
 

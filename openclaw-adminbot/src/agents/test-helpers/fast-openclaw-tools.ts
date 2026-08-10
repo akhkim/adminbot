@@ -64,7 +64,7 @@ const createOpenClawToolsMock = vi.fn(
 
 // Preserve action enums for tools whose tests assert schema/inventory behavior without paying the
 // cost of constructing the real tool bundle.
-vi.mock("../openclaw-tools.js", () => ({
+vi.mock("../tools/openclaw-tools.js", () => ({
   createOpenClawTools: createOpenClawToolsMock,
   testing: {
     setDepsForTest: () => {},

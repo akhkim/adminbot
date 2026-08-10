@@ -15,11 +15,11 @@ vi.mock("../../config/config.js", () => ({
   setRuntimeConfigSnapshot: mocks.setRuntimeConfigSnapshot,
 }));
 
-vi.mock("../../cli/command-secret-gateway.js", () => ({
+vi.mock("../../cli/program/command-secret-gateway.js", () => ({
   resolveCommandSecretRefsViaGateway: mocks.resolveCommandSecretRefsViaGateway,
 }));
 
-vi.mock("../../cli/command-secret-targets.js", () => ({
+vi.mock("../../cli/program/command-secret-targets.js", () => ({
   getModelsCommandSecretTargetIds: mocks.getModelsCommandSecretTargetIds,
 }));
 

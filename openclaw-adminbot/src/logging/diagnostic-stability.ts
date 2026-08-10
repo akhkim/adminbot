@@ -3,7 +3,7 @@ import {
   onDiagnosticEvent,
   type DiagnosticEventPayload,
   type DiagnosticMemoryUsage,
-} from "../infra/diagnostic-events.js";
+} from "../infra/diagnostics/diagnostic-events.js";
 
 // Ring-buffer recorder for stability diagnostics and support-bundle snapshots.
 const DEFAULT_DIAGNOSTIC_STABILITY_CAPACITY = 1000;
@@ -31,9 +31,7 @@ export type DiagnosticStabilityEventRecord = {
   phase?: string;
   detector?: string;
   deliveryKind?: string;
-  talkEventType?: string;
   transport?: string;
-  brain?: string;
   toolName?: string;
   activeWorkKind?: string;
   pairedToolName?: string;
@@ -267,16 +265,6 @@ function sanitizeDiagnosticEvent(event: DiagnosticEventPayload): DiagnosticStabi
       record.durationMs = event.durationMs;
       record.outcome = "error";
       assignReasonCode(record, event.errorCategory);
-      break;
-    case "talk.event":
-      record.talkEventType = event.talkEventType;
-      record.mode = event.mode;
-      record.transport = event.transport;
-      record.brain = event.brain;
-      record.provider = event.provider;
-      record.final = event.final;
-      record.durationMs = event.durationMs;
-      record.bytes = event.byteLength;
       break;
     case "session.state":
       record.outcome = event.state;

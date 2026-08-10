@@ -9,9 +9,9 @@ import {
   type PlainTextToolCallNameMatcher,
   type PlainTextToolCallMessageNormalization,
 } from "../../packages/tool-call-repair/src/index.js";
-import { resolveOpenAIReasoningEffortMap } from "../agents/openai-reasoning-compat.js";
-import { resolveOpenAIReasoningEffortForModel } from "../agents/openai-reasoning-effort.js";
 import type { StreamFn } from "../agents/runtime/index.js";
+import { resolveOpenAIReasoningEffortMap } from "../agents/transport/openai-reasoning-compat.js";
+import { resolveOpenAIReasoningEffortForModel } from "../agents/transport/openai-reasoning-effort.js";
 import type { ThinkLevel } from "../auto-reply/thinking.js";
 import { streamWithPayloadPatch } from "../llm/providers/stream-wrappers/stream-payload-utils.js";
 import { streamSimple } from "../llm/stream.js";
@@ -955,7 +955,7 @@ export function createGoogleThinkingStreamWrapper(
 export {
   applyAnthropicPayloadPolicyToParams,
   resolveAnthropicPayloadPolicy,
-} from "../agents/anthropic-payload-policy.js";
+} from "../agents/transport/anthropic-payload-policy.js";
 export { applyAnthropicEphemeralCacheControlMarkers } from "../llm/providers/stream-wrappers/anthropic-cache-control-payload.js";
 export {
   createMoonshotThinkingWrapper,

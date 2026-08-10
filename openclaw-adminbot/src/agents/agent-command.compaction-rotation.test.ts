@@ -5,10 +5,10 @@ import path from "node:path";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadSessionStore, saveSessionStore, type SessionEntry } from "../config/sessions.js";
 import { CURRENT_SESSION_VERSION } from "../config/sessions/version.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type { runAgentAttempt } from "./command/attempt-execution.runtime.js";
-import type { EmbeddedAgentRunResult } from "./embedded-agent.js";
-import type { loadManifestModelCatalog } from "./model-catalog.js";
+import type { EmbeddedAgentRunResult } from "./embedded/embedded-agent.js";
+import type { loadManifestModelCatalog } from "./models/model-catalog.js";
 
 type ProviderModelNormalizationParams = { provider: string; context: { modelId: string } };
 type LoadManifestModelCatalogParams = Parameters<typeof loadManifestModelCatalog>[0];
@@ -26,7 +26,7 @@ const state = vi.hoisted(() => ({
   deliveryFreshEntries: [] as Array<SessionEntry | undefined>,
 }));
 
-vi.mock("../config/io.js", () => ({
+vi.mock("../config/io/io.js", () => ({
   getRuntimeConfig: () => state.cfg,
   readConfigFileSnapshotForWrite: async () => ({ snapshot: { valid: false } }),
 }));
@@ -58,16 +58,16 @@ vi.mock("./agent-scope.js", async () => {
   };
 });
 
-vi.mock("../plugins/manifest-contract-eligibility.js", () => ({
+vi.mock("../plugins/manifest/manifest-contract-eligibility.js", () => ({
   loadManifestMetadataSnapshot: () => ({ plugins: [] }),
 }));
 
-vi.mock("./model-catalog.js", () => ({
+vi.mock("./models/model-catalog.js", () => ({
   loadManifestModelCatalog: (params: LoadManifestModelCatalogParams) =>
     state.loadManifestModelCatalogMock(params),
 }));
 
-vi.mock("./provider-model-normalization.runtime.js", () => ({
+vi.mock("./transport/provider-model-normalization.runtime.js", () => ({
   normalizeProviderModelIdWithRuntime: (params: {
     provider: string;
     context: { modelId: string };
@@ -78,7 +78,7 @@ vi.mock("./harness/runtime-plugin.js", () => ({
   ensureSelectedAgentHarnessPlugin: vi.fn(async () => undefined),
 }));
 
-vi.mock("./workspace.js", () => ({
+vi.mock("./workspace/workspace.js", () => ({
   ensureAgentWorkspace: vi.fn(async () => undefined),
 }));
 
@@ -120,7 +120,7 @@ vi.mock("./exec-defaults.js", () => ({
   canExecRequestNode: () => false,
 }));
 
-vi.mock("./model-fallback.js", () => ({
+vi.mock("./models/model-fallback.js", () => ({
   runWithModelFallback: async (params: {
     provider: string;
     model: string;

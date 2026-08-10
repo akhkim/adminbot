@@ -6,7 +6,7 @@ import { buildTimestampPrefix } from "../../../gateway/server-methods/agent-time
 import { INTER_SESSION_PROMPT_PREFIX_BASE } from "../../../sessions/input-provenance.js";
 import { stripHistoricalRuntimeContextCustomMessages } from "../../internal-runtime-context.js";
 import type { AgentMessage } from "../../runtime/index.js";
-import { stripToolResultDetails } from "../../session-transcript-repair.js";
+import { stripToolResultDetails } from "../../sessions/session-transcript-repair.js";
 import { normalizeAssistantReplayContent } from "../replay-history.js";
 import { markTranscriptPromptText } from "../tool-result-context-guard.js";
 import type { RuntimeContextCustomMessage } from "./runtime-context-prompt.js";

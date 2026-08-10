@@ -10,8 +10,8 @@ import {
   restoreCurrentPluginMetadataSnapshotState,
   setCurrentPluginMetadataSnapshot,
 } from "./current-plugin-metadata-snapshot.js";
-import { resolveInstalledPluginIndexPolicyHash } from "./installed-plugin-index-policy.js";
-import { writePersistedInstalledPluginIndexSync } from "./installed-plugin-index-store.js";
+import { resolveInstalledPluginIndexPolicyHash } from "./install/installed-plugin-index-policy.js";
+import { writePersistedInstalledPluginIndexSync } from "./install/installed-plugin-index-store.js";
 import type { PluginMetadataSnapshot } from "./plugin-metadata-snapshot.js";
 
 function createSnapshot(

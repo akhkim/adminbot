@@ -1,5 +1,5 @@
 /** Renders Linux systemd availability hints for gateway service commands. */
-import { formatCliCommand } from "../cli/command-format.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
 import {
   classifySystemdUnavailableDetail,
   type SystemdUnavailableKind,

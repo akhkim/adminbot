@@ -225,7 +225,7 @@ export function resolveControlUiRootSync(opts: ControlUiRootResolveOptions = {})
     addCandidate(candidates, path.join(moduleDir, "control-ui"));
     // dist/gateway/control-ui.js -> dist/control-ui
     addCandidate(candidates, path.join(moduleDir, "../control-ui"));
-    // src/gateway/control-ui.ts -> dist/control-ui
+    // src/gateway/control/control-ui.ts -> dist/control-ui
     addCandidate(candidates, path.join(moduleDir, "../../dist/control-ui"));
   }
   if (argv1Dir) {

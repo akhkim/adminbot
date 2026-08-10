@@ -5,7 +5,7 @@ import {
   emitDiagnosticEvent,
   type DiagnosticPhaseDetails,
   type DiagnosticPhaseSnapshot,
-} from "../infra/diagnostic-events.js";
+} from "../infra/diagnostics/diagnostic-events.js";
 
 // Tracks nested diagnostic phases for recent-phase snapshots and optional event emission.
 const RECENT_PHASE_CAPACITY = 40;

@@ -5,11 +5,11 @@
 // the broad harness barrel.
 
 export async function reviewExecRequestWithConfiguredModel(params: {
-  cfg?: import("../config/types.openclaw.js").OpenClawConfig;
+  cfg?: import("../config/types/openclaw.js").OpenClawConfig;
   agentId?: string;
   reviewer?: unknown;
-  input: import("../infra/exec-auto-review.js").ExecAutoReviewInput;
-}): Promise<import("../infra/exec-auto-review.js").ExecAutoReviewDecision> {
+  input: import("../infra/exec/exec-auto-review.js").ExecAutoReviewInput;
+}): Promise<import("../infra/exec/exec-auto-review.js").ExecAutoReviewDecision> {
   const { createModelExecAutoReviewer } = await import("../agents/exec-auto-reviewer.js");
   const reviewer = createModelExecAutoReviewer({
     cfg: params.cfg,
@@ -24,20 +24,20 @@ export async function reviewExecRequestWithConfiguredModel(params: {
 export async function buildExecAutoReviewInputForShellCommand(params: {
   command: string;
   cwd?: string | null;
-  host: import("../infra/exec-auto-review.js").ExecAutoReviewHost;
+  host: import("../infra/exec/exec-auto-review.js").ExecAutoReviewHost;
   envKeys?: readonly string[];
   agent?: {
     id?: string | null;
     sessionKey?: string | null;
   };
-}): Promise<import("../infra/exec-auto-review.js").ExecAutoReviewInput | undefined> {
+}): Promise<import("../infra/exec/exec-auto-review.js").ExecAutoReviewInput | undefined> {
   const [
     { commandRequiresSecurityAuditSuppressionApproval, evaluateShellAllowlistWithAuthorization },
     { detectUnsafeExecControlShellCommand },
     { detectPolicyInlineEval },
   ] = await Promise.all([
-    import("../infra/exec-approvals.js"),
-    import("../infra/exec-control-command-guard.js"),
+    import("../infra/exec/exec-approvals.js"),
+    import("../infra/exec/exec-control-command-guard.js"),
     import("../infra/command-analysis/policy.js"),
   ]);
   const command = params.command.trim();

@@ -1,8 +1,8 @@
 // Collects dangerous config flag findings across agents and runtime config.
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { collectPluginConfigContractMatches } from "../plugins/config-contract-matches.js";
-import { resolvePluginConfigContractsById } from "../plugins/config-contracts.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { collectPluginConfigContractMatches } from "../plugins/config/config-contract-matches.js";
+import { resolvePluginConfigContractsById } from "../plugins/config/config-contracts.js";
 import { isRecord } from "../utils.js";
 import { collectEnabledInsecureOrDangerousFlagsFromContracts } from "./dangerous-config-flags-core.js";
 import { collectEnabledInsecureOrDangerousFlagsFromCurrentSnapshot } from "./dangerous-config-flags-current.js";

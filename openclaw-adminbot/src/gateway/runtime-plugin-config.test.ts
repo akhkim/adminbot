@@ -2,14 +2,14 @@
  * Runtime plugin config regression tests.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 const mocks = vi.hoisted(() => ({
   applyPluginAutoEnable: vi.fn(),
   getCurrentPluginMetadataSnapshot: vi.fn(),
 }));
 
-vi.mock("../config/plugin-auto-enable.js", () => ({
+vi.mock("../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: mocks.applyPluginAutoEnable,
 }));
 

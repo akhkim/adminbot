@@ -3,8 +3,8 @@ import path from "node:path";
 import type {
   AdminBotLabMemberInput,
   AdminBotPaperRecordInput,
-} from "../extensions/adminbot/src/contracts.js";
-import { createAdminBotSqliteService } from "../extensions/adminbot/src/service-sqlite.js";
+} from "../extensions/adminbot/src/contracts/actions.js";
+import { createAdminBotSqliteService } from "../extensions/adminbot/src/persistence/sqlite.js";
 
 type CsvRecord = Record<string, string>;
 

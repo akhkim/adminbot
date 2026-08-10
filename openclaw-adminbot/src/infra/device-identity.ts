@@ -2,7 +2,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import { privateFileStoreSync } from "./private-file-store.js";
 
 /** Gateway/device Ed25519 identity used for APNs relay and gateway authentication. */

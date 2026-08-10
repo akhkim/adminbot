@@ -29,7 +29,7 @@ import {
 import {
   emitTrustedSecurityEvent,
   type DiagnosticSecurityEventInput,
-} from "../../infra/diagnostic-events.js";
+} from "../../infra/diagnostics/diagnostic-events.js";
 import type { GatewayClient, GatewayRequestHandlers } from "./types.js";
 
 const DEVICE_TOKEN_ROTATION_DENIED_MESSAGE = "device token rotation denied";

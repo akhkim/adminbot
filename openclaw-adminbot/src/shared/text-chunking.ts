@@ -1,3 +1,4 @@
+// NOTE(dedupe): overlaps with src/shared/token-format.ts — see docs/adr/0005-shared-is-the-helper-home.md
 /**
  * Splits text into bounded chunks using caller-owned soft-break selection.
  *

@@ -18,8 +18,8 @@ describe("e2e vitest config", () => {
       "src/**/*.e2e.test.ts",
       "packages/**/*.e2e.test.ts",
       "src/gateway/gateway.test.ts",
-      "src/gateway/server.startup-matrix-migration.integration.test.ts",
-      "src/gateway/sessions-history-http.test.ts",
+      "src/gateway/server/server.startup-matrix-migration.integration.test.ts",
+      "src/gateway/sessions/sessions-history-http.test.ts",
       BUNDLED_PLUGIN_E2E_TEST_GLOB,
     ]);
     expect(e2eConfig.test?.exclude).toContain("src/tui/tui-pty-harness.e2e.test.ts");

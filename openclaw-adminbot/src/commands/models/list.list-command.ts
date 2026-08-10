@@ -1,9 +1,9 @@
 /** Implementation of `openclaw models list`. */
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
-import { parseModelRef } from "../../agents/model-selection.js";
+import { parseModelRef } from "../../agents/models/model-selection.js";
 import type { ModelRegistry } from "../../llm/model-registry.js";
 import type { Model } from "../../llm/types.js";
-import { loadManifestMetadataSnapshot } from "../../plugins/manifest-contract-eligibility.js";
+import { loadManifestMetadataSnapshot } from "../../plugins/manifest/manifest-contract-eligibility.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { createModelListAuthIndex } from "./list.auth-index.js";
@@ -80,7 +80,7 @@ export async function modelsListCommand(
   ] = await Promise.all([
     import("../../agents/auth-profiles/store.js"),
     import("../../agents/agent-scope.js"),
-    import("../../agents/workspace.js"),
+    import("../../agents/workspace/workspace.js"),
   ]);
   const { resolvedConfig: cfg } = await loadModelsConfigWithSource({
     commandName: "models list",

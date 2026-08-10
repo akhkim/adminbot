@@ -10,11 +10,11 @@ import { updateSessionStore, type SessionEntry } from "../../config/sessions.js"
 import {
   initializeGlobalHookRunner,
   resetGlobalHookRunner,
-} from "../../plugins/hook-runner-global.js";
-import { createMockPluginRegistry } from "../../plugins/hooks.test-helpers.js";
-import { patchPluginSessionExtension } from "../../plugins/host-hook-state.js";
-import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+} from "../../plugins/hooks/hook-runner-global.js";
+import { createMockPluginRegistry } from "../../plugins/hooks/hooks.test-helpers.js";
+import { patchPluginSessionExtension } from "../../plugins/host/host-hook-state.js";
+import { createEmptyPluginRegistry } from "../../plugins/manifest/registry-empty.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import {
   testing,
   buildNativeHookRelayCommand,

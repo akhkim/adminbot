@@ -1,6 +1,6 @@
 // Source-aware gateway run option resolution shared by pre-action and runtime startup.
 import type { Command } from "commander";
-import { inheritOptionFromParent } from "../command-options.js";
+import { inheritOptionFromParent } from "../program/command-options.js";
 
 export type GatewayRunOpts = {
   port?: unknown;

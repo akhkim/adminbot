@@ -13,19 +13,19 @@ import {
   parseModelRef,
   resolveModelRefFromString,
   type ModelRef,
-} from "../agents/model-selection.js";
-import { resolvePluginWebSearchConfig } from "../config/plugin-web-search-config.js";
-import type { ModelDefinitionConfig } from "../config/types.models.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+} from "../agents/models/model-selection.js";
+import { resolvePluginWebSearchConfig } from "../config/plugin/plugin-web-search-config.js";
+import type { ModelDefinitionConfig } from "../config/types/models.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { planManifestModelCatalogRows } from "../model-catalog/index.js";
-import { isInstalledPluginEnabled } from "../plugins/installed-plugin-index.js";
-import type { PluginManifestRegistry } from "../plugins/manifest-registry.js";
+import { isInstalledPluginEnabled } from "../plugins/install/installed-plugin-index.js";
+import type { PluginManifestRegistry } from "../plugins/manifest/manifest-registry.js";
 import type {
   PluginManifestModelPricingModelIdTransform,
   PluginManifestModelPricingProvider,
   PluginManifestModelPricingSource,
-} from "../plugins/manifest.js";
+} from "../plugins/manifest/manifest.js";
 import {
   clearLoadPluginMetadataSnapshotMemo,
   resolvePluginMetadataSnapshot,

@@ -10,16 +10,16 @@ import {
   resolveAgentWorkspaceDir,
 } from "../../../agents/agent-scope.js";
 import type { ApiKeyCredential } from "../../../agents/auth-profiles/types.js";
-import { resolveDefaultAgentWorkspaceDir } from "../../../agents/workspace.js";
+import { resolveDefaultAgentWorkspaceDir } from "../../../agents/workspace/workspace.js";
 import { resolveAgentModelPrimaryValue } from "../../../config/model-input.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { enablePluginInConfig } from "../../../plugins/enable.js";
-import { resolvePreferredProviderForAuthChoice } from "../../../plugins/provider-auth-choice-preference.js";
-import { resolveManifestProviderAuthChoice } from "../../../plugins/provider-auth-choices.js";
+import { resolvePreferredProviderForAuthChoice } from "../../../plugins/providers/provider-auth-choice-preference.js";
+import { resolveManifestProviderAuthChoice } from "../../../plugins/providers/provider-auth-choices.js";
 import {
   resolveDeprecatedProviderInstallCatalogEntry,
   resolveProviderInstallCatalogEntry,
-} from "../../../plugins/provider-install-catalog.js";
+} from "../../../plugins/providers/provider-install-catalog.js";
 import type {
   ProviderAuthOptionBag,
   ProviderNonInteractiveApiKeyCredentialParams,
@@ -33,7 +33,7 @@ import {
 } from "../../codex-runtime-plugin-install.js";
 import { ensureCopilotRuntimePluginForModelSelection } from "../../copilot-runtime-plugin-install.js";
 import { createNonInteractiveLoggingPrompter } from "../../non-interactive-prompter.js";
-import type { OnboardOptions } from "../../onboard-types.js";
+import type { OnboardOptions } from "../../onboard/onboard-types.js";
 
 const PROVIDER_PLUGIN_CHOICE_PREFIX = "provider-plugin:";
 

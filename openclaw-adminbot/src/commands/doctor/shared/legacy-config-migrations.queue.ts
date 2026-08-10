@@ -4,7 +4,7 @@ import {
   getRecord,
   type LegacyConfigMigrationSpec,
   type LegacyConfigRule,
-} from "../../../config/legacy.shared.js";
+} from "../../../config/legacy/legacy.shared.js";
 
 const RETIRED_QUEUE_MODES = new Set(["queue", "steer-backlog", "steer+backlog"]);
 

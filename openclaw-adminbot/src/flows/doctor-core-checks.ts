@@ -6,28 +6,28 @@ import {
   maybeArchiveLegacyClawdBrowserProfileResidue,
   noteChromeMcpBrowserReadiness,
   type LegacyClawdBrowserProfileResidue,
-} from "../commands/doctor-browser.js";
-import { hasConfiguredCommandOwners } from "../commands/doctor-command-owner.js";
+} from "../commands/doctor/doctor-browser.js";
+import { hasConfiguredCommandOwners } from "../commands/doctor/doctor-command-owner.js";
 import {
   checkShellCompletionStatus,
   shellCompletionStatusToHealthFindings,
   shellCompletionStatusToRepairEffects,
-} from "../commands/doctor-completion.js";
+} from "../commands/doctor/doctor-completion.js";
 import {
   disableUnavailableSkillsInConfig,
   formatMissingSkillSummary,
-} from "../commands/doctor-skills-core.js";
+} from "../commands/doctor/doctor-skills-core.js";
 import {
   detectUiProtocolFreshnessIssues,
   uiProtocolFreshnessIssueToHealthFinding,
   uiProtocolFreshnessIssueToRepairEffects,
-} from "../commands/doctor-ui.js";
+} from "../commands/doctor/doctor-ui.js";
 import { collectDisabledCodexPluginRouteIssues } from "../commands/doctor/shared/codex-route-warnings.js";
-import type { ConfigValidationIssue, OpenClawConfig } from "../config/types.openclaw.js";
-import { resolveSecretInputRef, type SecretRef } from "../config/types.secrets.js";
-import { hasAmbiguousGatewayAuthModeConfig } from "../gateway/auth-mode-policy.js";
-import { resolveGatewayAuthToken } from "../gateway/auth-token-resolution.js";
-import { resolveGatewayAuth } from "../gateway/auth.js";
+import type { ConfigValidationIssue, OpenClawConfig } from "../config/types/openclaw.js";
+import { resolveSecretInputRef, type SecretRef } from "../config/types/secrets.js";
+import { hasAmbiguousGatewayAuthModeConfig } from "../gateway/auth/auth-mode-policy.js";
+import { resolveGatewayAuthToken } from "../gateway/auth/auth-token-resolution.js";
+import { resolveGatewayAuth } from "../gateway/auth/auth.js";
 import { getSkippedExecRefStaticError } from "../secrets/exec-resolution-policy.js";
 import type { SkillStatusEntry } from "../skills/discovery/status.js";
 import { registerHealthCheck } from "./health-check-registry.js";
@@ -39,7 +39,8 @@ const FINAL_CONFIG_VALIDATION_CHECK_ID = "core/doctor/final-config-validation";
 
 const loadDoctorCoreChecksRuntimeModule = async () =>
   await import("./doctor-core-checks.runtime.js");
-const loadDoctorWorkspaceModule = async () => await import("../commands/doctor-workspace.js");
+const loadDoctorWorkspaceModule = async () =>
+  await import("../commands/doctor/doctor-workspace.js");
 
 export type CoreHealthCheckDeps = {
   readonly detectUnavailableSkills: (cfg: OpenClawConfig) => Promise<readonly SkillStatusEntry[]>;
@@ -61,14 +62,15 @@ async function detectUnavailableSkillsWithRuntime(
 }
 
 async function collectSecurityWarningsWithRuntime(cfg: OpenClawConfig): Promise<readonly string[]> {
-  const { collectSecurityWarnings } = await import("../commands/doctor-security.js");
+  const { collectSecurityWarnings } = await import("../commands/doctor/doctor-security.js");
   return collectSecurityWarnings(cfg);
 }
 
 async function collectWorkspaceSuggestionNotesWithRuntime(
   workspaceDir: string,
 ): Promise<readonly string[]> {
-  const { collectWorkspaceBackupTip } = await import("../commands/doctor-state-integrity.js");
+  const { collectWorkspaceBackupTip } =
+    await import("../commands/doctor/doctor-state-integrity.js");
   const { MEMORY_SYSTEM_PROMPT, shouldSuggestMemorySystem } = await loadDoctorWorkspaceModule();
   const notes: string[] = [];
   const backupTip = collectWorkspaceBackupTip(workspaceDir);
@@ -294,9 +296,9 @@ const hooksModelCheck: HealthCheck = {
       return [];
     }
     const { DEFAULT_MODEL, DEFAULT_PROVIDER } = await import("../agents/defaults.js");
-    const { loadModelCatalog } = await import("../agents/model-catalog.js");
+    const { loadModelCatalog } = await import("../agents/models/model-catalog.js");
     const { getModelRefStatus, resolveConfiguredModelRef, resolveHooksGmailModel } =
-      await import("../agents/model-selection.js");
+      await import("../agents/models/model-selection.js");
     const hooksModelRef = resolveHooksGmailModel({
       cfg: ctx.cfg,
       defaultProvider: DEFAULT_PROVIDER,
@@ -353,7 +355,8 @@ const legacyStateCheck: HealthCheck = {
   description: "Legacy sessions, agent state, and channel auth paths have been migrated.",
   source: "doctor",
   async detect(ctx) {
-    const { detectLegacyStateMigrations } = await import("../commands/doctor-state-migrations.js");
+    const { detectLegacyStateMigrations } =
+      await import("../commands/doctor/doctor-state-migrations.js");
     const detected = await detectLegacyStateMigrations({ cfg: ctx.cfg });
     return detected.preview.map(
       (line): HealthFinding => ({
@@ -374,10 +377,10 @@ const bootstrapSizeCheck: HealthCheck = {
   source: "doctor",
   async detect(ctx) {
     const { buildBootstrapInjectionStats, analyzeBootstrapBudget } =
-      await import("../agents/bootstrap-budget.js");
-    const { resolveBootstrapContextForRun } = await import("../agents/bootstrap-files.js");
+      await import("../agents/prompt/bootstrap-budget.js");
+    const { resolveBootstrapContextForRun } = await import("../agents/prompt/bootstrap-files.js");
     const { resolveBootstrapMaxChars, resolveBootstrapTotalMaxChars } =
-      await import("../agents/embedded-agent-helpers.js");
+      await import("../agents/embedded/embedded-agent-helpers.js");
     const workspaceDir = resolveAgentWorkspaceDir(ctx.cfg, resolveDefaultAgentId(ctx.cfg));
     const { bootstrapFiles, contextFiles } = await resolveBootstrapContextForRun({
       workspaceDir,
@@ -542,7 +545,7 @@ const claudeCliCheck: HealthCheck = {
   description: "Claude CLI readiness is captured as structured findings.",
   source: "doctor",
   async detect(ctx) {
-    const { noteClaudeCliHealth } = await import("../commands/doctor-claude-cli.js");
+    const { noteClaudeCliHealth } = await import("../commands/doctor/doctor-claude-cli.js");
     const collector = createNoteCollector("core/doctor/claude-cli");
     noteClaudeCliHealth(ctx.cfg, {
       noteFn: collector.noteFn,
@@ -581,7 +584,7 @@ const openAIOAuthTlsCheck: HealthCheck = {
       formatOpenAIOAuthTlsPreflightFix,
       runOpenAIOAuthTlsPreflight,
       shouldRunOpenAIOAuthTlsPrerequisites,
-    } = await import("../plugins/provider-openai-chatgpt-oauth-tls.js");
+    } = await import("../plugins/providers/provider-openai-chatgpt-oauth-tls.js");
     if (!shouldRunOpenAIOAuthTlsPrerequisites({ cfg: ctx.cfg, deep: ctx.mode === "doctor" })) {
       return [];
     }
@@ -660,7 +663,7 @@ const gatewayPlatformNotesCheck: HealthCheck = {
   source: "doctor",
   async detect(ctx) {
     const { collectMacGatewayPlatformWarnings } =
-      await import("../commands/doctor-platform-notes.js");
+      await import("../commands/doctor/doctor-platform-notes.js");
     const warnings = await collectMacGatewayPlatformWarnings(ctx.cfg);
     return warnings.map((warning) =>
       noteTextToFinding({

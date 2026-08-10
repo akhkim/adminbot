@@ -4,10 +4,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, expect, vi } from "vitest";
-import { clearRuntimeAuthProfileStoreSnapshots } from "../../../src/agents/auth-profiles.js";
+import { clearRuntimeAuthProfileStoreSnapshots } from "../../../src/agents/auth/auth-profiles.js";
 import type { EmbeddedAgentQueueMessageOutcome } from "../../../src/agents/embedded-agent-runner/runs.js";
-import { withFastReplyConfig } from "../../../src/auto-reply/reply/get-reply-fast-path.js";
-import type { OpenClawConfig } from "../../../src/config/types.openclaw.js";
+import { withFastReplyConfig } from "../../../src/auto-reply/reply/get-reply/get-reply-fast-path.js";
+import type { OpenClawConfig } from "../../../src/config/types/openclaw.js";
 
 // Avoid exporting vitest mock types (TS2742 under pnpm + d.ts emit).
 type AnyMock = any;
@@ -52,7 +52,7 @@ export function getRunEmbeddedAgentMock(): AnyMock {
 }
 
 const installEmbeddedAgentMock = () =>
-  vi.doMock("../../../src/agents/embedded-agent.js", () => ({
+  vi.doMock("../../../src/agents/embedded/embedded-agent.js", () => ({
     abortEmbeddedAgentRun: (...args: unknown[]) =>
       embeddedAgentMocks.abortEmbeddedAgentRun(...args),
     compactEmbeddedAgentSession: (...args: unknown[]) =>
@@ -97,7 +97,7 @@ export function getProviderUsageMocks(): AnyMocks {
   return providerUsageMocks;
 }
 
-vi.mock("../../../src/infra/provider-usage.js", () => providerUsageMocks);
+vi.mock("../../../src/infra/providers/provider-usage.js", () => providerUsageMocks);
 
 const DEFAULT_MODEL_CATALOG = [
   {
@@ -125,16 +125,16 @@ const modelCatalogMocks = getSharedMocks("openclaw.trigger-handling.model-catalo
 }));
 
 const installModelCatalogMock = () =>
-  vi.doMock("../../../src/agents/model-catalog.js", () => modelCatalogMocks);
+  vi.doMock("../../../src/agents/models/model-catalog.js", () => modelCatalogMocks);
 
 installModelCatalogMock();
 
-vi.doMock("../../../src/agents/model-catalog.runtime.js", () => ({
+vi.doMock("../../../src/agents/models/model-catalog.runtime.js", () => ({
   loadManifestModelCatalog: () => modelCatalogMocks.loadManifestModelCatalog(),
   loadModelCatalog: (...args: unknown[]) => modelCatalogMocks.loadModelCatalog(...args),
 }));
 
-vi.doMock("../../../src/plugins/provider-runtime.runtime.js", () => ({
+vi.doMock("../../../src/plugins/providers/provider-runtime.runtime.js", () => ({
   augmentModelCatalogWithProviderPlugins: async (params: { catalog?: unknown[] }) =>
     params.catalog ?? [],
   buildProviderAuthDoctorHintWithPlugin: () => undefined,
@@ -160,7 +160,7 @@ const modelFallbackMocks = getSharedMocks("openclaw.trigger-handling.model-fallb
 }));
 
 const installModelFallbackMock = () =>
-  vi.doMock("../../../src/agents/model-fallback.js", () => modelFallbackMocks);
+  vi.doMock("../../../src/agents/models/model-fallback.js", () => modelFallbackMocks);
 
 installModelFallbackMock();
 

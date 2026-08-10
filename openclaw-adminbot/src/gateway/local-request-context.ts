@@ -1,18 +1,18 @@
 // Local embedded Gateway request context.
 // Lets local agent paths reuse Gateway server methods without starting a server.
-import { loadManifestModelCatalog } from "../agents/model-catalog.js";
+import { loadManifestModelCatalog } from "../agents/models/model-catalog.js";
 import type { CliDeps } from "../cli/deps.types.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type { CronServiceContract } from "../cron/service-contract.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
   getPluginRuntimeGatewayRequestScope,
   withPluginRuntimeGatewayRequestScope,
 } from "../plugins/runtime/gateway-request-scope.js";
-import { NodeRegistry } from "./node-registry.js";
-import type { ChannelRuntimeSnapshot } from "./server-channel-runtime.types.js";
-import { createChatRunEntry, type ChatRunEntry } from "./server-chat-state.js";
+import { NodeRegistry } from "./node/node-registry.js";
 import type { GatewayRequestContext } from "./server-methods/types.js";
+import type { ChannelRuntimeSnapshot } from "./server/server-channel-runtime.types.js";
+import { createChatRunEntry, type ChatRunEntry } from "./server/server-chat-state.js";
 
 // Embedded/local agent calls need enough GatewayRequestContext to reuse server
 // methods without starting the full gateway. Unsupported subsystems fail loudly

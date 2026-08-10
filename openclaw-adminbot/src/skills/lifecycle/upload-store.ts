@@ -8,7 +8,7 @@ import {
   isFutureDateTimestampMs,
   resolveExpiresAtMsFromDurationMs,
 } from "@openclaw/normalization-core/number-coercion";
-import { resolveStateDir } from "../../config/paths.js";
+import { resolveStateDir } from "../../config/paths/paths.js";
 import { DEFAULT_MAX_ARCHIVE_BYTES_ZIP } from "../../infra/archive.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { createAsyncLock, readDurableJsonFile, writeJsonAtomic } from "../../infra/json-files.js";

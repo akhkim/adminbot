@@ -1,16 +1,16 @@
 // Gateway health state builds snapshots, caches health probes, and broadcasts health/presence version changes.
 import type { Snapshot } from "../../../packages/gateway-protocol/src/index.js";
 import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
-import { getHealthSnapshot, type HealthSummary } from "../../commands/health.js";
-import { createConfigIO, getRuntimeConfig } from "../../config/io.js";
-import { STATE_DIR } from "../../config/paths.js";
+import { getHealthSnapshot, type HealthSummary } from "../../commands/maintenance/health.js";
+import { createConfigIO, getRuntimeConfig } from "../../config/io/io.js";
+import { STATE_DIR } from "../../config/paths/paths.js";
 import { resolveMainSessionKey } from "../../config/sessions.js";
-import { listSystemPresence } from "../../infra/system-presence.js";
-import { getUpdateAvailable } from "../../infra/update-startup.js";
+import { getUpdateAvailable } from "../../infra/install/update-startup.js";
+import { listSystemPresence } from "../../infra/system/system-presence.js";
 import { normalizeMainKey } from "../../routing/session-key.js";
-import { resolveGatewayAuth } from "../auth.js";
-import type { ChannelRuntimeSnapshot } from "../server-channel-runtime.types.js";
+import { resolveGatewayAuth } from "../auth/auth.js";
 import type { GatewayEventLoopHealth } from "./event-loop-health.js";
+import type { ChannelRuntimeSnapshot } from "./server-channel-runtime.types.js";
 
 let presenceVersion = 1;
 let healthVersion = 1;

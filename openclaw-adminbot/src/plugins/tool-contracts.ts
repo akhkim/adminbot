@@ -1,5 +1,5 @@
 // Normalizes plugin tool contracts from manifest metadata.
-import type { PluginManifestContracts } from "./manifest.js";
+import type { PluginManifestContracts } from "./manifest/manifest.js";
 
 export function normalizePluginToolContractNames(
   contracts: Pick<PluginManifestContracts, "tools"> | undefined,

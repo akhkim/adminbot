@@ -1,15 +1,15 @@
 // Audits configured model references for risky provider or model choices.
 import { DEFAULT_PROVIDER } from "../agents/defaults.js";
-import { modelKey } from "../agents/model-selection-normalize.js";
+import { modelKey } from "../agents/models/model-selection-normalize.js";
 import {
   buildModelAliasIndex,
   resolveModelRefFromString,
-} from "../agents/model-selection-shared.js";
+} from "../agents/models/model-selection-shared.js";
 import {
   resolveAgentModelFallbackValues,
   resolveAgentModelPrimaryValue,
 } from "../config/model-input.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 /**
  * Model reference used by security audit findings.

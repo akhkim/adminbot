@@ -12,11 +12,11 @@ import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
-import { resolveGatewayPort } from "../config/paths.js";
-import type { OpenClawConfig } from "../config/types.js";
-import { normalizeSecretInputString, resolveSecretInputRef } from "../config/types.secrets.js";
-import { materializeGatewayAuthSecretRefs } from "../gateway/auth-config-utils.js";
-import { assertExplicitGatewayAuthModeWhenBothConfigured } from "../gateway/auth-mode-policy.js";
+import { resolveGatewayPort } from "../config/paths/paths.js";
+import { normalizeSecretInputString, resolveSecretInputRef } from "../config/types/secrets.js";
+import type { OpenClawConfig } from "../config/types/types.js";
+import { materializeGatewayAuthSecretRefs } from "../gateway/auth/auth-config-utils.js";
+import { assertExplicitGatewayAuthModeWhenBothConfigured } from "../gateway/auth/auth-mode-policy.js";
 import { issueDeviceBootstrapToken } from "../infra/device-bootstrap.js";
 import {
   pickMatchingExternalInterfaceAddress,

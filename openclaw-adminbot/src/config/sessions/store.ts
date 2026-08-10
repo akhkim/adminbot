@@ -6,7 +6,7 @@ import {
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
 import type { MsgContext } from "../../auto-reply/templating.js";
-import { resolveStoredSessionOwnerAgentId } from "../../gateway/session-store-key.js";
+import { resolveStoredSessionOwnerAgentId } from "../../gateway/sessions/session-store-key.js";
 import { writeTextAtomic } from "../../infra/json-files.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
@@ -17,11 +17,11 @@ import {
   mergeDeliveryContext,
   normalizeDeliveryContext,
   normalizeSessionDeliveryFields,
-} from "../../utils/delivery-context.shared.js";
-import type { DeliveryContext } from "../../utils/delivery-context.types.js";
+} from "../../shared/delivery-context.shared.js";
+import type { DeliveryContext } from "../../shared/delivery-context.types.js";
 import { getFileStatSnapshot } from "../cache-utils.js";
-import { getRuntimeConfig } from "../io.js";
-import type { OpenClawConfig } from "../types.openclaw.js";
+import { getRuntimeConfig } from "../io/io.js";
+import type { OpenClawConfig } from "../types/openclaw.js";
 import { formatSessionArchiveTimestamp } from "./artifacts.js";
 import {
   pruneUnreferencedSessionArtifacts,
@@ -117,7 +117,7 @@ export type SessionEntryPatchProjectionResult<TFailure extends SessionEntryPatch
 
 const log = createSubsystemLogger("sessions/store");
 let sessionArchiveRuntimePromise: Promise<
-  typeof import("../../gateway/session-archive.runtime.js")
+  typeof import("../../gateway/sessions/session-archive.runtime.js")
 > | null = null;
 let trajectoryCleanupRuntimePromise: Promise<typeof import("../../trajectory/cleanup.js")> | null =
   null;
@@ -128,7 +128,7 @@ const writerStoreFileStats = new WeakMap<
 
 function loadSessionArchiveRuntime() {
   // Archive cleanup is a cold maintenance path, so keep it lazy to avoid gateway import cycles.
-  sessionArchiveRuntimePromise ??= import("../../gateway/session-archive.runtime.js");
+  sessionArchiveRuntimePromise ??= import("../../gateway/sessions/session-archive.runtime.js");
   return sessionArchiveRuntimePromise;
 }
 

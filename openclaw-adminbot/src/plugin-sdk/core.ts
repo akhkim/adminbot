@@ -23,12 +23,12 @@ import type {
 } from "../channels/plugins/types.core.js";
 import type { ChannelPlugin } from "../channels/plugins/types.plugin.js";
 import type { ChannelMeta } from "../channels/plugins/types.public.js";
-import type { ReplyToMode } from "../config/types.base.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { ReplyToMode } from "../config/types/base.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { buildOutboundBaseSessionKey } from "../infra/outbound/base-session-key.js";
 import type { OutboundDeliveryResult } from "../infra/outbound/deliver.js";
 import { normalizeOutboundThreadId } from "../infra/outbound/thread-id.js";
-import { resolveBundledPluginsDir } from "../plugins/bundled-dir.js";
+import { resolveBundledPluginsDir } from "../plugins/install/bundled-dir.js";
 import type { PluginRuntime } from "../plugins/runtime/types.js";
 import type { OpenClawPluginApi } from "../plugins/types.js";
 import { resolveThreadSessionKeys } from "../routing/session-key.js";
@@ -43,7 +43,6 @@ export type {
   AgentPromptSurfaceKind,
   AgentHarness,
   AnyAgentTool,
-  MediaUnderstandingProviderPlugin,
   OpenClawPluginApi,
   OpenClawPluginCommandDefinition,
   OpenClawPluginConfigSchema,
@@ -116,7 +115,6 @@ export type {
   ProviderResolveWebSocketSessionPolicyContext,
   ProviderResolvedUsageAuth,
   ProviderUsageAuthToken,
-  RealtimeTranscriptionProviderPlugin,
   ProviderSanitizeReplayHistoryContext,
   ProviderTransportTurnState,
   ProviderToolSchemaDiagnostic,
@@ -128,14 +126,13 @@ export type {
   ProviderWrapStreamFnContext,
   UnifiedModelCatalogProviderContext,
   UnifiedModelCatalogProviderPlugin,
-  SpeechProviderPlugin,
 } from "./plugin-entry.js";
 export type {
   UnifiedModelCatalogEntry,
   UnifiedModelCatalogKind,
   UnifiedModelCatalogSource,
 } from "@openclaw/model-catalog-core/model-catalog-types";
-export type { ProviderRuntimeModel } from "../plugins/provider-runtime-model.types.js";
+export type { ProviderRuntimeModel } from "../plugins/providers/provider-runtime-model.types.js";
 export type {
   OpenClawPluginActiveModelContext,
   OpenClawPluginToolContext,
@@ -173,7 +170,7 @@ export type { NormalizedLocation } from "../channels/location.js";
 export type { ChannelDirectoryEntry } from "../channels/plugins/types.core.js";
 export type { ChannelOutboundAdapter } from "../channels/plugins/types.adapters.js";
 export type { PollInput } from "../polls.js";
-export { isSecretRef } from "../config/types.secrets.js";
+export { isSecretRef } from "../config/types/secrets.js";
 export type { GatewayRequestHandlerOptions } from "../gateway/server-methods/types.js";
 export type {
   ChannelOutboundSessionRoute,
@@ -202,7 +199,7 @@ export type {
   ProviderUsageSnapshot,
   UsageProviderId,
   UsageWindow,
-} from "../infra/provider-usage.types.js";
+} from "../infra/providers/provider-usage.types.js";
 export type { ChannelMessageActionContext } from "../channels/plugins/types.public.js";
 export type { ChannelPlugin } from "../channels/plugins/types.plugin.js";
 export type { ChannelConfigUiHint } from "../channels/plugins/types.config.js";
@@ -214,7 +211,7 @@ export {
   buildJsonPluginConfigSchema,
   buildPluginConfigSchema,
   emptyPluginConfigSchema,
-} from "../plugins/config-schema.js";
+} from "../plugins/config/config-schema.js";
 export { KeyedAsyncQueue, enqueueKeyedTask } from "./keyed-async-queue.js";
 export { createDedupeCache, resolveGlobalDedupeCache } from "../infra/dedupe.js";
 export { generateSecureToken, generateSecureUuid } from "../infra/secure-random.js";
@@ -257,7 +254,7 @@ export type { SecretFileReadOptions, SecretFileReadResult } from "../infra/secre
 
 export { resolveGatewayBindUrl } from "../shared/gateway-bind-url.js";
 export type { GatewayBindUrlResult } from "../shared/gateway-bind-url.js";
-export { resolveGatewayPort } from "../config/paths.js";
+export { resolveGatewayPort } from "../config/paths/paths.js";
 export { createSubsystemLogger } from "../logging/subsystem.js";
 export {
   normalizeAtHashSlug,

@@ -10,17 +10,17 @@ import {
   resolveChannelDmAllowFrom,
   resolveChannelDmPolicy,
 } from "../channels/plugins/dm-access.js";
-import { isPathInside } from "../infra/path-guards.js";
+import { isPathInside } from "../infra/system/path-guards.js";
 import { planManifestModelCatalogSuppressions } from "../model-catalog/index.js";
 import {
   normalizePluginsConfig,
   normalizePluginId,
   resolveEffectivePluginActivationState,
   resolveMemorySlotDecision,
-} from "../plugins/config-state.js";
-import { loadInstalledPluginIndexInstallRecordsSync } from "../plugins/installed-plugin-index-record-reader.js";
-import { resolveManifestCommandAliasOwnerInRegistry } from "../plugins/manifest-command-aliases.js";
-import type { PluginManifestRegistry } from "../plugins/manifest-registry.js";
+} from "../plugins/config/config-state.js";
+import { loadInstalledPluginIndexInstallRecordsSync } from "../plugins/install/installed-plugin-index-record-reader.js";
+import { resolveManifestCommandAliasOwnerInRegistry } from "../plugins/manifest/manifest-command-aliases.js";
+import type { PluginManifestRegistry } from "../plugins/manifest/manifest-registry.js";
 import {
   getOfficialExternalPluginCatalogEntry,
   resolveOfficialExternalPluginInstall,
@@ -31,7 +31,7 @@ import {
 } from "../plugins/plugin-metadata-snapshot.js";
 import { validateJsonSchemaValue } from "../plugins/schema-validator.js";
 import { hasKind } from "../plugins/slots.js";
-import { resolveWebSearchInstallCatalogEntries } from "../plugins/web-search-install-catalog.js";
+import { resolveWebSearchInstallCatalogEntries } from "../plugins/web/web-search-install-catalog.js";
 import { collectUnsupportedSecretRefConfigCandidates } from "../secrets/unsupported-surface-policy.js";
 import {
   hasAvatarUriScheme,
@@ -47,21 +47,21 @@ import {
 import { isRecord, resolveUserPath } from "../utils.js";
 import { findDuplicateAgentDirs, formatDuplicateAgentDirError } from "./agent-dirs.js";
 import { appendAllowedValuesHint, summarizeAllowedValues } from "./allowed-values.js";
-import { GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA } from "./bundled-channel-config-metadata.generated.js";
+import { GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA } from "./channel/bundled-channel-config-metadata.generated.js";
 import {
   collectChannelDmPolicyMetadata,
   collectChannelSchemaMetadataWithOwnership,
-} from "./channel-config-metadata.js";
-import { shouldSuppressMissingCodexPluginDiagnostics } from "./codex-plugin-diagnostics.js";
-import { materializeRuntimeConfig } from "./materialize.js";
-import type { OpenClawConfig, ConfigValidationIssue } from "./types.js";
-import { coerceSecretRef } from "./types.secrets.js";
+} from "./channel/channel-config-metadata.js";
+import { materializeRuntimeConfig } from "./mutate/materialize.js";
+import { shouldSuppressMissingCodexPluginDiagnostics } from "./plugin/codex-plugin-diagnostics.js";
+import { coerceSecretRef } from "./types/secrets.js";
+import type { OpenClawConfig, ConfigValidationIssue } from "./types/types.js";
 import {
   type DmPolicyAllowFromViolation,
   evaluateDmPolicyAllowFromDependency,
   isBuiltInModelProviderOverlayId,
-} from "./zod-schema.core.js";
-import { OpenClawSchema } from "./zod-schema.js";
+} from "./zod/core.js";
+import { OpenClawSchema } from "./zod/zod-schema.js";
 
 const LEGACY_REMOVED_PLUGIN_IDS = new Set([
   "google-antigravity-auth",

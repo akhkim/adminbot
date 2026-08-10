@@ -13,9 +13,12 @@ const acquireSessionWriteLockMock = vi.hoisted(() =>
   vi.fn(async (_params?: unknown) => ({ release: acquireSessionWriteLockReleaseMock })),
 );
 
-vi.mock("../session-write-lock.js", () =>
+vi.mock("../sessions/session-write-lock.js", () =>
   buildSessionWriteLockModuleMock(
-    () => vi.importActual<typeof import("../session-write-lock.js")>("../session-write-lock.js"),
+    () =>
+      vi.importActual<typeof import("../sessions/session-write-lock.js")>(
+        "../sessions/session-write-lock.js",
+      ),
     (params) => acquireSessionWriteLockMock(params),
   ),
 );
@@ -23,7 +26,7 @@ vi.mock("../session-write-lock.js", () =>
 let rewriteTranscriptEntriesInSessionManager: typeof import("./transcript-rewrite.js").rewriteTranscriptEntriesInSessionManager;
 let rewriteTranscriptEntriesInRuntimeTranscript: typeof import("./transcript-rewrite.js").rewriteTranscriptEntriesInRuntimeTranscript;
 let onSessionTranscriptUpdate: typeof import("../../sessions/transcript-events.js").onSessionTranscriptUpdate;
-let installSessionToolResultGuard: typeof import("../session-tool-result-guard.js").installSessionToolResultGuard;
+let installSessionToolResultGuard: typeof import("../sessions/session-tool-result-guard.js").installSessionToolResultGuard;
 
 type AppendMessage = Parameters<SessionManager["appendMessage"]>[0];
 
@@ -154,11 +157,9 @@ function requireString(value: string | undefined, label: string): string {
 
 beforeAll(async () => {
   ({ onSessionTranscriptUpdate } = await import("../../sessions/transcript-events.js"));
-  ({ installSessionToolResultGuard } = await import("../session-tool-result-guard.js"));
-  ({
-    rewriteTranscriptEntriesInRuntimeTranscript,
-    rewriteTranscriptEntriesInSessionManager,
-  } = await import("./transcript-rewrite.js"));
+  ({ installSessionToolResultGuard } = await import("../sessions/session-tool-result-guard.js"));
+  ({ rewriteTranscriptEntriesInRuntimeTranscript, rewriteTranscriptEntriesInSessionManager } =
+    await import("./transcript-rewrite.js"));
 });
 
 beforeEach(() => {
@@ -411,5 +412,4 @@ describe("rewriteTranscriptEntriesInRuntimeTranscript", () => {
       cleanup();
     }
   });
-
 });

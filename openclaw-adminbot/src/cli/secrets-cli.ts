@@ -7,9 +7,13 @@ import { formatErrorMessage } from "../infra/errors.js";
 import { defaultRuntime } from "../runtime.js";
 import type { SecretsApplyPlan } from "../secrets/plan.js";
 import { createLazyImportLoader } from "../shared/lazy-promise.js";
-import { formatCliCommand } from "./command-format.js";
 import { formatGatewayCommandFailure } from "./error-format.js";
-import { addGatewayClientOptions, callGatewayFromCli, type GatewayRpcOpts } from "./gateway-rpc.js";
+import {
+  addGatewayClientOptions,
+  callGatewayFromCli,
+  type GatewayRpcOpts,
+} from "./gateway-cli/gateway-rpc.js";
+import { formatCliCommand } from "./program/command-format.js";
 
 type FsModule = typeof import("node:fs");
 type ClackPromptsModule = typeof import("@clack/prompts");

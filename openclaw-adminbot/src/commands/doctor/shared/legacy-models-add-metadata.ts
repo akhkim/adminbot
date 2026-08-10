@@ -1,6 +1,6 @@
 // Detection helper for legacy `/models add` OpenAI Codex entries missing metadata markers.
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
-import type { ModelDefinitionConfig } from "../../../config/types.models.js";
+import type { ModelDefinitionConfig } from "../../../config/types/models.js";
 
 const LEGACY_MODELS_ADD_CODEX_MODEL_IDS = new Set(["gpt-5.5", "gpt-5.5-pro"]);
 const LEGACY_MODELS_ADD_CODEX_APIS = new Set([

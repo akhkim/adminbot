@@ -1,8 +1,8 @@
 // Collects dangerous config flag findings from the current config shape.
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { collectPluginConfigContractMatches } from "../plugins/config-contract-matches.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { collectPluginConfigContractMatches } from "../plugins/config/config-contract-matches.js";
 import { getCurrentPluginMetadataSnapshot } from "../plugins/current-plugin-metadata-snapshot.js";
-import type { PluginManifestConfigContracts } from "../plugins/manifest.js";
+import type { PluginManifestConfigContracts } from "../plugins/manifest/manifest.js";
 import type { PluginOrigin } from "../plugins/plugin-origin.types.js";
 import { isRecord } from "../utils.js";
 import { collectEnabledInsecureOrDangerousFlagsFromContracts } from "./dangerous-config-flags-core.js";

@@ -1,7 +1,7 @@
 // Gateway runtime plugin config resolver.
 // Applies plugin auto-enable rules against the active manifest snapshot.
-import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { applyPluginAutoEnable } from "../config/plugin/plugin-auto-enable.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { getCurrentPluginMetadataSnapshot } from "../plugins/current-plugin-metadata-snapshot.js";
 import type { PluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.types.js";
 

@@ -11,8 +11,8 @@ import {
   hasBundledChannelPersistedAuthState,
   listBundledChannelIdsWithPersistedAuthState,
 } from "../channels/plugins/persisted-auth-state.js";
-import { resolveStateDir } from "../config/paths.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { resolveStateDir } from "../config/paths/paths.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { hasNonEmptyString } from "../infra/outbound/channel-target.js";
 import type { PluginDiscoveryResult } from "../plugins/discovery.js";
 import { isRecord } from "../utils.js";

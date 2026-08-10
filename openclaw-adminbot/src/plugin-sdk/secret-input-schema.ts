@@ -1,7 +1,7 @@
 // Secret input schema helpers validate plugin-declared credential prompts and storage metadata.
 import { z } from "zod";
-import { ENV_SECRET_REF_ID_RE } from "../config/types.secrets.js";
-import { sensitive } from "../config/zod-schema.sensitive.js";
+import { ENV_SECRET_REF_ID_RE } from "../config/types/secrets.js";
+import { sensitive } from "../config/zod/sensitive.js";
 import {
   formatExecSecretRefIdValidationMessage,
   isValidExecSecretRefId,

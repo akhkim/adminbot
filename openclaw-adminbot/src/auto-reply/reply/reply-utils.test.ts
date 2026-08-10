@@ -1,11 +1,13 @@
 // Tests reply utility helpers for response normalization and send decisions.
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { parseAudioTag } from "../../media/audio-tags.js";
 import { getReplyPayloadMetadata, setReplyPayloadMetadata } from "../reply-payload.js";
 import { SILENT_REPLY_TOKEN } from "../tokens.js";
-import { parseAudioTag } from "../../media/audio-tags.js";
 import { createBlockReplyCoalescer } from "./block-reply-coalescer.js";
 import { matchesMentionWithExplicit } from "./mentions.js";
 import { normalizeReplyPayload } from "./normalize-reply.js";
+import { createTypingSignaler, resolveTypingMode } from "./queue/typing-mode.js";
+import { createTypingController } from "./queue/typing.js";
 import { createReplyReferencePlanner, isSingleUseReplyToMode } from "./reply-reference.js";
 import {
   extractShortModelName,
@@ -16,8 +18,6 @@ import {
   splitTrailingDirective,
 } from "./streaming-directives.js";
 import { createMockTypingController } from "./test-helpers.js";
-import { createTypingSignaler, resolveTypingMode } from "./typing-mode.js";
-import { createTypingController } from "./typing.js";
 
 type NormalizedReplyPayload = NonNullable<ReturnType<typeof normalizeReplyPayload>>;
 

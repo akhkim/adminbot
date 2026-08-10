@@ -3,22 +3,16 @@
  */
 const BUNDLED_PLUGIN_ROOT_DIR = "extensions";
 
-function bundledPluginFile(pluginId: string, relativePath: string, suffix = ""): string {
-  return `${BUNDLED_PLUGIN_ROOT_DIR}/${pluginId}/${relativePath}${suffix}`;
-}
-
 const rootEntries = [
   "openclaw.mjs!",
   "src/index.ts!",
   "src/entry.ts!",
-  "src/cli/daemon-cli.ts!",
-  "src/agents/code-mode.worker.ts!",
-  "src/agents/model-provider-auth.worker.ts!",
-  "src/infra/kysely-node-sqlite.ts!",
+  "src/cli/daemon-cli/daemon-cli.ts!",
+  "src/agents/tools/code-mode.worker.ts!",
+  "src/agents/auth/model-provider-auth.worker.ts!",
+  "src/infra/state/kysely-node-sqlite.ts!",
   "src/infra/warning-filter.ts!",
   "src/infra/command-explainer/index.ts!",
-  bundledPluginFile("telegram", "src/audit.ts", "!"),
-  bundledPluginFile("telegram", "src/token.ts", "!"),
   "src/hooks/bundled/*/handler.ts!",
   "src/hooks/llm-slug-generator.ts!",
   "src/plugin-sdk/*.ts!",
@@ -34,47 +28,25 @@ const bundledPluginEntries = [
   "src/subagent-hooks-api.ts!",
 ] as const;
 
-const bundledPluginIgnoredRuntimeDependencies = [
-  "@agentclientprotocol/claude-agent-acp",
-  "@a2ui/lit",
-  "@azure/identity",
-  "@clawdbot/lobster",
-  "@discordjs/opus",
-  "@homebridge/ciao",
-  "@lit/context",
-  "@matrix-org/matrix-sdk-crypto-wasm",
-  "@mozilla/readability",
-  "@openai/codex",
-  "@pierre/theme",
-  "@tloncorp/tlon-skill",
-  "@zed-industries/codex-acp",
-  "jiti",
-  "json5",
-  "lit",
-  "linkedom",
-  "openclaw",
-  "clawpdf",
-] as const;
+// Runtime dependencies the surviving bundled plugins resolve dynamically, so
+// Knip's static pass cannot see them. Only packages that a surviving plugin
+// manifest actually declares belong here.
+const bundledPluginIgnoredRuntimeDependencies = ["json5", "openclaw"] as const;
 
+// Root dependencies that only bundled plugins reach, via dynamic import or
+// host injection. Every entry must exist in the root manifest.
 const rootBundledPluginRuntimeDependencies = [
   "@anthropic-ai/sdk",
-  "@anthropic-ai/vertex-sdk",
   "@google/genai",
   "@grammyjs/runner",
   "@grammyjs/transformer-throttler",
   "@homebridge/ciao",
   "@mozilla/readability",
-  "@silvia-odwyer/photon-node",
-  "@slack/bolt",
-  "@slack/types",
-  "@slack/web-api",
   "grammy",
   "linkedom",
   "minimatch",
   "node-edge-tts",
-  "openshell",
   "clawpdf",
-  "tokenjuice",
 ] as const;
 
 const config = {
@@ -128,18 +100,9 @@ const config = {
     "**/*.test-utils.ts",
     "test/helpers/live-image-probe.ts",
     "src/secrets/credential-matrix.ts",
-    "src/agents/claude-cli-runner.ts",
-    "src/agents/agent-auth-json.ts",
-    "src/agents/tool-policy.conformance.ts",
-    "src/auto-reply/reply/audio-tags.ts",
     "src/gateway/live-tool-probe-utils.ts",
-    "src/gateway/server.auth.shared.ts",
+    "src/gateway/server/server.auth.shared.ts",
     "src/shared/text/assistant-visible-text.ts",
-    bundledPluginFile("telegram", "src/bot/reply-threading.ts"),
-    bundledPluginFile("telegram", "src/draft-chunking.ts"),
-    bundledPluginFile("msteams", "src/conversation-store-memory.ts"),
-    bundledPluginFile("msteams", "src/polls-store-memory.ts"),
-    bundledPluginFile("voice-call", "src/providers/index.ts"),
   ],
   ignore: ["packages/*/dist/**"],
   workspaces: {
@@ -171,10 +134,6 @@ const config = {
       // Workboard lazy-loads Three.js at runtime; Knip's dependency pass misses it.
       ignoreDependencies: ["three"],
       project: ["src/**/*.{ts,tsx}!"],
-    },
-    "packages/sdk": {
-      entry: ["src/index.ts!"],
-      project: ["src/**/*.ts!"],
     },
     "packages/agent-core": {
       entry: ["src/index.ts!", "src/*.ts!", "src/harness/**/*.ts!"],
@@ -208,24 +167,9 @@ const config = {
       entry: ["src/*.ts!"],
       project: ["src/**/*.ts!"],
     },
-    "packages/speech-core": {
-      entry: ["api.ts!", "runtime-api.ts!", "speaker.ts!", "voice-models.ts!"],
-      project: ["**/*.ts!"],
-      ignoreDependencies: ["openclaw"],
-    },
     "packages/*": {
-      entry: ["index.js!", "scripts/postinstall.js!"],
-      project: ["index.js!", "scripts/**/*.js!"],
-    },
-    [`${BUNDLED_PLUGIN_ROOT_DIR}/llama-cpp`]: {
-      entry: bundledPluginEntries,
-      project: ["index.ts!", "src/**/*.{js,mjs,ts}!"],
-      ignoreDependencies: [
-        // The provider resolves node-llama-cpp from its own package at runtime
-        // so local embeddings use the plugin-owned native dependency.
-        "node-llama-cpp",
-        ...bundledPluginIgnoredRuntimeDependencies,
-      ],
+      entry: ["src/index.ts!", "src/*.ts!"],
+      project: ["src/**/*.ts!"],
     },
     [`${BUNDLED_PLUGIN_ROOT_DIR}/*`]: {
       // Bundled plugins often load their public surface via string specifiers in

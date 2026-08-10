@@ -1,9 +1,9 @@
 /** Shared fixtures for secrets runtime unit tests. */
 import { afterEach, beforeAll, beforeEach, vi } from "vitest";
-import type { AuthProfileStore } from "../agents/auth-profiles.js";
+import type { AuthProfileStore } from "../agents/auth/auth-profiles.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { createEmptyPluginRegistry } from "../plugins/registry.js";
-import { setActivePluginRegistry } from "../plugins/runtime.js";
+import { createEmptyPluginRegistry } from "../plugins/manifest/registry.js";
+import { setActivePluginRegistry } from "../plugins/runtime/runtime.js";
 import type { PluginWebSearchProviderEntry } from "../plugins/types.js";
 
 type PrepareSecretsRuntimeSnapshot = typeof import("./runtime.js").prepareSecretsRuntimeSnapshot;
@@ -13,11 +13,11 @@ const { resolvePluginWebSearchProvidersMock } = vi.hoisted(() => ({
   resolvePluginWebSearchProvidersMock: vi.fn(() => buildTestWebSearchProviders()),
 }));
 
-vi.mock("../plugins/web-search-providers.runtime.js", () => ({
+vi.mock("../plugins/web/web-search-providers.runtime.js", () => ({
   resolvePluginWebSearchProviders: resolvePluginWebSearchProvidersMock,
 }));
 
-vi.mock("../plugins/installed-plugin-index-records.js", () => ({
+vi.mock("../plugins/install/installed-plugin-index-records.js", () => ({
   loadInstalledPluginIndexInstallRecordsSync: () => ({}),
 }));
 

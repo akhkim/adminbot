@@ -210,8 +210,8 @@ vi.mock("../config/config.js", async () => {
   return createGatewayConfigModuleMock(actual);
 });
 
-vi.mock("../config/io.js", async () => {
-  const actual = await vi.importActual<typeof import("../config/io.js")>("../config/io.js");
+vi.mock("../config/io/io.js", async () => {
+  const actual = await vi.importActual<typeof import("../config/io/io.js")>("../config/io/io.js");
   const configActual =
     await vi.importActual<typeof import("../config/config.js")>("../config/config.js");
   const { createGatewayConfigModuleMock } = await import("./test-helpers.config-runtime.js");
@@ -235,15 +235,15 @@ vi.mock("../config/io.js", async () => {
   };
 });
 
-vi.mock("../agents/embedded-agent.js", async () => {
-  return await importEmbeddedRunMockModule<typeof import("../agents/embedded-agent.js")>(
-    "../agents/embedded-agent.js",
+vi.mock("../agents/embedded/embedded-agent.js", async () => {
+  return await importEmbeddedRunMockModule<typeof import("../agents/embedded/embedded-agent.js")>(
+    "../agents/embedded/embedded-agent.js",
   );
 });
 
 vi.mock("/src/agents/embedded-agent.js", async () => {
-  return await importEmbeddedRunMockModule<typeof import("../agents/embedded-agent.js")>(
-    "../agents/embedded-agent.js",
+  return await importEmbeddedRunMockModule<typeof import("../agents/embedded/embedded-agent.js")>(
+    "../agents/embedded/embedded-agent.js",
   );
 });
 
@@ -259,13 +259,13 @@ vi.mock("/src/agents/embedded-agent-runner/runs.js", async () => {
   >("../agents/embedded-agent-runner/runs.js", { includeActiveCount: true });
 });
 
-vi.mock("../commands/health.js", () => ({
+vi.mock("../commands/maintenance/health.js", () => ({
   getHealthSnapshot: vi.fn().mockResolvedValue({ ok: true, stub: true }),
 }));
-vi.mock("../commands/status.js", () => ({
+vi.mock("../commands/status/status.js", () => ({
   getStatusSummary: vi.fn().mockResolvedValue({ ok: true }),
 }));
-vi.mock("../commands/agent.js", () => ({
+vi.mock("../commands/agent/agent.js", () => ({
   agentCommand,
   agentCommandFromIngress: agentCommand,
 }));
@@ -298,7 +298,7 @@ vi.mock("/src/auto-reply/reply.js", () => ({
   getReplyFromConfig: (...args: Parameters<GetReplyFromConfigFn>) =>
     gatewayTestHoisted.getReplyFromConfig(...args),
 }));
-vi.mock("../auto-reply/reply/get-reply-from-config.runtime.js", () => ({
+vi.mock("../auto-reply/reply/get-reply/get-reply-from-config.runtime.js", () => ({
   getReplyFromConfig: (...args: Parameters<GetReplyFromConfigFn>) =>
     gatewayTestHoisted.getReplyFromConfig(...args),
 }));
@@ -319,9 +319,10 @@ vi.mock("../cli/deps.js", async () => {
   };
 });
 
-vi.mock("../plugins/loader.js", async () => {
-  const actual =
-    await vi.importActual<typeof import("../plugins/loader.js")>("../plugins/loader.js");
+vi.mock("../plugins/runtime/loader.js", async () => {
+  const actual = await vi.importActual<typeof import("../plugins/runtime/loader.js")>(
+    "../plugins/runtime/loader.js",
+  );
   return {
     ...actual,
     loadOpenClawPlugins: () => getTestPluginRegistry(),

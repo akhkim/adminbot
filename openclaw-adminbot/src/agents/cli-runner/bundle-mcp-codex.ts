@@ -2,10 +2,13 @@
  * Codex CLI and app-server bundle MCP projection helpers.
  */
 import { normalizeConfiguredMcpServers } from "../../config/mcp-config-normalize.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { BundleMcpConfig, BundleMcpServerConfig } from "../../plugins/bundle-mcp.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { BundleMcpConfig, BundleMcpServerConfig } from "../../plugins/install/bundle-mcp.js";
 import { isValidAgentId, normalizeAgentId } from "../../routing/session-key.js";
-import { buildCodexMcpServersConfig, normalizeCodexMcpServerConfig } from "../codex-mcp-config.js";
+import {
+  buildCodexMcpServersConfig,
+  normalizeCodexMcpServerConfig,
+} from "../mcp/codex-mcp-config.js";
 import { isRecord } from "./bundle-mcp-adapter-shared.js";
 import { serializeTomlInlineValue } from "./toml-inline.js";
 

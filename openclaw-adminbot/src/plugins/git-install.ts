@@ -6,7 +6,7 @@ import { redactSensitiveUrlLikeString } from "@openclaw/net-policy/redact-sensit
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { sanitizeForLog } from "../../packages/terminal-core/src/ansi.js";
 import { pathExists } from "../infra/fs-safe.js";
-import { withTempDir } from "../infra/install-source-utils.js";
+import { withTempDir } from "../infra/install/install-source-utils.js";
 import { replaceDirectoryAtomic } from "../infra/replace-file.js";
 import {
   createSafeNpmInstallArgs,
@@ -14,17 +14,17 @@ import {
 } from "../infra/safe-package-install.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { resolveUserPath } from "../utils.js";
-import { resolveDefaultPluginGitDir } from "./install-paths.js";
+import { resolveDefaultPluginGitDir } from "./install/install-paths.js";
 import {
   preflightPluginGitInstallPolicy,
   type InstallSafetyOverrides,
   type InstallSecurityScanResult,
-} from "./install-security-scan.js";
+} from "./install/install-security-scan.js";
 import {
   installPluginFromInstalledPackageDir,
   PLUGIN_INSTALL_ERROR_CODE,
   type InstallPluginResult,
-} from "./install.js";
+} from "./install/install.js";
 import {
   emitPluginAuditSecurityEvent,
   emitPluginInstallSecurityEvent,

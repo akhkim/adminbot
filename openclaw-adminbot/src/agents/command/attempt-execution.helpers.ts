@@ -16,7 +16,7 @@ import { resolveToolUseId, type ToolContentBlock } from "../../chat/tool-content
 import {
   type ClaudeCliFallbackSeed,
   readClaudeCliFallbackSeed,
-} from "../../gateway/cli-session-history.js";
+} from "../../gateway/client/cli-session-history.js";
 import { cliBackendLog } from "../cli-runner/log.js";
 import { resolveClaudeCliProjectDirForWorkspace } from "./claude-cli-project-dir.js";
 

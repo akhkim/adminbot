@@ -3,8 +3,8 @@ import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/s
 import { getLoadedChannelPlugin, normalizeChannelId } from "../channels/plugins/index.js";
 import { resolveReadOnlyChannelCommandDefaults } from "../channels/plugins/read-only-command-defaults.js";
 import type { ChannelId } from "../channels/plugins/types.public.js";
-import type { NativeCommandsSetting } from "./types.js";
-import type { OpenClawConfig } from "./types.openclaw.js";
+import type { OpenClawConfig } from "./types/openclaw.js";
+import type { NativeCommandsSetting } from "./types/types.js";
 export { isCommandFlagEnabled, isRestartEnabled } from "./commands.flags.js";
 
 function resolveAutoDefault(

@@ -1,6 +1,6 @@
 /** Plans reply/thread references for multi-payload channel sends. */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { ReplyToMode } from "../../config/types.js";
+import type { ReplyToMode } from "../../config/types/types.js";
 
 /** Stateful planner for reply-to ids across one delivery flow. */
 type ReplyReferencePlanner = {

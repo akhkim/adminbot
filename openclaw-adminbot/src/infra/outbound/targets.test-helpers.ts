@@ -5,7 +5,7 @@ import type {
   ChannelOutboundAdapter,
   ChannelPlugin,
 } from "../../channels/plugins/types.public.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { buildChannelOutboundSessionRoute } from "../../plugin-sdk/core.js";
 import { createTestRegistry } from "../../test-utils/channel-plugins.js";
 

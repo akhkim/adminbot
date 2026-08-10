@@ -1,14 +1,14 @@
 /** Tests parsing of inline reply directives and command tags. */
 import { describe, expect, it } from "vitest";
-import { parseInlineDirectives } from "./reply/directive-handling.parse.js";
+import { parseInlineDirectives } from "./reply/directives/directive-handling.parse.js";
 import {
   extractElevatedDirective,
   extractReasoningDirective,
   extractTraceDirective,
   extractThinkDirective,
   extractVerboseDirective,
-} from "./reply/directives.js";
-import { extractFastDirective, extractStatusDirective } from "./reply/directives.js";
+} from "./reply/directives/directives.js";
+import { extractFastDirective, extractStatusDirective } from "./reply/directives/directives.js";
 import { extractExecDirective } from "./reply/exec/directive.js";
 import { extractQueueDirective } from "./reply/queue/directive.js";
 import { extractReplyToTag } from "./reply/reply-tags.js";

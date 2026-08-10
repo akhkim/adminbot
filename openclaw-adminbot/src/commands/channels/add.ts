@@ -8,13 +8,13 @@ import { moveSingleAccountChannelSectionToDefaultAccount } from "../../channels/
 import type { ChannelSetupPlugin } from "../../channels/plugins/setup-wizard-types.js";
 import type { ChannelPlugin } from "../../channels/plugins/types.plugin.js";
 import type { ChannelId, ChannelSetupInput } from "../../channels/plugins/types.public.js";
-import { formatCliCommand } from "../../cli/command-format.js";
 import {
   formatUnknownChannelMessage,
   formatUnsupportedChannelActionMessage,
 } from "../../cli/error-format.js";
-import { commitConfigWithPendingPluginInstalls } from "../../cli/plugins-install-record-commit.js";
-import { refreshPluginRegistryAfterConfigMutation } from "../../cli/plugins-registry-refresh.js";
+import { commitConfigWithPendingPluginInstalls } from "../../cli/plugins/plugins-install-record-commit.js";
+import { refreshPluginRegistryAfterConfigMutation } from "../../cli/plugins/plugins-registry-refresh.js";
+import { formatCliCommand } from "../../cli/program/command-format.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import { parseStrictNonNegativeInteger } from "../../infra/parse-finite-number.js";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../../routing/session-key.js";
@@ -22,20 +22,20 @@ import { defaultRuntime, type RuntimeEnv } from "../../runtime.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { createClackPrompter } from "../../wizard/clack-prompter.js";
 import { WizardCancelledError } from "../../wizard/prompts.js";
-import { applyAgentBindings, describeBinding } from "../agents.bindings.js";
-import type { ChannelChoice } from "../onboard-types.js";
+import { applyAgentBindings, describeBinding } from "../agents/agents.bindings.js";
+import type { ChannelChoice } from "../onboard/onboard-types.js";
 import { applyAccountName, applyChannelAccountConfig } from "./add-mutators.js";
 import { channelLabel } from "./runtime-label.js";
 import { requireValidConfigFileSnapshot, shouldUseWizard } from "./shared.js";
 
 type ChannelSetupPluginInstallModule = typeof import("../channel-setup/plugin-install.js");
-type OnboardChannelsModule = typeof import("../onboard-channels.js");
+type OnboardChannelsModule = typeof import("../onboard/onboard-channels.js");
 
 const channelSetupPluginInstallLoader = createLazyImportLoader<ChannelSetupPluginInstallModule>(
   () => import("../channel-setup/plugin-install.js"),
 );
 const onboardChannelsLoader = createLazyImportLoader<OnboardChannelsModule>(
-  () => import("../onboard-channels.js"),
+  () => import("../onboard/onboard-channels.js"),
 );
 
 function loadChannelSetupPluginInstall(): Promise<ChannelSetupPluginInstallModule> {
@@ -159,7 +159,7 @@ async function channelsAddCommandImpl(
   const useWizard = shouldUseWizard(params);
   if (useWizard) {
     const [{ buildAgentSummaries }, onboardChannels] = await Promise.all([
-      import("../agents.config.js"),
+      import("../agents/agents.config.js"),
       loadOnboardChannels(),
     ]);
     const prompter = createClackPrompter();

@@ -26,9 +26,10 @@ const sessionEntryState = vi.hoisted(() => ({
   loadCalls: [] as Array<{ sessionKey: string; opts?: { agentId?: string } }>,
 }));
 
-vi.mock("../session-utils.js", async () => {
-  const original =
-    await vi.importActual<typeof import("../session-utils.js")>("../session-utils.js");
+vi.mock("../sessions/session-utils.js", async () => {
+  const original = await vi.importActual<typeof import("../sessions/session-utils.js")>(
+    "../sessions/session-utils.js",
+  );
   return {
     ...original,
     loadSessionEntry: (sessionKey: string, opts?: { agentId?: string }) => {

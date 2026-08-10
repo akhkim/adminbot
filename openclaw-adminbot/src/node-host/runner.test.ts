@@ -1,6 +1,6 @@
 /** Tests node-host runner command parsing, timeout, and plugin dispatch behavior. */
 import { describe, expect, it, vi } from "vitest";
-import type { GatewayClientOptions } from "../gateway/client.js";
+import type { GatewayClientOptions } from "../gateway/client/client.js";
 import {
   resolveNodeHostGatewayDeviceFamily,
   resolveNodeHostGatewayPlatform,
@@ -30,11 +30,11 @@ vi.mock("../config/config.js", () => ({
   getRuntimeConfig: mocks.getRuntimeConfig,
 }));
 
-vi.mock("../gateway/client-start-readiness.js", () => ({
+vi.mock("../gateway/client/client-start-readiness.js", () => ({
   startGatewayClientWhenEventLoopReady: mocks.startGatewayClientWhenEventLoopReady,
 }));
 
-vi.mock("../gateway/client.js", () => ({
+vi.mock("../gateway/client/client.js", () => ({
   GatewayClient: function GatewayClient(opts: GatewayClientOptions) {
     mocks.capturedGatewayClientOptions.push(opts);
   },
@@ -56,7 +56,7 @@ vi.mock("../infra/machine-name.js", () => ({
   getMachineDisplayName: vi.fn(async () => "test-node"),
 }));
 
-vi.mock("../infra/path-env.js", () => ({
+vi.mock("../infra/system/path-env.js", () => ({
   ensureOpenClawCliOnPath: vi.fn(),
 }));
 

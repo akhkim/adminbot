@@ -8,7 +8,7 @@ import {
   registerAcpRuntimeBackend,
 } from "../../acp/runtime/registry.js";
 import type { OpenClawConfig } from "../../config/config.js";
-import type { PluginManifestRegistry } from "../../plugins/manifest-registry.js";
+import type { PluginManifestRegistry } from "../../plugins/manifest/manifest-registry.js";
 import { createTrackedTempDirs } from "../../test-utils/tracked-temp-dirs.js";
 import { testing } from "./plugin-skills.js";
 
@@ -33,7 +33,7 @@ const hoisted = vi.hoisted(() => {
   };
 });
 
-vi.mock("../../plugins/manifest-registry-installed.js", () => ({
+vi.mock("../../plugins/manifest/manifest-registry-installed.js", () => ({
   loadPluginManifestRegistryForInstalledIndex: hoisted.loadPluginManifestRegistryForInstalledIndex,
 }));
 

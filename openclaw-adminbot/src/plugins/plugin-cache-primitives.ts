@@ -1,5 +1,5 @@
 // Defines lifecycle-owned cache primitives for plugin metadata.
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 /** Result shape for cache lookups that need to distinguish a miss from cached `undefined`. */
 export type PluginLruCacheResult<T> = { hit: true; value: T } | { hit: false };

@@ -1,6 +1,6 @@
 // Runtime maintenance config reads current config and falls back for narrow helpers/tests.
 import { getRuntimeConfig } from "../config.js";
-import type { SessionMaintenanceConfig } from "../types.base.js";
+import type { SessionMaintenanceConfig } from "../types/base.js";
 import {
   resolveMaintenanceConfigFromInput,
   type ResolvedSessionMaintenanceConfig,

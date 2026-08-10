@@ -5,7 +5,7 @@ import {
   buildBootstrapPromptWarningNotice,
   buildBootstrapInjectionStats,
   buildBootstrapPromptWarning,
-} from "../../bootstrap-budget.js";
+} from "../../prompt/bootstrap-budget.js";
 import { composeSystemPromptWithHookContext } from "./attempt.thread-helpers.js";
 
 describe("runEmbeddedAttempt bootstrap warning prompt assembly", () => {

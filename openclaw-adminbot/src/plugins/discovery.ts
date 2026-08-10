@@ -5,22 +5,30 @@ import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
-import type { PluginInstallRecord } from "../config/types.plugins.js";
+import type { PluginInstallRecord } from "../config/types/plugins.js";
 import { satisfiesPluginApiRange } from "../infra/clawhub.js";
 import { readRootJsonObjectSync } from "../infra/json-files.js";
 import { tryReadJsonSync } from "../infra/json-files.js";
 import { resolveUserPath } from "../utils.js";
 import { resolveCompatibilityHostVersion } from "../version.js";
-import { detectBundleManifestFormat, loadBundleManifest } from "./bundle-manifest.js";
-import { resolveSourceCheckoutDependencyDiagnostic } from "./bundled-dir.js";
+import {
+  normalizePluginDependencySpecs,
+  type PluginDependencySpecMap,
+} from "./config/status-dependencies-core.js";
+import { shouldRejectHardlinkedPluginFiles } from "./hardlink-policy.js";
+import { detectBundleManifestFormat, loadBundleManifest } from "./install/bundle-manifest.js";
+import { resolveSourceCheckoutDependencyDiagnostic } from "./install/bundled-dir.js";
 import {
   buildLegacyBundledRootPath,
   resolvePackagedBundledLoadPathAlias,
-} from "./bundled-load-path-aliases.js";
-import { listBundledSourceOverlayDirs } from "./bundled-source-overlays.js";
-import { shouldRejectHardlinkedPluginFiles } from "./hardlink-policy.js";
+} from "./install/bundled-load-path-aliases.js";
+import { listBundledSourceOverlayDirs } from "./install/bundled-source-overlays.js";
 import { readLegacyNpmPluginDeclaration } from "./legacy-npm-declaration.js";
-import type { PluginBundleFormat, PluginDiagnostic, PluginFormat } from "./manifest-types.js";
+import type {
+  PluginBundleFormat,
+  PluginDiagnostic,
+  PluginFormat,
+} from "./manifest/manifest-types.js";
 import {
   DEFAULT_PLUGIN_ENTRY_CANDIDATES,
   getPackageManifestMetadata,
@@ -30,7 +38,7 @@ import {
   type OpenClawPackageManifest,
   type PackageExtensionResolution,
   type PackageManifest,
-} from "./manifest.js";
+} from "./manifest/manifest.js";
 import { resolvePackagePluginApiRange } from "./package-compat.js";
 import {
   resolvePackageRuntimeExtensionSources,
@@ -40,10 +48,6 @@ import { formatPosixMode, isPathInside, safeRealpathSync, safeStatSync } from ".
 import { tracePluginLifecyclePhase } from "./plugin-lifecycle-trace.js";
 import type { PluginOrigin } from "./plugin-origin.types.js";
 import { resolvePluginSourceRoots } from "./roots.js";
-import {
-  normalizePluginDependencySpecs,
-  type PluginDependencySpecMap,
-} from "./status-dependencies-core.js";
 
 const EXTENSION_EXTS = new Set([".ts", ".js", ".mts", ".cts", ".mjs", ".cjs"]);
 const SCANNED_DIRECTORY_IGNORE_NAMES = new Set([

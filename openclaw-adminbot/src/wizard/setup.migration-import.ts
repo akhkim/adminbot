@@ -1,8 +1,8 @@
 // Setup migration import helpers read existing config during onboarding migration.
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { OnboardOptions } from "../commands/onboard-types.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OnboardOptions } from "../commands/onboard/onboard-types.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import type { MigrationProviderPlugin } from "../plugins/types.js";
 import type { RuntimeEnv } from "../runtime.js";
@@ -35,7 +35,7 @@ let migrationProviderRuntimeModulePromise: Promise<
 > | null = null;
 let migrationContextModulePromise: Promise<typeof import("../commands/migrate/context.js")> | null =
   null;
-let configPathsModulePromise: Promise<typeof import("../config/paths.js")> | null = null;
+let configPathsModulePromise: Promise<typeof import("../config/paths/paths.js")> | null = null;
 
 const loadMigrationProviderRuntimeModule = async () => {
   migrationProviderRuntimeModulePromise ??= import("../plugins/migration-provider-runtime.js");
@@ -48,7 +48,7 @@ const loadMigrationContextModule = async () => {
 };
 
 const loadConfigPathsModule = async () => {
-  configPathsModulePromise ??= import("../config/paths.js");
+  configPathsModulePromise ??= import("../config/paths/paths.js");
   return await configPathsModulePromise;
 };
 
@@ -246,12 +246,12 @@ export async function runSetupMigrationImport(params: {
     { resolveStateDir },
     onboardHelpers,
   ] = await Promise.all([
-    import("../commands/onboard-config.js"),
+    import("../commands/onboard/onboard-config.js"),
     loadMigrationContextModule(),
     import("../commands/migrate/apply.js"),
     import("../commands/migrate/output.js"),
     loadConfigPathsModule(),
-    import("../commands/onboard-helpers.js"),
+    import("../commands/onboard/onboard-helpers.js"),
   ]);
   const { provider, providerId } = await selectSetupMigrationProvider({
     opts: params.opts,

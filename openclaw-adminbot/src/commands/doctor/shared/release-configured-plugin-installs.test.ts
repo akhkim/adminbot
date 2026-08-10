@@ -49,11 +49,11 @@ function readOnlyMissingPluginInstallRepairCall(): MissingPluginInstallRepairCal
   return call;
 }
 
-vi.mock("../../../config/plugin-auto-enable.js", () => ({
+vi.mock("../../../config/plugin/plugin-auto-enable.js", () => ({
   detectPluginAutoEnableCandidates: mocks.detectPluginAutoEnableCandidates,
 }));
 
-vi.mock("../../../plugins/provider-install-catalog.js", () => ({
+vi.mock("../../../plugins/providers/provider-install-catalog.js", () => ({
   resolveProviderInstallCatalogEntries: mocks.resolveProviderInstallCatalogEntries,
 }));
 

@@ -22,7 +22,7 @@ vi.mock("../plugins/synthetic-auth.runtime.js", () => ({
   resolveRuntimeSyntheticAuthProviderRefs,
 }));
 
-vi.mock("../plugins/provider-runtime.js", () => ({
+vi.mock("../plugins/providers/provider-runtime.js", () => ({
   applyProviderResolvedTransportWithPlugin: () => undefined,
   normalizeProviderResolvedModelWithPlugin: () => undefined,
   resolveProviderSyntheticAuthWithPlugin,
@@ -34,11 +34,11 @@ vi.mock("./auth-profiles/store.js", () => ({
   loadAuthProfileStoreForSecretsRuntime: () => ({ version: 1, profiles: {} }),
 }));
 
-vi.mock("./agent-auth-discovery-core.js", () => ({
+vi.mock("./auth/agent-auth-discovery-core.js", () => ({
   addEnvBackedAgentCredentials: (credentials: Record<string, unknown>) => ({ ...credentials }),
 }));
 
-let resolveAgentCredentialsForDiscovery: typeof import("./agent-auth-discovery.js").resolveAgentCredentialsForDiscovery;
+let resolveAgentCredentialsForDiscovery: typeof import("./auth/agent-auth-discovery.js").resolveAgentCredentialsForDiscovery;
 
 async function withAgentDir(run: (agentDir: string) => Promise<void>): Promise<void> {
   const agentDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-agent-synthetic-auth-"));
@@ -51,7 +51,7 @@ async function withAgentDir(run: (agentDir: string) => Promise<void>): Promise<v
 
 describe("agent model discovery synthetic auth", () => {
   beforeAll(async () => {
-    ({ resolveAgentCredentialsForDiscovery } = await import("./agent-auth-discovery.js"));
+    ({ resolveAgentCredentialsForDiscovery } = await import("./auth/agent-auth-discovery.js"));
   });
 
   beforeEach(() => {

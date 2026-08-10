@@ -32,7 +32,7 @@ vi.mock("../infra/clipboard.js", () => ({
   copyToClipboard: copyToClipboardMock,
 }));
 
-vi.mock("../commands/gateway-readiness.js", () => ({
+vi.mock("../commands/gateway/gateway-readiness.js", () => ({
   ensureGatewayReadyForOperation: ensureGatewayReadyForOperationMock,
 }));
 

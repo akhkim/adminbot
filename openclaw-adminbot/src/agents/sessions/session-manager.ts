@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 3026 lines; see docs/adr/0006-deferred-monster-splits.md
 /**
  * JSONL-backed session tree manager.
  *
@@ -45,8 +46,8 @@ import {
   type SessionTreeEntry as CoreSessionTreeEntry,
   uuidv7,
 } from "../runtime/index.js";
-import { invalidateSessionFileRepairCache } from "../session-file-repair.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
+import { invalidateSessionFileRepairCache } from "./session-file-repair.js";
 
 export { CURRENT_SESSION_VERSION };
 

@@ -9,14 +9,14 @@ import {
 } from "../../packages/markdown-core/src/fences.js";
 import type { ChannelId } from "../channels/plugins/types.core.js";
 import { resolveChannelStreamingChunkMode } from "../channels/streaming.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { resolveAccountEntry } from "../routing/account-lookup.js";
 import { normalizeAccountId } from "../routing/session-key.js";
+import { INTERNAL_MESSAGE_CHANNEL } from "../shared/message-channel-constants.js";
 import {
   avoidTrailingHighSurrogateBreak,
   chunkTextByBreakResolver,
 } from "../shared/text-chunking.js";
-import { INTERNAL_MESSAGE_CHANNEL } from "../utils/message-channel-constants.js";
 
 export type TextChunkProvider = ChannelId;
 

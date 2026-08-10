@@ -86,11 +86,11 @@ function createToolHandlerCtx() {
 }
 
 let toToolDefinitions: typeof import("./agent-tool-definition-adapter.js").toToolDefinitions;
-let handleToolExecutionStart: typeof import("./embedded-agent-subscribe.handlers.tools.js").handleToolExecutionStart;
-let handleToolExecutionEnd: typeof import("./embedded-agent-subscribe.handlers.tools.js").handleToolExecutionEnd;
+let handleToolExecutionStart: typeof import("./embedded/embedded-agent-subscribe.handlers.tools.js").handleToolExecutionStart;
+let handleToolExecutionEnd: typeof import("./embedded/embedded-agent-subscribe.handlers.tools.js").handleToolExecutionEnd;
 
 async function loadFreshAfterToolCallModulesForTest() {
-  vi.doMock("../plugins/hook-runner-global.js", () => ({
+  vi.doMock("../plugins/hooks/hook-runner-global.js", () => ({
     getGlobalHookRunner: () => hookMocks.runner,
   }));
   vi.doMock("../infra/agent-events.js", () => ({
@@ -98,12 +98,12 @@ async function loadFreshAfterToolCallModulesForTest() {
     emitAgentEvent: vi.fn(),
     emitAgentItemEvent: vi.fn(),
   }));
-  vi.doMock("./agent-tools.before-tool-call.state.js", () => ({
+  vi.doMock("./tools/agent-tools.before-tool-call.state.js", () => ({
     consumeAdjustedParamsForToolCall: beforeToolCallMocks.consumeAdjustedParamsForToolCall,
     consumePreExecutionBlockedToolCall: vi.fn(() => false),
     consumeStructuredReplaySafeToolCall: vi.fn(() => false),
   }));
-  vi.doMock("./agent-tools.before-tool-call.js", () => ({
+  vi.doMock("./tools/agent-tools.before-tool-call.js", () => ({
     BeforeToolCallBlockedError: beforeToolCallMocks.BeforeToolCallBlockedError,
     buildBlockedToolResult: ({ reason }: { reason: string }) => ({
       content: [{ type: "text", text: reason }],
@@ -121,7 +121,7 @@ async function loadFreshAfterToolCallModulesForTest() {
   }));
   ({ toToolDefinitions } = await import("./agent-tool-definition-adapter.js"));
   ({ handleToolExecutionStart, handleToolExecutionEnd } =
-    await import("./embedded-agent-subscribe.handlers.tools.js"));
+    await import("./embedded/embedded-agent-subscribe.handlers.tools.js"));
 }
 
 describe("after_tool_call fires exactly once in embedded runs", () => {

@@ -10,12 +10,12 @@
 // matrix can never disagree about who belongs on it.
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
+import { resolveGogExecutable } from "../extensions/adminbot/src/connectors/gog.js";
+import type { AdminBotLabMember } from "../extensions/adminbot/src/contracts/actions.js";
 import {
   vectorSponsorRoster,
   type AdminBotVectorRoster,
-} from "../extensions/adminbot/src/collaborator-subgroups.js";
-import type { AdminBotLabMember } from "../extensions/adminbot/src/contracts.js";
-import { resolveGogExecutable } from "../extensions/adminbot/src/gog-executor.js";
+} from "../extensions/adminbot/src/workflows/members/collaborator-subgroups.js";
 
 const execFile = promisify(execFileCallback);
 

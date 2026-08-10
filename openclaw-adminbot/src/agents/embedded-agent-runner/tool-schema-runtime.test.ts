@@ -13,7 +13,7 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../plugins/provider-runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-runtime.js", () => ({
   inspectProviderToolSchemasWithPlugin: mocks.inspectProviderToolSchemasWithPlugin,
   normalizeProviderToolSchemasWithPlugin: mocks.normalizeProviderToolSchemasWithPlugin,
 }));

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { AdminBotLabMemberInput } from "../extensions/adminbot/src/contracts.js";
-import { createAdminBotSqliteService } from "../extensions/adminbot/src/service-sqlite.js";
+import type { AdminBotLabMemberInput } from "../extensions/adminbot/src/contracts/actions.js";
+import { createAdminBotSqliteService } from "../extensions/adminbot/src/persistence/sqlite.js";
 
 type CsvRow = Record<string, string>;
 

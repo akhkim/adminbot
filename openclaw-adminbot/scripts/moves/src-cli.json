@@ -1,0 +1,586 @@
+[
+  {
+    "from": "src/cli/command-bootstrap.test.ts",
+    "to": "src/cli/program/command-bootstrap.test.ts"
+  },
+  {
+    "from": "src/cli/command-bootstrap.ts",
+    "to": "src/cli/program/command-bootstrap.ts"
+  },
+  {
+    "from": "src/cli/command-catalog.ts",
+    "to": "src/cli/program/command-catalog.ts"
+  },
+  {
+    "from": "src/cli/command-config-resolution.runtime.ts",
+    "to": "src/cli/program/command-config-resolution.runtime.ts"
+  },
+  {
+    "from": "src/cli/command-config-resolution.test.ts",
+    "to": "src/cli/program/command-config-resolution.test.ts"
+  },
+  {
+    "from": "src/cli/command-config-resolution.ts",
+    "to": "src/cli/program/command-config-resolution.ts"
+  },
+  {
+    "from": "src/cli/command-execution-startup.test.ts",
+    "to": "src/cli/program/command-execution-startup.test.ts"
+  },
+  {
+    "from": "src/cli/command-execution-startup.ts",
+    "to": "src/cli/program/command-execution-startup.ts"
+  },
+  {
+    "from": "src/cli/command-format.ts",
+    "to": "src/cli/program/command-format.ts"
+  },
+  {
+    "from": "src/cli/command-options.test.ts",
+    "to": "src/cli/program/command-options.test.ts"
+  },
+  {
+    "from": "src/cli/command-options.ts",
+    "to": "src/cli/program/command-options.ts"
+  },
+  {
+    "from": "src/cli/command-path-matches.test.ts",
+    "to": "src/cli/program/command-path-matches.test.ts"
+  },
+  {
+    "from": "src/cli/command-path-matches.ts",
+    "to": "src/cli/program/command-path-matches.ts"
+  },
+  {
+    "from": "src/cli/command-path-policy.test.ts",
+    "to": "src/cli/program/command-path-policy.test.ts"
+  },
+  {
+    "from": "src/cli/command-path-policy.ts",
+    "to": "src/cli/program/command-path-policy.ts"
+  },
+  {
+    "from": "src/cli/command-registration-policy.test.ts",
+    "to": "src/cli/program/command-registration-policy.test.ts"
+  },
+  {
+    "from": "src/cli/command-registration-policy.ts",
+    "to": "src/cli/program/command-registration-policy.ts"
+  },
+  {
+    "from": "src/cli/command-secret-gateway.test.ts",
+    "to": "src/cli/program/command-secret-gateway.test.ts"
+  },
+  {
+    "from": "src/cli/command-secret-gateway.ts",
+    "to": "src/cli/program/command-secret-gateway.ts"
+  },
+  {
+    "from": "src/cli/command-secret-resolution.coverage.test.ts",
+    "to": "src/cli/program/command-secret-resolution.coverage.test.ts"
+  },
+  {
+    "from": "src/cli/command-secret-targets.import.test.ts",
+    "to": "src/cli/program/command-secret-targets.import.test.ts"
+  },
+  {
+    "from": "src/cli/command-secret-targets.test.ts",
+    "to": "src/cli/program/command-secret-targets.test.ts"
+  },
+  {
+    "from": "src/cli/command-secret-targets.ts",
+    "to": "src/cli/program/command-secret-targets.ts"
+  },
+  {
+    "from": "src/cli/command-source.test-helpers.test.ts",
+    "to": "src/cli/program/command-source.test-helpers.test.ts"
+  },
+  {
+    "from": "src/cli/command-source.test-helpers.ts",
+    "to": "src/cli/program/command-source.test-helpers.ts"
+  },
+  {
+    "from": "src/cli/command-startup-policy.test.ts",
+    "to": "src/cli/program/command-startup-policy.test.ts"
+  },
+  {
+    "from": "src/cli/command-startup-policy.ts",
+    "to": "src/cli/program/command-startup-policy.ts"
+  },
+  {
+    "from": "src/cli/completion-cli.test.ts",
+    "to": "src/cli/program/completion-cli.test.ts"
+  },
+  {
+    "from": "src/cli/completion-cli.ts",
+    "to": "src/cli/program/completion-cli.ts"
+  },
+  {
+    "from": "src/cli/completion-cli.write-state.test.ts",
+    "to": "src/cli/program/completion-cli.write-state.test.ts"
+  },
+  {
+    "from": "src/cli/completion-fish.test.ts",
+    "to": "src/cli/program/completion-fish.test.ts"
+  },
+  {
+    "from": "src/cli/completion-fish.ts",
+    "to": "src/cli/program/completion-fish.ts"
+  },
+  {
+    "from": "src/cli/completion-runtime.test.ts",
+    "to": "src/cli/program/completion-runtime.test.ts"
+  },
+  {
+    "from": "src/cli/completion-runtime.ts",
+    "to": "src/cli/program/completion-runtime.ts"
+  },
+  {
+    "from": "src/cli/config-cli.integration.test.ts",
+    "to": "src/cli/config/config-cli.integration.test.ts"
+  },
+  {
+    "from": "src/cli/config-cli.test.ts",
+    "to": "src/cli/config/config-cli.test.ts"
+  },
+  {
+    "from": "src/cli/config-cli.ts",
+    "to": "src/cli/config/config-cli.ts"
+  },
+  {
+    "from": "src/cli/config-recovery-hints.ts",
+    "to": "src/cli/config/config-recovery-hints.ts"
+  },
+  {
+    "from": "src/cli/config-set-dryrun.ts",
+    "to": "src/cli/config/config-set-dryrun.ts"
+  },
+  {
+    "from": "src/cli/config-set-input.test.ts",
+    "to": "src/cli/config/config-set-input.test.ts"
+  },
+  {
+    "from": "src/cli/config-set-input.ts",
+    "to": "src/cli/config/config-set-input.ts"
+  },
+  {
+    "from": "src/cli/config-set-mode.test.ts",
+    "to": "src/cli/config/config-set-mode.test.ts"
+  },
+  {
+    "from": "src/cli/config-set-parser.ts",
+    "to": "src/cli/config/config-set-parser.ts"
+  },
+  {
+    "from": "src/cli/daemon-cli-compat.test.ts",
+    "to": "src/cli/daemon-cli/daemon-cli-compat.test.ts"
+  },
+  {
+    "from": "src/cli/daemon-cli-compat.ts",
+    "to": "src/cli/daemon-cli/daemon-cli-compat.ts"
+  },
+  {
+    "from": "src/cli/daemon-cli.coverage.test.ts",
+    "to": "src/cli/daemon-cli/daemon-cli.coverage.test.ts"
+  },
+  {
+    "from": "src/cli/daemon-cli.ts",
+    "to": "src/cli/daemon-cli/daemon-cli.ts"
+  },
+  {
+    "from": "src/cli/devices-cli.lazy.test.ts",
+    "to": "src/cli/devices/devices-cli.lazy.test.ts"
+  },
+  {
+    "from": "src/cli/devices-cli.runtime.timeout.test.ts",
+    "to": "src/cli/devices/devices-cli.runtime.timeout.test.ts"
+  },
+  {
+    "from": "src/cli/devices-cli.runtime.ts",
+    "to": "src/cli/devices/devices-cli.runtime.ts"
+  },
+  {
+    "from": "src/cli/devices-cli.test.ts",
+    "to": "src/cli/devices/devices-cli.test.ts"
+  },
+  {
+    "from": "src/cli/devices-cli.ts",
+    "to": "src/cli/devices/devices-cli.ts"
+  },
+  {
+    "from": "src/cli/gateway-cli.coverage.test.ts",
+    "to": "src/cli/gateway-cli/gateway-cli.coverage.test.ts"
+  },
+  {
+    "from": "src/cli/gateway-cli.ts",
+    "to": "src/cli/gateway-cli/gateway-cli.ts"
+  },
+  {
+    "from": "src/cli/gateway-dispatch-dotenv.ts",
+    "to": "src/cli/gateway-cli/gateway-dispatch-dotenv.ts"
+  },
+  {
+    "from": "src/cli/gateway-rpc.runtime.test.ts",
+    "to": "src/cli/gateway-cli/gateway-rpc.runtime.test.ts"
+  },
+  {
+    "from": "src/cli/gateway-rpc.runtime.ts",
+    "to": "src/cli/gateway-cli/gateway-rpc.runtime.ts"
+  },
+  {
+    "from": "src/cli/gateway-rpc.ts",
+    "to": "src/cli/gateway-cli/gateway-rpc.ts"
+  },
+  {
+    "from": "src/cli/gateway-rpc.types.ts",
+    "to": "src/cli/gateway-cli/gateway-rpc.types.ts"
+  },
+  {
+    "from": "src/cli/gateway-run-argv.ts",
+    "to": "src/cli/gateway-cli/gateway-run-argv.ts"
+  },
+  {
+    "from": "src/cli/gateway-secret-options.ts",
+    "to": "src/cli/gateway-cli/gateway-secret-options.ts"
+  },
+  {
+    "from": "src/cli/node-cli.ts",
+    "to": "src/cli/node-cli/node-cli.ts"
+  },
+  {
+    "from": "src/cli/nodes-camera.test.ts",
+    "to": "src/cli/nodes-cli/nodes-camera.test.ts"
+  },
+  {
+    "from": "src/cli/nodes-camera.ts",
+    "to": "src/cli/nodes-cli/nodes-camera.ts"
+  },
+  {
+    "from": "src/cli/nodes-cli.coverage.test.ts",
+    "to": "src/cli/nodes-cli/nodes-cli.coverage.test.ts"
+  },
+  {
+    "from": "src/cli/nodes-cli.plugin-registration.test.ts",
+    "to": "src/cli/nodes-cli/nodes-cli.plugin-registration.test.ts"
+  },
+  {
+    "from": "src/cli/nodes-cli.ts",
+    "to": "src/cli/nodes-cli/nodes-cli.ts"
+  },
+  {
+    "from": "src/cli/nodes-media-utils.test.ts",
+    "to": "src/cli/nodes-cli/nodes-media-utils.test.ts"
+  },
+  {
+    "from": "src/cli/nodes-media-utils.ts",
+    "to": "src/cli/nodes-cli/nodes-media-utils.ts"
+  },
+  {
+    "from": "src/cli/nodes-screen.ts",
+    "to": "src/cli/nodes-cli/nodes-screen.ts"
+  },
+  {
+    "from": "src/cli/parse-bytes.ts",
+    "to": "src/cli/program/parse-bytes.ts"
+  },
+  {
+    "from": "src/cli/parse-duration.ts",
+    "to": "src/cli/program/parse-duration.ts"
+  },
+  {
+    "from": "src/cli/parse-timeout.test.ts",
+    "to": "src/cli/program/parse-timeout.test.ts"
+  },
+  {
+    "from": "src/cli/parse-timeout.ts",
+    "to": "src/cli/program/parse-timeout.ts"
+  },
+  {
+    "from": "src/cli/plugin-install-config-policy.ts",
+    "to": "src/cli/plugins/plugin-install-config-policy.ts"
+  },
+  {
+    "from": "src/cli/plugin-install-plan.test.ts",
+    "to": "src/cli/plugins/plugin-install-plan.test.ts"
+  },
+  {
+    "from": "src/cli/plugin-install-plan.ts",
+    "to": "src/cli/plugins/plugin-install-plan.ts"
+  },
+  {
+    "from": "src/cli/plugin-registry-loader.test.ts",
+    "to": "src/cli/plugins/plugin-registry-loader.test.ts"
+  },
+  {
+    "from": "src/cli/plugin-registry-loader.ts",
+    "to": "src/cli/plugins/plugin-registry-loader.ts"
+  },
+  {
+    "from": "src/cli/plugin-registry.test.ts",
+    "to": "src/cli/plugins/plugin-registry.test.ts"
+  },
+  {
+    "from": "src/cli/plugin-registry.ts",
+    "to": "src/cli/plugins/plugin-registry.ts"
+  },
+  {
+    "from": "src/cli/plugins-authoring-command.test.ts",
+    "to": "src/cli/plugins/plugins-authoring-command.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-authoring-command.ts",
+    "to": "src/cli/plugins/plugins-authoring-command.ts"
+  },
+  {
+    "from": "src/cli/plugins-cli-test-helpers.ts",
+    "to": "src/cli/plugins/plugins-cli-test-helpers.ts"
+  },
+  {
+    "from": "src/cli/plugins-cli.install.test.ts",
+    "to": "src/cli/plugins/plugins-cli.install.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-cli.lazy.test.ts",
+    "to": "src/cli/plugins/plugins-cli.lazy.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-cli.list.test.ts",
+    "to": "src/cli/plugins/plugins-cli.list.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-cli.policy.test.ts",
+    "to": "src/cli/plugins/plugins-cli.policy.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-cli.runtime.ts",
+    "to": "src/cli/plugins/plugins-cli.runtime.ts"
+  },
+  {
+    "from": "src/cli/plugins-cli.ts",
+    "to": "src/cli/plugins/plugins-cli.ts"
+  },
+  {
+    "from": "src/cli/plugins-cli.uninstall.test.ts",
+    "to": "src/cli/plugins/plugins-cli.uninstall.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-cli.update.test.ts",
+    "to": "src/cli/plugins/plugins-cli.update.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-command-helpers.ts",
+    "to": "src/cli/plugins/plugins-command-helpers.ts"
+  },
+  {
+    "from": "src/cli/plugins-config.test.ts",
+    "to": "src/cli/plugins/plugins-config.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-config.ts",
+    "to": "src/cli/plugins/plugins-config.ts"
+  },
+  {
+    "from": "src/cli/plugins-inspect-command.ts",
+    "to": "src/cli/plugins/plugins-inspect-command.ts"
+  },
+  {
+    "from": "src/cli/plugins-install-command.ts",
+    "to": "src/cli/plugins/plugins-install-command.ts"
+  },
+  {
+    "from": "src/cli/plugins-install-config.test.ts",
+    "to": "src/cli/plugins/plugins-install-config.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-install-persist.test.ts",
+    "to": "src/cli/plugins/plugins-install-persist.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-install-persist.ts",
+    "to": "src/cli/plugins/plugins-install-persist.ts"
+  },
+  {
+    "from": "src/cli/plugins-install-record-commit.test.ts",
+    "to": "src/cli/plugins/plugins-install-record-commit.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-install-record-commit.ts",
+    "to": "src/cli/plugins/plugins-install-record-commit.ts"
+  },
+  {
+    "from": "src/cli/plugins-install-records.ts",
+    "to": "src/cli/plugins/plugins-install-records.ts"
+  },
+  {
+    "from": "src/cli/plugins-list-command.test.ts",
+    "to": "src/cli/plugins/plugins-list-command.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-list-command.ts",
+    "to": "src/cli/plugins/plugins-list-command.ts"
+  },
+  {
+    "from": "src/cli/plugins-list-format.test.ts",
+    "to": "src/cli/plugins/plugins-list-format.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-list-format.ts",
+    "to": "src/cli/plugins/plugins-list-format.ts"
+  },
+  {
+    "from": "src/cli/plugins-location-bridges.test.ts",
+    "to": "src/cli/plugins/plugins-location-bridges.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-location-bridges.ts",
+    "to": "src/cli/plugins/plugins-location-bridges.ts"
+  },
+  {
+    "from": "src/cli/plugins-registry-refresh.ts",
+    "to": "src/cli/plugins/plugins-registry-refresh.ts"
+  },
+  {
+    "from": "src/cli/plugins-search-command.test.ts",
+    "to": "src/cli/plugins/plugins-search-command.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-search-command.ts",
+    "to": "src/cli/plugins/plugins-search-command.ts"
+  },
+  {
+    "from": "src/cli/plugins-uninstall-command.ts",
+    "to": "src/cli/plugins/plugins-uninstall-command.ts"
+  },
+  {
+    "from": "src/cli/plugins-uninstall-selection.test.ts",
+    "to": "src/cli/plugins/plugins-uninstall-selection.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-uninstall-selection.ts",
+    "to": "src/cli/plugins/plugins-uninstall-selection.ts"
+  },
+  {
+    "from": "src/cli/plugins-update-command.ts",
+    "to": "src/cli/plugins/plugins-update-command.ts"
+  },
+  {
+    "from": "src/cli/plugins-update-outcomes.ts",
+    "to": "src/cli/plugins/plugins-update-outcomes.ts"
+  },
+  {
+    "from": "src/cli/plugins-update-selection.test.ts",
+    "to": "src/cli/plugins/plugins-update-selection.test.ts"
+  },
+  {
+    "from": "src/cli/plugins-update-selection.ts",
+    "to": "src/cli/plugins/plugins-update-selection.ts"
+  },
+  {
+    "from": "src/cli/program.force.test.ts",
+    "to": "src/cli/program/program.force.test.ts"
+  },
+  {
+    "from": "src/cli/program.nodes-basic.e2e.test.ts",
+    "to": "src/cli/program/program.nodes-basic.e2e.test.ts"
+  },
+  {
+    "from": "src/cli/program.nodes-test-helpers.test.ts",
+    "to": "src/cli/program/program.nodes-test-helpers.test.ts"
+  },
+  {
+    "from": "src/cli/program.nodes-test-helpers.ts",
+    "to": "src/cli/program/program.nodes-test-helpers.ts"
+  },
+  {
+    "from": "src/cli/program.smoke.test.ts",
+    "to": "src/cli/program/program.smoke.test.ts"
+  },
+  {
+    "from": "src/cli/program.test-mocks.ts",
+    "to": "src/cli/program/program.test-mocks.ts"
+  },
+  {
+    "from": "src/cli/program.ts",
+    "to": "src/cli/program/program.ts"
+  },
+  {
+    "from": "src/cli/root-help-live-config.test.ts",
+    "to": "src/cli/program/root-help-live-config.test.ts"
+  },
+  {
+    "from": "src/cli/root-help-live-config.ts",
+    "to": "src/cli/program/root-help-live-config.ts"
+  },
+  {
+    "from": "src/cli/root-help-metadata.ts",
+    "to": "src/cli/program/root-help-metadata.ts"
+  },
+  {
+    "from": "src/cli/root-option-forward.ts",
+    "to": "src/cli/program/root-option-forward.ts"
+  },
+  {
+    "from": "src/cli/root-option-scan.ts",
+    "to": "src/cli/program/root-option-scan.ts"
+  },
+  {
+    "from": "src/cli/root-option-value.test.ts",
+    "to": "src/cli/program/root-option-value.test.ts"
+  },
+  {
+    "from": "src/cli/root-option-value.ts",
+    "to": "src/cli/program/root-option-value.ts"
+  },
+  {
+    "from": "src/cli/skills-cli.clawhub-install.e2e.test.ts",
+    "to": "src/cli/skills/skills-cli.clawhub-install.e2e.test.ts"
+  },
+  {
+    "from": "src/cli/skills-cli.commands.test.ts",
+    "to": "src/cli/skills/skills-cli.commands.test.ts"
+  },
+  {
+    "from": "src/cli/skills-cli.format.ts",
+    "to": "src/cli/skills/skills-cli.format.ts"
+  },
+  {
+    "from": "src/cli/skills-cli.formatting.test.ts",
+    "to": "src/cli/skills/skills-cli.formatting.test.ts"
+  },
+  {
+    "from": "src/cli/skills-cli.test.ts",
+    "to": "src/cli/skills/skills-cli.test.ts"
+  },
+  {
+    "from": "src/cli/skills-cli.ts",
+    "to": "src/cli/skills/skills-cli.ts"
+  },
+  {
+    "from": "src/cli/skills-cli.verify.test.ts",
+    "to": "src/cli/skills/skills-cli.verify.test.ts"
+  },
+  {
+    "from": "src/cli/skills-cli.workshop.test.ts",
+    "to": "src/cli/skills/skills-cli.workshop.test.ts"
+  },
+  {
+    "from": "src/cli/update-cli.option-collisions.test.ts",
+    "to": "src/cli/update-cli/update-cli.option-collisions.test.ts"
+  },
+  {
+    "from": "src/cli/update-cli.test-helpers.test.ts",
+    "to": "src/cli/update-cli/update-cli.test-helpers.test.ts"
+  },
+  {
+    "from": "src/cli/update-cli.test-helpers.ts",
+    "to": "src/cli/update-cli/update-cli.test-helpers.ts"
+  },
+  {
+    "from": "src/cli/update-cli.test.ts",
+    "to": "src/cli/update-cli/update-cli.test.ts"
+  },
+  {
+    "from": "src/cli/update-cli.ts",
+    "to": "src/cli/update-cli/update-cli.ts"
+  }
+]

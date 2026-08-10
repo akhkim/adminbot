@@ -1,8 +1,8 @@
 // Covers task executor runtime selection, lifecycle updates, and error paths.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { resetAgentEventsForTest, resetAgentRunContextForTest } from "../infra/agent-events.js";
-import { resetHeartbeatWakeStateForTests } from "../infra/heartbeat-wake.js";
-import { resetSystemEventsForTest } from "../infra/system-events.js";
+import { resetHeartbeatWakeStateForTests } from "../infra/heartbeat/heartbeat-wake.js";
+import { resetSystemEventsForTest } from "../infra/system/system-events.js";
 import { withStateDirEnv } from "../test-helpers/state-dir-env.js";
 import { captureEnv } from "../test-utils/env.js";
 import {
@@ -90,11 +90,11 @@ vi.mock("../acp/control-plane/manager.js", () => ({
   }),
 }));
 
-vi.mock("../agents/subagent-control.js", () => ({
+vi.mock("../agents/subagents/subagent-control.js", () => ({
   killSubagentRunAdmin: (params: unknown) => hoisted.killSubagentRunAdminMock(params),
 }));
 
-vi.mock("../utils/message-channel.js", () => ({
+vi.mock("../shared/message-channel.js", () => ({
   isDeliverableMessageChannel: (channel: string) => channel === "notifychat",
 }));
 

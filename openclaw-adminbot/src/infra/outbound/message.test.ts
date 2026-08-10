@@ -32,11 +32,11 @@ vi.mock("../../agents/agent-scope.js", () => ({
   resolveAgentWorkspaceDir: () => "/tmp/openclaw-test-workspace",
 }));
 
-vi.mock("../../config/plugin-auto-enable.js", () => ({
+vi.mock("../../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: ({ config }: { config: unknown }) => ({ config, changes: [] }),
 }));
 
-vi.mock("../../plugins/loader.js", () => ({
+vi.mock("../../plugins/runtime/loader.js", () => ({
   resolveRuntimePluginRegistry: mocks.resolveRuntimePluginRegistry,
 }));
 
@@ -50,9 +50,9 @@ vi.mock("./deliver.js", () => ({
   resolveOutboundDurableFinalDeliverySupport: mocks.resolveOutboundDurableFinalDeliverySupport,
 }));
 
-vi.mock("../../utils/message-channel.js", async () => {
-  const actual = await vi.importActual<typeof import("../../utils/message-channel.js")>(
-    "../../utils/message-channel.js",
+vi.mock("../../shared/message-channel.js", async () => {
+  const actual = await vi.importActual<typeof import("../../shared/message-channel.js")>(
+    "../../shared/message-channel.js",
   );
   const deliverable = ["forum", "directchat"];
   return {
@@ -65,7 +65,7 @@ vi.mock("../../utils/message-channel.js", async () => {
   };
 });
 
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import { createTestRegistry } from "../../test-utils/channel-plugins.js";
 
 let sendMessage: typeof import("./message.js").sendMessage;

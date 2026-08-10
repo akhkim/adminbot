@@ -1,16 +1,16 @@
 // Prompt composition scenarios build reusable agent prompt fixtures.
 import fs from "node:fs/promises";
 import path from "node:path";
+import { buildCurrentInboundPrompt } from "../../../src/agents/embedded-agent-runner/run/runtime-context-prompt.js";
+import { buildEmbeddedSystemPrompt } from "../../../src/agents/embedded-agent-runner/system-prompt.js";
 import {
   appendBootstrapPromptWarning,
   analyzeBootstrapBudget,
   buildBootstrapInjectionStats,
   buildBootstrapPromptWarning,
-} from "../../../src/agents/bootstrap-budget.js";
-import { resolveBootstrapContextForRun } from "../../../src/agents/bootstrap-files.js";
-import { buildCurrentInboundPrompt } from "../../../src/agents/embedded-agent-runner/run/runtime-context-prompt.js";
-import { buildEmbeddedSystemPrompt } from "../../../src/agents/embedded-agent-runner/system-prompt.js";
-import { buildAgentSystemPrompt } from "../../../src/agents/system-prompt.js";
+} from "../../../src/agents/prompt/bootstrap-budget.js";
+import { resolveBootstrapContextForRun } from "../../../src/agents/prompt/bootstrap-files.js";
+import { buildAgentSystemPrompt } from "../../../src/agents/prompt/system-prompt.js";
 import { createStubTool } from "../../../src/agents/test-helpers/agent-tool-stubs.js";
 import {
   buildDirectChatContext,
@@ -20,7 +20,7 @@ import {
 import {
   buildInboundMetaSystemPrompt,
   buildInboundUserContextPrefix,
-} from "../../../src/auto-reply/reply/inbound-meta.js";
+} from "../../../src/auto-reply/reply/inbound/inbound-meta.js";
 import { buildReplyPromptEnvelope } from "../../../src/auto-reply/reply/prompt-prelude.js";
 import type { TemplateContext } from "../../../src/auto-reply/templating.js";
 import { SILENT_REPLY_TOKEN } from "../../../src/auto-reply/tokens.js";

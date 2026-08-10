@@ -4,7 +4,7 @@
  * Derives canonical ids from generated bundled channel metadata with runtime catalog fallback.
  */
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
-import { GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA } from "../config/bundled-channel-config-metadata.generated.js";
+import { GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA } from "../config/channel/bundled-channel-config-metadata.generated.js";
 import { listBundledChannelCatalogEntries } from "./bundled-channel-catalog-read.js";
 
 /**

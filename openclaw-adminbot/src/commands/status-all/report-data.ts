@@ -6,23 +6,23 @@ import { readConfigFileSnapshot, resolveGatewayPort } from "../../config/config.
 import { readLastGatewayErrorLine } from "../../daemon/diagnostics.js";
 import { inspectPortUsage } from "../../infra/ports.js";
 import { readRestartSentinel } from "../../infra/restart-sentinel.js";
-import { buildPluginCompatibilityNotices } from "../../plugins/status.js";
+import { buildPluginCompatibilityNotices } from "../../plugins/config/status.js";
 import { buildWorkspaceSkillStatus } from "../../skills/discovery/status.js";
 import { getRemoteSkillEligibility } from "../../skills/runtime/remote.js";
-import { buildStatusAllOverviewRows } from "../status-overview-rows.ts";
+import { buildStatusAllOverviewRows } from "../status/status-overview-rows.js";
 import {
   buildStatusOverviewSurfaceFromOverview,
   type StatusOverviewSurface,
-} from "../status-overview-surface.ts";
+} from "../status/status-overview-surface.js";
 import {
   resolveStatusGatewayDiagnosticsSafe,
   resolveStatusGatewayHealthSafe,
   type resolveStatusServiceSummaries,
-} from "../status-runtime-shared.ts";
-import { formatUpdateRestartStatusValue } from "../status-update-restart.ts";
-import { resolveStatusAllConnectionDetails } from "../status.gateway-connection.ts";
-import type { NodeOnlyGatewayInfo } from "../status.node-mode.js";
-import type { StatusScanOverviewResult } from "../status.scan-overview.ts";
+} from "../status/status-runtime-shared.js";
+import { formatUpdateRestartStatusValue } from "../status/status-update-restart.js";
+import { resolveStatusAllConnectionDetails } from "../status/status.gateway-connection.js";
+import type { NodeOnlyGatewayInfo } from "../status/status.node-mode.js";
+import type { StatusScanOverviewResult } from "../status/status.scan-overview.js";
 
 type StatusServiceSummaries = Awaited<ReturnType<typeof resolveStatusServiceSummaries>>;
 type StatusGatewayServiceSummary = StatusServiceSummaries[0];

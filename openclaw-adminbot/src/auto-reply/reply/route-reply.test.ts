@@ -6,7 +6,7 @@ import type {
   ChannelThreadingAdapter,
 } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import {
   createChannelTestPluginBase,
   createTestRegistry,
@@ -35,7 +35,7 @@ vi.mock("../../infra/outbound/deliver.js", () => ({
   deliverOutboundPayloadsInternal: mocks.deliverOutboundPayloads,
 }));
 
-vi.mock("../../plugins/hook-runner-global.js", () => ({
+vi.mock("../../plugins/hooks/hook-runner-global.js", () => ({
   getGlobalHookRunner: () => mocks.hookRunner,
 }));
 

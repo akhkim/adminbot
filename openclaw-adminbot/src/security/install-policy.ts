@@ -2,7 +2,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { OpenClawConfig, SecurityConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig, SecurityConfig } from "../config/types/openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import {
   forceKillChildProcessTree,
@@ -725,7 +725,7 @@ export async function runInstallPolicy(params: {
   let config = params.config;
   if (!config) {
     try {
-      const { getRuntimeConfig } = await import("../config/io.js");
+      const { getRuntimeConfig } = await import("../config/io/io.js");
       config = getRuntimeConfig({ skipPluginValidation: true });
     } catch (err) {
       return failClosed(`could not load OpenClaw config (${formatErrorMessage(err)})`);

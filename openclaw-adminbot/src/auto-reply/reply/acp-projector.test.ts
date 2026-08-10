@@ -1,6 +1,6 @@
 // Tests ACP event projection into session updates and reply payloads.
 import { describe, expect, it, vi } from "vitest";
-import { prefixSystemMessage } from "../../infra/system-message.js";
+import { prefixSystemMessage } from "../../infra/system/system-message.js";
 import { createAcpReplyProjector } from "./acp-projector.js";
 import { createAcpTestConfig as createCfg } from "./test-fixtures/acp-runtime.js";
 

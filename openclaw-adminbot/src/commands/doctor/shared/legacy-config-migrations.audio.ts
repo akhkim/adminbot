@@ -5,7 +5,7 @@ import {
   getRecord,
   mapLegacyAudioTranscription,
   type LegacyConfigMigrationSpec,
-} from "../../../config/legacy.shared.js";
+} from "../../../config/legacy/legacy.shared.js";
 
 function applyLegacyAudioTranscriptionModel(params: {
   raw: Record<string, unknown>;

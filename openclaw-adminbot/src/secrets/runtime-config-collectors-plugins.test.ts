@@ -17,7 +17,7 @@ vi.mock("../plugins/plugin-registry.js", () => ({
   loadPluginManifestRegistryForPluginRegistry: loadPluginManifestRegistryForPluginRegistryMock,
 }));
 
-vi.mock("../plugins/bundled-plugin-metadata.js", () => ({
+vi.mock("../plugins/install/bundled-plugin-metadata.js", () => ({
   findBundledPluginMetadataById: () => undefined,
   listBundledPluginMetadata: () => [],
 }));

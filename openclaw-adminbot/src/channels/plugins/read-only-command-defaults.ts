@@ -4,10 +4,10 @@
  * Reads native command/skill defaults from installed plugin manifests without loading plugins.
  */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { isBlockedObjectKey } from "../../infra/prototype-keys.js";
-import { isInstalledPluginEnabled } from "../../plugins/installed-plugin-index.js";
-import type { PluginManifestRecord } from "../../plugins/manifest-registry.js";
+import { isInstalledPluginEnabled } from "../../plugins/install/installed-plugin-index.js";
+import type { PluginManifestRecord } from "../../plugins/manifest/manifest-registry.js";
 import { resolvePluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.js";
 import type { ChannelPlugin } from "./types.plugin.js";
 

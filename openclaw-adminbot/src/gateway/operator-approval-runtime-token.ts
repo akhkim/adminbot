@@ -1,7 +1,7 @@
 // Operator approval runtime token.
 // Uses an existing shared socket token when available, with a process-local fallback.
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { loadExecApprovals } from "../infra/exec-approvals.js";
+import { loadExecApprovals } from "../infra/exec/exec-approvals.js";
 
 const APPROVAL_RUNTIME_TOKEN_CONTEXT = "openclaw:gateway-approval-runtime-token:v1";
 

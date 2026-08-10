@@ -2,9 +2,9 @@
 import type { Command } from "commander";
 import { formatDocsLink } from "../../../packages/terminal-core/src/links.js";
 import { theme } from "../../../packages/terminal-core/src/theme.js";
-import { formatAuthChoiceChoicesForCli } from "../../commands/auth-choice-options.js";
-import type { GatewayDaemonRuntime } from "../../commands/daemon-runtime.js";
-import { CORE_ONBOARD_AUTH_FLAGS } from "../../commands/onboard-core-auth-flags.js";
+import { formatAuthChoiceChoicesForCli } from "../../commands/auth/auth-choice-options.js";
+import type { GatewayDaemonRuntime } from "../../commands/daemon/daemon-runtime.js";
+import { CORE_ONBOARD_AUTH_FLAGS } from "../../commands/onboard/onboard-core-auth-flags.js";
 import type {
   AuthChoice,
   GatewayAuthChoice,
@@ -13,8 +13,8 @@ import type {
   ResetScope,
   SecretInputMode,
   TailscaleMode,
-} from "../../commands/onboard-types.js";
-import { resolveProviderOnboardAuthFlags } from "../../plugins/provider-auth-choices.js";
+} from "../../commands/onboard/onboard-types.js";
+import { resolveProviderOnboardAuthFlags } from "../../plugins/providers/provider-auth-choices.js";
 import { runCommandWithRuntime } from "../cli-utils.js";
 import { parsePort } from "../shared/parse-port.js";
 
@@ -182,13 +182,6 @@ export function registerOnboardCommand(program: Command): void {
     const { defaultRuntime } = await import("../../runtime.js");
     await runCommandWithRuntime(defaultRuntime, async () => {
       if (opts.modern) {
-        const { runCrestodian } = await import("../../crestodian/crestodian.js");
-        await runCrestodian({
-          message: opts.nonInteractive ? "overview" : undefined,
-          yes: false,
-          json: Boolean(opts.json),
-          interactive: !opts.nonInteractive,
-        });
         return;
       }
       const installDaemon = resolveInstallDaemonFlag(commandRuntime, {
@@ -198,7 +191,7 @@ export function registerOnboardCommand(program: Command): void {
       const providerAuthOptionValues = pickOnboardProviderAuthOptionValues(
         opts as Record<string, unknown>,
       );
-      const { setupWizardCommand } = await import("../../commands/onboard.js");
+      const { setupWizardCommand } = await import("../../commands/onboard/onboard.js");
       await setupWizardCommand(
         {
           workspace: opts.workspace as string | undefined,

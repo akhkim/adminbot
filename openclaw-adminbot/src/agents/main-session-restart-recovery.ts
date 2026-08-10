@@ -6,8 +6,8 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { sanitizePendingFinalDeliveryText } from "../auto-reply/reply/pending-final-delivery.js";
-import { resolveStateDir } from "../config/paths.js";
+import { sanitizePendingFinalDeliveryText } from "../auto-reply/reply/queue/pending-final-delivery.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import {
   type RestartRecoveryRun,
   type SessionEntry,
@@ -17,10 +17,10 @@ import {
   resolveSessionTranscriptPathInDir,
 } from "../config/sessions.js";
 import { applyRestartRecoveryLifecycle } from "../config/sessions/session-accessor.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { callGateway } from "../gateway/call.js";
-import { readSessionMessagesAsync } from "../gateway/session-transcript-readers.js";
-import { resolveGatewaySessionStoreTarget } from "../gateway/session-utils.js";
+import { readSessionMessagesAsync } from "../gateway/sessions/session-transcript-readers.js";
+import { resolveGatewaySessionStoreTarget } from "../gateway/sessions/session-utils.js";
 import {
   getAgentEventLifecycleGeneration,
   listAgentRunsForSession,
@@ -38,14 +38,14 @@ import {
   deliveryContextFromSession,
   normalizeDeliveryContext,
   type DeliveryContext,
-} from "../utils/delivery-context.shared.js";
-import { isDeliverableMessageChannel } from "../utils/message-channel.js";
+} from "../shared/delivery-context.shared.js";
+import { isDeliverableMessageChannel } from "../shared/message-channel.js";
 import {
   listActiveEmbeddedRunSessionIds,
   listActiveEmbeddedRunSessionKeys,
 } from "./embedded-agent-runner/run-state.js";
-import { resolveAgentSessionDirs } from "./session-dirs.js";
-import type { SessionLockInspection } from "./session-write-lock.js";
+import { resolveAgentSessionDirs } from "./sessions/session-dirs.js";
+import type { SessionLockInspection } from "./sessions/session-write-lock.js";
 
 const log = createSubsystemLogger("main-session-restart-recovery");
 

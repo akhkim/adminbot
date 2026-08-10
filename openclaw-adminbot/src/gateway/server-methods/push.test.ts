@@ -12,7 +12,7 @@ vi.mock("../../config/config.js", () => ({
   getRuntimeConfig: mocks.getRuntimeConfig,
 }));
 
-vi.mock("../../infra/push-apns.js", () => ({
+vi.mock("../../infra/diagnostics/push-apns.js", () => ({
   clearApnsRegistrationIfCurrent: vi.fn(),
   loadApnsRegistration: vi.fn(),
   normalizeApnsEnvironment: vi.fn(),
@@ -32,7 +32,7 @@ import {
   resolveApnsRelayConfigFromEnv,
   sendApnsAlert,
   shouldClearStoredApnsRegistration,
-} from "../../infra/push-apns.js";
+} from "../../infra/diagnostics/push-apns.js";
 
 type RespondCall = [boolean, unknown?, { code: number; message: string }?];
 

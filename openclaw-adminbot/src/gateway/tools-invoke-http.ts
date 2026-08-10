@@ -1,16 +1,16 @@
 // HTTP endpoint adapter for invoking gateway tools from OpenAI-compatible clients.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { normalizeMessageChannel } from "../utils/message-channel.js";
-import type { AuthRateLimiter } from "./auth-rate-limit.js";
-import type { ResolvedGatewayAuth } from "./auth.js";
-import { readJsonBodyOrError, sendJson, sendMethodNotAllowed } from "./http-common.js";
+import { normalizeMessageChannel } from "../shared/message-channel.js";
+import type { AuthRateLimiter } from "./auth/auth-rate-limit.js";
+import type { ResolvedGatewayAuth } from "./auth/auth.js";
+import { readJsonBodyOrError, sendJson, sendMethodNotAllowed } from "./http/http-common.js";
 import {
   authorizeScopedGatewayHttpRequestOrReply,
   getHeader,
   resolveOpenAiCompatibleHttpOperatorScopes,
   resolveOpenAiCompatibleHttpSenderIsOwner,
-} from "./http-utils.js";
+} from "./http/http-utils.js";
 import { invokeGatewayTool, type ToolsInvokeInput } from "./tools-invoke-shared.js";
 
 const DEFAULT_BODY_BYTES = 2 * 1024 * 1024;

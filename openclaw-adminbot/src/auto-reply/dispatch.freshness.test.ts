@@ -1,22 +1,22 @@
 /** Tests foreground reply freshness fencing for buffered inbound dispatch. */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { OutboundDeliveryError } from "../infra/outbound/deliver-types.js";
-import { resetGlobalHookRunner } from "../plugins/hook-runner-global.js";
+import { resetGlobalHookRunner } from "../plugins/hooks/hook-runner-global.js";
 import type { ReplyDispatchBeforeDeliver } from "./reply/reply-dispatcher.js";
 import { buildTestCtx } from "./reply/test-ctx.js";
 import type { FinalizedMsgContext, MsgContext } from "./templating.js";
 import type { ReplyPayload } from "./types.js";
 
 type DispatchReplyFromConfigFn =
-  typeof import("./reply/dispatch-from-config.js").dispatchReplyFromConfig;
+  typeof import("./reply/dispatch/dispatch-from-config.js").dispatchReplyFromConfig;
 type DispatchReplyFromConfigParams = Parameters<DispatchReplyFromConfigFn>[0];
 
 const hoisted = vi.hoisted(() => ({
   dispatchReplyFromConfigMock: vi.fn(),
 }));
 
-vi.mock("./reply/dispatch-from-config.js", () => ({
+vi.mock("./reply/dispatch/dispatch-from-config.js", () => ({
   dispatchReplyFromConfig: (...args: Parameters<DispatchReplyFromConfigFn>) =>
     hoisted.dispatchReplyFromConfigMock(...args),
 }));

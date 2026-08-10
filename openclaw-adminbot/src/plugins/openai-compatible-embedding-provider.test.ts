@@ -3,8 +3,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import type { AddressInfo, Socket } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { withEnvAsync } from "../test-utils/env.js";
-import type { EmbeddingProviderCreateOptions } from "./embedding-providers.js";
-import { getRegisteredEmbeddingProvider } from "./embedding-providers.js";
+import type { EmbeddingProviderCreateOptions } from "./embedding/embedding-providers.js";
+import { getRegisteredEmbeddingProvider } from "./embedding/embedding-providers.js";
 import {
   createOpenAICompatibleEmbeddingProvider,
   openAICompatibleEmbeddingProviderAdapter,

@@ -1,7 +1,7 @@
 // Status message tests cover status message formatting and persistence.
 import { afterEach, describe, expect, it } from "vitest";
-import { testing as cliBackendsTesting } from "../agents/cli-backends.js";
-import type { ModelDefinitionConfig } from "../config/types.models.js";
+import { testing as cliBackendsTesting } from "../agents/cli-runner/cli-backends.js";
+import type { ModelDefinitionConfig } from "../config/types/models.js";
 import { buildStatusMessage } from "./status-message.js";
 
 function statusTestModel(id: string, name: string, contextWindow: number): ModelDefinitionConfig {

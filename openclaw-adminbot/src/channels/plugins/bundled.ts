@@ -5,22 +5,22 @@
  */
 import path from "node:path";
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { extractErrorCode, formatErrorMessage } from "../../infra/errors.js";
-import { isPathInside } from "../../infra/path-guards.js";
+import { isPathInside } from "../../infra/system/path-guards.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import type {
   BundledChannelLegacySessionSurface,
   BundledChannelLegacyStateMigrationDetector,
   BundledEntryModuleLoadOptions,
 } from "../../plugin-sdk/channel-entry-contract.types.js";
+import { normalizePluginsConfig } from "../../plugins/config/config-state.js";
 import {
   listBundledChannelPluginMetadata,
   resolveBundledChannelGeneratedPath,
   type BundledChannelPluginMetadata,
-} from "../../plugins/bundled-channel-runtime.js";
-import { normalizePluginsConfig } from "../../plugins/config-state.js";
-import { passesManifestOwnerBasePolicy } from "../../plugins/manifest-owner-policy.js";
+} from "../../plugins/install/bundled-channel-runtime.js";
+import { passesManifestOwnerBasePolicy } from "../../plugins/manifest/manifest-owner-policy.js";
 import { unwrapDefaultModuleExport } from "../../plugins/module-export.js";
 import {
   getCachedPluginModuleLoader,

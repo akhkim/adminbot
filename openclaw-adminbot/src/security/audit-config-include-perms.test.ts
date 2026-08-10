@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { ConfigFileSnapshot } from "../config/types.openclaw.js";
+import type { ConfigFileSnapshot } from "../config/types/openclaw.js";
 import { collectIncludeFilePermFindings } from "./audit-extra.async.js";
 
 describe("security audit config include permissions", () => {

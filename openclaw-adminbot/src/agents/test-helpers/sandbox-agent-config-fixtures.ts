@@ -3,7 +3,7 @@
  *
  * Builds restricted agent configs for sandbox tool-policy and workspace tests.
  */
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 
 type AgentToolsConfig = NonNullable<NonNullable<OpenClawConfig["agents"]>["list"]>[number]["tools"];
 type SandboxToolsConfig = {

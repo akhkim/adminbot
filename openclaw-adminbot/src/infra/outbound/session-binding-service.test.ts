@@ -1,12 +1,12 @@
 // Covers session binding adapter registration, generic current-conversation
 // fallback, capability errors, deduping, and duplicate graph teardown.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
+import { createEmptyPluginRegistry } from "../../plugins/manifest/registry-empty.js";
 import {
   pinActivePluginChannelRegistry,
   releasePinnedPluginChannelRegistry,
   setActivePluginRegistry,
-} from "../../plugins/runtime.js";
+} from "../../plugins/runtime/runtime.js";
 import { createTestRegistry } from "../../test-utils/channel-plugins.js";
 import {
   testing,

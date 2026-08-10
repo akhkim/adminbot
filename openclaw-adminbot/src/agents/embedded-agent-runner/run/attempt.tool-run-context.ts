@@ -4,7 +4,7 @@
 import {
   freezeDiagnosticTraceContext,
   type DiagnosticTraceContext,
-} from "../../../infra/diagnostic-trace-context.js";
+} from "../../../infra/diagnostics/diagnostic-trace-context.js";
 import type { EmbeddedRunTrigger } from "./params.js";
 
 /**

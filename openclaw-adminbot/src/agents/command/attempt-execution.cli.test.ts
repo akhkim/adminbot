@@ -6,10 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionEntry } from "../../config/sessions.js";
 import { clearSessionStoreCacheForTest } from "../../config/sessions/store.js";
 import { appendSessionTranscriptMessage } from "../../config/sessions/transcript-append.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { captureEnv, setTestEnvValue } from "../../test-utils/env.js";
 import { saveAuthProfileStore } from "../auth-profiles/store.js";
-import type { EmbeddedAgentRunResult } from "../embedded-agent.js";
+import type { EmbeddedAgentRunResult } from "../embedded/embedded-agent.js";
 import { FailoverError } from "../failover-error.js";
 import {
   persistCliTurnTranscript,
@@ -51,11 +51,11 @@ const providerAuthAliasMocks = vi.hoisted(() => ({
     },
   ),
 }));
-vi.mock("../cli-runner.js", () => ({
+vi.mock("../cli-runner/cli-runner.js", () => ({
   runCliAgent: runCliAgentMock,
 }));
 
-vi.mock("../model-selection.js", () => ({
+vi.mock("../models/model-selection.js", () => ({
   isCliProvider: (provider: string) =>
     provider.trim().toLowerCase() === "claude-cli" ||
     provider.trim().toLowerCase() === "codex-cli" ||
@@ -63,14 +63,14 @@ vi.mock("../model-selection.js", () => ({
   normalizeProviderId: (provider: string) => provider.trim().toLowerCase(),
 }));
 
-vi.mock("../provider-auth-aliases.js", () => ({
+vi.mock("../auth/provider-auth-aliases.js", () => ({
   resolveProviderAuthAliasMap: providerAuthAliasMocks.resolveProviderAuthAliasMap,
   resolveProviderIdForAuth: providerAuthAliasMocks.resolveProviderIdForAuth,
 }));
 
-vi.mock("../model-runtime-aliases.js", async () => {
-  const actual = await vi.importActual<typeof import("../model-runtime-aliases.js")>(
-    "../model-runtime-aliases.js",
+vi.mock("../models/model-runtime-aliases.js", async () => {
+  const actual = await vi.importActual<typeof import("../models/model-runtime-aliases.js")>(
+    "../models/model-runtime-aliases.js",
   );
   return {
     ...actual,
@@ -94,7 +94,7 @@ vi.mock("../model-runtime-aliases.js", async () => {
   };
 });
 
-vi.mock("../embedded-agent.js", () => ({
+vi.mock("../embedded/embedded-agent.js", () => ({
   runEmbeddedAgent: runEmbeddedAgentMock,
 }));
 

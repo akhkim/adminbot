@@ -10,7 +10,7 @@ import {
   buildHelpMessage as buildHelpMessageCompat,
 } from "../auto-reply/command-status-builders.js";
 import type { ChannelId } from "../channels/plugins/types.public.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   expandAllowFromWithAccessGroups,
   type AccessGroupMembershipResolver,
@@ -104,8 +104,8 @@ export {
   buildModelsProviderData,
   formatModelsAvailableHeader,
   resolveModelsCommandReply,
-} from "../auto-reply/reply/commands-models.js";
-export type { ModelsProviderData } from "../auto-reply/reply/commands-models.js";
+} from "../auto-reply/reply/commands/commands-models.js";
+export type { ModelsProviderData } from "../auto-reply/reply/commands/commands-models.js";
 export { resolveStoredModelOverride } from "../auto-reply/reply/stored-model-override.js";
 export type { StoredModelOverride } from "../auto-reply/reply/stored-model-override.js";
 

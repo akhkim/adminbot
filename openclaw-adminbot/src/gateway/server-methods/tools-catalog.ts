@@ -16,11 +16,11 @@ import {
   listCoreToolSections,
   PROFILE_OPTIONS,
   resolveCoreToolProfiles,
-} from "../../agents/tool-catalog.js";
-import { summarizeToolDescriptionText } from "../../agents/tool-description-summary.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { PluginRegistry } from "../../plugins/registry-types.js";
-import { getActivePluginRegistry } from "../../plugins/runtime.js";
+} from "../../agents/tools/tool-catalog.js";
+import { summarizeToolDescriptionText } from "../../agents/tools/tool-description-summary.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { PluginRegistry } from "../../plugins/manifest/registry-types.js";
+import { getActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import {
   buildPluginToolMetadataKey,
   ensureStandalonePluginToolRegistryLoaded,

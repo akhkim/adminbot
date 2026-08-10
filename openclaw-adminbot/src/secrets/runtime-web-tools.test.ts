@@ -85,7 +85,7 @@ vi.mock("./runtime-web-tools-fallback.runtime.js", async () => {
   };
 });
 
-vi.mock("../plugins/web-provider-public-artifacts.explicit.js", () => ({
+vi.mock("../plugins/web/web-provider-public-artifacts.explicit.js", () => ({
   resolveBundledExplicitWebSearchProvidersFromPublicArtifacts:
     resolveBundledExplicitWebSearchProvidersFromPublicArtifactsMock,
   resolveBundledExplicitWebFetchProvidersFromPublicArtifacts:
@@ -106,10 +106,10 @@ vi.mock("./runtime-web-tools-manifest.runtime.js", () => ({
     resolveManifestContractPluginIdsByCompatibilityRuntimePathMock,
 }));
 
-vi.mock("../plugins/installed-plugin-index-records.js", async () => {
+vi.mock("../plugins/install/installed-plugin-index-records.js", async () => {
   const actual = await vi.importActual<
-    typeof import("../plugins/installed-plugin-index-records.js")
-  >("../plugins/installed-plugin-index-records.js");
+    typeof import("../plugins/install/installed-plugin-index-records.js")
+  >("../plugins/install/installed-plugin-index-records.js");
   return {
     ...actual,
     loadInstalledPluginIndexInstallRecordsSync: loadInstalledPluginIndexInstallRecordsSyncMock,

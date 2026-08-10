@@ -1,18 +1,13 @@
 // Focused public test helpers for environment, network, and time fixtures.
 
 export {
-  createAuthCaptureJsonFetch,
-  createRequestCaptureJsonFetch,
-  installPinnedHostnameTestHooks,
-} from "../media-understanding/audio.test-helpers.ts";
-export {
   createSingleUserPromptMessage,
   extractNonEmptyAssistantText,
   isLiveProfileKeyModeEnabled,
   isLiveTestEnabled,
 } from "../agents/live-test-helpers.js";
-export { collectProviderApiKeys } from "../agents/live-auth-keys.js";
-export { isModelNotFoundErrorMessage } from "../agents/live-model-errors.js";
+export { collectProviderApiKeys } from "../agents/auth/live-auth-keys.js";
+export { isModelNotFoundErrorMessage } from "../agents/models/live-model-errors.js";
 export {
   isAuthErrorMessage,
   isBillingErrorMessage,
@@ -22,35 +17,8 @@ export {
 } from "../agents/embedded-agent-helpers/failover-matches.js";
 export { maybeLoadShellEnvForGenerationProviders } from "../test-utils/generation-live-test-helpers.js";
 export { isTruthyEnvValue } from "../infra/env.js";
-export { getShellEnvAppliedKeys } from "../infra/shell-env.js";
+export { getShellEnvAppliedKeys } from "../infra/system/shell-env.js";
 export { encodePngRgba, fillPixel } from "../media/png-encode.js";
-export {
-  parseLiveCsvFilter as parseCsvFilter,
-  parseProviderModelMap,
-  redactLiveApiKey,
-} from "../media-generation/live-test-helpers.js";
-export {
-  DEFAULT_LIVE_MUSIC_MODELS,
-  resolveConfiguredLiveMusicModels,
-  resolveLiveMusicAuthStore,
-} from "../music-generation/live-test-helpers.js";
-export {
-  canRunBufferBackedImageToVideoLiveLane,
-  canRunBufferBackedVideoToVideoLiveLane,
-  DEFAULT_LIVE_VIDEO_MODELS,
-  resolveConfiguredLiveVideoModels,
-  resolveLiveVideoAuthStore,
-  resolveLiveVideoResolution,
-} from "../video-generation/live-test-helpers.js";
-export { normalizeVideoGenerationDuration } from "../video-generation/duration-support.js";
-export { parseVideoGenerationModelRef } from "../video-generation/model-ref.js";
-export type {
-  GeneratedVideoAsset,
-  VideoGenerationMode,
-  VideoGenerationModeCapabilities,
-  VideoGenerationProvider,
-  VideoGenerationRequest,
-} from "../video-generation/types.js";
 export { jsonResponse, requestBodyText, requestUrl } from "../test-helpers/http.js";
 export { mockPinnedHostnameResolution } from "../test-helpers/ssrf.js";
 export { createWindowsCmdShimFixture } from "../test-helpers/windows-cmd-shim.js";

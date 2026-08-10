@@ -88,7 +88,7 @@ export {
   type LookupFn,
   type SsrFPolicy,
 } from "../infra/net/ssrf.js";
-export { isNotFoundPathError, isPathInside } from "../infra/path-guards.js";
+export { isNotFoundPathError, isPathInside } from "../infra/system/path-guards.js";
 export {
   assertAbsolutePathInput,
   canonicalPathFromExistingAncestor,

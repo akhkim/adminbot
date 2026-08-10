@@ -3,7 +3,7 @@ import { normalizeOptionalString } from "../../packages/normalization-core/src/s
 import type { ChannelStatusAdapter } from "../channels/plugins/types.adapters.js";
 import type { ChannelAccountSnapshot } from "../channels/plugins/types.core.js";
 import type { ChannelStatusIssue } from "../channels/plugins/types.public.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 export type { ChannelAccountSnapshot } from "../channels/plugins/types.core.js";
 export type { ChannelStatusIssue } from "../channels/plugins/types.public.js";
 export { isRecord } from "../channels/plugins/status-issues/shared.js";
@@ -18,7 +18,7 @@ export {
   resolveReactionLevel,
   type ReactionLevel,
   type ResolvedReactionLevel,
-} from "../utils/reaction-level.js";
+} from "../shared/reaction-level.js";
 
 type RuntimeLifecycleSnapshot = {
   running?: boolean | null;

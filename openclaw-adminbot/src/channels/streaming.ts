@@ -1,7 +1,7 @@
 // Channel streaming config normalization and progress-draft formatting helpers.
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
 import { normalizeTrimmedStringList } from "@openclaw/normalization-core/string-normalization";
-import { formatToolDetail, resolveToolDisplay } from "../agents/tool-display.js";
+import { formatToolDetail, resolveToolDisplay } from "../agents/tools/tool-display.js";
 import { formatToolAggregate } from "../auto-reply/tool-meta.js";
 import type {
   BlockStreamingChunkConfig,
@@ -11,8 +11,8 @@ import type {
   ChannelStreamingConfig,
   StreamingMode,
   TextChunkMode,
-} from "../config/types.base.js";
-import { asBoolean } from "../utils/boolean.js";
+} from "../config/types/base.js";
+import { asBoolean } from "../shared/boolean.js";
 
 export type {
   ChannelDeliveryStreamingConfig,
@@ -24,8 +24,8 @@ export type {
   ChannelStreamingPreviewConfig,
   StreamingMode,
   TextChunkMode,
-} from "../config/types.base.js";
-export type { SlackChannelStreamingConfig } from "../config/types.slack.js";
+} from "../config/types/base.js";
+export type { SlackChannelStreamingConfig } from "../config/types/slack.js";
 
 export type StreamingCompatEntry = {
   /** Canonical nested streaming config or legacy preview mode string. */

@@ -1,0 +1,250 @@
+[
+  {
+    "from": "extensions/adminbot/src/core/service.test.ts",
+    "to": "extensions/adminbot/src/kernel/service.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/core/service.ts",
+    "to": "extensions/adminbot/src/kernel/service.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/executors/composite.ts",
+    "to": "extensions/adminbot/src/connectors/composite.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/executors/gog.test.ts",
+    "to": "extensions/adminbot/src/connectors/gog.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/executors/gog.ts",
+    "to": "extensions/adminbot/src/connectors/gog.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/executors/message.test.ts",
+    "to": "extensions/adminbot/src/connectors/message.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/executors/message.ts",
+    "to": "extensions/adminbot/src/connectors/message.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/executors/openreview.ts",
+    "to": "extensions/adminbot/src/connectors/openreview.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/executors/overleaf.test.ts",
+    "to": "extensions/adminbot/src/connectors/overleaf.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/executors/overleaf.ts",
+    "to": "extensions/adminbot/src/connectors/overleaf.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/executors/social.test.ts",
+    "to": "extensions/adminbot/src/connectors/social.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/executors/social.ts",
+    "to": "extensions/adminbot/src/connectors/social.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/auth/account-approved-email.test.ts",
+    "to": "extensions/adminbot/src/workflows/identity/account-approved-email.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/auth/account-approved-email.ts",
+    "to": "extensions/adminbot/src/workflows/identity/account-approved-email.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/auth/auth.test.ts",
+    "to": "extensions/adminbot/src/workflows/identity/auth.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/auth/auth.ts",
+    "to": "extensions/adminbot/src/workflows/identity/auth.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/auth/device-pairing-scopes.ts",
+    "to": "extensions/adminbot/src/workflows/identity/device-pairing-scopes.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/calendar/source.test.ts",
+    "to": "extensions/adminbot/src/workflows/calendar/source.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/calendar/source.ts",
+    "to": "extensions/adminbot/src/workflows/calendar/source.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/deadlines/board.ts",
+    "to": "extensions/adminbot/src/workflows/deadlines/board.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/deadlines/generated/dataset.ts",
+    "to": "extensions/adminbot/src/workflows/deadlines/generated/dataset.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/members/applicant-sheet.test.ts",
+    "to": "extensions/adminbot/src/workflows/members/applicant-sheet.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/members/applicant-sheet.ts",
+    "to": "extensions/adminbot/src/workflows/members/applicant-sheet.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/members/availability.test.ts",
+    "to": "extensions/adminbot/src/workflows/members/availability.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/members/availability.ts",
+    "to": "extensions/adminbot/src/workflows/members/availability.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/members/collaborator-subgroups.test.ts",
+    "to": "extensions/adminbot/src/workflows/members/collaborator-subgroups.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/members/collaborator-subgroups.ts",
+    "to": "extensions/adminbot/src/workflows/members/collaborator-subgroups.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/members/member-map.test.ts",
+    "to": "extensions/adminbot/src/workflows/members/member-map.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/members/member-map.ts",
+    "to": "extensions/adminbot/src/workflows/members/member-map.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/onboarding/calendar-invite.ts",
+    "to": "extensions/adminbot/src/workflows/onboarding/calendar-invite.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/onboarding/drive-workspace.ts",
+    "to": "extensions/adminbot/src/workflows/onboarding/drive-workspace.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/onboarding/emails.ts",
+    "to": "extensions/adminbot/src/workflows/onboarding/emails.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/onboarding/guide-sender.ts",
+    "to": "extensions/adminbot/src/workflows/onboarding/guide-sender.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/onboarding/guide.test.ts",
+    "to": "extensions/adminbot/src/workflows/onboarding/guide.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/onboarding/guide.ts",
+    "to": "extensions/adminbot/src/workflows/onboarding/guide.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/onboarding/onboarding.test.ts",
+    "to": "extensions/adminbot/src/workflows/onboarding/onboarding.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/onboarding/onboarding.ts",
+    "to": "extensions/adminbot/src/workflows/onboarding/onboarding.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/papers/openreview-cadence.test.ts",
+    "to": "extensions/adminbot/src/workflows/papers/openreview-cadence.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/papers/openreview-cadence.ts",
+    "to": "extensions/adminbot/src/workflows/papers/openreview-cadence.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/papers/openreview-matching.test.ts",
+    "to": "extensions/adminbot/src/workflows/papers/openreview-matching.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/papers/openreview-matching.ts",
+    "to": "extensions/adminbot/src/workflows/papers/openreview-matching.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/papers/openreview-workflow.test.ts",
+    "to": "extensions/adminbot/src/workflows/papers/openreview-workflow.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/papers/openreview-workflow.ts",
+    "to": "extensions/adminbot/src/workflows/papers/openreview-workflow.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/papers/overleaf-editing.test.ts",
+    "to": "extensions/adminbot/src/workflows/papers/overleaf-editing.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/papers/overleaf-editing.ts",
+    "to": "extensions/adminbot/src/workflows/papers/overleaf-editing.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/papers/social-posting.test.ts",
+    "to": "extensions/adminbot/src/workflows/papers/social-posting.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/papers/social-posting.ts",
+    "to": "extensions/adminbot/src/workflows/papers/social-posting.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/privacy/broker.test.ts",
+    "to": "extensions/adminbot/src/privacy/broker.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/privacy/broker.ts",
+    "to": "extensions/adminbot/src/privacy/broker.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/privacy/sensitive-info-doc.ts",
+    "to": "extensions/adminbot/src/privacy/sensitive-info-doc.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/reimbursements/workflow.test.ts",
+    "to": "extensions/adminbot/src/workflows/reimbursements/workflow.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/features/reimbursements/workflow.ts",
+    "to": "extensions/adminbot/src/workflows/reimbursements/workflow.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/http/client.test.ts",
+    "to": "extensions/adminbot/src/api/client.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/http/client.ts",
+    "to": "extensions/adminbot/src/api/client.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/http/server.test.ts",
+    "to": "extensions/adminbot/src/api/server.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/http/server.ts",
+    "to": "extensions/adminbot/src/api/server.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/store/memory.ts",
+    "to": "extensions/adminbot/src/persistence/memory.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/store/sqlite.test.ts",
+    "to": "extensions/adminbot/src/persistence/sqlite.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/store/sqlite.ts",
+    "to": "extensions/adminbot/src/persistence/sqlite.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/tools/email-automation-tool.test.ts",
+    "to": "extensions/adminbot/src/adapters/openclaw/email-automation-tool.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/tools/index.test.ts",
+    "to": "extensions/adminbot/src/adapters/openclaw/index.test.ts"
+  },
+  {
+    "from": "extensions/adminbot/src/tools/index.ts",
+    "to": "extensions/adminbot/src/adapters/openclaw/index.ts"
+  }
+]

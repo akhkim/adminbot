@@ -1,15 +1,15 @@
 // Non-interactive gateway config tests cover port, bind, auth token, and SecretRef preservation behavior.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { withEnv } from "../../../test-utils/env.js";
-import type { OnboardOptions } from "../../onboard-types.js";
+import type { OnboardOptions } from "../../onboard/onboard-types.js";
 import { applyNonInteractiveGatewayConfig } from "./gateway-config.js";
 
 // Narrow mock: reproduce normalize semantics (typeof-string + trim, reject
 // "undefined"/"null" literals) and stub randomToken so we can assert when a
 // fresh token is generated vs. reused from the resolution chain.
 const randomToken = vi.hoisted(() => vi.fn(() => "generated-random-token"));
-vi.mock("../../onboard-helpers.js", () => ({
+vi.mock("../../onboard/onboard-helpers.js", () => ({
   normalizeGatewayTokenInput: (value: unknown): string => {
     if (typeof value !== "string") {
       return "";

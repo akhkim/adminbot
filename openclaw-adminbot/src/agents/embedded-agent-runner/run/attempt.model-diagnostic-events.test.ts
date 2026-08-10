@@ -9,8 +9,8 @@ import {
   type DiagnosticEventPrivateData,
   type DiagnosticEventPayload,
   waitForDiagnosticEventsDrained,
-} from "../../../infra/diagnostic-events.js";
-import { createDiagnosticTraceContext } from "../../../infra/diagnostic-trace-context.js";
+} from "../../../infra/diagnostics/diagnostic-events.js";
+import { createDiagnosticTraceContext } from "../../../infra/diagnostics/diagnostic-trace-context.js";
 import {
   getDiagnosticSessionActivitySnapshot,
   resetDiagnosticRunActivityForTest,
@@ -18,8 +18,8 @@ import {
 import {
   initializeGlobalHookRunner,
   resetGlobalHookRunner,
-} from "../../../plugins/hook-runner-global.js";
-import { createHookRunnerWithRegistry } from "../../../plugins/hooks.test-helpers.js";
+} from "../../../plugins/hooks/hook-runner-global.js";
+import { createHookRunnerWithRegistry } from "../../../plugins/hooks/hooks.test-helpers.js";
 import { wrapStreamFnWithDiagnosticModelCallEvents } from "./attempt.model-diagnostic-events.js";
 
 async function collectModelCallEvents(run: () => Promise<void>): Promise<DiagnosticEventPayload[]> {

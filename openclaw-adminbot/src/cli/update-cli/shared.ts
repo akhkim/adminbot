@@ -6,13 +6,9 @@ import path from "node:path";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { theme } from "../../../packages/terminal-core/src/theme.js";
 import { resolveRequiredHomeDir } from "../../infra/home-dir.js";
-import { resolveOpenClawPackageRoot } from "../../infra/openclaw-root.js";
-import { readPackageName, readPackageVersion } from "../../infra/package-json.js";
-import { normalizePackageTagInput } from "../../infra/package-tag.js";
-import { parseStrictPositiveInteger } from "../../infra/parse-finite-number.js";
-import { trimLogTail } from "../../infra/restart-sentinel.js";
-import { parseSemver } from "../../infra/runtime-guard.js";
-import { fetchNpmTagVersion } from "../../infra/update-check.js";
+import { readPackageName, readPackageVersion } from "../../infra/install/package-json.js";
+import { normalizePackageTagInput } from "../../infra/install/package-tag.js";
+import { fetchNpmTagVersion } from "../../infra/install/update-check.js";
 import {
   canResolveRegistryVersionForPackageTarget,
   createGlobalInstallEnv,
@@ -20,12 +16,16 @@ import {
   detectGlobalInstallManagerForRoot,
   type CommandRunner,
   type GlobalInstallManager,
-} from "../../infra/update-global.js";
-import type { UpdateStepProgress, UpdateStepResult } from "../../infra/update-runner.js";
+} from "../../infra/install/update-global.js";
+import type { UpdateStepProgress, UpdateStepResult } from "../../infra/install/update-runner.js";
+import { resolveOpenClawPackageRoot } from "../../infra/openclaw-root.js";
+import { parseStrictPositiveInteger } from "../../infra/parse-finite-number.js";
+import { trimLogTail } from "../../infra/restart-sentinel.js";
+import { parseSemver } from "../../infra/runtime-guard.js";
 import { runCommandWithTimeout } from "../../process/exec.js";
 import { defaultRuntime } from "../../runtime.js";
 import { pathExists } from "../../utils.js";
-import { COMPLETION_SKIP_PLUGIN_COMMANDS_ENV } from "../completion-runtime.js";
+import { COMPLETION_SKIP_PLUGIN_COMMANDS_ENV } from "../program/completion-runtime.js";
 
 export type UpdateCommandOptions = {
   json?: boolean;

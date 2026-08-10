@@ -1,3 +1,4 @@
+import type { DeliveryContext } from "../../shared/delivery-context.types.js";
 // Task domain types define plugin task-flow payloads shared by runtime adapters.
 import type { JsonValue } from "../../tasks/task-flow-registry.types.js";
 import type {
@@ -10,7 +11,6 @@ import type {
   TaskStatusCounts,
   TaskTerminalOutcome,
 } from "../../tasks/task-registry.types.js";
-import type { DeliveryContext } from "../../utils/delivery-context.types.js";
 
 /** Aggregate task-run counts exposed to plugin task views. */
 export type TaskRunAggregateSummary = {

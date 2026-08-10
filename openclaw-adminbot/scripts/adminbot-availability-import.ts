@@ -7,13 +7,16 @@
 // Members link the doc themselves under My profile (availability_doc_url) and correct whatever the
 // extraction gets wrong in the same panel, so this importer is a prefill, never the authority.
 
-import { exportGoogleDoc, googleDocId } from "../extensions/adminbot/src/calendar-source.js";
 import type {
   AdminBotAvailabilityRow,
   AdminBotLabMember,
   AdminBotTimeOffRow,
-} from "../extensions/adminbot/src/contracts.js";
-import { createAdminBotSqliteService } from "../extensions/adminbot/src/service-sqlite.js";
+} from "../extensions/adminbot/src/contracts/actions.js";
+import { createAdminBotSqliteService } from "../extensions/adminbot/src/persistence/sqlite.js";
+import {
+  exportGoogleDoc,
+  googleDocId,
+} from "../extensions/adminbot/src/workflows/calendar/source.js";
 import { AdminBotEmailModel, type ModelAvailability } from "./adminbot-email-model.js";
 
 type ImportOptions = {

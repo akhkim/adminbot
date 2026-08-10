@@ -7,8 +7,8 @@ import {
   type ChannelHealthPolicy,
   type ChannelHealthEvaluation,
 } from "../channel-health-policy.js";
-import type { ChannelManager } from "../server-channels.js";
 import type { GatewayEventLoopHealth } from "./event-loop-health.js";
+import type { ChannelManager } from "./server-channels.js";
 
 /** Snapshot returned by the gateway readiness probe. */
 export type ReadinessResult = {

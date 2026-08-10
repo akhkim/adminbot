@@ -2,7 +2,7 @@
 // proxies that OpenClaw owns or inherited from a parent process.
 import { readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import type { ProxyConfig } from "../../../config/zod-schema.proxy.js";
+import type { ProxyConfig } from "../../../config/zod/proxy.js";
 
 /** TLS trust material passed to proxy clients for OpenClaw-managed HTTPS proxies. */
 export type ManagedProxyTlsOptions = Readonly<{

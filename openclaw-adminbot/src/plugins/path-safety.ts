@@ -14,4 +14,4 @@ export {
   safeStatSync,
   splitSafeRelativePath,
   formatPosixMode,
-} from "../infra/path-safety.js";
+} from "../infra/system/path-safety.js";

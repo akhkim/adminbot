@@ -13,11 +13,11 @@ import {
 import {
   buildHistoryPrunePlanWithWorker,
   computeAdaptiveChunkRatioWithWorker,
-} from "../compaction-planning-worker.js";
+} from "../compaction/compaction-planning-worker.js";
 import {
   hasMeaningfulConversationContent,
   isRealConversationMessage,
-} from "../compaction-real-conversation.js";
+} from "../compaction/compaction-real-conversation.js";
 import {
   BASE_CHUNK_RATIO,
   MIN_CHUNK_RATIO,
@@ -27,15 +27,18 @@ import {
   isOversizedForSummary,
   resolveContextWindowTokens,
   summarizeInStages,
-} from "../compaction.js";
+} from "../compaction/compaction.js";
 import { collectTextContentBlocks } from "../content-blocks.js";
-import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "../copilot-dynamic-headers.js";
 import { isTimeoutError } from "../failover-error.js";
 import { stripRuntimeContextCustomMessages } from "../internal-runtime-context.js";
 import type { AgentMessage } from "../runtime/index.js";
-import { repairToolUseResultPairing } from "../session-transcript-repair.js";
 import type { ExtensionAPI, ExtensionContext, FileOperations } from "../sessions/index.js";
-import { extractToolCallsFromAssistant, extractToolResultId } from "../tool-call-id.js";
+import { repairToolUseResultPairing } from "../sessions/session-transcript-repair.js";
+import { extractToolCallsFromAssistant, extractToolResultId } from "../tools/tool-call-id.js";
+import {
+  buildCopilotDynamicHeaders,
+  hasCopilotVisionInput,
+} from "../transport/copilot-dynamic-headers.js";
 import {
   composeSplitTurnInstructions,
   resolveCompactionInstructions,

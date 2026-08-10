@@ -21,8 +21,8 @@ import type {
   ChannelOutboundTargetRef,
 } from "../../channels/plugins/types.adapters.js";
 import { resolveMirroredTranscriptText } from "../../config/sessions/transcript-mirror.js";
-import type { ReplyToMode } from "../../config/types.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { ReplyToMode } from "../../config/types/types.js";
 import { fireAndForgetHook } from "../../hooks/fire-and-forget.js";
 import { createInternalHookEvent, triggerInternalHook } from "../../hooks/internal-hooks.js";
 import {
@@ -40,12 +40,12 @@ import {
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import type { OutboundMediaAccess } from "../../media/load-options.js";
 import { resolveAgentScopedOutboundMediaAccess } from "../../media/read-capability.js";
-import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
-import { diagnosticErrorCategory } from "../diagnostic-error-metadata.js";
+import { getGlobalHookRunner } from "../../plugins/hooks/hook-runner-global.js";
+import { diagnosticErrorCategory } from "../diagnostics/diagnostic-error-metadata.js";
 import {
   emitInternalDiagnosticEvent as emitDiagnosticEvent,
   type DiagnosticMessageDeliveryKind,
-} from "../diagnostic-events.js";
+} from "../diagnostics/diagnostic-events.js";
 import { formatErrorMessage } from "../errors.js";
 import { throwIfAborted } from "./abort.js";
 import { resolveOutboundChannelMessageAdapter } from "./channel-resolution.js";

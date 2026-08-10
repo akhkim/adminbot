@@ -3,8 +3,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { PluginManifestRegistry } from "../plugins/manifest-registry.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import type { PluginManifestRegistry } from "../plugins/manifest/manifest-registry.js";
 import { resolveSecretRefString } from "./resolve.js";
 
 const mocks = vi.hoisted(() => ({
@@ -18,7 +18,7 @@ vi.mock("../plugins/current-plugin-metadata-snapshot.js", () => ({
   getCurrentPluginMetadataSnapshot: mocks.getCurrentPluginMetadataSnapshot,
 }));
 
-vi.mock("../plugins/manifest-registry.js", () => ({
+vi.mock("../plugins/manifest/manifest-registry.js", () => ({
   loadPluginManifestRegistry: mocks.loadPluginManifestRegistry,
 }));
 

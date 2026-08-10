@@ -6,24 +6,30 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import type { GroupKeyResolution } from "../config/sessions.js";
 import { channelRouteDedupeKey } from "../plugin-sdk/channel-route.js";
-import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
+import {
+  resetPluginRuntimeStateForTest,
+  setActivePluginRegistry,
+} from "../plugins/runtime/runtime.js";
 import { createChannelTestPluginBase, createTestRegistry } from "../test-utils/channel-plugins.js";
 import { createInboundDebouncer } from "./inbound-debounce.js";
 import { resolveGroupRequireMention } from "./reply/groups.js";
-import { finalizeInboundContext } from "./reply/inbound-context.js";
+import { finalizeInboundContext } from "./reply/inbound/inbound-context.js";
 import {
   buildInboundDedupeKey,
   resetInboundDedupe,
   shouldSkipDuplicateInbound,
-} from "./reply/inbound-dedupe.js";
-import { normalizeInboundTextNewlines, sanitizeInboundSystemTags } from "./reply/inbound-text.js";
+} from "./reply/inbound/inbound-dedupe.js";
+import {
+  normalizeInboundTextNewlines,
+  sanitizeInboundSystemTags,
+} from "./reply/inbound/inbound-text.js";
 import {
   buildMentionRegexes,
   matchesMentionPatterns,
   normalizeMentionText,
   stripMentions,
 } from "./reply/mentions.js";
-import { initSessionState } from "./reply/session.js";
+import { initSessionState } from "./reply/session/session.js";
 import { applyTemplate, type MsgContext, type TemplateContext } from "./templating.js";
 
 type TestChannelGroupContext = {

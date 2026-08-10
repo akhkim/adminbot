@@ -5,12 +5,12 @@ import {
   resetDiagnosticEventsForTest,
   type DiagnosticEventMetadata,
   type DiagnosticEventPayload,
-} from "../infra/diagnostic-events.js";
+} from "../infra/diagnostics/diagnostic-events.js";
 import {
   createDiagnosticTraceContext,
   resetDiagnosticTraceContextForTest,
   runWithDiagnosticTraceContext,
-} from "../infra/diagnostic-trace-context.js";
+} from "../infra/diagnostics/diagnostic-trace-context.js";
 import { getChildLogger, resetLogger, setLoggerOverride } from "./logger.js";
 
 const TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736";

@@ -36,16 +36,17 @@ vi.mock("../../infra/clawhub.js", () => ({
   searchClawHubSkills: searchClawHubSkillsMock,
 }));
 
-vi.mock("../../infra/install-flow.js", () => ({
+vi.mock("../../infra/install/install-flow.js", () => ({
   withExtractedArchiveRoot: withExtractedArchiveRootMock,
 }));
 
-vi.mock("../../infra/install-package-dir.js", () => ({
+vi.mock("../../infra/install/install-package-dir.js", () => ({
   installPackageDir: installPackageDirMock,
 }));
 
-vi.mock("../../plugins/install-security-scan.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../plugins/install-security-scan.js")>();
+vi.mock("../../plugins/install/install-security-scan.js", async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import("../../plugins/install/install-security-scan.js")>();
   return {
     ...actual,
     evaluateSkillInstallPolicy: (...args: unknown[]) => evaluateSkillInstallPolicyMock(...args),

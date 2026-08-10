@@ -9,7 +9,7 @@ import { statSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import { killProcessTree } from "../process/kill-tree.js";
 
 const SNAPSHOT_VERSION = 1;

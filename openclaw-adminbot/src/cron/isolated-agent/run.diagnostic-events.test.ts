@@ -4,7 +4,7 @@ import {
   onDiagnosticEvent,
   onInternalDiagnosticEvent,
   resetDiagnosticEventsForTest,
-} from "../../infra/diagnostic-events.js";
+} from "../../infra/diagnostics/diagnostic-events.js";
 import { resetDiagnosticStateForTest } from "../../logging/diagnostic.js";
 
 vi.mock("../../agents/auth-profiles/source-check.js", () => ({

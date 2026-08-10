@@ -13,7 +13,7 @@ import {
   validateArtifactsListParams,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   normalizeAgentId,
   parseAgentSessionKey,
@@ -21,14 +21,14 @@ import {
   toAgentStoreSessionKey,
 } from "../../routing/session-key.js";
 import { getTaskSessionLookupByIdForStatus } from "../../tasks/task-status-access.js";
-import { resolveSessionKeyForRun } from "../server-session-key.js";
+import { resolveSessionKeyForRun } from "../server/server-session-key.js";
 import {
   resolveSessionStoreAgentId,
   resolveSessionStoreKey,
   resolveStoredSessionKeyForAgentStore,
-} from "../session-store-key.js";
-import { visitSessionMessagesAsync } from "../session-transcript-readers.js";
-import { loadSessionEntry } from "../session-utils.js";
+} from "../sessions/session-store-key.js";
+import { visitSessionMessagesAsync } from "../sessions/session-transcript-readers.js";
+import { loadSessionEntry } from "../sessions/session-utils.js";
 import type { GatewayRequestHandlers, RespondFn } from "./types.js";
 import { assertValidParams } from "./validation.js";
 

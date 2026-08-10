@@ -1,0 +1,1482 @@
+[
+  {
+    "from": "src/commands/agent-command.test-mocks.ts",
+    "to": "src/commands/agent/agent-command.test-mocks.ts"
+  },
+  {
+    "from": "src/commands/agent-via-gateway.test.ts",
+    "to": "src/commands/agent/agent-via-gateway.test.ts"
+  },
+  {
+    "from": "src/commands/agent-via-gateway.ts",
+    "to": "src/commands/agent/agent-via-gateway.ts"
+  },
+  {
+    "from": "src/commands/agent.acp.test.ts",
+    "to": "src/commands/agent/agent.acp.test.ts"
+  },
+  {
+    "from": "src/commands/agent.delivery.test.ts",
+    "to": "src/commands/agent/agent.delivery.test.ts"
+  },
+  {
+    "from": "src/commands/agent.runtime-config.test.ts",
+    "to": "src/commands/agent/agent.runtime-config.test.ts"
+  },
+  {
+    "from": "src/commands/agent.session.test.ts",
+    "to": "src/commands/agent/agent.session.test.ts"
+  },
+  {
+    "from": "src/commands/agent.test.ts",
+    "to": "src/commands/agent/agent.test.ts"
+  },
+  {
+    "from": "src/commands/agent.ts",
+    "to": "src/commands/agent/agent.ts"
+  },
+  {
+    "from": "src/commands/agents.add.test.ts",
+    "to": "src/commands/agents/agents.add.test.ts"
+  },
+  {
+    "from": "src/commands/agents.bind.commands.test.ts",
+    "to": "src/commands/agents/agents.bind.commands.test.ts"
+  },
+  {
+    "from": "src/commands/agents.bind.matrix.integration.test.ts",
+    "to": "src/commands/agents/agents.bind.matrix.integration.test.ts"
+  },
+  {
+    "from": "src/commands/agents.bind.test-support.ts",
+    "to": "src/commands/agents/agents.bind.test-support.ts"
+  },
+  {
+    "from": "src/commands/agents.binding-format.ts",
+    "to": "src/commands/agents/agents.binding-format.ts"
+  },
+  {
+    "from": "src/commands/agents.bindings.ts",
+    "to": "src/commands/agents/agents.bindings.ts"
+  },
+  {
+    "from": "src/commands/agents.command-shared.ts",
+    "to": "src/commands/agents/agents.command-shared.ts"
+  },
+  {
+    "from": "src/commands/agents.commands.add.ts",
+    "to": "src/commands/agents/agents.commands.add.ts"
+  },
+  {
+    "from": "src/commands/agents.commands.bind.ts",
+    "to": "src/commands/agents/agents.commands.bind.ts"
+  },
+  {
+    "from": "src/commands/agents.commands.delete.ts",
+    "to": "src/commands/agents/agents.commands.delete.ts"
+  },
+  {
+    "from": "src/commands/agents.commands.identity.ts",
+    "to": "src/commands/agents/agents.commands.identity.ts"
+  },
+  {
+    "from": "src/commands/agents.commands.list.test.ts",
+    "to": "src/commands/agents/agents.commands.list.test.ts"
+  },
+  {
+    "from": "src/commands/agents.commands.list.ts",
+    "to": "src/commands/agents/agents.commands.list.ts"
+  },
+  {
+    "from": "src/commands/agents.config.ts",
+    "to": "src/commands/agents/agents.config.ts"
+  },
+  {
+    "from": "src/commands/agents.delete.test.ts",
+    "to": "src/commands/agents/agents.delete.test.ts"
+  },
+  {
+    "from": "src/commands/agents.identity.test.ts",
+    "to": "src/commands/agents/agents.identity.test.ts"
+  },
+  {
+    "from": "src/commands/agents.providers.test.ts",
+    "to": "src/commands/agents/agents.providers.test.ts"
+  },
+  {
+    "from": "src/commands/agents.providers.ts",
+    "to": "src/commands/agents/agents.providers.ts"
+  },
+  {
+    "from": "src/commands/agents.test.ts",
+    "to": "src/commands/agents/agents.test.ts"
+  },
+  {
+    "from": "src/commands/auth-choice-legacy.test.ts",
+    "to": "src/commands/auth/auth-choice-legacy.test.ts"
+  },
+  {
+    "from": "src/commands/auth-choice-legacy.ts",
+    "to": "src/commands/auth/auth-choice-legacy.ts"
+  },
+  {
+    "from": "src/commands/auth-choice-options.static.ts",
+    "to": "src/commands/auth/auth-choice-options.static.ts"
+  },
+  {
+    "from": "src/commands/auth-choice-options.test.ts",
+    "to": "src/commands/auth/auth-choice-options.test.ts"
+  },
+  {
+    "from": "src/commands/auth-choice-options.ts",
+    "to": "src/commands/auth/auth-choice-options.ts"
+  },
+  {
+    "from": "src/commands/auth-choice-prompt.ts",
+    "to": "src/commands/auth/auth-choice-prompt.ts"
+  },
+  {
+    "from": "src/commands/auth-choice.apply-helpers.ts",
+    "to": "src/commands/auth/auth-choice.apply-helpers.ts"
+  },
+  {
+    "from": "src/commands/auth-choice.apply.api-providers.test.ts",
+    "to": "src/commands/auth/auth-choice.apply.api-providers.test.ts"
+  },
+  {
+    "from": "src/commands/auth-choice.apply.api-providers.ts",
+    "to": "src/commands/auth/auth-choice.apply.api-providers.ts"
+  },
+  {
+    "from": "src/commands/auth-choice.apply.plugin-provider.test.ts",
+    "to": "src/commands/auth/auth-choice.apply.plugin-provider.test.ts"
+  },
+  {
+    "from": "src/commands/auth-choice.apply.ts",
+    "to": "src/commands/auth/auth-choice.apply.ts"
+  },
+  {
+    "from": "src/commands/auth-choice.apply.types.ts",
+    "to": "src/commands/auth/auth-choice.apply.types.ts"
+  },
+  {
+    "from": "src/commands/auth-choice.model-check.test.ts",
+    "to": "src/commands/auth/auth-choice.model-check.test.ts"
+  },
+  {
+    "from": "src/commands/auth-choice.model-check.ts",
+    "to": "src/commands/auth/auth-choice.model-check.ts"
+  },
+  {
+    "from": "src/commands/auth-choice.preferred-provider.test.ts",
+    "to": "src/commands/auth/auth-choice.preferred-provider.test.ts"
+  },
+  {
+    "from": "src/commands/auth-choice.test.ts",
+    "to": "src/commands/auth/auth-choice.test.ts"
+  },
+  {
+    "from": "src/commands/auth-choice.ts",
+    "to": "src/commands/auth/auth-choice.ts"
+  },
+  {
+    "from": "src/commands/auth-token.ts",
+    "to": "src/commands/auth/auth-token.ts"
+  },
+  {
+    "from": "src/commands/backup-shared.ts",
+    "to": "src/commands/maintenance/backup-shared.ts"
+  },
+  {
+    "from": "src/commands/backup-verify.test.ts",
+    "to": "src/commands/maintenance/backup-verify.test.ts"
+  },
+  {
+    "from": "src/commands/backup-verify.ts",
+    "to": "src/commands/maintenance/backup-verify.ts"
+  },
+  {
+    "from": "src/commands/backup.atomic.test.ts",
+    "to": "src/commands/maintenance/backup.atomic.test.ts"
+  },
+  {
+    "from": "src/commands/backup.create-verify.test.ts",
+    "to": "src/commands/maintenance/backup.create-verify.test.ts"
+  },
+  {
+    "from": "src/commands/backup.test-support.ts",
+    "to": "src/commands/maintenance/backup.test-support.ts"
+  },
+  {
+    "from": "src/commands/backup.test.ts",
+    "to": "src/commands/maintenance/backup.test.ts"
+  },
+  {
+    "from": "src/commands/backup.ts",
+    "to": "src/commands/maintenance/backup.ts"
+  },
+  {
+    "from": "src/commands/channel-account-context.test.ts",
+    "to": "src/commands/channels/channel-account-context.test.ts"
+  },
+  {
+    "from": "src/commands/channel-account-context.ts",
+    "to": "src/commands/channels/channel-account-context.ts"
+  },
+  {
+    "from": "src/commands/channel-test-registry.ts",
+    "to": "src/commands/channels/channel-test-registry.ts"
+  },
+  {
+    "from": "src/commands/channels.add.test.ts",
+    "to": "src/commands/channels/channels.add.test.ts"
+  },
+  {
+    "from": "src/commands/channels.adds-non-default-telegram-account.test.ts",
+    "to": "src/commands/channels/channels.adds-non-default-telegram-account.test.ts"
+  },
+  {
+    "from": "src/commands/channels.config-only-status-output.test.ts",
+    "to": "src/commands/channels/channels.config-only-status-output.test.ts"
+  },
+  {
+    "from": "src/commands/channels.list.test.ts",
+    "to": "src/commands/channels/channels.list.test.ts"
+  },
+  {
+    "from": "src/commands/channels.logs.test.ts",
+    "to": "src/commands/channels/channels.logs.test.ts"
+  },
+  {
+    "from": "src/commands/channels.mock-harness.ts",
+    "to": "src/commands/channels/channels.mock-harness.ts"
+  },
+  {
+    "from": "src/commands/channels.plugin-install.test-helpers.ts",
+    "to": "src/commands/channels/channels.plugin-install.test-helpers.ts"
+  },
+  {
+    "from": "src/commands/channels.remove.test.ts",
+    "to": "src/commands/channels/channels.remove.test.ts"
+  },
+  {
+    "from": "src/commands/channels.resolve.test.ts",
+    "to": "src/commands/channels/channels.resolve.test.ts"
+  },
+  {
+    "from": "src/commands/channels.status.command-flow.test.ts",
+    "to": "src/commands/channels/channels.status.command-flow.test.ts"
+  },
+  {
+    "from": "src/commands/channels.status.external-env.test.ts",
+    "to": "src/commands/channels/channels.status.external-env.test.ts"
+  },
+  {
+    "from": "src/commands/channels.surfaces-signal-runtime-errors-channels-status-output.test.ts",
+    "to": "src/commands/channels/channels.surfaces-signal-runtime-errors-channels-status-output.test.ts"
+  },
+  {
+    "from": "src/commands/channels.ts",
+    "to": "src/commands/channels/channels.ts"
+  },
+  {
+    "from": "src/commands/cleanup-command.test-support.ts",
+    "to": "src/commands/maintenance/cleanup-command.test-support.ts"
+  },
+  {
+    "from": "src/commands/cleanup-plan.ts",
+    "to": "src/commands/maintenance/cleanup-plan.ts"
+  },
+  {
+    "from": "src/commands/cleanup-utils.test.ts",
+    "to": "src/commands/maintenance/cleanup-utils.test.ts"
+  },
+  {
+    "from": "src/commands/cleanup-utils.ts",
+    "to": "src/commands/maintenance/cleanup-utils.ts"
+  },
+  {
+    "from": "src/commands/configure.channels.test.ts",
+    "to": "src/commands/configure/configure.channels.test.ts"
+  },
+  {
+    "from": "src/commands/configure.channels.ts",
+    "to": "src/commands/configure/configure.channels.ts"
+  },
+  {
+    "from": "src/commands/configure.commands.ts",
+    "to": "src/commands/configure/configure.commands.ts"
+  },
+  {
+    "from": "src/commands/configure.daemon.test.ts",
+    "to": "src/commands/configure/configure.daemon.test.ts"
+  },
+  {
+    "from": "src/commands/configure.daemon.ts",
+    "to": "src/commands/configure/configure.daemon.ts"
+  },
+  {
+    "from": "src/commands/configure.gateway-auth.prompt-auth-config.test.ts",
+    "to": "src/commands/configure/configure.gateway-auth.prompt-auth-config.test.ts"
+  },
+  {
+    "from": "src/commands/configure.gateway-auth.test.ts",
+    "to": "src/commands/configure/configure.gateway-auth.test.ts"
+  },
+  {
+    "from": "src/commands/configure.gateway-auth.ts",
+    "to": "src/commands/configure/configure.gateway-auth.ts"
+  },
+  {
+    "from": "src/commands/configure.gateway.test.ts",
+    "to": "src/commands/configure/configure.gateway.test.ts"
+  },
+  {
+    "from": "src/commands/configure.gateway.ts",
+    "to": "src/commands/configure/configure.gateway.ts"
+  },
+  {
+    "from": "src/commands/configure.shared.ts",
+    "to": "src/commands/configure/configure.shared.ts"
+  },
+  {
+    "from": "src/commands/configure.ts",
+    "to": "src/commands/configure/configure.ts"
+  },
+  {
+    "from": "src/commands/configure.wizard.test.ts",
+    "to": "src/commands/configure/configure.wizard.test.ts"
+  },
+  {
+    "from": "src/commands/configure.wizard.ts",
+    "to": "src/commands/configure/configure.wizard.ts"
+  },
+  {
+    "from": "src/commands/daemon-install-auth-profiles-source.runtime.ts",
+    "to": "src/commands/daemon/daemon-install-auth-profiles-source.runtime.ts"
+  },
+  {
+    "from": "src/commands/daemon-install-auth-profiles-store.runtime.ts",
+    "to": "src/commands/daemon/daemon-install-auth-profiles-store.runtime.ts"
+  },
+  {
+    "from": "src/commands/daemon-install-helpers.test.ts",
+    "to": "src/commands/daemon/daemon-install-helpers.test.ts"
+  },
+  {
+    "from": "src/commands/daemon-install-helpers.ts",
+    "to": "src/commands/daemon/daemon-install-helpers.ts"
+  },
+  {
+    "from": "src/commands/daemon-install-plan.shared.test.ts",
+    "to": "src/commands/daemon/daemon-install-plan.shared.test.ts"
+  },
+  {
+    "from": "src/commands/daemon-install-plan.shared.ts",
+    "to": "src/commands/daemon/daemon-install-plan.shared.ts"
+  },
+  {
+    "from": "src/commands/daemon-install-runtime-warning.test.ts",
+    "to": "src/commands/daemon/daemon-install-runtime-warning.test.ts"
+  },
+  {
+    "from": "src/commands/daemon-install-runtime-warning.ts",
+    "to": "src/commands/daemon/daemon-install-runtime-warning.ts"
+  },
+  {
+    "from": "src/commands/daemon-runtime.ts",
+    "to": "src/commands/daemon/daemon-runtime.ts"
+  },
+  {
+    "from": "src/commands/doctor-auth-canonical-api-key-alias.test.ts",
+    "to": "src/commands/doctor/doctor-auth-canonical-api-key-alias.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-auth-flat-profiles.test.ts",
+    "to": "src/commands/doctor/doctor-auth-flat-profiles.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-auth-flat-profiles.ts",
+    "to": "src/commands/doctor/doctor-auth-flat-profiles.ts"
+  },
+  {
+    "from": "src/commands/doctor-auth-legacy-oauth.ts",
+    "to": "src/commands/doctor/doctor-auth-legacy-oauth.ts"
+  },
+  {
+    "from": "src/commands/doctor-auth-oauth-sidecar.test.ts",
+    "to": "src/commands/doctor/doctor-auth-oauth-sidecar.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-auth-oauth-sidecar.ts",
+    "to": "src/commands/doctor/doctor-auth-oauth-sidecar.ts"
+  },
+  {
+    "from": "src/commands/doctor-auth-profile-config.ts",
+    "to": "src/commands/doctor/doctor-auth-profile-config.ts"
+  },
+  {
+    "from": "src/commands/doctor-auth.deprecated-cli-profiles.test.ts",
+    "to": "src/commands/doctor/doctor-auth.deprecated-cli-profiles.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-auth.hints.test.ts",
+    "to": "src/commands/doctor/doctor-auth.hints.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-auth.profile-health.test.ts",
+    "to": "src/commands/doctor/doctor-auth.profile-health.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-auth.ts",
+    "to": "src/commands/doctor/doctor-auth.ts"
+  },
+  {
+    "from": "src/commands/doctor-bootstrap-size.test.ts",
+    "to": "src/commands/doctor/doctor-bootstrap-size.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-bootstrap-size.ts",
+    "to": "src/commands/doctor/doctor-bootstrap-size.ts"
+  },
+  {
+    "from": "src/commands/doctor-browser.ts",
+    "to": "src/commands/doctor/doctor-browser.ts"
+  },
+  {
+    "from": "src/commands/doctor-claude-cli.test.ts",
+    "to": "src/commands/doctor/doctor-claude-cli.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-claude-cli.ts",
+    "to": "src/commands/doctor/doctor-claude-cli.ts"
+  },
+  {
+    "from": "src/commands/doctor-command-owner.test.ts",
+    "to": "src/commands/doctor/doctor-command-owner.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-command-owner.ts",
+    "to": "src/commands/doctor/doctor-command-owner.ts"
+  },
+  {
+    "from": "src/commands/doctor-completion.test.ts",
+    "to": "src/commands/doctor/doctor-completion.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-completion.ts",
+    "to": "src/commands/doctor/doctor-completion.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-analysis.test.ts",
+    "to": "src/commands/doctor/doctor-config-analysis.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-analysis.ts",
+    "to": "src/commands/doctor/doctor-config-analysis.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-audit-scrub.ts",
+    "to": "src/commands/doctor/doctor-config-audit-scrub.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-flow.include-warning.test.ts",
+    "to": "src/commands/doctor/doctor-config-flow.include-warning.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-flow.missing-default-account-bindings.integration.test.ts",
+    "to": "src/commands/doctor/doctor-config-flow.missing-default-account-bindings.integration.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-flow.missing-default-account-bindings.test.ts",
+    "to": "src/commands/doctor/doctor-config-flow.missing-default-account-bindings.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-flow.missing-explicit-default-account.test.ts",
+    "to": "src/commands/doctor/doctor-config-flow.missing-explicit-default-account.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-flow.safe-bins.test.ts",
+    "to": "src/commands/doctor/doctor-config-flow.safe-bins.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-flow.test-utils.ts",
+    "to": "src/commands/doctor/doctor-config-flow.test-utils.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-flow.test.ts",
+    "to": "src/commands/doctor/doctor-config-flow.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-flow.ts",
+    "to": "src/commands/doctor/doctor-config-flow.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-preflight.state-migration.test.ts",
+    "to": "src/commands/doctor/doctor-config-preflight.state-migration.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-preflight.test.ts",
+    "to": "src/commands/doctor/doctor-config-preflight.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-config-preflight.ts",
+    "to": "src/commands/doctor/doctor-config-preflight.ts"
+  },
+  {
+    "from": "src/commands/doctor-device-pairing.test.ts",
+    "to": "src/commands/doctor/doctor-device-pairing.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-device-pairing.ts",
+    "to": "src/commands/doctor/doctor-device-pairing.ts"
+  },
+  {
+    "from": "src/commands/doctor-disk-space.test.ts",
+    "to": "src/commands/doctor/doctor-disk-space.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-disk-space.ts",
+    "to": "src/commands/doctor/doctor-disk-space.ts"
+  },
+  {
+    "from": "src/commands/doctor-format.test.ts",
+    "to": "src/commands/doctor/doctor-format.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-format.ts",
+    "to": "src/commands/doctor/doctor-format.ts"
+  },
+  {
+    "from": "src/commands/doctor-gateway-auth-token.test.ts",
+    "to": "src/commands/doctor/doctor-gateway-auth-token.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-gateway-auth-token.ts",
+    "to": "src/commands/doctor/doctor-gateway-auth-token.ts"
+  },
+  {
+    "from": "src/commands/doctor-gateway-daemon-flow.test.ts",
+    "to": "src/commands/doctor/doctor-gateway-daemon-flow.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-gateway-daemon-flow.ts",
+    "to": "src/commands/doctor/doctor-gateway-daemon-flow.ts"
+  },
+  {
+    "from": "src/commands/doctor-gateway-health.test.ts",
+    "to": "src/commands/doctor/doctor-gateway-health.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-gateway-health.ts",
+    "to": "src/commands/doctor/doctor-gateway-health.ts"
+  },
+  {
+    "from": "src/commands/doctor-gateway-services.test.ts",
+    "to": "src/commands/doctor/doctor-gateway-services.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-gateway-services.ts",
+    "to": "src/commands/doctor/doctor-gateway-services.ts"
+  },
+  {
+    "from": "src/commands/doctor-heartbeat-main-session-repair.ts",
+    "to": "src/commands/doctor/doctor-heartbeat-main-session-repair.ts"
+  },
+  {
+    "from": "src/commands/doctor-heartbeat-session-target.test.ts",
+    "to": "src/commands/doctor/doctor-heartbeat-session-target.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-heartbeat-session-target.ts",
+    "to": "src/commands/doctor/doctor-heartbeat-session-target.ts"
+  },
+  {
+    "from": "src/commands/doctor-heartbeat-template-repair.test.ts",
+    "to": "src/commands/doctor/doctor-heartbeat-template-repair.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-heartbeat-template-repair.ts",
+    "to": "src/commands/doctor/doctor-heartbeat-template-repair.ts"
+  },
+  {
+    "from": "src/commands/doctor-install-policy.test.ts",
+    "to": "src/commands/doctor/doctor-install-policy.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-install-policy.ts",
+    "to": "src/commands/doctor/doctor-install-policy.ts"
+  },
+  {
+    "from": "src/commands/doctor-install.test.ts",
+    "to": "src/commands/doctor/doctor-install.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-install.ts",
+    "to": "src/commands/doctor/doctor-install.ts"
+  },
+  {
+    "from": "src/commands/doctor-legacy-config.migrations.test.ts",
+    "to": "src/commands/doctor/doctor-legacy-config.migrations.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-legacy-config.test.ts",
+    "to": "src/commands/doctor/doctor-legacy-config.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-lint.test.ts",
+    "to": "src/commands/doctor/doctor-lint.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-lint.ts",
+    "to": "src/commands/doctor/doctor-lint.ts"
+  },
+  {
+    "from": "src/commands/doctor-memory-search.test.ts",
+    "to": "src/commands/doctor/doctor-memory-search.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-memory-search.ts",
+    "to": "src/commands/doctor/doctor-memory-search.ts"
+  },
+  {
+    "from": "src/commands/doctor-platform-notes.launchctl-env-overrides.test.ts",
+    "to": "src/commands/doctor/doctor-platform-notes.launchctl-env-overrides.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-platform-notes.startup-optimization.test.ts",
+    "to": "src/commands/doctor/doctor-platform-notes.startup-optimization.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-platform-notes.ts",
+    "to": "src/commands/doctor/doctor-platform-notes.ts"
+  },
+  {
+    "from": "src/commands/doctor-plugin-manifests.test.ts",
+    "to": "src/commands/doctor/doctor-plugin-manifests.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-plugin-manifests.ts",
+    "to": "src/commands/doctor/doctor-plugin-manifests.ts"
+  },
+  {
+    "from": "src/commands/doctor-plugin-registry.test.ts",
+    "to": "src/commands/doctor/doctor-plugin-registry.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-plugin-registry.ts",
+    "to": "src/commands/doctor/doctor-plugin-registry.ts"
+  },
+  {
+    "from": "src/commands/doctor-post-upgrade.test.ts",
+    "to": "src/commands/doctor/doctor-post-upgrade.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-post-upgrade.ts",
+    "to": "src/commands/doctor/doctor-post-upgrade.ts"
+  },
+  {
+    "from": "src/commands/doctor-post-upgrade.types.ts",
+    "to": "src/commands/doctor/doctor-post-upgrade.types.ts"
+  },
+  {
+    "from": "src/commands/doctor-prompter.test.ts",
+    "to": "src/commands/doctor/doctor-prompter.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-prompter.ts",
+    "to": "src/commands/doctor/doctor-prompter.ts"
+  },
+  {
+    "from": "src/commands/doctor-repair-mode.ts",
+    "to": "src/commands/doctor/doctor-repair-mode.ts"
+  },
+  {
+    "from": "src/commands/doctor-sandbox.ts",
+    "to": "src/commands/doctor/doctor-sandbox.ts"
+  },
+  {
+    "from": "src/commands/doctor-sandbox.warns-sandbox-enabled-without-docker.test.ts",
+    "to": "src/commands/doctor/doctor-sandbox.warns-sandbox-enabled-without-docker.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-security.test.ts",
+    "to": "src/commands/doctor/doctor-security.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-security.ts",
+    "to": "src/commands/doctor/doctor-security.ts"
+  },
+  {
+    "from": "src/commands/doctor-service-audit.test-helpers.ts",
+    "to": "src/commands/doctor/doctor-service-audit.test-helpers.ts"
+  },
+  {
+    "from": "src/commands/doctor-service-repair-policy.ts",
+    "to": "src/commands/doctor/doctor-service-repair-policy.ts"
+  },
+  {
+    "from": "src/commands/doctor-session-locks.test.ts",
+    "to": "src/commands/doctor/doctor-session-locks.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-session-locks.ts",
+    "to": "src/commands/doctor/doctor-session-locks.ts"
+  },
+  {
+    "from": "src/commands/doctor-session-snapshots.test.ts",
+    "to": "src/commands/doctor/doctor-session-snapshots.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-session-snapshots.ts",
+    "to": "src/commands/doctor/doctor-session-snapshots.ts"
+  },
+  {
+    "from": "src/commands/doctor-session-state-providers.test.ts",
+    "to": "src/commands/doctor/doctor-session-state-providers.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-session-state-providers.ts",
+    "to": "src/commands/doctor/doctor-session-state-providers.ts"
+  },
+  {
+    "from": "src/commands/doctor-session-transcripts.test.ts",
+    "to": "src/commands/doctor/doctor-session-transcripts.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-session-transcripts.ts",
+    "to": "src/commands/doctor/doctor-session-transcripts.ts"
+  },
+  {
+    "from": "src/commands/doctor-skills-core.ts",
+    "to": "src/commands/doctor/doctor-skills-core.ts"
+  },
+  {
+    "from": "src/commands/doctor-skills.test.ts",
+    "to": "src/commands/doctor/doctor-skills.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-skills.ts",
+    "to": "src/commands/doctor/doctor-skills.ts"
+  },
+  {
+    "from": "src/commands/doctor-state-integrity.cloud-storage.test.ts",
+    "to": "src/commands/doctor/doctor-state-integrity.cloud-storage.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-state-integrity.linux-storage.test.ts",
+    "to": "src/commands/doctor/doctor-state-integrity.linux-storage.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-state-integrity.test.ts",
+    "to": "src/commands/doctor/doctor-state-integrity.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-state-integrity.ts",
+    "to": "src/commands/doctor/doctor-state-integrity.ts"
+  },
+  {
+    "from": "src/commands/doctor-state-migrations.test.ts",
+    "to": "src/commands/doctor/doctor-state-migrations.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-state-migrations.ts",
+    "to": "src/commands/doctor/doctor-state-migrations.ts"
+  },
+  {
+    "from": "src/commands/doctor-ui.test.ts",
+    "to": "src/commands/doctor/doctor-ui.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-ui.ts",
+    "to": "src/commands/doctor/doctor-ui.ts"
+  },
+  {
+    "from": "src/commands/doctor-update.test.ts",
+    "to": "src/commands/doctor/doctor-update.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-update.ts",
+    "to": "src/commands/doctor/doctor-update.ts"
+  },
+  {
+    "from": "src/commands/doctor-volatile-fs.test.ts",
+    "to": "src/commands/doctor/doctor-volatile-fs.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-whatsapp-responsiveness.test.ts",
+    "to": "src/commands/doctor/doctor-whatsapp-responsiveness.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-whatsapp-responsiveness.ts",
+    "to": "src/commands/doctor/doctor-whatsapp-responsiveness.ts"
+  },
+  {
+    "from": "src/commands/doctor-workspace-status.test.ts",
+    "to": "src/commands/doctor/doctor-workspace-status.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-workspace-status.ts",
+    "to": "src/commands/doctor/doctor-workspace-status.ts"
+  },
+  {
+    "from": "src/commands/doctor-workspace.test.ts",
+    "to": "src/commands/doctor/doctor-workspace.test.ts"
+  },
+  {
+    "from": "src/commands/doctor-workspace.ts",
+    "to": "src/commands/doctor/doctor-workspace.ts"
+  },
+  {
+    "from": "src/commands/doctor.e2e-harness.ts",
+    "to": "src/commands/doctor/doctor.e2e-harness.ts"
+  },
+  {
+    "from": "src/commands/doctor.fast-path-mocks.ts",
+    "to": "src/commands/doctor/doctor.fast-path-mocks.ts"
+  },
+  {
+    "from": "src/commands/doctor.note-test-helpers.ts",
+    "to": "src/commands/doctor/doctor.note-test-helpers.ts"
+  },
+  {
+    "from": "src/commands/doctor.runs-legacy-state-migrations-yes-mode-without.e2e.test.ts",
+    "to": "src/commands/doctor/doctor.runs-legacy-state-migrations-yes-mode-without.e2e.test.ts"
+  },
+  {
+    "from": "src/commands/doctor.test.ts",
+    "to": "src/commands/doctor/doctor.test.ts"
+  },
+  {
+    "from": "src/commands/doctor.ts",
+    "to": "src/commands/doctor/doctor.ts"
+  },
+  {
+    "from": "src/commands/doctor.types.ts",
+    "to": "src/commands/doctor/doctor.types.ts"
+  },
+  {
+    "from": "src/commands/doctor.warns-state-directory-is-missing.e2e.test.ts",
+    "to": "src/commands/doctor/doctor.warns-state-directory-is-missing.e2e.test.ts"
+  },
+  {
+    "from": "src/commands/gateway-health-auth-diagnostic.ts",
+    "to": "src/commands/gateway/gateway-health-auth-diagnostic.ts"
+  },
+  {
+    "from": "src/commands/gateway-install-token.persist.runtime.ts",
+    "to": "src/commands/gateway/gateway-install-token.persist.runtime.ts"
+  },
+  {
+    "from": "src/commands/gateway-install-token.test.ts",
+    "to": "src/commands/gateway/gateway-install-token.test.ts"
+  },
+  {
+    "from": "src/commands/gateway-install-token.ts",
+    "to": "src/commands/gateway/gateway-install-token.ts"
+  },
+  {
+    "from": "src/commands/gateway-presence.test.ts",
+    "to": "src/commands/gateway/gateway-presence.test.ts"
+  },
+  {
+    "from": "src/commands/gateway-presence.ts",
+    "to": "src/commands/gateway/gateway-presence.ts"
+  },
+  {
+    "from": "src/commands/gateway-readiness.test.ts",
+    "to": "src/commands/gateway/gateway-readiness.test.ts"
+  },
+  {
+    "from": "src/commands/gateway-readiness.ts",
+    "to": "src/commands/gateway/gateway-readiness.ts"
+  },
+  {
+    "from": "src/commands/gateway-status.test.ts",
+    "to": "src/commands/gateway/gateway-status.test.ts"
+  },
+  {
+    "from": "src/commands/gateway-status.ts",
+    "to": "src/commands/gateway/gateway-status.ts"
+  },
+  {
+    "from": "src/commands/health-format.ts",
+    "to": "src/commands/maintenance/health-format.ts"
+  },
+  {
+    "from": "src/commands/health.snapshot.test.ts",
+    "to": "src/commands/maintenance/health.snapshot.test.ts"
+  },
+  {
+    "from": "src/commands/health.test.ts",
+    "to": "src/commands/maintenance/health.test.ts"
+  },
+  {
+    "from": "src/commands/health.ts",
+    "to": "src/commands/maintenance/health.ts"
+  },
+  {
+    "from": "src/commands/health.types.ts",
+    "to": "src/commands/maintenance/health.types.ts"
+  },
+  {
+    "from": "src/commands/model-picker.runtime.ts",
+    "to": "src/commands/models/model-picker.runtime.ts"
+  },
+  {
+    "from": "src/commands/model-picker.test.ts",
+    "to": "src/commands/models/model-picker.test.ts"
+  },
+  {
+    "from": "src/commands/model-picker.ts",
+    "to": "src/commands/models/model-picker.ts"
+  },
+  {
+    "from": "src/commands/models.auth.provider-resolution.test.ts",
+    "to": "src/commands/models/models.auth.provider-resolution.test.ts"
+  },
+  {
+    "from": "src/commands/models.list.e2e.test.ts",
+    "to": "src/commands/models/models.list.e2e.test.ts"
+  },
+  {
+    "from": "src/commands/models.set.e2e.test.ts",
+    "to": "src/commands/models/models.set.e2e.test.ts"
+  },
+  {
+    "from": "src/commands/oauth-tls-preflight.doctor.test.ts",
+    "to": "src/commands/auth/oauth-tls-preflight.doctor.test.ts"
+  },
+  {
+    "from": "src/commands/oauth-tls-preflight.test.ts",
+    "to": "src/commands/auth/oauth-tls-preflight.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-auth.config-shared.test.ts",
+    "to": "src/commands/onboard/onboard-auth.config-shared.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-auth.test.ts",
+    "to": "src/commands/onboard/onboard-auth.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-channels.e2e.test.ts",
+    "to": "src/commands/onboard/onboard-channels.e2e.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-channels.post-write.test.ts",
+    "to": "src/commands/onboard/onboard-channels.post-write.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-channels.ts",
+    "to": "src/commands/onboard/onboard-channels.ts"
+  },
+  {
+    "from": "src/commands/onboard-config.test.ts",
+    "to": "src/commands/onboard/onboard-config.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-config.ts",
+    "to": "src/commands/onboard/onboard-config.ts"
+  },
+  {
+    "from": "src/commands/onboard-core-auth-flags.ts",
+    "to": "src/commands/onboard/onboard-core-auth-flags.ts"
+  },
+  {
+    "from": "src/commands/onboard-custom-config.test.ts",
+    "to": "src/commands/onboard/onboard-custom-config.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-custom-config.ts",
+    "to": "src/commands/onboard/onboard-custom-config.ts"
+  },
+  {
+    "from": "src/commands/onboard-custom.test.ts",
+    "to": "src/commands/onboard/onboard-custom.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-custom.ts",
+    "to": "src/commands/onboard/onboard-custom.ts"
+  },
+  {
+    "from": "src/commands/onboard-helpers.test.ts",
+    "to": "src/commands/onboard/onboard-helpers.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-helpers.ts",
+    "to": "src/commands/onboard/onboard-helpers.ts"
+  },
+  {
+    "from": "src/commands/onboard-hooks.test.ts",
+    "to": "src/commands/onboard/onboard-hooks.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-hooks.ts",
+    "to": "src/commands/onboard/onboard-hooks.ts"
+  },
+  {
+    "from": "src/commands/onboard-interactive.test.ts",
+    "to": "src/commands/onboard/onboard-interactive.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-interactive.ts",
+    "to": "src/commands/onboard/onboard-interactive.ts"
+  },
+  {
+    "from": "src/commands/onboard-non-interactive.gateway-health-auth.test.ts",
+    "to": "src/commands/onboard/onboard-non-interactive.gateway-health-auth.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-non-interactive.gateway.test.ts",
+    "to": "src/commands/onboard/onboard-non-interactive.gateway.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-non-interactive.test-helpers.ts",
+    "to": "src/commands/onboard/onboard-non-interactive.test-helpers.ts"
+  },
+  {
+    "from": "src/commands/onboard-non-interactive.ts",
+    "to": "src/commands/onboard/onboard-non-interactive.ts"
+  },
+  {
+    "from": "src/commands/onboard-remote.test.ts",
+    "to": "src/commands/onboard/onboard-remote.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-remote.ts",
+    "to": "src/commands/onboard/onboard-remote.ts"
+  },
+  {
+    "from": "src/commands/onboard-search.providers.test.ts",
+    "to": "src/commands/onboard/onboard-search.providers.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-search.test.ts",
+    "to": "src/commands/onboard/onboard-search.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-search.ts",
+    "to": "src/commands/onboard/onboard-search.ts"
+  },
+  {
+    "from": "src/commands/onboard-skills.test.ts",
+    "to": "src/commands/onboard/onboard-skills.test.ts"
+  },
+  {
+    "from": "src/commands/onboard-skills.ts",
+    "to": "src/commands/onboard/onboard-skills.ts"
+  },
+  {
+    "from": "src/commands/onboard-types.ts",
+    "to": "src/commands/onboard/onboard-types.ts"
+  },
+  {
+    "from": "src/commands/onboard.test.ts",
+    "to": "src/commands/onboard/onboard.test.ts"
+  },
+  {
+    "from": "src/commands/onboard.ts",
+    "to": "src/commands/onboard/onboard.ts"
+  },
+  {
+    "from": "src/commands/sandbox-display.ts",
+    "to": "src/commands/sandbox/sandbox-display.ts"
+  },
+  {
+    "from": "src/commands/sandbox-explain.test.ts",
+    "to": "src/commands/sandbox/sandbox-explain.test.ts"
+  },
+  {
+    "from": "src/commands/sandbox-explain.ts",
+    "to": "src/commands/sandbox/sandbox-explain.ts"
+  },
+  {
+    "from": "src/commands/sandbox-formatters.test.ts",
+    "to": "src/commands/sandbox/sandbox-formatters.test.ts"
+  },
+  {
+    "from": "src/commands/sandbox-formatters.ts",
+    "to": "src/commands/sandbox/sandbox-formatters.ts"
+  },
+  {
+    "from": "src/commands/sandbox.test.ts",
+    "to": "src/commands/sandbox/sandbox.test.ts"
+  },
+  {
+    "from": "src/commands/sandbox.ts",
+    "to": "src/commands/sandbox/sandbox.ts"
+  },
+  {
+    "from": "src/commands/session-store-targets.test.ts",
+    "to": "src/commands/sessions/session-store-targets.test.ts"
+  },
+  {
+    "from": "src/commands/session-store-targets.ts",
+    "to": "src/commands/sessions/session-store-targets.ts"
+  },
+  {
+    "from": "src/commands/sessions-cleanup.test.ts",
+    "to": "src/commands/sessions/sessions-cleanup.test.ts"
+  },
+  {
+    "from": "src/commands/sessions-cleanup.ts",
+    "to": "src/commands/sessions/sessions-cleanup.ts"
+  },
+  {
+    "from": "src/commands/sessions-display-model.ts",
+    "to": "src/commands/sessions/sessions-display-model.ts"
+  },
+  {
+    "from": "src/commands/sessions-table.ts",
+    "to": "src/commands/sessions/sessions-table.ts"
+  },
+  {
+    "from": "src/commands/sessions-tail.test.ts",
+    "to": "src/commands/sessions/sessions-tail.test.ts"
+  },
+  {
+    "from": "src/commands/sessions-tail.ts",
+    "to": "src/commands/sessions/sessions-tail.ts"
+  },
+  {
+    "from": "src/commands/sessions.acp-model-display.test.ts",
+    "to": "src/commands/sessions/sessions.acp-model-display.test.ts"
+  },
+  {
+    "from": "src/commands/sessions.acp-runtime-metadata.test.ts",
+    "to": "src/commands/sessions/sessions.acp-runtime-metadata.test.ts"
+  },
+  {
+    "from": "src/commands/sessions.default-agent-store.test.ts",
+    "to": "src/commands/sessions/sessions.default-agent-store.test.ts"
+  },
+  {
+    "from": "src/commands/sessions.kind-classification.test.ts",
+    "to": "src/commands/sessions/sessions.kind-classification.test.ts"
+  },
+  {
+    "from": "src/commands/sessions.model-resolution.test.ts",
+    "to": "src/commands/sessions/sessions.model-resolution.test.ts"
+  },
+  {
+    "from": "src/commands/sessions.test-helpers.ts",
+    "to": "src/commands/sessions/sessions.test-helpers.ts"
+  },
+  {
+    "from": "src/commands/sessions.test.ts",
+    "to": "src/commands/sessions/sessions.test.ts"
+  },
+  {
+    "from": "src/commands/sessions.ts",
+    "to": "src/commands/sessions/sessions.ts"
+  },
+  {
+    "from": "src/commands/status-all.ts",
+    "to": "src/commands/status/status-all.ts"
+  },
+  {
+    "from": "src/commands/status-json-command.test.ts",
+    "to": "src/commands/status/status-json-command.test.ts"
+  },
+  {
+    "from": "src/commands/status-json-command.ts",
+    "to": "src/commands/status/status-json-command.ts"
+  },
+  {
+    "from": "src/commands/status-json-payload.test.ts",
+    "to": "src/commands/status/status-json-payload.test.ts"
+  },
+  {
+    "from": "src/commands/status-json-payload.ts",
+    "to": "src/commands/status/status-json-payload.ts"
+  },
+  {
+    "from": "src/commands/status-json-runtime.test.ts",
+    "to": "src/commands/status/status-json-runtime.test.ts"
+  },
+  {
+    "from": "src/commands/status-json-runtime.ts",
+    "to": "src/commands/status/status-json-runtime.ts"
+  },
+  {
+    "from": "src/commands/status-json.test.ts",
+    "to": "src/commands/status/status-json.test.ts"
+  },
+  {
+    "from": "src/commands/status-json.ts",
+    "to": "src/commands/status/status-json.ts"
+  },
+  {
+    "from": "src/commands/status-overview-rows.test.ts",
+    "to": "src/commands/status/status-overview-rows.test.ts"
+  },
+  {
+    "from": "src/commands/status-overview-rows.ts",
+    "to": "src/commands/status/status-overview-rows.ts"
+  },
+  {
+    "from": "src/commands/status-overview-surface.test.ts",
+    "to": "src/commands/status/status-overview-surface.test.ts"
+  },
+  {
+    "from": "src/commands/status-overview-surface.ts",
+    "to": "src/commands/status/status-overview-surface.ts"
+  },
+  {
+    "from": "src/commands/status-overview-values.test.ts",
+    "to": "src/commands/status/status-overview-values.test.ts"
+  },
+  {
+    "from": "src/commands/status-overview-values.ts",
+    "to": "src/commands/status/status-overview-values.ts"
+  },
+  {
+    "from": "src/commands/status-runtime-shared.test.ts",
+    "to": "src/commands/status/status-runtime-shared.test.ts"
+  },
+  {
+    "from": "src/commands/status-runtime-shared.ts",
+    "to": "src/commands/status/status-runtime-shared.ts"
+  },
+  {
+    "from": "src/commands/status-update-restart.test.ts",
+    "to": "src/commands/status/status-update-restart.test.ts"
+  },
+  {
+    "from": "src/commands/status-update-restart.ts",
+    "to": "src/commands/status/status-update-restart.ts"
+  },
+  {
+    "from": "src/commands/status.agent-local.ts",
+    "to": "src/commands/status/status.agent-local.ts"
+  },
+  {
+    "from": "src/commands/status.command-report-data.test.ts",
+    "to": "src/commands/status/status.command-report-data.test.ts"
+  },
+  {
+    "from": "src/commands/status.command-report-data.ts",
+    "to": "src/commands/status/status.command-report-data.ts"
+  },
+  {
+    "from": "src/commands/status.command-report.test.ts",
+    "to": "src/commands/status/status.command-report.test.ts"
+  },
+  {
+    "from": "src/commands/status.command-report.ts",
+    "to": "src/commands/status/status.command-report.ts"
+  },
+  {
+    "from": "src/commands/status.command-sections.test.ts",
+    "to": "src/commands/status/status.command-sections.test.ts"
+  },
+  {
+    "from": "src/commands/status.command-sections.ts",
+    "to": "src/commands/status/status.command-sections.ts"
+  },
+  {
+    "from": "src/commands/status.command.text-runtime.ts",
+    "to": "src/commands/status/status.command.text-runtime.ts"
+  },
+  {
+    "from": "src/commands/status.command.ts",
+    "to": "src/commands/status/status.command.ts"
+  },
+  {
+    "from": "src/commands/status.daemon.test.ts",
+    "to": "src/commands/status/status.daemon.test.ts"
+  },
+  {
+    "from": "src/commands/status.daemon.ts",
+    "to": "src/commands/status/status.daemon.ts"
+  },
+  {
+    "from": "src/commands/status.format.test.ts",
+    "to": "src/commands/status/status.format.test.ts"
+  },
+  {
+    "from": "src/commands/status.format.ts",
+    "to": "src/commands/status/status.format.ts"
+  },
+  {
+    "from": "src/commands/status.gateway-connection.test.ts",
+    "to": "src/commands/status/status.gateway-connection.test.ts"
+  },
+  {
+    "from": "src/commands/status.gateway-connection.ts",
+    "to": "src/commands/status/status.gateway-connection.ts"
+  },
+  {
+    "from": "src/commands/status.gateway-probe.ts",
+    "to": "src/commands/status/status.gateway-probe.ts"
+  },
+  {
+    "from": "src/commands/status.link-channel.test.ts",
+    "to": "src/commands/status/status.link-channel.test.ts"
+  },
+  {
+    "from": "src/commands/status.link-channel.ts",
+    "to": "src/commands/status/status.link-channel.ts"
+  },
+  {
+    "from": "src/commands/status.node-mode.test.ts",
+    "to": "src/commands/status/status.node-mode.test.ts"
+  },
+  {
+    "from": "src/commands/status.node-mode.ts",
+    "to": "src/commands/status/status.node-mode.ts"
+  },
+  {
+    "from": "src/commands/status.scan-execute.test.ts",
+    "to": "src/commands/status/status.scan-execute.test.ts"
+  },
+  {
+    "from": "src/commands/status.scan-execute.ts",
+    "to": "src/commands/status/status.scan-execute.ts"
+  },
+  {
+    "from": "src/commands/status.scan-memory.test.ts",
+    "to": "src/commands/status/status.scan-memory.test.ts"
+  },
+  {
+    "from": "src/commands/status.scan-memory.ts",
+    "to": "src/commands/status/status.scan-memory.ts"
+  },
+  {
+    "from": "src/commands/status.scan-overview.test.ts",
+    "to": "src/commands/status/status.scan-overview.test.ts"
+  },
+  {
+    "from": "src/commands/status.scan-overview.ts",
+    "to": "src/commands/status/status.scan-overview.ts"
+  },
+  {
+    "from": "src/commands/status.scan-result.test.ts",
+    "to": "src/commands/status/status.scan-result.test.ts"
+  },
+  {
+    "from": "src/commands/status.scan-result.ts",
+    "to": "src/commands/status/status.scan-result.ts"
+  },
+  {
+    "from": "src/commands/status.scan.bootstrap-shared.ts",
+    "to": "src/commands/status/status.scan.bootstrap-shared.ts"
+  },
+  {
+    "from": "src/commands/status.scan.config-shared.test.ts",
+    "to": "src/commands/status/status.scan.config-shared.test.ts"
+  },
+  {
+    "from": "src/commands/status.scan.config-shared.ts",
+    "to": "src/commands/status/status.scan.config-shared.ts"
+  },
+  {
+    "from": "src/commands/status.scan.deps.runtime.ts",
+    "to": "src/commands/status/status.scan.deps.runtime.ts"
+  },
+  {
+    "from": "src/commands/status.scan.fast-json.test.ts",
+    "to": "src/commands/status/status.scan.fast-json.test.ts"
+  },
+  {
+    "from": "src/commands/status.scan.fast-json.ts",
+    "to": "src/commands/status/status.scan.fast-json.ts"
+  },
+  {
+    "from": "src/commands/status.scan.runtime.ts",
+    "to": "src/commands/status/status.scan.runtime.ts"
+  },
+  {
+    "from": "src/commands/status.scan.shared.test.ts",
+    "to": "src/commands/status/status.scan.shared.test.ts"
+  },
+  {
+    "from": "src/commands/status.scan.shared.ts",
+    "to": "src/commands/status/status.scan.shared.ts"
+  },
+  {
+    "from": "src/commands/status.scan.test-helpers.ts",
+    "to": "src/commands/status/status.scan.test-helpers.ts"
+  },
+  {
+    "from": "src/commands/status.scan.test.ts",
+    "to": "src/commands/status/status.scan.test.ts"
+  },
+  {
+    "from": "src/commands/status.scan.ts",
+    "to": "src/commands/status/status.scan.ts"
+  },
+  {
+    "from": "src/commands/status.service-summary.test.ts",
+    "to": "src/commands/status/status.service-summary.test.ts"
+  },
+  {
+    "from": "src/commands/status.service-summary.ts",
+    "to": "src/commands/status/status.service-summary.ts"
+  },
+  {
+    "from": "src/commands/status.summary.redaction.test.ts",
+    "to": "src/commands/status/status.summary.redaction.test.ts"
+  },
+  {
+    "from": "src/commands/status.summary.runtime.test.ts",
+    "to": "src/commands/status/status.summary.runtime.test.ts"
+  },
+  {
+    "from": "src/commands/status.summary.runtime.ts",
+    "to": "src/commands/status/status.summary.runtime.ts"
+  },
+  {
+    "from": "src/commands/status.summary.test.ts",
+    "to": "src/commands/status/status.summary.test.ts"
+  },
+  {
+    "from": "src/commands/status.summary.ts",
+    "to": "src/commands/status/status.summary.ts"
+  },
+  {
+    "from": "src/commands/status.test-support.ts",
+    "to": "src/commands/status/status.test-support.ts"
+  },
+  {
+    "from": "src/commands/status.test.ts",
+    "to": "src/commands/status/status.test.ts"
+  },
+  {
+    "from": "src/commands/status.ts",
+    "to": "src/commands/status/status.ts"
+  },
+  {
+    "from": "src/commands/status.types.ts",
+    "to": "src/commands/status/status.types.ts"
+  },
+  {
+    "from": "src/commands/status.update.test.ts",
+    "to": "src/commands/status/status.update.test.ts"
+  },
+  {
+    "from": "src/commands/status.update.ts",
+    "to": "src/commands/status/status.update.ts"
+  },
+  {
+    "from": "src/commands/tasks-audit-system.ts",
+    "to": "src/commands/maintenance/tasks-audit-system.ts"
+  },
+  {
+    "from": "src/commands/tasks-json.test.ts",
+    "to": "src/commands/maintenance/tasks-json.test.ts"
+  },
+  {
+    "from": "src/commands/tasks-json.ts",
+    "to": "src/commands/maintenance/tasks-json.ts"
+  },
+  {
+    "from": "src/commands/tasks.test.ts",
+    "to": "src/commands/maintenance/tasks.test.ts"
+  },
+  {
+    "from": "src/commands/tasks.ts",
+    "to": "src/commands/maintenance/tasks.ts"
+  }
+]

@@ -2,14 +2,14 @@
 import type { Command } from "commander";
 import { resolveCliArgvInvocation } from "../argv-invocation.js";
 import {
-  shouldEagerRegisterSubcommands,
-  shouldRegisterPrimarySubcommandOnly,
-} from "../command-registration-policy.js";
-import {
   buildCommandGroupEntries,
   defineImportedProgramCommandGroupSpecs,
   type CommandGroupDescriptorSpec,
 } from "./command-group-descriptors.js";
+import {
+  shouldEagerRegisterSubcommands,
+  shouldRegisterPrimarySubcommandOnly,
+} from "./command-registration-policy.js";
 import {
   registerCommandGroupByName,
   registerCommandGroups,
@@ -38,7 +38,7 @@ const entrySpecs: readonly CommandGroupDescriptorSpec<SubCliRegistrar>[] = [
   ...defineImportedProgramCommandGroupSpecs([
     {
       commandNames: ["completion"],
-      loadModule: () => import("../completion-cli.js"),
+      loadModule: () => import("./completion-cli.js"),
       exportName: "registerCompletionCli",
     },
   ]),

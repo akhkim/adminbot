@@ -1,5 +1,5 @@
 // Emits redacted plugin lifecycle security diagnostics for SIEM consumers.
-import { emitTrustedSecurityEvent } from "../infra/diagnostic-events.js";
+import { emitTrustedSecurityEvent } from "../infra/diagnostics/diagnostic-events.js";
 
 export type PluginSecuritySourceFamily =
   | "archive"

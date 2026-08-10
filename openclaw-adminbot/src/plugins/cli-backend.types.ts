@@ -1,6 +1,6 @@
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 /** Type contracts for plugin-owned CLI backend integrations. */
-import type { CliBackendConfig } from "../config/types.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { CliBackendConfig } from "../config/types/types.js";
 import type { ContextEngineHostCapability } from "../context-engine/types.js";
 
 export type PluginTextReplacement = {

@@ -6,7 +6,7 @@ import {
   parseEnvInvocationPrelude,
   unwrapEnvInvocation,
 } from "./command-carriers.js";
-import { normalizeExecutableToken } from "./exec-wrapper-tokens.js";
+import { normalizeExecutableToken } from "./exec/exec-wrapper-tokens.js";
 import { parseInlineOptionToken } from "./inline-option-token.js";
 
 export { unwrapEnvInvocation } from "./command-carriers.js";

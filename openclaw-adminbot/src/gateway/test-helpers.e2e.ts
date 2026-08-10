@@ -15,16 +15,16 @@ import {
   signDevicePayload,
 } from "../infra/device-identity.js";
 import { rawDataToString } from "../infra/ws.js";
-import { getDeterministicFreePortBlock } from "../test-utils/ports.js";
 import {
   GATEWAY_CLIENT_MODES,
   GATEWAY_CLIENT_NAMES,
   type GatewayClientMode,
   type GatewayClientName,
-} from "../utils/message-channel.js";
-import { GatewayClient } from "./client.js";
+} from "../shared/message-channel.js";
+import { getDeterministicFreePortBlock } from "../test-utils/ports.js";
+import { GatewayClient } from "./client/client.js";
 import { buildDeviceAuthPayloadV3 } from "./device-auth.js";
-import { startGatewayServer } from "./server.js";
+import { startGatewayServer } from "./server/server.js";
 
 /** Reserve a deterministic free port block for Gateway E2E tests. */
 export async function getFreeGatewayPort(): Promise<number> {

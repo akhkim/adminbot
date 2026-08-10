@@ -1,7 +1,7 @@
 // Model auth-list tests cover provider auth listing and output formatting.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuthProfileStore } from "../../agents/auth-profiles.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { AuthProfileStore } from "../../agents/auth/auth-profiles.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { OutputRuntimeEnv } from "../../runtime.js";
 import { modelsAuthListCommand } from "./auth-list.js";
 
@@ -18,7 +18,7 @@ vi.mock("../../agents/agent-scope.js", () => ({
   resolveDefaultAgentId: () => "main",
 }));
 
-vi.mock("../../agents/auth-profiles.js", () => ({
+vi.mock("../../agents/auth/auth-profiles.js", () => ({
   ensureAuthProfileStore: mocks.ensureAuthProfileStore,
   externalCliDiscoveryForProviderAuth: mocks.externalCliDiscoveryForProviderAuth,
   resolveAuthProfileDisplayLabel: mocks.resolveAuthProfileDisplayLabel,

@@ -10,18 +10,18 @@ import {
   stylePromptMessage,
   stylePromptTitle,
 } from "../../packages/terminal-core/src/prompt-style.js";
-import { formatCliCommand } from "../cli/command-format.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
 import { isNixMode } from "../config/config.js";
 import { resolveGatewayService } from "../daemon/service.js";
 import type { RuntimeEnv } from "../runtime.js";
-import { resolveCleanupPlanFromDisk } from "./cleanup-plan.js";
+import { resolveCleanupPlanFromDisk } from "./maintenance/cleanup-plan.js";
 import {
   listAgentSessionDirs,
   removePath,
   removeStateAndLinkedPaths,
   removeWorkspaceAttestationPaths,
   removeWorkspaceDirs,
-} from "./cleanup-utils.js";
+} from "./maintenance/cleanup-utils.js";
 
 export type ResetScope = "config" | "config+creds+sessions" | "full";
 

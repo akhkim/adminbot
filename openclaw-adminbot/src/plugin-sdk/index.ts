@@ -43,15 +43,12 @@ export type {
   AgentHarness,
   AnyAgentTool,
   CliBackendPlugin,
-  MediaUnderstandingProviderPlugin,
   OpenClawPluginApi,
   OpenClawPluginConfigSchema,
   PluginLogger,
   ProviderAuthContext,
   ProviderAuthResult,
   ProviderPreparedRuntimeAuth,
-  RealtimeTranscriptionProviderPlugin,
-  SpeechProviderPlugin,
   UnifiedModelCatalogProviderContext,
   UnifiedModelCatalogProviderPlugin,
 } from "../plugins/types.js";
@@ -60,7 +57,7 @@ export type {
   UnifiedModelCatalogKind,
   UnifiedModelCatalogSource,
 } from "@openclaw/model-catalog-core/model-catalog-types";
-export type { ProviderRuntimeModel } from "../plugins/provider-runtime-model.types.js";
+export type { ProviderRuntimeModel } from "../plugins/providers/provider-runtime-model.types.js";
 export type { ResolvedProviderRuntimeAuth } from "../plugins/runtime/model-auth-types.js";
 export type {
   PluginRuntime,
@@ -101,10 +98,8 @@ export type {
   MemoryPluginPublicArtifact,
   MemoryPluginPublicArtifactsProvider,
 } from "../plugins/memory-state.js";
-export type { CliBackendConfig } from "../config/types.js";
-export type * from "./image-generation.js";
-export type * from "./music-generation.js";
-export type { SecretInput, SecretRef } from "../config/types.secrets.js";
+export type { CliBackendConfig } from "../config/types/types.js";
+export type { SecretInput, SecretRef } from "../config/types/secrets.js";
 export type { RuntimeEnv } from "../runtime.js";
 export type { HookEntry } from "../hooks/types.js";
 export type { ReplyPayload } from "./reply-payload.js";
@@ -113,8 +108,8 @@ export type {
   ContextEngineFactory,
   ContextEngineFactoryContext,
 } from "../context-engine/registry.js";
-export type { DiagnosticEventPayload } from "../infra/diagnostic-events.js";
-export type { DiagnosticTraceContext } from "../infra/diagnostic-trace-context.js";
+export type { DiagnosticEventPayload } from "../infra/diagnostics/diagnostic-events.js";
+export type { DiagnosticTraceContext } from "../infra/diagnostics/diagnostic-trace-context.js";
 export type {
   AssembleResult,
   BootstrapResult,
@@ -139,7 +134,7 @@ export type {
   TranscriptRewriteResult,
 } from "../context-engine/types.js";
 
-export { emptyPluginConfigSchema } from "../plugins/config-schema.js";
+export { emptyPluginConfigSchema } from "../plugins/config/config-schema.js";
 export { registerContextEngine } from "../context-engine/registry.js";
 export {
   ContextEngineRuntimeSettingsUnavailableError,
@@ -150,5 +145,5 @@ export {
   buildMemorySystemPromptAddition,
   delegateCompactionToRuntime,
 } from "../context-engine/delegate.js";
-export { onDiagnosticEvent } from "../infra/diagnostic-events.js";
+export { onDiagnosticEvent } from "../infra/diagnostics/diagnostic-events.js";
 export { optionalStringEnum, stringEnum } from "../agents/schema/typebox.js";

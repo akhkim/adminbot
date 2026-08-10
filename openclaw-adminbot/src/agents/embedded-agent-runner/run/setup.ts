@@ -1,8 +1,8 @@
 /**
  * Resolves hook-selected model state and pre-model attachments for a run.
  */
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import type { ProviderRuntimeModel } from "../../../plugins/provider-runtime-model.types.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import type { ProviderRuntimeModel } from "../../../plugins/providers/provider-runtime-model.types.js";
 import type {
   PluginHookBeforeAgentStartResult,
   PluginHookBeforeModelResolveAttachment,

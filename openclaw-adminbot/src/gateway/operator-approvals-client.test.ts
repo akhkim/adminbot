@@ -56,7 +56,7 @@ class MockGatewayClient {
   }
 }
 
-vi.mock("./client-bootstrap.js", () => ({
+vi.mock("./client/client-bootstrap.js", () => ({
   resolveGatewayClientBootstrap: vi.fn(async () => ({
     url: bootstrapState.url,
     urlSource: bootstrapState.urlSource,
@@ -64,7 +64,7 @@ vi.mock("./client-bootstrap.js", () => ({
   })),
 }));
 
-vi.mock("./client.js", () => ({
+vi.mock("./client/client.js", () => ({
   GatewayClient: MockGatewayClient,
 }));
 

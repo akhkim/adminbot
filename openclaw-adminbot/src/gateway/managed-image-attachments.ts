@@ -7,7 +7,7 @@ import path from "node:path";
 import { isPassThroughRemoteMediaSource } from "@openclaw/media-core/media-source-url";
 import { resolveDefaultAgentId } from "../agents/agent-scope-config.js";
 import { getRuntimeConfig } from "../config/config.js";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import { readLocalFileSafely } from "../infra/fs-safe.js";
 import { tryReadJson, writeJson } from "../infra/json-files.js";
 import { safeFileURLToPath } from "../infra/local-file-access.js";
@@ -19,17 +19,20 @@ import {
 } from "../media/media-services.js";
 import { MEDIA_MAX_BYTES, saveMediaBuffer, saveMediaSource } from "../media/store.js";
 import { resolveUserPath } from "../utils.js";
-import type { AuthRateLimiter } from "./auth-rate-limit.js";
-import type { ResolvedGatewayAuth } from "./auth.js";
-import { sendJson, sendMethodNotAllowed, sendMissingScopeForbidden } from "./http-common.js";
+import type { AuthRateLimiter } from "./auth/auth-rate-limit.js";
+import type { ResolvedGatewayAuth } from "./auth/auth.js";
+import { sendJson, sendMethodNotAllowed, sendMissingScopeForbidden } from "./http/http-common.js";
 import {
   authorizeGatewayHttpRequestOrReply,
   resolveOpenAiCompatibleHttpOperatorScopes,
   resolveOpenAiCompatibleHttpSenderIsOwner,
-} from "./http-utils.js";
+} from "./http/http-utils.js";
 import { authorizeOperatorScopesForMethod } from "./method-scopes.js";
-import { readSessionMessagesWithSourceAsync } from "./session-transcript-readers.js";
-import { loadSessionEntry, resolveSessionHistoryTranscriptPathAsync } from "./session-utils.js";
+import { readSessionMessagesWithSourceAsync } from "./sessions/session-transcript-readers.js";
+import {
+  loadSessionEntry,
+  resolveSessionHistoryTranscriptPathAsync,
+} from "./sessions/session-utils.js";
 
 const OUTGOING_IMAGE_ROUTE_PREFIX = "/api/chat/media/outgoing";
 const DEFAULT_TRANSIENT_OUTGOING_IMAGE_TTL_MS = 15 * 60 * 1000;

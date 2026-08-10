@@ -6,12 +6,12 @@ import type {
   QueuedFileWriter,
   QueuedFileWriterDiagnostics,
 } from "../agents/queued-file-writer.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { assertNoSymlinkParents, writeSiblingTempFile } from "../infra/fs-safe-advanced.js";
 import { readRegularFileSync } from "../infra/fs-safe.js";
 import { redactSecrets } from "../logging/redact.js";
-import { parseBooleanValue } from "../utils/boolean.js";
-import { safeJsonStringify } from "../utils/safe-json.js";
+import { parseBooleanValue } from "../shared/boolean.js";
+import { safeJsonStringify } from "../shared/safe-json.js";
 import {
   TRAJECTORY_RUNTIME_CAPTURE_MAX_BYTES,
   TRAJECTORY_RUNTIME_EVENT_MAX_BYTES,

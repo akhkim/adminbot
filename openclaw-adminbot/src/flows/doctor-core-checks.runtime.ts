@@ -1,9 +1,3 @@
-// Doctor runtime checks inspect tool names, browser residue, and runtime state.
-import { TOOL_NAME_SEPARATOR } from "../agents/agent-bundle-mcp-names.js";
-import {
-  type McpToolCatalogDiagnostic,
-  createBundleMcpToolRuntime,
-} from "../agents/agent-bundle-mcp-tools.js";
 import {
   listAgentEntries,
   listAgentIds,
@@ -11,29 +5,35 @@ import {
   resolveAgentWorkspaceDir,
   resolveDefaultAgentId,
 } from "../agents/agent-scope.js";
-import { createOpenClawCodingTools } from "../agents/agent-tools.js";
-import { resolveEffectiveToolPolicy } from "../agents/agent-tools.policy.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { applyFinalEffectiveToolPolicy } from "../agents/embedded-agent-runner/effective-tool-policy.js";
 import { shouldCreateBundleMcpRuntimeForAttempt } from "../agents/embedded-agent-runner/run/attempt-tool-construction-plan.js";
+// Doctor runtime checks inspect tool names, browser residue, and runtime state.
+import { TOOL_NAME_SEPARATOR } from "../agents/mcp/agent-bundle-mcp-names.js";
+import {
+  type McpToolCatalogDiagnostic,
+  createBundleMcpToolRuntime,
+} from "../agents/mcp/agent-bundle-mcp-tools.js";
 import {
   findModelInCatalog,
   loadModelCatalog,
   type ModelCatalogEntry,
-} from "../agents/model-catalog.js";
-import { resolveDefaultModelForAgent } from "../agents/model-selection.js";
-import { supportsModelTools } from "../agents/model-tool-support.js";
+} from "../agents/models/model-catalog.js";
+import { resolveDefaultModelForAgent } from "../agents/models/model-selection.js";
+import { supportsModelTools } from "../agents/models/model-tool-support.js";
 import { normalizeAgentRuntimeTools } from "../agents/runtime-plan/tools.js";
-import { collectExplicitAllowlist, normalizeToolName } from "../agents/tool-policy.js";
+import { createOpenClawCodingTools } from "../agents/tools/agent-tools.js";
+import { resolveEffectiveToolPolicy } from "../agents/tools/agent-tools.policy.js";
+import type { AnyAgentTool } from "../agents/tools/common.js";
+import { collectExplicitAllowlist, normalizeToolName } from "../agents/tools/tool-policy.js";
 import {
   inspectRuntimeToolInputSchemas,
   type RuntimeToolSchemaDiagnostic,
-} from "../agents/tool-schema-projection.js";
-import type { AnyAgentTool } from "../agents/tools/common.js";
-import { collectUnavailableAgentSkills } from "../commands/doctor-skills-core.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+} from "../agents/tools/tool-schema-projection.js";
+import { collectUnavailableAgentSkills } from "../commands/doctor/doctor-skills-core.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
-import type { ProviderRuntimeModel } from "../plugins/provider-runtime-model.types.js";
+import type { ProviderRuntimeModel } from "../plugins/providers/provider-runtime-model.types.js";
 import { getPluginToolMeta, setPluginToolMeta } from "../plugins/tools.js";
 import type { ProviderCatalogOrder, ProviderPlugin } from "../plugins/types.js";
 import { normalizeAgentId } from "../routing/session-key.js";
@@ -425,8 +425,8 @@ function groupProviderCatalogsForDoctor(providers: readonly ProviderPlugin[]): {
 export async function collectProviderCatalogProjectionFindings(
   cfg: OpenClawConfig,
 ): Promise<readonly HealthFinding[]> {
-  const { runProviderStaticCatalog } = await import("../plugins/provider-discovery.js");
-  const { resolvePluginProviders } = await import("../plugins/providers.runtime.js");
+  const { runProviderStaticCatalog } = await import("../plugins/providers/provider-discovery.js");
+  const { resolvePluginProviders } = await import("../plugins/providers/providers.runtime.js");
   const env = process.env;
   const agentDir = resolveDefaultAgentDir(cfg);
   const workspaceDir = resolveAgentWorkspaceDir(cfg, resolveDefaultAgentId(cfg));

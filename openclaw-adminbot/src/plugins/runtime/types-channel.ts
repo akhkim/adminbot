@@ -6,7 +6,7 @@
  * keyed by plugin id.
  */
 type DispatchReplyWithBufferedBlockDispatcher =
-  import("../../auto-reply/reply/provider-dispatcher.types.js").DispatchReplyWithBufferedBlockDispatcher;
+  import("../../auto-reply/reply/providers/provider-dispatcher.types.js").DispatchReplyWithBufferedBlockDispatcher;
 type CreateReplyDispatcherWithTyping =
   import("../../auto-reply/reply/reply-dispatcher.runtime-types.js").CreateReplyDispatcherWithTyping;
 type ReadChannelAllowFromStoreForAccount =
@@ -82,7 +82,7 @@ export type PluginRuntimeChannel = {
     resolveChunkMode: typeof import("../../auto-reply/chunk.js").resolveChunkMode;
     resolveTextChunkLimit: typeof import("../../auto-reply/chunk.js").resolveTextChunkLimit;
     hasControlCommand: typeof import("../../auto-reply/command-detection.js").hasControlCommand;
-    resolveMarkdownTableMode: import("../../config/markdown-tables.types.js").ResolveMarkdownTableMode;
+    resolveMarkdownTableMode: import("../../config/markdown/markdown-tables.types.js").ResolveMarkdownTableMode;
     convertMarkdownTables: typeof import("../../../packages/markdown-core/src/tables.js").convertMarkdownTables;
   };
   reply: {
@@ -105,7 +105,7 @@ export type PluginRuntimeChannel = {
      * manually preserve source reply delivery metadata such as
      * `sourceReplyDeliveryMode`.
      */
-    dispatchReplyFromConfig: import("../../auto-reply/reply/dispatch-from-config.types.js").DispatchReplyFromConfig;
+    dispatchReplyFromConfig: import("../../auto-reply/reply/dispatch/dispatch-from-config.types.js").DispatchReplyFromConfig;
     withReplyDispatcher: typeof import("../../auto-reply/dispatch-dispatcher.js").withReplyDispatcher;
     settleReplyDispatcher: typeof import("../../auto-reply/dispatch-dispatcher.js").settleReplyDispatcher;
     /**
@@ -113,7 +113,7 @@ export type PluginRuntimeChannel = {
      * `openclaw/plugin-sdk/channel-inbound` so inbound event metadata is
      * carried into reply dispatch.
      */
-    finalizeInboundContext: typeof import("../../auto-reply/reply/inbound-context.js").finalizeInboundContext;
+    finalizeInboundContext: typeof import("../../auto-reply/reply/inbound/inbound-context.js").finalizeInboundContext;
     formatAgentEnvelope: typeof import("../../auto-reply/envelope.js").formatAgentEnvelope;
     /** @deprecated Prefer `BodyForAgent` + structured user-context blocks (do not build plaintext envelopes for prompts). */
     formatInboundEnvelope: typeof import("../../auto-reply/envelope.js").formatInboundEnvelope;

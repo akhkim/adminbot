@@ -1,7 +1,7 @@
 # AdminBot Deadline Tracker (operator guide)
 
 Collects the lab's upcoming conference/workshop deadlines and drives reminders.
-Three outputs share one dataset (`extensions/adminbot/deadlines/venues.json`):
+Three outputs share one dataset (`extensions/adminbot/content/deadlines/venues.json`):
 
 - **Output 0** — a live countdown **board** (`deadlines-board.html`).
 - **Output 1** — a periodic digest posted to **#jinesis-active** (see below).
@@ -54,11 +54,11 @@ papers escalate to Zhijing at the deadline. Also set
 **Served page — IMPLEMENTED (mirrors the existing `/adminbot` console).**
 The AdminBot service now serves the board:
 
-- `extensions/adminbot/src/deadlines-web-ui.ts` — `renderDeadlinesWebUi(items)`
-  returns the self-contained board (generated from `deadlines/deadlines-board.html`).
-- `extensions/adminbot/src/deadlines-dataset.ts` — `DEADLINE_VENUES`
-  (generated from `deadlines/venues.json`).
-- `extensions/adminbot/src/mock-service.ts` — `GET /deadlines` (HTML board) and
+- `extensions/adminbot/src/workflows/deadlines/board.ts` — `renderDeadlinesWebUi(items)`
+  returns the self-contained board (generated from `content/deadlines/deadlines-board.html`).
+- `extensions/adminbot/src/workflows/deadlines/generated/dataset.ts` — `DEADLINE_VENUES`
+  (generated from `content/deadlines/venues.json`).
+- `extensions/adminbot/src/api/server.ts` — `GET /deadlines` (HTML board) and
   `GET /deadlines/venues.json` (JSON), next to `GET /adminbot`.
 
 Reachable the same way as the `/adminbot` console (loopback / SSH-forward on the

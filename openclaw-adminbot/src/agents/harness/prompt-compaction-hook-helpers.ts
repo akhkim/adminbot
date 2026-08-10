@@ -5,7 +5,7 @@
  * compaction while keeping hook failures non-fatal.
  */
 import { createSubsystemLogger } from "../../logging/subsystem.js";
-import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
+import { getGlobalHookRunner } from "../../plugins/hooks/hook-runner-global.js";
 import type {
   PluginHookBeforeAgentStartResult,
   PluginHookBeforePromptBuildResult,

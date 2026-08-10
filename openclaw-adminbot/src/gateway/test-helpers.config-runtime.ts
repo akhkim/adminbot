@@ -8,10 +8,10 @@ import { vi } from "vitest";
 import type {
   ReadConfigFileSnapshotForWriteResult,
   ReadConfigFileSnapshotWithPluginMetadataResult,
-} from "../config/io.js";
-import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
-import type { AgentBinding } from "../config/types.agents.js";
-import type { ConfigFileSnapshot, OpenClawConfig } from "../config/types.js";
+} from "../config/io/io.js";
+import { applyPluginAutoEnable } from "../config/plugin/plugin-auto-enable.js";
+import type { AgentBinding } from "../config/types/agents.js";
+import type { ConfigFileSnapshot, OpenClawConfig } from "../config/types/types.js";
 import { buildTestConfigSnapshot } from "./test-helpers.config-snapshots.js";
 import { testConfigRoot, testIsNixMode, testState } from "./test-helpers.runtime-state.js";
 

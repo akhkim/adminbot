@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { redactSensitiveUrlLikeString } from "@openclaw/net-policy/redact-sensitive-url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DiagnosticSecurityEvent } from "../infra/diagnostic-events.js";
+import type { DiagnosticSecurityEvent } from "../infra/diagnostics/diagnostic-events.js";
 
 const runCommandWithTimeoutMock = vi.fn();
 const installPluginFromInstalledPackageDirMock = vi.fn();
@@ -15,8 +15,9 @@ vi.mock("../process/exec.js", () => ({
   runCommandWithTimeout: (...args: unknown[]) => runCommandWithTimeoutMock(...args),
 }));
 
-vi.mock("./install.js", async () => {
-  const actual = await vi.importActual<typeof import("./install.js")>("./install.js");
+vi.mock("./install/install.js", async () => {
+  const actual =
+    await vi.importActual<typeof import("./install/install.js")>("./install/install.js");
   return {
     ...actual,
     installPluginFromInstalledPackageDir: (...args: unknown[]) =>
@@ -24,9 +25,9 @@ vi.mock("./install.js", async () => {
   };
 });
 
-vi.mock("./install-security-scan.js", async () => {
-  const actual = await vi.importActual<typeof import("./install-security-scan.js")>(
-    "./install-security-scan.js",
+vi.mock("./install/install-security-scan.js", async () => {
+  const actual = await vi.importActual<typeof import("./install/install-security-scan.js")>(
+    "./install/install-security-scan.js",
   );
   return {
     ...actual,
@@ -39,7 +40,7 @@ vi.resetModules();
 
 const { installPluginFromGitSpec, isImmutableGitCommitRef, parseGitPluginSpec } =
   await import("./git-install.js");
-const { onInternalDiagnosticEvent } = await import("../infra/diagnostic-events.js");
+const { onInternalDiagnosticEvent } = await import("../infra/diagnostics/diagnostic-events.js");
 
 function expectedGitRepoDir(params: { gitDir: string; normalizedSpec: string }): string {
   const hash = createHash("sha256")

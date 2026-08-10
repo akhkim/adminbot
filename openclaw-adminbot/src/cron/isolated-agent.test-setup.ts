@@ -1,8 +1,8 @@
 // Isolated agent test setup centralizes common mocks for cron agent tests.
 import { vi } from "vitest";
-import { runEmbeddedAgent } from "../agents/embedded-agent.js";
-import { loadModelCatalog } from "../agents/model-catalog.js";
-import { runSubagentAnnounceFlow } from "../agents/subagent-announce.js";
+import { runEmbeddedAgent } from "../agents/embedded/embedded-agent.js";
+import { loadModelCatalog } from "../agents/models/model-catalog.js";
+import { runSubagentAnnounceFlow } from "../agents/subagents/subagent-announce.js";
 import type {
   ChannelOutboundAdapter,
   ChannelOutboundContext,
@@ -10,7 +10,7 @@ import type {
 import { callGateway } from "../gateway/call.js";
 import { resolveOutboundSendDep } from "../infra/outbound/send-deps.js";
 import { buildChannelOutboundSessionRoute } from "../plugin-sdk/core.js";
-import { setActivePluginRegistry } from "../plugins/runtime.js";
+import { setActivePluginRegistry } from "../plugins/runtime/runtime.js";
 import { createOutboundTestPlugin, createTestRegistry } from "../test-utils/channel-plugins.js";
 
 // Test-only outbound registry for isolated cron turns.

@@ -1,25 +1,28 @@
 // Hook install runtime helpers resolve archive install behavior behind runtime imports.
 import { resolveArchiveKind } from "../infra/archive.js";
 import { pathExists } from "../infra/fs-safe.js";
-import { resolveExistingInstallPath, withExtractedArchiveRoot } from "../infra/install-flow.js";
-import { installFromValidatedNpmSpecArchive } from "../infra/install-from-npm-spec.js";
+import {
+  resolveExistingInstallPath,
+  withExtractedArchiveRoot,
+} from "../infra/install/install-flow.js";
+import { installFromValidatedNpmSpecArchive } from "../infra/install/install-from-npm-spec.js";
 import {
   resolveInstallModeOptions,
   resolveTimedInstallModeOptions,
-} from "../infra/install-mode-options.js";
+} from "../infra/install/install-mode-options.js";
 import {
   installPackageDir,
   installPackageDirWithManifestDeps,
-} from "../infra/install-package-dir.js";
+} from "../infra/install/install-package-dir.js";
 import {
   type NpmIntegrityDrift,
   type NpmSpecResolution,
   resolveArchiveSourcePath,
-} from "../infra/install-source-utils.js";
+} from "../infra/install/install-source-utils.js";
 import {
   ensureInstallTargetAvailable,
   resolveCanonicalInstallTarget,
-} from "../infra/install-target.js";
+} from "../infra/install/install-target.js";
 import { readJson } from "../infra/json-files.js";
 import { isPathInside, isPathInsideWithRealpath } from "../security/scan-paths.js";
 

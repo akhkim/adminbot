@@ -84,7 +84,7 @@ export async function runDirectiveBehaviorPreparedReply(params: unknown) {
 
 export const runPreparedReplyMock: Mock = vi.fn(runDirectiveBehaviorPreparedReply);
 
-vi.mock("../agents/embedded-agent.js", () => ({
+vi.mock("../agents/embedded/embedded-agent.js", () => ({
   abortEmbeddedAgentRun: vi.fn().mockReturnValue(false),
   compactEmbeddedAgentSession: (...args: unknown[]) => compactEmbeddedAgentSessionMock(...args),
   runEmbeddedAgent: (...args: unknown[]) => runEmbeddedAgentMock(...args),
@@ -94,7 +94,7 @@ vi.mock("../agents/embedded-agent.js", () => ({
   isEmbeddedAgentRunStreaming: vi.fn().mockReturnValue(false),
 }));
 
-vi.mock("../agents/embedded-agent.runtime.js", () => ({
+vi.mock("../agents/embedded/embedded-agent.runtime.js", () => ({
   abortEmbeddedAgentRun: vi.fn().mockReturnValue(false),
   compactEmbeddedAgentSession: (...args: unknown[]) => compactEmbeddedAgentSessionMock(...args),
   runEmbeddedAgent: (...args: unknown[]) => runEmbeddedAgentMock(...args),
@@ -106,11 +106,11 @@ vi.mock("../agents/embedded-agent.runtime.js", () => ({
   waitForEmbeddedAgentRunEnd: vi.fn().mockResolvedValue(true),
 }));
 
-vi.mock("../agents/model-catalog.js", () => ({
+vi.mock("../agents/models/model-catalog.js", () => ({
   loadModelCatalog: loadModelCatalogMock,
 }));
 
-vi.mock("../cli/command-secret-gateway.js", () => ({
+vi.mock("../cli/program/command-secret-gateway.js", () => ({
   resolveCommandSecretRefsViaGateway: (...args: unknown[]) =>
     resolveCommandSecretRefsViaGatewayMock(...args),
 }));
@@ -122,16 +122,16 @@ vi.mock("../agents/auth-profiles/session-override.js", () => ({
     resolveSessionAuthProfileOverrideMock(...args),
 }));
 
-vi.mock("../plugins/hook-runner-global.js", () => ({
+vi.mock("../plugins/hooks/hook-runner-global.js", () => ({
   getGlobalHookRunner: () => undefined,
   initializeGlobalHookRunner: vi.fn(),
   resetGlobalHookRunner: vi.fn(),
 }));
 
-vi.mock("./reply/agent-runner.runtime.js", () => ({
+vi.mock("./reply/agent/agent-runner.runtime.js", () => ({
   runReplyAgent: (...args: unknown[]) => runReplyAgentMock(...args),
 }));
 
-vi.mock("./reply/get-reply-run.js", () => ({
+vi.mock("./reply/get-reply/get-reply-run.js", () => ({
   runPreparedReply: (...args: unknown[]) => runPreparedReplyMock(...args),
 }));

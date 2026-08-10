@@ -11,7 +11,7 @@ import {
   enqueueNodePendingWork,
   type NodePendingWorkPriority,
   type NodePendingWorkType,
-} from "../node-pending-work.js";
+} from "../node/node-pending-work.js";
 import { respondInvalidParams, respondUnavailableOnThrow } from "./nodes.helpers.js";
 import {
   maybeSendNodeWakeNudge,

@@ -1,12 +1,12 @@
 /** Resolves provider environment variable candidates and auth evidence from core/plugin metadata. */
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
-import { resolveProviderAuthAliasMap } from "../agents/provider-auth-aliases.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { normalizePluginsConfig } from "../plugins/config-state.js";
+import { resolveProviderAuthAliasMap } from "../agents/auth/provider-auth-aliases.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { normalizePluginsConfig } from "../plugins/config/config-state.js";
 import { getCurrentPluginMetadataSnapshot } from "../plugins/current-plugin-metadata-snapshot.js";
-import { isInstalledPluginEnabled } from "../plugins/installed-plugin-index.js";
-import type { PluginManifestRecord } from "../plugins/manifest-registry.js";
+import { isInstalledPluginEnabled } from "../plugins/install/installed-plugin-index.js";
+import type { PluginManifestRecord } from "../plugins/manifest/manifest-registry.js";
 import {
   isWorkspacePluginAllowedByConfig,
   normalizePluginConfigId,

@@ -57,7 +57,7 @@ vi.mock("./sessions/session-manager.js", () => ({
   parseSessionEntries: (...args: unknown[]) => parseSessionEntriesMock(...args),
 }));
 
-vi.mock("./models-config.js", () => ({
+vi.mock("./models/models-config.js", () => ({
   ensureOpenClawModelsJson: (...args: unknown[]) => ensureOpenClawModelsJsonMock(...args),
 }));
 
@@ -71,7 +71,7 @@ vi.mock("./embedded-agent-runner/model.js", () => ({
   resolveModelWithRegistry: (...args: unknown[]) => resolveModelWithRegistryMock(...args),
 }));
 
-vi.mock("./model-auth.js", () => ({
+vi.mock("./auth/model-auth.js", () => ({
   ensureAuthProfileStore: (...args: unknown[]) => ensureAuthProfileStoreMock(...args),
   ensureAuthProfileStoreWithoutExternalProfiles: (...args: unknown[]) =>
     ensureAuthProfileStoreWithoutExternalProfilesMock(...args),
@@ -79,7 +79,7 @@ vi.mock("./model-auth.js", () => ({
   requireApiKey: (...args: unknown[]) => requireApiKeyMock(...args),
 }));
 
-vi.mock("./model-runtime-aliases.js", () => ({
+vi.mock("./models/model-runtime-aliases.js", () => ({
   isCliRuntimeAliasForProvider: ({ runtime, provider }: { runtime?: string; provider?: string }) =>
     runtime === "claude-cli" && provider === "anthropic",
   resolveCliRuntimeExecutionProvider: ({
@@ -144,11 +144,11 @@ vi.mock("./agent-scope.js", () => ({
   resolveAgentWorkspaceDir: (...args: unknown[]) => resolveAgentWorkspaceDirMock(...args),
 }));
 
-vi.mock("../plugins/provider-runtime.js", () => ({
+vi.mock("../plugins/providers/provider-runtime.js", () => ({
   prepareProviderRuntimeAuth: (...args: unknown[]) => prepareProviderRuntimeAuthMock(...args),
 }));
 
-vi.mock("./provider-stream.js", () => ({
+vi.mock("./transport/provider-stream.js", () => ({
   registerProviderStreamForModel: (...args: unknown[]) =>
     registerProviderStreamForModelMock(...args),
 }));

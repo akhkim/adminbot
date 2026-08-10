@@ -1,12 +1,12 @@
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   lookupCachedContextTokens,
   lookupCachedContextWindow,
   minPositiveContextTokens,
   providerContextTokenCacheKey,
 } from "./context-cache.js";
-import { normalizeProviderId } from "./model-selection.js";
+import { normalizeProviderId } from "./models/model-selection.js";
 
 type ConfigModelEntry = { id?: string; contextWindow?: number; contextTokens?: number };
 type ProviderConfigEntry = {

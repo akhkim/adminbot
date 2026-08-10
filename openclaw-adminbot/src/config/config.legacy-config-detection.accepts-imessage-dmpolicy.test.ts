@@ -3,9 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   expectSchemaConfigValue,
   expectSchemaValid,
-} from "./legacy-config-detection.test-support.js";
-import { AudioSchema, BindingsSchema } from "./zod-schema.agents.js";
-import { OpenClawSchema } from "./zod-schema.js";
+} from "./legacy/legacy-config-detection.test-support.js";
+import { AudioSchema, BindingsSchema } from "./zod/agents.js";
+import { OpenClawSchema } from "./zod/zod-schema.js";
 
 function expectOpenClawSchemaInvalidPreservesField(params: {
   config: unknown;

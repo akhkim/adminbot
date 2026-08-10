@@ -5,8 +5,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import {
   initializeGlobalHookRunner,
   resetGlobalHookRunner,
-} from "../../plugins/hook-runner-global.js";
-import { createMockPluginRegistry } from "../../plugins/hooks.test-helpers.js";
+} from "../../plugins/hooks/hook-runner-global.js";
+import { createMockPluginRegistry } from "../../plugins/hooks/hooks.test-helpers.js";
 import { captureEnv } from "../../test-utils/env.js";
 import { createFixtureSuite } from "../../test-utils/fixture-suite.js";
 import { resolveOpenClawMetadata, resolveSkillInvocationPolicy } from "../loading/frontmatter.js";

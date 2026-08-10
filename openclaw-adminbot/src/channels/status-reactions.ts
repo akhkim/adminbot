@@ -1,7 +1,7 @@
 // Status-reaction controller helpers for channel-visible agent activity.
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
-import { TOOL_DISPLAY_CONFIG } from "../agents/tool-display-config.js";
-import { resolveToolDisplay } from "../agents/tool-display.js";
+import { TOOL_DISPLAY_CONFIG } from "../agents/tools/tool-display-config.js";
+import { resolveToolDisplay } from "../agents/tools/tool-display.js";
 
 /** Adapter implemented by channels that expose message reaction status updates. */
 export type StatusReactionAdapter = {

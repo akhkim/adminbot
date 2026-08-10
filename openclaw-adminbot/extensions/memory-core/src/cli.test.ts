@@ -1414,7 +1414,7 @@ describe("memory cli", () => {
         [
           "# Preferences Learned",
           '- Always use "Happy Together" calendar for flights and reservations.',
-          "- Calendar ID: udolnrooml2f2ha8jaio24v1r8@group.calendar.google.com",
+          "- Calendar ID: examplecalendarid000000000@group.calendar.google.com",
         ].join("\n") + "\n",
         "utf-8",
       );
@@ -1456,7 +1456,7 @@ describe("memory cli", () => {
         [
           "## Preferences Learned",
           '- Always use "Happy Together" calendar for flights and reservations.',
-          "- Calendar ID: udolnrooml2f2ha8jaio24v1r8@group.calendar.google.com",
+          "- Calendar ID: examplecalendarid000000000@group.calendar.google.com",
         ].join("\n") + "\n",
         "utf-8",
       );
@@ -1494,7 +1494,7 @@ describe("memory cli", () => {
         [
           "## Preferences Learned",
           '- Always use "Happy Together" calendar for flights and reservations.',
-          "- Calendar ID: udolnrooml2f2ha8jaio24v1r8@group.calendar.google.com",
+          "- Calendar ID: examplecalendarid000000000@group.calendar.google.com",
           "",
           "## Setup",
           "- Set up Gmail access via gog.",
@@ -1545,7 +1545,7 @@ describe("memory cli", () => {
         [
           "## Preferences Learned",
           '- Always use "Happy Together" calendar for flights and reservations.',
-          "- Calendar ID: udolnrooml2f2ha8jaio24v1r8@group.calendar.google.com",
+          "- Calendar ID: examplecalendarid000000000@group.calendar.google.com",
         ].join("\n") + "\n",
         "utf-8",
       );

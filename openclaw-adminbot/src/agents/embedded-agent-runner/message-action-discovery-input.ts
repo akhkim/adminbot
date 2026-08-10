@@ -1,7 +1,7 @@
 /**
  * Builds scoped message-action discovery inputs for embedded-agent tool setup.
  */
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 
 /**
  * Normalizes channel/session/message context before message-action discovery.

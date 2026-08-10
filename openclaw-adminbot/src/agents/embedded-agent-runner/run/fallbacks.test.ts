@@ -1,7 +1,7 @@
 // Fallback configuration tests pin how embedded runs detect model fallback
 // availability from explicit overrides versus normal agent config.
 import { describe, expect, it } from "vitest";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { hasEmbeddedRunConfiguredModelFallbacks } from "./fallbacks.js";
 
 describe("hasEmbeddedRunConfiguredModelFallbacks", () => {

@@ -3,14 +3,14 @@
  */
 import crypto from "node:crypto";
 import type { ReplyBackendHandle } from "../../auto-reply/reply/reply-run-registry.js";
-import type { CliBackendConfig } from "../../config/types.js";
+import type { CliBackendConfig } from "../../config/types/types.js";
 import {
   emitTrustedDiagnosticEvent,
   type DiagnosticToolParamsSummary,
   type DiagnosticToolSource,
   type DiagnosticToolExecutionErrorEvent,
   type DiagnosticToolExecutionCompletedEvent,
-} from "../../infra/diagnostic-events.js";
+} from "../../infra/diagnostics/diagnostic-events.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import {
   loadExecApprovals,
@@ -20,8 +20,10 @@ import {
   resolveExecApprovalsFromFile,
   type ExecAsk,
   type ExecSecurity,
-} from "../../infra/exec-approvals.js";
+} from "../../infra/exec/exec-approvals.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
+import { classifyFailoverReason } from "../embedded/embedded-agent-helpers.js";
+import { FailoverError, resolveFailoverStatus } from "../failover-error.js";
 import {
   createCliJsonlStreamingParser,
   extractCliErrorMessage,
@@ -30,9 +32,7 @@ import {
   type CliStreamingDelta,
   type CliToolResultDelta,
   type CliToolUseStartDelta,
-} from "../cli-output.js";
-import { classifyFailoverReason } from "../embedded-agent-helpers.js";
-import { FailoverError, resolveFailoverStatus } from "../failover-error.js";
+} from "./cli-output.js";
 import { buildClaudeOwnerKey } from "./helpers.js";
 import { cliBackendLog, formatCliBackendOutputDigest } from "./log.js";
 import type { PreparedCliRunContext } from "./types.js";

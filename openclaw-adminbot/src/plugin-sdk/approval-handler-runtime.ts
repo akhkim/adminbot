@@ -30,14 +30,14 @@ export {
   type PluginApprovalPendingView,
   type PluginApprovalResolvedView,
   type ResolvedApprovalView,
-} from "../infra/approval-handler-runtime.js";
+} from "../infra/approvals/approval-handler-runtime.js";
 export { resolveApprovalOverGateway } from "./approval-gateway-runtime.js";
 import { normalizeOptionalString } from "../../packages/normalization-core/src/string-coerce.js";
 import type {
   ExpiredApprovalView,
   ResolvedApprovalView,
-} from "../infra/approval-view-model.types.js";
-import type { ExecApprovalRequest, ExecApprovalResolved } from "../infra/exec-approvals.js";
+} from "../infra/approvals/approval-view-model.types.js";
+import type { ExecApprovalRequest, ExecApprovalResolved } from "../infra/exec/exec-approvals.js";
 import {
   buildPluginApprovalExpiredMessage,
   buildPluginApprovalResolvedMessage,

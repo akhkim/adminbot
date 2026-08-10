@@ -25,7 +25,7 @@ vi.mock("../process/exec.js", () => ({
   runCommandWithTimeout: (...args: unknown[]) => runCommandWithTimeoutMock(...args),
 }));
 
-vi.mock("../plugins/install-security-scan.js", () => ({
+vi.mock("../plugins/install/install-security-scan.js", () => ({
   scanPackageInstallSource: (...args: unknown[]) => scanPackageInstallSourceMock(...args),
   scanInstalledPackageDependencyTree: (...args: unknown[]) =>
     scanInstalledPackageDependencyTreeMock(...args),

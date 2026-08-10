@@ -2,7 +2,7 @@
 """
 AdminBot deadline collector (Output 0 data source).
 
-Refreshes extensions/adminbot/deadlines/venues.json with the lab's UPCOMING
+Refreshes extensions/adminbot/content/deadlines/venues.json with the lab's UPCOMING
 submission/rebuttal deadlines:
 
   - NeurIPS 2026 workshops  -> collected live from OpenReview
@@ -120,21 +120,21 @@ def main():
     print(f"wrote {OUT} with {len(items)} items")
 
     # keep the served-page dataset (Output 0 Control-UI surface) in sync
-    ds = os.path.join(HERE, "..", "extensions", "adminbot", "src", "deadlines-dataset.ts")
+    ds = os.path.join(HERE, "..", "extensions", "adminbot", "src", "workflows", "deadlines", "generated", "dataset.ts")
     with open(ds, "w") as f:
-        f.write("// Generated from extensions/adminbot/deadlines/venues.json by\n"
+        f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
                 "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
                 "export const DEADLINE_VENUES = "
                 + json.dumps(items, ensure_ascii=False, indent=2) + " as const;\n")
     print(f"wrote {ds}")
 
-    # keep the bundled Control-UI tab dataset in sync (ui/src/ui/deadlines-data.ts)
+    # keep the bundled Control-UI tab dataset in sync (ui/src/ui/adminbot/data/deadlines.ts)
     keys = ["id", "name", "venue_type", "venue_group", "track",
             "deadline_label", "deadline_aoe", "notification_aoe", "link"]
     slim = [{k: it.get(k, "") for k in keys} for it in items]
-    ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "deadlines-data.ts")
+    ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
     with open(ui_ds, "w") as f:
-        f.write("// Generated from extensions/adminbot/deadlines/venues.json by\n"
+        f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
                 "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
                 "export type DeadlineVenue = {\n"
                 "  id: string;\n  name: string;\n  venue_type: string;\n  venue_group: string;\n"

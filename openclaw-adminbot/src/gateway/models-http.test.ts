@@ -1,19 +1,19 @@
 // Models HTTP tests cover OpenAI-compatible /v1/models behavior, read-scope
 // authorization, ordering, and disabled-surface responses.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { startOpenAiCompatGatewayServer } from "./openai-compatible-http.test-helpers.js";
+import { startOpenAiCompatGatewayServer } from "./protocol/openai-compatible-http.test-helpers.js";
 import { getFreePort, installGatewayTestHooks } from "./test-helpers.js";
 
 installGatewayTestHooks({ scope: "suite" });
 
 const READ_SCOPE_HEADER = { "x-openclaw-scopes": "operator.read" };
 
-let startGatewayServer: typeof import("./server.js").startGatewayServer;
+let startGatewayServer: typeof import("./server/server.js").startGatewayServer;
 let enabledServer: Awaited<ReturnType<typeof startOpenAiCompatGatewayServer>>;
 let enabledPort: number;
 
 beforeAll(async () => {
-  ({ startGatewayServer } = await import("./server.js"));
+  ({ startGatewayServer } = await import("./server/server.js"));
   enabledPort = await getFreePort();
   enabledServer = await startOpenAiCompatGatewayServer({
     startGatewayServer,

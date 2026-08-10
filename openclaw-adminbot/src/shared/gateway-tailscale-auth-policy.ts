@@ -1,5 +1,5 @@
 // Gateway Tailscale auth policy helpers describe auth requirements for Tailscale modes.
-import type { GatewayAuthMode, GatewayTailscaleMode } from "../config/types.gateway.js";
+import type { GatewayAuthMode, GatewayTailscaleMode } from "../config/types/gateway.js";
 
 /** True when Tailscale exposure is configured without gateway authentication. */
 export function isUnsafeGatewayTailscaleNoAuth(params: {

@@ -1,6 +1,6 @@
 // Session delivery info tests cover persisted delivery metadata.
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import { createSessionConversationTestRegistry } from "../../test-utils/session-conversation-registry.js";
 import type { SessionEntry } from "./types.js";
 
@@ -14,7 +14,7 @@ const storeState = vi.hoisted(() => {
   return state;
 });
 
-vi.mock("../io.js", () => ({
+vi.mock("../io/io.js", () => ({
   getRuntimeConfig: () => ({}),
 }));
 

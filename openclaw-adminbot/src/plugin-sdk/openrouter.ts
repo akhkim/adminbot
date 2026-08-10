@@ -1,5 +1,5 @@
 // Manual facade. Keep loader boundary explicit.
-import type { ModelProviderConfig, OpenClawConfig } from "../config/types.js";
+import type { ModelProviderConfig, OpenClawConfig } from "../config/types/types.js";
 import { loadBundledPluginPublicSurfaceModuleSync } from "./facade-loader.js";
 
 type FacadeModule = {

@@ -3,16 +3,16 @@
 import fs from "node:fs/promises";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ErrorCodes } from "../../../packages/gateway-protocol/src/index.js";
-import {
-  registerExecApprovalFollowupRuntimeHandoff,
-  resetExecApprovalFollowupRuntimeHandoffsForTests,
-} from "../../agents/bash-tools.exec-approval-followup-state.js";
 import { createAgentRunRestartAbortError } from "../../agents/run-termination.js";
 import {
   getSubagentRunByChildSessionKey,
   resetSubagentRegistryForTests,
   testing as subagentRegistryTesting,
-} from "../../agents/subagent-registry.js";
+} from "../../agents/subagents/subagent-registry.js";
+import {
+  registerExecApprovalFollowupRuntimeHandoff,
+  resetExecApprovalFollowupRuntimeHandoffsForTests,
+} from "../../agents/tools/bash-tools.exec-approval-followup-state.js";
 import {
   getDetachedTaskLifecycleRuntime,
   resetDetachedTaskLifecycleRuntimeForTests,
@@ -63,8 +63,10 @@ const mocks = vi.hoisted(() => ({
   lifecycleGeneration: "test-generation",
 }));
 
-vi.mock("../session-utils.js", async () => {
-  const actual = await vi.importActual<typeof import("../session-utils.js")>("../session-utils.js");
+vi.mock("../sessions/session-utils.js", async () => {
+  const actual = await vi.importActual<typeof import("../sessions/session-utils.js")>(
+    "../sessions/session-utils.js",
+  );
   return {
     ...actual,
     loadSessionEntry: mocks.loadSessionEntry,
@@ -95,7 +97,7 @@ vi.mock("../../config/sessions.js", async () => {
   };
 });
 
-vi.mock("../../commands/agent.js", () => ({
+vi.mock("../../commands/agent/agent.js", () => ({
   agentCommand: mocks.agentCommand,
   agentCommandFromIngress: mocks.agentCommand,
 }));
@@ -158,15 +160,15 @@ vi.mock("../../infra/agent-events.js", () => ({
   onAgentEvent: vi.fn(),
 }));
 
-vi.mock("../../agents/subagent-registry-read.js", () => ({
+vi.mock("../../agents/subagents/subagent-registry-read.js", () => ({
   getLatestSubagentRunByChildSessionKey: mocks.getLatestSubagentRunByChildSessionKey,
 }));
 
-vi.mock("../session-subagent-reactivation.runtime.js", () => ({
+vi.mock("../sessions/session-subagent-reactivation.runtime.js", () => ({
   replaceSubagentRunAfterSteer: mocks.replaceSubagentRunAfterSteer,
 }));
 
-vi.mock("../session-reset-service.js", () => ({
+vi.mock("../sessions/session-reset-service.js", () => ({
   emitGatewaySessionEndPluginHook: (...args: unknown[]) =>
     (mocks.emitGatewaySessionEndPluginHook as (...args: unknown[]) => unknown)(...args),
   emitGatewaySessionStartPluginHook: (...args: unknown[]) =>
@@ -217,9 +219,9 @@ vi.mock("../../channels/message/runtime.js", async () => {
   };
 });
 
-vi.mock("../../utils/delivery-context.js", async () => {
-  const actual = await vi.importActual<typeof import("../../utils/delivery-context.js")>(
-    "../../utils/delivery-context.js",
+vi.mock("../../shared/delivery-context.js", async () => {
+  const actual = await vi.importActual<typeof import("../../shared/delivery-context.js")>(
+    "../../shared/delivery-context.js",
   );
   return {
     ...actual,

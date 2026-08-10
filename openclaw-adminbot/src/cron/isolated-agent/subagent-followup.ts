@@ -1,6 +1,6 @@
 /** Reads or waits for descendant subagent summaries after isolated cron orchestration. */
 import { readLatestAssistantReply, waitForAgentRunsToDrain } from "../../agents/run-wait.js";
-import { listDescendantRunsForRequester } from "../../agents/subagent-registry-read.js";
+import { listDescendantRunsForRequester } from "../../agents/subagents/subagent-registry-read.js";
 import { SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import { isLikelyInterimCronMessage } from "./subagent-followup-hints.js";
 

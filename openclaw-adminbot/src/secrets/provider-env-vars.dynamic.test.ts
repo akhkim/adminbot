@@ -82,7 +82,7 @@ vi.mock("../plugins/current-plugin-metadata-snapshot.js", () => ({
   getCurrentPluginMetadataSnapshot: pluginRegistryMocks.getCurrentPluginMetadataSnapshot,
 }));
 
-vi.mock("../plugins/manifest-registry-installed.js", () => ({
+vi.mock("../plugins/manifest/manifest-registry-installed.js", () => ({
   loadPluginManifestRegistryForInstalledIndex:
     pluginRegistryMocks.loadPluginManifestRegistryForInstalledIndex,
 }));

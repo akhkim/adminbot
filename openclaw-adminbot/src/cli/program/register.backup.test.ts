@@ -17,11 +17,11 @@ const backupCreateCommand = mocks.backupCreateCommand;
 const backupVerifyCommand = mocks.backupVerifyCommand;
 const runtime = mocks.runtime;
 
-vi.mock("../../commands/backup.js", () => ({
+vi.mock("../../commands/maintenance/backup.js", () => ({
   backupCreateCommand: mocks.backupCreateCommand,
 }));
 
-vi.mock("../../commands/backup-verify.js", () => ({
+vi.mock("../../commands/maintenance/backup-verify.js", () => ({
   backupVerifyCommand: mocks.backupVerifyCommand,
 }));
 

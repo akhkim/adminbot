@@ -18,15 +18,15 @@ import {
   clearRuntimeConfigSnapshot,
   getRuntimeConfigSnapshot,
   setRuntimeConfigSnapshot,
-} from "../config/runtime-snapshot.js";
-import type { SystemRunApprovalPlan } from "../infra/exec-approvals.js";
+} from "../config/runtime/runtime-snapshot.js";
+import type { SystemRunApprovalPlan } from "../infra/exec/exec-approvals.js";
 import {
   loadExecApprovals,
   resolveExecApprovalsPath,
   saveExecApprovals,
-} from "../infra/exec-approvals.js";
-import type { ExecAutoReviewer } from "../infra/exec-auto-review.js";
-import type { ExecHostResponse } from "../infra/exec-host.js";
+} from "../infra/exec/exec-approvals.js";
+import type { ExecAutoReviewer } from "../infra/exec/exec-auto-review.js";
+import type { ExecHostResponse } from "../infra/exec/exec-host.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import { buildSystemRunApprovalPlan } from "./invoke-system-run-plan.js";
 import { handleSystemRunInvoke } from "./invoke-system-run.js";

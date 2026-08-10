@@ -2,7 +2,7 @@
 import {
   buildNpmResolutionFields,
   type NpmSpecResolution as NpmResolutionMetadata,
-} from "../infra/install-source-utils.js";
+} from "../infra/install/install-source-utils.js";
 
 /** Choose the install-record spec for an npm package, optionally pinning to the resolved version. */
 export function resolvePinnedNpmSpec(params: {

@@ -3,30 +3,30 @@ import {
   normalizeOptionalLowercaseString,
   readStringValue,
 } from "@openclaw/normalization-core/string-coerce";
+import { emitModelTransportDebug } from "../../../agents/models/model-transport-debug.js";
+import type { StreamFn } from "../../../agents/runtime/index.js";
+import type { SandboxToolPolicy } from "../../../agents/sandbox/sandbox.js";
 import {
   patchCodexNativeWebSearchPayload,
   resolveCodexNativeSearchActivation,
-} from "../../../agents/codex-native-web-search-core.js";
-import { emitModelTransportDebug } from "../../../agents/model-transport-debug.js";
+} from "../../../agents/transport/codex-native-web-search-core.js";
 import {
   flattenCompletionMessagesToStringContent,
   stripCompletionMessagesToRoleContent,
-} from "../../../agents/openai-completions-string-content.js";
-import { resolveOpenAIReasoningEffortForModel } from "../../../agents/openai-reasoning-effort.js";
+} from "../../../agents/transport/openai-completions-string-content.js";
+import { resolveOpenAIReasoningEffortForModel } from "../../../agents/transport/openai-reasoning-effort.js";
 import {
   applyOpenAIResponsesPayloadPolicy,
   resolveOpenAIResponsesPayloadPolicy,
-} from "../../../agents/openai-responses-payload-policy.js";
+} from "../../../agents/transport/openai-responses-payload-policy.js";
 import {
   resolveOpenAITextVerbosity,
   type OpenAITextVerbosity,
-} from "../../../agents/openai-text-verbosity.js";
-import { createOpenAIResponsesTransportStreamFn } from "../../../agents/openai-transport-stream.js";
-import { resolveProviderRequestPolicyConfig } from "../../../agents/provider-request-config.js";
-import type { StreamFn } from "../../../agents/runtime/index.js";
-import type { SandboxToolPolicy } from "../../../agents/sandbox.js";
+} from "../../../agents/transport/openai-text-verbosity.js";
+import { createOpenAIResponsesTransportStreamFn } from "../../../agents/transport/openai-transport-stream.js";
+import { resolveProviderRequestPolicyConfig } from "../../../agents/transport/provider-request-config.js";
 import type { ThinkLevel } from "../../../auto-reply/thinking.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { createSubsystemLogger } from "../../../logging/subsystem.js";
 import { streamSimple } from "../../stream.js";
 import type { SimpleStreamOptions } from "../../types.js";

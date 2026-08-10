@@ -1,16 +1,16 @@
 // Channel setup plugin install/reload helpers used by onboarding and channel commands.
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import type { ChannelPluginCatalogEntry } from "../../channels/plugins/catalog.js";
-import { applyPluginAutoEnable } from "../../config/plugin-auto-enable.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { applyPluginAutoEnable } from "../../config/plugin/plugin-auto-enable.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import {
   resolveConfiguredChannelPluginIds,
   resolveDiscoverableScopedChannelPluginIds,
 } from "../../plugins/channel-plugin-ids.js";
-import { loadOpenClawPlugins } from "../../plugins/loader.js";
 import { createPluginLoaderLogger } from "../../plugins/logger.js";
-import type { PluginRegistry } from "../../plugins/registry.js";
+import type { PluginRegistry } from "../../plugins/manifest/registry.js";
+import { loadOpenClawPlugins } from "../../plugins/runtime/loader.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import type { WizardPrompter } from "../../wizard/prompts.js";
 import {

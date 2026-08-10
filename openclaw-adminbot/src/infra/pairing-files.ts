@@ -1,6 +1,6 @@
 // Shared JSON state helpers for pairing namespaces.
 import path from "node:path";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 
 export { createAsyncLock, readJsonIfExists, tryReadJson, writeJson } from "./json-files.js";
 

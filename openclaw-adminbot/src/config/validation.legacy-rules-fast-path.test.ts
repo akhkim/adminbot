@@ -1,6 +1,6 @@
 // Verifies legacy-rule validation uses the fast path for known config shapes.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { LegacyConfigRule } from "./legacy.shared.js";
+import type { LegacyConfigRule } from "./legacy/legacy.shared.js";
 
 const { collectChannelLegacyConfigRulesMock, listPluginDoctorLegacyConfigRulesMock } = vi.hoisted(
   () => ({

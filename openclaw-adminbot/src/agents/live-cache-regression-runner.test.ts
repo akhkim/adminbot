@@ -1,11 +1,11 @@
 // Verifies live cache regression baseline classification without live providers.
 import { describe, expect, it } from "vitest";
+import { ProviderAuthError } from "./auth/model-auth-runtime-shared.js";
 import { testing } from "./live-cache-regression-runner.js";
 import {
   LiveCachePrerequisiteSkip,
   toLiveCachePrerequisiteSkip,
 } from "./live-cache-test-support.js";
-import { ProviderAuthError } from "./model-auth-runtime-shared.js";
 
 describe("live cache regression runner", () => {
   it("keeps OpenAI image cache floors observable without blocking release validation", () => {

@@ -12,7 +12,7 @@ import {
 } from "./plugin-npm-runtime-build.mjs";
 
 const GENERATED_BUNDLED_CHANNEL_CONFIG_METADATA_PATH =
-  "src/config/bundled-channel-config-metadata.generated.ts";
+  "src/config/channel/bundled-channel-config-metadata.generated.ts";
 
 function readJsonFile(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));

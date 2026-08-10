@@ -25,15 +25,15 @@ vi.mock("../../channels/plugins/index.js", () => ({
   getChannelPlugin: (...args: unknown[]) => getChannelPluginMock(...args),
 }));
 
-vi.mock("../../config/plugin-auto-enable.js", () => ({
+vi.mock("../../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: (...args: unknown[]) => applyPluginAutoEnableMock(...args),
 }));
 
-vi.mock("../../plugins/loader.js", () => ({
+vi.mock("../../plugins/runtime/loader.js", () => ({
   resolveRuntimePluginRegistry: (...args: unknown[]) => resolveRuntimePluginRegistryMock(...args),
 }));
 
-vi.mock("../../plugins/runtime.js", () => ({
+vi.mock("../../plugins/runtime/runtime.js", () => ({
   getActivePluginRegistry: (...args: unknown[]) => getActivePluginRegistryMock(...args),
   getActivePluginRegistryVersion: (...args: unknown[]) =>
     getActivePluginRegistryVersionMock(...args),
@@ -43,7 +43,7 @@ vi.mock("../../plugins/runtime.js", () => ({
     getActivePluginChannelRegistryVersionMock(...args),
 }));
 
-vi.mock("../../utils/message-channel.js", () => ({
+vi.mock("../../shared/message-channel.js", () => ({
   INTERNAL_MESSAGE_CHANNEL: "webchat",
   normalizeMessageChannel: (...args: unknown[]) => normalizeMessageChannelMock(...args),
   isDeliverableMessageChannel: (...args: unknown[]) => isDeliverableMessageChannelMock(...args),

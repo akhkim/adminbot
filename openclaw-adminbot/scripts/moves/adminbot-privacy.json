@@ -1,0 +1,6 @@
+[
+  {
+    "from": "extensions/adminbot/src/features/sensitive-info-doc.ts",
+    "to": "extensions/adminbot/src/features/privacy/sensitive-info-doc.ts"
+  }
+]

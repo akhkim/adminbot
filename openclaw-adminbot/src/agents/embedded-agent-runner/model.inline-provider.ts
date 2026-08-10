@@ -2,16 +2,16 @@
  * Converts inline provider model config into runtime model definitions.
  */
 import { normalizeOptionalLowercaseString } from "@openclaw/normalization-core/string-coerce";
-import type { ModelDefinitionConfig, ModelProviderConfig } from "../../config/types.js";
+import type { ModelDefinitionConfig, ModelProviderConfig } from "../../config/types/types.js";
 import { normalizeGoogleApiBaseUrl } from "../../infra/google-api-base-url.js";
 import type { Api } from "../../llm/types.js";
-import { isSecretRefHeaderValueMarker } from "../model-auth-markers.js";
-import { attachModelProviderLocalService } from "../provider-local-service.js";
+import { isSecretRefHeaderValueMarker } from "../auth/model-auth-markers.js";
+import { attachModelProviderLocalService } from "../transport/provider-local-service.js";
 import {
   attachModelProviderRequestTransport,
   resolveProviderRequestConfig,
   sanitizeConfiguredModelProviderRequest,
-} from "../provider-request-config.js";
+} from "../transport/provider-request-config.js";
 
 /**
  * Normalizes inline `models.providers` config into runtime model entries.

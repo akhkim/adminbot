@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 2396 lines; see docs/adr/0006-deferred-monster-splits.md
 /**
  * Bridges native harness hook events through registered relay processes.
  */
@@ -24,23 +25,23 @@ import {
   asDateTimestampMs,
   resolveExpiresAtMsFromDurationMs,
 } from "@openclaw/normalization-core/number-coercion";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { resolveOpenClawPackageRootSync } from "../../infra/openclaw-root.js";
 import { privateFileStoreSync } from "../../infra/private-file-store.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
-import { hasGlobalHooks } from "../../plugins/hook-runner-global.js";
+import { hasGlobalHooks } from "../../plugins/hooks/hook-runner-global.js";
 import { PluginApprovalResolutions } from "../../plugins/types.js";
+import { stableStringify } from "../stable-stringify.js";
 import {
   cancelDeferredPluginToolApproval,
   hasBeforeToolCallPolicy,
   requestDeferredPluginToolApproval,
   runBeforeToolCallHook,
   type DeferredPluginToolApproval,
-} from "../agent-tools.before-tool-call.js";
-import { stableStringify } from "../stable-stringify.js";
-import { resolveToolLoopDetectionConfig } from "../tool-loop-detection-config.js";
-import { normalizeToolName } from "../tool-policy.js";
+} from "../tools/agent-tools.before-tool-call.js";
 import { callGatewayTool } from "../tools/gateway.js";
+import { resolveToolLoopDetectionConfig } from "../tools/tool-loop-detection-config.js";
+import { normalizeToolName } from "../tools/tool-policy.js";
 import { runAgentHarnessAfterToolCallHook } from "./hook-helpers.js";
 import { runAgentHarnessBeforeAgentFinalizeHook } from "./lifecycle-hook-helpers.js";
 

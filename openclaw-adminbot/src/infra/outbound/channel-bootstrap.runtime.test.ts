@@ -1,19 +1,19 @@
 // Covers lazy outbound channel bootstrap, retry guards, auto-enable config, and
 // send-capable active registry short-circuiting.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { createEmptyPluginRegistry } from "../../plugins/manifest/registry-empty.js";
 import {
   pinActivePluginChannelRegistry,
   resetPluginRuntimeStateForTest,
   setActivePluginRegistry,
-} from "../../plugins/runtime.js";
+} from "../../plugins/runtime/runtime.js";
 
 const loaderMocks = vi.hoisted(() => ({
   resolveRuntimePluginRegistry: vi.fn(),
 }));
 
-vi.mock("../../plugins/loader.js", () => ({
+vi.mock("../../plugins/runtime/loader.js", () => ({
   resolveRuntimePluginRegistry: loaderMocks.resolveRuntimePluginRegistry,
 }));
 

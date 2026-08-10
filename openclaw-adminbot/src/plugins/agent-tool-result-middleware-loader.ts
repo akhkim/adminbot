@@ -1,5 +1,5 @@
 // Loads agent tool result middleware from plugin runtime surfaces.
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { getLoadedRuntimePluginRegistry } from "./active-runtime-registry.js";
 import type {
@@ -16,16 +16,16 @@ import {
   resolveEffectivePluginActivationState,
   type NormalizedPluginsConfig,
   type PluginActivationConfigSource,
-} from "./config-state.js";
+} from "./config/config-state.js";
 import { isPluginEnabledByDefaultForPlatform } from "./default-enablement.js";
-import { loadOpenClawPlugins } from "./loader.js";
 import {
   loadPluginManifestRegistry,
   type PluginManifestRecord,
   type PluginManifestRegistry,
-} from "./manifest-registry.js";
-import type { PluginRegistry } from "./registry-types.js";
-import { getActivePluginRegistry } from "./runtime.js";
+} from "./manifest/manifest-registry.js";
+import type { PluginRegistry } from "./manifest/registry-types.js";
+import { loadOpenClawPlugins } from "./runtime/loader.js";
+import { getActivePluginRegistry } from "./runtime/runtime.js";
 
 const log = createSubsystemLogger("plugins/agent-tool-result-middleware");
 

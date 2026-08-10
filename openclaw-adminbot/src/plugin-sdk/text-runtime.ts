@@ -24,12 +24,12 @@ export * from "../shared/text/code-regions.js";
 export * from "../shared/text/reasoning-tags.js";
 export * from "../shared/text/strip-markdown.js";
 export * from "../../packages/terminal-core/src/safe-text.js";
-export * from "../infra/system-message.ts";
-export * from "../utils/directive-tags.js";
-export * from "../utils/chunk-items.js";
-export * from "../utils/fetch-timeout.js";
-export * from "../utils/reaction-level.js";
-export * from "../utils/with-timeout.js";
+export * from "../infra/system/system-message.js";
+export * from "../shared/directive-tags.js";
+export * from "../shared/chunk-items.js";
+export * from "../shared/fetch-timeout.js";
+export * from "../shared/reaction-level.js";
+export * from "../shared/with-timeout.js";
 export {
   hasNonEmptyString,
   localeLowercasePreservingWhitespace,

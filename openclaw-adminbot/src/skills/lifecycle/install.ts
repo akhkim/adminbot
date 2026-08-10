@@ -2,14 +2,14 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { resolveBrewExecutable as defaultResolveBrewExecutable } from "../../infra/brew.js";
 import { isContainerEnvironment as defaultIsContainerEnvironment } from "../../infra/container-environment.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import {
   evaluateSkillInstallPolicy,
   type SkillInstallSpecMetadata,
-} from "../../plugins/install-security-scan.js";
+} from "../../plugins/install/install-security-scan.js";
 import { runCommandWithTimeout, type CommandOptions } from "../../process/exec.js";
 import { resolveUserPath } from "../../utils.js";
 import {

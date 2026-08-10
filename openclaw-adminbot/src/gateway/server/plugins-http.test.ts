@@ -3,13 +3,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerPluginHttpRoute } from "../../plugins/http-registry.js";
-import { createEmptyPluginRegistry } from "../../plugins/registry.js";
+import { createEmptyPluginRegistry } from "../../plugins/manifest/registry.js";
+import { getPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gateway-request-scope.js";
 import {
   pinActivePluginHttpRouteRegistry,
   releasePinnedPluginHttpRouteRegistry,
   setActivePluginRegistry,
-} from "../../plugins/runtime.js";
-import { getPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gateway-request-scope.js";
+} from "../../plugins/runtime/runtime.js";
 import { makeMockHttpResponse } from "../test-http-response.js";
 import { createTestRegistry } from "./__tests__/test-utils.js";
 import {

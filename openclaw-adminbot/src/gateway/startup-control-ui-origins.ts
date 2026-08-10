@@ -3,8 +3,8 @@
 import {
   ensureControlUiAllowedOriginsForNonLoopbackBind,
   type GatewayNonLoopbackBindMode,
-} from "../config/gateway-control-ui-origins.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+} from "../config/gateway/gateway-control-ui-origins.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { isContainerEnvironment } from "./net.js";
 
 /**

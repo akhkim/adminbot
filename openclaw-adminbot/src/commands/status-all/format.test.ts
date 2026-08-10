@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   baseStatusExpectedUpdateChannelInfo,
   baseStatusExpectedUpdateChannelLabel,
-} from "../status.test-support.ts";
+} from "../status/status.test-support.js";
 import {
   buildStatusGatewaySurfaceValues,
   buildStatusOverviewRows,

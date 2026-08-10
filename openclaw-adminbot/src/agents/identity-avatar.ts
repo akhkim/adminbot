@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import {
   AVATAR_MAX_BYTES,

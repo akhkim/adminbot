@@ -16,10 +16,10 @@ vi.mock("../../../globals.js", () => ({
   setVerbose: vi.fn(),
 }));
 
-vi.mock("../../plugin-registry.js", () => ({
+vi.mock("../../plugins/plugin-registry.js", () => ({
   ensurePluginRegistryLoaded: vi.fn(),
 }));
-const { ensurePluginRegistryLoaded } = await import("../../plugin-registry.js");
+const { ensurePluginRegistryLoaded } = await import("../../plugins/plugin-registry.js");
 
 const hasHooksMock = vi.fn((_hookName: string) => false);
 const runGatewayStopMock = vi.fn(
@@ -41,7 +41,7 @@ const runGlobalGatewayStopSafelyMock = vi.fn(
     }
   },
 );
-vi.mock("../../../plugins/hook-runner-global.js", () => ({
+vi.mock("../../../plugins/hooks/hook-runner-global.js", () => ({
   runGlobalGatewayStopSafely: runGlobalGatewayStopSafelyMock,
 }));
 

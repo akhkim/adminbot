@@ -2,7 +2,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { withPathResolutionEnv } from "../test-utils/env.js";
-import { resolveBundledPluginsDir } from "./bundled-dir.js";
+import { resolveBundledPluginsDir } from "./install/bundled-dir.js";
 import { formatPluginSourceForTable, resolvePluginSourceRoots } from "./source-display.js";
 
 const PLUGIN_SOURCE_ROOTS = {

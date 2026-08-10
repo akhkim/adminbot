@@ -1,6 +1,6 @@
 // Global Commander pre-action hook: startup presentation, config guard, logging, and plugin preflight.
 import type { Command } from "commander";
-import type { ConfigFileSnapshot } from "../../config/types.js";
+import type { ConfigFileSnapshot } from "../../config/types/types.js";
 import { setVerbose } from "../../globals.js";
 import type { LogLevel } from "../../logging/levels.js";
 import { defaultRuntime } from "../../runtime.js";
@@ -8,15 +8,15 @@ import { resolveCliArgvInvocation } from "../argv-invocation.js";
 import { getVerboseFlag, isHelpOrVersionInvocation } from "../argv.js";
 import { resolveCliName } from "../cli-name.js";
 import {
+  resolvePluginInstallInvalidConfigPolicy,
+  resolvePluginInstallPreactionRequest,
+} from "../plugins/plugin-install-config-policy.js";
+import {
   applyCliExecutionStartupPresentation,
   ensureCliExecutionBootstrap,
   resolveCliExecutionStartupContext,
-} from "../command-execution-startup.js";
-import { shouldBypassConfigGuardForCommandPath } from "../command-startup-policy.js";
-import {
-  resolvePluginInstallInvalidConfigPolicy,
-  resolvePluginInstallPreactionRequest,
-} from "../plugin-install-config-policy.js";
+} from "./command-execution-startup.js";
+import { shouldBypassConfigGuardForCommandPath } from "./command-startup-policy.js";
 import { isCommandJsonOutputMode } from "./json-mode.js";
 import { isParentDefaultHelpAction } from "./parent-default-help.js";
 

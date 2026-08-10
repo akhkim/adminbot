@@ -26,7 +26,7 @@ vi.mock("../agents/auth-profiles/persisted.js", () => ({
   loadPersistedAuthProfileStore: (...args: unknown[]) => loadPersistedAuthProfileStoreMock(...args),
 }));
 
-vi.mock("../plugins/manifest-registry.js", () => ({
+vi.mock("../plugins/manifest/manifest-registry.js", () => ({
   loadPluginManifestRegistry: (...args: unknown[]) => loadPluginManifestRegistryMock(...args),
 }));
 

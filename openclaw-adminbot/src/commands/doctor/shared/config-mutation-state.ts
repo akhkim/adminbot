@@ -1,5 +1,5 @@
 // Shared doctor state helpers for previewing or applying config mutations.
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 
 export type DoctorConfigMutationState = {
   /** Config currently used for command execution. */

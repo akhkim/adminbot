@@ -1,7 +1,7 @@
 // Resolves provider policy settings from config and plugin metadata.
-import type { PluginManifestRegistry } from "../plugins/manifest-registry.js";
-import { resolveBundledProviderPolicySurface } from "../plugins/provider-public-artifacts.js";
-import type { ModelProviderConfig, OpenClawConfig } from "./types.js";
+import type { PluginManifestRegistry } from "../plugins/manifest/manifest-registry.js";
+import { resolveBundledProviderPolicySurface } from "../plugins/providers/provider-public-artifacts.js";
+import type { ModelProviderConfig, OpenClawConfig } from "./types/types.js";
 
 /** Applies bundled provider-owned normalization to one provider config during config defaults. */
 export function normalizeProviderConfigForConfigDefaults(params: {

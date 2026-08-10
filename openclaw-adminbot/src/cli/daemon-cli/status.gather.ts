@@ -8,13 +8,13 @@ import {
   resolveGatewayPort,
   resolveStateDir,
 } from "../../config/config.js";
+import { resolveSecretInputRef } from "../../config/types/secrets.js";
 import type {
   OpenClawConfig,
   ConfigFileSnapshot,
   GatewayBindMode,
   GatewayControlUiConfig,
-} from "../../config/types.js";
-import { resolveSecretInputRef } from "../../config/types.secrets.js";
+} from "../../config/types/types.js";
 import { readLastGatewayErrorLine } from "../../daemon/diagnostics.js";
 import type { FindExtraGatewayServicesOptions } from "../../daemon/inspect.js";
 import type { StaleOpenClawUpdateLaunchdJob } from "../../daemon/launchd.js";
@@ -46,7 +46,7 @@ import {
   type GatewayRestartHandoff,
 } from "../../infra/restart-handoff.js";
 import { resolveConfiguredLogFilePath } from "../../logging/log-file-path.js";
-import { loadInstalledPluginIndexInstallRecords } from "../../plugins/installed-plugin-index-record-reader.js";
+import { loadInstalledPluginIndexInstallRecords } from "../../plugins/install/installed-plugin-index-record-reader.js";
 import {
   detectPluginVersionDrift,
   type PluginVersionDriftReport,

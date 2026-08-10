@@ -12,7 +12,7 @@ const loadSessionEntryMock = vi.fn((sessionKey: string, _opts?: { agentId?: stri
   canonicalKey: sessionKey,
 }));
 
-vi.mock("../server-session-key.js", () => ({
+vi.mock("../server/server-session-key.js", () => ({
   resolveSessionKeyForRun: (...args: unknown[]) => resolveSessionKeyForRunMock(...args),
 }));
 
@@ -22,8 +22,10 @@ vi.mock("./chat.js", () => ({
   },
 }));
 
-vi.mock("../session-utils.js", async () => {
-  const actual = await vi.importActual<typeof import("../session-utils.js")>("../session-utils.js");
+vi.mock("../sessions/session-utils.js", async () => {
+  const actual = await vi.importActual<typeof import("../sessions/session-utils.js")>(
+    "../sessions/session-utils.js",
+  );
   return {
     ...actual,
     listSessionsFromStoreAsync: (...args: unknown[]) => listSessionsFromStoreAsyncMock(...args),

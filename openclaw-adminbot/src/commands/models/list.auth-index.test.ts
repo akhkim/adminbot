@@ -30,8 +30,8 @@ const envCandidateMocks = vi.hoisted(() => ({
   resolveProviderEnvAuthLookupMaps: vi.fn(),
 }));
 
-vi.mock("../../agents/model-auth-env-vars.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../agents/model-auth-env-vars.js")>();
+vi.mock("../../agents/auth/model-auth-env-vars.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../agents/auth/model-auth-env-vars.js")>();
   envCandidateMocks.resolveProviderEnvApiKeyCandidates.mockImplementation(
     actual.resolveProviderEnvApiKeyCandidates,
   );

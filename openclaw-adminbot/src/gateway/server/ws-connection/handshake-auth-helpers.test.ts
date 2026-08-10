@@ -5,7 +5,7 @@ import {
   GATEWAY_CLIENT_MODES,
 } from "../../../../packages/gateway-protocol/src/client-info.js";
 import type { ConnectParams } from "../../../../packages/gateway-protocol/src/schema.js";
-import type { AuthRateLimiter } from "../../auth-rate-limit.js";
+import type { AuthRateLimiter } from "../../auth/auth-rate-limit.js";
 import {
   BROWSER_ORIGIN_RATE_LIMIT_KEY_PREFIX,
   BROWSER_ORIGIN_LOOPBACK_RATE_LIMIT_IP,

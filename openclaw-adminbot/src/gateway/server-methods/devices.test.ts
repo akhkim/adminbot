@@ -5,7 +5,7 @@ import {
   onInternalDiagnosticEvent,
   resetDiagnosticEventsForTest,
   type DiagnosticSecurityEvent,
-} from "../../infra/diagnostic-events.js";
+} from "../../infra/diagnostics/diagnostic-events.js";
 import { deviceHandlers } from "./devices.js";
 import type { GatewayRequestHandlerOptions } from "./types.js";
 

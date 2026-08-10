@@ -1,16 +1,16 @@
 // Model picker provider catalog helpers build provider choices from catalog data.
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
 import { resolveDefaultAgentDir } from "../agents/agent-scope.js";
-import { ensureAuthProfileStoreWithoutExternalProfiles } from "../agents/auth-profiles.js";
-import type { ModelCatalogEntry } from "../agents/model-catalog.js";
-import { normalizeConfiguredProviderCatalogModelId } from "../agents/model-ref-shared.js";
+import { ensureAuthProfileStoreWithoutExternalProfiles } from "../agents/auth/auth-profiles.js";
+import type { ModelCatalogEntry } from "../agents/models/model-catalog.js";
+import { normalizeConfiguredProviderCatalogModelId } from "../agents/models/model-ref-shared.js";
 import {
   createProviderApiKeyResolver,
   createProviderAuthResolver,
-} from "../agents/models-config.providers.secrets.js";
+} from "../agents/models/models-config.providers.secrets.js";
 import { resolveProviderCatalogPluginIdsForFilter } from "../commands/models/list.provider-catalog.js";
-import type { ModelDefinitionConfig, ModelProviderConfig } from "../config/types.models.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { ModelDefinitionConfig, ModelProviderConfig } from "../config/types/models.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import {
@@ -18,7 +18,7 @@ import {
   normalizePluginDiscoveryResult,
   resolveRuntimePluginDiscoveryProviders,
   runProviderCatalog,
-} from "../plugins/provider-discovery.js";
+} from "../plugins/providers/provider-discovery.js";
 import type { ProviderPlugin } from "../plugins/types.js";
 
 // Loads live provider model catalogs for the preferred-provider model picker.
@@ -76,7 +76,7 @@ async function resolvePreferredProviderLiveCatalogProviders(params: {
   }
 
   // Fallback activates setup-mode providers only when discovery returned no live catalog runner.
-  const { resolvePluginProviders } = await import("../plugins/providers.runtime.js");
+  const { resolvePluginProviders } = await import("../plugins/providers/providers.runtime.js");
   return resolvePluginProviders({
     config: params.cfg,
     env: params.env,

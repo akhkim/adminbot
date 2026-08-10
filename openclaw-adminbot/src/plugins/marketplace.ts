@@ -11,13 +11,13 @@ import { pathExists } from "../infra/fs-safe.js";
 import { resolveOsHomeRelativePath } from "../infra/home-dir.js";
 import { tryReadJson } from "../infra/json-files.js";
 import { fetchWithSsrFGuard } from "../infra/net/fetch-guard.js";
-import { isPathInside } from "../infra/path-guards.js";
+import { isPathInside } from "../infra/system/path-guards.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import type { InstallPolicySource } from "../security/install-policy.js";
 import { resolveUserPath } from "../utils.js";
 import { isImmutableGitCommitRef } from "./git-install.js";
-import type { InstallSafetyOverrides } from "./install-security-scan.js";
-import { installPluginFromPath, type InstallPluginResult } from "./install.js";
+import type { InstallSafetyOverrides } from "./install/install-security-scan.js";
+import { installPluginFromPath, type InstallPluginResult } from "./install/install.js";
 
 const DEFAULT_GIT_TIMEOUT_MS = 120_000;
 const DEFAULT_MARKETPLACE_DOWNLOAD_TIMEOUT_MS = 120_000;

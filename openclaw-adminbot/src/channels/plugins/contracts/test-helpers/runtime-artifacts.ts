@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { resolveBundledChannelWorkspacePath } from "../../../../plugins/bundled-channel-runtime.js";
+import { resolveBundledChannelWorkspacePath } from "../../../../plugins/install/bundled-channel-runtime.js";
 import {
   resolvePluginRuntimeModulePath,
   resolvePluginRuntimeRecord,

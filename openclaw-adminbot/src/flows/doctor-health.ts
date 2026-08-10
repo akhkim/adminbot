@@ -1,7 +1,7 @@
 // Doctor health flow renders interactive health check output.
 import { intro as clackIntro, outro as clackOutro } from "@clack/prompts";
 import { stylePromptTitle } from "../../packages/terminal-core/src/prompt-style.js";
-import type { DoctorOptions } from "../commands/doctor-prompter.js";
+import type { DoctorOptions } from "../commands/doctor/doctor-prompter.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { DoctorHealthFlowContext } from "./doctor-health-contributions.js";
 
@@ -25,8 +25,8 @@ export async function doctorCommand(runtime?: RuntimeEnv, options: DoctorOptions
     assertConfigWriteAllowedInCurrentMode();
   }
 
-  const { createDoctorPrompter } = await import("../commands/doctor-prompter.js");
-  const { printWizardHeader } = await import("../commands/onboard-helpers.js");
+  const { createDoctorPrompter } = await import("../commands/doctor/doctor-prompter.js");
+  const { printWizardHeader } = await import("../commands/onboard/onboard-helpers.js");
   const prompter = createDoctorPrompter({ runtime: effectiveRuntime, options });
   printWizardHeader(effectiveRuntime);
   intro("OpenClaw doctor");
@@ -38,7 +38,7 @@ export async function doctorCommand(runtime?: RuntimeEnv, options: DoctorOptions
     cwd: process.cwd(),
   });
 
-  const { maybeOfferUpdateBeforeDoctor } = await import("../commands/doctor-update.js");
+  const { maybeOfferUpdateBeforeDoctor } = await import("../commands/doctor/doctor-update.js");
   const updateResult = await maybeOfferUpdateBeforeDoctor({
     runtime: effectiveRuntime,
     options,
@@ -51,17 +51,19 @@ export async function doctorCommand(runtime?: RuntimeEnv, options: DoctorOptions
   }
 
   // Keep side-effect-heavy legacy checks before structured contributions until fully migrated.
-  const { maybeRepairUiProtocolFreshness } = await import("../commands/doctor-ui.js");
-  const { noteSourceInstallIssues } = await import("../commands/doctor-install.js");
+  const { maybeRepairUiProtocolFreshness } = await import("../commands/doctor/doctor-ui.js");
+  const { noteSourceInstallIssues } = await import("../commands/doctor/doctor-install.js");
   const { noteStalePluginRuntimeSymlinks } =
     await import("../commands/doctor/shared/plugin-runtime-symlinks.js");
-  const { noteStartupOptimizationHints } = await import("../commands/doctor-platform-notes.js");
+  const { noteStartupOptimizationHints } =
+    await import("../commands/doctor/doctor-platform-notes.js");
   await maybeRepairUiProtocolFreshness(effectiveRuntime, prompter);
   noteSourceInstallIssues(root);
   await noteStalePluginRuntimeSymlinks(root);
   noteStartupOptimizationHints();
 
-  const { loadAndMaybeMigrateDoctorConfig } = await import("../commands/doctor-config-flow.js");
+  const { loadAndMaybeMigrateDoctorConfig } =
+    await import("../commands/doctor/doctor-config-flow.js");
   const configResult = await loadAndMaybeMigrateDoctorConfig({
     options,
     confirm: (p) => prompter.confirm(p),
@@ -86,7 +88,7 @@ export async function doctorCommand(runtime?: RuntimeEnv, options: DoctorOptions
       UPDATE_POST_INSTALL_DOCTOR_ADVISORY_EXIT_CODE,
       UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH_ENV,
       writeUpdatePostInstallDoctorResult,
-    } = await import("../infra/update-doctor-result.js");
+    } = await import("../infra/install/update-doctor-result.js");
     const resultPath = process.env[UPDATE_POST_INSTALL_DOCTOR_RESULT_PATH_ENV]?.trim();
     if (resultPath) {
       await writeUpdatePostInstallDoctorResult({

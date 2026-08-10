@@ -5,10 +5,9 @@ import from this tree directly.
 
 ## Public Contracts
 
-- Docs:
-  - `docs/plugins/sdk-channel-plugins.md`
-  - `docs/plugins/architecture.md`
-  - `docs/plugins/sdk-overview.md`
+The upstream `docs/plugins/*` guides were removed with the deep clean; the
+definition files below are the surviving source of truth.
+
 - Definition files:
   - `src/channels/plugins/types.plugin.ts`
   - `src/channels/plugins/types.core.ts`
@@ -53,5 +52,3 @@ import from this tree directly.
 ## Verification
 
 - If you touch hot channel entrypoints or lazy-loading seams, run `pnpm build`.
-- For bundled plugin channel changes that can affect startup/import cost, run:
-  `OPENCLAW_LOCAL_CHECK=0 node scripts/profile-extension-memory.mjs --extension <id> --skip-combined --concurrency 1`

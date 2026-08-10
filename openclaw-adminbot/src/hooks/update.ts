@@ -1,10 +1,10 @@
 // Hook update helpers refresh installed hook records and config references.
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { buildNpmResolutionFields } from "../infra/install-source-utils.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { buildNpmResolutionFields } from "../infra/install/install-source-utils.js";
 import {
   expectedIntegrityForUpdate,
   readInstalledPackageVersion,
-} from "../infra/package-update-utils.js";
+} from "../infra/install/package-update-utils.js";
 import {
   installHooksFromNpmSpec,
   type HookNpmIntegrityDriftParams,

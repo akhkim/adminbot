@@ -1,5 +1,5 @@
 // Resolves model choices for commitment extraction and follow-up checks.
-import { resolveDefaultModelForAgent } from "../agents/model-selection.js";
+import { resolveDefaultModelForAgent } from "../agents/models/model-selection.js";
 import type { OpenClawConfig } from "../config/config.js";
 
 // Lazy runtime seam for commitment extraction model selection. Keeps the

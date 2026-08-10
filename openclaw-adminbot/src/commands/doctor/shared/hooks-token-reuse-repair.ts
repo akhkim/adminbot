@@ -1,11 +1,11 @@
 // Doctor repair for configs that reuse Gateway shared-secret auth as hooks.token.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import {
   canMaterializeGatewayAuthSecretRefsWithoutExec,
   materializeGatewayAuthSecretRefs,
-} from "../../../gateway/auth-config-utils.js";
-import { resolveGatewayAuth, type ResolvedGatewayAuth } from "../../../gateway/auth.js";
+} from "../../../gateway/auth/auth-config-utils.js";
+import { resolveGatewayAuth, type ResolvedGatewayAuth } from "../../../gateway/auth/auth.js";
 import { randomToken } from "../../random-token.js";
 import type { DoctorConfigMutationResult } from "./config-mutation-state.js";
 

@@ -1,5 +1,5 @@
 // Approval delivery helpers format approval prompts and results for channel plugins.
-import type { ExecApprovalRequest } from "../infra/exec-approvals.js";
+import type { ExecApprovalRequest } from "../infra/exec/exec-approvals.js";
 import type { PluginApprovalRequest } from "../infra/plugin-approvals.js";
 import type { ChannelApprovalCapability } from "./channel-contract.js";
 import type { OpenClawConfig } from "./config-runtime.js";

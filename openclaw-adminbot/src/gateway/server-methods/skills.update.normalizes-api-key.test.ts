@@ -2,7 +2,7 @@
 // do not overwrite existing secret values.
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
-import { REDACTED_SENTINEL } from "../../config/redact-snapshot.js";
+import { REDACTED_SENTINEL } from "../../config/redact/redact-snapshot.js";
 
 let writtenConfig: unknown = null;
 let loadedConfig: unknown = {

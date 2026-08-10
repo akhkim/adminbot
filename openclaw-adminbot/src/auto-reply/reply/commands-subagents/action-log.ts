@@ -2,7 +2,7 @@
 import { parseStrictNonNegativeInteger } from "@openclaw/normalization-core/number-coercion";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { callGateway } from "../../../gateway/call.js";
-import type { CommandHandlerResult } from "../commands-types.js";
+import type { CommandHandlerResult } from "../commands/commands-types.js";
 import { formatRunLabel } from "../subagents-utils.js";
 import {
   type ChatMessage,

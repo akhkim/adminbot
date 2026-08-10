@@ -88,7 +88,7 @@ vi.mock("../infra/boundary-file-read.js", () => {
   };
 });
 
-vi.mock("../plugins/manifest-registry-installed.js", () => ({
+vi.mock("../plugins/manifest/manifest-registry-installed.js", () => ({
   loadPluginManifestRegistryForInstalledIndex: bundleTestDeps.loadBundleRegistry,
 }));
 
@@ -116,7 +116,7 @@ vi.mock("../plugins/plugin-metadata-snapshot.js", () => {
   };
 });
 
-vi.mock("./embedded-agent-mcp.js", () => ({
+vi.mock("./embedded/embedded-agent-mcp.js", () => ({
   loadEmbeddedAgentMcpConfig: bundleTestDeps.loadEmbeddedAgentMcpConfig,
 }));
 

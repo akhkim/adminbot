@@ -1,6 +1,6 @@
 // Gateway run loop tests cover foreground gateway lifecycle and restart behavior.
 import { describe, expect, it, vi } from "vitest";
-import type { GatewayServer } from "../../gateway/server.impl.js";
+import type { GatewayServer } from "../../gateway/server/server.impl.js";
 import type { GatewayBonjourBeacon } from "../../infra/bonjour-discovery.js";
 import { pickBeaconHost, pickGatewayPort } from "./discover.js";
 
@@ -183,7 +183,7 @@ vi.mock("../../infra/agent-events.js", () => ({
   rotateAgentEventLifecycleGeneration: () => rotateAgentEventLifecycleGeneration(),
 }));
 
-vi.mock("../../config/runtime-snapshot.js", () => ({
+vi.mock("../../config/runtime/runtime-snapshot.js", () => ({
   clearRuntimeConfigSnapshot: () => clearRuntimeConfigSnapshot(),
 }));
 

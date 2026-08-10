@@ -4,8 +4,8 @@ import {
   normalizeStringEntries,
   uniqueStrings,
 } from "../../packages/normalization-core/src/string-normalization.js";
-import { createProviderApiKeyAuthMethod } from "../plugins/provider-api-key-auth.js";
-import { projectProviderCatalogResultToUnifiedTextRows } from "../plugins/provider-catalog-unified-text.js";
+import { createProviderApiKeyAuthMethod } from "../plugins/providers/provider-api-key-auth.js";
+import { projectProviderCatalogResultToUnifiedTextRows } from "../plugins/providers/provider-catalog-unified-text.js";
 import type {
   ProviderPlugin,
   ProviderCatalogContext,

@@ -4,30 +4,30 @@ import {
   normalizeOptionalLowercaseString,
 } from "@openclaw/normalization-core/string-coerce";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
-import { resolveDefaultAgentDir } from "../agents/agent-scope-config.js";
-import { hasAuthProfileForProvider } from "../agents/tools/model-config.helpers.js";
-import {
-  getRuntimeConfigSnapshot,
-  getRuntimeConfigSourceSnapshot,
-  selectApplicableRuntimeConfig,
-} from "../config/runtime-snapshot.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { logVerbose } from "../globals.js";
-import { resolveManifestContractOwnerPluginId } from "../plugins/plugin-registry-contributions.js";
-import type { PluginWebSearchProviderEntry } from "../plugins/types.js";
-import {
-  resolvePluginWebSearchProviders,
-  resolveRuntimeWebSearchProviders,
-} from "../plugins/web-search-providers.runtime.js";
-import { sortWebSearchProvidersForAutoDetect } from "../plugins/web-search-providers.shared.js";
-import { getActiveRuntimeWebToolsMetadata } from "../secrets/runtime-web-tools-state.js";
-import type { RuntimeWebSearchMetadata } from "../secrets/runtime-web-tools.types.js";
 import {
   hasWebProviderEntryCredential,
   providerRequiresCredential,
   readWebProviderEnvValue,
   resolveWebProviderConfig,
 } from "../../packages/web-content-core/src/provider-runtime-shared.js";
+import { resolveDefaultAgentDir } from "../agents/agent-scope-config.js";
+import { hasAuthProfileForProvider } from "../agents/tools/model-config.helpers.js";
+import {
+  getRuntimeConfigSnapshot,
+  getRuntimeConfigSourceSnapshot,
+  selectApplicableRuntimeConfig,
+} from "../config/runtime/runtime-snapshot.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { logVerbose } from "../globals.js";
+import { resolveManifestContractOwnerPluginId } from "../plugins/plugin-registry-contributions.js";
+import type { PluginWebSearchProviderEntry } from "../plugins/types.js";
+import {
+  resolvePluginWebSearchProviders,
+  resolveRuntimeWebSearchProviders,
+} from "../plugins/web/web-search-providers.runtime.js";
+import { sortWebSearchProvidersForAutoDetect } from "../plugins/web/web-search-providers.shared.js";
+import { getActiveRuntimeWebToolsMetadata } from "../secrets/runtime-web-tools-state.js";
+import type { RuntimeWebSearchMetadata } from "../secrets/runtime-web-tools.types.js";
 import type {
   ResolveWebSearchDefinitionParams,
   RunWebSearchParams,

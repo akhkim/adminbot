@@ -3,7 +3,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { resolveContextEngineOwnerPluginId } from "../../context-engine/registry.js";
 import type {
   ContextEngine,
@@ -30,7 +30,7 @@ import {
   findTaskByRunIdForOwner,
   updateTaskNotifyPolicyForOwner,
 } from "../../tasks/task-owner-access.js";
-import { findActiveSessionTask } from "../session-async-task-status.js";
+import { findActiveSessionTask } from "../sessions/session-async-task-status.js";
 import { resolveContextEngineCapabilities } from "./context-engine-capabilities.js";
 import { log } from "./logger.js";
 import {

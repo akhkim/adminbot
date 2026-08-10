@@ -39,8 +39,8 @@ import { resolveCompatibilityHostVersion } from "../version.js";
 import type { RuntimeVersionEnv } from "../version.js";
 import { CLAWHUB_INSTALL_ERROR_CODE, type ClawHubInstallErrorCode } from "./clawhub-error-codes.js";
 import type { ClawHubPluginInstallRecordFields } from "./clawhub-install-records.js";
-import type { InstallSafetyOverrides } from "./install-security-scan.js";
-import { installPluginFromArchive, type InstallPluginResult } from "./install.js";
+import type { InstallSafetyOverrides } from "./install/install-security-scan.js";
+import { installPluginFromArchive, type InstallPluginResult } from "./install/install.js";
 
 export { CLAWHUB_INSTALL_ERROR_CODE };
 export type { ClawHubInstallErrorCode };

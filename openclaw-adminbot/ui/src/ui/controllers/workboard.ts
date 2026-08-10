@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 4127 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI controller manages workboard gateway state.
 import { GatewayRequestError, type GatewayBrowserClient } from "../gateway.ts";
 import type { GatewaySessionRow } from "../types.ts";

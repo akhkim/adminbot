@@ -7,7 +7,7 @@ import { normalizeOptionalString } from "@openclaw/normalization-core/string-coe
 import {
   getActivePluginChannelRegistry,
   requireActivePluginRegistry,
-} from "../../plugins/runtime.js";
+} from "../../plugins/runtime/runtime.js";
 import { CHAT_CHANNEL_ORDER, type ChatChannelId } from "../registry.js";
 import { listBundledChannelSetupPlugins } from "./bundled.js";
 import type { ChannelPlugin } from "./types.plugin.js";

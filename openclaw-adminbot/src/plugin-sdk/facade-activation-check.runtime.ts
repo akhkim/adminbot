@@ -4,27 +4,27 @@
 import fs from "node:fs";
 import path from "node:path";
 import JSON5 from "json5";
-import { resolveConfigPath } from "../config/paths.js";
-import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
-import { configMayNeedPluginAutoEnable } from "../config/plugin-auto-enable.shared.js";
+import { resolveConfigPath } from "../config/paths/paths.js";
+import { applyPluginAutoEnable } from "../config/plugin/plugin-auto-enable.js";
+import { configMayNeedPluginAutoEnable } from "../config/plugin/plugin-auto-enable.shared.js";
 import {
   getRuntimeConfigSnapshot,
   getRuntimeConfigSourceSnapshot,
-} from "../config/runtime-snapshot.js";
-import type { OpenClawConfig } from "../config/types.js";
-import { resolveBundledPluginsDir } from "../plugins/bundled-dir.js";
+} from "../config/runtime/runtime-snapshot.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import {
   createPluginActivationSource,
   normalizePluginsConfig,
   resolveEffectivePluginActivationState,
-} from "../plugins/config-state.js";
+} from "../plugins/config/config-state.js";
 import { getCurrentPluginMetadataSnapshot } from "../plugins/current-plugin-metadata-snapshot.js";
 import { isPluginEnabledByDefaultForPlatform } from "../plugins/default-enablement.js";
+import { resolveBundledPluginsDir } from "../plugins/install/bundled-dir.js";
 import {
   loadPluginManifestRegistry,
   type PluginManifestRecord,
-} from "../plugins/manifest-registry.js";
-import { parseJsonWithJson5Fallback } from "../utils/parse-json-compat.js";
+} from "../plugins/manifest/manifest-registry.js";
+import { parseJsonWithJson5Fallback } from "../shared/parse-json-compat.js";
 import { resolveRegistryPluginModuleLocationFromRecords } from "./facade-resolution-shared.js";
 
 const ALWAYS_ALLOWED_RUNTIME_DIR_NAMES = new Set([

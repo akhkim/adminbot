@@ -1,10 +1,10 @@
 /** Model registry access helpers for `openclaw models list`. */
-import { loadAgentModelRegistry } from "../../agents/model-registry-loader.js";
+import { loadAgentModelRegistry } from "../../agents/models/model-registry-loader.js";
 import {
   shouldSuppressBuiltInModel,
   shouldSuppressBuiltInModelFromManifest,
-} from "../../agents/model-suppression.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+} from "../../agents/models/model-suppression.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { ModelRegistry } from "../../llm/model-registry.js";
 import type { Model } from "../../llm/types.js";
 import {

@@ -1,6 +1,6 @@
 /** Built-in and channel-derived command registry data for auto-reply commands. */
 import { listLoadedChannelPlugins } from "../channels/plugins/registry-loaded.js";
-import { getActivePluginChannelRegistryVersionFromState } from "../plugins/runtime-channel-state.js";
+import { getActivePluginChannelRegistryVersionFromState } from "../plugins/runtime/runtime-channel-state.js";
 import {
   assertCommandRegistry,
   buildBuiltinChatCommands,

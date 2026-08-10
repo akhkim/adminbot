@@ -1,15 +1,17 @@
 // Control UI module implements tool display behavior.
-import SHARED_TOOL_DISPLAY_JSON from "../../../apps/shared/OpenClawKit/Sources/OpenClawKit/Resources/tool-display.json" with { type: "json" };
 import {
   defaultTitle,
   formatToolDetailText,
   normalizeToolName,
   resolveToolVerbAndDetailForArgs,
   type ToolDisplaySpec as ToolDisplaySpecBase,
-} from "../../../src/agents/tool-display-common.js";
-import type { ToolDetailMode } from "../../../src/agents/tool-display-exec.js";
+} from "../../../src/agents/tools/tool-display-common.js";
+import type { ToolDetailMode } from "../../../src/agents/tools/tool-display-exec.js";
 import type { IconName } from "./icons.ts";
 import { normalizeLowercaseStringOrEmpty } from "./string-coerce.ts";
+// Specs used to live in the macOS/iOS OpenClawKit resource bundle. With the native apps gone the
+// Control UI is the only consumer, so the data sits next to its reader.
+import SHARED_TOOL_DISPLAY_JSON from "./tool-display.json" with { type: "json" };
 
 type ToolDisplaySpec = ToolDisplaySpecBase & {
   icon?: string;

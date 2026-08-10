@@ -9,8 +9,11 @@ import type { AssistantMessage, UserMessage } from "openclaw/plugin-sdk/llm";
 import { afterAll, beforeAll, beforeEach, expect, vi } from "vitest";
 import type { SessionEntry } from "../../config/sessions.js";
 import type { InternalHookEvent } from "../../hooks/internal-hooks.js";
-import { resetSystemEventsForTest } from "../../infra/system-events.js";
-import { startGatewayServerHarness, type GatewayServerHarness } from "../server.e2e-ws-harness.js";
+import { resetSystemEventsForTest } from "../../infra/system/system-events.js";
+import {
+  startGatewayServerHarness,
+  type GatewayServerHarness,
+} from "../server/server.e2e-ws-harness.js";
 import {
   connectOk,
   embeddedRunMock,
@@ -120,9 +123,9 @@ const bundleMcpRuntimeMocks = vi.hoisted(() => ({
   disposeAllSessionMcpRuntimes: vi.fn(async () => {}),
 }));
 
-vi.mock("../../auto-reply/reply/queue.js", async () => {
-  const actual = await vi.importActual<typeof import("../../auto-reply/reply/queue.js")>(
-    "../../auto-reply/reply/queue.js",
+vi.mock("../../auto-reply/reply/queue/queue.js", async () => {
+  const actual = await vi.importActual<typeof import("../../auto-reply/reply/queue/queue.js")>(
+    "../../auto-reply/reply/queue/queue.js",
   );
   return {
     ...actual,
@@ -140,9 +143,9 @@ vi.mock("../../auto-reply/reply/queue/cleanup.js", async () => {
   };
 });
 
-vi.mock("../../auto-reply/reply/abort.js", async () => {
-  const actual = await vi.importActual<typeof import("../../auto-reply/reply/abort.js")>(
-    "../../auto-reply/reply/abort.js",
+vi.mock("../../auto-reply/reply/queue/abort.js", async () => {
+  const actual = await vi.importActual<typeof import("../../auto-reply/reply/queue/abort.js")>(
+    "../../auto-reply/reply/queue/abort.js",
   );
   return {
     ...actual,
@@ -150,9 +153,9 @@ vi.mock("../../auto-reply/reply/abort.js", async () => {
   };
 });
 
-vi.mock("../../agents/bootstrap-cache.js", async () => {
-  const actual = await vi.importActual<typeof import("../../agents/bootstrap-cache.js")>(
-    "../../agents/bootstrap-cache.js",
+vi.mock("../../agents/prompt/bootstrap-cache.js", async () => {
+  const actual = await vi.importActual<typeof import("../../agents/prompt/bootstrap-cache.js")>(
+    "../../agents/prompt/bootstrap-cache.js",
   );
   return {
     ...actual,
@@ -171,9 +174,9 @@ vi.mock("../../hooks/internal-hooks.js", async () => {
   };
 });
 
-vi.mock("../../plugins/hook-runner-global.js", async () => {
-  const actual = await vi.importActual<typeof import("../../plugins/hook-runner-global.js")>(
-    "../../plugins/hook-runner-global.js",
+vi.mock("../../plugins/hooks/hook-runner-global.js", async () => {
+  const actual = await vi.importActual<typeof import("../../plugins/hooks/hook-runner-global.js")>(
+    "../../plugins/hooks/hook-runner-global.js",
   );
   return {
     ...actual,
@@ -234,7 +237,7 @@ vi.mock("../../plugin-sdk/browser-maintenance.js", () => ({
   movePathToTrash: vi.fn(async () => {}),
 }));
 
-vi.mock("../../agents/agent-bundle-mcp-tools.js", () => ({
+vi.mock("../../agents/mcp/agent-bundle-mcp-tools.js", () => ({
   disposeSessionMcpRuntime: bundleMcpRuntimeMocks.disposeSessionMcpRuntime,
   disposeAllSessionMcpRuntimes: bundleMcpRuntimeMocks.disposeAllSessionMcpRuntimes,
   retireSessionMcpRuntime: ({ sessionId }: { sessionId?: string | null }) =>

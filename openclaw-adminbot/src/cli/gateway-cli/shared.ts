@@ -6,7 +6,7 @@ import {
 } from "../../daemon/constants.js";
 import { resolveGatewayService } from "../../daemon/service.js";
 import { defaultRuntime } from "../../runtime.js";
-import { formatCliCommand } from "../command-format.js";
+import { formatCliCommand } from "../program/command-format.js";
 
 function renderGatewayServiceStopHints(env: NodeJS.ProcessEnv = process.env): string[] {
   const profile = env.OPENCLAW_PROFILE;

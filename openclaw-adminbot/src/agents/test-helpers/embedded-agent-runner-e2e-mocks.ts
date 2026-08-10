@@ -25,7 +25,7 @@ type EmbeddedRunnerBackoffMockOptions = {
 export function installEmbeddedRunnerBaseE2eMocks(options?: {
   hookRunner?: "minimal" | "full";
 }): void {
-  vi.doMock("../../plugins/hook-runner-global.js", () =>
+  vi.doMock("../../plugins/hooks/hook-runner-global.js", () =>
     options?.hookRunner === "full"
       ? {
           getGlobalHookRunner: vi.fn(() => undefined),
@@ -147,7 +147,7 @@ export function installEmbeddedRunnerFastRunE2eMocks(
   vi.doMock("../embedded-agent-runner/run/attempt.js", () => ({
     runEmbeddedAttempt: (params: unknown) => options.runEmbeddedAttempt(params),
   }));
-  vi.doMock("../../plugins/provider-runtime.js", () => ({
+  vi.doMock("../../plugins/providers/provider-runtime.js", () => ({
     applyProviderResolvedTransportWithPlugin: vi.fn(() => undefined),
     buildProviderMissingAuthMessageWithPlugin: vi.fn(() => undefined),
     buildProviderUnknownModelHintWithPlugin: vi.fn(() => undefined),

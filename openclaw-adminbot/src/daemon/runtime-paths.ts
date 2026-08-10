@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { isSupportedNodeVersion } from "../infra/runtime-guard.js";
 import { resolveStableNodePath } from "../infra/stable-node-path.js";
-import { getWindowsProgramFilesRoots } from "../infra/windows-install-roots.js";
+import { getWindowsProgramFilesRoots } from "../infra/system/windows-install-roots.js";
 
 const VERSION_MANAGER_MARKERS = [
   "/.nvm/",

@@ -8,8 +8,8 @@ import { uniqueStrings } from "@openclaw/normalization-core/string-normalization
 import { isGatewayArgv } from "../infra/gateway-process-argv.js";
 import { findVerifiedGatewayListenerPidsOnPortSync } from "../infra/gateway-processes.js";
 import { inspectPortUsage } from "../infra/ports.js";
+import { getWindowsInstallRoots } from "../infra/system/windows-install-roots.js";
 import { parseTcpPort } from "../infra/tcp-port.js";
-import { getWindowsInstallRoots } from "../infra/windows-install-roots.js";
 import { killProcessTree } from "../process/kill-tree.js";
 import { sleep } from "../utils.js";
 import { parseCmdScriptCommandLine, quoteCmdScriptArg } from "./cmd-argv.js";

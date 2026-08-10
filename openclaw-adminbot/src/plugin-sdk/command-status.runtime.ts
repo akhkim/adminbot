@@ -1,14 +1,14 @@
 // Command status runtime helpers collect agent/session state for plugin command status output.
 import { listAgentEntries, resolveSessionAgentId } from "../agents/agent-scope.js";
-import { resolveDefaultModelForAgent } from "../agents/model-selection.js";
-import { buildStatusReply } from "../auto-reply/reply/commands-status.js";
-import type { CommandContext } from "../auto-reply/reply/commands-types.js";
-import { resolveDefaultModel } from "../auto-reply/reply/directive-handling.defaults.js";
-import { resolveCurrentDirectiveLevels } from "../auto-reply/reply/directive-handling.levels.js";
+import { resolveDefaultModelForAgent } from "../agents/models/model-selection.js";
+import { buildStatusReply } from "../auto-reply/reply/commands/commands-status.js";
+import type { CommandContext } from "../auto-reply/reply/commands/commands-types.js";
+import { resolveDefaultModel } from "../auto-reply/reply/directives/directive-handling.defaults.js";
+import { resolveCurrentDirectiveLevels } from "../auto-reply/reply/directives/directive-handling.levels.js";
 import { createModelSelectionState } from "../auto-reply/reply/model-selection.js";
 import type { ReplyPayload } from "../auto-reply/types.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { loadSessionEntry } from "../gateway/session-utils.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { loadSessionEntry } from "../gateway/sessions/session-utils.js";
 
 /** Inputs for rendering direct-session status replies outside the active channel turn. */
 export type ResolveDirectStatusReplyForSessionParams = {

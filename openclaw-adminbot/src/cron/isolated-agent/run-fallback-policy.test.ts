@@ -1,7 +1,7 @@
 // Run fallback policy tests cover isolated agent fallback behavior after run failures.
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { CronJob } from "../types.js";
 import {
   resolveCronFallbacksOverride,

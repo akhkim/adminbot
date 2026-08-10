@@ -5,12 +5,9 @@ import type { InboundEventKind } from "../../channels/inbound-event/kind.js";
 import { annotateInterSessionPromptText } from "../../sessions/input-provenance.js";
 import type { SourceReplyDeliveryMode } from "../get-reply-options.types.js";
 import { HEARTBEAT_TRANSCRIPT_PROMPT } from "../heartbeat.js";
-import { buildInboundMediaNote } from "../media-note.js";
 import type { MsgContext, TemplateContext } from "../templating.js";
 import { appendUntrustedContext } from "./untrusted-context.js";
 
-const REPLY_MEDIA_HINT =
-  "To send an image back, use the message tool with structured media fields such as media, mediaUrl, path, or filePath. Keep caption in the text body.";
 const ROOM_EVENT_PROMPT = "[OpenClaw room event]";
 const ROOM_EVENT_SOURCE_REPLY_DELIVERY_MODE = "message_tool_only";
 const RESUMABLE_ROOM_CONTEXT_OMITTED_PREFIXES = [
@@ -29,8 +26,6 @@ export function buildReplyPromptBodies(params: {
   systemEventBlocks?: string[];
   inboundEventKind?: InboundEventKind;
 }): {
-  mediaNote?: string;
-  mediaReplyHint?: string;
   prefixedCommandBody: string;
   queuedBody: string;
   transcriptCommandBody: string;
@@ -48,26 +43,11 @@ export function buildReplyPromptBodies(params: {
     .filter(Boolean)
     .join("\n\n");
   const queueBodyBase = [params.threadContextNote, bodyWithEvents].filter(Boolean).join("\n\n");
-  const mediaNote = buildInboundMediaNote(params.ctx);
-  const mediaReplyHint = mediaNote ? REPLY_MEDIA_HINT : undefined;
-  const queuedBodyRaw = mediaNote
-    ? [mediaNote, mediaReplyHint, queueBodyBase].filter(Boolean).join("\n").trim()
-    : queueBodyBase;
-  const prefixedCommandBodyRaw = mediaNote
-    ? [mediaNote, mediaReplyHint, prefixedBody].filter(Boolean).join("\n").trim()
-    : prefixedBody;
+  const queuedBodyRaw = queueBodyBase;
+  const prefixedCommandBodyRaw = prefixedBody;
   const transcriptBody = params.transcriptBody ?? params.effectiveBaseBody;
-  const includeMediaOnlyTranscript = mediaNote && params.inboundEventKind !== "room_event";
-  const transcriptCommandBodyRaw = transcriptBody
-    ? mediaNote
-      ? [mediaNote, transcriptBody].filter(Boolean).join("\n").trim()
-      : transcriptBody
-    : includeMediaOnlyTranscript
-      ? mediaNote
-      : "";
+  const transcriptCommandBodyRaw = transcriptBody ?? "";
   return {
-    mediaNote,
-    mediaReplyHint,
     prefixedCommandBody: annotateInterSessionPromptText(
       prefixedCommandBodyRaw,
       params.sessionCtx.InputProvenance,

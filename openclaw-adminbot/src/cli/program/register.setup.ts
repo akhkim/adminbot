@@ -3,7 +3,7 @@ import type { Command } from "commander";
 import { formatDocsLink } from "../../../packages/terminal-core/src/links.js";
 import { theme } from "../../../packages/terminal-core/src/theme.js";
 import { runCommandWithRuntime } from "../cli-utils.js";
-import { hasExplicitOptions } from "../command-options.js";
+import { hasExplicitOptions } from "./command-options.js";
 
 /** Register the `setup` command and route wizard-style invocations to onboarding. */
 export function registerSetupCommand(program: Command): void {
@@ -53,7 +53,7 @@ export function registerSetupCommand(program: Command): void {
         ]);
         // Any onboarding-only flag means the user intended the wizard path even without --wizard.
         if (opts.wizard || hasWizardFlags) {
-          const { setupWizardCommand } = await import("../../commands/onboard.js");
+          const { setupWizardCommand } = await import("../../commands/onboard/onboard.js");
           await setupWizardCommand(
             {
               workspace: opts.workspace as string | undefined,

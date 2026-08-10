@@ -1,5 +1,8 @@
 // Gateway server test utilities build plugin-registry fixtures for nested server suites.
-import { createEmptyPluginRegistry, type PluginRegistry } from "../../../plugins/registry.js";
+import {
+  createEmptyPluginRegistry,
+  type PluginRegistry,
+} from "../../../plugins/manifest/registry.js";
 
 /**
  * Shared plugin-registry fixtures for gateway server tests.

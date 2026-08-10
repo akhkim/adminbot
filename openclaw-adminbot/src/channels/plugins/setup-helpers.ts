@@ -4,7 +4,7 @@
  * Applies account names and validates setup results for channel onboarding adapters.
  */
 import { z, type ZodType } from "zod";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "../../routing/session-key.js";
 import {
   collectSingleAccountPromotionEntries,

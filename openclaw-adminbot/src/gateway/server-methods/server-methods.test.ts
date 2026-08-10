@@ -9,9 +9,9 @@ import { fileURLToPath } from "node:url";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { validateExecApprovalRequestParams } from "../../../packages/gateway-protocol/src/index.js";
-import { STREAM_ERROR_FALLBACK_TEXT } from "../../agents/stream-message-shared.js";
+import { STREAM_ERROR_FALLBACK_TEXT } from "../../agents/transport/stream-message-shared.js";
 import { HEARTBEAT_PROMPT } from "../../auto-reply/heartbeat.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { registerLegacyContextEngine } from "../../context-engine/legacy.registration.js";
 import {
   clearContextEngineRuntimeQuarantine,
@@ -24,7 +24,7 @@ import { formatZonedTimestamp } from "../../infra/format-time/format-datetime.js
 import {
   buildSystemRunApprovalBinding,
   buildSystemRunApprovalEnvBinding,
-} from "../../infra/system-run-approval-binding.js";
+} from "../../infra/system/system-run-approval-binding.js";
 import { resetLogger, setLoggerOverride } from "../../logging.js";
 import {
   DEFAULT_CHAT_HISTORY_TEXT_MAX_CHARS,
@@ -42,7 +42,7 @@ import { normalizeRpcAttachmentsToChatAttachments } from "./attachment-normalize
 import { createExecApprovalHandlers } from "./exec-approval.js";
 import { logsHandlers } from "./logs.js";
 
-vi.mock("../../commands/status.js", () => ({
+vi.mock("../../commands/status/status.js", () => ({
   getStatusSummary: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
@@ -3946,11 +3946,11 @@ describe("exec approval handlers", () => {
 });
 
 describe("gateway healthHandlers.status scope handling", () => {
-  let statusModule: typeof import("../../commands/status.js");
+  let statusModule: typeof import("../../commands/status/status.js");
   let healthHandlers: typeof import("./health.js").healthHandlers;
 
   beforeAll(async () => {
-    statusModule = await import("../../commands/status.js");
+    statusModule = await import("../../commands/status/status.js");
     ({ healthHandlers } = await import("./health.js"));
   });
 

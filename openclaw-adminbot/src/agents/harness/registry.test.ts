@@ -1,6 +1,6 @@
 // Exercises agent harness registration, ownership metadata, and selection handoff.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   clearAgentHarnesses,
   disposeRegisteredAgentHarnesses,

@@ -168,7 +168,7 @@ vi.mock("../../agents/agent-scope.js", () => ({
   listAgentIds: mocks.listAgentIds,
   listAgentEntries: mocks.listAgentEntries,
 }));
-vi.mock("../../agents/workspace.js", () => ({
+vi.mock("../../agents/workspace/workspace.js", () => ({
   resolveDefaultAgentWorkspaceDir: vi.fn().mockReturnValue("/tmp/openclaw-agent/workspace"),
 }));
 vi.mock("../../agents/auth-profiles/display.js", () => ({
@@ -190,7 +190,7 @@ vi.mock("../../agents/auth-profiles/store.js", () => ({
 vi.mock("../../agents/auth-profiles/usage.js", () => ({
   resolveProfileUnusableUntilForDisplay: mocks.resolveProfileUnusableUntilForDisplay,
 }));
-vi.mock("../../agents/auth-health.js", () => ({
+vi.mock("../../agents/auth/auth-health.js", () => ({
   DEFAULT_OAUTH_WARN_MS: 86_400_000,
   buildAuthHealthSummary: vi.fn(
     ({ store, warnAfterMs }: { store: typeof mocks.store; warnAfterMs: number }) => {
@@ -216,32 +216,32 @@ vi.mock("../../agents/auth-health.js", () => ({
   ),
   formatRemainingShort: vi.fn(() => "1h"),
 }));
-vi.mock("../../agents/model-auth.js", () => ({
+vi.mock("../../agents/auth/model-auth.js", () => ({
   resolveEnvApiKey: mocks.resolveEnvApiKey,
   hasUsableCustomProviderApiKey: mocks.hasUsableCustomProviderApiKey,
   resolveUsableCustomProviderApiKey: mocks.resolveUsableCustomProviderApiKey,
   getCustomProviderApiKey: mocks.getCustomProviderApiKey,
 }));
-vi.mock("../../agents/model-auth-env-vars.js", () => ({
+vi.mock("../../agents/auth/model-auth-env-vars.js", () => ({
   listProviderEnvAuthLookupKeys: mocks.listProviderEnvAuthLookupKeys,
   resolveProviderEnvApiKeyCandidates: mocks.resolveProviderEnvApiKeyCandidates,
   resolveProviderEnvAuthEvidence: mocks.resolveProviderEnvAuthEvidence,
   resolveProviderEnvAuthLookupMaps: mocks.resolveProviderEnvAuthLookupMaps,
   listKnownProviderEnvApiKeyNames: mocks.listKnownProviderEnvApiKeyNames,
 }));
-vi.mock("../../agents/provider-auth-aliases.js", () => ({
+vi.mock("../../agents/auth/provider-auth-aliases.js", () => ({
   resolveProviderAuthAliasMap: vi.fn(() => ({ "codex-cli": "openai" })),
   resolveProviderIdForAuth: vi.fn((provider: string) =>
     provider === "codex-cli" ? "openai" : provider,
   ),
 }));
-vi.mock("../../agents/model-selection-cli.js", () => ({
+vi.mock("../../agents/models/model-selection-cli.js", () => ({
   isCliProvider: vi.fn(
     (provider: string, cfg?: { agents?: { defaults?: { cliBackends?: object } } }) =>
       Object.hasOwn(cfg?.agents?.defaults?.cliBackends ?? {}, provider),
   ),
 }));
-vi.mock("../../infra/shell-env.js", () => ({
+vi.mock("../../infra/system/shell-env.js", () => ({
   getShellEnvAppliedKeys: mocks.getShellEnvAppliedKeys,
   shouldEnableShellEnvFallback: mocks.shouldEnableShellEnvFallback,
 }));
@@ -251,7 +251,7 @@ vi.mock("../../config/config.js", () => ({
 vi.mock("./load-config.js", () => ({
   loadModelsConfig: vi.fn(async () => mocks.loadConfig()),
 }));
-vi.mock("../../infra/provider-usage.js", () => ({
+vi.mock("../../infra/providers/provider-usage.js", () => ({
   formatUsageWindowSummary: vi.fn().mockReturnValue("-"),
   loadProviderUsageSummary: mocks.loadProviderUsageSummary,
   resolveUsageProviderId: vi.fn((providerId: string) => providerId),
@@ -259,11 +259,11 @@ vi.mock("../../infra/provider-usage.js", () => ({
 vi.mock("../../plugins/synthetic-auth.runtime.js", () => ({
   resolveRuntimeSyntheticAuthProviderRefs: mocks.resolveRuntimeSyntheticAuthProviderRefs,
 }));
-vi.mock("../../plugins/provider-runtime.js", () => ({
+vi.mock("../../plugins/providers/provider-runtime.js", () => ({
   resolveProviderSyntheticAuthWithPlugin: mocks.resolveProviderSyntheticAuthWithPlugin,
 }));
 
-import { buildAuthHealthSummary } from "../../agents/auth-health.js";
+import { buildAuthHealthSummary } from "../../agents/auth/auth-health.js";
 import { modelsStatusCommand } from "./list.status-command.js";
 
 const defaultResolveEnvApiKeyImpl:

@@ -3,7 +3,7 @@
 import type { AssistantMessage } from "openclaw/plugin-sdk/llm";
 import { describe, expect, it } from "vitest";
 import { getReplyPayloadMetadata } from "../../../auto-reply/reply-payload.js";
-import { formatBillingErrorMessage } from "../../embedded-agent-helpers.js";
+import { formatBillingErrorMessage } from "../../embedded/embedded-agent-helpers.js";
 import { makeAssistantMessageFixture } from "../../test-helpers/assistant-message-fixtures.js";
 import {
   buildPayloads,

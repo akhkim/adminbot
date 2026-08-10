@@ -1,7 +1,7 @@
 // Runtime plugin health tests cover state shared across runtime processes.
 import { spawn } from "node:child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { recordPersistedRuntimeToolSchemaQuarantine } from "../agents/tool-schema-quarantine-health.js";
+import { recordPersistedRuntimeToolSchemaQuarantine } from "../agents/tools/tool-schema-quarantine-health.js";
 import { resolveReadOnlyChannelPluginsForConfig } from "../channels/plugins/read-only.js";
 import { recordPersistedContextEngineQuarantine } from "../context-engine/quarantine-health.js";
 import { clearContextEngineRuntimeQuarantine } from "../context-engine/registry.js";
@@ -10,8 +10,11 @@ import {
   resetPluginStateStoreForTests,
 } from "../plugin-state/plugin-state-store.js";
 import { createRuntimeHealthRecordEnvelope } from "../plugin-state/runtime-health-store.js";
-import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
-import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "../plugins/runtime.js";
+import { createEmptyPluginRegistry } from "../plugins/manifest/registry-empty.js";
+import {
+  resetPluginRuntimeStateForTest,
+  setActivePluginRegistry,
+} from "../plugins/runtime/runtime.js";
 import { withStateDirEnv } from "../test-helpers/state-dir-env.js";
 import { collectRuntimePluginHealthSnapshot } from "./status-plugin-health.runtime.js";
 

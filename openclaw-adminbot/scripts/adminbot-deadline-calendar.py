@@ -3,7 +3,7 @@
 Publish tracked submission deadlines to the Jinesis Lab Google Calendar.
 
 Reads the same `venues.json` the deadline board and reminders use, and writes one all-day event
-per venue deadline to `jinesis.lab@gmail.com`.
+per venue deadline to the lab calendar named by `ADMINBOT_DEADLINE_CALENDAR_ID`.
 
 Two things make this safe to run repeatedly:
 
@@ -19,9 +19,9 @@ converted into local time, because "the ICML deadline is the 15th" is what peopl
 it on the 16th because Toronto is ahead of AoE would be actively misleading.
 
 Env:
-  ADMINBOT_DEADLINE_CALENDAR_ID   default jinesis.lab@gmail.com
+  ADMINBOT_DEADLINE_CALENDAR_ID   required; falls back to ADMINBOT_LAB_EMAIL
   GOG_BIN                         default ~/.local/bin/gog
-  GOG_ACCOUNT                     default jinesis.adminbot@gmail.com
+  GOG_ACCOUNT                     required; falls back to ADMINBOT_BOT_EMAIL
 Args: --send  --venue-type {conference,workshop,all}  --within-days N  --limit N
 """
 
@@ -33,10 +33,28 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VENUES = os.path.join(HERE, "..", "extensions", "adminbot", "deadlines", "venues.json")
-CALENDAR_ID = os.environ.get("ADMINBOT_DEADLINE_CALENDAR_ID", "jinesis.lab@gmail.com")
+VENUES = os.path.join(HERE, "..", "extensions", "adminbot", "content", "deadlines", "venues.json")
+
+
+def _require_env(*names):
+    """First non-empty of `names`, or a clear exit naming the first one.
+
+    The calendar and the sending account name a real Google Workspace, so there is deliberately no
+    default: a baked-in address would write lab deadlines into a stranger's calendar.
+    """
+    for name in names:
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    sys.exit(
+        f"{names[0]} is not set - the deadline calendar job has no "
+        + ("calendar to write to" if "CALENDAR" in names[0] else "account to send as")
+    )
+
+
+CALENDAR_ID = _require_env("ADMINBOT_DEADLINE_CALENDAR_ID", "ADMINBOT_LAB_EMAIL")
 GOG = os.environ.get("GOG_BIN", os.path.expanduser("~/.local/bin/gog"))
-ACCOUNT = os.environ.get("GOG_ACCOUNT", "jinesis.adminbot@gmail.com")
+ACCOUNT = _require_env("GOG_ACCOUNT", "ADMINBOT_BOT_EMAIL")
 MARKER = "adminbot-deadline"
 
 

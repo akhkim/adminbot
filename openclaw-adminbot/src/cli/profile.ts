@@ -8,8 +8,8 @@ import {
 import { resolveRequiredHomeDir } from "../infra/home-dir.js";
 import { resolveCliArgvInvocation } from "./argv-invocation.js";
 import { isValidProfileName } from "./profile-utils.js";
-import { scanCliRootOptions } from "./root-option-scan.js";
-import { takeCliRootOptionValue } from "./root-option-value.js";
+import { scanCliRootOptions } from "./program/root-option-scan.js";
+import { takeCliRootOptionValue } from "./program/root-option-value.js";
 
 type CliProfileParseResult =
   | { ok: true; profile: string | null; argv: string[] }

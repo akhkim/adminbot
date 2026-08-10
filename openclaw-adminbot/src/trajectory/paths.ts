@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveHomeRelativePath } from "../infra/home-dir.js";
-import { isPathInside } from "../infra/path-guards.js";
+import { isPathInside } from "../infra/system/path-guards.js";
 
 // Runtime trajectory path helpers. Paths are either beside the session file or
 // inside OPENCLAW_TRAJECTORY_DIR, with names scrubbed for filesystem safety.

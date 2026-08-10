@@ -1,6 +1,6 @@
 // Anthropic provider tests cover stream events, tools, and message mapping.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "../../agents/system-prompt-cache-boundary.js";
+import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "../../agents/prompt/system-prompt-cache-boundary.js";
 import type { Context, Model, Tool } from "../types.js";
 
 const anthropicMockState = vi.hoisted(() => ({

@@ -29,20 +29,29 @@ describe("TAB_GROUPS", () => {
     expect(SETTINGS_TABS).toContain("channels");
   });
 
-  it("groups AdminBot management pages under one sidebar section", () => {
-    const adminbot = TAB_GROUPS.find((group) => group.label === "adminbot");
-    expect(adminbot?.tabs).toEqual([
+  it("splits the AdminBot sidebar into member, admin, and guest sections, in that order", () => {
+    const labels = TAB_GROUPS.map((group) => group.label);
+    const memberIndex = labels.indexOf("adminbotMember");
+    const adminIndex = labels.indexOf("adminbotAdmin");
+    const guestIndex = labels.indexOf("adminbotGuest");
+    expect(memberIndex).toBeGreaterThanOrEqual(0);
+    expect(adminIndex).toBeGreaterThan(memberIndex);
+    expect(guestIndex).toBeGreaterThan(adminIndex);
+
+    const member = TAB_GROUPS.find((group) => group.label === "adminbotMember");
+    expect(member?.tabs).toEqual(["adminbotMembers", "adminbotPapers"]);
+
+    const admin = TAB_GROUPS.find((group) => group.label === "adminbotAdmin");
+    expect(admin?.tabs).toEqual([
       "adminbot",
       "adminbotRegistrations",
       "adminbotOnboarding",
-      "adminbotReimbursements",
       "adminbotSettings",
-      "adminbotMembers",
-      "adminbotTimeAvailability",
-      "adminbotPapers",
       "adminbotAnnouncements",
-      "adminbotDeadlines",
     ]);
+
+    const guest = TAB_GROUPS.find((group) => group.label === "adminbotGuest");
+    expect(guest?.tabs).toEqual(["adminbotReimbursements", "adminbotDeadlines"]);
   });
 
   it("keeps the settings group active for nested settings routes", () => {
@@ -56,12 +65,12 @@ describe("TAB_GROUPS", () => {
     expect(isTabInGroup(settings, "debug")).toBe(true);
     expect(isTabInGroup(settings, "chat")).toBe(false);
 
-    const adminbot = TAB_GROUPS.find((group) => group.label === "adminbot");
-    if (!adminbot) {
-      throw new Error("Expected adminbot group");
+    const admin = TAB_GROUPS.find((group) => group.label === "adminbotAdmin");
+    if (!admin) {
+      throw new Error("Expected adminbotAdmin group");
     }
-    // Registration review is governance, so it belongs to the AdminBot group, not settings.
-    expect(isTabInGroup(adminbot, "adminbotRegistrations")).toBe(true);
+    // Registration review is governance, so it belongs to the AdminBot admin group, not settings.
+    expect(isTabInGroup(admin, "adminbotRegistrations")).toBe(true);
     expect(isTabInGroup(settings, "adminbotRegistrations")).toBe(false);
   });
 

@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => ({
   }),
 }));
 
-vi.mock("./io.js", () => ({
+vi.mock("./io/io.js", () => ({
   createConfigIO: mocks.createConfigIO,
 }));
 

@@ -75,23 +75,23 @@ function expectCommandOptions(command: MockCalls, expected: Record<string, unkno
   return optionsRecord;
 }
 
-vi.mock("../../commands/status.js", () => ({
+vi.mock("../../commands/status/status.js", () => ({
   statusCommand: mocks.statusCommand,
 }));
 
-vi.mock("../../commands/health.js", () => ({
+vi.mock("../../commands/maintenance/health.js", () => ({
   healthCommand: mocks.healthCommand,
 }));
 
-vi.mock("../../commands/sessions.js", () => ({
+vi.mock("../../commands/sessions/sessions.js", () => ({
   sessionsCommand: mocks.sessionsCommand,
 }));
 
-vi.mock("../../commands/sessions-cleanup.js", () => ({
+vi.mock("../../commands/sessions/sessions-cleanup.js", () => ({
   sessionsCleanupCommand: mocks.sessionsCleanupCommand,
 }));
 
-vi.mock("../../commands/sessions-tail.js", () => ({
+vi.mock("../../commands/sessions/sessions-tail.js", () => ({
   sessionsTailCommand: mocks.sessionsTailCommand,
 }));
 
@@ -104,7 +104,7 @@ vi.mock("../../commands/commitments.js", () => ({
   commitmentsDismissCommand: mocks.commitmentsDismissCommand,
 }));
 
-vi.mock("../../commands/tasks.js", () => ({
+vi.mock("../../commands/maintenance/tasks.js", () => ({
   tasksListCommand: mocks.tasksListCommand,
   tasksAuditCommand: mocks.tasksAuditCommand,
   tasksMaintenanceCommand: mocks.tasksMaintenanceCommand,

@@ -7,21 +7,21 @@ import type { TSchema } from "typebox";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import { isSilentReplyPayloadText, SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import { projectConfigOntoRuntimeSourceSnapshot } from "../../config/config.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { hasReplyPayloadContent } from "../../interactive/payload.js";
-import { loadManifestMetadataSnapshot } from "../../plugins/manifest-contract-eligibility.js";
+import { loadManifestMetadataSnapshot } from "../../plugins/manifest/manifest-contract-eligibility.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.types.js";
 import {
   resolveProviderRuntimePluginHandle,
   type ProviderRuntimePluginHandle,
-} from "../../plugins/provider-hook-runtime.js";
-import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
+} from "../../plugins/providers/provider-hook-runtime.js";
+import type { ProviderRuntimeModel } from "../../plugins/providers/provider-runtime-model.types.js";
 import {
   resolveProviderFollowupFallbackRoute,
   resolveProviderSystemPromptContribution,
   resolveProviderTextTransforms,
   transformProviderSystemPrompt,
-} from "../../plugins/provider-runtime.js";
+} from "../../plugins/providers/provider-runtime.js";
 import { resolvePreparedExtraParams } from "../embedded-agent-runner/extra-params.js";
 import { classifyEmbeddedAgentRunResultForModelFallback } from "../embedded-agent-runner/result-fallback-classifier.js";
 import {

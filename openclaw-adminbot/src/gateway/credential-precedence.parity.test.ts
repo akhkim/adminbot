@@ -1,9 +1,9 @@
 // Credential precedence parity tests keep call, probe, status, and auth surfaces
 // aligned on local/remote gateway token and password resolution.
 import { describe, expect, it } from "vitest";
-import { resolveGatewayProbeAuthResolution } from "../commands/status.gateway-probe.js";
+import { resolveGatewayProbeAuthResolution } from "../commands/status/status.gateway-probe.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { resolveGatewayAuth } from "./auth.js";
+import { resolveGatewayAuth } from "./auth/auth.js";
 import { resolveGatewayCredentialsFromConfig } from "./credentials.js";
 import { resolveGatewayProbeAuth } from "./probe-auth.js";
 
@@ -156,9 +156,8 @@ describe("gateway credential precedence coverage", () => {
       mode,
       env,
     });
-    const status = (
-      await withGatewayAuthEnv(env, () => resolveGatewayProbeAuthResolution(cfg))
-    ).auth;
+    const status = (await withGatewayAuthEnv(env, () => resolveGatewayProbeAuthResolution(cfg)))
+      .auth;
     const auth = resolveGatewayAuth({
       authConfig: cfg.gateway?.auth,
       env,

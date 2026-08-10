@@ -4,14 +4,14 @@ import {
   HEARTBEAT_SKIP_CRON_IN_PROGRESS,
   HEARTBEAT_SKIP_REQUESTS_IN_FLIGHT,
   type HeartbeatRunResult,
-} from "../infra/heartbeat-wake.js";
+} from "../infra/heartbeat/heartbeat-wake.js";
 import {
   consumeSelectedSystemEventEntries,
   drainSystemEventEntries,
   enqueueSystemEventEntry,
   peekSystemEventEntries,
   resetSystemEventsForTest,
-} from "../infra/system-events.js";
+} from "../infra/system/system-events.js";
 import type { CronEvent, CronServiceDeps } from "./service.js";
 import { CronService } from "./service.js";
 import {

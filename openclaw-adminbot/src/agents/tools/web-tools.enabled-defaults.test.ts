@@ -1,8 +1,8 @@
 // Web tool default tests cover enablement, runtime provider discovery, and
 // late-bound runtime config for web_search/web_fetch tools.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createEmptyPluginRegistry } from "../../plugins/registry-empty.js";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { createEmptyPluginRegistry } from "../../plugins/manifest/registry-empty.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import {
   clearActiveRuntimeWebToolsMetadata,
   setActiveRuntimeWebToolsMetadata,
@@ -46,7 +46,7 @@ vi.mock("../../secrets/runtime-state.js", () => ({
 }));
 
 vi.mock("../../web-search/runtime.js", async () => {
-  const { getActivePluginRegistry } = await import("../../plugins/runtime.js");
+  const { getActivePluginRegistry } = await import("../../plugins/runtime/runtime.js");
   const { getActiveRuntimeWebToolsMetadata } =
     await import("../../secrets/runtime-web-tools-state.js");
   const resolveRuntimeDefinition = (options?: {

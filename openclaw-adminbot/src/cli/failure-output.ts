@@ -1,7 +1,7 @@
 // Shared root CLI failure formatting with debug stack gating and recovery hints.
 import { isTruthyEnvValue } from "../infra/env.js";
 import { formatErrorMessage, formatUncaughtError } from "../infra/errors.js";
-import { formatCliCommand } from "./command-format.js";
+import { formatCliCommand } from "./program/command-format.js";
 
 type FormatCliFailureOptions = {
   title: string;

@@ -8,7 +8,7 @@ import { normalizeHyphenSlug } from "@openclaw/normalization-core/string-normali
 import type { MsgContext } from "../../auto-reply/templating.js";
 import { listChannelPlugins } from "../../channels/plugins/registry.js";
 import { normalizeSessionPeerId } from "../../sessions/session-key-utils.js";
-import { listDeliverableMessageChannels } from "../../utils/message-channel.js";
+import { listDeliverableMessageChannels } from "../../shared/message-channel.js";
 import type { GroupKeyResolution } from "./types.js";
 
 const getGroupSurfaces = () => new Set<string>([...listDeliverableMessageChannels(), "webchat"]);

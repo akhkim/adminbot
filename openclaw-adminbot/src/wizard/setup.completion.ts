@@ -6,12 +6,12 @@ import {
   formatCompletionReloadCommand,
   installCompletion,
   resolveCompletionProfilePath,
-} from "../cli/completion-runtime.js";
-import type { ShellCompletionStatus } from "../commands/doctor-completion.js";
+} from "../cli/program/completion-runtime.js";
+import type { ShellCompletionStatus } from "../commands/doctor/doctor-completion.js";
 import {
   checkShellCompletionStatus,
   ensureCompletionCacheExists,
-} from "../commands/doctor-completion.js";
+} from "../commands/doctor/doctor-completion.js";
 import { pathExists } from "../utils.js";
 import { t } from "./i18n/index.js";
 import type { WizardPrompter } from "./prompts.js";

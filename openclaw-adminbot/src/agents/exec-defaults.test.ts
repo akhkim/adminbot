@@ -1,7 +1,7 @@
 // Verifies exec host, sandbox, and approval-default resolution for embedded agents.
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionEntry } from "../config/sessions.js";
-import * as execApprovals from "../infra/exec-approvals.js";
+import * as execApprovals from "../infra/exec/exec-approvals.js";
 import { canExecRequestNode, resolveExecDefaults } from "./exec-defaults.js";
 
 describe("resolveExecDefaults", () => {

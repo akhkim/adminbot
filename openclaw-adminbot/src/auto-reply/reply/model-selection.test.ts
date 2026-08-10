@@ -7,12 +7,12 @@ import {
 import {
   loadManifestModelCatalog,
   loadModelCatalog as loadModelCatalogLocal,
-} from "../../agents/model-catalog.runtime.js";
+} from "../../agents/models/model-catalog.runtime.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionEntry } from "../../config/sessions.js";
 import { createModelSelectionState, resolveContextTokens } from "./model-selection.js";
 
-vi.mock("../../agents/model-catalog.runtime.js", () => ({
+vi.mock("../../agents/models/model-catalog.runtime.js", () => ({
   loadManifestModelCatalog: vi.fn(() => []),
   loadModelCatalog: vi.fn(async () => [
     { provider: "anthropic", id: "claude-opus-4-6", name: "Claude Opus 4.5" },
@@ -25,7 +25,7 @@ vi.mock("../../agents/model-catalog.runtime.js", () => ({
   ]),
 }));
 
-vi.mock("../../agents/provider-model-normalization.runtime.js", () => ({
+vi.mock("../../agents/transport/provider-model-normalization.runtime.js", () => ({
   normalizeProviderModelIdWithRuntime: () => undefined,
 }));
 
@@ -55,7 +55,7 @@ const authProfileStoreMock = vi.hoisted(() => {
   };
 });
 
-vi.mock("../../agents/auth-profiles.runtime.js", () => ({
+vi.mock("../../agents/auth/auth-profiles.runtime.js", () => ({
   ensureAuthProfileStore: authProfileStoreMock.ensureAuthProfileStore,
 }));
 
@@ -1780,7 +1780,7 @@ describe("createModelSelectionState resolveDefaultReasoningLevel", () => {
 
   it("returns on when catalog model has reasoning true", async () => {
     const { loadModelCatalog: loadModelCatalogForCase } =
-      await import("../../agents/model-catalog.runtime.js");
+      await import("../../agents/models/model-catalog.runtime.js");
     vi.mocked(loadModelCatalogForCase).mockResolvedValueOnce([
       { provider: "openrouter", id: "x-ai/grok-4.1-fast", name: "Grok", reasoning: true },
     ]);

@@ -1,7 +1,7 @@
+import { normalizeDeliveryContext } from "../shared/delivery-context.shared.js";
+import type { DeliveryContext } from "../shared/delivery-context.types.js";
 // Shares SQLite row mapping helpers between task registry persistence modules.
 import { isRecord } from "../utils.js";
-import { normalizeDeliveryContext } from "../utils/delivery-context.shared.js";
-import type { DeliveryContext } from "../utils/delivery-context.types.js";
 
 // oxlint-disable-next-line typescript/no-unnecessary-type-parameters -- Persisted JSON columns are typed by the receiving field.
 function parseSqliteJsonValue<T>(raw: string | null): T | undefined {

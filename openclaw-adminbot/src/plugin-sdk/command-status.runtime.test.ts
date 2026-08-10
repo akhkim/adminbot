@@ -12,11 +12,11 @@ const resolveDefaultModel = vi.fn();
 const createModelSelectionState = vi.fn();
 const resolveCurrentDirectiveLevels = vi.fn();
 
-vi.mock("../auto-reply/reply/commands-status.js", () => ({
+vi.mock("../auto-reply/reply/commands/commands-status.js", () => ({
   buildStatusReply,
 }));
 
-vi.mock("../gateway/session-utils.js", () => ({
+vi.mock("../gateway/sessions/session-utils.js", () => ({
   loadSessionEntry,
 }));
 
@@ -25,11 +25,11 @@ vi.mock("../agents/agent-scope.js", () => ({
   resolveSessionAgentId,
 }));
 
-vi.mock("../agents/model-selection.js", () => ({
+vi.mock("../agents/models/model-selection.js", () => ({
   resolveDefaultModelForAgent,
 }));
 
-vi.mock("../auto-reply/reply/directive-handling.defaults.js", () => ({
+vi.mock("../auto-reply/reply/directives/directive-handling.defaults.js", () => ({
   resolveDefaultModel,
 }));
 
@@ -37,7 +37,7 @@ vi.mock("../auto-reply/reply/model-selection.js", () => ({
   createModelSelectionState,
 }));
 
-vi.mock("../auto-reply/reply/directive-handling.levels.js", () => ({
+vi.mock("../auto-reply/reply/directives/directive-handling.levels.js", () => ({
   resolveCurrentDirectiveLevels,
 }));
 

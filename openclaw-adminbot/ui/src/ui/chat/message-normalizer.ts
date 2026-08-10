@@ -11,7 +11,7 @@ import {
   resolveToolBlockArgs,
 } from "../../../../src/chat/tool-content.js";
 import { splitMediaFromOutput } from "../../../../src/media/parse.js";
-import { parseInlineDirectives } from "../../../../src/utils/directive-tags.js";
+import { parseInlineDirectives } from "../../../../src/shared/directive-tags.js";
 import type { NormalizedMessage, MessageContentItem } from "../types/chat-types.ts";
 export { isToolResultMessage, normalizeRoleForGrouping } from "./role-normalizer.ts";
 

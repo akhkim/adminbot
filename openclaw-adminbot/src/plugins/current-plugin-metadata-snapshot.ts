@@ -1,12 +1,12 @@
 /** Tracks the current plugin metadata snapshot for control-plane lookups. */
 import { setCurrentManifestModelIdNormalizationRecords } from "@openclaw/model-catalog-core/provider-model-id-normalization";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   clearCurrentPluginMetadataSnapshotState,
   getCurrentPluginMetadataSnapshotState,
   setCurrentPluginMetadataSnapshotState,
 } from "./current-plugin-metadata-state.js";
-import { resolveInstalledPluginIndexPolicyHash } from "./installed-plugin-index-policy.js";
+import { resolveInstalledPluginIndexPolicyHash } from "./install/installed-plugin-index-policy.js";
 import {
   resolvePluginControlPlaneFingerprint,
   type ResolvePluginControlPlaneContextParams,

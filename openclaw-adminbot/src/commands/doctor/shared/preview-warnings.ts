@@ -4,16 +4,19 @@ import { isRecord as hasRecord } from "@openclaw/normalization-core/record-coerc
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { resolveAgentConfig } from "../../../agents/agent-scope-config.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../../../agents/defaults.js";
-import { parseModelRef } from "../../../agents/model-selection-normalize.js";
-import { pickSandboxToolPolicy } from "../../../agents/sandbox-tool-policy.js";
+import { parseModelRef } from "../../../agents/models/model-selection-normalize.js";
+import { pickSandboxToolPolicy } from "../../../agents/sandbox/sandbox-tool-policy.js";
 import {
   isToolAllowedByPolicies,
   isToolAllowedByPolicyName,
-} from "../../../agents/tool-policy-match.js";
-import { mergeAlsoAllowPolicy, resolveToolProfilePolicy } from "../../../agents/tool-policy.js";
+} from "../../../agents/tools/tool-policy-match.js";
+import {
+  mergeAlsoAllowPolicy,
+  resolveToolProfilePolicy,
+} from "../../../agents/tools/tool-policy.js";
 import { resolveAgentModelPrimaryValue } from "../../../config/model-input.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import type { AgentToolsConfig, ToolsConfig } from "../../../config/types.tools.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import type { AgentToolsConfig, ToolsConfig } from "../../../config/types/tools.js";
 import { collectChannelRouteTargets } from "../../../routing/channel-route-targets.js";
 import { createLazyImportLoader } from "../../../shared/lazy-promise.js";
 
@@ -758,8 +761,8 @@ async function resolveDoctorChannelPreviewConfig(params: {
 }): Promise<{ cfg: OpenClawConfig; diagnostics: string[] }> {
   const [{ resolveCommandSecretRefsViaGateway }, { getConfiguredChannelsCommandSecretTargetIds }] =
     await Promise.all([
-      import("../../../cli/command-secret-gateway.js"),
-      import("../../../cli/command-secret-targets.js"),
+      import("../../../cli/program/command-secret-gateway.js"),
+      import("../../../cli/program/command-secret-targets.js"),
     ]);
   const targetIds = getConfiguredChannelsCommandSecretTargetIds(params.cfg, params.env);
   if (targetIds.size === 0) {

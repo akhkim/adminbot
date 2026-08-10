@@ -3,16 +3,16 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { loadDotEnv } from "../infra/dotenv.js";
-import { resolveConfigEnvVars } from "./env-substitution.js";
+import { resolveConfigEnvVars } from "./env/env-substitution.js";
 import {
   applyConfigEnvVars,
   collectDurableServiceEnvVars,
   collectConfigRuntimeEnvVars,
   createConfigRuntimeEnv,
   readStateDirDotEnvVars,
-} from "./env-vars.js";
+} from "./env/env-vars.js";
 import { withEnvOverride, withTempHome, writeStateDirDotEnv } from "./test-helpers.js";
-import type { OpenClawConfig } from "./types.js";
+import type { OpenClawConfig } from "./types/types.js";
 
 describe("config env vars", () => {
   it("applies env vars from env block when missing", async () => {

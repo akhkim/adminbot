@@ -20,8 +20,8 @@ import {
 } from "../../infra/format-time/parse-offsetless-zoned-datetime.js";
 import { formatTimestamp } from "../../logging/timestamps.js";
 import { defaultRuntime, type RuntimeEnv } from "../../runtime.js";
-import type { GatewayRpcOpts } from "../gateway-rpc.js";
-import { callGatewayFromCli } from "../gateway-rpc.js";
+import type { GatewayRpcOpts } from "../gateway-cli/gateway-rpc.js";
+import { callGatewayFromCli } from "../gateway-cli/gateway-rpc.js";
 
 export function parseCronCommandArgv(value: unknown): string[] | undefined {
   if (typeof value !== "string") {

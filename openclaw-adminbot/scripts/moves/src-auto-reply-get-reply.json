@@ -1,0 +1,130 @@
+[
+  {
+    "from": "src/auto-reply/reply/get-reply-directive-aliases.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-directive-aliases.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-directive-aliases.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-directive-aliases.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-directives-apply.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-directives-apply.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-directives-apply.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-directives-apply.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-directives-utils.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-directives-utils.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-directives.target-session.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-directives.target-session.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-directives.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-directives.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-exec-overrides.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-exec-overrides.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-exec-overrides.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-exec-overrides.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-fast-path.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-fast-path.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-from-config.runtime.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-from-config.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-inline-actions.skip-when-config-empty.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-inline-actions.skip-when-config-empty.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-inline-actions.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-inline-actions.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-native-slash-fast-path.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-native-slash-fast-path.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-native-slash-fast-path.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-native-slash-fast-path.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-run-queue.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-run-queue.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-run-queue.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-run-queue.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-run.exec-hint.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-run.exec-hint.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply-run.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply-run.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply.before-agent-reply.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply.before-agent-reply.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply.config-override.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply.config-override.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply.fast-path.runtime.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply.fast-path.runtime.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply.fast-path.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply.fast-path.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply.imports.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply.imports.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply.message-hooks.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply.message-hooks.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply.reset-hooks-fallback.test.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply.reset-hooks-fallback.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply.test-fixtures.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply.test-fixtures.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply.test-loader.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply.test-loader.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply.test-mocks.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply.test-mocks.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply.test-runtime-mocks.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply.test-runtime-mocks.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/get-reply.types.ts",
+    "to": "src/auto-reply/reply/get-reply/get-reply.types.ts"
+  }
+]

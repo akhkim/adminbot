@@ -1,12 +1,12 @@
 /** Collects plugin config secret refs from runtime plugin metadata. */
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   collectPluginConfigContractMatches,
   resolvePluginConfigContractsById,
-} from "../plugins/config-contracts.js";
-import { normalizePluginsConfig, resolveEnableState } from "../plugins/config-state.js";
+} from "../plugins/config/config-contracts.js";
+import { normalizePluginsConfig, resolveEnableState } from "../plugins/config/config-state.js";
 import type { PluginOrigin } from "../plugins/plugin-origin.types.js";
 import { parseConfigPathArrayIndex } from "../shared/path-array-index.js";
 import {

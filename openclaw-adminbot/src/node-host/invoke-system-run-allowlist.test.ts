@@ -1,8 +1,8 @@
 /** Tests system.run allowlist planning, output truncation, and argv resolution. */
 import { describe, expect, it } from "vitest";
-import { resolveExecApprovalsFromFile } from "../infra/exec-approvals.js";
-import { planShellAuthorization } from "../infra/exec-authorization-plan.js";
-import { resolveExecSafeBinRuntimePolicy } from "../infra/exec-safe-bin-runtime-policy.js";
+import { resolveExecApprovalsFromFile } from "../infra/exec/exec-approvals.js";
+import { planShellAuthorization } from "../infra/exec/exec-authorization-plan.js";
+import { resolveExecSafeBinRuntimePolicy } from "../infra/exec/exec-safe-bin-runtime-policy.js";
 import { resolveSystemRunExecArgv } from "./invoke-system-run-allowlist.js";
 
 function resolveAllowlistApprovals() {

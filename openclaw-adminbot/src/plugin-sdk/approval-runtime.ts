@@ -9,7 +9,7 @@ export {
   type ExecApprovalRequestPayload,
   type ExecApprovalResolved,
   type ExecHost,
-} from "../infra/exec-approvals.js";
+} from "../infra/exec/exec-approvals.js";
 export {
   buildExecApprovalPendingReplyPayload,
   getExecApprovalApproverDmNoticeText,
@@ -17,9 +17,9 @@ export {
   type ExecApprovalPendingReplyParams,
   type ExecApprovalReplyDecision,
   type ExecApprovalReplyMetadata,
-} from "../infra/exec-approval-reply.js";
-export { resolveExecApprovalCommandDisplay } from "../infra/exec-approval-command-display.js";
-export { formatApprovalDisplayPath } from "../infra/approval-display-paths.js";
+} from "../infra/exec/exec-approval-reply.js";
+export { resolveExecApprovalCommandDisplay } from "../infra/exec/exec-approval-command-display.js";
+export { formatApprovalDisplayPath } from "../infra/approvals/approval-display-paths.js";
 export {
   createChannelApproverDmTargetResolver,
   createChannelNativeOriginTargetResolver,
@@ -29,12 +29,12 @@ export {
   resolveApprovalRequestSessionTarget,
   resolveExecApprovalSessionTarget,
   type ExecApprovalSessionTarget,
-} from "../infra/exec-approval-session-target.js";
+} from "../infra/exec/exec-approval-session-target.js";
 export {
   doesApprovalRequestMatchChannelAccount,
   resolveApprovalRequestAccountId,
   resolveApprovalRequestChannelAccountId,
-} from "../infra/approval-request-account-binding.js";
+} from "../infra/approvals/approval-request-account-binding.js";
 export {
   buildPluginApprovalExpiredMessage,
   buildPluginApprovalRequestMessage,
@@ -51,7 +51,7 @@ export {
   isChannelExecApprovalClientEnabledFromConfig,
   isChannelExecApprovalTargetRecipient,
 } from "./approval-client-helpers.js";
-export { createChannelNativeApprovalRuntime } from "../infra/approval-native-runtime.js";
+export { createChannelNativeApprovalRuntime } from "../infra/approvals/approval-native-runtime.js";
 export {
   createApproverRestrictedNativeApprovalAdapter,
   createApproverRestrictedNativeApprovalCapability,
@@ -63,7 +63,7 @@ export {
   matchesApprovalRequestFilters,
   matchesApprovalRequestSessionFilter,
   type ApprovalRequestFilterInput,
-} from "../infra/approval-request-filters.js";
+} from "../infra/approvals/approval-request-filters.js";
 export {
   buildApprovalPendingReplyPayload,
   buildApprovalResolvedReplyPayload,

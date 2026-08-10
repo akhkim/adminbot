@@ -14,4 +14,4 @@ export {
   ReplyRuntimeConfigSchemaShape,
   requireAllowlistAllowFrom,
   requireOpenAllowFrom,
-} from "../config/zod-schema.core.js";
+} from "../config/zod/core.js";

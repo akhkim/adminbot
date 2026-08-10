@@ -9,14 +9,14 @@ import {
 import {
   isNonSecretApiKeyMarker,
   isSecretRefHeaderValueMarker,
-} from "../agents/model-auth-markers.js";
-import { normalizeProviderId } from "../agents/model-selection.js";
+} from "../agents/auth/model-auth-markers.js";
+import { normalizeProviderId } from "../agents/models/model-selection.js";
 import { resolveStateDir, type OpenClawConfig } from "../config/config.js";
-import { coerceSecretRef } from "../config/types.secrets.js";
-import { resolveSecretInputRef, type SecretRef } from "../config/types.secrets.js";
+import { coerceSecretRef } from "../config/types/secrets.js";
+import { resolveSecretInputRef, type SecretRef } from "../config/types/secrets.js";
 import { formatErrorMessage } from "../infra/errors.js";
+import { runTasksWithConcurrency } from "../shared/run-with-concurrency.js";
 import { resolveConfigDir, resolveUserPath } from "../utils.js";
-import { runTasksWithConcurrency } from "../utils/run-with-concurrency.js";
 import { iterateAuthProfileCredentials } from "./auth-profiles-scan.js";
 import { createSecretsConfigIO } from "./config-io.js";
 import { getSkippedExecRefStaticError, selectRefsForExecPolicy } from "./exec-resolution-policy.js";

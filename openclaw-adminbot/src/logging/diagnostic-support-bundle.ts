@@ -1,7 +1,7 @@
 // Diagnostic support bundle helpers collect logs and metadata for support exports.
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { isPathInside } from "../infra/path-guards.js";
+import { isPathInside } from "../infra/system/path-guards.js";
 
 // File builders and writers for redacted diagnostic support bundles.
 export type DiagnosticSupportBundleFile = {

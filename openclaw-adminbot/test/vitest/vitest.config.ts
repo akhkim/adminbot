@@ -1,97 +1,39 @@
-// Vitest config config wires the config test shard.
-import { defineConfig } from "vitest/config";
-import {
+// Root Vitest config.
+//
+// Upstream sharded its suite across ~60 named lanes because it ran them as separate CI jobs.
+// AdminBot has no CI and runs tests locally, so the whole suite is two projects: a node lane for
+// everything under src/, extensions/ and packages/, and a jsdom lane for the Control UI.
+//
+// Use `pnpm test <path>` to scope a run; the lanes narrow their include patterns from the CLI
+// argument, so a single-file run does not load the rest of the suite.
+import { createScopedVitestConfig } from "./vitest.scoped-config.ts";
+import { jsdomOptimizedDeps } from "./vitest.shared.config.ts";
+
+export {
   resolveDefaultVitestPool,
   resolveLocalVitestMaxWorkers,
   resolveLocalVitestScheduling,
-  nonIsolatedRunnerPath,
-  sharedVitestConfig,
 } from "./vitest.shared.config.ts";
 
-export { resolveDefaultVitestPool, resolveLocalVitestMaxWorkers, resolveLocalVitestScheduling };
-
 export const rootVitestProjects = [
-  "test/vitest/vitest.unit.config.ts",
-  "test/vitest/vitest.unit-ui.config.ts",
-  "test/vitest/vitest.infra.config.ts",
-  "test/vitest/vitest.boundary.config.ts",
-  "test/vitest/vitest.contracts-channel-surface.config.ts",
-  "test/vitest/vitest.contracts-channel-config.config.ts",
-  "test/vitest/vitest.contracts-channel-registry.config.ts",
-  "test/vitest/vitest.contracts-channel-session.config.ts",
-  "test/vitest/vitest.contracts-plugin.config.ts",
-  "test/vitest/vitest.bundled.config.ts",
-  "test/vitest/vitest.gateway-core.config.ts",
-  "test/vitest/vitest.gateway-client.config.ts",
-  "test/vitest/vitest.gateway-methods.config.ts",
-  "test/vitest/vitest.gateway-server.config.ts",
-  "test/vitest/vitest.hooks.config.ts",
-  "test/vitest/vitest.acp.config.ts",
-  "test/vitest/vitest.runtime-config.config.ts",
-  "test/vitest/vitest.secrets.config.ts",
-  "test/vitest/vitest.cli.config.ts",
-  "test/vitest/vitest.commands-light.config.ts",
-  "test/vitest/vitest.commands.config.ts",
-  "test/vitest/vitest.auto-reply.config.ts",
-  "test/vitest/vitest.agents-core.config.ts",
-  "test/vitest/vitest.agents-embedded-agent.config.ts",
-  "test/vitest/vitest.agents-support.config.ts",
-  "test/vitest/vitest.agents-tools.config.ts",
-  "test/vitest/vitest.daemon.config.ts",
-  "test/vitest/vitest.media.config.ts",
-  "test/vitest/vitest.unit-fast.config.ts",
-  "test/vitest/vitest.unit-fast-fake-timers.config.ts",
-  "test/vitest/vitest.plugin-sdk-light.config.ts",
-  "test/vitest/vitest.plugin-sdk.config.ts",
-  "test/vitest/vitest.plugins.config.ts",
-  "test/vitest/vitest.logging.config.ts",
-  "test/vitest/vitest.process.config.ts",
-  "test/vitest/vitest.cron.config.ts",
-  "test/vitest/vitest.media-understanding.config.ts",
-  "test/vitest/vitest.shared-core.config.ts",
-  "test/vitest/vitest.tasks.config.ts",
-  "test/vitest/vitest.tooling-docker.config.ts",
-  "test/vitest/vitest.tooling-isolated.config.ts",
-  "test/vitest/vitest.tooling.config.ts",
-  "test/vitest/vitest.tui.config.ts",
+  "test/vitest/vitest.node.config.ts",
   "test/vitest/vitest.ui.config.ts",
-  "test/vitest/vitest.utils.config.ts",
-  "test/vitest/vitest.wizard.config.ts",
-  "test/vitest/vitest.channels.config.ts",
-  "test/vitest/vitest.extension-active-memory.config.ts",
-  "test/vitest/vitest.extension-acpx.config.ts",
-  "test/vitest/vitest.extension-diffs.config.ts",
-  "test/vitest/vitest.extension-codex.config.ts",
-  "test/vitest/vitest.extension-discord.config.ts",
-  "test/vitest/vitest.extension-feishu.config.ts",
-  "test/vitest/vitest.extension-imessage.config.ts",
-  "test/vitest/vitest.extension-irc.config.ts",
-  "test/vitest/vitest.extension-line.config.ts",
-  "test/vitest/vitest.extension-mattermost.config.ts",
-  "test/vitest/vitest.extension-matrix.config.ts",
-  "test/vitest/vitest.extension-memory.config.ts",
-  "test/vitest/vitest.extension-msteams.config.ts",
-  "test/vitest/vitest.extension-messaging.config.ts",
-  "test/vitest/vitest.extension-provider-openai.config.ts",
-  "test/vitest/vitest.extension-providers.config.ts",
-  "test/vitest/vitest.extension-signal.config.ts",
-  "test/vitest/vitest.extension-slack.config.ts",
-  "test/vitest/vitest.extension-telegram.config.ts",
-  "test/vitest/vitest.extension-voice-call.config.ts",
-  "test/vitest/vitest.extension-whatsapp.config.ts",
-  "test/vitest/vitest.extension-zalo.config.ts",
-  "test/vitest/vitest.extension-browser.config.ts",
-  "test/vitest/vitest.extension-qa.config.ts",
-  "test/vitest/vitest.extension-media.config.ts",
-  "test/vitest/vitest.extension-misc.config.ts",
-  "test/vitest/vitest.extensions.config.ts",
-] as const;
+];
 
-export default defineConfig({
-  ...sharedVitestConfig,
-  test: {
-    ...sharedVitestConfig.test,
-    runner: nonIsolatedRunnerPath,
-    projects: [...rootVitestProjects],
+export default createScopedVitestConfig(
+  [
+    "src/**/*.test.ts",
+    "extensions/**/*.test.ts",
+    "packages/**/*.test.ts",
+    "test/scripts/**/*.test.ts",
+    "ui/src/**/*.test.ts",
+  ],
+  {
+    name: "openclaw",
+    // Browser-only specs need jsdom; they run in the ui lane instead.
+    exclude: ["**/*.browser.test.ts", "**/*.e2e.test.ts", "**/*.live.test.ts"],
+    deps: jsdomOptimizedDeps,
+    environment: "node",
+    isolate: false,
   },
-});
+);

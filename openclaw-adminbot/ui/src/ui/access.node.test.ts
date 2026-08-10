@@ -7,7 +7,7 @@ import {
   resolveAccessRole,
   resolveAccessibleTab,
   visibleTabsForRole,
-} from "./access.ts";
+} from "./adminbot/access.ts";
 import { TAB_GROUPS, type Tab } from "./navigation.ts";
 
 const ALL_TABS = TAB_GROUPS.flatMap((group) => group.tabs) as readonly Tab[];
@@ -69,16 +69,15 @@ describe("visibleTabsForRole", () => {
     ]);
   });
 
-  it("adds the roster, availability, paper list, and chat for a member", () => {
+  it("adds the roster, the paper list and chat for a member", () => {
     expect(visibleTabsForRole(ALL_TABS, "member")).toEqual([
       "dashboard",
       "profile",
       "myWork",
       "chat",
-      "adminbotReimbursements",
       "adminbotMembers",
-      "adminbotTimeAvailability",
       "adminbotPapers",
+      "adminbotReimbursements",
       "adminbotDeadlines",
     ]);
   });

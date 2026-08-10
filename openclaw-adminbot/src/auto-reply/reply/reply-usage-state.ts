@@ -1,4 +1,4 @@
-import type { PluginHookReplyUsageState } from "../../plugins/hook-types.js";
+import type { PluginHookReplyUsageState } from "../../plugins/hooks/hook-types.js";
 
 const TTL_MS = 5 * 60_000;
 

@@ -1,6 +1,6 @@
 // Legacy config tests cover channel plugin config compatibility and migration helpers.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { LegacyConfigRule } from "../../config/legacy.shared.js";
+import type { LegacyConfigRule } from "../../config/legacy/legacy.shared.js";
 
 const {
   loadBundledChannelDoctorContractApiMock,

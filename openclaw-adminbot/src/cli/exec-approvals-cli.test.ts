@@ -2,8 +2,8 @@
 import { Readable } from "node:stream";
 import { Command } from "commander";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import * as execApprovals from "../infra/exec-approvals.js";
-import type { ExecApprovalsFile } from "../infra/exec-approvals.js";
+import * as execApprovals from "../infra/exec/exec-approvals.js";
+import type { ExecApprovalsFile } from "../infra/exec/exec-approvals.js";
 import { registerExecApprovalsCli, testing } from "./exec-approvals-cli.js";
 
 const mocks = vi.hoisted(() => {
@@ -141,7 +141,7 @@ function resetLocalSnapshot() {
   localSnapshot.file = { version: 1, agents: {} };
 }
 
-vi.mock("./gateway-rpc.js", () => ({
+vi.mock("./gateway-cli/gateway-rpc.js", () => ({
   callGatewayFromCli: (method: string, opts: unknown, params?: unknown) =>
     mocks.callGatewayFromCli(method, opts, params),
 }));
@@ -166,9 +166,9 @@ vi.mock("../config/config.js", async () => {
   };
 });
 
-vi.mock("../infra/exec-approvals.js", async () => {
-  const actual = await vi.importActual<typeof import("../infra/exec-approvals.js")>(
-    "../infra/exec-approvals.js",
+vi.mock("../infra/exec/exec-approvals.js", async () => {
+  const actual = await vi.importActual<typeof import("../infra/exec/exec-approvals.js")>(
+    "../infra/exec/exec-approvals.js",
   );
   return {
     ...actual,

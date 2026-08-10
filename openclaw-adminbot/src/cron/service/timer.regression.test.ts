@@ -10,7 +10,10 @@ import {
   noopLogger,
   setupCronRegressionFixtures,
 } from "../../../test/helpers/cron/service-regression-fixtures.js";
-import { HEARTBEAT_SKIP_LANES_BUSY, type HeartbeatRunResult } from "../../infra/heartbeat-wake.js";
+import {
+  HEARTBEAT_SKIP_LANES_BUSY,
+  type HeartbeatRunResult,
+} from "../../infra/heartbeat/heartbeat-wake.js";
 import { enqueueCommandInLane } from "../../process/command-queue.js";
 import { CommandLane } from "../../process/lanes.js";
 import {

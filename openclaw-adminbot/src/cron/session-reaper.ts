@@ -1,11 +1,11 @@
 /** Prunes expired per-run cron sessions and archives unreferenced transcripts. */
-import { parseDurationMs } from "../cli/parse-duration.js";
+import { parseDurationMs } from "../cli/program/parse-duration.js";
 import {
   applySessionEntryLifecycleMutation,
   listSessionEntries,
   type SessionEntryLifecycleRemoval,
 } from "../config/sessions/session-accessor.js";
-import type { CronConfig } from "../config/types.cron.js";
+import type { CronConfig } from "../config/types/cron.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { isCronRunSessionKey } from "../sessions/session-key-utils.js";
 import type { Logger } from "./service/state.js";

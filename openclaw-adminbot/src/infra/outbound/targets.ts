@@ -6,22 +6,22 @@ import type { ChannelOutboundTargetMode } from "../../channels/plugins/types.cor
 import type { ChannelPlugin } from "../../channels/plugins/types.plugin.js";
 import type { ChannelId } from "../../channels/plugins/types.public.js";
 import type { SessionEntry } from "../../config/sessions.js";
-import type { AgentDefaultsConfig } from "../../config/types.agent-defaults.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { AgentDefaultsConfig } from "../../config/types/agent-defaults.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { normalizeAccountId } from "../../routing/session-key.js";
 import {
   deliveryContextFromSession,
   mergeDeliveryContext,
-} from "../../utils/delivery-context.shared.js";
-import type { DeliveryContext } from "../../utils/delivery-context.types.js";
+} from "../../shared/delivery-context.shared.js";
+import type { DeliveryContext } from "../../shared/delivery-context.types.js";
 import type {
   DeliverableMessageChannel,
   GatewayMessageChannel,
-} from "../../utils/message-channel.js";
+} from "../../shared/message-channel.js";
 import {
   INTERNAL_MESSAGE_CHANNEL,
   isDeliverableMessageChannel,
-} from "../../utils/message-channel.js";
+} from "../../shared/message-channel.js";
 import {
   normalizeDeliverableOutboundChannel,
   resolveOutboundChannelPlugin,

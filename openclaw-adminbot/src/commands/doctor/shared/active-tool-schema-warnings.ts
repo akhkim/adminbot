@@ -6,21 +6,21 @@ import {
   resolveAgentDir,
   resolveAgentWorkspaceDir,
 } from "../../../agents/agent-scope.js";
-import { createOpenClawCodingTools } from "../../../agents/agent-tools.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../../../agents/defaults.js";
 import { resolveModel } from "../../../agents/embedded-agent-runner/model.js";
-import { parseModelRef } from "../../../agents/model-selection-normalize.js";
+import { parseModelRef } from "../../../agents/models/model-selection-normalize.js";
 import { normalizeAgentRuntimeTools } from "../../../agents/runtime-plan/tools.js";
+import { createOpenClawCodingTools } from "../../../agents/tools/agent-tools.js";
+import type { AnyAgentTool } from "../../../agents/tools/common.js";
 import {
   filterRuntimeCompatibleTools,
   type RuntimeToolSchemaDiagnostic,
-} from "../../../agents/tool-schema-projection.js";
-import type { AnyAgentTool } from "../../../agents/tools/common.js";
+} from "../../../agents/tools/tool-schema-projection.js";
 import { resolveAgentModelPrimaryValue } from "../../../config/model-input.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { formatErrorMessage } from "../../../infra/errors.js";
-import { extractModelCompat } from "../../../plugins/provider-model-compat.js";
-import type { ProviderRuntimeModel } from "../../../plugins/provider-runtime-model.types.js";
+import { extractModelCompat } from "../../../plugins/providers/provider-model-compat.js";
+import type { ProviderRuntimeModel } from "../../../plugins/providers/provider-runtime-model.types.js";
 import { getPluginToolMeta } from "../../../plugins/tools.js";
 
 function resolvePrimaryModelRef(

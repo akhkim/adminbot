@@ -1,7 +1,7 @@
 // Doctor health contribution tests cover plugin-provided health checks.
 import fs from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { DoctorPrompter } from "../commands/doctor-prompter.js";
+import type { DoctorPrompter } from "../commands/doctor/doctor-prompter.js";
 import {
   resolveDoctorHealthContributions,
   shouldSkipLegacyUpdateDoctorConfigWrite,
@@ -74,11 +74,11 @@ vi.mock("../../packages/terminal-core/src/note.js", () => ({
   note: mocks.note,
 }));
 
-vi.mock("../agents/model-catalog.js", () => ({
+vi.mock("../agents/models/model-catalog.js", () => ({
   loadModelCatalog: mocks.loadModelCatalog,
 }));
 
-vi.mock("../agents/model-selection.js", () => ({
+vi.mock("../agents/models/model-selection.js", () => ({
   getModelRefStatus: mocks.getModelRefStatus,
   resolveConfiguredModelRef: mocks.resolveConfiguredModelRef,
   resolveHooksGmailModel: mocks.resolveHooksGmailModel,
@@ -95,7 +95,7 @@ vi.mock("../config/config.js", () => ({
   readConfigFileSnapshot: mocks.readConfigFileSnapshot,
 }));
 
-vi.mock("../commands/doctor-gateway-health.js", () => ({
+vi.mock("../commands/doctor/doctor-gateway-health.js", () => ({
   checkGatewayHealth: mocks.checkGatewayHealth,
   probeGatewayMemoryStatus: mocks.probeGatewayMemoryStatus,
 }));
@@ -104,11 +104,11 @@ vi.mock("../cli/daemon-cli/status.gather.js", () => ({
   gatherDaemonStatus: mocks.gatherDaemonStatus,
 }));
 
-vi.mock("../commands/doctor-workspace-status.js", () => ({
+vi.mock("../commands/doctor/doctor-workspace-status.js", () => ({
   noteWorkspaceStatus: mocks.noteWorkspaceStatus,
 }));
 
-vi.mock("../commands/onboard-helpers.js", () => ({
+vi.mock("../commands/onboard/onboard-helpers.js", () => ({
   applyWizardMetadata: mocks.applyWizardMetadata,
 }));
 
@@ -122,7 +122,7 @@ vi.mock("../utils.js", async (importOriginal) => ({
   shortenHomePath: mocks.shortenHomePath,
 }));
 
-vi.mock("../cli/command-format.js", () => ({
+vi.mock("../cli/program/command-format.js", () => ({
   formatCliCommand: mocks.formatCliCommand,
 }));
 

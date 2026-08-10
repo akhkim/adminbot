@@ -1,9 +1,9 @@
 /** Tracks control-plane plugin metadata context during registry and status operations. */
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { hashJson } from "./installed-plugin-index-hash.js";
-import { resolveInstalledPluginIndexPolicyHash } from "./installed-plugin-index-policy.js";
-import type { InstalledPluginIndex } from "./installed-plugin-index.js";
-import { resolveInstalledManifestRegistryIndexFingerprint } from "./manifest-registry-installed.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { hashJson } from "./install/installed-plugin-index-hash.js";
+import { resolveInstalledPluginIndexPolicyHash } from "./install/installed-plugin-index-policy.js";
+import type { InstalledPluginIndex } from "./install/installed-plugin-index.js";
+import { resolveInstalledManifestRegistryIndexFingerprint } from "./manifest/manifest-registry-installed.js";
 import { resolvePluginCacheInputs, type PluginSourceRoots } from "./roots.js";
 
 /** Discovery inputs that affect plugin source resolution. */

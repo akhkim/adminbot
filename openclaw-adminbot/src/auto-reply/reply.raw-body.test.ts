@@ -1,8 +1,8 @@
 /** Tests raw body handling for command and reply prompt paths. */
 import { describe, expect, it } from "vitest";
-import { parseInlineDirectives } from "./reply/directive-handling.parse.js";
-import { finalizeInboundContext } from "./reply/inbound-context.js";
-import { buildInboundUserContextPrefix } from "./reply/inbound-meta.js";
+import { parseInlineDirectives } from "./reply/directives/directive-handling.parse.js";
+import { finalizeInboundContext } from "./reply/inbound/inbound-context.js";
+import { buildInboundUserContextPrefix } from "./reply/inbound/inbound-meta.js";
 import { buildReplyPromptBodies } from "./reply/prompt-prelude.js";
 
 describe("RawBody directive parsing", () => {

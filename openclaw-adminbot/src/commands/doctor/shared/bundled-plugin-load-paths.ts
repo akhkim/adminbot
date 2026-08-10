@@ -2,14 +2,14 @@
 import path from "node:path";
 import { sanitizeForLog } from "../../../../packages/terminal-core/src/ansi.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../../agents/agent-scope.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import {
   buildBundledPluginLoadPathAliases,
   normalizeBundledLookupPath,
   parseLegacyBundledPluginPath,
   parsePackagedBundledPluginPath,
-} from "../../../plugins/bundled-load-path-aliases.js";
-import { resolveBundledPluginSources } from "../../../plugins/bundled-sources.js";
+} from "../../../plugins/install/bundled-load-path-aliases.js";
+import { resolveBundledPluginSources } from "../../../plugins/install/bundled-sources.js";
 import { resolveUserPath } from "../../../utils.js";
 import { asObjectRecord } from "./object.js";
 

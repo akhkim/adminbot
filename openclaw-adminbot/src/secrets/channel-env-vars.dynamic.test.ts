@@ -26,7 +26,7 @@ const pluginRegistryMocks = vi.hoisted(() => {
   };
 });
 
-vi.mock("../plugins/manifest-registry-installed.js", () => ({
+vi.mock("../plugins/manifest/manifest-registry-installed.js", () => ({
   loadPluginManifestRegistryForInstalledIndex:
     pluginRegistryMocks.loadPluginManifestRegistryForInstalledIndex,
 }));

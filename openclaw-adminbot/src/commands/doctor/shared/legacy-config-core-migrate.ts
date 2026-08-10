@@ -1,5 +1,5 @@
 // Core doctor compatibility migration pipeline for current config objects.
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { runPluginSetupConfigMigrations } from "../../../plugins/setup-registry.js";
 import { normalizeAgentId } from "../../../routing/session-key.js";
 import { migrateLegacySecretRefEnvMarkers } from "../../../secrets/legacy-secretref-env-marker.js";
@@ -18,7 +18,11 @@ function repairNullAgentWorkspaces(cfg: OpenClawConfig, changes: string[]): Open
 
   let repaired = 0;
   const nextAgents = agents.map((agent) => {
-    if (agent && typeof agent === "object" && (agent as Record<string, unknown>).workspace === null) {
+    if (
+      agent &&
+      typeof agent === "object" &&
+      (agent as Record<string, unknown>).workspace === null
+    ) {
       repaired += 1;
       const { workspace: _workspace, ...rest } = agent as Record<string, unknown>;
       return rest;

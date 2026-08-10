@@ -2,18 +2,18 @@
 import { chmodSync, existsSync, mkdirSync, statSync } from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import { requireNodeSqlite } from "../infra/node-sqlite.js";
 import {
   clearNodeSqliteKyselyCacheForDatabase,
   executeSqliteQuerySync,
   getNodeSqliteKysely,
-} from "../infra/kysely-sync.js";
-import { requireNodeSqlite } from "../infra/node-sqlite.js";
-import { resolveSqliteDatabaseFilePaths } from "../infra/sqlite-files.js";
-import { runSqliteImmediateTransactionSync } from "../infra/sqlite-transaction.js";
+} from "../infra/state/kysely-sync.js";
+import { resolveSqliteDatabaseFilePaths } from "../infra/state/sqlite-files.js";
+import { runSqliteImmediateTransactionSync } from "../infra/state/sqlite-transaction.js";
 import {
   configureSqliteConnectionPragmas,
   type SqliteWalMaintenance,
-} from "../infra/sqlite-wal.js";
+} from "../infra/state/sqlite-wal.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import type { DB as OpenClawAgentKyselyDatabase } from "./openclaw-agent-db.generated.js";
 import { resolveOpenClawAgentSqlitePath } from "./openclaw-agent-db.paths.js";

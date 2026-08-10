@@ -1,7 +1,7 @@
 /**
  * Core plugin SDK contract-test fixture builders and registration helpers.
  */
-import type { PluginRegistryParams } from "../../plugins/registry-types.js";
+import type { PluginRegistryParams } from "../../plugins/manifest/registry-types.js";
 import type { OpenClawPluginApi } from "../plugin-entry.js";
 import {
   createPluginRecord,

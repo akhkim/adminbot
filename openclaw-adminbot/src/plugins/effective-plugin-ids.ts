@@ -5,16 +5,16 @@ import {
   listExplicitlyDisabledChannelIdsForConfig,
   listPotentialConfiguredChannelIds,
 } from "../channels/config-presence.js";
-import { applyPluginAutoEnable } from "../config/plugin-auto-enable.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { applyPluginAutoEnable } from "../config/plugin/plugin-auto-enable.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   listExplicitConfiguredChannelIdsForConfig,
   loadGatewayStartupPluginPlan,
   resolveConfiguredChannelPluginIds,
 } from "./channel-plugin-ids.js";
-import { normalizePluginsConfig } from "./config-state.js";
-import { loadManifestMetadataSnapshot } from "./manifest-contract-eligibility.js";
-import { passesManifestOwnerBasePolicy } from "./manifest-owner-policy.js";
+import { normalizePluginsConfig } from "./config/config-state.js";
+import { loadManifestMetadataSnapshot } from "./manifest/manifest-contract-eligibility.js";
+import { passesManifestOwnerBasePolicy } from "./manifest/manifest-owner-policy.js";
 import { defaultSlotIdForKey } from "./slots.js";
 
 function collectConfiguredChannelIds(

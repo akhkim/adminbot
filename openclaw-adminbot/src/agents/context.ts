@@ -3,8 +3,8 @@
 
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { getRuntimeConfig } from "../config/config.js";
-import { projectConfigOntoRuntimeSourceSnapshot } from "../config/runtime-source-projection.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { projectConfigOntoRuntimeSourceSnapshot } from "../config/runtime/runtime-source-projection.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { computeBackoff, type BackoffPolicy } from "../infra/backoff.js";
 import {
   lookupCachedContextTokens,
@@ -25,7 +25,7 @@ import {
   beginContextWindowCacheRefresh,
   CONTEXT_WINDOW_RUNTIME_STATE,
 } from "./context-runtime-state.js";
-import { normalizeProviderId } from "./model-selection.js";
+import { normalizeProviderId } from "./models/model-selection.js";
 
 export {
   ANTHROPIC_CONTEXT_1M_TOKENS,
@@ -46,7 +46,7 @@ const CONFIG_LOAD_RETRY_POLICY: BackoffPolicy = {
   factor: 2,
   jitter: 0,
 };
-const loadModelCatalogRuntime = () => import("./model-catalog.runtime.js");
+const loadModelCatalogRuntime = () => import("./models/model-catalog.runtime.js");
 const loadStaticModelCatalogRuntime = () =>
   import("./embedded-agent-runner/model.static-catalog.js");
 

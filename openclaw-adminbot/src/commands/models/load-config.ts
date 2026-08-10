@@ -1,5 +1,5 @@
 /** Config loader for model commands with command-scoped secret resolution. */
-import { resolveCommandConfigWithSecrets } from "../../cli/command-config-resolution.js";
+import { resolveCommandConfigWithSecrets } from "../../cli/program/command-config-resolution.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import {
   getRuntimeConfig,

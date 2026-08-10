@@ -14,8 +14,8 @@ import {
   emitDiagnosticEvent,
   onDiagnosticEvent,
   resetDiagnosticEventsForTest,
-} from "./diagnostic-events.js";
-import { readSessionStoreJson5 } from "./state-migrations.fs.js";
+} from "./diagnostics/diagnostic-events.js";
+import { readSessionStoreJson5 } from "./state/state-migrations.fs.js";
 import {
   loadVoiceWakeRoutingConfig,
   normalizeVoiceWakeTriggerWord,

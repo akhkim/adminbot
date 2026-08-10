@@ -3,12 +3,12 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import JSZip from "jszip";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { withExtractedArchiveRoot } from "../../infra/install-flow.js";
+import { withExtractedArchiveRoot } from "../../infra/install/install-flow.js";
 import {
   initializeGlobalHookRunner,
   resetGlobalHookRunner,
-} from "../../plugins/hook-runner-global.js";
-import { createMockPluginRegistry } from "../../plugins/hooks.test-helpers.js";
+} from "../../plugins/hooks/hook-runner-global.js";
+import { createMockPluginRegistry } from "../../plugins/hooks/hooks.test-helpers.js";
 import { createTrackedTempDirs } from "../../test-utils/tracked-temp-dirs.js";
 import {
   CLAWHUB_SKILL_ARCHIVE_ROOT_MARKERS,

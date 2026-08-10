@@ -6,7 +6,7 @@ import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/st
 import type {
   ExecApprovalDecision,
   ExecApprovalRequestPayload as InfraExecApprovalRequestPayload,
-} from "../infra/exec-approvals.js";
+} from "../infra/exec/exec-approvals.js";
 import { resolveTimerTimeoutMs } from "../shared/number-coercion.js";
 
 // Grace period to keep resolved entries for late awaitDecision calls

@@ -1,12 +1,8 @@
-import {
-  type NativeWebSearchToolPolicyParams,
-  isNativeWebSearchAllowedByToolPolicy,
-} from "../../agents/codex-native-web-search-core.js";
 /**
  * Resolves model extra parameters and transport overrides for embedded agents.
  */
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { createGoogleThinkingPayloadWrapper } from "../../llm/providers/stream-wrappers/google.js";
 import { createMinimaxThinkingDisabledWrapper } from "../../llm/providers/stream-wrappers/minimax.js";
 import {
@@ -32,15 +28,22 @@ import {
   type ProviderRuntimePluginHandle,
   resolveProviderExtraParamsForTransport as resolveProviderExtraParamsForTransportRuntime,
   wrapProviderStreamFn as wrapProviderStreamFnRuntime,
-} from "../../plugins/provider-hook-runtime.js";
-import type { ProviderRuntimeModel } from "../../plugins/provider-runtime-model.types.js";
-import { canonicalizeMaxTokensParam, resolveMaxTokensParam } from "../model-max-tokens-params.js";
-import { legacyModelKey, modelKey } from "../model-selection-normalize.js";
-import { supportsGptParallelToolCallsPayload } from "../provider-api-families.js";
-import { resolveProviderRequestPolicyConfig } from "../provider-request-config.js";
+} from "../../plugins/providers/provider-hook-runtime.js";
+import type { ProviderRuntimeModel } from "../../plugins/providers/provider-runtime-model.types.js";
+import {
+  canonicalizeMaxTokensParam,
+  resolveMaxTokensParam,
+} from "../models/model-max-tokens-params.js";
+import { legacyModelKey, modelKey } from "../models/model-selection-normalize.js";
 import type { AgentRuntimeTransport } from "../runtime-plan/types.js";
 import type { StreamFn } from "../runtime/index.js";
 import type { SettingsManager } from "../sessions/index.js";
+import {
+  type NativeWebSearchToolPolicyParams,
+  isNativeWebSearchAllowedByToolPolicy,
+} from "../transport/codex-native-web-search-core.js";
+import { supportsGptParallelToolCallsPayload } from "../transport/provider-api-families.js";
+import { resolveProviderRequestPolicyConfig } from "../transport/provider-request-config.js";
 import { log } from "./logger.js";
 import { resolveCacheRetention } from "./prompt-cache-retention.js";
 

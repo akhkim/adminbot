@@ -1,8 +1,8 @@
-import { listPersistedRuntimeToolSchemaQuarantines } from "../agents/tool-schema-quarantine-health.js";
+import { listPersistedRuntimeToolSchemaQuarantines } from "../agents/tools/tool-schema-quarantine-health.js";
 import { resolveReadOnlyChannelPluginsForConfig } from "../channels/plugins/read-only.js";
 // Runtime plugin health collection is isolated from pure status formatting so
 // ordinary status tests do not eagerly load plugin registry internals.
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { listContextEngineQuarantines } from "../context-engine/registry.js";
 import { getActiveRuntimePluginRegistry } from "../plugins/active-runtime-registry.js";
 import {
@@ -176,7 +176,7 @@ export async function collectInstalledPluginHealthSnapshot(params: {
   workspaceDir?: string;
 }): Promise<StatusPluginHealthSnapshot> {
   const { buildPluginCompatibilityNotices, buildPluginSnapshotReport } =
-    await import("../plugins/status.js");
+    await import("../plugins/config/status.js");
   const runtime = collectRuntimePluginHealthSnapshot();
   const report = buildPluginSnapshotReport({
     config: params.config,

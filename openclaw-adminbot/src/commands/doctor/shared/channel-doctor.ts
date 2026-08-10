@@ -12,8 +12,8 @@ import type {
   ChannelDoctorEmptyAllowlistAccountContext,
   ChannelDoctorSequenceResult,
 } from "../../../channels/plugins/types.adapters.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import { isUnresolvedSecretInputError } from "../../../config/types.secrets.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import { isUnresolvedSecretInputError } from "../../../config/types/secrets.js";
 
 type ChannelDoctorEntry = {
   id: string;

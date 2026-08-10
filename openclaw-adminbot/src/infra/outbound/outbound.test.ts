@@ -2,7 +2,7 @@
 // plugin registry setup.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../../config/config.js";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import { createTestRegistry } from "../../test-utils/channel-plugins.js";
 import { DirectoryCache } from "./directory-cache.js";
 

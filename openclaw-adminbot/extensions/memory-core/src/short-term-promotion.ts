@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 2886 lines; see docs/adr/0006-deferred-monster-splits.md
 // Memory Core plugin module implements short term promotion behavior.
 import { createHash } from "node:crypto";
 import fs from "node:fs/promises";

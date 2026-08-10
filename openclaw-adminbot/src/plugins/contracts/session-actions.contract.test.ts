@@ -5,14 +5,14 @@ import {
 } from "openclaw/plugin-sdk/plugin-test-contracts";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { APPROVALS_SCOPE, READ_SCOPE, WRITE_SCOPE } from "../../gateway/operator-scopes.js";
-import { handleGatewayRequest } from "../../gateway/server-methods.js";
 import { pluginHostHookHandlers } from "../../gateway/server-methods/plugin-host-hooks.js";
 import type { GatewayClient, RespondFn } from "../../gateway/server-methods/types.js";
+import { handleGatewayRequest } from "../../gateway/server/server-methods.js";
 import { onAgentEvent, resetAgentEventsForTest } from "../../infra/agent-events.js";
-import { createEmptyPluginRegistry } from "../registry-empty.js";
-import { createPluginRegistry } from "../registry.js";
-import { setActivePluginRegistry } from "../runtime.js";
-import { createPluginRecord } from "../status.test-helpers.js";
+import { createPluginRecord } from "../config/status.test-helpers.js";
+import { createEmptyPluginRegistry } from "../manifest/registry-empty.js";
+import { createPluginRegistry } from "../manifest/registry.js";
+import { setActivePluginRegistry } from "../runtime/runtime.js";
 import type { OpenClawPluginApi } from "../types.js";
 
 const MAIN_SESSION_KEY = "agent:main:main";

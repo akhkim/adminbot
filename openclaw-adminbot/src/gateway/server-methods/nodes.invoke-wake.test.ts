@@ -41,21 +41,21 @@ const mocks = vi.hoisted(() => ({
   requestNodePairing: vi.fn(),
 }));
 
-vi.mock("../../config/io.js", () => ({
+vi.mock("../../config/io/io.js", () => ({
   getRuntimeConfig: mocks.getRuntimeConfig,
 }));
 
-vi.mock("../node-command-policy.js", () => ({
+vi.mock("../node/node-command-policy.js", () => ({
   resolveNodeCommandAllowlist: mocks.resolveNodeCommandAllowlist,
   isNodeCommandAllowed: mocks.isNodeCommandAllowed,
   isForegroundRestrictedPluginNodeCommand: mocks.isForegroundRestrictedPluginNodeCommand,
 }));
 
-vi.mock("../node-invoke-sanitize.js", () => ({
+vi.mock("../node/node-invoke-sanitize.js", () => ({
   sanitizeNodeInvokeParamsForForwarding: mocks.sanitizeNodeInvokeParamsForForwarding,
 }));
 
-vi.mock("../../infra/push-apns.js", () => ({
+vi.mock("../../infra/diagnostics/push-apns.js", () => ({
   clearApnsRegistrationIfCurrent: mocks.clearApnsRegistrationIfCurrent,
   loadApnsRegistration: mocks.loadApnsRegistration,
   resolveApnsAuthConfigFromEnv: mocks.resolveApnsAuthConfigFromEnv,

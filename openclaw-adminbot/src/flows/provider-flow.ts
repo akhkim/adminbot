@@ -1,8 +1,11 @@
 // Provider setup flow configures provider credentials, models, and defaults.
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { normalizePluginsConfig, resolveEffectiveEnableState } from "../plugins/config-state.js";
-import * as providerAuthChoices from "../plugins/provider-auth-choices.js";
-import * as providerInstallCatalog from "../plugins/provider-install-catalog.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import {
+  normalizePluginsConfig,
+  resolveEffectiveEnableState,
+} from "../plugins/config/config-state.js";
+import * as providerAuthChoices from "../plugins/providers/provider-auth-choices.js";
+import * as providerInstallCatalog from "../plugins/providers/provider-install-catalog.js";
 import type { FlowContribution, FlowOption } from "./types.js";
 import { sortFlowContributionsByLabel } from "./types.js";
 

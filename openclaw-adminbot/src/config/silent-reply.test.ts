@@ -1,7 +1,7 @@
 // Covers silent-reply config normalization and policy behavior.
 import { describe, expect, it } from "vitest";
 import { resolveSilentReplyPolicy } from "./silent-reply.js";
-import type { OpenClawConfig } from "./types.openclaw.js";
+import type { OpenClawConfig } from "./types/openclaw.js";
 
 describe("silent reply config resolution", () => {
   it("uses the default direct/group/internal policy", () => {

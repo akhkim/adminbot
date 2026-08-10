@@ -1,8 +1,8 @@
 // Trajectory metadata helpers capture environment metadata for trajectory files.
-import { resolveStateDir } from "../config/paths.js";
-import { redactConfigObject } from "../config/redact-snapshot.js";
+import { resolveStateDir } from "../config/paths/paths.js";
+import { redactConfigObject } from "../config/redact/redact-snapshot.js";
 import type { SessionSystemPromptReport } from "../config/sessions/types.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { resolveCommitHash } from "../infra/git-commit.js";
 import { resolveOsSummary } from "../infra/os-summary.js";
 import {
@@ -11,7 +11,10 @@ import {
   type SupportRedactionContext,
 } from "../logging/diagnostic-support-redaction.js";
 import { loadPluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.js";
-import { getActivePluginRegistry, listImportedRuntimePluginIds } from "../plugins/runtime.js";
+import {
+  getActivePluginRegistry,
+  listImportedRuntimePluginIds,
+} from "../plugins/runtime/runtime.js";
 import type { SkillSnapshot } from "../skills/types.js";
 import { VERSION } from "../version.js";
 
@@ -118,15 +121,6 @@ function buildPluginsFromActiveRegistry() {
         channelIds: toSortedUniqueStrings(plugin.channelIds),
         cliBackendIds: toSortedUniqueStrings(plugin.cliBackendIds),
         providerIds: toSortedUniqueStrings(plugin.providerIds),
-        speechProviderIds: toSortedUniqueStrings(plugin.speechProviderIds),
-        realtimeTranscriptionProviderIds: toSortedUniqueStrings(
-          plugin.realtimeTranscriptionProviderIds,
-        ),
-        realtimeVoiceProviderIds: toSortedUniqueStrings(plugin.realtimeVoiceProviderIds),
-        mediaUnderstandingProviderIds: toSortedUniqueStrings(plugin.mediaUnderstandingProviderIds),
-        imageGenerationProviderIds: toSortedUniqueStrings(plugin.imageGenerationProviderIds),
-        videoGenerationProviderIds: toSortedUniqueStrings(plugin.videoGenerationProviderIds),
-        musicGenerationProviderIds: toSortedUniqueStrings(plugin.musicGenerationProviderIds),
         webFetchProviderIds: toSortedUniqueStrings(plugin.webFetchProviderIds),
         webSearchProviderIds: toSortedUniqueStrings(plugin.webSearchProviderIds),
         memoryEmbeddingProviderIds: toSortedUniqueStrings(plugin.memoryEmbeddingProviderIds),

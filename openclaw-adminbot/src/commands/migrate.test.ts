@@ -36,7 +36,7 @@ vi.mock("../config/config.js", () => ({
   loadConfig: () => ({}),
 }));
 
-vi.mock("../config/paths.js", () => ({
+vi.mock("../config/paths/paths.js", () => ({
   resolveStateDir: () => "/tmp/openclaw-migrate-command-test",
 }));
 
@@ -65,7 +65,7 @@ vi.mock("../plugins/migration-provider-runtime.js", () => ({
   resolvePluginMigrationProviders: () => [mocks.provider],
 }));
 
-vi.mock("./backup.js", () => ({
+vi.mock("./maintenance/backup.js", () => ({
   backupCreateCommand: mocks.backupCreateCommand,
 }));
 

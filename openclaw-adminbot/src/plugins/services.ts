@@ -1,14 +1,14 @@
 /** Starts, stops, and inspects plugin service registrations. */
-import { STATE_DIR } from "../config/paths.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { STATE_DIR } from "../config/paths/paths.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   emitTrustedDiagnosticEventWithPrivateData,
   onTrustedInternalDiagnosticEvent,
-} from "../infra/diagnostic-events.js";
+} from "../infra/diagnostics/diagnostic-events.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { withPluginHttpRouteRegistry } from "./http-registry.js";
-import type { PluginServiceRegistration } from "./registry-types.js";
-import type { PluginRegistry } from "./registry.js";
+import type { PluginServiceRegistration } from "./manifest/registry-types.js";
+import type { PluginRegistry } from "./manifest/registry.js";
 import { encodeStartupTraceSegment } from "./startup-trace-segment.js";
 import type { OpenClawPluginServiceContext, PluginLogger } from "./types.js";
 

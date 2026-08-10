@@ -3,7 +3,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_WINDOWS_SYSTEM_ROOT,
   resetWindowsInstallRootsForTests,
-} from "../infra/windows-install-roots.js";
+} from "../infra/system/windows-install-roots.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import type { WindowsAclEntry, WindowsAclSummary } from "./windows-acl.js";
 

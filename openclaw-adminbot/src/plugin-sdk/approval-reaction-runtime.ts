@@ -2,16 +2,19 @@
  * @deprecated Compatibility subpath for shipped approval reaction helpers.
  * New plugin code should use the focused approval runtime/reply subpaths.
  */
-import { sanitizeForPromptLiteral } from "../agents/sanitize-for-prompt.js";
-import { formatApprovalDisplayPath } from "../infra/approval-display-paths.js";
-import { buildPendingApprovalView } from "../infra/approval-view-model.js";
-import type { ApprovalRequest, PendingApprovalView } from "../infra/approval-view-model.types.js";
+import { sanitizeForPromptLiteral } from "../agents/prompt/sanitize-for-prompt.js";
+import { formatApprovalDisplayPath } from "../infra/approvals/approval-display-paths.js";
+import { buildPendingApprovalView } from "../infra/approvals/approval-view-model.js";
+import type {
+  ApprovalRequest,
+  PendingApprovalView,
+} from "../infra/approvals/approval-view-model.types.js";
 import {
   buildExecApprovalPendingReplyPayload,
   formatExecApprovalExpiresIn,
   type ExecApprovalPendingReplyParams,
   type ExecApprovalReplyDecision,
-} from "../infra/exec-approval-reply.js";
+} from "../infra/exec/exec-approval-reply.js";
 import type { PluginApprovalRequest } from "../infra/plugin-approvals.js";
 import {
   buildApprovalPendingReplyPayload,

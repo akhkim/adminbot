@@ -2,8 +2,8 @@
 import { localeLowercasePreservingWhitespace } from "@openclaw/normalization-core/string-coerce";
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import { extractKeywords, isQueryStopWordToken } from "../../memory-host-sdk/query.js";
-import type { CompactionSummarizationInstructions } from "../compaction.js";
-import { wrapUntrustedPromptDataBlock } from "../sanitize-for-prompt.js";
+import type { CompactionSummarizationInstructions } from "../compaction/compaction.js";
+import { wrapUntrustedPromptDataBlock } from "../prompt/sanitize-for-prompt.js";
 
 // Compaction summary quality helpers. They define the structured summary contract
 // and audit whether summaries preserve pending asks plus exact identifiers.

@@ -3,16 +3,16 @@ import type { IncomingMessage } from "node:http";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebSocket } from "ws";
 import { PROTOCOL_VERSION } from "../../../../packages/gateway-protocol/src/index.js";
-import type { HealthSummary } from "../../../commands/health.types.js";
+import type { HealthSummary } from "../../../commands/maintenance/health.types.js";
 import {
   onInternalDiagnosticEvent,
   resetDiagnosticEventsForTest,
   type DiagnosticSecurityEvent,
-} from "../../../infra/diagnostic-events.js";
-import type { ResolvedGatewayAuth } from "../../auth.js";
+} from "../../../infra/diagnostics/diagnostic-events.js";
+import type { ResolvedGatewayAuth } from "../../auth/auth.js";
 import { getOperatorApprovalRuntimeToken } from "../../operator-approval-runtime-token.js";
-import { handleGatewayRequest } from "../../server-methods.js";
 import type { GatewayRequestContext } from "../../server-methods/types.js";
+import { handleGatewayRequest } from "../server-methods.js";
 
 const {
   buildGatewaySnapshotMock,
@@ -54,14 +54,14 @@ vi.mock("../../../config/config.js", () => ({
   loadConfig: loadConfigMock,
 }));
 
-vi.mock("../../../config/io.js", () => ({
+vi.mock("../../../config/io/io.js", () => ({
   getRuntimeConfig: loadConfigMock,
 }));
-vi.mock("../../../infra/system-presence.js", () => ({
+vi.mock("../../../infra/system/system-presence.js", () => ({
   upsertPresence: upsertPresenceMock,
 }));
 
-vi.mock("../../server-methods.js", () => ({
+vi.mock("../server-methods.js", () => ({
   handleGatewayRequest: vi.fn(),
 }));
 

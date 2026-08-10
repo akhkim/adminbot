@@ -1,5 +1,5 @@
 /** Type contracts for text/native chat command definitions and command detection. */
-import type { OpenClawConfig } from "../config/types.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import type { CommandArgValues } from "./commands-args.types.js";
 import type { ThinkingCatalogEntry } from "./thinking.shared.js";
 

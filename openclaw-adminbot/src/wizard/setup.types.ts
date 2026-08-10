@@ -1,6 +1,6 @@
 // Setup wizard types describe onboarding choices and derived config.
-import type { GatewayAuthChoice } from "../commands/onboard-types.js";
-import type { SecretInput } from "../config/types.secrets.js";
+import type { GatewayAuthChoice } from "../commands/onboard/onboard-types.js";
+import type { SecretInput } from "../config/types/secrets.js";
 
 // Shared setup wizard types for quickstart/advanced gateway flows and their
 // persisted defaults.

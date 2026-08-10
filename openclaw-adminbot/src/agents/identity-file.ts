@@ -6,7 +6,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
-import { DEFAULT_IDENTITY_FILENAME } from "./workspace.js";
+import { DEFAULT_IDENTITY_FILENAME } from "./workspace/workspace.js";
 
 /** Parsed rich identity values from a workspace `IDENTITY.md` file. */
 export type AgentIdentityFile = {

@@ -7,24 +7,24 @@ import {
 import { normalizeUniqueStringEntries } from "@openclaw/normalization-core/string-normalization";
 import { resolveSandboxConfigForAgent } from "../agents/sandbox/config.js";
 import { isDangerousNetworkMode, normalizeNetworkMode } from "../agents/sandbox/network-mode.js";
+import { pickSandboxToolPolicy } from "../agents/sandbox/sandbox-tool-policy.js";
 import { resolveSandboxToolPolicyForAgent } from "../agents/sandbox/tool-policy.js";
 import type { SandboxToolPolicy } from "../agents/sandbox/types.js";
 import { getBlockedBindReason } from "../agents/sandbox/validate-sandbox-security.js";
-import { isToolAllowedByPolicies } from "../agents/tool-policy-match.js";
-import { resolveToolProfilePolicy } from "../agents/tool-policy.js";
-import { formatCliCommand } from "../cli/command-format.js";
-import type { GatewayAuthConfig } from "../config/types.gateway.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { AgentToolsConfig } from "../config/types.tools.js";
-import { resolveGatewayAuth, type ResolvedGatewayAuth } from "../gateway/auth.js";
-import { resolveAllowedAgentIds } from "../gateway/hooks-policy.js";
+import { isToolAllowedByPolicies } from "../agents/tools/tool-policy-match.js";
+import { resolveToolProfilePolicy } from "../agents/tools/tool-policy.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
+import type { GatewayAuthConfig } from "../config/types/gateway.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import type { AgentToolsConfig } from "../config/types/tools.js";
+import { resolveGatewayAuth, type ResolvedGatewayAuth } from "../gateway/auth/auth.js";
+import { resolveAllowedAgentIds } from "../gateway/hooks/hooks-policy.js";
 import {
   DEFAULT_DANGEROUS_NODE_COMMANDS,
   listDangerousPluginNodeCommands,
   resolveNodeCommandAllowlist,
-} from "../gateway/node-command-policy.js";
+} from "../gateway/node/node-command-policy.js";
 import { collectAuditModelRefs } from "./audit-model-refs.js";
-import { pickSandboxToolPolicy } from "../agents/sandbox-tool-policy.js";
 
 /**
  * Synchronous security audit collector functions.

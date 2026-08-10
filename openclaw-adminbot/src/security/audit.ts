@@ -12,29 +12,29 @@ import { resolveExecDefaults } from "../agents/exec-defaults.js";
 import { resolveSandboxConfigForAgent } from "../agents/sandbox/config.js";
 import type { ChannelPlugin } from "../channels/plugins/types.plugin.js";
 import type { ConfigFileSnapshot, OpenClawConfig } from "../config/config.js";
-import { resolveConfigPath, resolveStateDir } from "../config/paths.js";
-import type { CliBackendConfig } from "../config/types.agent-defaults.js";
-import type { GatewayAuthConfig } from "../config/types.gateway.js";
-import type { SecurityAuditSuppression } from "../config/types.openclaw.js";
+import { resolveConfigPath, resolveStateDir } from "../config/paths/paths.js";
+import type { CliBackendConfig } from "../config/types/agent-defaults.js";
+import type { GatewayAuthConfig } from "../config/types/gateway.js";
+import type { SecurityAuditSuppression } from "../config/types/openclaw.js";
 import {
   canMaterializeGatewayAuthSecretRefsWithoutExec,
   materializeGatewayAuthSecretRefs,
-} from "../gateway/auth-config-utils.js";
+} from "../gateway/auth/auth-config-utils.js";
 import { isInterpreterLikeAllowlistPattern } from "../infra/command-analysis/inline-eval.js";
+import { emitTrustedSecurityEvent } from "../infra/diagnostics/diagnostic-events.js";
 import {
   type ExecApprovalsFile,
   loadExecApprovals,
   maxAsk,
   minSecurity,
   resolveExecApprovalsFromFile,
-} from "../infra/exec-approvals.js";
+} from "../infra/exec/exec-approvals.js";
 import {
   listInterpreterLikeSafeBins,
   resolveMergedSafeBinProfileFixtures,
-} from "../infra/exec-safe-bin-runtime-policy.js";
-import { listRiskyConfiguredSafeBins } from "../infra/exec-safe-bin-semantics.js";
-import { normalizeTrustedSafeBinDirs } from "../infra/exec-safe-bin-trust.js";
-import { emitTrustedSecurityEvent } from "../infra/diagnostic-events.js";
+} from "../infra/exec/exec-safe-bin-runtime-policy.js";
+import { listRiskyConfiguredSafeBins } from "../infra/exec/exec-safe-bin-semantics.js";
+import { normalizeTrustedSafeBinDirs } from "../infra/exec/exec-safe-bin-trust.js";
 import { DEFAULT_AGENT_ID } from "../routing/session-key.js";
 import { collectDeepCodeSafetyFindings } from "./audit-deep-code-safety.js";
 import { collectDeepProbeFindings } from "./audit-deep-probe-findings.js";
@@ -143,12 +143,12 @@ let pluginMetadataRegistryLoaderModulePromise:
   | Promise<typeof import("../plugins/runtime/metadata-registry-loader.js")>
   | undefined;
 let pluginAutoEnableModulePromise:
-  | Promise<typeof import("../config/plugin-auto-enable.js")>
+  | Promise<typeof import("../config/plugin/plugin-auto-enable.js")>
   | undefined;
 let channelPluginIdsModulePromise:
   | Promise<typeof import("../plugins/channel-plugin-ids.js")>
   | undefined;
-let pluginRuntimeModulePromise: Promise<typeof import("../plugins/runtime.js")> | undefined;
+let pluginRuntimeModulePromise: Promise<typeof import("../plugins/runtime/runtime.js")> | undefined;
 let gatewayProbeDepsPromise:
   | Promise<{
       buildGatewayConnectionDetails: typeof import("../gateway/call.js").buildGatewayConnectionDetails;
@@ -180,7 +180,7 @@ async function loadPluginMetadataRegistryLoaderModule() {
 }
 
 async function loadPluginAutoEnableModule() {
-  pluginAutoEnableModulePromise ??= import("../config/plugin-auto-enable.js");
+  pluginAutoEnableModulePromise ??= import("../config/plugin/plugin-auto-enable.js");
   return await pluginAutoEnableModulePromise;
 }
 
@@ -190,7 +190,7 @@ async function loadChannelPluginIdsModule() {
 }
 
 async function loadPluginRuntimeModule() {
-  pluginRuntimeModulePromise ??= import("../plugins/runtime.js");
+  pluginRuntimeModulePromise ??= import("../plugins/runtime/runtime.js");
   return await pluginRuntimeModulePromise;
 }
 

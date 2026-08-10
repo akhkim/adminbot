@@ -2,18 +2,18 @@
  * Truncates oversized tool-result content in messages and transcripts.
  */
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import type { TextContent } from "../../llm/types.js";
 import { emitSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
 import { resolveAgentContextLimits } from "../agent-scope.js";
 import type { AgentMessage } from "../runtime/index.js";
+import { SessionManager } from "../sessions/index.js";
 import {
   acquireSessionWriteLock,
   type SessionWriteLockAcquireTimeoutConfig,
   resolveSessionWriteLockOptions,
-} from "../session-write-lock.js";
-import { SessionManager } from "../sessions/index.js";
+} from "../sessions/session-write-lock.js";
 import { formatContextLimitTruncationNotice } from "./context-truncation-notice.js";
 import { log } from "./logger.js";
 import {

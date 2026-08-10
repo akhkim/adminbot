@@ -1,6 +1,5 @@
 // Inbound event media tests cover channel media attachment normalization.
 import { describe, expect, it } from "vitest";
-import { normalizeAttachments } from "../../media-understanding/attachments.normalize.js";
 import {
   buildChannelInboundMediaPayload,
   toHistoryMediaEntries,

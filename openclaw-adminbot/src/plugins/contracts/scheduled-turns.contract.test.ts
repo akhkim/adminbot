@@ -12,22 +12,22 @@ import type {
   GatewayRequestHandlerOptions,
 } from "../../gateway/server-methods/types.js";
 import { withEnv } from "../../test-utils/env.js";
-import { cleanupReplacedPluginHostRegistry } from "../host-hook-cleanup.js";
+import { createPluginRecord } from "../config/status.test-helpers.js";
+import { cleanupReplacedPluginHostRegistry } from "../host/host-hook-cleanup.js";
 import {
   clearPluginHostRuntimeState,
   cleanupPluginSessionSchedulerJobs,
   listPluginSessionSchedulerJobs,
-} from "../host-hook-runtime.js";
+} from "../host/host-hook-runtime.js";
 import {
   buildPluginSchedulerCronName,
   schedulePluginSessionTurn,
   unschedulePluginSessionTurnsByTag,
-} from "../host-hook-scheduled-turns.js";
-import { clearPluginLoaderCache, loadOpenClawPlugins } from "../loader.js";
-import { makeTempDir, writePlugin } from "../loader.test-fixtures.js";
-import { createEmptyPluginRegistry } from "../registry-empty.js";
-import { setActivePluginRegistry } from "../runtime.js";
-import { createPluginRecord } from "../status.test-helpers.js";
+} from "../host/host-hook-scheduled-turns.js";
+import { createEmptyPluginRegistry } from "../manifest/registry-empty.js";
+import { clearPluginLoaderCache, loadOpenClawPlugins } from "../runtime/loader.js";
+import { makeTempDir, writePlugin } from "../runtime/loader.test-fixtures.js";
+import { setActivePluginRegistry } from "../runtime/runtime.js";
 import type { OpenClawPluginApi } from "../types.js";
 
 const workflowMocks = vi.hoisted(() => ({

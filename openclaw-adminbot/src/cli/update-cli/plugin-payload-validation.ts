@@ -1,8 +1,11 @@
 // Static payload checks for installed plugins after a core update swaps package files.
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { PluginInstallRecord } from "../../config/types.plugins.js";
-import { resolvePackageExtensionEntries, type PackageManifest } from "../../plugins/manifest.js";
+import type { PluginInstallRecord } from "../../config/types/plugins.js";
+import {
+  resolvePackageExtensionEntries,
+  type PackageManifest,
+} from "../../plugins/manifest/manifest.js";
 import { validatePackageExtensionEntriesForInstall } from "../../plugins/package-entry-resolution.js";
 import { auditOpenClawPeerDependencyLink } from "../../plugins/plugin-peer-link.js";
 import { resolveUserPath } from "../../utils.js";

@@ -5,14 +5,14 @@ import {
   formatUpdateAvailableHint,
   formatUpdateOneLiner,
   resolveUpdateAvailability,
-} from "../../commands/status.update.js";
+} from "../../commands/status/status.update.js";
 import { readSourceConfigBestEffort } from "../../config/config.js";
 import {
   normalizeUpdateChannel,
   resolveRegistryUpdateChannel,
   resolveUpdateChannelDisplay,
-} from "../../infra/update-channels.js";
-import { checkUpdateStatus } from "../../infra/update-check.js";
+} from "../../infra/install/update-channels.js";
+import { checkUpdateStatus } from "../../infra/install/update-check.js";
 import { defaultRuntime } from "../../runtime.js";
 import { VERSION } from "../../version.js";
 import { parseTimeoutMsOrExit, resolveUpdateRoot, type UpdateStatusOptions } from "./shared.js";

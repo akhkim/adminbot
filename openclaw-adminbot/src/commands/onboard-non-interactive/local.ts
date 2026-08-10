@@ -4,23 +4,26 @@
  * This entrypoint applies config changes, optionally installs the gateway
  * daemon, verifies health, and emits machine-readable setup output.
  */
-import { formatCliCommand } from "../../cli/command-format.js";
+import { formatCliCommand } from "../../cli/program/command-format.js";
 import { resolveGatewayPort } from "../../config/config.js";
 import { logConfigUpdated } from "../../config/logging.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { resolveGatewayAuthToken } from "../../gateway/auth-token-resolution.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { resolveGatewayAuthToken } from "../../gateway/auth/auth-token-resolution.js";
 import { resolveConfiguredSecretInputString } from "../../gateway/resolve-configured-secret-input-string.js";
 import type { RuntimeEnv } from "../../runtime.js";
-import { DEFAULT_GATEWAY_DAEMON_RUNTIME } from "../daemon-runtime.js";
-import { applyLocalSetupWorkspaceConfig, applySkipBootstrapConfig } from "../onboard-config.js";
+import { DEFAULT_GATEWAY_DAEMON_RUNTIME } from "../daemon/daemon-runtime.js";
+import {
+  applyLocalSetupWorkspaceConfig,
+  applySkipBootstrapConfig,
+} from "../onboard/onboard-config.js";
 import {
   applyWizardMetadata,
   DEFAULT_WORKSPACE,
   ensureWorkspaceAndSessions,
   resolveControlUiLinks,
   waitForGatewayReachable,
-} from "../onboard-helpers.js";
-import type { OnboardOptions } from "../onboard-types.js";
+} from "../onboard/onboard-helpers.js";
+import type { OnboardOptions } from "../onboard/onboard-types.js";
 import { commitNonInteractiveOnboardConfig } from "./config-write.js";
 import { applyNonInteractiveGatewayConfig } from "./local/gateway-config.js";
 import {
@@ -294,7 +297,7 @@ export async function runNonInteractiveLocalSetup(params: {
   }
 
   if (!opts.skipHealth) {
-    const { healthCommand } = await import("../health.js");
+    const { healthCommand } = await import("../maintenance/health.js");
     const links = resolveControlUiLinks({
       bind: gatewayResult.bind as "auto" | "lan" | "loopback" | "custom" | "tailnet",
       port: gatewayResult.port,

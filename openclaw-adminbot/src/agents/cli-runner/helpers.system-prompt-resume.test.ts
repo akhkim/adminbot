@@ -20,7 +20,7 @@
  *
  * Path coverage:
  *   Path 1 (extensions/anthropic/cli-backend.ts) — covered by
- *     `extensions/anthropic/cli-shared.test.ts` and `src/agents/cli-backends.test.ts`.
+ *     `extensions/anthropic/cli-shared.test.ts` and `src/agents/cli-runner/cli-backends.test.ts`.
  *   Path 2 (src/agents/cli-runner/execute.ts) — implicit: same gate as Path 3,
  *     and gated by `resolveSystemPromptUsage` which is tested below.
  *   Path 3 (src/agents/cli-runner/helpers.ts — buildCliArgs) — covered here.
@@ -28,7 +28,7 @@
  *     via buildClaudeLiveArgs) — covered here.
  */
 import { describe, expect, it } from "vitest";
-import type { CliBackendConfig } from "../../config/types.js";
+import type { CliBackendConfig } from "../../config/types/types.js";
 import { buildClaudeLiveArgs } from "./claude-live-session.js";
 import { buildCliArgs, resolveSystemPromptUsage } from "./helpers.js";
 

@@ -1,7 +1,7 @@
 // Covers plugin service registration and lookup behavior.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createEmptyPluginRegistry } from "./manifest/registry.js";
 import type { PluginOrigin } from "./plugin-origin.types.js";
-import { createEmptyPluginRegistry } from "./registry.js";
 import type { OpenClawPluginService, OpenClawPluginServiceContext } from "./types.js";
 
 const mockedLogger = vi.hoisted(() => ({
@@ -16,13 +16,13 @@ vi.mock("../logging/subsystem.js", () => ({
   createSubsystemLogger: () => mockedLogger,
 }));
 
-import { STATE_DIR } from "../config/paths.js";
+import { STATE_DIR } from "../config/paths/paths.js";
 import { registerPluginHttpRoute } from "./http-registry.js";
 import {
   pinActivePluginHttpRouteRegistry,
   resetPluginRuntimeStateForTest,
   setActivePluginRegistry,
-} from "./runtime.js";
+} from "./runtime/runtime.js";
 import { startPluginServices } from "./services.js";
 
 function createRegistry(

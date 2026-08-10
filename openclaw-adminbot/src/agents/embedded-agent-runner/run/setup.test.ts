@@ -1,9 +1,9 @@
 // Setup tests cover model-resolution hooks and effective runtime model context
 // metadata before an embedded run starts.
 import { describe, expect, it, vi } from "vitest";
-import type { ModelDefinitionConfig } from "../../../config/types.models.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import type { ProviderRuntimeModel } from "../../../plugins/provider-runtime-model.types.js";
+import type { ModelDefinitionConfig } from "../../../config/types/models.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import type { ProviderRuntimeModel } from "../../../plugins/providers/provider-runtime-model.types.js";
 import {
   buildBeforeModelResolveAttachments,
   resolveEffectiveRuntimeModel,

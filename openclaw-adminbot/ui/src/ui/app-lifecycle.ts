@@ -4,7 +4,7 @@ import {
   loadMemberPrivilege,
   type MemberAuthHost,
   resumeMemberSession,
-} from "./adminbot-auth-flow.ts";
+} from "./adminbot/auth/flow.ts";
 import { connectGateway } from "./app-gateway.ts";
 import {
   startLogsPolling,
@@ -73,12 +73,6 @@ type LifecycleHost = {
   chatComposerPersistTimer?: ReturnType<typeof globalThis.setTimeout> | number | null;
   chatComposerPersistSnapshot?: PendingChatComposerPersistSnapshot | null;
   pendingGatewayUrl?: string | null;
-  realtimeTalkSession?: { stop: () => void } | null;
-  realtimeTalkActive?: boolean;
-  realtimeTalkStatus?: string;
-  realtimeTalkDetail?: string | null;
-  realtimeTalkTranscript?: string | null;
-  realtimeTalkConversation?: unknown[];
   resetRealtimeTalkConversation?: () => void;
   chatLoading: boolean;
   chatMessages: unknown[];
@@ -249,13 +243,6 @@ export function handleDisconnected(host: LifecycleHost) {
   host.chatScrollTimeout = null;
   clearHostGlobalTimeout(host.sessionsChangedReloadTimer);
   host.sessionsChangedReloadTimer = null;
-  host.realtimeTalkSession?.stop();
-  host.realtimeTalkSession = null;
-  host.realtimeTalkActive = false;
-  host.realtimeTalkStatus = "idle";
-  host.realtimeTalkDetail = null;
-  host.realtimeTalkTranscript = null;
-  host.resetRealtimeTalkConversation?.();
   host.client?.stop();
   host.client = null;
   host.connected = false;

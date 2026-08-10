@@ -1,6 +1,6 @@
 // Dashboard command tests cover dashboard URL selection, gateway bind modes, and runtime output.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { GatewayBindMode } from "../config/types.gateway.js";
+import type { GatewayBindMode } from "../config/types/gateway.js";
 import { dashboardCommand } from "./dashboard.js";
 
 const mocks = vi.hoisted(() => ({
@@ -16,7 +16,7 @@ vi.mock("../config/config.js", () => ({
   resolveGatewayPort: mocks.resolveGatewayPort,
 }));
 
-vi.mock("./onboard-helpers.js", () => ({
+vi.mock("./onboard/onboard-helpers.js", () => ({
   resolveControlUiLinks: mocks.resolveControlUiLinks,
   detectBrowserOpenSupport: vi.fn(),
   openUrl: vi.fn(),
@@ -27,7 +27,7 @@ vi.mock("../infra/clipboard.js", () => ({
   copyToClipboard: mocks.copyToClipboard,
 }));
 
-vi.mock("./gateway-readiness.js", () => ({
+vi.mock("./gateway/gateway-readiness.js", () => ({
   ensureGatewayReadyForOperation: mocks.ensureGatewayReadyForOperation,
 }));
 

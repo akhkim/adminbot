@@ -1,16 +1,16 @@
 // Auth choice contract tests cover provider auth choice metadata and setup behavior.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearRuntimeAuthProfileStoreSnapshots } from "../../agents/auth-profiles/store.js";
-import { resolvePreferredProviderForAuthChoice } from "../../plugins/provider-auth-choice-preference.js";
-import { buildProviderPluginMethodChoice } from "../provider-wizard.js";
+import { resolvePreferredProviderForAuthChoice } from "../providers/provider-auth-choice-preference.js";
+import { buildProviderPluginMethodChoice } from "../providers/provider-wizard.js";
 import type { ProviderPlugin } from "../types.js";
 
 type ResolvePluginProviders =
-  typeof import("../../plugins/provider-auth-choice.runtime.js").resolvePluginProviders;
+  typeof import("../providers/provider-auth-choice.runtime.js").resolvePluginProviders;
 type ResolveProviderPluginChoice =
-  typeof import("../../plugins/provider-auth-choice.runtime.js").resolveProviderPluginChoice;
+  typeof import("../providers/provider-auth-choice.runtime.js").resolveProviderPluginChoice;
 type RunProviderModelSelectedHook =
-  typeof import("../../plugins/provider-auth-choice.runtime.js").runProviderModelSelectedHook;
+  typeof import("../providers/provider-auth-choice.runtime.js").runProviderModelSelectedHook;
 const resolvePluginProvidersMock = vi.hoisted(() => vi.fn<ResolvePluginProviders>(() => []));
 const resolvePluginSetupProviderMock = vi.hoisted(() => vi.fn(() => undefined));
 const resolveProviderPluginChoiceMock = vi.hoisted(() => vi.fn<ResolveProviderPluginChoice>());
@@ -19,7 +19,7 @@ const runProviderModelSelectedHookMock = vi.hoisted(() =>
 );
 const runAuthMethodMock = vi.hoisted(() => vi.fn(async () => ({ profiles: [] })));
 
-vi.mock("../../plugins/provider-auth-choice.runtime.js", () => ({
+vi.mock("../providers/provider-auth-choice.runtime.js", () => ({
   resolvePluginProviders: resolvePluginProvidersMock,
   resolvePluginSetupProvider: resolvePluginSetupProviderMock,
   resolveProviderPluginChoice: resolveProviderPluginChoiceMock,

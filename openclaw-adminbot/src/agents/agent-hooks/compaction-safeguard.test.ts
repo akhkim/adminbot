@@ -11,7 +11,7 @@ import {
   clearCompactionProviders,
   registerCompactionProvider,
 } from "../../plugins/compaction-provider.js";
-import * as compactionModule from "../compaction.js";
+import * as compactionModule from "../compaction/compaction.js";
 import { buildEmbeddedExtensionFactories } from "../embedded-agent-runner/extensions.js";
 import { castAgentMessage } from "../test-helpers/agent-message-fixtures.js";
 import {
@@ -22,8 +22,8 @@ import {
 } from "./compaction-safeguard-runtime.js";
 import compactionSafeguardExtension, { testing } from "./compaction-safeguard.js";
 
-vi.mock("../compaction.js", async () => {
-  const actual = await vi.importActual<typeof compactionModule>("../compaction.js");
+vi.mock("../compaction/compaction.js", async () => {
+  const actual = await vi.importActual<typeof compactionModule>("../compaction/compaction.js");
   return {
     ...actual,
     summarizeInStages: vi.fn(actual.summarizeInStages),

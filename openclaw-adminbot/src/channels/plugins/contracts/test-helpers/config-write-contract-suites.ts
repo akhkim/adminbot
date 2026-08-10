@@ -4,7 +4,7 @@
  * Proves origin and target channel/account policy before plugin writes mutate config.
  */
 import { describe, expect, it } from "vitest";
-import { INTERNAL_MESSAGE_CHANNEL } from "../../../../utils/message-channel.js";
+import { INTERNAL_MESSAGE_CHANNEL } from "../../../../shared/message-channel.js";
 import {
   authorizeConfigWrite,
   canBypassConfigWritePolicy,

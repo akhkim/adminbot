@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
-import { resolvePluginNpmProjectsDir } from "./install-paths.js";
+import { resolvePluginNpmProjectsDir } from "./install/install-paths.js";
 
 function isMissing(error: unknown): boolean {
   return (error as NodeJS.ErrnoException).code === "ENOENT";

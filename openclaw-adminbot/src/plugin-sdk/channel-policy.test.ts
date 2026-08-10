@@ -3,7 +3,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { formatPairingApproveHint } from "../channels/plugins/helpers.js";
-import type { GroupPolicy } from "../config/types.base.js";
+import type { GroupPolicy } from "../config/types/base.js";
 import {
   coerceNativeSetting,
   createDangerousNameMatchingMutableAllowlistWarningCollector,

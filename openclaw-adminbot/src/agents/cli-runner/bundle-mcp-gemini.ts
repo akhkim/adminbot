@@ -4,9 +4,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { applyMergePatch } from "../../config/merge-patch.js";
+import { applyMergePatch } from "../../config/mutate/merge-patch.js";
 import { tryReadJson, writeJson } from "../../infra/json-files.js";
-import type { BundleMcpConfig, BundleMcpServerConfig } from "../../plugins/bundle-mcp.js";
+import type { BundleMcpConfig, BundleMcpServerConfig } from "../../plugins/install/bundle-mcp.js";
 import {
   applyCommonServerConfig,
   decodeHeaderEnvPlaceholder,

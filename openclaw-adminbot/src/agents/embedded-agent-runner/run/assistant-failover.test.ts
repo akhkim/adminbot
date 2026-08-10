@@ -1,6 +1,6 @@
 // Coverage for assistant failover decisions and auth-profile rotation.
 import { describe, expect, it, vi } from "vitest";
-import { formatBillingErrorMessage } from "../../embedded-agent-helpers.js";
+import { formatBillingErrorMessage } from "../../embedded/embedded-agent-helpers.js";
 import { FailoverError } from "../../failover-error.js";
 import { handleAssistantFailover } from "./assistant-failover.js";
 

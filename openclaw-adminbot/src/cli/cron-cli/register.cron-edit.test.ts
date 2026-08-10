@@ -5,8 +5,10 @@ import { defaultRuntime } from "../../runtime.js";
 
 const callGatewayFromCli = vi.fn();
 
-vi.mock("../gateway-rpc.js", async () => {
-  const actual = await vi.importActual<typeof import("../gateway-rpc.js")>("../gateway-rpc.js");
+vi.mock("../gateway-cli/gateway-rpc.js", async () => {
+  const actual = await vi.importActual<typeof import("../gateway-cli/gateway-rpc.js")>(
+    "../gateway-cli/gateway-rpc.js",
+  );
   return {
     ...actual,
     callGatewayFromCli: (...args: Parameters<typeof actual.callGatewayFromCli>) =>

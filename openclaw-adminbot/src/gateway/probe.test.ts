@@ -150,7 +150,7 @@ class MockGatewayClient {
   }
 }
 
-vi.mock("./client.js", () => ({
+vi.mock("./client/client.js", () => ({
   GatewayClient: MockGatewayClient,
   GatewayClientRequestError: MockGatewayClientRequestError,
 }));

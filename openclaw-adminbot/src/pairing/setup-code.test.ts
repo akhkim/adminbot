@@ -1,6 +1,6 @@
 // Tests setup code generation and environment-derived defaults.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SecretInput } from "../config/types.secrets.js";
+import type { SecretInput } from "../config/types/secrets.js";
 import { captureEnv } from "../test-utils/env.js";
 
 vi.mock("../infra/device-bootstrap.js", () => ({

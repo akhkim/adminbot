@@ -3,9 +3,9 @@
  *
  * Routes legacy direct-message ingress through the standard channel reply pipeline.
  */
-import type { DispatchReplyWithBufferedBlockDispatcher } from "../auto-reply/reply/provider-dispatcher.types.js";
+import type { DispatchReplyWithBufferedBlockDispatcher } from "../auto-reply/reply/providers/provider-dispatcher.types.js";
 import type { FinalizedMsgContext } from "../auto-reply/templating.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { resolveInboundRouteEnvelopeBuilderWithRuntime } from "../plugin-sdk/inbound-envelope.js";
 import {
   normalizeOutboundReplyPayload,
@@ -60,7 +60,7 @@ type DirectDmRuntime = {
         cfg: OpenClawConfig,
       ) => ReturnType<typeof import("../auto-reply/envelope.js").resolveEnvelopeFormatOptions>;
       formatAgentEnvelope: typeof import("../auto-reply/envelope.js").formatAgentEnvelope;
-      finalizeInboundContext: typeof import("../auto-reply/reply/inbound-context.js").finalizeInboundContext;
+      finalizeInboundContext: typeof import("../auto-reply/reply/inbound/inbound-context.js").finalizeInboundContext;
       dispatchReplyWithBufferedBlockDispatcher: DispatchReplyWithBufferedBlockDispatcher;
     };
   };

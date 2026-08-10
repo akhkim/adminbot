@@ -2,8 +2,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isRecord as isPlainRecord } from "@openclaw/normalization-core/record-coerce";
-import { formatCliCommand } from "../cli/command-format.js";
-import { resolveStateDir } from "../config/paths.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import { resolveRuntimeServiceVersion } from "../version.js";
 import { writeJson } from "./json-files.js";
 

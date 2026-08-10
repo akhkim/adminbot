@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { resolveUserPath } from "../utils.js";
-import { areBundledPluginsDisabled, resolveBundledPluginsDir } from "./bundled-dir.js";
+import { areBundledPluginsDisabled, resolveBundledPluginsDir } from "./install/bundled-dir.js";
 
 export const PUBLIC_SURFACE_SOURCE_EXTENSIONS = [
   ".ts",

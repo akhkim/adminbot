@@ -26,7 +26,7 @@ import { resolveChannelResetConfig, resolveSessionResetType } from "../../config
 import { resolveSessionKey } from "../../config/sessions/session-key.js";
 import { loadSessionStore } from "../../config/sessions/store-load.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   buildAgentMainSessionKey,
   classifySessionKeyShape,
@@ -37,8 +37,8 @@ import {
 } from "../../routing/session-key.js";
 import { resolveSessionIdMatchSelection } from "../../sessions/session-id-resolution.js";
 import { listAgentIds, resolveDefaultAgentId } from "../agent-scope.js";
-import { clearBootstrapSnapshotOnSessionRollover } from "../bootstrap-cache.js";
-import { clearAllCliSessions } from "../cli-session.js";
+import { clearAllCliSessions } from "../cli-runner/cli-session.js";
+import { clearBootstrapSnapshotOnSessionRollover } from "../prompt/bootstrap-cache.js";
 
 /** Resolved command session identity plus backing store metadata. */
 type SessionResolution = {

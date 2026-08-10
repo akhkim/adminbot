@@ -3,10 +3,10 @@ import fsSync from "node:fs";
 import path from "node:path";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { listAgentIds, resolveDefaultAgentId } from "../../agents/agent-scope.js";
-import { resolveAgentSessionDirsFromAgentsDirSync } from "../../agents/session-dirs.js";
+import { resolveAgentSessionDirsFromAgentsDirSync } from "../../agents/sessions/session-dirs.js";
 import { DEFAULT_AGENT_ID, normalizeAgentId } from "../../routing/session-key.js";
-import { resolveStateDir } from "../paths.js";
-import type { OpenClawConfig } from "../types.openclaw.js";
+import { resolveStateDir } from "../paths/paths.js";
+import type { OpenClawConfig } from "../types/openclaw.js";
 import { resolveAgentsDirFromSessionStorePath, resolveStorePath } from "./paths.js";
 
 /** CLI/session-store target selection options. */

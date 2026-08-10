@@ -11,7 +11,7 @@ import {
 
 const loadPluginManifestRegistry = vi.fn();
 
-vi.mock("../plugins/manifest-registry.js", () => ({
+vi.mock("../plugins/manifest/manifest-registry.js", () => ({
   loadPluginManifestRegistry,
 }));
 

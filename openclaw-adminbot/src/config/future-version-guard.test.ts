@@ -6,7 +6,7 @@ import {
   resolveFutureConfigActionBlock,
 } from "./future-version-guard.js";
 import type { FutureConfigActionBlock } from "./future-version-guard.js";
-import type { ConfigFileSnapshot } from "./types.js";
+import type { ConfigFileSnapshot } from "./types/types.js";
 
 function snapshotWithTouchedVersion(
   version: string,

@@ -19,7 +19,11 @@ import { saveAuthProfileStore } from "../agents/auth-profiles/store.js";
 import { loadSessionStore, resolveSessionKey, saveSessionStore } from "../config/sessions.js";
 import { registerGroupIntroPromptCases } from "./reply.triggers.group-intro-prompts.cases.js";
 import { registerTriggerHandlingUsageSummaryCases } from "./reply.triggers.trigger-handling.filters-usage-summary-current-model-provider.cases.js";
-import { enqueueFollowupRun, getFollowupQueueDepth, type FollowupRun } from "./reply/queue.js";
+import {
+  enqueueFollowupRun,
+  getFollowupQueueDepth,
+  type FollowupRun,
+} from "./reply/queue/queue.js";
 import type { MsgContext } from "./templating.js";
 import { HEARTBEAT_TOKEN } from "./tokens.js";
 
@@ -36,7 +40,7 @@ const TELEGRAM_DIRECT_MESSAGE = {
   Surface: "telegram",
 } as const;
 
-vi.mock("./reply/agent-runner.runtime.js", () => ({
+vi.mock("./reply/agent/agent-runner.runtime.js", () => ({
   runReplyAgent: async (params: {
     commandBody: string;
     followupRun: {
@@ -94,8 +98,8 @@ vi.mock("./reply/agent-runner.runtime.js", () => ({
   },
 }));
 
-vi.mock("./reply/commands-compact.runtime.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./reply/commands-compact.runtime.js")>()),
+vi.mock("./reply/commands/commands-compact.runtime.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./reply/commands/commands-compact.runtime.js")>()),
   isEmbeddedAgentRunAbortableForCompaction: () => false,
 }));
 

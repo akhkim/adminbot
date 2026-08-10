@@ -1,7 +1,7 @@
 // Doctor cleanup for stale plugin dependency install state and dangling runtime symlinks.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { resolveStateDir } from "../../../config/paths.js";
+import { resolveStateDir } from "../../../config/paths/paths.js";
 import { resolveOpenClawPackageRootSync } from "../../../infra/openclaw-root.js";
 import { resolveConfigDir, resolveUserPath } from "../../../utils.js";
 import { removeStalePluginRuntimeSymlinks } from "./plugin-runtime-symlinks.js";

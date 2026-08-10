@@ -2,8 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { DEADLINE_VENUES as pluginVenues } from "../../extensions/adminbot/src/deadlines-dataset.js";
-import { DEADLINE_VENUES as controlUiVenues } from "../../ui/src/ui/deadlines-data.js";
+import { DEADLINE_VENUES as pluginVenues } from "../../extensions/adminbot/src/workflows/deadlines/generated/dataset.js";
+import { DEADLINE_VENUES as controlUiVenues } from "../../ui/src/ui/adminbot/data/deadlines.js";
 
 // venues.json is the source of truth; both TS modules are generated from it by
 // scripts/adminbot-deadline-collect.py. They drifted once already — the plugin dataset sat at 78
@@ -13,7 +13,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."
 
 const venuesDoc = JSON.parse(
   fs.readFileSync(
-    path.join(repoRoot, "extensions", "adminbot", "deadlines", "venues.json"),
+    path.join(repoRoot, "extensions", "adminbot", "content", "deadlines", "venues.json"),
     "utf8",
   ),
 ) as { count: number; items: Array<Record<string, string>> };
@@ -26,7 +26,9 @@ describe("AdminBot deadline dataset generation", () => {
 
   it("keeps both generated datasets in step with venues.json", () => {
     expect(pluginVenues.map((venue) => venue.id)).toEqual(venuesDoc.items.map((item) => item.id));
-    expect(controlUiVenues.map((venue) => venue.id)).toEqual(venuesDoc.items.map((item) => item.id));
+    expect(controlUiVenues.map((venue) => venue.id)).toEqual(
+      venuesDoc.items.map((item) => item.id),
+    );
   });
 
   it("carries every field the Control UI renders", () => {

@@ -18,7 +18,7 @@ vi.mock("../../packages/terminal-core/src/links.js", () => ({
   formatDocsLink: (path: string, label: string) => `${label}${path}`,
 }));
 
-vi.mock("../cli/command-format.js", () => ({
+vi.mock("../cli/program/command-format.js", () => ({
   formatCliCommand: (s: string) => s,
 }));
 

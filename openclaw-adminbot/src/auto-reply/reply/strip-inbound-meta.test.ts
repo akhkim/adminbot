@@ -2,7 +2,7 @@
 import { describe, it, expect } from "vitest";
 import type { TemplateContext } from "../templating.js";
 import { MESSAGE_TOOL_ONLY_DELIVERY_HINT } from "./delivery-hints.js";
-import { buildInboundUserContextPrefix } from "./inbound-meta.js";
+import { buildInboundUserContextPrefix } from "./inbound/inbound-meta.js";
 import {
   extractInboundSenderLabel,
   stripInboundMetadata,

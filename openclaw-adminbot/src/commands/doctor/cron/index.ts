@@ -1,8 +1,8 @@
 // Doctor cron repair orchestration for legacy stores, run logs, payloads, and warnings.
 import { normalizeOptionalString } from "../../../../packages/normalization-core/src/string-coerce.js";
 import { note } from "../../../../packages/terminal-core/src/note.js";
-import { formatCliCommand } from "../../../cli/command-format.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import { formatCliCommand } from "../../../cli/program/command-format.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import {
   loadCronQuarantineFile,
   loadCronJobsStoreWithConfigJobs,
@@ -13,7 +13,7 @@ import {
 } from "../../../cron/store.js";
 import type { CronJob } from "../../../cron/types.js";
 import { shortenHomePath } from "../../../utils.js";
-import type { DoctorPrompter, DoctorOptions } from "../../doctor-prompter.js";
+import type { DoctorPrompter, DoctorOptions } from "../doctor-prompter.js";
 import {
   countStaleDreamingJobs,
   migrateLegacyDreamingPayloadShape,

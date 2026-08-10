@@ -1,17 +1,17 @@
 /** Verifies plugin HTTP route registration, collision detection, and metadata capture. */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { createPluginRecord } from "./config/status.test-helpers.js";
 import { registerPluginHttpRoute, withPluginHttpRouteRegistry } from "./http-registry.js";
-import { createEmptyPluginRegistry } from "./registry-empty.js";
-import { createPluginRegistry } from "./registry.js";
+import { createEmptyPluginRegistry } from "./manifest/registry-empty.js";
+import { createPluginRegistry } from "./manifest/registry.js";
 import {
   pinActivePluginHttpRouteRegistry,
   releasePinnedPluginHttpRouteRegistry,
   resetPluginRuntimeStateForTest,
   setActivePluginRegistry,
-} from "./runtime.js";
+} from "./runtime/runtime.js";
 import type { PluginRuntime } from "./runtime/types.js";
-import { createPluginRecord } from "./status.test-helpers.js";
 
 function expectRouteRegistrationDenied(params: {
   replaceExisting: boolean;

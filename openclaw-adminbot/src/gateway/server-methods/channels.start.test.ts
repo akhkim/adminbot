@@ -2,7 +2,7 @@
  * Gateway channels.start method tests.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ChannelRuntimeSnapshot } from "../server-channel-runtime.types.js";
+import type { ChannelRuntimeSnapshot } from "../server/server-channel-runtime.types.js";
 import type { GatewayRequestHandlerOptions } from "./types.js";
 
 const mocks = vi.hoisted(() => ({
@@ -17,7 +17,7 @@ vi.mock("../../config/config.js", () => ({
   readConfigFileSnapshot: mocks.readConfigFileSnapshot,
 }));
 
-vi.mock("../../config/plugin-auto-enable.js", () => ({
+vi.mock("../../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: mocks.applyPluginAutoEnable,
 }));
 

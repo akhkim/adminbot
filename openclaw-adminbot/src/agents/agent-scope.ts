@@ -11,11 +11,11 @@ import {
   resolvePrimaryStringValue,
 } from "@openclaw/normalization-core/string-coerce";
 import type { SessionEntry } from "../config/sessions/types.js";
-import type { AgentDefaultsConfig } from "../config/types.agent-defaults.js";
-import type { AgentModelConfig } from "../config/types.agents-shared.js";
-import type { AgentConfig } from "../config/types.agents.js";
-import type { OpenClawConfig } from "../config/types.js";
-import { isPathInside } from "../infra/path-guards.js";
+import type { AgentDefaultsConfig } from "../config/types/agent-defaults.js";
+import type { AgentModelConfig } from "../config/types/agents-shared.js";
+import type { AgentConfig } from "../config/types/agents.js";
+import type { OpenClawConfig } from "../config/types/types.js";
+import { isPathInside } from "../infra/system/path-guards.js";
 import {
   isSubagentSessionKey,
   normalizeAgentId,

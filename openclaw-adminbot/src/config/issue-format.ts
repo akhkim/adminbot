@@ -1,6 +1,6 @@
 // Formats config validation issues for CLI and diagnostics.
 import { sanitizeTerminalText } from "../../packages/terminal-core/src/safe-text.js";
-import type { ConfigValidationIssue } from "./types.js";
+import type { ConfigValidationIssue } from "./types/types.js";
 
 type ConfigIssueLineInput = {
   path?: string | null;

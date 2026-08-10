@@ -3,16 +3,16 @@ import type { Command } from "commander";
 import { formatDocsLink } from "../../packages/terminal-core/src/links.js";
 import { theme } from "../../packages/terminal-core/src/theme.js";
 import { getRuntimeConfig } from "../config/config.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { hasConfiguredSecretInput } from "../config/types.secrets.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { hasConfiguredSecretInput } from "../config/types/secrets.js";
 import { trimToUndefined } from "../gateway/credentials.js";
 import { resolveRequiredConfiguredSecretRefInputString } from "../gateway/resolve-configured-secret-input-string.js";
 import { renderQrTerminal } from "../media/qr-terminal.ts";
 import { resolvePairingSetupFromConfig, encodePairingSetupCode } from "../pairing/setup-code.js";
 import { runCommandWithTimeout } from "../process/exec.js";
 import { defaultRuntime } from "../runtime.js";
-import { resolveCommandSecretRefsViaGateway } from "./command-secret-gateway.js";
-import { getQrRemoteCommandSecretTargetIds } from "./command-secret-targets.js";
+import { resolveCommandSecretRefsViaGateway } from "./program/command-secret-gateway.js";
+import { getQrRemoteCommandSecretTargetIds } from "./program/command-secret-targets.js";
 
 type QrCliOptions = {
   json?: boolean;

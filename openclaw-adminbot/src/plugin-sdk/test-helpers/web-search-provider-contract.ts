@@ -6,7 +6,7 @@ import {
   pluginRegistrationContractRegistry,
   resolveWebSearchProviderContractEntriesForPluginId,
 } from "../../plugins/contracts/registry.js";
-import { resolveBundledExplicitWebSearchProvidersFromPublicArtifacts } from "../../plugins/web-provider-public-artifacts.explicit.js";
+import { resolveBundledExplicitWebSearchProvidersFromPublicArtifacts } from "../../plugins/web/web-provider-public-artifacts.explicit.js";
 import { installWebSearchProviderContractSuite } from "./provider-contract-suites.js";
 
 type WebSearchContractEntry = ReturnType<

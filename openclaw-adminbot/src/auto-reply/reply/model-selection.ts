@@ -8,8 +8,8 @@ import { clearSessionAuthProfileOverride } from "../../agents/auth-profiles/sess
 import { resolveContextTokensForModel } from "../../agents/context.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../../agents/defaults.js";
 import { resolveAgentHarnessPolicy } from "../../agents/harness/policy.js";
-import type { ModelCatalogEntry } from "../../agents/model-catalog.js";
-import { parseConfiguredModelVisibilityEntries } from "../../agents/model-selection-shared.js";
+import type { ModelCatalogEntry } from "../../agents/models/model-catalog.js";
+import { parseConfiguredModelVisibilityEntries } from "../../agents/models/model-selection-shared.js";
 import {
   buildConfiguredModelCatalog,
   legacyModelKey,
@@ -19,22 +19,22 @@ import {
   resolvePersistedOverrideModelRef,
   resolveReasoningDefault,
   resolveThinkingDefault,
-} from "../../agents/model-selection.js";
+} from "../../agents/models/model-selection.js";
 import {
   RUNTIME_MODEL_VISIBILITY_NORMALIZATION,
   createModelVisibilityPolicy,
   type ModelVisibilityPolicy,
-} from "../../agents/model-visibility-policy.js";
+} from "../../agents/models/model-visibility-policy.js";
 import {
   OPENAI_CODEX_PROVIDER_ID,
   OPENAI_PROVIDER_ID,
   listOpenAIAuthProfileProvidersForAgentRuntime,
-} from "../../agents/openai-routing.js";
+} from "../../agents/transport/openai-routing.js";
 import type { SessionEntry } from "../../config/sessions/types.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { applyModelOverrideToSessionEntry } from "../../sessions/model-overrides.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
-import type { ThinkLevel } from "./directives.js";
+import type { ThinkLevel } from "./directives/directives.js";
 export {
   resolveModelDirectiveSelection,
   type ModelDirectiveSelection,
@@ -89,7 +89,7 @@ function shouldLogModelSelectionTiming(): boolean {
 }
 
 const modelCatalogRuntimeLoader = createLazyImportLoader(
-  () => import("../../agents/model-catalog.runtime.js"),
+  () => import("../../agents/models/model-catalog.runtime.js"),
 );
 const sessionAccessorRuntimeLoader = createLazyImportLoader(
   () => import("../../config/sessions/session-accessor.js"),
@@ -368,7 +368,7 @@ export async function createModelSelectionState(params: {
     sessionKey &&
     sessionEntry.authProfileOverride
   ) {
-    const { ensureAuthProfileStore } = await import("../../agents/auth-profiles.runtime.js");
+    const { ensureAuthProfileStore } = await import("../../agents/auth/auth-profiles.runtime.js");
     const store = ensureAuthProfileStore(undefined, {
       allowKeychainPrompt: false,
     });

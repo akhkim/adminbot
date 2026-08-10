@@ -10,28 +10,28 @@ import {
   onDiagnosticEvent,
   resetDiagnosticEventsForTest,
   type DiagnosticEventPayload,
-} from "../infra/diagnostic-events.js";
+} from "../infra/diagnostics/diagnostic-events.js";
 import {
   resetActiveManagedProxyStateForTests,
   registerActiveManagedProxyUrl,
   stopActiveManagedProxyRegistration,
 } from "../infra/net/proxy/active-proxy-state.js";
 import { defaultVoiceWakeTriggers } from "../infra/voicewake.js";
-import { handleControlUiHttpRequest } from "./control-ui.js";
+import { handleControlUiHttpRequest } from "./control/control-ui.js";
 import {
   DEFAULT_DANGEROUS_NODE_COMMANDS,
   resolveNodeCommandAllowlist,
-} from "./node-command-policy.js";
-import type { SerializedEventPayload } from "./node-registry.js";
-import { createGatewayBroadcaster } from "./server-broadcast.js";
-import { createChatRunRegistry } from "./server-chat.js";
-import { MAX_BUFFERED_BYTES } from "./server-constants.js";
+} from "./node/node-command-policy.js";
+import type { SerializedEventPayload } from "./node/node-registry.js";
 import { handleNodeInvokeResult } from "./server-methods/nodes.handlers.invoke-result.js";
 import type { GatewayClient as GatewayMethodClient } from "./server-methods/types.js";
 import type { GatewayRequestContext, RespondFn } from "./server-methods/types.js";
-import { createGatewayNodeSessionRuntime } from "./server-node-session-runtime.js";
-import { createNodeSubscriptionManager } from "./server-node-subscriptions.js";
-import { formatError, normalizeVoiceWakeTriggers } from "./server-utils.js";
+import { createGatewayBroadcaster } from "./server/server-broadcast.js";
+import { createChatRunRegistry } from "./server/server-chat.js";
+import { MAX_BUFFERED_BYTES } from "./server/server-constants.js";
+import { createGatewayNodeSessionRuntime } from "./server/server-node-session-runtime.js";
+import { createNodeSubscriptionManager } from "./server/server-node-subscriptions.js";
+import { formatError, normalizeVoiceWakeTriggers } from "./server/server-utils.js";
 import type { GatewayWsClient } from "./server/ws-types.js";
 
 function makeControlUiResponse() {
@@ -71,11 +71,11 @@ vi.mock("ws", () => ({
   },
 }));
 
-let GatewayClient: typeof import("./client.js").GatewayClient;
+let GatewayClient: typeof import("./client/client.js").GatewayClient;
 
 describe("GatewayClient", () => {
   beforeAll(async () => {
-    ({ GatewayClient } = await import("./client.js"));
+    ({ GatewayClient } = await import("./client/client.js"));
   });
 
   beforeEach(() => {

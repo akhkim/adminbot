@@ -1,7 +1,7 @@
 // WebSocket auth-context state tests cover shared-auth fallback and device-token candidate selection.
 import { describe, expect, it, vi } from "vitest";
-import type { AuthRateLimiter } from "../../auth-rate-limit.js";
-import type { ResolvedGatewayAuth } from "../../auth.js";
+import type { AuthRateLimiter } from "../../auth/auth-rate-limit.js";
+import type { ResolvedGatewayAuth } from "../../auth/auth.js";
 import { resolveConnectAuthDecision, resolveConnectAuthState } from "./auth-context.js";
 
 type ResolveConnectAuthStateParams = Parameters<typeof resolveConnectAuthState>[0];

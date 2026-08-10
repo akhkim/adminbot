@@ -8,13 +8,14 @@ import type { ChannelMessageCapability } from "../../channels/plugins/message-ca
 import type { ChannelMessageActionName, ChannelPlugin } from "../../channels/plugins/types.js";
 import type { MessageActionRunResult } from "../../infra/outbound/message-action-runner.js";
 import { resetDiagnosticSessionStateForTest } from "../../logging/diagnostic-session-state.js";
-import { wrapToolWithBeforeToolCallHook } from "../agent-tools.before-tool-call.js";
-import { CRITICAL_THRESHOLD } from "../tool-loop-detection.js";
+import { wrapToolWithBeforeToolCallHook } from "./agent-tools.before-tool-call.js";
+import { CRITICAL_THRESHOLD } from "./tool-loop-detection.js";
 type CreateMessageTool = typeof import("./message-tool.js").createMessageTool;
-type CreateOpenClawTools = typeof import("../openclaw-tools.js").createOpenClawTools;
+type CreateOpenClawTools = typeof import("./openclaw-tools.js").createOpenClawTools;
 type ResetPluginRuntimeStateForTest =
-  typeof import("../../plugins/runtime.js").resetPluginRuntimeStateForTest;
-type SetActivePluginRegistry = typeof import("../../plugins/runtime.js").setActivePluginRegistry;
+  typeof import("../../plugins/runtime/runtime.js").resetPluginRuntimeStateForTest;
+type SetActivePluginRegistry =
+  typeof import("../../plugins/runtime/runtime.js").setActivePluginRegistry;
 type CreateTestRegistry = typeof import("../../test-utils/channel-plugins.js").createTestRegistry;
 
 let createMessageTool: CreateMessageTool;
@@ -192,11 +193,11 @@ vi.mock("../../config/config.js", async () => {
   };
 });
 
-vi.mock("../../cli/command-secret-gateway.js", () => ({
+vi.mock("../../cli/program/command-secret-gateway.js", () => ({
   resolveCommandSecretRefsViaGateway: mocks.resolveCommandSecretRefsViaGateway,
 }));
 
-vi.mock("../../cli/command-secret-targets.js", () => ({
+vi.mock("../../cli/program/command-secret-targets.js", () => ({
   getScopedChannelsCommandSecretTargets: mocks.getScopedChannelsCommandSecretTargets,
 }));
 
@@ -312,10 +313,10 @@ function expectStringSchema(
 
 beforeAll(async () => {
   ({ resetPluginRuntimeStateForTest, setActivePluginRegistry } =
-    await import("../../plugins/runtime.js"));
+    await import("../../plugins/runtime/runtime.js"));
   ({ createTestRegistry } = await import("../../test-utils/channel-plugins.js"));
   ({ createMessageTool } = await import("./message-tool.js"));
-  ({ createOpenClawTools } = await import("../openclaw-tools.js"));
+  ({ createOpenClawTools } = await import("./openclaw-tools.js"));
 });
 
 beforeEach(() => {

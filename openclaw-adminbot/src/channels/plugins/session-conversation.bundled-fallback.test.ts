@@ -1,7 +1,7 @@
 // Session conversation fallback tests cover bundled plugin fallback for conversation sessions.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../../config/io.js";
-import { resetPluginRuntimeStateForTest } from "../../plugins/runtime.js";
+import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../../config/io/io.js";
+import { resetPluginRuntimeStateForTest } from "../../plugins/runtime/runtime.js";
 
 const fallbackState = vi.hoisted(() => ({
   activeDirName: null as string | null,

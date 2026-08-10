@@ -1,7 +1,7 @@
 // Dispatches final reply payloads through visible senders and message tools.
 import type { TypingCallbacks } from "../../channels/typing.js";
-import type { HumanDelayConfig } from "../../config/types.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { HumanDelayConfig } from "../../config/types/types.js";
 import { generateSecureInt } from "../../infra/secure-random.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import type { SilentReplyConversationType } from "../../shared/silent-reply-policy.js";
@@ -11,6 +11,7 @@ import { isSilentReplyText, SILENT_REPLY_TOKEN } from "../tokens.js";
 import type { GetReplyOptions, ReplyPayload } from "../types.js";
 import { registerDispatcher } from "./dispatcher-registry.js";
 import { normalizeReplyPayload, type NormalizeReplySkipReason } from "./normalize-reply.js";
+import type { TypingController } from "./queue/typing.js";
 import type {
   ReplyDispatchBeforeDeliver,
   ReplyDispatchKind,
@@ -19,7 +20,6 @@ import type {
   ReplyFollowupAdmissionBarrierTimeoutPolicy,
 } from "./reply-dispatcher.types.js";
 import type { ResponsePrefixContext } from "./response-prefix-template.js";
-import type { TypingController } from "./typing.js";
 
 export type { ReplyDispatchKind, ReplyDispatcher } from "./reply-dispatcher.types.js";
 

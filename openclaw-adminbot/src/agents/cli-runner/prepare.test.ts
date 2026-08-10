@@ -7,16 +7,16 @@ import { CURRENT_SESSION_VERSION } from "openclaw/plugin-sdk/agent-sessions";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChannelPlugin } from "../../channels/plugins/types.plugin.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { registerLegacyContextEngine } from "../../context-engine/legacy.registration.js";
 import {
   registerContextEngine,
   registerContextEngineForOwner,
 } from "../../context-engine/registry.js";
 import type { ContextEngine } from "../../context-engine/types.js";
-import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
+import { getGlobalHookRunner } from "../../plugins/hooks/hook-runner-global.js";
 import { clearMemoryPluginState, registerMemoryPromptSection } from "../../plugins/memory-state.js";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import {
   createChannelTestPluginBase,
   createTestRegistry,
@@ -24,14 +24,11 @@ import {
 import { captureEnv, setTestEnvValue } from "../../test-utils/env.js";
 import { resolveApiKeyForProfile as resolveApiKeyForProfileImpl } from "../auth-profiles/oauth.js";
 import { saveAuthProfileStore } from "../auth-profiles/store.js";
-import { testing as cliBackendsTesting } from "../cli-backends.js";
-import { hashCliSessionText } from "../cli-session.js";
 import { resetContextWindowCacheForTest } from "../context.js";
-import { buildActiveImageGenerationTaskPromptContextForSession } from "../image-generation-task-status.js";
-import { buildActiveMusicGenerationTaskPromptContextForSession } from "../music-generation-task-status.js";
+import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "../prompt/system-prompt-cache-boundary.js";
 import type { SandboxWorkspaceInfo } from "../sandbox/types.js";
-import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "../system-prompt-cache-boundary.js";
-import { buildActiveVideoGenerationTaskPromptContextForSession } from "../video-generation-task-status.js";
+import { testing as cliBackendsTesting } from "./cli-backends.js";
+import { hashCliSessionText } from "./cli-session.js";
 import {
   prepareCliRunContext,
   setCliRunnerPrepareTestDeps,
@@ -48,11 +45,11 @@ vi.mock("../../config/config.js", () => ({
   getRuntimeConfig: getRuntimeConfigMock,
 }));
 
-vi.mock("../sandbox.js", () => ({
+vi.mock("../sandbox/sandbox.js", () => ({
   ensureSandboxWorkspaceForSession: ensureSandboxWorkspaceForSessionMock,
 }));
 
-vi.mock("../../plugins/hook-runner-global.js", () => ({
+vi.mock("../../plugins/hooks/hook-runner-global.js", () => ({
   getGlobalHookRunner: vi.fn(() => null),
 }));
 

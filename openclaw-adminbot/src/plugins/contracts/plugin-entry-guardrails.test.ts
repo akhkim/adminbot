@@ -3,8 +3,8 @@ import { existsSync, readFileSync } from "node:fs";
 import path, { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { listBundledPluginMetadata } from "../bundled-plugin-metadata.js";
-import { loadPluginManifestRegistry } from "../manifest-registry.js";
+import { listBundledPluginMetadata } from "../install/bundled-plugin-metadata.js";
+import { loadPluginManifestRegistry } from "../manifest/manifest-registry.js";
 
 const REPO_ROOT = resolve(fileURLToPath(new URL("../../..", import.meta.url)));
 const RUNTIME_ENTRY_HELPER_RE = /(^|\/)plugin-entry\.runtime\.[cm]?[jt]s$/;

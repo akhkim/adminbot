@@ -1,7 +1,7 @@
 // Implements docs link/search output for `openclaw docs`.
 import { formatDocsLink } from "../../packages/terminal-core/src/links.js";
 import { isRich, theme } from "../../packages/terminal-core/src/theme.js";
-import { formatCliCommand } from "../cli/command-format.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
 import type { RuntimeEnv } from "../runtime.js";
 
 const SEARCH_API = "https://docs.openclaw.ai/api/search";

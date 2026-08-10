@@ -6,7 +6,7 @@ import type { ChannelId } from "../channels/plugins/types.js";
 import type { ChannelAccountSnapshot } from "../channels/plugins/types.js";
 import { MAX_TIMER_TIMEOUT_MS } from "../shared/number-coercion.js";
 import { startChannelHealthMonitor } from "./channel-health-monitor.js";
-import type { ChannelManager, ChannelRuntimeSnapshot } from "./server-channels.js";
+import type { ChannelManager, ChannelRuntimeSnapshot } from "./server/server-channels.js";
 
 function createMockChannelManager(overrides?: Partial<ChannelManager>): ChannelManager {
   return {

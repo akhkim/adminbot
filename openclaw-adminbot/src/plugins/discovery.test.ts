@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { bundledDistPluginFile } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { PluginInstallRecord } from "../config/types.plugins.js";
+import type { PluginInstallRecord } from "../config/types/plugins.js";
 import { discoverOpenClawPlugins } from "./discovery.js";
 import { listBuiltRuntimeEntryCandidates } from "./package-entrypoints.js";
 import {
@@ -13,8 +13,8 @@ import {
   mkdirSafeDir,
 } from "./test-helpers/fs-fixtures.js";
 
-vi.mock("./bundled-dir.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("./bundled-dir.js")>();
+vi.mock("./install/bundled-dir.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./install/bundled-dir.js")>();
   return {
     ...actual,
     resolveBundledPluginsDir: (env: NodeJS.ProcessEnv = process.env) =>

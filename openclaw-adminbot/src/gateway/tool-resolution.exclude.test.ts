@@ -2,7 +2,7 @@
  * Gateway tool-resolution exclusion tests.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 type CreateOpenClawToolsArg = {
   cronCreatorToolAllowlist?: Array<string | { name: string; pluginId?: string }>;
@@ -31,7 +31,7 @@ const hoisted = vi.hoisted(() => {
   };
 });
 
-vi.mock("../agents/openclaw-tools.js", () => ({
+vi.mock("../agents/tools/openclaw-tools.js", () => ({
   createOpenClawTools: (args: CreateOpenClawToolsArg) => hoisted.createOpenClawToolsMock(args),
 }));
 

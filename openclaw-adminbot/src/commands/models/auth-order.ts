@@ -7,9 +7,9 @@ import {
   ensureAuthProfileStore,
   resolveAuthStatePathForDisplay,
   setAuthProfileOrder,
-} from "../../agents/auth-profiles.js";
-import { normalizeProviderId } from "../../agents/model-selection.js";
-import { formatCliCommand } from "../../cli/command-format.js";
+} from "../../agents/auth/auth-profiles.js";
+import { normalizeProviderId } from "../../agents/models/model-selection.js";
+import { formatCliCommand } from "../../cli/program/command-format.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../../runtime.js";
 import { shortenHomePath } from "../../utils.js";
 import { loadModelsConfig } from "./load-config.js";

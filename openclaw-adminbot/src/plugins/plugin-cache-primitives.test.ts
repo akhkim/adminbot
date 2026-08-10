@@ -1,6 +1,6 @@
 /** Tests primitive cache-key helpers used by plugin descriptor and metadata caches. */
 import { describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   PluginLruCache,
   createConfigScopedPromiseLoader,

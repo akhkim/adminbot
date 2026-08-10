@@ -21,9 +21,17 @@ import {
   saveAuthProfileStore,
 } from "../agents/auth-profiles/store.js";
 import type { AuthProfileStore } from "../agents/auth-profiles/types.js";
-import { collectAnthropicApiKeys } from "../agents/live-auth-keys.js";
-import { appendPrioritizedDynamicLiveModels } from "../agents/live-model-dynamic-candidates.js";
-import { isModelNotFoundErrorMessage } from "../agents/live-model-errors.js";
+import { collectAnthropicApiKeys } from "../agents/auth/live-auth-keys.js";
+import { getApiKeyForModel, resolveEnvApiKey } from "../agents/auth/model-auth.js";
+import { createLiveTargetMatcher } from "../agents/live-target-matcher.js";
+import { isLiveProfileKeyModeEnabled, isLiveTestEnabled } from "../agents/live-test-helpers.js";
+import {
+  isLiveBillingDrift,
+  isLiveRateLimitDrift,
+  shouldSkipLiveProviderDrift,
+} from "../agents/live-test-provider-drift.js";
+import { appendPrioritizedDynamicLiveModels } from "../agents/models/live-model-dynamic-candidates.js";
+import { isModelNotFoundErrorMessage } from "../agents/models/live-model-errors.js";
 import {
   DEFAULT_HIGH_SIGNAL_LIVE_MODEL_LIMIT,
   DEFAULT_SMALL_LIVE_MODEL_LIMIT,
@@ -36,31 +44,23 @@ import {
   selectHighSignalLiveItems,
   selectSmallLiveItems,
   shouldExcludeProviderFromDefaultHighSignalLiveSweep,
-} from "../agents/live-model-filter.js";
-import { createLiveTargetMatcher } from "../agents/live-target-matcher.js";
-import { isLiveProfileKeyModeEnabled, isLiveTestEnabled } from "../agents/live-test-helpers.js";
-import {
-  isLiveBillingDrift,
-  isLiveRateLimitDrift,
-  shouldSkipLiveProviderDrift,
-} from "../agents/live-test-provider-drift.js";
-import { getApiKeyForModel, resolveEnvApiKey } from "../agents/model-auth.js";
-import { normalizeProviderId } from "../agents/model-selection.js";
-import { shouldSuppressBuiltInModel } from "../agents/model-suppression.js";
-import { ensureOpenClawModelsJson } from "../agents/models-config.js";
-import { STREAM_ERROR_FALLBACK_TEXT } from "../agents/stream-message-shared.js";
-import { clearRuntimeConfigSnapshot, getRuntimeConfig } from "../config/io.js";
-import type { ModelsConfig, ModelProviderConfig, OpenClawConfig } from "../config/types.js";
+} from "../agents/models/live-model-filter.js";
+import { normalizeProviderId } from "../agents/models/model-selection.js";
+import { shouldSuppressBuiltInModel } from "../agents/models/model-suppression.js";
+import { ensureOpenClawModelsJson } from "../agents/models/models-config.js";
+import { STREAM_ERROR_FALLBACK_TEXT } from "../agents/transport/stream-message-shared.js";
+import { clearRuntimeConfigSnapshot, getRuntimeConfig } from "../config/io/io.js";
+import type { ModelsConfig, ModelProviderConfig, OpenClawConfig } from "../config/types/types.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import type { ModelRegistry } from "../llm/model-registry.js";
 import { normalizeGoogleModelId } from "../plugin-sdk/google-model-id.js";
-import { resolveProviderThinkingProfile } from "../plugins/provider-runtime.js";
-import type { ProviderThinkingModelCompat } from "../plugins/provider-thinking.types.js";
+import { resolveProviderThinkingProfile } from "../plugins/providers/provider-runtime.js";
+import type { ProviderThinkingModelCompat } from "../plugins/providers/provider-thinking.types.js";
 import { DEFAULT_AGENT_ID } from "../routing/session-key.js";
+import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../shared/message-channel.js";
 import { stripAssistantInternalScaffolding } from "../shared/text/assistant-visible-text.js";
 import { findFinalTagMatches, stripFinalTags } from "../shared/text/final-tags.js";
-import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
-import { GatewayClient } from "./client.js";
+import { GatewayClient } from "./client/client.js";
 import {
   hasExpectedSingleNonce,
   hasExpectedToolNonce,
@@ -68,9 +68,9 @@ import {
   shouldRetryExecReadProbe,
   shouldRetryToolReadProbe,
 } from "./live-tool-probe-utils.js";
-import { startGatewayServer } from "./server.impl.js";
-import { readSessionMessagesAsync } from "./session-transcript-readers.js";
-import { loadSessionEntry } from "./session-utils.js";
+import { startGatewayServer } from "./server/server.impl.js";
+import { readSessionMessagesAsync } from "./sessions/session-transcript-readers.js";
+import { loadSessionEntry } from "./sessions/session-utils.js";
 
 const ZAI_FALLBACK = isTruthyEnvValue(process.env.OPENCLAW_LIVE_GATEWAY_ZAI_FALLBACK);
 const REQUIRE_PROFILE_KEYS = isLiveProfileKeyModeEnabled();
@@ -2916,7 +2916,7 @@ async function runGatewayModelSuite(params: GatewayModelSuiteParams) {
   }
 
   // Keep the broad live Docker suite on the impl entrypoint. The lazy public
-  // boundary (`./server.js`) is covered elsewhere, but under Vitest's live Docker
+  // boundary (`./server/server.js`) is covered elsewhere, but under Vitest's live Docker
   // worker this path can trip a Node module-status loader bug during startup.
   let server: Awaited<ReturnType<typeof startGatewayServer>> | undefined;
   let client: GatewayClient | undefined;

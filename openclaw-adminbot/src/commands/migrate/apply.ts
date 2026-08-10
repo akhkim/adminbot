@@ -2,10 +2,10 @@
 import fs from "node:fs/promises";
 import { withProgress } from "../../cli/progress.js";
 import type { ProgressReporter } from "../../cli/progress.js";
-import { resolveStateDir } from "../../config/paths.js";
+import { resolveStateDir } from "../../config/paths/paths.js";
 import type { MigrationApplyResult, MigrationProviderPlugin } from "../../plugins/types.js";
 import type { RuntimeEnv } from "../../runtime.js";
-import { backupCreateCommand } from "../backup.js";
+import { backupCreateCommand } from "../maintenance/backup.js";
 import { buildMigrationContext, buildMigrationReportDir } from "./context.js";
 import { assertApplySucceeded, assertConflictFreePlan, writeApplyResult } from "./output.js";
 import { buildMigrationProviderOptions } from "./providers.js";

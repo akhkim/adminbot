@@ -10,14 +10,7 @@ type PluginRegistrationContractParams = {
   providerIds?: string[];
   webFetchProviderIds?: string[];
   webSearchProviderIds?: string[];
-  speechProviderIds?: string[];
-  realtimeTranscriptionProviderIds?: string[];
-  realtimeVoiceProviderIds?: string[];
-  mediaUnderstandingProviderIds?: string[];
   transcriptSourceProviderIds?: string[];
-  imageGenerationProviderIds?: string[];
-  videoGenerationProviderIds?: string[];
-  musicGenerationProviderIds?: string[];
   toolNames?: string[];
   requireSpeechVoices?: boolean;
   requireDescribeImages?: boolean;
@@ -74,66 +67,10 @@ export function describePluginRegistrationContract(params: PluginRegistrationCon
       });
     }
 
-    if (params.speechProviderIds) {
-      it("keeps bundled speech ownership explicit", () => {
-        expect(findRegistration(params.pluginId).speechProviderIds).toEqual(
-          params.speechProviderIds,
-        );
-      });
-    }
-
-    if (params.realtimeTranscriptionProviderIds) {
-      it("keeps bundled realtime-transcription ownership explicit", () => {
-        expect(findRegistration(params.pluginId).realtimeTranscriptionProviderIds).toEqual(
-          params.realtimeTranscriptionProviderIds,
-        );
-      });
-    }
-
-    if (params.realtimeVoiceProviderIds) {
-      it("keeps bundled realtime-voice ownership explicit", () => {
-        expect(findRegistration(params.pluginId).realtimeVoiceProviderIds).toEqual(
-          params.realtimeVoiceProviderIds,
-        );
-      });
-    }
-
-    if (params.mediaUnderstandingProviderIds) {
-      it("keeps bundled media-understanding ownership explicit", () => {
-        expect(findRegistration(params.pluginId).mediaUnderstandingProviderIds).toEqual(
-          params.mediaUnderstandingProviderIds,
-        );
-      });
-    }
-
     if (params.transcriptSourceProviderIds) {
       it("keeps bundled transcripts source ownership explicit", () => {
         expect(findRegistration(params.pluginId).transcriptSourceProviderIds).toEqual(
           params.transcriptSourceProviderIds,
-        );
-      });
-    }
-
-    if (params.imageGenerationProviderIds) {
-      it("keeps bundled image-generation ownership explicit", () => {
-        expect(findRegistration(params.pluginId).imageGenerationProviderIds).toEqual(
-          params.imageGenerationProviderIds,
-        );
-      });
-    }
-
-    if (params.videoGenerationProviderIds) {
-      it("keeps bundled video-generation ownership explicit", () => {
-        expect(findRegistration(params.pluginId).videoGenerationProviderIds).toEqual(
-          params.videoGenerationProviderIds,
-        );
-      });
-    }
-
-    if (params.musicGenerationProviderIds) {
-      it("keeps bundled music-generation ownership explicit", () => {
-        expect(findRegistration(params.pluginId).musicGenerationProviderIds).toEqual(
-          params.musicGenerationProviderIds,
         );
       });
     }

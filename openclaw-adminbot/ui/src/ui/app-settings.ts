@@ -1,10 +1,11 @@
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
+import { loadAdminBot, type AdminBotHost } from "./adminbot/controllers/admin.ts";
 import {
   loadAdminBotRegistrations,
   type AdminBotRegistrationsHost,
-} from "./adminbot-registrations.ts";
+} from "./adminbot/data/registrations.ts";
 import { refreshChat } from "./app-chat.ts";
 import {
   startLogsPolling,
@@ -23,7 +24,6 @@ import {
   roundedControlUiDurationMs,
   scheduleControlUiTabVisibleTiming,
 } from "./control-ui-performance.ts";
-import { loadAdminBot, type AdminBotHost } from "./controllers/adminbot.ts";
 import { loadAgentFiles, type AgentFilesState } from "./controllers/agent-files.ts";
 import {
   loadAgentIdentities,
@@ -58,10 +58,6 @@ import {
 import { loadNodes, type NodesState } from "./controllers/nodes.ts";
 import { loadPresence, type PresenceState } from "./controllers/presence.ts";
 import { loadSessions, type SessionsState } from "./controllers/sessions.ts";
-import {
-  loadSkillWorkshopProposals,
-  type SkillWorkshopState,
-} from "./controllers/skill-workshop.ts";
 import { loadSkills, reconcileSkillsAgentId, type SkillsState } from "./controllers/skills.ts";
 import { loadUsage, type UsageState } from "./controllers/usage.ts";
 import {
@@ -170,7 +166,6 @@ type SettingsAppHost = SettingsHost &
   PresenceState &
   SessionsState &
   SkillsState &
-  SkillWorkshopState &
   ModelAuthStatusState &
   AdminBotHost &
   AdminBotRegistrationsHost &
@@ -474,9 +469,6 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "adminbotAnnouncements":
         await loadAdminBot(app);
         break;
-      case "adminbotTimeAvailability":
-        await loadAdminBot(app, "members");
-        break;
       case "adminbotRegistrations":
         await loadAdminBotRegistrations(app);
         break;
@@ -518,9 +510,6 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         await loadAgents(app);
         reconcileSkillsAgentId(app, app.agentsList);
         await loadSkills(app);
-        break;
-      case "skillWorkshop":
-        await loadSkillWorkshopProposals(app, { force: true });
         break;
       case "agents":
         await refreshAgentsTab(host, app);

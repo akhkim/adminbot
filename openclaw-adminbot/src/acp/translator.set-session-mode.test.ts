@@ -2,7 +2,7 @@
 import type { SetSessionModeRequest } from "@agentclientprotocol/sdk";
 import { createInMemorySessionStore } from "@openclaw/acp-core/session";
 import { describe, expect, it } from "vitest";
-import type { GatewayClient } from "../gateway/client.js";
+import type { GatewayClient } from "../gateway/client/client.js";
 import { AcpGatewayAgent } from "./translator.js";
 import { createAcpConnection, createAcpGateway } from "./translator.test-helpers.js";
 

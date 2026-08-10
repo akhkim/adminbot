@@ -8,7 +8,7 @@ import {
   clearMcpLoopbackToolCallCapture,
   type McpLoopbackToolCallStart,
   waitForMcpLoopbackToolCallCaptureIdle,
-} from "../../gateway/mcp-http.loopback-runtime.js";
+} from "../../gateway/protocol/mcp-http.loopback-runtime.js";
 import { shouldLogVerbose } from "../../globals.js";
 import {
   assertAgentRunLifecycleGenerationCurrent,
@@ -21,35 +21,27 @@ import {
   resolveEventSessionRoutingPolicy,
   scopedHeartbeatWakeOptionsForPolicy,
 } from "../../infra/event-session-routing.js";
-import { requestHeartbeat as requestHeartbeatImpl } from "../../infra/heartbeat-wake.js";
-import { sanitizeHostExecEnv } from "../../infra/host-env-security.js";
+import { requestHeartbeat as requestHeartbeatImpl } from "../../infra/heartbeat/heartbeat-wake.js";
 import { shouldUseInternalSourceReplySink } from "../../infra/outbound/internal-source-reply.js";
-import { enqueueSystemEvent as enqueueSystemEventImpl } from "../../infra/system-events.js";
+import { sanitizeHostExecEnv } from "../../infra/system/host-env-security.js";
+import { enqueueSystemEvent as enqueueSystemEventImpl } from "../../infra/system/system-events.js";
 import { getProcessSupervisor as getProcessSupervisorImpl } from "../../process/supervisor/index.js";
 import { applySkillEnvOverridesFromSnapshot } from "../../skills/runtime/env-overrides.js";
-import { appendBootstrapPromptWarning } from "../bootstrap-budget.js";
-import {
-  createCliJsonlStreamingParser,
-  extractCliErrorMessage,
-  parseCliOutput,
-  type CliOutput,
-  type CliStreamingDelta,
-} from "../cli-output.js";
-import { classifyFailoverReason } from "../embedded-agent-helpers.js";
+import { classifyFailoverReason } from "../embedded/embedded-agent-helpers.js";
 import {
   isDeliveredMessageToolOnlySourceReplyResult,
   isDeliveredMessagingToolResult,
-} from "../embedded-agent-message-tool-source-reply.js";
+} from "../embedded/embedded-agent-message-tool-source-reply.js";
 import {
   isMessagingTool,
   isMessagingToolDeliveryAction,
   isMessagingToolSendAction,
   isMessagingToolTargetEvidenceAction,
-} from "../embedded-agent-messaging.js";
+} from "../embedded/embedded-agent-messaging.js";
 import type {
   MessagingToolSend,
   MessagingToolSourceReplyPayload,
-} from "../embedded-agent-messaging.types.js";
+} from "../embedded/embedded-agent-messaging.types.js";
 import {
   collectMessagingMediaUrlsFromRecord,
   collectMessagingMediaUrlsFromToolResult,
@@ -58,9 +50,10 @@ import {
   extractMessagingToolSourceReplyPayload,
   sanitizeToolArgs,
   sanitizeToolResult,
-} from "../embedded-agent-subscribe.tools.js";
+} from "../embedded/embedded-agent-subscribe.tools.js";
 import { FailoverError, resolveFailoverStatus } from "../failover-error.js";
 import { applyPluginTextReplacements } from "../plugin-text-transforms.js";
+import { appendBootstrapPromptWarning } from "../prompt/bootstrap-budget.js";
 import { prepareCliBundleMcpCaptureAttempt } from "./bundle-mcp.js";
 import {
   rotateClaudeLiveMcpCaptureKeyForContext,
@@ -68,6 +61,13 @@ import {
   shouldUseClaudeLiveSession,
 } from "./claude-live-session.js";
 import { prepareClaudeCliSkillsPlugin } from "./claude-skills-plugin.js";
+import {
+  createCliJsonlStreamingParser,
+  extractCliErrorMessage,
+  parseCliOutput,
+  type CliOutput,
+  type CliStreamingDelta,
+} from "./cli-output.js";
 import { attachCliMessagingDeliveryEvidence } from "./delivery-evidence.js";
 import {
   buildCliSupervisorScopeKey,

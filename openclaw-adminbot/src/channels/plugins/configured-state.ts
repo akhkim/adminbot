@@ -3,7 +3,7 @@
  *
  * Lists and checks bundled channels that can report configured account state.
  */
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { PluginDiscoveryResult } from "../../plugins/discovery.js";
 import {
   hasBundledChannelPackageState,

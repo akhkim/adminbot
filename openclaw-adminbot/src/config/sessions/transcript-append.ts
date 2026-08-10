@@ -7,11 +7,11 @@ import type { AgentMessage } from "../../agents/runtime/index.js";
 import {
   acquireSessionWriteLock,
   resolveSessionWriteLockOptions,
-} from "../../agents/session-write-lock.js";
+} from "../../agents/sessions/session-write-lock.js";
 import { redactTranscriptMessage } from "../../agents/transcript-redact.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { redactSecrets } from "../../logging/redact.js";
 import { isTranscriptOnlyOpenClawAssistantMessage } from "../../shared/transcript-only-openclaw-assistant.js";
+import type { OpenClawConfig } from "../types/openclaw.js";
 import { createSessionTranscriptHeader } from "./transcript-header.js";
 import {
   appendJsonlEntry,

@@ -16,7 +16,7 @@ vi.mock("../api-keys.js", () => ({
 
 const resolveManifestDeprecatedProviderAuthChoice = vi.hoisted(() => vi.fn(() => undefined));
 const resolveManifestProviderAuthChoices = vi.hoisted(() => vi.fn(() => []));
-vi.mock("../../../plugins/provider-auth-choices.js", () => ({
+vi.mock("../../../plugins/providers/provider-auth-choices.js", () => ({
   resolveManifestDeprecatedProviderAuthChoice,
   resolveManifestProviderAuthChoices,
 }));

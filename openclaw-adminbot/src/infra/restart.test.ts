@@ -28,7 +28,7 @@ vi.mock("./ports-lsof.js", () => ({
   resolveLsofCommandSync: (...args: unknown[]) => resolveLsofCommandSyncMock(...args),
 }));
 
-vi.mock("../config/paths.js", () => ({
+vi.mock("../config/paths/paths.js", () => ({
   resolveGatewayPort: (...args: unknown[]) => resolveGatewayPortMock(...args),
   resolveStateDir: (env: NodeJS.ProcessEnv = process.env) =>
     env.OPENCLAW_STATE_DIR ?? "/tmp/openclaw-state",

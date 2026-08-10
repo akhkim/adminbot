@@ -1,7 +1,7 @@
 // Diagnostic session context helpers capture session metadata for support bundles.
 import fs from "node:fs";
 import path from "node:path";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import { loadCronJobsStoreSync, resolveCronJobsStorePath } from "../cron/store.js";
 
 const SESSION_TAIL_BYTES = 64 * 1024;

@@ -11,7 +11,7 @@ import type {
   QuarantinedCronConfigJob,
 } from "../../../cron/store.js";
 import type { CronStoreFile } from "../../../cron/types.js";
-import { parseJsonWithJson5Fallback } from "../../../utils/parse-json-compat.js";
+import { parseJsonWithJson5Fallback } from "../../../shared/parse-json-compat.js";
 
 const LEGACY_CRON_ARCHIVE_SUFFIX = ".migrated";
 

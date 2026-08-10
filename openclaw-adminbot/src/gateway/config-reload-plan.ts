@@ -5,7 +5,7 @@ import {
   getActivePluginChannelRegistryVersion,
   getActivePluginRegistry,
   getActivePluginRegistryVersion,
-} from "../plugins/runtime.js";
+} from "../plugins/runtime/runtime.js";
 import { isPlainObject } from "../utils.js";
 
 export type ChannelKind = ChannelId;

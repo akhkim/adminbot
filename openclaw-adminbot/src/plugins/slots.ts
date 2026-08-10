@@ -1,6 +1,6 @@
+import type { PluginSlotsConfig } from "../config/types/plugins.js";
 /** Applies mutually exclusive plugin slot selection for memory and context-engine plugins. */
-import type { OpenClawConfig } from "../config/types.js";
-import type { PluginSlotsConfig } from "../config/types.plugins.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import type { PluginKind } from "./plugin-kind.types.js";
 
 export type PluginSlotKey = keyof PluginSlotsConfig;

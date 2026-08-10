@@ -7,7 +7,7 @@ import {
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
 import { normalizeUniqueStringEntries } from "@openclaw/normalization-core/string-normalization";
-import { resolveOAuthDir, resolveStateDir } from "../config/paths.js";
+import { resolveOAuthDir, resolveStateDir } from "../config/paths/paths.js";
 import { resolveRequiredHomeDir } from "../infra/home-dir.js";
 import { DEFAULT_ACCOUNT_ID } from "../routing/session-key.js";
 import type { PairingChannel } from "./pairing-store.types.js";

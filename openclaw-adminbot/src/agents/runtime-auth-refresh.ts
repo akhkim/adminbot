@@ -3,7 +3,7 @@
  *
  * Clamps refresh deadlines before they are passed to setTimeout.
  */
-import { resolveSafeTimeoutDelayMs } from "../utils/timer-delay.js";
+import { resolveSafeTimeoutDelayMs } from "../shared/timer-delay.js";
 
 // Timer helper for runtime auth refresh scheduling.
 /** Clamp an auth refresh deadline to a safe setTimeout delay. */

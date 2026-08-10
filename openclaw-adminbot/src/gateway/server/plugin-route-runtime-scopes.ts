@@ -4,7 +4,7 @@ import {
   getHeader,
   resolveTrustedHttpOperatorScopes,
   type AuthorizedGatewayHttpRequest,
-} from "../http-auth-utils.js";
+} from "../http/http-auth-utils.js";
 import { CLI_DEFAULT_OPERATOR_SCOPES, WRITE_SCOPE } from "../method-scopes.js";
 
 /**

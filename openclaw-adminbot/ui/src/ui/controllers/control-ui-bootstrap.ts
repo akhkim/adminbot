@@ -3,7 +3,7 @@ import {
   CONTROL_UI_BOOTSTRAP_CONFIG_PATH,
   type ControlUiBootstrapConfig,
   type ControlUiEmbedSandboxMode,
-} from "../../../../src/gateway/control-ui-contract.js";
+} from "../../../../src/gateway/control/control-ui-contract.js";
 import { normalizeAssistantIdentity } from "../assistant-identity.ts";
 import { resolveControlUiAuthCandidates } from "../control-ui-auth.ts";
 import { setUiTimeFormatPreference } from "../format.ts";

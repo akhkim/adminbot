@@ -5,7 +5,7 @@ import path from "node:path";
 import type { AuthStorage, ModelRegistry } from "openclaw/plugin-sdk/agent-sessions";
 import type { Model } from "openclaw/plugin-sdk/llm";
 import { describe, expect, it, vi } from "vitest";
-import type { AnyAgentTool } from "../../agent-tools.types.js";
+import type { AnyAgentTool } from "../../tools/agent-tools.types.js";
 import { buildEmbeddedAttemptToolRunContext } from "./attempt.tool-run-context.js";
 
 const MEMORY_RELATIVE_PATH = "memory/2026-03-24.md";
@@ -70,7 +70,8 @@ describe("runEmbeddedAttempt memory flush tool forwarding", () => {
       await fs.mkdir(path.dirname(memoryFile), { recursive: true });
       await fs.writeFile(memoryFile, "seed", "utf-8");
 
-      const { wrapToolMemoryFlushAppendOnlyWrite } = await import("../../agent-tools.read.js");
+      const { wrapToolMemoryFlushAppendOnlyWrite } =
+        await import("../../tools/agent-tools.read.js");
       const fallbackWrite = vi.fn(async () => {
         throw new Error("append-only wrapper should not delegate to the base write tool");
       });

@@ -12,12 +12,15 @@ import { parseGeminiAuth } from "../../infra/gemini-auth.js";
 import { normalizeGoogleApiBaseUrl } from "../../infra/google-api-base-url.js";
 import { streamWithPayloadPatch } from "../../llm/providers/stream-wrappers/stream-payload-utils.js";
 import type { Model } from "../../llm/types.js";
-import { buildGuardedModelFetch } from "../provider-transport-fetch.js";
+import { stripSystemPromptCacheBoundary } from "../prompt/system-prompt-cache-boundary.js";
 import type { StreamFn } from "../runtime/index.js";
-import { isSessionWriteLockAcquireError } from "../session-write-lock-error.js";
+import { isSessionWriteLockAcquireError } from "../sessions/session-write-lock-error.js";
 import { stableStringify } from "../stable-stringify.js";
-import { stripSystemPromptCacheBoundary } from "../system-prompt-cache-boundary.js";
-import { mergeTransportHeaders, sanitizeTransportPayloadText } from "../transport-stream-shared.js";
+import { buildGuardedModelFetch } from "../transport/provider-transport-fetch.js";
+import {
+  mergeTransportHeaders,
+  sanitizeTransportPayloadText,
+} from "../transport/transport-stream-shared.js";
 import { log } from "./logger.js";
 import { isGooglePromptCacheEligible, resolveCacheRetention } from "./prompt-cache-retention.js";
 import { EmbeddedAttemptSessionTakeoverError } from "./run/attempt.session-lock.js";

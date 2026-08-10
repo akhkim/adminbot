@@ -26,18 +26,18 @@ vi.mock("../config/config.js", () => ({
   getRuntimeConfig: getRuntimeConfigMock,
 }));
 
-vi.mock("./http-utils.js", () => ({
+vi.mock("./http/http-utils.js", () => ({
   authorizeGatewayHttpRequestOrReply: authorizeGatewayHttpRequestOrReplyMock,
   resolveOpenAiCompatibleHttpOperatorScopes: resolveOpenAiCompatibleHttpOperatorScopesMock,
   resolveOpenAiCompatibleHttpSenderIsOwner: resolveOpenAiCompatibleHttpSenderIsOwnerMock,
 }));
 
-vi.mock("./session-utils.js", () => ({
+vi.mock("./sessions/session-utils.js", () => ({
   loadSessionEntry: loadSessionEntryMock,
   resolveSessionHistoryTranscriptPathAsync: resolveSessionHistoryTranscriptPathMock,
 }));
 
-vi.mock("./session-transcript-readers.js", () => ({
+vi.mock("./sessions/session-transcript-readers.js", () => ({
   readSessionMessagesAsync: readSessionMessagesMock,
   readSessionMessagesWithSourceAsync: async (...args: unknown[]) => ({
     messages: await readSessionMessagesMock(...args),

@@ -2,7 +2,7 @@
 import {
   onInternalDiagnosticEvent,
   type DiagnosticEventPayload,
-} from "../../infra/diagnostic-events.js";
+} from "../../infra/diagnostics/diagnostic-events.js";
 
 /** Captured diagnostic event shape for emitted log records. */
 type CapturedDiagnosticLogRecord = Extract<DiagnosticEventPayload, { type: "log.record" }>;

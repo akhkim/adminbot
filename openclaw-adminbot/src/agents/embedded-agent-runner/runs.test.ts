@@ -9,7 +9,7 @@ import {
   testing as replyRunTesting,
   createReplyOperation,
 } from "../../auto-reply/reply/reply-run-registry.js";
-import { setDiagnosticsEnabledForProcess } from "../../infra/diagnostic-events.js";
+import { setDiagnosticsEnabledForProcess } from "../../infra/diagnostics/diagnostic-events.js";
 import {
   getDiagnosticSessionState,
   resetDiagnosticSessionStateForTest,
@@ -588,5 +588,4 @@ describe("embedded-agent runner run registry", () => {
     clearActiveEmbeddedRun("session-snapshot", handle);
     expect(getActiveEmbeddedRunSnapshot("session-snapshot")).toBeUndefined();
   });
-
 });

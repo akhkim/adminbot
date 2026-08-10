@@ -9,7 +9,7 @@ import {
   applyCliExecutionStartupPresentation,
   ensureCliExecutionBootstrap,
   resolveCliExecutionStartupContext,
-} from "./command-execution-startup.js";
+} from "./program/command-execution-startup.js";
 import { findRoutedCommand } from "./program/routes.js";
 
 const LOG_LEVEL_FLAG = "--log-level";

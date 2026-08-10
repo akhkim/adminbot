@@ -1,5 +1,5 @@
 /** Commands for listing, adding, and removing model aliases. */
-import { formatCliCommand } from "../../cli/command-format.js";
+import { formatCliCommand } from "../../cli/program/command-format.js";
 import { logConfigUpdated } from "../../config/logging.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../../runtime.js";
 import { loadModelsConfig } from "./load-config.js";

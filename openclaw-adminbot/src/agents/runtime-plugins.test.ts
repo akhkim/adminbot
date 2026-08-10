@@ -18,7 +18,7 @@ vi.mock("../plugins/runtime/standalone-runtime-registry-loader.js", () => ({
   ensureStandaloneRuntimePluginRegistryLoaded: hoisted.ensureStandaloneRuntimePluginRegistryLoaded,
 }));
 
-vi.mock("../plugins/runtime.js", () => ({
+vi.mock("../plugins/runtime/runtime.js", () => ({
   getActivePluginRuntimeSubagentMode: hoisted.getActivePluginRuntimeSubagentMode,
   getActivePluginRegistryWorkspaceDir: hoisted.getActivePluginRegistryWorkspaceDir,
 }));

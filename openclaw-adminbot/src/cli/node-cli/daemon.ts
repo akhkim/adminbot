@@ -19,7 +19,6 @@ import {
 import type { GatewayServiceRuntime } from "../../daemon/service-runtime.js";
 import { loadNodeHostConfig } from "../../node-host/config.js";
 import { defaultRuntime } from "../../runtime.js";
-import { formatCliCommand } from "../command-format.js";
 import {
   runServiceRestart,
   runServiceStart,
@@ -36,6 +35,7 @@ import {
   resolveRuntimeStatusColor,
 } from "../daemon-cli/shared.js";
 import { formatInvalidConfigPort, formatInvalidPortOption } from "../error-format.js";
+import { formatCliCommand } from "../program/command-format.js";
 
 type NodeDaemonInstallOptions = {
   host?: string;

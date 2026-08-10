@@ -1,0 +1,1002 @@
+[
+  {
+    "from": "src/auto-reply/reply/abort-cutoff.runtime.test.ts",
+    "to": "src/auto-reply/reply/queue/abort-cutoff.runtime.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/abort-cutoff.runtime.ts",
+    "to": "src/auto-reply/reply/queue/abort-cutoff.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/abort-cutoff.ts",
+    "to": "src/auto-reply/reply/queue/abort-cutoff.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/abort-primitives.ts",
+    "to": "src/auto-reply/reply/queue/abort-primitives.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/abort.runtime-types.ts",
+    "to": "src/auto-reply/reply/queue/abort.runtime-types.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/abort.runtime.ts",
+    "to": "src/auto-reply/reply/queue/abort.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/abort.test.ts",
+    "to": "src/auto-reply/reply/queue/abort.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/abort.ts",
+    "to": "src/auto-reply/reply/queue/abort.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-lifecycle-terminal.ts",
+    "to": "src/auto-reply/reply/agent/agent-lifecycle-terminal.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-auth-profile.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-auth-profile.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-cli-dispatch.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-cli-dispatch.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-cli-dispatch.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-cli-dispatch.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-direct-runtime-config.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-direct-runtime-config.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-execution.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-execution.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-execution.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-execution.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-failure-copy.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-failure-copy.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-helpers.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-helpers.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-helpers.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-helpers.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-memory.dedup.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-memory.dedup.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-memory.preflight-stale-tokens.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-memory.preflight-stale-tokens.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-memory.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-memory.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-memory.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-memory.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-payloads.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-payloads.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-payloads.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-payloads.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-reminder-guard.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-reminder-guard.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-reminder-guard.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-reminder-guard.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-run-params.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-run-params.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-runtime-config.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-runtime-config.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-session-reset.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-session-reset.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-session-reset.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-session-reset.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-usage-line.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-usage-line.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-usage-line.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-usage-line.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-utils.secret-resolution.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-utils.secret-resolution.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-utils.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-utils.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner-utils.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner-utils.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner.misc.runreplyagent.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner.misc.runreplyagent.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner.runreplyagent.e2e.test.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner.runreplyagent.e2e.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner.runtime.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner.test-fixtures.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner.test-fixtures.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/agent-runner.ts",
+    "to": "src/auto-reply/reply/agent/agent-runner.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-abort-trigger.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-abort-trigger.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-acp.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-acp.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-acp.ts",
+    "to": "src/auto-reply/reply/commands/commands-acp.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-agent-scope.test-support.ts",
+    "to": "src/auto-reply/reply/commands/commands-agent-scope.test-support.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-allowlist.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-allowlist.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-allowlist.ts",
+    "to": "src/auto-reply/reply/commands/commands-allowlist.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-approve.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-approve.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-approve.ts",
+    "to": "src/auto-reply/reply/commands/commands-approve.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-bash-alias.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-bash-alias.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-bash.ts",
+    "to": "src/auto-reply/reply/commands/commands-bash.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-btw.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-btw.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-btw.ts",
+    "to": "src/auto-reply/reply/commands/commands-btw.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-compact.runtime.ts",
+    "to": "src/auto-reply/reply/commands/commands-compact.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-compact.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-compact.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-compact.ts",
+    "to": "src/auto-reply/reply/commands/commands-compact.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-config.ts",
+    "to": "src/auto-reply/reply/commands/commands-config.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-context-command.ts",
+    "to": "src/auto-reply/reply/commands/commands-context-command.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-context-report.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-context-report.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-context-report.ts",
+    "to": "src/auto-reply/reply/commands/commands-context-report.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-context.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-context.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-context.ts",
+    "to": "src/auto-reply/reply/commands/commands-context.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-core.runtime.ts",
+    "to": "src/auto-reply/reply/commands/commands-core.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-core.send-policy.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-core.send-policy.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-core.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-core.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-core.ts",
+    "to": "src/auto-reply/reply/commands/commands-core.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-diagnostics.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-diagnostics.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-diagnostics.ts",
+    "to": "src/auto-reply/reply/commands/commands-diagnostics.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-dock.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-dock.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-dock.ts",
+    "to": "src/auto-reply/reply/commands/commands-dock.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-export-common.ts",
+    "to": "src/auto-reply/reply/commands/commands-export-common.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-export-session.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-export-session.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-export-session.ts",
+    "to": "src/auto-reply/reply/commands/commands-export-session.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-export-test-mocks.ts",
+    "to": "src/auto-reply/reply/commands/commands-export-test-mocks.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-export-trajectory.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-export-trajectory.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-export-trajectory.ts",
+    "to": "src/auto-reply/reply/commands/commands-export-trajectory.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-filesystem.test-support.ts",
+    "to": "src/auto-reply/reply/commands/commands-filesystem.test-support.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-gating.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-gating.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-goal.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-goal.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-goal.ts",
+    "to": "src/auto-reply/reply/commands/commands-goal.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-handlers.runtime.ts",
+    "to": "src/auto-reply/reply/commands/commands-handlers.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-info.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-info.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-info.tools.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-info.tools.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-info.ts",
+    "to": "src/auto-reply/reply/commands/commands-info.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-mcp.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-mcp.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-mcp.ts",
+    "to": "src/auto-reply/reply/commands/commands-mcp.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-models.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-models.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-models.ts",
+    "to": "src/auto-reply/reply/commands/commands-models.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-name.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-name.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-name.ts",
+    "to": "src/auto-reply/reply/commands/commands-name.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-openclaw-cli.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-openclaw-cli.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-openclaw-cli.ts",
+    "to": "src/auto-reply/reply/commands/commands-openclaw-cli.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-parse.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-parse.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-plugin.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-plugin.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-plugin.ts",
+    "to": "src/auto-reply/reply/commands/commands-plugin.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-plugins.install.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-plugins.install.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-plugins.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-plugins.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-plugins.ts",
+    "to": "src/auto-reply/reply/commands/commands-plugins.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-private-route.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-private-route.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-private-route.ts",
+    "to": "src/auto-reply/reply/commands/commands-private-route.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-reset-hooks.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-reset-hooks.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-reset-hooks.ts",
+    "to": "src/auto-reply/reply/commands/commands-reset-hooks.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-reset-mode.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-reset-mode.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-reset-mode.ts",
+    "to": "src/auto-reply/reply/commands/commands-reset-mode.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-reset.ts",
+    "to": "src/auto-reply/reply/commands/commands-reset.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-session-abort.test-support.ts",
+    "to": "src/auto-reply/reply/commands/commands-session-abort.test-support.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-session-abort.ts",
+    "to": "src/auto-reply/reply/commands/commands-session-abort.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-session-lifecycle.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-session-lifecycle.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-session-restart.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-session-restart.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-session-store.ts",
+    "to": "src/auto-reply/reply/commands/commands-session-store.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-session-usage.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-session-usage.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-session.ts",
+    "to": "src/auto-reply/reply/commands/commands-session.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-setunset-standard.ts",
+    "to": "src/auto-reply/reply/commands/commands-setunset-standard.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-setunset.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-setunset.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-setunset.ts",
+    "to": "src/auto-reply/reply/commands/commands-setunset.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-slash-parse.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-slash-parse.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-slash-parse.ts",
+    "to": "src/auto-reply/reply/commands/commands-slash-parse.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-spawn.test-harness.ts",
+    "to": "src/auto-reply/reply/commands/commands-spawn.test-harness.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-status-subagents.ts",
+    "to": "src/auto-reply/reply/commands/commands-status-subagents.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-status.runtime.ts",
+    "to": "src/auto-reply/reply/commands/commands-status.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-status.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-status.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-status.thinking-default.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-status.thinking-default.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-status.ts",
+    "to": "src/auto-reply/reply/commands/commands-status.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-steer.runtime.ts",
+    "to": "src/auto-reply/reply/commands/commands-steer.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-steer.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-steer.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-steer.ts",
+    "to": "src/auto-reply/reply/commands/commands-steer.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-stop-target.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-stop-target.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-subagents-control.runtime.ts",
+    "to": "src/auto-reply/reply/commands/commands-subagents-control.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-subagents-dispatch.ts",
+    "to": "src/auto-reply/reply/commands/commands-subagents-dispatch.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-subagents-focus.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-subagents-focus.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-subagents-info.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-subagents-info.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-subagents-log.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-subagents-log.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-subagents-routing.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-subagents-routing.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-subagents-shared-focus.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-subagents-shared-focus.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-subagents-shared.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-subagents-shared.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-subagents-status.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-subagents-status.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-subagents-text.ts",
+    "to": "src/auto-reply/reply/commands/commands-subagents-text.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-subagents.test-helpers.ts",
+    "to": "src/auto-reply/reply/commands/commands-subagents.test-helpers.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-subagents.ts",
+    "to": "src/auto-reply/reply/commands/commands-subagents.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-system-prompt.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-system-prompt.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-system-prompt.ts",
+    "to": "src/auto-reply/reply/commands/commands-system-prompt.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-tasks.test.ts",
+    "to": "src/auto-reply/reply/commands/commands-tasks.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-tasks.ts",
+    "to": "src/auto-reply/reply/commands/commands-tasks.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-types.ts",
+    "to": "src/auto-reply/reply/commands/commands-types.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands-whoami.ts",
+    "to": "src/auto-reply/reply/commands/commands-whoami.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands.runtime.ts",
+    "to": "src/auto-reply/reply/commands/commands.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands.test-harness.ts",
+    "to": "src/auto-reply/reply/commands/commands.test-harness.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/commands.ts",
+    "to": "src/auto-reply/reply/commands/commands.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.auth-profile.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.auth-profile.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.auth.test.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.auth.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.auth.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.auth.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.defaults.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.defaults.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.directive-only.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.directive-only.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.fast-lane.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.fast-lane.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.impl.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.impl.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.levels.test.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.levels.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.levels.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.levels.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.mixed-inline.test.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.mixed-inline.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.model-picker.test.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.model-picker.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.model-picker.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.model-picker.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.model-selection.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.model-selection.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.model.test.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.model.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.model.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.model.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.params.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.params.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.parse.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.parse.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.persist.runtime.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.persist.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.persist.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.persist.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.queue-validation.test.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.queue-validation.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.queue-validation.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.queue-validation.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.shared.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.shared.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-handling.ts",
+    "to": "src/auto-reply/reply/directives/directive-handling.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directive-parsing.ts",
+    "to": "src/auto-reply/reply/directives/directive-parsing.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/directives.ts",
+    "to": "src/auto-reply/reply/directives/directives.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-acp-command-bypass.test.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-acp-command-bypass.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-acp-command-bypass.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-acp-command-bypass.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-acp-delivery.test.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-acp-delivery.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-acp-delivery.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-acp-delivery.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-acp-manager.runtime.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-acp-manager.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-acp-session.runtime.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-acp-session.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-acp-transcript.runtime.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-acp-transcript.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-acp.runtime.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-acp.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-acp.test.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-acp.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-acp.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-acp.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-from-config.acp-abort.test.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-from-config.acp-abort.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-from-config.final-outcome-counts.test.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-from-config.final-outcome-counts.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-from-config.reply-dispatch.test.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-from-config.reply-dispatch.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-from-config.runtime.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-from-config.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-from-config.shared.test-harness.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-from-config.shared.test-harness.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-from-config.stale-recovery.test.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-from-config.stale-recovery.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-from-config.test.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-from-config.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-from-config.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-from-config.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/dispatch-from-config.types.ts",
+    "to": "src/auto-reply/reply/dispatch/dispatch-from-config.types.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/followup-delivery.test.ts",
+    "to": "src/auto-reply/reply/queue/followup-delivery.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/followup-delivery.ts",
+    "to": "src/auto-reply/reply/queue/followup-delivery.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/followup-runner.test.ts",
+    "to": "src/auto-reply/reply/queue/followup-runner.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/followup-runner.ts",
+    "to": "src/auto-reply/reply/queue/followup-runner.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/inbound-context.test.ts",
+    "to": "src/auto-reply/reply/inbound/inbound-context.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/inbound-context.ts",
+    "to": "src/auto-reply/reply/inbound/inbound-context.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/inbound-dedupe.test.ts",
+    "to": "src/auto-reply/reply/inbound/inbound-dedupe.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/inbound-dedupe.ts",
+    "to": "src/auto-reply/reply/inbound/inbound-dedupe.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/inbound-media.ts",
+    "to": "src/auto-reply/reply/inbound/inbound-media.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/inbound-meta.test.ts",
+    "to": "src/auto-reply/reply/inbound/inbound-meta.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/inbound-meta.ts",
+    "to": "src/auto-reply/reply/inbound/inbound-meta.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/inbound-text.ts",
+    "to": "src/auto-reply/reply/inbound/inbound-text.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/pending-final-delivery.test.ts",
+    "to": "src/auto-reply/reply/queue/pending-final-delivery.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/pending-final-delivery.ts",
+    "to": "src/auto-reply/reply/queue/pending-final-delivery.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/pending-tool-task-drain.test.ts",
+    "to": "src/auto-reply/reply/queue/pending-tool-task-drain.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/pending-tool-task-drain.ts",
+    "to": "src/auto-reply/reply/queue/pending-tool-task-drain.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/provider-dispatcher.runtime.ts",
+    "to": "src/auto-reply/reply/providers/provider-dispatcher.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/provider-dispatcher.test.ts",
+    "to": "src/auto-reply/reply/providers/provider-dispatcher.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/provider-dispatcher.ts",
+    "to": "src/auto-reply/reply/providers/provider-dispatcher.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/provider-dispatcher.types.ts",
+    "to": "src/auto-reply/reply/providers/provider-dispatcher.types.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/provider-request-error-classifier.test.ts",
+    "to": "src/auto-reply/reply/providers/provider-request-error-classifier.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/provider-request-error-classifier.ts",
+    "to": "src/auto-reply/reply/providers/provider-request-error-classifier.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/queue-policy.test.ts",
+    "to": "src/auto-reply/reply/queue/queue-policy.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/queue-policy.ts",
+    "to": "src/auto-reply/reply/queue/queue-policy.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/queue.collect.test.ts",
+    "to": "src/auto-reply/reply/queue/queue.collect.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/queue.dedupe.test.ts",
+    "to": "src/auto-reply/reply/queue/queue.dedupe.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/queue.drain-restart.test.ts",
+    "to": "src/auto-reply/reply/queue/queue.drain-restart.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/queue.test-helpers.ts",
+    "to": "src/auto-reply/reply/queue/queue.test-helpers.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/queue.ts",
+    "to": "src/auto-reply/reply/queue/queue.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-delivery.test.ts",
+    "to": "src/auto-reply/reply/session/session-delivery.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-delivery.ts",
+    "to": "src/auto-reply/reply/session/session-delivery.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-fork.runtime.test.ts",
+    "to": "src/auto-reply/reply/session/session-fork.runtime.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-fork.runtime.ts",
+    "to": "src/auto-reply/reply/session/session-fork.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-fork.ts",
+    "to": "src/auto-reply/reply/session/session-fork.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-hooks-context.test.ts",
+    "to": "src/auto-reply/reply/session/session-hooks-context.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-hooks.ts",
+    "to": "src/auto-reply/reply/session/session-hooks.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-reset-cleanup.test.ts",
+    "to": "src/auto-reply/reply/session/session-reset-cleanup.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-reset-cleanup.ts",
+    "to": "src/auto-reply/reply/session/session-reset-cleanup.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-reset-model.runtime.ts",
+    "to": "src/auto-reply/reply/session/session-reset-model.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-reset-model.test.ts",
+    "to": "src/auto-reply/reply/session/session-reset-model.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-reset-model.ts",
+    "to": "src/auto-reply/reply/session/session-reset-model.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-reset-prompt.test.ts",
+    "to": "src/auto-reply/reply/session/session-reset-prompt.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-reset-prompt.ts",
+    "to": "src/auto-reply/reply/session/session-reset-prompt.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-run-accounting.ts",
+    "to": "src/auto-reply/reply/session/session-run-accounting.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-system-events.ts",
+    "to": "src/auto-reply/reply/session/session-system-events.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-transcript-replay.test.ts",
+    "to": "src/auto-reply/reply/session/session-transcript-replay.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-updates.lifecycle.test.ts",
+    "to": "src/auto-reply/reply/session/session-updates.lifecycle.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-updates.runtime.ts",
+    "to": "src/auto-reply/reply/session/session-updates.runtime.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-updates.test.ts",
+    "to": "src/auto-reply/reply/session/session-updates.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-updates.ts",
+    "to": "src/auto-reply/reply/session/session-updates.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session-usage.ts",
+    "to": "src/auto-reply/reply/session/session-usage.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session.heartbeat-no-reset.test.ts",
+    "to": "src/auto-reply/reply/session/session.heartbeat-no-reset.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session.test.ts",
+    "to": "src/auto-reply/reply/session/session.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/session.ts",
+    "to": "src/auto-reply/reply/session/session.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/typing-mode.ts",
+    "to": "src/auto-reply/reply/queue/typing-mode.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/typing-persistence.test.ts",
+    "to": "src/auto-reply/reply/queue/typing-persistence.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/typing-policy.test.ts",
+    "to": "src/auto-reply/reply/queue/typing-policy.test.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/typing-policy.ts",
+    "to": "src/auto-reply/reply/queue/typing-policy.ts"
+  },
+  {
+    "from": "src/auto-reply/reply/typing.ts",
+    "to": "src/auto-reply/reply/queue/typing.ts"
+  }
+]

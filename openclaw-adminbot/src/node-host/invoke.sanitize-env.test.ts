@@ -1,6 +1,6 @@
 /** Tests environment sanitization for node-host command execution. */
 import { describe, expect, it } from "vitest";
-import { parseWindowsCodePage } from "../infra/windows-encoding.js";
+import { parseWindowsCodePage } from "../infra/system/windows-encoding.js";
 import { withEnv } from "../test-utils/env.js";
 import { decodeCapturedOutputBuffer, sanitizeEnv } from "./invoke.js";
 import { buildNodeEventParams, buildNodeInvokeResultParams } from "./runner.js";

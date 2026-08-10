@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 2508 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders chat screen content.
 import { html, nothing, type TemplateResult } from "lit";
 import { guard } from "lit/directives/guard.js";
@@ -5,6 +6,10 @@ import { ifDefined } from "lit/directives/if-defined.js";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../i18n/index.ts";
+import type {
+  AdminBotActionProposal,
+  AdminBotDashboardData,
+} from "../adminbot/controllers/admin.ts";
 import type { CompactionStatus, FallbackStatus } from "../app-tool-stream.ts";
 import {
   getChatAttachmentPreviewUrl,
@@ -33,14 +38,6 @@ import { CHAT_HISTORY_RENDER_LIMIT } from "../chat/history-limits.ts";
 import type { ChatInputHistoryKeyInput, ChatInputHistoryKeyResult } from "../chat/input-history.ts";
 import { PinnedMessages } from "../chat/pinned-messages.ts";
 import { getPinnedMessageSummary } from "../chat/pinned-summary.ts";
-import {
-  REALTIME_TALK_FALLBACK_PROVIDERS,
-  listSelectableRealtimeTalkProviders,
-  resolveControlUiRealtimeTalkProviderTransports,
-  type RealtimeTalkCatalogProvider,
-} from "../chat/realtime-talk-catalog.ts";
-import type { RealtimeTalkConversationEntry } from "../chat/realtime-talk-conversation.ts";
-import type { RealtimeTalkStatus } from "../chat/realtime-talk.ts";
 import { renderChatRunControls } from "../chat/run-controls.ts";
 import type { ChatRunUiStatus } from "../chat/run-lifecycle.ts";
 import { getOrCreateSessionCacheValue } from "../chat/session-cache.ts";
@@ -60,7 +57,6 @@ import {
   renderFallbackIndicator,
 } from "../chat/status-indicators.ts";
 import { getExpandedToolCards, syncToolCardExpansionState } from "../chat/tool-expansion-state.ts";
-import type { AdminBotActionProposal, AdminBotDashboardData } from "../controllers/adminbot.ts";
 import type { EmbedSandboxMode } from "../embed-sandbox.ts";
 import { formatRelativeTimestamp } from "../format.ts";
 import { icons } from "../icons.ts";
@@ -124,23 +120,6 @@ export type ChatProps = {
   assistantAvatarUrl?: string | null;
   draft: string;
   queue: ChatQueueItem[];
-  realtimeTalkActive?: boolean;
-  realtimeTalkStatus?: RealtimeTalkStatus;
-  realtimeTalkDetail?: string | null;
-  realtimeTalkTranscript?: string | null;
-  realtimeTalkConversation?: RealtimeTalkConversationEntry[];
-  realtimeTalkOptionsOpen?: boolean;
-  realtimeTalkCatalogProviders?: RealtimeTalkCatalogProvider[] | null;
-  realtimeTalkOptions?: {
-    provider: string;
-    model: string;
-    voice: string;
-    transport: string;
-    vadThreshold: string;
-    silenceDurationMs: string;
-    prefixPaddingMs: string;
-    reasoningEffort: string;
-  };
   connected: boolean;
   canSend: boolean;
   disabledReason: string | null;
@@ -175,13 +154,7 @@ export type ChatProps = {
   onSend: () => void;
   onCompact?: () => void | Promise<void>;
   onOpenSessionCheckpoints?: () => void | Promise<void>;
-  onToggleRealtimeTalk?: () => void;
-  onToggleRealtimeTalkOptions?: () => void;
-  onRealtimeTalkOptionsChange?: (
-    next: Partial<NonNullable<ChatProps["realtimeTalkOptions"]>>,
-  ) => void;
   onDismissError?: () => void;
-  onDismissRealtimeTalkError?: () => void;
   onAbort?: () => void;
   onQueueRemove: (id: string) => void;
   onQueueRetry?: (id: string) => void;
@@ -236,48 +209,7 @@ const pinnedMessagesMap = new Map<string, PinnedMessages>();
 const deletedMessagesMap = new Map<string, DeletedMessages>();
 const SLASH_MENU_LISTBOX_ID = "chat-slash-menu-listbox";
 const SLASH_MENU_ACTIVE_ANNOUNCEMENT_ID = "chat-slash-active-announcement";
-type TalkSelectOption = { label: string; value: string };
 
-const TALK_VOICE_OPTIONS: TalkSelectOption[] = [
-  { label: "Default", value: "" },
-  { label: "Alloy", value: "alloy" },
-  { label: "Ash", value: "ash" },
-  { label: "Ballad", value: "ballad" },
-  { label: "Coral", value: "coral" },
-  { label: "Echo", value: "echo" },
-  { label: "Sage", value: "sage" },
-  { label: "Shimmer", value: "shimmer" },
-  { label: "Verse", value: "verse" },
-  { label: "Marin", value: "marin" },
-  { label: "Cedar", value: "cedar" },
-];
-const TALK_SENSITIVITY_OPTIONS: TalkSelectOption[] = [
-  { label: "Default", value: "" },
-  { label: "Low", value: "0.65" },
-  { label: "Medium", value: "0.5" },
-  { label: "High", value: "0.35" },
-];
-const TALK_PROVIDER_AUTO_OPTION: TalkSelectOption = { label: "Auto", value: "" };
-const TALK_PROVIDER_FALLBACK_OPTIONS: TalkSelectOption[] = [
-  TALK_PROVIDER_AUTO_OPTION,
-  ...REALTIME_TALK_FALLBACK_PROVIDERS.map((provider) => ({
-    label: provider.label,
-    value: provider.id,
-  })),
-];
-const TALK_TRANSPORT_OPTIONS: TalkSelectOption[] = [
-  { label: "Auto", value: "" },
-  { label: "WebRTC", value: "webrtc" },
-  { label: "Gateway relay", value: "gateway-relay" },
-  { label: "Provider WebSocket", value: "provider-websocket" },
-];
-const TALK_REASONING_OPTIONS: TalkSelectOption[] = [
-  { label: "Default", value: "" },
-  { label: "Minimal", value: "minimal" },
-  { label: "Low", value: "low" },
-  { label: "Medium", value: "medium" },
-  { label: "High", value: "high" },
-];
 const INITIAL_CHAT_HISTORY_RENDER_WINDOW = 30;
 const CHAT_HISTORY_RENDER_WINDOW_BATCH = 30;
 const CHAT_HISTORY_RENDER_EXPAND_SCROLL_TOP_PX = 48;
@@ -296,227 +228,6 @@ function getDeletedMessages(sessionKey: string): DeletedMessages {
     sessionKey,
     () => new DeletedMessages(sessionKey),
   );
-}
-
-function renderNativeTalkSelect(params: {
-  label: string;
-  value: string;
-  options: TalkSelectOption[];
-  onSelect: (value: string) => void;
-  selectedLabel?: string;
-}) {
-  const selectedLabel =
-    params.selectedLabel ?? params.options.find((entry) => entry.value === params.value)?.label;
-  return html`
-    <label class="agent-chat__talk-field" data-talk-select=${params.label.toLowerCase()}>
-      <span>${params.label}</span>
-      ${selectedLabel
-        ? html`<span class="agent-chat__talk-select-label">${selectedLabel}</span>`
-        : nothing}
-      <select
-        .value=${params.value}
-        @change=${(event: Event) =>
-          params.onSelect((event.currentTarget as HTMLSelectElement).value)}
-      >
-        ${repeat(
-          params.options,
-          (entry) => entry.value,
-          (entry) => html`
-            <option
-              value=${entry.value}
-              data-talk-select-option=${entry.value}
-              ?selected=${entry.value === params.value}
-              @click=${() => params.onSelect(entry.value)}
-            >
-              ${entry.label}
-            </option>
-          `,
-        )}
-      </select>
-    </label>
-  `;
-}
-
-function renderRealtimeTalkOptions(props: ChatProps) {
-  const options = props.realtimeTalkOptions;
-  const onChange = props.onRealtimeTalkOptionsChange;
-  if (!props.realtimeTalkOptionsOpen || !options || !onChange) {
-    return nothing;
-  }
-  const catalogProviders = props.realtimeTalkCatalogProviders;
-  const selectableProviders = listSelectableRealtimeTalkProviders(catalogProviders ?? []);
-  const providerOptions: TalkSelectOption[] = catalogProviders
-    ? [
-        TALK_PROVIDER_AUTO_OPTION,
-        ...selectableProviders.map((provider) => ({ label: provider.label, value: provider.id })),
-      ]
-    : TALK_PROVIDER_FALLBACK_OPTIONS;
-  const selectedCatalogProvider = options.provider
-    ? selectableProviders.find((provider) => provider.id === options.provider)
-    : null;
-  const selectedProviderTransports = selectedCatalogProvider
-    ? resolveControlUiRealtimeTalkProviderTransports(selectedCatalogProvider)
-    : undefined;
-  const transportOptions: TalkSelectOption[] = selectedProviderTransports
-    ? [
-        { label: "Auto", value: "" },
-        ...TALK_TRANSPORT_OPTIONS.filter(
-          (opt) => opt.value !== "" && selectedProviderTransports.includes(opt.value),
-        ),
-      ]
-    : TALK_TRANSPORT_OPTIONS;
-  const update = (key: keyof NonNullable<ChatProps["realtimeTalkOptions"]>) => (event: Event) => {
-    const value = (event.currentTarget as HTMLInputElement | HTMLSelectElement).value;
-    onChange({ [key]: value });
-  };
-  const isDefaultSensitivity = options.vadThreshold === "";
-  const isPresetSensitivity = ["0.65", "0.5", "0.35"].includes(options.vadThreshold);
-  const isCustomSensitivity = !isDefaultSensitivity && !isPresetSensitivity;
-  const sensitivityValue = isDefaultSensitivity
-    ? ""
-    : isPresetSensitivity
-      ? options.vadThreshold
-      : "__custom";
-  const sensitivityOptions = isCustomSensitivity
-    ? [...TALK_SENSITIVITY_OPTIONS, { label: "Custom", value: "__custom" }]
-    : TALK_SENSITIVITY_OPTIONS;
-  const sensitivityLabel =
-    sensitivityOptions.find((entry) => entry.value === sensitivityValue)?.label ?? "Custom";
-  const updateSensitivity = (value: string) => {
-    if (value !== "__custom") {
-      onChange({ vadThreshold: value });
-    }
-  };
-  return html`
-    <div class="agent-chat__talk-options" aria-label="Talk options">
-      <div class="agent-chat__talk-options-primary">
-        ${renderNativeTalkSelect({
-          label: "Voice",
-          value: options.voice,
-          options: TALK_VOICE_OPTIONS,
-          onSelect: (voice) => onChange({ voice }),
-        })}
-        <label class="agent-chat__talk-field">
-          <span>Model</span>
-          <input
-            .value=${options.model}
-            @input=${update("model")}
-            placeholder="Auto"
-            spellcheck="false"
-          />
-        </label>
-        ${renderNativeTalkSelect({
-          label: "Sensitivity",
-          value: sensitivityValue,
-          options: sensitivityOptions,
-          selectedLabel: sensitivityLabel,
-          onSelect: updateSensitivity,
-        })}
-      </div>
-      <details class="agent-chat__talk-options-advanced">
-        <summary>Advanced</summary>
-        <div class="agent-chat__talk-options-grid">
-          ${renderNativeTalkSelect({
-            label: "Provider",
-            value: options.provider,
-            options: providerOptions,
-            onSelect: (provider) => {
-              const selectedProvider = selectableProviders.find((entry) => entry.id === provider);
-              const transports = selectedProvider
-                ? resolveControlUiRealtimeTalkProviderTransports(selectedProvider)
-                : null;
-              const transport = options.transport;
-              onChange(
-                transports && transport && !transports.includes(transport)
-                  ? { provider, transport: "" }
-                  : { provider },
-              );
-            },
-          })}
-          ${renderNativeTalkSelect({
-            label: "Transport",
-            value: options.transport,
-            options: transportOptions,
-            onSelect: (transport) => onChange({ transport }),
-          })}
-          ${renderNativeTalkSelect({
-            label: "Reasoning",
-            value: options.reasoningEffort,
-            options: TALK_REASONING_OPTIONS,
-            onSelect: (reasoningEffort) => onChange({ reasoningEffort }),
-          })}
-          <label class="agent-chat__talk-field">
-            <span>Exact VAD</span>
-            <input
-              type="number"
-              min="0"
-              max="1"
-              step="0.05"
-              .value=${options.vadThreshold}
-              @input=${update("vadThreshold")}
-              placeholder="0.5"
-            />
-          </label>
-          <label class="agent-chat__talk-field">
-            <span>Pause before send</span>
-            <input
-              type="number"
-              min="1"
-              step="50"
-              .value=${options.silenceDurationMs}
-              @input=${update("silenceDurationMs")}
-              placeholder="500"
-            />
-          </label>
-          <label class="agent-chat__talk-field">
-            <span>Lead-in</span>
-            <input
-              type="number"
-              min="0"
-              step="50"
-              .value=${options.prefixPaddingMs}
-              @input=${update("prefixPaddingMs")}
-              placeholder="300"
-            />
-          </label>
-        </div>
-      </details>
-    </div>
-  `;
-}
-
-function renderRealtimeTalkConversation(props: ChatProps) {
-  const entries = props.realtimeTalkConversation ?? [];
-  if (entries.length === 0) {
-    return nothing;
-  }
-  return html`
-    <div class="agent-chat__voice-turns" role="log" aria-label=${t("chat.composer.talkTranscript")}>
-      ${repeat(
-        entries,
-        (entry) => entry.id,
-        (entry) => {
-          const label =
-            entry.role === "user" ? props.userName?.trim() || "You" : props.assistantName;
-          return html`
-            <div
-              class="agent-chat__voice-turn agent-chat__voice-turn--${entry.role}"
-              data-role=${entry.role}
-            >
-              <span class="agent-chat__voice-turn-speaker">${label}</span>
-              <span class="agent-chat__voice-turn-text">${entry.text}</span>
-              ${entry.isStreaming
-                ? html`<span
-                    class="agent-chat__voice-turn-stream"
-                    aria-label=${t("chat.composer.stillListening")}
-                  ></span>`
-                : nothing}
-            </div>
-          `;
-        },
-      )}
-    </div>
-  `;
 }
 
 interface ChatEphemeralState {
@@ -2203,8 +1914,7 @@ export function renderChat(props: ChatProps) {
     expandedToolCards.set(toolCardId, !expandedToolCards.get(toolCardId));
     requestUpdate();
   };
-  const hasRealtimeTalkConversation = (props.realtimeTalkConversation?.length ?? 0) > 0;
-  const isEmpty = chatItems.length === 0 && !props.loading && !hasRealtimeTalkConversation;
+  const isEmpty = chatItems.length === 0 && !props.loading;
   const showLoadingSkeleton = props.loading && chatItems.length === 0;
   const threadContextWindow =
     activeSession?.contextTokens ?? props.sessions?.defaults?.contextTokens ?? null;
@@ -2393,7 +2103,6 @@ export function renderChat(props: ChatProps) {
               },
             ),
         )}
-        ${renderRealtimeTalkConversation(props)}
       </div>
     </div>
   `;
@@ -2619,42 +2328,6 @@ export function renderChat(props: ChatProps) {
         @change=${(e: Event) => handleFileSelect(e, props)}
       />
 
-      ${renderRealtimeTalkOptions(props)}
-      ${
-        props.realtimeTalkActive || props.realtimeTalkDetail || props.realtimeTalkTranscript
-          ? html`
-              <div
-                class="agent-chat__stt-interim agent-chat__talk-status"
-                role=${props.realtimeTalkStatus === "error" ? "alert" : nothing}
-              >
-                <span class="agent-chat__talk-status-text">
-                  ${props.realtimeTalkDetail ??
-                  ((props.realtimeTalkConversation?.length ?? 0) === 0
-                    ? props.realtimeTalkTranscript
-                    : null) ??
-                  (props.realtimeTalkStatus === "thinking"
-                    ? "Asking OpenClaw..."
-                    : props.realtimeTalkStatus === "connecting"
-                      ? "Connecting Talk..."
-                      : "Talk live")}
-                </span>
-                ${props.realtimeTalkStatus === "error" && props.onDismissRealtimeTalkError
-                  ? html`
-                      <button
-                        class="callout__dismiss"
-                        type="button"
-                        @click=${props.onDismissRealtimeTalkError}
-                        aria-label=${t("chat.composer.dismissTalkError")}
-                        title=${t("chat.composer.dismissTalkError")}
-                      >
-                        ${icons.x}
-                      </button>
-                    `
-                  : nothing}
-              </div>
-            `
-          : nothing
-      }
 
       <div class="agent-chat__composer-combobox">
         <textarea
@@ -2706,51 +2379,6 @@ export function renderChat(props: ChatProps) {
             <span class="agent-chat__control-label">${t("chat.composer.attachFile")}</span>
           </button>
 
-          ${
-            props.onToggleRealtimeTalk
-              ? html`
-                  <button
-                    class="agent-chat__input-btn ${props.realtimeTalkActive
-                      ? "agent-chat__input-btn--talk"
-                      : ""}"
-                    @click=${props.onToggleRealtimeTalk}
-                    title=${props.realtimeTalkActive
-                      ? t("chat.composer.stopTalk")
-                      : t("chat.composer.startTalk")}
-                    aria-label=${props.realtimeTalkActive
-                      ? t("chat.composer.stopTalk")
-                      : t("chat.composer.startTalk")}
-                    ?disabled=${!props.connected}
-                  >
-                    ${props.realtimeTalkActive ? icons.volume2 : icons.radio}
-                    <span class="agent-chat__control-label"
-                      >${props.realtimeTalkActive
-                        ? t("chat.composer.stopTalk")
-                        : t("chat.composer.startTalk")}</span
-                    >
-                  </button>
-                `
-              : nothing
-          }
-          ${
-            props.onToggleRealtimeTalkOptions
-              ? html`
-                  <button
-                    class="agent-chat__input-btn ${props.realtimeTalkOptionsOpen
-                      ? "agent-chat__input-btn--talk"
-                      : ""}"
-                    @click=${props.onToggleRealtimeTalkOptions}
-                    title="Talk settings"
-                    aria-label="Talk settings"
-                    aria-expanded=${props.realtimeTalkOptionsOpen ? "true" : "false"}
-                    ?disabled=${!props.connected || props.realtimeTalkActive}
-                  >
-                    ${icons.settings}
-                    <span class="agent-chat__control-label">Talk settings</span>
-                  </button>
-                `
-              : nothing
-          }
           ${tokens ? html`<span class="agent-chat__token-count">${tokens}</span>` : nothing}
           ${renderChatRunStatusIndicator(composerRunStatus)}
         </div>

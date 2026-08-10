@@ -3,7 +3,7 @@ import { normalizeOptionalString } from "../../packages/normalization-core/src/s
 import {
   buildApprovalPresentation,
   type ExecApprovalReplyDecision,
-} from "../infra/exec-approval-reply.js";
+} from "../infra/exec/exec-approval-reply.js";
 import {
   buildPluginApprovalRequestMessage,
   buildPluginApprovalResolvedMessage,

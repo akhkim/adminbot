@@ -1,8 +1,11 @@
 // Normalizes installed plugin config and install records.
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { PluginInstallRecord } from "../config/types.plugins.js";
-import { buildNpmResolutionFields, type NpmSpecResolution } from "../infra/install-source-utils.js";
-import { parseRegistryNpmSpec } from "../infra/npm-registry-spec.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import type { PluginInstallRecord } from "../config/types/plugins.js";
+import {
+  buildNpmResolutionFields,
+  type NpmSpecResolution,
+} from "../infra/install/install-source-utils.js";
+import { parseRegistryNpmSpec } from "../infra/install/npm-registry-spec.js";
 
 /** Plugin install record update with the target plugin id attached. */
 export type PluginInstallUpdate = PluginInstallRecord & { pluginId: string };

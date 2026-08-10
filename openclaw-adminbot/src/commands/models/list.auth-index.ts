@@ -5,20 +5,20 @@ import type { AuthProfileCredential } from "../../agents/auth-profiles/types.js"
 import {
   listProviderEnvAuthLookupKeys,
   resolveProviderEnvAuthLookupMaps,
-} from "../../agents/model-auth-env-vars.js";
-import { resolveEnvApiKey } from "../../agents/model-auth-env.js";
-import { resolveAwsSdkEnvVarName } from "../../agents/model-auth-runtime-shared.js";
+} from "../../agents/auth/model-auth-env-vars.js";
+import { resolveEnvApiKey } from "../../agents/auth/model-auth-env.js";
+import { resolveAwsSdkEnvVarName } from "../../agents/auth/model-auth-runtime-shared.js";
 import {
   hasSyntheticLocalProviderAuthConfig,
   hasUsableCustomProviderApiKey,
-} from "../../agents/model-auth.js";
+} from "../../agents/auth/model-auth.js";
 import {
   OPENAI_CODEX_PROVIDER_ID,
   OPENAI_PROVIDER_ID,
   openAIProviderUsesCodexRuntimeByDefault,
-} from "../../agents/openai-routing.js";
+} from "../../agents/transport/openai-routing.js";
 import { resolveAgentModelPrimaryValue } from "../../config/model-input.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { PluginMetadataSnapshot } from "../../plugins/plugin-metadata-snapshot.types.js";
 import { loadPluginRegistrySnapshotWithMetadata } from "../../plugins/plugin-registry.js";
 

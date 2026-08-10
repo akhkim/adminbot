@@ -1,5 +1,5 @@
 /** Reply payload contracts and metadata helpers shared by dispatch and channel renderers. */
-import type { ReplyToMode } from "../config/types.base.js";
+import type { ReplyToMode } from "../config/types/base.js";
 import type {
   InteractiveReply,
   MessagePresentation,

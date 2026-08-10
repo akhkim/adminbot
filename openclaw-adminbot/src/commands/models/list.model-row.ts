@@ -1,5 +1,5 @@
 /** Converts registry/catalog models into printable model-list rows. */
-import { modelKey } from "../../agents/model-ref-shared.js";
+import { modelKey } from "../../agents/models/model-ref-shared.js";
 import { isLocalBaseUrl } from "./list.local-url.js";
 import type { ModelRow } from "./list.types.js";
 

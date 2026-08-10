@@ -2,7 +2,7 @@
  * Tests shared gateway auth behavior across config method updates.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { RestartSentinelPayload } from "../../infra/restart-sentinel.js";
 import {
   createConfigHandlerHarness,
@@ -49,8 +49,9 @@ vi.mock("../../config/config.js", async () => {
   };
 });
 
-vi.mock("../../config/io.js", async () => {
-  const actual = await vi.importActual<typeof import("../../config/io.js")>("../../config/io.js");
+vi.mock("../../config/io/io.js", async () => {
+  const actual =
+    await vi.importActual<typeof import("../../config/io/io.js")>("../../config/io/io.js");
   return {
     ...actual,
     createConfigIO: () => ({ configPath: "/tmp/openclaw.json" }),
@@ -68,7 +69,7 @@ vi.mock("../../config/validation.js", async () => {
   };
 });
 
-vi.mock("../../config/runtime-schema.js", () => ({
+vi.mock("../../config/runtime/runtime-schema.js", () => ({
   loadGatewayRuntimeConfigSchema: () => ({ uiHints: undefined }),
 }));
 

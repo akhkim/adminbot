@@ -7,14 +7,14 @@ import {
   buildAgentModelCatalogCacheKey,
   readCachedAgentModelCatalog,
   writeCachedAgentModelCatalog,
-} from "../../agents/model-catalog-state-cache.js";
-import { buildModelsJsonSourceFingerprint } from "../../agents/models-config.js";
+} from "../../agents/models/model-catalog-state-cache.js";
+import { buildModelsJsonSourceFingerprint } from "../../agents/models/models-config.js";
 import {
   createProviderApiKeyResolver,
   createProviderAuthResolver,
-} from "../../agents/models-config.providers.secrets.js";
-import type { ModelProviderConfig } from "../../config/types.models.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+} from "../../agents/models/models-config.providers.secrets.js";
+import type { ModelProviderConfig } from "../../config/types/models.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import type { Model } from "../../llm/types.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
@@ -31,11 +31,11 @@ import {
   resolveRuntimePluginDiscoveryProviders,
   runProviderCatalog,
   runProviderStaticCatalog,
-} from "../../plugins/provider-discovery.js";
+} from "../../plugins/providers/provider-discovery.js";
 import {
   resolveBundledProviderCompatPluginIds,
   resolveOwningPluginIdsForProviderRef,
-} from "../../plugins/providers.js";
+} from "../../plugins/providers/providers.js";
 import type { ProviderPlugin } from "../../plugins/types.js";
 
 const DISCOVERY_ORDERS = ["simple", "profile", "paired", "late"] as const;

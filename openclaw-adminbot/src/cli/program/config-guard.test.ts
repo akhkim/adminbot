@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { note } from "../../../packages/terminal-core/src/note.js";
-import { formatCliCommand } from "../command-format.js";
+import { formatCliCommand } from "./command-format.js";
 import { ensureConfigReady, testApi } from "./config-guard.js";
 
 const pluginPackagingRecoveryHint = [
@@ -16,7 +16,7 @@ const loadAndMaybeMigrateDoctorConfigMock = vi.hoisted(() => vi.fn());
 const readConfigFileSnapshotMock = vi.hoisted(() => vi.fn());
 const setRuntimeConfigSnapshotMock = vi.hoisted(() => vi.fn());
 
-vi.mock("../../commands/doctor-config-preflight.js", () => ({
+vi.mock("../../commands/doctor/doctor-config-preflight.js", () => ({
   runDoctorConfigPreflight: loadAndMaybeMigrateDoctorConfigMock,
 }));
 

@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
   waitForNodeReconnect: vi.fn(),
 }));
 
-vi.mock("../node-pending-work.js", () => ({
+vi.mock("../node/node-pending-work.js", () => ({
   drainNodePendingWork: mocks.drainNodePendingWork,
   enqueueNodePendingWork: mocks.enqueueNodePendingWork,
 }));

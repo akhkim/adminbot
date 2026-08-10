@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import { sortUniqueStrings } from "@openclaw/normalization-core/string-normalization";
 import { resolveOpenClawPackageRootSync } from "../infra/openclaw-root.js";
 import { replaceFileAtomicSync } from "../infra/replace-file.js";
-import type { ConfigSchemaResponse } from "./schema.js";
-import { schemaHasChildren } from "./schema.shared.js";
+import type { ConfigSchemaResponse } from "./schema/schema.js";
+import { schemaHasChildren } from "./schema/shared.js";
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 

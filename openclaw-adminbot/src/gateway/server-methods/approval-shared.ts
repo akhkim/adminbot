@@ -7,8 +7,8 @@ import {
   formatValidationErrors,
 } from "../../../packages/gateway-protocol/src/index.js";
 import type { ValidationError } from "../../../packages/gateway-protocol/src/index.js";
-import { hasApprovalTurnSourceRoute } from "../../infra/approval-turn-source.js";
-import type { ExecApprovalDecision } from "../../infra/exec-approvals.js";
+import { hasApprovalTurnSourceRoute } from "../../infra/approvals/approval-turn-source.js";
+import type { ExecApprovalDecision } from "../../infra/exec/exec-approvals.js";
 import type {
   ExecApprovalIdLookupResult,
   ExecApprovalManager,

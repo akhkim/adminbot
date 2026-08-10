@@ -5,8 +5,8 @@ export {
   buildModelsProviderData,
   formatModelsAvailableHeader,
   resolveModelsCommandReply,
-} from "../auto-reply/reply/commands-models.js";
+} from "../auto-reply/reply/commands/commands-models.js";
 export type {
   ModelsProviderData,
   ModelsRuntimeChoice,
-} from "../auto-reply/reply/commands-models.js";
+} from "../auto-reply/reply/commands/commands-models.js";

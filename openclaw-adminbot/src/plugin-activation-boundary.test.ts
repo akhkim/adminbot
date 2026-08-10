@@ -1,8 +1,7 @@
 // Tests plugin activation boundaries during root package startup.
 import { describe, expect, it, vi } from "vitest";
-import { normalizeModelRef } from "./agents/model-selection-normalize.js";
-import { isStaticallyChannelConfigured } from "./config/channel-configured-shared.js";
-import { parseBrowserMajorVersion } from "./plugin-sdk/browser-host-inspection.js";
+import { normalizeModelRef } from "./agents/models/model-selection-normalize.js";
+import { isStaticallyChannelConfigured } from "./config/channel/channel-configured-shared.js";
 
 const testModelIdNormalization = {
   providers: {

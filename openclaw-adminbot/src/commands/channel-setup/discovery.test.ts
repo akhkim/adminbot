@@ -1,6 +1,6 @@
 // Channel setup discovery tests cover visible setup choices from bundled, installed, and trusted catalog sources.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PluginAutoEnableResult } from "../../config/plugin-auto-enable.js";
+import type { PluginAutoEnableResult } from "../../config/plugin/plugin-auto-enable.js";
 
 const loadPluginRegistrySnapshot = vi.hoisted(() => vi.fn());
 const listPluginContributionIds = vi.hoisted(() =>
@@ -24,7 +24,7 @@ vi.mock("../../plugins/plugin-registry.js", () => ({
   listPluginContributionIds: (args: unknown) => listPluginContributionIds(args),
 }));
 
-vi.mock("../../config/plugin-auto-enable.js", () => ({
+vi.mock("../../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: (args: unknown) =>
     applyPluginAutoEnable(args as { config: unknown; env?: NodeJS.ProcessEnv }),
 }));

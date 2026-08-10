@@ -1,8 +1,8 @@
 // Fallback notice state helpers track fallback notices shown to users.
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { areRuntimeModelRefsEquivalent } from "../agents/model-runtime-aliases.js";
+import { areRuntimeModelRefsEquivalent } from "../agents/models/model-runtime-aliases.js";
 import type { SessionEntry } from "../config/sessions.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 // Persisted fallback notice state is active only when the current selected and
 // active runtime refs still match the recorded fallback transition.

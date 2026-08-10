@@ -25,7 +25,7 @@ const {
   runDoctorLintCli,
 } = mocks;
 
-vi.mock("../../commands/doctor.js", () => ({
+vi.mock("../../commands/doctor/doctor.js", () => ({
   doctorCommand: mocks.doctorCommand,
 }));
 
@@ -41,7 +41,7 @@ vi.mock("../../commands/uninstall.js", () => ({
   uninstallCommand: mocks.uninstallCommand,
 }));
 
-vi.mock("../../commands/doctor-lint.js", () => ({
+vi.mock("../../commands/doctor/doctor-lint.js", () => ({
   runDoctorLintCli: mocks.runDoctorLintCli,
 }));
 

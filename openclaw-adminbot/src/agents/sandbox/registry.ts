@@ -7,14 +7,14 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { Insertable, Selectable, Updateable } from "kysely";
 import { z } from "zod";
-import { executeSqliteQuerySync, getNodeSqliteKysely } from "../../infra/kysely-sync.js";
+import { executeSqliteQuerySync, getNodeSqliteKysely } from "../../infra/state/kysely-sync.js";
+import { safeParseJsonWithSchema } from "../../shared/zod-parse.js";
 import type { DB as OpenClawStateKyselyDatabase } from "../../state/openclaw-state-db.generated.js";
 import {
   openOpenClawStateDatabase,
   runOpenClawStateWriteTransaction,
 } from "../../state/openclaw-state-db.js";
-import { safeParseJsonWithSchema } from "../../utils/zod-parse.js";
-import { acquireSessionWriteLock } from "../session-write-lock.js";
+import { acquireSessionWriteLock } from "../sessions/session-write-lock.js";
 import {
   SANDBOX_BROWSER_REGISTRY_PATH,
   SANDBOX_BROWSERS_DIR,

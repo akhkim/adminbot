@@ -11,11 +11,11 @@ import { assertCronDeliveryInputNonBlankFields } from "../../cron/delivery-targe
 import { normalizeCronJobCreate, normalizeCronJobPatch } from "../../cron/normalize.js";
 import type { CronDelivery } from "../../cron/types.js";
 import { normalizeHttpWebhookUrl } from "../../cron/webhook-url.js";
-import { GatewayClientRequestError } from "../../gateway/client.js";
+import { GatewayClientRequestError } from "../../gateway/client/client.js";
 import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
 import { extractTextFromChatContent } from "../../shared/chat-content.js";
+import type { DeliveryContext } from "../../shared/delivery-context.shared.js";
 import { isRecord, truncateUtf16Safe } from "../../utils.js";
-import type { DeliveryContext } from "../../utils/delivery-context.shared.js";
 import { resolveSessionAgentId } from "../agent-scope.js";
 import {
   optionalFiniteNumberSchema,
@@ -24,15 +24,6 @@ import {
   optionalStringEnum,
   stringEnum,
 } from "../schema/typebox.js";
-import { CRON_TOOL_DISPLAY_SUMMARY } from "../tool-description-presets.js";
-import { isToolAllowedByPolicyName } from "../tool-policy-match.js";
-import {
-  buildPluginToolGroups,
-  expandPolicyWithPluginGroups,
-  expandToolGroups,
-  normalizeToolName,
-} from "../tool-policy.js";
-import { setToolTerminalPresentation } from "../tool-terminal-presentation.js";
 import {
   type AnyAgentTool,
   jsonResult,
@@ -48,6 +39,15 @@ import {
 import { gatewayCallOptionSchemaProperties } from "./gateway-schema.js";
 import { callGatewayTool, readGatewayCallOptions, type GatewayCallOptions } from "./gateway.js";
 import { resolveInternalSessionKey, resolveMainSessionAlias } from "./sessions-helpers.js";
+import { CRON_TOOL_DISPLAY_SUMMARY } from "./tool-description-presets.js";
+import { isToolAllowedByPolicyName } from "./tool-policy-match.js";
+import {
+  buildPluginToolGroups,
+  expandPolicyWithPluginGroups,
+  expandToolGroups,
+  normalizeToolName,
+} from "./tool-policy.js";
+import { setToolTerminalPresentation } from "./tool-terminal-presentation.js";
 
 // Spell out job/patch properties for model-facing schema; runtime validation
 // still happens in normalizeCronJob* to avoid nested union schemas.

@@ -2,7 +2,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { writeClaudeBundleManifest } from "../../plugins/bundle-mcp.test-support.js";
+import { writeClaudeBundleManifest } from "../../plugins/install/bundle-mcp.test-support.js";
 import { prepareCliBundleMcpConfig } from "./bundle-mcp.js";
 import {
   cliBundleMcpHarness,

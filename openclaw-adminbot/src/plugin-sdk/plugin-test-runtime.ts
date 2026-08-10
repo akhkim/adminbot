@@ -1,11 +1,11 @@
 // Focused public test helpers for plugin runtime, registry, and setup fixtures.
 
-export { setDefaultChannelPluginRegistryForTests } from "../commands/channel-test-registry.js";
+export { setDefaultChannelPluginRegistryForTests } from "../commands/channels/channel-test-registry.js";
 export {
   createEmptyPluginRegistry,
   createPluginRegistry,
   type PluginRecord,
-} from "../plugins/registry.js";
+} from "../plugins/manifest/registry.js";
 export {
   providerContractLoadError,
   pluginRegistrationContractRegistry,
@@ -13,46 +13,46 @@ export {
   resolveWebFetchProviderContractEntriesForPluginId,
   resolveWebSearchProviderContractEntriesForPluginId,
 } from "../plugins/contracts/registry.js";
-export { loadPluginManifestRegistry } from "../plugins/manifest-registry.js";
+export { loadPluginManifestRegistry } from "../plugins/manifest/manifest-registry.js";
 export {
   emitDiagnosticEventWithTrustedTraceContext,
   emitInternalDiagnosticEvent as emitInternalDiagnosticEventForTest,
   emitTrustedSecurityEvent,
-} from "../infra/diagnostic-events.js";
-export { runWithDiagnosticTraceContext } from "../infra/diagnostic-trace-context.js";
+} from "../infra/diagnostics/diagnostic-events.js";
+export { runWithDiagnosticTraceContext } from "../infra/diagnostics/diagnostic-trace-context.js";
 export { logMessageDispatchStarted, logMessageProcessed } from "../logging/diagnostic.js";
-export { resolveBundledExplicitProviderContractsFromPublicArtifacts } from "../plugins/provider-contract-public-artifacts.js";
+export { resolveBundledExplicitProviderContractsFromPublicArtifacts } from "../plugins/providers/provider-contract-public-artifacts.js";
 export {
   initializeGlobalHookRunner,
   resetGlobalHookRunner,
-} from "../plugins/hook-runner-global.js";
-export { addTestHook } from "../plugins/hooks.test-helpers.js";
-export { createPluginRecord } from "../plugins/status.test-helpers.js";
+} from "../plugins/hooks/hook-runner-global.js";
+export { addTestHook } from "../plugins/hooks/hooks.test-helpers.js";
+export { createPluginRecord } from "../plugins/config/status.test-helpers.js";
 export {
   resolveBundledExplicitWebFetchProvidersFromPublicArtifacts,
   resolveBundledExplicitWebSearchProvidersFromPublicArtifacts,
-} from "../plugins/web-provider-public-artifacts.explicit.js";
+} from "../plugins/web/web-provider-public-artifacts.explicit.js";
 export {
   getActivePluginRegistry,
   releasePinnedPluginChannelRegistry,
   resetPluginRuntimeStateForTest,
   setActivePluginRegistry,
-} from "../plugins/runtime.js";
+} from "../plugins/runtime/runtime.js";
 export {
   listImportedBundledPluginFacadeIds,
   resetFacadeRuntimeStateForTest,
 } from "./facade-runtime.js";
 export { capturePluginRegistration } from "../plugins/captured-registration.js";
 export { clearHealthChecksForTest } from "../flows/health-check-registry.js";
-export { runProviderCatalog } from "../plugins/provider-discovery.js";
-export { onTrustedInternalDiagnosticEvent } from "../infra/diagnostic-events.js";
+export { runProviderCatalog } from "../plugins/providers/provider-discovery.js";
+export { onTrustedInternalDiagnosticEvent } from "../infra/diagnostics/diagnostic-events.js";
 export {
   buildProviderPluginMethodChoice,
   resolveProviderModelPickerEntries,
   resolveProviderWizardOptions,
   setProviderWizardProvidersResolverForTest,
-} from "../plugins/provider-wizard.js";
-export { resolveProviderPluginChoice } from "../plugins/provider-auth-choice.runtime.js";
+} from "../plugins/providers/provider-wizard.js";
+export { resolveProviderPluginChoice } from "../plugins/providers/provider-auth-choice.runtime.js";
 export {
   clearEmbeddingProviders,
   getRegisteredEmbeddingProvider,
@@ -60,7 +60,7 @@ export {
   registerEmbeddingProvider,
   restoreRegisteredEmbeddingProviders,
   type RegisteredEmbeddingProvider,
-} from "../plugins/embedding-providers.js";
+} from "../plugins/embedding/embedding-providers.js";
 export {
   clearMemoryEmbeddingProviders,
   listRegisteredMemoryEmbeddingProviders,
@@ -68,7 +68,7 @@ export {
   type RegisteredMemoryEmbeddingProvider,
 } from "../plugins/memory-embedding-providers.js";
 export type { PluginRuntime } from "../plugins/runtime/types.js";
-export type { PluginHookRegistration } from "../plugins/hook-types.js";
+export type { PluginHookRegistration } from "../plugins/hooks/hook-types.js";
 export type { RuntimeEnv } from "../runtime.js";
 export type { MockFn } from "../test-utils/vitest-mock-fn.js";
 export { createOutboundTestPlugin, createTestRegistry } from "../test-utils/channel-plugins.js";
@@ -102,7 +102,7 @@ export {
   selectFirstWizardOption,
   type WizardPrompter,
 } from "../test-utils/plugin-setup-wizard.js";
-export { createMockPluginRegistry } from "../plugins/hooks.test-helpers.js";
+export { createMockPluginRegistry } from "../plugins/hooks/hooks.test-helpers.js";
 export { buildPluginApi } from "../plugins/api-builder.js";
 export {
   createCapturedPluginRegistration,

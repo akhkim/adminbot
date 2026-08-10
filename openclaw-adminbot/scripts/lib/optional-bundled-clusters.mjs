@@ -1,18 +1,7 @@
 // Optional bundled plugin cluster policy used by build and package scripts.
-const optionalBundledClusters = [
-  "acpx",
-  "diagnostics-otel",
-  "diffs",
-  "googlechat",
-  "memory-lancedb",
-  "msteams",
-  "nostr",
-  "tlon",
-  "twitch",
-  "ui",
-  "whatsapp",
-  "zalouser",
-];
+// Empty since the AdminBot clean removed every plugin this list used to name. None of the
+// surviving bundled plugins are size-sensitive enough to be optional.
+const optionalBundledClusters = [];
 
 /** Bundled plugin clusters that may be excluded from size-sensitive build lanes. */
 export const optionalBundledClusterSet = new Set(optionalBundledClusters);

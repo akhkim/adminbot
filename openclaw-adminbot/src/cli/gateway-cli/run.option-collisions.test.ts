@@ -2,7 +2,7 @@
 import path from "node:path";
 import { Command } from "commander";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ConfigFileSnapshot } from "../../config/types.js";
+import type { ConfigFileSnapshot } from "../../config/types/types.js";
 import { GATEWAY_SERVICE_RUNTIME_PID_ENV } from "../../daemon/constants.js";
 import { SUPERVISOR_HINT_ENV_VARS } from "../../infra/supervisor-markers.js";
 import { withEnvAsync } from "../../test-utils/env.js";
@@ -105,7 +105,7 @@ vi.mock("../../config/config.js", () => ({
     readConfigFileSnapshotWithPluginMetadata(options),
 }));
 
-vi.mock("../../config/paths.js", () => ({
+vi.mock("../../config/paths/paths.js", () => ({
   CONFIG_PATH: "/tmp/openclaw-test-missing-config.json",
   normalizeStateDirEnv: (env?: NodeJS.ProcessEnv) => normalizeStateDirEnv(env),
   pinRuntimePaths: (env?: NodeJS.ProcessEnv) => pinRuntimePaths(env),
@@ -126,11 +126,11 @@ vi.mock("../../infra/dotenv-global.js", () => ({
     },
 }));
 
-vi.mock("../../config/shell-env-expected-keys.js", () => ({
+vi.mock("../../config/env/shell-env-expected-keys.js", () => ({
   resolveShellEnvExpectedKeys: (env?: NodeJS.ProcessEnv) => resolveShellEnvExpectedKeys(env),
 }));
 
-vi.mock("../../infra/shell-env.js", () => ({
+vi.mock("../../infra/system/shell-env.js", () => ({
   clearShellEnvAppliedKeys: (keys: readonly string[]) => clearShellEnvAppliedKeys(keys),
   loadShellEnvFallback: (opts?: unknown) => loadShellEnvFallback(opts),
   resolveShellEnvFallbackTimeoutMs: (env?: NodeJS.ProcessEnv) =>
@@ -139,7 +139,7 @@ vi.mock("../../infra/shell-env.js", () => ({
   shouldEnableShellEnvFallback: (env?: NodeJS.ProcessEnv) => shouldEnableShellEnvFallback(env),
 }));
 
-vi.mock("../../gateway/auth.js", () => ({
+vi.mock("../../gateway/auth/auth.js", () => ({
   resolveGatewayAuth: (params: {
     authConfig?: { mode?: string; token?: unknown; password?: unknown };
     authOverride?: { mode?: string; token?: unknown; password?: unknown };
@@ -199,7 +199,7 @@ vi.mock("../../infra/restart-stale-pids.js", () => ({
     cleanStaleGatewayProcessesSync(port, options),
 }));
 
-vi.mock("../../gateway/server.js", () => ({
+vi.mock("../../gateway/server/server.js", () => ({
   startGatewayServer: (port: number, opts?: unknown) => startGatewayServer(port, opts),
 }));
 
@@ -258,7 +258,7 @@ vi.mock("../../runtime.js", () => ({
   defaultRuntime,
 }));
 
-vi.mock("../command-format.js", () => ({
+vi.mock("../program/command-format.js", () => ({
   formatCliCommand: (cmd: string) => cmd,
 }));
 

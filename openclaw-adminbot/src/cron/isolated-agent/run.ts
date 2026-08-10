@@ -1,10 +1,10 @@
 /** Orchestrates isolated cron agent turn setup, execution, delivery, and cleanup. */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { retireSessionMcpRuntime } from "../../agents/agent-bundle-mcp-tools.js";
 import { hasAnyAuthProfileStoreSource } from "../../agents/auth-profiles/source-check.js";
 import { resolveAgentHarnessPolicy } from "../../agents/harness/policy.js";
-import { listOpenAIAuthProfileProvidersForAgentRuntime } from "../../agents/openai-routing.js";
-import { expandToolGroups, normalizeToolName } from "../../agents/tool-policy.js";
+import { retireSessionMcpRuntime } from "../../agents/mcp/agent-bundle-mcp-tools.js";
+import { expandToolGroups, normalizeToolName } from "../../agents/tools/tool-policy.js";
+import { listOpenAIAuthProfileProvidersForAgentRuntime } from "../../agents/transport/openai-routing.js";
 import { deriveContextPromptTokens } from "../../agents/usage.js";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import type { CliDeps } from "../../cli/outbound-send-deps.js";
@@ -14,8 +14,8 @@ import {
   selectApplicableRuntimeConfig,
 } from "../../config/config.js";
 import { resolveAgentModelPrimaryValue } from "../../config/model-input.js";
-import type { AgentDefaultsConfig } from "../../config/types.agent-defaults.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { AgentDefaultsConfig } from "../../config/types/agent-defaults.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   assertAgentRunLifecycleGenerationCurrent,
   claimAgentRunContext,
@@ -23,11 +23,14 @@ import {
   getAgentRunContext,
   releaseAgentRunContext,
 } from "../../infra/agent-events.js";
-import { emitTrustedDiagnosticEvent, isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
+import {
+  emitTrustedDiagnosticEvent,
+  isDiagnosticsEnabled,
+} from "../../infra/diagnostics/diagnostic-events.js";
 import {
   createChildDiagnosticTraceContext,
   freezeDiagnosticTraceContext,
-} from "../../infra/diagnostic-trace-context.js";
+} from "../../infra/diagnostics/diagnostic-trace-context.js";
 import {
   createSourceDeliveryPlan,
   resolveSourceDeliveryOutcome,
@@ -128,7 +131,7 @@ const cronModelPreflightRuntimeLoader = createLazyImportLoader(
   () => import("./model-preflight.runtime.js"),
 );
 const runtimePluginsLoader = createLazyImportLoader(
-  () => import("../../plugins/runtime-plugins.runtime.js"),
+  () => import("../../plugins/runtime/runtime-plugins.runtime.js"),
 );
 
 async function loadSessionStoreRuntime() {
@@ -460,11 +463,11 @@ function resolvePositiveContextTokens(value: unknown): number | undefined {
 }
 
 async function loadCliRunnerRuntime() {
-  return await import("../../agents/cli-runner.runtime.js");
+  return await import("../../agents/cli-runner/cli-runner.runtime.js");
 }
 
 async function loadUsageFormatRuntime() {
-  return await import("../../utils/usage-format.js");
+  return await import("../../shared/usage-format.js");
 }
 
 type RunCronAgentTurnParams = {
@@ -1267,7 +1270,6 @@ async function finalizeCronRun(params: {
     deliveryPayloadHasStructuredContent,
     deliveryPayloads,
     synthesizedText,
-    ttsAuto: prepared.cronSession.sessionEntry.ttsAuto,
     summary,
     outputText,
     telemetry,

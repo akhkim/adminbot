@@ -9,7 +9,7 @@ vi.mock("./detect-binary.js", () => ({
 }));
 
 import { resolveBrowserOpenCommand } from "./browser-open.js";
-import { resetWindowsInstallRootsForTests } from "./windows-install-roots.js";
+import { resetWindowsInstallRootsForTests } from "./system/windows-install-roots.js";
 
 afterEach(() => {
   vi.restoreAllMocks();

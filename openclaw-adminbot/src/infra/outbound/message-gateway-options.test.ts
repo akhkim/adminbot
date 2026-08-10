@@ -1,8 +1,8 @@
 // Covers outbound gateway option defaults, timeout clamping, and backend URL
 // suppression.
 import { describe, expect, it } from "vitest";
+import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../../shared/message-channel.js";
 import { MAX_TIMER_TIMEOUT_MS } from "../../shared/number-coercion.js";
-import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../../utils/message-channel.js";
 import { resolveOutboundMessageGatewayOptions } from "./message-gateway-options.js";
 
 describe("resolveOutboundMessageGatewayOptions", () => {

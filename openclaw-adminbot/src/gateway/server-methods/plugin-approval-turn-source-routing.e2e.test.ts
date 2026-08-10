@@ -16,7 +16,7 @@ import { clearConfigCache, clearRuntimeConfigSnapshot } from "../../config/confi
 import { clearSessionStoreCacheForTest } from "../../config/sessions/store.js";
 import { captureEnv } from "../../test-utils/env.js";
 import { APPROVALS_SCOPE } from "../method-scopes.js";
-import { startGatewayServer } from "../server.js";
+import { startGatewayServer } from "../server/server.js";
 import {
   connectGatewayClient,
   disconnectGatewayClient,

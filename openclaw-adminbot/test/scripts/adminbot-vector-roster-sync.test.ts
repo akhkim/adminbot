@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { vectorSponsorRoster } from "../../extensions/adminbot/src/collaborator-subgroups.js";
-import type { AdminBotLabMember } from "../../extensions/adminbot/src/contracts.js";
+import type { AdminBotLabMember } from "../../extensions/adminbot/src/contracts/actions.js";
+import { vectorSponsorRoster } from "../../extensions/adminbot/src/workflows/members/collaborator-subgroups.js";
 import { buildSheetValues, syncVectorRoster } from "../../scripts/adminbot-vector-roster-sync.js";
 
 const member = (overrides: Partial<AdminBotLabMember> & { id: string }): AdminBotLabMember =>

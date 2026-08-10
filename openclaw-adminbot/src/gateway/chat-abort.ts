@@ -7,12 +7,12 @@ import {
 } from "@openclaw/normalization-core/number-coercion";
 import { resolveDefaultAgentId } from "../agents/agent-scope-config.js";
 import { createAgentRunRestartAbortError } from "../agents/run-termination.js";
-import { isAbortRequestText } from "../auto-reply/reply/abort-primitives.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { isAbortRequestText } from "../auto-reply/reply/queue/abort-primitives.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { emitAgentEvent, getAgentEventLifecycleGeneration } from "../infra/agent-events.js";
 import { jsonUtf8Bytes } from "../infra/json-utf8-bytes.js";
 import { projectLiveAssistantBufferedText } from "./live-chat-projector.js";
-import { createChatAbortMarker, type ChatAbortMarker } from "./server-chat-state.js";
+import { createChatAbortMarker, type ChatAbortMarker } from "./server/server-chat-state.js";
 
 const DEFAULT_CHAT_RUN_ABORT_GRACE_MS = 60_000;
 

@@ -3,10 +3,10 @@ import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "../../packages/normalization-core/src/string-coerce.js";
-import type { ExecApprovalForwardTarget } from "../config/types.approvals.js";
-import { matchesApprovalRequestFilters } from "../infra/approval-request-filters.js";
-import { getExecApprovalReplyMetadata } from "../infra/exec-approval-reply.js";
-import type { ExecApprovalRequest } from "../infra/exec-approvals.js";
+import type { ExecApprovalForwardTarget } from "../config/types/approvals.js";
+import { matchesApprovalRequestFilters } from "../infra/approvals/approval-request-filters.js";
+import { getExecApprovalReplyMetadata } from "../infra/exec/exec-approval-reply.js";
+import type { ExecApprovalRequest } from "../infra/exec/exec-approvals.js";
 import type { PluginApprovalRequest } from "../infra/plugin-approvals.js";
 import type { OpenClawConfig } from "./config-runtime.js";
 import type { ReplyPayload } from "./reply-payload.js";

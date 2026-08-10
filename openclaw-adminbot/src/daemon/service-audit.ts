@@ -9,7 +9,7 @@ import {
   normalizeStringEntries,
   sortUniqueStrings,
 } from "@openclaw/normalization-core/string-normalization";
-import { normalizeEnvVarKey } from "../infra/host-env-security.js";
+import { normalizeEnvVarKey } from "../infra/system/host-env-security.js";
 import { parseTcpPort } from "../infra/tcp-port.js";
 import { VERSION } from "../version.js";
 import { resolveLaunchAgentPlistPath } from "./launchd.js";

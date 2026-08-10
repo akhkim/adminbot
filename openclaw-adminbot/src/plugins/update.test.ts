@@ -5,7 +5,7 @@ import path from "node:path";
 import { bundledPluginRootAt } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import type { PluginNpmIntegrityDriftParams } from "./install.js";
+import type { PluginNpmIntegrityDriftParams } from "./install/install.js";
 
 const APP_ROOT = "/app";
 
@@ -39,7 +39,7 @@ const resolveBundledPluginSourcesMock = vi.fn();
 const runCommandWithTimeoutMock = vi.fn();
 const tempDirs: string[] = [];
 
-vi.mock("./install.js", () => ({
+vi.mock("./install/install.js", () => ({
   installPluginFromNpmSpec: (...args: unknown[]) => installPluginFromNpmSpecMock(...args),
   resolvePluginInstallDir: (pluginId: string, extensionsDir = "/tmp") =>
     `${extensionsDir}/${pluginId}`,
@@ -67,7 +67,7 @@ vi.mock("./clawhub.js", () => ({
   installPluginFromClawHub: (...args: unknown[]) => installPluginFromClawHubMock(...args),
 }));
 
-vi.mock("./bundled-sources.js", () => ({
+vi.mock("./install/bundled-sources.js", () => ({
   resolveBundledPluginSources: (...args: unknown[]) => resolveBundledPluginSourcesMock(...args),
 }));
 

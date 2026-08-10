@@ -4,8 +4,8 @@
 import {
   resolveProviderIdForAuth,
   type ProviderAuthAliasLookupParams,
-} from "../../../agents/provider-auth-aliases.js";
-import type { PluginManifestRegistry } from "../../../plugins/manifest-registry.js";
+} from "../../../agents/auth/provider-auth-aliases.js";
+import type { PluginManifestRegistry } from "../../../plugins/manifest/manifest-registry.js";
 
 export const AUTH_PROFILE_RUNTIME_CONTRACT = {
   sessionId: "session-auth-contract",

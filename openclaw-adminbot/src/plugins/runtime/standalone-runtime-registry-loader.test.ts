@@ -1,22 +1,22 @@
 // Standalone runtime registry loader tests cover registry loading outside gateway startup.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { clearPluginLoaderCache, testing } from "../loader.js";
-import { createEmptyPluginRegistry } from "../registry-empty.js";
-import type { PluginRegistry } from "../registry-types.js";
+import { createEmptyPluginRegistry } from "../manifest/registry-empty.js";
+import type { PluginRegistry } from "../manifest/registry-types.js";
+import { clearPluginLoaderCache, testing } from "./loader.js";
 import {
   getActivePluginChannelRegistry,
   getActivePluginRegistry,
   pinActivePluginChannelRegistry,
   resetPluginRuntimeStateForTest,
   setActivePluginRegistry,
-} from "../runtime.js";
+} from "./runtime.js";
 
 const loaderMocks = vi.hoisted(() => ({
-  loadOpenClawPlugins: vi.fn<typeof import("../loader.js").loadOpenClawPlugins>(),
+  loadOpenClawPlugins: vi.fn<typeof import("./loader.js").loadOpenClawPlugins>(),
 }));
 
-vi.mock("../loader.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../loader.js")>();
+vi.mock("./loader.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./loader.js")>();
   return {
     ...actual,
     loadOpenClawPlugins: (...args: Parameters<typeof loaderMocks.loadOpenClawPlugins>) =>

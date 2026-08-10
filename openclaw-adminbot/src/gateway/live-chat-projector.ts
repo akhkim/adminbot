@@ -7,11 +7,11 @@ import {
   stripLeadingSilentToken,
 } from "../auto-reply/tokens.js";
 import { resolveAssistantEventPhase } from "../shared/chat-message-content.js";
-import { stripInlineDirectiveTagsForDisplay } from "../utils/directive-tags.js";
+import { stripInlineDirectiveTagsForDisplay } from "../shared/directive-tags.js";
 import {
   isSuppressedControlReplyLeadFragment,
   isSuppressedControlReplyText,
-} from "./control-reply-text.js";
+} from "./control/control-reply-text.js";
 
 export const MAX_LIVE_CHAT_BUFFER_CHARS = 500_000;
 

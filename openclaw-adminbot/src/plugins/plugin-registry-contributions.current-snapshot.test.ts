@@ -1,13 +1,13 @@
 // Verifies current plugin registry contribution snapshots.
 import { afterEach, describe, expect, it } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   clearCurrentPluginMetadataSnapshot,
   setCurrentPluginMetadataSnapshot,
 } from "./current-plugin-metadata-snapshot.js";
-import { resolveInstalledPluginIndexPolicyHash } from "./installed-plugin-index-policy.js";
-import type { InstalledPluginIndex } from "./installed-plugin-index.js";
-import type { PluginManifestRecord } from "./manifest-registry.js";
+import { resolveInstalledPluginIndexPolicyHash } from "./install/installed-plugin-index-policy.js";
+import type { InstalledPluginIndex } from "./install/installed-plugin-index.js";
+import type { PluginManifestRecord } from "./manifest/manifest-registry.js";
 import type { PluginMetadataSnapshot } from "./plugin-metadata-snapshot.types.js";
 import { loadPluginManifestRegistryForPluginRegistry } from "./plugin-registry-contributions.js";
 

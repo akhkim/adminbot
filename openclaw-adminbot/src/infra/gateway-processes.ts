@@ -7,7 +7,7 @@ import { findGatewayPidsOnPortSync as findUnixGatewayPidsOnPortSync } from "./re
 import {
   readWindowsListeningPidsOnPortSync,
   readWindowsProcessArgsSync,
-} from "./windows-port-pids.js";
+} from "./system/windows-port-pids.js";
 
 // Gateway process helpers verify argv before signaling or reporting listener
 // PIDs so stale port owners cannot be mistaken for OpenClaw.

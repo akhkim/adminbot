@@ -4,7 +4,7 @@ import { listChannelPlugins } from "../channels/plugins/index.js";
 import {
   getActivePluginChannelRegistryVersion,
   requireActivePluginChannelRegistry,
-} from "../plugins/runtime.js";
+} from "../plugins/runtime/runtime.js";
 import type { ShouldHandleTextCommandsParams } from "./commands-registry.types.js";
 
 /** Cached native-command surface lookup, invalidated by active plugin-registry version. */

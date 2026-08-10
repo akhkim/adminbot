@@ -12,15 +12,15 @@ import type {
   ChatCompletionToolMessageParam,
 } from "openai/resources/chat/completions.js";
 import {
+  splitSystemPromptCacheBoundary,
+  stripSystemPromptCacheBoundary,
+} from "../../agents/prompt/system-prompt-cache-boundary.js";
+import {
   projectOpenAITools,
   reconcileOpenAICompletionsToolChoice,
   type OpenAICompletionsToolChoice,
   type OpenAIToolProjection,
-} from "../../agents/openai-tool-projection.js";
-import {
-  splitSystemPromptCacheBoundary,
-  stripSystemPromptCacheBoundary,
-} from "../../agents/system-prompt-cache-boundary.js";
+} from "../../agents/transport/openai-tool-projection.js";
 import { createReasoningTagTextPartitioner } from "../../shared/text/reasoning-tag-text-partitioner.js";
 import { getEnvApiKey } from "../env-api-keys.js";
 import { calculateCost, clampThinkingLevel } from "../model-utils.js";

@@ -6,7 +6,7 @@ import {
   INTERNAL_MESSAGE_CHANNEL,
   isDeliverableMessageChannel,
   normalizeMessageChannel,
-} from "../../utils/message-channel.js";
+} from "../../shared/message-channel.js";
 
 /** Optional external destination for best-effort delivery from session-only flows. */
 export type ExternalBestEffortDeliveryTarget = {

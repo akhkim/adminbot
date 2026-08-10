@@ -4,14 +4,14 @@ import path from "node:path";
 import process from "node:process";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { Command as CommanderCommand, Option as CommanderOption } from "commander";
-import { resolveStateDir } from "../config/paths.js";
-import type { ConfigFileSnapshot, OpenClawConfig } from "../config/types.openclaw.js";
+import { resolveStateDir } from "../config/paths/paths.js";
+import type { ConfigFileSnapshot, OpenClawConfig } from "../config/types/openclaw.js";
 import { FLAG_TERMINATOR, isValueToken } from "../infra/cli-root-options.js";
 import { isTruthyEnvValue, normalizeEnv } from "../infra/env.js";
 import type { ProxyHandle } from "../infra/net/proxy/proxy-lifecycle.js";
-import { ensureOpenClawCliOnPath } from "../infra/path-env.js";
 import { assertSupportedRuntime } from "../infra/runtime-guard.js";
-import type { PluginManifestCommandAliasRegistry } from "../plugins/manifest-command-aliases.js";
+import { ensureOpenClawCliOnPath } from "../infra/system/path-env.js";
+import type { PluginManifestCommandAliasRegistry } from "../plugins/manifest/manifest-command-aliases.js";
 import { resolveCliArgvInvocation } from "./argv-invocation.js";
 import {
   normalizeGeneratedHelpCommandArgv,
@@ -19,20 +19,20 @@ import {
   normalizeRootLogLevelArgv,
   normalizeRootNoColorArgv,
 } from "./argv.js";
-import {
-  isReservedNonPluginCommandRoot,
-  shouldRegisterPrimaryCommandOnly,
-  shouldSkipPluginCommandRegistration,
-} from "./command-registration-policy.js";
 import { maybeRunCliInContainer, parseCliContainerArgs } from "./container-target.js";
 import {
   consumeGatewayFastPathRootOptionToken,
   consumeGatewayRunOptionToken,
   resolveGatewayCatalogCommandPath,
   resolveGatewayRunPreBootstrapOptions,
-} from "./gateway-run-argv.js";
+} from "./gateway-cli/gateway-run-argv.js";
 import { hasJsonOutputFlag, withConsoleLogsRoutedToStderrForJson } from "./json-output-mode.js";
 import { applyCliProfileEnv, parseCliProfileArgs } from "./profile.js";
+import {
+  isReservedNonPluginCommandRoot,
+  shouldRegisterPrimaryCommandOnly,
+  shouldSkipPluginCommandRegistration,
+} from "./program/command-registration-policy.js";
 import { formatCliCommandSuggestions } from "./program/command-suggestions.js";
 import { getCoreCliCommandNames } from "./program/core-command-descriptors.js";
 import { getSubCliEntries } from "./program/subcli-descriptors.js";
@@ -41,8 +41,6 @@ import {
   resolveMissingPluginCommandMessage as resolveMissingPluginCommandMessageFromPolicy,
   rewriteUpdateFlagArgv,
   shouldEnsureCliPath,
-  shouldStartCrestodianForBareRoot,
-  shouldStartCrestodianForModernOnboard,
   shouldStartProxyForCli,
   shouldUseBrowserHelpFastPath,
   shouldUseNodesHelpFastPath,
@@ -56,8 +54,6 @@ export {
   resolvePrecomputedSubcommandHelpFastPath,
   rewriteUpdateFlagArgv,
   shouldEnsureCliPath,
-  shouldStartCrestodianForBareRoot,
-  shouldStartCrestodianForModernOnboard,
   shouldStartProxyForCli,
   shouldUseBrowserHelpFastPath,
   shouldUseNodesHelpFastPath,
@@ -77,14 +73,13 @@ const CLI_PROXY_ENV_KEYS = [
   "all_proxy",
 ] as const;
 
-const loadRootHelpLiveConfigModule = async () => await import("./root-help-live-config.js");
-const loadRootHelpMetadataModule = async () => await import("./root-help-metadata.js");
+const loadRootHelpLiveConfigModule = async () => await import("./program/root-help-live-config.js");
+const loadRootHelpMetadataModule = async () => await import("./program/root-help-metadata.js");
 const loadLoggingModule = async () => await import("../logging.js");
 const loadCliRegistryLoaderModule = async () => await import("../plugins/cli-registry-loader.js");
 const loadManifestCommandAliasesRuntimeModule = async () =>
-  await import("../plugins/manifest-command-aliases.runtime.js");
+  await import("../plugins/manifest/manifest-command-aliases.runtime.js");
 const loadProxyLifecycleModule = async () => await import("../infra/net/proxy/proxy-lifecycle.js");
-const loadCrestodianModule = async () => await import("../crestodian/crestodian.js");
 const loadProgressModule = async () => await import("./progress.js");
 
 function createGatewayCliMainStartupTrace(argv: string[]) {
@@ -197,9 +192,9 @@ async function tryRunGatewayRunFastPath(
       import("./gateway-cli/run-command.js"),
       import("../version.js"),
       import("./banner.js"),
-      import("./command-startup-policy.js"),
+      import("./program/command-startup-policy.js"),
       loadLoggingModule(),
-      import("./command-execution-startup.js"),
+      import("./program/command-execution-startup.js"),
       import("../runtime.js"),
     ]),
   );
@@ -316,10 +311,7 @@ function isUnconfiguredConfigSnapshot(
   );
 }
 
-export async function shouldStartOnboardingForFreshInstall(argv: string[]): Promise<boolean> {
-  if (!shouldStartCrestodianForBareRoot(argv)) {
-    return false;
-  }
+export async function shouldStartOnboardingForFreshInstall(_argv: string[]): Promise<boolean> {
   const { readConfigFileSnapshot } = await import("../config/config.js");
   const snapshot = await readConfigFileSnapshot();
   return isUnconfiguredConfigSnapshot(snapshot);
@@ -474,20 +466,6 @@ function normalizeRootLogLevelArgvForProgram(argv: string[], program: CommanderC
   });
 }
 
-async function ensureCliEnvProxyDispatcher(): Promise<void> {
-  try {
-    const { hasEnvHttpProxyAgentConfigured } = await import("../infra/net/proxy-env.js");
-    if (!hasEnvHttpProxyAgentConfigured()) {
-      return;
-    }
-    const { ensureGlobalUndiciEnvProxyDispatcher } =
-      await import("../infra/net/undici-global-dispatcher.js");
-    ensureGlobalUndiciEnvProxyDispatcher();
-  } catch {
-    // Best-effort proxy bootstrap; CLI startup should continue without it.
-  }
-}
-
 function shouldBootstrapCliProxyBeforeFastPath(env: NodeJS.ProcessEnv = process.env): boolean {
   if (
     isTruthyEnvValue(env.OPENCLAW_DEBUG_PROXY_ENABLED) ||
@@ -622,26 +600,6 @@ async function resolveUnownedCliPrimaryMessage(params: {
     .join("\n");
 }
 
-async function bootstrapCliProxyCaptureAndDispatcher(
-  startupTrace: ReturnType<typeof createGatewayCliMainStartupTrace>,
-  options: { ensureDispatcher?: boolean } = {},
-): Promise<void> {
-  const [
-    { initializeDebugProxyCapture, finalizeDebugProxyCapture },
-    { maybeWarnAboutDebugProxyCoverage },
-  ] = await startupTrace.measure("proxy-imports", () =>
-    Promise.all([import("../proxy-capture/runtime.js"), import("../proxy-capture/coverage.js")]),
-  );
-  initializeDebugProxyCapture("cli");
-  process.once("exit", () => {
-    finalizeDebugProxyCapture();
-  });
-  if (options.ensureDispatcher !== false) {
-    await startupTrace.measure("proxy-dispatcher", () => ensureCliEnvProxyDispatcher());
-  }
-  maybeWarnAboutDebugProxyCoverage();
-}
-
 export async function runCli(argv: string[] = process.argv) {
   const originalArgv = normalizeWindowsArgv(argv);
   const startupTrace = createGatewayCliMainStartupTrace(originalArgv);
@@ -681,7 +639,8 @@ export async function runCli(argv: string[] = process.argv) {
   if (!isHelpOrVersionInvocation && (isGatewayRunInvocation || shouldLoadCliDotEnv())) {
     await startupTrace.measure("dotenv", async () => {
       if (isRemoteAgentDispatchInvocation(normalizedArgv, normalizedInvocation.primary)) {
-        const { loadGatewayDispatchCliDotEnv } = await import("./gateway-dispatch-dotenv.js");
+        const { loadGatewayDispatchCliDotEnv } =
+          await import("./gateway-cli/gateway-dispatch-dotenv.js");
         await loadGatewayDispatchCliDotEnv({ quiet: true });
       } else {
         const { loadCliDotEnv } = await import("./dotenv.js");
@@ -715,7 +674,7 @@ export async function runCli(argv: string[] = process.argv) {
   const isolateProxyConfigEnv = isGatewayRunInvocation;
   const readBestEffortCliConfig = async (): Promise<OpenClawConfig> => {
     if (!bestEffortConfigPromise) {
-      bestEffortConfigPromise = import("../config/io.js").then(({ readBestEffortConfig }) =>
+      bestEffortConfigPromise = import("../config/io/io.js").then(({ readBestEffortConfig }) =>
         readBestEffortConfig(
           isolateProxyConfigEnv ? { isolateEnv: true, observe: false } : undefined,
         ),
@@ -871,68 +830,6 @@ export async function runCli(argv: string[] = process.argv) {
       }
     }
 
-    const shouldRunBareRootCrestodian = shouldStartCrestodianForBareRoot(normalizedArgv);
-    const shouldRunModernOnboardCrestodian = shouldStartCrestodianForModernOnboard(normalizedArgv);
-    if (shouldRunBareRootCrestodian || shouldRunModernOnboardCrestodian) {
-      await ensureCliEnvProxyDispatcher();
-    }
-
-    if (shouldRunBareRootCrestodian) {
-      if (await shouldStartOnboardingForFreshInstall(normalizedArgv)) {
-        if (!process.stdin.isTTY || !process.stdout.isTTY) {
-          console.error(
-            "Onboarding needs an interactive TTY. Use `openclaw onboard --non-interactive --accept-risk ...` for automation.",
-          );
-          process.exitCode = 1;
-          return;
-        }
-        const { setupWizardCommand } = await import("../commands/onboard.js");
-        await setupWizardCommand({});
-        return;
-      }
-      if (!process.stdin.isTTY || !process.stdout.isTTY) {
-        console.error(
-          'Crestodian needs an interactive TTY. Use `openclaw crestodian --message "status"` for one command.',
-        );
-        process.exitCode = 1;
-        return;
-      }
-      const { runCrestodian } = await loadCrestodianModule();
-      const { createCliProgress } = await loadProgressModule();
-      const progress = createCliProgress({
-        label: "Starting Crestodian…",
-        indeterminate: true,
-        delayMs: 0,
-        fallback: "none",
-      });
-      let progressStopped = false;
-      const stopProgress = () => {
-        if (progressStopped) {
-          return;
-        }
-        progressStopped = true;
-        progress.done();
-      };
-      try {
-        await runCrestodian({ onReady: stopProgress });
-      } finally {
-        stopProgress();
-      }
-      return;
-    }
-
-    if (shouldRunModernOnboardCrestodian) {
-      const { runCrestodian } = await loadCrestodianModule();
-      const nonInteractive = normalizedArgv.includes("--non-interactive");
-      await runCrestodian({
-        message: nonInteractive ? "overview" : undefined,
-        yes: false,
-        json: normalizedArgv.includes("--json"),
-        interactive: !nonInteractive,
-      });
-      return;
-    }
-
     const shouldUseCliEnvProxy =
       !isHelpOrVersionInvocation && shouldStartProxyForCli(normalizedArgv);
     const bootstrapProxyBeforeFastPath =
@@ -945,9 +842,6 @@ export async function runCli(argv: string[] = process.argv) {
     }
 
     if (!isHelpOrVersionInvocation) {
-      await bootstrapCliProxyCaptureAndDispatcher(startupTrace, {
-        ensureDispatcher: shouldUseCliEnvProxy,
-      });
     }
 
     if (
@@ -998,7 +892,7 @@ export async function runCli(argv: string[] = process.argv) {
         { restoreTerminalState },
       ] = await startupTrace.measure("core-imports", () =>
         Promise.all([
-          import("./program.js"),
+          import("./program/program.js"),
           import("../infra/errors.js"),
           import("./failure-output.js"),
           import("../infra/fatal-error-hooks.js"),

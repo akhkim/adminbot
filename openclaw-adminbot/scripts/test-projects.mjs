@@ -28,7 +28,6 @@ import {
   createVitestRunSpecs,
   findUnmatchedExplicitTestTargets,
   formatFailedShardDigest,
-  listFullExtensionVitestProjectConfigs,
   orderFullSuiteSpecsForParallelRun,
   parseTestProjectsArgs,
   resolveParallelFullSuiteConcurrency,
@@ -157,19 +156,6 @@ async function runLoggedVitestSpec(spec) {
     ...result,
     timing: createShardTimingSample(spec, durationMs),
   };
-}
-
-function isFullExtensionsProjectRun(specs) {
-  const fullExtensionProjectConfigs = new Set(listFullExtensionVitestProjectConfigs());
-  return (
-    specs.length > 1 &&
-    specs.every(
-      (spec) =>
-        spec.watchMode === false &&
-        spec.includePatterns === null &&
-        fullExtensionProjectConfigs.has(spec.config),
-    )
-  );
 }
 
 function printNoChangedTestTargets(args, cwd, baseEnv) {
@@ -307,8 +293,7 @@ async function main() {
     Boolean(baseEnv.OPENCLAW_TEST_PROJECTS_PARALLEL) &&
     runSpecs.length > 1 &&
     !runSpecs.some((spec) => spec.watchMode);
-  const isParallelShardRun =
-    isFullSuiteRun || isFullExtensionsProjectRun(runSpecs) || isExplicitParallelMultiConfigRun;
+  const isParallelShardRun = isFullSuiteRun || isExplicitParallelMultiConfigRun;
   if (isParallelShardRun) {
     const concurrency = resolveParallelFullSuiteConcurrency(runSpecs.length, baseEnv);
     if (!isCiLikeEnv(baseEnv) && runSpecs.length > 1) {

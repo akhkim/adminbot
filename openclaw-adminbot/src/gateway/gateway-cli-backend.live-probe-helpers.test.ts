@@ -12,7 +12,7 @@ import { verifyCliCronMcpLoopbackPreflight } from "./gateway-cli-backend.live-pr
 import {
   clearActiveMcpLoopbackRuntimeByOwnerToken,
   setActiveMcpLoopbackRuntime,
-} from "./mcp-http.loopback-runtime.js";
+} from "./protocol/mcp-http.loopback-runtime.js";
 
 const ownerToken = "test-owner-token";
 

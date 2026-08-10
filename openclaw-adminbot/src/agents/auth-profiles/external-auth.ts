@@ -3,9 +3,9 @@
  * Combines provider plugin auth profiles with scoped external CLI credentials
  * and decides which runtime profiles may be persisted back to the store.
  */
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { ProviderExternalAuthProfile } from "../../plugins/provider-external-auth.types.js";
-import { resolveExternalAuthProfilesWithPlugins } from "../../plugins/provider-runtime.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { ProviderExternalAuthProfile } from "../../plugins/providers/provider-external-auth.types.js";
+import { resolveExternalAuthProfilesWithPlugins } from "../../plugins/providers/provider-runtime.js";
 import { cloneAuthProfileStore } from "./clone.js";
 import { CLAUDE_CLI_PROFILE_ID, MINIMAX_CLI_PROFILE_ID } from "./constants.js";
 import * as externalCliSync from "./external-cli-sync.js";

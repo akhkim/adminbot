@@ -7,33 +7,33 @@ import {
   GATEWAY_STARTUP_CLOSE_CODE,
   GATEWAY_STARTUP_PENDING_CLOSE_CAUSE,
 } from "../../../packages/gateway-protocol/src/startup-unavailable.js";
-import { getRuntimeConfig } from "../../config/io.js";
-import { upsertPresence } from "../../infra/system-presence.js";
+import { getRuntimeConfig } from "../../config/io/io.js";
+import { upsertPresence } from "../../infra/system/system-presence.js";
 import { logRejectedLargePayload } from "../../logging/diagnostic-payload.js";
 import type { createSubsystemLogger } from "../../logging/subsystem.js";
+import { isWebchatClient } from "../../shared/message-channel.js";
 import { removeRemoteNodeInfo } from "../../skills/runtime/remote.js";
 import { truncateUtf16Safe } from "../../utils.js";
-import { isWebchatClient } from "../../utils/message-channel.js";
-import type { AuthRateLimiter } from "../auth-rate-limit.js";
-import type { ResolvedGatewayAuth } from "../auth.js";
+import type { AuthRateLimiter } from "../auth/auth-rate-limit.js";
+import type { ResolvedGatewayAuth } from "../auth/auth.js";
 import { resolvePreauthHandshakeTimeoutMs } from "../handshake-timeouts.js";
 import { resolveHostedPluginSurfaceUrl } from "../hosted-plugin-surface-url.js";
 import type { GatewayMethodRegistry } from "../methods/registry.js";
 import { isLoopbackAddress } from "../net.js";
-import type { NodeReapprovalCoordinator } from "../node-reapproval-coordinator.js";
+import type { NodeReapprovalCoordinator } from "../node/node-reapproval-coordinator.js";
 import type { PluginNodeCapabilitySurface } from "../plugin-node-capability.js";
-import {
-  MAX_BUFFERED_BYTES,
-  MAX_PAYLOAD_BYTES,
-  MAX_PREAUTH_PAYLOAD_BYTES,
-} from "../server-constants.js";
 import { clearNodeWakeState } from "../server-methods/nodes-wake-state.js";
 import type { GatewayRequestContext, GatewayRequestHandlers } from "../server-methods/types.js";
-import { formatError } from "../server-utils.js";
 import { logWs } from "../ws-log.js";
 import { getHealthVersion, incrementPresenceVersion } from "./health-state.js";
 import type { PreauthConnectionBudget } from "./preauth-connection-budget.js";
 import { broadcastPresenceSnapshot } from "./presence-events.js";
+import {
+  MAX_BUFFERED_BYTES,
+  MAX_PAYLOAD_BYTES,
+  MAX_PREAUTH_PAYLOAD_BYTES,
+} from "./server-constants.js";
+import { formatError } from "./server-utils.js";
 import {
   buildHandshakeAuthLogKey,
   HandshakeAuthLogLimiter,

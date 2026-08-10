@@ -7,8 +7,8 @@ import { importFreshModule } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { expectNoReaddirSyncDuring } from "../../test-utils/fs-scan-assertions.js";
 
-vi.mock("../../plugins/bundled-dir.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../plugins/bundled-dir.js")>();
+vi.mock("../../plugins/install/bundled-dir.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../plugins/install/bundled-dir.js")>();
   return {
     ...actual,
     resolveBundledPluginsDir: (env: NodeJS.ProcessEnv = process.env) =>
@@ -65,7 +65,7 @@ function resolveAlphaDistExtensionEntry(
 }
 
 function mockAlphaDistExtensionRuntime() {
-  vi.doMock("../../plugins/bundled-channel-runtime.js", () => ({
+  vi.doMock("../../plugins/install/bundled-channel-runtime.js", () => ({
     listBundledChannelPluginMetadata: () => [alphaChannelMetadata({ includeSetup: true })],
     resolveBundledChannelGeneratedPath: resolveAlphaDistExtensionEntry,
   }));
@@ -184,10 +184,10 @@ afterEach(() => {
     "__openclawBundledChannelReenter"
   ];
   vi.resetModules();
-  vi.doUnmock("../../plugins/bundled-channel-runtime.js");
-  vi.doUnmock("../../plugins/bundled-plugin-metadata.js");
+  vi.doUnmock("../../plugins/install/bundled-channel-runtime.js");
+  vi.doUnmock("../../plugins/install/bundled-plugin-metadata.js");
   vi.doUnmock("../../plugins/discovery.js");
-  vi.doUnmock("../../plugins/manifest-registry.js");
+  vi.doUnmock("../../plugins/manifest/manifest-registry.js");
   vi.doUnmock("../../plugins/channel-catalog-registry.js");
   vi.doUnmock("../../infra/boundary-file-read.js");
   vi.doUnmock("./bundled-root.js");
@@ -202,9 +202,9 @@ describe("bundled channel entry shape guards", () => {
   };
 
   beforeAll(async () => {
-    vi.doMock("../../plugins/bundled-channel-runtime.js", async (importOriginal) => {
+    vi.doMock("../../plugins/install/bundled-channel-runtime.js", async (importOriginal) => {
       const actual =
-        await importOriginal<typeof import("../../plugins/bundled-channel-runtime.js")>();
+        await importOriginal<typeof import("../../plugins/install/bundled-channel-runtime.js")>();
       return {
         ...actual,
         listBundledChannelPluginMetadata: (params: {
@@ -236,9 +236,9 @@ describe("bundled channel entry shape guards", () => {
   });
 
   it("treats missing bundled discovery results as empty", async () => {
-    vi.doMock("../../plugins/bundled-channel-runtime.js", async (importOriginal) => {
+    vi.doMock("../../plugins/install/bundled-channel-runtime.js", async (importOriginal) => {
       const actual =
-        await importOriginal<typeof import("../../plugins/bundled-channel-runtime.js")>();
+        await importOriginal<typeof import("../../plugins/install/bundled-channel-runtime.js")>();
       return {
         ...actual,
         listBundledChannelPluginMetadata: () => [],
@@ -286,7 +286,7 @@ describe("bundled channel entry shape guards", () => {
       "utf8",
     );
 
-    vi.doMock("../../plugins/bundled-channel-runtime.js", () => ({
+    vi.doMock("../../plugins/install/bundled-channel-runtime.js", () => ({
       listBundledChannelPluginMetadata: () => [
         {
           ...alphaChannelMetadata(),
@@ -355,7 +355,7 @@ describe("bundled channel entry shape guards", () => {
     let metadataRootDir: string | undefined;
     let generatedRootDir: string | undefined;
 
-    vi.doMock("../../plugins/bundled-channel-runtime.js", () => ({
+    vi.doMock("../../plugins/install/bundled-channel-runtime.js", () => ({
       listBundledChannelPluginMetadata: (params?: { rootDir?: string }) => {
         metadataRootDir = params?.rootDir;
         return [alphaChannelMetadata()];
@@ -440,7 +440,7 @@ describe("bundled channel entry shape guards", () => {
         cacheKey: `${root}:package-local-dist`,
       }),
     }));
-    vi.doMock("../../plugins/bundled-channel-runtime.js", () => ({
+    vi.doMock("../../plugins/install/bundled-channel-runtime.js", () => ({
       listBundledChannelPluginMetadata: () => [
         {
           ...alphaChannelMetadata(),
@@ -501,7 +501,7 @@ describe("bundled channel entry shape guards", () => {
       "utf8",
     );
 
-    vi.doMock("../../plugins/bundled-channel-runtime.js", () => ({
+    vi.doMock("../../plugins/install/bundled-channel-runtime.js", () => ({
       listBundledChannelPluginMetadata: () => [alphaChannelMetadata()],
       resolveBundledChannelGeneratedPath: () => path.join(pluginDir, "index.js"),
     }));
@@ -550,7 +550,7 @@ describe("bundled channel entry shape guards", () => {
     let generatedRootDir: string | undefined;
     let generatedScanDir: string | undefined;
 
-    vi.doMock("../../plugins/bundled-channel-runtime.js", () => ({
+    vi.doMock("../../plugins/install/bundled-channel-runtime.js", () => ({
       listBundledChannelPluginMetadata: (params?: { rootDir?: string; scanDir?: string }) => {
         metadataScanDir = params?.scanDir;
         return [alphaChannelMetadata()];
@@ -732,7 +732,7 @@ describe("bundled channel entry shape guards", () => {
         cacheKey: `${root}:dist-runtime`,
       }),
     }));
-    vi.doMock("../../plugins/bundled-channel-runtime.js", () => ({
+    vi.doMock("../../plugins/install/bundled-channel-runtime.js", () => ({
       listBundledChannelPluginMetadata: () => [alphaChannelMetadata({ includeSetup: true })],
       resolveBundledChannelGeneratedPath: (
         rootDir: string,
@@ -1073,7 +1073,7 @@ describe("bundled channel entry shape guards", () => {
 
   it("keeps runtime helper surfaces off bootstrap-registry", () => {
     const offenders = [
-      "src/config/markdown-tables.ts",
+      "src/config/markdown/markdown-tables.ts",
       "src/config/sessions/group.ts",
       "src/channels/plugins/setup-helpers.ts",
       "src/plugin-sdk/extension-shared.ts",
@@ -1138,9 +1138,9 @@ module.exports = {
       "utf8",
     );
 
-    vi.doMock("../../plugins/bundled-channel-runtime.js", async (importOriginal) => {
+    vi.doMock("../../plugins/install/bundled-channel-runtime.js", async (importOriginal) => {
       const actual =
-        await importOriginal<typeof import("../../plugins/bundled-channel-runtime.js")>();
+        await importOriginal<typeof import("../../plugins/install/bundled-channel-runtime.js")>();
       return {
         ...actual,
         listBundledChannelPluginMetadata: () => [

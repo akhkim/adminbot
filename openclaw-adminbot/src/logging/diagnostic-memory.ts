@@ -3,7 +3,7 @@ import {
   emitInternalDiagnosticEvent as emitDiagnosticEvent,
   type DiagnosticMemoryPressureEvent,
   type DiagnosticMemoryUsage,
-} from "../infra/diagnostic-events.js";
+} from "../infra/diagnostics/diagnostic-events.js";
 import { writeDiagnosticMemoryPressureBundleSync } from "./diagnostic-stability-bundle.js";
 import { createSubsystemLogger } from "./subsystem.js";
 

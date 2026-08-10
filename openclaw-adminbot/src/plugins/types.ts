@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 2792 lines; see docs/adr/0006-deferred-monster-splits.md
 // Defines the public plugin API and runtime extension contracts.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Duplex } from "node:stream";
@@ -14,74 +15,31 @@ import type {
 } from "../agents/auth-profiles/types.js";
 import type { FailoverReason } from "../agents/embedded-agent-helpers/types.js";
 import type { AgentHarness } from "../agents/harness/types.js";
-import type { ModelCatalogEntry } from "../agents/model-catalog.types.js";
+import type { ModelCatalogEntry } from "../agents/models/model-catalog.types.js";
+import type { ProviderSystemPromptContribution } from "../agents/prompt/system-prompt-contribution.js";
+import type { PromptMode } from "../agents/prompt/system-prompt.types.js";
 import type { AgentMessage } from "../agents/runtime/index.js";
 import type { StreamFn } from "../agents/runtime/index.js";
-import type { ProviderSystemPromptContribution } from "../agents/system-prompt-contribution.js";
-import type { PromptMode } from "../agents/system-prompt.types.js";
 import type { AnyAgentTool } from "../agents/tools/common.js";
 import type { ReplyPayload } from "../auto-reply/reply-payload.js";
 import type { ThinkLevel } from "../auto-reply/thinking.shared.js";
-import type { ModelProviderConfig } from "../config/types.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import type { ModelProviderConfig } from "../config/types/types.js";
 import type { OperatorScope } from "../gateway/operator-scopes.js";
 import type { GatewayRequestHandler } from "../gateway/server-methods/types.js";
 import type { InternalHookHandler } from "../hooks/internal-hook-types.js";
-import type { ImageGenerationProvider } from "../image-generation/types.js";
 import type {
   DiagnosticEventPrivateData,
   DiagnosticEventInput,
   DiagnosticEventMetadata,
   DiagnosticEventPayload,
-} from "../infra/diagnostic-events.js";
-import type { ProviderUsageSnapshot } from "../infra/provider-usage.types.js";
+} from "../infra/diagnostics/diagnostic-events.js";
+import type { ProviderUsageSnapshot } from "../infra/providers/provider-usage.types.js";
 import type { ModelRegistry } from "../llm/model-registry.js";
-import type { MediaUnderstandingProvider } from "../media-understanding/types.js";
-import type { MusicGenerationProvider } from "../music-generation/types.js";
-import type {
-  RealtimeTranscriptionProviderConfig,
-  RealtimeTranscriptionProviderConfiguredContext,
-  RealtimeTranscriptionProviderId,
-  RealtimeTranscriptionProviderResolveConfigContext,
-  RealtimeTranscriptionSession,
-  RealtimeTranscriptionSessionCreateRequest,
-} from "../realtime-transcription/provider-types.js";
 import type { RuntimeEnv } from "../runtime.js";
 import type { SecurityAuditFinding } from "../security/audit.types.js";
 import type { JsonSchemaObject } from "../shared/json-schema.types.js";
-import type {
-  RealtimeVoiceBridge,
-  RealtimeVoiceBrowserSession,
-  RealtimeVoiceBrowserSessionCreateRequest,
-  RealtimeVoiceBridgeCreateRequest,
-  RealtimeVoiceProviderCapabilities,
-  RealtimeVoiceProviderConfig,
-  RealtimeVoiceProviderConfiguredContext,
-  RealtimeVoiceProviderId,
-  RealtimeVoiceProviderResolveConfigContext,
-} from "../talk/provider-types.js";
 import type { TranscriptSourceProvider as TranscriptsSourceProviderCapability } from "../transcripts/provider-types.js";
-import type {
-  SpeechDirectiveTokenParseContext,
-  SpeechDirectiveTokenParseResult,
-  SpeechProviderConfiguredContext,
-  SpeechProviderConfig,
-  SpeechProviderResolveConfigContext,
-  SpeechProviderResolveTalkConfigContext,
-  SpeechProviderResolveTalkOverridesContext,
-  SpeechListVoicesRequest,
-  SpeechProviderPrepareSynthesisContext,
-  SpeechProviderPreparedSynthesis,
-  SpeechProviderId,
-  SpeechSynthesisRequest,
-  SpeechSynthesisResult,
-  SpeechSynthesisStreamRequest,
-  SpeechSynthesisStreamResult,
-  SpeechTelephonySynthesisRequest,
-  SpeechTelephonySynthesisResult,
-  SpeechVoiceOption,
-} from "../tts/provider-types.js";
-import type { VideoGenerationProvider } from "../video-generation/types.js";
 import type { WizardPrompter } from "../wizard/prompts.js";
 import type {
   AgentToolResultMiddleware,
@@ -95,7 +53,7 @@ import type {
   PluginConversationBindingRequestResult,
   PluginConversationBindingResolvedEvent,
 } from "./conversation-binding.types.js";
-import type { PluginHookHandlerMap, PluginHookName } from "./hook-types.js";
+import type { PluginHookHandlerMap, PluginHookName } from "./hooks/hook-types.js";
 import type {
   PluginAgentEventEmitParams,
   PluginAgentEventEmitResult,
@@ -118,15 +76,15 @@ import type {
   PluginSessionTurnUnscheduleByTagResult,
   PluginToolMetadataRegistration,
   PluginTrustedToolPolicyRegistration,
-} from "./host-hooks.js";
-import type { PluginConfigUiHint } from "./manifest-types.js";
+} from "./host/host-hooks.js";
+import type { PluginConfigUiHint } from "./manifest/manifest-types.js";
 import type { PluginKind } from "./plugin-kind.types.js";
-import type { SecretInputMode } from "./provider-auth-types.js";
+import type { SecretInputMode } from "./providers/provider-auth-types.js";
 import type {
   ProviderApplyConfigDefaultsContext,
   ProviderNormalizeConfigContext,
   ProviderResolveConfigApiKeyContext,
-} from "./provider-config-context.types.js";
+} from "./providers/provider-config-context.types.js";
 import type {
   ProviderExternalAuthProfile,
   ProviderExternalOAuthProfile,
@@ -134,24 +92,24 @@ import type {
   ProviderResolveExternalOAuthProfilesContext,
   ProviderResolveSyntheticAuthContext,
   ProviderSyntheticAuthResult,
-} from "./provider-external-auth.types.js";
-import type { createVpsAwareOAuthHandlers } from "./provider-oauth-flow.js";
-import type { ProviderRuntimeModel } from "./provider-runtime-model.types.js";
+} from "./providers/provider-external-auth.types.js";
+import type { createVpsAwareOAuthHandlers } from "./providers/provider-oauth-flow.js";
+import type { ProviderRuntimeModel } from "./providers/provider-runtime-model.types.js";
 import type {
   ProviderDefaultThinkingPolicyContext,
   ProviderThinkingProfile,
   ProviderThinkingPolicyContext,
-} from "./provider-thinking.types.js";
+} from "./providers/provider-thinking.types.js";
 import type { PluginRuntime } from "./runtime/types.js";
 import type {
   OpenClawPluginHookOptions,
   OpenClawPluginToolFactory,
   OpenClawPluginToolOptions,
 } from "./tool-types.js";
-import type { WebFetchProviderPlugin, WebSearchProviderPlugin } from "./web-provider-types.js";
+import type { WebFetchProviderPlugin, WebSearchProviderPlugin } from "./web/web-provider-types.js";
 
 type ModelProviderRequestTransportOverrides =
-  import("../agents/provider-request-config.js").ModelProviderRequestTransportOverrides;
+  import("../agents/transport/provider-request-config.js").ModelProviderRequestTransportOverrides;
 type ChannelId = import("../channels/plugins/types.core.js").ChannelId;
 type ChannelPlugin = import("../channels/plugins/types.plugin.js").ChannelPlugin;
 
@@ -162,7 +120,7 @@ export type {
   PluginConfigUiHint,
   PluginDiagnostic,
   PluginFormat,
-} from "./manifest-types.js";
+} from "./manifest/manifest-types.js";
 export type {
   OpenClawPluginActiveModelContext,
   OpenClawPluginHookOptions,
@@ -205,7 +163,7 @@ export type {
   PluginTextReplacement,
   PluginTextTransforms,
 } from "./cli-backend.types.js";
-export * from "./hook-types.js";
+export * from "./hooks/hook-types.js";
 export type {
   PluginAgentEventEmitParams,
   PluginAgentEventEmitResult,
@@ -236,7 +194,7 @@ export type {
   PluginSessionTurnUnscheduleByTagResult,
   PluginToolMetadataRegistration,
   PluginTrustedToolPolicyRegistration,
-} from "./host-hooks.js";
+} from "./host/host-hooks.js";
 
 export type ProviderAuthOptionBag = {
   token?: string;
@@ -261,7 +219,7 @@ export type {
   ProviderResolveExternalOAuthProfilesContext,
   ProviderResolveSyntheticAuthContext,
   ProviderSyntheticAuthResult,
-} from "./provider-external-auth.types.js";
+} from "./providers/provider-external-auth.types.js";
 export type {
   PluginWebFetchProviderEntry,
   PluginWebSearchProviderEntry,
@@ -279,8 +237,8 @@ export type {
   WebSearchProviderToolDefinition,
   WebSearchProviderToolExecutionContext,
   WebSearchRuntimeMetadataContext,
-} from "./web-provider-types.js";
-export type { ProviderRuntimeModel } from "./provider-runtime-model.types.js";
+} from "./web/web-provider-types.js";
+export type { ProviderRuntimeModel } from "./providers/provider-runtime-model.types.js";
 
 export type PluginConfigValidation =
   | { ok: true; value?: unknown }
@@ -567,7 +525,7 @@ export type {
   ProviderApplyConfigDefaultsContext,
   ProviderNormalizeConfigContext,
   ProviderResolveConfigApiKeyContext,
-} from "./provider-config-context.types.js";
+} from "./providers/provider-config-context.types.js";
 
 /**
  * Provider-owned transport normalization for arbitrary provider/model config.
@@ -1090,7 +1048,7 @@ export type {
   ProviderDefaultThinkingPolicyContext,
   ProviderThinkingProfile,
   ProviderThinkingPolicyContext,
-} from "./provider-thinking.types.js";
+} from "./providers/provider-thinking.types.js";
 
 /**
  * Provider-owned "modern model" policy input.
@@ -1846,93 +1804,12 @@ export type ProviderPlugin = {
   onModelSelected?: (ctx: ProviderModelSelectedContext) => Promise<void>;
 };
 
-/** Speech capability registered by a plugin. */
-export type SpeechProviderPlugin = {
-  id: SpeechProviderId;
-  label: string;
-  aliases?: string[];
-  autoSelectOrder?: number;
-  /** Default provider operation timeout in milliseconds when caller/config omit timeoutMs. */
-  defaultTimeoutMs?: number;
-  defaultModel?: string;
-  models?: readonly string[];
-  voices?: readonly string[];
-  resolveConfig?: (ctx: SpeechProviderResolveConfigContext) => SpeechProviderConfig;
-  parseDirectiveToken?: (ctx: SpeechDirectiveTokenParseContext) => SpeechDirectiveTokenParseResult;
-  resolveTalkConfig?: (ctx: SpeechProviderResolveTalkConfigContext) => SpeechProviderConfig;
-  resolveTalkOverrides?: (
-    ctx: SpeechProviderResolveTalkOverridesContext,
-  ) => SpeechProviderConfig | undefined;
-  prepareSynthesis?: (
-    ctx: SpeechProviderPrepareSynthesisContext,
-  ) =>
-    | SpeechProviderPreparedSynthesis
-    | undefined
-    | Promise<SpeechProviderPreparedSynthesis | undefined>;
-  isConfigured: (ctx: SpeechProviderConfiguredContext) => boolean;
-  synthesize: (req: SpeechSynthesisRequest) => Promise<SpeechSynthesisResult>;
-  streamSynthesize?: (req: SpeechSynthesisStreamRequest) => Promise<SpeechSynthesisStreamResult>;
-  synthesizeTelephony?: (
-    req: SpeechTelephonySynthesisRequest,
-  ) => Promise<SpeechTelephonySynthesisResult>;
-  listVoices?: (req: SpeechListVoicesRequest) => Promise<SpeechVoiceOption[]>;
-};
-
-export type PluginSpeechProviderEntry = SpeechProviderPlugin & {
-  pluginId: string;
-};
-
-/** Realtime transcription capability registered by a plugin. */
-export type RealtimeTranscriptionProviderPlugin = {
-  id: RealtimeTranscriptionProviderId;
-  label: string;
-  aliases?: string[];
-  defaultModel?: string;
-  models?: readonly string[];
-  autoSelectOrder?: number;
-  resolveConfig?: (
-    ctx: RealtimeTranscriptionProviderResolveConfigContext,
-  ) => RealtimeTranscriptionProviderConfig;
-  isConfigured: (ctx: RealtimeTranscriptionProviderConfiguredContext) => boolean;
-  createSession: (req: RealtimeTranscriptionSessionCreateRequest) => RealtimeTranscriptionSession;
-};
-
-export type PluginRealtimeTranscriptionProviderEntry = RealtimeTranscriptionProviderPlugin & {
-  pluginId: string;
-};
-
 /** Transcript source capability registered by a channel or meeting plugin. */
 export type TranscriptSourceProvider = TranscriptsSourceProviderCapability;
 
 export type PluginTranscriptsSourceProviderEntry = TranscriptSourceProvider & {
   pluginId: string;
 };
-
-/** Realtime voice capability registered by a plugin. */
-export type RealtimeVoiceProviderPlugin = {
-  id: RealtimeVoiceProviderId;
-  label: string;
-  aliases?: string[];
-  defaultModel?: string;
-  models?: readonly string[];
-  autoSelectOrder?: number;
-  capabilities?: RealtimeVoiceProviderCapabilities;
-  resolveConfig?: (ctx: RealtimeVoiceProviderResolveConfigContext) => RealtimeVoiceProviderConfig;
-  isConfigured: (ctx: RealtimeVoiceProviderConfiguredContext) => boolean;
-  createBridge: (req: RealtimeVoiceBridgeCreateRequest) => RealtimeVoiceBridge;
-  createBrowserSession?: (
-    req: RealtimeVoiceBrowserSessionCreateRequest,
-  ) => Promise<RealtimeVoiceBrowserSession>;
-};
-
-export type PluginRealtimeVoiceProviderEntry = RealtimeVoiceProviderPlugin & {
-  pluginId: string;
-};
-
-export type MediaUnderstandingProviderPlugin = MediaUnderstandingProvider;
-export type ImageGenerationProviderPlugin = ImageGenerationProvider;
-export type VideoGenerationProviderPlugin = VideoGenerationProvider;
-export type MusicGenerationProviderPlugin = MusicGenerationProvider;
 
 export type OpenClawPluginGatewayMethod = {
   method: string;
@@ -2713,24 +2590,10 @@ export type OpenClawPluginApi = {
   registerModelCatalogProvider: (provider: UnifiedModelCatalogProviderPlugin) => void;
   /** Register a general embedding provider (embedding capability). */
   registerEmbeddingProvider: (
-    adapter: import("./embedding-providers.js").EmbeddingProviderAdapter,
+    adapter: import("./embedding/embedding-providers.js").EmbeddingProviderAdapter,
   ) => void;
-  /** Register a speech synthesis provider (speech capability). */
-  registerSpeechProvider: (provider: SpeechProviderPlugin) => void;
-  /** Register a realtime transcription provider (streaming STT capability). */
-  registerRealtimeTranscriptionProvider: (provider: RealtimeTranscriptionProviderPlugin) => void;
-  /** Register a realtime voice provider (duplex voice capability). */
-  registerRealtimeVoiceProvider: (provider: RealtimeVoiceProviderPlugin) => void;
-  /** Register a media understanding provider (media understanding capability). */
-  registerMediaUnderstandingProvider: (provider: MediaUnderstandingProviderPlugin) => void;
   /** Register a transcripts source provider (live or imported meeting transcript capability). */
   registerTranscriptSourceProvider: (provider: TranscriptSourceProvider) => void;
-  /** Register an image generation provider (image generation capability). */
-  registerImageGenerationProvider: (provider: ImageGenerationProviderPlugin) => void;
-  /** Register a video generation provider (video generation capability). */
-  registerVideoGenerationProvider: (provider: VideoGenerationProviderPlugin) => void;
-  /** Register a music generation provider (music generation capability). */
-  registerMusicGenerationProvider: (provider: MusicGenerationProviderPlugin) => void;
   /** Register a web fetch provider (web fetch capability). */
   registerWebFetchProvider: (provider: WebFetchProviderPlugin) => void;
   /** Register a web search provider (web search capability). */

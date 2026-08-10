@@ -1,10 +1,10 @@
 /** Leases and formats completed subagent results for injection into requester turns. */
-import { sanitizeForPromptLiteral, wrapPromptDataBlock } from "./sanitize-for-prompt.js";
+import { sanitizeForPromptLiteral, wrapPromptDataBlock } from "./prompt/sanitize-for-prompt.js";
 import type {
   PendingFinalDeliveryPayload,
   SubagentCompletionDeliveryState,
   SubagentRunRecord,
-} from "./subagent-registry.types.js";
+} from "./subagents/subagent-registry.types.js";
 
 // Steering queue utilities for delivering completed subagent results back into
 // the requester session. Items are leased before injection to avoid duplicate

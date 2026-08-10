@@ -2,17 +2,17 @@
  * Gateway method-scope policy tests.
  */
 import { afterEach, describe, expect, it } from "vitest";
-import { createEmptyPluginRegistry } from "../plugins/registry-empty.js";
-import { setActivePluginRegistry } from "../plugins/runtime.js";
+import { createEmptyPluginRegistry } from "../plugins/manifest/registry-empty.js";
+import { setActivePluginRegistry } from "../plugins/runtime/runtime.js";
 import {
   authorizeOperatorScopesForMethod,
   isGatewayMethodClassified,
   resolveLeastPrivilegeOperatorScopesForMethod,
 } from "./method-scopes.js";
 import { createPluginGatewayMethodDescriptor } from "./methods/registry.js";
-import { listGatewayMethods } from "./server-methods-list.js";
-import { coreGatewayHandlers } from "./server-methods.js";
 import type { GatewayRequestHandler } from "./server-methods/types.js";
+import { listGatewayMethods } from "./server/server-methods-list.js";
+import { coreGatewayHandlers } from "./server/server-methods.js";
 
 const RESERVED_ADMIN_PLUGIN_METHOD = "config.plugin.inspect";
 const pluginHandler: GatewayRequestHandler = ({ respond }) => respond(true, {});

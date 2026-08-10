@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   emitDiagnosticEvent,
   resetDiagnosticEventsForTest,
-} from "../../infra/diagnostic-events.js";
+} from "../../infra/diagnostics/diagnostic-events.js";
 import {
   resetDiagnosticStabilityRecorderForTest,
   startDiagnosticStabilityRecorder,

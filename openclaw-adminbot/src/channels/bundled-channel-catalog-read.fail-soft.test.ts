@@ -13,7 +13,7 @@ describe("listBundledChannelCatalogEntries discovery failures", () => {
       resolveOpenClawPackageRootSync: () => null,
       resolveOpenClawPackageRoot: async () => null,
     }));
-    vi.doMock("../plugins/bundled-dir.js", () => ({
+    vi.doMock("../plugins/install/bundled-dir.js", () => ({
       resolveBundledPluginsDir: () => undefined,
     }));
 

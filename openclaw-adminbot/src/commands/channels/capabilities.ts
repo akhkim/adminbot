@@ -16,11 +16,11 @@ import type {
   ChannelCapabilitiesDisplayLine,
   ChannelPlugin,
 } from "../../channels/plugins/types.public.js";
-import { formatCliCommand } from "../../cli/command-format.js";
 import { formatUnknownChannelMessage } from "../../cli/error-format.js";
-import { parseTimeoutMsWithFallback } from "../../cli/parse-timeout.js";
-import { commitConfigWithPendingPluginInstalls } from "../../cli/plugins-install-record-commit.js";
-import { refreshPluginRegistryAfterConfigMutation } from "../../cli/plugins-registry-refresh.js";
+import { commitConfigWithPendingPluginInstalls } from "../../cli/plugins/plugins-install-record-commit.js";
+import { refreshPluginRegistryAfterConfigMutation } from "../../cli/plugins/plugins-registry-refresh.js";
+import { formatCliCommand } from "../../cli/program/command-format.js";
+import { parseTimeoutMsWithFallback } from "../../cli/program/parse-timeout.js";
 import {
   readConfigFileSnapshot,
   replaceConfigFile,

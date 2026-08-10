@@ -12,10 +12,10 @@ import {
   isFutureDateTimestampMs,
   resolveExpiresAtMsFromDurationMs,
 } from "../../packages/normalization-core/src/number-coercion.js";
-import { normalizeConfiguredProviderCatalogModelId } from "../agents/model-ref-shared.js";
-import { resolveProviderRequestCapabilities } from "../agents/provider-attribution.js";
-import type { ModelDefinitionConfig } from "../config/types.models.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { normalizeConfiguredProviderCatalogModelId } from "../agents/models/model-ref-shared.js";
+import { resolveProviderRequestCapabilities } from "../agents/transport/provider-attribution.js";
+import type { ModelDefinitionConfig } from "../config/types/models.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type { ModelProviderConfig } from "./provider-model-shared.js";
 
 export type { ProviderCatalogContext, ProviderCatalogResult } from "../plugins/types.js";
@@ -24,7 +24,7 @@ export {
   buildPairedProviderApiKeyCatalog,
   buildSingleProviderApiKeyCatalog,
   findCatalogTemplate,
-} from "../plugins/provider-catalog.js";
+} from "../plugins/providers/provider-catalog.js";
 
 /**
  * Normalized model row read from user config for provider catalog augmentation.

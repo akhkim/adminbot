@@ -4,7 +4,7 @@ import fsSync from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveOAuthDir } from "../config/paths.js";
+import { resolveOAuthDir } from "../config/paths/paths.js";
 import { DEFAULT_ACCOUNT_ID } from "../routing/session-key.js";
 
 const pairingMocks = vi.hoisted(() => ({

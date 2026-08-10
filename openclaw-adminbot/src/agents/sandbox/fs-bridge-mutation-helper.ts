@@ -3,7 +3,7 @@
  *
  * Performs symlink-resistant create/replace/delete operations inside a previously validated sandbox boundary.
  */
-import { PATH_ALIAS_POLICIES } from "../../infra/path-alias-guards.js";
+import { PATH_ALIAS_POLICIES } from "../../infra/system/path-alias-guards.js";
 import type {
   PathSafetyCheck,
   PinnedSandboxDirectoryEntry,

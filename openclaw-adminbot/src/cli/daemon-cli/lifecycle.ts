@@ -19,8 +19,8 @@ import {
 import type { SafeGatewayRestartRequestResult } from "../../infra/restart-coordinator.js";
 import { type GatewayRestartIntent, writeGatewayRestartIntentSync } from "../../infra/restart.js";
 import { defaultRuntime } from "../../runtime.js";
-import { formatCliCommand } from "../command-format.js";
-import { parseDurationMs } from "../parse-duration.js";
+import { formatCliCommand } from "../program/command-format.js";
+import { parseDurationMs } from "../program/parse-duration.js";
 import { recoverInstalledLaunchAgent } from "./launchd-recovery.js";
 import {
   runServiceRestart,

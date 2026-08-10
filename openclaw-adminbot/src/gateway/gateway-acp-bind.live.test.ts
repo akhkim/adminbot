@@ -14,16 +14,16 @@ import {
   getRuntimeConfig,
 } from "../config/config.js";
 import { isTruthyEnvValue } from "../infra/env.js";
-import { clearPluginLoaderCache } from "../plugins/loader.js";
+import { clearPluginLoaderCache } from "../plugins/runtime/loader.js";
 import {
   pinActivePluginChannelRegistry,
   releasePinnedPluginChannelRegistry,
   resetPluginRuntimeStateForTest,
-} from "../plugins/runtime.js";
+} from "../plugins/runtime/runtime.js";
 import { extractFirstTextBlock } from "../shared/chat-message-content.js";
 import { createTestRegistry } from "../test-utils/channel-plugins.js";
 import { sleep } from "../utils.js";
-import type { GatewayClient } from "./client.js";
+import type { GatewayClient } from "./client/client.js";
 import { connectTestGatewayClient } from "./gateway-cli-backend.live-helpers.js";
 import {
   assertCronJobMatches,
@@ -35,7 +35,7 @@ import {
   shouldRunLiveImageProbe,
 } from "./live-agent-probes.js";
 import { restoreLiveEnv, snapshotLiveEnv, type LiveEnvSnapshot } from "./live-env-test-helpers.js";
-import { startGatewayServer } from "./server.js";
+import { startGatewayServer } from "./server/server.js";
 
 const LIVE = isLiveTestEnabled();
 const ACP_BIND_LIVE = isTruthyEnvValue(process.env.OPENCLAW_LIVE_ACP_BIND);

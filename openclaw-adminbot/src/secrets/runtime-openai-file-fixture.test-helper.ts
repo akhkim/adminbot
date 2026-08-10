@@ -2,9 +2,9 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { expect } from "vitest";
-import type { AuthProfileStore } from "../agents/auth-profiles.js";
+import type { AuthProfileStore } from "../agents/auth/auth-profiles.js";
 import { getRuntimeConfig } from "../config/config.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type { PluginOrigin } from "../plugins/plugin-origin.types.js";
 import type { captureEnv } from "../test-utils/env.js";
 import { getActiveSecretsRuntimeSnapshot } from "./runtime.js";

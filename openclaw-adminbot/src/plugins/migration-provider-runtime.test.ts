@@ -1,8 +1,8 @@
 // Covers migration provider runtime hooks supplied by plugins.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import type { PluginRegistry } from "./registry-types.js";
-import { createEmptyPluginRegistry } from "./registry.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import type { PluginRegistry } from "./manifest/registry-types.js";
+import { createEmptyPluginRegistry } from "./manifest/registry.js";
 
 type MockManifestRegistry = {
   plugins: Array<Record<string, unknown>>;
@@ -45,7 +45,7 @@ const mocks = vi.hoisted(() => ({
   ensureStandaloneRuntimePluginRegistryLoaded: vi.fn(),
 }));
 
-vi.mock("./loader.js", () => ({
+vi.mock("./runtime/loader.js", () => ({
   resolveRuntimePluginRegistry: mocks.resolveRuntimePluginRegistry,
 }));
 
@@ -65,7 +65,7 @@ vi.mock("./plugin-registry.js", () => ({
   loadPluginRegistrySnapshotWithMetadata: mocks.loadPluginRegistrySnapshotWithMetadata,
 }));
 
-vi.mock("./manifest-registry-installed.js", () => ({
+vi.mock("./manifest/manifest-registry-installed.js", () => ({
   loadPluginManifestRegistryForInstalledIndex: mocks.loadPluginManifestRegistry,
   resolveInstalledManifestRegistryIndexFingerprint: () => "test-installed-index",
 }));

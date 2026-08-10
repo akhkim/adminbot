@@ -6,13 +6,13 @@ import { tryReadJsonSync } from "../../../infra/json-files.js";
 import {
   normalizeBundledPluginStringList,
   resolveBundledPluginScanDir,
-} from "../../bundled-plugin-scan.js";
+} from "../../install/bundled-plugin-scan.js";
 import {
   getPackageManifestMetadata,
   PLUGIN_MANIFEST_FILENAME,
   type PackageManifest,
   type PluginManifest,
-} from "../../manifest.js";
+} from "../../manifest/manifest.js";
 import { resolveLoaderPackageRoot } from "../../sdk-alias.js";
 import { uniqueStrings } from "../shared.js";
 
@@ -25,15 +25,8 @@ export type BundledPluginContractSnapshot = {
   providerIds: string[];
   providerEnvVars: Record<string, string[]>;
   embeddingProviderIds: string[];
-  speechProviderIds: string[];
-  realtimeTranscriptionProviderIds: string[];
-  realtimeVoiceProviderIds: string[];
-  mediaUnderstandingProviderIds: string[];
   transcriptSourceProviderIds: string[];
   documentExtractorIds: string[];
-  imageGenerationProviderIds: string[];
-  videoGenerationProviderIds: string[];
-  musicGenerationProviderIds: string[];
   webContentExtractorIds: string[];
   webFetchProviderIds: string[];
   webSearchProviderIds: string[];
@@ -131,36 +124,12 @@ export function buildBundledPluginContractSnapshot(
     embeddingProviderIds: uniqueStrings(manifest.contracts?.embeddingProviders, (value) =>
       value.trim(),
     ),
-    speechProviderIds: uniqueStrings(manifest.contracts?.speechProviders, (value) => value.trim()),
-    realtimeTranscriptionProviderIds: uniqueStrings(
-      manifest.contracts?.realtimeTranscriptionProviders,
-      (value) => value.trim(),
-    ),
-    realtimeVoiceProviderIds: uniqueStrings(manifest.contracts?.realtimeVoiceProviders, (value) =>
-      value.trim(),
-    ),
-    mediaUnderstandingProviderIds: uniqueStrings(
-      manifest.contracts?.mediaUnderstandingProviders,
-      (value) => value.trim(),
-    ),
     transcriptSourceProviderIds: uniqueStrings(
       manifest.contracts?.transcriptSourceProviders,
       (value) => value.trim(),
     ),
     documentExtractorIds: uniqueStrings(manifest.contracts?.documentExtractors, (value) =>
       value.trim(),
-    ),
-    imageGenerationProviderIds: uniqueStrings(
-      manifest.contracts?.imageGenerationProviders,
-      (value) => value.trim(),
-    ),
-    videoGenerationProviderIds: uniqueStrings(
-      manifest.contracts?.videoGenerationProviders,
-      (value) => value.trim(),
-    ),
-    musicGenerationProviderIds: uniqueStrings(
-      manifest.contracts?.musicGenerationProviders,
-      (value) => value.trim(),
     ),
     webContentExtractorIds: uniqueStrings(manifest.contracts?.webContentExtractors, (value) =>
       value.trim(),
@@ -185,15 +154,8 @@ export function hasBundledPluginContractSnapshotCapabilities(
     entry.cliBackendIds.length > 0 ||
     entry.providerIds.length > 0 ||
     entry.embeddingProviderIds.length > 0 ||
-    entry.speechProviderIds.length > 0 ||
-    entry.realtimeTranscriptionProviderIds.length > 0 ||
-    entry.realtimeVoiceProviderIds.length > 0 ||
-    entry.mediaUnderstandingProviderIds.length > 0 ||
     entry.transcriptSourceProviderIds.length > 0 ||
     entry.documentExtractorIds.length > 0 ||
-    entry.imageGenerationProviderIds.length > 0 ||
-    entry.videoGenerationProviderIds.length > 0 ||
-    entry.musicGenerationProviderIds.length > 0 ||
     entry.webContentExtractorIds.length > 0 ||
     entry.webFetchProviderIds.length > 0 ||
     entry.webSearchProviderIds.length > 0 ||

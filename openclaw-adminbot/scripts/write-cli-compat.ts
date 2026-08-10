@@ -2,12 +2,14 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+// Value import, so the specifier must name the real file: node's type-stripping does not
+// remap a `.js` specifier onto a `.ts` source the way tsc does.
 import {
   LEGACY_DAEMON_CLI_EXPORTS,
   resolveLegacyDaemonCliAccessors,
   resolveLegacyDaemonCliRegisterAccessor,
   resolveLegacyDaemonCliRunnerAccessors,
-} from "../src/cli/daemon-cli-compat.ts";
+} from "../src/cli/daemon-cli/daemon-cli-compat.ts";
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = path.join(rootDir, "dist");

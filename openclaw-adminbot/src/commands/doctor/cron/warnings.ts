@@ -3,9 +3,9 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { normalizeOptionalString } from "../../../../packages/normalization-core/src/string-coerce.js";
 import { note } from "../../../../packages/terminal-core/src/note.js";
-import { formatCliCommand } from "../../../cli/command-format.js";
+import { formatCliCommand } from "../../../cli/program/command-format.js";
 import { resolveAgentModelPrimaryValue } from "../../../config/model-input.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import { shortenHomePath } from "../../../utils.js";
 
 type CrontabReader = () => Promise<{ stdout?: unknown; stderr?: unknown }>;

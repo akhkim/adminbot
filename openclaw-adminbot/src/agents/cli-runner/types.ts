@@ -7,8 +7,8 @@ import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import type { InboundEventKind } from "../../channels/inbound-event/kind.js";
 import type { CliSessionBinding, SessionEntry } from "../../config/sessions.js";
 import type { SessionSystemPromptReport } from "../../config/sessions/types.js";
-import type { CliBackendConfig } from "../../config/types.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { CliBackendConfig } from "../../config/types/types.js";
 import type { ContextEngine } from "../../context-engine/types.js";
 import type { ImageContent } from "../../llm/types.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
@@ -19,16 +19,16 @@ import type {
   UserTurnTranscriptRecorder,
 } from "../../sessions/user-turn-transcript.types.js";
 import type { SkillSnapshot } from "../../skills/types.js";
-import type { BootstrapContextMode } from "../bootstrap-files.js";
-import type { ResolvedCliBackend } from "../cli-backends.js";
 import type { ContextWindowInfo } from "../context-window-guard.js";
-import type { FailoverReason } from "../embedded-agent-helpers.js";
 import type { EmbeddedAgentExecutionPhase } from "../embedded-agent-runner/execution-phase.js";
 import type {
   CurrentInboundPromptContext,
   EmbeddedRunTrigger,
 } from "../embedded-agent-runner/run/params.js";
-import type { SilentReplyPromptMode } from "../system-prompt.types.js";
+import type { FailoverReason } from "../embedded/embedded-agent-helpers.js";
+import type { BootstrapContextMode } from "../prompt/bootstrap-files.js";
+import type { SilentReplyPromptMode } from "../prompt/system-prompt.types.js";
+import type { ResolvedCliBackend } from "./cli-backends.js";
 
 /** Input contract for one CLI-backed agent run. */
 export type RunCliAgentParams = {

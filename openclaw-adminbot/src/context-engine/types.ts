@@ -1,6 +1,6 @@
 // Context-engine public types define the pluggable context-management lifecycle.
 import type { AgentMessage } from "../agents/runtime/index.js";
-import type { MemoryCitationsMode } from "../config/types.memory.js";
+import type { MemoryCitationsMode } from "../config/types/memory.js";
 
 // Result types
 

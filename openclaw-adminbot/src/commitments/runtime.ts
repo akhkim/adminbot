@@ -5,7 +5,7 @@ import { resolveExpiresAtMsFromDurationMs } from "@openclaw/normalization-core/n
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import type { OpenClawConfig } from "../config/config.js";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { resolveCommitmentTimezone, resolveCommitmentsConfig } from "./config.js";
 import {
@@ -242,7 +242,7 @@ async function defaultExtractBatch(params: {
   const resolved = resolveCommitmentsConfig(cfg);
   const runId = `commitments-${randomUUID()}`;
   const modelRef = await resolveDefaultModel({ cfg, agentId: first.agentId });
-  const { runEmbeddedAgent } = await import("../agents/embedded-agent.js");
+  const { runEmbeddedAgent } = await import("../agents/embedded/embedded-agent.js");
   const result = await runEmbeddedAgent({
     sessionId: runId,
     sessionKey: `agent:${first.agentId}:commitments:${runId}`,

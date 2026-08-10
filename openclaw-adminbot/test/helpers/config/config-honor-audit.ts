@@ -2,7 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { computeBaseConfigSchemaResponse } from "../../../src/config/schema-base.js";
+import { computeBaseConfigSchemaResponse } from "../../../src/config/schema/schema-base.js";
 
 // Config honor audit helpers that compare schema keys with proof inventories.
 

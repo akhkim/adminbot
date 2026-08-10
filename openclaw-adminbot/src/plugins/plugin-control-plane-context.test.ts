@@ -2,7 +2,7 @@
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import type { InstalledPluginIndex } from "./installed-plugin-index.js";
+import type { InstalledPluginIndex } from "./install/installed-plugin-index.js";
 import {
   resolvePluginControlPlaneContext,
   resolvePluginControlPlaneFingerprint,

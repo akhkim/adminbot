@@ -1,6 +1,9 @@
 // Verifies channel metadata validation and plugin capability lookups.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PluginManifestRecord, PluginManifestRegistry } from "../plugins/manifest-registry.js";
+import type {
+  PluginManifestRecord,
+  PluginManifestRegistry,
+} from "../plugins/manifest/manifest-registry.js";
 import {
   validateConfigObjectRawWithPlugins,
   validateConfigObjectWithPlugins,
@@ -214,7 +217,7 @@ function createPluginManifestRecord(
   };
 }
 
-vi.mock("../plugins/manifest-registry.js", () => ({
+vi.mock("../plugins/manifest/manifest-registry.js", () => ({
   loadPluginManifestRegistry: () => mockLoadPluginManifestRegistry(),
   resolveManifestContractPluginIds: () => [],
 }));
@@ -247,7 +250,7 @@ vi.mock("../channels/plugins/legacy-config.js", () => ({
   collectChannelLegacyConfigRules: () => [],
 }));
 
-vi.mock("./zod-schema.js", () => ({
+vi.mock("./zod/zod-schema.js", () => ({
   OpenClawSchema: {
     safeParse: (raw: unknown) => ({ success: true, data: raw }),
   },

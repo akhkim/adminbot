@@ -3,7 +3,7 @@
  */
 import path from "node:path";
 import { isAcpSessionKey, isSubagentSessionKey } from "../../../routing/session-key.js";
-import type { EmbeddedContextFile } from "../../embedded-agent-helpers.js";
+import type { EmbeddedContextFile } from "../../embedded/embedded-agent-helpers.js";
 
 /**
  * Returns whether a session should receive primary bootstrap context. Subagents

@@ -5,11 +5,11 @@
  */
 import { Type } from "typebox";
 import { stringEnum } from "../schema/typebox.js";
+import { type AnyAgentTool, ToolInputError, readStringParam } from "./common.js";
 import {
   describeUpdatePlanTool,
   UPDATE_PLAN_TOOL_DISPLAY_SUMMARY,
-} from "../tool-description-presets.js";
-import { type AnyAgentTool, ToolInputError, readStringParam } from "./common.js";
+} from "./tool-description-presets.js";
 
 const PLAN_STEP_STATUSES = ["pending", "in_progress", "completed"] as const;
 

@@ -13,11 +13,14 @@ import {
   parseStrictNonNegativeInteger,
   parseStrictPositiveInteger,
 } from "../../../infra/parse-finite-number.js";
-import { runGlobalGatewayStopSafely } from "../../../plugins/hook-runner-global.js";
+import { runGlobalGatewayStopSafely } from "../../../plugins/hooks/hook-runner-global.js";
 import { defaultRuntime } from "../../../runtime.js";
 import { runCommandWithRuntime } from "../../cli-utils.js";
 import { createDefaultDeps } from "../../deps.js";
-import { ensurePluginRegistryLoaded, type PluginRegistryScope } from "../../plugin-registry.js";
+import {
+  ensurePluginRegistryLoaded,
+  type PluginRegistryScope,
+} from "../../plugins/plugin-registry.js";
 
 /** Shared helpers used by every message subcommand registration. */
 export type MessageCliHelpers = {

@@ -1,7 +1,7 @@
 // OpenAI completions tests cover chat completion stream adaptation.
 import type { ChatCompletionChunk } from "openai/resources/chat/completions.js";
 import { describe, expect, it, vi } from "vitest";
-import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "../../agents/system-prompt-cache-boundary.js";
+import { SYSTEM_PROMPT_CACHE_BOUNDARY } from "../../agents/prompt/system-prompt-cache-boundary.js";
 import type { Context, Model } from "../types.js";
 
 type DeepPartial<T> = { [P in keyof T]?: DeepPartial<T[P]> };

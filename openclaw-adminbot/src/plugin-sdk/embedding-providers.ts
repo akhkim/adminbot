@@ -4,7 +4,7 @@
 export {
   getEmbeddingProvider,
   listEmbeddingProviders,
-} from "../plugins/embedding-provider-runtime.js";
+} from "../plugins/embedding/embedding-provider-runtime.js";
 
 export type {
   EmbeddingInput,
@@ -15,4 +15,4 @@ export type {
   EmbeddingProviderCreateResult,
   EmbeddingProviderIndexIdentity,
   EmbeddingProviderRuntime,
-} from "../plugins/embedding-providers.js";
+} from "../plugins/embedding/embedding-providers.js";

@@ -7,4 +7,4 @@ export type {
   ModelCompatConfig,
   ModelDefinitionConfig,
   ModelProviderConfig,
-} from "../config/types.models.js";
+} from "../config/types/models.js";

@@ -3,8 +3,8 @@ import {
   normalizeLowercaseStringOrEmpty,
   normalizeStringifiedOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
-import { parseByteSize } from "../../cli/parse-bytes.js";
-import { parseDurationMs } from "../../cli/parse-duration.js";
+import { parseByteSize } from "../../cli/program/parse-bytes.js";
+import { parseDurationMs } from "../../cli/program/parse-duration.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 import {
   isAcpSessionKey,
@@ -12,7 +12,7 @@ import {
   isSubagentSessionKey,
   parseAgentSessionKey,
 } from "../../sessions/session-key-utils.js";
-import type { SessionMaintenanceConfig, SessionMaintenanceMode } from "../types.base.js";
+import type { SessionMaintenanceConfig, SessionMaintenanceMode } from "../types/base.js";
 import { parseSessionThreadInfoFast } from "./thread-info.js";
 import type { SessionEntry } from "./types.js";
 

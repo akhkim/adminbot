@@ -2,10 +2,6 @@
 // Keep heavyweight tool construction out of this module so harness imports can
 // register quickly inside gateway startup and Docker e2e runs.
 
-import type {
-  CodexBundleMcpThreadConfig,
-  LoadCodexBundleMcpThreadConfigParams,
-} from "../agents/codex-mcp-config.types.js";
 import type { EmbeddedRunAttemptResult } from "../agents/embedded-agent-runner/run/types.js";
 import {
   abortAndDrainEmbeddedAgentRun,
@@ -17,8 +13,12 @@ import {
   type AbortAndDrainEmbeddedAgentRunResult,
   type EmbeddedAgentQueueMessageOptions,
 } from "../agents/embedded-agent-runner/runs.js";
+import type {
+  CodexBundleMcpThreadConfig,
+  LoadCodexBundleMcpThreadConfigParams,
+} from "../agents/mcp/codex-mcp-config.types.js";
 import type { SandboxFsBridge } from "../agents/sandbox/fs-bridge.js";
-import { formatToolDetail, resolveToolDisplay } from "../agents/tool-display.js";
+import { formatToolDetail, resolveToolDisplay } from "../agents/tools/tool-display.js";
 import type { ImageContent } from "../llm/types.js";
 import { redactToolDetail } from "../logging/redact.js";
 import type { PromptImageOrderEntry } from "../media/prompt-image-order.js";
@@ -66,15 +66,15 @@ export type { AnyAgentTool } from "../agents/tools/common.js";
 export type {
   MessagingToolSend,
   MessagingToolSourceReplyPayload,
-} from "../agents/embedded-agent-messaging.types.js";
+} from "../agents/embedded/embedded-agent-messaging.types.js";
 export type { HeartbeatToolResponse } from "../auto-reply/heartbeat-tool-response.js";
 export type { AgentApprovalEventData, AgentEventPayload } from "../infra/agent-events.js";
-export type { ExecApprovalDecision } from "../infra/exec-approvals.js";
+export type { ExecApprovalDecision } from "../infra/exec/exec-approvals.js";
 export type {
   ExecAutoReviewDecision,
   ExecAutoReviewInput,
   ExecAutoReviewer,
-} from "../infra/exec-auto-review.js";
+} from "../infra/exec/exec-auto-review.js";
 export type { NormalizedUsage } from "../agents/usage.js";
 export type {
   AgentToolResultMiddleware,
@@ -102,8 +102,8 @@ export type {
 
 export { VERSION as OPENCLAW_VERSION } from "../version.js";
 export { formatErrorMessage } from "../infra/errors.js";
-export { formatApprovalDisplayPath } from "../infra/approval-display-paths.js";
-export { buildAgentHookContextChannelFields } from "../plugins/hook-agent-context.js";
+export { formatApprovalDisplayPath } from "../infra/approvals/approval-display-paths.js";
+export { buildAgentHookContextChannelFields } from "../plugins/hooks/hook-agent-context.js";
 export { emitAgentEvent, onAgentEvent, resetAgentEventsForTest } from "../infra/agent-events.js";
 export { runAgentCleanupStep } from "../agents/run-cleanup-timeout.js";
 export { log as embeddedAgentLog } from "../agents/embedded-agent-runner/logger.js";
@@ -127,7 +127,10 @@ export {
   HEARTBEAT_RESPONSE_TOOL_NAME,
   normalizeHeartbeatToolResponse,
 } from "../auto-reply/heartbeat-tool-response.js";
-export { isMessagingTool, isMessagingToolSendAction } from "../agents/embedded-agent-messaging.js";
+export {
+  isMessagingTool,
+  isMessagingToolSendAction,
+} from "../agents/embedded/embedded-agent-messaging.js";
 export {
   extractMessagingToolSend,
   extractMessagingToolSendResult,
@@ -135,7 +138,7 @@ export {
   filterToolResultMediaUrls,
   isToolResultError,
   sanitizeToolResult,
-} from "../agents/embedded-agent-subscribe.tools.js";
+} from "../agents/embedded/embedded-agent-subscribe.tools.js";
 export { normalizeUsage } from "../agents/usage.js";
 export { resolveOpenClawAgentDir } from "./agent-dir-compat.js";
 export {
@@ -143,14 +146,10 @@ export {
   resolveDefaultAgentDir,
   resolveSessionAgentIds,
 } from "../agents/agent-scope.js";
-export { resolveModelAuthMode } from "../agents/model-auth.js";
-export { supportsModelTools } from "../agents/model-tool-support.js";
-export { isAgentToolReplaySafe } from "../agents/tool-replay-safety.js";
-export { getChannelAgentToolMeta } from "../agents/channel-tool-metadata.js";
-export {
-  buildSkillWorkshopPromptSection,
-  SKILL_WORKSHOP_TOOL_NAME,
-} from "../agents/skill-workshop-prompt.js";
+export { resolveModelAuthMode } from "../agents/auth/model-auth.js";
+export { supportsModelTools } from "../agents/models/model-tool-support.js";
+export { isAgentToolReplaySafe } from "../agents/tools/tool-replay-safety.js";
+export { getChannelAgentToolMeta } from "../agents/tools/channel-tool-metadata.js";
 export { resolveAttemptFsWorkspaceOnly } from "../agents/embedded-agent-runner/run/attempt.prompt-helpers.js";
 export { resolveAttemptSpawnWorkspaceDir } from "../agents/embedded-agent-runner/run/attempt.thread-helpers.js";
 export { buildEmbeddedAttemptToolRunContext } from "../agents/embedded-agent-runner/run/attempt.tool-run-context.js";
@@ -193,11 +192,11 @@ export {
   type RuntimeToolInputSchemaJson,
   type RuntimeToolInputSchemaProjection,
   type RuntimeToolSchemaDiagnostic,
-} from "../agents/tool-schema-projection.js";
+} from "../agents/tools/tool-schema-projection.js";
 export type {
   CodexBundleMcpThreadConfig,
   LoadCodexBundleMcpThreadConfigParams,
-} from "../agents/codex-mcp-config.types.js";
+} from "../agents/mcp/codex-mcp-config.types.js";
 export { normalizeProviderToolSchemas } from "../agents/embedded-agent-runner/tool-schema-runtime.js";
 
 /** Detect prompt image references and load them through the same limits used by embedded runs. */
@@ -207,7 +206,7 @@ export async function detectAndLoadAgentHarnessPromptImages(params: {
   model: { input?: string[] };
   existingImages?: ImageContent[];
   imageOrder?: PromptImageOrderEntry[];
-  config?: import("../config/types.openclaw.js").OpenClawConfig;
+  config?: import("../config/types/openclaw.js").OpenClawConfig;
   workspaceOnly?: boolean;
   localRoots?: readonly string[];
   sandbox?: { root: string; bridge: SandboxFsBridge };
@@ -242,11 +241,12 @@ export async function detectAndLoadAgentHarnessPromptImages(params: {
 export async function loadCodexBundleMcpThreadConfig(
   params: LoadCodexBundleMcpThreadConfigParams,
 ): Promise<CodexBundleMcpThreadConfig> {
-  const { loadCodexBundleMcpThreadConfig: load } = await import("../agents/codex-mcp-config.js");
+  const { loadCodexBundleMcpThreadConfig: load } =
+    await import("../agents/mcp/codex-mcp-config.js");
   return load(params);
 }
-export { resolveSandboxContext } from "../agents/sandbox.js";
-export type { SandboxContext, SandboxWorkspaceAccess } from "../agents/sandbox.js";
+export { resolveSandboxContext } from "../agents/sandbox/sandbox.js";
+export type { SandboxContext, SandboxWorkspaceAccess } from "../agents/sandbox/sandbox.js";
 export {
   hasSandboxBindContainerPathAliases,
   hasSandboxBindReadonlyHostShadows,
@@ -256,7 +256,7 @@ export {
   buildBootstrapContextForFiles,
   resolveBootstrapContextForRun,
   resolveBootstrapFilesForRun,
-} from "../agents/bootstrap-files.js";
+} from "../agents/prompt/bootstrap-files.js";
 export type { EmbeddedContextFile } from "../agents/embedded-agent-helpers/types.js";
 export { isSubagentSessionKey } from "../routing/session-key.js";
 export {
@@ -264,7 +264,7 @@ export {
   resolveSessionWriteLockAcquireTimeoutMs,
   resolveSessionWriteLockOptions,
   type SessionWriteLockAcquireTimeoutConfig,
-} from "../agents/session-write-lock.js";
+} from "../agents/sessions/session-write-lock.js";
 export { appendSessionTranscriptMessage } from "../config/sessions/transcript-append.js";
 export { emitSessionTranscriptUpdate } from "../sessions/transcript-events.js";
 export {
@@ -280,8 +280,8 @@ export {
   wrapToolWithBeforeToolCallHook,
   type BeforeToolCallPolicyDiagnosticState,
   type DeferredPluginToolApproval,
-} from "../agents/agent-tools.before-tool-call.js";
-export { isReplaySafeToolCall } from "../agents/tool-mutation.js";
+} from "../agents/tools/agent-tools.before-tool-call.js";
+export { isReplaySafeToolCall } from "../agents/tools/tool-mutation.js";
 export {
   resolveAgentHarnessBeforePromptBuildResult,
   runAgentHarnessAfterCompactionHook,

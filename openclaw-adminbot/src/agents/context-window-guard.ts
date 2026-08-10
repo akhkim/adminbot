@@ -5,8 +5,8 @@
  * more actionable remediation text.
  */
 import { findNormalizedProviderValue } from "@openclaw/model-catalog-core/provider-id";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { resolveProviderEndpoint } from "./provider-attribution.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { resolveProviderEndpoint } from "./transport/provider-attribution.js";
 
 export const CONTEXT_WINDOW_HARD_MIN_TOKENS = 4_000;
 const CONTEXT_WINDOW_WARN_BELOW_TOKENS = 8_000;

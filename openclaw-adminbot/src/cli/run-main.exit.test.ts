@@ -156,7 +156,7 @@ vi.mock("./gateway-cli/run-command.js", () => ({
   addGatewayRunCommand: addGatewayRunCommandMock,
 }));
 
-vi.mock("./command-execution-startup.js", () => ({
+vi.mock("./program/command-execution-startup.js", () => ({
   ensureCliExecutionBootstrap: ensureCliExecutionBootstrapMock,
 }));
 
@@ -189,8 +189,8 @@ vi.mock("../infra/env.js", async (importOriginal) => ({
   normalizeEnv: normalizeEnvMock,
 }));
 
-vi.mock("../config/paths.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../config/paths.js")>()),
+vi.mock("../config/paths/paths.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../config/paths/paths.js")>()),
   pinRuntimePaths: pinRuntimePathsMock,
 }));
 
@@ -199,7 +199,7 @@ vi.mock("../utils.js", async (importOriginal) => ({
   pinConfigDir: pinConfigDirMock,
 }));
 
-vi.mock("../infra/path-env.js", () => ({
+vi.mock("../infra/system/path-env.js", () => ({
   ensureOpenClawCliOnPath: ensurePathMock,
 }));
 
@@ -232,7 +232,7 @@ vi.mock("./program/root-help.js", () => ({
   outputRootHelp: outputRootHelpMock,
 }));
 
-vi.mock("./root-help-metadata.js", () => ({
+vi.mock("./program/root-help-metadata.js", () => ({
   outputPrecomputedBrowserHelpText: outputPrecomputedBrowserHelpTextMock,
   outputPrecomputedNodesHelpText: outputPrecomputedNodesHelpTextMock,
   outputPrecomputedRootHelpText: outputPrecomputedRootHelpTextMock,
@@ -240,7 +240,7 @@ vi.mock("./root-help-metadata.js", () => ({
   outputPrecomputedSubcommandHelpText: outputPrecomputedSubcommandHelpTextMock,
 }));
 
-vi.mock("./root-help-live-config.js", () => ({
+vi.mock("./program/root-help-live-config.js", () => ({
   loadRootHelpRenderOptionsForConfigSensitivePlugins:
     loadRootHelpRenderOptionsForConfigSensitivePluginsMock,
 }));
@@ -249,7 +249,7 @@ vi.mock("./setup-onboard-configure-help-fast-path.js", () => ({
   tryOutputSetupOnboardConfigureHelp: tryOutputSetupOnboardConfigureHelpMock,
 }));
 
-vi.mock("./program.js", () => ({
+vi.mock("./program/program.js", () => ({
   buildProgram: buildProgramMock,
 }));
 
@@ -273,7 +273,7 @@ vi.mock("../plugins/cli-registry-loader.js", () => ({
   resolvePluginCliRootOwnerIds: resolvePluginCliRootOwnerIdsMock,
 }));
 
-vi.mock("../plugins/manifest-command-aliases.runtime.js", () => ({
+vi.mock("../plugins/manifest/manifest-command-aliases.runtime.js", () => ({
   resolveManifestCliCommandSurfaceOwner: resolveManifestCliCommandSurfaceOwnerMock,
   resolveManifestCommandAliasOwner: resolveManifestCommandAliasOwnerMock,
   resolveManifestToolOwner: resolveManifestToolOwnerMock,
@@ -295,7 +295,7 @@ vi.mock("../config/config.js", () => ({
   readConfigFileSnapshot: readConfigFileSnapshotMock,
 }));
 
-vi.mock("../commands/onboard.js", () => ({
+vi.mock("../commands/onboard/onboard.js", () => ({
   setupWizardCommand: setupWizardCommandMock,
 }));
 
@@ -307,7 +307,7 @@ vi.mock("./progress.js", () => ({
   createCliProgress: createCliProgressMock,
 }));
 
-vi.mock("../config/io.js", () => ({
+vi.mock("../config/io/io.js", () => ({
   readBestEffortConfig: loadConfigMock,
 }));
 

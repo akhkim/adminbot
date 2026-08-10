@@ -1,6 +1,6 @@
 // Identifies wrapper commands that can carry hidden command payloads.
-import { splitShellArgs } from "../utils/shell-argv.js";
-import { normalizeExecutableToken } from "./exec-wrapper-tokens.js";
+import { splitShellArgs } from "../shared/shell-argv.js";
+import { normalizeExecutableToken } from "./exec/exec-wrapper-tokens.js";
 import { parseInlineOptionToken } from "./inline-option-token.js";
 
 // Command carriers are executables that can hide the real command behind

@@ -1,6 +1,6 @@
 // Skill tool dispatch tests cover policy-filtered tool surfaces.
 import { describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 
 type CreateOpenClawToolsArg = {
   cronCreatorToolAllowlist?: Array<string | { name: string; pluginId?: string }>;
@@ -24,7 +24,7 @@ const hoisted = vi.hoisted(() => {
   };
 });
 
-vi.mock("../../agents/openclaw-tools.runtime.js", () => ({
+vi.mock("../../agents/tools/openclaw-tools.runtime.js", () => ({
   createOpenClawTools: (args: CreateOpenClawToolsArg) => hoisted.createOpenClawToolsMock(args),
 }));
 

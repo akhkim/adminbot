@@ -10,8 +10,8 @@ import { markOpenClawExecEnv } from "../infra/openclaw-exec-env.js";
 import {
   decodeWindowsOutputBuffer,
   resolveWindowsConsoleEncoding,
-} from "../infra/windows-encoding.js";
-import { getWindowsInstallRoots } from "../infra/windows-install-roots.js";
+} from "../infra/system/windows-encoding.js";
+import { getWindowsInstallRoots } from "../infra/system/windows-install-roots.js";
 import { logDebug, logError } from "../logger.js";
 import { killProcessTree as terminateProcessTree } from "./kill-tree.js";
 import { resolveCommandStdio } from "./spawn-utils.js";
@@ -460,11 +460,7 @@ export async function runCommandWithTimeout(
       } else {
         killIssuedByAbort = true;
       }
-      if (
-        killProcessTree &&
-        typeof child.pid === "number" &&
-        child.pid > 0
-      ) {
+      if (killProcessTree && typeof child.pid === "number" && child.pid > 0) {
         if (process.platform === "win32") {
           try {
             spawn("taskkill", ["/PID", String(child.pid), "/T"], {

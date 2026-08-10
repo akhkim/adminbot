@@ -26,7 +26,7 @@ import {
   getPairedDevice,
   requestDevicePairing,
 } from "../infra/device-pairing.js";
-import { drainSystemEvents, peekSystemEvents } from "../infra/system-events.js";
+import { drainSystemEvents, peekSystemEvents } from "../infra/system/system-events.js";
 import { rawDataToString } from "../infra/ws.js";
 import { resetLogger, setLoggerOverride } from "../logging.js";
 import { clearGatewaySubagentRuntime } from "../plugins/runtime/gateway-bindings.js";
@@ -36,13 +36,13 @@ import {
   parseAgentSessionKey,
   toAgentStoreSessionKey,
 } from "../routing/session-key.js";
+import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../shared/message-channel.js";
 import { resetTaskRegistryForTests } from "../tasks/runtime-internal.js";
 import { resetTaskFlowRegistryForTests } from "../tasks/task-flow-runtime-internal.js";
 import { captureEnv } from "../test-utils/env.js";
 import { getDeterministicFreePortBlock } from "../test-utils/ports.js";
-import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import { buildDeviceAuthPayloadV3 } from "./device-auth.js";
-import type { GatewayServerOptions } from "./server.js";
+import type { GatewayServerOptions } from "./server/server.js";
 import { resetTestPluginRegistry } from "./test-helpers.plugin-registry.js";
 import {
   agentCommand,
@@ -61,10 +61,10 @@ import {
 
 // Import lazily after test env/home setup so config/session paths resolve to test dirs.
 // Keep one cached module per worker for speed.
-let serverModulePromise: Promise<typeof import("./server.js")> | undefined;
+let serverModulePromise: Promise<typeof import("./server/server.js")> | undefined;
 
 async function getServerModule() {
-  serverModulePromise ??= import("./server.js");
+  serverModulePromise ??= import("./server/server.js");
   return await serverModulePromise;
 }
 

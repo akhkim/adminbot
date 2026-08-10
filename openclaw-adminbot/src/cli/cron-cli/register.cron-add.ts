@@ -8,8 +8,8 @@ import { theme } from "../../../packages/terminal-core/src/theme.js";
 import type { CronJob } from "../../cron/types.js";
 import { sanitizeAgentId } from "../../routing/session-key.js";
 import { defaultRuntime } from "../../runtime.js";
-import type { GatewayRpcOpts } from "../gateway-rpc.js";
-import { addGatewayClientOptions, callGatewayFromCli } from "../gateway-rpc.js";
+import type { GatewayRpcOpts } from "../gateway-cli/gateway-rpc.js";
+import { addGatewayClientOptions, callGatewayFromCli } from "../gateway-cli/gateway-rpc.js";
 import {
   parsePositiveIntOrUndefined,
   parseStrictPositiveIntOrUndefined,

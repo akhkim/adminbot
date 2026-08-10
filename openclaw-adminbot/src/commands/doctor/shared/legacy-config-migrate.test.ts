@@ -1,7 +1,7 @@
 // Legacy config migration tests cover generic doctor repair of old config layouts.
 import { describe, expect, it } from "vitest";
-import { findLegacyConfigIssues } from "../../../config/legacy.js";
-import type { OpenClawConfig } from "../../../config/types.js";
+import { findLegacyConfigIssues } from "../../../config/legacy/legacy.js";
+import type { OpenClawConfig } from "../../../config/types/types.js";
 import { normalizeCompatibilityConfigValues } from "./legacy-config-core-migrate.js";
 import { LEGACY_CONFIG_MIGRATIONS } from "./legacy-config-migrations.js";
 

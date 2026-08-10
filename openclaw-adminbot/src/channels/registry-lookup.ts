@@ -4,7 +4,7 @@ import type {
   ActivePluginChannelRegistration,
   ActivePluginChannelRegistry,
 } from "../plugins/channel-registry-state.types.js";
-import { getActivePluginChannelRegistrySnapshotFromState } from "../plugins/runtime-channel-state.js";
+import { getActivePluginChannelRegistrySnapshotFromState } from "../plugins/runtime/runtime-channel-state.js";
 
 type RegisteredChannelPluginEntry = ActivePluginChannelRegistration & {
   plugin: ActivePluginChannelRegistration["plugin"] & {

@@ -1,7 +1,7 @@
 // sessions_send helper tests cover session-key target parsing and ping-pong
 // turn limits for agent-to-agent announce flows.
 import { beforeEach, describe, expect, it } from "vitest";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import { createSessionConversationTestRegistry } from "../../test-utils/session-conversation-registry.js";
 import {
   buildAgentToAgentMessageContext,

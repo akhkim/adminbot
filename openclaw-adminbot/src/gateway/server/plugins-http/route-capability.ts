@@ -1,5 +1,5 @@
 // Plugin HTTP route capability helpers discover node-authorized route surfaces from plugin registrations.
-import type { PluginRegistry } from "../../../plugins/registry.js";
+import type { PluginRegistry } from "../../../plugins/manifest/registry.js";
 import {
   resolvePluginNodeCapabilityTtlMs,
   type PluginNodeCapabilitySurface,

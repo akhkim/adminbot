@@ -8,14 +8,14 @@ import {
   isSilentReplyText,
   SILENT_REPLY_TOKEN,
 } from "../../../auto-reply/tokens.js";
-import { hasAcceptedSessionSpawn } from "../../accepted-session-spawn.js";
 import { collectTextContentBlocks } from "../../content-blocks.js";
 import {
   isStrictAgenticSupportedProviderModel,
   stripProviderPrefix,
 } from "../../execution-contract.js";
-import { hasOnlyAssistantReasoningContent } from "../../replay-turn-classification.js";
 import type { AgentMessage } from "../../runtime/index.js";
+import { hasAcceptedSessionSpawn } from "../../subagents/accepted-session-spawn.js";
+import { hasOnlyAssistantReasoningContent } from "../../transport/replay-turn-classification.js";
 import {
   hasCommittedMessagingToolDeliveryEvidence,
   hasMessagingToolDeliveryEvidence,

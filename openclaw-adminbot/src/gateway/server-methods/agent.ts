@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 3049 lines; see docs/adr/0006-deferred-monster-splits.md
 // Gateway agent methods implement agent.run, agent.wait, agent.reset, identity,
 // and related session-aware RPC handlers used by UI and operator clients.
 import { randomUUID } from "node:crypto";
@@ -25,13 +26,8 @@ import {
 } from "../../../packages/gateway-protocol/src/index.js";
 import { readAcpSessionMeta } from "../../acp/runtime/session-meta.js";
 import { listAgentIds, resolveDefaultAgentId } from "../../agents/agent-scope.js";
-import { resolveTrustedGroupId } from "../../agents/agent-tools.policy.js";
-import {
-  consumeExecApprovalFollowupRuntimeHandoff,
-  isExecApprovalFollowupSessionRebound,
-  parseExecApprovalFollowupApprovalId,
-} from "../../agents/bash-tools.exec-approval-followup-state.js";
-import { clearAllCliSessions } from "../../agents/cli-session.js";
+import { resolveProviderIdForAuth } from "../../agents/auth/provider-auth-aliases.js";
+import { clearAllCliSessions } from "../../agents/cli-runner/cli-session.js";
 import type { AgentCommandOpts } from "../../agents/command/types.js";
 import { isTimeoutError } from "../../agents/failover-error.js";
 import {
@@ -40,7 +36,6 @@ import {
 } from "../../agents/identity-avatar.js";
 import { AGENT_INTERNAL_EVENT_TYPE_TASK_COMPLETION } from "../../agents/internal-event-contract.js";
 import type { AgentInternalEvent } from "../../agents/internal-events.js";
-import { resolveProviderIdForAuth } from "../../agents/provider-auth-aliases.js";
 import {
   AGENT_RUN_RESTART_ABORT_STOP_REASON,
   isAgentRunRestartAbortReason,
@@ -54,7 +49,13 @@ import {
   resolveIngressWorkspaceOverrideForSpawnedRun,
 } from "../../agents/spawned-context.js";
 import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
-import { agentCommandFromIngress } from "../../commands/agent.js";
+import { resolveTrustedGroupId } from "../../agents/tools/agent-tools.policy.js";
+import {
+  consumeExecApprovalFollowupRuntimeHandoff,
+  isExecApprovalFollowupSessionRebound,
+  parseExecApprovalFollowupApprovalId,
+} from "../../agents/tools/bash-tools.exec-approval-followup-state.js";
+import { agentCommandFromIngress } from "../../commands/agent/agent.js";
 import {
   evaluateSessionFreshness,
   hasTerminalMainSessionTranscriptNewerThanRegistrySync,
@@ -73,7 +74,7 @@ import {
   updateSessionStore,
 } from "../../config/sessions.js";
 import { resolveMaintenanceConfigFromInput } from "../../config/sessions/store-maintenance.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   assertAgentRunLifecycleGenerationCurrent,
   claimAgentRunContext,
@@ -93,7 +94,7 @@ import {
   resolveVoiceWakeRouteByTrigger,
 } from "../../infra/voicewake-routing.js";
 import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
-import type { PluginHookSessionEndReason } from "../../plugins/hook-types.js";
+import type { PluginHookSessionEndReason } from "../../plugins/hooks/hook-types.js";
 import {
   classifySessionKeyShape,
   isAcpSessionKey,
@@ -112,21 +113,21 @@ import {
   parseRawSessionConversationRef,
   parseThreadSessionSuffix,
 } from "../../sessions/session-key-utils.js";
-import { createRunningTaskRun, finalizeTaskRunByRunId } from "../../tasks/detached-task-runtime.js";
-import type { TaskStatus } from "../../tasks/task-registry.types.js";
 import {
   mergeDeliveryContext,
   normalizeDeliveryContext,
   normalizeSessionDeliveryFields,
   type DeliveryContext,
-} from "../../utils/delivery-context.shared.js";
+} from "../../shared/delivery-context.shared.js";
 import {
   INTERNAL_MESSAGE_CHANNEL,
   isDeliverableMessageChannel,
   isGatewayMessageChannel,
   isInternalNonDeliveryChannel,
   normalizeMessageChannel,
-} from "../../utils/message-channel.js";
+} from "../../shared/message-channel.js";
+import { createRunningTaskRun, finalizeTaskRunByRunId } from "../../tasks/detached-task-runtime.js";
+import type { TaskStatus } from "../../tasks/task-registry.types.js";
 import { resolveAssistantIdentity } from "../assistant-identity.js";
 import {
   type ChatAbortControllerEntry,
@@ -139,14 +140,14 @@ import {
   parseMessageWithAttachments,
   resolveChatAttachmentMaxBytes,
 } from "../chat-attachments.js";
-import { resolveAssistantAvatarUrl } from "../control-ui-shared.js";
+import { resolveAssistantAvatarUrl } from "../control/control-ui-shared.js";
 import { ADMIN_SCOPE } from "../method-scopes.js";
 import {
   emitGatewaySessionEndPluginHook,
   emitGatewaySessionStartPluginHook,
   performGatewaySessionReset,
-} from "../session-reset-service.js";
-import { reactivateCompletedSubagentSession } from "../session-subagent-reactivation.js";
+} from "../sessions/session-reset-service.js";
+import { reactivateCompletedSubagentSession } from "../sessions/session-subagent-reactivation.js";
 import {
   canonicalizeSpawnedByForAgent,
   loadGatewaySessionRow,
@@ -156,7 +157,7 @@ import {
   resolveGatewayModelSupportsImages,
   resolveSessionStoreKey,
   resolveSessionModelRef,
-} from "../session-utils.js";
+} from "../sessions/session-utils.js";
 import { formatForLog } from "../ws-log.js";
 import { waitForAgentJob } from "./agent-job.js";
 import {
@@ -692,7 +693,7 @@ async function registerPluginSubagentRunFromGateway(params: {
     cfg: params.cfg,
     agentId: resolveAgentIdFromSessionKey(childSessionKey),
   });
-  const { registerSubagentRun } = await import("../../agents/subagent-registry.js");
+  const { registerSubagentRun } = await import("../../agents/subagents/subagent-registry.js");
   registerSubagentRun({
     runId: params.runId,
     childSessionKey,

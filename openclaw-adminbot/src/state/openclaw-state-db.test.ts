@@ -5,14 +5,14 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readCronRunLogEntriesSync } from "../cron/run-log.js";
+import { requireNodeSqlite } from "../infra/node-sqlite.js";
+import { listOpenFileDescriptorsForPath } from "../infra/open-file-descriptors.test-support.js";
 import {
   executeSqliteQuerySync,
   executeSqliteQueryTakeFirstSync,
   getNodeSqliteKysely,
-} from "../infra/kysely-sync.js";
-import { requireNodeSqlite } from "../infra/node-sqlite.js";
-import { listOpenFileDescriptorsForPath } from "../infra/open-file-descriptors.test-support.js";
-import { readSqliteNumberPragma } from "../infra/sqlite-pragma.test-support.js";
+} from "../infra/state/kysely-sync.js";
+import { readSqliteNumberPragma } from "../infra/state/sqlite-pragma.test-support.js";
 import type { DB as OpenClawStateKyselyDatabase } from "./openclaw-state-db.generated.js";
 import {
   closeOpenClawStateDatabaseForTest,

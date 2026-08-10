@@ -13,7 +13,7 @@ const hookMocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../plugins/hook-runner-global.js", () => ({
+vi.mock("./hooks/hook-runner-global.js", () => ({
   getGlobalHookRunner: () => hookMocks.runner,
 }));
 
@@ -100,13 +100,13 @@ function expectAfterToolCallPayload(params: {
   expect(context).toEqual(params.expectedContext);
 }
 
-let handleToolExecutionStart: typeof import("../agents/embedded-agent-subscribe.handlers.tools.js").handleToolExecutionStart;
-let handleToolExecutionEnd: typeof import("../agents/embedded-agent-subscribe.handlers.tools.js").handleToolExecutionEnd;
+let handleToolExecutionStart: typeof import("../agents/embedded/embedded-agent-subscribe.handlers.tools.js").handleToolExecutionStart;
+let handleToolExecutionEnd: typeof import("../agents/embedded/embedded-agent-subscribe.handlers.tools.js").handleToolExecutionEnd;
 
 describe("after_tool_call hook wiring", () => {
   beforeAll(async () => {
     ({ handleToolExecutionStart, handleToolExecutionEnd } =
-      await import("../agents/embedded-agent-subscribe.handlers.tools.js"));
+      await import("../agents/embedded/embedded-agent-subscribe.handlers.tools.js"));
   });
 
   beforeEach(() => {

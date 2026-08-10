@@ -1,8 +1,8 @@
+// oxlint-disable max-lines -- grandfathered at 2459 lines; see docs/adr/0006-deferred-monster-splits.md
 /** Main agent command orchestration for sessions, model selection, delivery, and attempts. */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { sanitizeForLog } from "../../packages/terminal-core/src/ansi.js";
-import { resolveInlineAgentImageAttachments } from "../auto-reply/reply/agent-turn-attachments.js";
-import { sanitizePendingFinalDeliveryText } from "../auto-reply/reply/pending-final-delivery.js";
+import { sanitizePendingFinalDeliveryText } from "../auto-reply/reply/queue/pending-final-delivery.js";
 import {
   formatThinkingLevels,
   isThinkingLevelSupported,
@@ -12,11 +12,11 @@ import {
   type VerboseLevel,
 } from "../auto-reply/thinking.js";
 import { resolveChannelModelOverride } from "../channels/model-overrides.js";
-import { formatCliCommand } from "../cli/command-format.js";
 import type { CliDeps } from "../cli/deps.types.js";
-import { getRuntimeConfig } from "../config/io.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
+import { getRuntimeConfig } from "../config/io/io.js";
 import type { SessionEntry } from "../config/sessions/types.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { withLocalGatewayRequestScope } from "../gateway/local-request-context.js";
 import {
   assertAgentRunLifecycleGenerationCurrent,
@@ -35,8 +35,8 @@ import { resolveMessageChannelSelection } from "../infra/outbound/channel-select
 import { buildOutboundSessionContext } from "../infra/outbound/session-context.js";
 import { parseStrictNonNegativeInteger } from "../infra/parse-finite-number.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
-import { normalizePluginsConfig } from "../plugins/config-state.js";
-import { loadManifestMetadataSnapshot } from "../plugins/manifest-contract-eligibility.js";
+import { normalizePluginsConfig } from "../plugins/config/config-state.js";
+import { loadManifestMetadataSnapshot } from "../plugins/manifest/manifest-contract-eligibility.js";
 import {
   classifySessionKeyShape,
   isUnscopedSessionKeySentinel,
@@ -52,21 +52,21 @@ import {
   repairProviderWrappedModelOverride,
 } from "../sessions/model-overrides.js";
 import { resolveSendPolicy } from "../sessions/send-policy.js";
+import {
+  normalizeDeliveryContext,
+  type DeliveryContext,
+} from "../shared/delivery-context.shared.js";
 import { createLazyImportLoader } from "../shared/lazy-promise.js";
+import {
+  INTERNAL_MESSAGE_CHANNEL,
+  isDeliverableMessageChannel,
+  resolveMessageChannel,
+} from "../shared/message-channel.js";
 import { resolveEffectiveAgentSkillFilter } from "../skills/discovery/agent-filter.js";
 import type { getRemoteSkillEligibility } from "../skills/runtime/remote.js";
 import type { resolveReusableWorkspaceSkillSnapshot } from "../skills/runtime/session-snapshot.js";
 import { createTrajectoryRuntimeRecorder } from "../trajectory/runtime.js";
 import { resolveUserPath } from "../utils.js";
-import {
-  normalizeDeliveryContext,
-  type DeliveryContext,
-} from "../utils/delivery-context.shared.js";
-import {
-  INTERNAL_MESSAGE_CHANNEL,
-  isDeliverableMessageChannel,
-  resolveMessageChannel,
-} from "../utils/message-channel.js";
 import { resolveAgentRuntimeConfig } from "./agent-runtime-config.js";
 import {
   clearAutoFallbackPrimaryProbeSelection,
@@ -86,6 +86,7 @@ import {
 import { isStoredCredentialCompatibleWithAuthProvider } from "./auth-profiles/order.js";
 import { clearSessionAuthProfileOverride } from "./auth-profiles/session-override.js";
 import { ensureAuthProfileStore } from "./auth-profiles/store.js";
+import { resolveProviderIdForAuth } from "./auth/provider-auth-aliases.js";
 import {
   createAgentAttemptLifecycleCallbacks,
   type AgentAttemptLifecycleState,
@@ -109,11 +110,11 @@ import { ensureSelectedAgentHarnessPlugin } from "./harness/runtime-plugin.js";
 import { resolveAvailableAgentHarnessPolicy } from "./harness/selection.js";
 import { prepareInternalSessionEffectsTranscript } from "./internal-session-effects.js";
 import { AGENT_LANE_SUBAGENT } from "./lanes.js";
-import { LiveSessionModelSwitchError } from "./live-model-switch.js";
-import { loadManifestModelCatalog } from "./model-catalog.js";
-import { runWithModelFallback } from "./model-fallback.js";
-import { normalizeConfiguredProviderCatalogModelId } from "./model-ref-shared.js";
-import type { ModelManifestNormalizationContext } from "./model-selection-normalize.js";
+import { LiveSessionModelSwitchError } from "./models/live-model-switch.js";
+import { loadManifestModelCatalog } from "./models/model-catalog.js";
+import { runWithModelFallback } from "./models/model-fallback.js";
+import { normalizeConfiguredProviderCatalogModelId } from "./models/model-ref-shared.js";
+import type { ModelManifestNormalizationContext } from "./models/model-selection-normalize.js";
 import {
   buildConfiguredModelCatalog,
   buildModelAliasIndex,
@@ -124,20 +125,19 @@ import {
   resolveDefaultModelForAgent,
   resolveModelRefFromString,
   resolveThinkingDefault,
-} from "./model-selection.js";
+} from "./models/model-selection.js";
 import {
   createModelVisibilityPolicy,
   type ModelVisibilityPolicy,
-} from "./model-visibility-policy.js";
-import { listOpenAIAuthProfileProvidersForAgentRuntime } from "./openai-routing.js";
-import { resolveProviderIdForAuth } from "./provider-auth-aliases.js";
+} from "./models/model-visibility-policy.js";
 import {
   isAgentRunRestartAbortReason,
   resolveAgentRunAbortLifecycleFields,
 } from "./run-termination.js";
 import { normalizeSpawnedRunMetadata } from "./spawned-context.js";
 import { resolveAgentTimeoutMs } from "./timeout.js";
-import { ensureAgentWorkspace } from "./workspace.js";
+import { listOpenAIAuthProfileProvidersForAgentRuntime } from "./transport/openai-routing.js";
+import { ensureAgentWorkspace } from "./workspace/workspace.js";
 
 const log = createSubsystemLogger("agents/agent-command");
 
@@ -996,13 +996,11 @@ async function agentCommandInternal(
           throw agentPolicyError;
         }
 
-        const acpImageAttachments = resolveInlineAgentImageAttachments(opts.images);
         assertAgentRunLifecycleGenerationCurrent(lifecycleGeneration);
         await acpManager.runTurn({
           cfg,
           sessionKey,
           text: body,
-          attachments: acpImageAttachments.length > 0 ? acpImageAttachments : undefined,
           mode: "prompt",
           requestId: runId,
           signal: opts.abortSignal,

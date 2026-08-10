@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { asOptionalRecord } from "@openclaw/normalization-core/record-coerce";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../../agents/agent-scope.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   resolveMemoryDeepDreamingConfig,
   resolveMemoryLightDreamingConfig,
@@ -15,7 +15,7 @@ import {
 } from "../../memory-host-sdk/dreaming.js";
 import { getActiveMemorySearchManager } from "../../plugins/memory-runtime.js";
 import { normalizeAgentId } from "../../routing/session-key.js";
-import { formatError } from "../server-utils.js";
+import { formatError } from "../server/server-utils.js";
 import {
   dedupeDreamDiaryEntries,
   loadShortTermPromotionDreamingStats,

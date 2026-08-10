@@ -1,11 +1,11 @@
 // Runtime bridge for plugin-provided migration hooks.
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { getLoadedRuntimePluginRegistry } from "./active-runtime-registry.js";
 import {
   withBundledPluginEnablementCompat,
   withBundledPluginVitestCompat,
-} from "./bundled-compat.js";
-import { resolveManifestContractRuntimePluginResolution } from "./manifest-contract-runtime.js";
+} from "./install/bundled-compat.js";
+import { resolveManifestContractRuntimePluginResolution } from "./manifest/manifest-contract-runtime.js";
 import { ensureStandaloneRuntimePluginRegistryLoaded } from "./runtime/standalone-runtime-registry-loader.js";
 import type { MigrationProviderPlugin } from "./types.js";
 

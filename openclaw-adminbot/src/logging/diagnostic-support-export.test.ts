@@ -4,7 +4,10 @@ import os from "node:os";
 import path from "node:path";
 import JSZip from "jszip";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { emitDiagnosticEvent, resetDiagnosticEventsForTest } from "../infra/diagnostic-events.js";
+import {
+  emitDiagnosticEvent,
+  resetDiagnosticEventsForTest,
+} from "../infra/diagnostics/diagnostic-events.js";
 import {
   resetDiagnosticStabilityBundleForTest,
   writeDiagnosticStabilityBundleSync,

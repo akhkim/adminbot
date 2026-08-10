@@ -3,7 +3,7 @@ import {
   defineLegacyConfigMigration,
   type LegacyConfigMigrationSpec,
   type LegacyConfigRule,
-} from "../../../config/legacy.shared.js";
+} from "../../../config/legacy/legacy.shared.js";
 import { isRecord } from "./legacy-config-record-shared.js";
 import { migrateLegacyXSearchConfig } from "./legacy-x-search-migrate.js";
 

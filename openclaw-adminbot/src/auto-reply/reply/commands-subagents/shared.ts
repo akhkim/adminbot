@@ -3,12 +3,12 @@ import {
   normalizeLowercaseStringOrEmpty,
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
-import { resolveStoredSubagentCapabilities } from "../../../agents/subagent-capabilities.js";
-import type { ResolvedSubagentController } from "../../../agents/subagent-control.js";
-import { subagentRuns } from "../../../agents/subagent-registry-memory.js";
-import { countPendingDescendantRunsFromRuns } from "../../../agents/subagent-registry-queries.js";
-import { getSubagentRunsSnapshotForRead } from "../../../agents/subagent-registry-state.js";
-import type { SubagentRunRecord } from "../../../agents/subagent-registry.types.js";
+import { resolveStoredSubagentCapabilities } from "../../../agents/subagents/subagent-capabilities.js";
+import type { ResolvedSubagentController } from "../../../agents/subagents/subagent-control.js";
+import { subagentRuns } from "../../../agents/subagents/subagent-registry-memory.js";
+import { countPendingDescendantRunsFromRuns } from "../../../agents/subagents/subagent-registry-queries.js";
+import { getSubagentRunsSnapshotForRead } from "../../../agents/subagents/subagent-registry-state.js";
+import type { SubagentRunRecord } from "../../../agents/subagents/subagent-registry.types.js";
 import {
   resolveInternalSessionKey,
   resolveMainSessionAlias,
@@ -20,8 +20,8 @@ import { isSubagentSessionKey } from "../../../routing/session-key.js";
 import { looksLikeSessionId } from "../../../sessions/session-id.js";
 import { isNativeCommandTurn, resolveCommandTurnContext } from "../../command-turn-context.js";
 import { resolveCommandSurfaceChannel, resolveChannelAccountId } from "../channel-context.js";
-import { extractMessageText, type ChatMessage } from "../commands-subagents-text.js";
-import type { CommandHandler, CommandHandlerResult } from "../commands-types.js";
+import { extractMessageText, type ChatMessage } from "../commands/commands-subagents-text.js";
+import type { CommandHandler, CommandHandlerResult } from "../commands/commands-types.js";
 import {
   formatRunLabel,
   resolveSubagentTargetFromRuns,
@@ -30,7 +30,7 @@ import {
 
 export { stripToolMessages };
 export { resolveCommandSurfaceChannel, resolveChannelAccountId };
-export type { ChatMessage } from "../commands-subagents-text.js";
+export type { ChatMessage } from "../commands/commands-subagents-text.js";
 
 export const COMMAND = "/subagents";
 const COMMAND_FOCUS = "/focus";

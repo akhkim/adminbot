@@ -6,26 +6,28 @@ import { normalizeLowercaseStringOrEmpty } from "./string-coerce.ts";
 export const TAB_GROUPS = [
   { label: "home", tabs: ["dashboard", "profile", "myWork"] },
   { label: "chat", tabs: ["chat"] },
+  // The AdminBot surface used to be one flat group; it is now three, one per access tier
+  // (see ui/src/ui/adminbot/access.ts), least to most privileged, so the sidebar itself shows
+  // who a tool is for instead of that only being visible in the access table. A tier with no tab
+  // the viewer can see renders no section at all (app-render.ts), so a plain member never sees an
+  // empty "Admin" heading and a visitor never sees "Lab" at all.
+  { label: "adminbotMember", tabs: ["adminbotMembers", "adminbotPapers"] },
   {
-    label: "adminbot",
+    label: "adminbotAdmin",
     tabs: [
       "adminbot",
       "adminbotRegistrations",
       "adminbotOnboarding",
-      "adminbotReimbursements",
       "adminbotSettings",
-      "adminbotMembers",
-      "adminbotTimeAvailability",
-      "adminbotPapers",
       "adminbotAnnouncements",
-      "adminbotDeadlines",
     ],
   },
+  { label: "adminbotGuest", tabs: ["adminbotReimbursements", "adminbotDeadlines"] },
   {
     label: "control",
     tabs: ["overview", "activity", "workboard", "instances", "sessions", "usage", "cron"],
   },
-  { label: "agent", tabs: ["agents", "skills", "skillWorkshop", "nodes", "dreams"] },
+  { label: "agent", tabs: ["agents", "skills", "nodes", "dreams"] },
   {
     label: "settings",
     tabs: ["config"],
@@ -44,7 +46,6 @@ export type Tab =
   | "adminbotReimbursements"
   | "adminbotSettings"
   | "adminbotMembers"
-  | "adminbotTimeAvailability"
   | "adminbotPapers"
   | "adminbotAnnouncements"
   | "adminbotDeadlines"
@@ -56,7 +57,6 @@ export type Tab =
   | "usage"
   | "cron"
   | "skills"
-  | "skillWorkshop"
   | "nodes"
   | "chat"
   | "config"
@@ -95,7 +95,6 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotReimbursements: "/adminbot/reimbursements",
   adminbotSettings: "/adminbot/settings",
   adminbotMembers: "/adminbot/members",
-  adminbotTimeAvailability: "/adminbot/time-availability",
   adminbotPapers: "/adminbot/papers",
   adminbotAnnouncements: "/adminbot/announcements",
   adminbotDeadlines: "/adminbot/deadlines",
@@ -107,7 +106,6 @@ const TAB_PATHS: Record<Tab, string> = {
   usage: "/usage",
   cron: "/cron",
   skills: "/skills",
-  skillWorkshop: "/skills/workshop",
   nodes: "/nodes",
   chat: "/chat",
   config: "/config",
@@ -253,8 +251,6 @@ export function iconForTab(tab: Tab): IconName {
       return "settings";
     case "adminbotMembers":
       return "folder";
-    case "adminbotTimeAvailability":
-      return "clock";
     case "adminbotPapers":
       return "fileText";
     case "adminbotAnnouncements":
@@ -275,8 +271,6 @@ export function iconForTab(tab: Tab): IconName {
       return "loader";
     case "skills":
       return "zap";
-    case "skillWorkshop":
-      return "wrench";
     case "nodes":
       return "monitor";
     case "config":

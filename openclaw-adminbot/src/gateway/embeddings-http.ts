@@ -8,24 +8,24 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 import { resolveAgentDir } from "../agents/agent-scope.js";
 import { resolveMemorySearchConfig } from "../agents/memory-search.js";
-import { getRuntimeConfig } from "../config/io.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { getRuntimeConfig } from "../config/io/io.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import { logWarn } from "../logger.js";
 import {
   getEmbeddingProvider as getGenericEmbeddingProvider,
   type EmbeddingProvider as GenericEmbeddingProvider,
   type EmbeddingProviderAdapter as GenericEmbeddingProviderAdapter,
-} from "../plugins/embedding-provider-runtime.js";
+} from "../plugins/embedding/embedding-provider-runtime.js";
 import { getMemoryEmbeddingProvider } from "../plugins/memory-embedding-provider-runtime.js";
 import type {
   MemoryEmbeddingProvider,
   MemoryEmbeddingProviderAdapter,
 } from "../plugins/memory-embedding-providers.js";
-import type { AuthRateLimiter } from "./auth-rate-limit.js";
-import type { ResolvedGatewayAuth } from "./auth.js";
-import { sendJson, sendMissingScopeForbidden } from "./http-common.js";
-import { handleGatewayPostJsonEndpoint } from "./http-endpoint-helpers.js";
+import type { AuthRateLimiter } from "./auth/auth-rate-limit.js";
+import type { ResolvedGatewayAuth } from "./auth/auth.js";
+import { sendJson, sendMissingScopeForbidden } from "./http/http-common.js";
+import { handleGatewayPostJsonEndpoint } from "./http/http-endpoint-helpers.js";
 import {
   OPENCLAW_MODEL_ID,
   authorizeOpenAiCompatibleHttpModelOverride,
@@ -34,7 +34,7 @@ import {
   resolveAgentIdForRequest,
   resolveAgentIdFromModel,
   resolveOpenAiCompatibleHttpOperatorScopes,
-} from "./http-utils.js";
+} from "./http/http-utils.js";
 
 // OpenAI-compatible `/v1/embeddings` bridge. It maps OpenClaw agent/model
 // routing onto configured memory embedding providers while preserving the

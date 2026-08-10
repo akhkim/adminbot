@@ -4,7 +4,7 @@ import {
   channelRouteTargetsMatchExact,
   channelRouteTargetsShareConversation,
 } from "../../plugin-sdk/channel-route.js";
-import { setActivePluginRegistry } from "../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../plugins/runtime/runtime.js";
 import { createTestRegistry } from "../../test-utils/channel-plugins.js";
 import {
   comparableChannelTargetsMatch,

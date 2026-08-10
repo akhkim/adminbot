@@ -5,8 +5,8 @@
  * native harness or context-engine compaction, and records resulting session state.
  */
 import type { SessionEntry } from "../../config/sessions/types.js";
-import type { AgentCompactionMode } from "../../config/types.agent-defaults.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { AgentCompactionMode } from "../../config/types/agent-defaults.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { buildGenericCliContextEngineHostSupport } from "../../context-engine/host-compat.js";
 import { ensureContextEnginesInitialized as ensureContextEnginesInitializedImpl } from "../../context-engine/init.js";
 import { resolveContextEngine as resolveContextEngineImpl } from "../../context-engine/registry.js";
@@ -21,7 +21,7 @@ import {
   applyAgentAutoCompactionGuard as applyAgentAutoCompactionGuardImpl,
   resolveEffectiveCompactionMode,
 } from "../agent-settings.js";
-import { resolveCliBackendConfig as resolveCliBackendConfigImpl } from "../cli-backends.js";
+import { resolveCliBackendConfig as resolveCliBackendConfigImpl } from "../cli-runner/cli-backends.js";
 import { classifyCompactionReason } from "../embedded-agent-runner/compact-reasons.js";
 import { buildEmbeddedCompactionRuntimeContext } from "../embedded-agent-runner/compaction-runtime-context.js";
 import {

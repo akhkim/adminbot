@@ -16,11 +16,11 @@ import {
   uniqueStrings,
 } from "@openclaw/normalization-core/string-normalization";
 import { resolveAuthProfileDatabaseFilePaths } from "../agents/auth-profiles/sqlite.js";
-import { formatCliCommand } from "../cli/command-format.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
 import { MANIFEST_KEY } from "../compat/legacy-names.js";
 import type { OpenClawConfig, ConfigFileSnapshot } from "../config/config.js";
 import { collectIncludePathsRecursive } from "../config/includes-scan.js";
-import { resolveOAuthDir } from "../config/paths.js";
+import { resolveOAuthDir } from "../config/paths/paths.js";
 import { normalizeAgentId } from "../routing/session-key.js";
 import type { SkillScanFinding } from "../skills/security/scanner.js";
 import { shouldIgnoreInstalledPluginDirName } from "./installed-plugin-dirs.js";
@@ -53,7 +53,7 @@ let skillsModulePromise: Promise<typeof import("../skills/loading/workspace.js")
 let configModulePromise: Promise<typeof import("../config/config.js")> | undefined;
 let agentScopeModulePromise: Promise<typeof import("../agents/agent-scope.js")> | undefined;
 let agentWorkspaceDirsModulePromise:
-  | Promise<typeof import("../agents/workspace-dirs.js")>
+  | Promise<typeof import("../agents/workspace/workspace-dirs.js")>
   | undefined;
 let skillSourceModulePromise: Promise<typeof import("../skills/loading/source.js")> | undefined;
 let sandboxDockerModulePromise: Promise<typeof import("../agents/sandbox/docker.js")> | undefined;
@@ -85,7 +85,7 @@ function loadAgentScopeModule() {
 }
 
 function loadAgentWorkspaceDirsModule() {
-  agentWorkspaceDirsModulePromise ??= import("../agents/workspace-dirs.js");
+  agentWorkspaceDirsModulePromise ??= import("../agents/workspace/workspace-dirs.js");
   return agentWorkspaceDirsModulePromise;
 }
 

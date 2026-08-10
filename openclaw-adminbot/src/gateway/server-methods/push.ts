@@ -18,13 +18,13 @@ import {
   resolveApnsRelayConfigFromEnv,
   sendApnsAlert,
   shouldClearStoredApnsRegistration,
-} from "../../infra/push-apns.js";
+} from "../../infra/diagnostics/push-apns.js";
 import {
   broadcastWebPush,
   clearWebPushSubscriptionByEndpoint,
   registerWebPushSubscription,
   resolveVapidKeys,
-} from "../../infra/push-web.js";
+} from "../../infra/diagnostics/push-web.js";
 import { respondInvalidParams, respondUnavailableOnThrow } from "./nodes.helpers.js";
 import { normalizeTrimmedString } from "./record-shared.js";
 import type { GatewayRequestHandlers } from "./types.js";

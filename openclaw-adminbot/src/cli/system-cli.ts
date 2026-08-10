@@ -5,9 +5,9 @@ import { formatDocsLink } from "../../packages/terminal-core/src/links.js";
 import { theme } from "../../packages/terminal-core/src/theme.js";
 import { danger } from "../globals.js";
 import { defaultRuntime } from "../runtime.js";
-import { formatCliCommand } from "./command-format.js";
-import type { GatewayRpcOpts } from "./gateway-rpc.js";
-import { addGatewayClientOptions, callGatewayFromCli } from "./gateway-rpc.js";
+import type { GatewayRpcOpts } from "./gateway-cli/gateway-rpc.js";
+import { addGatewayClientOptions, callGatewayFromCli } from "./gateway-cli/gateway-rpc.js";
+import { formatCliCommand } from "./program/command-format.js";
 
 type SystemEventOpts = GatewayRpcOpts & {
   text?: string;

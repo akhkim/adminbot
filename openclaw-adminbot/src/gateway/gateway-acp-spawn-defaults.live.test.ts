@@ -9,7 +9,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { getAcpSessionManager } from "../acp/control-plane/manager.js";
 import { getAcpRuntimeBackend } from "../acp/runtime/registry.js";
-import { isSpawnAcpAcceptedResult, spawnAcpDirect } from "../agents/acp-spawn.js";
+import { isSpawnAcpAcceptedResult, spawnAcpDirect } from "../agents/acp/acp-spawn.js";
 import { isLiveTestEnabled } from "../agents/live-test-helpers.js";
 import {
   clearConfigCache,
@@ -19,13 +19,13 @@ import {
 import { resolveStorePath } from "../config/sessions/paths.js";
 import { loadSessionStore } from "../config/sessions/store.js";
 import type { SessionEntry } from "../config/sessions/types.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { isTruthyEnvValue } from "../infra/env.js";
-import { clearPluginLoaderCache } from "../plugins/loader.js";
-import { resetPluginRuntimeStateForTest } from "../plugins/runtime.js";
+import { clearPluginLoaderCache } from "../plugins/runtime/loader.js";
+import { resetPluginRuntimeStateForTest } from "../plugins/runtime/runtime.js";
 import { sleep } from "../utils.js";
 import { restoreLiveEnv, snapshotLiveEnv, type LiveEnvSnapshot } from "./live-env-test-helpers.js";
-import { startGatewayServer } from "./server.js";
+import { startGatewayServer } from "./server/server.js";
 
 const LIVE = isLiveTestEnabled();
 const ACP_SPAWN_DEFAULTS_LIVE = isTruthyEnvValue(process.env.OPENCLAW_LIVE_ACP_SPAWN_DEFAULTS);

@@ -7,11 +7,11 @@ import {
   loadBundledPluginPublicSurfaceModule,
   loadBundledPluginPublicSurfaceModuleSync,
 } from "../plugin-sdk/facade-loader.js";
-import { resolveBundledPluginsDir } from "../plugins/bundled-dir.js";
+import { resolveBundledPluginsDir } from "../plugins/install/bundled-dir.js";
 import {
   findBundledPluginMetadataById,
   type BundledPluginMetadata,
-} from "../plugins/bundled-plugin-metadata.js";
+} from "../plugins/install/bundled-plugin-metadata.js";
 import {
   getCachedPluginSourceModuleLoader,
   type PluginModuleLoaderCache,

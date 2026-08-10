@@ -3,12 +3,12 @@
  */
 import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import type { SessionContextBudgetStatus } from "../../../config/sessions.js";
-import { estimateStringChars } from "../../../utils/cjk-chars.js";
+import { estimateStringChars } from "../../../shared/cjk-chars.js";
 import {
   MIN_PROMPT_BUDGET_RATIO,
   MIN_PROMPT_BUDGET_TOKENS,
 } from "../../agent-compaction-constants.js";
-import { SAFETY_MARGIN } from "../../compaction.js";
+import { SAFETY_MARGIN } from "../../compaction/compaction.js";
 import type { AgentMessage } from "../../runtime/index.js";
 import { estimateToolResultReductionPotential } from "../tool-result-truncation.js";
 import type { PreemptiveCompactionRoute } from "./preemptive-compaction.types.js";

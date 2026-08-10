@@ -1,0 +1,6 @@
+[
+  {
+    "from": "extensions/adminbot/src/core/store-memory.ts",
+    "to": "extensions/adminbot/src/store/memory.ts"
+  }
+]

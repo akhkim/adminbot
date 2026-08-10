@@ -11,13 +11,13 @@ import { isLiveTestEnabled } from "../agents/live-test-helpers.js";
 import { getRuntimeConfig } from "../config/config.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { isTruthyEnvValue } from "../infra/env.js";
+import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../shared/message-channel.js";
 import { parseNodeList, parsePairingList } from "../shared/node-list-parse.js";
 import type { NodeListNode } from "../shared/node-list-types.js";
-import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import { buildGatewayConnectionDetails } from "./call.js";
-import { GatewayClient } from "./client.js";
+import { GatewayClient } from "./client/client.js";
 import { resolveGatewayCredentialsFromConfig } from "./credentials.js";
-import { resolveNodeCommandAllowlist } from "./node-command-policy.js";
+import { resolveNodeCommandAllowlist } from "./node/node-command-policy.js";
 
 const LIVE = isLiveTestEnabled();
 const LIVE_ANDROID_NODE = isTruthyEnvValue(process.env.OPENCLAW_LIVE_ANDROID_NODE);

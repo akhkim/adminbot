@@ -1,7 +1,7 @@
 /**
  * Manages context-engine lifecycle hooks for native agent harnesses.
  */
-import type { MemoryCitationsMode } from "../../config/types.memory.js";
+import type { MemoryCitationsMode } from "../../config/types/memory.js";
 import {
   OPENCLAW_EMBEDDED_CONTEXT_ENGINE_HOST,
   type ContextEngineHostSupport,
@@ -20,7 +20,7 @@ import {
 } from "../embedded-agent-runner/run/attempt.prompt-helpers.js";
 import { stripRuntimeContextCustomMessages } from "../internal-runtime-context.js";
 import type { AgentMessage } from "../runtime/index.js";
-import type { SessionWriteLockAcquireTimeoutConfig } from "../session-write-lock.js";
+import type { SessionWriteLockAcquireTimeoutConfig } from "../sessions/session-write-lock.js";
 
 export type HarnessContextEngine = ContextEngine;
 

@@ -27,7 +27,7 @@ vi.mock("../../gateway/probe.js", () => ({
   probeGateway: (opts: unknown) => probeGateway(opts),
 }));
 
-vi.mock("../../config/io.js", () => ({
+vi.mock("../../config/io/io.js", () => ({
   createConfigIO: (opts: unknown) => createConfigIO(opts),
 }));
 

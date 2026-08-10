@@ -1,8 +1,8 @@
 // Regresses legacy provider config shapes accepted by config loading.
 import { describe, expect, it } from "vitest";
 import { normalizeLegacyTalkConfig } from "../commands/doctor/shared/legacy-talk-config-normalizer.js";
-import type { OpenClawConfig } from "./types.js";
-import { OpenClawSchema } from "./zod-schema.js";
+import type { OpenClawConfig } from "./types/types.js";
+import { OpenClawSchema } from "./zod/zod-schema.js";
 
 describe("legacy provider-shaped config snapshots", () => {
   it("accepts a string map of voice aliases while still flagging legacy talk config", () => {

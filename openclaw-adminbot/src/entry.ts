@@ -28,8 +28,9 @@ const ENTRY_WRAPPER_PAIRS = [
 type PrecomputedCommandHelpName = "browser" | "secrets" | "nodes";
 type OutputPrecomputedHelpText = () => boolean;
 
-const loadRootHelpLiveConfigModule = async () => await import("./cli/root-help-live-config.js");
-const loadRootHelpMetadataModule = async () => await import("./cli/root-help-metadata.js");
+const loadRootHelpLiveConfigModule = async () =>
+  await import("./cli/program/root-help-live-config.js");
+const loadRootHelpMetadataModule = async () => await import("./cli/program/root-help-metadata.js");
 
 function shouldForceReadOnlyAuthStore(argv: string[]): boolean {
   const tokens = argv.slice(2).filter((token) => token.length > 0 && !token.startsWith("-"));

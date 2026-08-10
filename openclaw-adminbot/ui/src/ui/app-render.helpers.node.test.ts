@@ -1586,31 +1586,3 @@ describe("dismissChatError", () => {
     expect(state.realtimeTalkTranscript).toBe("partial transcript");
   });
 });
-
-describe("dismissRealtimeTalkError", () => {
-  it("clears only Talk-owned error state", () => {
-    const stop = vi.fn();
-    const state = {
-      lastError: "unrelated gateway error",
-      lastErrorCode: "UNAVAILABLE",
-      chatError: "unrelated chat error",
-      realtimeTalkActive: true,
-      realtimeTalkSession: { stop },
-      realtimeTalkStatus: "error",
-      realtimeTalkDetail: 'Realtime voice provider "openai" is not configured',
-      realtimeTalkTranscript: "partial transcript",
-    } as unknown as AppViewState & { realtimeTalkSession: { stop(): void } | null };
-
-    dismissRealtimeTalkError(state);
-
-    expect(state.lastError).toBe("unrelated gateway error");
-    expect(state.lastErrorCode).toBe("UNAVAILABLE");
-    expect(state.chatError).toBe("unrelated chat error");
-    expect(stop).toHaveBeenCalledOnce();
-    expect(state.realtimeTalkSession).toBeNull();
-    expect(state.realtimeTalkActive).toBe(false);
-    expect(state.realtimeTalkStatus).toBe("idle");
-    expect(state.realtimeTalkDetail).toBeNull();
-    expect(state.realtimeTalkTranscript).toBeNull();
-  });
-});

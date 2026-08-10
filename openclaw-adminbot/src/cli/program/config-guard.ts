@@ -4,8 +4,12 @@ import os from "node:os";
 import path from "node:path";
 import { withSuppressedNotes } from "../../../packages/terminal-core/src/note.js";
 import { readConfigFileSnapshot, setRuntimeConfigSnapshot } from "../../config/config.js";
-import { resolveLegacyStateDirs, resolveOAuthDir, resolveStateDir } from "../../config/paths.js";
-import type { ConfigFileSnapshot } from "../../config/types.js";
+import {
+  resolveLegacyStateDirs,
+  resolveOAuthDir,
+  resolveStateDir,
+} from "../../config/paths/paths.js";
+import type { ConfigFileSnapshot } from "../../config/types/types.js";
 import { resolveRequiredHomeDir } from "../../infra/home-dir.js";
 import type { RuntimeEnv } from "../../runtime.js";
 import { shouldMigrateStateFromPath } from "../argv.js";
@@ -201,7 +205,7 @@ export async function ensureConfigReady(params: {
   const runStateMigrationPreflight = async () => {
     didRunDoctorConfigFlow = true;
     const runDoctorConfigPreflight = async () =>
-      (await import("../../commands/doctor-config-preflight.js")).runDoctorConfigPreflight({
+      (await import("../../commands/doctor/doctor-config-preflight.js")).runDoctorConfigPreflight({
         migrateState: true,
         migrateLegacyConfig: false,
         invalidConfigNote: false,
@@ -274,9 +278,9 @@ export async function ensureConfigReady(params: {
   ] = await Promise.all([
     import("../../../packages/terminal-core/src/theme.js"),
     import("../../utils.js"),
-    import("../command-format.js"),
+    import("./command-format.js"),
     import("../../config/recovery-policy.js"),
-    import("../config-recovery-hints.js"),
+    import("../config/config-recovery-hints.js"),
   ]);
   const rich = isRich();
   const muted = (value: string) => colorize(rich, theme.muted, value);

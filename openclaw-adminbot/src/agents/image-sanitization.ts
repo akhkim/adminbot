@@ -1,7 +1,7 @@
 /**
  * Resolves image sanitization limits for historical session messages.
  */
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 // Image sanitization limits shared by tools and provider payload builders.
 export type ImageSanitizationLimits = {

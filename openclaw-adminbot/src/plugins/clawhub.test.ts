@@ -38,7 +38,7 @@ vi.mock("../version.js", () => ({
     resolveCompatibilityHostVersionMock(...args),
 }));
 
-vi.mock("./install.js", () => ({
+vi.mock("./install/install.js", () => ({
   installPluginFromArchive: (...args: unknown[]) => installPluginFromArchiveMock(...args),
 }));
 

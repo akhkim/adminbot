@@ -1,6 +1,6 @@
 /** Tests command-turn context normalization and source/kind conversions. */
 import { describe, expect, it } from "vitest";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   createCommandTurnContext,
   isAuthorizedTextSlashCommandTurn,

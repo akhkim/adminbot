@@ -26,7 +26,7 @@ vi.mock("../config/config.js", () => ({
   replaceConfigFile: mocks.replaceConfigFile,
 }));
 
-vi.mock("../config/plugin-auto-enable.js", () => ({
+vi.mock("../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: mocks.applyPluginAutoEnable,
 }));
 

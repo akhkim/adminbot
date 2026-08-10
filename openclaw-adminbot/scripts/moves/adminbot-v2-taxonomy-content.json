@@ -1,0 +1,30 @@
+[
+  {
+    "from": "extensions/adminbot/deadlines/.gitignore",
+    "to": "extensions/adminbot/content/deadlines/.gitignore"
+  },
+  {
+    "from": "extensions/adminbot/deadlines/README.md",
+    "to": "extensions/adminbot/content/deadlines/README.md"
+  },
+  {
+    "from": "extensions/adminbot/deadlines/deadlines-board.html",
+    "to": "extensions/adminbot/content/deadlines/deadlines-board.html"
+  },
+  {
+    "from": "extensions/adminbot/deadlines/dm-templates.json",
+    "to": "extensions/adminbot/content/deadlines/dm-templates.json"
+  },
+  {
+    "from": "extensions/adminbot/deadlines/neurips2026-workshops.json",
+    "to": "extensions/adminbot/content/deadlines/neurips2026-workshops.json"
+  },
+  {
+    "from": "extensions/adminbot/deadlines/venues.json",
+    "to": "extensions/adminbot/content/deadlines/venues.json"
+  },
+  {
+    "from": "extensions/adminbot/onboarding-emails/README.md",
+    "to": "extensions/adminbot/content/onboarding-emails/README.md"
+  }
+]

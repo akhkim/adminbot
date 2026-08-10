@@ -16,22 +16,22 @@ import {
   resolveAuthProfileDisplayLabel,
   resolveAuthProfileEligibility,
   resolveAuthProfileOrder,
-} from "../../agents/auth-profiles.js";
+} from "../../agents/auth/auth-profiles.js";
+import { hasUsableCustomProviderApiKey, resolveEnvApiKey } from "../../agents/auth/model-auth.js";
 import { describeFailoverError } from "../../agents/failover-error.js";
-import { hasUsableCustomProviderApiKey, resolveEnvApiKey } from "../../agents/model-auth.js";
-import { loadModelCatalog } from "../../agents/model-catalog.js";
+import { loadModelCatalog } from "../../agents/models/model-catalog.js";
 import {
   findNormalizedProviderValue,
   normalizeProviderId,
   parseModelRef,
-} from "../../agents/model-selection.js";
-import { resolveDefaultAgentWorkspaceDir } from "../../agents/workspace.js";
+} from "../../agents/models/model-selection.js";
+import { resolveDefaultAgentWorkspaceDir } from "../../agents/workspace/workspace.js";
 import {
   resolveSessionTranscriptPath,
   resolveSessionTranscriptsDirForAgent,
 } from "../../config/sessions/paths.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import { coerceSecretRef, normalizeSecretInputString } from "../../config/types.secrets.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { coerceSecretRef, normalizeSecretInputString } from "../../config/types/secrets.js";
 import { type SecretRefResolveCache, resolveSecretRefString } from "../../secrets/resolve.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
 import { redactSecrets } from "../status-all/format.js";
@@ -40,7 +40,7 @@ import { DEFAULT_PROVIDER, formatMs } from "./shared.js";
 const PROBE_PROMPT = "Reply with OK. Do not use tools.";
 
 const embeddedRunnerModuleLoader = createLazyImportLoader(
-  () => import("../../agents/embedded-agent.js"),
+  () => import("../../agents/embedded/embedded-agent.js"),
 );
 
 function loadEmbeddedRunnerModule() {

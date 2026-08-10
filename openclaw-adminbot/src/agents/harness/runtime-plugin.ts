@@ -1,9 +1,9 @@
 /**
  * Ensures runtime plugins required by selected native harnesses are installed.
  */
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { withActivatedPluginIds } from "../../plugins/activation-context.js";
-import { resolveEffectivePluginActivationState } from "../../plugins/config-state.js";
+import { resolveEffectivePluginActivationState } from "../../plugins/config/config-state.js";
 import { isPluginEnabledByDefaultForPlatform } from "../../plugins/default-enablement.js";
 import {
   loadPluginRegistrySnapshot,
@@ -13,7 +13,7 @@ import {
   resolveActivatableProviderOwnerPluginIds,
   resolveBundledProviderCompatPluginIds,
   resolveOwningPluginIdsForProviderRef,
-} from "../../plugins/providers.js";
+} from "../../plugins/providers/providers.js";
 import { isDefaultAgentRuntimeId, OPENCLAW_AGENT_RUNTIME_ID } from "../agent-runtime-id.js";
 import { normalizeOptionalAgentRuntimeId } from "../agent-runtime-id.js";
 import { resolveAgentHarnessPolicy } from "./policy.js";

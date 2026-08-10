@@ -4,7 +4,7 @@ import { withMockedWindowsPlatform } from "../test-utils/vitest-spies.js";
 
 const resolveSandboxInputPathMock = vi.hoisted(() => vi.fn());
 
-vi.mock("./sandbox-paths.js", () => ({
+vi.mock("./sandbox/sandbox-paths.js", () => ({
   resolveSandboxInputPath: resolveSandboxInputPathMock,
 }));
 

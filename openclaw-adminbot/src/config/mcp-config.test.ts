@@ -42,11 +42,11 @@ const mockReplaceConfigFile = vi.hoisted(() => async ({ nextConfig }: { nextConf
   await fsLocal.writeFile(configPath, JSON.stringify(nextConfig, null, 2), "utf-8");
 });
 
-vi.mock("./io.js", () => ({
+vi.mock("./io/io.js", () => ({
   readSourceConfigSnapshot: mockReadSourceConfigSnapshot,
 }));
 
-vi.mock("./mutate.js", () => ({
+vi.mock("./mutate/mutate.js", () => ({
   replaceConfigFile: mockReplaceConfigFile,
 }));
 

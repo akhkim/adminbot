@@ -7,7 +7,7 @@ import {
 import {
   createDiagnosticTraceContextFromActiveScope,
   runWithDiagnosticTraceContext,
-} from "../../infra/diagnostic-trace-context.js";
+} from "../../infra/diagnostics/diagnostic-trace-context.js";
 import { toHistoryMediaEntries } from "../inbound-event/media.js";
 import { createChannelReplyPipeline } from "../message/reply-pipeline.js";
 import type { CreateChannelReplyPipelineParams } from "../message/reply-pipeline.js";

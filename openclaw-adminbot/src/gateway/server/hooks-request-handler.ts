@@ -8,8 +8,8 @@ import {
   AUTH_RATE_LIMIT_SCOPE_HOOK_AUTH,
   createAuthRateLimiter,
   normalizeRateLimitClientIp,
-} from "../auth-rate-limit.js";
-import { applyHookMappings } from "../hooks-mapping.js";
+} from "../auth/auth-rate-limit.js";
+import { applyHookMappings } from "../hooks/hooks-mapping.js";
 import {
   extractHookToken,
   getHookAgentPolicyError,
@@ -30,9 +30,9 @@ import {
   resolveHookIdempotencyKey,
   resolveHookSessionKey,
   resolveHookTargetAgentId,
-} from "../hooks.js";
+} from "../hooks/hooks.js";
 import { resolveRequestClientIp } from "../net.js";
-import { DEDUPE_MAX, DEDUPE_TTL_MS } from "../server-constants.js";
+import { DEDUPE_MAX, DEDUPE_TTL_MS } from "./server-constants.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 

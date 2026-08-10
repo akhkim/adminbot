@@ -4,7 +4,7 @@
  * profiles, and external CLI overlays while keeping save paths local.
  */
 import { isDeepStrictEqual } from "node:util";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { asDateTimestampMs } from "../../shared/number-coercion.js";
 import type { OpenClawAgentDatabase } from "../../state/openclaw-agent-db.js";
 import { isRecord } from "../../utils.js";

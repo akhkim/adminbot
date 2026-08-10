@@ -1,6 +1,6 @@
 // Verifies model reference validation in config surfaces.
 import { describe, expect, it } from "vitest";
-import type { PluginManifestRegistry } from "../plugins/manifest-registry.js";
+import type { PluginManifestRegistry } from "../plugins/manifest/manifest-registry.js";
 import { validateConfigObjectWithPlugins } from "./validation.js";
 
 function createModelSuppressionRegistry(): PluginManifestRegistry {

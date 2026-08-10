@@ -9,16 +9,16 @@ import type {
   TextBlockParam,
 } from "@anthropic-ai/sdk/resources/messages.js";
 import {
+  splitSystemPromptCacheBoundary,
+  stripSystemPromptCacheBoundary,
+} from "../../agents/prompt/system-prompt-cache-boundary.js";
+import {
   projectAnthropicTools,
   reconcileAnthropicToolChoice,
   resolveOriginalAnthropicToolName,
   type AnthropicProjectedToolChoice,
   type AnthropicToolProjection,
-} from "../../agents/anthropic-tool-projection.js";
-import {
-  splitSystemPromptCacheBoundary,
-  stripSystemPromptCacheBoundary,
-} from "../../agents/system-prompt-cache-boundary.js";
+} from "../../agents/transport/anthropic-tool-projection.js";
 import {
   resolveClaudeNativeThinkingLevelMap,
   requiresClaudeAdaptiveThinking,

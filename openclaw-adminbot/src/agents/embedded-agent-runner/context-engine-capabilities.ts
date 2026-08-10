@@ -2,9 +2,9 @@
  * Builds host capabilities passed into context-engine runtime calls.
  */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { ContextEngineRuntimeContext } from "../../context-engine/types.js";
-import { resolveBoundAgentIdForSession } from "../session-agent-binding.js";
+import { resolveBoundAgentIdForSession } from "../sessions/session-agent-binding.js";
 
 type ResolveContextEngineCapabilitiesParams = {
   config?: OpenClawConfig;

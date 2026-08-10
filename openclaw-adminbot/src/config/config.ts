@@ -30,24 +30,24 @@ export {
   setRuntimeConfigSnapshotRefreshHandler,
   setRuntimeConfigSnapshot,
   writeConfigFile,
-} from "./io.js";
+} from "./io/io.js";
 export {
   hashRuntimeConfigValue,
   resolveConfigWriteAfterWrite,
   resolveConfigWriteFollowUp,
-} from "./runtime-snapshot.js";
+} from "./runtime/runtime-snapshot.js";
 export type {
   ConfigWriteAfterWrite,
   ConfigWriteFollowUp,
   RuntimeConfigSnapshotMetadata,
-} from "./runtime-snapshot.js";
+} from "./runtime/runtime-snapshot.js";
 export type {
   BestEffortConfigSnapshot,
   ConfigSnapshotReadOptions,
   ConfigWriteNotification,
   ConfigWriteResult,
   ReadConfigFileSnapshotWithPluginMetadataResult,
-} from "./io.js";
+} from "./io/io.js";
 export {
   ConfigMutationConflictError,
   mutateConfigFile,
@@ -55,7 +55,7 @@ export {
   replaceConfigFile,
   transformConfigFile,
   transformConfigFileWithRetry,
-} from "./mutate.js";
+} from "./mutate/mutate.js";
 export type {
   ConfigMutationCommit,
   ConfigMutationCommitParams,
@@ -67,15 +67,15 @@ export type {
   ConfigTransformResult,
   TransformConfigFileParams,
   TransformConfigFileWithRetryParams,
-} from "./mutate.js";
+} from "./mutate/mutate.js";
 export {
   assertConfigWriteAllowedInCurrentMode,
   NixModeConfigMutationError,
 } from "./nix-mode-write-guard.js";
-export * from "./paths.js";
+export * from "./paths/paths.js";
 export * from "./recovery-policy.js";
-export * from "./runtime-overrides.js";
-export * from "./types.js";
+export * from "./runtime/runtime-overrides.js";
+export * from "./types/types.js";
 export {
   validateConfigObject,
   validateConfigObjectRaw,

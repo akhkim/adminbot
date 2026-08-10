@@ -1,6 +1,6 @@
 /** Tests ACP metadata session-key resolution against Gateway defaults and lookups. */
 import { describe, expect, it, vi } from "vitest";
-import type { GatewayClient } from "../gateway/client.js";
+import type { GatewayClient } from "../gateway/client/client.js";
 import { parseSessionMeta, resolveSessionKey } from "./session-mapper.js";
 
 function createGateway(resolveLabelKey = "agent:main:label"): {

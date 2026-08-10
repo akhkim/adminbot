@@ -5,7 +5,9 @@ export PATH=$HOME/.local/bin:$PATH
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 
-HOST="aurora.ais.sandbox"
+# Default deploy target. AURORA_HOST or --host still override it for a one-off against a
+# different machine.
+HOST="${AURORA_HOST:-aurora.ais.sandbox}"
 CS_USER="${CS_USER:-}"
 REF="HEAD"
 GATEWAY_PORT="18789"
@@ -25,7 +27,7 @@ Usage:
 
 Options:
   --user <cs-user>       CS Unix account (required; may also set CS_USER)
-  --host <hostname>      Default: aurora.ais.sandbox
+  --host <hostname>      Default: aurora.ais.sandbox (or $AURORA_HOST if set)
   --ref <git-ref>        Committed revision to deploy (default: HEAD)
   --gateway-port <port>  Local and remote Gateway port (default: 18789)
   --adminbot-port <port> Local and remote AdminBot port (default: 8765)
@@ -118,6 +120,7 @@ done
 COMMAND="$1"
 shift
 [[ -n "$CS_USER" ]] || die "set CS_USER or pass --user <cs-user>"
+[[ -n "$HOST" ]] || die "set AURORA_HOST or pass --host <hostname> — the deploy target is not named in the repo"
 [[ "$GATEWAY_PORT" =~ ^[0-9]+$ ]] || die "gateway port must be numeric"
 [[ "$ADMINBOT_PORT" =~ ^[0-9]+$ ]] || die "AdminBot port must be numeric"
 [[ "$KEEP_RELEASES" =~ ^[0-9]+$ && "$KEEP_RELEASES" -ge 1 ]] || die "--keep-releases must be a positive integer"
@@ -499,7 +502,7 @@ REMOTE_ADMINBOT_DATA
   auth-gog)
     (($# == 0)) || die "auth-gog takes no arguments"
     "${SSHPASS_PREFIX[@]}" ssh -t -o "ConnectTimeout=${SSH_CONNECT_TIMEOUT}" "$TARGET" \
-      "set -euo pipefail; set -a; . $REMOTE_ENV; set +a; /h/405/${CS_USER}/.local/bin/gog auth add jinesis.adminbot@gmail.com --remote --force-consent --services gmail,calendar,drive,docs,sheets,contacts"
+      "set -euo pipefail; set -a; . $REMOTE_ENV; set +a; /h/405/${CS_USER}/.local/bin/gog auth add \"\$GOG_ACCOUNT\" --remote --force-consent --services gmail,calendar,drive,docs,sheets,contacts"
     ;;
 
   install-services)

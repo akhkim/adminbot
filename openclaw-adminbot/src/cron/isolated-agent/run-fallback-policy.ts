@@ -1,8 +1,8 @@
 /** Resolves model fallback chains for isolated cron runs and preflight. */
-import { resolveModelCandidateChain } from "../../agents/model-fallback.js";
-import type { ModelCandidate } from "../../agents/model-fallback.types.js";
+import { resolveModelCandidateChain } from "../../agents/models/model-fallback.js";
+import type { ModelCandidate } from "../../agents/models/model-fallback.types.js";
 import { resolveAgentModelFallbackValues } from "../../config/model-input.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { CronJob } from "../types.js";
 import {
   resolveEffectiveModelFallbacks,

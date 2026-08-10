@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { openRootFileSync } from "../infra/boundary-file-read.js";
-import { resolveBundledPluginsDir } from "../plugins/bundled-dir.js";
+import { resolveBundledPluginsDir } from "../plugins/install/bundled-dir.js";
 import {
   getCachedPluginModuleLoader,
   type PluginModuleLoaderCache,

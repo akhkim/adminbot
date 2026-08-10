@@ -8,14 +8,14 @@ import type { ChannelOutboundAdapter } from "../../channels/plugins/types.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SessionTranscriptAppendResult } from "../../config/sessions/transcript.js";
 import * as mediaCapabilityModule from "../../media/read-capability.js";
-import { createHookRunner } from "../../plugins/hooks.js";
-import { addTestHook } from "../../plugins/hooks.test-helpers.js";
-import { createEmptyPluginRegistry } from "../../plugins/registry.js";
+import { createHookRunner } from "../../plugins/hooks/hooks.js";
+import { addTestHook } from "../../plugins/hooks/hooks.test-helpers.js";
+import { createEmptyPluginRegistry } from "../../plugins/manifest/registry.js";
 import {
   pinActivePluginChannelRegistry,
   releasePinnedPluginChannelRegistry,
   setActivePluginRegistry,
-} from "../../plugins/runtime.js";
+} from "../../plugins/runtime/runtime.js";
 import type { PluginHookRegistration } from "../../plugins/types.js";
 import {
   createChannelTestPluginBase,
@@ -27,7 +27,7 @@ import {
   onInternalDiagnosticEvent,
   resetDiagnosticEventsForTest,
   type DiagnosticEventPayload,
-} from "../diagnostic-events.js";
+} from "../diagnostics/diagnostic-events.js";
 import { resolvePreferredOpenClawTmpDir } from "../tmp-openclaw-dir.js";
 
 const mocks = vi.hoisted(() => ({
@@ -86,7 +86,7 @@ vi.mock("../../config/sessions/transcript.js", async () => {
     appendAssistantMessageToSessionTranscript: mocks.appendAssistantMessageToSessionTranscript,
   };
 });
-vi.mock("../../plugins/hook-runner-global.js", () => ({
+vi.mock("../../plugins/hooks/hook-runner-global.js", () => ({
   getGlobalHookRunner: () => hookMocks.runner,
 }));
 vi.mock("../../hooks/internal-hooks.js", () => ({

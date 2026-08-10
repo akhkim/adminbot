@@ -1,6 +1,6 @@
 // Plugins core registry contract tests cover channel plugin registry behavior and cleanup.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { setActivePluginRegistry } from "../../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../../plugins/runtime/runtime.js";
 import { createTestRegistry } from "../../../test-utils/channel-plugins.js";
 import { listChannelPlugins } from "../index.js";
 import type { ChannelPlugin } from "../types.js";

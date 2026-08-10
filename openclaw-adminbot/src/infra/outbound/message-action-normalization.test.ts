@@ -9,7 +9,7 @@ vi.mock("../../channels/plugins/bootstrap-registry.js", async () => ({
   ).createPinboardMessageActionBootstrapRegistryMock(),
 }));
 
-vi.mock("../../utils/message-channel.js", () => ({
+vi.mock("../../shared/message-channel.js", () => ({
   isDeliverableMessageChannel: (value: string) => ["workspace", "forum"].includes(value),
   normalizeMessageChannel: (value?: string | null) =>
     typeof value === "string" ? value.trim().toLowerCase() : undefined,

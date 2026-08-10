@@ -1,9 +1,9 @@
 // Model auth status tests cover profile health summaries, provider usage,
 // credential cleanup, secret refresh, and provider run abort side effects.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AuthHealthSummary } from "../../agents/auth-health.js";
-import type { AuthProfileStore } from "../../agents/auth-profiles.js";
-import type { UsageSummary } from "../../infra/provider-usage.types.js";
+import type { AuthHealthSummary } from "../../agents/auth/auth-health.js";
+import type { AuthProfileStore } from "../../agents/auth/auth-profiles.js";
+import type { UsageSummary } from "../../infra/providers/provider-usage.types.js";
 import { MAX_DATE_TIMESTAMP_MS } from "../../shared/number-coercion.js";
 import type { GatewayRequestHandlerOptions } from "./types.js";
 
@@ -46,9 +46,9 @@ vi.mock("../../agents/agent-scope.js", () => ({
   resolveDefaultAgentDir: mocks.resolveDefaultAgentDir,
 }));
 
-vi.mock("../../agents/auth-profiles.js", async () => {
-  const actual = await vi.importActual<typeof import("../../agents/auth-profiles.js")>(
-    "../../agents/auth-profiles.js",
+vi.mock("../../agents/auth/auth-profiles.js", async () => {
+  const actual = await vi.importActual<typeof import("../../agents/auth/auth-profiles.js")>(
+    "../../agents/auth/auth-profiles.js",
   );
   return {
     ...actual,
@@ -62,9 +62,9 @@ vi.mock("../../agents/auth-profiles.js", async () => {
   };
 });
 
-vi.mock("../../agents/auth-health.js", async () => {
-  const actual = await vi.importActual<typeof import("../../agents/auth-health.js")>(
-    "../../agents/auth-health.js",
+vi.mock("../../agents/auth/auth-health.js", async () => {
+  const actual = await vi.importActual<typeof import("../../agents/auth/auth-health.js")>(
+    "../../agents/auth/auth-health.js",
   );
   return {
     ...actual,
@@ -72,7 +72,7 @@ vi.mock("../../agents/auth-health.js", async () => {
   };
 });
 
-vi.mock("../../infra/provider-usage.load.js", () => ({
+vi.mock("../../infra/providers/provider-usage.load.js", () => ({
   loadProviderUsageSummary: mocks.loadProviderUsageSummary,
 }));
 
@@ -80,7 +80,7 @@ vi.mock("../../secrets/runtime.js", () => ({
   refreshActiveSecretsRuntimeSnapshot: mocks.refreshActiveSecretsRuntimeSnapshot,
 }));
 
-vi.mock("../../agents/model-provider-auth.js", () => ({
+vi.mock("../../agents/auth/model-provider-auth.js", () => ({
   clearCurrentProviderAuthState: mocks.clearCurrentProviderAuthState,
   warmCurrentProviderAuthStateOffMainThread: mocks.warmCurrentProviderAuthStateOffMainThread,
 }));

@@ -5,8 +5,8 @@ import path from "node:path";
 import { importFreshModule } from "openclaw/plugin-sdk/test-fixtures";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../../plugins/bundled-dir.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../plugins/bundled-dir.js")>();
+vi.mock("../../plugins/install/bundled-dir.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../plugins/install/bundled-dir.js")>();
   return {
     ...actual,
     resolveBundledPluginsDir: (env: NodeJS.ProcessEnv = process.env) =>

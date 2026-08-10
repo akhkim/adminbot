@@ -5,16 +5,16 @@
  * instructions with deterministic ordering and a hard character budget.
  */
 import path from "node:path";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { resolveUserPath, truncateUtf16Safe } from "../utils.js";
 import { resolveAgentWorkspaceDir } from "./agent-scope.js";
-import { resolveBootstrapFilesForRun } from "./bootstrap-files.js";
-import { buildBootstrapContextFiles } from "./embedded-agent-helpers.js";
+import { buildBootstrapContextFiles } from "./embedded/embedded-agent-helpers.js";
+import { resolveBootstrapFilesForRun } from "./prompt/bootstrap-files.js";
 import {
   DEFAULT_IDENTITY_FILENAME,
   DEFAULT_SOUL_FILENAME,
   DEFAULT_USER_FILENAME,
-} from "./workspace.js";
+} from "./workspace/workspace.js";
 
 /** Default ordered profile files included in realtime bootstrap context. */
 export const REALTIME_BOOTSTRAP_CONTEXT_FILE_NAMES = [

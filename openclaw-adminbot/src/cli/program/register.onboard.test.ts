@@ -16,11 +16,11 @@ const mocks = vi.hoisted(() => ({
 const setupWizardCommandMock = mocks.setupWizardCommandMock;
 const runtime = mocks.runtime;
 
-vi.mock("../../commands/auth-choice-options.js", () => ({
+vi.mock("../../commands/auth/auth-choice-options.js", () => ({
   formatAuthChoiceChoicesForCli: () => "token|oauth|openai-api-key",
 }));
 
-vi.mock("../../commands/onboard-core-auth-flags.js", () => ({
+vi.mock("../../commands/onboard/onboard-core-auth-flags.js", () => ({
   CORE_ONBOARD_AUTH_FLAGS: [
     {
       cliOption: "--mistral-api-key <key>",
@@ -35,7 +35,7 @@ vi.mock("../../commands/onboard-core-auth-flags.js", () => ({
   ] as Array<{ cliOption: string; description: string; optionKey: string }>,
 }));
 
-vi.mock("../../plugins/provider-auth-choices.js", () => ({
+vi.mock("../../plugins/providers/provider-auth-choices.js", () => ({
   resolveProviderOnboardAuthFlags: () => [
     {
       cliOption: "--openai-api-key <key>",
@@ -45,7 +45,7 @@ vi.mock("../../plugins/provider-auth-choices.js", () => ({
   ],
 }));
 
-vi.mock("../../commands/onboard.js", () => ({
+vi.mock("../../commands/onboard/onboard.js", () => ({
   setupWizardCommand: mocks.setupWizardCommandMock,
 }));
 

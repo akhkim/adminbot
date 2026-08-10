@@ -10,13 +10,16 @@ import { loadSessionStore, updateSessionStore, type SessionEntry } from "../../c
 import { withTempConfig } from "../../gateway/test-temp-config.js";
 import { resolvePreferredOpenClawTmpDir } from "../../infra/tmp-openclaw-dir.js";
 import { withEnvAsync } from "../../test-utils/env.js";
-import { cleanupReplacedPluginHostRegistry, runPluginHostCleanup } from "../host-hook-cleanup.js";
-import { clearPluginHostRuntimeState } from "../host-hook-runtime.js";
-import { patchPluginSessionExtension } from "../host-hook-state.js";
-import type { PluginJsonValue } from "../host-hooks.js";
-import { createEmptyPluginRegistry } from "../registry-empty.js";
-import { setActivePluginRegistry } from "../runtime.js";
-import { createPluginRecord } from "../status.test-helpers.js";
+import { createPluginRecord } from "../config/status.test-helpers.js";
+import {
+  cleanupReplacedPluginHostRegistry,
+  runPluginHostCleanup,
+} from "../host/host-hook-cleanup.js";
+import { clearPluginHostRuntimeState } from "../host/host-hook-runtime.js";
+import { patchPluginSessionExtension } from "../host/host-hook-state.js";
+import type { PluginJsonValue } from "../host/host-hooks.js";
+import { createEmptyPluginRegistry } from "../manifest/registry-empty.js";
+import { setActivePluginRegistry } from "../runtime/runtime.js";
 import { runTrustedToolPolicies } from "../trusted-tool-policy.js";
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {

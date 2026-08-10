@@ -1,6 +1,6 @@
 // Active session shutdown tracker.
 // Remembers sessions needing `session_end` hooks during gateway shutdown/restart.
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 // Module-level tracker of sessions that have received `session_start` but not
 // yet a paired `session_end`. The close handler drains this set on gateway

@@ -8,7 +8,10 @@ import {
   isColdPluginRuntimeLoaded,
 } from "../plugins/test-helpers/cold-plugin-fixtures.js";
 import { cleanupTrackedTempDirs, makeTrackedTempDir } from "../plugins/test-helpers/fs-fixtures.js";
-import { buildAuthChoiceOptions, formatAuthChoiceChoicesForCli } from "./auth-choice-options.js";
+import {
+  buildAuthChoiceOptions,
+  formatAuthChoiceChoicesForCli,
+} from "./auth/auth-choice-options.js";
 import { listManifestInstalledChannelIds } from "./channel-setup/discovery.js";
 import { resolveProviderCatalogPluginIdsForFilter } from "./models/list.provider-catalog.js";
 

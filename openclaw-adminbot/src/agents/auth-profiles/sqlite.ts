@@ -7,14 +7,14 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import { requireNodeSqlite } from "../../infra/node-sqlite.js";
 import {
   clearNodeSqliteKyselyCacheForDatabase,
   executeSqliteQuerySync,
   executeSqliteQueryTakeFirstSync,
   getNodeSqliteKysely,
-} from "../../infra/kysely-sync.js";
-import { requireNodeSqlite } from "../../infra/node-sqlite.js";
-import { resolveSqliteDatabaseFilePaths } from "../../infra/sqlite-files.js";
+} from "../../infra/state/kysely-sync.js";
+import { resolveSqliteDatabaseFilePaths } from "../../infra/state/sqlite-files.js";
 import type { DB as OpenClawAgentKyselyDatabase } from "../../state/openclaw-agent-db.generated.js";
 import {
   runOpenClawAgentWriteTransaction,

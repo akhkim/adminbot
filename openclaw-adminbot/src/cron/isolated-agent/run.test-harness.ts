@@ -2,7 +2,7 @@
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { vi, type Mock } from "vitest";
 import { resolveFastModeState as resolveFastModeStateImpl } from "../../agents/fast-mode.js";
-import { LiveSessionModelSwitchError } from "../../agents/live-model-switch-error.js";
+import { LiveSessionModelSwitchError } from "../../agents/models/live-model-switch-error.js";
 import { resolveAgentModelFallbackValues } from "../../config/model-input.js";
 
 // Central mock harness for isolated cron agent run orchestration tests.
@@ -135,9 +135,9 @@ vi.mock("./run.runtime.js", () => ({
   getRemoteSkillEligibility: getRemoteSkillEligibilityMock,
 }));
 
-vi.mock("../../agents/model-runtime-aliases.js", async () => ({
-  ...(await vi.importActual<typeof import("../../agents/model-runtime-aliases.js")>(
-    "../../agents/model-runtime-aliases.js",
+vi.mock("../../agents/models/model-runtime-aliases.js", async () => ({
+  ...(await vi.importActual<typeof import("../../agents/models/model-runtime-aliases.js")>(
+    "../../agents/models/model-runtime-aliases.js",
   )),
   resolveCliRuntimeExecutionProvider: resolveCliRuntimeExecutionProviderMock,
 }));
@@ -155,7 +155,7 @@ vi.mock("./run-model-catalog.runtime.js", () => ({
   loadModelCatalog: loadModelCatalogMock,
 }));
 
-vi.mock("../../plugins/runtime-plugins.runtime.js", () => ({
+vi.mock("../../plugins/runtime/runtime-plugins.runtime.js", () => ({
   ensureRuntimePluginsLoaded: ensureRuntimePluginsLoadedMock,
 }));
 
@@ -246,7 +246,7 @@ vi.mock("./run-execution.runtime.js", () => ({
   logWarn: (...args: unknown[]) => logWarnMock(...args),
 }));
 
-vi.mock("../../agents/model-runtime-aliases.js", () => ({
+vi.mock("../../agents/models/model-runtime-aliases.js", () => ({
   resolveCliRuntimeExecutionProvider: ({
     provider,
     cfg,
@@ -285,12 +285,12 @@ vi.mock("./run-subagent-registry.runtime.js", () => ({
   listDescendantRunsForRequester: listDescendantRunsForRequesterMock,
 }));
 
-vi.mock("../../agents/cli-runner.runtime.js", () => ({
+vi.mock("../../agents/cli-runner/cli-runner.runtime.js", () => ({
   clearCliSession: clearCliSessionMock,
   setCliSessionId: vi.fn(),
 }));
 
-vi.mock("../../agents/agent-bundle-mcp-tools.js", () => ({
+vi.mock("../../agents/mcp/agent-bundle-mcp-tools.js", () => ({
   retireSessionMcpRuntime: retireSessionMcpRuntimeMock,
 }));
 

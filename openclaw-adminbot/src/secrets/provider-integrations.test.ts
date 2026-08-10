@@ -7,7 +7,7 @@ import type { PluginCandidate } from "../plugins/discovery.js";
 import {
   loadPluginManifestRegistry,
   type PluginManifestRegistry,
-} from "../plugins/manifest-registry.js";
+} from "../plugins/manifest/manifest-registry.js";
 import type { PluginOrigin } from "../plugins/plugin-origin.types.js";
 import {
   listSecretProviderIntegrationPresets,

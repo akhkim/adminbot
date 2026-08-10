@@ -5,11 +5,11 @@ import {
   resolvePluginMetadataControlPlaneFingerprint,
   setCurrentPluginMetadataSnapshot,
 } from "./current-plugin-metadata-snapshot.js";
-import { resolveInstalledPluginIndexPolicyHash } from "./installed-plugin-index-policy.js";
-import type { InstalledPluginIndex } from "./installed-plugin-index.js";
+import { resolveInstalledPluginIndexPolicyHash } from "./install/installed-plugin-index-policy.js";
+import type { InstalledPluginIndex } from "./install/installed-plugin-index.js";
+import { createEmptyPluginRegistry } from "./manifest/registry-empty.js";
 import type { PluginMetadataSnapshot } from "./plugin-metadata-snapshot.js";
-import { createEmptyPluginRegistry } from "./registry-empty.js";
-import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "./runtime.js";
+import { resetPluginRuntimeStateForTest, setActivePluginRegistry } from "./runtime/runtime.js";
 
 const loadPluginRegistrySnapshotMock = vi.hoisted(() => vi.fn());
 const loadPluginManifestRegistryForInstalledIndexMock = vi.hoisted(() => vi.fn());
@@ -19,8 +19,8 @@ vi.mock("./plugin-registry.js", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./plugin-registry.js")>()),
   loadPluginRegistrySnapshot: loadPluginRegistrySnapshotMock,
 }));
-vi.mock("./manifest-registry-installed.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./manifest-registry-installed.js")>()),
+vi.mock("./manifest/manifest-registry-installed.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./manifest/manifest-registry-installed.js")>()),
   loadPluginManifestRegistryForInstalledIndex: loadPluginManifestRegistryForInstalledIndexMock,
 }));
 vi.mock("./plugin-metadata-snapshot.js", async () => {

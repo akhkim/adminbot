@@ -8,7 +8,6 @@
   "plugin-test-contracts",
   "plugin-state-test-runtime",
   "plugin-test-runtime",
-  "provider-http-test-mocks",
   "provider-test-contracts",
   "qa-channel",
   "qa-channel-protocol",

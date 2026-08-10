@@ -3,7 +3,7 @@
 import type { AgentMessage } from "openclaw/plugin-sdk/agent-core";
 import { describe, expect, it, vi } from "vitest";
 import type { ContextEngine, ContextEngineRuntimeSettings } from "../../context-engine/types.js";
-import { sanitizeToolUseResultPairing } from "../session-transcript-repair.js";
+import { sanitizeToolUseResultPairing } from "../sessions/session-transcript-repair.js";
 import { castAgentMessage } from "../test-helpers/agent-message-fixtures.js";
 import { MidTurnPrecheckSignal } from "./run/midturn-precheck.js";
 import {

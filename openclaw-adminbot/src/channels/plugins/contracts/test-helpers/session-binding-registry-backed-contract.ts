@@ -10,7 +10,7 @@ import {
   type SessionBindingCapabilities,
   type SessionBindingRecord,
 } from "../../../../infra/outbound/session-binding-service.js";
-import { resetPluginRuntimeStateForTest } from "../../../../plugins/runtime.js";
+import { resetPluginRuntimeStateForTest } from "../../../../plugins/runtime/runtime.js";
 import { getSessionBindingContractRegistry } from "./registry-session-binding.js";
 
 function resolveSessionBindingContractRuntimeConfig(id: string) {

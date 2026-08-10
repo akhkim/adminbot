@@ -17,5 +17,5 @@ export {
   ReplyRuntimeConfigSchemaShape,
   requireAllowlistAllowFrom,
   requireOpenAllowFrom,
-} from "../config/zod-schema.core.js";
-export { ToolPolicySchema } from "../config/zod-schema.agent-runtime.js";
+} from "../config/zod/core.js";
+export { ToolPolicySchema } from "../config/zod/agent-runtime.js";

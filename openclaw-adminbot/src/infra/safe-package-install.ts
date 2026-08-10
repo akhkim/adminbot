@@ -1,6 +1,6 @@
 // Builds script-disabled npm install commands and env.
-import type { NpmProjectInstallEnvOptions } from "./npm-install-env.js";
-import { createNpmProjectInstallEnv } from "./npm-install-env.js";
+import type { NpmProjectInstallEnvOptions } from "./install/npm-install-env.js";
+import { createNpmProjectInstallEnv } from "./install/npm-install-env.js";
 
 type SafeNpmInstallEnvOptions = NpmProjectInstallEnvOptions & {
   ignoreWorkspaces?: boolean;

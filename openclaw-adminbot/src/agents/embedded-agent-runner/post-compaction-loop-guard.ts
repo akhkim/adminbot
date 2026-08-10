@@ -1,7 +1,7 @@
 /**
  * Guards against repeated tool-loop compactions that never make progress.
  */
-import type { ToolLoopPostCompactionGuardConfig } from "../../config/types.tools.js";
+import type { ToolLoopPostCompactionGuardConfig } from "../../config/types/tools.js";
 import { createSubsystemLogger } from "../../logging/subsystem.js";
 
 /**

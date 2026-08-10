@@ -1,16 +1,16 @@
 /** Shared helpers for gateway status target selection, auth, summaries, and probe rendering. */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { colorize, theme } from "../../../packages/terminal-core/src/theme.js";
-import { parseTimeoutMsWithFallback } from "../../cli/parse-timeout.js";
+import { parseTimeoutMsWithFallback } from "../../cli/program/parse-timeout.js";
 import { resolveGatewayPort } from "../../config/config.js";
-import type { OpenClawConfig, ConfigFileSnapshot } from "../../config/types.js";
-import { hasConfiguredSecretInput } from "../../config/types.secrets.js";
-import { resolveGatewayProbeSurfaceAuth } from "../../gateway/auth-surface-resolution.js";
+import { hasConfiguredSecretInput } from "../../config/types/secrets.js";
+import type { OpenClawConfig, ConfigFileSnapshot } from "../../config/types/types.js";
+import { resolveGatewayProbeSurfaceAuth } from "../../gateway/auth/auth-surface-resolution.js";
 import { isLoopbackHost } from "../../gateway/net.js";
 import type { GatewayProbeCapability, GatewayProbeResult } from "../../gateway/probe.js";
 import { inspectBestEffortPrimaryTailnetIPv4 } from "../../infra/network-discovery-display.js";
 import { parseStrictInteger } from "../../infra/parse-finite-number.js";
-import { pickGatewaySelfPresence } from "../gateway-presence.js";
+import { pickGatewaySelfPresence } from "../gateway/gateway-presence.js";
 
 const MISSING_SCOPE_PATTERN = /\bmissing scope:\s*[a-z0-9._-]+/i;
 

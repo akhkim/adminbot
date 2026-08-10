@@ -6,7 +6,7 @@ const getActivePluginRegistryMock = vi.hoisted(() => vi.fn());
 const loadPluginMetadataRegistrySnapshotMock = vi.hoisted(() => vi.fn());
 const resolveConfiguredChannelPluginIdsMock = vi.hoisted(() => vi.fn());
 
-vi.mock("../config/plugin-auto-enable.js", () => ({
+vi.mock("../config/plugin/plugin-auto-enable.js", () => ({
   applyPluginAutoEnable: (...args: unknown[]) => applyPluginAutoEnableMock(...args),
 }));
 
@@ -15,7 +15,7 @@ vi.mock("../plugins/channel-plugin-ids.js", () => ({
     resolveConfiguredChannelPluginIdsMock(...args),
 }));
 
-vi.mock("../plugins/runtime.js", () => ({
+vi.mock("../plugins/runtime/runtime.js", () => ({
   getActivePluginRegistry: (...args: unknown[]) => getActivePluginRegistryMock(...args),
 }));
 

@@ -1,8 +1,8 @@
 // Formats detailed subagent run information for the info action.
 import { timestampMsToIsoString } from "@openclaw/normalization-core/number-coercion";
-import { subagentRuns } from "../../../agents/subagent-registry-memory.js";
-import { countPendingDescendantRunsFromRuns } from "../../../agents/subagent-registry-queries.js";
-import { getSubagentRunsSnapshotForRead } from "../../../agents/subagent-registry-state.js";
+import { subagentRuns } from "../../../agents/subagents/subagent-registry-memory.js";
+import { countPendingDescendantRunsFromRuns } from "../../../agents/subagents/subagent-registry-queries.js";
+import { getSubagentRunsSnapshotForRead } from "../../../agents/subagents/subagent-registry-state.js";
 import { resolveStorePath } from "../../../config/sessions/paths.js";
 import { loadSessionEntry } from "../../../config/sessions/session-accessor.js";
 import { formatTimeAgo } from "../../../infra/format-time/format-relative.ts";
@@ -10,7 +10,7 @@ import { parseAgentSessionKey } from "../../../routing/session-key.js";
 import { formatDurationCompact } from "../../../shared/subagents-format.js";
 import { findTaskByRunIdForOwner } from "../../../tasks/task-owner-access.js";
 import { sanitizeTaskStatusText } from "../../../tasks/task-status.js";
-import type { CommandHandlerResult } from "../commands-types.js";
+import type { CommandHandlerResult } from "../commands/commands-types.js";
 import { formatRunLabel, formatRunStatus } from "../subagents-utils.js";
 import {
   resolveSubagentEntryForToken,

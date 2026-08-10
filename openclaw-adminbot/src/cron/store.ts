@@ -5,12 +5,12 @@ import { isRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { expandHomePrefix } from "../infra/home-dir.js";
 import { replaceFileAtomic } from "../infra/replace-file.js";
+import { parseJsonWithJson5Fallback } from "../shared/parse-json-compat.js";
 import {
   openOpenClawStateDatabase,
   runOpenClawStateWriteTransaction,
 } from "../state/openclaw-state-db.js";
 import { resolveConfigDir } from "../utils.js";
-import { parseJsonWithJson5Fallback } from "../utils/parse-json-compat.js";
 import { cronStoreKey } from "./store/key.js";
 import {
   assertCronStoreCanPersist,

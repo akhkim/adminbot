@@ -3,7 +3,7 @@
  *
  * Defines normalized conversation facts, binding records, and stateful target descriptors.
  */
-import type { AgentBinding } from "../../config/types.js";
+import type { AgentBinding } from "../../config/types/types.js";
 import type {
   ConversationRef,
   SessionBindingRecord,

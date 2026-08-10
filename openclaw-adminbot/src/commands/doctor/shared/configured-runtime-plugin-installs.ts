@@ -4,8 +4,8 @@ import {
   collectConfiguredAgentHarnessRuntimes,
   type ConfiguredAgentHarnessRuntimeOptions,
 } from "../../../agents/harness-runtimes.js";
-import type { OpenClawConfig } from "../../../config/types.openclaw.js";
-import type { PluginPackageInstall } from "../../../plugins/manifest.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import type { PluginPackageInstall } from "../../../plugins/manifest/manifest.js";
 
 type ConfiguredRuntimePluginInstallCandidate = {
   /** Runtime/plugin id used in config and plugin installation records. */

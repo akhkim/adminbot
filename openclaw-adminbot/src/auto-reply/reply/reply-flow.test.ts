@@ -1,6 +1,6 @@
 // Tests high-level reply flow decisions across commands and agent dispatch.
 import { describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { HEARTBEAT_TOKEN, SILENT_REPLY_TOKEN } from "../tokens.js";
 import { createReplyDispatcher, waitForReplyDispatcherIdle } from "./reply-dispatcher.js";
 import { createReplyToModeFilter } from "./reply-threading.js";

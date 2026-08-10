@@ -1,7 +1,7 @@
 // Verifies compaction settings config parsing and defaults.
 import { describe, expect, it } from "vitest";
 import { applyCompactionDefaults } from "./defaults.js";
-import type { OpenClawConfig } from "./types.js";
+import type { OpenClawConfig } from "./types/types.js";
 
 function materializeCompactionConfig(
   compaction: NonNullable<NonNullable<OpenClawConfig["agents"]>["defaults"]>["compaction"],

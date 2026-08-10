@@ -1,7 +1,7 @@
 // Workspace audit helpers inspect local skill folders for security and trust issues.
 import fs from "node:fs/promises";
 import path from "node:path";
-import { listAgentWorkspaceDirs } from "../../agents/workspace-dirs.js";
+import { listAgentWorkspaceDirs } from "../../agents/workspace/workspace-dirs.js";
 import type { OpenClawConfig } from "../../config/config.js";
 import type { SecurityAuditFinding } from "../../security/audit.types.js";
 import { isPathInside } from "../../security/scan-paths.js";

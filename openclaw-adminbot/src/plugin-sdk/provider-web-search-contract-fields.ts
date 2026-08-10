@@ -8,7 +8,7 @@ import {
   setProviderWebSearchPluginConfigValue,
   setTopLevelCredentialValue,
 } from "../agents/tools/web-search-provider-config.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type { WebSearchProviderPlugin } from "../plugins/types.js";
 
 /** Credential storage mode advertised by a web-search-capable provider. */

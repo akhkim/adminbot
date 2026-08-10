@@ -3,21 +3,11 @@ import type {
   UnifiedModelCatalogEntry,
   UnifiedModelCatalogSource,
 } from "@openclaw/model-catalog-core/model-catalog-types";
-import {
-  synthesizeMediaGenerationCatalogEntries,
-  type MediaGenerationCatalogKind,
-  type MediaGenerationCatalogProvider,
-} from "../../packages/media-generation-core/src/catalog.js";
 import { normalizeOptionalString } from "../../packages/normalization-core/src/string-coerce.js";
 import { uniqueValues } from "../../packages/normalization-core/src/string-normalization.js";
-import {
-  synthesizeVoiceModelCatalogEntries,
-  type VoiceModelCapabilities,
-  type VoiceModelProvider,
-} from "../../packages/speech-core/voice-models.js";
-import type { PluginDiagnostic } from "./manifest-types.js";
-import { projectProviderCatalogResultToUnifiedTextRows } from "./provider-catalog-unified-text.js";
-import type { PluginRecord, PluginRegistry } from "./registry-types.js";
+import type { PluginDiagnostic } from "./manifest/manifest-types.js";
+import type { PluginRecord, PluginRegistry } from "./manifest/registry-types.js";
+import { projectProviderCatalogResultToUnifiedTextRows } from "./providers/provider-catalog-unified-text.js";
 import type {
   ProviderPlugin,
   UnifiedModelCatalogProviderContext,
@@ -171,44 +161,8 @@ export function createModelCatalogRegistrationHandlers(params: {
     });
   };
 
-  const registerSynthesizedMediaModelCatalogProvider = <TCapabilities>(registration: {
-    record: PluginRecord;
-    kind: MediaGenerationCatalogKind;
-    provider: MediaGenerationCatalogProvider<TCapabilities>;
-  }) => {
-    registerModelCatalogProvider(registration.record, {
-      provider: registration.provider.id,
-      kinds: [registration.kind],
-      staticCatalog: () =>
-        synthesizeMediaGenerationCatalogEntries({
-          kind: registration.kind,
-          provider: registration.provider,
-        }),
-    });
-  };
-
-  const registerSynthesizedVoiceModelCatalogProvider = (registration: {
-    record: PluginRecord;
-    provider: VoiceModelProvider;
-    capabilities: VoiceModelCapabilities;
-    modes?: readonly string[];
-  }) => {
-    registerModelCatalogProvider(registration.record, {
-      provider: registration.provider.id,
-      kinds: ["voice"],
-      staticCatalog: () =>
-        synthesizeVoiceModelCatalogEntries({
-          provider: registration.provider,
-          capabilities: registration.capabilities,
-          modes: registration.modes,
-        }),
-    });
-  };
-
   return {
     registerModelCatalogProvider,
     registerSynthesizedTextModelCatalogProvider,
-    registerSynthesizedMediaModelCatalogProvider,
-    registerSynthesizedVoiceModelCatalogProvider,
   };
 }

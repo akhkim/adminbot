@@ -5,10 +5,10 @@ import {
 } from "@openclaw/normalization-core/string-coerce";
 import { resolveChannelGroupRequireMention } from "../../config/group-policy.js";
 import type { GroupKeyResolution, SessionEntry } from "../../config/sessions.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
+import { isInternalMessageChannel } from "../../shared/message-channel.js";
 import type { SilentReplyPolicy } from "../../shared/silent-reply-policy.js";
-import { isInternalMessageChannel } from "../../utils/message-channel.js";
 import type { SourceReplyDeliveryMode } from "../get-reply-options.types.js";
 import { normalizeGroupActivation } from "../group-activation.js";
 import type { TemplateContext } from "../templating.js";

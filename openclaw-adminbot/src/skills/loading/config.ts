@@ -4,8 +4,8 @@ import {
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
-import type { SkillConfig } from "../../config/types.skills.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import type { SkillConfig } from "../../config/types/skills.js";
 import {
   evaluateRuntimeEligibility,
   hasBinary,

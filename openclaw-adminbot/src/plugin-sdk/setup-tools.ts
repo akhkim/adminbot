@@ -1,7 +1,7 @@
 /**
  * Public SDK subpath for setup-time command, archive, binary, and docs-link helpers.
  */
-export { formatCliCommand } from "../cli/command-format.js";
+export { formatCliCommand } from "../cli/program/command-format.js";
 export { extractArchive } from "../infra/archive.js";
 export { resolveBrewExecutable } from "../infra/brew.js";
 export { detectBinary } from "../infra/detect-binary.js";

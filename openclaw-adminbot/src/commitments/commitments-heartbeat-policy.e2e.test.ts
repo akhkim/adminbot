@@ -1,12 +1,12 @@
 // Exercises commitment heartbeat policy through end-to-end runtime flows.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { runHeartbeatOnce } from "../infra/heartbeat-runner.js";
-import { installHeartbeatRunnerTestRuntime } from "../infra/heartbeat-runner.test-harness.js";
+import { runHeartbeatOnce } from "../infra/heartbeat/heartbeat-runner.js";
+import { installHeartbeatRunnerTestRuntime } from "../infra/heartbeat/heartbeat-runner.test-harness.js";
 import {
   seedSessionStore,
   withTempHeartbeatSandbox,
-} from "../infra/heartbeat-runner.test-utils.js";
+} from "../infra/heartbeat/heartbeat-runner.test-utils.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import { saveCommitmentStore, loadCommitmentStore } from "./store.js";
 import type { CommitmentRecord } from "./types.js";

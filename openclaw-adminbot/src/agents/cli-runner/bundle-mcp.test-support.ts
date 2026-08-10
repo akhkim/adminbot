@@ -1,10 +1,10 @@
 /** Shared test harness for CLI runner bundle-MCP config preparation tests. */
 import { afterAll, beforeAll } from "vitest";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   createBundleMcpTempHarness,
   createBundleProbePlugin,
-} from "../../plugins/bundle-mcp.test-support.js";
+} from "../../plugins/install/bundle-mcp.test-support.js";
 import { captureEnv, setTestEnvValue, withEnvAsync } from "../../test-utils/env.js";
 import { prepareCliBundleMcpConfig } from "./bundle-mcp.js";
 

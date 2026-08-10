@@ -17,7 +17,7 @@ vi.mock("../config/config.js", () => ({
   resolveGatewayPort: resolveGatewayPortMock,
 }));
 
-vi.mock("./onboard-helpers.js", () => ({
+vi.mock("./onboard/onboard-helpers.js", () => ({
   resolveControlUiLinks: resolveControlUiLinksMock,
   detectBrowserOpenSupport: detectBrowserOpenSupportMock,
   openUrl: openUrlMock,
@@ -28,7 +28,7 @@ vi.mock("../infra/clipboard.js", () => ({
   copyToClipboard: copyToClipboardMock,
 }));
 
-vi.mock("./gateway-readiness.js", () => ({
+vi.mock("./gateway/gateway-readiness.js", () => ({
   ensureGatewayReadyForOperation: ensureGatewayReadyForOperationMock,
 }));
 
@@ -173,9 +173,7 @@ describe("dashboardCommand", () => {
     expect(copyToClipboardMock).toHaveBeenCalledWith(authedUrl);
     expect(openUrlMock).toHaveBeenCalledWith(authedUrl);
     expect(runtime.log).toHaveBeenCalledWith(`Dashboard URL: ${displayUrl}`);
-    expect(runtime.log).toHaveBeenCalledWith(
-      "Gateway WebSocket URL: ws://10.0.0.5:18789/openclaw",
-    );
+    expect(runtime.log).toHaveBeenCalledWith("Gateway WebSocket URL: ws://10.0.0.5:18789/openclaw");
     for (const call of runtime.log.mock.calls) {
       const line = String(call[0]);
       expect(line).not.toContain("abc123");

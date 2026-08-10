@@ -5,7 +5,7 @@
  */
 import { beforeEach, expect, it, type Mock } from "vitest";
 import type { ReplyPayload } from "../../../plugin-sdk/reply-payload.js";
-import { resetGlobalHookRunner } from "../../../plugins/hook-runner-global.js";
+import { resetGlobalHookRunner } from "../../../plugins/hooks/hook-runner-global.js";
 
 type PayloadLike = Pick<ReplyPayload, "mediaUrl" | "mediaUrls" | "text">;
 

@@ -4,22 +4,22 @@ import fs from "node:fs";
 import path from "node:path";
 import { resolveUserPath } from "../utils.js";
 import { resolveCompatibilityHostVersion } from "../version.js";
-import { resolveBundledPluginsDir } from "./bundled-dir.js";
-import { buildLegacyBundledRootPath } from "./bundled-load-path-aliases.js";
-import { listBundledSourceOverlayDirs } from "./bundled-source-overlays.js";
-import { normalizePluginsConfig } from "./config-state.js";
+import { normalizePluginsConfig } from "./config/config-state.js";
 import { getCurrentPluginMetadataSnapshot } from "./current-plugin-metadata-snapshot.js";
 import type { PluginDiscoveryResult } from "./discovery.js";
-import { fileSignatureMatches, hashJson } from "./installed-plugin-index-hash.js";
-import { hasOptionalMissingPluginManifestFile } from "./installed-plugin-index-manifest.js";
-import { loadInstalledPluginIndexInstallRecordsSync } from "./installed-plugin-index-record-reader.js";
+import { resolveBundledPluginsDir } from "./install/bundled-dir.js";
+import { buildLegacyBundledRootPath } from "./install/bundled-load-path-aliases.js";
+import { listBundledSourceOverlayDirs } from "./install/bundled-source-overlays.js";
+import { fileSignatureMatches, hashJson } from "./install/installed-plugin-index-hash.js";
+import { hasOptionalMissingPluginManifestFile } from "./install/installed-plugin-index-manifest.js";
+import { loadInstalledPluginIndexInstallRecordsSync } from "./install/installed-plugin-index-record-reader.js";
 import {
   inspectPersistedInstalledPluginIndex,
   readPersistedInstalledPluginIndexSync,
   refreshPersistedInstalledPluginIndex,
   type InstalledPluginIndexStoreInspection,
   type InstalledPluginIndexStoreOptions,
-} from "./installed-plugin-index-store.js";
+} from "./install/installed-plugin-index-store.js";
 import {
   getInstalledPluginRecord,
   extractPluginInstallRecordsFromInstalledPluginIndex,
@@ -32,7 +32,7 @@ import {
   type InstalledPluginIndexRecord,
   type LoadInstalledPluginIndexParams,
   type RefreshInstalledPluginIndexParams,
-} from "./installed-plugin-index.js";
+} from "./install/installed-plugin-index.js";
 import { registerPluginMetadataProcessMemoLifecycleClear } from "./plugin-metadata-lifecycle.js";
 import type { PluginRegistrySnapshotSource } from "./plugin-registry-snapshot.types.js";
 import { resolvePluginCacheInputs } from "./roots.js";

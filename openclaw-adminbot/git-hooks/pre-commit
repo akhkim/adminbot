@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT_DIR="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 RUN_NODE_TOOL="$ROOT_DIR/scripts/pre-commit/run-node-tool.sh"
 FILTER_FILES="$ROOT_DIR/scripts/pre-commit/filter-staged-files.mjs"
+LINT_FILES="$ROOT_DIR/scripts/pre-commit/lint-staged-files.mjs"
 
 if [[ ! -x "$RUN_NODE_TOOL" ]]; then
   echo "Missing helper: $RUN_NODE_TOOL" >&2
@@ -13,6 +14,11 @@ fi
 
 if [[ ! -f "$FILTER_FILES" ]]; then
   echo "Missing helper: $FILTER_FILES" >&2
+  exit 1
+fi
+
+if [[ ! -f "$LINT_FILES" ]]; then
+  echo "Missing helper: $LINT_FILES" >&2
   exit 1
 fi
 
@@ -46,4 +52,15 @@ fi
 
 if [ "${#restage_files[@]}" -gt 0 ]; then
   git add -- "${restage_files[@]}"
+fi
+
+# Lint after re-staging, so a lint failure never costs the formatting work:
+# the formatted content is already staged and the commit can be retried.
+lint_files=()
+while IFS= read -r -d '' file; do
+  lint_files+=("$file")
+done < <(node "$FILTER_FILES" lint -- "${restage_files[@]}")
+
+if [ "${#lint_files[@]}" -gt 0 ]; then
+  node "$LINT_FILES" -- "${lint_files[@]}"
 fi

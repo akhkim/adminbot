@@ -9,16 +9,24 @@ import {
 } from "../../config/sessions.js";
 import { patchSessionEntry } from "../../config/sessions/session-accessor.js";
 import { resolveMaintenanceConfigFromInput } from "../../config/sessions/store-maintenance.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { createLazyImportLoader } from "../../shared/lazy-promise.js";
-import { clearCliSession, setCliSessionBinding, setCliSessionId } from "../cli-session.js";
+import {
+  clearCliSession,
+  setCliSessionBinding,
+  setCliSessionId,
+} from "../cli-runner/cli-session.js";
 import { DEFAULT_CONTEXT_TOKENS } from "../defaults.js";
-import { isCliProvider } from "../model-selection.js";
+import { isCliProvider } from "../models/model-selection.js";
 import { deriveSessionTotalTokens, hasNonzeroUsage } from "../usage.js";
 
-type RunResult = Awaited<ReturnType<(typeof import("../embedded-agent.js"))["runEmbeddedAgent"]>>;
+type RunResult = Awaited<
+  ReturnType<(typeof import("../embedded/embedded-agent.js"))["runEmbeddedAgent"]>
+>;
 
-const usageFormatModuleLoader = createLazyImportLoader(() => import("../../utils/usage-format.js"));
+const usageFormatModuleLoader = createLazyImportLoader(
+  () => import("../../shared/usage-format.js"),
+);
 const contextModuleLoader = createLazyImportLoader(() => import("../context.js"));
 
 async function getUsageFormatModule() {

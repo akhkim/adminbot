@@ -1,6 +1,6 @@
 // Media read capability tests cover allowed roots and blocked file access.
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import { getDefaultMediaLocalRoots } from "./local-roots.js";
 import { resolveAgentScopedOutboundMediaAccess } from "./read-capability.js";
 

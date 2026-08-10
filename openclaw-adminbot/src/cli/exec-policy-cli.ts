@@ -6,12 +6,12 @@ import { sanitizeTerminalText } from "../../packages/terminal-core/src/safe-text
 import { getTerminalTableWidth, renderTable } from "../../packages/terminal-core/src/table.js";
 import { isRich, theme } from "../../packages/terminal-core/src/theme.js";
 import { readConfigFileSnapshot, replaceConfigFile } from "../config/config.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { sanitizeExecApprovalDisplayText } from "../infra/exec-approval-command-display.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { sanitizeExecApprovalDisplayText } from "../infra/exec/exec-approval-command-display.js";
 import {
   collectExecPolicyScopeSnapshots,
   type ExecPolicyScopeSnapshot,
-} from "../infra/exec-approvals-effective.js";
+} from "../infra/exec/exec-approvals-effective.js";
 import {
   normalizeExecAsk,
   normalizeExecSecurity,
@@ -23,7 +23,7 @@ import {
   type ExecAsk,
   type ExecSecurity,
   type ExecTarget,
-} from "../infra/exec-approvals.js";
+} from "../infra/exec/exec-approvals.js";
 import { defaultRuntime } from "../runtime.js";
 
 type ExecPolicyPresetName = "yolo" | "cautious" | "deny-all";

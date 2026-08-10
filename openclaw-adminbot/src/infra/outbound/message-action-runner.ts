@@ -4,7 +4,6 @@ import {
   normalizeOptionalLowercaseString,
   normalizeOptionalString,
 } from "@openclaw/normalization-core/string-coerce";
-import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload";
 import { stripPlainTextToolCallBlocks } from "../../../packages/tool-call-repair/src/index.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
 import type { AgentToolResult } from "../../agents/runtime/index.js";
@@ -24,7 +23,7 @@ import type {
   ChannelMessageActionName,
   ChannelThreadingToolContext,
 } from "../../channels/plugins/types.public.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   hasInteractiveReplyBlocks,
   hasMessagePresentationBlocks,
@@ -40,14 +39,14 @@ import { extractToolPayload } from "../../plugin-sdk/tool-payload.js";
 import { hasPollCreationParams } from "../../poll-params.js";
 import { resolvePollMaxSelections } from "../../polls.js";
 import { resolveFirstBoundAccountId } from "../../routing/bound-account-read.js";
-import { stripUnsupportedCitationControlMarkers } from "../../shared/text/citation-control-markers.js";
-import { stripFormattedReasoningMessage } from "../../shared/text/formatted-reasoning-message.js";
-import { parseInlineDirectives } from "../../utils/directive-tags.js";
+import { parseInlineDirectives } from "../../shared/directive-tags.js";
 import {
   INTERNAL_MESSAGE_CHANNEL,
   type GatewayClientMode,
   type GatewayClientName,
-} from "../../utils/message-channel.js";
+} from "../../shared/message-channel.js";
+import { stripUnsupportedCitationControlMarkers } from "../../shared/text/citation-control-markers.js";
+import { stripFormattedReasoningMessage } from "../../shared/text/formatted-reasoning-message.js";
 import { formatErrorMessage } from "../errors.js";
 import { throwIfAborted } from "./abort.js";
 import { resolveOutboundChannelPlugin } from "./channel-resolution.js";
@@ -74,7 +73,6 @@ import {
   resolveAndApplyOutboundReplyToId,
   resolveAndApplyOutboundThreadId,
 } from "./message-action-threading.js";
-import { maybeApplyTtsToMessageActionSendPayload } from "./message-action-tts.js";
 import { resolveOutboundMessageGatewayOptions } from "./message-gateway-options.js";
 import type { MessagePollResult, MessageSendResult } from "./message.js";
 import {
@@ -467,34 +465,6 @@ type SendPayloadParts = {
   bestEffort?: boolean;
   silent?: boolean;
 };
-
-function updateSendPayloadPartsFromReplyPayload(
-  parts: SendPayloadParts,
-  payload: ReplyPayload,
-): SendPayloadParts {
-  const sendable = resolveSendableOutboundReplyParts(payload);
-  const mediaUrls = sendable.mediaUrls.length > 0 ? sendable.mediaUrls : undefined;
-  return {
-    ...parts,
-    message: payload.text ?? "",
-    payload,
-    mediaUrl: mediaUrls?.[0],
-    mediaUrls,
-    asVoice: payload.audioAsVoice === true,
-  };
-}
-
-function applySendPayloadPartsToActionParams(
-  actionParams: Record<string, unknown>,
-  parts: SendPayloadParts,
-) {
-  actionParams.message = parts.message;
-  actionParams.media = parts.mediaUrl;
-  actionParams.mediaUrl = parts.mediaUrl;
-  actionParams.mediaUrls = parts.mediaUrls;
-  actionParams.asVoice = parts.asVoice || undefined;
-  actionParams.audioAsVoice = parts.asVoice || undefined;
-}
 
 function collectMessageAttachmentMediaHints(value: unknown): string[] {
   if (!Array.isArray(value)) {
@@ -1076,20 +1046,6 @@ async function handleSendAction(ctx: ResolvedActionContext): Promise<MessageActi
   const resolvedReplyToId = readStringParam(params, "replyTo");
   throwIfAborted(abortSignal);
 
-  const ttsPayload = await maybeApplyTtsToMessageActionSendPayload({
-    payload: sendPayload.payload,
-    cfg,
-    channel,
-    accountId,
-    agentId,
-    sessionKey: input.sessionKey,
-    inboundAudio: input.inboundAudio,
-    dryRun,
-  });
-  if (ttsPayload !== sendPayload.payload) {
-    sendPayload = updateSendPayloadPartsFromReplyPayload(sendPayload, ttsPayload);
-    applySendPayloadPartsToActionParams(params, sendPayload);
-  }
   throwIfAborted(abortSignal);
   const mediaAccess = resolveAgentScopedOutboundMediaAccess({
     cfg,

@@ -3,7 +3,7 @@
  */
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import type { AgentMessage } from "../runtime/index.js";
-import { extractToolCallsFromAssistant, extractToolResultId } from "../tool-call-id.js";
+import { extractToolCallsFromAssistant, extractToolResultId } from "../tools/tool-call-id.js";
 
 type AnthropicContentBlock = {
   type: "text" | "toolUse" | "toolCall" | "functionCall" | "toolResult" | "tool";

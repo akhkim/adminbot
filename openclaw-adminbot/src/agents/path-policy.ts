@@ -4,8 +4,8 @@
  * Converts validated absolute or relative inputs into root-relative paths without allowing boundary escapes.
  */
 import path from "node:path";
-import { normalizeWindowsPathForComparison } from "../infra/path-guards.js";
-import { resolveSandboxInputPath } from "./sandbox-paths.js";
+import { normalizeWindowsPathForComparison } from "../infra/system/path-guards.js";
+import { resolveSandboxInputPath } from "./sandbox/sandbox-paths.js";
 
 // Shared path boundary helpers for workspace and sandbox-facing agent inputs.
 // Callers get normalized relative paths only after the candidate proves it stays

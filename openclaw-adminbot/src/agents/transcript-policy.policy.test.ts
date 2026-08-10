@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveTranscriptPolicy } from "./transcript-policy.js";
 
-vi.mock("../plugins/provider-hook-runtime.js", () => ({
+vi.mock("../plugins/providers/provider-hook-runtime.js", () => ({
   resolveProviderRuntimePlugin: vi.fn(({ provider }: { provider?: string }) =>
     provider === "mistral"
       ? {

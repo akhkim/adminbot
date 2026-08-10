@@ -1,7 +1,7 @@
 // Covers task registry lifecycle, delivery, notification, and query behavior.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AcpSessionStoreEntry } from "../acp/runtime/session-meta.js";
-import { startAcpSpawnParentStreamRelay } from "../agents/acp-spawn-parent-stream.js";
+import { startAcpSpawnParentStreamRelay } from "../agents/acp/acp-spawn-parent-stream.js";
 import { resetCronActiveJobs } from "../cron/active-jobs.js";
 import {
   emitAgentEvent,
@@ -11,9 +11,9 @@ import {
 import {
   hasPendingHeartbeatWake,
   resetHeartbeatWakeStateForTests,
-} from "../infra/heartbeat-wake.js";
+} from "../infra/heartbeat/heartbeat-wake.js";
 import type { SessionBindingRecord } from "../infra/outbound/session-binding-service.js";
-import { peekSystemEvents, resetSystemEventsForTest } from "../infra/system-events.js";
+import { peekSystemEvents, resetSystemEventsForTest } from "../infra/system/system-events.js";
 import type { ParsedAgentSessionKey } from "../routing/session-key.js";
 import { withTempDir } from "../test-helpers/temp-dir.js";
 import { withEnvAsync } from "../test-utils/env.js";
@@ -131,11 +131,11 @@ vi.mock("../acp/control-plane/manager.js", () => ({
   }),
 }));
 
-vi.mock("../agents/subagent-control.js", () => ({
+vi.mock("../agents/subagents/subagent-control.js", () => ({
   killSubagentRunAdmin: (params: unknown) => hoisted.killSubagentRunAdminMock(params),
 }));
 
-vi.mock("../utils/message-channel.js", () => ({
+vi.mock("../shared/message-channel.js", () => ({
   isDeliverableMessageChannel: (channel: string) =>
     channel === "notifychat" || channel === "guildchat" || channel === "discord",
 }));

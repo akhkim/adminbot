@@ -17,7 +17,7 @@ export {
   warn,
 } from "../globals.js";
 export { sleep } from "../utils.js";
-export { withTimeout } from "../utils/with-timeout.js";
+export { withTimeout } from "../shared/with-timeout.js";
 export { isTruthyEnvValue } from "../infra/env.js";
 export * from "../logging.js";
 export { waitForAbortSignal } from "../infra/abort-signal.js";

@@ -1,7 +1,7 @@
 // Stores voice wake trigger configuration.
 import path from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
-import { resolveStateDir } from "../config/paths.js";
+import { resolveStateDir } from "../config/paths/paths.js";
 import { createAsyncLock, tryReadJson, writeJson } from "./json-files.js";
 
 // Voice wake config stores trigger words used by local voice integrations.

@@ -1,6 +1,6 @@
 // Control UI view renders agents panels tools skills screen content.
 import { html, nothing } from "lit";
-import { normalizeToolName } from "../../../../src/agents/tool-policy-shared.js";
+import { normalizeToolName } from "../../../../src/agents/tools/tool-policy-shared.js";
 import { t } from "../../i18n/index.ts";
 import { normalizeLowercaseStringOrEmpty, normalizeStringEntries } from "../string-coerce.ts";
 import type {

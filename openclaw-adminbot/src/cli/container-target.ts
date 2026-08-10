@@ -4,8 +4,8 @@ import { isIP } from "node:net";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { consumeRootOptionToken, FLAG_TERMINATOR } from "../infra/cli-root-options.js";
 import { resolveCliArgvInvocation } from "./argv-invocation.js";
-import { scanCliRootOptions } from "./root-option-scan.js";
-import { takeCliRootOptionValue } from "./root-option-value.js";
+import { scanCliRootOptions } from "./program/root-option-scan.js";
+import { takeCliRootOptionValue } from "./program/root-option-value.js";
 
 type CliContainerParseResult =
   | { ok: true; container: string | null; argv: string[] }

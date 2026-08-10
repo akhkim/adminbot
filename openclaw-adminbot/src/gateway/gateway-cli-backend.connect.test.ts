@@ -5,8 +5,8 @@ import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 import { loadOrCreateDeviceIdentity } from "../infra/device-identity.js";
+import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../shared/message-channel.js";
 import { createSuiteTempRootTracker } from "../test-helpers/temp-dir.js";
-import { GATEWAY_CLIENT_MODES, GATEWAY_CLIENT_NAMES } from "../utils/message-channel.js";
 import { connectTestGatewayClient } from "./gateway-cli-backend.live-helpers.js";
 import {
   buildMinimalGatewayHelloOkPayload,

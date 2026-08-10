@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- deferred split, see docs/adr/0006-deferred-monster-splits.md
 /**
  * Top-level embedded-agent run orchestration entrypoint.
  */
@@ -5,12 +6,9 @@ import { randomBytes } from "node:crypto";
 import fs from "node:fs/promises";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { sanitizeForLog } from "../../../packages/terminal-core/src/ansi.js";
-import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import { SILENT_REPLY_TOKEN } from "../../auto-reply/tokens.js";
 import { getRuntimeConfigSnapshot } from "../../config/config.js";
-import { resolveStorePath } from "../../config/sessions.js";
-import { updateSessionEntry } from "../../config/sessions/session-accessor.js";
 import { OPENCLAW_EMBEDDED_CONTEXT_ENGINE_HOST } from "../../context-engine/host-compat.js";
 import { ensureContextEnginesInitialized } from "../../context-engine/init.js";
 import {
@@ -28,27 +26,22 @@ import {
   withAgentRunLifecycleGeneration,
 } from "../../infra/agent-events.js";
 import { sleepWithAbort } from "../../infra/backoff.js";
-import { freezeDiagnosticTraceContext } from "../../infra/diagnostic-trace-context.js";
+import { freezeDiagnosticTraceContext } from "../../infra/diagnostics/diagnostic-trace-context.js";
 import { formatErrorMessage } from "../../infra/errors.js";
-import { buildAgentHookContextChannelFields } from "../../plugins/hook-agent-context.js";
-import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
-import { resolveProviderAuthProfileId } from "../../plugins/provider-runtime.js";
+import { buildAgentHookContextChannelFields } from "../../plugins/hooks/hook-agent-context.js";
+import { getGlobalHookRunner } from "../../plugins/hooks/hook-runner-global.js";
+import { resolveProviderAuthProfileId } from "../../plugins/providers/provider-runtime.js";
 import { enqueueCommandInLane, getCommandLaneSnapshot } from "../../process/command-queue.js";
 import type { CommandQueueEnqueueOptions } from "../../process/command-queue.types.js";
+import { isMarkdownCapableMessageChannel } from "../../shared/message-channel.js";
 import { createAgentHarnessTaskRuntimeScope } from "../../tasks/agent-harness-task-runtime-scope.js";
 import { resolveUserPath } from "../../utils.js";
-import { isMarkdownCapableMessageChannel } from "../../utils/message-channel.js";
-import {
-  retireSessionMcpRuntime,
-  retireSessionMcpRuntimeForSessionKey,
-} from "../agent-bundle-mcp-tools.js";
 import {
   resolveAgentDir,
   resolveSessionAgentIds,
   resolveAgentWorkspaceDir,
 } from "../agent-scope.js";
-import type { ToolOutcomeObservation } from "../agent-tools.before-tool-call.js";
-import { resolveProcessToolScopeKey } from "../agent-tools.js";
+import { resolveExternalCliAuthOverlayScopeFromSelection } from "../auth-profiles/external-cli-auth-selection.js";
 import {
   type AuthProfileFailureReason,
   type AuthProfileStore,
@@ -56,13 +49,16 @@ import {
   markAuthProfileFailure,
   markAuthProfileSuccess,
   resolveAuthProfileEligibility,
-} from "../auth-profiles.js";
-import { resolveExternalCliAuthOverlayScopeFromSelection } from "../auth-profiles/external-cli-auth-selection.js";
-import { listActiveProcessSessionReferences } from "../bash-process-references.js";
+} from "../auth/auth-profiles.js";
 import {
-  resolveSessionKeyForRequest,
-  resolveStoredSessionKeyForSessionId,
-} from "../command/session.js";
+  applyAuthHeaderOverride,
+  applyLocalNoAuthHeaderOverride,
+  ensureAuthProfileStore,
+  ensureAuthProfileStoreWithoutExternalProfiles,
+  resolveAuthProfileOrder,
+  shouldPreferExplicitConfigApiKeyAuth,
+} from "../auth/model-auth.js";
+import { resolveProviderIdForAuth } from "../auth/provider-auth-aliases.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../defaults.js";
 import {
   classifyAssistantFailoverReason,
@@ -81,7 +77,7 @@ import {
   parseImageDimensionError,
   parseImageSizeError,
   pickFallbackThinkingLevel,
-} from "../embedded-agent-helpers.js";
+} from "../embedded/embedded-agent-helpers.js";
 import { isStrictAgenticExecutionContractActive } from "../execution-contract.js";
 import {
   coerceToFailoverError,
@@ -91,32 +87,16 @@ import {
 } from "../failover-error.js";
 import { ensureSelectedAgentHarnessPlugin } from "../harness/runtime-plugin.js";
 import { selectAgentHarness } from "../harness/selection.js";
-import { LiveSessionModelSwitchError } from "../live-model-switch-error.js";
-import { shouldSwitchToLiveModel, clearLiveModelSwitchPending } from "../live-model-switch.js";
 import {
-  applyAuthHeaderOverride,
-  applyLocalNoAuthHeaderOverride,
-  ensureAuthProfileStore,
-  ensureAuthProfileStoreWithoutExternalProfiles,
-  type ResolvedProviderAuth,
-  resolveAuthProfileOrder,
-  shouldPreferExplicitConfigApiKeyAuth,
-} from "../model-auth.js";
+  retireSessionMcpRuntime,
+  retireSessionMcpRuntimeForSessionKey,
+} from "../mcp/agent-bundle-mcp-tools.js";
+import { LiveSessionModelSwitchError } from "../models/live-model-switch-error.js";
 import {
-  buildModelAliasIndex,
-  resolveDefaultModelForAgent,
-  resolveModelRefFromString,
-} from "../model-selection.js";
-import { resolveThinkingDefault } from "../model-thinking-default.js";
-import { ensureOpenClawModelsJson } from "../models-config.js";
-import {
-  OPENAI_PROVIDER_ID,
-  listOpenAIAuthProfileProvidersForAgentRuntime,
-  resolveContextConfigProviderForRuntime,
-  resolveSelectedOpenAIRuntimeProvider,
-} from "../openai-routing.js";
-import { resolveProviderIdForAuth } from "../provider-auth-aliases.js";
-import { hasOnlyAssistantReasoningContent } from "../replay-turn-classification.js";
+  shouldSwitchToLiveModel,
+  clearLiveModelSwitchPending,
+} from "../models/live-model-switch.js";
+import { ensureOpenClawModelsJson } from "../models/models-config.js";
 import { runAgentCleanupStep } from "../run-cleanup-timeout.js";
 import { buildAgentRuntimeAuthPlan } from "../runtime-plan/auth.js";
 import { buildAgentRuntimePlan } from "../runtime-plan/build.js";
@@ -126,10 +106,20 @@ import {
   resolveSessionSuspensionTarget,
   suspendSession,
   type SessionSuspensionParams,
-} from "../session-suspension.js";
-import { resolveToolLoopDetectionConfig } from "../tool-loop-detection-config.js";
+} from "../sessions/session-suspension.js";
+import type { ToolOutcomeObservation } from "../tools/agent-tools.before-tool-call.js";
+import { resolveProcessToolScopeKey } from "../tools/agent-tools.js";
+import { listActiveProcessSessionReferences } from "../tools/bash-process-references.js";
+import { resolveToolLoopDetectionConfig } from "../tools/tool-loop-detection-config.js";
+import {
+  OPENAI_PROVIDER_ID,
+  listOpenAIAuthProfileProvidersForAgentRuntime,
+  resolveContextConfigProviderForRuntime,
+  resolveSelectedOpenAIRuntimeProvider,
+} from "../transport/openai-routing.js";
+import { hasOnlyAssistantReasoningContent } from "../transport/replay-turn-classification.js";
 import { derivePromptTokens, normalizeUsage, type UsageLike } from "../usage.js";
-import { redactRunIdentifier, resolveRunWorkspaceDir } from "../workspace-run.js";
+import { redactRunIdentifier, resolveRunWorkspaceDir } from "../workspace/workspace-run.js";
 import { runPostCompactionSideEffects } from "./compaction-hooks.js";
 import { buildEmbeddedCompactionRuntimeContext } from "./compaction-runtime-context.js";
 import {
@@ -215,6 +205,41 @@ import type { RunEmbeddedAgentParams } from "./run/params.js";
 import { buildEmbeddedRunPayloads } from "./run/payloads.js";
 import { handleRetryLimitExhaustion } from "./run/retry-limit.js";
 import {
+  hasCompletedModelProgressForIdleBreaker,
+  normalizeEmbeddedRunAttemptResult,
+  buildTraceToolSummary,
+} from "./run/run.attempt-result.js";
+import {
+  type ApiKeyInfo,
+  createEmptyAuthProfileStore,
+  createScopedAuthProfileStore,
+  resolveAttemptDispatchApiKey,
+  resolveAuthProfileStateProvider,
+} from "./run/run.auth-profile-scope.js";
+import {
+  buildBeforeAgentFinalizeRetryPrompt,
+  COMPACTION_CONTINUATION_RETRY_INSTRUCTION,
+  MAX_BEFORE_AGENT_FINALIZE_REVISIONS,
+  MID_TURN_PRECHECK_CONTINUATION_PROMPT,
+} from "./run/run.continuation-prompts.js";
+import { buildHandledReplyPayloads, toLintErrorObject } from "./run/run.hook-outcomes.js";
+import {
+  EMBEDDED_RUN_LANE_HEARTBEAT_MS,
+  EMBEDDED_RUN_LANE_TIMEOUT_GRACE_MS,
+  resolveEmbeddedRunLaneTimeoutMs,
+  resolveEmbeddedRunSessionQueuePriority,
+  withEmbeddedRunLaneTimeout,
+} from "./run/run.lane-queue.js";
+import {
+  resolveInitialEmbeddedRunModel,
+  resolveInitialThinkLevel,
+} from "./run/run.model-selection.js";
+import {
+  isNoRealConversationCompactionNoop,
+  resetNoRealConversationTokenSnapshot,
+} from "./run/run.no-real-conversation.js";
+import { backfillSessionKey } from "./run/run.session-key.js";
+import {
   buildBeforeModelResolveAttachments,
   resolveEffectiveRuntimeModel,
   resolveHookModelSelection,
@@ -225,366 +250,10 @@ import {
   sessionLikelyHasOversizedToolResults,
   truncateOversizedToolResultsInSession,
 } from "./tool-result-truncation.js";
-import type {
-  EmbeddedAgentMeta,
-  EmbeddedAgentRunResult,
-  TraceAttempt,
-  ToolSummaryTrace,
-} from "./types.js";
+import type { EmbeddedAgentMeta, EmbeddedAgentRunResult, TraceAttempt } from "./types.js";
 import { createUsageAccumulator, mergeUsageIntoAccumulator } from "./usage-accumulator.js";
 
-type ApiKeyInfo = ResolvedProviderAuth;
-
 const MAX_SAME_MODEL_IDLE_TIMEOUT_RETRIES = 1;
-const EMBEDDED_RUN_LANE_TIMEOUT_GRACE_MS = 30_000;
-const EMBEDDED_RUN_LANE_HEARTBEAT_MS = EMBEDDED_RUN_LANE_TIMEOUT_GRACE_MS / 2;
-const MID_TURN_PRECHECK_CONTINUATION_PROMPT =
-  "Continue from the current transcript after the latest tool result. Do not repeat the original user request, and do not rerun completed tools unless the transcript shows they are still needed.";
-const COMPACTION_CONTINUATION_RETRY_INSTRUCTION =
-  "The previous attempt compacted the conversation context before producing a final user-visible answer. Continue from the compacted transcript and produce the final answer now. Do not restart from scratch, do not repeat completed work, and do not rerun tools unless the transcript clearly lacks required evidence.";
-const NO_REAL_CONVERSATION_MESSAGES_REASON = "no real conversation messages";
-const BEFORE_AGENT_FINALIZE_RETRY_PROMPT_PREFIX =
-  "Before accepting the previous final answer, apply this revision request and produce the revised final answer. Do not repeat completed work or rerun tools unless the request explicitly requires it.";
-const MAX_BEFORE_AGENT_FINALIZE_REVISIONS = 3;
-type EmbeddedRunAttemptForRunner = Awaited<ReturnType<typeof runEmbeddedAttemptWithBackend>>;
-
-function isNoRealConversationCompactionNoop(params: {
-  ok?: boolean;
-  compacted?: boolean;
-  reason?: string;
-}): boolean {
-  return (
-    params.ok === true &&
-    params.compacted === false &&
-    params.reason === NO_REAL_CONVERSATION_MESSAGES_REASON
-  );
-}
-
-function resolveInitialThinkLevel(params: {
-  requested?: ThinkLevel;
-  config?: RunEmbeddedAgentParams["config"];
-  provider: string;
-  modelId: string;
-  model: { reasoning?: boolean };
-}): ThinkLevel {
-  if (params.requested) {
-    return params.requested;
-  }
-  return resolveThinkingDefault({
-    cfg: params.config ?? {},
-    provider: params.provider,
-    model: params.modelId,
-    catalog: [
-      {
-        provider: params.provider,
-        id: params.modelId,
-        name: params.modelId,
-        reasoning: params.model.reasoning,
-      },
-    ],
-  });
-}
-
-async function resetNoRealConversationTokenSnapshot(params: {
-  config?: RunEmbeddedAgentParams["config"];
-  sessionKey?: string;
-  agentId?: string;
-}): Promise<void> {
-  if (!params.sessionKey) {
-    return;
-  }
-  const storePath = resolveStorePath(params.config?.session?.store, { agentId: params.agentId });
-  try {
-    await updateSessionEntry(
-      {
-        storePath,
-        sessionKey: params.sessionKey,
-      },
-      async () => ({
-        totalTokens: 0,
-        totalTokensFresh: true,
-        inputTokens: undefined,
-        outputTokens: undefined,
-        cacheRead: undefined,
-        cacheWrite: undefined,
-        contextBudgetStatus: undefined,
-        updatedAt: Date.now(),
-      }),
-      {
-        skipMaintenance: true,
-        takeCacheOwnership: true,
-      },
-    );
-  } catch (err) {
-    log.warn(
-      `[context-overflow-precheck] failed to reset stale context snapshot for ` +
-        `${params.sessionKey}: ${String(err)}`,
-    );
-  }
-}
-
-function resolveAttemptDispatchApiKey(params: {
-  apiKeyInfo: ApiKeyInfo | null;
-  runtimeAuthState: RuntimeAuthState | null;
-}): string | undefined {
-  if (params.runtimeAuthState) {
-    return undefined;
-  }
-  return params.apiKeyInfo?.apiKey;
-}
-
-function buildBeforeAgentFinalizeRetryPrompt(reason: string): string {
-  return `${BEFORE_AGENT_FINALIZE_RETRY_PROMPT_PREFIX}\n\n${reason}`;
-}
-
-function resolveEmbeddedRunLaneTimeoutMs(timeoutMs: number): number | undefined {
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    return undefined;
-  }
-  return Math.floor(timeoutMs) + EMBEDDED_RUN_LANE_TIMEOUT_GRACE_MS;
-}
-
-function withEmbeddedRunLaneTimeout(
-  opts: CommandQueueEnqueueOptions | undefined,
-  laneTaskTimeoutMs: number | undefined,
-): CommandQueueEnqueueOptions | undefined {
-  if (laneTaskTimeoutMs === undefined || opts?.taskTimeoutMs !== undefined) {
-    return opts;
-  }
-  return { ...opts, taskTimeoutMs: laneTaskTimeoutMs };
-}
-
-function resolveEmbeddedRunSessionQueuePriority(
-  trigger: RunEmbeddedAgentParams["trigger"],
-): CommandQueueEnqueueOptions["priority"] {
-  switch (trigger) {
-    case "user":
-    case "manual":
-      return "foreground";
-    case "cron":
-    case "heartbeat":
-    case "memory":
-    case "overflow":
-      return "background";
-    default:
-      return "normal";
-  }
-}
-
-function normalizeEmbeddedRunAttemptResult(
-  attempt: EmbeddedRunAttemptForRunner,
-): EmbeddedRunAttemptForRunner {
-  const raw = attempt as EmbeddedRunAttemptForRunner & {
-    assistantTexts?: EmbeddedRunAttemptForRunner["assistantTexts"] | null;
-    toolMetas?: EmbeddedRunAttemptForRunner["toolMetas"] | null;
-    acceptedSessionSpawns?: EmbeddedRunAttemptForRunner["acceptedSessionSpawns"] | null;
-    messagesSnapshot?: EmbeddedRunAttemptForRunner["messagesSnapshot"] | null;
-    messagingToolSentTexts?: EmbeddedRunAttemptForRunner["messagingToolSentTexts"] | null;
-    messagingToolSentMediaUrls?: EmbeddedRunAttemptForRunner["messagingToolSentMediaUrls"] | null;
-    messagingToolSentTargets?: EmbeddedRunAttemptForRunner["messagingToolSentTargets"] | null;
-    messagingToolSourceReplyPayloads?:
-      | EmbeddedRunAttemptForRunner["messagingToolSourceReplyPayloads"]
-      | null;
-    didDeliverSourceReplyViaMessageTool?: boolean | null;
-    itemLifecycle?: EmbeddedRunAttemptForRunner["itemLifecycle"] | null;
-  };
-  return {
-    ...attempt,
-    assistantTexts: raw.assistantTexts ?? [],
-    toolMetas: raw.toolMetas ?? [],
-    acceptedSessionSpawns: raw.acceptedSessionSpawns ?? [],
-    messagesSnapshot: raw.messagesSnapshot ?? [],
-    messagingToolSentTexts: raw.messagingToolSentTexts ?? [],
-    messagingToolSentMediaUrls: raw.messagingToolSentMediaUrls ?? [],
-    messagingToolSentTargets: raw.messagingToolSentTargets ?? [],
-    messagingToolSourceReplyPayloads: raw.messagingToolSourceReplyPayloads ?? [],
-    didDeliverSourceReplyViaMessageTool: raw.didDeliverSourceReplyViaMessageTool === true,
-    itemLifecycle: raw.itemLifecycle ?? {
-      startedCount: 0,
-      completedCount: 0,
-      activeCount: 0,
-    },
-    replayMetadata: resolveAttemptReplayMetadata(raw),
-  };
-}
-
-function hasCompletedModelProgressForIdleBreaker(attempt: EmbeddedRunAttemptForRunner): boolean {
-  return (
-    attempt.assistantTexts.some((text) => text.trim().length > 0) ||
-    attempt.toolMetas.length > 0 ||
-    (attempt.clientToolCalls?.length ?? 0) > 0 ||
-    hasOutboundDeliveryEvidence(attempt) ||
-    attempt.itemLifecycle.completedCount > 0
-  );
-}
-
-function createEmptyAuthProfileStore(): AuthProfileStore {
-  return {
-    version: 1,
-    profiles: {},
-  };
-}
-
-function createScopedAuthProfileStore(
-  store: AuthProfileStore,
-  profileIds: string | undefined | string[],
-): AuthProfileStore {
-  const profiles = store.profiles ?? {};
-  const normalizedProfileIds = (Array.isArray(profileIds) ? profileIds : [profileIds])
-    .map((profileId) => profileId?.trim())
-    .filter((profileId): profileId is string => Boolean(profileId));
-  const scopedProfiles = Object.fromEntries(
-    normalizedProfileIds.flatMap((profileId) => {
-      const credential = profiles[profileId];
-      return credential ? [[profileId, credential] as const] : [];
-    }),
-  );
-  const scopedRuntimeExternalProfileIds = (store.runtimeExternalProfileIds ?? []).filter(
-    (profileId) => scopedProfiles[profileId],
-  );
-  const scopedRuntimePersistedProfileIds = (store.runtimePersistedProfileIds ?? []).filter(
-    (profileId) => scopedProfiles[profileId],
-  );
-  return Object.keys(scopedProfiles).length > 0
-    ? {
-        version: store.version,
-        profiles: scopedProfiles,
-        ...(scopedRuntimePersistedProfileIds.length > 0
-          ? { runtimePersistedProfileIds: scopedRuntimePersistedProfileIds }
-          : {}),
-        ...(scopedRuntimeExternalProfileIds.length > 0 ||
-        store.runtimeExternalProfileIdsAuthoritative === true
-          ? { runtimeExternalProfileIds: scopedRuntimeExternalProfileIds }
-          : {}),
-        ...(store.runtimeExternalProfileIdsAuthoritative === true
-          ? { runtimeExternalProfileIdsAuthoritative: true }
-          : {}),
-      }
-    : createEmptyAuthProfileStore();
-}
-
-function buildTraceToolSummary(params: {
-  toolMetas?: Array<{ toolName: string; meta?: string; asyncStarted?: boolean }>;
-  hadFailure: boolean;
-}): ToolSummaryTrace | undefined {
-  if (!params.toolMetas?.length) {
-    return undefined;
-  }
-  const tools: string[] = [];
-  const seen = new Set<string>();
-  for (const entry of params.toolMetas) {
-    const toolName = normalizeOptionalString(entry.toolName);
-    if (!toolName || seen.has(toolName)) {
-      continue;
-    }
-    seen.add(toolName);
-    tools.push(toolName);
-  }
-  return {
-    calls: params.toolMetas?.length ?? 0,
-    tools,
-    failures: params.hadFailure ? 1 : 0,
-  };
-}
-
-/**
- * Best-effort backfill of sessionKey from sessionId when not explicitly provided.
- * The return value is normalized: whitespace-only inputs collapse to undefined, and
- * successful resolution returns a trimmed session key. This is a read-only lookup
- * with no side effects.
- * See: https://github.com/openclaw/openclaw/issues/60552
- */
-function backfillSessionKey(params: {
-  config: RunEmbeddedAgentParams["config"];
-  sessionId: string;
-  sessionKey?: string;
-  agentId?: string;
-}): string | undefined {
-  const trimmed = normalizeOptionalString(params.sessionKey);
-  if (trimmed) {
-    return trimmed;
-  }
-  if (!params.config || !params.sessionId) {
-    return undefined;
-  }
-  try {
-    const resolved = normalizeOptionalString(params.agentId)
-      ? resolveStoredSessionKeyForSessionId({
-          cfg: params.config,
-          sessionId: params.sessionId,
-          agentId: params.agentId,
-        })
-      : resolveSessionKeyForRequest({
-          cfg: params.config,
-          sessionId: params.sessionId,
-          clone: false,
-        });
-    return normalizeOptionalString(resolved.sessionKey);
-  } catch (err) {
-    log.warn(
-      `[backfillSessionKey] Failed to resolve sessionKey for sessionId=${redactRunIdentifier(sanitizeForLog(params.sessionId))}: ${formatErrorMessage(err)}`,
-    );
-    return undefined;
-  }
-}
-
-function buildHandledReplyPayloads(reply?: ReplyPayload) {
-  const normalized = reply ?? { text: SILENT_REPLY_TOKEN };
-  return [
-    {
-      text: normalized.text,
-      mediaUrl: normalized.mediaUrl,
-      mediaUrls: normalized.mediaUrls,
-      replyToId: normalized.replyToId,
-      audioAsVoice: normalized.audioAsVoice,
-      isError: normalized.isError,
-      isReasoning: normalized.isReasoning,
-    },
-  ];
-}
-
-function resolveInitialEmbeddedRunModel(params: {
-  config: RunEmbeddedAgentParams["config"];
-  agentId?: string;
-  provider?: string;
-  model?: string;
-}): { provider: string; modelId: string } {
-  const cfg = params.config ?? {};
-  const configuredDefault = resolveDefaultModelForAgent({
-    cfg,
-    agentId: params.agentId,
-  });
-  const explicitProvider = normalizeOptionalString(params.provider);
-  const explicitModel = normalizeOptionalString(params.model);
-  const defaultProvider = configuredDefault.provider || DEFAULT_PROVIDER;
-
-  if (explicitProvider && explicitModel) {
-    return { provider: explicitProvider, modelId: explicitModel };
-  }
-
-  if (explicitModel) {
-    const provider = explicitProvider ?? defaultProvider;
-    const aliasIndex = buildModelAliasIndex({
-      cfg,
-      defaultProvider: provider,
-    });
-    const resolved = resolveModelRefFromString({
-      cfg,
-      raw: explicitModel,
-      defaultProvider: provider,
-      aliasIndex,
-    });
-    return {
-      provider: explicitProvider ?? resolved?.ref.provider ?? provider,
-      modelId: resolved?.ref.model ?? explicitModel,
-    };
-  }
-
-  return {
-    provider: explicitProvider ?? defaultProvider,
-    modelId: configuredDefault.model || DEFAULT_MODEL,
-  };
-}
 
 export function runEmbeddedAgent(
   paramsInput: RunEmbeddedAgentParams,
@@ -4034,31 +3703,4 @@ async function runEmbeddedAgentInternal(
       }
     });
   });
-}
-
-function resolveAuthProfileStateProvider(
-  store: AuthProfileStore,
-  profileId: string,
-  fallbackProvider: string,
-): string {
-  const profileProvider = store.profiles?.[profileId]?.provider?.trim();
-  if (profileProvider) {
-    return profileProvider;
-  }
-  const idProvider = profileId.split(":", 1)[0]?.trim();
-  return idProvider || fallbackProvider;
-}
-
-function toLintErrorObject(value: unknown, fallbackMessage: string): Error {
-  if (value instanceof Error) {
-    return value;
-  }
-  if (typeof value === "string") {
-    return new Error(value);
-  }
-  const error = new Error(fallbackMessage, { cause: value });
-  if ((typeof value === "object" && value !== null) || typeof value === "function") {
-    Object.assign(error, value);
-  }
-  return error;
 }

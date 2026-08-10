@@ -7,17 +7,17 @@ to loopback and is not published through Tailscale.
 After deploying the commit, run on Aurora:
 
 ```bash
-/h/405/akim/services/openclaw-adminbot/current/deploy/aurora/setup-qwen35-vllm.sh \
-  --root /h/405/akim/services/openclaw-adminbot/current \
+/h/405/<cs-user>/services/openclaw-adminbot/current/deploy/aurora/setup-qwen35-vllm.sh \
+  --root /h/405/<cs-user>/services/openclaw-adminbot/current \
   --gpu GPU-51e9e550-a798-120d-2926-5c76e25b9e56 \
-  --model-home /mfs1/u/akim/jinesis-vllm-qwen35 \
+  --model-home "$JINESIS_VLLM_MODEL_HOME" \
   --max-model-len 65536 \
   --gpu-memory-utilization 0.90
 ```
 
 The installer:
 
-- creates `/mfs1/u/akim/jinesis-vllm-qwen35/venv`;
+- creates `$JINESIS_VLLM_MODEL_HOME/venv`;
 - installs vLLM and the Hugging Face CLI without sudo;
 - checks for at least 80 GiB free before the first download;
 - downloads `nvidia/Qwen3.5-122B-A10B-NVFP4` once into the Hugging Face cache;

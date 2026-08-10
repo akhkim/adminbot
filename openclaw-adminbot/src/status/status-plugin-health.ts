@@ -1,5 +1,5 @@
 // Builds compact plugin health summaries for chat status surfaces.
-import type { PluginDiagnosticCode } from "../plugins/manifest-types.js";
+import type { PluginDiagnosticCode } from "../plugins/manifest/manifest-types.js";
 
 type StatusPluginDependencyStatus = {
   hasDependencies?: boolean;

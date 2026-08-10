@@ -17,7 +17,7 @@ import type { ContextEngine } from "../context-engine/types.js";
 import { isTruthyEnvValue } from "../infra/env.js";
 import { extractFirstTextBlock } from "../shared/chat-message-content.js";
 import type { CallGatewayOptions } from "./call.js";
-import type { GatewayClient } from "./client.js";
+import type { GatewayClient } from "./client/client.js";
 import {
   connectTestGatewayClient,
   ensurePairedTestGatewayClientIdentity,
@@ -890,7 +890,7 @@ async function verifyCodexSubagentProbe(params: {
   });
   try {
     const { testing: subagentSpawnTesting, spawnSubagentDirect } =
-      await import("../agents/subagent-spawn.js");
+      await import("../agents/subagents/subagent-spawn.js");
     const noOpContextEngine: ContextEngine = {
       info: { id: "codex-harness-subagent-smoke", name: "Codex harness subagent smoke" },
       ingest: async () => ({ ingested: false }),
@@ -964,7 +964,7 @@ async function verifyCodexSubagentProbe(params: {
       events,
     });
   } finally {
-    const { testing: subagentSpawnTesting } = await import("../agents/subagent-spawn.js");
+    const { testing: subagentSpawnTesting } = await import("../agents/subagents/subagent-spawn.js");
     subagentSpawnTesting.setDepsForTest();
     unsubscribe();
   }
@@ -1033,7 +1033,7 @@ describeLive("gateway live (Codex harness)", () => {
     async () => {
       const modelKey = process.env.OPENCLAW_LIVE_CODEX_HARNESS_MODEL ?? DEFAULT_CODEX_MODEL;
       const { clearRuntimeConfigSnapshot } = await import("../config/config.js");
-      const { startGatewayServer } = await import("./server.js");
+      const { startGatewayServer } = await import("./server/server.js");
 
       const previousEnv = snapshotEnv();
       const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-live-codex-harness-"));

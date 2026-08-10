@@ -15,9 +15,9 @@ import {
   GATEWAY_CLIENT_NAMES,
 } from "../../packages/gateway-protocol/src/client-info.js";
 import { getRuntimeConfig } from "../config/config.js";
-import { resolveGatewayClientBootstrap } from "../gateway/client-bootstrap.js";
-import { startGatewayClientWhenEventLoopReady } from "../gateway/client-start-readiness.js";
-import { GatewayClient } from "../gateway/client.js";
+import { resolveGatewayClientBootstrap } from "../gateway/client/client-bootstrap.js";
+import { startGatewayClientWhenEventLoopReady } from "../gateway/client/client-start-readiness.js";
+import { GatewayClient } from "../gateway/client/client.js";
 import { isMainModule } from "../infra/is-main.js";
 import { routeLogsToStderr } from "../logging/console.js";
 import {

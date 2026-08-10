@@ -7,14 +7,14 @@
 import fs from "node:fs/promises";
 import JSON5 from "json5";
 import { z } from "zod";
-import { formatCliCommand } from "../cli/command-format.js";
-import type { OptionalBootstrapFileName } from "../config/types.agent-defaults.js";
-import type { OpenClawConfig } from "../config/types.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
+import type { OptionalBootstrapFileName } from "../config/types/agent-defaults.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { defaultRuntime } from "../runtime.js";
 import { createLazyImportLoader } from "../shared/lazy-promise.js";
+import { safeParseWithSchema } from "../shared/zod-parse.js";
 import { shortenHomePath } from "../utils.js";
-import { safeParseWithSchema } from "../utils/zod-parse.js";
 
 const JsonRecordSchema = z.record(z.string(), z.unknown());
 
@@ -45,12 +45,12 @@ type SetupCommandDeps = {
   }) => Promise<unknown>;
 };
 
-type AgentWorkspaceModule = typeof import("../agents/workspace.js");
+type AgentWorkspaceModule = typeof import("../agents/workspace/workspace.js");
 type ConfigIOModule = typeof import("../config/config.js");
 type ConfigLoggingModule = typeof import("../config/logging.js");
 
 const agentWorkspaceModuleLoader = createLazyImportLoader<AgentWorkspaceModule>(
-  () => import("../agents/workspace.js"),
+  () => import("../agents/workspace/workspace.js"),
 );
 const configIOModuleLoader = createLazyImportLoader<ConfigIOModule>(
   () => import("../config/config.js"),

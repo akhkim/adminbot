@@ -9,7 +9,7 @@ import {
   isDangerousHostEnvOverrideVarName,
   isDangerousHostEnvVarName,
   normalizeEnvVarKey,
-} from "./host-env-security.js";
+} from "./system/host-env-security.js";
 
 const logger = createSubsystemLogger("infra:dotenv");
 

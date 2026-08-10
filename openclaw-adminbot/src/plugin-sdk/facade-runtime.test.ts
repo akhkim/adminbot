@@ -3,14 +3,17 @@ import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../config/config.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { setBundledPluginsDirOverrideForTest } from "../plugins/bundled-dir.js";
-import { createPluginActivationSource, normalizePluginsConfig } from "../plugins/config-state.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import {
+  createPluginActivationSource,
+  normalizePluginsConfig,
+} from "../plugins/config/config-state.js";
 import {
   clearCurrentPluginMetadataSnapshot,
   setCurrentPluginMetadataSnapshot,
 } from "../plugins/current-plugin-metadata-snapshot.js";
-import { resolveInstalledPluginIndexPolicyHash } from "../plugins/installed-plugin-index-policy.js";
+import { setBundledPluginsDirOverrideForTest } from "../plugins/install/bundled-dir.js";
+import { resolveInstalledPluginIndexPolicyHash } from "../plugins/install/installed-plugin-index-policy.js";
 import type { PluginMetadataSnapshot } from "../plugins/plugin-metadata-snapshot.types.js";
 import {
   evaluateBundledPluginPublicSurfaceAccess,
@@ -103,7 +106,7 @@ afterEach(() => {
   clearCurrentPluginMetadataSnapshot();
   resetFacadeRuntimeStateForTest();
   setBundledPluginsDirOverrideForTest(undefined);
-  vi.doUnmock("../plugins/manifest-registry.js");
+  vi.doUnmock("../plugins/manifest/manifest-registry.js");
   if (originalBundledPluginsDir === undefined) {
     delete process.env.OPENCLAW_BUNDLED_PLUGINS_DIR;
   } else {

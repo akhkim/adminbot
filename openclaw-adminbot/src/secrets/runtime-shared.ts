@@ -1,7 +1,7 @@
 /** Shared secrets runtime resolver context, assignments, and warning helpers. */
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { coerceSecretRef, type SecretRef } from "../config/types.secrets.js";
-import type { PluginManifestRegistry } from "../plugins/manifest-registry.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { coerceSecretRef, type SecretRef } from "../config/types/secrets.js";
+import type { PluginManifestRegistry } from "../plugins/manifest/manifest-registry.js";
 import { secretRefKey } from "./ref-contract.js";
 import type { SecretRefResolveCache } from "./resolve-types.js";
 import { assertExpectedResolvedSecretValue } from "./secret-value.js";

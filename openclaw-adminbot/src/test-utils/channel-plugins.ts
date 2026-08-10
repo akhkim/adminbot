@@ -6,7 +6,7 @@ import type {
   ChannelOutboundAdapter,
   ChannelPlugin,
 } from "../channels/plugins/types.public.js";
-import type { PluginRegistry } from "../plugins/registry.js";
+import type { PluginRegistry } from "../plugins/manifest/registry.js";
 
 /** Registry entry shape used by channel tests without loading real plugins. */
 export type TestChannelRegistration = {
@@ -30,14 +30,7 @@ export const createTestRegistry = (channels: TestChannelRegistration[] = []): Pl
   providers: [],
   modelCatalogProviders: [],
   embeddingProviders: [],
-  speechProviders: [],
-  realtimeTranscriptionProviders: [],
-  realtimeVoiceProviders: [],
-  mediaUnderstandingProviders: [],
   transcriptSourceProviders: [],
-  imageGenerationProviders: [],
-  videoGenerationProviders: [],
-  musicGenerationProviders: [],
   webFetchProviders: [],
   webSearchProviders: [],
   migrationProviders: [],

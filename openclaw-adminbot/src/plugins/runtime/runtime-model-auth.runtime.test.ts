@@ -7,12 +7,12 @@ const hoisted = vi.hoisted(() => ({
   prepareProviderRuntimeAuth: vi.fn(),
 }));
 
-vi.mock("../../agents/model-auth.js", () => ({
+vi.mock("../../agents/auth/model-auth.js", () => ({
   getApiKeyForModel: hoisted.getApiKeyForModel,
   resolveApiKeyForProvider: hoisted.resolveApiKeyForProvider,
 }));
 
-vi.mock("../provider-runtime.runtime.js", () => ({
+vi.mock("../providers/provider-runtime.runtime.js", () => ({
   prepareProviderRuntimeAuth: hoisted.prepareProviderRuntimeAuth,
 }));
 

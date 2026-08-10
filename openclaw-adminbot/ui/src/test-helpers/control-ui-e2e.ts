@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import type { Page } from "playwright";
 import type { ViteDevServer } from "vite";
 import { PROTOCOL_VERSION } from "../../../packages/gateway-protocol/src/version.js";
-import { CONTROL_UI_BOOTSTRAP_CONFIG_PATH } from "../../../src/gateway/control-ui-contract.js";
+import { CONTROL_UI_BOOTSTRAP_CONFIG_PATH } from "../../../src/gateway/control/control-ui-contract.js";
 import {
   controlUiBrowserOnlySharedModuleAliases,
   resolveSourcePackageAliasesForVite,

@@ -5,6 +5,12 @@ import { describe, expect, it } from "vitest";
 import { withTempDir } from "../test-helpers/temp-dir.js";
 import { withEnvAsync } from "../test-utils/env.js";
 import {
+  CONTROL_PLANE_UPDATE_RESTART_HEALTH_PENDING_REASON,
+  buildControlPlaneUpdateRestartHealthPendingResult,
+  isPendingControlPlaneUpdateRestartSentinel,
+} from "./install/update-control-plane-sentinel.js";
+import { buildUpdateRestartSentinelPayload } from "./install/update-restart-sentinel-payload.js";
+import {
   buildRestartSuccessContinuation,
   consumeRestartSentinel,
   finalizeUpdateRestartSentinelRunningVersion,
@@ -17,12 +23,6 @@ import {
   trimLogTail,
   writeRestartSentinel,
 } from "./restart-sentinel.js";
-import {
-  CONTROL_PLANE_UPDATE_RESTART_HEALTH_PENDING_REASON,
-  buildControlPlaneUpdateRestartHealthPendingResult,
-  isPendingControlPlaneUpdateRestartSentinel,
-} from "./update-control-plane-sentinel.js";
-import { buildUpdateRestartSentinelPayload } from "./update-restart-sentinel-payload.js";
 
 async function withRestartSentinelStateDir(run: () => Promise<void>): Promise<void> {
   await withTempDir({ prefix: "openclaw-sentinel-" }, async (tempDir) => {

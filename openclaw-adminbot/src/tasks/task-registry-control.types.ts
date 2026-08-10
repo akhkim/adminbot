@@ -1,5 +1,5 @@
 // Defines task control runtime contracts exposed to command surfaces.
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 /** Admin cancellation hook for ACP sessions owned by task records. */
 export type CancelAcpSessionAdmin = (params: {

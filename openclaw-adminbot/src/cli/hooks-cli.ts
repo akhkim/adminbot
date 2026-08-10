@@ -9,7 +9,7 @@ import { getTerminalTableWidth, renderTable } from "../../packages/terminal-core
 import { theme } from "../../packages/terminal-core/src/theme.js";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { getRuntimeConfig, readConfigFileSnapshot, replaceConfigFile } from "../config/config.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import {
   buildWorkspaceHookStatus,
   type HookStatusEntry,
@@ -19,13 +19,13 @@ import { resolveHookEntries } from "../hooks/policy.js";
 import type { HookEntry } from "../hooks/types.js";
 import { loadWorkspaceHookEntries } from "../hooks/workspace.js";
 import { formatErrorMessage } from "../infra/errors.js";
-import { buildPluginDiagnosticsReport } from "../plugins/status.js";
+import { buildPluginDiagnosticsReport } from "../plugins/config/status.js";
 import { defaultRuntime } from "../runtime.js";
 import { shortenHomePath } from "../utils.js";
-import { formatCliCommand } from "./command-format.js";
 import { runNativeHookRelayCli, type NativeHookRelayCliOptions } from "./native-hook-relay-cli.js";
-import { runPluginInstallCommand } from "./plugins-install-command.js";
-import { runPluginUpdateCommand } from "./plugins-update-command.js";
+import { runPluginInstallCommand } from "./plugins/plugins-install-command.js";
+import { runPluginUpdateCommand } from "./plugins/plugins-update-command.js";
+import { formatCliCommand } from "./program/command-format.js";
 
 export type HooksListOptions = {
   json?: boolean;

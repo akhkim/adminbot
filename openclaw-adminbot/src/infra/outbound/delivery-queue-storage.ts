@@ -3,8 +3,8 @@
 import type { ReplyDispatchKind } from "../../auto-reply/reply/reply-dispatcher.types.js";
 import type { ReplyPayload } from "../../auto-reply/types.js";
 import type { RenderedMessageBatchPlanItem } from "../../channels/message/types.js";
-import type { ReplyToMode } from "../../config/types.js";
-import type { PluginHookReplyPayloadSendingContext } from "../../plugins/hook-types.js";
+import type { ReplyToMode } from "../../config/types/types.js";
+import type { PluginHookReplyPayloadSendingContext } from "../../plugins/hooks/hook-types.js";
 import {
   deleteDeliveryQueueEntry,
   loadDeliveryQueueEntries,

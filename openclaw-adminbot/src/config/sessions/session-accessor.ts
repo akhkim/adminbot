@@ -5,14 +5,14 @@ import path from "node:path";
 import {
   acquireSessionWriteLock,
   resolveSessionWriteLockOptions,
-} from "../../agents/session-write-lock.js";
+} from "../../agents/sessions/session-write-lock.js";
 import { formatErrorMessage } from "../../infra/errors.js";
 import { resolveRequiredHomeDir } from "../../infra/home-dir.js";
 import { resolveAgentIdFromSessionKey } from "../../routing/session-key.js";
 import { emitSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
 import type { SessionTranscriptUpdate } from "../../sessions/transcript-events.js";
-import { getRuntimeConfig } from "../io.js";
-import type { OpenClawConfig } from "../types.openclaw.js";
+import { getRuntimeConfig } from "../io/io.js";
+import type { OpenClawConfig } from "../types/openclaw.js";
 import { formatSessionArchiveTimestamp } from "./artifacts.js";
 import { extractGeneratedTranscriptSessionId } from "./generated-transcript-session-id.js";
 import {
@@ -303,11 +303,11 @@ type SessionEntryRetirement = {
 };
 
 let sessionArchiveRuntimePromise: Promise<
-  typeof import("../../gateway/session-archive.runtime.js")
+  typeof import("../../gateway/sessions/session-archive.runtime.js")
 > | null = null;
 
 function loadSessionArchiveRuntime() {
-  sessionArchiveRuntimePromise ??= import("../../gateway/session-archive.runtime.js");
+  sessionArchiveRuntimePromise ??= import("../../gateway/sessions/session-archive.runtime.js");
   return sessionArchiveRuntimePromise;
 }
 

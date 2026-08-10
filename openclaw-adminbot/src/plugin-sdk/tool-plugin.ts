@@ -5,8 +5,8 @@ import { jsonResult, textResult } from "../agents/tools/common.js";
 import type {
   PluginHookBeforeToolCallResult,
   PluginHookToolContext,
-} from "../plugins/hook-types.js";
-import type { PluginManifestActivation } from "../plugins/manifest.js";
+} from "../plugins/hooks/hook-types.js";
+import type { PluginManifestActivation } from "../plugins/manifest/manifest.js";
 import type { JsonSchemaObject } from "../shared/json-schema.types.js";
 import {
   buildJsonPluginConfigSchema,

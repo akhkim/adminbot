@@ -3,7 +3,7 @@
  */
 export * from "../../packages/memory-host-sdk/src/runtime-cli.js";
 export { formatErrorMessage, withManager } from "../cli/cli-utils.js";
-export { resolveCommandSecretRefsViaGateway } from "../cli/command-secret-gateway.js";
+export { resolveCommandSecretRefsViaGateway } from "../cli/program/command-secret-gateway.js";
 export { formatHelpExamples } from "../cli/help-format.js";
 export { withProgress, withProgressTotals } from "../cli/progress.js";
 export { isVerbose, setVerbose } from "../globals.js";

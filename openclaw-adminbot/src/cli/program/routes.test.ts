@@ -17,7 +17,7 @@ const agentsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const runPluginsListCommandMock = vi.hoisted(() => vi.fn(async () => {}));
 const pluginsCliLoadedMock = vi.hoisted(() => vi.fn());
 
-vi.mock("../config-cli.js", () => ({
+vi.mock("../config/config-cli.js", () => ({
   runConfigGet: runConfigGetMock,
   runConfigUnset: runConfigUnsetMock,
 }));
@@ -33,16 +33,16 @@ vi.mock("../daemon-cli/status.js", () => ({
   runDaemonStatus: runDaemonStatusMock,
 }));
 
-vi.mock("../../commands/status-json.js", () => ({
+vi.mock("../../commands/status/status-json.js", () => ({
   statusJsonCommand: statusJsonCommandMock,
 }));
 
-vi.mock("../../commands/tasks-json.js", () => ({
+vi.mock("../../commands/maintenance/tasks-json.js", () => ({
   tasksListJsonCommand: tasksListJsonCommandMock,
   tasksAuditJsonCommand: tasksAuditJsonCommandMock,
 }));
 
-vi.mock("../../commands/tasks.js", () => {
+vi.mock("../../commands/maintenance/tasks.js", () => {
   throw new Error("routed task JSON commands must not import the full tasks command module");
 });
 
@@ -54,15 +54,15 @@ vi.mock("../../commands/channels/status.js", () => ({
   channelsStatusCommand: channelsStatusCommandMock,
 }));
 
-vi.mock("../../commands/agents.commands.list.js", () => ({
+vi.mock("../../commands/agents/agents.commands.list.js", () => ({
   agentsListCommand: agentsListCommandMock,
 }));
 
-vi.mock("../plugins-list-command.js", () => ({
+vi.mock("../plugins/plugins-list-command.js", () => ({
   runPluginsListCommand: runPluginsListCommandMock,
 }));
 
-vi.mock("../plugins-cli.js", () => {
+vi.mock("../plugins/plugins-cli.js", () => {
   pluginsCliLoadedMock();
   return {
     registerPluginsCli: vi.fn(),

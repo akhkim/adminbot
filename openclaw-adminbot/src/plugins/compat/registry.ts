@@ -20,7 +20,7 @@ export const PLUGIN_COMPAT_RECORDS = [
     docsPath: "/plugins/sdk-migration",
     surfaces: ["plugin hooks", "plugins inspect", "status diagnostics"],
     diagnostics: ["plugin compatibility notice"],
-    tests: ["src/plugins/status.test.ts", "src/plugins/contracts/shape.contract.test.ts"],
+    tests: ["src/plugins/config/status.test.ts", "src/plugins/contracts/shape.contract.test.ts"],
     releaseNote:
       "Legacy `before_agent_start` hook compatibility remains wired while plugins migrate to modern hook stages.",
   },
@@ -36,7 +36,7 @@ export const PLUGIN_COMPAT_RECORDS = [
     docsPath: "/plugins/hooks#upcoming-deprecations",
     surfaces: ['api.on("deactivate", ...)', "plugin typed hook registration"],
     diagnostics: ["plugin runtime compatibility warning"],
-    tests: ["src/plugins/loader.test.ts"],
+    tests: ["src/plugins/runtime/loader.test.ts"],
     releaseNote:
       '`api.on("deactivate", ...)` remains wired as a deprecated compatibility alias while plugins migrate to `gateway_stop`.',
   },
@@ -58,7 +58,7 @@ export const PLUGIN_COMPAT_RECORDS = [
       "SubagentLifecycleHookRunner.runSubagentSpawning",
     ],
     diagnostics: ["plugin runtime compatibility warning"],
-    tests: ["src/plugins/loader.test.ts", "src/plugins/compat/registry.test.ts"],
+    tests: ["src/plugins/runtime/loader.test.ts", "src/plugins/compat/registry.test.ts"],
     releaseNote:
       '`api.on("subagent_spawning", ...)` remains wired only for older plugins; core now owns thread-bound subagent routing.',
   },
@@ -71,7 +71,7 @@ export const PLUGIN_COMPAT_RECORDS = [
     docsPath: "/plugins/sdk-migration",
     surfaces: ["plugin shape inspection", "plugins inspect", "status diagnostics"],
     diagnostics: ["plugin compatibility notice"],
-    tests: ["src/plugins/status.test.ts", "src/plugins/contracts/shape.contract.test.ts"],
+    tests: ["src/plugins/config/status.test.ts", "src/plugins/contracts/shape.contract.test.ts"],
   },
   {
     code: "deprecated-memory-embedding-provider-api",
@@ -91,7 +91,7 @@ export const PLUGIN_COMPAT_RECORDS = [
     ],
     diagnostics: ["plugin compatibility notice", "plugin SDK package guardrail"],
     tests: [
-      "src/plugins/status.test.ts",
+      "src/plugins/config/status.test.ts",
       "src/plugins/compat/registry.test.ts",
       "src/plugins/contracts/plugin-sdk-package-contract-guardrails.test.ts",
     ],
@@ -125,8 +125,8 @@ export const PLUGIN_COMPAT_RECORDS = [
     surfaces: ["before_tool_call block result", "before_tool_call approval result"],
     diagnostics: ["hook runner contract probe"],
     tests: [
-      "src/plugins/hooks.security.test.ts",
-      "src/agents/agent-tools.before-tool-call.e2e.test.ts",
+      "src/plugins/hooks/hooks.security.test.ts",
+      "src/agents/tools/agent-tools.before-tool-call.e2e.test.ts",
     ],
   },
   {
@@ -137,7 +137,10 @@ export const PLUGIN_COMPAT_RECORDS = [
     docsPath: "/plugins/hooks",
     surfaces: ["llm_input", "llm_output", "agent_end", "allowConversationAccess"],
     diagnostics: ["conversation access hook contract probe"],
-    tests: ["src/agents/cli-runner.reliability.test.ts", "src/config/schema.help.quality.test.ts"],
+    tests: [
+      "src/agents/cli-runner/cli-runner.reliability.test.ts",
+      "src/config/schema/help.quality.test.ts",
+    ],
   },
   {
     code: "api.capture.runtime-registrars",
@@ -359,7 +362,7 @@ export const PLUGIN_COMPAT_RECORDS = [
     docsPath: "/plugins/architecture",
     surfaces: ["plugins.allow", "bundled provider startup", "plugins status"],
     diagnostics: ["plugin status report"],
-    tests: ["src/plugins/status.test.ts", "src/plugins/config-state.test.ts"],
+    tests: ["src/plugins/config/status.test.ts", "src/plugins/config/config-state.test.ts"],
   },
   {
     code: "bundled-plugin-enablement",
@@ -370,7 +373,7 @@ export const PLUGIN_COMPAT_RECORDS = [
     docsPath: "/plugins/architecture",
     surfaces: ["plugins.entries", "bundled provider startup", "plugins status"],
     diagnostics: ["plugin status report"],
-    tests: ["src/plugins/status.test.ts", "src/plugins/config-state.test.ts"],
+    tests: ["src/plugins/config/status.test.ts", "src/plugins/config/config-state.test.ts"],
   },
   {
     code: "bundled-plugin-vitest-defaults",
@@ -381,7 +384,7 @@ export const PLUGIN_COMPAT_RECORDS = [
     docsPath: "/plugins/architecture",
     surfaces: ["Vitest plugin defaults", "bundled provider tests"],
     diagnostics: ["test-only compatibility path"],
-    tests: ["src/plugins/config-state.test.ts"],
+    tests: ["src/plugins/config/config-state.test.ts"],
   },
   {
     code: "provider-auth-env-vars",
@@ -395,7 +398,10 @@ export const PLUGIN_COMPAT_RECORDS = [
     docsPath: "/plugins/manifest",
     surfaces: ["openclaw.plugin.json providerAuthEnvVars", "provider setup"],
     diagnostics: ["manifest compatibility diagnostic"],
-    tests: ["src/plugins/setup-registry.test.ts", "src/plugins/provider-auth-choices.test.ts"],
+    tests: [
+      "src/plugins/setup-registry.test.ts",
+      "src/plugins/providers/provider-auth-choices.test.ts",
+    ],
   },
   {
     code: "channel-env-vars",
@@ -556,7 +562,7 @@ export const PLUGIN_COMPAT_RECORDS = [
     surfaces: ["manifest/catalog execution policy", "runtime selection"],
     diagnostics: ["agent runtime compatibility warning"],
     tests: [
-      "src/plugins/provider-runtime.test.ts",
+      "src/plugins/providers/provider-runtime.test.ts",
       "packages/web-content-core/src/provider-runtime-shared.test.ts",
     ],
   },
@@ -616,7 +622,7 @@ export const PLUGIN_COMPAT_RECORDS = [
     surfaces: ["plugins.installs authored config", "plugin install/update migration"],
     diagnostics: ["config write migration warning", "doctor registry migration"],
     tests: [
-      "src/config/io.write-config.test.ts",
+      "src/config/io/write-config.test.ts",
       "src/commands/doctor/shared/plugin-registry-migration.test.ts",
     ],
   },
@@ -691,7 +697,7 @@ export const PLUGIN_COMPAT_RECORDS = [
     docsPath: "/plugins/sdk-entrypoints",
     surfaces: ["plugin module `activate(api)`", "plugin loader registration"],
     diagnostics: ["loader compatibility path"],
-    tests: ["src/plugins/loader.test.ts"],
+    tests: ["src/plugins/runtime/loader.test.ts"],
   },
   {
     code: "setup-runtime-fallback",
@@ -716,7 +722,10 @@ export const PLUGIN_COMPAT_RECORDS = [
     docsPath: "/plugins/sdk-migration",
     surfaces: ["provider plugin `discovery` hook", "provider catalog resolution"],
     diagnostics: ["provider validation warning when catalog and discovery both register"],
-    tests: ["src/plugins/provider-discovery.test.ts", "src/plugins/provider-validation.test.ts"],
+    tests: [
+      "src/plugins/providers/provider-discovery.test.ts",
+      "src/plugins/providers/provider-validation.test.ts",
+    ],
   },
   {
     code: "channel-exposure-legacy-aliases",
@@ -825,7 +834,7 @@ export const PLUGIN_COMPAT_RECORDS = [
       "src/plugins/memory-state split registration helpers",
     ],
     diagnostics: ["plugin SDK compatibility warning"],
-    tests: ["src/plugins/memory-state.test.ts", "src/plugins/loader.test.ts"],
+    tests: ["src/plugins/memory-state.test.ts", "src/plugins/runtime/loader.test.ts"],
   },
   {
     code: "provider-static-capabilities-bag",
@@ -841,7 +850,7 @@ export const PLUGIN_COMPAT_RECORDS = [
     surfaces: ["ProviderPlugin.capabilities", "ProviderCapabilities"],
     diagnostics: ["provider validation warning"],
     tests: [
-      "src/plugins/provider-runtime.test.ts",
+      "src/plugins/providers/provider-runtime.test.ts",
       "src/plugins/contracts/provider-family-plugin-tests.test.ts",
     ],
   },
@@ -881,7 +890,7 @@ export const PLUGIN_COMPAT_RECORDS = [
       "ProviderPlugin.resolveDefaultThinkingLevel",
     ],
     diagnostics: ["provider runtime compatibility warning"],
-    tests: ["src/plugins/provider-runtime.test.ts"],
+    tests: ["src/plugins/providers/provider-runtime.test.ts"],
   },
   {
     code: "provider-external-oauth-profiles-hook",
@@ -895,7 +904,7 @@ export const PLUGIN_COMPAT_RECORDS = [
     docsPath: "/plugins/sdk-provider-plugins",
     surfaces: ["ProviderPlugin.resolveExternalOAuthProfiles"],
     diagnostics: ["provider external auth fallback warning"],
-    tests: ["src/plugins/provider-runtime.test.ts"],
+    tests: ["src/plugins/providers/provider-runtime.test.ts"],
   },
   {
     code: "agent-tool-result-harness-alias",

@@ -11,18 +11,18 @@ import { updateSessionStore, type SessionEntry } from "../../config/sessions.js"
 import { withTempConfig } from "../../gateway/test-temp-config.js";
 import { resolvePreferredOpenClawTmpDir } from "../../infra/tmp-openclaw-dir.js";
 import { createOutboundTestPlugin, createTestRegistry } from "../../test-utils/channel-plugins.js";
+import { createPluginRecord } from "../config/status.test-helpers.js";
 import {
   attachmentProbeFs,
   resolveAttachmentDelivery,
   resolveSessionAttachmentThreadId,
   sendPluginSessionAttachment,
-} from "../host-hook-attachments.js";
-import { clearPluginLoaderCache } from "../loader.js";
-import { createEmptyPluginRegistry } from "../registry-empty.js";
-import { createPluginRegistry } from "../registry.js";
-import { setActivePluginRegistry } from "../runtime.js";
+} from "../host/host-hook-attachments.js";
+import { createEmptyPluginRegistry } from "../manifest/registry-empty.js";
+import { createPluginRegistry } from "../manifest/registry.js";
+import { clearPluginLoaderCache } from "../runtime/loader.js";
+import { setActivePluginRegistry } from "../runtime/runtime.js";
 import type { PluginRuntime } from "../runtime/types.js";
-import { createPluginRecord } from "../status.test-helpers.js";
 import type { OpenClawPluginApi } from "../types.js";
 
 const workflowMocks = vi.hoisted(() => ({

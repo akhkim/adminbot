@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { resolveAdvertisedGatewayUrl } from "./advertised-gateway-url.ts";
 
 const HOSTED_PAGE = "https://jinesis-admin.vercel.app/chat";
-const REMOTE_GATEWAY = "wss://aurora-adminbot.taila4f725.ts.net";
+const REMOTE_GATEWAY = "wss://adminbot.tailnet.example.ts.net";
 
 describe("resolveAdvertisedGatewayUrl", () => {
   // The regression: AdminBot advertised its own loopback address, sign-in adopted it, and the
@@ -50,7 +50,7 @@ describe("resolveAdvertisedGatewayUrl", () => {
 
   // An older service that emitted `url: ""` must not win over the configured URL either — an empty
   // string is not nullish, so `??` alone let it through.
-  it.each([undefined, "", "   ", "not a url", "https://aurora-adminbot.taila4f725.ts.net"])(
+  it.each([undefined, "", "   ", "not a url", "https://adminbot.tailnet.example.ts.net"])(
     "keeps the current URL when the advertised value is %p (unusable as a gateway URL)",
     (advertised) => {
       expect(

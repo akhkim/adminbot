@@ -2,13 +2,13 @@
  * Logs redacted failover decisions for embedded-agent attempts.
  */
 import { redactIdentifier } from "../../../logging/redact-identifier.js";
-import type { AuthProfileFailureReason } from "../../auth-profiles.js";
+import type { AuthProfileFailureReason } from "../../auth/auth-profiles.js";
 import {
   buildApiErrorObservationFields,
   sanitizeForConsole,
   shouldSuppressRawErrorConsoleSuffix,
-} from "../../embedded-agent-error-observation.js";
-import type { FailoverReason } from "../../embedded-agent-helpers.js";
+} from "../../embedded/embedded-agent-error-observation.js";
+import type { FailoverReason } from "../../embedded/embedded-agent-helpers.js";
 import { log } from "../logger.js";
 
 /** Structured fields emitted whenever embedded run failover chooses an action. */

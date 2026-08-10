@@ -8,13 +8,13 @@ import {
   ensureAuthProfileStore,
   resolveApiKeyForProfile,
   resolveAuthProfileOrder,
-} from "../../agents/auth-profiles.js";
-import { resolveEnvApiKey } from "../../agents/model-auth.js";
-import { formatCliCommand } from "../../cli/command-format.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+} from "../../agents/auth/auth-profiles.js";
+import { resolveEnvApiKey } from "../../agents/auth/model-auth.js";
+import { formatCliCommand } from "../../cli/program/command-format.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import type { RuntimeEnv } from "../../runtime.js";
-import { normalizeOptionalSecretInput } from "../../utils/normalize-secret-input.js";
-import type { SecretInputMode } from "../onboard-types.js";
+import { normalizeOptionalSecretInput } from "../../shared/normalize-secret-input.js";
+import type { SecretInputMode } from "../onboard/onboard-types.js";
 
 /** Source that supplied a non-interactive provider API key. */
 export type NonInteractiveApiKeySource = "flag" | "env" | "profile";

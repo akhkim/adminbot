@@ -8,19 +8,19 @@ import {
   assertContextEngineHostSupport,
   type ContextEngineHostSupport,
 } from "../../context-engine/host-compat.js";
-import { diagnosticErrorCategory } from "../../infra/diagnostic-error-metadata.js";
+import { diagnosticErrorCategory } from "../../infra/diagnostics/diagnostic-error-metadata.js";
 import {
   emitTrustedDiagnosticEvent,
   type DiagnosticHarnessRunErrorEvent,
   type DiagnosticHarnessRunOutcome,
-} from "../../infra/diagnostic-events.js";
+} from "../../infra/diagnostics/diagnostic-events.js";
 import {
   createChildDiagnosticTraceContext,
   freezeDiagnosticTraceContext,
   getActiveDiagnosticTraceContext,
   runWithDiagnosticTraceContext,
   type DiagnosticTraceContext,
-} from "../../infra/diagnostic-trace-context.js";
+} from "../../infra/diagnostics/diagnostic-trace-context.js";
 import { applyAgentHarnessResultClassification } from "./result-classification.js";
 import type {
   AgentHarness,

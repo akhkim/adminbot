@@ -5,11 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SessionScope } from "../config/sessions/types.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 const agentCommand = vi.fn();
 
-vi.mock("../commands/agent.js", () => ({
+vi.mock("../commands/agent/agent.js", () => ({
   agentCommand,
   agentCommandFromIngress: agentCommand,
 }));

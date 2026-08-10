@@ -1,0 +1,59 @@
+{
+  "_doc": {
+    "purpose": "Grandfather list for scripts/check-dir-size.mjs, which enforces the <=80-non-test-files-per-directory target from ADR-0001. JSON has no comments, so the documentation is this key.",
+    "counting": "Tracked files sitting directly in a directory, tests excluded. Scope is src/ and extensions/*/src. A directory's subtree does not count against it — subdirectories are the relief valve, not a workaround.",
+    "max": "The count each directory was at when it was grandfathered. It is a ratchet: growing past max fails, dropping below it warns so the max can be tightened, and reaching the limit makes the entry prunable.",
+    "status": "Two entries are permanent by ADR. The other ten are the remaining sub-grouping work, and this list is the metric for it: it shrinks as phase-3-style splits land."
+  },
+  "limit": 80,
+  "grandfathered": {
+    "src/plugin-sdk": {
+      "max": 383,
+      "reason": "Permanent, per docs/adr/0003-plugin-sdk-stays-flat.md: the flat directory IS the published export namespace — one file, one openclaw/plugin-sdk/<name> subpath, mirrored by 320 package.json export entries and the tsconfig wildcard."
+    },
+    "src/agents": {
+      "max": 103,
+      "reason": "Permanent, per docs/adr/0004-agents-is-the-application-layer.md: agents is the application layer, not a peer domain, and its size is a property of that. Navigation comes from its 27 sub-directories."
+    },
+    "src/infra": {
+      "max": 151,
+      "reason": "Remaining sub-grouping work."
+    },
+    "src/agents/tools": {
+      "max": 145,
+      "reason": "Remaining sub-grouping work; the largest agents sub-group."
+    },
+    "src/plugins": {
+      "max": 134,
+      "reason": "Remaining sub-grouping work."
+    },
+    "src/gateway": {
+      "max": 111,
+      "reason": "Remaining sub-grouping work."
+    },
+    "src/channels/plugins": {
+      "max": 99,
+      "reason": "Remaining sub-grouping work."
+    },
+    "src/shared": {
+      "max": 95,
+      "reason": "Accepted per docs/adr/0005-shared-is-the-helper-home.md: the src/utils fold grew it past the target, with topical sub-directories as the relief valve."
+    },
+    "src/gateway/server-methods": {
+      "max": 95,
+      "reason": "Remaining sub-grouping work; one file per JSON-RPC method, so it grows with the protocol."
+    },
+    "src/auto-reply/reply": {
+      "max": 91,
+      "reason": "Remaining sub-grouping work."
+    },
+    "src/gateway/server": {
+      "max": 89,
+      "reason": "Remaining sub-grouping work."
+    },
+    "extensions/slack/src": {
+      "max": 85,
+      "reason": "Remaining sub-grouping work; the only extension over the limit."
+    }
+  }
+}

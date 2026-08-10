@@ -7,12 +7,12 @@ import {
   registerSessionBindingAdapter,
   type SessionBindingRecord,
 } from "../../../infra/outbound/session-binding-service.js";
-import { setActivePluginRegistry } from "../../../plugins/runtime.js";
+import { setActivePluginRegistry } from "../../../plugins/runtime/runtime.js";
 import {
   createChannelTestPluginBase,
   createTestRegistry,
 } from "../../../test-utils/channel-plugins.js";
-import { buildCommandTestParams } from "../commands-spawn.test-harness.js";
+import { buildCommandTestParams } from "../commands/commands-spawn.test-harness.js";
 import {
   resolveAcpCommandBindingContext,
   resolveAcpCommandConversationId,

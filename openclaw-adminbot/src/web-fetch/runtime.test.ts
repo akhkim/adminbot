@@ -1,6 +1,6 @@
 /** Tests web_fetch runtime provider selection, credential discovery, and sandbox filtering. */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { OpenClawConfig } from "../config/types.js";
+import type { OpenClawConfig } from "../config/types/types.js";
 import type { PluginWebFetchProviderEntry } from "../plugins/types.js";
 import type { RuntimeWebFetchMetadata } from "../secrets/runtime-web-tools.types.js";
 import { withEnv } from "../test-utils/env.js";
@@ -22,7 +22,7 @@ const { resolvePluginWebFetchProvidersMock, resolveRuntimeWebFetchProvidersMock 
   }),
 );
 
-vi.mock("../plugins/web-fetch-providers.runtime.js", () => ({
+vi.mock("../plugins/web/web-fetch-providers.runtime.js", () => ({
   resolvePluginWebFetchProviders: resolvePluginWebFetchProvidersMock,
   resolveRuntimeWebFetchProviders: resolveRuntimeWebFetchProvidersMock,
 }));

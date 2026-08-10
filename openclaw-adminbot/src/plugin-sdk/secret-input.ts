@@ -7,15 +7,15 @@ import {
   resolveSecretInputString,
   normalizeResolvedSecretInputString,
   normalizeSecretInputString,
-} from "../config/types.secrets.js";
-import { normalizeSecretInput } from "../utils/normalize-secret-input.js";
+} from "../config/types/secrets.js";
+import { normalizeSecretInput } from "../shared/normalize-secret-input.js";
 import { buildSecretInputSchema } from "./secret-input-schema.js";
 
 export type {
   SecretInput,
   SecretInputStringResolution,
   SecretInputStringResolutionMode,
-} from "../config/types.secrets.js";
+} from "../config/types/secrets.js";
 export {
   buildSecretInputSchema,
   coerceSecretRef,

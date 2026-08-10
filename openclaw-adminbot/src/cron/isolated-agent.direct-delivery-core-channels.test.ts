@@ -1,12 +1,12 @@
 // Direct delivery tests cover isolated agent delivery through core channel targets.
 import "./isolated-agent.mocks.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runSubagentAnnounceFlow } from "../agents/subagent-announce.js";
+import { runSubagentAnnounceFlow } from "../agents/subagents/subagent-announce.js";
 import type { ChannelOutboundAdapter, ChannelOutboundContext } from "../channels/plugins/types.js";
 import type { CliDeps } from "../cli/deps.js";
 import { clearRuntimeConfigSnapshot, setRuntimeConfigSnapshot } from "../config/config.js";
 import { resolveOutboundSendDep } from "../infra/outbound/send-deps.js";
-import { setActivePluginRegistry } from "../plugins/runtime.js";
+import { setActivePluginRegistry } from "../plugins/runtime/runtime.js";
 import { createOutboundTestPlugin, createTestRegistry } from "../test-utils/channel-plugins.js";
 import {
   createCliDeps,

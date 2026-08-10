@@ -5,7 +5,7 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import type { PathAliasPolicy } from "../../infra/path-alias-guards.js";
+import type { PathAliasPolicy } from "../../infra/system/path-alias-guards.js";
 import { openRootFile, type RootFileOpenResult } from "./fs-bridge-path-safety.runtime.js";
 import type { SandboxResolvedFsPath, SandboxFsMount } from "./fs-paths.js";
 import {

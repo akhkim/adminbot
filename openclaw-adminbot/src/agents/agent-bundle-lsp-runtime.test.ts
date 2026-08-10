@@ -16,7 +16,7 @@ vi.mock("../process/kill-tree.js", () => ({
   killProcessTree: killProcessTreeMock,
 }));
 
-vi.mock("./embedded-agent-lsp.js", () => ({
+vi.mock("./embedded/embedded-agent-lsp.js", () => ({
   loadEmbeddedAgentLspConfig: loadEmbeddedAgentLspConfigMock,
 }));
 

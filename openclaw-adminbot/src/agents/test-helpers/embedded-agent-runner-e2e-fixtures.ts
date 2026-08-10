@@ -7,7 +7,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { AssistantMessage } from "openclaw/plugin-sdk/llm";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { buildAttemptReplayMetadata } from "../embedded-agent-runner/run/incomplete-turn.js";
 import type { EmbeddedRunAttemptResult } from "../embedded-agent-runner/run/types.js";
 

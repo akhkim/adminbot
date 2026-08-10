@@ -2,7 +2,7 @@
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { pathExists } from "../infra/fs-safe.js";
-import { isPathInside } from "../infra/path-guards.js";
+import { isPathInside } from "../infra/system/path-guards.js";
 import { exportTrajectoryBundle, resolveDefaultTrajectoryExportDir } from "./export.js";
 
 // CLI-facing trajectory export wrapper: resolves safe workspace-local paths,

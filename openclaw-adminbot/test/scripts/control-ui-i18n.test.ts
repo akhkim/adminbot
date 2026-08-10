@@ -1,101 +1,63 @@
-// Control Ui I18N tests cover control ui i18n script behavior.
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import process from "node:process";
+// Control UI i18n script tests cover locale extraction and validation.
 import { describe, expect, it } from "vitest";
-import { appendBoundedProcessOutput, runProcess } from "../../scripts/control-ui-i18n.ts";
+import {
+  findPlaceholderMismatches,
+  isProviderAuthError,
+  resolveTranslationModel,
+} from "../../scripts/control-ui-i18n.ts";
 
-function processIsAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === "EPERM";
-  }
-}
+describe("control-ui-i18n placeholder validation", () => {
+  it("reports missing and extra placeholders by key", () => {
+    const mismatches = findPlaceholderMismatches(
+      new Map([
+        ["sessionsView.activeTooltip", "Updated in the last {count} minutes."],
+        ["sessionsView.store", "Store: {path}"],
+        ["sessionsView.limitTooltip", "Max sessions to load."],
+      ]),
+      new Map([
+        ["sessionsView.activeTooltip", "Actualizadas en los últimos N minutos."],
+        ["sessionsView.store", "Almacén: {path}"],
+        ["sessionsView.limitTooltip", "Máximo {extra} de sesiones."],
+      ]),
+      "es",
+    );
 
-async function waitForProcessExit(pid: number, timeoutMs = 1_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (!processIsAlive(pid)) {
-      return;
-    }
-    await new Promise((resolve) => {
-      setTimeout(resolve, 10);
+    expect(mismatches).toEqual([
+      {
+        key: "sessionsView.activeTooltip",
+        locale: "es",
+        sourcePlaceholders: ["count"],
+        translatedPlaceholders: [],
+      },
+      {
+        key: "sessionsView.limitTooltip",
+        locale: "es",
+        sourcePlaceholders: [],
+        translatedPlaceholders: ["extra"],
+      },
+    ]);
+  });
+});
+
+describe("control-ui-i18n translation runtime resolution", () => {
+  it("uses the in-tree OpenClaw LLM model catalog", () => {
+    expect(resolveTranslationModel()).toMatchObject({
+      id: "gpt-5.5",
+      provider: "openai",
     });
-  }
-  throw new Error(`process ${pid} was still alive after ${timeoutMs}ms`);
-}
-
-describe("control-ui-i18n process runner", () => {
-  it("keeps a bounded process output tail", () => {
-    const first = appendBoundedProcessOutput({ text: "", truncatedChars: 0 }, "abcdef", 5);
-    const second = appendBoundedProcessOutput(first, "ghij", 5);
-
-    expect(first).toEqual({ text: "bcdef", truncatedChars: 1 });
-    expect(second).toEqual({ text: "fghij", truncatedChars: 5 });
   });
+});
 
-  it("bounds failure diagnostics to the newest output", async () => {
-    await expect(
-      runProcess(
-        process.execPath,
-        [
-          "-e",
-          [
-            "process.stderr.write('stderr-begin-' + 'x'.repeat(128) + '-stderr-end', () => process.exit(2));",
-          ].join(" "),
-        ],
-        { maxOutputChars: 64, rejectOnFailure: true },
+describe("control-ui-i18n provider auth errors", () => {
+  it("recognizes OpenAI and Anthropic authentication failures", () => {
+    expect(isProviderAuthError(new Error("401 Incorrect API key provided"))).toBe(true);
+    expect(
+      isProviderAuthError(
+        new Error(
+          '401 {"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}',
+        ),
       ),
-    ).rejects.toThrow(/output truncated[\s\S]*stderr-end/u);
+    ).toBe(true);
+    expect(isProviderAuthError(new Error("model timed out"))).toBe(false);
   });
-
-  it("rejects successful commands before returning truncated stdout", async () => {
-    await expect(
-      runProcess(
-        process.execPath,
-        ["-e", "process.stdout.write('x'.repeat(128), () => process.exit(0));"],
-        {
-          maxOutputChars: 12,
-        },
-      ),
-    ).rejects.toThrow("produced more than 12 stdout chars");
-  });
-
-  it.runIf(process.platform !== "win32")(
-    "kills descendant processes after the process timeout",
-    async () => {
-      const tempDir = mkdtempSync(path.join(tmpdir(), "openclaw-control-ui-i18n-timeout-"));
-      try {
-        const markerPath = path.join(tempDir, "grandchild.pid");
-        const grandchildScript = [
-          "process.on('SIGTERM', () => {});",
-          "setInterval(() => {}, 1000);",
-        ].join("\n");
-        const parentScript = [
-          "const { spawn } = require('node:child_process');",
-          "const { writeFileSync } = require('node:fs');",
-          `const grandchild = spawn(process.execPath, ["-e", ${JSON.stringify(grandchildScript)}], { stdio: "ignore" });`,
-          `writeFileSync(${JSON.stringify(markerPath)}, String(grandchild.pid));`,
-          "process.on('SIGTERM', () => {});",
-          "setInterval(() => {}, 1000);",
-        ].join("\n");
-
-        await expect(
-          runProcess(process.execPath, ["-e", parentScript], {
-            cwd: tempDir,
-            killGraceMs: 25,
-            timeoutMs: 500,
-          }),
-        ).rejects.toThrow(`timed out after 500ms`);
-
-        const grandchildPid = Number(readFileSync(markerPath, "utf8"));
-        await waitForProcessExit(grandchildPid);
-      } finally {
-        rmSync(tempDir, { force: true, recursive: true });
-      }
-    },
-  );
 });

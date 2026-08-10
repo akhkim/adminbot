@@ -1,5 +1,5 @@
 // Runtime registry loader assembles activated plugin runtimes from config and registry metadata.
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { withActivatedPluginIds } from "../activation-context.js";
 import {
   getLoadedRuntimePluginRegistry,
@@ -11,17 +11,17 @@ import {
   resolveDiscoverableScopedChannelPluginIds,
 } from "../channel-plugin-ids.js";
 import { resolveEffectivePluginIds } from "../effective-plugin-ids.js";
-import { loadOpenClawPlugins } from "../loader.js";
 import {
   hasExplicitPluginIdScope,
   hasNonEmptyPluginIdScope,
   normalizePluginIdScope,
 } from "../plugin-scope.js";
-import { getActivePluginRegistry, getActivePluginRegistryWorkspaceDir } from "../runtime.js";
 import {
   buildPluginRuntimeLoadOptionsFromValues,
   resolvePluginRuntimeLoadContext,
 } from "./load-context.js";
+import { loadOpenClawPlugins } from "./loader.js";
+import { getActivePluginRegistry, getActivePluginRegistryWorkspaceDir } from "./runtime.js";
 
 let pluginRegistryLoaded: "none" | "configured-channels" | "channels" | "all" = "none";
 

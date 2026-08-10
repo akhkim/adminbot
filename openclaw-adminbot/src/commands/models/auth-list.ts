@@ -9,8 +9,8 @@ import {
   type AuthProfileCredential,
   type AuthProfileStore,
   type ProfileUsageStats,
-} from "../../agents/auth-profiles.js";
-import { resolveProviderIdForAuth } from "../../agents/provider-auth-aliases.js";
+} from "../../agents/auth/auth-profiles.js";
+import { resolveProviderIdForAuth } from "../../agents/auth/provider-auth-aliases.js";
 import { type RuntimeEnv, writeRuntimeJson } from "../../runtime.js";
 import { shortenHomePath } from "../../utils.js";
 import { loadModelsConfig } from "./load-config.js";

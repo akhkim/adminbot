@@ -3,8 +3,8 @@ import fs from "node:fs";
 import { isRecord as isObjectRecord } from "@openclaw/normalization-core/record-coerce";
 import JSON5 from "json5";
 import { getCommandPathWithRootOptions } from "../cli/argv.js";
-import { resolveConfigPath } from "../config/paths.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { resolveConfigPath } from "../config/paths/paths.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 
 // Lightweight logging-config reader used before the full config runtime is safe to load.
 type LoggingConfig = OpenClawConfig["logging"];

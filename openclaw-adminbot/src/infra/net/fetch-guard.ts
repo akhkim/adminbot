@@ -2,7 +2,7 @@
 // trusted proxy modes around provider/network requests.
 import type { Dispatcher } from "undici";
 import { logWarn } from "../../logger.js";
-import { buildTimeoutAbortSignal } from "../../utils/fetch-timeout.js";
+import { buildTimeoutAbortSignal } from "../../shared/fetch-timeout.js";
 import {
   normalizeHeadersInitForFetch,
   normalizeRequestInitHeadersForFetch,
@@ -118,14 +118,9 @@ type GuardedFetchPresetOptions = Omit<
 >;
 
 const DEFAULT_MAX_REDIRECTS = 3;
-const OPENCLAW_DEBUG_PROXY_ENABLED = "OPENCLAW_DEBUG_PROXY_ENABLED";
 
 function getRedirectVisitKey(url: string, init: RequestInit | undefined): string {
   return `${init?.method?.toUpperCase() ?? "GET"} ${url}`;
-}
-
-function isTruthyEnvValue(value: string | undefined): boolean {
-  return value === "1" || value === "true" || value === "yes" || value === "on";
 }
 
 export function withStrictGuardedFetchMode(params: GuardedFetchPresetOptions): GuardedFetchOptions {
@@ -268,7 +263,7 @@ export function retainSafeHeadersForCrossOriginRedirectHeaders(
   return retainSafeRedirectHeaders(headers);
 }
 
-async function captureGuardedFetchExchange(params: {
+async function captureGuardedFetchExchange(_params: {
   url: string;
   method: string;
   requestHeaders?: Headers | Record<string, string> | undefined;
@@ -279,28 +274,9 @@ async function captureGuardedFetchExchange(params: {
   auditContext?: string;
   capturedByGlobalFetchPatch?: boolean;
 }): Promise<void> {
-  if (params.capture === false || !isTruthyEnvValue(process.env[OPENCLAW_DEBUG_PROXY_ENABLED])) {
-    return;
-  }
-  const { captureHttpExchange, isDebugProxyGlobalFetchPatchInstalled } =
-    await import("../../proxy-capture/runtime.js");
-  if (params.capturedByGlobalFetchPatch && isDebugProxyGlobalFetchPatchInstalled()) {
-    return;
-  }
-  captureHttpExchange({
-    url: params.url,
-    method: params.method,
-    requestHeaders: params.requestHeaders,
-    requestBody: params.requestBody,
-    response: params.response,
-    transport: params.transport,
-    flowId: params.capture?.flowId,
-    meta: {
-      captureOrigin: "guarded-fetch",
-      ...(params.auditContext ? { auditContext: params.auditContext } : {}),
-      ...params.capture?.meta,
-    },
-  });
+  // The debug proxy capture subsystem this fed was removed with the developer tooling, so there
+  // is nothing left to hand the exchange to.
+  return;
 }
 
 function retainSafeHeadersForCrossOriginRedirect(init?: RequestInit): RequestInit | undefined {

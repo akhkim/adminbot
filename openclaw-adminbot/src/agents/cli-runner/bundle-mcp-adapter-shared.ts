@@ -2,7 +2,7 @@
  * Shared normalization helpers for CLI-specific bundle MCP adapters.
  */
 import { isRecord } from "../../../packages/normalization-core/src/record-coerce.js";
-import type { BundleMcpServerConfig } from "../../plugins/bundle-mcp.js";
+import type { BundleMcpServerConfig } from "../../plugins/install/bundle-mcp.js";
 /** Re-exported record guard for adapter modules that share loose JSON inputs. */
 export { isRecord } from "../../../packages/normalization-core/src/record-coerce.js";
 

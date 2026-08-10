@@ -1,5 +1,5 @@
 // Detects dangerous config names used by validation and warnings.
-import { asBoolean } from "../utils/boolean.js";
+import { asBoolean } from "../shared/boolean.js";
 import type { OpenClawConfig } from "./config.js";
 
 type DangerousNameMatchingConfig = {

@@ -6,13 +6,13 @@ import {
   AUTH_RATE_LIMIT_SCOPE_DEVICE_TOKEN,
   AUTH_RATE_LIMIT_SCOPE_SHARED_SECRET,
   type AuthRateLimiter,
-} from "../../auth-rate-limit.js";
+} from "../../auth/auth-rate-limit.js";
 import {
   authorizeHttpGatewayConnect,
   authorizeWsControlUiGatewayConnect,
   type GatewayAuthResult,
   type ResolvedGatewayAuth,
-} from "../../auth.js";
+} from "../../auth/auth.js";
 import { withSerializedRateLimitAttempt } from "../../rate-limit-attempt-serialization.js";
 
 type HandshakeConnectAuth = {

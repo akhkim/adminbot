@@ -3,11 +3,11 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveRegistryUpdateChannel } from "../../../infra/update-channels.js";
+import { resolveRegistryUpdateChannel } from "../../../infra/install/update-channels.js";
 import {
   resolveClawHubInstallSpecsForUpdateChannel,
   resolveNpmInstallSpecsForUpdateChannel,
-} from "../../../plugins/install-channel-specs.js";
+} from "../../../plugins/install/install-channel-specs.js";
 import { VERSION } from "../../../version.js";
 
 function expectedNpmInstallSpec(spec: string): string {
@@ -120,18 +120,18 @@ vi.mock("../../../channels/plugins/catalog.js", () => ({
   listRawChannelPluginCatalogEntries: mocks.listChannelPluginCatalogEntries,
 }));
 
-vi.mock("../../../plugins/installed-plugin-index-records.js", () => ({
+vi.mock("../../../plugins/install/installed-plugin-index-records.js", () => ({
   loadInstalledPluginIndexInstallRecords: mocks.loadInstalledPluginIndexInstallRecords,
   writePersistedInstalledPluginIndexInstallRecords:
     mocks.writePersistedInstalledPluginIndexInstallRecords,
 }));
 
-vi.mock("../../../plugins/installed-plugin-index.js", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../../plugins/installed-plugin-index.js")>()),
+vi.mock("../../../plugins/install/installed-plugin-index.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../plugins/install/installed-plugin-index.js")>()),
   loadInstalledPluginIndex: mocks.loadInstalledPluginIndex,
 }));
 
-vi.mock("../../../plugins/install-paths.js", () => ({
+vi.mock("../../../plugins/install/install-paths.js", () => ({
   resolveDefaultPluginExtensionsDir: mocks.resolveDefaultPluginExtensionsDir,
   resolveDefaultPluginNpmDir: mocks.resolveDefaultPluginNpmDir,
   resolvePluginNpmPackageDir: mocks.resolvePluginNpmPackageDir,
@@ -139,7 +139,7 @@ vi.mock("../../../plugins/install-paths.js", () => ({
   validatePluginId: mocks.validatePluginId,
 }));
 
-vi.mock("../../../plugins/install.js", () => ({
+vi.mock("../../../plugins/install/install.js", () => ({
   installPluginFromNpmSpec: mocks.installPluginFromNpmSpec,
 }));
 
@@ -173,7 +173,7 @@ vi.mock("../../../plugins/official-external-plugin-catalog.js", () => ({
     mocks.resolveOfficialExternalWebProviderContractPluginIdsForEnv,
 }));
 
-vi.mock("../../../plugins/provider-install-catalog.js", () => ({
+vi.mock("../../../plugins/providers/provider-install-catalog.js", () => ({
   resolveProviderInstallCatalogEntries: mocks.resolveProviderInstallCatalogEntries,
 }));
 

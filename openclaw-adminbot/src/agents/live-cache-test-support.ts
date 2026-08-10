@@ -8,17 +8,17 @@ import { completeSimple } from "../llm/stream.js";
 import type { Api, AssistantMessage, Model } from "../llm/types.js";
 import { discoverAuthStorage, discoverModels } from "./agent-model-discovery.js";
 import { resolveDefaultAgentDir } from "./agent-scope.js";
-import { collectProviderApiKeys } from "./live-auth-keys.js";
-import { isLiveTestEnabled } from "./live-test-helpers.js";
+import { collectProviderApiKeys } from "./auth/live-auth-keys.js";
 import {
   getApiKeyForModel,
   isMissingProviderAuthError,
   isProviderAuthError,
   requireApiKey,
-} from "./model-auth.js";
-import { normalizeProviderId, parseModelRef } from "./model-selection.js";
-import { ensureOpenClawModelsJson } from "./models-config.js";
-import { buildAssistantMessageWithZeroUsage } from "./stream-message-shared.js";
+} from "./auth/model-auth.js";
+import { isLiveTestEnabled } from "./live-test-helpers.js";
+import { normalizeProviderId, parseModelRef } from "./models/model-selection.js";
+import { ensureOpenClawModelsJson } from "./models/models-config.js";
+import { buildAssistantMessageWithZeroUsage } from "./transport/stream-message-shared.js";
 
 // Shared helpers for live prompt-cache regression tests. They resolve real
 // provider credentials/models, wrap live calls with timeouts, and build stable

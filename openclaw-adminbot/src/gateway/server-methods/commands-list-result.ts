@@ -24,12 +24,12 @@ import type {
   CommandArgDefinition,
 } from "../../auto-reply/commands-registry.types.js";
 import { getChannelPlugin } from "../../channels/plugins/index.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import {
   getPluginCommandEntrySpecs,
   getPluginCommandEntrySpecsFromRegistrations,
 } from "../../plugins/command-specs.js";
-import { getActivePluginGatewayCommandRegistry } from "../../plugins/runtime.js";
+import { getActivePluginGatewayCommandRegistry } from "../../plugins/runtime/runtime.js";
 import { listSkillCommandsForAgents } from "../../skills/discovery/chat-commands.js";
 
 type SerializedArg = NonNullable<CommandEntry["args"]>[number];

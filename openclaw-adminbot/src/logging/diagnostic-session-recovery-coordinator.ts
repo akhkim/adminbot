@@ -2,7 +2,7 @@
 import {
   emitInternalDiagnosticEvent as emitDiagnosticEvent,
   getInternalDiagnosticEventSequence,
-} from "../infra/diagnostic-events.js";
+} from "../infra/diagnostics/diagnostic-events.js";
 import {
   clearDiagnosticEmbeddedRunActivityForSession,
   getDiagnosticEmbeddedRunActivitySequence,

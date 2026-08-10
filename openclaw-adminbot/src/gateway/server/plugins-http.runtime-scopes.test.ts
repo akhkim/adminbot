@@ -4,15 +4,15 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SubsystemLogger } from "../../logging/subsystem.js";
-import { createEmptyPluginRegistry } from "../../plugins/registry.js";
+import { createEmptyPluginRegistry } from "../../plugins/manifest/registry.js";
+import { getPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gateway-request-scope.js";
 import {
   pinActivePluginHttpRouteRegistry,
   releasePinnedPluginHttpRouteRegistry,
   setActivePluginRegistry,
-} from "../../plugins/runtime.js";
-import { getPluginRuntimeGatewayRequestScope } from "../../plugins/runtime/gateway-request-scope.js";
+} from "../../plugins/runtime/runtime.js";
 import { ExecApprovalManager } from "../exec-approval-manager.js";
-import type { AuthorizedGatewayHttpRequest } from "../http-utils.js";
+import type { AuthorizedGatewayHttpRequest } from "../http/http-utils.js";
 import { authorizeOperatorScopesForMethod, CLI_DEFAULT_OPERATOR_SCOPES } from "../method-scopes.js";
 import { isApprovalRecordVisibleToClient } from "../server-methods/approval-shared.js";
 import type { GatewayRequestContext } from "../server-methods/types.js";

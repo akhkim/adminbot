@@ -1,6 +1,6 @@
 // Captures plugin registrations for controlled registry assembly.
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import type {
   AgentToolResultMiddleware,
   AgentToolResultMiddlewareOptions,
@@ -8,7 +8,7 @@ import type {
 import { normalizeAgentToolResultMiddlewareRuntimes } from "./agent-tool-result-middleware.js";
 import { buildPluginApi } from "./api-builder.js";
 import type { CodexAppServerExtensionFactory } from "./codex-app-server-extension-types.js";
-import type { EmbeddingProviderAdapter } from "./embedding-providers.js";
+import type { EmbeddingProviderAdapter } from "./embedding/embedding-providers.js";
 import type {
   PluginAgentEventSubscriptionRegistration,
   PluginControlUiDescriptor,
@@ -18,29 +18,22 @@ import type {
   PluginSessionExtensionRegistration,
   PluginToolMetadataRegistration,
   PluginTrustedToolPolicyRegistration,
-} from "./host-hooks.js";
+} from "./host/host-hooks.js";
+import type { PluginAgentToolResultMiddlewareRegistration } from "./manifest/registry-types.js";
 import type { MemoryEmbeddingProviderAdapter } from "./memory-embedding-providers.js";
-import type { PluginAgentToolResultMiddlewareRegistration } from "./registry-types.js";
 import type { PluginRuntime } from "./runtime/types.js";
 import type {
   AnyAgentTool,
   AgentHarness,
   CliBackendPlugin,
   OpenClawPluginApi,
-  ImageGenerationProviderPlugin,
-  MediaUnderstandingProviderPlugin,
   TranscriptSourceProvider,
   MigrationProviderPlugin,
-  MusicGenerationProviderPlugin,
   OpenClawPluginCliCommandDescriptor,
   OpenClawPluginCliRegistrar,
   PluginTextTransformRegistration,
   ProviderPlugin,
-  RealtimeTranscriptionProviderPlugin,
-  RealtimeVoiceProviderPlugin,
-  SpeechProviderPlugin,
   UnifiedModelCatalogProviderPlugin,
-  VideoGenerationProviderPlugin,
   WebFetchProviderPlugin,
   WebSearchProviderPlugin,
 } from "./types.js";
@@ -62,14 +55,7 @@ export type CapturedPluginRegistration = {
   codexAppServerExtensionFactories: CodexAppServerExtensionFactory[];
   agentToolResultMiddlewares: PluginAgentToolResultMiddlewareRegistration[];
   embeddingProviders: EmbeddingProviderAdapter[];
-  speechProviders: SpeechProviderPlugin[];
-  realtimeTranscriptionProviders: RealtimeTranscriptionProviderPlugin[];
-  realtimeVoiceProviders: RealtimeVoiceProviderPlugin[];
-  mediaUnderstandingProviders: MediaUnderstandingProviderPlugin[];
   transcriptSourceProviders: TranscriptSourceProvider[];
-  imageGenerationProviders: ImageGenerationProviderPlugin[];
-  videoGenerationProviders: VideoGenerationProviderPlugin[];
-  musicGenerationProviders: MusicGenerationProviderPlugin[];
   webFetchProviders: WebFetchProviderPlugin[];
   webSearchProviders: WebSearchProviderPlugin[];
   migrationProviders: MigrationProviderPlugin[];
@@ -101,14 +87,7 @@ export function createCapturedPluginRegistration(params?: {
   const codexAppServerExtensionFactories: CodexAppServerExtensionFactory[] = [];
   const agentToolResultMiddlewares: PluginAgentToolResultMiddlewareRegistration[] = [];
   const embeddingProviders: EmbeddingProviderAdapter[] = [];
-  const speechProviders: SpeechProviderPlugin[] = [];
-  const realtimeTranscriptionProviders: RealtimeTranscriptionProviderPlugin[] = [];
-  const realtimeVoiceProviders: RealtimeVoiceProviderPlugin[] = [];
-  const mediaUnderstandingProviders: MediaUnderstandingProviderPlugin[] = [];
   const transcriptSourceProviders: TranscriptSourceProvider[] = [];
-  const imageGenerationProviders: ImageGenerationProviderPlugin[] = [];
-  const videoGenerationProviders: VideoGenerationProviderPlugin[] = [];
-  const musicGenerationProviders: MusicGenerationProviderPlugin[] = [];
   const webFetchProviders: WebFetchProviderPlugin[] = [];
   const webSearchProviders: WebSearchProviderPlugin[] = [];
   const migrationProviders: MigrationProviderPlugin[] = [];
@@ -143,14 +122,7 @@ export function createCapturedPluginRegistration(params?: {
     codexAppServerExtensionFactories,
     agentToolResultMiddlewares,
     embeddingProviders,
-    speechProviders,
-    realtimeTranscriptionProviders,
-    realtimeVoiceProviders,
-    mediaUnderstandingProviders,
     transcriptSourceProviders,
-    imageGenerationProviders,
-    videoGenerationProviders,
-    musicGenerationProviders,
     webFetchProviders,
     webSearchProviders,
     migrationProviders,
@@ -233,29 +205,8 @@ export function createCapturedPluginRegistration(params?: {
         registerEmbeddingProvider(provider: EmbeddingProviderAdapter) {
           embeddingProviders.push(provider);
         },
-        registerSpeechProvider(provider: SpeechProviderPlugin) {
-          speechProviders.push(provider);
-        },
-        registerRealtimeTranscriptionProvider(provider: RealtimeTranscriptionProviderPlugin) {
-          realtimeTranscriptionProviders.push(provider);
-        },
-        registerRealtimeVoiceProvider(provider: RealtimeVoiceProviderPlugin) {
-          realtimeVoiceProviders.push(provider);
-        },
-        registerMediaUnderstandingProvider(provider: MediaUnderstandingProviderPlugin) {
-          mediaUnderstandingProviders.push(provider);
-        },
         registerTranscriptSourceProvider(provider: TranscriptSourceProvider) {
           transcriptSourceProviders.push(provider);
-        },
-        registerImageGenerationProvider(provider: ImageGenerationProviderPlugin) {
-          imageGenerationProviders.push(provider);
-        },
-        registerVideoGenerationProvider(provider: VideoGenerationProviderPlugin) {
-          videoGenerationProviders.push(provider);
-        },
-        registerMusicGenerationProvider(provider: MusicGenerationProviderPlugin) {
-          musicGenerationProviders.push(provider);
         },
         registerWebFetchProvider(provider: WebFetchProviderPlugin) {
           webFetchProviders.push(provider);

@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
-import { GatewayClient } from "../gateway/client.js";
+import { GatewayClient } from "../gateway/client/client.js";
 import {
   analyzeArgvCommand,
   ensureExecApprovals,
@@ -17,26 +17,26 @@ import {
   type ExecApprovalsFile,
   type ExecApprovalsResolved,
   type ExecSecurity,
-} from "../infra/exec-approvals.js";
-import { planShellAuthorization } from "../infra/exec-authorization-plan.js";
+} from "../infra/exec/exec-approvals.js";
+import { planShellAuthorization } from "../infra/exec/exec-authorization-plan.js";
 import {
   requestExecHostViaSocket,
   type ExecHostRequest,
   type ExecHostResponse,
-} from "../infra/exec-host.js";
+} from "../infra/exec/exec-host.js";
 import {
   extractShellWrapperCommand,
   isShellWrapperInvocation,
-} from "../infra/exec-wrapper-resolution.js";
+} from "../infra/exec/exec-wrapper-resolution.js";
 import {
   inspectHostExecEnvOverrides,
   sanitizeHostExecEnv,
   sanitizeSystemRunEnvOverrides,
-} from "../infra/host-env-security.js";
+} from "../infra/system/host-env-security.js";
 import {
   decodeWindowsOutputBuffer,
   resolveWindowsConsoleEncoding,
-} from "../infra/windows-encoding.js";
+} from "../infra/system/windows-encoding.js";
 import {
   buildSystemRunApprovalPlan,
   handleSystemRunInvoke,

@@ -7,7 +7,7 @@ export {
   resolveDefaultAgentId,
   resolveSessionAgentId,
 } from "../../../../src/agents/agent-scope.js";
-export { requireApiKey, resolveApiKeyForProvider } from "../../../../src/agents/model-auth.js";
+export { requireApiKey, resolveApiKeyForProvider } from "../../../../src/agents/auth/model-auth.js";
 export { stripInternalRuntimeContext } from "../../../../src/agents/internal-runtime-context.js";
 export { DEFAULT_AGENT_COMPACTION_RESERVE_TOKENS_FLOOR } from "../../../../src/agents/agent-settings.js";
 export {
@@ -36,9 +36,9 @@ export {
 
 // CLI/runtime/config helpers.
 export { formatErrorMessage, withManager } from "../../../../src/cli/cli-utils.js";
-export { resolveCommandSecretRefsViaGateway } from "../../../../src/cli/command-secret-gateway.js";
+export { resolveCommandSecretRefsViaGateway } from "../../../../src/cli/program/command-secret-gateway.js";
 export { formatHelpExamples } from "../../../../src/cli/help-format.js";
-export { parseDurationMs } from "../../../../src/cli/parse-duration.js";
+export { parseDurationMs } from "../../../../src/cli/program/parse-duration.js";
 export { withProgress, withProgressTotals } from "../../../../src/cli/progress.js";
 export { parseNonNegativeByteSize } from "../../../../src/config/byte-size.js";
 export {
@@ -47,7 +47,7 @@ export {
   loadConfig,
 } from "../../../../src/config/config.js";
 export type { OpenClawConfig } from "../../../../src/config/config.js";
-export { resolveStateDir } from "../../../../src/config/paths.js";
+export { resolveStateDir } from "../../../../src/config/paths/paths.js";
 export {
   isCompactionCheckpointTranscriptFileName,
   isSessionArchiveArtifactName,
@@ -55,7 +55,7 @@ export {
   parseUsageCountedSessionIdFromFileName,
 } from "../../../../src/config/sessions/artifacts.js";
 export { resolveSessionTranscriptsDirForAgent } from "../../../../src/config/sessions/paths.js";
-export type { SessionSendPolicyConfig } from "../../../../src/config/types.base.js";
+export type { SessionSendPolicyConfig } from "../../../../src/config/types/base.js";
 export type {
   MemoryBackend,
   MemoryCitationsMode,
@@ -63,17 +63,17 @@ export type {
   MemoryQmdIndexPath,
   MemoryQmdMcporterConfig,
   MemoryQmdSearchMode,
-} from "../../../../src/config/types.memory.js";
+} from "../../../../src/config/types/memory.js";
 export {
   hasConfiguredSecretInput,
   normalizeResolvedSecretInputString,
-} from "../../../../src/config/types.secrets.js";
-export type { SecretInput } from "../../../../src/config/types.secrets.js";
-export type { MemorySearchConfig } from "../../../../src/config/types.tools.js";
+} from "../../../../src/config/types/secrets.js";
+export type { SecretInput } from "../../../../src/config/types/secrets.js";
+export type { MemorySearchConfig } from "../../../../src/config/types/tools.js";
 export { isVerbose, setVerbose } from "../../../../src/globals.js";
 
 // IO, network, and logging helpers.
-export { isExecCompletionEvent } from "../../../../src/infra/heartbeat-events-filter.js";
+export { isExecCompletionEvent } from "../../../../src/infra/heartbeat/heartbeat-events-filter.js";
 export { root } from "../../../../src/infra/fs-safe.js";
 export { fetchWithSsrFGuard } from "../../../../src/infra/net/fetch-guard.js";
 export { shouldUseEnvHttpProxyForUrl } from "../../../../src/infra/net/proxy-env.js";
@@ -84,12 +84,12 @@ export {
   DEFAULT_SQLITE_WAL_TRUNCATE_INTERVAL_MS,
   configureSqliteConnectionPragmas,
   configureSqliteWalMaintenance,
-} from "../../../../src/infra/sqlite-wal.js";
+} from "../../../../src/infra/state/sqlite-wal.js";
 export type {
   SqliteConnectionPragmaOptions,
   SqliteWalMaintenance,
   SqliteWalMaintenanceOptions,
-} from "../../../../src/infra/sqlite-wal.js";
+} from "../../../../src/infra/state/sqlite-wal.js";
 export {
   installProcessWarningFilter,
   shouldIgnoreWarning,
@@ -120,7 +120,7 @@ export type {
   MemoryEmbeddingProviderCreateResult,
   MemoryEmbeddingProviderRuntime,
 } from "../../../../src/plugins/memory-embedding-providers.js";
-export { emptyPluginConfigSchema } from "../../../../src/plugins/config-schema.js";
+export { emptyPluginConfigSchema } from "../../../../src/plugins/config/config-schema.js";
 export {
   buildMemoryPromptSection as buildActiveMemoryPromptSection,
   getMemoryCapabilityRegistration,
@@ -145,9 +145,9 @@ export { isCronRunSessionKey } from "../../../../src/sessions/session-key-utils.
 export { onSessionTranscriptUpdate } from "../../../../src/sessions/transcript-events.js";
 export { formatDocsLink } from "../../../terminal-core/src/links.js";
 export { colorize, isRich, theme } from "../../../terminal-core/src/theme.js";
-export { CHARS_PER_TOKEN_ESTIMATE, estimateStringChars } from "../../../../src/utils/cjk-chars.js";
-export { runTasksWithConcurrency } from "../../../../src/utils/run-with-concurrency.js";
-export { splitShellArgs } from "../../../../src/utils/shell-argv.js";
+export { CHARS_PER_TOKEN_ESTIMATE, estimateStringChars } from "../../../../src/shared/cjk-chars.js";
+export { runTasksWithConcurrency } from "../../../../src/shared/run-with-concurrency.js";
+export { splitShellArgs } from "../../../../src/shared/shell-argv.js";
 export {
   resolveUserPath,
   shortenHomeInString,

@@ -6,7 +6,7 @@ import {
   removeWorkspaceAttestationPaths,
   resetCleanupCommandMocks,
   silenceCleanupCommandRuntime,
-} from "./cleanup-command.test-support.js";
+} from "./maintenance/cleanup-command.test-support.js";
 
 describe("resetCommand", () => {
   const runtime = createCleanupCommandRuntime();

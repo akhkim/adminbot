@@ -3,7 +3,7 @@
  *
  * Creates/reuses Docker containers and exposes backend-neutral exec and shell-command handles.
  */
-import { buildDockerExecArgs } from "../bash-tools.shared.js";
+import { buildDockerExecArgs } from "../tools/bash-tools.shared.js";
 import type { SandboxBackendCommandParams } from "./backend-handle.types.js";
 import type {
   CreateSandboxBackendParams,

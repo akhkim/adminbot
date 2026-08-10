@@ -8,18 +8,18 @@ import { selectApplicableRuntimeConfig } from "../config/config.js";
 import {
   getRuntimeConfigSnapshot,
   getRuntimeConfigSourceSnapshot,
-} from "../config/runtime-snapshot.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+} from "../config/runtime/runtime-snapshot.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { resolvePluginTools } from "../plugins/tools.js";
-import { normalizeDeliveryContext } from "../utils/delivery-context.js";
-import { resolveApiKeyForProfile, resolveAuthProfileOrder } from "./auth-profiles.js";
+import { normalizeDeliveryContext } from "../shared/delivery-context.js";
 import type { AuthProfileStore } from "./auth-profiles/types.js";
+import { resolveApiKeyForProfile, resolveAuthProfileOrder } from "./auth/auth-profiles.js";
+import { applyPluginToolDeliveryDefaults } from "./plugin-tool-delivery-defaults.js";
+import type { AnyAgentTool } from "./tools/common.js";
 import {
   resolveOpenClawPluginToolInputs,
   type OpenClawPluginToolOptions,
-} from "./openclaw-tools.plugin-context.js";
-import { applyPluginToolDeliveryDefaults } from "./plugin-tool-delivery-defaults.js";
-import type { AnyAgentTool } from "./tools/common.js";
+} from "./tools/openclaw-tools.plugin-context.js";
 
 type ResolveOpenClawPluginToolsOptions = OpenClawPluginToolOptions & {
   pluginToolAllowlist?: string[];

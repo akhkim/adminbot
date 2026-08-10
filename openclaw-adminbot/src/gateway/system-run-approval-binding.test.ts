@@ -2,7 +2,7 @@
  * Tests system-run approval binding and request identity propagation.
  */
 import { describe, expect, test } from "vitest";
-import { toSystemRunApprovalMismatchError } from "../infra/system-run-approval-binding.js";
+import { toSystemRunApprovalMismatchError } from "../infra/system/system-run-approval-binding.js";
 
 describe("toSystemRunApprovalMismatchError", () => {
   test("includes runId/code and preserves mismatch details", () => {

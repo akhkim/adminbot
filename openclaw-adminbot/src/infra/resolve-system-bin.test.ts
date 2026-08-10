@@ -10,7 +10,7 @@ import {
   resetWindowsInstallRootsForTests,
   getWindowsInstallRoots,
   getWindowsProgramFilesRoots,
-} from "./windows-install-roots.js";
+} from "./system/windows-install-roots.js";
 
 let executables: Set<string>;
 

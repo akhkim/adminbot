@@ -1,27 +1,27 @@
 // Setup wizard orchestrates onboarding prompts and generated OpenClaw config.
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
-import { formatCliCommand } from "../cli/command-format.js";
 import {
   commitConfigWriteWithPendingPluginInstalls,
   hasPendingPluginInstallRecords,
   stripPendingPluginInstallRecords,
   unchangedPendingPluginInstallRecordIds,
-} from "../cli/plugins-install-record-commit.js";
+} from "../cli/plugins/plugins-install-record-commit.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
 import type {
   AuthChoice,
   GatewayAuthChoice,
   OnboardMode,
   OnboardOptions,
   ResetScope,
-} from "../commands/onboard-types.js";
+} from "../commands/onboard/onboard-types.js";
 import { createConfigIO, replaceConfigFile, resolveGatewayPort } from "../config/config.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
-import { normalizeSecretInputString } from "../config/types.secrets.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
+import { normalizeSecretInputString } from "../config/types/secrets.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import {
   buildPluginCompatibilitySnapshotNotices,
   formatPluginCompatibilityNotice,
-} from "../plugins/status.js";
+} from "../plugins/config/status.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { defaultRuntime } from "../runtime.js";
 import { resolveUserPath } from "../utils.js";
@@ -38,10 +38,10 @@ import type { QuickstartGatewayDefaults, WizardFlow } from "./setup.types.js";
 
 type SetupFlowChoice = WizardFlow | "import";
 
-type AuthChoiceModule = typeof import("../commands/auth-choice.js");
+type AuthChoiceModule = typeof import("../commands/auth/auth-choice.js");
 type ConfigLoggingModule = typeof import("../config/logging.js");
-type ModelPickerModule = typeof import("../commands/model-picker.js");
-type OnboardConfigModule = typeof import("../commands/onboard-config.js");
+type ModelPickerModule = typeof import("../commands/models/model-picker.js");
+type OnboardConfigModule = typeof import("../commands/onboard/onboard-config.js");
 
 let authChoiceModulePromise: Promise<AuthChoiceModule> | undefined;
 let configLoggingModulePromise: Promise<ConfigLoggingModule> | undefined;
@@ -49,7 +49,7 @@ let modelPickerModulePromise: Promise<ModelPickerModule> | undefined;
 let onboardConfigModulePromise: Promise<OnboardConfigModule> | undefined;
 
 function loadAuthChoiceModule(): Promise<AuthChoiceModule> {
-  authChoiceModulePromise ??= import("../commands/auth-choice.js");
+  authChoiceModulePromise ??= import("../commands/auth/auth-choice.js");
   return authChoiceModulePromise;
 }
 
@@ -59,12 +59,12 @@ function loadConfigLoggingModule(): Promise<ConfigLoggingModule> {
 }
 
 function loadModelPickerModule(): Promise<ModelPickerModule> {
-  modelPickerModulePromise ??= import("../commands/model-picker.js");
+  modelPickerModulePromise ??= import("../commands/models/model-picker.js");
   return modelPickerModulePromise;
 }
 
 function loadOnboardConfigModule(): Promise<OnboardConfigModule> {
-  onboardConfigModulePromise ??= import("../commands/onboard-config.js");
+  onboardConfigModulePromise ??= import("../commands/onboard/onboard-config.js");
   return onboardConfigModulePromise;
 }
 
@@ -141,7 +141,10 @@ async function resolveAuthChoiceModelSelectionPolicy(params: {
   });
 
   const [{ resolveManifestProviderAuthChoice }, { resolvePluginSetupProvider }] = await Promise.all(
-    [import("../plugins/provider-auth-choices.js"), import("../plugins/setup-registry.js")],
+    [
+      import("../plugins/providers/provider-auth-choices.js"),
+      import("../plugins/setup-registry.js"),
+    ],
   );
   const manifestChoice = resolveManifestProviderAuthChoice(params.authChoice, {
     config: params.config,
@@ -170,7 +173,7 @@ async function resolveAuthChoiceModelSelectionPolicy(params: {
   }
 
   const { resolvePluginProviders, resolveProviderPluginChoice } =
-    await import("../plugins/provider-auth-choice.runtime.js");
+    await import("../plugins/providers/provider-auth-choice.runtime.js");
   const providers = resolvePluginProviders({
     config: params.config,
     workspaceDir: params.workspaceDir,
@@ -228,7 +231,7 @@ export async function runSetupWizard(
 ) {
   let runtime = runtimeInput;
   runtime ??= defaultRuntime;
-  const onboardHelpers = await import("../commands/onboard-helpers.js");
+  const onboardHelpers = await import("../commands/onboard/onboard-helpers.js");
   onboardHelpers.printWizardHeader(runtime);
   await prompter.intro(t("wizard.setup.intro"));
   await requireRiskAcknowledgement({ opts, prompter });
@@ -614,7 +617,7 @@ export async function runSetupWizard(
         })) as OnboardMode));
 
   if (mode === "remote") {
-    const { promptRemoteGatewayConfig } = await import("../commands/onboard-remote.js");
+    const { promptRemoteGatewayConfig } = await import("../commands/onboard/onboard-remote.js");
     const { applySkipBootstrapConfig } = await loadOnboardConfigModule();
     const { logConfigUpdated } = await loadConfigLoggingModule();
     let nextConfig = await promptRemoteGatewayConfig(baseConfig, prompter, {
@@ -653,14 +656,16 @@ export async function runSetupWizard(
   const authChoiceFromPrompt = opts.authChoice === undefined;
   let authChoice: AuthChoice | undefined = opts.authChoice;
   let authStore:
-    | ReturnType<(typeof import("../agents/auth-profiles.runtime.js"))["ensureAuthProfileStore"]>
+    | ReturnType<
+        (typeof import("../agents/auth/auth-profiles.runtime.js"))["ensureAuthProfileStore"]
+      >
     | undefined;
   let promptAuthChoiceGrouped:
-    | (typeof import("../commands/auth-choice-prompt.js"))["promptAuthChoiceGrouped"]
+    | (typeof import("../commands/auth/auth-choice-prompt.js"))["promptAuthChoiceGrouped"]
     | undefined;
   if (authChoiceFromPrompt) {
-    const { ensureAuthProfileStore } = await import("../agents/auth-profiles.runtime.js");
-    ({ promptAuthChoiceGrouped } = await import("../commands/auth-choice-prompt.js"));
+    const { ensureAuthProfileStore } = await import("../agents/auth/auth-profiles.runtime.js");
+    ({ promptAuthChoiceGrouped } = await import("../commands/auth/auth-choice-prompt.js"));
     authStore = ensureAuthProfileStore(undefined, {
       allowKeychainPrompt: false,
     });
@@ -680,7 +685,7 @@ export async function runSetupWizard(
     }
 
     if (authChoice === "custom-api-key") {
-      const { promptCustomApiConfig } = await import("../commands/onboard-custom.js");
+      const { promptCustomApiConfig } = await import("../commands/onboard/onboard-custom.js");
       const customResult = await promptCustomApiConfig({
         prompter,
         runtime,
@@ -795,7 +800,7 @@ export async function runSetupWizard(
     await prompter.note(t("wizard.setup.skipChannels"), t("wizard.setup.channelsTitle"));
   } else {
     const { listChannelPlugins } = await import("../channels/plugins/index.js");
-    const { setupChannels } = await import("../commands/onboard-channels.js");
+    const { setupChannels } = await import("../commands/onboard/onboard-channels.js");
     const quickstartAllowFromChannels =
       flow === "quickstart"
         ? listChannelPlugins()
@@ -826,7 +831,7 @@ export async function runSetupWizard(
   if (opts.skipSearch) {
     await prompter.note(t("wizard.setup.skipSearch"), t("wizard.setup.searchTitle"));
   } else {
-    const { setupSearch } = await import("../commands/onboard-search.js");
+    const { setupSearch } = await import("../commands/onboard/onboard-search.js");
     nextConfig = await setupSearch(nextConfig, runtime, prompter, {
       quickstartDefaults: flow === "quickstart",
       secretInputMode: opts.secretInputMode,
@@ -836,7 +841,7 @@ export async function runSetupWizard(
   if (opts.skipSkills) {
     await prompter.note(t("wizard.setup.skipSkills"), t("wizard.setup.skillsTitle"));
   } else {
-    const { setupSkills } = await import("../commands/onboard-skills.js");
+    const { setupSkills } = await import("../commands/onboard/onboard-skills.js");
     nextConfig = await setupSkills(nextConfig, workspaceDir, runtime, prompter);
   }
 
@@ -865,7 +870,7 @@ export async function runSetupWizard(
 
   if (!opts.skipHooks) {
     // Setup hooks (session memory on /new)
-    const { setupInternalHooks } = await import("../commands/onboard-hooks.js");
+    const { setupInternalHooks } = await import("../commands/onboard/onboard-hooks.js");
     nextConfig = await setupInternalHooks(nextConfig, runtime, prompter);
   }
 

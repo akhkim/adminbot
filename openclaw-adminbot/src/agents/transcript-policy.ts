@@ -4,16 +4,16 @@
  * history sanitization, tool IDs, thinking blocks, and turn validation align.
  */
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { resolvePluginControlPlaneFingerprint } from "../plugins/plugin-control-plane-context.js";
-import type { ProviderRuntimePluginHandle } from "../plugins/provider-hook-runtime.js";
-import { resolveProviderRuntimePlugin } from "../plugins/provider-hook-runtime.js";
-import { shouldPreserveThinkingBlocks } from "../plugins/provider-replay-helpers.js";
-import type { ProviderRuntimeModel } from "../plugins/provider-runtime-model.types.js";
+import type { ProviderRuntimePluginHandle } from "../plugins/providers/provider-hook-runtime.js";
+import { resolveProviderRuntimePlugin } from "../plugins/providers/provider-hook-runtime.js";
+import { shouldPreserveThinkingBlocks } from "../plugins/providers/provider-replay-helpers.js";
+import type { ProviderRuntimeModel } from "../plugins/providers/provider-runtime-model.types.js";
 import type { ProviderReplayPolicy } from "../plugins/types.js";
 import { isGoogleModelApi } from "./embedded-agent-helpers/google.js";
-import { normalizeProviderId } from "./model-selection.js";
-import type { ToolCallIdMode } from "./tool-call-id.js";
+import { normalizeProviderId } from "./models/model-selection.js";
+import type { ToolCallIdMode } from "./tools/tool-call-id.js";
 
 /** Scope of transcript content sanitization before provider replay. */
 type TranscriptSanitizeMode = "full" | "images-only";

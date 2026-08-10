@@ -2,7 +2,7 @@
 // connected node id through gateway RPCs.
 import { expect } from "vitest";
 import type { WebSocket } from "ws";
-import type { GatewayClient } from "./client.js";
+import type { GatewayClient } from "./client/client.js";
 import { rpcReq } from "./test-helpers.js";
 
 /**

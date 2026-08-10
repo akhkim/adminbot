@@ -1,8 +1,8 @@
 /** Validates and normalizes serialized secrets apply plans before config mutation. */
 import { isRecord as isObjectRecord } from "@openclaw/normalization-core/record-coerce";
 import { normalizeStringEntries } from "@openclaw/normalization-core/string-normalization";
-import type { SecretProviderConfig, SecretRef } from "../config/types.secrets.js";
-import { SecretProviderSchema } from "../config/zod-schema.core.js";
+import type { SecretProviderConfig, SecretRef } from "../config/types/secrets.js";
+import { SecretProviderSchema } from "../config/zod/core.js";
 import { isValidSecretProviderAlias, isValidSecretRef } from "./ref-contract.js";
 import { parseDotPath, toDotPath } from "./shared.js";
 import { resolvePlanTargetAgainstRegistry, type ResolvedPlanTarget } from "./target-registry.js";

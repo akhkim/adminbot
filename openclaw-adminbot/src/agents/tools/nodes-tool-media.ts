@@ -13,7 +13,7 @@ import {
   parseCameraSnapPayload,
   writeCameraClipPayloadToFile,
   writeCameraPayloadToFile,
-} from "../../cli/nodes-camera.js";
+} from "../../cli/nodes-cli/nodes-camera.js";
 import {
   parseScreenRecordPayload,
   parseScreenSnapshotPayload,
@@ -21,11 +21,10 @@ import {
   screenSnapshotTempPath,
   writeScreenRecordToFile,
   writeScreenSnapshotToFile,
-} from "../../cli/nodes-screen.js";
-import { parseDurationMs } from "../../cli/parse-duration.js";
+} from "../../cli/nodes-cli/nodes-screen.js";
+import { parseDurationMs } from "../../cli/program/parse-duration.js";
 import type { ImageSanitizationLimits } from "../image-sanitization.js";
 import type { AgentToolResult } from "../runtime/index.js";
-import { sanitizeToolResultImages } from "../tool-images.js";
 import {
   readFiniteNumberParam,
   readNonNegativeIntegerParam,
@@ -34,6 +33,7 @@ import {
 import type { GatewayCallOptions } from "./gateway.js";
 import { callGatewayTool } from "./gateway.js";
 import { resolveNode, resolveNodeId } from "./nodes-utils.js";
+import { sanitizeToolResultImages } from "./tool-images.js";
 
 export const MEDIA_INVOKE_ACTIONS = {
   "camera.snap": "camera_snap",

@@ -5,7 +5,7 @@
  */
 import path from "node:path";
 import { CHANNEL_IDS } from "../../channels/ids.js";
-import { STATE_DIR } from "../../config/paths.js";
+import { STATE_DIR } from "../../config/paths/paths.js";
 
 export const DEFAULT_SANDBOX_WORKSPACE_ROOT = path.join(STATE_DIR, "sandboxes");
 

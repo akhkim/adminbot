@@ -1,6 +1,6 @@
 // Post-install migration helpers guide users through setup after package install.
-import { formatCliCommand } from "../cli/command-format.js";
-import type { OpenClawConfig } from "../config/types.openclaw.js";
+import { formatCliCommand } from "../cli/program/command-format.js";
+import type { OpenClawConfig } from "../config/types/openclaw.js";
 import { formatErrorMessage } from "../infra/errors.js";
 import {
   readMigrationConfigPatchDetails,
@@ -36,7 +36,7 @@ type ResolvedProviderCandidate = {
 
 let migrationContextModulePromise: Promise<typeof import("../commands/migrate/context.js")> | null =
   null;
-let configPathsModulePromise: Promise<typeof import("../config/paths.js")> | null = null;
+let configPathsModulePromise: Promise<typeof import("../config/paths/paths.js")> | null = null;
 
 const loadMigrationContextModule = async () => {
   migrationContextModulePromise ??= import("../commands/migrate/context.js");
@@ -44,7 +44,7 @@ const loadMigrationContextModule = async () => {
 };
 
 const loadConfigPathsModule = async () => {
-  configPathsModulePromise ??= import("../config/paths.js");
+  configPathsModulePromise ??= import("../config/paths/paths.js");
   return await configPathsModulePromise;
 };
 
@@ -63,7 +63,7 @@ async function resolveCandidates(params: {
     { resolveStateDir },
   ] = await Promise.all([
     import("../plugins/migration-provider-runtime.js"),
-    import("../plugins/manifest-contract-runtime.js"),
+    import("../plugins/manifest/manifest-contract-runtime.js"),
     loadMigrationContextModule(),
     loadConfigPathsModule(),
   ]);

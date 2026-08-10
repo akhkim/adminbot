@@ -1,10 +1,10 @@
+import { requireApiKey } from "../../agents/auth/model-auth.js";
 // Generates short labels for sessions from conversation context.
 import { resolveModelAsync } from "../../agents/embedded-agent-runner/model.js";
-import { requireApiKey } from "../../agents/model-auth.js";
-import { resolveDefaultModelForAgent } from "../../agents/model-selection.js";
-import { applyPreparedRuntimeAuthToModel } from "../../agents/provider-request-config.js";
-import { prepareModelForSimpleCompletion } from "../../agents/simple-completion-transport.js";
-import type { OpenClawConfig } from "../../config/types.openclaw.js";
+import { resolveDefaultModelForAgent } from "../../agents/models/model-selection.js";
+import { applyPreparedRuntimeAuthToModel } from "../../agents/transport/provider-request-config.js";
+import { prepareModelForSimpleCompletion } from "../../agents/transport/simple-completion-transport.js";
+import type { OpenClawConfig } from "../../config/types/openclaw.js";
 import { logVerbose } from "../../globals.js";
 import { completeSimple } from "../../llm/stream.js";
 import type { TextContent } from "../../llm/types.js";

@@ -1,7 +1,7 @@
 // Config validation tests cover config snapshot validation and command error handling.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { PluginCompatibilityNotice } from "../plugins/status.js";
-import { createCompatibilityNotice } from "../plugins/status.test-helpers.js";
+import type { PluginCompatibilityNotice } from "../plugins/config/status.js";
+import { createCompatibilityNotice } from "../plugins/config/status.test-helpers.js";
 import { requireValidConfigSnapshot } from "./config-validation.js";
 
 const { readConfigFileSnapshot, buildPluginCompatibilitySnapshotNotices } = vi.hoisted(() => ({
@@ -15,7 +15,7 @@ vi.mock("../config/config.js", () => ({
   readConfigFileSnapshot,
 }));
 
-vi.mock("../plugins/status.js", () => ({
+vi.mock("../plugins/config/status.js", () => ({
   buildPluginCompatibilitySnapshotNotices,
   formatPluginCompatibilityNotice: (notice: { pluginId: string; message: string }) =>
     `${notice.pluginId} ${notice.message}`,

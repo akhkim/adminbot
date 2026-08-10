@@ -2,7 +2,7 @@
 // Stores normalized pricing rows and source-health failures for runtime reads.
 import { normalizeProviderId } from "@openclaw/model-catalog-core/provider-id";
 import { normalizeLowercaseStringOrEmpty } from "@openclaw/normalization-core/string-coerce";
-import { normalizeModelRef } from "../agents/model-selection.js";
+import { normalizeModelRef } from "../agents/models/model-selection.js";
 
 export type CachedPricingTier = {
   input: number;

@@ -11,7 +11,7 @@ import { DEFAULT_MAX_BYTES } from "./truncate.js";
 
 const decodeWindowsTextFileBufferMock = vi.hoisted(() => vi.fn(() => ""));
 
-vi.mock("../../../infra/windows-encoding.js", () => ({
+vi.mock("../../../infra/system/windows-encoding.js", () => ({
   decodeWindowsTextFileBuffer: decodeWindowsTextFileBufferMock,
 }));
 

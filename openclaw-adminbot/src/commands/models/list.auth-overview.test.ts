@@ -1,7 +1,7 @@
 // Model auth overview tests cover provider auth overview rows for model listings.
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { NON_ENV_SECRETREF_MARKER } from "../../agents/model-auth-markers.js";
-import { resolveEnvApiKey } from "../../agents/model-auth.js";
+import { NON_ENV_SECRETREF_MARKER } from "../../agents/auth/model-auth-markers.js";
+import { resolveEnvApiKey } from "../../agents/auth/model-auth.js";
 import { withEnv } from "../../test-utils/env.js";
 import { resolveProviderAuthOverview } from "./list.auth-overview.js";
 
@@ -36,7 +36,7 @@ vi.mock("../../agents/auth-profiles/usage.js", () => ({
   resolveProfileUnusableUntilForDisplay: vi.fn(() => undefined),
 }));
 
-vi.mock("../../agents/model-auth.js", () => {
+vi.mock("../../agents/auth/model-auth.js", () => {
   const resolveConfigKey = (
     cfg: { models?: { providers?: Record<string, { apiKey?: string }> } } | undefined,
     provider: string,

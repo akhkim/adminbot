@@ -1,3 +1,4 @@
+// oxlint-disable max-lines -- grandfathered at 2362 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI module implements app chat behavior.
 import { setLastActiveSessionKey } from "./app-last-active-session.ts";
 import { scheduleChatScroll, resetChatScroll } from "./app-scroll.ts";

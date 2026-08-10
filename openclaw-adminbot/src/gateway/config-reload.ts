@@ -1,15 +1,15 @@
 // Gateway config hot-reload watcher.
 // Diffs config/plugin install snapshots and dispatches hot reload or restart plans.
 import chokidar from "chokidar";
-import type { ConfigWriteNotification } from "../config/io.js";
+import type { ConfigWriteNotification } from "../config/io/io.js";
 import { formatConfigIssueLines } from "../config/issue-format.js";
-import { resolveConfigWriteFollowUp } from "../config/runtime-snapshot.js";
-import type { ConfigFileSnapshot, OpenClawConfig } from "../config/types.openclaw.js";
-import type { PluginInstallRecord } from "../config/types.plugins.js";
+import { resolveConfigWriteFollowUp } from "../config/runtime/runtime-snapshot.js";
+import type { ConfigFileSnapshot, OpenClawConfig } from "../config/types/openclaw.js";
+import type { PluginInstallRecord } from "../config/types/plugins.js";
 import {
   loadInstalledPluginIndexInstallRecords,
   loadInstalledPluginIndexInstallRecordsSync,
-} from "../plugins/installed-plugin-index-records.js";
+} from "../plugins/install/installed-plugin-index-records.js";
 import { bumpSkillsSnapshotVersion } from "../skills/runtime/refresh-state.js";
 import { diffConfigPaths } from "./config-diff.js";
 import {
