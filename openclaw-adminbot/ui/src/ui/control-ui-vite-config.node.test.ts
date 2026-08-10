@@ -72,8 +72,8 @@ describe("Control UI Vite config", () => {
     for (const importerSuffix of ["", "?browserv=123"]) {
       const resolved = await resolveIdHandler.call(
         {} as never,
-        "../logging/redact.js",
-        `${path.join(repoRoot, "src/agents/tool-display-common.ts")}${importerSuffix}`,
+        "../../logging/redact.js",
+        `${path.join(repoRoot, "src/agents/tools/tool-display-common.ts")}${importerSuffix}`,
         { custom: {}, isEntry: false, ssr: false },
       );
 

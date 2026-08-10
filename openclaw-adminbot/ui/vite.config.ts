@@ -195,7 +195,11 @@ export function controlUiBrowserOnlySharedModuleAliases(): Plugin {
     enforce: "pre",
     resolveId(source, importer) {
       if (
-        source === "../logging/redact.js" &&
+        // Must track the specifier the importers actually write. These live in src/agents/tools/,
+        // two levels below src/, so the path is "../../". An exact-match miss here fails silently:
+        // resolveId returns null, Vite resolves the real Node module, and the Control UI dies at
+        // runtime on node:url rather than failing the build.
+        source === "../../logging/redact.js" &&
         importer &&
         sharedRedactImporters.has(normalizeViteImporterPath(importer))
       ) {

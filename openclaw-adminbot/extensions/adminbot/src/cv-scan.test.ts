@@ -1,7 +1,16 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import type { AdminBotCvEntry, AdminBotCvSnapshot, AdminBotLabMember } from "./contracts.js";
-import { runAdminBotCvScan, type AdminBotCvScanDeps } from "./cv-scan.js";
+import type {
+  AdminBotCvEntry,
+  AdminBotCvSnapshot,
+  AdminBotLabMember,
+} from "./contracts/actions.js";
+import {
+  assertPublicHost,
+  isPublicIpAddress,
+  runAdminBotCvScan,
+  type AdminBotCvScanDeps,
+} from "./cv-scan.js";
 
 const SCANNED_AT = new Date("2026-08-05T12:00:00.000Z");
 
@@ -122,13 +131,13 @@ describe("runAdminBotCvScan", () => {
     expect(result.results[0]).toMatchObject({ status: "unchanged", added: [], removed: [] });
   });
 
-  it("refuses a stored link pointing off the allowlist", async () => {
+  it("refuses a non-https link without fetching it", async () => {
     const fetchPdf = vi.fn(async () => new Uint8Array([1]));
     const { result } = await runAdminBotCvScan(
-      [member({ id: "evil", cv_url: "https://internal.example/admin" })],
+      [member({ id: "insecure", cv_url: "http://example.com/cv.pdf" })],
       deps({ fetchPdf }),
     );
-    expect(result.results[0]?.status).toBe("skipped");
+    expect(result.results[0]).toMatchObject({ status: "skipped", reason: "cv url must use https" });
     expect(fetchPdf).not.toHaveBeenCalled();
   });
 
@@ -164,5 +173,68 @@ describe("runAdminBotCvScan", () => {
       deps({ extractText: async () => ({ ok: false, reason: "no_text_layer" }) }),
     );
     expect(result.results[0]).toMatchObject({ status: "failed", reason: "no_text_layer" });
+  });
+});
+
+describe("isPublicIpAddress", () => {
+  // Each of these is a real place a forged request would try to reach from the service host.
+  it.each([
+    ["127.0.0.1", "loopback — the AdminBot API itself"],
+    ["169.254.169.254", "cloud instance metadata"],
+    ["10.0.0.5", "private"],
+    ["172.16.0.1", "private"],
+    ["172.31.255.255", "private, top of range"],
+    ["192.168.1.1", "private"],
+    ["100.64.0.1", "carrier-grade NAT"],
+    ["0.0.0.0", "this-network"],
+    ["224.0.0.1", "multicast"],
+    ["::1", "IPv6 loopback"],
+    ["fd00::1", "IPv6 unique local"],
+    ["fe80::1", "IPv6 link local"],
+    ["::ffff:127.0.0.1", "IPv4 loopback mapped into IPv6"],
+    ["::ffff:169.254.169.254", "metadata address mapped into IPv6"],
+    ["not-an-ip", "unparseable"],
+  ])("refuses %s (%s)", (address) => {
+    expect(isPublicIpAddress(address)).toBe(false);
+  });
+
+  it.each([["8.8.8.8"], ["1.1.1.1"], ["172.32.0.1"], ["192.169.0.1"], ["2606:4700::1111"]])(
+    "allows public %s",
+    (address) => {
+      expect(isPublicIpAddress(address)).toBe(true);
+    },
+  );
+});
+
+describe("assertPublicHost", () => {
+  it("accepts a host that resolves entirely to public addresses", async () => {
+    const lookup = vi.fn(async () => [{ address: "8.8.8.8" }]);
+    await expect(
+      assertPublicHost("example.com", lookup as never),
+    ).resolves.toBeUndefined();
+  });
+
+  it("refuses a host whose addresses include a private one", async () => {
+    // A name answering with one public and one private address would otherwise be usable to reach
+    // the private one, so every record has to pass.
+    const lookup = vi.fn(async () => [{ address: "8.8.8.8" }, { address: "10.1.2.3" }]);
+    await expect(assertPublicHost("rebind.example", lookup as never)).rejects.toThrow(
+      /non-public address \(10\.1\.2\.3\)/u,
+    );
+  });
+
+  it("checks an IP literal directly without consulting DNS", async () => {
+    const lookup = vi.fn(async () => [{ address: "8.8.8.8" }]);
+    await expect(assertPublicHost("169.254.169.254", lookup as never)).rejects.toThrow(
+      /non-public address/u,
+    );
+    expect(lookup).not.toHaveBeenCalled();
+  });
+
+  it("refuses a host that resolves to nothing", async () => {
+    const lookup = vi.fn(async () => []);
+    await expect(assertPublicHost("void.example", lookup as never)).rejects.toThrow(
+      /resolved to no addresses/u,
+    );
   });
 });

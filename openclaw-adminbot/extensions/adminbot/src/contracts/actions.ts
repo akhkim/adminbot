@@ -201,11 +201,6 @@ export type AdminBotTimeOffRow = {
   note?: string;
 };
 
-// Same allowlist and reasoning as the availability planning doc: a CV link is fetched server-side
-// with the AdminBot Google account, so without the restriction a self-editable profile field
-// becomes a fetch primitive aimed at any host the service can reach.
-export const CV_URL_HOSTS = new Set(["docs.google.com", "drive.google.com"]);
-
 // One dated line off a CV. `kind` is what makes a change newsworthy or not: a new `position` or
 // `education` entry is a career move worth announcing, an `award` is worth congratulating, and
 // anything the model cannot place lands in `other` and is reported but never drafted.
