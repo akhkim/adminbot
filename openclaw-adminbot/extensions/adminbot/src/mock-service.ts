@@ -25,6 +25,7 @@ import { DEADLINE_VENUES } from "./deadlines-dataset.js";
 import { renderDeadlinesWebUi } from "./deadlines-web-ui.js";
 import { allowedGatewayScopesForPrivilege } from "./device-pairing-scopes.js";
 import { createDriveWorkspaceProvisioner } from "./drive-workspace.js";
+import { createIpinfoLiteGeolocator } from "./ip-geolocation.js";
 import {
   createAdminBotOnboardingSender,
   type AdminBotOnboardingSender,
@@ -52,6 +53,8 @@ import {
   type AdminBotServiceStore,
 } from "./service-core.js";
 import { createAdminBotSqliteService } from "./service-sqlite.js";
+import { renderMemberMapWebUi } from "./member-map-web-ui.js";
+import { toPublicMemberMapSummary } from "./member-map.js";
 import { renderAdminBotWebUi } from "./web-ui.js";
 
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -75,6 +78,14 @@ export type AdminBotMockServiceOptions = {
   serviceToken?: string;
   gatewayToken?: string;
   gatewayUrl?: string;
+  // Free-tier IPinfo Lite token, used to stamp a coarse (country-level) location on a member's
+  // record from the IP their most recent successful login came from. Falls back to
+  // process.env.IPINFO_TOKEN; absent either way, login location just never gets recorded.
+  ipinfoToken?: string;
+  // Trust X-Forwarded-For for the caller's IP (rate limiting, login-location) instead of the raw
+  // socket address. Only safe when this process is only reachable through a proxy that sets that
+  // header itself (Render, Fly, etc.) — falls back to process.env.ADMINBOT_TRUST_PROXY === "1".
+  trustProxyHeaders?: boolean;
   // Injected so the composition root owns the Slack dependency: the invite needs the Slack
   // extension's write client, and a bundled plugin importing another plugin is what the
   // extensions boundary forbids.
@@ -141,15 +152,21 @@ type AdminBotPrincipal =
   | { kind: "anonymous"; ip?: string }
   | AdminBotMemberPrincipal;
 
+// Routes the anonymous principal may reach, keyed as "METHOD pathname" -- re-checked against this
+// list before any handler runs, so a new route cannot become anonymously reachable by being added
+// to handleAuthenticatedRoute.
+//
 // Reimbursement is deliberately usable without an account: the forms carry only the claimant's own
-// details, which they are typing in anyway. The anonymous principal therefore reaches these two
-// routes and nothing else -- it is rejected by isPrivileged, carries no member, and is re-checked
-// against this list before any handler runs, so a new route cannot become anonymously reachable by
-// being added to handleAuthenticatedRoute.
-const ANONYMOUS_ROUTES = new Set(["/reimbursements/converse", "/reimbursements/generate"]);
+// details, which they are typing in anyway.
+//
+// GET /member-map is deliberately public too, same spirit as GET /deadlines: the handler itself
+// still checks isPrivileged and gives an anonymous (or non-admin) caller a names-stripped, counts-
+// only summary -- publishing where people are by name was the thing worth gating, headcounts
+// per city were not.
+const ANONYMOUS_ROUTES = new Set(["POST /reimbursements/converse", "POST /reimbursements/generate", "GET /member-map"]);
 
 function isAnonymousRoute(method: string | undefined, pathname: string): boolean {
-  return method === "POST" && ANONYMOUS_ROUTES.has(pathname);
+  return ANONYMOUS_ROUTES.has(`${method} ${pathname}`);
 }
 
 // Anonymous callers are unauthenticated by design, so the only abuse control left is volume. These
@@ -205,6 +222,10 @@ type AdminBotRouteContext = {
   onboardingSender: AdminBotOnboardingSender;
   allowedOrigins: Set<string>;
   anonymousRateLimiter: AnonymousRateLimiter;
+  // Only true when this process is known to sit behind a trusted reverse proxy (Render, Fly,
+  // etc.) that sets X-Forwarded-For itself. Otherwise a caller could hand-write that header to
+  // spoof the IP rate-limiting and login-location keys off of — see remoteIp().
+  trustProxyHeaders: boolean;
 };
 
 export function createAdminBotMockService(options: AdminBotMockServiceOptions = {}) {
@@ -229,6 +250,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // the client keeps the URL it already connects with.
   const gatewayUrl = trimmedEnv(options.gatewayUrl ?? process.env.ADMINBOT_GATEWAY_WS_URL);
   const serviceToken = trimmedEnv(options.serviceToken ?? process.env.ADMINBOT_SERVICE_TOKEN);
+  const ipinfoToken = trimmedEnv(options.ipinfoToken ?? process.env.IPINFO_TOKEN);
   const allowedOrigins = new Set(
     options.allowedOrigins ??
       parseOrigins(process.env.ADMINBOT_ALLOWED_ORIGINS) ??
@@ -250,6 +272,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
     ...(gatewayToken ? { gatewayToken } : {}),
     ...(gatewayUrl ? { gatewayUrl } : {}),
+    ...(ipinfoToken ? { geolocateIp: createIpinfoLiteGeolocator(ipinfoToken) } : {}),
   });
   const onboardingSender =
     options.onboardingSender ??
@@ -313,6 +336,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
     allowedOrigins,
     anonymousRateLimiter: createAnonymousRateLimiter(),
+    trustProxyHeaders: options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
   };
   const server = createServer(async (req, res) => {
     try {
@@ -369,6 +393,10 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     sendJson(res, 200, { items: DEADLINE_VENUES });
     return;
   }
+  if (req.method === "GET" && url.pathname === "/lab_stats/member_map") {
+    sendHtml(res, 200, renderMemberMapWebUi());
+    return;
+  }
   if (url.pathname.startsWith("/auth/")) {
     await handleAuthRoute(req, res, ctx, url);
     return;
@@ -380,7 +408,7 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
-    const ip = remoteIp(req);
+    const ip = remoteIp(req, ctx.trustProxyHeaders);
     if (!ctx.anonymousRateLimiter.check(ip)) {
       ctx.service.recordAnonymousReimbursementUse({
         route: url.pathname,
@@ -418,32 +446,35 @@ async function handleAuthRoute(
   }
   if (req.method === "POST" && url.pathname === "/auth/claim") {
     const body = readRecord(await readJson(req));
+    const ip = remoteIp(req, ctx.trustProxyHeaders);
     const result = ctx.auth.claim({
       member_id: asString(body.member_id),
       email: asString(body.email),
       password: asString(body.password),
-      ...(remoteIp(req) ? { remoteIp: remoteIp(req) } : {}),
+      ...(ip ? { remoteIp: ip } : {}),
     });
     sendAuthResult(res, result);
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/signup") {
     const body = readRecord(await readJson(req));
+    const ip = remoteIp(req, ctx.trustProxyHeaders);
     const result = ctx.auth.signup({
       profile: readRecord(body.profile),
       email: asString(body.email),
       password: asString(body.password),
-      ...(remoteIp(req) ? { remoteIp: remoteIp(req) } : {}),
+      ...(ip ? { remoteIp: ip } : {}),
     });
     sendAuthResult(res, result);
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/login") {
     const body = readRecord(await readJson(req));
+    const ip = remoteIp(req, ctx.trustProxyHeaders);
     const result = ctx.auth.login({
       email: asString(body.email),
       password: asString(body.password),
-      ...(remoteIp(req) ? { remoteIp: remoteIp(req) } : {}),
+      ...(ip ? { remoteIp: ip } : {}),
     });
     if (!result.ok && result.code === "pending_approval") {
       // Distinct body so the client can route the applicant to a "waiting for approval" state.
@@ -519,7 +550,7 @@ async function handleAuthRoute(
       principal.member.id,
       asString(body.new_email),
       asString(body.current_password),
-      remoteIp(req),
+      remoteIp(req, ctx.trustProxyHeaders),
     );
     sendAuthResult(res, result);
     return;
@@ -720,13 +751,23 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "GET" && url.pathname === "/member-map") {
-    // Where everyone is, by name. Privileged rather than public: the doc calls this a
-    // public website function, but publishing 144 people's locations is a decision to
-    // make deliberately, not a side effect of building the view.
-    if (!requirePrivileged(res, principal)) {
+    // Public in shape (see GET /member-map in ANONYMOUS_ROUTES), but only ever public in a
+    // counts-only shape: publishing 100+ people's names and locations is a decision to make
+    // deliberately, not a side effect of building the view, so only an admin gets the version
+    // with who is where. Everyone else -- anonymous or a signed-in non-admin member alike --
+    // gets a headcount per city.
+    const result = service.memberMap();
+    if (!result.ok) {
+      sendServiceResult(res, result);
       return;
     }
-    sendServiceResult(res, service.memberMap());
+    sendJson(
+      res,
+      200,
+      isPrivileged(principal)
+        ? { mode: "full", ...result.payload }
+        : { mode: "summary", ...toPublicMemberMapSummary(result.payload) },
+    );
     return;
   }
   if (req.method === "POST" && url.pathname === "/member-map/refresh") {
@@ -1249,7 +1290,18 @@ function cookieToken(req: IncomingMessage): string | undefined {
   return undefined;
 }
 
-function remoteIp(req: IncomingMessage): string | undefined {
+// Behind a reverse proxy (Render, Fly, etc.), req.socket.remoteAddress is the proxy's own
+// address, not the real caller's — the actual IP only shows up in X-Forwarded-For, which the
+// proxy sets and the app must not trust unless it knows every request actually passes through
+// that proxy (otherwise a direct caller could hand-write the header to spoof it).
+function remoteIp(req: IncomingMessage, trustProxyHeaders: boolean): string | undefined {
+  if (trustProxyHeaders) {
+    const header = req.headers["x-forwarded-for"];
+    const first = (Array.isArray(header) ? header[0] : header)?.split(",")[0]?.trim();
+    if (first) {
+      return first;
+    }
+  }
   return req.socket.remoteAddress ?? undefined;
 }
 
@@ -1298,6 +1350,10 @@ function readRecord(value: unknown): Record<string, unknown> {
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+  // Every JSON response here reflects live, mutable state (roster, sessions, map places...);
+  // without this a browser can silently serve a stale GET from its disk cache instead of
+  // re-asking the server, which is indistinguishable from the data actually being wrong.
+  res.setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify(body));
 }
 

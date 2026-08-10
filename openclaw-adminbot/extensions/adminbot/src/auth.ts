@@ -86,6 +86,9 @@ export type AdminBotAuthServiceOptions = {
   // member their account is live. Same contract as inviteToLabCalendar: audited either way, never
   // fails or delays the approval response.
   sendAccountApprovedEmail?: (params: { email: string; name?: string }) => Promise<void>;
+  // Best-effort, fired but not awaited on a successful login (see login()): resolving it can take
+  // a moment and must never slow down or fail the sign-in it happened alongside.
+  geolocateIp?: (ip: string) => Promise<{ country?: string; continent?: string } | undefined>;
   gatewayToken?: string;
   gatewayUrl?: string;
   sessionTtlMs?: number;
@@ -134,6 +137,9 @@ export class AdminBotAuthService {
     email: string;
     name?: string;
   }) => Promise<void>;
+  private readonly geolocateIp?: (
+    ip: string,
+  ) => Promise<{ country?: string; continent?: string } | undefined>;
   private readonly gatewayToken?: string;
   private readonly gatewayUrl?: string;
   private readonly sessionTtlMs: number;
@@ -148,6 +154,7 @@ export class AdminBotAuthService {
     this.createMember = options.createMember;
     this.inviteToLabCalendar = options.inviteToLabCalendar;
     this.sendAccountApprovedEmail = options.sendAccountApprovedEmail;
+    this.geolocateIp = options.geolocateIp;
     this.gatewayToken = options.gatewayToken?.trim() || undefined;
     this.gatewayUrl = options.gatewayUrl?.trim() || undefined;
     this.sessionTtlMs = options.sessionTtlMs ?? DEFAULT_SESSION_TTL_MS;
@@ -257,7 +264,37 @@ export class AdminBotAuthService {
     }
     const { payload } = this.startSession(member);
     this.audit("auth.login_succeeded", member.id, { email });
+    if (this.geolocateIp && request.remoteIp) {
+      // Not awaited: geolocation is a courtesy stamp on the member record, not part of the
+      // sign-in itself, and must never make login wait on a third-party API.
+      void this.recordLoginLocation(member.id, request.remoteIp);
+    }
     return { ok: true, status: 200, payload, sessionToken: payload.session_token };
+  }
+
+  private async recordLoginLocation(memberId: string, remoteIp: string): Promise<void> {
+    try {
+      const location = await this.geolocateIp?.(remoteIp);
+      if (!location || (!location.country && !location.continent)) {
+        return;
+      }
+      // Re-read rather than reuse the `member` from login(): logins can race, and this must
+      // only ever touch the three last_login_* fields, never clobber a concurrent profile edit.
+      const current = this.store.getLabMember(memberId);
+      if (!current) {
+        return;
+      }
+      this.store.saveLabMember({
+        ...current,
+        last_login_at: this.now().toISOString(),
+        ...(location.country ? { last_login_country: location.country } : {}),
+        ...(location.continent ? { last_login_continent: location.continent } : {}),
+        updated_at: this.now().toISOString(),
+      });
+      this.audit("auth.login_location_updated", memberId, { ...location });
+    } catch {
+      // Best-effort, per the option's own contract — nothing left to do with a failure here.
+    }
   }
 
   resolveSession(rawToken: string): AdminBotMemberPrincipal | undefined {

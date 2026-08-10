@@ -227,6 +227,13 @@ export type AdminBotLabMemberInput = {
   // `location` is what they told us when they joined, this is what Slack knows now.
   slack_location?: string;
   slack_location_updated_at?: string;
+  // Coarse (country-level) location derived from the IP address of this person's most recent
+  // successful login, via IP geolocation (see ip-geolocation.ts). Distinct from `location` and
+  // `slack_location`, which are both self-reported: this one is inferred, so it is never taken
+  // as an input and never overwrites either — it is only ever set by the login path itself.
+  last_login_at?: string;
+  last_login_country?: string;
+  last_login_continent?: string;
   availability?: AdminBotAvailabilityRow[];
   time_off?: AdminBotTimeOffRow[];
   // Link to the member's own planning doc in Drive, which the availability importer reads to
@@ -570,7 +577,8 @@ export type AdminBotAuditEvent = {
     | "openreview.milestone_sent"
     | "openreview.milestone_blocked"
     | "openreview.assignment_changed"
-    | "member_map.refreshed";
+    | "member_map.refreshed"
+    | "auth.login_location_updated";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;

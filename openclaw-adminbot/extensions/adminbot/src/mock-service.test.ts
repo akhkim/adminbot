@@ -190,6 +190,20 @@ describe("AdminBot mock service", () => {
     expect(body.items.length).toBeGreaterThan(0);
   });
 
+  it("serves the member map page as a public, unauthenticated shell", async () => {
+    const { baseUrl } = await startService();
+
+    const page = await fetch(`${baseUrl}/lab_stats/member_map`);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("Lab Member Map");
+
+    // The shell loads without a session, and so does the data it fetches -- anonymously, that
+    // data is a names-stripped, counts-only summary rather than a 401.
+    const data = await fetch(`${baseUrl}/member-map`);
+    expect(data.status).toBe(200);
+    await expect(data.json()).resolves.toMatchObject({ mode: "summary" });
+  });
+
   it("rejects unauthenticated requests to gated routes", async () => {
     const { baseUrl } = await startService();
     const members = await fetch(`${baseUrl}/lab/members`);
@@ -541,6 +555,31 @@ describe("AdminBot mock service", () => {
     expect(body.retry_after_seconds).toBeGreaterThan(0);
   });
 
+  it("only honors X-Forwarded-For for the caller's IP when trustProxyHeaders is on", async () => {
+    const spoofed = "203.0.113.9";
+
+    async function rateLimitAndGetAuditedIp(trustProxyHeaders: boolean): Promise<unknown> {
+      const { baseUrl } = await startService({ trustProxyHeaders });
+      await seedMember(baseUrl, "rl2", { name: "RL2", email: "rl2@example.com" });
+      for (let attempt = 0; attempt < 11; attempt += 1) {
+        await fetch(`${baseUrl}/auth/login`, {
+          method: "POST",
+          headers: jsonHeaders({ "X-Forwarded-For": spoofed }),
+          body: JSON.stringify({ email: "rl2@example.com", password: "wrongpassword" }),
+        });
+      }
+      const events = mockFor(baseUrl).service.listAuditEvents();
+      const limited = events.find((event) => event.type === "auth.rate_limited");
+      return limited?.details?.remote_ip;
+    }
+
+    // Untrusted (the default): a caller-supplied header must never override the real socket
+    // address, or anyone could spoof their way around IP-based rate limiting.
+    await expect(rateLimitAndGetAuditedIp(false)).resolves.not.toBe(spoofed);
+    // Trusted: this process is configured to sit behind a proxy that sets the header itself.
+    await expect(rateLimitAndGetAuditedIp(true)).resolves.toBe(spoofed);
+  });
+
   it("guards member self-profile edits", async () => {
     const { baseUrl } = await startService();
     await seedMember(baseUrl, "self", {
@@ -821,24 +860,70 @@ describe("AdminBot mock service", () => {
     expect((await attempt()).status).toBe(429);
   });
 
-  it("serves the member map to a privileged principal and refuses anonymous callers", async () => {
+  it("gives a privileged principal full names, and everyone else a counts-only summary", async () => {
     const { baseUrl } = await startService();
     await seedMember(baseUrl, "ada", {
       name: "Ada",
       privilege_level: "member",
       location: "Toronto",
     });
+    // Unplaced (no location anywhere), so a summary that ever put unplaced names back in would
+    // leak "Zedunia" specifically, and the check below would catch it even though Zed never
+    // appears in a `places` entry at all.
+    await seedMember(baseUrl, "zed", { name: "Zedunia", privilege_level: "member" });
+    await approveClaim(baseUrl, "ada", "ada@example.com");
+    const memberToken = await loginToken(baseUrl, "ada@example.com");
 
     const anonymous = await fetch(`${baseUrl}/member-map`);
-    expect(anonymous.status).toBe(401);
+    expect(anonymous.status).toBe(200);
+    const anonymousText = await anonymous.text();
+    expect(anonymousText).not.toContain("Ada");
+    expect(anonymousText).not.toContain("Zedunia");
+    expect(anonymousText).not.toContain("members");
+    const anonymousBody = JSON.parse(anonymousText) as {
+      mode: string;
+      places: Array<{ label: string; count: number; members?: unknown }>;
+      unplaced?: unknown;
+    };
+    expect(anonymousBody.mode).toBe("summary");
+    expect(anonymousBody.places[0]).toMatchObject({ label: "Toronto", count: 1 });
+    expect(anonymousBody.places[0]?.members).toBeUndefined();
+    expect(anonymousBody.unplaced).toBeUndefined();
+
+    // A signed-in member who is not an admin gets the same counts-only shape as anonymous --
+    // checked by reading the raw response text for the name, not just the structured fields,
+    // so a bug that stashed "members" under some other key would still be caught.
+    const asMember = await fetch(`${baseUrl}/member-map`, {
+      headers: { Authorization: `Bearer ${memberToken}` },
+    });
+    expect(asMember.status).toBe(200);
+    const asMemberText = await asMember.text();
+    expect(asMemberText).not.toContain("Ada");
+    expect(asMemberText).not.toContain("Zedunia");
+    expect(asMemberText).not.toContain("members");
+    const asMemberBody = JSON.parse(asMemberText) as {
+      mode: string;
+      places: Array<{ members?: unknown }>;
+      unplaced?: unknown;
+    };
+    expect(asMemberBody.mode).toBe("summary");
+    expect(asMemberBody.places[0]?.members).toBeUndefined();
+    expect(asMemberBody.unplaced).toBeUndefined();
 
     const response = await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() });
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
+      mode: string;
       places: Array<{ label: string; members: Array<{ name: string; source: string }> }>;
+      unplaced: Array<{ name: string }>;
     };
+    expect(body.mode).toBe("full");
     expect(body.places[0]?.label).toBe("Toronto");
     expect(body.places[0]?.members[0]).toMatchObject({ name: "Ada", source: "roster" });
+    // The full path still surfaces the unplaced name -- proving the two summary checks above
+    // are actually testing something the admin view does show, not a name that was never in
+    // the data to begin with.
+    expect(body.unplaced.map((entry) => entry.name)).toContain("Zedunia");
   });
 
   it("reports a 503 for a map refresh when no slack lookup is configured", async () => {
