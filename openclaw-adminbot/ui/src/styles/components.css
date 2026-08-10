@@ -1103,6 +1103,38 @@
   line-height: 1.45;
 }
 
+/* The approval gate reads as state, not as one more grey fact in the meta row. Unmet it is
+   simply the count; met, it is the last thing standing between a proposal and a real Slack
+   message, email or payout, so it takes the warning colour and says so on hover.
+   PRODUCT.md: the gate is meant to be visible, never hidden behind a button that reads instant. */
+.adminbot-action__gate {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.adminbot-action__gate::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+
+.adminbot-action__gate[data-armed] {
+  border-color: var(--warn-muted);
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
 .adminbot-hash {
   display: block;
   max-width: 100%;
@@ -1564,11 +1596,41 @@
   color: var(--ok);
 }
 
+/* A status is a state, a tag is a label, and the two were styled identically -- so in the roster
+   an alumnus and an active member looked the same, and a status looked like a research topic. The
+   leading dot marks the whole class as state; colour is spent only on the states that are not the
+   unremarkable default.
+   Vocabulary: active | part_time | on_leave | alumni | external (contracts/actions.ts). */
+.adminbot-status::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+
 .adminbot-status--on_leave,
 .adminbot-status--part_time {
   border-color: var(--warn-muted);
   background: var(--warn-subtle);
   color: var(--warn);
+}
+
+/* Someone who has left. Recessed rather than coloured: it is not a condition to act on, but the
+   roster must never read them as present. */
+.adminbot-status--alumni {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--muted);
+}
+
+/* On the roster but not of the lab. */
+.adminbot-status--external {
+  border-color: var(--accent-muted);
+  background: var(--accent-subtle);
+  color: var(--accent);
 }
 
 .adminbot-contact-item {

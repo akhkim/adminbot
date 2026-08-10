@@ -220,7 +220,7 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
           aria-valuemax="100"
           aria-label=${paper.title}
         >
-          <span class="my-work-item__fill" style=${`width:${percent}%`}></span>
+          <span class="my-work-item__fill" style=${`transform:scaleX(${percent / 100})`}></span>
         </div>
         <span class="my-work-item__step">
           ${index >= 0

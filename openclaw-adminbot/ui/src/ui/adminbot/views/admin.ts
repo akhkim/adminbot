@@ -786,7 +786,16 @@ function renderPendingActions(props: AdminBotProps) {
               </div>
               <div class="adminbot-action__meta">
                 <span>${friendly(proposal.type)}</span>
-                <span>${approvals}/${required} approvals</span>
+                <!-- The gate, not another metadatum: whether this proposal still needs another
+                     human or is one click away from a real external effect. -->
+                <span
+                  class="adminbot-action__gate"
+                  ?data-armed=${approvals >= required}
+                  title=${approvals >= required
+                    ? "Approval threshold met — the next approval executes this action."
+                    : `Needs ${required - approvals} more approval(s) before it can execute.`}
+                  >${approvals}/${required} approvals</span
+                >
                 <span>${formatTime(proposal.updated_at)}</span>
               </div>
               <code class="adminbot-hash">${proposal.payload_hash}</code>
