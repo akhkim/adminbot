@@ -9,6 +9,8 @@ export const adminBotActionTypes = [
   "slack.invite_guest",
   "slack.invite_member",
   "slack.send_message",
+  "slack.channel_naming_notify_owner",
+  "slack.rename_channel",
   "vector.invite",
   "calendar.create_tentative_hold",
   "calendar.send_invite",

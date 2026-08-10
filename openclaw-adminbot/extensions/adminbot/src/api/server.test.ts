@@ -200,6 +200,55 @@ describe("AdminBot mock service", () => {
     });
   });
 
+  it("accepts Slack channel naming events for the service principal", async () => {
+    const { baseUrl } = await startService({
+      executor: { execute: async () => ({ handled: true }) },
+    });
+    const res = await fetch(`${baseUrl}/slack/channel-naming/events`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        event_type: "channel_created",
+        channel_id: "C123",
+        channel_name: "eu-post-training",
+        owner_user_id: "U123",
+      }),
+    });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      status: "reminder_sent",
+      channel_id: "C123",
+      suggested_name: "proj-eu-post-training",
+    });
+  });
+
+  it("runs Slack channel naming sweep over due reminders", async () => {
+    const { baseUrl } = await startService({
+      executor: { execute: async () => ({ handled: true }) },
+    });
+    await fetch(`${baseUrl}/slack/channel-naming/events`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        event_type: "channel_created",
+        channel_id: "C777",
+        channel_name: "rule-coherence-project",
+        owner_user_id: "U777",
+      }),
+    });
+    const sweep = await fetch(`${baseUrl}/slack/channel-naming/sweep/run`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ now: "2099-01-01T00:00:00.000Z" }),
+    });
+    expect(sweep.status).toBe(200);
+    await expect(sweep.json()).resolves.toMatchObject({
+      scanned: 1,
+      renamed: 1,
+      skipped: 0,
+    });
+  });
+
   it("claim queues a pending registration, login is blocked until approval", async () => {
     const { baseUrl } = await startService();
     await seedMember(baseUrl, "ada", {

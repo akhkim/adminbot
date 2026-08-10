@@ -19,6 +19,14 @@ export type MonitorSlackOpts = {
   setStatus?: (next: Record<string, unknown>) => void;
   /** Callback to read the current channel account status snapshot. */
   getStatus?: () => Record<string, unknown>;
+  onChannelNamingEvent?: (event: {
+    eventType: "channel_created" | "channel_rename";
+    channelId?: string;
+    channelName?: string;
+    ownerUserId?: string;
+    purpose?: string;
+    topic?: string;
+  }) => Promise<void>;
 };
 
 export type SlackReactionEvent = {
@@ -44,7 +52,7 @@ export type SlackMemberChannelEvent = {
 
 export type SlackChannelCreatedEvent = {
   type: "channel_created";
-  channel?: { id?: string; name?: string };
+  channel?: { id?: string; name?: string; creator?: string; purpose?: { value?: string }; topic?: { value?: string } };
   event_ts?: string;
 };
 

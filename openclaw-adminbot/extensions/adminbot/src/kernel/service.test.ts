@@ -233,6 +233,66 @@ describe("AdminBotService", () => {
     expect(unwrap(service.listPending()).proposals).toEqual([]);
   });
 
+  describe("Slack channel naming enforcement", () => {
+    it("reminds owner on invalid names, then renames after 48 hours", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+
+      const created = await service.processSlackChannelNamingEvent({
+        event_type: "channel_created",
+        channel_id: "C1",
+        channel_name: "eu-post-training",
+        owner_user_id: "U1",
+      });
+      expect(created).toMatchObject({
+        ok: true,
+        payload: { status: "reminder_sent", suggested_name: "proj-eu-post-training" },
+      });
+
+      const now = Date.now();
+      const beforeDue = await service.runSlackChannelNamingSweep(
+        "cron",
+        new Date(now + 47 * 60 * 60 * 1000).toISOString(),
+      );
+      expect(beforeDue).toMatchObject({
+        ok: true,
+        payload: { reminders_pending: 1, renamed: 0 },
+      });
+
+      const due = await service.runSlackChannelNamingSweep(
+        "cron",
+        new Date(now + 49 * 60 * 60 * 1000).toISOString(),
+      );
+      expect(due).toMatchObject({
+        ok: true,
+        payload: { renamed: 1, skipped: 0 },
+      });
+      // reminder DM + rename + post-rename DM
+      expect(executor.execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("clears pending enforcement when the channel is renamed to a compliant name", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+
+      await service.processSlackChannelNamingEvent({
+        event_type: "channel_created",
+        channel_id: "C2",
+        channel_name: "rule-coherence-project",
+        owner_user_id: "U2",
+      });
+      const renamed = await service.processSlackChannelNamingEvent({
+        event_type: "channel_rename",
+        channel_id: "C2",
+        channel_name: "proj-rule-coherence-project",
+      });
+      expect(renamed).toMatchObject({ ok: true, payload: { status: "compliant" } });
+
+      const sweep = await service.runSlackChannelNamingSweep("cron", "2099-01-01T00:00:00.000Z");
+      expect(sweep).toMatchObject({ ok: true, payload: { scanned: 0, renamed: 0 } });
+    });
+  });
+
   it("hashes equivalent object payloads consistently", () => {
     expect(payloadHash({ b: 2, a: { y: true, x: "x" } })).toBe(
       payloadHash({ a: { x: "x", y: true }, b: 2 }),

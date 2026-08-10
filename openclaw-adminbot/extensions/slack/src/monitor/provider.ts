@@ -85,6 +85,8 @@ async function getSlackBoltInterop(): Promise<SlackBoltResolvedExports> {
 
 const SLACK_WEBHOOK_MAX_BODY_BYTES = 1024 * 1024;
 const SLACK_WEBHOOK_BODY_TIMEOUT_MS = 30_000;
+const ADMINBOT_SERVICE_BASE_URL_ENV = "ADMINBOT_SERVICE_BASE_URL";
+const ADMINBOT_SERVICE_TOKEN_ENV = "ADMINBOT_SERVICE_TOKEN";
 
 function resolveStableSlackUserIdEntry(raw: string): string | undefined {
   const trimmed = raw.trim();
@@ -144,6 +146,55 @@ function parseApiAppIdFromAppToken(raw?: string) {
   }
   const match = /^xapp-\d-([a-z0-9]+)-/i.exec(token);
   return match?.[1]?.toUpperCase();
+}
+
+function resolveAdminBotChannelNamingReporter(runtime: RuntimeEnv) {
+  const baseUrl = process.env[ADMINBOT_SERVICE_BASE_URL_ENV]?.trim();
+  const serviceToken = process.env[ADMINBOT_SERVICE_TOKEN_ENV]?.trim();
+  if (!baseUrl || !serviceToken) {
+    return undefined;
+  }
+  const endpoint = `${baseUrl.replace(/\/$/u, "")}/slack/channel-naming/events`;
+  return async function reportSlackChannelNamingEvent(event: {
+    eventType: "channel_created" | "channel_rename";
+    channelId?: string;
+    channelName?: string;
+    ownerUserId?: string;
+    purpose?: string;
+    topic?: string;
+  }): Promise<void> {
+    if (!event.channelId || !event.channelName) {
+      return;
+    }
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${serviceToken}`,
+          "Content-Type": "application/json; charset=utf-8",
+        },
+        body: JSON.stringify({
+          event_type: event.eventType,
+          channel_id: event.channelId,
+          channel_name: event.channelName,
+          ...(event.ownerUserId ? { owner_user_id: event.ownerUserId } : {}),
+          ...(event.purpose ? { purpose: event.purpose } : {}),
+          ...(event.topic ? { topic: event.topic } : {}),
+        }),
+      });
+      if (!response.ok) {
+        runtime.log?.(
+          warn(`slack channel naming event forward failed: ${response.status} ${response.statusText}`),
+        );
+      }
+    } catch (error) {
+      runtime.log?.(
+        warn(
+          `slack channel naming event forward failed: ${error instanceof Error ? error.message : String(error)}`,
+        ),
+      );
+    }
+  };
 }
 
 export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
@@ -371,6 +422,7 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
     : undefined;
 
   const handleSlackMessage = createSlackMessageHandler({ ctx, account, trackEvent });
+  const onChannelNamingEvent = opts.onChannelNamingEvent ?? resolveAdminBotChannelNamingReporter(runtime);
   if (
     isSlackAnyNativeApprovalClientEnabled({
       cfg,
@@ -390,7 +442,13 @@ export async function monitorSlackProvider(opts: MonitorSlackOpts = {}) {
     });
   }
 
-  registerSlackMonitorEvents({ ctx, account, handleSlackMessage, trackEvent });
+  registerSlackMonitorEvents({
+    ctx,
+    account,
+    handleSlackMessage,
+    trackEvent,
+    onChannelNamingEvent,
+  });
   await registerSlackMonitorSlashCommands({ ctx, account, trackEvent });
   if (slackMode === "http" && slackHttpHandler) {
     unregisterHttpHandler = registerSlackHttpHandler({

@@ -22,6 +22,7 @@ import {
   type AdminBotActionExecutor,
   type AdminBotServiceOptions,
   type AdminBotServiceStore,
+  type AdminBotSlackChannelNamingRecord,
 } from "../kernel/service.js";
 import { resolveMemberOnboarding } from "../workflows/onboarding/onboarding.js";
 
@@ -184,6 +185,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_sessions_member_expiry_idx
         ON adminbot_sessions(member_id, expires_at);
+
+      CREATE TABLE IF NOT EXISTS adminbot_slack_channel_naming (
+        channel_id TEXT PRIMARY KEY,
+        updated_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_slack_channel_naming_updated_idx
+        ON adminbot_slack_channel_naming(updated_at);
     `);
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
@@ -731,6 +741,43 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       .prepare("DELETE FROM adminbot_sessions WHERE expires_at < ?")
       .run(cutoffIso);
     return Number(result.changes ?? 0);
+  }
+
+  saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_slack_channel_naming (
+          channel_id,
+          updated_at,
+          payload_json
+        ) VALUES (?, ?, ?)
+        ON CONFLICT(channel_id) DO UPDATE SET
+          updated_at = excluded.updated_at,
+          payload_json = excluded.payload_json`,
+      )
+      .run(record.channel_id, record.last_seen_at, JSON.stringify(record));
+  }
+
+  getSlackChannelNamingRecord(channelId: string): AdminBotSlackChannelNamingRecord | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_slack_channel_naming WHERE channel_id = ?")
+      .get(channelId) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotSlackChannelNamingRecord>(row.payload_json) : undefined;
+  }
+
+  listSlackChannelNamingRecords(): AdminBotSlackChannelNamingRecord[] {
+    const rows = this.db
+      .prepare("SELECT payload_json FROM adminbot_slack_channel_naming ORDER BY updated_at ASC")
+      .all() as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotSlackChannelNamingRecord>(row.payload_json));
+  }
+
+  deleteSlackChannelNamingRecord(channelId: string): boolean {
+    return (
+      this.db
+        .prepare("DELETE FROM adminbot_slack_channel_naming WHERE channel_id = ?")
+        .run(channelId).changes > 0
+    );
   }
 
   close(): void {
