@@ -89,6 +89,9 @@ export type MemberProfileUpdate = {
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
+  // The link only. cv_snapshot is not writable here: the service owns it, and a member who could
+  // set it could hide or invent their own career changes.
+  cv_url?: string;
   notes?: string;
 };
 
@@ -626,6 +629,26 @@ export async function fetchMemberResource(
   baseUrl: string,
 ): Promise<AuthResult<unknown>> {
   const result = await authedJson(baseUrl, path, "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+// Runs the admin CV scan (POST /cv/scan) over the member's own session. Privileged server-side,
+// so a non-admin session gets `forbidden` back rather than an empty result -- the panel is
+// already admin-gated, and this keeps the two from disagreeing if that ever drifts.
+export async function scanMemberCvs(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/cv/scan", "POST", sessionToken, {});
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }

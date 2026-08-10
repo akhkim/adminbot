@@ -1,10 +1,16 @@
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
-import { adminBotMemberRoles } from "../../../../extensions/adminbot/src/contracts.js";
+import {
+  ADMINBOT_DRIVE_ACCOUNT,
+  adminBotMemberRoles,
+} from "../../../../extensions/adminbot/src/contracts.js";
 import type { MemberNudgeChannel, MemberProfileUpdate } from "../adminbot-auth.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../adminbot-availability.js";
 import type {
   AdminBotActionProposal,
+  AdminBotCvEntry,
+  AdminBotCvScanMemberResult,
+  AdminBotCvScanResult,
   AdminBotDashboardData,
   AdminBotLabMember,
   AdminBotLabMemberSaveInput,
@@ -37,6 +43,11 @@ export type AdminBotProps = {
   data: AdminBotDashboardData;
   busyActionId: string | null;
   notice: { kind: "success" | "error"; text: string } | null;
+  // Result of the most recent CV scan this session. Null until one is run: the scan reaches out
+  // to every member's CV, so it happens when an admin asks for it and never on panel load.
+  cvScan: AdminBotCvScanResult | null;
+  cvScanning: boolean;
+  onScanCvs: () => void;
   onRefresh: () => void;
   onApprove: (proposal: AdminBotActionProposal) => void;
   onRemove: (proposal: AdminBotActionProposal) => void;
@@ -69,7 +80,8 @@ export type AdminBotPanel =
   | "settings"
   | "members"
   | "papers"
-  | "announcements";
+  | "announcements"
+  | "cv-updates";
 
 const stepLabels: Record<string, string> = {
   brainstorming_docs: "Brainstorming docs",
@@ -533,6 +545,7 @@ function collectSelfProfileFields(form: HTMLFormElement): MemberProfileUpdate {
     affiliation: getFormValue(data, "affiliation"),
     timezone: getFormValue(data, "timezone"),
     personal_website: personalWebsite,
+    cv_url: getFormValue(data, "cvUrl"),
     notes: notes ?? "",
   };
 }
@@ -1142,6 +1155,19 @@ function renderMemberSelfEditPopover(
           <label class="adminbot-form__field"
             ><span>GitHub</span><input name="github" .value=${noteDraft.github}
           /></label>
+          <label class="adminbot-form__field"
+            ><span>CV link</span
+            ><input
+              name="cvUrl"
+              placeholder="https://drive.google.com/file/d/..."
+              .value=${member.cv_url ?? ""}
+            />
+            <small class="muted"
+              >Google Docs or Drive link to your CV, shared with
+              ${ADMINBOT_DRIVE_ACCOUNT}. Admins scan it for career changes worth
+              announcing.</small
+            ></label
+          >
         </div>
         <label class="adminbot-form__field"
           ><span>Additional notes</span
@@ -2068,6 +2094,20 @@ function renderPanel(props: AdminBotProps) {
           ${renderPapers(props, props.data.papers)}
         </div>
       `;
+    case "cv-updates":
+      if (general) {
+        return renderPanel({ ...props, panel: "papers" });
+      }
+      return html`
+        <div class="card adminbot-card adminbot-card--wide">
+          <div class="card-title">CV updates</div>
+          <div class="card-sub">
+            Re-read every member's linked CV, show what changed since the last scan, and draft
+            newsletter copy from it. Members without a CV link are not listed.
+          </div>
+          ${renderCvUpdates(props)}
+        </div>
+      `;
     case "announcements":
       if (general) {
         return renderPanel({ ...props, panel: "papers" });
@@ -2082,6 +2122,107 @@ function renderPanel(props: AdminBotProps) {
         </div>
       `;
   }
+}
+
+const cvStatusLabels: Record<AdminBotCvScanMemberResult["status"], string> = {
+  changed: "Changed",
+  first_scan: "First scan",
+  unchanged: "No change",
+  skipped: "Skipped",
+  failed: "Could not read",
+};
+
+function renderCvEntry(entry: AdminBotCvEntry) {
+  const dates = [entry.start, entry.end].filter(Boolean).join(" – ");
+  return html`<li>
+    ${entry.title}${entry.organization ? html` — ${entry.organization}` : nothing}
+    ${dates ? html`<span class="muted">(${dates})</span>` : nothing}
+  </li>`;
+}
+
+function renderCvUpdates(props: AdminBotProps) {
+  const scan = props.cvScan;
+  // Only members with a CV link ever appear in a result, so this counts the linked roster rather
+  // than the whole one -- "0 of 40" would read as a failure when most people simply have no link.
+  const linked = props.data.members.filter((member) => member.cv_url?.trim()).length;
+  return html`
+    <div class="adminbot-cv">
+      <div class="adminbot-cv__actions">
+        <button
+          class="btn btn--sm primary"
+          type="button"
+          ?disabled=${props.cvScanning || linked === 0}
+          @click=${props.onScanCvs}
+        >
+          ${props.cvScanning ? "Scanning..." : "Scan CVs"}
+        </button>
+        <span class="muted"
+          >${linked} member${linked === 1 ? "" : "s"} with a CV link${scan
+            ? html` · last scan ${formatRelativeTimestamp(Date.parse(scan.scanned_at))}`
+            : nothing}</span
+        >
+      </div>
+
+      ${linked === 0
+        ? html`<p class="muted">
+            No member has linked a CV yet. Members add theirs under My profile.
+          </p>`
+        : nothing}
+      ${scan
+        ? html`
+            ${scan.newsletter_draft
+              ? html`<div class="adminbot-cv__draft">
+                  <div class="card-title">Newsletter draft</div>
+                  <div class="card-sub">
+                    Built from new positions, degrees, and awards. Edit before sending — nothing is
+                    published from here.
+                  </div>
+                  <textarea rows="8" .value=${scan.newsletter_draft} readonly></textarea>
+                </div>`
+              : nothing}
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Member</th>
+                  <th>Status</th>
+                  <th>Added</th>
+                  <th>Removed</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${scan.results.map(
+                  (entry) => html`
+                    <tr>
+                      <td>${entry.member_name}</td>
+                      <td>
+                        ${cvStatusLabels[entry.status]}
+                        ${entry.reason ? html`<div class="muted">${entry.reason}</div>` : nothing}
+                      </td>
+                      <td>
+                        ${entry.added.length
+                          ? html`<ul>
+                              ${entry.added.map(renderCvEntry)}
+                            </ul>`
+                          : html`<span class="muted">—</span>`}
+                      </td>
+                      <td>
+                        ${entry.removed.length
+                          ? html`<ul>
+                              ${entry.removed.map(renderCvEntry)}
+                            </ul>`
+                          : html`<span class="muted">—</span>`}
+                      </td>
+                    </tr>
+                  `,
+                )}
+              </tbody>
+            </table>
+          `
+        : html`<p class="muted">
+            Run a scan to see what changed since each member's CV was last read.
+          </p>`}
+    </div>
+  `;
 }
 
 export function renderAdminBot(props: AdminBotProps) {

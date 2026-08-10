@@ -58,6 +58,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotRegistrations: "admin",
   adminbotSettings: "admin",
   adminbotAnnouncements: "admin",
+  // CV scanning reads career history the roster does not carry, so it stays on the admin side of
+  // the console rather than being visible to every signed-in member.
+  adminbotCvUpdates: "admin",
   activity: "admin",
   agents: "admin",
   aiAgents: "admin",

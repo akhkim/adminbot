@@ -9,6 +9,7 @@ import {
   fetchMemberResource,
   resolveAdminBotBaseUrl,
   saveOwnPaper,
+  scanMemberCvs,
   sendMemberNudge,
   updateOwnProfile,
   upsertLabMemberAsAdmin,
@@ -52,11 +53,37 @@ export type AdminBotLabMember = {
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
+  // Link to the member's own CV PDF, self-editable like the availability planning doc. The scan
+  // reads it; the console never renders its contents, only what changed.
+  cv_url?: string;
   // Self-attested checklist state (see extensions/adminbot/src/onboarding.ts); the dashboard
   // only reads step id + status to preselect nudge recipients.
   onboarding?: { steps?: Array<{ id: string; status: string }> } | null;
   created_at: string;
   updated_at: string;
+};
+
+export type AdminBotCvEntry = {
+  kind: "position" | "education" | "award" | "other";
+  title: string;
+  organization: string;
+  start?: string;
+  end?: string;
+};
+
+export type AdminBotCvScanMemberResult = {
+  member_id: string;
+  member_name: string;
+  status: "unchanged" | "changed" | "first_scan" | "skipped" | "failed";
+  reason?: string;
+  added: AdminBotCvEntry[];
+  removed: AdminBotCvEntry[];
+};
+
+export type AdminBotCvScanResult = {
+  scanned_at: string;
+  results: AdminBotCvScanMemberResult[];
+  newsletter_draft: string;
 };
 
 export type AdminBotSettings = {
@@ -257,6 +284,10 @@ export type AdminBotHost = {
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
+  // Last CV scan result and whether one is in flight. Session-scoped rather than persisted: a
+  // scan is a point-in-time read, and a stale one shown as current would be misleading.
+  adminBotCvScan: AdminBotCvScanResult | null;
+  adminBotCvScanning: boolean;
   // Needed to resolve the AdminBot HTTP base URL for the direct admin-write path in
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
   settings: UiSettings;
@@ -631,6 +662,47 @@ function requirePrivilegedSession(
     return null;
   }
   return { sessionToken: stored.sessionToken, baseUrl: resolveAdminBotBaseUrl(host.settings) };
+}
+
+// Re-reads every linked CV and replaces the panel's scan result. Deliberately not merged into the
+// previous result: a member whose link broke since the last run must stop showing that run's
+// changes as though they were still current.
+export async function scanAdminBotCvs(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  host.adminBotCvScanning = true;
+  host.adminBotNotice = null;
+  try {
+    const result = await scanMemberCvs(session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotNotice = {
+        kind: "error",
+        text:
+          result.kind === "unreachable"
+            ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+            : result.kind === "forbidden"
+              ? "Scanning CVs requires an admin or core member session."
+              : `CV scan failed: ${result.kind}`,
+      };
+      return;
+    }
+    const scan = result.value as AdminBotCvScanResult;
+    host.adminBotCvScan = scan;
+    const changed = scan.results.filter((entry) => entry.status === "changed").length;
+    const failed = scan.results.filter((entry) => entry.status === "failed").length;
+    host.adminBotNotice = {
+      // A run where nothing changed is a success, not an empty state -- saying so stops an admin
+      // wondering whether the scan actually ran.
+      kind: failed ? "error" : "success",
+      text: `Scanned ${scan.results.length} CV${scan.results.length === 1 ? "" : "s"}: ${changed} changed${
+        failed ? `, ${failed} could not be read` : ""
+      }.`,
+    };
+  } finally {
+    host.adminBotCvScanning = false;
+  }
 }
 
 export async function removePendingAdminBotAction(

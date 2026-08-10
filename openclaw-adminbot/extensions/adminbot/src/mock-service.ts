@@ -37,6 +37,7 @@ import {
   createAdminBotSensitiveInfoDocument,
   type AdminBotSensitiveInfoDocument,
 } from "./sensitive-info-doc.js";
+import { runAdminBotCvScan, type AdminBotCvScanDeps } from "./cv-scan.js";
 import {
   AdminBotMemoryStore,
   AdminBotService,
@@ -71,6 +72,9 @@ export type AdminBotMockServiceOptions = {
   gatewayToken?: string;
   gatewayUrl?: string;
   allowedOrigins?: string[];
+  // Fetch/extract/model steps behind the admin CV scan. Injected so tests can drive the scan
+  // without a network fetch, a python interpreter, or a running local model.
+  cvScanDeps?: AdminBotCvScanDeps;
   // Overrides the default `gws` CLI-backed calendar invite runner — used by tests to avoid
   // shelling out to a real `gws` binary.
   calendarInviteRunner?: (email: string) => Promise<void>;
@@ -189,6 +193,7 @@ type AdminBotRouteContext = {
   reimbursementWorkflow?: AdminBotReimbursementWorkflow;
   openReviewWorkflow?: AdminBotOpenReviewWorkflow;
   fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
+  cvScanDeps?: AdminBotCvScanDeps;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
   deviceTokenIssuer?: DeviceTokenIssuer;
@@ -284,6 +289,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.deviceTokenIssuer ? { deviceTokenIssuer: options.deviceTokenIssuer } : {}),
     ...(openReviewWorkflow ? { openReviewWorkflow } : {}),
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
+    ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
     allowedOrigins,
     anonymousRateLimiter: createAnonymousRateLimiter(),
   };
@@ -714,6 +720,42 @@ async function handleAuthenticatedRoute(
       res,
       await service.refreshMemberMap(ctx.fetchSlackLocations, principalActor(principal)),
     );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/cv/scan") {
+    // Reading the roster's CVs exposes career history the roster itself does not carry, so it
+    // sits behind the same privileged gate as the member map rather than being open to members.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.cvScanDeps) {
+      sendJson(res, 503, { error: { message: "cv scanning is not configured" } });
+      return;
+    }
+    const members = service.listLabMembers();
+    if (!members.ok) {
+      sendServiceResult(res, members);
+      return;
+    }
+    const { result, snapshots } = await runAdminBotCvScan(members.payload.members, ctx.cvScanDeps);
+    // Snapshots are written through upsertLabMember rather than straight to the store so the
+    // scan cannot bypass member validation, and so a bad extraction fails one member's save
+    // instead of corrupting the roster.
+    for (const member of members.payload.members) {
+      const snapshot = snapshots.get(member.id);
+      if (!snapshot) {
+        continue;
+      }
+      const saved = service.upsertLabMember({ ...member, cv_snapshot: snapshot });
+      if (!saved.ok) {
+        const failed = result.results.find((entry) => entry.member_id === member.id);
+        if (failed) {
+          failed.status = "failed";
+          failed.reason = `could not save cv snapshot: ${saved.error.message}`;
+        }
+      }
+    }
+    sendJson(res, 200, result);
     return;
   }
   if (url.pathname.startsWith("/openreview/")) {

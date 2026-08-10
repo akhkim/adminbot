@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { CV_URL_HOSTS } from "./contracts.js";
 import type {
   AdminBotAccessGrant,
   AdminBotAccountRegistration,
@@ -1364,6 +1365,9 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "availability",
   "time_off",
   "availability_doc_url",
+  // The link only. cv_snapshot is deliberately absent: it is what the scan compares against, so a
+  // member who could write it could hide or invent their own career changes.
+  "cv_url",
 ] as const;
 
 const SELF_PROFILE_PRIVILEGED_FIELDS = [
@@ -1507,6 +1511,12 @@ function validateLabMember(member: AdminBotLabMemberInput): string | undefined {
       return docError;
     }
   }
+  if (member.cv_url !== undefined) {
+    const cvError = validateCvUrl(member.cv_url);
+    if (cvError) {
+      return cvError;
+    }
+  }
   return validateAvailability(member);
 }
 
@@ -1535,6 +1545,30 @@ function validateAvailabilityDocUrl(value: unknown): string | undefined {
   }
   if (!AVAILABILITY_DOC_HOSTS.has(parsed.hostname)) {
     return "availability doc url must be a Google Docs or Drive link";
+  }
+  return undefined;
+}
+
+function validateCvUrl(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return "cv url must be a string";
+  }
+  const trimmed = value.trim();
+  // Empty clears the link; the scan simply skips members without one.
+  if (!trimmed) {
+    return undefined;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return "cv url must be a valid URL";
+  }
+  if (parsed.protocol !== "https:") {
+    return "cv url must use https";
+  }
+  if (!CV_URL_HOSTS.has(parsed.hostname)) {
+    return "cv url must be a Google Docs or Drive link";
   }
   return undefined;
 }

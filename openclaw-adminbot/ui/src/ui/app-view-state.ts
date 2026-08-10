@@ -350,6 +350,8 @@ export type AppViewState = {
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
+  adminBotCvScan: import("./controllers/adminbot.ts").AdminBotCvScanResult | null;
+  adminBotCvScanning: boolean;
   registrations: import("./adminbot-auth.ts").MemberRegistration[];
   registrationsLoading: boolean;
   registrationsError: import("./adminbot-registrations.ts").RegistrationsLoadError | null;

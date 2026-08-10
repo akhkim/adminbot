@@ -113,6 +113,7 @@ import {
   createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   type AdminBotDashboardData,
+  type AdminBotCvScanResult,
   type AdminBotMemberNudgeState,
   type AdminBotReimbursementState,
 } from "./controllers/adminbot.ts";
@@ -532,6 +533,8 @@ export class OpenClawApp extends LitElement {
   @state() adminBotReimbursement: AdminBotReimbursementState =
     createEmptyAdminBotReimbursementState();
   @state() adminBotMemberNudge: AdminBotMemberNudgeState = createEmptyAdminBotMemberNudgeState();
+  @state() adminBotCvScan: AdminBotCvScanResult | null = null;
+  @state() adminBotCvScanning = false;
   @state() registrations: MemberRegistration[] = [];
   @state() registrationsLoading = false;
   @state() registrationsError: RegistrationsLoadError | null = null;

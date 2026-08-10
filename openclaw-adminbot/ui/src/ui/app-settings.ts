@@ -468,6 +468,7 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "adminbotMembers":
       case "adminbotPapers":
       case "adminbotAnnouncements":
+      case "adminbotCvUpdates":
         await loadAdminBot(app);
         break;
       case "adminbotRegistrations":

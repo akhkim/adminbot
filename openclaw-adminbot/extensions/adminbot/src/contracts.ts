@@ -174,6 +174,55 @@ export type AdminBotTimeOffRow = {
   note?: string;
 };
 
+// Same allowlist and reasoning as the availability planning doc: a CV link is fetched server-side
+// with the AdminBot Google account, so without the restriction a self-editable profile field
+// becomes a fetch primitive aimed at any host the service can reach.
+export const CV_URL_HOSTS = new Set(["docs.google.com", "drive.google.com"]);
+
+// One dated line off a CV. `kind` is what makes a change newsworthy or not: a new `position` or
+// `education` entry is a career move worth announcing, an `award` is worth congratulating, and
+// anything the model cannot place lands in `other` and is reported but never drafted.
+export type AdminBotCvEntryKind = "position" | "education" | "award" | "other";
+
+export type AdminBotCvEntry = {
+  kind: AdminBotCvEntryKind;
+  title: string;
+  organization: string;
+  // Free text exactly as printed on the CV ("Sept 2025", "2024-present"). Not normalized to a
+  // date: CVs write ranges a hundred ways, and a wrong parse would invent career events.
+  start?: string;
+  end?: string;
+};
+
+export type AdminBotCvSnapshot = {
+  fetched_at: string;
+  // Hash of the extracted CV text. A re-scan whose hash is unchanged skips the model call
+  // entirely, so repeat scans over an unchanged roster cost one fetch each and nothing more.
+  content_hash: string;
+  entries: AdminBotCvEntry[];
+};
+
+// What one member's CV produced on a scan. `status` is a closed set rather than an ok/error pair
+// so the console can tell "nothing changed" apart from "we could not read it" -- they look the
+// same in a count but mean opposite things to whoever is chasing the roster.
+export type AdminBotCvScanMemberResult = {
+  member_id: string;
+  member_name: string;
+  status: "unchanged" | "changed" | "first_scan" | "skipped" | "failed";
+  // Present when status is "failed" or "skipped": why this member produced nothing.
+  reason?: string;
+  added: AdminBotCvEntry[];
+  removed: AdminBotCvEntry[];
+};
+
+export type AdminBotCvScanResult = {
+  scanned_at: string;
+  results: AdminBotCvScanMemberResult[];
+  // Newsletter copy built from the newsworthy additions across every member. Empty when nothing
+  // changed. Draft only -- publishing is not part of this flow.
+  newsletter_draft: string;
+};
+
 export type AdminBotLabMemberInput = {
   id: string;
   name: string;
@@ -211,6 +260,14 @@ export type AdminBotLabMemberInput = {
   // prefill the rows above. Member-owned and self-editable: whatever the importer gets wrong, the
   // member fixes in the same panel.
   availability_doc_url?: string;
+  // Link to the member's own CV PDF in Drive, which the admin CV scan reads to spot career
+  // changes worth a newsletter mention. Member-owned and self-editable for the same reason the
+  // planning doc is: the person whose CV it is keeps the link current.
+  cv_url?: string;
+  // Career facts from the last successful CV scan, kept so the next scan has something to diff
+  // against. Deliberately holds the extracted *facts* and a hash, never the CV text: the roster is
+  // read whole on every members/capacity load, and a stored CV body would bloat all of them.
+  cv_snapshot?: AdminBotCvSnapshot;
   // Stamped server-side on every write that touches availability/time_off, so
   // the UI can show staleness without diffing payloads.
   availability_updated_at?: string;

@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createCompositeAdminBotExecutor } from "./extensions/adminbot/src/composite-executor.ts";
+import { createAdminBotCvScanDeps } from "./extensions/adminbot/src/cv-scan.ts";
 import { createGogAdminBotExecutor } from "./extensions/adminbot/src/gog-executor.ts";
 import { createAdminBotMessageExecutor } from "./extensions/adminbot/src/message-executor.ts";
 import { createAdminBotMockService } from "./extensions/adminbot/src/mock-service.ts";
@@ -25,6 +26,9 @@ const service = createAdminBotMockService({
     }),
     createGogAdminBotExecutor(),
   ]),
+  cvScanDeps: createAdminBotCvScanDeps({
+    extractScriptPath: path.join(repoRoot, "scripts/adminbot-cv-extract.py"),
+  }),
   sensitiveInfoPath: path.join(os.homedir(), ".openclaw/adminbot-sensitive-information.md"),
   emailAutomationRunner: runEmailAutomation,
   reimbursementWorkflow: createAdminBotReimbursementWorkflow({

@@ -9,7 +9,7 @@ out/
 .env.*
 !.env.example
 
-state/
+/state/
 *.sqlite
 *.sqlite-journal
 *.sqlite-wal
