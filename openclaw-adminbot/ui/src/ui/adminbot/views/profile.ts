@@ -247,9 +247,12 @@ type EditableField = ProfileField;
 
 // Buckets a field list under PROFILE_FIELD_GROUPS' fixed order, dropping any group that has no
 // fields to show (relevant to the blanks form, where most groups are usually already complete).
-function groupFields(
-  fields: EditableField[],
-): Array<{ id: ProfileFieldGroup; labelKey: string; icon: keyof typeof icons; fields: EditableField[] }> {
+function groupFields(fields: EditableField[]): Array<{
+  id: ProfileFieldGroup;
+  labelKey: string;
+  icon: keyof typeof icons;
+  fields: EditableField[];
+}> {
   return PROFILE_FIELD_GROUPS.map((group) => ({
     ...group,
     fields: fields.filter((field) => field.group === group.id),
@@ -426,9 +429,7 @@ function valueOf(member: LabMember, field: EditableField): string {
 }
 
 export function blankFields(member: LabMember): EditableField[] {
-  return EDITABLE_FIELDS.filter(
-    (field) => !field.optional && !valueOf(member, field).trim(),
-  );
+  return EDITABLE_FIELDS.filter((field) => !field.optional && !valueOf(member, field).trim());
 }
 
 // Everything a member may set, blank or not -- what the full editor offers.
@@ -467,12 +468,21 @@ export function badgesFor(state: AppViewState, member: LabMember): string[] {
   return badges;
 }
 
+// The read view marks what is *owed*, not what is merely mandatory: a filled required field is
+// just a fact, so carrying its star into the record turned most of the sheet into punctuation.
+// Only a required field that is still blank says so, and it says it in the value column, where the
+// answer would otherwise be.
 function renderFieldRow(field: EditableField, value: string) {
+  const owed = !field.optional && !value.trim();
   return html`
-    <div class="profile-field">
-      <dt class="profile-field__label">${labelFor(field.key)}${renderMandatoryMark(field)}</dt>
+    <div class=${`profile-field ${owed ? "profile-field--owed" : ""}`}>
+      <dt class="profile-field__label">${labelFor(field.key)}</dt>
       <dd class=${`profile-field__value ${value ? "" : "profile-field__value--empty"}`}>
-        ${value || t("profile.basics.empty")}
+        ${value
+          ? value
+          : owed
+            ? html`<span class="profile-field__owed">${t("profile.basics.mandatory")}</span>`
+            : t("profile.basics.empty")}
       </dd>
     </div>
   `;
@@ -612,9 +622,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
         ></textarea>
       `;
     case "date":
-      return html`
-        <input class="input" name=${field.key} type="date" .value=${currentValue} />
-      `;
+      return html` <input class="input" name=${field.key} type="date" .value=${currentValue} /> `;
     case "link":
       return html`
         <input
@@ -666,14 +674,17 @@ function renderFieldInput(field: EditableField, currentValue: string) {
 }
 
 // A field left blank never blocks saving or closing the editor -- see the "Done" handler below,
-// which flushes and exits regardless of what's filled in. The star is the whole enforcement
-// mechanism on this page; the dashboard warning and the daily Slack reminder are what actually
-// follow up on a field that stays blank.
+// which flushes and exits regardless of what's filled in. The dashboard warning and the daily
+// Slack reminder are what actually follow up on a field that stays blank.
+//
+// A dot rather than a red asterisk: nothing on this page rejects a blank, so borrowing the error
+// color to say "required" claimed a consequence the form does not have. The dot carries the same
+// mark in the accent the rest of the page already uses for "the lab is waiting on this".
 function renderMandatoryMark(field: EditableField) {
   if (field.optional) {
     return nothing;
   }
-  return html`<span class="profile__mandatory" aria-hidden="true">*</span
+  return html`<span class="profile__mandatory" aria-hidden="true"></span
     ><span class="sr-only">${t("profile.basics.mandatory")}</span>`;
 }
 
@@ -825,9 +836,7 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                       ${t(group.labelKey)}
                     </h3>
                     <div class="profile__field-grid">
-                      ${group.fields.map((field) =>
-                        renderFieldRow(field, valueOf(member, field)),
-                      )}
+                      ${group.fields.map((field) => renderFieldRow(field, valueOf(member, field)))}
                     </div>
                   </div>
                 `,
@@ -835,6 +844,58 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
             </div>
           `}
     </section>
+  `;
+}
+
+// One instrument for "what does the lab still need from me".
+//
+// This page used to state that fact twice -- a percentage ring up here and a progress bar down in
+// the blanks card -- computed in two places from the same numbers, so the two could disagree for
+// the beat an autosave was in flight, and neither told you anything the other did not. The ring
+// won because it sits with the identity, and it now carries the detail the bar never had: one tick
+// per required field, in the order the groups appear below, split by group. A run of empty ticks
+// says *which* part of the record is thin, not just how thin it is.
+//
+// The ticks are decoration to a screen reader on purpose. The accessible read is the same
+// "{count} of {total}" sentence the bar used to carry, and the fields themselves -- with their
+// required marks -- are the real interface for acting on it.
+function renderCompletionLedger(member: LabMember) {
+  const blanks = new Set(blankFields(member).map((field) => field.key));
+  const total = requiredFieldCount();
+  const done = total - blanks.size;
+  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+  const groups = PROFILE_FIELD_GROUPS.map((group) => ({
+    id: group.id,
+    fields: EDITABLE_FIELDS.filter((field) => !field.optional && field.group === group.id),
+  })).filter((group) => group.fields.length > 0);
+  return html`
+    <div
+      class=${`profile__completeness ${percent === 100 ? "profile__completeness--done" : ""}`}
+      role="img"
+      aria-label=${t("profile.blanks.summary", { count: String(done), total: String(total) })}
+      title=${t("profile.completeness.hint")}
+    >
+      <div class="profile__completeness-copy">
+        <span class="profile__completeness-percent">${percent}%</span>
+        <span class="profile__completeness-label">${t("profile.completeness.label")}</span>
+      </div>
+      <div class="profile__ledger" aria-hidden="true" data-testid="profile-ledger">
+        ${groups.map(
+          (group) => html`
+            <span class="profile__ledger-group">
+              ${group.fields.map(
+                (field) => html`<span
+                  class=${`profile__tick ${
+                    blanks.has(field.key) ? "profile__tick--blank" : "profile__tick--filled"
+                  }`}
+                  title=${labelFor(field.key)}
+                ></span>`,
+              )}
+            </span>
+          `,
+        )}
+      </div>
+    </div>
   `;
 }
 
@@ -862,25 +923,17 @@ function renderBadges(state: AppViewState, member: LabMember) {
 // of an editor asking them to re-confirm what is already true.
 function renderBlanks(state: AppViewState, member: LabMember, props: ProfileProps) {
   const blanks = blankFields(member);
-  const total = requiredFieldCount();
   // A finished task should leave the page, not sit there announcing that it is finished. Basic info
   // above already shows every value, and Edit is how you change one.
   if (!blanks.length) {
     return nothing;
   }
-  const done = total - blanks.length;
-  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+  // No progress bar here any more: the ledger in the header is the page's single completion read,
+  // and this card sits directly under it, so a second meter measuring the same nine fields was
+  // duplication that could visibly disagree with the first mid-save.
   return html`
     <section class="profile__section profile__section--highlight" data-testid="profile-blanks">
       <h2 class="profile__section-title">${t("profile.blanks.title")}</h2>
-      <div class="profile__progress">
-        <div class="profile__progress-track">
-          <div class="profile__progress-fill" style=${`width:${percent}%`}></div>
-        </div>
-        <p class="profile__section-sub profile__progress-label">
-          ${t("profile.blanks.summary", { count: String(done), total: String(total) })}
-        </p>
-      </div>
       <form
         class="profile__form"
         @submit=${(event: SubmitEvent) => event.preventDefault()}
@@ -928,8 +981,7 @@ function renderBlanks(state: AppViewState, member: LabMember, props: ProfileProp
                       <span class="profile__form-label">
                         ${labelFor(field.key)}${renderMandatoryMark(field)}
                       </span>
-                      ${renderFieldInput(field, "")}
-                      ${renderAccountCheckStatus(state, field)}
+                      ${renderFieldInput(field, "")} ${renderAccountCheckStatus(state, field)}
                     </label>
                   `,
                 )}
@@ -1113,9 +1165,6 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
     return html`<p class="profile__empty">${t("profile.blanks.signInRequired")}</p>`;
   }
   const name = member.name?.trim() || member.email?.trim() || "";
-  const total = requiredFieldCount();
-  const done = total - blankFields(member).length;
-  const percent = total > 0 ? Math.round((done / total) * 100) : 0;
   return html`
     <div class="profile">
       ${renderSaveToast(state)}
@@ -1129,28 +1178,12 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
               : nothing}
           </div>
           <span class="profile__email">${member.email?.trim() ?? ""}</span>
-          ${renderLinks(member)}
-          ${renderBadges(state, member)}
+          ${renderLinks(member)} ${renderBadges(state, member)}
         </div>
-        <div class="profile__completeness" title=${t("profile.completeness.hint")}>
-          <svg class="profile__completeness-ring" viewBox="0 0 40 40" aria-hidden="true">
-            <circle class="profile__completeness-track" cx="20" cy="20" r="17" />
-            <circle
-              class="profile__completeness-fill"
-              cx="20"
-              cy="20"
-              r="17"
-              style=${`stroke-dasharray:${(percent / 100) * 106.8} 106.8`}
-            />
-          </svg>
-          <span class="profile__completeness-copy">
-            <span class="profile__completeness-percent">${percent}%</span>
-            <span class="profile__completeness-label">${t("profile.completeness.label")}</span>
-          </span>
-        </div>
+        ${renderCompletionLedger(member)}
       </header>
-      ${renderBlanks(state, member, props)}
-      ${renderBasics(state, member, props)} ${renderSuggestions(member)}
+      ${renderBlanks(state, member, props)} ${renderBasics(state, member, props)}
+      ${renderSuggestions(member)}
     </div>
   `;
 }

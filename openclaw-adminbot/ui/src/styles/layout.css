@@ -1996,8 +1996,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 64px;
+  width: 80px;
+  height: 80px;
   border-radius: var(--radius-full);
   background: linear-gradient(160deg, var(--accent-subtle), var(--bg-muted));
   border: 1px solid var(--accent-muted);
@@ -2076,8 +2076,9 @@
 }
 
 .profile__name {
-  font-size: var(--control-ui-text-xl);
-  font-weight: 600;
+  font-size: var(--control-ui-text-2xl);
+  font-weight: 650;
+  line-height: 1.15;
   letter-spacing: var(--tracking-tight);
   color: var(--text-strong);
 }
@@ -2166,61 +2167,93 @@
   stroke-width: 1.5px;
 }
 
-/* A small ring rather than a number alone, so "how much is left" reads at a glance the same way
-   the field groups below let it be filled in at a glance. */
+/* The completion ledger: the number, then one tick per required field, grouped the way the record
+   below is grouped. The ticks are what a ring could not do -- they say which run of fields is
+   thin, so the meter is a diagnosis rather than a score. */
 .profile__completeness {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
   flex-shrink: 0;
   margin-left: auto;
   padding-left: var(--space-5);
   border-left: 1px solid var(--border);
 }
 
-.profile__completeness-ring {
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  transform: rotate(-90deg);
-}
-
-.profile__completeness-track,
-.profile__completeness-fill {
-  fill: none;
-  stroke-width: 4;
-}
-
-.profile__completeness-track {
-  stroke: var(--border);
-}
-
-.profile__completeness-fill {
-  stroke: var(--accent);
-  stroke-linecap: round;
-  transition: stroke-dasharray var(--duration-normal) var(--ease-out);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .profile__completeness-fill {
-    transition: none;
-  }
-}
-
 .profile__completeness-copy {
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
+  gap: var(--space-2);
 }
 
 .profile__completeness-percent {
-  font-size: var(--control-ui-text-md);
+  font-size: var(--control-ui-text-2xl);
   font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
   color: var(--text-strong);
 }
 
 .profile__completeness-label {
+  font-family: var(--mono);
   font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
   color: var(--muted);
+}
+
+/* Group gaps are wider than tick gaps, so the four runs read as four runs without a label each. */
+.profile__ledger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.profile__ledger-group {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.profile__tick {
+  width: 10px;
+  height: 4px;
+  border-radius: 1px;
+  transition: background-color var(--duration-normal) var(--ease-out);
+}
+
+.profile__tick--filled {
+  background: var(--accent);
+}
+
+.profile__tick--blank {
+  background: var(--border-strong);
+}
+
+/* Nothing outstanding: the ledger stops using the "waiting on you" color and reads as a receipt. */
+.profile__completeness--done .profile__tick--filled {
+  background: var(--ok);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile__tick {
+    transition: none;
+  }
+}
+
+/* Once the hero wraps, the ledger is below the identity rather than beside it, so the rule that
+   separated the two columns has to become the one that separates the two rows. */
+@media (max-width: 640px) {
+  .profile__completeness {
+    align-items: flex-start;
+    width: 100%;
+    margin-left: 0;
+    padding-left: 0;
+    padding-top: var(--space-4);
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
 }
 
 /* ===========================================
@@ -2234,11 +2267,12 @@
   background: var(--bg-elevated);
 }
 
-/* The one section asking for something rather than just showing it -- a light accent wash marks
-   it as the actionable card without resorting to a second color of button. */
+/* The one section asking for something rather than just showing it. Its whole edge carries the
+   accent, without the accent wash it used to sit on: the wash tinted every input inside the card,
+   which made the controls the member is supposed to type into read as less editable than the ones
+   in the plain card below. */
 .profile__section--highlight {
   border-color: var(--accent-muted);
-  background: var(--accent-subtle);
 }
 
 .profile__section-title,
@@ -2268,36 +2302,6 @@
   font-size: var(--control-ui-text-sm);
 }
 
-/* ---- Progress bar (fill in the blanks) ---- */
-
-.profile__progress {
-  margin-bottom: var(--space-5);
-}
-
-.profile__progress-track {
-  height: 6px;
-  border-radius: var(--radius-full);
-  background: var(--bg-muted);
-  overflow: hidden;
-}
-
-.profile__progress-fill {
-  height: 100%;
-  border-radius: var(--radius-full);
-  background: var(--accent);
-  transition: width var(--duration-normal) var(--ease-out);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .profile__progress-fill {
-    transition: none;
-  }
-}
-
-.profile__progress-label {
-  margin: var(--space-2) 0 0;
-}
-
 /* ===========================================
    Field groups -- shared by the read-only view and both forms
    =========================================== */
@@ -2312,6 +2316,13 @@
 .profile__field-group + .profile__field-group {
   padding-top: var(--space-5);
   border-top: 1px solid var(--border);
+}
+
+/* The read view's rows already rule themselves, so the group's own rule lands a hairline directly
+   under the previous group's last row and reads as a printing error. Spacing alone separates them
+   there; the forms, whose rows carry no rules, keep the border. */
+.profile__fields .profile__field-group + .profile__field-group {
+  border-top: none;
 }
 
 .profile__group-title {
@@ -2343,22 +2354,33 @@
   stroke-linejoin: round;
 }
 
+/* min() rather than a bare 22rem: auto-fill honours the minimum even when it is wider than the
+   container, so a bare track floor overflows every viewport narrower than one column. */
 .profile__field-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-  gap: var(--space-3) var(--space-6);
+  grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
+  column-gap: var(--space-8);
 }
 
 .profile__form .profile__field-grid {
-  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
   gap: var(--space-4);
-  align-items: end;
+  /* Top-aligned: bottom-aligning a row that contains a three-line textarea drops every short
+     field in that row to the textarea's floor and tears a hole under their labels. */
+  align-items: start;
 }
 
+/* The record reads as a ruled sheet rather than a grid of stacked label/value pairs: label left at
+   a fixed measure, answer right, a hairline under each row. Nineteen facts scan down the answer
+   column in one pass, and a blank is visible as a gap in that column instead of as a line of text
+   that has to be read to discover it says nothing. */
 .profile-field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
 }
 
 .profile-field__label {
@@ -2370,14 +2392,38 @@
 
 .profile-field__value {
   margin: 0;
+  min-width: 0;
   font-size: var(--control-ui-text-md);
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
 /* A blank is information too, so it is stated rather than left as an empty row. */
 .profile-field__value--empty {
   color: var(--muted);
-  font-style: italic;
+}
+
+/* A required field with no answer is the one blank worth interrupting the column for. */
+.profile-field__owed {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--accent-muted);
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+/* Under the label rather than beside it once there is no room for two columns. */
+@media (max-width: 640px) {
+  .profile-field {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
 }
 
 .profile__form-row {
@@ -2401,10 +2447,16 @@
   text-transform: none;
 }
 
+/* The required dot. Sits on the label's baseline row rather than after the text so a two-line
+   label does not push it onto a line of its own. */
 .profile__mandatory {
-  margin-left: 3px;
-  color: var(--danger);
-  font-weight: 700;
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-left: 5px;
+  vertical-align: 0.35em;
+  border-radius: var(--radius-full);
+  background: var(--accent);
 }
 
 .profile__upload {
@@ -2448,27 +2500,28 @@
    Suggestions
    =========================================== */
 
+/* Advice, not the task. These used to be boxed cards the same weight as the sections above them,
+   which gave an optional guidebook pointer the same visual claim as the required fields. They are
+   ruled rows now -- present, readable, and clearly the least urgent thing on the page. */
 .profile__suggestions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
-  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  column-gap: var(--space-8);
 }
 
 .profile-suggestion {
-  padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--panel);
-  transition: border-color var(--duration-fast) var(--ease-out);
+  padding: var(--space-3) 0;
+  border-top: 1px solid var(--border);
 }
 
-.profile-suggestion:hover {
-  border-color: var(--border-hover);
+.profile-suggestion:first-child {
+  border-top: none;
+  padding-top: 0;
 }
 
 .profile-suggestion__title {
   margin: 0;
-  font-size: var(--control-ui-text-md);
+  font-size: var(--control-ui-text-sm);
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -3175,5 +3228,258 @@
     max-width: none;
     border-right: none;
     border-bottom: 1px solid var(--border);
+  }
+}
+
+/* ===========================================
+   Deadline board
+   =========================================== */
+
+.deadlines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 62rem;
+}
+
+/* Urgency is one variable resolved per row, so every part of a row -- countdown, dot, lead panel
+   edge -- speaks with one voice and the scale lives in the token set rather than in each rule. */
+[data-urgency="critical"] {
+  --deadline-urgency: var(--danger);
+  --deadline-urgency-subtle: var(--danger-subtle);
+}
+
+[data-urgency="soon"] {
+  --deadline-urgency: var(--warning);
+  --deadline-urgency-subtle: var(--warning-subtle);
+}
+
+[data-urgency="planned"] {
+  --deadline-urgency: var(--accent);
+  --deadline-urgency-subtle: var(--accent-subtle);
+}
+
+[data-urgency="distant"] {
+  --deadline-urgency: var(--muted);
+  --deadline-urgency-subtle: transparent;
+}
+
+/* ---- The one that is actually running ---- */
+
+.deadline-lead {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-1) var(--space-5);
+  padding: var(--space-6);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+}
+
+.deadline-lead__eyebrow {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* The number is the page. At this size the seconds column visibly ticks, which is the whole
+   argument for a live countdown over a printed date. */
+.deadline-lead__countdown {
+  grid-column: 1;
+  margin: var(--space-2) 0 0;
+  font-family: var(--mono);
+  font-size: clamp(2rem, 6vw, 3.25rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--deadline-urgency);
+}
+
+.deadline-lead__name {
+  grid-column: 1 / -1;
+  margin: var(--space-4) 0 0;
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.deadline-lead__date {
+  grid-column: 1 / -1;
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.deadline-lead .deadline-row__link {
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-5);
+}
+
+.deadlines__intro {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+/* ---- The calendar spine ---- */
+
+.deadlines__day + .deadlines__day {
+  margin-top: var(--space-6);
+}
+
+/* The band carries the countdown for everything under it. At a whole track of workshops sharing
+   one instant, this is the difference between one deadline with sixty venues and sixty
+   deadlines. */
+.deadlines__day-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin: 0 0 var(--space-1);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.deadlines__day-countdown {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--deadline-urgency);
+}
+
+/* The dot carries the urgency band for anyone who cannot separate the countdown's hues. */
+.deadlines__day-countdown::before {
+  content: "";
+  align-self: center;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--deadline-urgency);
+}
+
+.deadlines__day-name {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--text-strong);
+}
+
+.deadlines__day-count {
+  margin-left: auto;
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.deadlines__day-shared {
+  margin: var(--space-2) 0 var(--space-1);
+  padding-left: var(--space-2);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.deadlines__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Ruled rows rather than a stack of bordered cards: a hundred cards is a hundred boxes to look
+   past, and what is being scanned is the venue name. */
+.deadline-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.deadline-row:last-child {
+  border-bottom: none;
+}
+
+.deadline-row:hover {
+  background: var(--bg-muted);
+}
+
+.deadline-row__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.deadline-row__name {
+  font-size: var(--control-ui-text-md);
+  color: var(--text);
+}
+
+/* Which deadline this is -- a commitment and a submission for one venue are different dates, and
+   the old list showed only the name, so the two were indistinguishable. */
+.deadline-row__label {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  color: var(--muted);
+  vertical-align: 1px;
+}
+
+.deadline-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.deadline-row__note {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.deadline-row__link {
+  color: var(--muted);
+  font-size: var(--control-ui-text-md);
+  text-decoration: none;
+  line-height: 1;
+}
+
+.deadline-row__link:hover,
+.deadline-row__link:focus-visible {
+  color: var(--accent);
+}
+
+.deadlines__empty {
+  margin: 0;
+  padding: var(--space-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  .deadlines__day-count {
+    margin-left: 0;
   }
 }
