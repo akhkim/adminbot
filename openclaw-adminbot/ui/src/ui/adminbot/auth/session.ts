@@ -533,7 +533,11 @@ export async function sendOnboardingGuide(
   request: OnboardingGuideRequest,
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<OnboardingGuideResult> | { ok: false; kind: "missing"; missing: string[] }> {
+): Promise<
+  | AuthResult<OnboardingGuideResult>
+  | { ok: false; kind: "missing"; missing: string[] }
+  | { ok: false; kind: "rejected"; message: string }
+> {
   const result = await authedJson(baseUrl, "/onboarding/guide", "POST", sessionToken, {
     template_id: request.templateId,
     name: request.name,
@@ -545,12 +549,23 @@ export async function sendOnboardingGuide(
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
-    const error = (result.body as { error?: { missing?: string[] } } | undefined)?.error;
+    const error = (result.body as { error?: { missing?: string[]; message?: string } } | undefined)
+      ?.error;
     if (result.response.status === 422 && error?.missing?.length) {
       return { ok: false, kind: "missing", missing: error.missing };
     }
     if (result.response.status === 403) {
       return { ok: false, kind: "forbidden" };
+    }
+    // Everything else this route refuses -- an unconfigured mail account (503), Drive or Slack
+    // provisioning that is not wired up (501), an unknown template (404), a rejected name or
+    // address (400) -- arrives with a message that says exactly which one it was. Passing it
+    // through matters more here than on most routes: only 400 is about what the admin typed, so
+    // the generic "check the details" advice is wrong for every other case, and an operator who
+    // follows it re-types a correct form until they give up.
+    const message = normalizeOptionalString(error?.message);
+    if (message) {
+      return { ok: false, kind: "rejected", message };
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
@@ -1089,10 +1104,7 @@ export function markOnboardingChecklistAcknowledged(memberId: string): void {
   try {
     const acknowledged = loadAcknowledgedOnboardingMemberIds();
     acknowledged.add(memberId);
-    storage?.setItem(
-      ONBOARDING_ACKNOWLEDGED_STORAGE_KEY,
-      JSON.stringify([...acknowledged]),
-    );
+    storage?.setItem(ONBOARDING_ACKNOWLEDGED_STORAGE_KEY, JSON.stringify([...acknowledged]));
   } catch {
     // best-effort — quota/security failures just mean the warning card may reappear.
   }

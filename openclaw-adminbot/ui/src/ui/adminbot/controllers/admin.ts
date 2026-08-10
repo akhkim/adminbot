@@ -186,7 +186,13 @@ export async function sendOnboardingGuide(
         ? "The AdminBot service is unreachable — try again in a moment."
         : result.kind === "forbidden"
           ? "Only an admin can send onboarding guides."
-          : "Couldn't send that guide — check the details and try again.";
+          : // The service names the actual refusal -- unconfigured mail, Drive or Slack
+            // provisioning that is not wired up, an unknown template. Show it: telling an admin to
+            // "check the details" when the details are fine and the server is missing an
+            // environment variable sends them round a loop nothing they type can break.
+            result.kind === "rejected"
+            ? result.message
+            : "Couldn't send that guide — check the details and try again.";
   } finally {
     host.onboardingBusy = false;
   }
