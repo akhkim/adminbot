@@ -2522,25 +2522,38 @@
    ruled rows now -- present, readable, and clearly the least urgent thing on the page. */
 .profile__suggestions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
-  column-gap: var(--space-8);
+  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
+  gap: var(--space-5) var(--space-8);
 }
 
+/* Separated by space rather than by rules. A top rule plus :first-child only lines up in a single
+   column: at two columns the second card is not the first child, so it drew a rule its neighbour
+   did not have, and the row looked broken rather than divided. */
 .profile-suggestion {
-  padding: var(--space-3) 0;
-  border-top: 1px solid var(--border);
-}
-
-.profile-suggestion:first-child {
-  border-top: none;
-  padding-top: 0;
+  padding: 0;
 }
 
 .profile-suggestion__title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   margin: 0;
   font-size: var(--control-ui-text-sm);
   font-weight: 600;
   color: var(--text-strong);
+}
+
+/* An onboarding step carries the checklist's own word for where it stands; a guidebook pointer
+   carries none, which is the difference between the lab waiting on you and a suggestion. */
+.profile-suggestion__status {
+  flex-shrink: 0;
+}
+
+.profile-suggestion__status:not(:empty) {
+  border-color: var(--accent-muted);
+  background: var(--accent-subtle);
+  color: var(--accent);
 }
 
 .profile-suggestion__body {

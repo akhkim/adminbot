@@ -125,7 +125,9 @@ describe("renderProfile autosave", () => {
       // The save still goes through -- a liveness miss is a warning, not a rejection.
       expect(onSave).toHaveBeenCalledWith(
         "pat",
-        expect.objectContaining({ github_url: "https://github.com/this-handle-should-not-exist-zzz" }),
+        expect.objectContaining({
+          github_url: "https://github.com/this-handle-should-not-exist-zzz",
+        }),
       );
       expect(fetchMock).toHaveBeenCalledWith(
         "https://api.github.com/users/this-handle-should-not-exist-zzz",
@@ -168,9 +170,7 @@ describe("renderProfile mandatory fields", () => {
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
-    const nameRow = container
-      .querySelector('input[name="name"]')
-      ?.closest(".profile__form-row");
+    const nameRow = container.querySelector('input[name="name"]')?.closest(".profile__form-row");
     expect(nameRow?.querySelector(".profile__mandatory")).not.toBeNull();
 
     const websiteRow = container
@@ -180,34 +180,105 @@ describe("renderProfile mandatory fields", () => {
     expect(websiteRow?.querySelector(".profile__optional")).not.toBeNull();
   });
 
-  it("lets the member close the editor with mandatory fields still blank", () => {
-    const member = createMember({ role: "", affiliation: "" });
-    const state = createState(member);
-    const onSave = vi.fn();
-    const container = renderPage(state, onSave);
-
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="profile-basics"] .btn.primary')!
-      .click();
-
-    // Closing flushes whatever is on the form -- including the blanks -- but never blocks it.
-    expect(state.profileEditingSection).toBeNull();
-    expect(onSave).toHaveBeenCalledWith(
-      "pat",
-      expect.objectContaining({ role: "", affiliation: "" }),
-    );
-  });
-
-  it("marks every field in the blanks form, since only mandatory fields ever appear there", () => {
+  it("marks every mandatory field and leaves the optional ones unmarked", () => {
     const member = createMember({ role: "", location: "" });
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
-    const blanksSection = container.querySelector('[data-testid="profile-blanks"]')!;
-    const stars = blanksSection.querySelectorAll(".profile__mandatory");
-    const rows = blanksSection.querySelectorAll(".profile__form-row");
-    expect(stars.length).toBe(rows.length);
-    expect(stars.length).toBeGreaterThan(0);
+    const basics = container.querySelector('[data-testid="profile-basics"]')!;
+    const marks = basics.querySelectorAll(".profile__mandatory");
+    const optional = basics.querySelectorAll(".profile__optional");
+    expect(marks.length).toBeGreaterThan(0);
+    expect(optional.length).toBeGreaterThan(0);
+    // Every field is on the page now, so the two sets together account for all of them.
+    expect(marks.length + optional.length).toBe(
+      basics.querySelectorAll(".profile__form-row").length,
+    );
+  });
+});
+
+describe("renderProfile onboarding suggestions", () => {
+  const step = (id: string, status: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    label: `Step ${id}`,
+    status,
+    category: "Getting started",
+    required: true,
+    ...extra,
+  });
+
+  it("lists the onboarding steps the member has not finished yet", () => {
+    const member = createMember();
+    const state = createState(member, {
+      adminBotOnboarding: {
+        current_step: step("linkedin", "current", {
+          detail: "Add the lab to your profile.",
+          links: [{ label: "Open LinkedIn", url: "https://linkedin.com" }],
+        }),
+        remaining: [step("gpu", "remaining")],
+        completed: [step("calendar", "complete")],
+        steps: [],
+      },
+    } as unknown as Partial<AppViewState>);
+
+    const container = renderPage(state, vi.fn());
+    const suggestions = container.querySelector('[data-testid="profile-suggestions"]')!;
+
+    expect(
+      suggestions.querySelector('[data-testid="suggestion-onboarding-linkedin"]'),
+    ).not.toBeNull();
+    expect(suggestions.querySelector('[data-testid="suggestion-onboarding-gpu"]')).not.toBeNull();
+    // A finished step is not outstanding, so it is not advice.
+    expect(suggestions.querySelector('[data-testid="suggestion-onboarding-calendar"]')).toBeNull();
+  });
+
+  it("carries each step's own status, detail and link through from the checklist", () => {
+    const member = createMember();
+    const state = createState(member, {
+      adminBotOnboarding: {
+        current_step: step("linkedin", "current", {
+          detail: "Add the lab to your profile.",
+          links: [{ label: "Open LinkedIn", url: "https://linkedin.com" }],
+        }),
+        remaining: [],
+        completed: [],
+        steps: [],
+      },
+    } as unknown as Partial<AppViewState>);
+
+    const container = renderPage(state, vi.fn());
+    const card = container.querySelector('[data-testid="suggestion-onboarding-linkedin"]')!;
+
+    expect(card.querySelector(".profile-suggestion__title")?.textContent).toContain(
+      "Step linkedin",
+    );
+    expect(card.querySelector(".profile-suggestion__status")?.textContent?.trim()).toBe(
+      "Start here",
+    );
+    expect(card.querySelector(".profile-suggestion__body")?.textContent?.trim()).toBe(
+      "Add the lab to your profile.",
+    );
+    const link = card.querySelector<HTMLAnchorElement>(".profile-suggestion__link");
+    expect(link?.getAttribute("href")).toBe("https://linkedin.com");
+    expect(link?.textContent).toContain("Open LinkedIn");
+  });
+
+  it("renders a step that carries no link or detail without an empty link stub", () => {
+    const member = createMember();
+    const state = createState(member, {
+      adminBotOnboarding: {
+        remaining: [step("gpu", "remaining")],
+        completed: [],
+        steps: [],
+      },
+    } as unknown as Partial<AppViewState>);
+
+    const container = renderPage(state, vi.fn());
+    const card = container.querySelector('[data-testid="suggestion-onboarding-gpu"]')!;
+
+    expect(card.querySelector(".profile-suggestion__link")).toBeNull();
+    expect(card.querySelector(".profile-suggestion__body")).toBeNull();
+    expect(card.querySelector(".profile-suggestion__status")?.textContent?.trim()).toBe("To do");
   });
 });
 
@@ -239,12 +310,10 @@ describe("renderProfile field types", () => {
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
-    expect(
-      container.querySelector<HTMLInputElement>('input[name="hours_per_week"]')?.type,
-    ).toBe("number");
-    expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe(
-      "url",
+    expect(container.querySelector<HTMLInputElement>('input[name="hours_per_week"]')?.type).toBe(
+      "number",
     );
+    expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe("url");
   });
 
   it("offers a calendar email field distinct from the governed directory email", () => {
@@ -285,8 +354,10 @@ describe("renderProfile visual structure", () => {
     // github_url (a "Links" field) must land inside a group, not floating at the top level.
     const githubInput = container.querySelector('input[name="github_url"]')!;
     expect(githubInput.closest(".profile__field-group")).not.toBeNull();
-    expect(githubInput.closest(".profile__field-group")?.querySelector(".profile__group-title")
-      ?.textContent).toContain("Links");
+    expect(
+      githubInput.closest(".profile__field-group")?.querySelector(".profile__group-title")
+        ?.textContent,
+    ).toContain("Links");
   });
 
   it("groups the read-only view the same way as the edit form", () => {
@@ -315,20 +386,32 @@ describe("renderProfile visual structure", () => {
     expect(hero.querySelector(".profile__completeness-percent")?.textContent).toMatch(/^\d+%$/);
   });
 
-  it("only shows the fill-in-the-blanks card as highlighted, not every section", () => {
-    const member = createMember({ role: "" });
+  it("edits the record in place, with no edit button and no separate blanks card", () => {
+    const member = createMember({ role: "", location: "" });
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
-    expect(
-      container.querySelector('[data-testid="profile-blanks"]')?.classList.contains(
-        "profile__section--highlight",
-      ),
-    ).toBe(true);
-    expect(
-      container.querySelector('[data-testid="profile-basics"]')?.classList.contains(
-        "profile__section--highlight",
-      ),
-    ).toBe(false);
+    // The record is editable on arrival: no click stands between the member and a correction.
+    const basics = container.querySelector('[data-testid="profile-basics"]')!;
+    expect(basics.querySelector('input[name="name"]')).not.toBeNull();
+    expect(basics.querySelector('select[name="role"]')).not.toBeNull();
+
+    // The edit affordance and the duplicate fill-in-the-blanks form are both gone.
+    expect(container.querySelector('[data-testid="profile-basics-edit"]')).toBeNull();
+    expect(container.querySelector('[data-testid="profile-blanks"]')).toBeNull();
+    expect(basics.querySelector(".btn.primary")).toBeNull();
+  });
+
+  it("keeps the governed fields read-only inside the always-editable record", () => {
+    const member = createMember();
+    const state = createState(member);
+    const container = renderPage(state, vi.fn());
+
+    const basics = container.querySelector('[data-testid="profile-basics"]')!;
+    // Email is the lab's to set: it renders as a locked row, never as an input to type into.
+    expect(basics.querySelector('input[name="email"]')).toBeNull();
+    expect(basics.querySelector(".profile-field--locked")?.textContent).toContain(
+      "pat@example.com",
+    );
   });
 });

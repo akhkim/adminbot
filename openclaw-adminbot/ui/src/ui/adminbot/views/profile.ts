@@ -265,7 +265,6 @@ function groupFields(fields: EditableField[]): Array<{
 // PUT per keystroke-field.
 const AUTOSAVE_DEBOUNCE_MS = 900;
 let basicsSaveTimer: ReturnType<typeof setTimeout> | undefined;
-let blanksSaveTimer: ReturnType<typeof setTimeout> | undefined;
 
 // PROFILE_FIELDS carries its keys as plain `string` (it is data, not a `const`-narrowed
 // tuple -- the whole point of the schema is that it's one editable table, not a union type
@@ -274,35 +273,6 @@ let blanksSaveTimer: ReturnType<typeof setTimeout> | undefined;
 // accepted; this only exists to satisfy the compiler about a key that's already known-dynamic.
 function setField(fields: MemberProfileUpdate, key: string, value: unknown): void {
   (fields as Record<string, unknown>)[key] = value;
-}
-
-function collectBlanks(form: HTMLFormElement, blanks: EditableField[]): MemberProfileUpdate {
-  const data = new FormData(form);
-  const fields: MemberProfileUpdate = {};
-  for (const field of blanks) {
-    const value = String(data.get(field.key) ?? "").trim();
-    if (!value) {
-      continue;
-    }
-    if (field.type === "list") {
-      setField(
-        fields,
-        field.key,
-        value
-          .split(",")
-          .map((entry) => entry.trim())
-          .filter(Boolean),
-      );
-    } else if (field.type === "numeric") {
-      const parsed = Number(value);
-      if (Number.isFinite(parsed)) {
-        fields.hours_per_week = parsed;
-      }
-    } else {
-      setField(fields, field.key, value);
-    }
-  }
-  return fields;
 }
 
 function scheduleAutosave(
@@ -466,26 +436,6 @@ export function badgesFor(state: AppViewState, member: LabMember): string[] {
     badges.push(member.role.trim());
   }
   return badges;
-}
-
-// The read view marks what is *owed*, not what is merely mandatory: a filled required field is
-// just a fact, so carrying its star into the record turned most of the sheet into punctuation.
-// Only a required field that is still blank says so, and it says it in the value column, where the
-// answer would otherwise be.
-function renderFieldRow(field: EditableField, value: string) {
-  const owed = !field.optional && !value.trim();
-  return html`
-    <div class=${`profile-field ${owed ? "profile-field--owed" : ""}`}>
-      <dt class="profile-field__label">${labelFor(field.key)}</dt>
-      <dd class=${`profile-field__value ${value ? "" : "profile-field__value--empty"}`}>
-        ${value
-          ? value
-          : owed
-            ? html`<span class="profile-field__owed">${t("profile.basics.mandatory")}</span>`
-            : t("profile.basics.empty")}
-      </dd>
-    </div>
-  `;
 }
 
 // Collects whatever the basics form holds. Governed fields have no input to read, so they cannot
@@ -688,161 +638,109 @@ function renderMandatoryMark(field: EditableField) {
     ><span class="sr-only">${t("profile.basics.mandatory")}</span>`;
 }
 
+// The record, always editable. There is no edit button and no read-only mode: this page is one
+// person's own row in the roster, they are the only one who writes it, and the extra click only
+// ever stood between them and a correction they had already decided to make. Every control commits
+// itself a beat after typing stops, so the page holds no draft that can be lost by navigating away.
+//
+// Two things stay uneditable and say so: the fields the lab governs (email), and the picture,
+// which has its own upload control because a file is not a text field.
 function renderBasics(state: AppViewState, member: LabMember, props: ProfileProps) {
-  const editing = state.profileEditingSection === "basics";
+  const commit = (form: HTMLFormElement) => () => {
+    member.id && props.onSave(member.id, collectBasics(form));
+    runAccountChecks(form, state);
+  };
   return html`
     <section class="profile__section" data-testid="profile-basics">
       <div class="profile__section-head">
         <h2 class="profile__section-title">${t("profile.basics.title")}</h2>
-        ${editing
-          ? nothing
-          : html`
-              <button
-                type="button"
-                class="btn btn--sm profile__edit"
-                data-testid="profile-basics-edit"
-                @click=${() => {
-                  state.profileEditingSection = "basics";
-                }}
-              >
-                <span class="profile__edit-icon" aria-hidden="true">${icons.penLine}</span>
-                ${t("profile.basics.edit")}
-              </button>
-            `}
+        <span class="profile__autosave-hint">${t("profile.basics.autosaveHint")}</span>
       </div>
-      ${editing
-        ? html`
-            <form
-              class="profile__form"
-              @submit=${(event: SubmitEvent) => event.preventDefault()}
-              @input=${(event: Event) => {
-                const form = event.currentTarget as HTMLFormElement;
-                scheduleAutosave(
-                  basicsSaveTimer,
-                  (next) => {
-                    basicsSaveTimer = next;
-                  },
-                  () => {
-                    member.id && props.onSave(member.id, collectBasics(form));
-                    runAccountChecks(form, state);
-                  },
-                );
-              }}
-              @focusout=${(event: FocusEvent) => {
-                const form = event.currentTarget as HTMLFormElement;
-                if (!focusLeftForm(form, event)) {
-                  return;
-                }
-                flushAutosave(
-                  basicsSaveTimer,
-                  (next) => {
-                    basicsSaveTimer = next;
-                  },
-                  () => {
-                    member.id && props.onSave(member.id, collectBasics(form));
-                    runAccountChecks(form, state);
-                  },
-                );
-              }}
-            >
-              ${groupFields(EDITABLE_FIELDS.filter((field) => field.type !== "image")).map(
-                (group) => html`
-                  <div class="profile__field-group">
-                    <h3 class="profile__group-title">
-                      <span class="profile__group-icon" aria-hidden="true"
-                        >${icons[group.icon]}</span
-                      >
-                      ${t(group.labelKey)}
-                    </h3>
-                    <div class="profile__field-grid">
-                      ${group.fields.map(
-                        (field) => html`
-                          <label class="profile__form-row">
-                            <span class="profile__form-label">
-                              ${labelFor(field.key)}${renderMandatoryMark(field)}
-                              ${field.optional
-                                ? html`<span class="profile__optional"
-                                    >${t("profile.basics.optional")}</span
-                                  >`
-                                : nothing}
-                            </span>
-                            ${renderFieldInput(field, valueOf(member, field))}
-                            ${renderAccountCheckStatus(state, field)}
-                          </label>
-                        `,
-                      )}
-                    </div>
-                  </div>
-                `,
-              )}
-              ${renderAvatarUpload(state, member, props)}
-              <div class="profile__form-actions">
-                <button
-                  type="button"
-                  class="btn primary"
-                  @click=${(event: Event) => {
-                    const form = (event.currentTarget as HTMLElement).closest("form")!;
-                    flushAutosave(
-                      basicsSaveTimer,
-                      (next) => {
-                        basicsSaveTimer = next;
-                      },
-                      () =>
-                        member.id &&
-                        props.onSave(member.id, collectBasics(form as HTMLFormElement)),
-                    );
-                    state.profileEditingSection = null;
-                  }}
-                >
-                  ${t("profile.basics.done")}
-                </button>
-                <span class="profile__autosave-hint">${t("profile.basics.autosaveHint")}</span>
-              </div>
-              <p class="profile__managed">
-                ${t("profile.basics.managed", {
-                  fields: GOVERNED_FIELDS.map((key) => labelFor(key)).join(", "),
-                })}
-              </p>
-            </form>
-          `
-        : html`
-            <div class="profile__fields">
-              <div class="profile__field-group">
-                <h3 class="profile__group-title">
-                  <span class="profile__group-icon" aria-hidden="true">${icons.lock}</span>
-                  ${t("profile.groups.account")}
-                </h3>
-                <div class="profile__field-grid">
-                  ${GOVERNED_FIELDS.map(
-                    (key) => html`
-                      <div class="profile-field profile-field--locked">
-                        <dt class="profile-field__label">
-                          ${labelFor(key)}
-                          <span class="profile-field__lock" aria-hidden="true">${icons.lock}</span>
-                        </dt>
-                        <dd class="profile-field__value">${String(member[key] ?? "").trim()}</dd>
-                      </div>
-                    `,
-                  )}
+      <div class="profile__fields">
+        <div class="profile__field-group">
+          <h3 class="profile__group-title">
+            <span class="profile__group-icon" aria-hidden="true">${icons.lock}</span>
+            ${t("profile.groups.account")}
+          </h3>
+          <div class="profile__field-grid">
+            ${GOVERNED_FIELDS.map(
+              (key) => html`
+                <div class="profile-field profile-field--locked">
+                  <dt class="profile-field__label">
+                    ${labelFor(key)}
+                    <span class="profile-field__lock" aria-hidden="true">${icons.lock}</span>
+                  </dt>
+                  <dd class="profile-field__value">${String(member[key] ?? "").trim()}</dd>
                 </div>
+              `,
+            )}
+          </div>
+        </div>
+      </div>
+      <form
+        class="profile__form"
+        @submit=${(event: SubmitEvent) => event.preventDefault()}
+        @input=${(event: Event) => {
+          const form = event.currentTarget as HTMLFormElement;
+          scheduleAutosave(
+            basicsSaveTimer,
+            (next) => {
+              basicsSaveTimer = next;
+            },
+            commit(form),
+          );
+        }}
+        @focusout=${(event: FocusEvent) => {
+          const form = event.currentTarget as HTMLFormElement;
+          if (!focusLeftForm(form, event)) {
+            return;
+          }
+          // Leaving the form commits immediately rather than waiting out the debounce: the member
+          // may be on their way to another tab, and a pending timer would not survive it.
+          flushAutosave(
+            basicsSaveTimer,
+            (next) => {
+              basicsSaveTimer = next;
+            },
+            commit(form),
+          );
+        }}
+      >
+        ${groupFields(EDITABLE_FIELDS.filter((field) => field.type !== "image")).map(
+          (group) => html`
+            <div class="profile__field-group">
+              <h3 class="profile__group-title">
+                <span class="profile__group-icon" aria-hidden="true">${icons[group.icon]}</span>
+                ${t(group.labelKey)}
+              </h3>
+              <div class="profile__field-grid">
+                ${group.fields.map(
+                  (field) => html`
+                    <label class="profile__form-row">
+                      <span class="profile__form-label">
+                        ${labelFor(field.key)}${renderMandatoryMark(field)}
+                        ${field.optional
+                          ? html`<span class="profile__optional"
+                              >${t("profile.basics.optional")}</span
+                            >`
+                          : nothing}
+                      </span>
+                      ${renderFieldInput(field, valueOf(member, field))}
+                      ${renderAccountCheckStatus(state, field)}
+                    </label>
+                  `,
+                )}
               </div>
-              ${groupFields(EDITABLE_FIELDS).map(
-                (group) => html`
-                  <div class="profile__field-group">
-                    <h3 class="profile__group-title">
-                      <span class="profile__group-icon" aria-hidden="true"
-                        >${icons[group.icon]}</span
-                      >
-                      ${t(group.labelKey)}
-                    </h3>
-                    <div class="profile__field-grid">
-                      ${group.fields.map((field) => renderFieldRow(field, valueOf(member, field)))}
-                    </div>
-                  </div>
-                `,
-              )}
             </div>
-          `}
+          `,
+        )}
+        ${renderAvatarUpload(state, member, props)}
+        <p class="profile__managed">
+          ${t("profile.basics.managed", {
+            fields: GOVERNED_FIELDS.map((key) => labelFor(key)).join(", "),
+          })}
+        </p>
+      </form>
     </section>
   `;
 }
@@ -919,84 +817,13 @@ function renderBadges(state: AppViewState, member: LabMember) {
   `;
 }
 
-// Only the empty fields appear. A member who has filled everything in sees the done state instead
-// of an editor asking them to re-confirm what is already true.
-function renderBlanks(state: AppViewState, member: LabMember, props: ProfileProps) {
-  const blanks = blankFields(member);
-  // A finished task should leave the page, not sit there announcing that it is finished. Basic info
-  // above already shows every value, and Edit is how you change one.
-  if (!blanks.length) {
-    return nothing;
-  }
-  // No progress bar here any more: the ledger in the header is the page's single completion read,
-  // and this card sits directly under it, so a second meter measuring the same nine fields was
-  // duplication that could visibly disagree with the first mid-save.
-  return html`
-    <section class="profile__section profile__section--highlight" data-testid="profile-blanks">
-      <h2 class="profile__section-title">${t("profile.blanks.title")}</h2>
-      <form
-        class="profile__form"
-        @submit=${(event: SubmitEvent) => event.preventDefault()}
-        @input=${(event: Event) => {
-          const form = event.currentTarget as HTMLFormElement;
-          scheduleAutosave(
-            blanksSaveTimer,
-            (next) => {
-              blanksSaveTimer = next;
-            },
-            () => {
-              member.id && props.onSave(member.id, collectBlanks(form, blanks));
-              runAccountChecks(form, state);
-            },
-          );
-        }}
-        @focusout=${(event: FocusEvent) => {
-          const form = event.currentTarget as HTMLFormElement;
-          if (!focusLeftForm(form, event)) {
-            return;
-          }
-          flushAutosave(
-            blanksSaveTimer,
-            (next) => {
-              blanksSaveTimer = next;
-            },
-            () => {
-              member.id && props.onSave(member.id, collectBlanks(form, blanks));
-              runAccountChecks(form, state);
-            },
-          );
-        }}
-      >
-        ${groupFields(blanks.filter((field) => field.type !== "image")).map(
-          (group) => html`
-            <div class="profile__field-group">
-              <h3 class="profile__group-title">
-                <span class="profile__group-icon" aria-hidden="true">${icons[group.icon]}</span>
-                ${t(group.labelKey)}
-              </h3>
-              <div class="profile__field-grid">
-                ${group.fields.map(
-                  (field) => html`
-                    <label class="profile__form-row">
-                      <span class="profile__form-label">
-                        ${labelFor(field.key)}${renderMandatoryMark(field)}
-                      </span>
-                      ${renderFieldInput(field, "")} ${renderAccountCheckStatus(state, field)}
-                    </label>
-                  `,
-                )}
-              </div>
-            </div>
-          `,
-        )}
-        <span class="profile__autosave-hint">${t("profile.blanks.autosaveHint")}</span>
-      </form>
-    </section>
-  `;
-}
-
-// Suggestions read the same blanks the form does, so advice and task never disagree.
-function renderSuggestions(member: LabMember) {
+// What is still outstanding for this person, in one place: the onboarding steps they have not
+// finished, then the guidebook pointers derived from what their record is missing.
+//
+// The onboarding steps come first because they are the lab actually waiting on someone, where a
+// guidebook pointer is only advice. Their labels, detail and links all come from the checklist the
+// service generated for this member, so this list and the checklist itself can never drift.
+function renderSuggestions(state: AppViewState, member: LabMember) {
   const blanks = new Set(blankFields(member).map((field) => field.key));
   const suggestions: Array<{
     id: string;
@@ -1004,9 +831,45 @@ function renderSuggestions(member: LabMember) {
     body: string;
     label: string;
     href: string;
+    // Present only on an onboarding step: the checklist's own word for where the step stands.
+    status?: string;
   }> = [];
+
+  const onboarding = state.adminBotOnboarding;
+  // `remaining` is everything not yet done; `current_step` is the one the checklist points at
+  // first and is not repeated inside it, so both are needed to list all of the outstanding work.
+  const outstanding = [
+    ...(onboarding?.current_step ? [onboarding.current_step] : []),
+    ...(onboarding?.remaining ?? []),
+  ].filter(
+    (step, index, all) =>
+      step.status !== "complete" && all.findIndex((other) => other.id === step.id) === index,
+  );
+  for (const step of outstanding) {
+    const link = step.links?.[0];
+    suggestions.push({
+      id: `onboarding-${step.id}`,
+      title: step.label,
+      body: step.detail ?? "",
+      label: link?.label ?? "",
+      href: link?.url ?? "",
+      status:
+        step.status === "current"
+          ? t("adminbotWelcome.status.current")
+          : t("adminbotWelcome.status.remaining"),
+    });
+  }
+
+  // A guidebook pointer that repeats an outstanding onboarding step is noise: the step is the lab
+  // actually asking, and the pointer is advice about the same thing. Whatever onboarding already
+  // covers, the static suggestions below stay quiet about.
+  const coveredByOnboarding = outstanding
+    .map((step) => `${step.id} ${step.label}`.toLowerCase())
+    .join(" ");
+
   const topics = (member.research_topics ?? []).join(" ").toLowerCase();
   if (
+    !coveredByOnboarding.includes("gpu") &&
     !topics.includes("gpu") &&
     !String(member.notes ?? "")
       .toLowerCase()
@@ -1020,7 +883,7 @@ function renderSuggestions(member: LabMember) {
       href: "https://github.com/akhkim/openclaw-adminbot-lab#gpu-onboarding",
     });
   }
-  if (blanks.has("personal_website")) {
+  if (blanks.has("personal_website") && !coveredByOnboarding.includes("website")) {
     suggestions.push({
       id: "website",
       title: t("profile.suggestions.websiteTitle"),
@@ -1038,20 +901,33 @@ function renderSuggestions(member: LabMember) {
       <div class="profile__suggestions">
         ${suggestions.map(
           (suggestion) => html`
-            <article class="profile-suggestion">
-              <h3 class="profile-suggestion__title">${suggestion.title}</h3>
-              <p class="profile-suggestion__body">${suggestion.body}</p>
-              <a
-                class="profile-suggestion__link"
-                href=${suggestion.href}
-                target=${EXTERNAL_LINK_TARGET}
-                rel=${buildExternalLinkRel()}
-              >
-                ${suggestion.label}
-                <span class="profile-suggestion__icon" aria-hidden="true">
-                  ${icons.externalLink}
-                </span>
-              </a>
+            <article class="profile-suggestion" data-testid=${`suggestion-${suggestion.id}`}>
+              <h3 class="profile-suggestion__title">
+                ${suggestion.title}
+                ${suggestion.status
+                  ? html`<span class="ab-chip profile-suggestion__status"
+                      >${suggestion.status}</span
+                    >`
+                  : nothing}
+              </h3>
+              ${suggestion.body
+                ? html`<p class="profile-suggestion__body">${suggestion.body}</p>`
+                : nothing}
+              ${suggestion.href
+                ? html`
+                    <a
+                      class="profile-suggestion__link"
+                      href=${suggestion.href}
+                      target=${EXTERNAL_LINK_TARGET}
+                      rel=${buildExternalLinkRel()}
+                    >
+                      ${suggestion.label}
+                      <span class="profile-suggestion__icon" aria-hidden="true">
+                        ${icons.externalLink}
+                      </span>
+                    </a>
+                  `
+                : nothing}
             </article>
           `,
         )}
@@ -1182,8 +1058,7 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         </div>
         ${renderCompletionLedger(member)}
       </header>
-      ${renderBlanks(state, member, props)} ${renderBasics(state, member, props)}
-      ${renderSuggestions(member)}
+      ${renderBasics(state, member, props)} ${renderSuggestions(state, member)}
     </div>
   `;
 }
