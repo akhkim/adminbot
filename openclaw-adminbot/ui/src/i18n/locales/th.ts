@@ -1310,8 +1310,10 @@ export const th: TranslationMap = {
   landing: {
     eyebrow: "Lab operations",
     tagline: "The admin side of research, in one place.",
-    signIn: "Sign in or register",
-    continueAsGuest: "Continue as a guest",
+    signIn: "Log In or Sign Up",
+    openWithoutAccount: "Open without an account",
+    guest: "Continue as a guest",
+    guestHint: "Guests can submit reimbursements and view deadlines without signing in.",
   },
   login: {
     subtitle: "Gateway Dashboard",

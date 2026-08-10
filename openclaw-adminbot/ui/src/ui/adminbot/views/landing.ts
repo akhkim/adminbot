@@ -7,55 +7,73 @@
 import { html } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
-import { icons } from "../../icons.ts";
-import { normalizeBasePath, pathForTab, type Tab } from "../../navigation.ts";
+import { normalizeBasePath, pathForTab, titleForTab, type Tab } from "../../navigation.ts";
 import { goToSignedOutView } from "../../signed-out-view.ts";
 import { renderSignedOutHeader } from "./signed-out-header.ts";
 
-// The access table opens both of these to `anonymous`; the guest button below lands on the
-// first one and the public shell's own sidebar covers the rest — named here rather than derived
-// so the landing page states its own offer, with access.ts still the thing that enforces it.
-const GUEST_ENTRY_TAB: Tab = "adminbotReimbursements";
+// The two surfaces the access table opens to `anonymous`. Named here rather than derived so the
+// landing page states its own offer; access.ts is still what actually enforces it.
+const OPEN_SURFACES: readonly Tab[] = ["adminbotReimbursements", "adminbotDeadlines"];
+
+function renderOpenSurfaceLink(state: AppViewState, tab: Tab, label?: string) {
+  return html`
+    <a
+      class="landing__surface"
+      href=${`${normalizeBasePath(state.basePath ?? "")}${pathForTab(tab)}`}
+      @click=${(event: MouseEvent) => {
+        // Modified clicks keep the browser's own behaviour so "open in new tab" still works.
+        if (
+          event.metaKey ||
+          event.ctrlKey ||
+          event.shiftKey ||
+          event.button !== 0
+        ) {
+          return;
+        }
+
+        event.preventDefault();
+        state.tab = tab;
+      }}
+    >
+      ${label ?? titleForTab(tab)}
+    </a>
+  `;
+}
 
 export function renderLanding(state: AppViewState) {
-  const guestHref = `${normalizeBasePath(state.basePath ?? "")}${pathForTab(GUEST_ENTRY_TAB)}`;
   return html`
     <div class="landing">
       <div class="landing__rules" aria-hidden="true"></div>
+
       ${renderSignedOutHeader(state, "sign-in")}
+
       <main class="landing__inner">
-        <p class="landing__eyebrow">${t("landing.eyebrow")}</p>
-        <h1 class="landing__wordmark">Jinesis<span class="landing__wordmark-tail">Lab</span></h1>
+        <h1 class="landing__wordmark">
+          Jinesis<span class="landing__wordmark-tail">Lab</span>
+        </h1>
+
         <p class="landing__tagline">${t("landing.tagline")}</p>
-        <div class="landing__actions">
+
+        <div class="landing__cta">
           <button
             type="button"
-            class="btn primary landing__cta"
+            class="btn primary"
             data-testid="landing-sign-in"
             @click=${() => {
               goToSignedOutView(state, "login");
             }}
           >
-            <span class="landing__cta-icon" aria-hidden="true">${icons.lock}</span>
-            <span>${t("landing.signIn")}</span>
+            ${t("landing.signIn")}
           </button>
-          <a
-            class="btn landing__cta landing__cta--guest"
-            data-testid="landing-continue-as-guest"
-            href=${guestHref}
-            @click=${(event: MouseEvent) => {
-              // Modified clicks keep the browser's own behaviour so "open in new tab" still works.
-              if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) {
-                return;
-              }
-              event.preventDefault();
-              state.tab = GUEST_ENTRY_TAB;
-            }}
-          >
-            <span class="landing__cta-icon" aria-hidden="true">${icons.globe}</span>
-            <span>${t("landing.continueAsGuest")}</span>
-          </a>
+
+          ${renderOpenSurfaceLink(
+            state,
+            "adminbotReimbursements",
+            t("landing.guest"),
+          )}
         </div>
+
+        <p class="landing__guest-hint">${t("landing.guestHint")}</p>
       </main>
     </div>
   `;
