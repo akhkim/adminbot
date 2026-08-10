@@ -64,6 +64,24 @@ export const ADMINBOT_OPTIONAL_VALUE_TOKENS: readonly string[] = ["first_name"];
 
 const OPTIONAL_VALUE_TOKENS = new Set(ADMINBOT_OPTIONAL_VALUE_TOKENS);
 
+/**
+ * An environment value only when someone actually chose it.
+ *
+ * deploy/aurora/adminbot.env.example seeds thirteen variables as REPLACE_ME_WITH_... so an
+ * operator can see what a complete file looks like. Those placeholders are non-empty, so a
+ * deployment that installed the template and never edited a line passed every "is it set?" check
+ * and failed much later, inside Slack or Gmail, with an error about the value rather than about
+ * the configuration. Treating them as unset moves the failure back to the config check, which is
+ * the one that can say which variable to set.
+ */
+export function configuredEnvValue(raw: string | undefined): string | undefined {
+  const value = raw?.trim();
+  if (!value || value.startsWith("REPLACE_ME")) {
+    return undefined;
+  }
+  return value;
+}
+
 /** `a@x, b@y` from a comma-separated env value, rendered as the copy reads it. */
 function renderList(raw: string): string {
   return raw
@@ -92,7 +110,7 @@ function resolveDeploymentTokens(
     if (!text.includes(`{${token}}`)) {
       continue;
     }
-    const raw = env[varName]?.trim();
+    const raw = configuredEnvValue(env[varName]);
     if (!raw) {
       missing.push(varName);
       continue;
@@ -103,14 +121,14 @@ function resolveDeploymentTokens(
     if (!text.includes(`{${token}}`)) {
       continue;
     }
-    values[token] = env[varName]?.trim() || fallback;
+    values[token] = configuredEnvValue(env[varName]) ?? fallback;
   }
   const unresolvedOptional = new Set<string>();
   for (const [token, varName] of Object.entries(OPTIONAL_DEPLOYMENT_TOKENS)) {
     if (!text.includes(`{${token}}`)) {
       continue;
     }
-    const raw = env[varName]?.trim();
+    const raw = configuredEnvValue(env[varName]);
     if (raw) {
       values[token] = raw;
     } else {

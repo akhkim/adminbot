@@ -69,13 +69,14 @@ describe("visibleTabsForRole", () => {
     ]);
   });
 
-  it("adds the roster, the paper list and chat for a member", () => {
+  it("adds the roster, availability, paper list, and chat for a member", () => {
     expect(visibleTabsForRole(ALL_TABS, "member")).toEqual([
       "dashboard",
       "profile",
       "myWork",
       "chat",
       "adminbotMembers",
+      "adminbotTimeAvailability",
       "adminbotPapers",
       "adminbotReimbursements",
       "adminbotDeadlines",

@@ -11,7 +11,10 @@ export const TAB_GROUPS = [
   // who a tool is for instead of that only being visible in the access table. A tier with no tab
   // the viewer can see renders no section at all (app-render.ts), so a plain member never sees an
   // empty "Admin" heading and a visitor never sees "Lab" at all.
-  { label: "adminbotMember", tabs: ["adminbotMembers", "adminbotPapers"] },
+  {
+    label: "adminbotMember",
+    tabs: ["adminbotMembers", "adminbotTimeAvailability", "adminbotPapers"],
+  },
   {
     label: "adminbotAdmin",
     tabs: [
@@ -46,6 +49,7 @@ export type Tab =
   | "adminbotReimbursements"
   | "adminbotSettings"
   | "adminbotMembers"
+  | "adminbotTimeAvailability"
   | "adminbotPapers"
   | "adminbotAnnouncements"
   | "adminbotDeadlines"
@@ -95,6 +99,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotReimbursements: "/adminbot/reimbursements",
   adminbotSettings: "/adminbot/settings",
   adminbotMembers: "/adminbot/members",
+  adminbotTimeAvailability: "/adminbot/time-availability",
   adminbotPapers: "/adminbot/papers",
   adminbotAnnouncements: "/adminbot/announcements",
   adminbotDeadlines: "/adminbot/deadlines",
@@ -251,6 +256,8 @@ export function iconForTab(tab: Tab): IconName {
       return "settings";
     case "adminbotMembers":
       return "folder";
+    case "adminbotTimeAvailability":
+      return "clock";
     case "adminbotPapers":
       return "fileText";
     case "adminbotAnnouncements":

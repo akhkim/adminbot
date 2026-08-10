@@ -208,6 +208,27 @@ describe("composeOnboardingGuide", () => {
     });
   });
 
+  // deploy/aurora/adminbot.env.example seeds thirteen variables as REPLACE_ME_WITH_..., and those
+  // placeholders are non-empty. Without this they satisfy every "is it set?" check and the failure
+  // surfaces much later, from Slack or Gmail, describing the value rather than the configuration.
+  it("treats an unedited REPLACE_ME placeholder as unset", () => {
+    const result = composeOnboardingGuide("acquaintance", valuesFor("acquaintance"), {
+      ADMINBOT_SLACK_INVITE_URL: "REPLACE_ME_WITH_THE_SLACK_INVITE_URL",
+    });
+    expect(result).toMatchObject({ ok: false, reason: "missing-environment" });
+    expect(result.ok ? [] : result.missing).toContain("ADMINBOT_SLACK_INVITE_URL");
+  });
+
+  it("falls back to the shipped example when a defaulted token is still a placeholder", () => {
+    const result = composeOnboardingGuide("member", { first_name: "Ada" }, {
+      ADMINBOT_EMAIL_FORMAT_EXAMPLE: "REPLACE_ME_WITH_AN_EXAMPLE_ADDRESS",
+    } satisfies NodeJS.ProcessEnv);
+    expect(result.ok).toBe(true);
+    // The illustration a recipient reads must never be the operator's unfilled placeholder.
+    expect(result.ok ? result.guide.body : "").toContain('e.g., "zjin@cs.toronto.edu"');
+    expect(result.ok ? result.guide.body : "").not.toContain("REPLACE_ME");
+  });
+
   it("rejects an unknown template", () => {
     expect(composeOnboardingGuide("nope", {})).toMatchObject({ reason: "unknown-template" });
   });

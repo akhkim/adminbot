@@ -808,6 +808,171 @@
   grid-column: 1 / -1;
 }
 
+.adminbot-time-availability {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.adminbot-time-availability__controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr);
+  gap: var(--space-3);
+  max-width: 520px;
+}
+
+.adminbot-time-availability__report {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.adminbot-time-availability__report-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.adminbot-time-availability__empty {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+  text-align: center;
+}
+
+.adminbot-time-chart-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
+}
+
+.adminbot-time-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4) 0;
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-time-chart__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.adminbot-time-chart__legend i,
+.adminbot-time-allocation-table__task {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.adminbot-time-chart {
+  display: block;
+  width: 100%;
+  min-width: 760px;
+  height: auto;
+}
+
+.adminbot-time-chart__grid {
+  stroke: #2a2e35;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.adminbot-time-chart__axis {
+  stroke: #9aa0aa;
+  stroke-width: 1.5;
+}
+
+.adminbot-time-chart__capacity-line {
+  stroke: #f7615d;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+  opacity: 0.6;
+}
+
+.adminbot-time-chart__axis-label {
+  fill: #9aa0aa;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.adminbot-time-chart__axis-label--timeline {
+  font-size: 11px;
+}
+
+.adminbot-time-chart__segment {
+  stroke: none;
+}
+
+.adminbot-time-chart__total {
+  fill: #9aa0aa;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.adminbot-time-chart__total--near {
+  fill: #fbbf24;
+}
+
+.adminbot-time-chart__total--over {
+  fill: #f87171;
+}
+
+.adminbot-time-chart__capacity-note {
+  padding: 0 var(--space-4) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-time-allocation-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.adminbot-time-allocation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-time-allocation-table th,
+.adminbot-time-allocation-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.adminbot-time-allocation-table th {
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.adminbot-time-allocation-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.adminbot-time-allocation-table td:first-child {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.adminbot-time-allocation-table__task {
+  display: inline-block;
+}
+
 .adminbot-registrations {
   list-style: none;
   margin: 0;

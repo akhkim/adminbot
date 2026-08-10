@@ -313,6 +313,9 @@ export type AdminBotReimbursementState = {
   artifacts: AdminBotReimbursementArtifact[];
 };
 
+export type AdminBotDashboardMode = "admin" | "general";
+export type AdminBotLoadMode = AdminBotDashboardMode | "members";
+
 export type AdminBotDashboardData = {
   proposals: AdminBotActionProposal[];
   members: AdminBotLabMember[];
@@ -321,6 +324,7 @@ export type AdminBotDashboardData = {
   settings: AdminBotSettings | null;
   sensitiveInfo: AdminBotSensitiveInfoRecord | null;
   loadedAt: number | null;
+  loadedMode: AdminBotLoadMode | null;
 };
 
 // Draft state for the "Announcements" compose form (member_nudge.send): channel + message text
@@ -357,8 +361,6 @@ export type AdminBotHost = {
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
   settings: UiSettings;
 };
-
-export type AdminBotLoadMode = "admin" | "general";
 
 export function createEmptyAdminBotReimbursementState(): AdminBotReimbursementState {
   return {
@@ -402,6 +404,7 @@ export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
     settings: null,
     sensitiveInfo: null,
     loadedAt: null,
+    loadedMode: null,
   };
 }
 
@@ -521,6 +524,16 @@ async function loadAdminBotOverSession(
     return result.ok ? result.value : undefined;
   };
   try {
+    if (mode === "members") {
+      const members = await read("/lab/members");
+      host.adminBotData = {
+        ...host.adminBotData,
+        members: readArray<AdminBotLabMember>(members, "members"),
+        loadedAt: Date.now(),
+        loadedMode: host.adminBotData.loadedMode ?? "members",
+      };
+      return;
+    }
     const [members, papers] = await Promise.all([read("/lab/members"), read("/papers")]);
     if (mode === "general") {
       host.adminBotData = {
@@ -528,6 +541,7 @@ async function loadAdminBotOverSession(
         members: readArray<AdminBotLabMember>(members, "members"),
         papers: readArray<AdminBotPaperRecord>(papers, "papers"),
         loadedAt: Date.now(),
+        loadedMode: host.adminBotData.loadedMode === "admin" ? "admin" : "general",
       };
       return;
     }
@@ -550,6 +564,7 @@ async function loadAdminBotOverSession(
         Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
       sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,
       loadedAt: Date.now(),
+      loadedMode: "admin",
     };
   } catch (err) {
     host.adminBotError = err instanceof Error ? err.message : String(err);
@@ -583,6 +598,16 @@ export async function loadAdminBot(
   host.adminBotLoading = true;
   host.adminBotError = null;
   try {
+    if (mode === "members") {
+      const members = await invokeAdminBotTool(host, "adminbot_list_lab_members");
+      host.adminBotData = {
+        ...host.adminBotData,
+        members: readArray<AdminBotLabMember>(members, "members"),
+        loadedAt: Date.now(),
+        loadedMode: host.adminBotData.loadedMode ?? "members",
+      };
+      return;
+    }
     if (mode === "general") {
       const [members, papers] = await Promise.all([
         invokeAdminBotTool(host, "adminbot_list_lab_members"),
@@ -593,6 +618,7 @@ export async function loadAdminBot(
         members: readArray<AdminBotLabMember>(members, "members"),
         papers: readArray<AdminBotPaperRecord>(papers, "papers"),
         loadedAt: Date.now(),
+        loadedMode: host.adminBotData.loadedMode === "admin" ? "admin" : "general",
       };
       return;
     }
@@ -637,6 +663,7 @@ export async function loadAdminBot(
         Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
       sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,
       loadedAt: Date.now(),
+      loadedMode: "admin",
     };
   } catch (err) {
     host.adminBotError = formatAdminBotToolError(err);

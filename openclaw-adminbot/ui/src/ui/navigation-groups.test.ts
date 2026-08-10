@@ -39,7 +39,7 @@ describe("TAB_GROUPS", () => {
     expect(guestIndex).toBeGreaterThan(adminIndex);
 
     const member = TAB_GROUPS.find((group) => group.label === "adminbotMember");
-    expect(member?.tabs).toEqual(["adminbotMembers", "adminbotPapers"]);
+    expect(member?.tabs).toEqual(["adminbotMembers", "adminbotTimeAvailability", "adminbotPapers"]);
 
     const admin = TAB_GROUPS.find((group) => group.label === "adminbotAdmin");
     expect(admin?.tabs).toEqual([

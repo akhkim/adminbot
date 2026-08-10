@@ -507,6 +507,10 @@ const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
   notifyLazyViewChanged,
 );
+const lazyAdminBotTimeAvailability = createLazyView(
+  () => import("./adminbot/views/time-availability.ts"),
+  notifyLazyViewChanged,
+);
 const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewChanged);
 const lazyInstances = createLazyView(() => import("./views/instances.ts"), notifyLazyViewChanged);
 const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewChanged);
@@ -525,7 +529,10 @@ const lazyAdminBotOnboarding = createLazyView(
   notifyLazyViewChanged,
 );
 
-function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminBotPanel | null {
+function adminBotPanelForTab(
+  tab: Tab,
+  mode: AdminBotDashboardMode = "admin",
+): AdminBotPanel | null {
   if (mode === "general") {
     switch (tab) {
       case "adminbotMembers":
@@ -557,6 +564,19 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
     default:
       return null;
   }
+}
+
+function hasAdminBotDataForMode(data: AdminBotDashboardData, mode: AdminBotLoadMode): boolean {
+  if (!data.loadedMode) {
+    return false;
+  }
+  if (mode === "members") {
+    return true;
+  }
+  if (mode === "general") {
+    return data.loadedMode !== "members";
+  }
+  return data.loadedMode === "admin";
 }
 
 // Deep links and sign-out both leave `state.tab` pointing at a surface the current role may not
@@ -1266,6 +1286,14 @@ function buildArtifactSidebarContent(params: {
   return { kind: "markdown", content, rawText: content };
 }
 
+function allowDisconnectedViteMemberPreview(state: AppViewState): boolean {
+  return (
+    Boolean(state.memberId) &&
+    typeof document !== "undefined" &&
+    Boolean(document.querySelector('script[src*="/@vite/client"]'))
+  );
+}
+
 export function renderApp(state: AppViewState) {
   const updatableState = state as AppViewState & { requestUpdate?: () => void };
   const requestHostUpdate =
@@ -1306,7 +1334,10 @@ export function renderApp(state: AppViewState) {
       ${renderGatewayUrlConfirmation(state)}
     `;
   }
-  if (!state.connected) {
+  // Source checkouts may intentionally run the AdminBot HTTP service without a Gateway. Once the
+  // local member login succeeds, keep AdminBot's independently authenticated surfaces available
+  // in Vite development; production builds still require the Gateway before rendering this shell.
+  if (!state.connected && !allowDisconnectedViteMemberPreview(state)) {
     return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
   }
   // A deep link into a surface this role may not see lands on their own default instead, so a
@@ -1318,8 +1349,11 @@ export function renderApp(state: AppViewState) {
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
   const chatDisabledReason = state.connected ? null : t("chat.disconnected");
   const isChat = state.tab === "chat";
-  const adminBotMode: AdminBotLoadMode = resolveAdminBotMode(state.memberPrivilegeLevel);
+  const adminBotMode: AdminBotDashboardMode = resolveAdminBotMode(state.memberPrivilegeLevel);
   const adminBotPanel = adminBotPanelForTab(state.tab, adminBotMode);
+  const needsAdminBotData = Boolean(adminBotPanel) || state.tab === "adminbotTimeAvailability";
+  const adminBotLoadMode: AdminBotLoadMode =
+    state.tab === "adminbotTimeAvailability" ? "members" : adminBotMode;
   const headerError = !isChat && state.lastError !== state.chatError ? state.lastError : null;
   const chatViewError = state.lastError;
   const chatHeaderHidden = isChat && (state.onboarding || state.chatHeaderControlsHidden);
@@ -2149,14 +2183,16 @@ export function renderApp(state: AppViewState) {
   const refreshChatWorkspaceFiles = () => {
     loadChatWorkspaceFiles({ force: true });
   };
+  const canLoadAvailabilityOverMemberSession =
+    state.tab === "adminbotTimeAvailability" && allowDisconnectedViteMemberPreview(state);
   if (
-    ((isChat && isAdminBotChat) || adminBotPanel) &&
-    state.connected &&
+    ((isChat && isAdminBotChat) || needsAdminBotData) &&
+    (state.connected || canLoadAvailabilityOverMemberSession) &&
     !state.adminBotLoading &&
     !state.adminBotError &&
-    !state.adminBotData.loadedAt
+    !hasAdminBotDataForMode(state.adminBotData, adminBotLoadMode)
   ) {
-    void loadAdminBot(state, adminBotMode).finally(() => requestHostUpdate?.());
+    void loadAdminBot(state, adminBotLoadMode).finally(() => requestHostUpdate?.());
   }
   const browseChatWorkspacePath = (path: string) => {
     if (chatWorkspaceFiles.browserSearchTimer) {
@@ -2825,6 +2861,19 @@ export function renderApp(state: AppViewState) {
           : nothing}
         ${state.tab === "adminbotOnboarding" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotOnboarding, (m) => m.renderAdminBotOnboarding(state))
+          : nothing}
+        ${state.tab === "adminbotTimeAvailability"
+          ? renderLazyView(lazyAdminBotTimeAvailability, (m) =>
+              m.renderAdminBotTimeAvailability({
+                members: state.adminBotData.members,
+                loading: state.adminBotLoading,
+                error: state.adminBotError,
+                selectedMemberId: state.adminBotTimeAvailabilityMemberId,
+                onMemberChange: (memberId) => {
+                  state.adminBotTimeAvailabilityMemberId = memberId;
+                },
+              }),
+            )
           : nothing}
         ${state.tab === "adminbotDeadlines"
           ? renderLazyView(lazyDeadlines, (m) => m.renderDeadlines())

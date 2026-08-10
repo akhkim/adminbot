@@ -120,6 +120,19 @@ describe("loadAdminBot", () => {
     expect(host.adminBotData.nudges).toEqual([]);
     expect(host.adminBotData.settings).toBeNull();
     expect(host.adminBotData.sensitiveInfo).toBeNull();
+    expect(host.adminBotData.loadedMode).toBe("general");
+  });
+
+  it("loads only lab members in members mode", async () => {
+    const { host, calls } = createHost({
+      adminbot_list_lab_members: { members: [{ id: "zhijing" }] },
+    });
+
+    await loadAdminBot(host, "members");
+
+    expect(calls).toEqual(["adminbot_list_lab_members"]);
+    expect(host.adminBotData.members).toEqual([{ id: "zhijing" }]);
+    expect(host.adminBotData.loadedMode).toBe("members");
   });
 });
 
@@ -166,12 +179,29 @@ describe("loadAdminBot over the member session", () => {
     expect(calls).toEqual([]);
     expect(host.adminBotData.members).toHaveLength(1);
     expect(host.adminBotData.papers).toHaveLength(1);
+    expect(host.adminBotData.loadedMode).toBe("general");
     expect(host.adminBotError).toBeNull();
     for (const call of fetchMock.mock.calls) {
       expect(call[1]).toMatchObject({
         headers: expect.objectContaining({ Authorization: "Bearer member-sess-tok" }),
       });
     }
+  });
+
+  it("loads the availability roster without depending on papers", async () => {
+    saveStoredMemberSession({ sessionToken: "member-sess-tok", expiresAt: "later" });
+    const { host, calls } = createHost({});
+    const fetchMock = routedFetch({
+      "/lab/members": () => json({ members: [{ id: "pat" }] }),
+    });
+
+    await loadAdminBot(host, "members");
+
+    expect(calls).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(host.adminBotData.members).toEqual([{ id: "pat" }]);
+    expect(host.adminBotError).toBeNull();
+    expect(host.adminBotData.loadedMode).toBe("members");
   });
 
   it("still shows the roster when the privileged extras are refused", async () => {
