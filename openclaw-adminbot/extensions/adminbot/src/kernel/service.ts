@@ -910,7 +910,11 @@ export class AdminBotService {
     },
     actor: string,
   ): Promise<
-    AdminBotServiceResponse<{ idsResolved: number; timezonesChecked: number; timezonesUpdated: number }>
+    AdminBotServiceResponse<{
+      idsResolved: number;
+      timezonesChecked: number;
+      timezonesUpdated: number;
+    }>
   > {
     const now = new Date().toISOString();
     let idsResolved = 0;
@@ -937,9 +941,7 @@ export class AdminBotService {
     let timezonesUpdated = 0;
     if (deps.fetchSlackTimezones) {
       const members = this.store.listLabMembers().filter((member) => member.slack_user_id);
-      const ids = members.flatMap((member) =>
-        member.slack_user_id ? [member.slack_user_id] : [],
-      );
+      const ids = members.flatMap((member) => (member.slack_user_id ? [member.slack_user_id] : []));
       const timezones = await deps.fetchSlackTimezones(ids);
       timezonesChecked = ids.length;
       for (const member of members) {
@@ -1066,7 +1068,9 @@ export class AdminBotService {
     // The composed nudge text rides along so the reaction-confirm poller
     // (scripts/adminbot_onboarding_confirm.py) re-nudges with exactly the words the service
     // itself would send, instead of keeping a second copy of the message.
-    const message = buildOnboardingNudgeMessage(findOnboardingStep(buildInitialOnboarding(), stepId));
+    const message = buildOnboardingNudgeMessage(
+      findOnboardingStep(buildInitialOnboarding(), stepId),
+    );
     return { ok: true, status: 200, payload: { step_id: stepId, message, members } };
   }
 
@@ -1108,11 +1112,18 @@ export class AdminBotService {
     if (!incomplete.ok) {
       return incomplete;
     }
-    const recipients = incomplete.payload.members.map((member) => member.id);
+    // Who was reminded recently, so the cadence is a property of the product rather than of
+    // whatever schedule happens to invoke the cron script. A misconfigured crontab, a manual run,
+    // or two hosts running the same job cannot turn this into a daily nag.
+    const remindedAt = this.lastMandatoryFieldsReminderByMember();
+    const cutoff = Date.now() - MANDATORY_FIELDS_REMINDER_INTERVAL_MS;
+    const recipients = incomplete.payload.members
+      .map((member) => member.id)
+      .filter((id) => (remindedAt.get(id) ?? 0) <= cutoff);
     if (recipients.length === 0) {
       return { ok: true, status: 200, payload: { created: [], skipped: [] } };
     }
-    return await this.sendMemberNudge(
+    const result = await this.sendMemberNudge(
       {
         channel: "slack",
         recipient_member_ids: recipients,
@@ -1120,6 +1131,46 @@ export class AdminBotService {
       },
       actor,
     );
+    if (result.ok) {
+      // Stamp only the members a nudge was actually created for. Someone sendMemberNudge skipped
+      // (no Slack id on file, say) has not been reminded, and must not wait three days to be
+      // considered again.
+      const notified = recipients.filter(
+        (id) => !result.payload.skipped.some((skip) => skip.member_id === id),
+      );
+      if (notified.length > 0) {
+        this.recordAudit({
+          type: "mandatory_fields.reminded",
+          actor,
+          details: { member_ids: notified },
+        });
+      }
+    }
+    return result;
+  }
+
+  /** Epoch millis of the last mandatory-fields reminder each member received. */
+  private lastMandatoryFieldsReminderByMember(): Map<string, number> {
+    const latest = new Map<string, number>();
+    for (const event of this.store.listAuditEvents()) {
+      if (event.type !== "mandatory_fields.reminded") {
+        continue;
+      }
+      const ids = (event.details as { member_ids?: unknown } | undefined)?.member_ids;
+      if (!Array.isArray(ids)) {
+        continue;
+      }
+      const at = Date.parse(event.timestamp);
+      if (Number.isNaN(at)) {
+        continue;
+      }
+      for (const id of ids) {
+        if (typeof id === "string" && at > (latest.get(id) ?? 0)) {
+          latest.set(id, at);
+        }
+      }
+    }
+    return latest;
   }
 
   /**
@@ -1304,6 +1355,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "openreview_id",
   "cv_url",
   "linkedin_url",
+  "linkedin_urn",
   "twitter_url",
   "github_url",
   "scholar_url",
@@ -1407,6 +1459,11 @@ function serviceError<T>(status: number, message: string): AdminBotServiceRespon
 // no access to the UI's field schema (extensions must not import ui/, see extensions/CLAUDE.md),
 // and the UI is where "optional: true" is actually declared. Keep this list, and the labels below
 // it, in the same order and membership as the UI's mandatory set whenever that changes.
+// How long a member is left alone after a mandatory-fields reminder. The cron script may run as
+// often as it likes -- daily is fine, and gives a member who fills their profile in on day one a
+// prompt exit from the list -- but nobody is nudged about the same gap more than once per window.
+const MANDATORY_FIELDS_REMINDER_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+
 const MANDATORY_PROFILE_FIELDS = [
   "role",
   "affiliation",
@@ -1416,6 +1473,7 @@ const MANDATORY_PROFILE_FIELDS = [
   "slack_user_id",
   "research_topics",
   "projects",
+  "linkedin_urn",
 ] as const;
 
 const MANDATORY_PROFILE_FIELD_LABELS: Record<(typeof MANDATORY_PROFILE_FIELDS)[number], string> = {
@@ -1427,6 +1485,7 @@ const MANDATORY_PROFILE_FIELD_LABELS: Record<(typeof MANDATORY_PROFILE_FIELDS)[n
   slack_user_id: "Slack",
   research_topics: "Research topics",
   projects: "Projects",
+  linkedin_urn: "LinkedIn URN",
 };
 
 // name is deliberately excluded even though the UI also treats it as mandatory: validateLabMember
@@ -1576,7 +1635,13 @@ function validateLabMember(
 // check itself, client-side, against each platform's own public API, where it costs nothing to
 // get wrong and nothing to rate-limit.
 type SocialUrlFieldSpec = {
-  field: "personal_website" | "cv_url" | "linkedin_url" | "twitter_url" | "github_url" | "scholar_url";
+  field:
+    | "personal_website"
+    | "cv_url"
+    | "linkedin_url"
+    | "twitter_url"
+    | "github_url"
+    | "scholar_url";
   label: string;
   // Omitted for personal_website/cv_url: those genuinely point anywhere the member likes.
   hosts?: Set<string>;

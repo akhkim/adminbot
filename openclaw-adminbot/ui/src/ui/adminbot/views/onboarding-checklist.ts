@@ -188,9 +188,7 @@ export function renderOnboardingChecklist(state: AppViewState) {
       ${renderStepProgress(onboarding.steps)}
       ${groupStepsByCategory(onboarding.steps).map((group) => renderCategory(state, group))}
       ${state.adminBotOnboardingError
-        ? html`<p class="adminbot-welcome__error" role="alert">
-            ${state.adminBotOnboardingError}
-          </p>`
+        ? html`<p class="adminbot-welcome__error" role="alert">${state.adminBotOnboardingError}</p>`
         : nothing}
       <button
         type="button"

@@ -217,15 +217,15 @@ describe("AdminBotAuthService claim/login flow", () => {
         password: "correcthorse",
       });
       expect(signup.ok).toBe(true);
-      const registration = auth.listRegistrations("pending").find((entry) => entry.kind === "signup");
+      const registration = auth
+        .listRegistrations("pending")
+        .find((entry) => entry.kind === "signup");
       auth.approveRegistration(registration!.id, "admin");
 
       // Fire-and-forget: flush microtasks so the injected runner's resolution is observable.
       await Promise.resolve();
       await Promise.resolve();
-      expect(calls).toEqual([
-        { firstName: "Ada", lastName: "Lovelace", email: "ada@example.com" },
-      ]);
+      expect(calls).toEqual([{ firstName: "Ada", lastName: "Lovelace", email: "ada@example.com" }]);
     });
 
     // No middle-name/space to split on: rather than leave the form's required Last Name blank,
@@ -277,7 +277,9 @@ describe("AdminBotAuthService claim/login flow", () => {
         email: "pat@example.com",
         password: "correcthorse",
       });
-      const registration = auth.listRegistrations("pending").find((entry) => entry.kind === "signup");
+      const registration = auth
+        .listRegistrations("pending")
+        .find((entry) => entry.kind === "signup");
 
       const approved = auth.approveRegistration(registration!.id, "admin");
 
@@ -296,7 +298,9 @@ describe("AdminBotAuthService claim/login flow", () => {
         email: "norunner@example.com",
         password: "correcthorse",
       });
-      const registration = auth.listRegistrations("pending").find((entry) => entry.kind === "signup");
+      const registration = auth
+        .listRegistrations("pending")
+        .find((entry) => entry.kind === "signup");
 
       expect(() => auth.approveRegistration(registration!.id, "admin")).not.toThrow();
       expect(signup.ok).toBe(true);
@@ -730,9 +734,9 @@ describe("login IP location update", () => {
     await flushMicrotasks();
 
     expect(store.getLabMember("ada")?.location).toBe("Toronto, Ontario, Canada");
-    expect(
-      store.listAuditEvents().some((event) => event.type === "auth.location_updated"),
-    ).toBe(true);
+    expect(store.listAuditEvents().some((event) => event.type === "auth.location_updated")).toBe(
+      true,
+    );
   });
 
   it("leaves an existing location untouched when the lookup resolves nothing (private IP, provider failure)", async () => {

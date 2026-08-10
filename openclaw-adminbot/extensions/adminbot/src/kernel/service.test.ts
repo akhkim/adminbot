@@ -576,9 +576,7 @@ describe("AdminBotService", () => {
 
     // Sending the same email back alongside an unrelated change must not fail just because
     // upsertLabMember re-validates the whole merged record on every call.
-    const saved = unwrap(
-      service.updateOwnProfile("resave", { location: "Toronto" }),
-    );
+    const saved = unwrap(service.updateOwnProfile("resave", { location: "Toronto" }));
     expect(saved.location).toBe("Toronto");
     expect(saved.email).toBe("resave@cs.toronto.edu");
   });
@@ -599,9 +597,10 @@ describe("AdminBotService", () => {
     );
     expect(saved.calendar_email).toBe("cal.personal@gmail.com");
 
-    expect(
-      service.updateOwnProfile("cal", { calendar_email: "not an email" }),
-    ).toMatchObject({ ok: false, status: 400 });
+    expect(service.updateOwnProfile("cal", { calendar_email: "not an email" })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
   });
 
   it("moves availability_updated_at only when the schedule content actually changes", () => {
@@ -1217,11 +1216,10 @@ describe("AdminBotService", () => {
           slack_user_id: "U9",
           research_topics: ["nlp"],
           projects: ["adminbot"],
+          linkedin_urn: "ACoAAB1234567",
         }),
       );
-      unwrap(
-        service.upsertLabMember({ id: "gone", name: "Gone", status: "alumni" }),
-      );
+      unwrap(service.upsertLabMember({ id: "gone", name: "Gone", status: "alumni" }));
 
       const result = unwrap(service.listMembersWithIncompleteMandatoryFields());
       expect(result.members.map((member) => member.id)).toEqual(["blank"]);
@@ -1235,6 +1233,7 @@ describe("AdminBotService", () => {
           "slack_user_id",
           "research_topics",
           "projects",
+          "linkedin_urn",
         ]),
       );
     });
@@ -1268,6 +1267,7 @@ describe("AdminBotService", () => {
           slack_user_id: "U3",
           research_topics: ["nlp"],
           projects: ["adminbot"],
+          linkedin_urn: "ACoAAB1234567",
         }),
       );
 
@@ -1280,6 +1280,36 @@ describe("AdminBotService", () => {
         (proposal) => (proposal.target as { recipientMemberId?: string })?.recipientMemberId,
       );
       expect(recipients.sort()).toEqual(["blank1", "blank2"]);
+    });
+
+    it("leaves a member alone for three days after reminding them", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(service.upsertLabMember({ id: "blank1", name: "Blank One", slack_user_id: "U1" }));
+
+      const first = unwrap(await service.sendMandatoryFieldsReminders("cron"));
+      expect(first.created).toHaveLength(1);
+
+      // The cron script may run daily; the cadence is the product's, not the schedule's, so a
+      // second pass inside the window sends nothing rather than nagging.
+      const second = unwrap(await service.sendMandatoryFieldsReminders("cron"));
+      expect(second.created).toHaveLength(0);
+    });
+
+    it("reminds again once the window has passed", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(service.upsertLabMember({ id: "blank1", name: "Blank One", slack_user_id: "U1" }));
+
+      unwrap(await service.sendMandatoryFieldsReminders("cron"));
+      // Four days on, the same still-incomplete profile is fair game again.
+      vi.setSystemTime(new Date(Date.now() + 4 * 24 * 60 * 60 * 1000));
+      try {
+        const later = unwrap(await service.sendMandatoryFieldsReminders("cron"));
+        expect(later.created).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it("sends nothing when every member's required fields are filled in", async () => {
@@ -1297,6 +1327,7 @@ describe("AdminBotService", () => {
           slack_user_id: "U1",
           research_topics: ["nlp"],
           projects: ["adminbot"],
+          linkedin_urn: "ACoAAB1234567",
         }),
       );
 

@@ -162,24 +162,28 @@ describe("composeOnboardingGuide", () => {
     if (!result.ok) {
       return;
     }
+    // The naming *pattern* is notation, not a token to fill: it shows the shape of an address, so
+    // it survives compose verbatim while the worked example beside it is configurable.
     expect(result.guide.body).toContain("{first_letter_of_first_name}{full_last_name}");
     expect(result.guide.body).toContain("Hi Ada,");
-    // Nested bullets, two spaces per level.
-    expect(result.guide.body).toContain(
-      "- You will soon receive an email asking you to create a @cs.toronto.edu email\n  - Highly Preferred format:\n    - Top 1 choice:",
-    );
+    // Both routes to an account are described: already have a DCS address, or waiting on one.
+    expect(result.guide.body).toContain("If you already have an @cs.toronto.edu email");
+    expect(result.guide.body).toContain("If you do not have an @cs.toronto.edu email yet");
     expect(result.guide.body).toContain("https://jinesis-admin.vercel.app/signup");
-    // Dropped with the portal handover -- the form, the Slack-access step, the handbook line.
+    // The member is never told to file the DCS request themselves; approval does it for them.
     expect(result.guide.body).not.toContain("forms.office.com");
-    expect(result.guide.body).not.toContain("slack access");
+    expect(result.guide.body).not.toContain("click this link");
     expect(result.guide.body).not.toContain("mentee handbook");
+    // The escalation route is a named person with a deadline.
+    expect(result.guide.body).toContain("over 2 business days");
+    expect(result.guide.body).toContain("akim@cs.toronto.edu");
 
-    expect(result.guide.body).toContain("e.g., jdoe@cs.toronto.edu");
+    expect(result.guide.body).toContain('e.g., "zjin@cs.toronto.edu"');
     const configured = composeOnboardingGuide("member", { first_name: "Ada" }, {
       ...ENV,
       ADMINBOT_EMAIL_FORMAT_EXAMPLE: "aa@cs.example.edu",
     } satisfies NodeJS.ProcessEnv);
-    expect(configured.ok ? configured.guide.body : "").toContain("e.g., aa@cs.example.edu");
+    expect(configured.ok ? configured.guide.body : "").toContain('e.g., "aa@cs.example.edu"');
 
     // `first_name` is optional here: no name means "Hi," rather than a refusal or a stray comma.
     const anonymous = composeOnboardingGuide("member", {}, ENV);
@@ -195,11 +199,12 @@ describe("composeOnboardingGuide", () => {
       missing: ["first_name"],
     });
 
-    // contact_emails is still a hard requirement: unset, the member email does not go out.
+    // The member email now names its escalation contact directly, so it no longer depends on
+    // ADMINBOT_CONTACT_EMAILS and composes on a deployment that never set it. No template
+    // references {contact_emails} any more -- if one does again, this is the guard that should be
+    // restored alongside it.
     expect(composeOnboardingGuide("member", { first_name: "Ada" }, {})).toMatchObject({
-      ok: false,
-      reason: "missing-environment",
-      missing: ["ADMINBOT_CONTACT_EMAILS"],
+      ok: true,
     });
   });
 

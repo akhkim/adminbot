@@ -1412,6 +1412,14 @@ export const en: TranslationMap = {
       websiteTitle: "Add your website",
       websiteBody: "Lab pages link to member sites. Yours is blank.",
       websiteLink: "Guidebook: member pages",
+      urnTitle: "Add your LinkedIn URN",
+      urnBody:
+        "LinkedIn's API addresses people by URN, not by profile URL, so the lab cannot tag you in a post without it. The collector reads yours from your profile — paste the result into LinkedIn URN below.",
+      urnLink: "Open the URN collector",
+      formTitle: "Review your intake form answers",
+      formBody:
+        "Your original responses — including your career ambitions — are what the lab recaps from. Open the form to submit an updated response if anything has changed.",
+      formLink: "Open the intake form",
     },
     fields: {
       name: "Name",
@@ -1427,6 +1435,7 @@ export const en: TranslationMap = {
       avatarUrl: "Profile picture",
       cvUrl: "CV (PDF link)",
       linkedin: "LinkedIn",
+      linkedinUrn: "LinkedIn URN",
       twitter: "X / Twitter",
       github: "GitHub",
       scholar: "Google Scholar",

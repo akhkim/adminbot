@@ -37,7 +37,7 @@ const OPTIONAL_DEPLOYMENT_TOKENS = {
 const DEFAULTED_DEPLOYMENT_TOKENS = {
   email_format_example: {
     varName: "ADMINBOT_EMAIL_FORMAT_EXAMPLE",
-    fallback: "jdoe@cs.toronto.edu",
+    fallback: "zjin@cs.toronto.edu",
   },
 } as const;
 

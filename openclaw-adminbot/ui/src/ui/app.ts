@@ -29,8 +29,8 @@ import {
   sendOnboardingGuide as sendOnboardingGuideController,
 } from "./adminbot/controllers/admin.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
-import type { ProfileAccountCheck } from "./adminbot/views/profile-account-check.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
+import type { ProfileAccountCheck } from "./adminbot/views/profile-account-check.ts";
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
   handleChannelConfigSave as handleChannelConfigSaveInternal,

@@ -10,13 +10,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { startAdminBotHost } from "./dist/extensions/adminbot/host/main.js";
+import { loadConfig } from "./dist/plugin-sdk/config-runtime.js";
 import {
   approveDevicePairing,
   ensureDeviceToken,
   requestDevicePairing,
   resolveSharedGatewayAuthIssuer,
 } from "./dist/plugin-sdk/device-bootstrap.js";
-import { loadConfig } from "./dist/plugin-sdk/config-runtime.js";
 
 const execFileAsync = promisify(execFile);
 const repoRoot = path.dirname(fileURLToPath(import.meta.url));

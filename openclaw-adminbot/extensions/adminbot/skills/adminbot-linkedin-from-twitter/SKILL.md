@@ -93,6 +93,7 @@ LinkedIn draft:
 [post text]
 
 Source:
+
 - Paper: [title]
 - Spreadsheet source: [twitter_draft or Twitter Thread]
 - Thread: [URL or "not used"]

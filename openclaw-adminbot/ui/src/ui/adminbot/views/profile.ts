@@ -199,6 +199,13 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "links",
   },
   {
+    key: "linkedin_urn",
+    labelKey: "profile.fields.linkedinUrn",
+    example: "ACoAAB1234567",
+    type: "short_text",
+    group: "links",
+  },
+  {
     key: "cv_url",
     labelKey: "profile.fields.cvUrl",
     example: "https://ada.dev/cv.pdf",
@@ -817,6 +824,16 @@ function renderBadges(state: AppViewState, member: LabMember) {
   `;
 }
 
+// Reads a member's own URN off their LinkedIn profile; there is no API that maps a vanity URL to
+// one, so this hand-off is the only way the value reaches the roster.
+const LINKEDIN_URN_COLLECTOR_URL = "https://linkedin-urn-collector.vercel.app";
+
+// The lab's intake form. Google Forms scopes an edit link to a single submitted response and mails
+// it to that respondent, so a shared link cannot reopen anyone's own answers -- following this one
+// submits a fresh response, which is what the copy promises.
+const INTAKE_FORM_URL =
+  "https://docs.google.com/forms/d/e/1FAIpQLSdyRYBiLPFUaaUC5v4ATIUwQpYPgmjRja33qwZFvH6BoIRCAA/viewform";
+
 // What is still outstanding for this person, in one place: the onboarding steps they have not
 // finished, then the guidebook pointers derived from what their record is missing.
 //
@@ -866,6 +883,30 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
   const coveredByOnboarding = outstanding
     .map((step) => `${step.id} ${step.label}`.toLowerCase())
     .join(" ");
+
+  // The URN cannot be looked up from the profile URL -- LinkedIn exposes no mapping -- so the only
+  // route is the member reading it off the collector and pasting it back. The card is the handoff
+  // between those two steps, and disappears the moment the field is filled.
+  if (!String(member.linkedin_urn ?? "").trim()) {
+    suggestions.push({
+      id: "linkedin-urn",
+      title: t("profile.suggestions.urnTitle"),
+      body: t("profile.suggestions.urnBody"),
+      label: t("profile.suggestions.urnLink"),
+      href: LINKEDIN_URN_COLLECTOR_URL,
+    });
+  }
+
+  // Always offered: unlike every other card here, nothing on the record can tell us whether a
+  // member's intake answers are still true, and the answers the lab recaps from -- career
+  // ambitions especially -- are exactly the ones that go stale quietly.
+  suggestions.push({
+    id: "intake-form",
+    title: t("profile.suggestions.formTitle"),
+    body: t("profile.suggestions.formBody"),
+    label: t("profile.suggestions.formLink"),
+    href: INTAKE_FORM_URL,
+  });
 
   const topics = (member.research_topics ?? []).join(" ").toLowerCase();
   if (

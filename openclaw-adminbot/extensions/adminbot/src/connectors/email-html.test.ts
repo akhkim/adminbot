@@ -51,25 +51,22 @@ describe("renderEmailBodyHtml", () => {
   // The whole point of the html alternative: no output line is long enough for a client to be
   // tempted to wrap it, and no *source* line was ever wrapped either.
   it("carries the member template's copy with its structure intact", () => {
-    const composed = composeOnboardingGuide(
-      "member",
-      { first_name: "Ada" },
-      { ADMINBOT_CONTACT_EMAILS: "ops@example.edu" },
-    );
+    const composed = composeOnboardingGuide("member", { first_name: "Ada" }, {});
     expect(composed.ok).toBe(true);
     if (!composed.ok) {
       return;
     }
     const html = renderEmailBodyHtml(composed.guide.body);
     expect(html.startsWith("<p>Hi Ada,</p>")).toBe(true);
-    expect(html).toContain("<ul><li>You will soon receive an email");
-    expect(html).toContain("<ul><li>Highly Preferred format:<ul><li>Top 1 choice:");
+    // Prose paragraphs now, not a nested bullet tree: both routes to an account read as sentences.
+    expect(html).toContain("<p>If you already have an @cs.toronto.edu email");
+    expect(html).toContain("<p>If you do not have an @cs.toronto.edu email yet");
     expect(html).toContain(
       '<a href="https://jinesis-admin.vercel.app/signup">https://jinesis-admin.vercel.app/signup</a>',
     );
     // The literal example braces are copy, so they must survive escaping as text.
     expect(html).toContain("{first_letter_of_first_name}{full_last_name}");
-    expect(html.endsWith("<p>Best regards,<br />Jinesis AI Research Lab</p>")).toBe(true);
+    expect(html.endsWith("<p>Best regards,<br />Jinesis Lab</p>")).toBe(true);
     // Balanced structure: every list and item this body opened is closed again.
     expect(html.split("<ul>").length).toBe(html.split("</ul>").length);
     expect(html.split("<li>").length).toBe(html.split("</li>").length);

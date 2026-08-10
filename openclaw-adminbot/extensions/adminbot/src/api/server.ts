@@ -1138,10 +1138,7 @@ async function handleAuthenticatedRoute(
     if (!requirePrivileged(res, principal)) {
       return;
     }
-    sendServiceResult(
-      res,
-      await service.sendMandatoryFieldsReminders(principalActor(principal)),
-    );
+    sendServiceResult(res, await service.sendMandatoryFieldsReminders(principalActor(principal)));
     return;
   }
   const remove = /^\/proposals\/([^/]+)\/remove$/u.exec(url.pathname);

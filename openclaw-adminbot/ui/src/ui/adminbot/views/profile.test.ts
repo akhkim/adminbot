@@ -282,6 +282,48 @@ describe("renderProfile onboarding suggestions", () => {
   });
 });
 
+describe("renderProfile LinkedIn URN and intake form", () => {
+  it("offers the URN collector until the field is filled, then stops", () => {
+    const without = renderPage(createState(createMember()), vi.fn());
+    const card = without.querySelector('[data-testid="suggestion-linkedin-urn"]')!;
+    expect(card).not.toBeNull();
+    expect(card.querySelector<HTMLAnchorElement>(".profile-suggestion__link")?.href).toBe(
+      "https://linkedin-urn-collector.vercel.app/",
+    );
+
+    const filled = renderPage(
+      createState(createMember({ linkedin_urn: "ACoAAB1234567" } as Partial<LabMember>)),
+      vi.fn(),
+    );
+    expect(filled.querySelector('[data-testid="suggestion-linkedin-urn"]')).toBeNull();
+  });
+
+  it("keeps the URN an editable, required field on the record", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+    const input = container.querySelector<HTMLInputElement>('input[name="linkedin_urn"]');
+    expect(input).not.toBeNull();
+    // Required, so it counts toward the ledger and the Slack reminder rather than being optional.
+    const row = input?.closest(".profile__form-row");
+    expect(row?.querySelector(".profile__mandatory")).not.toBeNull();
+    expect(row?.querySelector(".profile__optional")).toBeNull();
+  });
+
+  it("always offers the intake form, since nothing on the record can tell us it is stale", () => {
+    const complete = createMember({
+      linkedin_urn: "ACoAAB1234567",
+      personal_website: "https://ada.dev",
+      research_topics: ["gpu scheduling"],
+    } as Partial<LabMember>);
+    const container = renderPage(createState(complete), vi.fn());
+
+    const card = container.querySelector('[data-testid="suggestion-intake-form"]')!;
+    expect(card).not.toBeNull();
+    expect(card.querySelector<HTMLAnchorElement>(".profile-suggestion__link")?.href).toContain(
+      "1FAIpQLSdyRYBiLPFUaaUC5v4ATIUwQpYPgmjRja33qwZFvH6BoIRCAA",
+    );
+  });
+});
+
 describe("renderProfile field types", () => {
   it("renders role as a dropdown restricted to the closed role list", () => {
     const member = createMember({ role: "" });

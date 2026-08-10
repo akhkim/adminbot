@@ -237,6 +237,11 @@ export type AdminBotLabMemberInput = {
   // redirect or lookalike link behind a "GitHub" label.
   cv_url?: string;
   linkedin_url?: string;
+  // The numeric LinkedIn URN behind a member's profile ("ACoAAB..." or the digits form), which the
+  // social automation needs to @-mention someone in a post: LinkedIn's API addresses people by URN,
+  // never by the vanity URL in `linkedin_url`, and offers no way to resolve one to the other.
+  // Members read theirs off https://linkedin-urn-collector.vercel.app and paste it here.
+  linkedin_urn?: string;
   twitter_url?: string;
   github_url?: string;
   scholar_url?: string;
@@ -590,6 +595,7 @@ export type AdminBotAuditEvent = {
     | "auth.location_updated"
     | "auth.location_update_failed"
     | "member_nudge.sent"
+    | "mandatory_fields.reminded"
     | "onboarding.step_updated"
     | "reimbursement.anonymous_use"
     | "openreview.cycle_run"

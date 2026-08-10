@@ -89,11 +89,7 @@ export type AdminBotAuthServiceOptions = {
   sendAccountApprovedEmail?: (params: { email: string; name?: string }) => Promise<void>;
   // Best-effort side effect fired (not awaited) when a registration is approved, filing the DCS
   // Slack-access request form on the new member's behalf. Same contract as the two above.
-  submitDcsForm?: (params: {
-    firstName: string;
-    lastName: string;
-    email: string;
-  }) => Promise<void>;
+  submitDcsForm?: (params: { firstName: string; lastName: string; email: string }) => Promise<void>;
   // Best-effort side effect fired (not awaited) on every successful login: geolocates the
   // request's source IP and stamps it onto the member's roster `location` field. A login is
   // never delayed or failed by a slow/unreachable geolocation provider -- see updateLoginLocation.

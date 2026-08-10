@@ -390,7 +390,11 @@ describe("AdminBot mock service", () => {
     await fetch(`${baseUrl}/auth/claim`, {
       method: "POST",
       headers: jsonHeaders(),
-      body: JSON.stringify({ member_id: "df", email: "df@cs.toronto.edu", password: "correcthorse" }),
+      body: JSON.stringify({
+        member_id: "df",
+        email: "df@cs.toronto.edu",
+        password: "correcthorse",
+      }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "df");
     expect(approveRegistration(baseUrl, registration!.id)).toEqual({
@@ -435,7 +439,11 @@ describe("AdminBot mock service", () => {
     await fetch(`${baseUrl}/auth/claim`, {
       method: "POST",
       headers: jsonHeaders(),
-      body: JSON.stringify({ member_id: "mk", email: "mk@cs.toronto.edu", password: "correcthorse" }),
+      body: JSON.stringify({
+        member_id: "mk",
+        email: "mk@cs.toronto.edu",
+        password: "correcthorse",
+      }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "mk");
     expect(approveRegistration(baseUrl, registration!.id)).toEqual({
@@ -455,7 +463,11 @@ describe("AdminBot mock service", () => {
     await fetch(`${baseUrl}/auth/claim`, {
       method: "POST",
       headers: jsonHeaders(),
-      body: JSON.stringify({ member_id: "rk", email: "rk@cs.toronto.edu", password: "correcthorse" }),
+      body: JSON.stringify({
+        member_id: "rk",
+        email: "rk@cs.toronto.edu",
+        password: "correcthorse",
+      }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "rk");
     const approveBody = approveRegistration(baseUrl, registration!.id);
@@ -469,7 +481,11 @@ describe("AdminBot mock service", () => {
     await fetch(`${baseUrl}/auth/claim`, {
       method: "POST",
       headers: jsonHeaders(),
-      body: JSON.stringify({ member_id: "rj", email: "rj@cs.toronto.edu", password: "correcthorse" }),
+      body: JSON.stringify({
+        member_id: "rj",
+        email: "rj@cs.toronto.edu",
+        password: "correcthorse",
+      }),
     });
     const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "rj");
     rejectRegistration(baseUrl, registration!.id);
@@ -520,7 +536,11 @@ describe("AdminBot mock service", () => {
     const shortClaim = await fetch(`${baseUrl}/auth/claim`, {
       method: "POST",
       headers: jsonHeaders(),
-      body: JSON.stringify({ member_id: "known", email: "known@cs.toronto.edu", password: "short" }),
+      body: JSON.stringify({
+        member_id: "known",
+        email: "known@cs.toronto.edu",
+        password: "short",
+      }),
     });
     expect(shortClaim.status).toBe(400);
 
@@ -732,7 +752,10 @@ describe("AdminBot mock service", () => {
     const change = await fetch(`${baseUrl}/auth/email`, {
       method: "POST",
       headers: memberHeaders,
-      body: JSON.stringify({ new_email: "renamed@cs.toronto.edu", current_password: "correcthorse" }),
+      body: JSON.stringify({
+        new_email: "renamed@cs.toronto.edu",
+        current_password: "correcthorse",
+      }),
     });
     expect(change.status).toBe(200);
     await expect(change.json()).resolves.toEqual({ email: "renamed@cs.toronto.edu" });
@@ -828,7 +851,10 @@ describe("AdminBot mock service", () => {
     const change = await fetch(`${baseUrl}/auth/email`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ new_email: "pending@cs.toronto.edu", current_password: "correcthorse" }),
+      body: JSON.stringify({
+        new_email: "pending@cs.toronto.edu",
+        current_password: "correcthorse",
+      }),
     });
     expect(change.status).toBe(409);
   });
@@ -838,7 +864,10 @@ describe("AdminBot mock service", () => {
     const change = await fetch(`${baseUrl}/auth/email`, {
       method: "POST",
       headers: serviceHeaders({ "Content-Type": "application/json" }),
-      body: JSON.stringify({ new_email: "renamed@cs.toronto.edu", current_password: "correcthorse" }),
+      body: JSON.stringify({
+        new_email: "renamed@cs.toronto.edu",
+        current_password: "correcthorse",
+      }),
     });
     expect(change.status).toBe(400);
     await expect(change.json()).resolves.toEqual({
@@ -860,7 +889,10 @@ describe("AdminBot mock service", () => {
       fetch(`${baseUrl}/auth/email`, {
         method: "POST",
         headers,
-        body: JSON.stringify({ new_email: "renamed@cs.toronto.edu", current_password: "wrong-pass" }),
+        body: JSON.stringify({
+          new_email: "renamed@cs.toronto.edu",
+          current_password: "wrong-pass",
+        }),
       });
     for (let i = 0; i < 10; i += 1) {
       expect((await attempt()).status).toBe(401);
@@ -948,7 +980,9 @@ describe("AdminBot mock service", () => {
     expect(body).toEqual({ idsResolved: 1, timezonesChecked: 1, timezonesUpdated: 1 });
 
     const roster = await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() });
-    const members = (await roster.json()) as { members: Array<{ id: string; slack_user_id?: string; timezone?: string }> };
+    const members = (await roster.json()) as {
+      members: Array<{ id: string; slack_user_id?: string; timezone?: string }>;
+    };
     const updated = members.members.find((m) => m.id === "unlinked");
     expect(updated?.slack_user_id).toBe("U-NEW");
     expect(updated?.timezone).toBe("America/Toronto");
@@ -1904,7 +1938,10 @@ describe("AdminBot device token issuance", () => {
     const { baseUrl } = await startService({ deviceTokenIssuer: fakeIssuer(calls) });
     const token = await seededMemberToken(baseUrl, "owner1", "member");
 
-    const res = await postDeviceToken(baseUrl, token, { deviceId: "dev-owner", publicKey: "pk-owner" });
+    const res = await postDeviceToken(baseUrl, token, {
+      deviceId: "dev-owner",
+      publicKey: "pk-owner",
+    });
     expect(res.status).toBe(200);
     expect(calls[0]?.memberId).toBe("owner1");
   });

@@ -302,7 +302,15 @@ export function createSlackDirectoryEmailResolver(repoRoot: string) {
     try {
       const { stdout } = await execFileAsync(
         process.execPath,
-        [path.join(repoRoot, "openclaw.mjs"), "directory", "peers", "list", "--channel", "slack", "--json"],
+        [
+          path.join(repoRoot, "openclaw.mjs"),
+          "directory",
+          "peers",
+          "list",
+          "--channel",
+          "slack",
+          "--json",
+        ],
         { timeout: 60_000, maxBuffer: 16 * 1024 * 1024 },
       );
       const entries = JSON.parse(stdout.trim().split("\n").at(-1) ?? "[]") as Array<{

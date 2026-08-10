@@ -204,8 +204,20 @@ describe("renderOnboardingChecklist", () => {
       completed: [],
       remaining: [],
       steps: [
-        { id: "linkedin", label: "Connect on LinkedIn", status: "current", category: "Social media", required: true },
-        { id: "twitter", label: "Follow X", status: "remaining", category: "Social media", required: false },
+        {
+          id: "linkedin",
+          label: "Connect on LinkedIn",
+          status: "current",
+          category: "Social media",
+          required: true,
+        },
+        {
+          id: "twitter",
+          label: "Follow X",
+          status: "remaining",
+          category: "Social media",
+          required: false,
+        },
       ],
     });
     render(renderOnboardingChecklist(state), container);

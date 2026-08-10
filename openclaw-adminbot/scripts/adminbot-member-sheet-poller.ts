@@ -1,11 +1,11 @@
 #!/usr/bin/env tsx
+import { readGogSheetRows } from "../extensions/adminbot/src/connectors/gog.js";
 // Imports explicitly sheet-owned member profile fields through the AdminBot HTTP boundary.
 //
 // The sheet is not an authorization surface: this poller cannot create/delete members or change
 // email, privilege, status, collaborator subgroup, or access. The service principal enforces the
 // same restriction again, so a future spreadsheet/parser mistake still cannot grant access.
 import type { AdminBotLabMember } from "../extensions/adminbot/src/contracts/actions.js";
-import { readGogSheetRows } from "../extensions/adminbot/src/connectors/gog.js";
 
 type EditableMemberField =
   | "name"
