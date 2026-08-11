@@ -101,6 +101,75 @@ def family_of(venue_group: str, name: str = "") -> str:
     return ""
 
 
+# --- sub-deadlines ------------------------------------------------------------
+#
+# A venue is not one date. A conference typically runs an abstract deadline, then
+# the full paper, then rebuttal, then camera-ready; an ARR venue runs a direct
+# submission and a commitment. Each is stored as its own dated row sharing a
+# `venue_group`, which is what lets the board group them under one conference and
+# count down to each separately. `milestone` is the machine-readable name for
+# which one a row is, so ordering and labelling do not depend on parsing prose out
+# of `deadline_label`.
+#
+# Ordered as a paper meets them, which is the order the board lists them in.
+MILESTONES = (
+    "abstract",
+    "direct_submission",
+    "full_paper",
+    "commitment",
+    "rebuttal",
+    "notification",
+    "camera_ready",
+)
+
+MILESTONE_LABELS = {
+    "abstract": "Abstract",
+    "direct_submission": "Direct submission",
+    "full_paper": "Full paper",
+    "commitment": "ARR commitment",
+    "rebuttal": "Rebuttal ends",
+    "notification": "Notification",
+    "camera_ready": "Camera-ready",
+}
+
+# Free-text `deadline_label` values already in the dataset, mapped onto the closed
+# set above. Anything unrecognised keeps its own label and sorts last, so an
+# unclassified date is still shown rather than dropped.
+_MILESTONE_FROM_LABEL = {
+    "abstract deadline": "abstract",
+    "abstract": "abstract",
+    "submission": "direct_submission",
+    "arr submission": "direct_submission",
+    "paper submission (arr)": "direct_submission",
+    "direct submission": "direct_submission",
+    "full paper": "full_paper",
+    "paper deadline": "full_paper",
+    "commitment": "commitment",
+    "arr commitment": "commitment",
+    "rebuttal ends": "rebuttal",
+    "camera-ready": "camera_ready",
+    "camera ready": "camera_ready",
+}
+
+
+def milestone_of(deadline_label: str, submission_type: str = "") -> str:
+    """Which sub-deadline a row is, or "" when its label is not one we know."""
+    key = (deadline_label or "").strip().lower()
+    if key in _MILESTONE_FROM_LABEL:
+        return _MILESTONE_FROM_LABEL[key]
+    # ARR rows carry the answer on their route when the label is uninformative.
+    if submission_type == SUBMISSION_COMMITMENT:
+        return "commitment"
+    if submission_type == SUBMISSION_DIRECT:
+        return "direct_submission"
+    return ""
+
+
+def milestone_order(milestone: str) -> int:
+    """Sort key: the order a paper meets these, unknowns last."""
+    return MILESTONES.index(milestone) if milestone in MILESTONES else len(MILESTONES)
+
+
 # ACL Rolling Review offers two routes to the same venue, and a paper's history
 # decides which one is open to it. Kept as an explicit field rather than inferred
 # from the label so the board can say which is which without parsing prose.

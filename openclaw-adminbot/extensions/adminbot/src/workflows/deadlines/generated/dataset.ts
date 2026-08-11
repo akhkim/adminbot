@@ -14,7 +14,8 @@ export const DEADLINE_VENUES = [
     "notification_aoe": "2026-08-20 23:59:59",
     "link": "https://2026.emnlp.org/",
     "venue_family": "EMNLP",
-    "archival": true
+    "archival": true,
+    "milestone": "commitment"
   },
   {
     "id": "arr_2026_august",
@@ -28,7 +29,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-03 23:59:59",
     "notification_aoe": "",
     "link": "https://aclrollingreview.org/dates",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "emnlp2026_ws_nlp4pi",
@@ -42,7 +44,8 @@ export const DEADLINE_VENUES = [
     "notification_aoe": "2026-08-15 23:59:59",
     "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment",
     "venue_family": "EMNLP",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "neurips2026_rebuttal",
@@ -56,7 +59,8 @@ export const DEADLINE_VENUES = [
     "link": "https://neurips.cc/Conferences/2026",
     "venue_family": "NeurIPS",
     "archival": false,
-    "submission_type": ""
+    "submission_type": "",
+    "milestone": "rebuttal"
   },
   {
     "id": "emnlp2026_ws_ORACLE",
@@ -70,7 +74,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-11 23:59:00",
     "notification_aoe": "",
     "link": "https://sites.google.com/view/workshoporacle/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "emnlp2026_ws_FinNLP",
@@ -84,7 +89,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-11 23:59:00",
     "notification_aoe": "",
     "link": "https://sigfintech.github.io/finnlp.html",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "colm2026_ws_AIMS_Competition_Track",
@@ -98,7 +104,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-14 23:59:00",
     "notification_aoe": "",
     "link": "https://aimslab.stanford.edu/workshop",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "emnlp2026_ws_Insights_ARR_Commitment",
@@ -112,7 +119,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-15 12:00:00",
     "notification_aoe": "",
     "link": "https://insights-workshop.github.io/2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_WaC-13",
@@ -126,7 +134,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-15 23:59:00",
     "notification_aoe": "",
     "link": "https://wackyworkshop.org",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "emnlp2026_ws_LM-KBC_Shared_Task",
@@ -140,7 +149,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-15 23:59:00",
     "notification_aoe": "",
     "link": "https://lm-kbc.github.io/challenge2026",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "emnlp2026_ws_GroundLM_Shared_Tasks",
@@ -154,7 +164,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-16 04:59:00",
     "notification_aoe": "",
     "link": "https://groundlm.github.io/grouplm_emnlp2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "emnlp2026_ws_NLLP",
@@ -168,7 +179,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-18 23:59:00",
     "notification_aoe": "",
     "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/NLLP",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "emnlp2026_ws_WSLP",
@@ -182,7 +194,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-20 00:00:00",
     "notification_aoe": "",
     "link": "https://exploration-lab.github.io/WSLP-2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "emnlp2026_ws_MathNLP_ARR_Commitment",
@@ -196,7 +209,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-21 12:00:00",
     "notification_aoe": "",
     "link": "https://sites.google.com/view/mathnlp2026",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_LUHME_ARR_Commitment",
@@ -210,7 +224,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-22 01:00:00",
     "notification_aoe": "",
     "link": "https://luhme.up.pt/",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_UncertaiNLP_ARR_Commitment",
@@ -224,7 +239,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-22 11:59:00",
     "notification_aoe": "",
     "link": "https://uncertainlp.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_ORACLE_ARR_Commitment",
@@ -238,7 +254,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-22 12:00:00",
     "notification_aoe": "",
     "link": "https://sites.google.com/view/workshoporacle/",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_WNUT_ARR_Commitment",
@@ -252,7 +269,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-22 23:59:00",
     "notification_aoe": "",
     "link": "https://noisy-text.github.io/2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_IMPACT-SPEECH_ARR_Commitment",
@@ -266,7 +284,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-24 12:00:00",
     "notification_aoe": "",
     "link": "https://impactspeech.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_MINT_ARR_Commitment",
@@ -280,7 +299,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-24 23:59:00",
     "notification_aoe": "",
     "link": "https://mintworkshop.github.io/2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_BlackboxNLP_ARR_Commitment",
@@ -294,7 +314,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-24 23:59:00",
     "notification_aoe": "",
     "link": "https://blackboxnlp.github.io/2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_WiNLP_ARR_Commitment",
@@ -308,7 +329,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-25 00:59:00",
     "notification_aoe": "",
     "link": "https://winlp-workshop.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_AKBC_ARR_Commitment",
@@ -322,7 +344,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-26 00:59:00",
     "notification_aoe": "",
     "link": "https://www.akbc.ws/2026",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_SALMA_ARR_Commitment",
@@ -336,7 +359,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-27 00:59:00",
     "notification_aoe": "",
     "link": "https://salma-workshop.github.io/salma-2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_FinNLP_ARR_Commitment",
@@ -350,7 +374,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-27 11:59:00",
     "notification_aoe": "",
     "link": "https://sigfintech.github.io/finnlp.html",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_NLLP_ARR_Commitment",
@@ -364,7 +389,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-27 23:59:00",
     "notification_aoe": "",
     "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/NLLP_ARR_Commitment",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_PANDORA_ARR_Commitment",
@@ -378,7 +404,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 00:59:00",
     "notification_aoe": "",
     "link": "https://pandora-workshop.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "neurips2026_ws_InfPriv_Fast_Track",
@@ -392,7 +419,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://beyond-private-training.ai.studio/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_HAIC",
@@ -406,7 +434,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "http://Neurips2026haic.com",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AABA4ET",
@@ -420,7 +449,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://sites.google.com/view/aaba4et",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AutoMLR",
@@ -434,7 +464,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://automlr.com",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_WRL",
@@ -448,7 +479,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://www.robot-learning.ml/2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AISciK",
@@ -462,7 +494,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://aiscik.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AIM",
@@ -476,7 +509,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://aim-neurips26.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AI4PowerGrids",
@@ -490,7 +524,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://ai4powergrids.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AI_and_the_Self",
@@ -504,7 +539,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://aintheself.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_ASCI",
@@ -518,7 +554,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://asci.artificialintelligencepathology.org/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AI4Mat",
@@ -532,7 +569,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://sites.google.com/view/ai4mat/home",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AI4ChipDesign",
@@ -546,7 +584,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://neurips-ai-for-chip-design-2026.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AIDaR",
@@ -560,7 +599,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://aidar-workshop.github.io/2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AXIOM",
@@ -574,7 +614,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://axiom-neurips2026.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_Africa_in_AI",
@@ -588,7 +629,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://africainai.mailab.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_BabyVLM",
@@ -602,7 +644,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://babyvlm.github.io/#cfp",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_BeNTo",
@@ -616,7 +659,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://bento-neurips.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_InfPriv",
@@ -630,7 +674,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://beyond-private-training.ai.studio/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_DevAI",
@@ -644,7 +689,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://sites.google.com/view/devai-workshop-2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_DiffuLM",
@@ -658,7 +704,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://7amin.github.io/diffulm-neurips2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_DynaFront",
@@ -672,7 +719,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://sites.google.com/view/dynafrontneurips26",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_Meta-Agents",
@@ -686,7 +734,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://meta-agents-workshop.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_JUDGe",
@@ -700,7 +749,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://judge2026.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_FAST",
@@ -714,7 +764,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://fast-workshop.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_FLMSec",
@@ -728,7 +779,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://flmsec.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_VLM4RWD",
@@ -742,7 +794,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://vlm4rwd.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_ICBINB-BIO",
@@ -756,7 +809,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://icbinb-bio.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_InterpScience",
@@ -770,7 +824,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://interpscience.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_LXAI",
@@ -784,7 +839,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://www.latinxinai.org/neurips-2026",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_MLForSys",
@@ -798,7 +854,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://mlforsystems.org",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AI4Science",
@@ -812,7 +869,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://ai4sciencecommunity.github.io/neurips26.html",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AgenticLS",
@@ -826,7 +884,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://agenticls.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AgenticOS",
@@ -840,7 +899,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://agentic-fmos.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_GlobalSouthAI",
@@ -854,7 +914,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://sites.google.com/view/globalsouthai-neurips26/home",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_MLxOR",
@@ -868,7 +929,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://mlxor-2026.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_TAE",
@@ -882,7 +944,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://tai-eval.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_EvoRobust",
@@ -896,7 +959,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://neurips.cc/Conferences/2026",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_RTCA",
@@ -910,7 +974,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://rtcaneurips26.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_Verify-Agents",
@@ -924,7 +989,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://verify-agents-workshop.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AI4DD",
@@ -938,7 +1004,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://ai4dd-neurips2026.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AI4MetaScience",
@@ -952,7 +1019,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://ai4metascience.org/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_STODY",
@@ -966,7 +1034,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://eethanshi.github.io/stochastic-dynamics-2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_VERICODEGEN",
@@ -980,7 +1049,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://vericodegen.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AI-Native_Academia",
@@ -994,7 +1064,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://ai-native-academia.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_ML4Molecules",
@@ -1008,7 +1079,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://moleculediscovery.github.io/workshop2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_Child_Safety_in_AI",
@@ -1022,7 +1094,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://childsafety-ai.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_CLEA",
@@ -1036,7 +1109,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://clea-neurips.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_CL4FMAgents",
@@ -1050,7 +1124,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://neurips26-cl4fmagents.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_CWM",
@@ -1064,7 +1139,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://continual-world-models-workshop.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_BiAlign",
@@ -1078,7 +1154,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://bialign-workshop.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_E-values",
@@ -1092,7 +1169,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://e-values-workshop.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_BrainBodyFM",
@@ -1106,7 +1184,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://brainbodyfm-workshop.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_FLLMPT",
@@ -1120,7 +1199,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://www.fllmpt-work.shop/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_UserSim",
@@ -1134,7 +1214,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://usersim-workshop.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_Interp4Discovery",
@@ -1148,7 +1229,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://interpretability4discovery.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_LP4FM",
@@ -1162,7 +1244,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://lp4fm.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_Med-Reasoner",
@@ -1176,7 +1259,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://med-reasoner.github.io/neurips2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_PhysUnderstand",
@@ -1190,7 +1274,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "sites.google.com/view/neurips-2026-workshop-pudm",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_PriGM",
@@ -1204,7 +1289,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://sites.google.com/view/prigmneurips2026/home",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_ReMuCAI",
@@ -1218,7 +1304,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://sites.google.com/view/remucai",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_SaTQuML",
@@ -1232,7 +1319,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://satquml.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_NeurReps_Extended_Abstracts",
@@ -1246,7 +1334,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://neurreps.org/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_NeurReps_Findings",
@@ -1260,7 +1349,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://neurreps.org/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_NeurReps_Proceedings",
@@ -1274,7 +1364,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://neurreps.org/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_TTCL",
@@ -1288,7 +1379,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "ttcl-agents.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_GDDL",
@@ -1302,7 +1394,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://gddl-neurips-2026.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_EIML",
@@ -1316,7 +1409,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://epistemic-intelligence-in-ml.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_FMTS",
@@ -1330,7 +1424,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://fmts-workshop.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_PALM",
@@ -1344,7 +1439,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://palm-neurips-2026.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_Pre-to-Post",
@@ -1358,7 +1454,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://pretrain2posttrain.github.io",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_CODEC-FM",
@@ -1372,7 +1469,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://collaborative-open-decentralized-fomo.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_GEM_Bio",
@@ -1386,7 +1484,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://www.gembio.ai/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_ML4SpatialBio",
@@ -1400,7 +1499,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://imsb-uke.github.io/ml4spatialbio-2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_NeuralArtifacts",
@@ -1414,7 +1514,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "artifactsasdata.org",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_LIGHT",
@@ -1428,7 +1529,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://almaai-disi-unibo.github.io/neurips2026-light-smallModels/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_NEmo",
@@ -1442,7 +1544,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://nemo.semantic.review/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_NewInML",
@@ -1456,7 +1559,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://newinml.github.io/NewInML2026NeurIPS/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_OPT",
@@ -1470,7 +1574,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://opt-ml.org/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_ODI",
@@ -1484,7 +1589,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://odi2026.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_PTA",
@@ -1498,7 +1604,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://ptaworkshop.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_MPLR-FM",
@@ -1512,7 +1619,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://neurips-workshop2026.github.io/foundation_model_agentic_privacy/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_QueerInAI",
@@ -1526,7 +1634,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://www.queerinai.com/neurips-2026",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_RL4XS",
@@ -1540,7 +1649,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://rl-experimental-sciences-workshop.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_RPS",
@@ -1554,7 +1664,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://representations-physical-sciences.github.io/workshop-2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_RCMLR",
@@ -1568,7 +1679,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://translatingmlresearch.github.io/RCMLR/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_RoCo-Spring",
@@ -1582,7 +1694,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://roco-spring.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_RoboPAD",
@@ -1596,7 +1709,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://robotpad2026.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_Robotics_World_Modeling",
@@ -1610,7 +1724,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://robowm-ws.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_SLM-Agents",
@@ -1624,7 +1739,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://slmw2026.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_SocialAgent",
@@ -1638,7 +1754,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://social-llm-workshop.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_Sim2Sci",
@@ -1652,7 +1769,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://www.sim2science.com/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_TCCML",
@@ -1666,7 +1784,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://www.climatechange.ai/events/neurips2026",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_IAB",
@@ -1680,7 +1799,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://iab-agents.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_IAB_Competition_Paper_Track",
@@ -1694,7 +1814,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "http://glee-competition.com; https://iab-agents.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_PhysWorldAI",
@@ -1708,7 +1829,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://physworld-org.github.io/physworld.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_Simbiochem",
@@ -1722,7 +1844,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "www.simbiochem.com",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_MusIML",
@@ -1736,7 +1859,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://www.musiml.org/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_MATH-AI",
@@ -1750,7 +1874,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://mathai-2026.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_GenAI4Health",
@@ -1764,7 +1889,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://genai4health.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_GenAI4Health_Demonstration_Paper_Track",
@@ -1778,7 +1904,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://genai4health.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_GenAI4Health_Position_Paper_Track",
@@ -1792,7 +1919,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://genai4health.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_ATTRIB",
@@ -1806,7 +1934,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://attrib-workshop.cc/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AIWILD",
@@ -1820,7 +1949,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://agentwild-workshop.github.io/neurips2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_AI4GOOD",
@@ -1834,7 +1964,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://trustworthy-ai-for-good.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_WiML",
@@ -1848,7 +1979,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://sites.google.com/wimlworkshop.org/wimlworkshopneurips2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_TS-LIMITS",
@@ -1862,7 +1994,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://ts-limits.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_EconML",
@@ -1876,7 +2009,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://econml26-workshop.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_IAEval",
@@ -1890,7 +2024,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://eval-interactive-agents-workshop.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_RAAAI",
@@ -1904,7 +2039,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://resource-aware-workshop.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_WMHS",
@@ -1918,7 +2054,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://wmhs-neurips.github.io/WMHS/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_WM_PAI",
@@ -1932,7 +2069,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "http://www.worldmodels-physicalai.com/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_XAI4Science",
@@ -1946,7 +2084,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://xai4science.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "neurips2026_ws_TCCML_Tutorials_Track",
@@ -1960,7 +2099,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-29 23:59:59",
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://www.climatechange.ai/events/neurips2026",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "emnlp2026_ws_DocInsights_ARR_Commitment",
@@ -1974,7 +2114,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-31 00:59:00",
     "notification_aoe": "",
     "link": "https://docinsights-workshop.github.io/docinsights-2026/",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_REALM_ARR_Commitment",
@@ -1988,7 +2129,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-08-31 23:59:00",
     "notification_aoe": "",
     "link": "https://realm-workshop.github.io/",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_WaC-13_ARR_Commitment",
@@ -2002,7 +2144,8 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-09-01 23:59:00",
     "notification_aoe": "",
     "link": "https://wackyworkshop.org",
-    "archival": false
+    "archival": false,
+    "milestone": "commitment"
   },
   {
     "id": "emnlp2026_ws_MRL",
@@ -2016,11 +2159,12 @@ export const DEADLINE_VENUES = [
     "deadline_aoe": "2026-09-04 23:59:00",
     "notification_aoe": "",
     "link": "https://sigtyp.github.io/ws2026-mrl.html",
-    "archival": false
+    "archival": false,
+    "milestone": "direct_submission"
   },
   {
     "id": "iclr2027_abstract",
-    "name": "ICLR 2027 (abstract; paper Sep 24)",
+    "name": "ICLR 2027",
     "venue_type": "conference",
     "venue_group": "ICLR 2027",
     "track": "main",
@@ -2030,7 +2174,23 @@ export const DEADLINE_VENUES = [
     "link": "https://iclr.cc/Conferences/2027",
     "venue_family": "ICLR",
     "archival": true,
-    "submission_type": ""
+    "submission_type": "",
+    "milestone": "abstract"
+  },
+  {
+    "id": "iclr2027_paper",
+    "name": "ICLR 2027",
+    "venue_type": "conference",
+    "venue_group": "ICLR 2027",
+    "track": "main",
+    "deadline_label": "full paper",
+    "deadline_aoe": "2026-09-24 23:59:59",
+    "notification_aoe": "",
+    "link": "https://iclr.cc/Conferences/2027",
+    "venue_family": "ICLR",
+    "archival": true,
+    "submission_type": "",
+    "milestone": "full_paper"
   },
   {
     "id": "naacl2027_paper",
@@ -2044,6 +2204,7 @@ export const DEADLINE_VENUES = [
     "notification_aoe": "",
     "link": "https://2027.naacl.org/",
     "venue_family": "NAACL",
-    "archival": true
+    "archival": true,
+    "milestone": "direct_submission"
   }
 ] as const;

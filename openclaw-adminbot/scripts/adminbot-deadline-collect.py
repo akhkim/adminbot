@@ -24,6 +24,7 @@ sys.path.insert(0, HERE)
 from adminbot_deadlines import (  # noqa: E402
     ARR_FAMILIES,
     DEADLINES_DIR,
+    milestone_of,
     SUBMISSION_COMMITMENT,
     SUBMISSION_DIRECT,
     WORKSHOP_FAMILIES,
@@ -57,9 +58,17 @@ CONFERENCES = [
          venue_family="ARR", submission_type="direct",
          deadline_label="ARR submission", deadline_aoe="2026-08-03 23:59:59",
          notification_aoe="", link="https://aclrollingreview.org/dates"),
-    dict(id="iclr2027_abstract", name="ICLR 2027 (abstract; paper Sep 24)",
+    # ICLR runs an abstract deadline and then the full paper five days later. That second date used
+    # to live inside the display name ("abstract; paper Sep 24"), where nothing could count down to
+    # it and the board could not show it as its own deadline. One row per sub-deadline; they share a
+    # venue_group, which is what groups them under one conference.
+    dict(id="iclr2027_abstract", name="ICLR 2027",
          venue_type="conference", venue_group="ICLR 2027", track="main",
          deadline_label="abstract deadline", deadline_aoe="2026-09-19 23:59:59",
+         notification_aoe="", link="https://iclr.cc/Conferences/2027"),
+    dict(id="iclr2027_paper", name="ICLR 2027",
+         venue_type="conference", venue_group="ICLR 2027", track="main",
+         deadline_label="full paper", deadline_aoe="2026-09-24 23:59:59",
          notification_aoe="", link="https://iclr.cc/Conferences/2027"),
     dict(id="naacl2027_paper", name="NAACL 2027 (main, ARR submission)",
          venue_type="conference", venue_group="NAACL 2027", track="main",
@@ -287,6 +296,7 @@ def classify(item):
     item["venue_family"] = family
     item["archival"] = is_archival(family, item.get("track", ""))
     item.setdefault("submission_type", "")
+    item["milestone"] = milestone_of(item.get("deadline_label", ""), item["submission_type"])
     return item
 
 
@@ -340,7 +350,7 @@ def main():
 
     # keep the bundled Control-UI tab dataset in sync (ui/src/ui/adminbot/data/deadlines.ts)
     keys = ["id", "name", "venue_type", "venue_group", "track", "venue_family",
-            "archival", "submission_type",
+            "archival", "submission_type", "milestone",
             "deadline_label", "deadline_aoe", "notification_aoe", "link"]
     slim = [{k: it.get(k, "") for k in keys} for it in items]
     ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
@@ -357,6 +367,9 @@ def main():
                 "  archival?: boolean;\n"
                 "  /** ARR route: \"direct\" submits fresh, \"commitment\" attaches existing reviews. */\n"
                 "  submission_type?: string;\n"
+                "  /** Which sub-deadline this row is: abstract, full_paper, camera_ready, ...\n"
+                "   *  See MILESTONES in scripts/adminbot_deadlines.py. Empty when unclassified. */\n"
+                "  milestone?: string;\n"
                 "  deadline_label: string;\n  deadline_aoe: string;\n"
                 "  notification_aoe?: string;\n  link?: string;\n};\n\n"
                 "export const DEADLINE_VENUES: DeadlineVenue[] = "

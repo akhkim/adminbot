@@ -56,6 +56,26 @@ paper's history. Each is its own dated entry, tagged `submission_type`:
 OpenReview names commitment venues with an `_ARR_Commitment` suffix, which is
 what the collector classifies on.
 
+### Sub-deadlines
+
+A venue is not one date. A conference runs an abstract deadline, then the full paper, then
+rebuttal, then camera-ready; an ARR venue runs a direct submission and a commitment. Each is
+**its own row sharing a `venue_group`**, tagged with `milestone` (`abstract`,
+`direct_submission`, `full_paper`, `commitment`, `rebuttal`, `notification`, `camera_ready`).
+That is what lets the board group them under one conference and count down to each separately,
+and what orders them in the sequence a paper meets them rather than by date alone.
+
+Adding one is adding a row to the curated table with the right `deadline_label` —
+`milestone_of()` in `scripts/adminbot_deadlines.py` maps the label onto the closed set. A row
+whose label is not recognised still renders; it just sorts last and shows its raw label.
+
+**OpenReview cannot supply these.** It exposes one dated stage per workshop (`-/Submission`) and
+none at all for main conferences — abstract, camera-ready and rebuttal dates are simply not in
+its group or invitation data. So sub-deadlines beyond the submission are curated, the same as
+main-conference dates. Today only ICLR 2027 carries a second row (abstract + full paper); its
+full-paper date had been sitting inside the display name as prose, where nothing could count
+down to it.
+
 ### What the weekly sweep fetches
 
 `refresh-venues` walks every tracked family's OpenReview workshop parent across a

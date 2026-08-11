@@ -182,6 +182,42 @@ describe("renderDeadlines", () => {
     ).toBe("true");
   });
 
+// A venue is not one date. Sub-deadlines are separate rows sharing a venue_group, so opening a
+// conference shows each one counting down separately, in the order a paper meets them.
+  it("lists a conference's sub-deadlines under it, named by stage", async () => {
+    const container = await renderView();
+
+    conferenceNamed(container, "ICLR")
+      .querySelector<HTMLButtonElement>('[data-testid="conference-toggle"]')!
+      .click();
+    await settle(container);
+
+    const names = [
+      ...conferenceNamed(container, "ICLR").querySelectorAll(".deadline-row__name"),
+    ].map((node) => node.textContent?.trim() ?? "");
+    // Two rows: the abstract and the full paper, five days apart. They are named by the stage
+    // rather than repeating "ICLR 2027" twice, which is the only part that differs.
+    expect(names).toContain("Abstract");
+    expect(names).toContain("Full paper");
+    // Stage order, which is also date order here.
+    expect(names.indexOf("Abstract")).toBeLessThan(names.indexOf("Full paper"));
+  });
+
+  it("keeps the full venue name on a conference with a single date", async () => {
+    const container = await renderView();
+
+    conferenceNamed(container, "NAACL")
+      .querySelector<HTMLButtonElement>('[data-testid="conference-toggle"]')!
+      .click();
+    await settle(container);
+
+    const names = [
+      ...conferenceNamed(container, "NAACL").querySelectorAll(".deadline-row__name"),
+    ].map((node) => node.textContent?.trim() ?? "");
+    // One row, so the name is the information rather than the stage.
+    expect(names.some((name) => name.includes("NAACL 2027"))).toBe(true);
+  });
+
   it("leads with the single most urgent deadline anywhere", async () => {
     const container = await renderView();
 

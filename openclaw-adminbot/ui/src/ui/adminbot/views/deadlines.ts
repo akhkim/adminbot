@@ -157,6 +157,49 @@ function renderLabel(venue: DeadlineVenue) {
     : nothing;
 }
 
+// A venue is not one date. A conference runs an abstract deadline, then the full paper, then
+// rebuttal, then camera-ready; an ARR venue runs a direct submission and a commitment. Each is its
+// own row sharing a venue_group, so opening a conference lists them in the order a paper meets
+// them. Stamped by the collector -- see MILESTONES in scripts/adminbot_deadlines.py.
+const MILESTONE_ORDER = [
+  "abstract",
+  "direct_submission",
+  "full_paper",
+  "commitment",
+  "rebuttal",
+  "notification",
+  "camera_ready",
+] as const;
+
+const MILESTONE_LABELS: Record<string, string> = {
+  abstract: "Abstract",
+  direct_submission: "Direct submission",
+  full_paper: "Full paper",
+  commitment: "ARR commitment",
+  rebuttal: "Rebuttal ends",
+  notification: "Notification",
+  camera_ready: "Camera-ready",
+};
+
+function milestoneRank(venue: DeadlineVenue): number {
+  const index = MILESTONE_ORDER.indexOf(venue.milestone as (typeof MILESTONE_ORDER)[number]);
+  return index < 0 ? MILESTONE_ORDER.length : index;
+}
+
+/**
+ * What a row is called once its conference is already the heading above it.
+ *
+ * When several rows share a venue_group they are that venue's sub-deadlines, and repeating
+ * "ICLR 2027" on each one says nothing — the milestone is the only part that differs, so it becomes
+ * the row's name. A lone row keeps its full venue name, because there the name is the information.
+ */
+function rowTitle(venue: DeadlineVenue, siblings: number): string {
+  if (siblings < 2) {
+    return venue.name;
+  }
+  return MILESTONE_LABELS[venue.milestone ?? ""] ?? venue.deadline_label ?? venue.name;
+}
+
 // Which ARR route a date is, spelled out. The *ACL venues take papers two ways and
 // only one of them is open to any given paper: `direct` starts a fresh review cycle,
 // `commitment` attaches reviews the paper already has. Reading that off a
@@ -252,8 +295,9 @@ class AdminbotDeadlinesView extends LitElement {
 
   // One deadline inside an opened conference. The date column disappears whenever the whole list
   // shares one date, which for a workshop track is the normal case.
-  private renderEntry(entry: Entry, shared: SharedFacts, now: number) {
+  private renderEntry(entry: Entry, shared: SharedFacts, now: number, siblings = 1) {
     const { venue, instant } = entry;
+    const title = rowTitle(venue, siblings);
     return html`
       <li class="deadline-row" data-urgency=${urgencyOf(instant, now)}>
         <span class="deadline-row__countdown">${countdownLabel(instant - now)}</span>
@@ -261,7 +305,9 @@ class AdminbotDeadlinesView extends LitElement {
           ? nothing
           : html`<span class="deadline-row__date">${aoeDateLabel(venue.deadline_aoe)}</span>`}
         <span class="deadline-row__body">
-          <span class="deadline-row__name">${venue.name}${renderLabel(venue)}${renderRoute(venue)}</span>
+          <span class="deadline-row__name"
+            >${title}${title === venue.name ? renderLabel(venue) : nothing}${renderRoute(venue)}</span
+          >
           ${venue.notification_aoe && !shared.notification
             ? html`<span class="deadline-row__note"
                 >notified ${aoeDateLabel(venue.notification_aoe)}</span
@@ -287,6 +333,24 @@ class AdminbotDeadlinesView extends LitElement {
       shared.date ? `all due ${aoeDateLabel(shared.date)} AoE` : "",
       shared.notification ? `notified ${aoeDateLabel(shared.notification)}` : "",
     ].filter(Boolean);
+    // How many rows each venue_group contributes, so a row can tell whether it is one of several
+    // sub-deadlines of the same venue or a venue on its own.
+    const siblings = new Map<string, number>();
+    for (const entry of entries) {
+      const key = (entry.venue.venue_group ?? "").trim() || entry.venue.name;
+      siblings.set(key, (siblings.get(key) ?? 0) + 1);
+    }
+    // Sub-deadlines of one venue read in the order a paper meets them (abstract before full paper
+    // before camera-ready), which is not always date order when two share a day. Across venues,
+    // date wins.
+    const ordered = entries.toSorted((left, right) => {
+      const leftKey = (left.venue.venue_group ?? "").trim() || left.venue.name;
+      const rightKey = (right.venue.venue_group ?? "").trim() || right.venue.name;
+      if (leftKey === rightKey && left.instant === right.instant) {
+        return milestoneRank(left.venue) - milestoneRank(right.venue);
+      }
+      return left.instant - right.instant;
+    });
     return html`
       <div class="deadline-section">
         <p class="deadline-section__head">
@@ -297,7 +361,14 @@ class AdminbotDeadlinesView extends LitElement {
             : nothing}
         </p>
         <ul class="deadline-section__list">
-          ${entries.map((entry) => this.renderEntry(entry, shared, now))}
+          ${ordered.map((entry) =>
+            this.renderEntry(
+              entry,
+              shared,
+              now,
+              siblings.get((entry.venue.venue_group ?? "").trim() || entry.venue.name) ?? 1,
+            ),
+          )}
         </ul>
       </div>
     `;
