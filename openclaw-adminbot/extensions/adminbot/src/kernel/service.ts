@@ -2113,7 +2113,11 @@ function validateSocialUrl(value: unknown, spec: SocialUrlFieldSpec): string | u
 // ending in the disambiguating digit OpenReview appends. Rejecting the shape here is cheap and
 // catches "pasted the profile URL instead of the id" before it reaches the reviewing-cycle
 // automation that matches submissions against this field.
-const OPENREVIEW_ID = /^~[A-Za-z][A-Za-z0-9_.]*[0-9]$/u;
+// Hyphens and non-ASCII letters are both ordinary in real ids -- "~Tung-Yu_Wu1",
+// "~Emilia_Wiśnios1" -- and the old ASCII-only, hyphen-free pattern rejected them, which silently
+// cost those members the field. Still anchored on the tilde and the trailing disambiguation digit,
+// which are the parts OpenReview actually guarantees.
+const OPENREVIEW_ID = /^~\p{L}[\p{L}\p{N}_.-]*[0-9]$/u;
 
 function validateOpenReviewId(value: unknown): string | undefined {
   if (typeof value !== "string") {

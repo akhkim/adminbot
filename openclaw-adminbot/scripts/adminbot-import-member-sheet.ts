@@ -46,6 +46,84 @@ const FIELD_BY_COLUMN: Array<[string, string]> = [
 
 const LIST_FIELDS = new Set(["research_topics"]);
 
+/**
+ * The sheet is filled in by hand, so a column holds whatever shape each person typed: a bare
+ * GitHub username next to a full profile URL, an OpenReview id with or without its leading tilde,
+ * a Twitter handle with or without the @. The service validates strictly and rejects the *whole*
+ * member on the first bad field, so one loosely-typed cell used to cost that person every other
+ * value in their row.
+ *
+ * These put each column into the one shape the service accepts. Anything that still cannot be
+ * rescued is dropped and reported rather than sent, so a single unusable cell never blocks the
+ * rest of a member's import.
+ */
+function normalizeSheetValue(field: string, raw: string): string | undefined {
+  const value = raw.trim();
+  if (!value) {
+    return undefined;
+  }
+  switch (field) {
+    case "github_url":
+      return asProfileUrl(
+        value,
+        "https://github.com/",
+        /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/u,
+      );
+    case "twitter_url":
+      // Handles arrive as "name", "@name", or a full link; the service wants x.com/<handle>.
+      return asProfileUrl(value.replace(/^@/u, ""), "https://x.com/", /^[A-Za-z0-9_]{1,15}$/u);
+    case "linkedin_url":
+      return asProfileUrl(value, "https://www.linkedin.com/in/", /^[A-Za-z0-9\-_%]+$/u);
+    case "openreview_id": {
+      const id = value.startsWith("~") ? value : `~${value}`;
+      // Mirrors OPENREVIEW_ID in extensions/adminbot/src/kernel/service.ts -- hyphens and
+      // non-ASCII letters are ordinary in real ids ("~Tung-Yu_Wu1", "~Emilia_Wiśnios1").
+      return /^~\p{L}[\p{L}\p{N}_.-]*[0-9]$/u.test(id) ? id : undefined;
+    }
+    case "personal_website":
+    case "lesswrong_url":
+      return asFreeUrl(value);
+    default:
+      return value;
+  }
+}
+
+/** A bare handle becomes a profile URL; a full URL is kept only if it already validates. */
+function asProfileUrl(value: string, prefix: string, handle: RegExp): string | undefined {
+  if (handle.test(value)) {
+    return `${prefix}${value}`;
+  }
+  const url = asFreeUrl(value);
+  if (!url) {
+    return undefined;
+  }
+  // A full link the service would reject anyway (wrong host, no username) is worth dropping here,
+  // where it costs one field, rather than failing the member's whole row at the service.
+  try {
+    const parsed = new URL(url);
+    const last = parsed.pathname.replace(/\/+$/u, "").split("/").pop() ?? "";
+    return handle.test(last) ? url : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Adds the scheme a bare domain is missing; returns undefined for anything still not a URL. */
+function asFreeUrl(value: string): string | undefined {
+  // http is upgraded rather than rejected: the service requires https, and a member typing the
+  // scheme by hand is not making a statement about transport security.
+  const candidate = /^https?:\/\//u.test(value)
+    ? value.replace(/^http:\/\//u, "https://")
+    : `https://${value}`;
+  try {
+    const parsed = new URL(candidate);
+    // Rules out prose typed into a link column ("WIP", "n/a"): a host with no dot is not a site.
+    return parsed.protocol === "https:" && parsed.hostname.includes(".") ? candidate : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Minimal RFC4180 reader: the sheet quotes any cell containing a comma or newline. */
 function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
@@ -134,6 +212,7 @@ async function run(params: {
   const nameColumn = params.header[0] ?? "";
   let matched = 0;
   const unmatched: string[] = [];
+  const dropped: string[] = [];
   const conflicts: string[] = [];
   const plans: Array<{ id: string; name: string; patch: Record<string, unknown> }> = [];
 
@@ -162,12 +241,21 @@ async function run(params: {
         }
         continue;
       }
-      patch[field] = LIST_FIELDS.has(field)
-        ? raw
-            .split(",")
-            .map((entry) => entry.trim())
-            .filter(Boolean)
-        : raw;
+      if (LIST_FIELDS.has(field)) {
+        patch[field] = raw
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter(Boolean);
+        continue;
+      }
+      const value = normalizeSheetValue(field, raw);
+      if (value === undefined) {
+        // Unusable as typed. Dropping the one cell keeps the rest of this member's row importable;
+        // sending it would have the service reject every field they have.
+        dropped.push(`${name} · ${field}: "${raw}"`);
+        continue;
+      }
+      patch[field] = value;
     }
     if (Object.keys(patch).length > 0) {
       plans.push({ id: String(member.id), name, patch });
@@ -179,10 +267,20 @@ async function run(params: {
   console.log(`matched by name : ${matched}`);
   console.log(`would fill      : ${fields} blank fields across ${plans.length} members`);
   console.log(`conflicts       : ${conflicts.length} (roster kept, sheet ignored)`);
+  console.log(`unusable cells  : ${dropped.length} (dropped, rest of the row still imported)`);
   if (unmatched.length) {
     console.log(`\nno roster member for ${unmatched.length} row(s) — skipped, never created:`);
     for (const name of unmatched) {
       console.log(`  ${name}`);
+    }
+  }
+  if (dropped.length) {
+    console.log(`\n${dropped.length} cell(s) the service would reject — dropped, not sent:`);
+    for (const line of dropped.slice(0, 40)) {
+      console.log(`  ${line}`);
+    }
+    if (dropped.length > 40) {
+      console.log(`  … and ${dropped.length - 40} more`);
     }
   }
   if (conflicts.length) {
