@@ -92,15 +92,15 @@
 }
 
 .login-gate .login-gate__connect.btn.primary {
-  background: #cfcfcf; 
-  border: 1px solid #808080; 
+  background: #cfcfcf;
+  border: 1px solid #808080;
   color: #0a0a0a;
-  opacity: 1
+  opacity: 1;
 }
 
 .login-gate .login-gate__connect.btn.primary:hover,
 .login-gate .login-gate__connect.btn.primary:focus-visible {
-  background: #e6e5e5 !important; 
+  background: #e6e5e5 !important;
   border-color: #808080 !important;
   opacity: 1;
 }
@@ -193,7 +193,10 @@
   border-radius: var(--radius-lg) !important;
   color: var(--muted-strong);
   cursor: pointer;
-  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
 }
 
 .login-gate .login-gate__guest-cta:hover,
@@ -9170,4 +9173,43 @@ select.input:focus {
   .input {
     transition: none;
   }
+}
+
+/* The intake-form row in the Links group: a destination, not a field, so it keeps the row's label
+   column and answers with a link where the others answer with an input. Sized to the control
+   height so it sits on the same baseline grid as the inputs above it. */
+/* Its own class rather than `.profile__form-row`: that one means "a field", and every field row
+   carries a mandatory or optional marker. A link is neither, and borrowing the class broke the
+   invariant a test rightly holds. */
+.profile__link-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.profile__form-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--control-h-md);
+  color: var(--accent);
+  font-size: var(--control-ui-text-md);
+  text-decoration: none;
+}
+
+.profile__form-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.profile__form-link-icon {
+  display: inline-flex;
+}
+
+.profile__form-link-icon svg {
+  width: 13px;
+  height: 13px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
 }

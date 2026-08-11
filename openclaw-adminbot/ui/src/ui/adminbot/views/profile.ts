@@ -47,10 +47,13 @@ const PROFILE_FIELD_GROUPS: Array<{
   labelKey: string;
   icon: keyof typeof icons;
 }> = [
+  // Order is the reading order of the page: who the account is, who the person is, what they work
+  // on, where to find them, and last the scheduling detail -- which is the part a member revisits
+  // least often and the only group whose answers go stale on their own.
   { id: "identity", labelKey: "profile.groups.identity", icon: "user" },
-  { id: "work", labelKey: "profile.groups.work", icon: "clock" },
   { id: "research", labelKey: "profile.groups.research", icon: "brain" },
   { id: "links", labelKey: "profile.groups.links", icon: "link" },
+  { id: "work", labelKey: "profile.groups.work", icon: "clock" },
 ];
 
 type ProfileField = {
@@ -652,6 +655,28 @@ function renderMandatoryMark(field: EditableField) {
 //
 // Two things stay uneditable and say so: the fields the lab governs (email), and the picture,
 // which has its own upload control because a file is not a text field.
+// The intake form sits with the links rather than in the suggestion stack below. It is the same
+// kind of thing as the rows above it -- somewhere else your details live -- and unlike a
+// suggestion it is never "done", so it belongs somewhere permanent instead of in a list of
+// outstanding work. It is a destination, not a field, so it renders as a link row rather than an
+// input.
+function renderIntakeFormRow() {
+  return html`
+    <div class="profile__link-row" data-testid="profile-intake-form">
+      <span class="profile__form-label">${t("profile.suggestions.formTitle")}</span>
+      <a
+        class="profile__form-link"
+        href=${INTAKE_FORM_URL}
+        target=${EXTERNAL_LINK_TARGET}
+        rel=${buildExternalLinkRel()}
+      >
+        ${t("profile.suggestions.formLink")}
+        <span class="profile__form-link-icon" aria-hidden="true">${icons.externalLink}</span>
+      </a>
+    </div>
+  `;
+}
+
 function renderBasics(state: AppViewState, member: LabMember, props: ProfileProps) {
   const commit = (form: HTMLFormElement) => () => {
     member.id && props.onSave(member.id, collectBasics(form));
@@ -737,6 +762,7 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                     </label>
                   `,
                 )}
+                ${group.id === "links" ? renderIntakeFormRow() : nothing}
               </div>
             </div>
           `,
@@ -897,16 +923,9 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
     });
   }
 
-  // Always offered: unlike every other card here, nothing on the record can tell us whether a
-  // member's intake answers are still true, and the answers the lab recaps from -- career
-  // ambitions especially -- are exactly the ones that go stale quietly.
-  suggestions.push({
-    id: "intake-form",
-    title: t("profile.suggestions.formTitle"),
-    body: t("profile.suggestions.formBody"),
-    label: t("profile.suggestions.formLink"),
-    href: INTAKE_FORM_URL,
-  });
+  // The intake form used to be pushed here unconditionally. It never had a "done" state, so it sat
+  // permanently in a stack whose whole meaning is "still outstanding" and quietly taught people to
+  // read past it. It lives with the links now, where a permanent destination belongs.
 
   const topics = (member.research_topics ?? []).join(" ").toLowerCase();
   if (

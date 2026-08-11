@@ -164,6 +164,10 @@
 html,
 body {
   height: 100%;
+  /* Stop the viewport scrolling past the end of the page. The installed-PWA block below already
+     did this; in an ordinary tab the document still rubber-banded, so the shell could be dragged
+     off its own background. Also stops scroll chaining out of inner panes to the document. */
+  overscroll-behavior: none;
 }
 
 body {
