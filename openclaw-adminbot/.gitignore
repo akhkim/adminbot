@@ -103,7 +103,9 @@ apps/ios/*.mobileprovision
 docs/.local/
 docs/internal/
 tmp/
-state/
+# Runtime state dir at the repo root only — an unanchored `state/` also swallows
+# src/state/ and src/infra/state/, which are source.
+/state/
 IDENTITY.md
 USER.md
 # Exception: oc-path real-world test fixtures need to be tracked even
