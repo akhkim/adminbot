@@ -1511,7 +1511,6 @@ describe("AdminBotService", () => {
           privilege_level: "member",
           calendar_email: "full@gmail.com",
           location: "Toronto",
-          slack_user_id: "U9",
           research_topics: ["nlp"],
           correspondence_email: "full@cs.toronto.edu",
           whatsapp: "(+1) 555 0100",
@@ -1531,7 +1530,6 @@ describe("AdminBotService", () => {
         expect.arrayContaining([
           "calendar_email",
           "location",
-          "slack_user_id",
           "research_topics",
           "correspondence_email",
           "whatsapp",

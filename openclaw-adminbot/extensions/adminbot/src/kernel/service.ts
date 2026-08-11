@@ -1736,6 +1736,7 @@ export function payloadHash(value: unknown): string {
 
 const SELF_PROFILE_EDITABLE_FIELDS = [
   "name",
+  "preferred_name",
   "slack_user_id",
   // Slack-derived, not something a member types: the roster sync writes it through the service
   // principal, which lands on this same whitelist. Governance fields stay in the privileged list.

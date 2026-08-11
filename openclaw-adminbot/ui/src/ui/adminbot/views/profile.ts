@@ -111,6 +111,16 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "identity",
   },
   {
+    // What the person actually goes by, when that is not their roster name. Optional on purpose:
+    // for most people it is the same string twice, and a required field whose honest answer is
+    // "same as above" is a field that teaches people to ignore required marks.
+    key: "preferred_name",
+    labelKey: "profile.fields.preferredName",
+    example: "Ada",
+    type: "short_text",
+    group: "identity",
+  },
+  {
     key: "role",
     labelKey: "profile.fields.role",
     example: adminBotMemberRoles[0] ?? "",
@@ -137,28 +147,23 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.location",
     example: "Toronto, ON",
     type: "short_text",
-    group: "work",
+    group: "identity",
   },
   {
+    // Sits with location because it is derived from it -- see displayValue, which prefills this
+    // control from whatever the member typed one field earlier.
     key: "timezone",
     labelKey: "profile.fields.timezone",
     example: "America/Toronto",
     type: "dropdown",
     options: timezoneOptions(),
-    group: "work",
+    group: "identity",
   },
   {
     key: "hours_per_week",
     labelKey: "profile.fields.hoursPerWeek",
     example: "20",
     type: "numeric",
-    group: "work",
-  },
-  {
-    key: "slack_user_id",
-    labelKey: "profile.fields.slackUserId",
-    example: "U0123ABC456",
-    type: "short_text",
     group: "work",
   },
   {
@@ -185,9 +190,11 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "identity",
   },
   {
+    // The country code is not optional in practice: a bare local number is not dialable by anyone
+    // outside the member's own country, and this roster spans a dozen of them.
     key: "whatsapp",
     labelKey: "profile.fields.whatsapp",
-    example: "(+1) 555 0100",
+    example: "+1 555 0100",
     type: "short_text",
     group: "identity",
   },
@@ -479,6 +486,29 @@ function prefilledTimezone(member: LabMember): string | null {
     return null;
   }
   return timezoneForLocation(String(member.location ?? ""));
+}
+
+/**
+ * Says a WhatsApp number is missing its country code.
+ *
+ * Advisory, not a save-blocker. Most of the 87 numbers already on the roster were imported without
+ * one, and this form PUTs every field on each autosave — so rejecting the value would make those
+ * members unable to save *any* profile edit until they fixed a field they may not have thought
+ * about. The nudge is visible, the correction is theirs to make.
+ */
+function renderWhatsappHint(member: LabMember, field: EditableField) {
+  if (field.key !== "whatsapp") {
+    return nothing;
+  }
+  const value = String(member.whatsapp ?? "").trim();
+  if (!value || value.startsWith("+")) {
+    return nothing;
+  }
+  return html`
+    <span class="profile__prefill" data-testid="profile-whatsapp-hint">
+      ${t("profile.whatsapp.needsCountryCode")}
+    </span>
+  `;
 }
 
 function renderPrefillHint(member: LabMember, field: EditableField) {
@@ -827,7 +857,8 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                           : nothing}
                       </span>
                       ${renderFieldInput(field, displayValue(member, field))}
-                      ${renderPrefillHint(member, field)} ${renderAccountCheckStatus(state, field)}
+                      ${renderPrefillHint(member, field)}
+                      ${renderWhatsappHint(member, field)} ${renderAccountCheckStatus(state, field)}
                     </label>
                   `,
                 )}

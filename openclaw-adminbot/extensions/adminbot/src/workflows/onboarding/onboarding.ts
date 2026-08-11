@@ -181,42 +181,6 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       ],
     },
     {
-      id: "google_drive",
-      label: "Set up your Google Drive project folder",
-      category: "Working with us",
-      required: true,
-      bullets: [
-        {
-          text: "Copy the Zhijing-StudentName prototype folder and rename it with your name.",
-          points: [
-            'Set access to "Editable to everyone".',
-            "Add your CV as a PDF as the first file.",
-          ],
-        },
-        {
-          text: "Write one long doc per topic, not several tabs.",
-          points: [
-            'Keep docs "Pageless": File > Page setup > Pageless.',
-            "Use headings to structure it rather than splitting into tabs.",
-          ],
-        },
-        {
-          text: "Name and arrange files so they stay findable.",
-          points: [
-            "Prefix document names with the creation date (yyyymmdd).",
-            "Keep the folder flat — deep nesting breaks sorting by last-modified date.",
-          ],
-        },
-        { text: "Installing Google Drive for desktop keeps the folder synced locally." },
-        {
-          // Moved here out of the "member" acceptance email: the handbook lives behind the portal
-          // now, so the checklist is the one place that has to mention it.
-          text: "Read the internal mentee handbook, already shared in your Google Drive folder.",
-          points: ["Check it first when a question comes up — it answers most of them."],
-        },
-      ],
-    },
-    {
       id: "communication_norms",
       label: "Review our meeting and communication norms",
       category: "Working with us",
@@ -246,7 +210,7 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       label: "Questions?",
       category: "Questions",
       required: false,
-      detail: "Ask our lab admin Andrew Kim anytime.",
+      detail: "Read the guidebook, consult with our chatbot, or ask Andrew directly.",
     },
   ];
 }

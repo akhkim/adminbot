@@ -120,12 +120,15 @@ export type AdminBotMemberRole = (typeof adminBotMemberRoles)[number];
  * `name` is here because the profile page marks it required, but the service leaves it out of the
  * reminder: validateLabMember already refuses to store a member without one, so it can never be the
  * reason a stored record is incomplete.
+ *
+ * `slack_user_id` is deliberately absent. It is still stored and still self-editable through the
+ * whitelist -- the Slack directory sync writes it -- but it is no longer a field anybody types, so
+ * chasing a member for it would be nagging them about something they cannot fix.
  */
 export const adminBotMandatoryProfileFields = [
   "name",
   "calendar_email",
   "location",
-  "slack_user_id",
   "research_topics",
   "correspondence_email",
   "whatsapp",
@@ -150,7 +153,6 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   name: "Name",
   calendar_email: "Calendar email",
   location: "Location",
-  slack_user_id: "Slack",
   research_topics: "Research topics",
   correspondence_email: "Correspondence email",
   whatsapp: "WhatsApp",

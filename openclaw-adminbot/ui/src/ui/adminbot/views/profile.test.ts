@@ -308,6 +308,54 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(row?.querySelector(".profile__optional")).toBeNull();
   });
 
+  it("offers a preferred name, optional, beside the roster name", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+    const input = container.querySelector<HTMLInputElement>('input[name="preferred_name"]');
+    expect(input).not.toBeNull();
+    expect(input?.closest(".profile__form-row")?.querySelector(".profile__optional")).not.toBeNull();
+  });
+
+  // Slack ids are written by the directory sync, never typed. Leaving the input on the page invited
+  // someone to paste a wrong one over a correct synced value.
+  it("no longer offers a Slack ID field", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+    expect(container.querySelector('[name="slack_user_id"]')).toBeNull();
+  });
+
+  it("groups location and time zone with identity rather than work logistics", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+    const groupOf = (name: string) =>
+      container
+        .querySelector(`[name="${name}"]`)
+        ?.closest(".profile__field-group")
+        ?.querySelector(".profile__group-title")?.textContent?.trim();
+    const identity = groupOf("name");
+    expect(groupOf("location")).toBe(identity);
+    expect(groupOf("timezone")).toBe(identity);
+  });
+
+  // Advisory only: most imported numbers have no country code, and this form PUTs every field on
+  // each autosave, so rejecting the value would block unrelated profile edits.
+  it("flags a WhatsApp number with no country code without blocking the save", () => {
+    const withCode = renderPage(
+      createState(createMember({ whatsapp: "+1 555 0100" } as Partial<LabMember>)),
+      vi.fn(),
+    );
+    expect(withCode.querySelector('[data-testid="profile-whatsapp-hint"]')).toBeNull();
+
+    const onSave = vi.fn();
+    const without = renderPage(
+      createState(createMember({ whatsapp: "4038907525" } as Partial<LabMember>)),
+      onSave,
+    );
+    expect(without.querySelector('[data-testid="profile-whatsapp-hint"]')).not.toBeNull();
+    // Still saves: the hint is a nudge, not a gate.
+    without
+      .querySelector<HTMLFormElement>(".profile__form")
+      ?.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    expect(onSave).toHaveBeenCalled();
+  });
+
   // The page's required marks and the service's daily reminder read one list, so neither can chase
   // a field the other calls skippable. They used to be two hand-kept lists that never agreed.
   it("marks exactly the shared mandatory list required, and nothing else", () => {

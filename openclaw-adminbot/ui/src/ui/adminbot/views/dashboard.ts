@@ -58,7 +58,30 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
     summary: t(key, { count: String(blanks.length) }),
     actionLabel: t("dashboard.mandatoryFields.open"),
     onAction: () => state.setTab("profile"),
+    // Name the first few rather than only counting them. "6 required fields are still blank" tells
+    // someone they have work without telling them what it is, so the card cannot be acted on
+    // without opening the profile and hunting. Three is the cutoff because the point is to make
+    // the gap concrete, not to reproduce the form -- past that the card is the form.
+    detail: renderBlankFieldNames(blanks),
   };
+}
+
+// How many blank fields the card names before it stops being a summary.
+const BLANK_FIELD_PREVIEW = 3;
+
+function renderBlankFieldNames(blanks: ReadonlyArray<{ labelKey: string }>) {
+  const named = blanks.slice(0, BLANK_FIELD_PREVIEW).map((field) => t(field.labelKey));
+  const rest = blanks.length - named.length;
+  return html`
+    <p class="dashboard-card__fields" data-testid="dashboard-mandatory-fields">
+      ${named.map((label) => html`<span class="dashboard-card__field">${label}</span>`)}
+      ${rest > 0
+        ? html`<span class="dashboard-card__field dashboard-card__field--more"
+            >${t("dashboard.mandatoryFields.more", { count: String(rest) })}</span
+          >`
+        : nothing}
+    </p>
+  `;
 }
 
 function proposalsItem(state: AppViewState, role: AccessRole): AttentionItem | null {

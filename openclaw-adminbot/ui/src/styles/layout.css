@@ -1811,6 +1811,29 @@
   color: var(--text-strong);
 }
 
+/* The specific fields still blank, named under the count. Chips rather than a sentence: they are
+   a set of short labels being scanned, not prose being read. */
+.dashboard-card__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.dashboard-card__field {
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-size: var(--control-ui-text-xs);
+  color: var(--text);
+}
+
+.dashboard-card__field--more {
+  border-style: dashed;
+  color: var(--muted);
+}
+
 .dashboard-card__summary {
   margin: var(--space-1) 0 0;
   font-size: var(--control-ui-text-sm);

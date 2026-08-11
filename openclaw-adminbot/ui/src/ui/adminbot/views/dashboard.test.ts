@@ -178,6 +178,66 @@ describe("renderDashboard", () => {
     expect(container.textContent).toContain("required fields are still blank");
   });
 
+  // A count alone ("6 required fields are still blank") says there is work without saying what it
+  // is, so the card cannot be acted on without opening the profile and hunting.
+  it("names the first three blank fields and counts the rest", () => {
+    const container = renderPage(
+      createState({
+        memberId: "m1",
+        adminBotData: {
+          proposals: [],
+          members: [{ id: "m1", name: "Ada" }], // every required field but name is blank
+        },
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
+
+    const chips = [
+      ...container.querySelectorAll('[data-testid="dashboard-mandatory-fields"] .dashboard-card__field'),
+    ].map((node) => node.textContent?.trim() ?? "");
+    // Three names plus one "+N more".
+    expect(chips).toHaveLength(4);
+    expect(chips.at(-1)).toMatch(/^\+\d+ more$/u);
+    for (const chip of chips.slice(0, 3)) {
+      expect(chip).not.toBe("");
+      expect(chip.endsWith("more")).toBe(false);
+    }
+  });
+
+  it("names them without a 'more' chip when three or fewer are blank", () => {
+    const container = renderPage(
+      createState({
+        memberId: "m1",
+        adminBotData: {
+          proposals: [],
+          members: [
+            {
+              id: "m1",
+              name: "Ada",
+              location: "Toronto",
+              research_topics: ["alignment"],
+              joined_month: "2026-03",
+              correspondence_email: "ada@cs.toronto.edu",
+              whatsapp: "+1 555 0100",
+              openreview_id: "~Ada_Lovelace1",
+              github_url: "https://github.com/ada",
+              linkedin_url: "https://www.linkedin.com/in/ada",
+              linkedin_urn: "ACoAAB1234567",
+              // calendar_email and cv_url left blank: exactly two.
+            },
+          ],
+        },
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
+
+    const chips = [
+      ...container.querySelectorAll('[data-testid="dashboard-mandatory-fields"] .dashboard-card__field'),
+    ];
+    expect(chips).toHaveLength(2);
+    expect(chips.some((chip) => (chip.textContent ?? "").trim().endsWith("more"))).toBe(false);
+  });
+
   it("drops the mandatory-fields item once every required field is filled in", () => {
     const container = renderPage(
       createState({
@@ -190,7 +250,6 @@ describe("renderDashboard", () => {
               id: "m1",
               name: "Ada",
               location: "Toronto",
-              slack_user_id: "U1",
               research_topics: ["alignment"],
               joined_month: "2026-03",
               correspondence_email: "ada@cs.toronto.edu",

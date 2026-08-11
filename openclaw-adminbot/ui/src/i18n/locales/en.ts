@@ -1319,6 +1319,7 @@ export const en: TranslationMap = {
       title: "Your profile is missing required fields",
       summary: "{count} required field is still blank.",
       summaryPlural: "{count} required fields are still blank.",
+      more: "+{count} more",
       open: "Open profile",
     },
     proposals: {
@@ -1527,6 +1528,7 @@ export const en: TranslationMap = {
     },
     fields: {
       name: "Name",
+      preferredName: "Preferred name",
       email: "Email (@cs.toronto.edu)",
       role: "Role",
       calendarEmail: "Calendar email",
@@ -1535,7 +1537,7 @@ export const en: TranslationMap = {
       timezone: "Timezone",
       slackUserId: "Slack",
       personalWebsite: "Website",
-      hoursPerWeek: "Hours per week",
+      hoursPerWeek: "Hours per week on Jinesis projects",
       avatarUrl: "Profile picture",
       correspondenceEmail: "Correspondence email",
       whatsapp: "WhatsApp",
@@ -1560,6 +1562,9 @@ export const en: TranslationMap = {
     },
     timezone: {
       prefilled: "Filled in as {zone} from “{location}”. Change it if that is wrong.",
+    },
+    whatsapp: {
+      needsCountryCode: "Add a country code (e.g. +1) so the number is dialable from abroad.",
     },
   },
   myWork: {
