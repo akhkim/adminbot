@@ -3807,6 +3807,50 @@
   vertical-align: 1px;
 }
 
+/* The ARR route, styled as a sibling of the deadline label rather than another
+   muted chip: which of the two routes is open decides whether a paper can use this
+   date at all, so it carries color where the label carries none. */
+.deadline-row__route {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px var(--space-2);
+  border: 1px solid currentcolor;
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+  vertical-align: 1px;
+}
+
+.deadline-row__route[data-route="direct"] {
+  color: var(--accent, var(--muted));
+}
+
+.deadline-row__route[data-route="commitment"] {
+  color: var(--ok-muted, var(--muted));
+}
+
+.deadlines__filter {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.deadlines__filter button[aria-pressed="true"] {
+  background: var(--bg-accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.deadlines__filter-count {
+  margin-left: var(--space-2);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
 .deadline-row__note {
   font-size: var(--control-ui-text-xs);
   color: var(--muted);

@@ -49,6 +49,38 @@ describe("AdminBot deadline dataset generation", () => {
     expect(deadlines).toEqual([...deadlines].sort());
   });
 
+  // The archival split is the board's organising idea, and it is stamped by the collector rather
+  // than re-derived per surface (see is_archival in scripts/adminbot_deadlines.py). A generator
+  // that stopped emitting the field would leave every venue reading as non-archival, which is
+  // silent: the board would still render, just with an empty archival column.
+  it("stamps the archival classification onto every venue", () => {
+    for (const venue of controlUiVenues) {
+      expect(typeof venue.archival).toBe("boolean");
+    }
+    expect(controlUiVenues.some((venue) => venue.archival)).toBe(true);
+  });
+
+  it("only calls a venue archival when its family and track say so", () => {
+    const ARR = ["ACL", "EMNLP", "NAACL", "EACL"];
+    const ML = ["NeurIPS", "ICML", "ICLR", "COLM", "CLeaR"];
+    for (const venue of controlUiVenues.filter((candidate) => candidate.archival)) {
+      expect([...ARR, ...ML]).toContain(venue.venue_family);
+      expect(["main", "demo"]).toContain(venue.track);
+    }
+    // Workshops are never archival, whichever family they belong to.
+    for (const venue of controlUiVenues.filter((candidate) => candidate.track === "workshop")) {
+      expect(venue.archival).toBe(false);
+    }
+  });
+
+  it("tags each ARR-family entry with the route it opens", () => {
+    const routed = controlUiVenues.filter((venue) => venue.submission_type);
+    expect(routed.length).toBeGreaterThan(0);
+    for (const venue of routed) {
+      expect(["direct", "commitment"]).toContain(venue.submission_type);
+    }
+  });
+
   it("gives every venue a unique id", () => {
     const ids = venuesDoc.items.map((item) => item.id);
     expect(new Set(ids).size).toBe(ids.length);

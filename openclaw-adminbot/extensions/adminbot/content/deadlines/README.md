@@ -21,11 +21,55 @@ Lab-wide conference & workshop **deadline collection + reminders** for
 
 ## The venue set (from Zhijing's guidebook)
 
-ACL / EMNLP / NAACL / EACL (main + demo), NeurIPS / ICML / ICLR / COLM (main),
-IASEAI (non-archival), and the **workshops** of the eight. Only _upcoming_
-deadlines are tracked; as of the last collection the live ones are the NeurIPS
-2026 workshops (Aug 29), EMNLP commitment (Aug 2), ARR August (Aug 3), the
-NeurIPS 2026 rebuttal (Aug 3), ICLR 2027 abstract (Sep 19), NAACL 2027 (Oct 12).
+ACL / EMNLP / NAACL / EACL (main + demo), NeurIPS / ICML / ICLR / COLM / CLeaR
+(main), IASEAI (non-archival), and the **workshops** of the eight — CLeaR is
+tracked for its main track only. Only _upcoming_ deadlines are collected.
+
+### Archival vs non-archival
+
+Every venue carries an `archival` flag, and the board is organised around it,
+because it is the question a member is actually asking when they scan these
+dates:
+
+- **Archival** — publishing here consumes the paper, so it cannot then go to a
+  second archival venue. The *ACL main and demo tracks, and the ML conferences'
+  main tracks.
+- **Non-archival** — the paper stays free to be submitted onward. Every
+  workshop, and IASEAI.
+- Neither — a rebuttal is work on a paper already in, not somewhere to send a
+  new one, so it sits outside both columns.
+
+The policy is written once, in `is_archival()` in `scripts/adminbot_deadlines.py`,
+and the collector stamps the result onto each venue. Nothing downstream re-derives
+it: the Control UI, the served board and the calendar publisher all read the field.
+A family nobody has classified is treated as non-archival and stays out of the
+archival column, so an unrecognised venue can never be presented as safe advice.
+
+### ARR routes
+
+The *ACL venues take papers two ways, and which one is open depends on the
+paper's history. Each is its own dated entry, tagged `submission_type`:
+
+- `direct` — submit fresh into the ARR cycle.
+- `commitment` — attach reviews the paper already has to a specific venue.
+
+OpenReview names commitment venues with an `_ARR_Commitment` suffix, which is
+what the collector classifies on.
+
+### What the weekly sweep fetches
+
+`refresh-venues` walks every tracked family's OpenReview workshop parent across a
+rolling two-year window (never a pinned year — a hardcoded one would keep working
+until its round closed and then return nothing forever without failing). Each
+workshop's deadline comes from its **Submission invitation**, not its group: the
+group's `date`/`start_date` are when the workshop *runs*, months after the CFP
+closes. An expired invitation answers 400, which is exactly the past deadlines
+this file means to drop.
+
+Main-conference dates stay in the curated table in
+`scripts/adminbot-deadline-collect.py` and always win — they change slowly and
+must be exact. **Still needing a verified CFP: ICML, COLM, CLeaR and IASEAI main
+tracks, and ACL/EACL.** Add them there as their official dates are announced.
 
 ## OpenReview stop-condition
 
