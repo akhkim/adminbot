@@ -1365,6 +1365,7 @@ export const en: TranslationMap = {
       week: "Hours/week",
       month: "Hours/month",
     },
+    totalWithCapacity: "{hours} · {percent}%",
     hoursValue: {
       day: "{hours} h/day",
       week: "{hours} h/wk",

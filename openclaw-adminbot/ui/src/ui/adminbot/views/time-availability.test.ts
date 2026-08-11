@@ -305,6 +305,46 @@ describe("the holiday override", () => {
   });
 });
 
+// The headroom reading Luke's percent axis gave for free: a bar is legible as a share of the
+// member's week, not just as a number. Kept in hours so a member with no declared capacity still
+// gets a chart -- which is why percent was dropped in the first place.
+describe("capacity framing", () => {
+  it("labels each bar with its share of capacity alongside the hours", () => {
+    // 20 h/wk against the 40 h/wk capacity on the fixture member.
+    const container = renderView();
+    expect(container.querySelector(".adminbot-time-chart")?.textContent).toContain("50%");
+    expect(container.querySelector(".adminbot-time-chart")?.textContent).toContain("20 h/wk");
+  });
+
+  it("says the same percentage whichever unit the axis is in", () => {
+    for (const hoursUnit of ["day", "week", "month"] as const) {
+      const text = renderView({ hoursUnit }).querySelector(".adminbot-time-chart")?.textContent;
+      expect(text).toContain("50%");
+    }
+  });
+
+  it("falls back to bare hours when no capacity is declared", () => {
+    const text = renderView({
+      members: [member({ hours_per_week: undefined } as Partial<AdminBotLabMember>)],
+    }).querySelector(".adminbot-time-chart")?.textContent;
+    expect(text).toContain("20 h/wk");
+    expect(text).not.toContain("%");
+  });
+
+  // A chart scaled to its own tallest bar cannot show headroom -- every member would look equally
+  // busy regardless of what they had committed.
+  it("scales the axis to capacity, so a half-full week looks half full", () => {
+    const container = renderView();
+    const bars = [...container.querySelectorAll(".adminbot-time-chart__segment")];
+    expect(bars.length).toBeGreaterThan(0);
+    const plotHeight = 360 - 28 - 64;
+    for (const bar of bars) {
+      // 20 of 40 hours against an axis that reaches at least capacity: never more than ~60% tall.
+      expect(Number(bar.getAttribute("height"))).toBeLessThan(plotHeight * 0.6);
+    }
+  });
+});
+
 describe("the hours unit", () => {
   const scaled = [
     { start: "2026-03-02", end: "2026-03-15", project: "Atlas", hours_per_week: 21 },

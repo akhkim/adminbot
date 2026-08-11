@@ -257,6 +257,33 @@ export function hoursIn(weeklyHours: number, unit: TimeAvailabilityHoursUnit): n
   return weeklyHours * WEEKS_PER_UNIT[unit];
 }
 
+/**
+ * A bar's total, written as hours and — when the member has declared a capacity — as the share of
+ * that capacity it uses.
+ *
+ * Luke's chart plotted percent of capacity outright, which made over-commitment obvious at a glance
+ * but needed `hours_per_week` as a denominator: a member who had not set one got no chart at all.
+ * Hours keep the chart working for everyone; the percentage rides alongside so the headroom reading
+ * survives for everyone who has set a capacity, which is most people.
+ *
+ * The percentage is unit-independent by construction: it is a ratio of two weekly-hours figures, so
+ * it reads the same whether the axis is in h/day, h/wk or h/mo.
+ */
+function formatTotal(
+  weeklyHours: number,
+  unit: TimeAvailabilityHoursUnit,
+  capacity: number,
+): string {
+  const hours = formatHours(weeklyHours, unit);
+  if (capacity <= 0) {
+    return hours;
+  }
+  return t("adminbotTimeAvailability.totalWithCapacity", {
+    hours,
+    percent: formatNumber(Math.round((weeklyHours / capacity) * 100)),
+  });
+}
+
 function formatHours(weeklyHours: number, unit: TimeAvailabilityHoursUnit): string {
   return t(`adminbotTimeAvailability.hoursValue.${unit}`, {
     hours: formatNumber(hoursIn(weeklyHours, unit)),
@@ -448,8 +475,16 @@ function yAxisMaximum(
   capacity: number,
   unit: TimeAvailabilityHoursUnit,
 ): number {
-  const highest = hoursIn(Math.max(capacity, ...segments.map((segment) => segment.total), 1), unit);
-  return Math.ceil(highest / axisStep(highest)) * axisStep(highest);
+  const tallest = hoursIn(Math.max(...segments.map((segment) => segment.total), 1), unit);
+  // The axis always reaches the member's capacity, so a week that uses half of it looks half full
+  // rather than filling the frame -- that headroom reading is the thing Luke's percent axis gave
+  // for free, and a chart scaled to its own tallest bar cannot show it.
+  const highest = Math.max(hoursIn(capacity, unit), tallest);
+  const step = axisStep(highest);
+  const rounded = Math.ceil(highest / step) * step;
+  // One more step when the tallest bar lands exactly on the top gridline, so the bar stops short of
+  // the frame and its total label has somewhere to sit.
+  return rounded > tallest ? rounded : rounded + step;
 }
 
 function renderTimeChart(
@@ -493,7 +528,7 @@ function renderTimeChart(
             allocations: segment.allocations
               .map((allocation) => `${allocation.name} ${formatHours(allocation.hours, unit)}`)
               .join(", "),
-            total: formatHours(segment.total, unit),
+            total: formatTotal(segment.total, unit, capacity),
           }),
     )
     .join(" ");
@@ -612,7 +647,7 @@ function renderTimeChart(
                   hours: formatHours(allocation.hours, unit),
                   start: tableDate(segment.start),
                   end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
-                  total: formatHours(segment.total, unit),
+                  total: formatTotal(segment.total, unit, capacity),
                 })}</title>
               </rect>
             `;
@@ -633,7 +668,7 @@ function renderTimeChart(
                   x=${barX + barWidth / 2}
                   y=${y(segment.total) - 8}
                   text-anchor="middle"
-                >${formatHours(segment.total, unit)}</text>`
+                >${formatTotal(segment.total, unit, capacity)}</text>`
                 : nothing
             }
             <text
