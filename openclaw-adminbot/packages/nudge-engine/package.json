@@ -1,0 +1,31 @@
+{
+  "name": "@openclaw/nudge-engine",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Stateless frontier resolver over the PaperFlow DAG — decides who to nudge about what, and why",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./graph/paperflow": "./src/graph/paperflow.ts"
+  },
+  "files": [
+    "src",
+    "docs",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "demo": "node demo/serve.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "keywords": [
+    "dag",
+    "workflow",
+    "nudge",
+    "adminbot"
+  ],
+  "license": "MIT"
+}
