@@ -1421,6 +1421,78 @@ describe("AdminBotService", () => {
     });
   });
 
+  // upsertLabMember merges its input over the stored record, so callers legitimately send only the
+  // fields they are changing. Validating the raw patch instead of the merge meant a partial update
+  // read as "a member with no name" -- and because the HTTP layer casts the JSON body straight to
+  // the input type, the missing name reached validateLabMember as undefined and threw a TypeError
+  // out of the route as a 500. That is the whole "add a commitment button does nothing" bug: the
+  // Control UI's schedule editor sends availability/time_off/milestones and never a name, and an
+  // admin session routes those through this method rather than through updateOwnProfile.
+  describe("partial updates", () => {
+    function seeded() {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "ada",
+          name: "Ada Lovelace",
+          privilege_level: "admin",
+          location: "Toronto",
+        }),
+      );
+      return service;
+    }
+
+    it("accepts a schedule patch that carries no name, keeping the stored one", () => {
+      const service = seeded();
+      const saved = unwrap(
+        service.upsertLabMember({
+          id: "ada",
+          availability: [
+            { start: "2026-04-01", end: "2026-04-30", hours_per_week: 10, project: "Writing" },
+          ],
+        } as never),
+      );
+      expect(saved.name).toBe("Ada Lovelace");
+      expect(saved.location).toBe("Toronto");
+      expect(saved.availability).toHaveLength(1);
+    });
+
+    it("accepts a time-off patch that carries no name", () => {
+      const service = seeded();
+      const saved = unwrap(
+        service.upsertLabMember({
+          id: "ada",
+          time_off: [
+            { start: "2026-12-24", end: "2027-01-02", kind: "vacation", availability: "none" },
+          ],
+        } as never),
+      );
+      expect(saved.name).toBe("Ada Lovelace");
+      expect(saved.time_off).toHaveLength(1);
+    });
+
+    // A genuinely nameless *new* member is still refused -- but as a 400 the caller can read,
+    // never as a thrown TypeError.
+    it("refuses a new member with no name, without throwing", () => {
+      const service = new AdminBotService();
+      const result = service.upsertLabMember({ id: "ghost", availability: [] } as never);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.status).toBe(400);
+        expect(result.error.message).toBe("member name is required");
+      }
+    });
+
+    it("still refuses a patch that blanks the name outright", () => {
+      const service = seeded();
+      const result = service.upsertLabMember({ id: "ada", name: "   " } as never);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toBe("member name is required");
+      }
+    });
+  });
+
   describe("mandatory profile fields", () => {
     it("lists current members missing a required field, and skips alumni/external", () => {
       const service = new AdminBotService();

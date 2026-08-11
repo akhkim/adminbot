@@ -606,7 +606,17 @@ export class AdminBotService {
     const existing = this.store.getLabMember(member.id);
     const privilegeLevel =
       member.privilege_level ?? existing?.privilege_level ?? DEFAULT_MEMBER_PRIVILEGE_LEVEL;
-    const validation = validateLabMember(member, privilegeLevel, existing?.email);
+    // This is a patch, not a replace: `stored` below is {...existing, ...member}, and callers send
+    // only the fields they are changing. So a *required* field has to be checked against what will
+    // actually be stored rather than against the patch -- an admin saving their schedule sends
+    // `availability` and nothing else, and validating the patch alone read that as a member with no
+    // name at all. Every other check in validateLabMember is already guarded on `!== undefined`, so
+    // it still only inspects what this request actually sent.
+    const validation = validateLabMember(
+      { ...member, name: member.name ?? existing?.name ?? "" },
+      privilegeLevel,
+      existing?.email,
+    );
     if (validation) {
       return serviceError(400, validation);
     }
@@ -1929,7 +1939,10 @@ function validateLabMember(
   if (!member.id.trim()) {
     return "member id is required";
   }
-  if (!member.name.trim()) {
+  // Optional-chained even though the type says `name` is required: the HTTP layer casts a parsed
+  // JSON body straight to this type, so an absent name reaches here as undefined and used to throw
+  // a TypeError out of the route as a 500 rather than answering 400.
+  if (!member.name?.trim()) {
     return "member name is required";
   }
   if (member.status && !adminBotMemberStatuses.includes(member.status)) {
