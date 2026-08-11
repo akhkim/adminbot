@@ -1394,7 +1394,7 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { members: Array<{ id: string; missing_fields: string[] }> };
     expect(body.members.map((member) => member.id)).toEqual(["blank"]);
-    expect(body.members[0]?.missing_fields).toContain("role");
+    expect(body.members[0]?.missing_fields).toContain("cv_url");
   });
 
   it("lets the service principal (unlike /nudges/send) run the daily mandatory-fields reminder, since it takes no caller-supplied content", async () => {

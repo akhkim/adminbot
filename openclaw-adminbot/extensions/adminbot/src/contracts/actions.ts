@@ -99,6 +99,69 @@ export const adminBotMemberRoles = [
 
 export type AdminBotMemberRole = (typeof adminBotMemberRoles)[number];
 
+/**
+ * The profile fields a member is expected to fill in, in the order the profile page asks for them.
+ *
+ * One list, deliberately here rather than on either side that uses it. The Control UI renders the
+ * required marks and the completion ledger from this; the service's daily reminder chases exactly
+ * the same set. Those were two hand-maintained lists that disagreed from the day they were written
+ * — the service chased five fields the page called optional, and the page marked eight the service
+ * never mentioned — so a member could fill in everything the page asked and still be nudged, or be
+ * nudged for something the page told them was skippable. The contracts module is the one place both
+ * may import (`extensions/` must not reach into `ui/`, and the UI already takes
+ * `adminBotMemberRoles` from here), so it is the only place the list can live and stay true.
+ *
+ * Membership is "the member sheet's own columns, plus the CV": what the lab keeps a record of for
+ * everyone. Fields that not everyone has an answer for (a Twitter, a graduation month) stay out —
+ * a checklist that can never reach zero stops being a checklist and just nags. So do the fields the
+ * lab plans *with* rather than files (hours per week, timezone): they are still editable and still
+ * on the page, they simply are not what a member is chased about.
+ *
+ * `name` is here because the profile page marks it required, but the service leaves it out of the
+ * reminder: validateLabMember already refuses to store a member without one, so it can never be the
+ * reason a stored record is incomplete.
+ */
+export const adminBotMandatoryProfileFields = [
+  "name",
+  "calendar_email",
+  "location",
+  "slack_user_id",
+  "research_topics",
+  "correspondence_email",
+  "whatsapp",
+  "joined_month",
+  "github_url",
+  "linkedin_url",
+  "linkedin_urn",
+  "cv_url",
+  "openreview_id",
+] as const;
+
+export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFields)[number];
+
+/**
+ * Plain-English names for the fields above, used to compose the reminder.
+ *
+ * Deliberately not the UI's translated labels: this text goes out over Slack to a member who has no
+ * locale set on it, and the message has to be byte-identical for every recipient so it can be sent
+ * once rather than composed per person.
+ */
+export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfileField, string> = {
+  name: "Name",
+  calendar_email: "Calendar email",
+  location: "Location",
+  slack_user_id: "Slack",
+  research_topics: "Research topics",
+  correspondence_email: "Correspondence email",
+  whatsapp: "WhatsApp",
+  joined_month: "Joined month",
+  github_url: "GitHub",
+  linkedin_url: "LinkedIn",
+  linkedin_urn: "LinkedIn URN",
+  cv_url: "CV",
+  openreview_id: "OpenReview",
+};
+
 export const adminBotMemberStatuses = [
   "active",
   "part_time",

@@ -2,6 +2,7 @@ import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
+import { adminBotMandatoryProfileFields } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { renderProfile } from "./profile.ts";
 
 function createMember(overrides: Partial<LabMember> = {}): LabMember {
@@ -302,11 +303,20 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     const container = renderPage(createState(createMember()), vi.fn());
     const input = container.querySelector<HTMLInputElement>('input[name="linkedin_urn"]');
     expect(input).not.toBeNull();
-    // MANDATORY_PROFILE_FIELDS in extensions/adminbot/src/kernel/service.ts counts it, so the
-    // Slack nudge chases it either way. Marking it optional here just hid that from the member.
     const row = input?.closest(".profile__form-row");
     expect(row?.querySelector(".profile__mandatory")).not.toBeNull();
     expect(row?.querySelector(".profile__optional")).toBeNull();
+  });
+
+  // The page's required marks and the service's daily reminder read one list, so neither can chase
+  // a field the other calls skippable. They used to be two hand-kept lists that never agreed.
+  it("marks exactly the shared mandatory list required, and nothing else", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+    const marked = [...container.querySelectorAll<HTMLElement>(".profile__form-row")]
+      .filter((row) => row.querySelector(".profile__mandatory"))
+      .map((row) => row.querySelector<HTMLElement>("[name]")?.getAttribute("name"))
+      .filter((name): name is string => Boolean(name));
+    expect(marked.toSorted()).toEqual([...adminBotMandatoryProfileFields].toSorted());
   });
 
   // Time zone is the one field derivable from another the member already filled in, so the control

@@ -36,6 +36,8 @@ import type {
 } from "../contracts/actions.js";
 import {
   adminBotExternalCollaboratorSubgroups,
+  adminBotMandatoryProfileFieldLabels,
+  adminBotMandatoryProfileFields,
   adminBotMemberRoles,
   adminBotMemberStatuses,
   ADMINBOT_MAX_LABEL_LENGTH,
@@ -1848,43 +1850,18 @@ function serviceError<T>(status: number, message: string): AdminBotServiceRespon
   return { ok: false, status, error: { message } };
 }
 
-// Mirrors the non-optional entries of PROFILE_FIELDS in
-// ui/src/ui/adminbot/views/profile.ts. The two lists have to stay in sync by hand: the server has
-// no access to the UI's field schema (extensions must not import ui/, see extensions/CLAUDE.md),
-// and the UI is where "optional: true" is actually declared. Keep this list, and the labels below
-// it, in the same order and membership as the UI's mandatory set whenever that changes.
 // How long a member is left alone after a mandatory-fields reminder. The cron script may run as
 // often as it likes -- daily is fine, and gives a member who fills their profile in on day one a
 // prompt exit from the list -- but nobody is nudged about the same gap more than once per window.
 const MANDATORY_FIELDS_REMINDER_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
 
-const MANDATORY_PROFILE_FIELDS = [
-  "role",
-  "affiliation",
-  "location",
-  "timezone",
-  "hours_per_week",
-  "slack_user_id",
-  "research_topics",
-  "projects",
-  "linkedin_urn",
-] as const;
-
-const MANDATORY_PROFILE_FIELD_LABELS: Record<(typeof MANDATORY_PROFILE_FIELDS)[number], string> = {
-  role: "Role",
-  affiliation: "Affiliation",
-  location: "Location",
-  timezone: "Timezone",
-  hours_per_week: "Hours per week",
-  slack_user_id: "Slack",
-  research_topics: "Research topics",
-  projects: "Projects",
-  linkedin_urn: "LinkedIn URN",
-};
-
-// name is deliberately excluded even though the UI also treats it as mandatory: validateLabMember
-// already refuses to store a member with no name, so it can never actually be the reason a stored
-// record is incomplete.
+// The one list, shared with the Control UI through the contracts module so the reminder can never
+// chase a field the profile page calls optional. See adminBotMandatoryProfileFields.
+//
+// name is dropped here even though the page marks it required: validateLabMember already refuses to
+// store a member with no name, so it can never actually be the reason a stored record is
+// incomplete.
+const MANDATORY_PROFILE_FIELDS = adminBotMandatoryProfileFields.filter((key) => key !== "name");
 function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
   return MANDATORY_PROFILE_FIELDS.filter((key) => {
     const value = member[key];
@@ -1901,7 +1878,7 @@ function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
 // missing subset) keeps the message identical for every recipient, which is what lets it go out
 // through a single sendMemberNudge call instead of one per person.
 function buildMandatoryFieldsReminderMessage(): string {
-  const fields = MANDATORY_PROFILE_FIELDS.map((key) => MANDATORY_PROFILE_FIELD_LABELS[key]).join(
+  const fields = MANDATORY_PROFILE_FIELDS.map((key) => adminBotMandatoryProfileFieldLabels[key]).join(
     ", ",
   );
   return [

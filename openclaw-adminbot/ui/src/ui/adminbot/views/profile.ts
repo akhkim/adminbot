@@ -11,7 +11,10 @@
 // Saving goes through the same self-edit path the Lab Members table uses, whose server-side
 // whitelist drops governance fields. Nothing here can write privilege_level, status, or email.
 import { html, nothing } from "lit";
-import { adminBotMemberRoles } from "../../../../../extensions/adminbot/src/contracts/actions.js";
+import {
+  adminBotMandatoryProfileFields,
+  adminBotMemberRoles,
+} from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
@@ -68,12 +71,23 @@ type ProfileField = {
   type: ProfileFieldType;
   // Dropdown-only: the closed set of values the control (and the server) accept.
   options?: readonly string[];
-  // Keeps a field out of the blanks count, the fill-in form, and the "profile complete" badge.
-  // Not everyone has a Twitter, and a checklist that can never reach zero stops being a
-  // checklist -- it just nags.
-  optional?: boolean;
   group: ProfileFieldGroup;
 };
+
+// Which fields are required is not declared here. It comes from adminBotMandatoryProfileFields in
+// the contracts module, which the service's reminder reads from too -- so the required marks on
+// this page, the completion ledger, and what the lab actually chases people about are one list
+// rather than three that agree by hand. They did not agree: the reminder used to name five fields
+// this page called optional, and this page marked eight the reminder never mentioned.
+//
+// Everything not on that list is optional, and being optional keeps a field out of the blanks
+// count, the fill-in prompt and the "profile complete" badge. Not everyone has a Twitter, and a
+// checklist that can never reach zero stops being a checklist -- it just nags.
+const MANDATORY_FIELD_KEYS = new Set<string>(adminBotMandatoryProfileFields);
+
+function isOptional(field: EditableField): boolean {
+  return !MANDATORY_FIELD_KEYS.has(field.key);
+}
 
 function timezoneOptions(): readonly string[] {
   try {
@@ -102,7 +116,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     example: adminBotMemberRoles[0] ?? "",
     type: "dropdown",
     options: adminBotMemberRoles,
-    optional: true,
     group: "identity",
   },
   {
@@ -117,7 +130,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.affiliation",
     example: "University of Toronto",
     type: "short_text",
-    optional: true,
     group: "work",
   },
   {
@@ -133,7 +145,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     example: "America/Toronto",
     type: "dropdown",
     options: timezoneOptions(),
-    optional: true,
     group: "work",
   },
   {
@@ -141,7 +152,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.hoursPerWeek",
     example: "20",
     type: "numeric",
-    optional: true,
     group: "work",
   },
   {
@@ -163,7 +173,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.projects",
     example: "AdminBot",
     type: "list",
-    optional: true,
     group: "research",
   },
   {
@@ -191,12 +200,11 @@ const PROFILE_FIELDS: ProfileField[] = [
   },
   {
     // Empty for every row on the sheet today; it is the column alumni will eventually be aged out
-    // by, and optional because a current member has no answer for it.
+    // by, which is why it is off the mandatory list -- a current member has no answer for it.
     key: "graduated_month",
     labelKey: "profile.fields.graduatedMonth",
     example: "2027-06",
     type: "short_text",
-    optional: true,
     group: "work",
   },
   {
@@ -204,7 +212,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.lesswrong",
     example: "https://www.lesswrong.com/users/ada",
     type: "link",
-    optional: true,
     group: "links",
   },
   {
@@ -212,7 +219,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.avatarUrl",
     example: "",
     type: "image",
-    optional: true,
     group: "identity",
   },
   {
@@ -220,7 +226,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.personalWebsite",
     example: "https://ada.dev",
     type: "link",
-    optional: true,
     group: "links",
   },
   {
@@ -238,14 +243,10 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "links",
   },
   {
-    // Mandatory, and the one field on this page nobody can fill in from what they already know:
-    // LinkedIn publishes no mapping from a vanity URL to a URN, so the value only exists once the
-    // member reads it off the collector below. The suggestion card in renderSuggestions is the
-    // hand-off, and it disappears the moment this is filled.
-    //
-    // The service already counts it in MANDATORY_PROFILE_FIELDS (kernel/service.ts), which is what
-    // drives the Slack reminder -- so leaving it optional here meant the lab nudged people about a
-    // field their own profile page marked as skippable.
+    // The one field on this page nobody can fill in from what they already know: LinkedIn
+    // publishes no mapping from a vanity URL to a URN, so the value only exists once the member
+    // reads it off the collector below. The suggestion card in renderSuggestions is the hand-off,
+    // and it disappears the moment this is filled.
     key: "linkedin_urn",
     labelKey: "profile.fields.linkedinUrn",
     example: "ACoAAB1234567",
@@ -260,7 +261,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.intakeFormUrl",
     example: "https://docs.google.com/forms/d/e/.../viewform?edit2=...",
     type: "link",
-    optional: true,
     group: "links",
   },
   {
@@ -275,7 +275,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.scholar",
     example: "https://scholar.google.com/citations?user=abc123",
     type: "link",
-    optional: true,
     group: "links",
   },
   {
@@ -290,7 +289,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.twitter",
     example: "https://x.com/ada",
     type: "link",
-    optional: true,
     group: "links",
   },
 ];
@@ -502,12 +500,12 @@ function renderPrefillHint(member: LabMember, field: EditableField) {
 }
 
 export function blankFields(member: LabMember): EditableField[] {
-  return EDITABLE_FIELDS.filter((field) => !field.optional && !valueOf(member, field).trim());
+  return EDITABLE_FIELDS.filter((field) => !isOptional(field) && !valueOf(member, field).trim());
 }
 
 // Everything a member may set, blank or not -- what the full editor offers.
 export function requiredFieldCount(): number {
-  return EDITABLE_FIELDS.filter((field) => !field.optional).length;
+  return EDITABLE_FIELDS.filter((field) => !isOptional(field)).length;
 }
 
 // Badges are earned, so each one is derived from a fact on the record rather than stored. A badge
@@ -734,7 +732,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
 // color to say "required" claimed a consequence the form does not have. The dot carries the same
 // mark in the accent the rest of the page already uses for "the lab is waiting on this".
 function renderMandatoryMark(field: EditableField) {
-  if (field.optional) {
+  if (isOptional(field)) {
     return nothing;
   }
   return html`<span class="profile__mandatory" aria-hidden="true"></span
@@ -822,7 +820,7 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                     <label class="profile__form-row">
                       <span class="profile__form-label">
                         ${labelFor(field.key)}${renderMandatoryMark(field)}
-                        ${field.optional
+                        ${isOptional(field)
                           ? html`<span class="profile__optional"
                               >${t("profile.basics.optional")}</span
                             >`
@@ -867,7 +865,7 @@ function renderCompletionLedger(member: LabMember) {
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
   const groups = PROFILE_FIELD_GROUPS.map((group) => ({
     id: group.id,
-    fields: EDITABLE_FIELDS.filter((field) => !field.optional && field.group === group.id),
+    fields: EDITABLE_FIELDS.filter((field) => !isOptional(field) && field.group === group.id),
   })).filter((group) => group.fields.length > 0);
   return html`
     <div

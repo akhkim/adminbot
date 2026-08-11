@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { adminBotMandatoryProfileFields } from "../contracts/actions.js";
 import { AdminBotService, payloadHash } from "./service.js";
 
 function unwrap<T>(
@@ -1436,15 +1437,18 @@ describe("AdminBotService", () => {
           id: "full",
           name: "Full",
           privilege_level: "member",
-          role: "Undergraduate Student",
-          affiliation: "UofT",
+          calendar_email: "full@gmail.com",
           location: "Toronto",
-          timezone: "America/Toronto",
-          hours_per_week: 10,
           slack_user_id: "U9",
           research_topics: ["nlp"],
-          projects: ["adminbot"],
+          correspondence_email: "full@cs.toronto.edu",
+          whatsapp: "(+1) 555 0100",
+          joined_month: "2026-03",
+          github_url: "https://github.com/full",
+          linkedin_url: "https://www.linkedin.com/in/full",
           linkedin_urn: "ACoAAB1234567",
+          cv_url: "https://example.com/cv.pdf",
+          openreview_id: "~Full_Member1",
         }),
       );
       unwrap(service.upsertLabMember({ id: "gone", name: "Gone", status: "alumni" }));
@@ -1453,16 +1457,32 @@ describe("AdminBotService", () => {
       expect(result.members.map((member) => member.id)).toEqual(["blank"]);
       expect(result.members[0]?.missing_fields).toEqual(
         expect.arrayContaining([
-          "role",
-          "affiliation",
+          "calendar_email",
           "location",
-          "timezone",
-          "hours_per_week",
           "slack_user_id",
           "research_topics",
-          "projects",
+          "correspondence_email",
+          "whatsapp",
+          "joined_month",
+          "github_url",
+          "linkedin_url",
           "linkedin_urn",
+          "cv_url",
+          "openreview_id",
         ]),
+      );
+    });
+
+    // The reminder and the profile page's required marks are one list now. Chasing a field the
+    // page calls optional is the bug this pins shut; `name` is the sole documented exception,
+    // because validateLabMember refuses a nameless member outright.
+    it("chases exactly the fields the profile page marks required, less name", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "blank", name: "Blank", privilege_level: "member" }));
+      const missing = unwrap(service.listMembersWithIncompleteMandatoryFields()).members[0]
+        ?.missing_fields;
+      expect(missing).toEqual(
+        adminBotMandatoryProfileFields.filter((field) => field !== "name"),
       );
     });
 
@@ -1487,15 +1507,18 @@ describe("AdminBotService", () => {
         service.upsertLabMember({
           id: "full",
           name: "Full",
-          role: "Undergraduate Student",
-          affiliation: "UofT",
+          calendar_email: "full@gmail.com",
           location: "Toronto",
-          timezone: "America/Toronto",
-          hours_per_week: 10,
           slack_user_id: "U3",
           research_topics: ["nlp"],
-          projects: ["adminbot"],
+          correspondence_email: "full@cs.toronto.edu",
+          whatsapp: "(+1) 555 0100",
+          joined_month: "2026-03",
+          github_url: "https://github.com/full",
+          linkedin_url: "https://www.linkedin.com/in/full",
           linkedin_urn: "ACoAAB1234567",
+          cv_url: "https://example.com/cv.pdf",
+          openreview_id: "~Full_Member1",
         }),
       );
 
@@ -1547,15 +1570,18 @@ describe("AdminBotService", () => {
         service.upsertLabMember({
           id: "full",
           name: "Full",
-          role: "Undergraduate Student",
-          affiliation: "UofT",
+          calendar_email: "full@gmail.com",
           location: "Toronto",
-          timezone: "America/Toronto",
-          hours_per_week: 10,
           slack_user_id: "U1",
           research_topics: ["nlp"],
-          projects: ["adminbot"],
+          correspondence_email: "full@cs.toronto.edu",
+          whatsapp: "(+1) 555 0100",
+          joined_month: "2026-03",
+          github_url: "https://github.com/full",
+          linkedin_url: "https://www.linkedin.com/in/full",
           linkedin_urn: "ACoAAB1234567",
+          cv_url: "https://example.com/cv.pdf",
+          openreview_id: "~Full_Member1",
         }),
       );
 
