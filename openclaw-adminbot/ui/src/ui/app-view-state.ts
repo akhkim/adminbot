@@ -8,7 +8,7 @@ import type {
 import type {
   MilestoneDraft,
   TimeAvailabilityDraft,
-  TimeAvailabilityHoursUnit,
+  TimeAvailabilityRange,
 } from "./adminbot/views/time-availability.ts";
 import type { ChatAbortOptions, ChatSendOptions } from "./app-chat.ts";
 import type { EventLogEntry } from "./app-events.ts";
@@ -354,7 +354,7 @@ export type AppViewState = {
   // the unsaved "add a commitment" draft. Draft lives here rather than in the view so a re-render
   // (the roster reloading underneath, a notice appearing) does not wipe half-typed input.
   adminBotTimeAvailabilityMemberId: string;
-  adminBotTimeAvailabilityHoursUnit: TimeAvailabilityHoursUnit;
+  adminBotTimeAvailabilityRange: TimeAvailabilityRange;
   adminBotTimeAvailabilityDraft: TimeAvailabilityDraft;
   adminBotTimeAwayDraft: TimeAvailabilityDraft;
   adminBotMilestoneDraft: MilestoneDraft;

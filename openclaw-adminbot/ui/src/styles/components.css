@@ -8820,92 +8820,194 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-time-chart-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
+  margin-bottom: var(--space-4);
 }
 
-.adminbot-time-chart__legend {
+/* The schedule chart. Read as a calendar: equal bins left to right, the soonest first. Ink is spent
+   on the bars and the capacity line; the grid is barely there, because it is a reference, not
+   content. */
+.time-chart {
+  margin: 0;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.time-chart__caption {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
-  padding: var(--space-3) var(--space-4) 0;
-  color: var(--text-muted);
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
   font-size: var(--control-ui-text-xs);
+  color: var(--muted);
 }
 
-.adminbot-time-chart__legend span {
+.time-chart__unit {
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+/* Names the capacity line in the same dashed language the line itself uses, so the reader does not
+   have to guess which mark it refers to. */
+.time-chart__capacity-key {
   display: inline-flex;
-  align-items: center;
   gap: var(--space-2);
+  align-items: center;
+  color: var(--text);
 }
 
-.adminbot-time-chart__legend i,
-.adminbot-time-allocation-table__task {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  flex: 0 0 auto;
+.time-chart__capacity-key::before {
+  content: "";
+  width: 18px;
+  border-top: 1px dashed var(--accent, currentcolor);
 }
 
-.adminbot-time-chart {
-  display: block;
+.time-chart__svg {
   width: 100%;
-  min-width: 760px;
-  height: auto;
+  height: 300px;
+  overflow: visible;
 }
 
-.adminbot-time-chart__grid {
-  stroke: #2a2e35;
+.time-chart__grid {
+  stroke: var(--border);
   stroke-width: 1;
-  stroke-dasharray: 3 3;
+  opacity: 0.5;
 }
 
-.adminbot-time-chart__axis {
-  stroke: #9aa0aa;
+.time-chart__axis {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+
+/* Capacity is the one line the whole chart is measured against, so it is the only dashed stroke and
+   the only place the accent appears outside the bars. */
+.time-chart__capacity {
+  stroke: var(--accent, var(--text));
   stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  opacity: 0.9;
 }
 
-.adminbot-time-chart__capacity-line {
-  stroke: #f7615d;
-  stroke-width: 1.5;
-  stroke-dasharray: 4 4;
-  opacity: 0.6;
-}
-
-.adminbot-time-chart__axis-label {
-  fill: #9aa0aa;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.adminbot-time-chart__axis-label--timeline {
+.time-chart__tick,
+.time-chart__bin {
+  fill: var(--muted);
+  font-family: var(--mono);
   font-size: 11px;
 }
 
-.adminbot-time-chart__segment {
-  stroke: none;
+.time-chart__bar {
+  transition: opacity 140ms ease-out;
 }
 
-.adminbot-time-chart__total {
-  fill: #9aa0aa;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+.time-chart__svg:hover .time-chart__bar {
+  opacity: 0.55;
 }
 
-.adminbot-time-chart__total--near {
-  fill: #fbbf24;
+.time-chart__svg .time-chart__bar:hover {
+  opacity: 1;
 }
 
-.adminbot-time-chart__total--over {
-  fill: #f87171;
+/* Only the slice above capacity is tinted, so the eye lands on the overage rather than on a bar
+   that is mostly fine. */
+.time-chart__over {
+  fill: var(--danger, #f7615d);
+  opacity: 0.22;
+  pointer-events: none;
 }
 
-.adminbot-time-chart__capacity-note {
-  padding: 0 var(--space-4) var(--space-3);
-  color: var(--text-muted);
+.time-chart__total {
+  fill: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.time-chart__total--over {
+  fill: var(--danger, #f7615d);
+}
+
+/* A bin the member is away for the whole of. Hatched rather than empty: nothing is bookable here,
+   which is not the same as nothing being booked. */
+.time-chart__away {
+  fill: url(#time-chart-away);
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.time-chart__away-line {
+  stroke: var(--border-strong);
+  stroke-width: 2;
+}
+
+.time-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
   font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.time-chart__legend-item {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.time-chart__legend-item i {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.time-chart__legend-away {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--border-strong) 0 2px,
+    transparent 2px 4px
+  );
+  border: 1px solid var(--border);
+}
+
+.time-chart__note {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* Segmented control for the range. One pressed option, no disabled states -- a disabled current
+   option cannot be tabbed to, which loses the group's own focus order. */
+.time-chart__range {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--panel);
+}
+
+.time-chart__range-option {
+  padding: var(--space-1, 4px) var(--space-3);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  font: inherit;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.time-chart__range-option:hover {
+  color: var(--text);
+}
+
+.time-chart__range-option[aria-pressed="true"] {
+  background: var(--bg-accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.time-chart__range-option:focus-visible {
+  outline: 2px solid var(--accent, var(--text));
+  outline-offset: 1px;
 }
 
 .adminbot-time-allocation-table-wrap {
@@ -8952,23 +9054,6 @@ details[open] > .ov-expandable-toggle::after {
 
 /* Granularity switch and the self-service commitment editor: added with the day/week/month views
    and the add-a-commitment form, which the ported branch did not have. */
-.adminbot-time-availability__unit {
-  display: inline-flex;
-  gap: var(--space-2);
-  align-items: center;
-}
-
-.adminbot-time-availability__unit-label {
-  font-size: var(--control-ui-text-xs);
-  color: var(--muted);
-}
-
-.adminbot-time-availability__unit button[aria-pressed="true"] {
-  background: var(--bg-accent);
-  color: var(--text);
-  font-weight: 600;
-}
-
 /* A checkbox reads as a statement, not as a labelled value, so it sits inline with its text
    rather than in the label-above-control stack the other fields use. */
 .adminbot-form__field--check {

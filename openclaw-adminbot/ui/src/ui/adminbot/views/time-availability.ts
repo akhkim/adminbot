@@ -55,39 +55,48 @@ type TimeAllocationTask = {
   hours: number;
 };
 
+/** One bar: a calendar bin and the hours booked inside it. */
 type TimeAllocationSegment = {
   start: string;
   end: string;
   label: string;
   allocations: Array<{ key: string; name: string; hours: number }>;
   total: number;
-  /** True when a whole-day time-off row covers this bucket entirely. */
+  /** True when time off covers the whole bin, so nothing is bookable in it. */
   suppressed: boolean;
+  /** Calendar days the bin spans, which is what the capacity line is prorated over. */
+  days: number;
 };
 
 /**
  * The unit the chart and tables quote hours in. Purely a display choice — see the header: it never
  * changes the bars, only the number written on them.
  */
-export type TimeAvailabilityHoursUnit = "day" | "week" | "month";
-
-export const TIME_AVAILABILITY_HOURS_UNITS: readonly TimeAvailabilityHoursUnit[] = [
-  "day",
-  "week",
-  "month",
-];
-
 /**
- * Weeks-per-unit, applied to the stored `hours_per_week` figure.
+ * How much calendar the chart shows, and therefore how wide one bar is.
  *
- * A month is 52/12 weeks rather than a real calendar month: every bar spans an arbitrary stretch of
- * days, so there is no particular month to take the length of. The average is the only figure that
- * means the same thing on every bar, which is the whole point of this being a unit and not a bucket.
+ * Fixed bins, not data-derived segments. A schedule is read against the calendar -- "what does my
+ * next month look like" -- and a bar per change in commitments cannot answer that: two bars might
+ * be a day and a year, side by side and the same width. Each range is a whole number of equal bins
+ * so the x axis is a ruler.
  */
-const WEEKS_PER_UNIT: Record<TimeAvailabilityHoursUnit, number> = {
-  day: 1 / 7,
-  week: 1,
-  month: 52 / 12,
+export type TimeAvailabilityRange = "week" | "month" | "year";
+
+export const TIME_AVAILABILITY_RANGES: readonly TimeAvailabilityRange[] = ["week", "month", "year"];
+
+type RangeShape = {
+  /** How many bars. */
+  bins: number;
+  /** Days per bar, for week/month. Months vary in length, so "year" is handled by the calendar. */
+  days?: number;
+  /** Whether bins step by calendar month rather than by a fixed day count. */
+  monthly?: boolean;
+};
+
+const RANGE_SHAPES: Record<TimeAvailabilityRange, RangeShape> = {
+  week: { bins: 7, days: 1 },
+  month: { bins: 4, days: 7 },
+  year: { bins: 12, monthly: true },
 };
 
 /**
@@ -166,8 +175,8 @@ export type AdminBotTimeAvailabilityProps = {
   error: string | null;
   selectedMemberId: string;
   onMemberChange: (memberId: string) => void;
-  hoursUnit: TimeAvailabilityHoursUnit;
-  onHoursUnitChange: (unit: TimeAvailabilityHoursUnit) => void;
+  range: TimeAvailabilityRange;
+  onRangeChange: (range: TimeAvailabilityRange) => void;
   /** The signed-in member. The editor renders only when this matches the selected member. */
   viewerMemberId: string | null;
   /** The Jinesis-commitment form's draft. Its category is always "jinesis". */
@@ -188,7 +197,9 @@ const CHART_LEFT = 58;
 const CHART_RIGHT = 20;
 const CHART_TOP = 28;
 const CHART_BOTTOM = 64;
-const MIN_BAR_SLOT = 88;
+// A fixed viewBox scaled to the container: the bin count is fixed per range, so the chart never
+// needs to grow horizontally or scroll.
+const CHART_WIDTH = 720;
 // Copied from EffortStackChart: stable color per task name, assigned in first-seen order.
 const CHART_COLORS = [
   "#3575DA",
@@ -201,11 +212,6 @@ const CHART_COLORS = [
   "#D4A72C",
 ] as const;
 const CHART_NEUTRAL_COLOR = "#9AA0AA";
-
-// One bar per change in the schedule keeps the count near the number of commitments, but a member
-// with a long history of short overlapping rows can still outrun the axis. Cap and say so, rather
-// than rendering a smear.
-const MAX_SEGMENTS = 40;
 
 // How many rows the side table shows before it stops being a summary.
 const BIG_DEADLINE_LIMIT = 6;
@@ -253,40 +259,35 @@ function formatNumber(value: number): string {
  * Storage is always hours per week — that is what the member typed and what the service validates
  * against 0–168 — so this is a display conversion and nothing writes the result back.
  */
-export function hoursIn(weeklyHours: number, unit: TimeAvailabilityHoursUnit): number {
-  return weeklyHours * WEEKS_PER_UNIT[unit];
+/**
+ * Hours a weekly rate contributes to a stretch of `days`.
+ *
+ * Everything is stored as hours per week, so a bin's height is that rate prorated over the days the
+ * bin actually covers. This is what makes the three ranges comparable: a bar is always "hours
+ * committed inside this bar", whether the bar is a day, a week or a month.
+ */
+function hoursOver(weeklyHours: number, days: number): number {
+  return (weeklyHours * days) / 7;
+}
+
+function formatHours(hours: number): string {
+  return t("adminbotTimeAvailability.hoursValue", { hours: formatNumber(hours) });
 }
 
 /**
- * A bar's total, written as hours and — when the member has declared a capacity — as the share of
- * that capacity it uses.
+ * A bar's total, plus the share of the member's capacity it uses when they have declared one.
  *
- * Luke's chart plotted percent of capacity outright, which made over-commitment obvious at a glance
- * but needed `hours_per_week` as a denominator: a member who had not set one got no chart at all.
- * Hours keep the chart working for everyone; the percentage rides alongside so the headroom reading
- * survives for everyone who has set a capacity, which is most people.
- *
- * The percentage is unit-independent by construction: it is a ratio of two weekly-hours figures, so
- * it reads the same whether the axis is in h/day, h/wk or h/mo.
+ * Capacity is the headroom reading: without it a chart scaled to its own tallest bar makes every
+ * member look equally busy. With it, half a week reads as half a week.
  */
-function formatTotal(
-  weeklyHours: number,
-  unit: TimeAvailabilityHoursUnit,
-  capacity: number,
-): string {
-  const hours = formatHours(weeklyHours, unit);
-  if (capacity <= 0) {
-    return hours;
+function formatTotal(hours: number, capacityHours: number): string {
+  const label = formatHours(hours);
+  if (capacityHours <= 0) {
+    return label;
   }
   return t("adminbotTimeAvailability.totalWithCapacity", {
-    hours,
-    percent: formatNumber(Math.round((weeklyHours / capacity) * 100)),
-  });
-}
-
-function formatHours(weeklyHours: number, unit: TimeAvailabilityHoursUnit): string {
-  return t(`adminbotTimeAvailability.hoursValue.${unit}`, {
-    hours: formatNumber(hoursIn(weeklyHours, unit)),
+    hours: label,
+    percent: formatNumber(Math.round((hours / capacityHours) * 100)),
   });
 }
 
@@ -317,14 +318,6 @@ function suppressedRanges(rows: readonly TimeOffRow[]): Array<{ start: string; e
   return rows
     .filter((row) => row.availability !== "partial")
     .map((row) => ({ start: row.start, end: exclusiveEnd(row.end) }));
-}
-
-function fullyCovered(
-  bucketStartIso: string,
-  bucketEndIso: string,
-  ranges: ReadonlyArray<{ start: string; end: string }>,
-): boolean {
-  return ranges.some((range) => range.start <= bucketStartIso && range.end >= bucketEndIso);
 }
 
 function jinesisTasks(member: AdminBotLabMember): TimeAllocationTask[] {
@@ -395,127 +388,183 @@ function taskColors(tasks: readonly TimeAllocationTask[]): Map<string, string> {
  *
  * A segment with no allocations and no time off is dropped outright, as his did — those are the
  * gaps between commitments, and a bar of nothing is not worth an axis slot.
- *
- * `truncated` is true when the schedule produced more segments than the axis can carry.
  */
-export function allocationSegments(
-  tasks: readonly TimeAllocationTask[],
-  timeOff: readonly TimeOffRow[] = [],
-): { segments: TimeAllocationSegment[]; truncated: boolean } {
-  if (tasks.length === 0) {
-    return { segments: [], truncated: false };
+/** The bins a range covers, starting from today. */
+export function rangeBins(range: TimeAvailabilityRange, now: number): Array<{
+  startMs: number;
+  endMs: number;
+  label: string;
+}> {
+  const shape = RANGE_SHAPES[range];
+  const bins: Array<{ startMs: number; endMs: number; label: string }> = [];
+  // Anchored to today rather than to a calendar boundary: the question is "what is coming", so the
+  // first bar should be now, not the leftover tail of a week that started on Monday.
+  let cursor = Date.UTC(
+    new Date(now).getUTCFullYear(),
+    new Date(now).getUTCMonth(),
+    shape.monthly ? 1 : new Date(now).getUTCDate(),
+  );
+  for (let index = 0; index < shape.bins; index += 1) {
+    const next = shape.monthly
+      ? Date.UTC(new Date(cursor).getUTCFullYear(), new Date(cursor).getUTCMonth() + 1, 1)
+      : cursor + (shape.days ?? 1) * DAY_MS;
+    bins.push({ startMs: cursor, endMs: next, label: binLabel(range, cursor) });
+    cursor = next;
   }
+  return bins;
+}
+
+function binLabel(range: TimeAvailabilityRange, startMs: number): string {
+  const date = new Date(startMs);
+  if (range === "year") {
+    return new Intl.DateTimeFormat(i18n.getLocale(), { month: "short", timeZone: "UTC" }).format(
+      date,
+    );
+  }
+  if (range === "week") {
+    return new Intl.DateTimeFormat(i18n.getLocale(), { weekday: "short", timeZone: "UTC" }).format(
+      date,
+    );
+  }
+  return shortDate(isoDate(startMs));
+}
+
+/** Days of [startMs, endMs) that a task's inclusive date range covers. */
+function overlapDays(task: TimeAllocationTask, startMs: number, endMs: number): number {
+  const from = Math.max(dateMs(task.start), startMs);
+  const to = Math.min(dateMs(exclusiveEnd(task.end)), endMs);
+  return Math.max(0, (to - from) / DAY_MS);
+}
+
+function suppressedDays(
+  ranges: ReadonlyArray<{ start: string; end: string }>,
+  startMs: number,
+  endMs: number,
+): number {
+  // Ranges can overlap, so union them by day rather than summing, or two holidays on the same week
+  // would cancel more work than the member is actually away for.
+  const days = new Set<number>();
+  for (const range of ranges) {
+    const from = Math.max(dateMs(range.start), startMs);
+    const to = Math.min(dateMs(range.end), endMs);
+    for (let day = from; day < to; day += DAY_MS) {
+      days.add(day);
+    }
+  }
+  return days.size;
+}
+
+/**
+ * Hours committed inside each bin of the range.
+ *
+ * A task contributes its weekly rate prorated over the days it actually covers in the bin, so a
+ * commitment that starts midweek raises that week by half rather than by all of it. Whole-day time
+ * off removes days from the bin before anything is booked against it -- that is the holiday
+ * override, and it is why a bin can be `off` (nothing bookable left) rather than merely empty.
+ */
+export function allocationBins(
+  tasks: readonly TimeAllocationTask[],
+  timeOff: readonly TimeOffRow[],
+  range: TimeAvailabilityRange,
+  now: number,
+): TimeAllocationSegment[] {
   const categories = taskCategories(tasks);
   const suppressed = suppressedRanges(timeOff);
-  // Time-off boundaries only matter where they fall inside the span the commitments cover; a
-  // holiday six months after the last commitment ends would otherwise stretch the axis over an
-  // empty year.
-  const firstDay = tasks.map((task) => task.start).reduce((a, b) => (a < b ? a : b));
-  const lastDay = tasks.map((task) => exclusiveEnd(task.end)).reduce((a, b) => (a > b ? a : b));
-  const breakpoints = [
-    ...new Set([
-      ...tasks.flatMap((task) => [task.start, exclusiveEnd(task.end)]),
-      ...suppressed
-        .flatMap((range) => [range.start, range.end])
-        .filter((day) => day > firstDay && day < lastDay),
-    ]),
-  ].toSorted();
-
-  const segments: TimeAllocationSegment[] = [];
-  let truncated = false;
-  for (let index = 0; index < breakpoints.length - 1; index += 1) {
-    if (segments.length >= MAX_SEGMENTS) {
-      truncated = true;
-      break;
-    }
-    const start = breakpoints[index];
-    const end = breakpoints[index + 1];
-    const isSuppressed = fullyCovered(start, end, suppressed);
+  return rangeBins(range, now).map((bin) => {
+    const binDays = (bin.endMs - bin.startMs) / DAY_MS;
+    const away = suppressedDays(suppressed, bin.startMs, bin.endMs);
+    const workable = Math.max(0, binDays - away);
     const byKey = new Map<string, number>();
-    if (!isSuppressed) {
+    if (workable > 0) {
       for (const task of tasks) {
-        // Active while [task.start, exclusiveEnd(task.end)) overlaps this segment.
-        if (task.start < end && exclusiveEnd(task.end) > start) {
-          byKey.set(task.key, (byKey.get(task.key) ?? 0) + task.hours);
+        const covered = overlapDays(task, bin.startMs, bin.endMs);
+        if (covered <= 0) {
+          continue;
         }
+        // Scale the covered days down by whatever fraction of the bin is time off, so a week with
+        // two days of holiday books five-sevenths of its commitments.
+        const effective = covered * (workable / binDays);
+        byKey.set(task.key, (byKey.get(task.key) ?? 0) + hoursOver(task.hours, effective));
       }
     }
     const allocations = categories.flatMap((category) => {
       const hours = byKey.get(category.key);
       return hours ? [{ ...category, hours }] : [];
     });
-    if (allocations.length === 0 && !isSuppressed) {
-      continue;
-    }
-    segments.push({
-      start,
-      end,
-      // His label: the stretch the bar covers, end shown as the inclusive last day it contains.
-      label: `${shortDate(start)} → ${shortDate(isoDate(dateMs(end) - DAY_MS))}`,
+    return {
+      start: isoDate(bin.startMs),
+      end: isoDate(bin.endMs),
+      label: bin.label,
       allocations,
       total: allocations.reduce((sum, allocation) => sum + allocation.hours, 0),
-      suppressed: isSuppressed,
-    });
-  }
-  return { segments, truncated };
+      suppressed: away >= binDays && binDays > 0,
+      days: binDays,
+    };
+  });
 }
 
-// Rounds up to a tick step that suits the magnitude, so an h/day axis does not jump in 5s (its
-// whole range is often under 8) and an h/mo axis does not need forty gridlines.
+// Round numbers on the axis, chosen from the magnitude so an h/day chart does not tick in 20s and
+// an h/month chart does not need forty gridlines.
 function axisStep(highest: number): number {
-  if (highest <= 8) {
-    return 1;
+  for (const step of [1, 2, 5, 10, 20, 50, 100]) {
+    if (highest / step <= 5) {
+      return step;
+    }
   }
-  return highest <= 40 ? 5 : 20;
+  return 200;
 }
 
-// Works in the displayed unit, so the axis is round numbers of what is written on it.
-function yAxisMaximum(
-  segments: readonly TimeAllocationSegment[],
-  capacity: number,
-  unit: TimeAvailabilityHoursUnit,
-): number {
-  const tallest = hoursIn(Math.max(...segments.map((segment) => segment.total), 1), unit);
-  // The axis always reaches the member's capacity, so a week that uses half of it looks half full
-  // rather than filling the frame -- that headroom reading is the thing Luke's percent axis gave
-  // for free, and a chart scaled to its own tallest bar cannot show it.
-  const highest = Math.max(hoursIn(capacity, unit), tallest);
+function yAxisMaximum(segments: readonly TimeAllocationSegment[], capacityHours: number): number {
+  const tallest = Math.max(...segments.map((segment) => segment.total), 0);
+  // Always reaches capacity, so a bin using half of it looks half full.
+  const highest = Math.max(capacityHours, tallest, 1);
   const step = axisStep(highest);
   const rounded = Math.ceil(highest / step) * step;
-  // One more step when the tallest bar lands exactly on the top gridline, so the bar stops short of
-  // the frame and its total label has somewhere to sit.
+  // One more step when the tallest bar lands exactly on the top gridline, so it stops short of the
+  // frame and its label has somewhere to sit.
   return rounded > tallest ? rounded : rounded + step;
 }
 
+/**
+ * The chart.
+ *
+ * Read left to right as a calendar: equal bins, one bar each, the soonest first. Everything on it
+ * answers one of two questions -- how much is booked, and how that compares to what the member said
+ * they have. So capacity is a line across the whole plot rather than a number in a caption, the
+ * portion of a bar above that line is the only place the danger color appears, and a bin the member
+ * is entirely away for is drawn as absence rather than as a zero.
+ */
 function renderTimeChart(
   tasks: readonly TimeAllocationTask[],
   memberName: string,
   timeOff: readonly TimeOffRow[],
-  capacity: number,
-  unit: TimeAvailabilityHoursUnit,
+  weeklyCapacity: number,
+  range: TimeAvailabilityRange,
+  now: number,
 ) {
-  const { segments, truncated } = allocationSegments(tasks, timeOff);
+  const segments = allocationBins(tasks, timeOff, range, now);
   const colors = taskColors(tasks);
   const categories = taskCategories(tasks);
-  const yMaximum = yAxisMaximum(segments, capacity, unit);
+  // Capacity is a weekly figure; a bin's share of it is the same proration the bars use.
+  const binDays = segments[0]?.days ?? 7;
+  const capacityHours = weeklyCapacity > 0 ? hoursOver(weeklyCapacity, binDays) : 0;
+  const yMaximum = yAxisMaximum(segments, capacityHours);
   const tickStep = axisStep(yMaximum);
   const hourTicks: number[] = [];
-  for (let value = 0; value <= yMaximum; value += tickStep) {
-    hourTicks.push(value);
-  }
-  if (hourTicks.at(-1) !== yMaximum) {
-    hourTicks.push(yMaximum);
+  for (let value = 0; value <= yMaximum + 0.001; value += tickStep) {
+    hourTicks.push(Math.round(value * 100) / 100);
   }
 
-  const chartWidth = Math.max(640, CHART_LEFT + CHART_RIGHT + segments.length * MIN_BAR_SLOT);
-  const plotWidth = chartWidth - CHART_LEFT - CHART_RIGHT;
+  const plotWidth = CHART_WIDTH - CHART_LEFT - CHART_RIGHT;
   const plotHeight = CHART_HEIGHT - CHART_TOP - CHART_BOTTOM;
-  const barWidth = plotWidth / Math.max(1, segments.length);
-  // Takes stored weekly hours and lands them on the axis, which is drawn in the display unit.
-  const y = (weeklyHours: number) =>
-    CHART_TOP + ((yMaximum - hoursIn(weeklyHours, unit)) / yMaximum) * plotHeight;
-  const hasCapacity = capacity > 0;
-  const segmentSummary = segments
+  const slot = plotWidth / Math.max(1, segments.length);
+  // Bars sit in their slot with air either side rather than touching, so each bin reads as its own
+  // unit of time instead of as a continuous area.
+  const barWidth = Math.min(slot * 0.62, 56);
+  const y = (hours: number) => CHART_TOP + ((yMaximum - hours) / yMaximum) * plotHeight;
+  const hasCapacity = capacityHours > 0;
+
+  const summary = segments
     .map((segment) =>
       segment.suppressed
         ? t("adminbotTimeAvailability.segmentSummaryOff", {
@@ -525,198 +574,205 @@ function renderTimeChart(
         : t("adminbotTimeAvailability.segmentSummary", {
             start: tableDate(segment.start),
             end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
-            allocations: segment.allocations
-              .map((allocation) => `${allocation.name} ${formatHours(allocation.hours, unit)}`)
-              .join(", "),
-            total: formatTotal(segment.total, unit, capacity),
+            allocations:
+              segment.allocations
+                .map((allocation) => `${allocation.name} ${formatHours(allocation.hours)}`)
+                .join(", ") || t("adminbotTimeAvailability.binEmpty"),
+            total: formatTotal(segment.total, capacityHours),
           }),
     )
     .join(" ");
 
   return html`
-    <div class="adminbot-time-chart__legend">
-      ${categories.map(
-        (category) => html`
-          <span>
-            <i style=${`background:${colors.get(category.key) ?? CHART_NEUTRAL_COLOR}`}></i>
-            ${category.name}
-          </span>
-        `,
-      )}
-      ${segments.some((segment) => segment.suppressed)
-        ? html`<span>
-            <i class="adminbot-time-chart__legend-off"></i>
-            ${t("adminbotTimeAvailability.legendTimeOff")}
-          </span>`
-        : nothing}
-    </div>
-    ${svg`
-      <svg
-        class="adminbot-time-chart"
-        viewBox="0 0 ${chartWidth} ${CHART_HEIGHT}"
-        role="img"
-        aria-label=${t("adminbotTimeAvailability.chartAria", { member: memberName })}
-      >
-        <title>${t("adminbotTimeAvailability.chartAria", { member: memberName })}</title>
-        <desc>${segmentSummary}</desc>
-        ${hourTicks.map((hours) => {
-          const tickY = y(hours);
-          return svg`
-            <line
-              class="adminbot-time-chart__grid"
-              x1=${CHART_LEFT}
-              x2=${chartWidth - CHART_RIGHT}
-              y1=${tickY}
-              y2=${tickY}
-            ></line>
-            <text
-              class="adminbot-time-chart__axis-label"
-              x=${CHART_LEFT - 10}
-              y=${tickY + 4}
-              text-anchor="end"
-            >${formatNumber(hours)}</text>
-          `;
-        })}
-        ${
-          hasCapacity
-            ? svg`<line
-              class="adminbot-time-chart__capacity-line"
-              x1=${CHART_LEFT}
-              x2=${chartWidth - CHART_RIGHT}
-              y1=${y(capacity)}
-              y2=${y(capacity)}
-            ></line>`
-            : nothing
-        }
-        <line
-          class="adminbot-time-chart__axis"
-          x1=${CHART_LEFT}
-          x2=${chartWidth - CHART_RIGHT}
-          y1=${CHART_HEIGHT - CHART_BOTTOM}
-          y2=${CHART_HEIGHT - CHART_BOTTOM}
-        ></line>
-        <line
-          class="adminbot-time-chart__axis"
-          x1=${CHART_LEFT}
-          x2=${CHART_LEFT}
-          y1=${CHART_TOP}
-          y2=${CHART_HEIGHT - CHART_BOTTOM}
-        ></line>
-        ${segments.map((segment, index) => {
-          const barX = CHART_LEFT + index * barWidth;
-          if (segment.suppressed) {
-            // The whole bucket is time off. Shade the column rather than drawing a zero bar, so it
-            // reads as "away" instead of "nothing scheduled".
-            return svg`
-              <rect
-                class="adminbot-time-chart__off"
-                x=${barX}
-                y=${CHART_TOP}
-                width=${barWidth}
-                height=${plotHeight}
+    <figure class="time-chart">
+      <figcaption class="time-chart__caption">
+        <span class="time-chart__unit">${t(`adminbotTimeAvailability.axisUnit.${range}`)}</span>
+        ${hasCapacity
+          ? html`<span class="time-chart__capacity-key">
+              ${t("adminbotTimeAvailability.capacityKey", { hours: formatHours(capacityHours) })}
+            </span>`
+          : nothing}
+      </figcaption>
+      ${svg`
+        <svg
+          class="time-chart__svg"
+          viewBox="0 0 ${CHART_WIDTH} ${CHART_HEIGHT}"
+          preserveAspectRatio="none"
+          role="img"
+          aria-label=${t("adminbotTimeAvailability.chartAria", { member: memberName })}
+        >
+          <title>${t("adminbotTimeAvailability.chartAria", { member: memberName })}</title>
+          <desc>${summary}</desc>
+          <defs>
+            <pattern id="time-chart-away" width="6" height="6" patternTransform="rotate(45)"
+              patternUnits="userSpaceOnUse">
+              <line class="time-chart__away-line" x1="0" y1="0" x2="0" y2="6"></line>
+            </pattern>
+          </defs>
+
+          ${hourTicks.map(
+            (hours) => svg`
+              <line
+                class="time-chart__grid"
+                x1=${CHART_LEFT}
+                x2=${CHART_WIDTH - CHART_RIGHT}
+                y1=${y(hours)}
+                y2=${y(hours)}
+              ></line>
+              <text class="time-chart__tick" x=${CHART_LEFT - 10} y=${y(hours) + 4} text-anchor="end"
+                >${formatNumber(hours)}</text
               >
-                <title>${t("adminbotTimeAvailability.segmentTooltipOff", {
-                  start: tableDate(segment.start),
-                  end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
-                })}</title>
-              </rect>
+            `,
+          )}
+
+          ${segments.map((segment, index) => {
+            const slotX = CHART_LEFT + index * slot;
+            const barX = slotX + (slot - barWidth) / 2;
+            const baseline = y(0);
+            if (segment.suppressed) {
+              // Away for the whole bin. Hatched to the full height rather than drawn as a zero bar:
+              // nothing is bookable here, which is different from nothing being booked.
+              return svg`
+                <rect
+                  class="time-chart__away"
+                  x=${barX}
+                  y=${CHART_TOP}
+                  width=${barWidth}
+                  height=${plotHeight}
+                  rx="4"
+                >
+                  <title>${t("adminbotTimeAvailability.segmentTooltipOff", {
+                    start: tableDate(segment.start),
+                    end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
+                  })}</title>
+                </rect>
+              `;
+            }
+            let accumulated = 0;
+            const bars = segment.allocations.map((allocation, depth) => {
+              const bottom = y(accumulated);
+              accumulated += allocation.hours;
+              const top = y(accumulated);
+              // A hairline between stacked pieces so two adjacent colors stay countable.
+              const height = Math.max(1, bottom - top - (depth > 0 ? 1 : 0));
+              return svg`
+                <rect
+                  class="time-chart__bar"
+                  x=${barX}
+                  y=${top}
+                  width=${barWidth}
+                  height=${height}
+                  rx="3"
+                  fill=${colors.get(allocation.key) ?? CHART_NEUTRAL_COLOR}
+                >
+                  <title>${t("adminbotTimeAvailability.segmentTooltip", {
+                    task: allocation.name,
+                    hours: formatHours(allocation.hours),
+                    start: tableDate(segment.start),
+                    end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
+                    total: formatTotal(segment.total, capacityHours),
+                  })}</title>
+                </rect>
+              `;
+            });
+            const over = hasCapacity && segment.total > capacityHours;
+            return svg`
+              ${bars}
+              ${
+                over
+                  ? // Only the part past capacity is tinted, so the eye lands on the overage itself
+                    // rather than on a whole bar that is mostly fine.
+                    svg`<rect
+                      class="time-chart__over"
+                      x=${barX}
+                      y=${y(segment.total)}
+                      width=${barWidth}
+                      height=${Math.max(1, y(capacityHours) - y(segment.total))}
+                      rx="3"
+                    ></rect>`
+                  : nothing
+              }
+              ${
+                segment.total > 0
+                  ? svg`<text
+                      class=${`time-chart__total ${over ? "time-chart__total--over" : ""}`}
+                      x=${barX + barWidth / 2}
+                      y=${y(segment.total) - 8}
+                      text-anchor="middle"
+                    >${formatNumber(Math.round(segment.total * 10) / 10)}</text>`
+                  : nothing
+              }
               <text
-                class="adminbot-time-chart__axis-label adminbot-time-chart__axis-label--timeline"
-                x=${barX + barWidth / 2}
-                y=${CHART_HEIGHT - 28}
+                class="time-chart__bin"
+                x=${slotX + slot / 2}
+                y=${baseline + 20}
                 text-anchor="middle"
               >${segment.label}</text>
             `;
+          })}
+
+          ${
+            hasCapacity
+              ? svg`<line
+                  class="time-chart__capacity"
+                  x1=${CHART_LEFT}
+                  x2=${CHART_WIDTH - CHART_RIGHT}
+                  y1=${y(capacityHours)}
+                  y2=${y(capacityHours)}
+                ></line>`
+              : nothing
           }
-          let accumulated = 0;
-          const bars = segment.allocations.map((allocation) => {
-            const bottom = y(accumulated);
-            accumulated += allocation.hours;
-            const top = y(accumulated);
-            return svg`
-              <rect
-                class="adminbot-time-chart__segment"
-                x=${barX}
-                y=${top}
-                width=${barWidth}
-                height=${Math.max(1, bottom - top)}
-                fill=${colors.get(allocation.key) ?? CHART_NEUTRAL_COLOR}
-              >
-                <title>${t("adminbotTimeAvailability.segmentTooltip", {
-                  task: allocation.name,
-                  hours: formatHours(allocation.hours, unit),
-                  start: tableDate(segment.start),
-                  end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
-                  total: formatTotal(segment.total, unit, capacity),
-                })}</title>
-              </rect>
-            `;
-          });
-          const overCapacity = hasCapacity && segment.total > capacity;
-          const nearCapacity = hasCapacity && !overCapacity && segment.total >= capacity * 0.9;
-          const totalClass = overCapacity
-            ? "adminbot-time-chart__total adminbot-time-chart__total--over"
-            : nearCapacity
-              ? "adminbot-time-chart__total adminbot-time-chart__total--near"
-              : "adminbot-time-chart__total";
-          return svg`
-            ${bars}
-            ${
-              segment.allocations.length
-                ? svg`<text
-                  class=${totalClass}
-                  x=${barX + barWidth / 2}
-                  y=${y(segment.total) - 8}
-                  text-anchor="middle"
-                >${formatTotal(segment.total, unit, capacity)}</text>`
-                : nothing
-            }
-            <text
-              class="adminbot-time-chart__axis-label adminbot-time-chart__axis-label--timeline"
-              x=${barX + barWidth / 2}
-              y=${CHART_HEIGHT - 28}
-              text-anchor="middle"
-            >${segment.label}</text>
-          `;
-        })}
-      </svg>
-    `}
-    ${truncated
-      ? html`<div class="adminbot-time-chart__capacity-note">
-          ${t("adminbotTimeAvailability.truncated", { count: String(MAX_SEGMENTS) })}
-        </div>`
-      : nothing}
-    <div class="adminbot-time-chart__capacity-note">
+          <line
+            class="time-chart__axis"
+            x1=${CHART_LEFT}
+            x2=${CHART_WIDTH - CHART_RIGHT}
+            y1=${y(0)}
+            y2=${y(0)}
+          ></line>
+        </svg>
+      `}
+      <div class="time-chart__legend">
+        ${categories.map(
+          (category) => html`
+            <span class="time-chart__legend-item">
+              <i style=${`background:${colors.get(category.key) ?? CHART_NEUTRAL_COLOR}`}></i>
+              ${category.name}
+            </span>
+          `,
+        )}
+        ${segments.some((segment) => segment.suppressed)
+          ? html`<span class="time-chart__legend-item">
+              <i class="time-chart__legend-away"></i>
+              ${t("adminbotTimeAvailability.legendTimeOff")}
+            </span>`
+          : nothing}
+      </div>
       ${hasCapacity
-        ? t("adminbotTimeAvailability.capacityNote")
-        : t("adminbotTimeAvailability.capacityNoteUnset")}
-    </div>
+        ? nothing
+        : html`<p class="time-chart__note">
+            ${t("adminbotTimeAvailability.capacityNoteUnset")}
+          </p>`}
+    </figure>
   `;
 }
 
-// Labelled "Show hours per" rather than "Display by": it picks a unit, not a bucket width, and the
-// old wording is exactly the calendar-bucketing this chart does not do.
-function renderHoursUnitSwitch(props: AdminBotTimeAvailabilityProps) {
+function renderRangeSwitch(props: AdminBotTimeAvailabilityProps) {
   return html`
     <div
-      class="adminbot-time-availability__unit"
+      class="time-chart__range"
       role="group"
-      aria-label=${t("adminbotTimeAvailability.hoursUnitLabel")}
+      aria-label=${t("adminbotTimeAvailability.rangeLabel")}
     >
-      <span class="adminbot-time-availability__unit-label">
-        ${t("adminbotTimeAvailability.hoursUnitLabel")}
-      </span>
-      ${TIME_AVAILABILITY_HOURS_UNITS.map(
-        (unit) => html`
+      ${TIME_AVAILABILITY_RANGES.map(
+        (range) => html`
           <button
             type="button"
-            class="btn btn--sm"
-            data-testid=${`time-availability-unit-${unit}`}
-            aria-pressed=${props.hoursUnit === unit}
-            ?disabled=${props.hoursUnit === unit}
-            @click=${() => props.onHoursUnitChange(unit)}
+            class="time-chart__range-option"
+            data-testid=${`time-availability-range-${range}`}
+            aria-pressed=${props.range === range}
+            @click=${() => props.onRangeChange(range)}
           >
-            ${t(`adminbotTimeAvailability.hoursUnit.${unit}`)}
+            ${t(`adminbotTimeAvailability.range.${range}`)}
           </button>
         `,
       )}
@@ -1160,7 +1216,6 @@ function renderJinesisTable(
   rows: AvailabilityRow[],
   props: AdminBotTimeAvailabilityProps,
   editable: boolean,
-  unit: TimeAvailabilityHoursUnit,
 ) {
   const colors = taskColors(tasks);
   return html`
@@ -1172,7 +1227,7 @@ function renderJinesisTable(
             <th>${t("adminbotTimeAvailability.taskName")}</th>
             <th>${t("adminbotTimeAvailability.startDate")}</th>
             <th>${t("adminbotTimeAvailability.endDate")}</th>
-            <th>${t(`adminbotTimeAvailability.hoursColumn.${unit}`)}</th>
+            <th>${t("adminbotTimeAvailability.hours")}</th>
             <th></th>
           </tr>
         </thead>
@@ -1195,7 +1250,7 @@ function renderJinesisTable(
                 </td>
                 <td>${tableDate(task.start)}</td>
                 <td>${tableDate(task.end)}</td>
-                <td>${formatHours(task.hours, unit)}</td>
+                <td>${t("adminbotTimeAvailability.hoursValue", { hours: formatNumber(task.hours) })}</td>
                 <td>
                   ${renderLink(row?.link)}
                   ${editable
@@ -1334,7 +1389,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
             )}
           </select>
         </label>
-        ${renderHoursUnitSwitch(props)}
+        ${renderRangeSwitch(props)}
       </div>
       ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
       ${selectedMember
@@ -1361,20 +1416,15 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                         selectedMember.name,
                         storedTimeOff,
                         capacity,
-                        props.hoursUnit,
+                        props.range,
+                        Date.now(),
                       )}
                     </div>`
                   : html`<div class="adminbot-time-availability__empty">
                       ${t("adminbotTimeAvailability.noAllocations")}
                     </div>`}
                 ${tasks.length
-                  ? renderJinesisTable(
-                      tasks,
-                      storedAvailability,
-                      props,
-                      editable,
-                      props.hoursUnit,
-                    )
+                  ? renderJinesisTable(tasks, storedAvailability, props, editable)
                   : nothing}
                 ${storedTimeOff.length ? renderOtherTable(storedTimeOff, props, editable) : nothing}
                 ${!hasAnything && !editable

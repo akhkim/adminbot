@@ -1345,32 +1345,28 @@ export const en: TranslationMap = {
   },
   adminbotTimeAvailability: {
     capacity: "{hours} hours/week capacity",
-    capacityNote:
-      "Dashed line marks the member's weekly capacity. A period's total turns amber near it, red past it.",
-    capacityNoteUnset: "No weekly capacity set, so there is no reference line to compare against.",
+    capacityNoteUnset:
+      "No weekly capacity set on this profile, so there is nothing to compare these hours against.",
     chartAria: "Time allocation chart for {member}",
-    chartSubtitle:
-      "Hours per week committed. One bar per stretch where the commitments do not change; overlapping ones are stacked.",
+    chartSubtitle: "Hours committed per period. Overlapping commitments are stacked.",
     empty: "Select a user to view their time allocation.",
     endDate: "End date",
     hours: "Hours/week",
-    hoursUnitLabel: "Show hours per",
-    hoursUnit: {
-      day: "Day",
+    rangeLabel: "Show",
+    range: {
       week: "Week",
       month: "Month",
+      year: "Year",
     },
-    hoursColumn: {
-      day: "Hours/day",
-      week: "Hours/week",
-      month: "Hours/month",
+    axisUnit: {
+      week: "Hours per day",
+      month: "Hours per week",
+      year: "Hours per month",
     },
+    capacityKey: "Capacity {hours}",
+    binEmpty: "nothing booked",
     totalWithCapacity: "{hours} · {percent}%",
-    hoursValue: {
-      day: "{hours} h/day",
-      week: "{hours} h/wk",
-      month: "{hours} h/mo",
-    },
+    hoursValue: "{hours} h",
     category: {
       jinesis: "Jinesis project",
       vacation: "Holiday",
@@ -1411,7 +1407,6 @@ export const en: TranslationMap = {
     startDate: "Start date",
     taskName: "Task name",
     termBaseline: "Term baseline",
-    truncated: "Showing the first {count} periods. Narrow the date ranges to see the rest.",
     form: {
       title: "Add a commitment",
       category: "Category",

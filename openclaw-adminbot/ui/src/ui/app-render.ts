@@ -2733,9 +2733,9 @@ export function renderApp(state: AppViewState) {
               onMemberChange: (memberId) => {
                 state.adminBotTimeAvailabilityMemberId = memberId;
               },
-              hoursUnit: state.adminBotTimeAvailabilityHoursUnit,
-              onHoursUnitChange: (unit) => {
-                state.adminBotTimeAvailabilityHoursUnit = unit;
+              range: state.adminBotTimeAvailabilityRange,
+              onRangeChange: (range) => {
+                state.adminBotTimeAvailabilityRange = range;
               },
               viewerMemberId: state.memberId ?? null,
               draft: state.adminBotTimeAvailabilityDraft,

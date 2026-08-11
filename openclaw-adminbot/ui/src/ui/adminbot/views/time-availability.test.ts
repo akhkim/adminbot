@@ -2,7 +2,8 @@ import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
 import {
-  allocationSegments,
+  allocationBins,
+  rangeBins,
   draftError,
   draftToPatch,
   EMPTY_MILESTONE_DRAFT,
@@ -38,8 +39,8 @@ function props(overrides: Partial<AdminBotTimeAvailabilityProps> = {}) {
     error: null,
     selectedMemberId: "m1",
     onMemberChange: () => {},
-    hoursUnit: "week" as const,
-    onHoursUnitChange: () => {},
+    range: "month" as const,
+    onRangeChange: () => {},
     viewerMemberId: "m1",
     draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT },
     onDraftChange: () => {},
@@ -59,96 +60,82 @@ function renderView(overrides: Partial<AdminBotTimeAvailabilityProps> = {}): HTM
   return container;
 }
 
-describe("allocationSegments", () => {
-  const twoWeeks = tasks([
-    { key: "a", name: "Alignment", start: "2026-03-02", end: "2026-03-15", hours: 20 },
+const NOW = Date.UTC(2026, 2, 2); // Monday 2 March 2026
+
+describe("rangeBins", () => {
+  it("gives a week seven day-long bins from today", () => {
+    const bins = rangeBins("week", NOW);
+    expect(bins).toHaveLength(7);
+    expect(bins[0].startMs).toBe(NOW);
+    expect((bins[0].endMs - bins[0].startMs) / 86_400_000).toBe(1);
+    expect(bins.at(-1)?.endMs).toBe(NOW + 7 * 86_400_000);
+  });
+
+  it("gives a month four week-long bins from today", () => {
+    const bins = rangeBins("month", NOW);
+    expect(bins).toHaveLength(4);
+    for (const bin of bins) {
+      expect((bin.endMs - bin.startMs) / 86_400_000).toBe(7);
+    }
+  });
+
+  // Months are not equal lengths, so these step by the calendar rather than by a day count.
+  it("gives a year twelve calendar-month bins", () => {
+    const bins = rangeBins("year", NOW);
+    expect(bins).toHaveLength(12);
+    expect(new Date(bins[0].startMs).getUTCDate()).toBe(1);
+    expect(new Set(bins.map((bin) => (bin.endMs - bin.startMs) / 86_400_000)).size).toBeGreaterThan(
+      1,
+    );
+    expect(bins.map((bin) => bin.label)).toContain("Dec");
+  });
+});
+
+describe("allocationBins", () => {
+  const march = tasks([
+    { key: "a", name: "Alignment", start: "2026-03-01", end: "2026-03-31", hours: 21 },
   ]);
 
-  // One commitment is one stretch, however long it runs: nothing changes inside it, so there is
-  // nothing to cut on. This is the whole difference from calendar bucketing, which would have made
-  // two bars of this because it happens to span two weeks.
-  it("makes one bar of a commitment that never changes", () => {
-    const { segments } = allocationSegments(twoWeeks);
-    expect(segments).toHaveLength(1);
-    expect(segments[0].start).toBe("2026-03-02");
-    // The boundary is exclusive: the segment ends the day after the last day it covers.
-    expect(segments[0].end).toBe("2026-03-16");
-    expect(segments[0].total).toBe(20);
+  // Everything is stored as hours per week, so a bar is that rate prorated over the days its bin
+  // covers. That is what makes the three ranges comparable.
+  it("prorates a weekly rate over the days a bin covers", () => {
+    expect(allocationBins(march, [], "week", NOW)[0].total).toBeCloseTo(3, 5);
+    expect(allocationBins(march, [], "month", NOW)[0].total).toBeCloseTo(21, 5);
   });
 
-  // Every start and end is a breakpoint, so an overlap splits the timeline into before / during /
-  // after, and only the middle bar carries both.
-  it("cuts at every date the active set changes", () => {
-    const { segments } = allocationSegments(
+  it("counts only the days a commitment actually covers in the bin", () => {
+    const late = tasks([{ key: "a", name: "A", start: "2026-03-05", end: "2026-03-31", hours: 21 }]);
+    expect(allocationBins(late, [], "month", NOW)[0].total).toBeCloseTo((21 * 4) / 7, 5);
+  });
+
+  it("stacks overlapping commitments in the same bin", () => {
+    const both = allocationBins(
       tasks([
-        { key: "a", name: "A", start: "2026-03-02", end: "2026-03-15", hours: 20 },
-        { key: "b", name: "B", start: "2026-03-09", end: "2026-03-22", hours: 10 },
+        { key: "a", name: "A", start: "2026-03-01", end: "2026-03-31", hours: 14 },
+        { key: "b", name: "B", start: "2026-03-01", end: "2026-03-31", hours: 7 },
       ]),
+      [],
+      "month",
+      NOW,
+    )[0];
+    expect(both.allocations.map((allocation) => allocation.key)).toEqual(["a", "b"]);
+    expect(both.total).toBeCloseTo(21, 5);
+  });
+
+  it("keeps empty bins so a gap in the schedule reads as a gap", () => {
+    const bins = allocationBins(
+      tasks([{ key: "a", name: "A", start: "2026-03-01", end: "2026-03-07", hours: 21 }]),
+      [],
+      "month",
+      NOW,
     );
-    expect(segments.map((segment) => segment.start)).toEqual([
-      "2026-03-02",
-      "2026-03-09",
-      "2026-03-16",
-    ]);
-    expect(segments.map((segment) => segment.total)).toEqual([20, 30, 10]);
-    expect(segments[1].allocations.map((allocation) => allocation.key)).toEqual(["a", "b"]);
+    expect(bins).toHaveLength(4);
+    expect(bins[0].total).toBeGreaterThan(0);
+    expect(bins.at(-1)?.total).toBe(0);
   });
 
-  it("stacks commitments that run over exactly the same dates into one bar", () => {
-    const { segments } = allocationSegments(
-      tasks([
-        { key: "a", name: "A", start: "2026-03-02", end: "2026-03-08", hours: 20 },
-        { key: "b", name: "B", start: "2026-03-02", end: "2026-03-08", hours: 10 },
-      ]),
-    );
-    expect(segments).toHaveLength(1);
-    expect(segments[0].total).toBe(30);
-    expect(segments[0].allocations.map((allocation) => allocation.key)).toEqual(["a", "b"]);
-  });
-
-  // The gap between two commitments is a breakpoint pair with nothing active in it. Luke dropped
-  // those rather than drawing an empty bar, and so does this: the axis is the sequence of
-  // commitments, not elapsed time.
-  it("drops the empty stretch between two distant commitments", () => {
-    const { segments } = allocationSegments(
-      tasks([
-        { key: "a", name: "A", start: "2026-03-01", end: "2026-03-31", hours: 20 },
-        { key: "b", name: "B", start: "2026-06-01", end: "2026-06-30", hours: 20 },
-      ]),
-    );
-    expect(segments.map((segment) => segment.start)).toEqual(["2026-03-01", "2026-06-01"]);
-    expect(segments.every((segment) => segment.allocations.length > 0)).toBe(true);
-  });
-
-  it("labels a bar with the stretch it covers, ending on its last inclusive day", () => {
-    const { segments } = allocationSegments(twoWeeks);
-    expect(segments[0].label).toContain("Mar 2");
-    expect(segments[0].label).toContain("Mar 15");
-  });
-
-  // A long history of short overlapping rows can still outrun the axis.
-  it("caps the segment count and reports the truncation", () => {
-    const { segments, truncated } = allocationSegments(
-      tasks(
-        Array.from({ length: 60 }, (_, index) => ({
-          key: `k${index}`,
-          name: `T${index}`,
-          start: `2026-01-${String((index % 28) + 1).padStart(2, "0")}`,
-          end: `2026-12-${String((index % 28) + 1).padStart(2, "0")}`,
-          hours: 1,
-        })),
-      ),
-    );
-    expect(segments).toHaveLength(40);
-    expect(truncated).toBe(true);
-  });
-
-  it("reports no truncation when everything fits", () => {
-    expect(allocationSegments(twoWeeks).truncated).toBe(false);
-  });
-
-  it("returns nothing for no tasks", () => {
-    expect(allocationSegments([])).toEqual({ segments: [], truncated: false });
+  it("returns the range's bins even with no commitments at all", () => {
+    expect(allocationBins([], [], "week", NOW)).toHaveLength(7);
   });
 });
 
@@ -239,157 +226,110 @@ describe("renderAdminBotTimeAvailability", () => {
   // the percentage view could not chart at all without one.
   it("still charts when no weekly capacity is set", () => {
     const container = renderView({ members: [member({ hours_per_week: undefined })] });
-    expect(container.querySelector(".adminbot-time-chart")).not.toBeNull();
+    expect(container.querySelector(".time-chart__svg")).not.toBeNull();
     expect(container.textContent).toContain("No weekly capacity set");
   });
 });
 
 describe("the holiday override", () => {
-  const work = [{ key: "a", name: "Atlas", start: "2026-03-02", end: "2026-03-15", hours: 20 }];
+  const work = [{ key: "a", name: "Atlas", start: "2026-03-01", end: "2026-03-31", hours: 21 }];
 
-  // A whole-day time-off row wins over whatever Jinesis work was scheduled underneath it: the
-  // member is away, so the hours are not happening. The holiday's own dates become breakpoints,
-  // which is what lets it cut a commitment that would otherwise be one unbroken bar.
-  it("splits a commitment at the holiday and zeroes the covered part", () => {
-    const { segments } = allocationSegments(work, [
-      { start: "2026-03-09", end: "2026-03-15", kind: "vacation", availability: "none" },
-    ]);
-    expect(segments.map((segment) => segment.start)).toEqual(["2026-03-02", "2026-03-09"]);
-    expect(segments[0].total).toBe(20);
-    expect(segments[0].suppressed).toBe(false);
-    expect(segments[1].total).toBe(0);
-    expect(segments[1].suppressed).toBe(true);
-    expect(segments[1].allocations).toEqual([]);
+  // Whole-day time off removes days from the bin before anything is booked against it, so a week
+  // with two days off books five-sevenths of its commitments.
+  it("scales a bin down by the days the member is away", () => {
+    const bins = allocationBins(
+      work,
+      [{ start: "2026-03-02", end: "2026-03-03", kind: "vacation", availability: "none" }],
+      "month",
+      NOW,
+    );
+    expect(bins[0].total).toBeCloseTo((21 * 5) / 7, 5);
   });
 
-  // Half a week off does not zero anything, and there is no stored figure saying what it does.
+  // Away for the entire bin: nothing is bookable, which the chart draws as absence, not a zero.
+  it("marks a bin the member is away for the whole of", () => {
+    const bins = allocationBins(
+      work,
+      [{ start: "2026-03-02", end: "2026-03-08", kind: "vacation", availability: "none" }],
+      "month",
+      NOW,
+    );
+    expect(bins[0].suppressed).toBe(true);
+    expect(bins[0].total).toBe(0);
+    expect(bins[1].suppressed).toBe(false);
+    expect(bins[1].total).toBeGreaterThan(0);
+  });
+
   it("leaves a partial row alone", () => {
-    const { segments } = allocationSegments(work, [
-      { start: "2026-03-09", end: "2026-03-15", kind: "course_load", availability: "partial" },
-    ]);
-    expect(segments).toHaveLength(1);
-    expect(segments[0].total).toBe(20);
-    expect(segments[0].suppressed).toBe(false);
+    const bins = allocationBins(
+      work,
+      [{ start: "2026-03-02", end: "2026-03-08", kind: "course_load", availability: "partial" }],
+      "month",
+      NOW,
+    );
+    expect(bins[0].suppressed).toBe(false);
+    expect(bins[0].total).toBeCloseTo(21, 5);
   });
 
-  // A holiday in the middle leaves work on both sides of it.
-  it("suppresses exactly the days the row covers", () => {
-    const { segments } = allocationSegments(work, [
-      { start: "2026-03-09", end: "2026-03-10", kind: "vacation", availability: "none" },
-    ]);
-    expect(
-      segments.map((segment) => ({ start: segment.start, off: segment.suppressed })),
-    ).toEqual([
-      { start: "2026-03-02", off: false },
-      { start: "2026-03-09", off: true },
-      { start: "2026-03-11", off: false },
-    ]);
-  });
-
-  it("keeps a suppressed segment at the start of the range", () => {
-    const { segments } = allocationSegments(work, [
-      { start: "2026-03-02", end: "2026-03-08", kind: "vacation", availability: "none" },
-    ]);
-    expect(segments[0].suppressed).toBe(true);
-    expect(segments[0].start).toBe("2026-03-02");
-  });
-
-  // A holiday nowhere near the commitments must not stretch the axis over the empty months
-  // between them.
-  it("ignores time off outside the span the commitments cover", () => {
-    const { segments } = allocationSegments(work, [
-      { start: "2026-09-01", end: "2026-09-07", kind: "vacation", availability: "none" },
-    ]);
-    expect(segments).toHaveLength(1);
-    expect(segments[0].suppressed).toBe(false);
+  // Two holidays over the same days must not cancel more work than the member is away for.
+  it("counts an overlapping pair of holidays once", () => {
+    const bins = allocationBins(
+      work,
+      [
+        { start: "2026-03-02", end: "2026-03-04", kind: "vacation", availability: "none" },
+        { start: "2026-03-03", end: "2026-03-05", kind: "personal", availability: "none" },
+      ],
+      "month",
+      NOW,
+    );
+    expect(bins[0].total).toBeCloseTo((21 * 3) / 7, 5);
   });
 });
 
-// The headroom reading Luke's percent axis gave for free: a bar is legible as a share of the
-// member's week, not just as a number. Kept in hours so a member with no declared capacity still
-// gets a chart -- which is why percent was dropped in the first place.
-describe("capacity framing", () => {
-  it("labels each bar with its share of capacity alongside the hours", () => {
-    // 20 h/wk against the 40 h/wk capacity on the fixture member.
-    const container = renderView();
-    expect(container.querySelector(".adminbot-time-chart")?.textContent).toContain("50%");
-    expect(container.querySelector(".adminbot-time-chart")?.textContent).toContain("20 h/wk");
+describe("the chart", () => {
+  it("draws one bar slot per bin for the chosen range", () => {
+    const bins = (range: "week" | "month" | "year") =>
+      renderView({ range }).querySelectorAll(".time-chart__bin").length;
+    expect(bins("week")).toBe(7);
+    expect(bins("month")).toBe(4);
+    expect(bins("year")).toBe(12);
   });
 
-  it("says the same percentage whichever unit the axis is in", () => {
-    for (const hoursUnit of ["day", "week", "month"] as const) {
-      const text = renderView({ hoursUnit }).querySelector(".adminbot-time-chart")?.textContent;
-      expect(text).toContain("50%");
-    }
-  });
-
-  it("falls back to bare hours when no capacity is declared", () => {
-    const text = renderView({
-      members: [member({ hours_per_week: undefined } as Partial<AdminBotLabMember>)],
-    }).querySelector(".adminbot-time-chart")?.textContent;
-    expect(text).toContain("20 h/wk");
-    expect(text).not.toContain("%");
-  });
-
-  // A chart scaled to its own tallest bar cannot show headroom -- every member would look equally
-  // busy regardless of what they had committed.
-  it("scales the axis to capacity, so a half-full week looks half full", () => {
-    const container = renderView();
-    const bars = [...container.querySelectorAll(".adminbot-time-chart__segment")];
-    expect(bars.length).toBeGreaterThan(0);
-    const plotHeight = 360 - 28 - 64;
-    for (const bar of bars) {
-      // 20 of 40 hours against an axis that reaches at least capacity: never more than ~60% tall.
-      expect(Number(bar.getAttribute("height"))).toBeLessThan(plotHeight * 0.6);
-    }
-  });
-});
-
-describe("the hours unit", () => {
-  const scaled = [
-    { start: "2026-03-02", end: "2026-03-15", project: "Atlas", hours_per_week: 21 },
-  ];
-
-  // The unit changes the number, never the bars: the segmentation is the same object in all three.
-  it("keeps the identical segments whatever the unit", () => {
-    const week = renderView({ hoursUnit: "week", members: [member({ availability: scaled })] });
-    const month = renderView({ hoursUnit: "month", members: [member({ availability: scaled })] });
-    const bars = (root: HTMLElement) => root.querySelectorAll(".adminbot-time-chart__segment");
-    expect(bars(week)).toHaveLength(bars(month).length);
-    expect(bars(week).length).toBeGreaterThan(0);
-  });
-
-  it("quotes stored hours as-is for the week unit", () => {
-    const container = renderView({ hoursUnit: "week", members: [member({ availability: scaled })] });
-    expect(container.textContent).toContain("21 h/wk");
-  });
-
-  // 21 h/wk is 3 h/day and 91 h/mo (52/12 weeks). Storage never changes; only the reading does.
-  it("rescales to hours per day", () => {
-    const container = renderView({ hoursUnit: "day", members: [member({ availability: scaled })] });
-    expect(container.textContent).toContain("3 h/day");
-  });
-
-  it("rescales to hours per month", () => {
-    const container = renderView({
-      hoursUnit: "month",
-      members: [member({ availability: scaled })],
-    });
-    expect(container.textContent).toContain("91 h/mo");
-  });
-
-  it("marks the active unit and switches on click", () => {
-    const onHoursUnitChange = vi.fn();
-    const container = renderView({ hoursUnit: "month", onHoursUnitChange });
+  it("offers the three ranges and marks the active one", () => {
+    const onRangeChange = vi.fn();
+    const container = renderView({ range: "year", onRangeChange });
     expect(
       container
-        .querySelector('[data-testid="time-availability-unit-month"]')
+        .querySelector('[data-testid="time-availability-range-year"]')
         ?.getAttribute("aria-pressed"),
     ).toBe("true");
     container
-      .querySelector<HTMLButtonElement>('[data-testid="time-availability-unit-day"]')
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-range-week"]')
       ?.click();
-    expect(onHoursUnitChange).toHaveBeenCalledWith("day");
+    expect(onRangeChange).toHaveBeenCalledWith("week");
+  });
+
+  // Capacity is the headroom reading: without it a chart scaled to its own tallest bar makes every
+  // member look equally busy.
+  it("draws the capacity line only when the member declared one", () => {
+    expect(renderView().querySelector(".time-chart__capacity")).not.toBeNull();
+    expect(renderView().querySelector(".time-chart__capacity-key")).not.toBeNull();
+
+    const without = renderView({
+      members: [member({ hours_per_week: undefined } as Partial<AdminBotLabMember>)],
+    });
+    expect(without.querySelector(".time-chart__capacity")).toBeNull();
+    // And says why the comparison is missing rather than leaving a bare chart.
+    expect(without.querySelector(".time-chart__note")).not.toBeNull();
+  });
+
+  it("names the unit each bar is measured in", () => {
+    expect(renderView({ range: "week" }).querySelector(".time-chart__unit")?.textContent).toContain(
+      "day",
+    );
+    expect(renderView({ range: "year" }).querySelector(".time-chart__unit")?.textContent).toContain(
+      "month",
+    );
   });
 });
 
@@ -579,7 +519,7 @@ describe("the split tables and the deadline panel", () => {
     const container = renderView();
     expect(
       container.querySelector('[data-testid="time-availability-jinesis-table"]')?.textContent,
-    ).toContain("20 h/wk");
+    ).toContain("20 h");
   });
 
   // Conference dates come from the bundled snapshot the Deadlines tab already ships, so the lab
