@@ -2742,6 +2742,10 @@ export function renderApp(state: AppViewState) {
               onDraftChange: (draft) => {
                 state.adminBotTimeAvailabilityDraft = draft;
               },
+              awayDraft: state.adminBotTimeAwayDraft,
+              onAwayDraftChange: (draft) => {
+                state.adminBotTimeAwayDraft = draft;
+              },
               milestoneDraft: state.adminBotMilestoneDraft,
               onMilestoneDraftChange: (draft) => {
                 state.adminBotMilestoneDraft = draft;

@@ -1419,6 +1419,8 @@ export const en: TranslationMap = {
       link: "Link (optional)",
       linkPlaceholder: "https://\u2026 class schedule, project board",
       note: "Note",
+      jinesisTitle: "Add a Jinesis commitment",
+      awayTitle: "Add time away",
       wholeDay: "Away the whole day",
       wholeDayHint:
         "Recorded as a whole day off, so it clears any Jinesis hours booked over these dates.",

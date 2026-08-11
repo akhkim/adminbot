@@ -356,6 +356,7 @@ export type AppViewState = {
   adminBotTimeAvailabilityMemberId: string;
   adminBotTimeAvailabilityHoursUnit: TimeAvailabilityHoursUnit;
   adminBotTimeAvailabilityDraft: TimeAvailabilityDraft;
+  adminBotTimeAwayDraft: TimeAvailabilityDraft;
   adminBotMilestoneDraft: MilestoneDraft;
   adminBotTimeAvailabilitySaving: boolean;
   adminBotBusyActionId: string | null;

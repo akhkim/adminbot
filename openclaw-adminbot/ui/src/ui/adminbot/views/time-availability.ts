@@ -171,8 +171,12 @@ export type AdminBotTimeAvailabilityProps = {
   onHoursUnitChange: (unit: TimeAvailabilityHoursUnit) => void;
   /** The signed-in member. The editor renders only when this matches the selected member. */
   viewerMemberId: string | null;
+  /** The Jinesis-commitment form's draft. Its category is always "jinesis". */
   draft: TimeAvailabilityDraft;
   onDraftChange: (draft: TimeAvailabilityDraft) => void;
+  /** The time-away form's draft, kept separate so the two forms cannot clear each other. */
+  awayDraft: TimeAvailabilityDraft;
+  onAwayDraftChange: (draft: TimeAvailabilityDraft) => void;
   milestoneDraft: MilestoneDraft;
   onMilestoneDraftChange: (draft: MilestoneDraft) => void;
   onSaveSchedule: (memberId: string, patch: SchedulePatch) => void;
@@ -791,22 +795,44 @@ export function draftToPatch(
   };
 }
 
-function renderEditor(
-  props: AdminBotTimeAvailabilityProps,
-  existing: { availability: AvailabilityRow[]; timeOff: TimeOffRow[] },
-) {
-  const { draft } = props;
+// Two separate add forms rather than one with a mode switch.
+//
+// A Jinesis commitment and time away are different acts recorded on different
+// lists: one costs weekly hours and belongs to `availability`, the other is a
+// stretch the member is not doing lab work at all and belongs to `time_off`. As
+// one form behind a category dropdown they shared a submit button and a set of
+// fields that appeared and vanished depending on the first control, so filling in
+// "20 hours" and then switching category silently discarded it. Two forms means
+// each one only ever shows the fields it actually stores, and neither can clear
+// the other's half-typed input.
+//
+// They share this renderer because the date/link/note tail and the validation are
+// genuinely identical; only the head differs.
+type CommitmentFormProps = {
+  props: AdminBotTimeAvailabilityProps;
+  existing: { availability: AvailabilityRow[]; timeOff: TimeOffRow[] };
+  draft: TimeAvailabilityDraft;
+  onDraftChange: (draft: TimeAvailabilityDraft) => void;
+  testId: string;
+  titleKey: string;
+  head: (helpers: {
+    draft: TimeAvailabilityDraft;
+    update: (patch: Partial<TimeAvailabilityDraft>) => void;
+    field: (key: keyof TimeAvailabilityDraft) => (event: Event) => void;
+  }) => unknown;
+};
+
+function renderCommitmentForm(form: CommitmentFormProps) {
+  const { props, existing, draft, onDraftChange, testId, titleKey, head } = form;
   const error = draftError(draft);
   const touched = Boolean(draft.start || draft.end || draft.hoursPerWeek || draft.customLabel);
-  const update = (patch: Partial<TimeAvailabilityDraft>) =>
-    props.onDraftChange({ ...draft, ...patch });
+  const update = (patch: Partial<TimeAvailabilityDraft>) => onDraftChange({ ...draft, ...patch });
   const field = (key: keyof TimeAvailabilityDraft) => (event: Event) =>
     update({ [key]: (event.currentTarget as HTMLInputElement).value });
-  const isJinesis = draft.category === "jinesis";
 
   return html`
-    <section class="adminbot-time-availability__editor" data-testid="time-availability-editor">
-      <div class="card-title">${t("adminbotTimeAvailability.form.title")}</div>
+    <section class="adminbot-time-availability__editor" data-testid=${testId}>
+      <div class="card-title">${t(titleKey)}</div>
       <form
         class="adminbot-form adminbot-time-availability__form"
         @submit=${(event: Event) => {
@@ -817,48 +843,7 @@ function renderEditor(
           props.onSaveSchedule(props.selectedMemberId, draftToPatch(draft, existing));
         }}
       >
-        <label class="adminbot-form__field">
-          <span>${t("adminbotTimeAvailability.form.category")}</span>
-          <select
-            data-testid="time-availability-category"
-            .value=${draft.category}
-            @change=${(event: Event) =>
-              update({
-                category: (event.currentTarget as HTMLSelectElement)
-                  .value as TimeAvailabilityCategory,
-              })}
-          >
-            ${TIME_AVAILABILITY_CATEGORIES.map(
-              (category) => html`
-                <option value=${category} ?selected=${draft.category === category}>
-                  ${t(`adminbotTimeAvailability.category.${category}`)}
-                </option>
-              `,
-            )}
-          </select>
-        </label>
-        ${draft.category === "other"
-          ? html`<label class="adminbot-form__field">
-              <span>${t("adminbotTimeAvailability.form.customLabel")}</span>
-              <input
-                type="text"
-                data-testid="time-availability-custom-label"
-                .value=${draft.customLabel}
-                @input=${field("customLabel")}
-              />
-            </label>`
-          : nothing}
-        ${isJinesis
-          ? html`<label class="adminbot-form__field">
-              <span>${t("adminbotTimeAvailability.form.project")}</span>
-              <input
-                type="text"
-                .value=${draft.project}
-                placeholder=${t("adminbotTimeAvailability.form.projectPlaceholder")}
-                @input=${field("project")}
-              />
-            </label>`
-          : nothing}
+        ${head({ draft, update, field })}
         <label class="adminbot-form__field">
           <span>${t("adminbotTimeAvailability.startDate")}</span>
           <input type="date" .value=${draft.start} required @input=${field("start")} />
@@ -867,34 +852,6 @@ function renderEditor(
           <span>${t("adminbotTimeAvailability.endDate")}</span>
           <input type="date" .value=${draft.end} required @input=${field("end")} />
         </label>
-        ${isJinesis
-          ? html`<label class="adminbot-form__field">
-              <span>${t("adminbotTimeAvailability.form.hours")}</span>
-              <input
-                type="number"
-                min="0.5"
-                max="168"
-                step="0.5"
-                data-testid="time-availability-hours"
-                .value=${draft.hoursPerWeek}
-                @input=${field("hoursPerWeek")}
-              />
-            </label>`
-          : html`<label class="adminbot-form__field adminbot-form__field--check">
-                <input
-                  type="checkbox"
-                  data-testid="time-availability-whole-day"
-                  .checked=${draft.wholeDay}
-                  @change=${(event: Event) =>
-                    update({ wholeDay: (event.currentTarget as HTMLInputElement).checked })}
-                />
-                <span>${t("adminbotTimeAvailability.form.wholeDay")}</span>
-              </label>
-              <p class="adminbot-time-availability__form-hint">
-                ${draft.wholeDay
-                  ? t("adminbotTimeAvailability.form.wholeDayHint")
-                  : t("adminbotTimeAvailability.form.partialHint")}
-              </p>`}
         <label class="adminbot-form__field">
           <span>${t("adminbotTimeAvailability.form.link")}</span>
           <input
@@ -918,7 +875,7 @@ function renderEditor(
           <button
             type="submit"
             class="btn primary"
-            data-testid="time-availability-add"
+            data-testid=${`${testId}-submit`}
             ?disabled=${props.saving || error !== null}
           >
             ${props.saving
@@ -929,6 +886,112 @@ function renderEditor(
       </form>
     </section>
   `;
+}
+
+// Jinesis work: a project and the hours a week it takes. Category is pinned, so
+// this form has no dropdown at all.
+function renderJinesisEditor(
+  props: AdminBotTimeAvailabilityProps,
+  existing: { availability: AvailabilityRow[]; timeOff: TimeOffRow[] },
+) {
+  return renderCommitmentForm({
+    props,
+    existing,
+    draft: props.draft,
+    onDraftChange: (draft) => props.onDraftChange({ ...draft, category: "jinesis" }),
+    testId: "time-availability-editor",
+    titleKey: "adminbotTimeAvailability.form.jinesisTitle",
+    head: ({ draft, field }) => html`
+      <label class="adminbot-form__field">
+        <span>${t("adminbotTimeAvailability.form.project")}</span>
+        <input
+          type="text"
+          .value=${draft.project}
+          placeholder=${t("adminbotTimeAvailability.form.projectPlaceholder")}
+          @input=${field("project")}
+        />
+      </label>
+      <label class="adminbot-form__field">
+        <span>${t("adminbotTimeAvailability.form.hours")}</span>
+        <input
+          type="number"
+          min="0.5"
+          max="168"
+          step="0.5"
+          data-testid="time-availability-hours"
+          .value=${draft.hoursPerWeek}
+          @input=${field("hoursPerWeek")}
+        />
+      </label>
+    `,
+  });
+}
+
+// Everything that is not Jinesis work: a holiday, a course, an internship, another
+// project. No hours field -- these are not lab work, so there is nothing to book
+// against the week; what they carry instead is whether the member is away for the
+// whole day, which is what suppresses the Jinesis hours underneath.
+function renderTimeAwayEditor(
+  props: AdminBotTimeAvailabilityProps,
+  existing: { availability: AvailabilityRow[]; timeOff: TimeOffRow[] },
+) {
+  const categories = TIME_AVAILABILITY_CATEGORIES.filter((category) => category !== "jinesis");
+  return renderCommitmentForm({
+    props,
+    existing,
+    draft: props.awayDraft,
+    onDraftChange: props.onAwayDraftChange,
+    testId: "time-away-editor",
+    titleKey: "adminbotTimeAvailability.form.awayTitle",
+    head: ({ draft, update, field }) => html`
+      <label class="adminbot-form__field">
+        <span>${t("adminbotTimeAvailability.form.category")}</span>
+        <select
+          data-testid="time-away-category"
+          .value=${draft.category}
+          @change=${(event: Event) =>
+            update({
+              category: (event.currentTarget as HTMLSelectElement)
+                .value as TimeAvailabilityCategory,
+            })}
+        >
+          ${categories.map(
+            (category) => html`
+              <option value=${category} ?selected=${draft.category === category}>
+                ${t(`adminbotTimeAvailability.category.${category}`)}
+              </option>
+            `,
+          )}
+        </select>
+      </label>
+      ${draft.category === "other"
+        ? html`<label class="adminbot-form__field">
+            <span>${t("adminbotTimeAvailability.form.customLabel")}</span>
+            <input
+              type="text"
+              data-testid="time-availability-custom-label"
+              .value=${draft.customLabel}
+              @input=${field("customLabel")}
+            />
+          </label>`
+        : nothing}
+      <label class="adminbot-form__field adminbot-form__field--check">
+        <input
+          type="checkbox"
+          data-testid="time-availability-whole-day"
+          .checked=${draft.wholeDay}
+          @change=${(event: Event) =>
+            update({ wholeDay: (event.currentTarget as HTMLInputElement).checked })}
+        />
+        <span>${t("adminbotTimeAvailability.form.wholeDay")}</span>
+      </label>
+      <p class="adminbot-time-availability__form-hint">
+        ${draft.wholeDay
+          ? t("adminbotTimeAvailability.form.wholeDayHint")
+          : t("adminbotTimeAvailability.form.partialHint")}
+      </p>
+    `,
+  });
 }
 
 function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: MilestoneRow[]) {
@@ -1296,7 +1359,16 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
             </div>
           `}
       ${editable
-        ? renderEditor(props, { availability: storedAvailability, timeOff: storedTimeOff })
+        ? html`<div class="adminbot-time-availability__editors">
+            ${renderJinesisEditor(props, {
+              availability: storedAvailability,
+              timeOff: storedTimeOff,
+            })}
+            ${renderTimeAwayEditor(props, {
+              availability: storedAvailability,
+              timeOff: storedTimeOff,
+            })}
+          </div>`
         : nothing}
     </div>
   `;

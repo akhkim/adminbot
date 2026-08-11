@@ -517,6 +517,12 @@ export class OpenClawApp extends LitElement {
   // Hours per week is how the schedule is stored and typed in, so it is the unit that needs no
   // conversion to read back.
   @state() adminBotTimeAvailabilityHoursUnit: TimeAvailabilityHoursUnit = "week";
+  // Two independent drafts: the Jinesis form and the time-away form each keep their own, so
+  // half-typed input in one survives working in the other.
+  @state() adminBotTimeAwayDraft: TimeAvailabilityDraft = {
+    ...EMPTY_TIME_AVAILABILITY_DRAFT,
+    category: "vacation",
+  };
   @state() adminBotTimeAvailabilityDraft: TimeAvailabilityDraft = {
     ...EMPTY_TIME_AVAILABILITY_DRAFT,
   };

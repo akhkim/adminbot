@@ -43,6 +43,8 @@ function props(overrides: Partial<AdminBotTimeAvailabilityProps> = {}) {
     viewerMemberId: "m1",
     draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT },
     onDraftChange: () => {},
+    awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "vacation" as const },
+    onAwayDraftChange: () => {},
     milestoneDraft: { ...EMPTY_MILESTONE_DRAFT },
     onMilestoneDraftChange: () => {},
     onSaveSchedule: () => {},
@@ -354,7 +356,7 @@ describe("the hours unit", () => {
 describe("the whole-day toggle", () => {
   it("offers it for a time-away category, ticked by default", () => {
     const container = renderView({
-      draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "vacation" },
+      awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "vacation" },
     });
     const box = container.querySelector<HTMLInputElement>(
       '[data-testid="time-availability-whole-day"]',
@@ -364,12 +366,16 @@ describe("the whole-day toggle", () => {
   });
 
   // Jinesis work is measured in hours, so "away the whole day" is not a question it answers.
-  it("hides it for a Jinesis commitment, which asks for hours instead", () => {
-    const container = renderView({
-      draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "jinesis" },
-    });
-    expect(container.querySelector('[data-testid="time-availability-whole-day"]')).toBeNull();
-    expect(container.querySelector('[data-testid="time-availability-hours"]')).not.toBeNull();
+  // The toggle lives in the time-away form only. The Jinesis form asks for hours instead, and
+  // now that they are two forms neither ever shows the other's field.
+  it("keeps the toggle out of the Jinesis form, which asks for hours instead", () => {
+    const container = renderView();
+    const jinesis = container.querySelector('[data-testid="time-availability-editor"]')!;
+    const away = container.querySelector('[data-testid="time-away-editor"]')!;
+    expect(jinesis.querySelector('[data-testid="time-availability-whole-day"]')).toBeNull();
+    expect(jinesis.querySelector('[data-testid="time-availability-hours"]')).not.toBeNull();
+    expect(away.querySelector('[data-testid="time-availability-whole-day"]')).not.toBeNull();
+    expect(away.querySelector('[data-testid="time-availability-hours"]')).toBeNull();
   });
 });
 
@@ -576,19 +582,37 @@ describe("the split tables and the deadline panel", () => {
   });
 
   // The hours field is meaningless for time away and must not be asked for.
-  it("hides the hours field for a non-Jinesis category", () => {
-    const container = renderView({
-      draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "vacation" },
-    });
-    expect(container.querySelector('[data-testid="time-availability-hours"]')).toBeNull();
-    expect(container.querySelector('[data-testid="time-availability-link"]')).not.toBeNull();
+  // Two chunks of adding, not one form with a mode switch: a Jinesis commitment costs weekly
+  // hours and lands on `availability`, time away carries none and lands on `time_off`.
+  it("offers both add forms, each with only the fields it stores", () => {
+    const container = renderView();
+    const jinesis = container.querySelector('[data-testid="time-availability-editor"]')!;
+    const away = container.querySelector('[data-testid="time-away-editor"]')!;
+    expect(jinesis).not.toBeNull();
+    expect(away).not.toBeNull();
+    // The Jinesis form has no category picker at all -- its category is pinned.
+    expect(jinesis.querySelector('[data-testid="time-away-category"]')).toBeNull();
+    expect(away.querySelector('[data-testid="time-away-category"]')).not.toBeNull();
+    // Each keeps its own submit, so neither can clear the other's half-typed input.
+    expect(jinesis.querySelector('[data-testid="time-availability-editor-submit"]')).not.toBeNull();
+    expect(away.querySelector('[data-testid="time-away-editor-submit"]')).not.toBeNull();
+  });
+
+  it("never offers Jinesis as a time-away category", () => {
+    const options = [
+      ...renderView()
+        .querySelector('[data-testid="time-away-category"]')!
+        .querySelectorAll("option"),
+    ].map((option) => option.getAttribute("value"));
+    expect(options).not.toContain("jinesis");
+    expect(options).toContain("vacation");
   });
 
   it("asks for a custom name only for the 'other' category", () => {
     expect(renderView().querySelector('[data-testid="time-availability-custom-label"]')).toBeNull();
     expect(
       renderView({
-        draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "other" },
+        awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "other" },
       }).querySelector('[data-testid="time-availability-custom-label"]'),
     ).not.toBeNull();
   });
