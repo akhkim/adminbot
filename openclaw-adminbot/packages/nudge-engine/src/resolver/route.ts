@@ -72,7 +72,9 @@ export function routeFrontier(
             recipient: target.owner,
             reason: `${node.label} is waiting on this`,
             unblocks: unblockedBy(graph, actionable, status),
-            sibling: siblingFor(graph, actionable, status),
+            // Resolved *through* this join, so the sibling is relative to it — that is the
+            // whole point of the message: tell each side what the other is doing.
+            sibling: otherInputOf(graph, id, actionable, status),
             ...(target.versioned ? { version: state.version } : {}),
             priority: branchPriority[target.branch ?? ""] ?? 9,
           });
@@ -152,31 +154,33 @@ export function routeFrontier(
 function siblingFor(graph: Graph, from: NodeId, status: StatusMap): Nudge["sibling"] {
   const byId = nodeById(graph);
 
-  // Nearest downstream AND-join, remembering which of its inputs we arrived through.
-  let joinId: NodeId | undefined;
-  let viaPred: NodeId | undefined;
+  // Only a *direct* input to a join gets sibling context. Walking further downstream finds
+  // a join eventually for almost every node — `CK` reaches `JN` nine hops away — and
+  // telling someone doing submission checks that the social draft is "also needed" is
+  // noise that makes the whole message look automated and wrong.
+  const join = successors(graph, from).find((s) => byId.get(s)?.cls === "join");
+  if (!join) return undefined;
 
-  const queue: NodeId[] = [from];
-  const seen = new Set<NodeId>([from]);
-  while (queue.length > 0 && !joinId) {
-    const current = queue.shift() as NodeId;
-    for (const next of successors(graph, current)) {
-      if (seen.has(next)) continue;
-      seen.add(next);
-      if (byId.get(next)?.cls === "join") {
-        joinId = next;
-        viaPred = current;
-        break;
-      }
-      queue.push(next);
-    }
-  }
+  return otherInputOf(graph, join, from, status);
+}
 
-  if (!joinId || !viaPred) return undefined;
+/**
+ * The other input to a specific join, given which side we arrived from.
+ */
+function otherInputOf(
+  graph: Graph,
+  joinId: NodeId,
+  ourSide: NodeId,
+  status: StatusMap,
+): Nudge["sibling"] {
+  const byId = nodeById(graph);
+  const preds = predecessors(graph, joinId).filter((p) => status.get(p) !== "not_applicable");
 
-  const other = predecessors(graph, joinId)
-    .filter((p) => status.get(p) !== "not_applicable")
-    .find((p) => p !== viaPred);
+  // `ourSide` may be the direct input, or something further upstream that feeds it.
+  const ours = preds.find(
+    (p) => p === ourSide || resolveActionable(graph, p, status).has(ourSide),
+  );
+  const other = preds.find((p) => p !== ours);
   if (!other) return undefined;
 
   const node = byId.get(other);

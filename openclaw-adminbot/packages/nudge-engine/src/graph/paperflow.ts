@@ -119,6 +119,26 @@ export const paperflow: Graph = {
     { id: "DC", label: "Decision recorded", cls: "action", owner: "first_author", branch: "venue" },
     { id: "AC", label: "Accepted", cls: "decision", branch: "venue" },
     { id: "CM", label: "Camera ready", cls: "action", owner: "first_author", branch: "venue" },
+    {
+      // Travel is triggered by acceptance and runs *parallel* to camera ready, not after
+      // it — chaining it behind CM would delay booking until flights are expensive.
+      // Only opened for a first or co-first author, expressed as a decision outcome.
+      id: "CA",
+      label: "Conference attendance",
+      cls: "action",
+      owner: "first_author",
+      branch: "venue",
+      hardDeadline: true,
+    },
+    {
+      // Separate from CA rather than a bullet on it: reimbursement cannot start until the
+      // receipts exist, so it is genuinely sequential.
+      id: "RM",
+      label: "Reimbursement reminders",
+      cls: "action",
+      owner: "first_author",
+      branch: "venue",
+    },
     { id: "RJ", label: "Rejected", cls: "action", owner: "first_author", branch: "venue" },
 
     // ── convergence ─────────────────────────────────────────────────────────────
@@ -164,6 +184,8 @@ export const paperflow: Graph = {
     { from: "RS", to: "DC", kind: "requires" },
     { from: "DC", to: "AC", kind: "requires" },
     { from: "AC", to: "CM", kind: "requires", label: "Accept" },
+    { from: "AC", to: "CA", kind: "requires", label: "Accept, first or co-first author" },
+    { from: "CA", to: "RM", kind: "requires", label: "After conference" },
     { from: "AC", to: "RJ", kind: "requires", label: "Reject" },
     { from: "CM", to: "PK", kind: "requires", label: "Still needs the gate" },
     // C1 — RESET. Never traversed upstream. Opens attempt n+1.
@@ -180,7 +202,7 @@ export const paperflow: Graph = {
  */
 export const resetScope = {
   /** Cleared and re-run on the next attempt. */
-  cleared: ["CK", "SB", "RV", "RB", "RS", "DC", "AC", "CM", "RJ"],
+  cleared: ["CK", "SB", "RV", "RB", "RS", "DC", "AC", "CM", "CA", "RM", "RJ"],
   /** Re-opened for revision. */
   reopened: ["OV", "PM", "FX", "PDF"],
   /** Untouched — this work stays valid across attempts. */

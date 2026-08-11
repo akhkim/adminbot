@@ -256,9 +256,21 @@ describe("cliff 27-29 — semantics and silence", () => {
   it("cliff 29 — an empty frontier with nothing finished is a stall, not silence", () => {
     const status: Partial<Record<NodeId, Status>> = {};
     for (const n of paperflow.nodes) status[n.id] = "complete";
-    // A finished graph reports done...
-    const done = tick(paperflow, { ...emptyState("p1"), status });
+    // Decisions must be recorded too — "every node complete but nothing decided" is not a
+    // finished paper, it is a status feed that never wrote the outcomes down.
+    const done = tick(paperflow, {
+      ...emptyState("p1"),
+      status,
+      decisions: { RB: "DC", AC: ["CM", "CA"] },
+    });
     assert.equal(done.outcome, "done");
+  });
+
+  it("an undecided decision with everything else complete is not 'done'", () => {
+    const status: Partial<Record<NodeId, Status>> = {};
+    for (const n of paperflow.nodes) status[n.id] = "complete";
+    const result = tick(paperflow, { ...emptyState("p1"), status });
+    assert.notEqual(result.outcome, "done", "an unrecorded outcome must not read as finished");
   });
 });
 
@@ -271,5 +283,63 @@ describe("whyBlocked — the user-facing question", () => {
     assert.deepEqual(answer.actionable.sort(), ["CP", "GT"]);
     assert.ok(answer.actionableLabels.includes("Coauthor feedback"));
     assert.ok(answer.actionableLabels.includes("Zhijing explicit yes"));
+  });
+});
+
+describe("conference attendance — a decision that opens two branches", () => {
+  const submitted = [...throughPdf, "CK", "SB", "RV", "DC"] as NodeId[];
+
+  it("accept as first author keeps BOTH camera ready and conference attendance live", () => {
+    const state: PaperState = {
+      ...withComplete(...submitted),
+      // Accept opens two successors. A single-valued outcome would prune one of them.
+      decisions: { RB: "DC", AC: ["CM", "CA"] },
+    };
+    const { notApplicable } = prune(paperflow, state);
+
+    assert.ok(!notApplicable.has("CM"), "camera ready must stay live");
+    assert.ok(!notApplicable.has("CA"), "conference attendance must stay live");
+    assert.ok(!notApplicable.has("RM"), "and reimbursement after it");
+    assert.ok(notApplicable.has("RJ"), "the rejection branch is pruned");
+
+    const status = effectiveStatus(paperflow, state, { notApplicable, prunedEdges: new Set() });
+    const open = frontier(paperflow, status);
+    assert.ok(open.includes("CM") && open.includes("CA"), "both are actionable at once");
+  });
+
+  it("accept as a non-first author prunes the conference subtree only", () => {
+    const state: PaperState = {
+      ...withComplete(...submitted),
+      decisions: { RB: "DC", AC: ["CM"] },
+    };
+    const { notApplicable } = prune(paperflow, state);
+
+    assert.ok(!notApplicable.has("CM"), "camera ready is unaffected");
+    assert.ok(notApplicable.has("CA"), "no travel for a non-first author");
+    assert.ok(notApplicable.has("RM"), "and RM is only reachable through CA");
+  });
+
+  it("a rejection prunes the whole conference subtree", () => {
+    const state: PaperState = {
+      ...withComplete(...submitted),
+      decisions: { RB: "DC", AC: "RJ" },
+    };
+    const { notApplicable } = prune(paperflow, state);
+    assert.ok(notApplicable.has("CA"));
+    assert.ok(notApplicable.has("RM"), "nobody books travel for a rejected paper");
+  });
+
+  it("reimbursement waits for the conference to happen", () => {
+    const state: PaperState = {
+      ...withComplete(...submitted),
+      decisions: { RB: "DC", AC: ["CM", "CA"] },
+    };
+    const { notApplicable } = prune(paperflow, state);
+    const status = effectiveStatus(paperflow, state, { notApplicable, prunedEdges: new Set() });
+    assert.ok(!frontier(paperflow, status).includes("RM"), "RM is not actionable before CA");
+  });
+
+  it("the graph is still acyclic with the new nodes", () => {
+    assert.equal(isAcyclic(paperflow), true);
   });
 });

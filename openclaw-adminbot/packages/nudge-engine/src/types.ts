@@ -88,8 +88,13 @@ export type PaperState = {
   /** Which artifact version the versioned gates currently apply to. */
   version: string;
   status: Partial<Record<NodeId, Status>>;
-  /** decision node -> the successor actually taken. Absent means undecided. */
-  decisions: Partial<Record<NodeId, NodeId>>;
+  /**
+   * decision node -> the successor(s) actually taken. Absent means undecided.
+   *
+   * An array when one outcome opens several branches: `AC = Accept` starts both `CM`
+   * (camera ready) and, for a first or co-first author, `CA` (conference attendance).
+   */
+  decisions: Partial<Record<NodeId, NodeId | NodeId[]>>;
   /** ISO dates for `external_wait` nodes, used to decide when to nudge for observation. */
   expectedDates?: Partial<Record<NodeId, string>>;
 };

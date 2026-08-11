@@ -29,9 +29,13 @@ export function prune(graph: Graph, state: PaperState): PruneResult {
 
   for (const [decisionNode, taken] of Object.entries(state.decisions)) {
     if (!taken) continue; // undecided — every branch stays possible
+    // A decision may open more than one successor. `AC = Accept` starts both Camera ready
+    // and Conference attendance; treating the outcome as a single node would prune one of
+    // them and the pruned branch would never be nudged, silently.
+    const takenSet = new Set(Array.isArray(taken) ? taken : [taken]);
     for (const edge of dependencyEdges(graph)) {
       if (edge.from !== decisionNode) continue;
-      if (edge.to === taken) continue;
+      if (takenSet.has(edge.to)) continue;
       prunedEdges.add(edgeKey(edge.from, edge.to));
     }
   }
@@ -58,6 +62,14 @@ export function effectiveStatus(
   for (const node of graph.nodes) {
     if (pruned.notApplicable.has(node.id)) {
       out.set(node.id, "not_applicable");
+      continue;
+    }
+    // A decision is never "done" by a person — it is satisfied the moment its outcome is
+    // recorded. Without this, nothing downstream of `RB` or `AC` could ever reach the
+    // frontier: camera ready and conference attendance would sit behind a node that no
+    // one can ever complete.
+    if (node.cls === "decision") {
+      out.set(node.id, state.decisions[node.id] ? "complete" : "incomplete");
       continue;
     }
     out.set(node.id, state.status[node.id] ?? "incomplete");
