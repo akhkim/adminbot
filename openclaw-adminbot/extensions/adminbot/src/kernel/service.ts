@@ -1745,6 +1745,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "scholar_url",
   "calendar_email",
   "joined_month",
+  "graduated_month",
   "whatsapp",
   "correspondence_email",
   "lesswrong_url",

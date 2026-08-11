@@ -101,6 +101,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     example: adminBotMemberRoles[0] ?? "",
     type: "dropdown",
     options: adminBotMemberRoles,
+    optional: true,
     group: "identity",
   },
   {
@@ -108,7 +109,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.calendarEmail",
     example: "ada.lovelace@gmail.com",
     type: "short_text",
-    optional: true,
     group: "identity",
   },
   {
@@ -116,6 +116,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.affiliation",
     example: "University of Toronto",
     type: "short_text",
+    optional: true,
     group: "work",
   },
   {
@@ -131,6 +132,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     example: "America/Toronto",
     type: "dropdown",
     options: timezoneOptions(),
+    optional: true,
     group: "work",
   },
   {
@@ -138,6 +140,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.hoursPerWeek",
     example: "20",
     type: "numeric",
+    optional: true,
     group: "work",
   },
   {
@@ -159,15 +162,49 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.projects",
     example: "AdminBot",
     type: "list",
+    optional: true,
     group: "research",
   },
   {
-    key: "notes",
-    labelKey: "profile.fields.notes",
-    example: "Prefers async check-ins on Fridays.",
-    type: "paragraph",
+    // The sheet's correspondence address, deliberately distinct from `email` (the login identity)
+    // and `calendar_email` (the Google account invites go to). It is frequently neither.
+    key: "correspondence_email",
+    labelKey: "profile.fields.correspondenceEmail",
+    example: "ada@cs.toronto.edu",
+    type: "short_text",
+    group: "identity",
+  },
+  {
+    key: "whatsapp",
+    labelKey: "profile.fields.whatsapp",
+    example: "(+1) 555 0100",
+    type: "short_text",
+    group: "identity",
+  },
+  {
+    key: "joined_month",
+    labelKey: "profile.fields.joinedMonth",
+    example: "2026-03",
+    type: "short_text",
+    group: "work",
+  },
+  {
+    // Empty for every row on the sheet today; it is the column alumni will eventually be aged out
+    // by, and optional because a current member has no answer for it.
+    key: "graduated_month",
+    labelKey: "profile.fields.graduatedMonth",
+    example: "2027-06",
+    type: "short_text",
     optional: true,
-    group: "research",
+    group: "work",
+  },
+  {
+    key: "lesswrong_url",
+    labelKey: "profile.fields.lesswrong",
+    example: "https://www.lesswrong.com/users/ada",
+    type: "link",
+    optional: true,
+    group: "links",
   },
   {
     key: "avatar_url",
@@ -190,7 +227,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.github",
     example: "https://github.com/ada",
     type: "link",
-    optional: true,
     group: "links",
   },
   {
@@ -198,7 +234,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.linkedin",
     example: "https://www.linkedin.com/in/ada",
     type: "link",
-    optional: true,
     group: "links",
   },
   {
@@ -206,6 +241,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.linkedinUrn",
     example: "ACoAAB1234567",
     type: "short_text",
+    optional: true,
     group: "links",
   },
   {
@@ -224,7 +260,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.cvUrl",
     example: "https://ada.dev/cv.pdf",
     type: "link",
-    optional: true,
     group: "links",
   },
   {
@@ -240,7 +275,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.openreviewId",
     example: "~Ada_Lovelace1",
     type: "short_text",
-    optional: true,
     group: "links",
   },
   {

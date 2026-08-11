@@ -17,8 +17,15 @@ import fs from "node:fs";
 
 type Row = Record<string, string>;
 
-// Sheet column -> roster field. Graduated month and Access level are omitted deliberately: both
-// are empty for every row in the current export, so there is nothing to carry.
+// Sheet column -> roster field.
+//
+// Omitted deliberately:
+//   Graduated month, Access level -- still empty for every row in the export, nothing to carry.
+//     Access level is governance-owned besides, and is never taken from a self-service source.
+//   Any other notes -- not carried onto the roster at all; the profile has no free-text notes
+//     field for it to land in.
+//   Slack email -- no field on the record. The Slack directory sync already matches members to
+//     Slack by email and is the live source for that link, so a sheet copy would only go stale.
 const FIELD_BY_COLUMN: Array<[string, string]> = [
   ["Joined month", "joined_month"],
   ["Location", "location"],
@@ -32,7 +39,9 @@ const FIELD_BY_COLUMN: Array<[string, string]> = [
   ["Personal website", "personal_website"],
   ["LessWrong", "lesswrong_url"],
   ["Research interests", "research_topics"],
-  ["Any other notes", "notes"],
+  // Fills a blank only, like every other column here. The Slack directory sync is the live source
+  // and wins wherever it has already resolved someone.
+  ["Slack ID", "slack_user_id"],
 ];
 
 const LIST_FIELDS = new Set(["research_topics"]);

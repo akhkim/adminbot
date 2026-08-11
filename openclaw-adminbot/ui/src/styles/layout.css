@@ -535,6 +535,9 @@
   overflow-x: hidden;
   padding: 0;
   scrollbar-width: none;
+  /* The other scroller in the shell, and the other place the bounce showed. Same reasoning as
+     `.content`: the shell is fixed-height, so this pane owns its own overscroll. */
+  overscroll-behavior-y: none;
 }
 
 .sidebar-sessions {

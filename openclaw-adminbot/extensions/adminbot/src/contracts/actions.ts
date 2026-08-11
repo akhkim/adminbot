@@ -297,6 +297,9 @@ export type AdminBotLabMemberInput = {
   // github_url, personal_website), so the same fact was stored in two places and whichever the
   // reader happened to consult decided the answer. These are the two that had nowhere else to go.
   joined_month?: string;
+  // When they left, for alumni. Empty for everyone currently on the sheet, but it is the column the
+  // roster will eventually age members out by, so it is stored rather than inferred from `status`.
+  graduated_month?: string;
   whatsapp?: string;
   // The address the lab writes to for outreach, kept apart from `email` (the login identity) and
   // `calendar_email` (the Google account invites go to). The roster spreadsheet has one for every

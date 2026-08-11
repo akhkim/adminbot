@@ -298,14 +298,14 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(filled.querySelector('[data-testid="suggestion-linkedin-urn"]')).toBeNull();
   });
 
-  it("keeps the URN an editable, required field on the record", () => {
+  it("keeps the URN editable, now optional rather than required", () => {
     const container = renderPage(createState(createMember()), vi.fn());
     const input = container.querySelector<HTMLInputElement>('input[name="linkedin_urn"]');
     expect(input).not.toBeNull();
-    // Required, so it counts toward the ledger and the Slack reminder rather than being optional.
+    // Off the member sheet, so optional: only the sheet's own columns (plus the CV) are chased.
     const row = input?.closest(".profile__form-row");
-    expect(row?.querySelector(".profile__mandatory")).not.toBeNull();
-    expect(row?.querySelector(".profile__optional")).toBeNull();
+    expect(row?.querySelector(".profile__optional")).not.toBeNull();
+    expect(row?.querySelector(".profile__mandatory")).toBeNull();
   });
 
   // It is the member's own answers, not the lab's blank form. Google Forms only ever hands the
@@ -344,13 +344,14 @@ describe("renderProfile field types", () => {
     expect(options).not.toContain("Definitely Not A Real Role");
   });
 
-  it("renders timezone as a dropdown and notes as a paragraph textarea", () => {
+  it("renders timezone as a dropdown, and carries no free-text notes field", () => {
     const member = createMember();
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
     expect(container.querySelector('select[name="timezone"]')).not.toBeNull();
-    expect(container.querySelector('textarea[name="notes"]')).not.toBeNull();
+    // "Any other notes" is deliberately not carried onto the profile from the member sheet.
+    expect(container.querySelector('textarea[name="notes"]')).toBeNull();
   });
 
   it("renders hours_per_week as a numeric input and github_url as a url input", () => {
