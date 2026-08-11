@@ -283,6 +283,9 @@ export class OpenClawApp extends LitElement {
   @state() adminBotOnboardingAcknowledged = true;
   @state() adminBotOnboardingBusyStepId: string | null = null;
   @state() adminBotOnboardingError: string | null = null;
+  // Where the member is in the single-card walk of the checklist. Must be reactive: Back/Next
+  // mutate it alone, so a non-reaction property would let clicks fall through with no repaint.
+  @state() adminBotOnboardingStepIndex: number | null = null;
   @state() tab: Tab = "chat";
   @state() onboarding = resolveOnboardingMode();
   @state() connected = false;

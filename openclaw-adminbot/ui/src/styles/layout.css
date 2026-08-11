@@ -1745,26 +1745,43 @@
   background: var(--bg-elevated);
 }
 
-/* The one mark of severity, on the heading rather than as a wash over the whole card: a tint
-   behind the acknowledge button made the control read as part of the warning instead of as the
-   way out of it. */
 .dashboard-onboarding__title::before {
   content: "";
   display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: var(--space-2);
-  vertical-align: 0.2em;
+  width: 9px;
+  height: 9px;
+  margin-right: var(--space-3);
+  vertical-align: 0.1em;
   border-radius: var(--radius-full);
   background: var(--danger);
 }
+
+@keyframes onboarding-dot-pulse {
+  0%,
+  60%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  30% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-onboarding__title::before {
+    animation: none;
+  }
+}
+
 
 .dashboard-onboarding__header {
   margin-bottom: var(--space-5);
 }
 
 .dashboard-onboarding__title {
-  font-size: var(--control-ui-text-lg);
+  font-size: var(--control-ui-text-xl);
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -1772,13 +1789,218 @@
 .dashboard-onboarding__sub {
   margin-top: var(--space-1);
   color: var(--muted);
+  font-size: var(--control-ui-text-md);
+}
+
+.onboarding-step-card {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--bg);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  /* scrollIntoView(block:"start") lands the top flush against the viewport edge without this, so a
+     tall step slides underneath the sticky topbar and reads as a black cut across the screen. */
+  scroll-margin-top: calc(var(--shell-topbar-height) + var(--space-4));
+}
+
+.onboarding-step-card__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.onboarding-step-card__row--category {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.onboarding-step-card__category {
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-strong);
+}
+
+.onboarding-step-card__count {
+  font-size: var(--control-ui-text-md);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.onboarding-step-card__row--task {
+  padding: var(--space-5);
+  align-items: flex-start;
+}
+
+.onboarding-step-card__task {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.onboarding-step-card__number {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  font-size: var(--control-ui-text-md);
+  font-weight: 700;
+  color: var(--muted-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.onboarding-step-card__label {
+  font-size: var(--control-ui-text-xl);
+  font-weight: 600;
+  color: var(--text-strong);
+  line-height: 1.3;
+}
+
+.onboarding-step-card__badges {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.onboarding-step-card__badge {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.onboarding-step-card__badge--required {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+
+.onboarding-step-card__badge--optional {
+  background: color-mix(in srgb, var(--muted) 16%, transparent);
+  color: var(--muted-strong);
+}
+
+.onboarding-step-card__badge--status {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.onboarding-step-card__badge--status[data-status="complete"] {
+  background: color-mix(in srgb, var(--success, #34d3a6) 18%, transparent);
+  color: var(--success, #34d3a6);
+}
+
+.onboarding-step-card__body {
+  padding: 0 var(--space-5) var(--space-5);
+  font-size: var(--control-ui-text-md);
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.onboarding-step-card__detail {
+  margin: 0 0 var(--space-3);
+  color: var(--muted-strong);
+}
+
+.onboarding-step-card__bullets {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.onboarding-step-card__points {
+  margin: var(--space-1) 0 0;
+  padding-left: 18px;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.onboarding-step-card__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.onboarding-step-card__link {
+  height: var(--control-h-lg);
+  padding: 0 var(--space-4);
+  font-size: var(--control-ui-text-md);
+}
+
+.onboarding-step-card__blocked-note {
+  margin: 0 var(--space-5) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
   font-size: var(--control-ui-text-sm);
 }
 
-.dashboard-onboarding__acknowledge {
-  width: 100%;
-  margin-top: var(--space-2);
+/* Same surface as the rest of the card -- just a hairline above, not a background swap --
+   so Next/Back/toggle read as this card's own controls, not a separate strip. */
+.onboarding-step-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border);
 }
+
+.onboarding-step-card__back,
+.onboarding-step-card__toggle,
+.onboarding-step-card__next {
+  height: var(--control-h-lg);
+  padding: 0 var(--space-6);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.onboarding-step-card__error {
+  margin-bottom: var(--space-4);
+  color: var(--danger);
+  font-size: var(--control-ui-text-md);
+}
+
+.onboarding-step-card__next.btn.primary {
+  height: 35px;
+  padding: 0 var(--space-4);
+  background: #e7e6e6;
+  border: 1px solid #808080;
+  color: #0a0a0a;
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.onboarding-step-card__next.btn.primary:hover,
+.onboarding-step-card__next.btn.primary:focus-visible {
+  background: #e7e6e6 !important;
+  border-color: #808080 !important;
+  opacity: 0.88;
+}
+
+.onboarding-step-card__next.btn.primary:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 
 /* Every card in this stack is something waiting on the viewer, so the accent edge that used to
    run down all of them marked nothing -- it was decoration wearing the costume of a signal. The
@@ -2420,7 +2642,8 @@
 }
 
 .profile__field-group + .profile__field-group {
-  padding-top: var(--space-5);
+  margin-top: var(--space-3);
+  padding-top: var(--space-6);
   border-top: 1px solid var(--border);
 }
 
@@ -2436,7 +2659,7 @@
   align-items: center;
   gap: var(--space-2);
   margin: 0 0 var(--space-4);
-  font-size: var(--control-ui-text-xs);
+  font-size: var(--control-ui-text-sm);
   font-weight: 600;
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
@@ -2493,7 +2716,7 @@
   font-size: var(--control-ui-text-xs);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--muted-strong);
 }
 
 .profile-field__value {
@@ -2542,7 +2765,7 @@
   font-size: var(--control-ui-text-xs);
   letter-spacing: var(--tracking-wide);
   text-transform: uppercase;
-  color: var(--muted);
+  color: #d8d7d7;
 }
 
 .profile__optional {
@@ -2557,31 +2780,38 @@
    label does not push it onto a line of its own. */
 .profile__mandatory {
   display: inline-block;
-  width: 4px;
-  height: 4px;
-  margin-left: 5px;
-  vertical-align: 0.35em;
-  border-radius: var(--radius-full);
-  background: var(--accent);
+  width: auto;
+  height: auto;
+  margin-left: 4px;
+  vertical-align: super;
+  border-radius: 0;
+  background: none;
+  color: var(--danger);
+  font-size: 0.9em;
+  line-height: 1;
+}
+
+.profile__mandatory::before {
+  content: "★";
 }
 
 .profile__upload {
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  padding-top: var(--space-5);
+  gap: var(--space-3);
+  padding: var(--space-6) 0;
   border-top: 1px solid var(--border);
 }
 
 .profile__upload-row {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-5);
 }
 
 .profile__upload-preview {
-  width: 44px;
-  height: 44px;
+  width: 76px;
+  height: 76px;
   border-radius: var(--radius-full);
   border: 1px solid var(--border-strong);
   background: var(--bg-muted);
@@ -2598,7 +2828,7 @@
 
 .profile__upload-hint {
   margin: 0;
-  font-size: var(--control-ui-text-xs);
+  font-size: var(--control-ui-text-sm);
   color: var(--muted);
 }
 
@@ -2606,50 +2836,81 @@
    Suggestions
    =========================================== */
 
-/* Advice, not the task. These used to be boxed cards the same weight as the sections above them,
-   which gave an optional guidebook pointer the same visual claim as the required fields. They are
-   ruled rows now -- present, readable, and clearly the least urgent thing on the page. */
-.profile__suggestions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(20rem, 100%), 1fr));
-  gap: var(--space-5) var(--space-8);
+.profile__section-title {
+  margin: 0 0 var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--control-ui-text-lg);
+  font-weight: 700;
+  color: var(--muted-strong);
 }
 
-/* Separated by space rather than by rules. A top rule plus :first-child only lines up in a single
-   column: at two columns the second card is not the first child, so it drew a rule its neighbour
-   did not have, and the row looked broken rather than divided. */
+.profile__suggestions-group {
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border);
+}
+
+.profile__suggestions-group:first-of-type {
+  padding-top: 0;
+  border-top: none;
+}
+
+.profile__suggestions-group + .profile__suggestions-group {
+  margin-top: var(--space-6);
+}
+
+.profile__suggestions-group-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--control-ui-text-xl);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.profile__suggestions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
+  gap: var(--space-6) var(--space-8);
+}
+
 .profile-suggestion {
   padding: 0;
 }
 
 .profile-suggestion__title {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: var(--space-3);
   margin: 0;
-  font-size: var(--control-ui-text-sm);
+  font-size: var(--control-ui-text-md);
   font-weight: 600;
+  line-height: 1.35;
   color: var(--text-strong);
 }
 
-/* An onboarding step carries the checklist's own word for where it stands; a guidebook pointer
-   carries none, which is the difference between the lab waiting on you and a suggestion. */
 .profile-suggestion__status {
   flex-shrink: 0;
-}
-
-.profile-suggestion__status:not(:empty) {
-  border-color: var(--accent-muted);
-  background: var(--accent-subtle);
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .profile-suggestion__body {
-  margin: var(--space-1) 0 var(--space-3);
-  font-size: var(--control-ui-text-sm);
-  line-height: 1.5;
-  color: var(--muted);
+  margin: var(--space-2) 0 var(--space-3);
+  font-size: var(--control-ui-text-md);
+  line-height: 1.6;
+  color: var(--muted-strong);
 }
 
 .profile-suggestion__link {
@@ -2657,7 +2918,8 @@
   align-items: center;
   gap: 6px;
   color: var(--accent);
-  font-size: var(--control-ui-text-sm);
+  font-size: var(--control-ui-text-md);
+  font-weight: 500;
   text-decoration: none;
 }
 
@@ -2668,13 +2930,13 @@
 
 .profile-suggestion__icon {
   display: inline-flex;
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
 }
 
 .profile-suggestion__icon svg {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.5px;
@@ -2870,22 +3132,42 @@
   color: var(--muted);
 }
 
-.profile-field--locked .profile-field__label {
-  display: flex;
+.profile__fields + .profile__form {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.profile-field--locked {
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--space-6);
   align-items: center;
-  gap: 5px;
+  padding: var(--space-3) 0;
+}
+
+.profile-field--locked .profile-field__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .profile-field__lock {
   display: inline-flex;
-  width: 11px;
-  height: 11px;
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
   color: var(--muted);
 }
 
+
+.profile-field--locked .profile-field__value {
+  display: block;
+}
+
+
 .profile-field__lock svg {
-  width: 11px;
-  height: 11px;
+  width: 10px;
+  height: 10px;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.5px;

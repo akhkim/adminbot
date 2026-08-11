@@ -215,18 +215,28 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "work",
   },
   {
-    key: "lesswrong_url",
-    labelKey: "profile.fields.lesswrong",
-    example: "https://www.lesswrong.com/users/ada",
-    type: "link",
-    group: "links",
-  },
-  {
     key: "avatar_url",
     labelKey: "profile.fields.avatarUrl",
     example: "",
     type: "image",
     group: "identity",
+  },
+  {
+    // The member's own intake answers. Google Forms mails each respondent a link to their single
+    // submitted response, so nobody else -- the lab included -- can produce this URL for them;
+    // that is why it is a field they paste into rather than a link the profile renders.
+    key: "intake_form_url",
+    labelKey: "profile.fields.intakeFormUrl",
+    example: "https://docs.google.com/forms/d/e/.../viewform?edit2=...",
+    type: "link",
+    group: "links",
+  },
+  {
+    key: "cv_url",
+    labelKey: "profile.fields.cvUrl",
+    example: "https://ada.dev/cv.pdf",
+    type: "link",
+    group: "links",
   },
   {
     key: "personal_website",
@@ -261,20 +271,10 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "links",
   },
   {
-    // The member's own intake answers. Google Forms mails each respondent a link to their single
-    // submitted response, so nobody else -- the lab included -- can produce this URL for them;
-    // that is why it is a field they paste into rather than a link the profile renders.
-    key: "intake_form_url",
-    labelKey: "profile.fields.intakeFormUrl",
-    example: "https://docs.google.com/forms/d/e/.../viewform?edit2=...",
-    type: "link",
-    group: "links",
-  },
-  {
-    key: "cv_url",
-    labelKey: "profile.fields.cvUrl",
-    example: "https://ada.dev/cv.pdf",
-    type: "link",
+    key: "openreview_id",
+    labelKey: "profile.fields.openreviewId",
+    example: "~Ada_Lovelace1",
+    type: "short_text",
     group: "links",
   },
   {
@@ -285,10 +285,10 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "links",
   },
   {
-    key: "openreview_id",
-    labelKey: "profile.fields.openreviewId",
-    example: "~Ada_Lovelace1",
-    type: "short_text",
+    key: "lesswrong_url",
+    labelKey: "profile.fields.lesswrong",
+    example: "https://www.lesswrong.com/users/ada",
+    type: "link",
     group: "links",
   },
   {
@@ -1023,19 +1023,20 @@ function renderBadges(state: AppViewState, member: LabMember) {
 // service generated for this member, so this list and the checklist itself can never drift.
 function renderSuggestions(state: AppViewState, member: LabMember) {
   const blanks = new Set(blankFields(member).map((field) => field.key));
-  const suggestions: Array<{
+
+  type Suggestion = {
     id: string;
     title: string;
     body: string;
     label: string;
     href: string;
-    // Present only on an onboarding step: the checklist's own word for where the step stands.
     status?: string;
-  }> = [];
+  };
+
+  const onboardingSuggestions: Suggestion[] = [];
+  const otherSuggestions: Suggestion[] = [];
 
   const onboarding = state.adminBotOnboarding;
-  // `remaining` is everything not yet done; `current_step` is the one the checklist points at
-  // first and is not repeated inside it, so both are needed to list all of the outstanding work.
   const outstanding = [
     ...(onboarding?.current_step ? [onboarding.current_step] : []),
     ...(onboarding?.remaining ?? []),
@@ -1045,7 +1046,7 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
   );
   for (const step of outstanding) {
     const link = step.links?.[0];
-    suggestions.push({
+    onboardingSuggestions.push({
       id: `onboarding-${step.id}`,
       title: step.label,
       body: step.detail ?? "",
@@ -1058,21 +1059,9 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
     });
   }
 
-  // A guidebook pointer that repeats an outstanding onboarding step is noise: the step is the lab
-  // actually asking, and the pointer is advice about the same thing. Whatever onboarding already
-  // covers, the static suggestions below stay quiet about.
   const coveredByOnboarding = outstanding
     .map((step) => `${step.id} ${step.label}`.toLowerCase())
     .join(" ");
-
-  // The URN hand-off used to be a card here. It now sits on the field itself (renderFieldHelp and
-  // renderFieldAction), so the explanation and the input are in one place and the explanation
-  // survives being filled in -- a card that vanishes on completion leaves anyone correcting a wrong
-  // value with nothing to check against.
-
-  // The intake form used to be pushed here unconditionally. It never had a "done" state, so it sat
-  // permanently in a stack whose whole meaning is "still outstanding" and quietly taught people to
-  // read past it. It lives with the links now, where a permanent destination belongs.
 
   const topics = (member.research_topics ?? []).join(" ").toLowerCase();
   if (
@@ -1082,7 +1071,7 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
       .toLowerCase()
       .includes("gpu")
   ) {
-    suggestions.push({
+    otherSuggestions.push({
       id: "gpu",
       title: t("profile.suggestions.gpuTitle"),
       body: t("profile.suggestions.gpuBody"),
@@ -1091,7 +1080,7 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
     });
   }
   if (blanks.has("personal_website") && !coveredByOnboarding.includes("website")) {
-    suggestions.push({
+    otherSuggestions.push({
       id: "website",
       title: t("profile.suggestions.websiteTitle"),
       body: t("profile.suggestions.websiteBody"),
@@ -1099,49 +1088,71 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
       href: "https://github.com/akhkim/openclaw-adminbot-lab#member-pages",
     });
   }
-  if (!suggestions.length) {
+
+  if (!onboardingSuggestions.length && !otherSuggestions.length) {
     return nothing;
   }
+
+  const renderCard = (suggestion: Suggestion) => html`
+    <article class="profile-suggestion" data-testid=${`suggestion-${suggestion.id}`}>
+      <h3 class="profile-suggestion__title">
+        ${suggestion.title}
+        ${suggestion.status
+          ? html`<span class="ab-chip profile-suggestion__status">${suggestion.status}</span>`
+          : nothing}
+      </h3>
+      ${suggestion.body
+        ? html`<p class="profile-suggestion__body">${suggestion.body}</p>`
+        : nothing}
+      ${suggestion.href
+        ? html`
+            <a
+              class="profile-suggestion__link"
+              href=${suggestion.href}
+              target=${EXTERNAL_LINK_TARGET}
+              rel=${buildExternalLinkRel()}
+            >
+              ${suggestion.label}
+              <span class="profile-suggestion__icon" aria-hidden="true">
+                ${icons.externalLink}
+              </span>
+            </a>
+          `
+        : nothing}
+    </article>
+  `;
+
   return html`
     <section class="profile__section" data-testid="profile-suggestions">
       <h2 class="profile__section-title">${t("profile.suggestions.title")}</h2>
-      <div class="profile__suggestions">
-        ${suggestions.map(
-          (suggestion) => html`
-            <article class="profile-suggestion" data-testid=${`suggestion-${suggestion.id}`}>
-              <h3 class="profile-suggestion__title">
-                ${suggestion.title}
-                ${suggestion.status
-                  ? html`<span class="ab-chip profile-suggestion__status"
-                      >${suggestion.status}</span
-                    >`
-                  : nothing}
+      ${onboardingSuggestions.length
+        ? html`
+            <div class="profile__suggestions-group">
+              <h3 class="profile__suggestions-group-title">
+                ${t("profile.suggestions.fromOnboarding")}
               </h3>
-              ${suggestion.body
-                ? html`<p class="profile-suggestion__body">${suggestion.body}</p>`
-                : nothing}
-              ${suggestion.href
-                ? html`
-                    <a
-                      class="profile-suggestion__link"
-                      href=${suggestion.href}
-                      target=${EXTERNAL_LINK_TARGET}
-                      rel=${buildExternalLinkRel()}
-                    >
-                      ${suggestion.label}
-                      <span class="profile-suggestion__icon" aria-hidden="true">
-                        ${icons.externalLink}
-                      </span>
-                    </a>
-                  `
-                : nothing}
-            </article>
-          `,
-        )}
-      </div>
+              <div class="profile__suggestions">
+                ${onboardingSuggestions.map(renderCard)}
+              </div>
+            </div>
+          `
+        : nothing}
+      ${otherSuggestions.length
+        ? html`
+            <div class="profile__suggestions-group">
+              <h3 class="profile__suggestions-group-title">
+                ${t("profile.suggestions.other")}
+              </h3>
+              <div class="profile__suggestions">
+                ${otherSuggestions.map(renderCard)}
+              </div>
+            </div>
+          `
+        : nothing}
     </section>
   `;
 }
+
 
 // A picture when there is one, initials when there is not -- never an empty circle.
 // The picture is its own edit control: hovering (or tabbing to) it reveals a pencil, and the whole

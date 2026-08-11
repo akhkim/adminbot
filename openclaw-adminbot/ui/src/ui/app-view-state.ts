@@ -132,6 +132,9 @@ export type AppViewState = {
   adminBotOnboardingAcknowledged: boolean;
   adminBotOnboardingBusyStepId: string | null;
   adminBotOnboardingError: string | null;
+  // Where the member is in the walk of the checklist (null = not navigated yet; the view opens on
+  // the first step that still needs the member).
+  adminBotOnboardingStepIndex: number | null;
   submitMemberAuth: () => Promise<void>;
   signOutMember: () => Promise<void>;
   loadRoster: () => Promise<void>;
