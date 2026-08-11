@@ -537,7 +537,6 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
   if (mode === "general") {
     switch (tab) {
       case "adminbotMembers":
-      case "adminbotTimeAvailability":
         return "members";
       case "adminbotReimbursements":
         return "reimbursements";
@@ -558,7 +557,6 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
     case "adminbotReimbursements":
       return "reimbursements";
     case "adminbotMembers":
-    case "adminbotTimeAvailability":
       return "members";
     case "adminbotPapers":
       return "papers";
@@ -2180,7 +2178,13 @@ export function renderApp(state: AppViewState) {
   // session (loadAdminBot prefers loadStoredMemberSession), which needs no gateway socket at all --
   // requiring one was the second half of why the landing page came up blank for plain members.
   const hasMemberSession = Boolean(state.memberId);
-  const wantsGatewayAdminBotLoad = ((isChat && isAdminBotChat) || adminBotPanel) && state.connected;
+  // Time Availability needs the roster to fill its member picker but renders its own view, so it
+  // deliberately maps to no panel. It has to be named here instead: `adminBotPanel` doubles as the
+  // render switch, and borrowing "members" to trigger the fetch drew the whole Lab Members panel
+  // underneath the schedule.
+  const wantsRosterOnly = state.tab === "adminbotTimeAvailability";
+  const wantsGatewayAdminBotLoad =
+    ((isChat && isAdminBotChat) || adminBotPanel || wantsRosterOnly) && state.connected;
   if (
     (hasMemberSession || wantsGatewayAdminBotLoad) &&
     !state.adminBotLoading &&
