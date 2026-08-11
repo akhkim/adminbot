@@ -9077,3 +9077,97 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--text-muted);
   font-size: var(--control-ui-text-xs);
 }
+
+/* ===========================================
+   Form controls
+   ===========================================
+
+   `.input` had no rule anywhere outside the workboard's own scope, so every field carrying it —
+   the profile's Basic Info among them — rendered as a bare user-agent control: an opaque grey slab
+   that belonged to the browser rather than to this UI.
+
+   The replacement is a hairline field on the page's own ground. No fill, because the stacked
+   micro-label already separates one row from the next and a filled box on top of that reads as two
+   containers doing one job. The border stays as the affordance so the field is still obviously
+   editable — an underline-only control is the more fashionable minimal, and the wrong trade on a
+   form people have to complete. Focus is where the color goes. */
+
+.input {
+  width: 100%;
+  min-width: 0;
+  /* Matches `.btn`: a transparent control on a `--border-strong` edge, at the shared control
+     height, so a field and a button on the same row are the same object at rest. `--border` is the
+     card edge and is too faint to be a field's only affordance once the fill is gone. */
+  min-height: var(--control-h-md);
+  padding: 6px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--control-ui-text-md);
+  line-height: 1.45;
+  transition:
+    border-color 120ms var(--ease-out),
+    background-color 120ms var(--ease-out),
+    box-shadow 120ms var(--ease-out);
+}
+
+.input::placeholder {
+  color: var(--muted);
+}
+
+/* Only when it is not already the focused field, so hover cannot mute the focus treatment. */
+.input:hover:not(:disabled):not(:focus) {
+  border-color: var(--border-hover);
+}
+
+.input:focus,
+.input:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  /* A faint lift on focus: the one place the field earns a surface, marking where typing lands. */
+  background: var(--bg-accent);
+  box-shadow: 0 0 0 3px var(--focus);
+}
+
+.input:disabled {
+  border-color: var(--border);
+  /* The one place a fill is right: it reads as "not yours to type in" without needing a cursor. */
+  background: var(--bg-muted);
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+textarea.input {
+  min-height: 68px;
+  resize: vertical;
+}
+
+/* The native select arrow is drawn by the platform and ignores the theme, which is the other half
+   of why these looked like grey boxes. Replaced with a chevron in the same stroke as the icon set. */
+select.input {
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238f8f98' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px 14px;
+  appearance: none;
+}
+
+select.input:focus {
+  /* Keep the chevron over the focus surface rather than letting the lift paint it out. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238f8f98' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-color: var(--bg-accent);
+}
+
+/* Date fields ship a UA calendar glyph that renders near-black on a dark ground. */
+.input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  filter: invert(0.62);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .input {
+    transition: none;
+  }
+}
