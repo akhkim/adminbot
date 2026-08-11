@@ -1651,7 +1651,7 @@
   background: var(--text-strong);
   border: 1px solid var(--text-strong);
   color: #0a0a0a;
-  opacity: 0.90;
+  opacity: 0.9;
   transition: opacity 150ms ease;
 }
 
@@ -1945,7 +1945,9 @@
 
 .dashboard-summary__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 64px 34px;
+  /* The last column holds a step name, not a glyph -- it was 34px, so "Submission" and anything
+     longer overflowed the card. Bounded rather than fixed, and the cell truncates below. */
+  grid-template-columns: minmax(0, 1fr) 64px minmax(0, 7rem);
   align-items: center;
   gap: var(--space-3);
   font-size: var(--control-ui-text-sm);
@@ -1984,10 +1986,47 @@
 }
 
 .dashboard-summary__row-step {
+  overflow: hidden;
   font-family: var(--mono);
   font-size: var(--control-ui-text-xs);
   color: var(--muted);
+  text-align: right;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A venue name that links out. The icon used to be a standalone button with no styles at all, so
+   it rendered at the SVG's natural size and dominated the row; it now sits inline at text size. */
+.dashboard-summary__row-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.dashboard-summary__row-link:hover {
+  text-decoration: underline;
+}
+
+.dashboard-summary__row-link-icon {
+  display: inline-flex;
+  margin-left: 4px;
+  vertical-align: -1px;
+}
+
+.dashboard-summary__row-link-icon svg {
+  width: 11px;
+  height: 11px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+}
+
+/* Urgency reads through the countdown value, matching the deadline board's bands. */
+.dashboard-summary__row[data-urgency="critical"] .dashboard-summary__row-value {
+  color: var(--danger, #a83b38);
+}
+
+.dashboard-summary__row[data-urgency="soon"] .dashboard-summary__row-value {
+  color: var(--warn, #9f5b12);
 }
 
 .dashboard-summary__more {
@@ -3056,7 +3095,6 @@
   background: var(--bg-landing) center / cover no-repeat;
 }
 
-
 /* Hairline ledger rules, faded out at the edges so they never compete with the wordmark. */
 /* NOTE: THIS HAS BEEN REPLACE BY BG AT --bg-landing */
 /* .landing__rules {
@@ -3165,7 +3203,9 @@
   border-radius: var(--radius-md, 6px);
   text-decoration: none;
   color: var(--muted-strong);
-  transition: border-color 150ms ease, color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    color 150ms ease;
 }
 
 .landing__cta .landing__surface:hover,
@@ -3335,7 +3375,9 @@
   line-height: 1;
   color: var(--text-strong);
   text-decoration: none;
-  transition: border-color 150ms ease, background-color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
 }
 
 .public-shell-back:hover,
@@ -3343,7 +3385,6 @@
   border-color: var(--text-strong);
   background: color-mix(in srgb, var(--text-strong) 8%, transparent);
 }
-
 
 .public-shell-back__arrow {
   font-size: 1.1em;

@@ -7,7 +7,7 @@
 //
 // Selection and countdown formatting come from data/deadline-time.ts, shared with the board, so the
 // two surfaces can never disagree about what is next or how long is left.
-import { html, nothing, LitElement } from "lit";
+import { html, LitElement } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
@@ -22,31 +22,30 @@ import {
 
 const SUMMARY_LIMIT = 2;
 
+// One deadline row, in the same shape the work summary uses: a truncating label and a mono value
+// on the right. The venue name is the link rather than a separate icon button -- the icon had no
+// styles of its own and rendered at the SVG's natural size, which dwarfed the row.
 function renderEntry(entry: DeadlineEntry, now: number) {
   const { venue, instant } = entry;
+  const label = venue.link
+    ? html`<a
+        class="dashboard-summary__row-link"
+        href=${venue.link}
+        target=${EXTERNAL_LINK_TARGET}
+        rel=${buildExternalLinkRel()}
+        >${venue.name}<span class="dashboard-summary__row-link-icon" aria-hidden="true"
+          >${icons.externalLink}</span
+        ></a
+      >`
+    : venue.name;
   return html`
     <li
-      class="deadline-summary__row"
+      class="dashboard-summary__row dashboard-summary__row--paper"
       data-urgency=${urgencyOf(instant, now)}
       data-testid=${`deadline-summary-${venue.id}`}
     >
-      <span class="deadline-summary__countdown">${countdownLabel(instant - now)}</span>
-      <span class="deadline-summary__body">
-        <span class="deadline-summary__name">${venue.name}</span>
-        <span class="deadline-summary__date">
-          ${aoeDateLabel(venue.deadline_aoe)} ${t("deadlineSummary.aoe")}
-        </span>
-      </span>
-      ${venue.link
-        ? html`<a
-            class="deadline-summary__link"
-            href=${venue.link}
-            target=${EXTERNAL_LINK_TARGET}
-            rel=${buildExternalLinkRel()}
-            aria-label=${t("deadlineSummary.venueLink", { name: venue.name })}
-            >${icons.externalLink}</a
-          >`
-        : nothing}
+      <span class="dashboard-summary__row-label" title=${venue.name}>${label}</span>
+      <span class="dashboard-summary__row-value">${countdownLabel(instant - now)}</span>
     </li>
   `;
 }
@@ -80,22 +79,36 @@ class AdminbotDeadlineSummary extends LitElement {
   protected override render() {
     const now = Date.now();
     const entries = upcomingMajorDeadlines(now, SUMMARY_LIMIT);
+    const next = entries[0];
+    // Same anatomy as the Needs You and My Projects & Papers cards: label, one headline number,
+    // a supporting line, the rows, then the action. The headline is the soonest countdown, which
+    // is the one figure worth reading at a glance.
     return html`
-      <section class="deadline-summary" data-testid="profile-deadline-summary">
-        <h2 class="deadline-summary__title">${t("deadlineSummary.title")}</h2>
-        ${entries.length
-          ? html`<ul class="deadline-summary__list">
-              ${entries.map((entry) => renderEntry(entry, now))}
-            </ul>`
-          : html`<p class="deadline-summary__empty">${t("deadlineSummary.empty")}</p>`}
+      <article class="dashboard-summary" data-testid="profile-deadline-summary">
+        <h3 class="dashboard-summary__title">
+          <span class="dashboard-summary__icon" aria-hidden="true">${icons.loader}</span>
+          ${t("deadlineSummary.title")}
+        </h3>
+        ${next
+          ? html`
+              <p class="dashboard-summary__headline">${countdownLabel(next.instant - now)}</p>
+              <p class="dashboard-summary__detail">
+                ${next.venue.name} · ${aoeDateLabel(next.venue.deadline_aoe)}
+                ${t("deadlineSummary.aoe")}
+              </p>
+              <ul class="dashboard-summary__list">
+                ${entries.map((entry) => renderEntry(entry, now))}
+              </ul>
+            `
+          : html`<p class="dashboard-summary__detail">${t("deadlineSummary.empty")}</p>`}
         <button
           type="button"
-          class="btn deadline-summary__action"
+          class="btn dashboard-summary__action"
           @click=${() => this.onOpenBoard?.()}
         >
           ${t("deadlineSummary.open")}
         </button>
-      </section>
+      </article>
     `;
   }
 }

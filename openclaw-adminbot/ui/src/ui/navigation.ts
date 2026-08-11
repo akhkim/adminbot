@@ -11,7 +11,7 @@ import { normalizeLowercaseStringOrEmpty } from "./string-coerce.ts";
 // two open tools inside "General Tools".
 export const TAB_GROUPS = [
   { label: "myProfile", tabs: ["profile"] },
-  { label: "myProjects", tabs: ["myWork", "adminbotPapers"] },
+  { label: "myProjects", tabs: ["myWork"] },
   {
     label: "generalTools",
     tabs: [
@@ -27,6 +27,7 @@ export const TAB_GROUPS = [
     label: "admin",
     tabs: [
       "adminbot",
+      "adminbotPapers",
       "adminbotRegistrations",
       "adminbotOnboarding",
       "adminbotAnnouncements",

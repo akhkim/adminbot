@@ -87,7 +87,6 @@ describe("visibleTabsForRole", () => {
     expect(visibleTabsForRole(ALL_TABS, "member")).toEqual([
       "profile",
       "myWork",
-      "adminbotPapers",
       "chat",
       "adminbotDeadlines",
       "adminbotReimbursements",
@@ -129,7 +128,7 @@ describe("the access table", () => {
 describe("resolveAccessibleTab", () => {
   it("keeps a tab the role may see", () => {
     expect(resolveAccessibleTab("adminbotDeadlines", "anonymous")).toBe("adminbotDeadlines");
-    expect(resolveAccessibleTab("adminbotPapers", "member")).toBe("adminbotPapers");
+    expect(resolveAccessibleTab("adminbotMembers", "member")).toBe("adminbotMembers");
     expect(resolveAccessibleTab("config", "admin")).toBe("config");
   });
 

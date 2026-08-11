@@ -45,7 +45,8 @@ describe("TAB_GROUPS", () => {
     const byLabel = (label: string) => TAB_GROUPS.find((group) => group.label === label)?.tabs;
 
     expect(byLabel("myProfile")).toEqual(["profile"]);
-    expect(byLabel("myProjects")).toEqual(["myWork", "adminbotPapers"]);
+    // Active Papers is the lab-wide pipeline, so it lives under Admin now, not "my" work.
+    expect(byLabel("myProjects")).toEqual(["myWork"]);
     expect(byLabel("generalTools")).toEqual([
       "chat",
       "adminbotDeadlines",
@@ -56,6 +57,7 @@ describe("TAB_GROUPS", () => {
     expect(byLabel("labSharing")).toEqual(["labSharing"]);
     expect(byLabel("admin")).toEqual([
       "adminbot",
+      "adminbotPapers",
       "adminbotRegistrations",
       "adminbotOnboarding",
       "adminbotAnnouncements",

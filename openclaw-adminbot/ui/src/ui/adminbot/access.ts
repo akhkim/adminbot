@@ -48,13 +48,12 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotReimbursements: "anonymous",
   adminbotDeadlines: "anonymous",
 
-  // Members. The roster and the paper list are lab-internal but not governance surfaces, and chat
-  // is how members talk to AdminBot at all.
+  // Members. The roster is lab-internal but not a governance surface, and chat is how members talk
+  // to AdminBot at all.
   adminbotMembers: "member",
   // Whose time is committed where is lab-internal planning, not governance: any member may read
   // any member's schedule. Writing is separately restricted to your own record by the service.
   adminbotTimeAvailability: "member",
-  adminbotPapers: "member",
   chat: "member",
   // Your own record and your own work. Both are scoped to the viewer, so neither needs privilege
   // beyond having an account. Profile is also home for anyone signed in: it carries the attention
@@ -67,6 +66,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   labSharing: "member",
 
   // Everything else is an operator or governance surface.
+  // Active Papers is the lab-wide pipeline across every author, not the viewer's own work -- that
+  // is My Work, which stays member-visible and is scoped to them.
+  adminbotPapers: "admin",
   adminbot: "admin",
   adminbotRegistrations: "admin",
   adminbotOnboarding: "admin",
