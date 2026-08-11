@@ -1743,6 +1743,10 @@
   border: 1px solid var(--danger-muted);
   border-radius: var(--radius-xl);
   background: var(--bg-elevated);
+  /* The checklist sits beside -- not inside -- the .profile container in app-render.ts, so it
+     would stretch to the full content width without the same 62rem measure the sections above it
+     use. */
+  max-width: 62rem;
 }
 
 .dashboard-onboarding__title::before {
