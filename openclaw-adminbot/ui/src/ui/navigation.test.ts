@@ -21,16 +21,26 @@ const ALL_TABS: Tab[] = Array.from(
 );
 
 const leadingSlashNormalizerCases = [
-  { name: "normalizeBasePath", normalize: normalizeBasePath, input: "ui", expected: "/ui" },
-  { name: "normalizePath", normalize: normalizePath, input: "chat", expected: "/chat" },
+  {
+    name: "normalizeBasePath",
+    normalize: normalizeBasePath,
+    input: "ui",
+    expected: "/ui",
+  },
+  {
+    name: "normalizePath",
+    normalize: normalizePath,
+    input: "chat",
+    expected: "/chat",
+  },
 ];
 
 describe("iconForTab", () => {
   it("returns stable icons for every tab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, iconForTab(tab)]))).toEqual({
-      dashboard: "layoutComfortable",
       profile: "user",
       myWork: "book",
+      labSharing: "link",
       chat: "messageSquare",
       overview: "barChart",
       adminbot: "brain",
@@ -52,7 +62,6 @@ describe("iconForTab", () => {
       cron: "loader",
       agents: "folder",
       skills: "zap",
-      skillWorkshop: "wrench",
       nodes: "monitor",
       dreams: "moon",
       config: "settings",
@@ -77,9 +86,9 @@ describe("iconForTab", () => {
 describe("titleForTab", () => {
   it("returns expected titles for every tab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, titleForTab(tab)]))).toEqual({
-      dashboard: "Dashboard",
       profile: "My Profile",
       myWork: "My Projects & Papers",
+      labSharing: "Lab Sharing",
       chat: "Chat",
       overview: "Overview",
       adminbot: "Pending Actions",
@@ -101,7 +110,6 @@ describe("titleForTab", () => {
       cron: "Tasks & Tools",
       agents: "Agents",
       skills: "Skills",
-      skillWorkshop: "Skill Workshop",
       nodes: "Nodes",
       dreams: "Dreaming",
       config: "Settings",
@@ -120,9 +128,9 @@ describe("titleForTab", () => {
 describe("subtitleForTab", () => {
   it("returns expected subtitles for every tab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, subtitleForTab(tab)]))).toEqual({
-      dashboard: "What needs you, and where the lab stands.",
-      profile: "Your details, your badges, and anything still blank.",
+      profile: "What needs you, your details, and anything still blank.",
       myWork: "What you are working on, and anything holding it up.",
+      labSharing: "Shared lab resources. Not built yet.",
       chat: "Gateway chat for quick interventions.",
       overview: "Status, entry points, health.",
       adminbot: "Approval queue and execution controls.",
@@ -130,7 +138,7 @@ describe("subtitleForTab", () => {
       adminbotOnboarding: "Send a member or collaborator their onboarding guide.",
       adminbotSettings: "Lab defaults and escalation policy.",
       adminbotMembers: "Privilege levels and access profiles.",
-      adminbotTimeAvailability: "Choose a lab member to view time availability.",
+      adminbotTimeAvailability: "Who is committed to what, and when.",
       adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
       adminbotPapers: "PaperPublish records and current steps.",
       adminbotAnnouncements: "Nudge members or send a general announcement.",
@@ -144,7 +152,6 @@ describe("subtitleForTab", () => {
       cron: "Recurring runs, and tools you run on command.",
       agents: "Workspaces, tools, identities.",
       skills: "Skills and API keys.",
-      skillWorkshop: "Review, refine, and apply proposals before they become live skills.",
       nodes: "Paired devices and commands.",
       dreams: "Memory dreaming, consolidation, and reflection.",
       config: "Edit openclaw.json.",
@@ -218,7 +225,6 @@ describe("tabFromPath", () => {
     expect(tabFromPath("/adminbot/registrations")).toBe("adminbotRegistrations");
     expect(tabFromPath("/adminbot/settings")).toBe("adminbotSettings");
     expect(tabFromPath("/adminbot/members")).toBe("adminbotMembers");
-    expect(tabFromPath("/adminbot/time-availability")).toBe("adminbotTimeAvailability");
     expect(tabFromPath("/adminbot/papers")).toBe("adminbotPapers");
     expect(tabFromPath("/adminbot/announcements")).toBe("adminbotAnnouncements");
     expect(tabFromPath("/adminbot/deadlines")).toBe("adminbotDeadlines");
@@ -228,8 +234,14 @@ describe("tabFromPath", () => {
     expect(tabFromPath("/dreams")).toBe("dreams");
   });
 
-  it("returns the dashboard for root path", () => {
-    expect(tabFromPath("/")).toBe("dashboard");
+  // The dashboard folded into the profile, which is now what root resolves to for a signed-in
+  // viewer; app-render still coerces a visitor's root to the landing page.
+  it("returns the profile for root path", () => {
+    expect(tabFromPath("/")).toBe("profile");
+  });
+
+  it("routes the Lab Sharing placeholder", () => {
+    expect(tabFromPath("/lab-sharing")).toBe("labSharing");
   });
 
   it("handles base paths", () => {
@@ -271,16 +283,14 @@ describe("inferBasePathFromPathname", () => {
 });
 
 describe("TAB_GROUPS", () => {
-  it("contains all expected groups, AdminBot split member -> admin -> guest", () => {
+  it("contains all expected groups, member surfaces first and privileged ones last", () => {
     expect(TAB_GROUPS.map((g) => g.label)).toEqual([
-      "home",
-      "chat",
-      "adminbotMember",
-      "adminbotAdmin",
-      "adminbotGuest",
-      "control",
-      "agent",
-      "settings",
+      "myProfile",
+      "myProjects",
+      "generalTools",
+      "labSharing",
+      "admin",
+      "openclaw",
     ]);
   });
 
@@ -291,8 +301,10 @@ describe("TAB_GROUPS", () => {
   });
 
   it("keeps detailed settings slices routed but out of the root sidebar", () => {
-    const settings = TAB_GROUPS.find((group) => group.label === "settings");
-    expect(settings?.tabs).toEqual(["config"]);
+    const openclaw = TAB_GROUPS.find((group) => group.label === "openclaw");
+    // `config` is the only settings tab in the sidebar; the rest are slices of that page.
+    expect(openclaw?.tabs).toContain("config");
+    expect(openclaw?.tabs).not.toContain("channels");
     expect(SETTINGS_TABS).toEqual([
       "config",
       "channels",

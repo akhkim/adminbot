@@ -127,11 +127,6 @@ import {
 import { resolveSessionKeyFromResolveParams } from "../sessions/sessions-resolve.js";
 import { setGatewayDedupeEntry } from "./agent-wait-dedupe.js";
 import { chatHandlers } from "./chat.js";
-import {
-  canRequesterAccessSession,
-  resolveSessionAccessRequester,
-  type SessionAccessRequester,
-} from "./session-ownership.js";
 import { loadOptionalServerMethodModelCatalog } from "./optional-model-catalog.js";
 import { hasTrackedActiveSessionRun } from "./session-active-runs.js";
 import { emitSessionsChanged } from "./session-change-event.js";
@@ -235,18 +230,6 @@ function requireSessionKey(key: unknown, respond: RespondFn): string | null {
   return normalized;
 }
 
-function filterSessionStoreToAccessibleOwner(
-  store: Record<string, SessionEntry>,
-  requester: SessionAccessRequester,
-): Record<string, SessionEntry> {
-  if (requester.isAdmin) {
-    return store;
-  }
-  return Object.fromEntries(
-    Object.entries(store).filter(([, entry]) => canRequesterAccessSession(entry, requester)),
-  );
-}
-
 function rejectPluginRuntimeDeleteMismatch(params: {
   client: GatewayClient | null;
   key: string;
@@ -266,29 +249,6 @@ function rejectPluginRuntimeDeleteMismatch(params: {
     errorShape(
       ErrorCodes.INVALID_REQUEST,
       `Plugin "${pluginOwnerId}" cannot delete session "${params.key}" because it did not create it.`,
-    ),
-  );
-  return true;
-}
-
-function rejectSessionOwnershipMismatch(params: {
-  client: GatewayClient | null;
-  key: string;
-  entry: SessionEntry | undefined;
-  respond: RespondFn;
-}): boolean {
-  if (!params.entry) {
-    return false;
-  }
-  if (canRequesterAccessSession(params.entry, resolveSessionAccessRequester(params.client))) {
-    return false;
-  }
-  params.respond(
-    false,
-    undefined,
-    errorShape(
-      ErrorCodes.INVALID_REQUEST,
-      `Cannot delete session "${params.key}" because it belongs to a different member.`,
     ),
   );
   return true;
@@ -953,14 +913,13 @@ async function handleSessionSend(params: {
   }
 }
 export const sessionsHandlers: GatewayRequestHandlers = {
-  "sessions.list": async ({ params, respond, context, client }) => {
+  "sessions.list": async ({ params, respond, context }) => {
     if (!assertValidParams(params, validateSessionsListParams, "sessions.list", respond)) {
       return;
     }
     const p = params;
     const cfg = context.getRuntimeConfig();
     const configuredAgentsOnly = p.configuredAgentsOnly === true;
-    const accessRequester = resolveSessionAccessRequester(client);
     const payload = await measureDiagnosticsTimelineSpan(
       "gateway.sessions.list",
       async () => {
@@ -979,10 +938,9 @@ export const sessionsHandlers: GatewayRequestHandlers = {
             },
           },
         );
-        const configuredStore = configuredAgentsOnly
+        const listStore = configuredAgentsOnly
           ? filterSessionStoreToConfiguredAgents(cfg, store)
           : store;
-        const listStore = filterSessionStoreToAccessibleOwner(configuredStore, accessRequester);
         const modelCatalog = await measureDiagnosticsTimelineSpan(
           "gateway.sessions.list.model_catalog",
           () => loadOptionalServerMethodModelCatalog(context, "sessions.list"),
@@ -1240,7 +1198,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
     respond(true, { ts: Date.now(), previews } satisfies SessionsPreviewResult, undefined);
   },
-  "sessions.describe": ({ params, respond, context, client }) => {
+  "sessions.describe": ({ params, respond, context }) => {
     if (!assertValidParams(params, validateSessionsDescribeParams, "sessions.describe", respond)) {
       return;
     }
@@ -1251,7 +1209,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     }
     const cfg = context.getRuntimeConfig();
     const { target, storePath, store, entry } = loadSessionEntriesForTarget({ key, cfg });
-    if (!entry || !canRequesterAccessSession(entry, resolveSessionAccessRequester(client))) {
+    if (!entry) {
       respond(true, { session: null }, undefined);
       return;
     }
@@ -1541,20 +1499,16 @@ export const sessionsHandlers: GatewayRequestHandlers = {
           },
           loadGatewayModelCatalog: context.loadGatewayModelCatalog,
         });
-        if (!patched.ok) {
+        if (!patched.ok || !canonicalParentSessionKey) {
           return patched;
         }
-        const inheritedSelection =
-          canonicalParentSessionKey && !normalizeOptionalString(p.model)
-            ? inheritSessionRuntimeSelection(parentSessionEntry)
-            : {};
+        const inheritedSelection = normalizeOptionalString(p.model)
+          ? {}
+          : inheritSessionRuntimeSelection(parentSessionEntry);
         const nextEntry: SessionEntry = {
           ...patched.entry,
           ...inheritedSelection,
-          ...(canonicalParentSessionKey ? { parentSessionKey: canonicalParentSessionKey } : {}),
-          ...(client?.ownerMemberId && !patched.entry.ownerMemberId
-            ? { ownerMemberId: client.ownerMemberId }
-            : {}),
+          parentSessionKey: canonicalParentSessionKey,
         };
         return {
           ...patched,
@@ -2354,9 +2308,6 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       agentId: requestedAgentId,
     });
     if (rejectPluginRuntimeDeleteMismatch({ client, key: canonicalKey ?? key, entry, respond })) {
-      return;
-    }
-    if (rejectSessionOwnershipMismatch({ client, key: canonicalKey ?? key, entry, respond })) {
       return;
     }
     const mutationCleanupError = await cleanupSessionBeforeMutation({

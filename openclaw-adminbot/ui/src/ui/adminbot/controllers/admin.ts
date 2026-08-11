@@ -4,6 +4,7 @@ import type { UiSettings } from "../../storage.ts";
 import {
   type MemberNudgeChannel,
   type MemberProfileUpdate,
+  type MemberScheduleUpdate,
   approveActionAsMember,
   executeActionAsMember,
   removePendingAction,
@@ -14,9 +15,10 @@ import {
   saveOwnPaper,
   sendMemberNudge,
   updateOwnProfile,
+  updateOwnSchedule,
   upsertLabMemberAsAdmin,
 } from "../auth/session.ts";
-import type { AvailabilityRow, TimeOffRow } from "../data/availability.js";
+import type { AvailabilityRow, MilestoneRow, TimeOffRow } from "../data/availability.js";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
 
@@ -59,10 +61,15 @@ export type AdminBotLabMember = {
   hours_per_week?: number;
   availability?: AvailabilityRow[];
   time_off?: TimeOffRow[];
+  milestones?: MilestoneRow[];
   location?: string;
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
+  calendar_email?: string;
+  github_url?: string;
+  joined_month?: string;
+  whatsapp?: string;
   // Self-attested checklist state (see extensions/adminbot/src/workflows/onboarding/onboarding.ts); the dashboard
   // only reads step id + status to preselect nudge recipients.
   onboarding?: { steps?: Array<{ id: string; status: string }> } | null;
@@ -102,6 +109,12 @@ export type AdminBotLabMemberSaveInput = {
   affiliation?: string;
   timezone?: string;
   personalWebsite?: string;
+  // Promoted out of the notes line convention, which stored these with no server-side schema
+  // alongside fields that already owned the same fact. See migrateMemberNotesToFields.
+  joinedMonth?: string;
+  whatsapp?: string;
+  calendarEmail?: string;
+  githubUrl?: string;
 };
 
 export type AdminBotPaperSaveInput = {
@@ -313,9 +326,6 @@ export type AdminBotReimbursementState = {
   artifacts: AdminBotReimbursementArtifact[];
 };
 
-export type AdminBotDashboardMode = "admin" | "general";
-export type AdminBotLoadMode = AdminBotDashboardMode | "members";
-
 export type AdminBotDashboardData = {
   proposals: AdminBotActionProposal[];
   members: AdminBotLabMember[];
@@ -324,7 +334,6 @@ export type AdminBotDashboardData = {
   settings: AdminBotSettings | null;
   sensitiveInfo: AdminBotSensitiveInfoRecord | null;
   loadedAt: number | null;
-  loadedMode: AdminBotLoadMode | null;
 };
 
 // Draft state for the "Announcements" compose form (member_nudge.send): channel + message text
@@ -361,6 +370,8 @@ export type AdminBotHost = {
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
   settings: UiSettings;
 };
+
+export type AdminBotLoadMode = "admin" | "general";
 
 export function createEmptyAdminBotReimbursementState(): AdminBotReimbursementState {
   return {
@@ -404,7 +415,6 @@ export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
     settings: null,
     sensitiveInfo: null,
     loadedAt: null,
-    loadedMode: null,
   };
 }
 
@@ -524,16 +534,6 @@ async function loadAdminBotOverSession(
     return result.ok ? result.value : undefined;
   };
   try {
-    if (mode === "members") {
-      const members = await read("/lab/members");
-      host.adminBotData = {
-        ...host.adminBotData,
-        members: readArray<AdminBotLabMember>(members, "members"),
-        loadedAt: Date.now(),
-        loadedMode: host.adminBotData.loadedMode ?? "members",
-      };
-      return;
-    }
     const [members, papers] = await Promise.all([read("/lab/members"), read("/papers")]);
     if (mode === "general") {
       host.adminBotData = {
@@ -541,7 +541,6 @@ async function loadAdminBotOverSession(
         members: readArray<AdminBotLabMember>(members, "members"),
         papers: readArray<AdminBotPaperRecord>(papers, "papers"),
         loadedAt: Date.now(),
-        loadedMode: host.adminBotData.loadedMode === "admin" ? "admin" : "general",
       };
       return;
     }
@@ -564,7 +563,6 @@ async function loadAdminBotOverSession(
         Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
       sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,
       loadedAt: Date.now(),
-      loadedMode: "admin",
     };
   } catch (err) {
     host.adminBotError = err instanceof Error ? err.message : String(err);
@@ -598,16 +596,6 @@ export async function loadAdminBot(
   host.adminBotLoading = true;
   host.adminBotError = null;
   try {
-    if (mode === "members") {
-      const members = await invokeAdminBotTool(host, "adminbot_list_lab_members");
-      host.adminBotData = {
-        ...host.adminBotData,
-        members: readArray<AdminBotLabMember>(members, "members"),
-        loadedAt: Date.now(),
-        loadedMode: host.adminBotData.loadedMode ?? "members",
-      };
-      return;
-    }
     if (mode === "general") {
       const [members, papers] = await Promise.all([
         invokeAdminBotTool(host, "adminbot_list_lab_members"),
@@ -618,7 +606,6 @@ export async function loadAdminBot(
         members: readArray<AdminBotLabMember>(members, "members"),
         papers: readArray<AdminBotPaperRecord>(papers, "papers"),
         loadedAt: Date.now(),
-        loadedMode: host.adminBotData.loadedMode === "admin" ? "admin" : "general",
       };
       return;
     }
@@ -663,7 +650,6 @@ export async function loadAdminBot(
         Object.keys(settingsRecord).length > 0 ? (settingsRecord as AdminBotSettings) : null,
       sensitiveInfo: markdown ? { markdown, ...(filePath ? { path: filePath } : {}) } : null,
       loadedAt: Date.now(),
-      loadedMode: "admin",
     };
   } catch (err) {
     host.adminBotError = formatAdminBotToolError(err);
@@ -828,6 +814,10 @@ function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
     ...(member.affiliation ? { affiliation: member.affiliation } : {}),
     ...(member.timezone ? { timezone: member.timezone } : {}),
     ...(member.personalWebsite ? { personal_website: member.personalWebsite } : {}),
+    ...(member.joinedMonth ? { joined_month: member.joinedMonth } : {}),
+    ...(member.whatsapp ? { whatsapp: member.whatsapp } : {}),
+    ...(member.calendarEmail ? { calendar_email: member.calendarEmail } : {}),
+    ...(member.githubUrl ? { github_url: member.githubUrl } : {}),
   };
 }
 
@@ -938,6 +928,55 @@ export async function saveAdminBotOwnProfile(
     return;
   }
   host.adminBotNotice = { kind: "success", text: "Saved your profile." };
+  await loadAdminBot(host);
+}
+
+/**
+ * Replaces the signed-in member's own schedule lists with `patch`.
+ *
+ * Whole lists are sent, not deltas: each stored field is a list the service validates as one, so
+ * add and remove are both "write the list you want". The caller composes them. An omitted list is
+ * left untouched.
+ *
+ * Writing another member's schedule is not possible: the service routes a self session to its own
+ * record only. Same posture as saveAdminBotOwnProfile — the UI never offers the editor on anyone
+ * else's row, and a 403 folds into the generic failure below because reaching it means a stale
+ * session rather than a case worth its own copy.
+ */
+export async function saveAdminBotOwnSchedule(
+  host: AdminBotHost,
+  memberId: string,
+  patch: MemberScheduleUpdate,
+): Promise<void> {
+  host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your member account to edit your schedule.",
+    };
+    return;
+  }
+  const result = await updateOwnSchedule(
+    memberId,
+    patch,
+    stored.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  if (!result.ok) {
+    const message =
+      result.kind === "unreachable"
+        ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+        : result.kind === "rate-limited"
+          ? "Too many attempts. Wait a moment and try again."
+          : // The service rejects an out-of-range date or an hours value outside 0–168 with a 400;
+            // the form validates the same things first, so reaching here means a stale session or
+            // a rule the form does not know about yet.
+            "Couldn't save your schedule. Check the dates and hours, then retry.";
+    host.adminBotNotice = { kind: "error", text: message };
+    return;
+  }
+  host.adminBotNotice = { kind: "success", text: "Saved your schedule." };
   await loadAdminBot(host);
 }
 

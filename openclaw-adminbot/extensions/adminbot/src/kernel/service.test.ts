@@ -438,6 +438,84 @@ describe("AdminBotService", () => {
     }
   });
 
+  it("lets a member self-edit milestones, links and the non-Jinesis time-off kinds", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "plan", name: "Plan", privilege_level: "member" }));
+
+    const saved = unwrap(
+      service.updateOwnProfile("plan", {
+        availability: [
+          {
+            start: "2026-09-01",
+            end: "2026-12-01",
+            project: "Atlas",
+            hours_per_week: 12,
+            link: "https://example.com/board",
+          },
+        ],
+        time_off: [
+          // The two kinds added for the time-availability tab, plus a member's own name for the
+          // category that does not fit the closed list.
+          { start: "2026-12-24", end: "2027-01-02", kind: "personal", availability: "none" },
+          {
+            start: "2026-09-08",
+            end: "2026-12-05",
+            kind: "other_project",
+            availability: "partial",
+          },
+          {
+            start: "2026-10-13",
+            end: "2026-10-17",
+            kind: "other",
+            availability: "none",
+            label: "Reading week",
+            link: "https://example.com/syllabus",
+          },
+        ],
+        milestones: [
+          { date: "2027-06-12", label: "Graduation" },
+          { date: "2026-11-03", label: "Thesis draft", link: "https://example.com/thesis" },
+        ],
+      }),
+    );
+    expect(saved.milestones).toHaveLength(2);
+    expect(saved.time_off?.[2]).toMatchObject({ label: "Reading week", kind: "other" });
+    expect(saved.availability?.[0]?.link).toBe("https://example.com/board");
+
+    for (const bad of [
+      { milestones: "not-a-list" },
+      { milestones: [{ date: "12-06-2027", label: "Graduation" }] },
+      // A milestone with no label is an unexplained mark on someone's timeline.
+      { milestones: [{ date: "2027-06-12", label: "   " }] },
+      { milestones: [{ date: "2027-06-12", label: "Graduation", link: "not-a-url" }] },
+      // Rendered as anchors, so anything but https is refused rather than left to the renderer.
+      { milestones: [{ date: "2027-06-12", label: "Graduation", link: "http://example.com" }] },
+      {
+        availability: [
+          {
+            start: "2026-09-01",
+            end: "2026-12-01",
+            hours_per_week: 4,
+            link: "javascript:alert(1)",
+          },
+        ],
+      },
+      {
+        time_off: [
+          {
+            start: "2026-10-13",
+            end: "2026-10-17",
+            kind: "other",
+            availability: "none",
+            label: "x".repeat(121),
+          },
+        ],
+      },
+    ]) {
+      expect(service.updateOwnProfile("plan", bad)).toMatchObject({ ok: false, status: 400 });
+    }
+  });
+
   it("restricts the availability doc link to https Google Docs or Drive hosts", () => {
     const service = new AdminBotService();
     unwrap(service.upsertLabMember({ id: "doc", name: "Doc", privilege_level: "member" }));
@@ -1192,6 +1270,90 @@ describe("AdminBotService", () => {
     });
   });
 
+  describe("migrateMemberNotesToFields", () => {
+    it("moves a notes line into the field that owns it, and keeps the rest of the prose", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "m1",
+          name: "Ada",
+          notes: "Joined month: 2026-03\nWhatsApp: +1 555 0100\nPrefers async check-ins.",
+        }),
+      );
+
+      const result = unwrap(service.migrateMemberNotesToFields("admin"));
+      expect(result.fieldsFilled).toBe(2);
+      expect(result.membersUpdated).toBe(1);
+
+      const member = unwrap(service.listLabMembers()).members[0]!;
+      expect(member.joined_month).toBe("2026-03");
+      expect(member.whatsapp).toBe("+1 555 0100");
+      // Unrecognised prose is not a schema field and must survive untouched.
+      expect(member.notes).toBe("Prefers async check-ins.");
+    });
+
+    it("never overwrites a field that already holds a value", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "m1",
+          name: "Ada",
+          location: "Toronto",
+          notes: "Location: Somewhere stale",
+        }),
+      );
+
+      const result = unwrap(service.migrateMemberNotesToFields("admin"));
+
+      // The stored field wins; the line was a duplicate of a fact already held properly.
+      expect(unwrap(service.listLabMembers()).members[0]?.location).toBe("Toronto");
+      expect(result.fieldsFilled).toBe(0);
+      // It is still removed, because leaving it keeps the two-sources-of-truth problem alive.
+      expect(unwrap(service.listLabMembers()).members[0]?.notes).toBeUndefined();
+    });
+
+    it("splits research interests into the list the roster stores", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "m1",
+          name: "Ada",
+          notes: "Research interests: reasoning, alignment",
+        }),
+      );
+
+      unwrap(service.migrateMemberNotesToFields("admin"));
+
+      expect(unwrap(service.listLabMembers()).members[0]?.research_topics).toEqual([
+        "reasoning",
+        "alignment",
+      ]);
+    });
+
+    it("is a no-op on a second run", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "m1", name: "Ada", notes: "Joined month: 2026-03" }));
+
+      unwrap(service.migrateMemberNotesToFields("admin"));
+      const second = unwrap(service.migrateMemberNotesToFields("admin"));
+
+      // A partial run must be safe to repeat, so re-running changes nothing.
+      expect(second.membersUpdated).toBe(0);
+      expect(second.fieldsFilled).toBe(0);
+      expect(unwrap(service.listLabMembers()).members[0]?.joined_month).toBe("2026-03");
+    });
+
+    it("leaves a member with only free-text notes completely alone", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "m1", name: "Ada", notes: "Just a note." }));
+
+      const result = unwrap(service.migrateMemberNotesToFields("admin"));
+
+      expect(result.membersUpdated).toBe(0);
+      expect(unwrap(service.listLabMembers()).members[0]?.notes).toBe("Just a note.");
+    });
+  });
+
   describe("mandatory profile fields", () => {
     it("lists current members missing a required field, and skips alumni/external", () => {
       const service = new AdminBotService();
@@ -1377,6 +1539,31 @@ describe("AdminBotService", () => {
       );
     });
 
+    it("leaves a stored timezone alone when the Slack lookup never answered", async () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "m1",
+          name: "Ada",
+          slack_user_id: "U1",
+          timezone: "America/Toronto",
+        }),
+      );
+
+      // An empty map is what a failed transport produces. Read as an answer it wipes the roster;
+      // timezone is mandatory, so that quietly makes every profile incomplete.
+      const result = unwrap(
+        await service.refreshMemberDirectoryFromSlack(
+          { fetchSlackTimezones: async () => new Map<string, string | null>() },
+          "cron",
+        ),
+      );
+
+      expect(result.timezonesChecked).toBe(0);
+      expect(result.timezonesUpdated).toBe(0);
+      expect(unwrap(service.listLabMembers()).members[0]?.timezone).toBe("America/Toronto");
+    });
+
     it("syncs timezone from Slack and clears it when Slack has nothing", async () => {
       const service = new AdminBotService();
       unwrap(
@@ -1399,7 +1586,11 @@ describe("AdminBotService", () => {
       );
       const fetchSlackTimezones = vi.fn(async (ids: string[]) => {
         expect(ids.sort()).toEqual(["U1", "U2"]);
-        return new Map([["U1", "America/Toronto"]]);
+        // U1 has a zone; U2 was asked and Slack had none, which is null rather than absent.
+        return new Map<string, string | null>([
+          ["U1", "America/Toronto"],
+          ["U2", null],
+        ]);
       });
 
       const result = unwrap(

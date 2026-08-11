@@ -5,6 +5,11 @@ import type {
   AdminBotMemberNudgeState,
   AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
+import type {
+  MilestoneDraft,
+  TimeAvailabilityDraft,
+  TimeAvailabilityGranularity,
+} from "./adminbot/views/time-availability.ts";
 import type { ChatAbortOptions, ChatSendOptions } from "./app-chat.ts";
 import type { EventLogEntry } from "./app-events.ts";
 import type { CompactionStatus, FallbackStatus } from "./app-tool-stream.ts";
@@ -345,7 +350,14 @@ export type AppViewState = {
   adminBotLoading: boolean;
   adminBotError: string | null;
   adminBotData: AdminBotDashboardData;
+  // Time Availability tab: whose schedule is on screen, at what bucket width, and the unsaved
+  // "add a commitment" draft. Draft lives here rather than in the view so a re-render (the roster
+  // reloading underneath, a notice appearing) does not wipe half-typed input.
   adminBotTimeAvailabilityMemberId: string;
+  adminBotTimeAvailabilityGranularity: TimeAvailabilityGranularity;
+  adminBotTimeAvailabilityDraft: TimeAvailabilityDraft;
+  adminBotMilestoneDraft: MilestoneDraft;
+  adminBotTimeAvailabilitySaving: boolean;
   adminBotBusyActionId: string | null;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotReimbursement: AdminBotReimbursementState;

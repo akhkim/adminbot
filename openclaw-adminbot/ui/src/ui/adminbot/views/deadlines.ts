@@ -20,62 +20,16 @@
 // blue-grey theme than the product around it.
 import { html, nothing, LitElement } from "lit";
 import { icons } from "../../icons.ts";
+// AoE parsing, the countdown format and the urgency bands are shared with the profile-page
+// summary; see data/deadline-time.ts for why they live outside this view.
+import {
+  aoeDateLabel,
+  aoeInstantMs,
+  countdownLabel,
+  urgencyOf,
+  type DeadlineEntry as Entry,
+} from "../data/deadline-time.ts";
 import { DEADLINE_VENUES, type DeadlineVenue } from "../data/deadlines.ts";
-
-const MS_DAY = 86_400_000;
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-// AoE (UTC-12): a wall-clock deadline maps to its UTC instant + 12h.
-function aoeInstantMs(aoe: string): number {
-  const m = /(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/u.exec(aoe);
-  if (!m) {
-    return Number.NaN;
-  }
-  const [, y, mo, d, h, mi, s] = m.map(Number);
-  return Date.UTC(y, mo - 1, d, h, mi, s) + 12 * 3600 * 1000;
-}
-
-// Display the AoE calendar date (not the +12h-shifted UTC date).
-function aoeDateLabel(aoe: string): string {
-  const m = /(\d{4})-(\d{2})-(\d{2})/u.exec(aoe);
-  return m ? `${MONTHS[Number(m[2]) - 1]} ${Number(m[3])}, ${m[1]}` : "";
-}
-
-// Four bands rather than a gradient: a countdown is read as "can I still start this", and that
-// question has a small number of distinct answers. Named for the token each one resolves to, so
-// urgency is a design-system color and not a hex chosen per component.
-type Urgency = "critical" | "soon" | "planned" | "distant";
-
-function urgencyOf(instant: number, now: number): Urgency {
-  const days = Math.floor((instant - now) / MS_DAY);
-  if (days <= 3) {
-    return "critical";
-  }
-  if (days <= 7) {
-    return "soon";
-  }
-  if (days <= 30) {
-    return "planned";
-  }
-  return "distant";
-}
-
-const pad = (n: number): string => String(n).padStart(2, "0");
-
-// Remaining time as "Nd HH:MM:SS" (AoE deadlines can be same-day, so we always show
-// hours:minutes:seconds instead of collapsing a due-today item to "0d"). Inside the last day the
-// leading "0d" is dropped: it reads as a zero quantity when what it actually means is "today".
-function countdownLabel(ms: number): string {
-  const left = Math.max(ms, 0);
-  const d = Math.floor(left / MS_DAY);
-  const h = Math.floor(left / 3_600_000) % 24;
-  const m = Math.floor(left / 60_000) % 60;
-  const s = Math.floor(left / 1000) % 60;
-  const clock = `${pad(h)}:${pad(m)}:${pad(s)}`;
-  return d > 0 ? `${d}d ${clock}` : clock;
-}
-
-type Entry = { venue: DeadlineVenue; instant: number };
 
 type Conference = {
   key: string;
@@ -109,7 +63,10 @@ function buildConferences(now: number): Conference[] {
       bucket = { main: [], workshops: [] };
       byKey.set(key, bucket);
     }
-    (venue.venue_type === "workshop" ? bucket.workshops : bucket.main).push({ venue, instant });
+    (venue.venue_type === "workshop" ? bucket.workshops : bucket.main).push({
+      venue,
+      instant,
+    });
   }
 
   return [...byKey]
@@ -118,7 +75,13 @@ function buildConferences(now: number): Conference[] {
       const workshops = bucket.workshops.toSorted(byInstant);
       // Both lists are sorted, so the soonest overall is whichever head comes first.
       const nextEntry = [main[0], workshops[0]].filter(Boolean).toSorted(byInstant)[0];
-      return { key, main, workshops, nextInstant: nextEntry.instant, nextEntry };
+      return {
+        key,
+        main,
+        workshops,
+        nextInstant: nextEntry.instant,
+        nextEntry,
+      };
     })
     .toSorted((a, b) => a.nextInstant - b.nextInstant);
 }

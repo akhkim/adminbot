@@ -23,7 +23,7 @@ import type {
   AdminBotSettingsSaveInput,
 } from "../controllers/admin.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
-import { buildMemberNotes, noteField, parseMemberNotes } from "../data/member-notes.ts";
+import { noteField, parseMemberNotes } from "../data/member-notes.ts";
 import { renderAdminBotReimbursements } from "./reimbursements.ts";
 
 export type AdminBotProps = {
@@ -468,16 +468,10 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
       .map((value) => value.trim())
       .filter(Boolean);
   const hoursPerWeek = Number(getFormValue(data, "hoursPerWeek"));
-  const notes = buildMemberNotes({
-    location: getFormValue(data, "location"),
-    joinedMonth: getFormValue(data, "joinedMonth"),
-    researchInterests: getFormValue(data, "researchInterests"),
-    calendarEmail: getFormValue(data, "calendarEmail"),
-    whatsapp: getFormValue(data, "whatsapp"),
-    github: getFormValue(data, "github"),
-    website: getFormValue(data, "website"),
-    notes: getFormValue(data, "notes"),
-  });
+  // Each of these now has a field of its own, so the editor writes them there rather than
+  // re-encoding them as "Label: value" lines. notes is free prose again -- doing otherwise would
+  // recreate the two-sources-of-truth problem migrateMemberNotesToFields exists to end.
+  const notes = getFormValue(data, "notes").trim();
   props.onSaveMember({
     id,
     name,
@@ -515,6 +509,14 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
       : {}),
     ...(getFormValue(data, "timezone") ? { timezone: getFormValue(data, "timezone") } : {}),
     ...(getFormValue(data, "website") ? { personalWebsite: getFormValue(data, "website") } : {}),
+    ...(getFormValue(data, "joinedMonth")
+      ? { joinedMonth: getFormValue(data, "joinedMonth") }
+      : {}),
+    ...(getFormValue(data, "whatsapp") ? { whatsapp: getFormValue(data, "whatsapp") } : {}),
+    ...(getFormValue(data, "calendarEmail")
+      ? { calendarEmail: getFormValue(data, "calendarEmail") }
+      : {}),
+    ...(getFormValue(data, "github") ? { githubUrl: getFormValue(data, "github") } : {}),
     ...(notes ? { notes } : {}),
   });
   form.closest<HTMLElement>("[popover]")?.hidePopover();
@@ -550,16 +552,8 @@ function collectSelfProfileFields(form: HTMLFormElement): MemberProfileUpdate {
   const hoursPerWeek = Number(getFormValue(data, "hoursPerWeek"));
   const location = getFormValue(data, "location");
   const personalWebsite = getFormValue(data, "website");
-  const notes = buildMemberNotes({
-    location,
-    joinedMonth: getFormValue(data, "joinedMonth"),
-    researchInterests: getFormValue(data, "researchInterests"),
-    calendarEmail: getFormValue(data, "calendarEmail"),
-    whatsapp: getFormValue(data, "whatsapp"),
-    github: getFormValue(data, "github"),
-    website: personalWebsite,
-    notes: getFormValue(data, "notes"),
-  });
+  // Same reasoning as the admin editor above: these are fields now, not notes lines.
+  const notes = getFormValue(data, "notes").trim();
   return {
     name: getFormValue(data, "name"),
     slack_user_id: getFormValue(data, "slackUserId"),
@@ -574,7 +568,13 @@ function collectSelfProfileFields(form: HTMLFormElement): MemberProfileUpdate {
     affiliation: getFormValue(data, "affiliation"),
     timezone: getFormValue(data, "timezone"),
     personal_website: personalWebsite,
-    notes: notes ?? "",
+    // Carried explicitly now that they are fields rather than notes lines; omitting them here
+    // would make a member's own save silently drop whatever they typed.
+    joined_month: getFormValue(data, "joinedMonth"),
+    whatsapp: getFormValue(data, "whatsapp"),
+    calendar_email: getFormValue(data, "calendarEmail"),
+    github_url: getFormValue(data, "github"),
+    notes,
   };
 }
 
@@ -1074,16 +1074,19 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
         ><input name="researchInterests" .value=${noteDraft.researchInterests}
       /></label>
       <label class="adminbot-form__field"
-        ><span>Calendar email</span><input name="calendarEmail" .value=${noteDraft.calendarEmail}
+        ><span>Calendar email</span
+        ><input name="calendarEmail" .value=${member?.calendar_email ?? noteDraft.calendarEmail}
       /></label>
       <label class="adminbot-form__field"
-        ><span>WhatsApp</span><input name="whatsapp" .value=${noteDraft.whatsapp}
+        ><span>WhatsApp</span
+        ><input name="whatsapp" .value=${member?.whatsapp ?? noteDraft.whatsapp}
       /></label>
       <label class="adminbot-form__field"
-        ><span>GitHub</span><input name="github" .value=${noteDraft.github}
+        ><span>GitHub</span><input name="github" .value=${member?.github_url ?? noteDraft.github}
       /></label>
       <label class="adminbot-form__field"
-        ><span>Website</span><input name="website" .value=${noteDraft.website}
+        ><span>Website</span
+        ><input name="website" .value=${member?.personal_website ?? noteDraft.website}
       /></label>
     </div>
     <label class="adminbot-form__field"

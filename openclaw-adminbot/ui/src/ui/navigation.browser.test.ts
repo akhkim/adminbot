@@ -43,7 +43,11 @@ function createSessionsResult(sessions: Array<Record<string, unknown>>) {
     ts: 0,
     path: "",
     count: sessions.length,
-    defaults: { modelProvider: "openai", model: "gpt-5.5", contextTokens: null },
+    defaults: {
+      modelProvider: "openai",
+      model: "gpt-5.5",
+      contextTokens: null,
+    },
     sessions: sessions.map((session) => ({
       kind: "direct",
       updatedAt: Date.now(),
@@ -127,7 +131,13 @@ describe("control UI routing", () => {
       signalEntries: [],
       promotedEntries: [],
       phases: {
-        light: { enabled: true, cron: "", managedCronPresent: false, lookbackDays: 7, limit: 20 },
+        light: {
+          enabled: true,
+          cron: "",
+          managedCronPresent: false,
+          lookbackDays: 7,
+          limit: 20,
+        },
         deep: {
           enabled: true,
           cron: "",
@@ -304,7 +314,13 @@ describe("control UI routing", () => {
       signalEntries: [],
       promotedEntries: [],
       phases: {
-        light: { enabled: true, cron: "", managedCronPresent: false, lookbackDays: 7, limit: 20 },
+        light: {
+          enabled: true,
+          cron: "",
+          managedCronPresent: false,
+          lookbackDays: 7,
+          limit: 20,
+        },
         deep: {
           enabled: true,
           cron: "",
@@ -468,9 +484,14 @@ describe("control UI routing", () => {
     const app = mountApp("/chat");
     await app.updateComplete;
 
+    // Chat sits in the "General Tools" group alongside the deadline board and the reimbursement
+    // assistant; collapsing that group is what hides it.
     app.applySettings({
       ...app.settings,
-      navGroupsCollapsed: { ...app.settings.navGroupsCollapsed, chat: true },
+      navGroupsCollapsed: {
+        ...app.settings.navGroupsCollapsed,
+        generalTools: true,
+      },
     });
     await app.updateComplete;
 
@@ -494,16 +515,34 @@ describe("control UI routing", () => {
     app.sessionKey = "agent:main:second";
     app.sessionsResult = createSessionsResult([
       { key: "global", kind: "global", label: "Global", updatedAt: Date.now() },
-      { key: "unknown", kind: "unknown", label: "Unknown", updatedAt: Date.now() - 10_000 },
-      { key: "cron:daily", kind: "cron", label: "Daily cron", updatedAt: Date.now() - 20_000 },
+      {
+        key: "unknown",
+        kind: "unknown",
+        label: "Unknown",
+        updatedAt: Date.now() - 10_000,
+      },
+      {
+        key: "cron:daily",
+        kind: "cron",
+        label: "Daily cron",
+        updatedAt: Date.now() - 20_000,
+      },
       {
         key: "agent:main:subagent:task",
         label: "Subagent",
         spawnedBy: "agent:main:second",
         updatedAt: Date.now() - 25_000,
       },
-      { key: "agent:main:first", label: "First workspace", updatedAt: Date.now() - 5 * 60_000 },
-      { key: "agent:main:second", label: "Second workspace", updatedAt: Date.now() - 30_000 },
+      {
+        key: "agent:main:first",
+        label: "First workspace",
+        updatedAt: Date.now() - 5 * 60_000,
+      },
+      {
+        key: "agent:main:second",
+        label: "Second workspace",
+        updatedAt: Date.now() - 30_000,
+      },
     ]) as typeof app.sessionsResult;
     await app.updateComplete;
 

@@ -1,7 +1,18 @@
+/**
+ * Local AdminBot service against a throwaway database, with one seeded admin account.
+ *
+ * Brought across from the lab branch `luke/time-allocation` (commit a4c560bd), where it was added
+ * alongside the time-availability tab so that surface could be driven without the real service.
+ * The mock service moved to `extensions/adminbot/src/api/server.ts` in the restructuring; that
+ * import is the only change from the original.
+ *
+ * Distinct from `start-adminbot.mjs`, which runs the real service against the real database. This
+ * one deliberately stubs the calendar and email connectors, so nothing it does leaves the machine.
+ */
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { createAdminBotMockService } from "../extensions/adminbot/src/mock-service.ts";
+import { createAdminBotMockService } from "../extensions/adminbot/src/api/server.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const email = requireEnv("ADMINBOT_DEV_EMAIL").toLowerCase();
@@ -77,8 +88,17 @@ if (!elevated.ok) {
   throw new Error(`Could not grant local admin access: ${elevated.error.message}`);
 }
 
-await app.listen(8765, "127.0.0.1");
-console.log(`Local AdminBot development service: http://127.0.0.1:8765`);
+// The systemd unit usually holds 8765, and a dev bootstrap that cannot start because the real
+// service is running is a confusing way to find that out. Same override the real launcher takes.
+const port = Number(process.env.ADMINBOT_PORT?.trim() || 8765);
+if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+  throw new Error(
+    `ADMINBOT_PORT must be an integer between 0 and 65535, got ${process.env.ADMINBOT_PORT}`,
+  );
+}
+
+await app.listen(port, "127.0.0.1");
+console.log(`Local AdminBot development service: http://127.0.0.1:${port}`);
 console.log(`Local admin email: ${email}`);
 console.log("Use the ADMINBOT_DEV_PASSWORD value from this terminal to sign in.");
 console.log(`Local-only database: ${databasePath}`);

@@ -254,14 +254,6 @@ export type SessionEntry = {
   inheritedToolAllow?: string[];
   /** Plugin id that created this session through api.runtime.subagent. */
   pluginOwnerId?: string;
-  /**
-   * Identity (e.g. AdminBot member id) that created this session, stamped from
-   * GatewayClient.ownerMemberId at sessions.create time. Undefined means either the
-   * connection had no paired-device identity (shared-secret/CLI use) or the session
-   * predates this field -- both are treated as unscoped, not owned by nobody.
-   * See canRequesterAccessSession in gateway/server-methods/session-ownership.ts.
-   */
-  ownerMemberId?: string;
   systemSent?: boolean;
   abortedLastRun?: boolean;
   /** Interrupted run generations whose late lifecycle events must be ignored. */

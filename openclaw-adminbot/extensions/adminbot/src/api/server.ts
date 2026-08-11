@@ -116,7 +116,7 @@ export type AdminBotMockServiceOptions = {
   fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
   // Reads each member's IANA timezone from Slack, for the profile `timezone` field --
   // distinct from fetchSlackLocations, which resolves a human-readable place, not a zone id.
-  fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
+  fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
   // Backfills `slack_user_id` for members the roster has never linked to Slack, by matching
   // roster email against the workspace directory.
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
@@ -220,7 +220,7 @@ type AdminBotRouteContext = {
   reimbursementWorkflow?: AdminBotReimbursementWorkflow;
   openReviewWorkflow?: AdminBotOpenReviewWorkflow;
   fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
-  fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
+  fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
@@ -1120,6 +1120,15 @@ async function handleAuthenticatedRoute(
     }
     const body = (await readJson(req)) as AdminBotMemberNudgeRequest;
     sendServiceResult(res, await service.sendMemberNudge(body, principalActor(principal)));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/members/notes/migrate") {
+    // Rewrites stored member records, so it takes a genuine admin session rather than the shared
+    // service principal: unlike the cron-driven routes, the caller chooses when this happens.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.migrateMemberNotesToFields(principalActor(principal)));
     return;
   }
   if (req.method === "GET" && url.pathname === "/members/mandatory-fields-incomplete") {

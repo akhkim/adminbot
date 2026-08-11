@@ -808,171 +808,6 @@
   grid-column: 1 / -1;
 }
 
-.adminbot-time-availability {
-  display: grid;
-  gap: var(--space-5);
-}
-
-.adminbot-time-availability__controls {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr);
-  gap: var(--space-3);
-  max-width: 520px;
-}
-
-.adminbot-time-availability__report {
-  display: grid;
-  gap: var(--space-4);
-}
-
-.adminbot-time-availability__report-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.adminbot-time-availability__empty {
-  display: grid;
-  place-items: center;
-  min-height: 240px;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-lg);
-  color: var(--muted);
-  text-align: center;
-}
-
-.adminbot-time-chart-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
-}
-
-.adminbot-time-chart__legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
-  padding: var(--space-3) var(--space-4) 0;
-  color: var(--text-muted);
-  font-size: var(--control-ui-text-xs);
-}
-
-.adminbot-time-chart__legend span {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.adminbot-time-chart__legend i,
-.adminbot-time-allocation-table__task {
-  width: 9px;
-  height: 9px;
-  border-radius: 2px;
-  flex: 0 0 auto;
-}
-
-.adminbot-time-chart {
-  display: block;
-  width: 100%;
-  min-width: 760px;
-  height: auto;
-}
-
-.adminbot-time-chart__grid {
-  stroke: #2a2e35;
-  stroke-width: 1;
-  stroke-dasharray: 3 3;
-}
-
-.adminbot-time-chart__axis {
-  stroke: #9aa0aa;
-  stroke-width: 1.5;
-}
-
-.adminbot-time-chart__capacity-line {
-  stroke: #f7615d;
-  stroke-width: 1.5;
-  stroke-dasharray: 4 4;
-  opacity: 0.6;
-}
-
-.adminbot-time-chart__axis-label {
-  fill: #9aa0aa;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.adminbot-time-chart__axis-label--timeline {
-  font-size: 11px;
-}
-
-.adminbot-time-chart__segment {
-  stroke: none;
-}
-
-.adminbot-time-chart__total {
-  fill: #9aa0aa;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-}
-
-.adminbot-time-chart__total--near {
-  fill: #fbbf24;
-}
-
-.adminbot-time-chart__total--over {
-  fill: #f87171;
-}
-
-.adminbot-time-chart__capacity-note {
-  padding: 0 var(--space-4) var(--space-3);
-  color: var(--text-muted);
-  font-size: var(--control-ui-text-xs);
-}
-
-.adminbot-time-allocation-table-wrap {
-  overflow-x: auto;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-}
-
-.adminbot-time-allocation-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: var(--control-ui-text-sm);
-}
-
-.adminbot-time-allocation-table th,
-.adminbot-time-allocation-table td {
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--border);
-  text-align: left;
-  font-variant-numeric: tabular-nums;
-}
-
-.adminbot-time-allocation-table th {
-  color: var(--text-muted);
-  font-size: var(--control-ui-text-xs);
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.adminbot-time-allocation-table tbody tr:last-child td {
-  border-bottom: 0;
-}
-
-.adminbot-time-allocation-table td:first-child {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.adminbot-time-allocation-table__task {
-  display: inline-block;
-}
-
 .adminbot-registrations {
   list-style: none;
   margin: 0;
@@ -8909,4 +8744,300 @@ details[open] > .ov-expandable-toggle::after {
   .adminbot-reimbursement-message {
     max-width: 100%;
   }
+}
+
+.adminbot-time-availability {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.adminbot-time-availability__controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr);
+  gap: var(--space-3);
+  max-width: 520px;
+}
+
+.adminbot-time-availability__report {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.adminbot-time-availability__report-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.adminbot-time-availability__empty {
+  display: grid;
+  place-items: center;
+  min-height: 240px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--muted);
+  text-align: center;
+}
+
+.adminbot-time-chart-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
+}
+
+.adminbot-time-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  padding: var(--space-3) var(--space-4) 0;
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-time-chart__legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.adminbot-time-chart__legend i,
+.adminbot-time-allocation-table__task {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.adminbot-time-chart {
+  display: block;
+  width: 100%;
+  min-width: 760px;
+  height: auto;
+}
+
+.adminbot-time-chart__grid {
+  stroke: #2a2e35;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.adminbot-time-chart__axis {
+  stroke: #9aa0aa;
+  stroke-width: 1.5;
+}
+
+.adminbot-time-chart__capacity-line {
+  stroke: #f7615d;
+  stroke-width: 1.5;
+  stroke-dasharray: 4 4;
+  opacity: 0.6;
+}
+
+.adminbot-time-chart__axis-label {
+  fill: #9aa0aa;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.adminbot-time-chart__axis-label--timeline {
+  font-size: 11px;
+}
+
+.adminbot-time-chart__segment {
+  stroke: none;
+}
+
+.adminbot-time-chart__total {
+  fill: #9aa0aa;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.adminbot-time-chart__total--near {
+  fill: #fbbf24;
+}
+
+.adminbot-time-chart__total--over {
+  fill: #f87171;
+}
+
+.adminbot-time-chart__capacity-note {
+  padding: 0 var(--space-4) var(--space-3);
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-time-allocation-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.adminbot-time-allocation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-time-allocation-table th,
+.adminbot-time-allocation-table td {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+
+.adminbot-time-allocation-table th {
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.adminbot-time-allocation-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.adminbot-time-allocation-table td:first-child {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.adminbot-time-allocation-table__task {
+  display: inline-block;
+}
+
+/* Granularity switch and the self-service commitment editor: added with the day/week/month views
+   and the add-a-commitment form, which the ported branch did not have. */
+.adminbot-time-availability__granularity {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.adminbot-time-availability__granularity button[aria-pressed="true"] {
+  background: var(--bg-accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.adminbot-time-availability__editor {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.adminbot-time-availability__form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.adminbot-time-availability__form-note {
+  grid-column: 1 / -1;
+}
+
+.adminbot-time-availability__form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+.adminbot-time-availability__form-error {
+  color: var(--danger, #f87171);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* Split tables, the big-deadlines side panel, and the time-off column shading. */
+.adminbot-time-availability__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .adminbot-time-availability__body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.adminbot-time-chart__off {
+  fill: color-mix(in srgb, var(--text-muted) 18%, transparent);
+}
+
+.adminbot-time-chart__legend-off {
+  background: color-mix(in srgb, var(--text-muted) 40%, transparent);
+}
+
+.adminbot-time-allocation-table__task--off {
+  background: #9aa8b2;
+}
+
+.adminbot-time-allocation-table__link {
+  display: inline-flex;
+  align-items: center;
+  margin-right: var(--space-2);
+  color: var(--text-muted);
+}
+
+.adminbot-time-availability__deadlines {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
+}
+
+.adminbot-time-availability__deadline-list {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-time-availability__deadline-list li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+/* A member's own milestone is the one they can act on; the lab's conference dates are context. */
+.adminbot-time-availability__deadline-list li[data-own="false"] {
+  color: var(--text-muted);
+}
+
+.adminbot-time-availability__deadline-date {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.adminbot-time-availability__deadline-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.adminbot-time-availability__milestone-form {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.adminbot-time-availability__form-hint,
+.adminbot-time-availability__empty-note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
 }

@@ -48,19 +48,23 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotReimbursements: "anonymous",
   adminbotDeadlines: "anonymous",
 
-  // Members. The roster, availability picker, and paper list are lab-internal but not governance
-  // surfaces, and chat is how members talk to AdminBot at all.
+  // Members. The roster and the paper list are lab-internal but not governance surfaces, and chat
+  // is how members talk to AdminBot at all.
   adminbotMembers: "member",
+  // Whose time is committed where is lab-internal planning, not governance: any member may read
+  // any member's schedule. Writing is separately restricted to your own record by the service.
   adminbotTimeAvailability: "member",
   adminbotPapers: "member",
   chat: "member",
-  // Home for anyone signed in. It only ever shows what the viewer's own role already reaches, so
-  // it needs no privilege of its own beyond having an account.
-  dashboard: "member",
   // Your own record and your own work. Both are scoped to the viewer, so neither needs privilege
-  // beyond having an account.
+  // beyond having an account. Profile is also home for anyone signed in: it carries the attention
+  // stack and deadline board the dashboard used to, and each item there is gated on the viewer's
+  // own role, so the page never needs privilege beyond having an account.
   profile: "member",
   myWork: "member",
+  // Not built yet — the tab renders a placeholder. Declared at member tier so the group appears
+  // for the audience it is being built for rather than silently defaulting to admin-only.
+  labSharing: "member",
 
   // Everything else is an operator or governance surface.
   adminbot: "admin",
@@ -106,7 +110,7 @@ export function visibleTabsForRole(tabs: readonly Tab[], role: AccessRole): Tab[
 // Where a role lands when it has no tab of its own choosing — a fresh visit, or a tab that is no
 // longer allowed after signing out. Deliberately the least privileged surface that role can see.
 export function defaultTabForRole(role: AccessRole): Tab {
-  return role === "anonymous" ? "adminbotDeadlines" : "dashboard";
+  return role === "anonymous" ? "adminbotDeadlines" : "profile";
 }
 
 // The tab to actually render: the requested one when the role may see it, otherwise that role's

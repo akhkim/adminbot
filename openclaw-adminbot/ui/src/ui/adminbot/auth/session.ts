@@ -112,6 +112,9 @@ export type MemberProfileUpdate = {
   scholar_url?: string;
   avatar_url?: string;
   notes?: string;
+  // Promoted out of the notes line convention; see migrateMemberNotesToFields in the service.
+  joined_month?: string;
+  whatsapp?: string;
 };
 
 // Full governance-capable payload for an admin editing ANY member (including
@@ -344,6 +347,86 @@ export async function updateOwnProfile(
     "PUT",
     sessionToken,
     fields,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as LabMember };
+}
+
+// A single commitment row on a member's schedule. Mirrors AdminBotAvailabilityRow in
+// extensions/adminbot/src/contracts/actions.ts, and AvailabilityRow in ../data/availability.ts —
+// copied rather than imported for the same reason the privilege levels are: the auth layer does
+// not reach across into either the extensions boundary or the view layer.
+export type MemberAvailabilityRow = {
+  start: string;
+  end: string;
+  project?: string;
+  hours_per_week: number;
+  note?: string;
+  link?: string;
+};
+
+export type MemberTimeOffRow = {
+  start: string;
+  end: string;
+  // Optional here only because the lists sent back are composed from stored rows, whose parsed
+  // shape treats `kind` as absent-able. The service rejects any row whose kind is not one of
+  // adminBotTimeOffKinds, so a row without one never lands.
+  kind?: string;
+  availability: "none" | "partial";
+  note?: string;
+  label?: string;
+  link?: string;
+};
+
+export type MemberMilestoneRow = {
+  date: string;
+  label: string;
+  link?: string;
+};
+
+/**
+ * The three schedule lists, any subset of which may be sent.
+ *
+ * An omitted list is left alone; a list sent as `[]` clears that part of the schedule outright
+ * (the service deletes an empty array rather than storing one, so it reads as "nothing recorded"
+ * rather than as an empty chart).
+ */
+export type MemberScheduleUpdate = {
+  availability?: MemberAvailabilityRow[];
+  time_off?: MemberTimeOffRow[];
+  milestones?: MemberMilestoneRow[];
+};
+
+/**
+ * Self-service schedule edit (PUT /lab/members/:id) with the member session.
+ *
+ * Deliberately separate from `updateOwnProfile` rather than fields on `MemberProfileUpdate`: that
+ * type declares `availability` as a free-text string, which is what the admin member form sends,
+ * while the stored schedule the service validates is a list of rows (SELF_PROFILE_EDITABLE_FIELDS
+ * and validateMember in extensions/adminbot/src/kernel/service.ts). Widening the one field to carry
+ * both shapes would let the wrong one through at either call site.
+ *
+ * All three lists are self-editable, so this needs no approval gate — but the service still
+ * re-validates everything (date ranges, 0–168 hours, https-only links, 200-row caps) and stamps
+ * `availability_updated_at`. The UI never writes another member's schedule; the server enforces it.
+ */
+export async function updateOwnSchedule(
+  memberId: string,
+  patch: MemberScheduleUpdate,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LabMember>> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/${encodeURIComponent(memberId)}`,
+    "PUT",
+    sessionToken,
+    patch,
   );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };

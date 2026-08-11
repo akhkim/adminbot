@@ -1,22 +1,25 @@
-// Home for anyone signed in: what is waiting on you, then where to go.
+// The home half of the profile page: what is waiting on you, what is coming up, and where to go.
 //
-// The attention stack at the top is the point of the page. Everything the lab asks of a person --
-// finishing onboarding, approving an action, admitting a new member -- used to live behind a tab
-// they had to think to open, or behind a welcome screen that only appeared once. Here it is the
-// first thing on the page, and it disappears when there is nothing to say.
+// This was the standalone dashboard tab. It folded into the profile because the two pages answered
+// the same question from opposite ends -- the dashboard summarised the member's record, and the
+// profile was that record -- so a person signing in landed on a summary of a page they then had to
+// open. Now they land on the page itself, with the attention stack on top of it.
+//
+// The profile summary card that used to sit here is gone for the same reason: summarising the page
+// you are already on is a card that says "you are here".
 //
 // Each item is built from state the app already loads, and each is gated on the viewer's own role,
-// so this page never shows a person work they cannot do. `access.ts` is still what enforces that;
-// this is presentation.
+// so this never shows a person work they cannot do. `access.ts` is still what enforces that; this
+// is presentation.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
 import { iconForTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
+import { renderDeadlineSummary } from "./deadlines-summary.ts";
 import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
-import { renderOnboardingChecklist } from "./onboarding-checklist.ts";
-import { badgesFor, blankFields, findOwnMember } from "./profile.ts";
+import { blankFields, findOwnMember } from "./profile.ts";
 
 // One thing waiting on the viewer. `detail` is optional supporting text -- the queue items say
 // everything in their summary.
@@ -29,13 +32,12 @@ type AttentionItem = {
   detail?: unknown;
 };
 
-// Below the attention stack, the dashboard summarises the two pages a member owns rather than
-// listing every door in the building: each card states the one number that would make someone open
-// that page, and opens it.
-
 // Blank mandatory fields never block saving or leaving the profile editor (see profile.ts) --
 // this card, plus a daily Slack reminder for the same members, is how the lab actually follows up
 // instead. blankFields() is already mandatory-only: optional fields never appear in it.
+//
+// The card now sits on the same page as the fields it is complaining about, so it scrolls rather
+// than navigates: the editor is directly below it.
 function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
   const member = findOwnMember(state);
   if (!member) {
@@ -54,7 +56,11 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
     title: t("dashboard.mandatoryFields.title"),
     summary: t(key, { count: String(blanks.length) }),
     actionLabel: t("dashboard.mandatoryFields.open"),
-    onAction: () => state.setTab("profile"),
+    onAction: () => {
+      document
+        .querySelector('[data-testid="profile-basics"]')
+        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+    },
   };
 }
 
@@ -71,7 +77,9 @@ function proposalsItem(state: AppViewState, role: AccessRole): AttentionItem | n
   return {
     id: "proposals",
     title: t("dashboard.proposals.title"),
-    summary: t("dashboard.proposals.summary", { count: String(pending.length) }),
+    summary: t("dashboard.proposals.summary", {
+      count: String(pending.length),
+    }),
     actionLabel: t("dashboard.proposals.open"),
     onAction: () => state.setTab("adminbot"),
   };
@@ -102,8 +110,8 @@ function registrationsItem(state: AppViewState, role: AccessRole): AttentionItem
 
 function attentionItems(state: AppViewState, role: AccessRole): AttentionItem[] {
   // Own-account work first: a person can always act on their own profile, whereas a queue may be
-  // someone else's to clear. Onboarding itself is not in this stack -- it is the dedicated
-  // warning card at the very top of the page, see renderOnboardingChecklist below.
+  // someone else's to clear. Onboarding itself is not in this stack -- it is the checklist at the
+  // very bottom of the profile page, see renderOnboardingChecklist.
   return [
     mandatoryFieldsItem(state),
     proposalsItem(state, role),
@@ -183,51 +191,6 @@ function renderMore(count: number) {
     : nothing;
 }
 
-function renderProfileSummary(state: AppViewState) {
-  const member = findOwnMember(state);
-  if (!member) {
-    return nothing;
-  }
-  const blanks = blankFields(member);
-  const badges = badgesFor(state, member);
-  const name = member.name?.trim() || member.email?.trim() || "";
-  return renderSummary({
-    state,
-    tab: "profile",
-    title: t("dashboard.profileSummary.title"),
-    headline: name,
-    detail: [member.role?.trim(), member.affiliation?.trim()].filter(Boolean).join(" · "),
-    // An overview of the page: the badges you hold, and the blanks that are still waiting.
-    body: html`
-      ${badges.length
-        ? html`<div class="dashboard-summary__badges">
-            ${badges
-              .slice(0, SUMMARY_PREVIEW_LIMIT)
-              .map((badge) => html`<span class="dashboard-summary__badge">${badge}</span>`)}
-            ${badges.length > SUMMARY_PREVIEW_LIMIT
-              ? html`<span class="dashboard-summary__badge dashboard-summary__badge--more">
-                  ${t("dashboard.more", {
-                    count: String(badges.length - SUMMARY_PREVIEW_LIMIT),
-                  })}
-                </span>`
-              : nothing}
-          </div>`
-        : nothing}
-      ${blanks.length
-        ? html`<p class="dashboard-summary__line dashboard-summary__line--warn">
-            ${t(
-              blanks.length === 1
-                ? "dashboard.profileSummary.blanks"
-                : "dashboard.profileSummary.blanksPlural",
-              { count: String(blanks.length) },
-            )}
-          </p>`
-        : html`<p class="dashboard-summary__line">${t("dashboard.profileSummary.complete")}</p>`}
-    `,
-    open: t("dashboard.profileSummary.open"),
-  });
-}
-
 function renderWorkSummary(state: AppViewState) {
   const items = ownPapers(state);
   const blockers = (state.myWorkBlockers ?? []).length;
@@ -269,13 +232,17 @@ function renderWorkSummary(state: AppViewState) {
   });
 }
 
-export function renderDashboard(state: AppViewState, role: AccessRole) {
+/**
+ * Everything that sits above the member's own record on the profile page: what is waiting on them,
+ * the two closest conference deadlines, and a summary of their papers.
+ */
+export function renderProfileHome(state: AppViewState, role: AccessRole) {
   return html`
     <div class="dashboard">
-      ${renderOnboardingChecklist(state)} ${renderAttention(state, role)}
+      ${renderAttention(state, role)}
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
-          ${renderProfileSummary(state)} ${renderWorkSummary(state)}
+          ${renderDeadlineSummary(state)} ${renderWorkSummary(state)}
         </div>
       </section>
     </div>

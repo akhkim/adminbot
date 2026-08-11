@@ -46,7 +46,6 @@ import {
   startOptionalServerMethodModelCatalogLoad,
 } from "./optional-model-catalog.js";
 import { hasTrackedActiveSessionRun } from "./session-active-runs.js";
-import { canRequesterAccessSession, resolveSessionAccessRequester } from "./session-ownership.js";
 /**
  * chat.history subhandler.
  *
@@ -218,7 +217,6 @@ export async function handleChatHistoryRequest({
   params,
   respond,
   context,
-  client,
   method,
   includeAgentsList,
   includeMetadata,
@@ -251,14 +249,10 @@ export async function handleChatHistoryRequest({
     agentId: agentIdOverride,
   });
   const sessionLoadOptions = requestedAgentId ? { agentId: requestedAgentId } : undefined;
-  const { cfg, storePath, store, entry: rawEntry, canonicalKey } = loadSessionEntry(
+  const { cfg, storePath, store, entry, canonicalKey } = loadSessionEntry(
     sessionKey,
     sessionLoadOptions,
   );
-  const entry =
-    rawEntry && canRequesterAccessSession(rawEntry, resolveSessionAccessRequester(client))
-      ? rawEntry
-      : undefined;
   const selectedAgent = validateChatSelectedAgent({
     cfg,
     requestedSessionKey: sessionKey,

@@ -3,45 +3,63 @@ import { t } from "../i18n/index.ts";
 import type { IconName } from "./icons.js";
 import { normalizeLowercaseStringOrEmpty } from "./string-coerce.ts";
 
+// The sidebar is organised by what a person came here to do, not by which system owns the screen.
+// Four member groups answer "my record / my work / the shared tools / the lab", and the two
+// privileged groups sit below them: `admin` for lab governance, `openclaw` for the operator
+// surfaces inherited from upstream. A group whose every tab is out of reach renders no section at
+// all (app-render.ts), so a plain member never sees an "Admin" heading and a visitor sees only the
+// two open tools inside "General Tools".
 export const TAB_GROUPS = [
-  { label: "home", tabs: ["dashboard", "profile", "myWork"] },
-  { label: "chat", tabs: ["chat"] },
-  // The AdminBot surface used to be one flat group; it is now three, one per access tier
-  // (see ui/src/ui/adminbot/access.ts), least to most privileged, so the sidebar itself shows
-  // who a tool is for instead of that only being visible in the access table. A tier with no tab
-  // the viewer can see renders no section at all (app-render.ts), so a plain member never sees an
-  // empty "Admin" heading and a visitor never sees "Lab" at all.
+  { label: "myProfile", tabs: ["profile"] },
+  { label: "myProjects", tabs: ["myWork", "adminbotPapers"] },
   {
-    label: "adminbotMember",
-    tabs: ["adminbotMembers", "adminbotTimeAvailability", "adminbotPapers"],
+    label: "generalTools",
+    tabs: [
+      "chat",
+      "adminbotDeadlines",
+      "adminbotReimbursements",
+      "adminbotMembers",
+      "adminbotTimeAvailability",
+    ],
   },
+  { label: "labSharing", tabs: ["labSharing"] },
   {
-    label: "adminbotAdmin",
+    label: "admin",
     tabs: [
       "adminbot",
       "adminbotRegistrations",
       "adminbotOnboarding",
-      "adminbotSettings",
       "adminbotAnnouncements",
+      "adminbotSettings",
     ],
   },
-  { label: "adminbotGuest", tabs: ["adminbotReimbursements", "adminbotDeadlines"] },
+  // Upstream OpenClaw's own operator surfaces. Every one of these is already admin-only in
+  // access.ts, so collapsing the former control/agent/settings groups into one heading changes
+  // where they sit, never who can reach them.
   {
-    label: "control",
-    tabs: ["overview", "activity", "workboard", "instances", "sessions", "usage", "cron"],
-  },
-  { label: "agent", tabs: ["agents", "skills", "nodes", "dreams"] },
-  {
-    label: "settings",
-    tabs: ["config"],
+    label: "openclaw",
+    tabs: [
+      "overview",
+      "activity",
+      "workboard",
+      "instances",
+      "sessions",
+      "usage",
+      "cron",
+      "agents",
+      "skills",
+      "nodes",
+      "dreams",
+      "config",
+    ],
   },
 ] as const;
 
 export type Tab =
   | "agents"
-  | "dashboard"
   | "profile"
   | "myWork"
+  | "labSharing"
   | "activity"
   | "adminbot"
   | "adminbotRegistrations"
@@ -89,9 +107,9 @@ export const SETTINGS_TABS = [
 
 const TAB_PATHS: Record<Tab, string> = {
   agents: "/agents",
-  dashboard: "/dashboard",
   profile: "/profile",
   myWork: "/my-work",
+  labSharing: "/lab-sharing",
   activity: "/activity",
   adminbot: "/adminbot",
   adminbotRegistrations: "/adminbot/registrations",
@@ -180,8 +198,9 @@ export function isTabInGroup(group: (typeof TAB_GROUPS)[number], tab: Tab): bool
     return true;
   }
   // Nested settings slices (channels/appearance/...) render inside the settings page, so they keep
-  // the settings sidebar group active even though only its top-level tabs are listed.
-  return group.label === "settings" && isSettingsTab(tab);
+  // their sidebar group active even though only its top-level tab (`config`) is listed. That page
+  // now hangs off the OpenClaw group, which is where `config` moved.
+  return group.label === "openclaw" && isSettingsTab(tab);
 }
 
 export function tabFromPath(pathname: string, basePath = ""): Tab | null {
@@ -198,10 +217,11 @@ export function tabFromPath(pathname: string, basePath = ""): Tab | null {
   if (normalized.endsWith("/index.html")) {
     normalized = "/";
   }
-  // The root is home: the dashboard for anyone signed in, and — because a visitor may not see it —
-  // the coercion in app-render turns the same resolution into the landing page for them.
+  // The root is home: the profile for anyone signed in — it now carries what the dashboard used to,
+  // the attention stack and deadline board above the member's own record. Because a visitor may not
+  // see it, the coercion in app-render turns the same resolution into the landing page for them.
   if (normalized === "/") {
-    return "dashboard";
+    return "profile";
   }
   return PATH_TO_TAB.get(normalized) ?? null;
 }
@@ -232,12 +252,12 @@ export function iconForTab(tab: Tab): IconName {
   switch (tab) {
     case "agents":
       return "folder";
-    case "dashboard":
-      return "layoutComfortable";
     case "profile":
       return "user";
     case "myWork":
       return "book";
+    case "labSharing":
+      return "link";
     case "chat":
       return "messageSquare";
     case "overview":

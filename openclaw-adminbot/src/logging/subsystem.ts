@@ -52,14 +52,7 @@ function shouldLogToConsole(level: LogLevel, settings: { level: LogLevel }): boo
 
 type ChalkInstance = InstanceType<typeof Chalk>;
 
-// This module is reachable from the Control UI bundle (tool-display -> ... -> logging/subsystem),
-// where `process` does not exist at all -- referencing it unguarded at module scope used to throw
-// "process is not defined" the instant the module was evaluated, aborting the whole bundle before
-// `openclaw-app` could register.
 const inspectValue: ((value: unknown) => string) | null = (() => {
-  if (typeof process === "undefined") {
-    return null;
-  }
   const getBuiltinModule = (
     process as NodeJS.Process & {
       getBuiltinModule?: (id: string) => unknown;

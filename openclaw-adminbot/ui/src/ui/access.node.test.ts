@@ -41,10 +41,18 @@ describe("resolveAccessRole", () => {
   it("keeps the break-glass gateway operator on the admin view", () => {
     // Holding a gateway credential already grants full RPC access; hiding tabs would be theatre.
     expect(
-      resolveAccessRole({ signedIn: false, privilegeLevel: null, gatewayConnected: true }),
+      resolveAccessRole({
+        signedIn: false,
+        privilegeLevel: null,
+        gatewayConnected: true,
+      }),
     ).toBe("admin");
     expect(
-      resolveAccessRole({ signedIn: false, privilegeLevel: null, gatewayConnected: false }),
+      resolveAccessRole({
+        signedIn: false,
+        privilegeLevel: null,
+        gatewayConnected: false,
+      }),
     ).toBe("anonymous");
   });
 
@@ -52,9 +60,12 @@ describe("resolveAccessRole", () => {
     expect(resolveAccessRole({ signedIn: true, privilegeLevel: "admin" })).toBe("admin");
     expect(resolveAccessRole({ signedIn: true, privilegeLevel: "member" })).toBe("member");
     expect(resolveAccessRole({ signedIn: true, privilegeLevel: "trial" })).toBe("member");
-    expect(resolveAccessRole({ signedIn: true, privilegeLevel: "external_collaborator" })).toBe(
-      "member",
-    );
+    expect(
+      resolveAccessRole({
+        signedIn: true,
+        privilegeLevel: "external_collaborator",
+      }),
+    ).toBe("member");
     // Privilege still loading: a signed-in session is a member until the level says otherwise, so
     // admin controls never flash before the answer arrives.
     expect(resolveAccessRole({ signedIn: true, privilegeLevel: null })).toBe("member");
@@ -63,23 +74,26 @@ describe("resolveAccessRole", () => {
 
 describe("visibleTabsForRole", () => {
   it("shows a visitor the reimbursement assistant and the deadline board, and nothing else", () => {
+    // Unchanged by the sidebar rework: the two open tools moved into the "General Tools" group,
+    // but a visitor's reachable set is still exactly these two.
     expect(visibleTabsForRole(ALL_TABS, "anonymous")).toEqual([
-      "adminbotReimbursements",
       "adminbotDeadlines",
+      "adminbotReimbursements",
     ]);
   });
 
-  it("adds the roster, availability, paper list, and chat for a member", () => {
+  it("adds the roster, the paper list and chat for a member", () => {
+    // Sidebar order: profile, then own work, then the shared tools, then the unbuilt Lab Sharing.
     expect(visibleTabsForRole(ALL_TABS, "member")).toEqual([
-      "dashboard",
       "profile",
       "myWork",
+      "adminbotPapers",
       "chat",
+      "adminbotDeadlines",
+      "adminbotReimbursements",
       "adminbotMembers",
       "adminbotTimeAvailability",
-      "adminbotPapers",
-      "adminbotReimbursements",
-      "adminbotDeadlines",
+      "labSharing",
     ]);
   });
 
@@ -100,7 +114,7 @@ describe("the access table", () => {
   // would silently publish a surface. Pin the open set so widening it has to be deliberate.
   it("opens exactly two surfaces to visitors", () => {
     const open = ALL_TABS.filter((tab) => minimumRoleForTab(tab) === "anonymous");
-    expect(open).toEqual(["adminbotReimbursements", "adminbotDeadlines"]);
+    expect(open).toEqual(["adminbotDeadlines", "adminbotReimbursements"]);
   });
 
   it("is monotonic: anything a lesser role sees, a greater role sees too", () => {
@@ -123,7 +137,7 @@ describe("resolveAccessibleTab", () => {
   // rendering a privileged panel with no data behind it.
   it("falls back to the role's default when the tab is out of reach", () => {
     expect(resolveAccessibleTab("config", "anonymous")).toBe("adminbotDeadlines");
-    expect(resolveAccessibleTab("adminbotSettings", "member")).toBe("dashboard");
+    expect(resolveAccessibleTab("adminbotSettings", "member")).toBe("profile");
     expect(canAccessTab(defaultTabForRole("anonymous"), "anonymous")).toBe(true);
     expect(canAccessTab(defaultTabForRole("member"), "member")).toBe(true);
   });

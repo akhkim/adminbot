@@ -162,7 +162,10 @@ describe("createSlackTimezoneReader", () => {
 
     const result = await createSlackTimezoneReader("/repo")(["U1"]);
 
-    expect(result.has("U1")).toBe(false);
+    // Slack answered and had no tz, so the key is present and null. That is the difference the
+    // caller relies on: null clears the stored zone, an absent key leaves it alone.
+    expect(result.has("U1")).toBe(true);
+    expect(result.get("U1")).toBeNull();
   });
 });
 

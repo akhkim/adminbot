@@ -4,6 +4,10 @@ import { clearDeviceAuthToken, storeDeviceAuthToken } from "../../device-auth.ts
 import { loadOrCreateDeviceIdentity } from "../../device-identity.ts";
 import { clearSignedOutView } from "../../signed-out-view.ts";
 import type { UiSettings } from "../../storage.ts";
+import {
+  createEmptyAdminBotDashboardData,
+  type AdminBotDashboardData,
+} from "../controllers/admin.ts";
 // Control UI module orchestrates member auth against the app view state.
 //
 // Bridges the pure AdminBot API client (`adminbot-auth.ts`) into the running
@@ -87,6 +91,11 @@ export type MemberAuthHost = {
   memberNotes: string;
   memberPrivilegeLevel: string | null;
   memberId: string | null;
+  // Cleared on sign-out. The roster and paper list now load off the *session* rather than off
+  // opening the Members tab (see app-render.ts), and the load is latched on `loadedAt` -- so
+  // leaving the previous member's data in place would make the next person to sign in on this
+  // browser land on a page showing it, with nothing to trigger a refetch.
+  adminBotData?: AdminBotDashboardData;
   adminBotOnboarding: MemberOnboarding | null;
   // Whether the signed-in member has explicitly clicked "I have read this" on the dashboard's
   // onboarding warning card, in this browser. False (and the card showing) is the default
@@ -446,6 +455,9 @@ export async function signOutMember(host: MemberAuthHost): Promise<void> {
   host.memberNotes = "";
   host.memberPrivilegeLevel = null;
   host.memberId = null;
+  if (host.adminBotData) {
+    host.adminBotData = createEmptyAdminBotDashboardData();
+  }
   host.adminBotOnboarding = null;
   host.adminBotOnboardingAcknowledged = true;
   host.loginMode = "signin";

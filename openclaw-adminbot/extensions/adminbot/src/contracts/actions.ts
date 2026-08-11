@@ -145,16 +145,29 @@ export type AdminBotMemberOnboarding = {
   remaining: AdminBotMemberOnboardingStep[];
   steps: AdminBotMemberOnboardingStep[];
 };
+// Why a member is not on lab work for a stretch. `personal` and `other_project` were added for the
+// Control UI's time-availability tab, which asks members to categorise their non-Jinesis time:
+// `personal` is time off that is nobody's business but their own (distinct from `vacation`, which
+// reads as a holiday), and `other_project` is real work that simply is not Jinesis work.
+//
+// Appending only: these values are stored on member records, so removing or renaming one silently
+// invalidates existing rows.
 export const adminBotTimeOffKinds = [
   "vacation",
   "internship",
   "course_load",
   "travel",
   "conference",
+  "personal",
+  "other_project",
   "other",
 ] as const;
 
 export type AdminBotTimeOffKind = (typeof adminBotTimeOffKinds)[number];
+
+// Longest a member-supplied free-text label may be. Long enough for "Reading week (CSC2515)",
+// short enough that it cannot be used as a storage channel.
+export const ADMINBOT_MAX_LABEL_LENGTH = 120;
 
 // Reserved project name for hours a member has explicitly declared as spare
 // capacity ("can take on something new / help others"). It is a sentinel, not a
@@ -189,6 +202,9 @@ export type AdminBotAvailabilityRow = {
   project?: string;
   hours_per_week: number;
   note?: string;
+  // Optional supporting page for the commitment — a course syllabus, a project board, a shared
+  // schedule. https only; see validateExternalLink in kernel/service.ts.
+  link?: string;
 };
 
 export type AdminBotTimeOffRow = {
@@ -199,6 +215,22 @@ export type AdminBotTimeOffRow = {
   // week. Callers must not infer this from `kind` — a conference can be either.
   availability: "none" | "partial";
   note?: string;
+  // What the member called this when `kind` is "other". The enum stays closed so the categories
+  // mean the same thing lab-wide; this is the escape hatch for the one that does not fit.
+  label?: string;
+  link?: string;
+};
+
+// A single dated milestone on a member's horizon — a thesis deadline, a defence, graduation. A
+// date rather than a range: these are moments to plan back from, not stretches of time, which is
+// what keeps them out of `availability` (hours over a range) and `time_off` (absence over a range).
+//
+// Conference submission deadlines deliberately do NOT live here: the Control UI merges these with
+// the bundled venue snapshot it already ships, so nobody retypes a date the lab already tracks.
+export type AdminBotMemberMilestone = {
+  date: string;
+  label: string;
+  link?: string;
 };
 
 export type AdminBotLabMemberInput = {
@@ -252,10 +284,24 @@ export type AdminBotLabMemberInput = {
   // Last location read from this person's Slack profile, stamped by the member-map
   // refresh. Kept apart from `location` so the two sources never overwrite each other:
   // `location` is what they told us when they joined, this is what Slack knows now.
+  // Promoted out of the free-text `notes` column, where ui/src/ui/adminbot/data/member-notes.ts
+  // encoded them as "Label: value" lines with no server-side schema. Five of that convention's
+  // seven keys already had first-class fields (location, research_topics, calendar_email,
+  // github_url, personal_website), so the same fact was stored in two places and whichever the
+  // reader happened to consult decided the answer. These are the two that had nowhere else to go.
+  joined_month?: string;
+  whatsapp?: string;
+  // The address the lab writes to for outreach, kept apart from `email` (the login identity) and
+  // `calendar_email` (the Google account invites go to). The roster spreadsheet has one for every
+  // member, and it is frequently neither of the other two.
+  correspondence_email?: string;
+  lesswrong_url?: string;
   slack_location?: string;
   slack_location_updated_at?: string;
   availability?: AdminBotAvailabilityRow[];
   time_off?: AdminBotTimeOffRow[];
+  // Dated milestones the member is planning back from. Self-editable like the two lists above.
+  milestones?: AdminBotMemberMilestone[];
   // Link to the member's own planning doc in Drive, which the availability importer reads to
   // prefill the rows above. Member-owned and self-editable: whatever the importer gets wrong, the
   // member fixes in the same panel.
@@ -573,6 +619,7 @@ export type AdminBotAuditEvent = {
     | "execution.failed"
     | "execution.idempotent_replay"
     | "lab_member.upserted"
+    | "lab_member.notes_migrated"
     | "paper.upserted"
     | "paper.deleted"
     | "onboarding.guide_sent"

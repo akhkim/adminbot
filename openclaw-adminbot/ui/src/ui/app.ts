@@ -32,6 +32,13 @@ import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
 import type { ProfileAccountCheck } from "./adminbot/views/profile-account-check.ts";
 import {
+  EMPTY_MILESTONE_DRAFT,
+  EMPTY_TIME_AVAILABILITY_DRAFT,
+  type MilestoneDraft,
+  type TimeAvailabilityDraft,
+  type TimeAvailabilityGranularity,
+} from "./adminbot/views/time-availability.ts";
+import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
   handleChannelConfigSave as handleChannelConfigSaveInternal,
   handleNostrProfileCancel as handleNostrProfileCancelInternal,
@@ -504,7 +511,15 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLoading = false;
   @state() adminBotError: string | null = null;
   @state() adminBotData: AdminBotDashboardData = createEmptyAdminBotDashboardData();
+  // Empty selection means "nobody picked yet"; app-render defaults it to the viewer's own row once
+  // the roster arrives, since your own schedule is the one you came to look at.
   @state() adminBotTimeAvailabilityMemberId = "";
+  @state() adminBotTimeAvailabilityGranularity: TimeAvailabilityGranularity = "week";
+  @state() adminBotTimeAvailabilityDraft: TimeAvailabilityDraft = {
+    ...EMPTY_TIME_AVAILABILITY_DRAFT,
+  };
+  @state() adminBotMilestoneDraft: MilestoneDraft = { ...EMPTY_MILESTONE_DRAFT };
+  @state() adminBotTimeAvailabilitySaving = false;
   @state() adminBotBusyActionId: string | null = null;
   @state() adminBotNotice: { kind: "success" | "error"; text: string } | null = null;
   @state() adminBotReimbursement: AdminBotReimbursementState =

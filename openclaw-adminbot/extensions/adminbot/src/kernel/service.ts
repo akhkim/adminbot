@@ -38,6 +38,7 @@ import {
   adminBotExternalCollaboratorSubgroups,
   adminBotMemberRoles,
   adminBotMemberStatuses,
+  ADMINBOT_MAX_LABEL_LENGTH,
   adminBotTimeOffKinds,
 } from "../contracts/actions.js";
 import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
@@ -906,7 +907,10 @@ export class AdminBotService {
   async refreshMemberDirectoryFromSlack(
     deps: {
       resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
-      fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
+      // A present key means Slack answered for that user: a string is their zone, `null` is
+      // "Slack has none". An *absent* key means the lookup never succeeded, which must never be
+      // read as an answer -- see the clearing rule below.
+      fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
     },
     actor: string,
   ): Promise<
@@ -943,9 +947,18 @@ export class AdminBotService {
       const members = this.store.listLabMembers().filter((member) => member.slack_user_id);
       const ids = members.flatMap((member) => (member.slack_user_id ? [member.slack_user_id] : []));
       const timezones = await deps.fetchSlackTimezones(ids);
-      timezonesChecked = ids.length;
       for (const member of members) {
-        const next = timezones.get(member.slack_user_id ?? "")?.trim() || undefined;
+        const slackUserId = member.slack_user_id ?? "";
+        // Not asked, or the ask failed. Clearing here is how a transport problem used to wipe a
+        // roster: an empty result is indistinguishable from "Slack knows nothing about anyone",
+        // and timezone is a mandatory field, so a failed refresh quietly made every profile
+        // incomplete. Absent means unknown, and unknown leaves the stored value alone.
+        if (!timezones.has(slackUserId)) {
+          continue;
+        }
+        timezonesChecked += 1;
+        const answer = timezones.get(slackUserId);
+        const next = answer?.trim() || undefined;
         if ((member.timezone ?? undefined) === next) {
           continue;
         }
@@ -1077,6 +1090,106 @@ export class AdminBotService {
   // Read-only, so it carries no privilege gate of its own at the route level (same shape as
   // listPaperNudges) -- it is what the daily reminder run and the Control UI dashboard both check
   // before deciding whether there is anything to warn about.
+  /**
+   * One-time backfill of the `notes` line convention into the fields that now own those facts.
+   *
+   * ui/src/ui/adminbot/data/member-notes.ts encoded seven profile fields as "Label: value" lines
+   * inside the free-text notes column, with no server-side schema. Five of them duplicated real
+   * contract fields, so the same fact lived in two places and whichever one a reader consulted
+   * decided the answer -- which is why making any of them mandatory was unsafe.
+   *
+   * Deliberately conservative, because this rewrites stored member records:
+   *   - a contract field that already holds something is never overwritten; the line is dropped
+   *     as the duplicate it is,
+   *   - a line whose label is not one of the seven is left in notes untouched,
+   *   - notes keeps whatever prose remains, and is cleared only when nothing is left.
+   * Re-running it is a no-op once the lines are gone, so a partial run is safe to repeat.
+   */
+  migrateMemberNotesToFields(actor: string): AdminBotServiceResponse<{
+    membersScanned: number;
+    membersUpdated: number;
+    fieldsFilled: number;
+  }> {
+    // Label as written by buildMemberNotes -> the field that now owns it. `research interests`
+    // lands on research_topics, which is a list, so it is split the way the roster stores it.
+    const LINE_FIELDS: Array<[string, keyof AdminBotLabMember]> = [
+      ["location", "location"],
+      ["joined month", "joined_month"],
+      ["research interests", "research_topics"],
+      ["gmail for calendar", "calendar_email"],
+      ["whatsapp", "whatsapp"],
+      ["github", "github_url"],
+      ["personal website", "personal_website"],
+    ];
+    const now = new Date().toISOString();
+    let membersUpdated = 0;
+    let fieldsFilled = 0;
+    const members = this.store.listLabMembers();
+    for (const member of members) {
+      const notes = typeof member.notes === "string" ? member.notes : "";
+      if (!notes.trim()) {
+        continue;
+      }
+      const kept: string[] = [];
+      const patch: Record<string, unknown> = {};
+      let touched = false;
+      for (const rawLine of notes.split("\n")) {
+        const line = rawLine.trim();
+        if (!line) {
+          continue;
+        }
+        const [rawKey, ...rest] = line.split(":");
+        const key = rawKey?.trim().toLowerCase() ?? "";
+        const value = rest.join(":").trim();
+        const match = LINE_FIELDS.find(([label]) => label === key);
+        if (!match || !value) {
+          kept.push(line);
+          continue;
+        }
+        touched = true;
+        const [, field] = match;
+        const existing = member[field];
+        const alreadySet = Array.isArray(existing)
+          ? existing.filter(Boolean).length > 0
+          : String(existing ?? "").trim() !== "";
+        if (alreadySet) {
+          // The field wins. The line was a duplicate of a fact already stored properly.
+          continue;
+        }
+        patch[field] =
+          field === "research_topics"
+            ? value
+                .split(",")
+                .map((entry) => entry.trim())
+                .filter(Boolean)
+            : value;
+        fieldsFilled += 1;
+      }
+      if (!touched) {
+        continue;
+      }
+      const remaining = kept.join("\n").trim();
+      const stored: AdminBotLabMember = { ...member, ...patch, updated_at: now };
+      if (remaining) {
+        stored.notes = remaining;
+      } else {
+        delete stored.notes;
+      }
+      this.store.saveLabMember(stored);
+      membersUpdated += 1;
+    }
+    this.recordAudit({
+      type: "lab_member.notes_migrated",
+      actor,
+      details: { members_scanned: members.length, members_updated: membersUpdated, fieldsFilled },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { membersScanned: members.length, membersUpdated, fieldsFilled },
+    };
+  }
+
   listMembersWithIncompleteMandatoryFields(): AdminBotServiceResponse<{
     members: Array<{ id: string; name: string; missing_fields: string[] }>;
   }> {
@@ -1360,9 +1473,14 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "github_url",
   "scholar_url",
   "calendar_email",
+  "joined_month",
+  "whatsapp",
+  "correspondence_email",
+  "lesswrong_url",
   "notes",
   "availability",
   "time_off",
+  "milestones",
   "availability_doc_url",
 ] as const;
 
@@ -1827,6 +1945,72 @@ function validateDateRange(row: { start: string; end: string }, label: string): 
   return undefined;
 }
 
+// Supporting links on a schedule row or milestone. Deliberately stricter than "is a URL": these
+// are rendered as anchors in the Control UI, so anything but https is refused outright rather than
+// left for the renderer to decide about. Unlike availability_doc_url this is not restricted to
+// Google — a syllabus or a project board can live anywhere.
+function validateExternalLink(value: unknown, label: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    return `${label} link must be a string`;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return `${label} link must be a valid URL`;
+  }
+  if (parsed.protocol !== "https:") {
+    return `${label} link must use https`;
+  }
+  return undefined;
+}
+
+function validateLabel(value: unknown, label: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    return `${label} must be a string`;
+  }
+  if (value.length > ADMINBOT_MAX_LABEL_LENGTH) {
+    return `${label} cannot exceed ${ADMINBOT_MAX_LABEL_LENGTH} characters`;
+  }
+  return undefined;
+}
+
+function validateMilestones(member: AdminBotLabMemberInput): string | undefined {
+  if (member.milestones === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(member.milestones)) {
+    return "member milestones must be a list";
+  }
+  if (member.milestones.length > MAX_AVAILABILITY_ROWS) {
+    return `member milestones cannot exceed ${MAX_AVAILABILITY_ROWS} rows`;
+  }
+  for (const row of member.milestones) {
+    if (!Number.isFinite(parseIsoDate(row?.date))) {
+      return "milestone date must be YYYY-MM-DD";
+    }
+    // A milestone with no label is an unexplained mark on someone's timeline.
+    if (typeof row.label !== "string" || !row.label.trim()) {
+      return "milestone label is required";
+    }
+    const labelError = validateLabel(row.label, "milestone label");
+    if (labelError) {
+      return labelError;
+    }
+    const linkError = validateExternalLink(row.link, "milestone");
+    if (linkError) {
+      return linkError;
+    }
+  }
+  return undefined;
+}
+
 function validateAvailability(member: AdminBotLabMemberInput): string | undefined {
   if (member.availability !== undefined) {
     if (!Array.isArray(member.availability)) {
@@ -1846,6 +2030,10 @@ function validateAvailability(member: AdminBotLabMemberInput): string | undefine
         row.hours_per_week > 168
       ) {
         return "availability hours per week must be between 0 and 168";
+      }
+      const linkError = validateExternalLink(row.link, "availability");
+      if (linkError) {
+        return linkError;
       }
     }
   }
@@ -1867,9 +2055,17 @@ function validateAvailability(member: AdminBotLabMemberInput): string | undefine
       if (row.availability !== "none" && row.availability !== "partial") {
         return "time off availability must be none or partial";
       }
+      const labelError = validateLabel(row.label, "time off label");
+      if (labelError) {
+        return labelError;
+      }
+      const linkError = validateExternalLink(row.link, "time off");
+      if (linkError) {
+        return linkError;
+      }
     }
   }
-  return undefined;
+  return validateMilestones(member);
 }
 
 // availability_updated_at is server-owned: it moves only when the schedule content

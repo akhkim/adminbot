@@ -272,13 +272,17 @@ function createSlackLocationReader(repoRoot: string) {
 export function createSlackTimezoneReader(repoRoot: string) {
   return async function fetchSlackTimezones(
     slackUserIds: readonly string[],
-  ): Promise<Map<string, string>> {
-    const timezones = new Map<string, string>();
+  ): Promise<Map<string, string | null>> {
+    const timezones = new Map<string, string | null>();
     for (const userId of slackUserIds) {
       const user = (await fetchSlackMemberInfo(repoRoot, userId)) as { tz?: unknown } | undefined;
-      if (typeof user?.tz === "string" && user.tz.trim()) {
-        timezones.set(userId, user.tz.trim());
+      // fetchSlackMemberInfo answers `undefined` only when the lookup itself failed. Leaving the
+      // key out says "we could not ask"; `null` says Slack answered and had no zone. The caller
+      // clears on the second and never on the first.
+      if (user === undefined) {
+        continue;
       }
+      timezones.set(userId, typeof user.tz === "string" && user.tz.trim() ? user.tz.trim() : null);
     }
     return timezones;
   };

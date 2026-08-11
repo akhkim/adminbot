@@ -17,11 +17,7 @@ export function resolveIsNixMode(env: NodeJS.ProcessEnv = process.env): boolean 
   return env.OPENCLAW_NIX_MODE === "1";
 }
 
-// This module is reachable from the Control UI bundle (tool-display -> ... -> logging/config ->
-// ... -> config/paths/paths), where `process`/`fs`/`os` are all browser stubs. This and the other
-// two eager top-level bindings below (STATE_DIR, CONFIG_PATH) used to call into them the instant
-// the module was evaluated, throwing before openclaw-app could ever register.
-export let isNixMode = typeof process === "undefined" ? false : resolveIsNixMode();
+export let isNixMode = resolveIsNixMode();
 
 // Support the remaining legacy pre-rebrand state dir.
 const LEGACY_STATE_DIRNAMES = [".clawdbot"] as const;
@@ -146,7 +142,7 @@ export function resolveIncludeRoots(
   return roots;
 }
 
-export let STATE_DIR = typeof process === "undefined" ? "" : resolveStateDir();
+export let STATE_DIR = resolveStateDir();
 
 /**
  * Config file path (JSON or JSON5).
@@ -229,7 +225,7 @@ export function resolveConfigPath(
   return path.join(stateDir, CONFIG_FILENAME);
 }
 
-export let CONFIG_PATH = typeof process === "undefined" ? "" : resolveConfigPathCandidate();
+export let CONFIG_PATH = resolveConfigPathCandidate();
 
 /**
  * Re-pins process-stable runtime paths after an early startup selector changes the environment.
