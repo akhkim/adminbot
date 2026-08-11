@@ -42,9 +42,11 @@ const FIELD_BY_COLUMN: Array<[string, string]> = [
   // Fills a blank only, like every other column here. The Slack directory sync is the live source
   // and wins wherever it has already resolved someone.
   ["Slack ID", "slack_user_id"],
+  ["Profile photo", "avatar_url"],
+  ["Channels", "slack_channels"],
 ];
 
-const LIST_FIELDS = new Set(["research_topics"]);
+const LIST_FIELDS = new Set(["research_topics", "slack_channels"]);
 
 /**
  * The sheet is filled in by hand, so a column holds whatever shape each person typed: a bare
@@ -82,6 +84,7 @@ function normalizeSheetValue(field: string, raw: string): string | undefined {
     }
     case "personal_website":
     case "lesswrong_url":
+    case "avatar_url":
       return asFreeUrl(value);
     default:
       return value;
@@ -236,7 +239,12 @@ async function run(params: {
         : String(existing ?? "").trim() !== "";
       if (alreadySet) {
         const current = Array.isArray(existing) ? existing.join(", ") : String(existing);
-        if (normalizeName(current) !== normalizeName(raw)) {
+        // Compare the *normalized* sheet value, not the raw cell. The roster holds what a previous
+        // run wrote -- "https://github.com/ada" -- while the sheet still says "ada", and reporting
+        // those as disagreeing buries the handful of real conflicts under a hundred that only
+        // differ by the normalization this script performed itself.
+        const candidate = LIST_FIELDS.has(field) ? raw : (normalizeSheetValue(field, raw) ?? raw);
+        if (normalizeName(current) !== normalizeName(candidate)) {
           conflicts.push(`${name} · ${field}: roster "${current}" vs sheet "${raw}"`);
         }
         continue;

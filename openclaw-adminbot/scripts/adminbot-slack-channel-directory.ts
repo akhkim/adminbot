@@ -71,6 +71,17 @@ export async function fetchSlackChannelDirectory(
     }
   }
 
+  // The seed list is ids, but the fallback below has to emit *names* -- a raw "C09MANEUPPZ" is not
+  // a channel name, and downstream roster validation rejects it. Resolved once here rather than
+  // per member, since the same handful of seeds serves everyone.
+  const seedNames = new Map<string, string>();
+  for (const channel of channels) {
+    const name = await channelName(api, channel);
+    if (name) {
+      seedNames.set(channel, name);
+    }
+  }
+
   const entries: SlackDirectoryEntry[] = [];
   for (const [id, found] of channelsByUser) {
     const info = (await api("users.info", { user: id })) as unknown as {
@@ -104,10 +115,82 @@ export async function fetchSlackChannelDirectory(
       image: profile.image_512 ?? profile.image_192 ?? "",
       // Absent unless the app holds users:read.email; Slack omits it rather than erroring.
       email: profile.email?.trim() ?? "",
-      channels: found,
+      // Every channel this person is in, by name -- not just the seed channels they were
+      // discovered through. `found` only ever holds the handful of ids this run scanned, which is
+      // a statement about the scan rather than about the member.
+      channels: await memberChannelNames(
+        api,
+        id,
+        found.flatMap((channel) => {
+          const name = seedNames.get(channel);
+          return name ? [name] : [];
+        }),
+      ),
     });
   }
   return entries.toSorted((a, b) => a.real_name.localeCompare(b.real_name));
+}
+
+/**
+ * Every conversation a member belongs to, by name.
+ *
+ * `users.conversations` answers this in one call per person and returns names, so the seed
+ * channels are only ever how someone is *discovered*; where they actually are comes from here.
+ * Limited to what the bot itself can see -- private channels it is not in are invisible to it, so
+ * this is "every channel we can observe them in", not a claim about the whole workspace.
+ *
+ * A failure falls back to the seed channels this person was discovered in (by name, never by
+ * raw id) rather than throwing: a directory run that loses one person's channel list should
+ * still record everything else about them.
+ */
+/** A channel's name from its id, or "" when the bot cannot see it. */
+async function channelName(api: SlackApi, channel: string): Promise<string> {
+  try {
+    const info = (await api("conversations.info", { channel })) as unknown as {
+      ok?: boolean;
+      channel?: { name?: string };
+    };
+    return info.ok ? (info.channel?.name?.trim() ?? "") : "";
+  } catch {
+    return "";
+  }
+}
+
+async function memberChannelNames(
+  api: SlackApi,
+  user: string,
+  fallback: readonly string[],
+): Promise<string[]> {
+  const names: string[] = [];
+  let cursor: string | undefined;
+  try {
+    do {
+      const page = (await api("users.conversations", {
+        user,
+        types: "public_channel,private_channel",
+        exclude_archived: true,
+        limit: 200,
+        ...(cursor ? { cursor } : {}),
+      })) as unknown as {
+        ok?: boolean;
+        channels?: Array<{ name?: string }>;
+        response_metadata?: { next_cursor?: string };
+      };
+      if (!page.ok) {
+        return [...fallback];
+      }
+      for (const channel of page.channels ?? []) {
+        const name = channel.name?.trim();
+        if (name) {
+          names.push(name);
+        }
+      }
+      cursor = page.response_metadata?.next_cursor?.trim() || undefined;
+    } while (cursor);
+  } catch {
+    return [...fallback];
+  }
+  return names.sort((a, b) => a.localeCompare(b));
 }
 
 const normalize = (value: string) => value.trim().replaceAll(/\s+/gu, " ").toLowerCase();
@@ -180,6 +263,8 @@ export function fillSheet(
   const derived: Array<[string, (entry: SlackDirectoryEntry) => string]> = [
     ["Slack ID", (entry) => entry.slack_user_id],
     ["Slack email", (entry) => entry.email],
+    ["Profile photo", (entry) => entry.image],
+    ["Channels", (entry) => entry.channels.join(", ")],
   ];
   const columnFor = new Map<string, number>();
   for (const [label] of derived) {

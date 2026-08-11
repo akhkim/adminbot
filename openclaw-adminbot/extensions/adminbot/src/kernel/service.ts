@@ -1725,6 +1725,9 @@ export function payloadHash(value: unknown): string {
 const SELF_PROFILE_EDITABLE_FIELDS = [
   "name",
   "slack_user_id",
+  // Slack-derived, not something a member types: the roster sync writes it through the service
+  // principal, which lands on this same whitelist. Governance fields stay in the privileged list.
+  "slack_channels",
   "role",
   "research_branch",
   "research_topics",
@@ -1736,6 +1739,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "timezone",
   "personal_website",
   "openreview_id",
+  "avatar_url",
   "cv_url",
   "intake_form_url",
   "linkedin_url",
@@ -2003,6 +2007,18 @@ function validateLabMember(
       return openReviewError;
     }
   }
+  // Slack channel names, not ids or links: the sync writes what `users.conversations` reports, and
+  // a stray "#" or a full archive URL would break the lookups that join a member to a channel.
+  if (member.slack_channels !== undefined) {
+    if (!Array.isArray(member.slack_channels)) {
+      return "member slack channels must be a list";
+    }
+    for (const channel of member.slack_channels) {
+      if (typeof channel !== "string" || !SLACK_CHANNEL_NAME.test(channel)) {
+        return `member slack channel is invalid: ${String(channel)}`;
+      }
+    }
+  }
   for (const spec of SOCIAL_URL_FIELDS) {
     const value = member[spec.field];
     if (value === undefined) {
@@ -2027,6 +2043,7 @@ function validateLabMember(
 type SocialUrlFieldSpec = {
   field:
     | "personal_website"
+    | "avatar_url"
     | "cv_url"
     | "intake_form_url"
     | "linkedin_url"
@@ -2042,6 +2059,7 @@ type SocialUrlFieldSpec = {
 
 const SOCIAL_URL_FIELDS: SocialUrlFieldSpec[] = [
   { field: "personal_website", label: "personal website" },
+  { field: "avatar_url", label: "profile photo" },
   { field: "cv_url", label: "CV" },
   {
     // A member's own intake answers. Google Forms hands each respondent a link to their single
@@ -2117,6 +2135,7 @@ function validateSocialUrl(value: unknown, spec: SocialUrlFieldSpec): string | u
 // "~Emilia_Wiśnios1" -- and the old ASCII-only, hyphen-free pattern rejected them, which silently
 // cost those members the field. Still anchored on the tilde and the trailing disambiguation digit,
 // which are the parts OpenReview actually guarantees.
+const SLACK_CHANNEL_NAME = /^[a-z0-9][a-z0-9._-]{0,79}$/u;
 const OPENREVIEW_ID = /^~\p{L}[\p{L}\p{N}_.-]*[0-9]$/u;
 
 function validateOpenReviewId(value: unknown): string | undefined {

@@ -306,6 +306,13 @@ export type AdminBotLabMemberInput = {
   // member, and it is frequently neither of the other two.
   correspondence_email?: string;
   lesswrong_url?: string;
+  // Profile photo, normally the member's Slack avatar carried over by the directory sync. Stored
+  // as a URL rather than bytes: Slack already hosts and resizes it, and copying it would leave the
+  // roster serving a stale face after someone changes theirs.
+  avatar_url?: string;
+  // Every channel the member is in, by name, as the directory sync last observed. Only what the
+  // bot can see -- a private channel it is not in is invisible to it -- so absence is not proof.
+  slack_channels?: string[];
   slack_location?: string;
   slack_location_updated_at?: string;
   // Coarse (country-level) location derived from the IP address of this person's most recent
