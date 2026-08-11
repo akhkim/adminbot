@@ -963,6 +963,17 @@ export class AdminBotService {
       // "Slack has none". An *absent* key means the lookup never succeeded, which must never be
       // read as an answer -- see the clearing rule below.
       fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
+      // Messages each member sent inside the activity window. Same present/absent contract as the
+      // timezone reader: an absent key means the sweep could not measure that member, which must
+      // never be stored as zero -- zero is "we looked and they said nothing", and the badge reads
+      // the two differently.
+      // Takes the channels to read as well as the members to count: Slack has no "messages by
+      // user" endpoint a bot token can call, so the only route is reading channels and tallying by
+      // author, and the store is what knows which channels the lab tracks.
+      fetchSlackMessageCounts?: (
+        slackUserIds: string[],
+        channelIds: string[],
+      ) => Promise<ReadonlyMap<string, number>>;
     },
     actor: string,
   ): Promise<
@@ -970,6 +981,7 @@ export class AdminBotService {
       idsResolved: number;
       timezonesChecked: number;
       timezonesUpdated: number;
+      activityChecked: number;
     }>
   > {
     const now = new Date().toISOString();
@@ -1029,7 +1041,50 @@ export class AdminBotService {
       actor,
       details: { idsResolved, timezonesChecked, timezonesUpdated },
     });
-    return { ok: true, status: 200, payload: { idsResolved, timezonesChecked, timezonesUpdated } };
+    // Message counts, stamped last so a member linked earlier in this same pass is included.
+    let activityChecked = 0;
+    if (deps.fetchSlackMessageCounts) {
+      const linked = this.store
+        .listLabMembers()
+        .filter((member): member is AdminBotLabMember & { slack_user_id: string } =>
+          Boolean(member.slack_user_id?.trim()),
+        );
+      if (linked.length) {
+        const channelIds = this.store
+          .listSlackChannelNamingRecords()
+          .map((record) => record.channel_id)
+          .filter(Boolean);
+        const counts = await deps.fetchSlackMessageCounts(
+          linked.map((member) => member.slack_user_id),
+          channelIds,
+        );
+        for (const member of linked) {
+          const count = counts.get(member.slack_user_id);
+          // Absent means the sweep could not measure this member. Leave the previous reading in
+          // place rather than overwriting it with a zero nobody observed.
+          if (count === undefined) {
+            continue;
+          }
+          activityChecked += 1;
+          this.store.saveLabMember({
+            ...member,
+            slack_messages_7d: count,
+            slack_activity_checked_at: now,
+            updated_at: now,
+          });
+        }
+        this.recordAudit({
+          type: "lab_member.upserted",
+          actor,
+          details: { slack_activity_checked: activityChecked },
+        });
+      }
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { idsResolved, timezonesChecked, timezonesUpdated, activityChecked },
+    };
   }
 
   // Reviewing cycles and their firing history, for the admin panel. Reads persisted
@@ -1741,6 +1796,9 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   // Slack-derived, not something a member types: the roster sync writes it through the service
   // principal, which lands on this same whitelist. Governance fields stay in the privileged list.
   "slack_channels",
+  // Written by the Slack activity sweep through the service principal, never typed by a member.
+  "slack_messages_7d",
+  "slack_activity_checked_at",
   "role",
   "research_branch",
   "research_topics",

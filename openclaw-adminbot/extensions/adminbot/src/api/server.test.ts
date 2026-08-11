@@ -1111,7 +1111,7 @@ describe("AdminBot mock service", () => {
       timezonesChecked: number;
       timezonesUpdated: number;
     };
-    expect(body).toEqual({ idsResolved: 1, timezonesChecked: 1, timezonesUpdated: 1 });
+    expect(body).toEqual({ idsResolved: 1, timezonesChecked: 1, timezonesUpdated: 1, activityChecked: 0 });
 
     const roster = await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() });
     const members = (await roster.json()) as {

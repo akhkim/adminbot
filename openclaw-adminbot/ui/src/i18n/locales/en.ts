@@ -1560,6 +1560,13 @@ export const en: TranslationMap = {
     timezone: {
       prefilled: "Filled in as {zone} from “{location}”. Change it if that is wrong.",
     },
+    activity: {
+      active: "Active",
+      inactive: "Inactive",
+      activeDetail: "{count} Slack messages in the last {days} days.",
+      inactiveDetail:
+        "{count} Slack messages in the last {days} days — under the {threshold} that counts as active.",
+    },
     whatsapp: {
       needsCountryCode: "Add a country code (e.g. +1) so the number is dialable from abroad.",
     },

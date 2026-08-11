@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import { adminBotMandatoryProfileFields } from "../contracts/actions.js";
+import {
+  adminBotMandatoryProfileFields,
+  adminBotSlackActivityOf,
+} from "../contracts/actions.js";
 import { AdminBotService, payloadHash } from "./service.js";
 
 function unwrap<T>(
@@ -1428,6 +1431,85 @@ describe("AdminBotService", () => {
   // out of the route as a 500. That is the whole "add a commitment button does nothing" bug: the
   // Control UI's schedule editor sends availability/time_off/milestones and never a name, and an
   // admin session routes those through this method rather than through updateOwnProfile.
+  // Whether a member counts as active in Slack. The sweep counts messages; the badge reads the
+  // count. Both go through adminBotSlackActivityOf so they cannot disagree.
+  describe("slack activity", () => {
+    it("classifies from the stored count against the shared threshold", () => {
+      const base = { slack_user_id: "U1", slack_activity_checked_at: "2026-08-11T00:00:00.000Z" };
+      expect(adminBotSlackActivityOf({ ...base, slack_messages_7d: 2 })).toBe("active");
+      expect(adminBotSlackActivityOf({ ...base, slack_messages_7d: 9 })).toBe("active");
+      expect(adminBotSlackActivityOf({ ...base, slack_messages_7d: 1 })).toBe("inactive");
+      expect(adminBotSlackActivityOf({ ...base, slack_messages_7d: 0 })).toBe("inactive");
+    });
+
+    // Missing data is not silence. A member the sweep has never measured, or one with no Slack
+    // account linked, must not read as inactive -- that would be an accusation from a gap.
+    it("reads as unknown when nothing has been measured", () => {
+      expect(adminBotSlackActivityOf({})).toBe("unknown");
+      expect(adminBotSlackActivityOf({ slack_user_id: "U1" })).toBe("unknown");
+      expect(
+        adminBotSlackActivityOf({ slack_messages_7d: 5, slack_activity_checked_at: "2026-08-11" }),
+      ).toBe("unknown");
+      expect(
+        adminBotSlackActivityOf({ slack_user_id: "U1", slack_activity_checked_at: "2026-08-11" }),
+      ).toBe("unknown");
+    });
+
+    it("stamps counts onto the linked members it measured", async () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "chatty", name: "Chatty", slack_user_id: "U1" }));
+      unwrap(service.upsertLabMember({ id: "quiet", name: "Quiet", slack_user_id: "U2" }));
+      unwrap(service.upsertLabMember({ id: "unlinked", name: "Unlinked" }));
+
+      const result = unwrap(
+        await service.refreshMemberDirectoryFromSlack(
+          {
+            fetchSlackMessageCounts: async () =>
+              new Map([
+                ["U1", 6],
+                ["U2", 0],
+              ]),
+          },
+          "cron",
+        ),
+      );
+      expect(result.activityChecked).toBe(2);
+      const members = unwrap(service.listLabMembers()).members;
+      const byId = (id: string) => members.find((member) => member.id === id)!;
+      expect(byId("chatty").slack_messages_7d).toBe(6);
+      expect(adminBotSlackActivityOf(byId("chatty"))).toBe("active");
+      // A measured zero is a real reading, so this member is inactive rather than unknown.
+      expect(byId("quiet").slack_messages_7d).toBe(0);
+      expect(adminBotSlackActivityOf(byId("quiet"))).toBe("inactive");
+      // Never linked to Slack, so never measured.
+      expect(byId("unlinked").slack_activity_checked_at).toBeUndefined();
+    });
+
+    // A failed sweep returns no keys at all. Overwriting every member with zero would mark the
+    // whole lab inactive on one bad night.
+    it("leaves the previous reading alone for a member it could not measure", async () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "chatty", name: "Chatty", slack_user_id: "U1" }));
+      unwrap(
+        await service.refreshMemberDirectoryFromSlack(
+          { fetchSlackMessageCounts: async () => new Map([["U1", 5]]) },
+          "cron",
+        ),
+      );
+      const result = unwrap(
+        await service.refreshMemberDirectoryFromSlack(
+          { fetchSlackMessageCounts: async () => new Map() },
+          "cron",
+        ),
+      );
+      expect(result.activityChecked).toBe(0);
+      expect(
+        unwrap(service.listLabMembers()).members.find((member) => member.id === "chatty")
+          ?.slack_messages_7d,
+      ).toBe(5);
+    });
+  });
+
   describe("partial updates", () => {
     function seeded() {
       const service = new AdminBotService();

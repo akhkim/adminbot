@@ -335,6 +335,46 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(row?.querySelector(".profile__optional")).toBeNull();
   });
 
+  // Three states, not two. "Unknown" renders nothing, because labelling someone Inactive from a
+  // measurement that was never taken is an accusation drawn from a gap.
+  it("shows the Slack activity state beside the name once it has been measured", () => {
+    const active = renderPage(
+      createState(
+        createMember({
+          slack_user_id: "U1",
+          slack_messages_7d: 6,
+          slack_activity_checked_at: "2026-08-11T00:00:00.000Z",
+        } as Partial<LabMember>),
+      ),
+      vi.fn(),
+    );
+    const pill = active.querySelector('[data-testid="profile-slack-activity"]');
+    expect(pill?.getAttribute("data-activity")).toBe("active");
+    expect(pill?.textContent?.trim()).toContain("Active");
+    // It sits with the name, not down in the field list.
+    expect(pill?.closest(".profile__hero")).not.toBeNull();
+
+    const inactive = renderPage(
+      createState(
+        createMember({
+          slack_user_id: "U1",
+          slack_messages_7d: 1,
+          slack_activity_checked_at: "2026-08-11T00:00:00.000Z",
+        } as Partial<LabMember>),
+      ),
+      vi.fn(),
+    );
+    expect(
+      inactive.querySelector('[data-testid="profile-slack-activity"]')?.getAttribute("data-activity"),
+    ).toBe("inactive");
+  });
+
+  it("shows nothing at all when activity has never been measured", () => {
+    // The fixture member carries a slack_user_id but no measurement.
+    const container = renderPage(createState(createMember()), vi.fn());
+    expect(container.querySelector('[data-testid="profile-slack-activity"]')).toBeNull();
+  });
+
   it("offers a preferred name, optional, beside the roster name", () => {
     const container = renderPage(createState(createMember()), vi.fn());
     const input = container.querySelector<HTMLInputElement>('input[name="preferred_name"]');

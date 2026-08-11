@@ -14,6 +14,9 @@ import { html, nothing } from "lit";
 import {
   adminBotMandatoryProfileFields,
   adminBotMemberRoles,
+  adminBotSlackActivityOf,
+  adminBotSlackActivityThreshold,
+  adminBotSlackActivityWindowDays,
 } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -998,6 +1001,42 @@ function renderCompletionLedger(member: LabMember) {
 // Lives in the identity card rather than its own section -- badges are a fact about the person
 // the header is already introducing, the same way a LinkedIn/GitHub header shows them inline
 // rather than in a separate scroll-to section.
+/**
+ * Whether the member has been active in Slack lately, beside their name.
+ *
+ * Three states, not two. "Unknown" is the honest answer before the sweep has ever measured this
+ * member -- and for anyone whose Slack account the roster has not linked -- so it renders nothing
+ * at all. Showing "Inactive" there would be an accusation drawn from missing data rather than from
+ * silence, and on a page whose whole job is telling you what the lab knows about you, that is the
+ * one thing it must not get wrong.
+ */
+function renderSlackActivity(member: LabMember) {
+  const activity = adminBotSlackActivityOf({
+    slack_user_id: member.slack_user_id as string | undefined,
+    slack_messages_7d: member.slack_messages_7d as number | undefined,
+    slack_activity_checked_at: member.slack_activity_checked_at as string | undefined,
+  });
+  if (activity === "unknown") {
+    return nothing;
+  }
+  const count = Number(member.slack_messages_7d ?? 0);
+  return html`
+    <span
+      class="profile__activity"
+      data-activity=${activity}
+      data-testid="profile-slack-activity"
+      title=${t(`profile.activity.${activity}Detail`, {
+        count: String(count),
+        days: String(adminBotSlackActivityWindowDays),
+        threshold: String(adminBotSlackActivityThreshold),
+      })}
+    >
+      <span class="profile__activity-dot" aria-hidden="true"></span>
+      ${t(`profile.activity.${activity}`)}
+    </span>
+  `;
+}
+
 function renderBadges(state: AppViewState, member: LabMember) {
   const badges = badgesFor(state, member);
   if (!badges.length) {
@@ -1259,6 +1298,7 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
             ${member.role?.trim()
               ? html`<span class="profile__role-pill">${member.role.trim()}</span>`
               : nothing}
+            ${renderSlackActivity(member)}
           </div>
           <span class="profile__email">${member.email?.trim() ?? ""}</span>
           ${renderLinks(member)} ${renderBadges(state, member)}

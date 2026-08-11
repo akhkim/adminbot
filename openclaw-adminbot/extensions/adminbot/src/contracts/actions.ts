@@ -164,6 +164,48 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   openreview_id: "OpenReview",
 };
 
+/**
+ * When a member counts as active in Slack.
+ *
+ * One threshold, here rather than on either side that uses it, for the same reason the mandatory
+ * profile fields ended up in one list: the sweep that counts messages and the badge that reads the
+ * count must agree, or a member is told they are active by one surface and inactive by the other.
+ *
+ * Two messages rather than one: a single message is as likely to be an emoji reaction thread or an
+ * out-of-office note as it is participation. Seven days rather than a month because the question the
+ * badge answers is "is this person around right now".
+ */
+export const adminBotSlackActivityWindowDays = 7;
+export const adminBotSlackActivityThreshold = 2;
+
+/** Active, inactive, or not yet measured. */
+export type AdminBotSlackActivity = "active" | "inactive" | "unknown";
+
+/**
+ * Whether a member reads as active from what the last sweep stored.
+ *
+ * `unknown` is a real answer and the default: before the first sweep, and for anyone whose Slack
+ * account the roster has never linked, there is no measurement. Calling those members inactive
+ * would be an accusation drawn from missing data rather than from silence, so the badge shows
+ * nothing at all for them.
+ */
+export function adminBotSlackActivityOf(member: {
+  slack_user_id?: string;
+  /** Messages this member sent in the last adminBotSlackActivityWindowDays, from the Slack sweep. */
+  slack_messages_7d?: number;
+  /** When that count was last measured. Absent means never, which reads as "unknown", not zero. */
+  slack_activity_checked_at?: string;
+}): AdminBotSlackActivity {
+  if (!member.slack_user_id?.trim() || !member.slack_activity_checked_at?.trim()) {
+    return "unknown";
+  }
+  const count = member.slack_messages_7d;
+  if (typeof count !== "number" || !Number.isFinite(count)) {
+    return "unknown";
+  }
+  return count >= adminBotSlackActivityThreshold ? "active" : "inactive";
+}
+
 export const adminBotMemberStatuses = [
   "active",
   "part_time",
@@ -310,6 +352,10 @@ export type AdminBotLabMemberInput = {
   // Google Calendar, which is very often not their cs.toronto.edu address.
   calendar_email?: string;
   slack_user_id?: string;
+  /** Messages sent in the last adminBotSlackActivityWindowDays, stamped by the Slack sweep. */
+  slack_messages_7d?: number;
+  /** When that count was last measured. Absent means never, which reads as unknown, not zero. */
+  slack_activity_checked_at?: string;
   privilege_level?: AdminBotPrivilegeLevel;
   // Which kind of external collaborator this person is, which decides the access items they get.
   // Only meaningful while `privilege_level` is "external_collaborator"; governance-owned like

@@ -16,6 +16,7 @@ import {
   type DevicePairingApproval,
   type DeviceTokenIssuance,
 } from "../src/api/server.js";
+import { adminBotSlackActivityWindowDays } from "../src/contracts/actions.js";
 import { createCompositeAdminBotExecutor } from "../src/connectors/composite.js";
 import { createGogAdminBotExecutor } from "../src/connectors/gog.js";
 import { createAdminBotMessageExecutor } from "../src/connectors/message.js";
@@ -290,6 +291,99 @@ export function createSlackTimezoneReader(repoRoot: string) {
 }
 
 /**
+ * Counts how many messages each member sent across the workspace in the activity window.
+ *
+ * One pass over the channels AdminBot already tracks (the same channel ids the naming sweep works
+ * from), reading recent messages per channel and tallying by author. That direction matters: Slack
+ * has no "messages by user" endpoint a bot token can call, so the only way to this number is to
+ * read channels and count. Doing it once per channel rather than once per member keeps the cost at
+ * ~45 calls instead of ~45 x 159.
+ *
+ * Every member the sweep managed to read for gets a key, including a zero -- that is a real
+ * measurement, and the service treats it differently from an absent key. If the whole read fails,
+ * no keys come back at all and the service leaves the previous readings alone rather than marking
+ * the entire lab inactive on one bad night.
+ */
+export function createSlackMessageCounter(repoRoot: string) {
+  return async function fetchSlackMessageCounts(
+    slackUserIds: readonly string[],
+    channelIds: readonly string[],
+  ): Promise<Map<string, number>> {
+    const wanted = new Set(slackUserIds);
+    const counts = new Map<string, number>();
+    const since = Date.now() - adminBotSlackActivityWindowDays * 86_400_000;
+    let readAny = false;
+    for (const channelId of channelIds) {
+      const messages = await readSlackChannel(repoRoot, channelId);
+      if (messages === undefined) {
+        continue;
+      }
+      readAny = true;
+      for (const message of messages) {
+        const author = typeof message.user === "string" ? message.user : "";
+        if (!author || !wanted.has(author)) {
+          continue;
+        }
+        // Slack timestamps are seconds with a microsecond fraction.
+        const sentMs = Number.parseFloat(String(message.ts ?? "0")) * 1000;
+        if (!Number.isFinite(sentMs) || sentMs < since) {
+          continue;
+        }
+        counts.set(author, (counts.get(author) ?? 0) + 1);
+      }
+    }
+    if (!readAny) {
+      return new Map();
+    }
+    // A member the sweep read for and never saw really did send nothing; that is a zero, not a gap.
+    for (const userId of wanted) {
+      if (!counts.has(userId)) {
+        counts.set(userId, 0);
+      }
+    }
+    return counts;
+  };
+}
+
+/** Recent messages in one Slack channel, or undefined when the read failed. */
+async function readSlackChannel(
+  repoRoot: string,
+  channelId: string,
+): Promise<Array<Record<string, unknown>> | undefined> {
+  try {
+    const { stdout } = await execFileAsync(
+      process.execPath,
+      [
+        path.join(repoRoot, "openclaw.mjs"),
+        "message",
+        "read",
+        "--channel",
+        "slack",
+        "--target",
+        channelId,
+        "--limit",
+        String(SLACK_HISTORY_LIMIT),
+        "--json",
+      ],
+      { timeout: 60_000, maxBuffer: 8 * 1024 * 1024 },
+    );
+    const payload = JSON.parse(stdout.trim().split("\n").at(-1) ?? "{}");
+    const messages = payload?.messages ?? payload?.result?.messages ?? payload?.result ?? [];
+    return Array.isArray(messages) ? (messages as Array<Record<string, unknown>>) : [];
+  } catch (error) {
+    // One unreadable channel must not abandon the rest of the workspace.
+    console.warn(
+      `slack history read failed for ${channelId}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return undefined;
+  }
+}
+
+// Deep enough to cover a busy week in an active channel without paging. A channel that outruns it
+// undercounts rather than failing, which is the safer direction for a badge.
+const SLACK_HISTORY_LIMIT = 400;
+
+/**
  * Resolves Slack user ids for members the roster has never linked to Slack, by email against the
  * workspace directory -- the seam a member self-editing `slack_user_id` normally fills in by hand.
  * One directory listing covers the whole workspace, so this never scales with roster size the way
@@ -435,6 +529,7 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     dcsFormScriptPath: path.join(repoRoot, "scripts/adminbot-dcs-form-submit.ts"),
     fetchSlackLocations: createSlackLocationReader(repoRoot),
     fetchSlackTimezones: createSlackTimezoneReader(repoRoot),
+    fetchSlackMessageCounts: createSlackMessageCounter(repoRoot),
     resolveSlackUserIdsByEmail: createSlackDirectoryEmailResolver(repoRoot),
     // No `geolocateIp` here on purpose. PR #17 replaced the city-level ipapi.co lookup below with
     // the country/continent IPinfo Lite one, which api/server.ts builds itself from IPINFO_TOKEN.

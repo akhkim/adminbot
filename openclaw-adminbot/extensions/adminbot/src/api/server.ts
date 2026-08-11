@@ -129,6 +129,11 @@ export type AdminBotMockServiceOptions = {
   // Reads each member's IANA timezone from Slack, for the profile `timezone` field --
   // distinct from fetchSlackLocations, which resolves a human-readable place, not a zone id.
   fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
+  // Counts each member's messages in the activity window, by reading the channels the lab tracks.
+  fetchSlackMessageCounts?: (
+    slackUserIds: string[],
+    channelIds: string[],
+  ) => Promise<ReadonlyMap<string, number>>;
   // Backfills `slack_user_id` for members the roster has never linked to Slack, by matching
   // roster email against the workspace directory.
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
@@ -248,6 +253,11 @@ type AdminBotRouteContext = {
   openReviewWorkflow?: AdminBotOpenReviewWorkflow;
   fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
   fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
+  // Counts each member's messages in the activity window, by reading the channels the lab tracks.
+  fetchSlackMessageCounts?: (
+    slackUserIds: string[],
+    channelIds: string[],
+  ) => Promise<ReadonlyMap<string, number>>;
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
@@ -380,6 +390,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(openReviewWorkflow ? { openReviewWorkflow } : {}),
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
     ...(options.fetchSlackTimezones ? { fetchSlackTimezones: options.fetchSlackTimezones } : {}),
+    ...(options.fetchSlackMessageCounts
+      ? { fetchSlackMessageCounts: options.fetchSlackMessageCounts }
+      : {}),
     ...(options.resolveSlackUserIdsByEmail
       ? { resolveSlackUserIdsByEmail: options.resolveSlackUserIdsByEmail }
       : {}),
@@ -850,7 +863,7 @@ async function handleAuthenticatedRoute(
     if (!requirePrivileged(res, principal)) {
       return;
     }
-    if (!ctx.resolveSlackUserIdsByEmail && !ctx.fetchSlackTimezones) {
+    if (!ctx.resolveSlackUserIdsByEmail && !ctx.fetchSlackTimezones && !ctx.fetchSlackMessageCounts) {
       sendJson(res, 503, { error: { message: "slack directory sync is not configured" } });
       return;
     }
@@ -862,6 +875,9 @@ async function handleAuthenticatedRoute(
             ? { resolveSlackUserIdsByEmail: ctx.resolveSlackUserIdsByEmail }
             : {}),
           ...(ctx.fetchSlackTimezones ? { fetchSlackTimezones: ctx.fetchSlackTimezones } : {}),
+          ...(ctx.fetchSlackMessageCounts
+            ? { fetchSlackMessageCounts: ctx.fetchSlackMessageCounts }
+            : {}),
         },
         principalActor(principal),
       ),

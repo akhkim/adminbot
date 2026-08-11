@@ -2189,6 +2189,36 @@
   color: var(--text-strong);
 }
 
+/* Reads as a state, not a label: the dot carries the status and the word confirms it, so the two
+   states differ by more than color alone. */
+.profile__activity {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  cursor: help;
+}
+
+.profile__activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+.profile__activity[data-activity="active"] {
+  color: var(--ok, var(--ok-muted, var(--text)));
+  border-color: currentcolor;
+}
+
+.profile__activity[data-activity="inactive"] {
+  color: var(--muted);
+}
+
 .profile__role-pill {
   display: inline-flex;
   align-items: center;
