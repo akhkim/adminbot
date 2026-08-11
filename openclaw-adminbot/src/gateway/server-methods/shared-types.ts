@@ -46,6 +46,8 @@ export type GatewayClient = {
   pluginNodeCapabilitySurfaces?: Record<string, PluginNodeCapabilitySurface>;
   pluginNodeCapabilities?: Record<string, { capability: string; expiresAtMs: number }>;
   isDeviceTokenAuth?: boolean;
+  // See GatewayWsClient.ownerMemberId (ws-types.ts) -- same field, narrowed view.
+  ownerMemberId?: string;
   internal?: {
     allowModelOverride?: boolean;
     approvalRuntime?: boolean;

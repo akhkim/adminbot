@@ -130,6 +130,11 @@ import { chatHandlers } from "./chat.js";
 import { loadOptionalServerMethodModelCatalog } from "./optional-model-catalog.js";
 import { hasTrackedActiveSessionRun } from "./session-active-runs.js";
 import { emitSessionsChanged } from "./session-change-event.js";
+import {
+  canRequesterAccessSession,
+  resolveSessionAccessRequester,
+  type SessionAccessRequester,
+} from "./session-ownership.js";
 import type {
   GatewayClient,
   GatewayRequestContext,
@@ -230,6 +235,19 @@ function requireSessionKey(key: unknown, respond: RespondFn): string | null {
   return normalized;
 }
 
+// No admin short-circuit: the listing is filtered by ownership for everyone, so an admin's
+// sessions.list shows their own sessions and no one else's, same as any member.
+function filterSessionStoreToAccessibleOwner(
+  store: Record<string, SessionEntry>,
+  requester: SessionAccessRequester,
+): Record<string, SessionEntry> {
+  return Object.fromEntries(
+    Object.entries(store).filter(([key, entry]) =>
+      canRequesterAccessSession(entry, requester, key),
+    ),
+  );
+}
+
 function rejectPluginRuntimeDeleteMismatch(params: {
   client: GatewayClient | null;
   key: string;
@@ -249,6 +267,35 @@ function rejectPluginRuntimeDeleteMismatch(params: {
     errorShape(
       ErrorCodes.INVALID_REQUEST,
       `Plugin "${pluginOwnerId}" cannot delete session "${params.key}" because it did not create it.`,
+    ),
+  );
+  return true;
+}
+
+function rejectSessionOwnershipMismatch(params: {
+  client: GatewayClient | null;
+  key: string;
+  entry: SessionEntry | undefined;
+  respond: RespondFn;
+}): boolean {
+  if (!params.entry) {
+    return false;
+  }
+  if (
+    canRequesterAccessSession(
+      params.entry,
+      resolveSessionAccessRequester(params.client),
+      params.key,
+    )
+  ) {
+    return false;
+  }
+  params.respond(
+    false,
+    undefined,
+    errorShape(
+      ErrorCodes.INVALID_REQUEST,
+      `Cannot delete session "${params.key}" because it belongs to a different member.`,
     ),
   );
   return true;
@@ -913,13 +960,14 @@ async function handleSessionSend(params: {
   }
 }
 export const sessionsHandlers: GatewayRequestHandlers = {
-  "sessions.list": async ({ params, respond, context }) => {
+  "sessions.list": async ({ params, respond, context, client }) => {
     if (!assertValidParams(params, validateSessionsListParams, "sessions.list", respond)) {
       return;
     }
     const p = params;
     const cfg = context.getRuntimeConfig();
     const configuredAgentsOnly = p.configuredAgentsOnly === true;
+    const accessRequester = resolveSessionAccessRequester(client);
     const payload = await measureDiagnosticsTimelineSpan(
       "gateway.sessions.list",
       async () => {
@@ -938,9 +986,10 @@ export const sessionsHandlers: GatewayRequestHandlers = {
             },
           },
         );
-        const listStore = configuredAgentsOnly
+        const configuredStore = configuredAgentsOnly
           ? filterSessionStoreToConfiguredAgents(cfg, store)
           : store;
+        const listStore = filterSessionStoreToAccessibleOwner(configuredStore, accessRequester);
         const modelCatalog = await measureDiagnosticsTimelineSpan(
           "gateway.sessions.list.model_catalog",
           () => loadOptionalServerMethodModelCatalog(context, "sessions.list"),
@@ -1198,7 +1247,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
 
     respond(true, { ts: Date.now(), previews } satisfies SessionsPreviewResult, undefined);
   },
-  "sessions.describe": ({ params, respond, context }) => {
+  "sessions.describe": ({ params, respond, context, client }) => {
     if (!assertValidParams(params, validateSessionsDescribeParams, "sessions.describe", respond)) {
       return;
     }
@@ -1209,7 +1258,7 @@ export const sessionsHandlers: GatewayRequestHandlers = {
     }
     const cfg = context.getRuntimeConfig();
     const { target, storePath, store, entry } = loadSessionEntriesForTarget({ key, cfg });
-    if (!entry) {
+    if (!entry || !canRequesterAccessSession(entry, resolveSessionAccessRequester(client), key)) {
       respond(true, { session: null }, undefined);
       return;
     }
@@ -1332,6 +1381,12 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       return;
     }
     const p = params;
+    // No identity check here on purpose. This used to refuse any connection without a paired-device
+    // owner, so that no session could be created unowned -- but that also refused every legitimate
+    // machine caller (an agent's sessions-send-tool, cron, the CLI), which are not member chats and
+    // have no member to name. Ownership is now derived from the session key instead
+    // (memberIdFromSessionKey), so a member's session is owned by construction and a machine
+    // session is simply owned by nobody: creatable, and unreadable through the member gateway.
     const cfg = context.getRuntimeConfig();
     const requestedKey = normalizeOptionalString(p.key);
     const agentId = normalizeAgentId(
@@ -1499,16 +1554,20 @@ export const sessionsHandlers: GatewayRequestHandlers = {
           },
           loadGatewayModelCatalog: context.loadGatewayModelCatalog,
         });
-        if (!patched.ok || !canonicalParentSessionKey) {
+        if (!patched.ok) {
           return patched;
         }
-        const inheritedSelection = normalizeOptionalString(p.model)
-          ? {}
-          : inheritSessionRuntimeSelection(parentSessionEntry);
+        const inheritedSelection =
+          canonicalParentSessionKey && !normalizeOptionalString(p.model)
+            ? inheritSessionRuntimeSelection(parentSessionEntry)
+            : {};
         const nextEntry: SessionEntry = {
           ...patched.entry,
           ...inheritedSelection,
-          parentSessionKey: canonicalParentSessionKey,
+          ...(canonicalParentSessionKey ? { parentSessionKey: canonicalParentSessionKey } : {}),
+          // Guaranteed present: the handler refuses the call above without one. Kept as a
+          // conditional only so an inherited owner on a reset parent entry is not overwritten.
+          ...(!patched.entry.ownerMemberId ? { ownerMemberId: client?.ownerMemberId } : {}),
         };
         return {
           ...patched,
@@ -2308,6 +2367,9 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       agentId: requestedAgentId,
     });
     if (rejectPluginRuntimeDeleteMismatch({ client, key: canonicalKey ?? key, entry, respond })) {
+      return;
+    }
+    if (rejectSessionOwnershipMismatch({ client, key: canonicalKey ?? key, entry, respond })) {
       return;
     }
     const mutationCleanupError = await cleanupSessionBeforeMutation({

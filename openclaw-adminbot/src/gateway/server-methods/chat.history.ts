@@ -46,6 +46,7 @@ import {
   startOptionalServerMethodModelCatalogLoad,
 } from "./optional-model-catalog.js";
 import { hasTrackedActiveSessionRun } from "./session-active-runs.js";
+import { canRequesterAccessSession, resolveSessionAccessRequester } from "./session-ownership.js";
 /**
  * chat.history subhandler.
  *
@@ -217,6 +218,7 @@ export async function handleChatHistoryRequest({
   params,
   respond,
   context,
+  client,
   method,
   includeAgentsList,
   includeMetadata,
@@ -249,9 +251,26 @@ export async function handleChatHistoryRequest({
     agentId: agentIdOverride,
   });
   const sessionLoadOptions = requestedAgentId ? { agentId: requestedAgentId } : undefined;
-  const { cfg, storePath, store, entry, canonicalKey } = loadSessionEntry(
-    sessionKey,
-    sessionLoadOptions,
+  const {
+    cfg,
+    storePath,
+    store,
+    entry: rawEntry,
+    canonicalKey,
+  } = loadSessionEntry(sessionKey, sessionLoadOptions);
+  const sessionRequester = resolveSessionAccessRequester(client);
+  const entry =
+    rawEntry && canRequesterAccessSession(rawEntry, sessionRequester, canonicalKey)
+      ? rawEntry
+      : undefined;
+  // The store has to be filtered as well, not just `entry`. buildGatewaySessionInfo below is
+  // handed both, and reads the store by key for the session and its children -- so nulling `entry`
+  // alone still let a non-owner reconstruct another member's session info (its label included,
+  // which leaks what the conversation is about).
+  const accessibleStore = Object.fromEntries(
+    Object.entries(store).filter(([candidateKey, candidate]) =>
+      canRequesterAccessSession(candidate, sessionRequester, candidateKey),
+    ),
   );
   const selectedAgent = validateChatSelectedAgent({
     cfg,
@@ -385,7 +404,7 @@ export async function handleChatHistoryRequest({
   const sessionInfo = buildGatewaySessionInfo({
     cfg,
     storePath,
-    store,
+    store: accessibleStore,
     key: canonicalKey,
     entry,
     agentId: selectedAgent.agentId,

@@ -11,6 +11,11 @@ export type GatewayWsClient = PluginNodeCapabilityClient & {
   connect: ConnectParams;
   connId: string;
   isDeviceTokenAuth?: boolean;
+  // The identity (e.g. AdminBot member id) this connection's paired device is owned by, resolved
+  // from the device-pairing store at connect time. Undefined for connections with no paired
+  // device (shared-secret fallback, CLI/single-operator use) -- those keep today's unscoped
+  // behavior, see canRequesterAccessSession in server-methods/session-ownership.ts.
+  ownerMemberId?: string;
   usesSharedGatewayAuth: boolean;
   sharedGatewaySessionGeneration?: string;
   presenceKey?: string;

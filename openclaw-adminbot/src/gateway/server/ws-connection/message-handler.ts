@@ -1869,6 +1869,16 @@ export function attachGatewayWsMessageHandler(params: GatewayWsMessageHandlerPar
           connectParams.client.mode === GATEWAY_CLIENT_MODES.BACKEND &&
           isOperatorApprovalRuntimeToken(connectParams.auth?.approvalRuntimeToken);
         clearHandshakeTimer();
+        // Resolved fresh from the pairing store rather than threaded through the auth-decision
+        // branches above: this connect may have gone through any of several paths (explicit
+        // device token, bootstrap handoff, retry, shared-secret fallback), and the paired
+        // device's own record is the one place that identity is guaranteed current regardless of
+        // which path got here. No paired device (or a device paired before ownership existed)
+        // means undefined, which callers treat as "unscoped" -- see ownerMemberId on
+        // GatewayWsClient.
+        const ownerMemberId = device?.id
+          ? ((await getPairedDevice(device.id))?.ownerMemberId ?? undefined)
+          : undefined;
         const nextClient: GatewayWsClient = {
           socket,
           connect: connectParams,
@@ -1878,6 +1888,7 @@ export function attachGatewayWsMessageHandler(params: GatewayWsMessageHandlerPar
           sharedGatewaySessionGeneration: sessionSharedGatewaySessionGeneration,
           presenceKey,
           clientIp: reportedClientIp,
+          ...(ownerMemberId ? { ownerMemberId } : {}),
           ...(isTrustedApprovalRuntime ? { internal: { approvalRuntime: true } } : {}),
           ...(Object.keys(pluginSurfaceUrls).length > 0 ? { pluginSurfaceUrls } : {}),
           ...(Object.keys(pluginNodeCapabilitySurfaces).length > 0

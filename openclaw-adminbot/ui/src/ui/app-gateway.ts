@@ -95,6 +95,9 @@ import type { Tab } from "./navigation.ts";
 import {
   areUiSessionKeysEquivalent,
   buildAgentMainSessionKey,
+  buildMemberSessionKey,
+  DEFAULT_AGENT_ID,
+  isForeignMemberSessionKey,
   isUiGlobalSessionKey,
   normalizeAgentId,
   parseAgentSessionKey,
@@ -119,6 +122,9 @@ function isGenericBrowserFetchFailure(message: string): boolean {
 type GatewayHost = {
   settings: UiSettings;
   password: string;
+  // The signed-in AdminBot member, when there is one. Decides which session slot this browser
+  // lands in: each member gets their own rather than everyone sharing `main`.
+  memberId?: string | null;
   clientInstanceId: string;
   client: GatewayBrowserClient | null;
   connected: boolean;
@@ -610,6 +616,17 @@ function resolveMainSessionFallback(host: GatewayHost): string {
   const snapshot = host.hello?.snapshot as
     | { sessionDefaults?: SessionDefaultsSnapshot }
     | undefined;
+  // A signed-in member lands in their own slot, ahead of every shared default below -- including
+  // the gateway's configured mainSessionKey, which is one room for the whole lab. Without this the
+  // Control UI opens the same conversation for everybody and per-session ownership has nothing to
+  // scope.
+  const memberId = host.memberId?.trim();
+  if (memberId) {
+    return buildMemberSessionKey({
+      agentId: host.agentsList?.defaultId?.trim() || DEFAULT_AGENT_ID,
+      memberId,
+    });
+  }
   const mainSessionKey = snapshot?.sessionDefaults?.mainSessionKey?.trim();
   if (mainSessionKey) {
     return mainSessionKey;
@@ -699,10 +716,17 @@ function fallbackUnconfiguredSessionSelection(host: GatewayHost): boolean {
   if (!parsed) {
     return false;
   }
+  // Someone else's member session. The selected key is persisted per gateway URL, not per member,
+  // so on a shared browser the next person to sign in would otherwise land straight in the
+  // previous member's chat -- and with ownership enforced, on an error rather than their own.
+  const foreignMemberSession = isForeignMemberSessionKey(host.sessionKey, host.memberId);
   const configuredAgentIds = new Set(
     (host.agentsList?.agents ?? []).map((entry) => normalizeAgentId(entry.id)),
   );
-  if (configuredAgentIds.size === 0 || configuredAgentIds.has(normalizeAgentId(parsed.agentId))) {
+  if (
+    !foreignMemberSession &&
+    (configuredAgentIds.size === 0 || configuredAgentIds.has(normalizeAgentId(parsed.agentId)))
+  ) {
     return false;
   }
   const nextSessionKey = resolveMainSessionFallback(host);
