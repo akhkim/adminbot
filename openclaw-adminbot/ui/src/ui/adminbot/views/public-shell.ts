@@ -93,18 +93,39 @@ export function renderPublicShell(state: AppViewState) {
     <div class="app-shell app-shell--public">
       <header class="topbar topbar--public">
         <div class="topnav-shell">
-          <div class="topnav-shell__content"></div>
+          <div class="topnav-shell__content">
+            <span class="public-shell-brand">
+              Jinesis<span class="public-shell-brand__tail">Lab</span>
+            </span>
+          </div>
           <div class="topnav-shell__actions">
+            <a
+              class="public-shell-back"
+              href=${normalizeBasePath(state.basePath ?? "")}
+              data-testid="public-shell-back"
+              aria-label=${t("login.public.back")}
+              @click=${(event: MouseEvent) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) {
+                  return;
+                }
+                event.preventDefault();
+                // The landing page is what `renderApp` shows for a visitor whose tab is not one
+                // of the anonymous-open surfaces, so leave the open surface and land on root.
+                state.tab = "chat";
+                window.history.pushState({}, "", normalizeBasePath(state.basePath ?? "") || "/");
+              }}
+            >
+              ←
+            </a>
             <button
               type="button"
-              class="btn primary public-signin"
+              class="public-signin"
               data-testid="public-shell-sign-in"
               @click=${() => {
                 goToSignedOutView(state, "login");
               }}
             >
-              <span class="public-signin__icon" aria-hidden="true">${icons.lock}</span>
-              <span>${t("login.member.signIn")}</span>
+              ${t("login.member.signIn")}
             </button>
           </div>
         </div>

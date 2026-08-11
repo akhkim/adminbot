@@ -91,6 +91,20 @@
   min-width: 0;
 }
 
+.login-gate .login-gate__connect.btn.primary {
+  background: #cfcfcf; 
+  border: 1px solid #808080; 
+  color: #0a0a0a;
+  opacity: 1
+}
+
+.login-gate .login-gate__connect.btn.primary:hover,
+.login-gate .login-gate__connect.btn.primary:focus-visible {
+  background: #e6e5e5 !important; 
+  border-color: #808080 !important;
+  opacity: 1;
+}
+
 .login-gate__secret-row .btn--icon {
   width: var(--control-h-lg);
   min-width: var(--control-h-lg);
@@ -150,21 +164,43 @@
 .login-gate__guest {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-1);
-  margin-top: var(--space-4);
-  padding-top: var(--space-4);
+  align-items: stretch;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
   border-top: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.25));
 }
 
-.login-gate .login-gate__guest-button {
-  width: 100%;
+.login-gate__guest-hint {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.5;
+  color: var(--muted-strong);
+  text-align: center;
 }
 
-.login-gate__guest-hint {
-  font-size: var(--control-ui-text-sm);
-  opacity: 0.75;
-  text-align: center;
+.login-gate .login-gate__guest-cta {
+  width: 100%;
+  min-height: var(--control-h-lg);
+  padding: 0 var(--space-4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg) !important;
+  color: var(--muted-strong);
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.login-gate .login-gate__guest-cta:hover,
+.login-gate .login-gate__guest-cta:focus-visible {
+  background: color-mix(in srgb, var(--muted-strong) 12%, transparent);
+  border-color: var(--muted-strong);
+  color: var(--text-strong);
 }
 
 /* The reimbursement body is a full working surface (chat, receipts, draft table), so the guest

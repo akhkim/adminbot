@@ -711,9 +711,10 @@ function renderPendingNotice(state: AppViewState) {
 function renderGuestReimbursementLink(state: AppViewState) {
   return html`
     <div class="login-gate__guest">
+      <p class="login-gate__guest-hint">${t("login.guest.reimbursementsPrompt")}</p>
       <button
         type="button"
-        class="btn login-gate__guest-button"
+        class="login-gate__guest-cta"
         data-testid="login-guest-reimbursements"
         @click=${() => {
           goToSignedOutView(state, "guest-reimbursements");
@@ -721,20 +722,10 @@ function renderGuestReimbursementLink(state: AppViewState) {
       >
         ${t("login.guest.reimbursements")}
       </button>
-      <div class="login-gate__guest-hint">${t("login.guest.reimbursementsHint")}</div>
-      <button
-        type="button"
-        class="session-link login-gate__public-back"
-        data-testid="login-continue-without-sign-in"
-        @click=${() => {
-          goToSignedOutView(state, "landing");
-        }}
-      >
-        ${t("login.public.continueWithoutSignIn")}
-      </button>
     </div>
   `;
 }
+
 
 export function renderLoginGate(state: AppViewState) {
   const basePath = normalizeBasePath(state.basePath ?? "");

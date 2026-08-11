@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..900;1,9..144,300..900&display=swap");
+
 :root {
   /* Canvas — near-black zinc, no blue cast */
   --bg: #09090b;
@@ -6,6 +8,7 @@
   --bg-hover: #1a1a1d;
   --bg-muted: #18181b;
   --bg-content: #0c0c0e;
+  --bg-landing: url("/bg-dark.png");
 
   /* Card / surface — one step off canvas, separated by border not shadow */
   --card: #0f0f11;
@@ -109,6 +112,7 @@
     "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, monospace;
   --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-display: var(--font-body);
+  --font-wordmark: "Fraunces", var(--font-display);
   --tracking-tighter: -0.03em;
   --tracking-tight: -0.015em;
   --tracking-normal: 0;
