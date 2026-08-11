@@ -8977,12 +8977,13 @@ details[open] > .ov-expandable-toggle::after {
   align-items: center;
 }
 
-/* Side by side where there is room: the two forms are peers, and stacking them made
-   the second one read as a continuation of the first. */
+/* Stacked, Jinesis first. Side by side made them compete for which one you were meant to use, and
+   halved the width each form's date and project inputs had to work with. In a column the order
+   states the answer: lab work first, everything else under it. */
 .adminbot-time-availability__editors {
   display: grid;
   gap: var(--space-4);
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: 1fr;
 }
 
 .adminbot-time-availability__editor {

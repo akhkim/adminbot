@@ -496,6 +496,71 @@ function prefilledTimezone(member: LabMember): string | null {
  * members unable to save *any* profile edit until they fixed a field they may not have thought
  * about. The nudge is visible, the correction is theirs to make.
  */
+/**
+ * Fields whose name cannot carry their whole meaning, mapped to an i18n key explaining them.
+ *
+ * Two of them ask for something a member has no reason to have heard of — a LinkedIn URN is not a
+ * thing LinkedIn's own UI ever names, and "application form answers" is a link only the applicant
+ * can produce. Both used to be explained in the suggestions stack at the bottom of the page, which
+ * meant reading the explanation and filling the field were separated by the whole form, and the
+ * explanation disappeared the moment the field was filled — so anyone correcting a wrong value had
+ * nothing left to check against.
+ */
+const FIELD_HELP: Record<string, string> = {
+  linkedin_urn: "profile.help.linkedinUrn",
+  intake_form_url: "profile.help.intakeFormUrl",
+};
+
+// Hover or focus reveals it; `aria-describedby` is what makes it reachable without a pointer.
+// The trigger cancels its own click because this whole row is a <label>, and a click inside a label
+// is forwarded to the control it wraps -- without this, reading the help would retarget the caret
+// into the input underneath.
+function renderFieldHelp(field: EditableField) {
+  const helpKey = FIELD_HELP[field.key];
+  if (!helpKey) {
+    return nothing;
+  }
+  const id = `profile-help-${field.key}`;
+  return html`
+    <span class="profile__help">
+      <button
+        type="button"
+        class="profile__help-trigger"
+        data-testid=${`profile-help-${field.key}`}
+        aria-describedby=${id}
+        aria-label=${t("profile.help.trigger", { field: t(field.labelKey) })}
+        @click=${(event: Event) => event.preventDefault()}
+      >
+        i
+      </button>
+      <span class="profile__help-bubble" id=${id} role="tooltip">${t(helpKey)}</span>
+    </span>
+  `;
+}
+
+// The one field nobody can fill in from what they already know: LinkedIn publishes no mapping from
+// a vanity URL to a URN, so the value only exists once the member reads it off the collector. That
+// hand-off belongs against the input it feeds, not in a card elsewhere on the page.
+const LINKEDIN_URN_COLLECTOR_URL = "https://linkedin-urn-collector.vercel.app";
+
+function renderFieldAction(field: EditableField) {
+  if (field.key !== "linkedin_urn") {
+    return nothing;
+  }
+  return html`
+    <a
+      class="profile__field-action"
+      href=${LINKEDIN_URN_COLLECTOR_URL}
+      target=${EXTERNAL_LINK_TARGET}
+      rel=${buildExternalLinkRel()}
+      data-testid="profile-urn-collector"
+    >
+      ${t("profile.suggestions.urnLink")}
+      <span class="profile__field-action-icon" aria-hidden="true">${icons.externalLink}</span>
+    </a>
+  `;
+}
+
 function renderWhatsappHint(member: LabMember, field: EditableField) {
   if (field.key !== "whatsapp") {
     return nothing;
@@ -849,7 +914,7 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                   (field) => html`
                     <label class="profile__form-row">
                       <span class="profile__form-label">
-                        ${labelFor(field.key)}${renderMandatoryMark(field)}
+                        ${labelFor(field.key)}${renderMandatoryMark(field)}${renderFieldHelp(field)}
                         ${isOptional(field)
                           ? html`<span class="profile__optional"
                               >${t("profile.basics.optional")}</span
@@ -857,6 +922,7 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                           : nothing}
                       </span>
                       ${renderFieldInput(field, displayValue(member, field))}
+                      ${renderFieldAction(field)}
                       ${renderPrefillHint(member, field)}
                       ${renderWhatsappHint(member, field)} ${renderAccountCheckStatus(state, field)}
                     </label>
@@ -949,10 +1015,6 @@ function renderBadges(state: AppViewState, member: LabMember) {
   `;
 }
 
-// Reads a member's own URN off their LinkedIn profile; there is no API that maps a vanity URL to
-// one, so this hand-off is the only way the value reaches the roster.
-const LINKEDIN_URN_COLLECTOR_URL = "https://linkedin-urn-collector.vercel.app";
-
 // What is still outstanding for this person, in one place: the onboarding steps they have not
 // finished, then the guidebook pointers derived from what their record is missing.
 //
@@ -1003,18 +1065,10 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
     .map((step) => `${step.id} ${step.label}`.toLowerCase())
     .join(" ");
 
-  // The URN cannot be looked up from the profile URL -- LinkedIn exposes no mapping -- so the only
-  // route is the member reading it off the collector and pasting it back. The card is the handoff
-  // between those two steps, and disappears the moment the field is filled.
-  if (!String(member.linkedin_urn ?? "").trim()) {
-    suggestions.push({
-      id: "linkedin-urn",
-      title: t("profile.suggestions.urnTitle"),
-      body: t("profile.suggestions.urnBody"),
-      label: t("profile.suggestions.urnLink"),
-      href: LINKEDIN_URN_COLLECTOR_URL,
-    });
-  }
+  // The URN hand-off used to be a card here. It now sits on the field itself (renderFieldHelp and
+  // renderFieldAction), so the explanation and the input are in one place and the explanation
+  // survives being filled in -- a card that vanishes on completion leaves anyone correcting a wrong
+  // value with nothing to check against.
 
   // The intake form used to be pushed here unconditionally. It never had a "done" state, so it sat
   // permanently in a stack whose whole meaning is "still outstanding" and quietly taught people to

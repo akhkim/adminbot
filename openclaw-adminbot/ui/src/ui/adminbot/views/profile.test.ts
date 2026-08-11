@@ -284,19 +284,46 @@ describe("renderProfile onboarding suggestions", () => {
 });
 
 describe("renderProfile LinkedIn URN and intake form", () => {
-  it("offers the URN collector until the field is filled, then stops", () => {
+  // The collector link sits on the field it feeds rather than in a card elsewhere on the page, and
+  // it stays there once the field is filled: a hand-off that vanishes on completion leaves anyone
+  // correcting a wrong value with nowhere to go.
+  it("puts the URN collector link on the field itself, filled or not", () => {
+    const linkIn = (container: HTMLElement) =>
+      container.querySelector<HTMLAnchorElement>('[data-testid="profile-urn-collector"]');
+
     const without = renderPage(createState(createMember()), vi.fn());
-    const card = without.querySelector('[data-testid="suggestion-linkedin-urn"]')!;
-    expect(card).not.toBeNull();
-    expect(card.querySelector<HTMLAnchorElement>(".profile-suggestion__link")?.href).toBe(
-      "https://linkedin-urn-collector.vercel.app/",
-    );
+    expect(linkIn(without)?.href).toBe("https://linkedin-urn-collector.vercel.app/");
+    // It is next to the input it feeds, not adrift on the page.
+    expect(
+      without.querySelector('[name="linkedin_urn"]')?.closest(".profile__form-row"),
+    ).toBe(linkIn(without)?.closest(".profile__form-row"));
 
     const filled = renderPage(
       createState(createMember({ linkedin_urn: "ACoAAB1234567" } as Partial<LabMember>)),
       vi.fn(),
     );
-    expect(filled.querySelector('[data-testid="suggestion-linkedin-urn"]')).toBeNull();
+    expect(linkIn(filled)).not.toBeNull();
+    // And the old suggestion card is gone, not duplicated.
+    expect(without.querySelector('[data-testid="suggestion-linkedin-urn"]')).toBeNull();
+  });
+
+  // Both fields ask for something a member has no reason to have heard of, so each carries an
+  // explanation next to its own name rather than at the bottom of the page.
+  it("explains the URN and the application form on hover, beside their labels", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+    for (const key of ["linkedin_urn", "intake_form_url"]) {
+      const trigger = container.querySelector<HTMLButtonElement>(
+        `[data-testid="profile-help-${key}"]`,
+      );
+      expect(trigger).not.toBeNull();
+      // The bubble is wired to the trigger for anyone not using a pointer.
+      const describedBy = trigger!.getAttribute("aria-describedby")!;
+      const bubble = container.querySelector(`#${describedBy}`);
+      expect(bubble?.getAttribute("role")).toBe("tooltip");
+      expect((bubble?.textContent ?? "").length).toBeGreaterThan(40);
+      // It sits with the field's own label.
+      expect(trigger!.closest(".profile__form-label")).not.toBeNull();
+    }
   });
 
   it("marks the URN required, matching the reminder the service already sends", () => {

@@ -1548,7 +1548,7 @@ export const en: TranslationMap = {
       cvUrl: "CV (PDF link)",
       intakeFormUrl: "Application form answers",
       linkedin: "LinkedIn",
-      linkedinUrn: "LinkedIn URN",
+      linkedinUrn: "LinkedIn member ID (URN)",
       twitter: "X / Twitter",
       github: "GitHub",
       scholar: "Google Scholar",
@@ -1566,6 +1566,13 @@ export const en: TranslationMap = {
     },
     whatsapp: {
       needsCountryCode: "Add a country code (e.g. +1) so the number is dialable from abroad.",
+    },
+    help: {
+      trigger: "What is {field}?",
+      linkedinUrn:
+        "A stable id LinkedIn uses for your account internally — it looks like ACoAAB1234567 and never appears in LinkedIn's own interface. The lab needs it to tag you in posts about your work: LinkedIn's API addresses people by this id, not by profile URL, so a post cannot mention you without it. Nobody can look it up from your profile link, which is why the collector below exists.",
+      intakeFormUrl:
+        "The link to your own submitted answers on the lab's application form. Google Forms emails it only to the person who responded, so nobody else — the lab included — can produce it for you. It lets you review and edit what you told us when you applied.",
     },
   },
   myWork: {

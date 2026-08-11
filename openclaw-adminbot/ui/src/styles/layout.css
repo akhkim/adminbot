@@ -2731,6 +2731,82 @@
   font-size: var(--control-ui-text-xs);
 }
 
+/* The "i" beside a field name, and the bubble it reveals. Hover or focus, never click: this row is
+   a <label>, so a click is forwarded to the input it wraps. */
+.profile__help {
+  position: relative;
+  display: inline-flex;
+  margin-left: var(--space-2);
+  vertical-align: 1px;
+}
+
+.profile__help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: help;
+}
+
+.profile__help-trigger:hover,
+.profile__help-trigger:focus-visible {
+  border-color: var(--accent, var(--border-strong));
+  color: var(--text);
+}
+
+.profile__help-bubble {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 50%;
+  z-index: 20;
+  width: max-content;
+  max-width: min(320px, 70vw);
+  transform: translateX(-50%);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow-2, 0 4px 16px rgb(0 0 0 / 25%));
+  font-size: var(--control-ui-text-xs);
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.profile__help:hover .profile__help-bubble,
+.profile__help:focus-within .profile__help-bubble {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* The hand-off link that feeds a field, sitting directly under its input. */
+.profile__field-action {
+  display: inline-flex;
+  gap: var(--space-1, 4px);
+  align-items: center;
+  font-size: var(--control-ui-text-xs);
+  color: var(--accent, var(--muted));
+}
+
+.profile__field-action-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
 /* Says a value was inferred rather than typed. Muted like the other field-level notes: it is
    context on the control above it, not a warning about it. */
 .profile__prefill {
