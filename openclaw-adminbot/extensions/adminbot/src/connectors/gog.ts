@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import type { AdminBotActionExecutor } from "../kernel/service.js";
+import { renderEmailBodyHtml } from "./email-html.js";
 
 const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 60_000;
@@ -173,7 +174,17 @@ function buildEmailArgs(proposal: AdminBotStoredProposal, draft: boolean): strin
   // then re-wraps -- the ~70-character breaks the operator sees mid-paragraph. `--body-html` adds
   // an alternative part that is not wrapped; `--body` stays, so a text-only client still gets the
   // canonical copy. Both the send and the draft path take it.
-  appendOptional(args, "--body-html", optionalString(payload, "body_html"));
+  //
+  // Rendered here rather than at each caller: a proposal reaches this connector from the agent's
+  // `email.send`/`email.draft` pipeline, which has no place to put an html alternative and no
+  // business generating markup. An explicit `body_html` still wins, so a caller that already
+  // renders one (guide-sender, account-approved-email) is unaffected.
+  // `body` is already required non-empty above, so the render is never the empty string.
+  appendOptional(
+    args,
+    "--body-html",
+    optionalString(payload, "body_html") ?? renderEmailBodyHtml(body),
+  );
   appendOptional(args, "--cc", recipients(payload.cc));
   appendOptional(args, "--bcc", recipients(payload.bcc));
   appendOptional(args, "--reply-to", optionalString(payload, "reply_to"));
