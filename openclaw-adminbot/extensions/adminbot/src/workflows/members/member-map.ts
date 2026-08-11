@@ -1,13 +1,18 @@
 // Where lab members are, for the member map.
 //
-// Two sources, in a fixed order: whatever Slack knows about a person wins, and the
-// roster location (imported from the contact spreadsheet) is used only when Slack has
-// nothing for them. Slack is preferred because people keep it current — a spreadsheet
-// entry is whatever they typed when they joined.
+// Three sources, tried in a fixed order, each one falling through to the next whenever it
+// doesn't resolve to a place (not just when it's empty):
+//   1. Slack's IANA timezone (or workspace location field) — a specific city, and the most
+//      likely to be current, since people's Slack clients keep it in sync automatically.
+//   2. The country/continent stamped on their most recent login, from IP geolocation — coarser
+//      (country-level, no city), but still self-updating and current as of their last sign-in.
+//   3. The roster `location` — self-typed once, at signup or when an admin adds them. Kept
+//      last on purpose: it is whatever they wrote once and never updates itself.
 //
-// Both sources are free text written by humans: "ETH", "Zürich, Tübingen", "Mainly
-// Montreal (can visit Toronto too)". Resolving that is the whole job of this module,
-// and anything it cannot place is reported rather than guessed at or dropped.
+// All three are resolved the same way a person would read them: free text written by humans
+// ("ETH", "Zürich, Tübingen", "Mainly Montreal") for the first and third, a plain country name
+// ("Switzerland") for the second. Anything none of the three can place is reported rather than
+// guessed at or dropped.
 
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 
@@ -112,6 +117,122 @@ const GAZETTEER: AdminBotMapPlace[] = [
 ];
 
 const PLACES_BY_KEY = new Map(GAZETTEER.map((place) => [place.key, place]));
+
+// Approximate centroid (or capital, where that reads better on a low-zoom world map) per
+// country, for placing a member by last-login geolocation, which only ever gives a country —
+// there is no city to look up in GAZETTEER. Deliberately coarser than a real city dot; the UI
+// marks a member placed this way rather than let it pass for city-level precision it doesn't
+// have. A country IPinfo returns that isn't listed here reports here — same "add an entry
+// deliberately" philosophy as an unresolved GAZETTEER lookup.
+const COUNTRY_CENTROIDS: Record<string, { lat: number; lon: number }> = {
+  "united states": { lat: 39.8283, lon: -98.5795 },
+  canada: { lat: 56.1304, lon: -106.3468 },
+  mexico: { lat: 23.6345, lon: -102.5528 },
+  "united kingdom": { lat: 54, lon: -2 },
+  ireland: { lat: 53.4129, lon: -8.2439 },
+  france: { lat: 46.6034, lon: 1.8883 },
+  germany: { lat: 51.1657, lon: 10.4515 },
+  switzerland: { lat: 46.8182, lon: 8.2275 },
+  austria: { lat: 47.5162, lon: 14.5501 },
+  netherlands: { lat: 52.1326, lon: 5.2913 },
+  belgium: { lat: 50.5039, lon: 4.4699 },
+  luxembourg: { lat: 49.8153, lon: 6.1296 },
+  spain: { lat: 40.4637, lon: -3.7492 },
+  portugal: { lat: 39.3999, lon: -8.2245 },
+  italy: { lat: 41.8719, lon: 12.5674 },
+  poland: { lat: 51.9194, lon: 19.1451 },
+  "czech republic": { lat: 49.8175, lon: 15.473 },
+  czechia: { lat: 49.8175, lon: 15.473 },
+  slovakia: { lat: 48.669, lon: 19.699 },
+  hungary: { lat: 47.1625, lon: 19.5033 },
+  romania: { lat: 45.9432, lon: 24.9668 },
+  bulgaria: { lat: 42.7339, lon: 25.4858 },
+  greece: { lat: 39.0742, lon: 21.8243 },
+  croatia: { lat: 45.1, lon: 15.2 },
+  slovenia: { lat: 46.1512, lon: 14.9955 },
+  serbia: { lat: 44.0165, lon: 21.0059 },
+  denmark: { lat: 56.2639, lon: 9.5018 },
+  sweden: { lat: 60.1282, lon: 18.6435 },
+  norway: { lat: 60.472, lon: 8.4689 },
+  finland: { lat: 61.9241, lon: 25.7482 },
+  iceland: { lat: 64.9631, lon: -19.0208 },
+  estonia: { lat: 58.5953, lon: 25.0136 },
+  latvia: { lat: 56.8796, lon: 24.6032 },
+  lithuania: { lat: 55.1694, lon: 23.8813 },
+  cyprus: { lat: 35.1264, lon: 33.4299 },
+  malta: { lat: 35.9375, lon: 14.3754 },
+  ukraine: { lat: 48.3794, lon: 31.1656 },
+  russia: { lat: 61.524, lon: 105.3188 },
+  turkey: { lat: 38.9637, lon: 35.2433 },
+  india: { lat: 20.5937, lon: 78.9629 },
+  pakistan: { lat: 30.3753, lon: 69.3451 },
+  bangladesh: { lat: 23.685, lon: 90.3563 },
+  "sri lanka": { lat: 7.8731, lon: 80.7718 },
+  nepal: { lat: 28.3949, lon: 84.124 },
+  china: { lat: 35.8617, lon: 104.1954 },
+  "hong kong": { lat: 22.3193, lon: 114.1694 },
+  taiwan: { lat: 23.6978, lon: 120.9605 },
+  japan: { lat: 36.2048, lon: 138.2529 },
+  "south korea": { lat: 35.9078, lon: 127.7669 },
+  singapore: { lat: 1.3521, lon: 103.8198 },
+  malaysia: { lat: 4.2105, lon: 101.9758 },
+  indonesia: { lat: -0.7893, lon: 113.9213 },
+  thailand: { lat: 15.87, lon: 100.9925 },
+  vietnam: { lat: 14.0583, lon: 108.2772 },
+  philippines: { lat: 12.8797, lon: 121.774 },
+  israel: { lat: 31.0461, lon: 34.8516 },
+  "united arab emirates": { lat: 23.4241, lon: 53.8478 },
+  "saudi arabia": { lat: 23.8859, lon: 45.0792 },
+  qatar: { lat: 25.3548, lon: 51.1839 },
+  iran: { lat: 32.4279, lon: 53.688 },
+  iraq: { lat: 33.2232, lon: 43.6793 },
+  egypt: { lat: 26.8206, lon: 30.8025 },
+  morocco: { lat: 31.7917, lon: -7.0926 },
+  tunisia: { lat: 33.8869, lon: 9.5375 },
+  algeria: { lat: 28.0339, lon: 1.6596 },
+  nigeria: { lat: 9.082, lon: 8.6753 },
+  ghana: { lat: 7.9465, lon: -1.0232 },
+  kenya: { lat: -0.0236, lon: 37.9062 },
+  rwanda: { lat: -1.9403, lon: 29.8739 },
+  tanzania: { lat: -6.369, lon: 34.8888 },
+  uganda: { lat: 1.3733, lon: 32.2903 },
+  ethiopia: { lat: 9.145, lon: 40.4897 },
+  "south africa": { lat: -30.5595, lon: 22.9375 },
+  "ivory coast": { lat: 7.54, lon: -5.5471 },
+  senegal: { lat: 14.4974, lon: -14.4524 },
+  cameroon: { lat: 7.3697, lon: 12.3547 },
+  zimbabwe: { lat: -19.0154, lon: 29.1549 },
+  australia: { lat: -25.2744, lon: 133.7751 },
+  "new zealand": { lat: -40.9006, lon: 174.886 },
+  brazil: { lat: -14.235, lon: -51.9253 },
+  argentina: { lat: -38.4161, lon: -63.6167 },
+  chile: { lat: -35.6751, lon: -71.543 },
+  colombia: { lat: 4.5709, lon: -74.2973 },
+  peru: { lat: -9.19, lon: -75.0152 },
+  ecuador: { lat: -1.8312, lon: -78.1834 },
+  venezuela: { lat: 6.4238, lon: -66.5897 },
+  uruguay: { lat: -32.5228, lon: -55.7658 },
+  paraguay: { lat: -23.4425, lon: -58.4438 },
+  bolivia: { lat: -16.2902, lon: -63.5887 },
+  cuba: { lat: 21.5218, lon: -77.7812 },
+  jamaica: { lat: 18.1096, lon: -77.2975 },
+  "costa rica": { lat: 9.7489, lon: -83.7534 },
+  panama: { lat: 8.538, lon: -80.7821 },
+};
+
+// Same normalize/candidate-fragment approach as resolvePlace, minus the timezone/gazetteer
+// machinery a plain country name has no use for.
+export function resolveCountry(raw: string | undefined): AdminBotMapPlace | undefined {
+  if (!raw?.trim()) {
+    return undefined;
+  }
+  const key = normalize(raw);
+  const coords = COUNTRY_CENTROIDS[key];
+  if (!coords) {
+    return undefined;
+  }
+  return { key: `country:${key}`, label: raw.trim(), country: raw.trim(), ...coords };
+}
 
 // What people write instead of a city name. Institutions dominate: "ETH" is where
 // somebody works, and the map wants where they are.
@@ -226,7 +347,7 @@ export function resolvePlace(raw: string | undefined): AdminBotMapPlace | undefi
   return undefined;
 }
 
-export type AdminBotMapSource = "slack" | "roster";
+export type AdminBotMapSource = "slack" | "login" | "roster";
 
 export type AdminBotMapMember = {
   member_id: string;
@@ -250,6 +371,45 @@ export type AdminBotMemberMap = {
 // spread out than it is.
 const DEPARTED_STATUSES = new Set(["alumni"]);
 
+type MemberPlaceResolution =
+  | { place: AdminBotMapPlace; source: AdminBotMapSource; raw: string }
+  | { place?: undefined; raw?: string; source?: AdminBotMapSource };
+
+// Tries Slack, then last-login, then roster, in that order — each one skipped in favor of the
+// next whenever it fails to resolve, not just when it is empty, so one person's unresolvable
+// Slack text does not hide a perfectly good roster location underneath it.
+function resolveMemberPlace(
+  member: AdminBotLabMember,
+  slackRaw: string | undefined,
+): MemberPlaceResolution {
+  const slackText = slackRaw?.trim();
+  if (slackText) {
+    const place = resolvePlace(slackText);
+    if (place) {
+      return { place, source: "slack", raw: slackText };
+    }
+  }
+  const loginText = member.last_login_country?.trim();
+  if (loginText) {
+    const place = resolveCountry(loginText);
+    if (place) {
+      return { place, source: "login", raw: loginText };
+    }
+  }
+  const rosterText = member.location?.trim();
+  if (rosterText) {
+    const place = resolvePlace(rosterText);
+    if (place) {
+      return { place, source: "roster", raw: rosterText };
+    }
+  }
+  // Nothing resolved: still report whatever the highest-priority source with any text wrote,
+  // so an unplaced entry always points at the thing worth fixing.
+  const raw = slackText || loginText || rosterText;
+  const source: AdminBotMapSource | undefined = slackText ? "slack" : loginText ? "login" : rosterText ? "roster" : undefined;
+  return raw && source ? { raw, source } : {};
+}
+
 export function buildMemberMap(
   members: readonly AdminBotLabMember[],
   slackLocations: ReadonlyMap<string, string> = new Map(),
@@ -262,27 +422,25 @@ export function buildMemberMap(
     if (DEPARTED_STATUSES.has(member.status ?? "")) {
       continue;
     }
-    // Slack first, roster only when Slack has nothing for this person.
     const slackRaw = member.slack_user_id ? slackLocations.get(member.slack_user_id) : undefined;
-    const raw = slackRaw?.trim() || member.location?.trim();
-    const source: AdminBotMapSource | undefined = slackRaw?.trim()
-      ? "slack"
-      : member.location?.trim()
-        ? "roster"
-        : undefined;
-    if (!raw || !source) {
-      unknown += 1;
-      unplaced.push({ member_id: member.id, name: member.name });
+    const resolution = resolveMemberPlace(member, slackRaw);
+    if (!resolution.place) {
+      if (!resolution.raw || !resolution.source) {
+        unknown += 1;
+        unplaced.push({ member_id: member.id, name: member.name });
+      } else {
+        unplaced.push({
+          member_id: member.id,
+          name: member.name,
+          raw: resolution.raw,
+          source: resolution.source,
+        });
+      }
       continue;
     }
-    const place = resolvePlace(raw);
-    if (!place) {
-      unplaced.push({ member_id: member.id, name: member.name, raw, source });
-      continue;
-    }
-    const group = groups.get(place.key) ?? { ...place, members: [] };
-    group.members.push({ member_id: member.id, name: member.name, source });
-    groups.set(place.key, group);
+    const group = groups.get(resolution.place.key) ?? { ...resolution.place, members: [] };
+    group.members.push({ member_id: member.id, name: member.name, source: resolution.source });
+    groups.set(resolution.place.key, group);
   }
 
   for (const group of groups.values()) {
@@ -301,5 +459,23 @@ export function buildMemberMap(
       unplaced: unplaced.length - unknown,
       unknown,
     },
+  };
+}
+
+export type AdminBotMapPlaceSummary = AdminBotMapPlace & { count: number };
+
+export type AdminBotMemberMapSummary = {
+  places: AdminBotMapPlaceSummary[];
+  counts: AdminBotMemberMap["counts"];
+};
+
+// Where people are, without who: for callers who have not earned the right to read 100+
+// individual names off a map (see the "Privileged rather than public" comment on GET
+// /member-map in mock-service.ts). A headcount per city is not the thing that comment is
+// about, so this stays available to everyone.
+export function toPublicMemberMapSummary(map: AdminBotMemberMap): AdminBotMemberMapSummary {
+  return {
+    places: map.places.map(({ members, ...place }) => ({ ...place, count: members.length })),
+    counts: map.counts,
   };
 }

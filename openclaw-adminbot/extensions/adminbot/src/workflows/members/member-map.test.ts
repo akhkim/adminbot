@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AdminBotLabMember } from "../../contracts/actions.js";
-import { buildMemberMap, resolvePlace } from "./member-map.js";
+import { buildMemberMap, resolveCountry, resolvePlace } from "./member-map.js";
 
 function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
   return {
@@ -70,7 +70,92 @@ describe("resolvePlace", () => {
   });
 });
 
+describe("resolveCountry", () => {
+  it("resolves a known country name, case- and accent-insensitively", () => {
+    expect(resolveCountry("Switzerland")?.label).toBe("Switzerland");
+    expect(resolveCountry("switzerland")?.key).toBe("country:switzerland");
+    expect(resolveCountry("SWITZERLAND")?.key).toBe("country:switzerland");
+  });
+
+  it("returns nothing for a country not in the table, rather than guessing", () => {
+    expect(resolveCountry("Narnia")).toBeUndefined();
+    expect(resolveCountry("")).toBeUndefined();
+    expect(resolveCountry(undefined)).toBeUndefined();
+  });
+});
+
 describe("buildMemberMap", () => {
+  it("falls back to last-login country when Slack has nothing and roster is empty", () => {
+    const map = buildMemberMap([
+      member({ id: "a", name: "Ada", last_login_country: "Switzerland" }),
+    ]);
+    expect(map.places[0]?.label).toBe("Switzerland");
+    expect(map.places[0]?.members).toEqual([{ member_id: "a", name: "Ada", source: "login" }]);
+  });
+
+  it("tries Slack, then last-login, then roster, in that order", () => {
+    const map = buildMemberMap(
+      [
+        // Slack resolves: wins over both login and roster.
+        member({
+          id: "a",
+          name: "Ada",
+          slack_user_id: "U1",
+          last_login_country: "Germany",
+          location: "Toronto",
+        }),
+        // Slack has nothing at all: falls to last-login.
+        member({ id: "b", name: "Bo", last_login_country: "India", location: "Toronto" }),
+        // Slack has unresolvable text ("remote"): still falls through to last-login, not roster.
+        member({
+          id: "c",
+          name: "Cy",
+          slack_user_id: "U3",
+          last_login_country: "Japan",
+          location: "Toronto",
+        }),
+      ],
+      new Map([
+        ["U1", "Europe/Zurich"],
+        ["U3", "remote"],
+      ]),
+    );
+    const byMemberId = new Map(
+      map.places.flatMap((place) => place.members.map((m) => [m.member_id, { place, member: m }])),
+    );
+    expect(byMemberId.get("a")?.place.label).toBe("Zürich");
+    expect(byMemberId.get("a")?.member.source).toBe("slack");
+    expect(byMemberId.get("b")?.place.label).toBe("India");
+    expect(byMemberId.get("b")?.member.source).toBe("login");
+    expect(byMemberId.get("c")?.place.label).toBe("Japan");
+    expect(byMemberId.get("c")?.member.source).toBe("login");
+  });
+
+  it("falls through to roster when Slack and last-login both fail to resolve", () => {
+    const map = buildMemberMap(
+      [
+        member({
+          id: "a",
+          name: "Ada",
+          slack_user_id: "U1",
+          last_login_country: "Narnia",
+          location: "Toronto",
+        }),
+      ],
+      new Map([["U1", "remote"]]),
+    );
+    expect(map.places[0]?.label).toBe("Toronto");
+    expect(map.places[0]?.members).toEqual([{ member_id: "a", name: "Ada", source: "roster" }]);
+  });
+
+  it("reports the highest-priority source with text when nothing resolves at all", () => {
+    const map = buildMemberMap(
+      [member({ id: "a", name: "Ada", slack_user_id: "U1", last_login_country: "Narnia" })],
+      new Map([["U1", "remote"]]),
+    );
+    expect(map.unplaced).toEqual([{ member_id: "a", name: "Ada", raw: "remote", source: "slack" }]);
+  });
+
   it("prefers Slack and falls back to the roster only when Slack has nothing", () => {
     const map = buildMemberMap(
       [

@@ -434,7 +434,12 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     fetchSlackLocations: createSlackLocationReader(repoRoot),
     fetchSlackTimezones: createSlackTimezoneReader(repoRoot),
     resolveSlackUserIdsByEmail: createSlackDirectoryEmailResolver(repoRoot),
-    geolocateIp: createIpLocationResolver(),
+    // No `geolocateIp` here on purpose. PR #17 replaced the city-level ipapi.co lookup below with
+    // the country/continent IPinfo Lite one, which api/server.ts builds itself from IPINFO_TOKEN.
+    // The old resolver wrote "City, Region, Country" straight into the member's `location` field —
+    // the self-reported one — which the new contract explicitly forbids inferred data from
+    // touching. createIpLocationResolver is now unwired; it and its tests can go once nothing
+    // else wants a city-level lookup.
     deviceTokenIssuer: createDeviceTokenIssuer(deps),
     devicePairingApprover: createDevicePairingApprover(deps),
   });

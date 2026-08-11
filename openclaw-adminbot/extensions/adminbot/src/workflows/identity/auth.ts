@@ -90,10 +90,9 @@ export type AdminBotAuthServiceOptions = {
   // Best-effort side effect fired (not awaited) when a registration is approved, filing the DCS
   // Slack-access request form on the new member's behalf. Same contract as the two above.
   submitDcsForm?: (params: { firstName: string; lastName: string; email: string }) => Promise<void>;
-  // Best-effort side effect fired (not awaited) on every successful login: geolocates the
-  // request's source IP and stamps it onto the member's roster `location` field. A login is
-  // never delayed or failed by a slow/unreachable geolocation provider -- see updateLoginLocation.
-  geolocateIp?: (ip: string) => Promise<string | undefined>;
+  // Best-effort, fired but not awaited on a successful login (see login()): resolving it can take
+  // a moment and must never slow down or fail the sign-in it happened alongside.
+  geolocateIp?: (ip: string) => Promise<{ country?: string; continent?: string } | undefined>;
   gatewayToken?: string;
   gatewayUrl?: string;
   sessionTtlMs?: number;
@@ -171,7 +170,9 @@ export class AdminBotAuthService {
     lastName: string;
     email: string;
   }) => Promise<void>;
-  private readonly geolocateIp?: (ip: string) => Promise<string | undefined>;
+  private readonly geolocateIp?: (
+    ip: string,
+  ) => Promise<{ country?: string; continent?: string } | undefined>;
   private readonly gatewayToken?: string;
   private readonly gatewayUrl?: string;
   private readonly sessionTtlMs: number;
@@ -297,42 +298,43 @@ export class AdminBotAuthService {
     }
     const { payload } = this.startSession(member);
     this.audit("auth.login_succeeded", member.id, { email });
-    if (request.remoteIp) {
-      this.updateLoginLocation(member.id, request.remoteIp);
+    if (this.geolocateIp && request.remoteIp) {
+      // Not awaited: geolocation is a courtesy stamp on the member record, not part of the
+      // sign-in itself, and must never make login wait on a third-party API.
+      void this.recordLoginLocation(member.id, request.remoteIp);
     }
     return { ok: true, status: 200, payload, sessionToken: payload.session_token };
   }
 
-  // Fire-and-forget, same contract as the calendar invite/approval email: the login already
-  // succeeded, so a slow or failed geolocation lookup never delays or fails it. Only a resolved
-  // location is written -- a private/loopback IP or a provider failure returns undefined from
-  // geolocateIp, and an undefined result leaves whatever the member already has untouched rather
-  // than blanking out a value a previous successful lookup (or the member themselves) set.
-  private updateLoginLocation(memberId: string, remoteIp: string): void {
-    if (!this.geolocateIp) {
-      return;
-    }
-    void this.geolocateIp(remoteIp)
-      .then((location) => {
-        if (!location) {
-          return;
-        }
-        const member = this.store.getLabMember(memberId);
-        if (!member || member.location === location) {
-          return;
-        }
-        this.store.saveLabMember({
-          ...member,
-          location,
-          updated_at: this.now().toISOString(),
-        });
-        this.audit("auth.location_updated", memberId, { location });
-      })
-      .catch((error: unknown) => {
-        this.audit("auth.location_update_failed", memberId, {
-          error: error instanceof Error ? error.message : String(error),
-        });
+  // Fire-and-forget, same contract as the calendar invite and the approval email: the login has
+  // already succeeded, so a slow or unreachable geolocation provider must never delay or fail it.
+  //
+  // Only the three inferred last_login_* fields are written. `location` and `slack_location` are
+  // self-reported and are deliberately never touched here -- an inferred country must not silently
+  // overwrite what a member told us about themselves.
+  private async recordLoginLocation(memberId: string, remoteIp: string): Promise<void> {
+    try {
+      const location = await this.geolocateIp?.(remoteIp);
+      if (!location || (!location.country && !location.continent)) {
+        return;
+      }
+      // Re-read rather than reuse the `member` from login(): logins can race, and this must
+      // only ever touch the three last_login_* fields, never clobber a concurrent profile edit.
+      const current = this.store.getLabMember(memberId);
+      if (!current) {
+        return;
+      }
+      this.store.saveLabMember({
+        ...current,
+        last_login_at: this.now().toISOString(),
+        ...(location.country ? { last_login_country: location.country } : {}),
+        ...(location.continent ? { last_login_continent: location.continent } : {}),
+        updated_at: this.now().toISOString(),
       });
+      this.audit("auth.login_location_updated", memberId, { ...location });
+    } catch {
+      // Best-effort, per the option's own contract — nothing left to do with a failure here.
+    }
   }
 
   resolveSession(rawToken: string): AdminBotMemberPrincipal | undefined {

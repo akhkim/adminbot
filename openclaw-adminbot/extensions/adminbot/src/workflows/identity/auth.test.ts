@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../../contracts/actions.js";
 import { AdminBotMemoryStore, AdminBotService } from "../../kernel/service.js";
 import { AdminBotAuthService, hashPassword, verifyPassword } from "./auth.js";
@@ -32,7 +32,7 @@ function setup(
       lastName: string;
       email: string;
     }) => Promise<void>;
-    geolocateIp?: (ip: string) => Promise<string | undefined>;
+    geolocateIp?: (ip: string) => Promise<{ country?: string; continent?: string } | undefined>;
   } = {},
 ) {
   const store = new AdminBotMemoryStore();
@@ -500,6 +500,47 @@ describe("AdminBotAuthService claim/login flow", () => {
     }
   });
 
+  it("stamps a last-login location from a configured geolocator, without blocking login itself", async () => {
+    const geolocateIp = vi.fn(async () => ({ country: "Switzerland", continent: "Europe" }));
+    const { store, auth } = setup({ geolocateIp });
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    const login = auth.login({
+      email: "ada@example.com",
+      password: "correcthorse",
+      remoteIp: "8.8.8.8",
+    });
+    expect(login.ok).toBe(true);
+    // login() returns before the geolocation lookup resolves — it must never wait on it.
+    expect(store.getLabMember("ada")?.last_login_country).toBeUndefined();
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(geolocateIp).toHaveBeenCalledWith("8.8.8.8");
+    const updated = store.getLabMember("ada");
+    expect(updated?.last_login_country).toBe("Switzerland");
+    expect(updated?.last_login_continent).toBe("Europe");
+    expect(updated?.last_login_at).toBeTruthy();
+  });
+
+  it("leaves last-login fields alone when no geolocator is configured, or it resolves to nothing", async () => {
+    const { store, auth } = setup();
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    auth.login({ email: "ada@example.com", password: "correcthorse", remoteIp: "8.8.8.8" });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.getLabMember("ada")?.last_login_country).toBeUndefined();
+
+    const { store: store2, auth: auth2 } = setup({ geolocateIp: async () => undefined });
+    claimAndApprove(store2, auth2, "bo", "bo@example.com");
+    auth2.login({ email: "bo@example.com", password: "correcthorse", remoteIp: "8.8.8.8" });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store2.getLabMember("bo")?.last_login_country).toBeUndefined();
+  });
+
   it("rate limits after 10 failures in the window", () => {
     const { store, auth } = setup();
     claimAndApprove(store, auth, "ada", "ada@example.com");
@@ -717,28 +758,6 @@ describe("AdminBotAuthService signup role vocabulary", () => {
 });
 
 describe("login IP location update", () => {
-  it("stamps the resolved location onto the member after a successful login", async () => {
-    const geolocateIp = async (ip: string) => {
-      expect(ip).toBe("203.0.113.5");
-      return "Toronto, Ontario, Canada";
-    };
-    const { store, auth } = setup({ geolocateIp });
-    claimAndApprove(store, auth, "ada", "ada@example.com");
-
-    const login = auth.login({
-      email: "ada@example.com",
-      password: "correcthorse",
-      remoteIp: "203.0.113.5",
-    });
-    expect(login.ok).toBe(true);
-    await flushMicrotasks();
-
-    expect(store.getLabMember("ada")?.location).toBe("Toronto, Ontario, Canada");
-    expect(store.listAuditEvents().some((event) => event.type === "auth.location_updated")).toBe(
-      true,
-    );
-  });
-
   it("leaves an existing location untouched when the lookup resolves nothing (private IP, provider failure)", async () => {
     const geolocateIp = async () => undefined;
     const { store, auth } = setup({ geolocateIp });
@@ -769,25 +788,5 @@ describe("login IP location update", () => {
     await flushMicrotasks();
 
     expect(store.getLabMember("ada")?.location).toBeUndefined();
-  });
-
-  it("audits a failed geolocation lookup without touching the member record", async () => {
-    const geolocateIp = async () => {
-      throw new Error("provider unreachable");
-    };
-    const { store, auth } = setup({ geolocateIp });
-    claimAndApprove(store, auth, "ada", "ada@example.com");
-
-    auth.login({
-      email: "ada@example.com",
-      password: "correcthorse",
-      remoteIp: "203.0.113.5",
-    });
-    await flushMicrotasks();
-
-    expect(store.getLabMember("ada")?.location).toBeUndefined();
-    expect(
-      store.listAuditEvents().some((event) => event.type === "auth.location_update_failed"),
-    ).toBe(true);
   });
 });

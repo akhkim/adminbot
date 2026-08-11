@@ -298,6 +298,13 @@ export type AdminBotLabMemberInput = {
   lesswrong_url?: string;
   slack_location?: string;
   slack_location_updated_at?: string;
+  // Coarse (country-level) location derived from the IP address of this person's most recent
+  // successful login, via IP geolocation (see ip-geolocation.ts). Distinct from `location` and
+  // `slack_location`, which are both self-reported: this one is inferred, so it is never taken
+  // as an input and never overwrites either — it is only ever set by the login path itself.
+  last_login_at?: string;
+  last_login_country?: string;
+  last_login_continent?: string;
   availability?: AdminBotAvailabilityRow[];
   time_off?: AdminBotTimeOffRow[];
   // Dated milestones the member is planning back from. Self-editable like the two lists above.
@@ -650,7 +657,8 @@ export type AdminBotAuditEvent = {
     | "openreview.milestone_blocked"
     | "openreview.assignment_changed"
     | "member_map.refreshed"
-    | "member_directory.slack_synced";
+    | "member_directory.slack_synced"
+    | "auth.login_location_updated";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;
