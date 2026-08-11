@@ -209,6 +209,17 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "links",
   },
   {
+    // The member's own intake answers. Google Forms mails each respondent a link to their single
+    // submitted response, so nobody else -- the lab included -- can produce this URL for them;
+    // that is why it is a field they paste into rather than a link the profile renders.
+    key: "intake_form_url",
+    labelKey: "profile.fields.intakeFormUrl",
+    example: "https://docs.google.com/forms/d/e/.../viewform?edit2=...",
+    type: "link",
+    optional: true,
+    group: "links",
+  },
+  {
     key: "cv_url",
     labelKey: "profile.fields.cvUrl",
     example: "https://ada.dev/cv.pdf",
@@ -655,28 +666,6 @@ function renderMandatoryMark(field: EditableField) {
 //
 // Two things stay uneditable and say so: the fields the lab governs (email), and the picture,
 // which has its own upload control because a file is not a text field.
-// The intake form sits with the links rather than in the suggestion stack below. It is the same
-// kind of thing as the rows above it -- somewhere else your details live -- and unlike a
-// suggestion it is never "done", so it belongs somewhere permanent instead of in a list of
-// outstanding work. It is a destination, not a field, so it renders as a link row rather than an
-// input.
-function renderIntakeFormRow() {
-  return html`
-    <div class="profile__link-row" data-testid="profile-intake-form">
-      <span class="profile__form-label">${t("profile.suggestions.formTitle")}</span>
-      <a
-        class="profile__form-link"
-        href=${INTAKE_FORM_URL}
-        target=${EXTERNAL_LINK_TARGET}
-        rel=${buildExternalLinkRel()}
-      >
-        ${t("profile.suggestions.formLink")}
-        <span class="profile__form-link-icon" aria-hidden="true">${icons.externalLink}</span>
-      </a>
-    </div>
-  `;
-}
-
 function renderBasics(state: AppViewState, member: LabMember, props: ProfileProps) {
   const commit = (form: HTMLFormElement) => () => {
     member.id && props.onSave(member.id, collectBasics(form));
@@ -762,7 +751,6 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                     </label>
                   `,
                 )}
-                ${group.id === "links" ? renderIntakeFormRow() : nothing}
               </div>
             </div>
           `,
@@ -853,12 +841,6 @@ function renderBadges(state: AppViewState, member: LabMember) {
 // Reads a member's own URN off their LinkedIn profile; there is no API that maps a vanity URL to
 // one, so this hand-off is the only way the value reaches the roster.
 const LINKEDIN_URN_COLLECTOR_URL = "https://linkedin-urn-collector.vercel.app";
-
-// The lab's intake form. Google Forms scopes an edit link to a single submitted response and mails
-// it to that respondent, so a shared link cannot reopen anyone's own answers -- following this one
-// submits a fresh response, which is what the copy promises.
-const INTAKE_FORM_URL =
-  "https://docs.google.com/forms/d/e/1FAIpQLSdyRYBiLPFUaaUC5v4ATIUwQpYPgmjRja33qwZFvH6BoIRCAA/viewform";
 
 // What is still outstanding for this person, in one place: the onboarding steps they have not
 // finished, then the guidebook pointers derived from what their record is missing.

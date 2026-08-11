@@ -270,6 +270,11 @@ export type AdminBotLabMemberInput = {
   // (see SOCIAL_URL_FIELDS in kernel/service.ts) so a self-edit can't stash an arbitrary
   // redirect or lookalike link behind a "GitHub" label.
   cv_url?: string;
+  // The member's own copy of their intake answers. Google Forms mails each respondent an edit link
+  // scoped to their single submitted response, so this is per-person and only they can produce it
+  // -- the lab cannot derive it from the shared form URL, which is why it is a field they fill in
+  // rather than a link the profile can render for them.
+  intake_form_url?: string;
   linkedin_url?: string;
   // The numeric LinkedIn URN behind a member's profile ("ACoAAB..." or the digits form), which the
   // social automation needs to @-mention someone in a post: LinkedIn's API addresses people by URN,

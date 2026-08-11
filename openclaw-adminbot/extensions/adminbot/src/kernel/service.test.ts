@@ -643,6 +643,7 @@ describe("AdminBotService", () => {
         linkedin_url: "https://www.linkedin.com/in/octocat",
         scholar_url: "https://scholar.google.com/citations?user=abc123",
         cv_url: "https://example.com/jane-doe-cv.pdf",
+        intake_form_url: "https://docs.google.com/forms/d/e/1FAIpQLSc/viewform?edit2=2_ABaOnud",
       }),
     );
     expect(saved.github_url).toBe("https://github.com/octocat");
@@ -650,6 +651,7 @@ describe("AdminBotService", () => {
     expect(saved.linkedin_url).toBe("https://www.linkedin.com/in/octocat");
     expect(saved.scholar_url).toBe("https://scholar.google.com/citations?user=abc123");
     expect(saved.cv_url).toBe("https://example.com/jane-doe-cv.pdf");
+    expect(saved.intake_form_url).toContain("docs.google.com/forms/");
 
     // Empty clears each link.
     expect(unwrap(service.updateOwnProfile("social", { github_url: "" })).github_url).toBe("");
@@ -662,6 +664,10 @@ describe("AdminBotService", () => {
       { scholar_url: "https://scholar.google.com/citations" }, // missing ?user=
       { scholar_url: "http://scholar.google.com/citations?user=abc123" }, // not https
       { cv_url: "not a url" },
+      // Only the member's own Forms response link belongs here; a stray link filed under it would
+      // read on the profile as "these are their intake answers" when it is nothing of the sort.
+      { intake_form_url: "https://example.com/my-answers" },
+      { intake_form_url: "https://docs.google.com/document/d/abc/edit" },
     ]) {
       expect(service.updateOwnProfile("social", bad)).toMatchObject({ ok: false, status: 400 });
     }

@@ -79,6 +79,7 @@ export type LabMember = {
   personal_website?: string | null;
   openreview_id?: string | null;
   cv_url?: string | null;
+  intake_form_url?: string | null;
   linkedin_url?: string | null;
   twitter_url?: string | null;
   github_url?: string | null;
@@ -106,6 +107,7 @@ export type MemberProfileUpdate = {
   personal_website?: string;
   openreview_id?: string;
   cv_url?: string;
+  intake_form_url?: string;
   linkedin_url?: string;
   twitter_url?: string;
   github_url?: string;

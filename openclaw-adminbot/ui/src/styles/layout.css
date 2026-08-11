@@ -1266,6 +1266,11 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* This pane is what actually scrolls -- the shell is a fixed-height grid and the document itself
+     never moves -- so the rubber-band past the end of a tab has to be stopped here. The html/body
+     rule could not reach it. `none` rather than `contain`: contain only stops the scroll chaining
+     to a parent, and still leaves the pane its own bounce, which is the thing being seen. */
+  overscroll-behavior-y: none;
 }
 
 .content > * + * {

@@ -1737,6 +1737,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "personal_website",
   "openreview_id",
   "cv_url",
+  "intake_form_url",
   "linkedin_url",
   "linkedin_urn",
   "twitter_url",
@@ -2026,6 +2027,7 @@ type SocialUrlFieldSpec = {
   field:
     | "personal_website"
     | "cv_url"
+    | "intake_form_url"
     | "linkedin_url"
     | "twitter_url"
     | "github_url"
@@ -2040,6 +2042,15 @@ type SocialUrlFieldSpec = {
 const SOCIAL_URL_FIELDS: SocialUrlFieldSpec[] = [
   { field: "personal_website", label: "personal website" },
   { field: "cv_url", label: "CV" },
+  {
+    // A member's own intake answers. Google Forms hands each respondent a link to their single
+    // submitted response, so the host is fixed and the path is always a /forms/ route -- checking
+    // that much stops a stray link being filed here, without pretending to know the response id.
+    field: "intake_form_url",
+    label: "intake form answers",
+    hosts: new Set(["docs.google.com"]),
+    path: /^\/forms\/.+/u,
+  },
   {
     field: "github_url",
     label: "GitHub",

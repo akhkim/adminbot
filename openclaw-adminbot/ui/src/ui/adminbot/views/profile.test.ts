@@ -308,10 +308,10 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(row?.querySelector(".profile__optional")).toBeNull();
   });
 
-  // It lives with the links now rather than in the suggestion stack. Nothing on the record can say
-  // whether the answers are still true, so it never reaches a "done" state -- which made it a
-  // permanent resident of a list that is supposed to empty, and easy to read past.
-  it("offers the intake form from the links group, not the suggestion stack", () => {
+  // It is the member's own answers, not the lab's blank form. Google Forms only ever hands the
+  // edit link to the respondent, so nobody else can produce it for them -- which is why this is a
+  // field they paste into rather than a link the profile could render.
+  it("collects the member's own application form URL as a field, not a shared link", () => {
     const complete = createMember({
       linkedin_urn: "ACoAAB1234567",
       personal_website: "https://ada.dev",
@@ -322,11 +322,11 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(container.querySelector('[data-testid="suggestion-intake-form"]')).toBeNull();
 
     const basics = container.querySelector('[data-testid="profile-basics"]')!;
-    const row = basics.querySelector('[data-testid="profile-intake-form"]')!;
-    expect(row).not.toBeNull();
-    expect(row.querySelector<HTMLAnchorElement>(".profile__form-link")?.href).toContain(
-      "1FAIpQLSdyRYBiLPFUaaUC5v4ATIUwQpYPgmjRja33qwZFvH6BoIRCAA",
-    );
+    const input = basics.querySelector<HTMLInputElement>('[name="intake_form_url"]');
+    expect(input).not.toBeNull();
+    // Optional, and in the links group beside the other places a member's details live.
+    const row = input?.closest(".profile__form-row");
+    expect(row?.querySelector(".profile__optional")).not.toBeNull();
   });
 });
 
