@@ -36,7 +36,7 @@ import {
   EMPTY_TIME_AVAILABILITY_DRAFT,
   type MilestoneDraft,
   type TimeAvailabilityDraft,
-  type TimeAvailabilityGranularity,
+  type TimeAvailabilityHoursUnit,
 } from "./adminbot/views/time-availability.ts";
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
@@ -514,7 +514,9 @@ export class OpenClawApp extends LitElement {
   // Empty selection means "nobody picked yet"; app-render defaults it to the viewer's own row once
   // the roster arrives, since your own schedule is the one you came to look at.
   @state() adminBotTimeAvailabilityMemberId = "";
-  @state() adminBotTimeAvailabilityGranularity: TimeAvailabilityGranularity = "week";
+  // Hours per week is how the schedule is stored and typed in, so it is the unit that needs no
+  // conversion to read back.
+  @state() adminBotTimeAvailabilityHoursUnit: TimeAvailabilityHoursUnit = "week";
   @state() adminBotTimeAvailabilityDraft: TimeAvailabilityDraft = {
     ...EMPTY_TIME_AVAILABILITY_DRAFT,
   };

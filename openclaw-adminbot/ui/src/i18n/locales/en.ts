@@ -395,6 +395,7 @@ export const en: TranslationMap = {
     // (app-render.ts) and `adminbot` in the public one (public-shell.ts).
     control: "Control",
     adminbot: "AdminBot",
+    home: "Home",
     myProfile: "My Profile",
     myProjects: "My Projects and Papers",
     generalTools: "General Tools",
@@ -407,6 +408,7 @@ export const en: TranslationMap = {
     resize: "Resize sidebar",
   },
   tabs: {
+    dashboard: "Dashboard",
     profile: "My Profile",
     myWork: "My Projects & Papers",
     labSharing: "Lab Sharing",
@@ -445,7 +447,8 @@ export const en: TranslationMap = {
     dreams: "Dreaming",
   },
   subtitles: {
-    profile: "What needs you, your details, and anything still blank.",
+    dashboard: "What needs you, and where the lab stands.",
+    profile: "Your details, and anything still blank.",
     myWork: "What you are working on, and anything holding it up.",
     labSharing: "Shared lab resources. Not built yet.",
     agents: "Workspaces, tools, identities.",
@@ -1345,16 +1348,26 @@ export const en: TranslationMap = {
       "Dashed line marks the member's weekly capacity. A period's total turns amber near it, red past it.",
     capacityNoteUnset: "No weekly capacity set, so there is no reference line to compare against.",
     chartAria: "Time allocation chart for {member}",
-    chartSubtitle: "Hours per week committed. Overlapping commitments are stacked.",
+    chartSubtitle:
+      "Hours per week committed. One bar per stretch where the commitments do not change; overlapping ones are stacked.",
     empty: "Select a user to view their time allocation.",
     endDate: "End date",
     hours: "Hours/week",
-    hoursValue: "{hours} h/wk",
-    granularityLabel: "Display by",
-    granularity: {
+    hoursUnitLabel: "Show hours per",
+    hoursUnit: {
       day: "Day",
       week: "Week",
       month: "Month",
+    },
+    hoursColumn: {
+      day: "Hours/day",
+      week: "Hours/week",
+      month: "Hours/month",
+    },
+    hoursValue: {
+      day: "{hours} h/day",
+      week: "{hours} h/wk",
+      month: "{hours} h/mo",
     },
     category: {
       jinesis: "Jinesis project",
@@ -1395,7 +1408,7 @@ export const en: TranslationMap = {
     startDate: "Start date",
     taskName: "Task name",
     termBaseline: "Term baseline",
-    truncated: "Showing the first {count} periods. Switch to a wider period to see the rest.",
+    truncated: "Showing the first {count} periods. Narrow the date ranges to see the rest.",
     form: {
       title: "Add a commitment",
       category: "Category",
@@ -1406,7 +1419,11 @@ export const en: TranslationMap = {
       link: "Link (optional)",
       linkPlaceholder: "https://\u2026 class schedule, project board",
       note: "Note",
-      wholeDayHint: "Recorded as a whole day off for the dates above.",
+      wholeDay: "Away the whole day",
+      wholeDayHint:
+        "Recorded as a whole day off, so it clears any Jinesis hours booked over these dates.",
+      partialHint:
+        "Recorded as reduced availability. Jinesis hours over these dates are left as they are, since nothing says by how much to cut them.",
       submit: "Add commitment",
       saving: "Saving\u2026",
       remove: "Remove",
@@ -1538,6 +1555,9 @@ export const en: TranslationMap = {
     accountCheck: {
       checking: "Checking...",
       verified: "Account found.",
+    },
+    timezone: {
+      prefilled: "Filled in as {zone} from “{location}”. Change it if that is wrong.",
     },
   },
   myWork: {

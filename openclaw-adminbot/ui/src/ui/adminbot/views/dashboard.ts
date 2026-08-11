@@ -1,12 +1,14 @@
-// The home half of the profile page: what is waiting on you, what is coming up, and where to go.
+// Home for anyone signed in: what is waiting on you, what is coming up, and where to go.
 //
-// This was the standalone dashboard tab. It folded into the profile because the two pages answered
-// the same question from opposite ends -- the dashboard summarised the member's record, and the
-// profile was that record -- so a person signing in landed on a summary of a page they then had to
-// open. Now they land on the page itself, with the attention stack on top of it.
+// This briefly folded into the profile page, on the reasoning that a summary of your own record
+// should not sit above the record itself. That reasoning only held for the profile summary card,
+// and it cost the other three: the attention stack, the deadline board and the work summary are
+// about the lab and the calendar, not about the member's own fields, so putting them on the
+// editor buried them under a form. They are a landing page again.
 //
-// The profile summary card that used to sit here is gone for the same reason: summarising the page
-// you are already on is a card that says "you are here".
+// The profile summary card stays gone. It is the one card that really did only say "you are
+// here" -- the profile's own completion ledger says the same thing, on the page that can act on
+// it.
 //
 // Each item is built from state the app already loads, and each is gated on the viewer's own role,
 // so this never shows a person work they cannot do. `access.ts` is still what enforces that; this
@@ -36,8 +38,7 @@ type AttentionItem = {
 // this card, plus a daily Slack reminder for the same members, is how the lab actually follows up
 // instead. blankFields() is already mandatory-only: optional fields never appear in it.
 //
-// The card now sits on the same page as the fields it is complaining about, so it scrolls rather
-// than navigates: the editor is directly below it.
+// The fields live on another tab again, so this navigates rather than scrolling.
 function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
   const member = findOwnMember(state);
   if (!member) {
@@ -56,11 +57,7 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
     title: t("dashboard.mandatoryFields.title"),
     summary: t(key, { count: String(blanks.length) }),
     actionLabel: t("dashboard.mandatoryFields.open"),
-    onAction: () => {
-      document
-        .querySelector('[data-testid="profile-basics"]')
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    },
+    onAction: () => state.setTab("profile"),
   };
 }
 
@@ -233,10 +230,10 @@ function renderWorkSummary(state: AppViewState) {
 }
 
 /**
- * Everything that sits above the member's own record on the profile page: what is waiting on them,
- * the two closest conference deadlines, and a summary of their papers.
+ * The dashboard: what is waiting on the viewer, the two closest conference deadlines, and a
+ * summary of their projects and papers.
  */
-export function renderProfileHome(state: AppViewState, role: AccessRole) {
+export function renderDashboard(state: AppViewState, role: AccessRole) {
   return html`
     <div class="dashboard">
       ${renderAttention(state, role)}

@@ -55,10 +55,11 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // any member's schedule. Writing is separately restricted to your own record by the service.
   adminbotTimeAvailability: "member",
   chat: "member",
+  // Home for anyone signed in. Every card on it is gated on the viewer's own role, so the page
+  // never needs privilege beyond having an account.
+  dashboard: "member",
   // Your own record and your own work. Both are scoped to the viewer, so neither needs privilege
-  // beyond having an account. Profile is also home for anyone signed in: it carries the attention
-  // stack and deadline board the dashboard used to, and each item there is gated on the viewer's
-  // own role, so the page never needs privilege beyond having an account.
+  // beyond having an account.
   profile: "member",
   myWork: "member",
   // Not built yet — the tab renders a placeholder. Declared at member tier so the group appears
@@ -112,7 +113,7 @@ export function visibleTabsForRole(tabs: readonly Tab[], role: AccessRole): Tab[
 // Where a role lands when it has no tab of its own choosing — a fresh visit, or a tab that is no
 // longer allowed after signing out. Deliberately the least privileged surface that role can see.
 export function defaultTabForRole(role: AccessRole): Tab {
-  return role === "anonymous" ? "adminbotDeadlines" : "profile";
+  return role === "anonymous" ? "adminbotDeadlines" : "dashboard";
 }
 
 // The tab to actually render: the requested one when the role may see it, otherwise that role's

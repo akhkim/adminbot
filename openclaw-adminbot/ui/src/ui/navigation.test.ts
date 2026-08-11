@@ -38,6 +38,7 @@ const leadingSlashNormalizerCases = [
 describe("iconForTab", () => {
   it("returns stable icons for every tab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, iconForTab(tab)]))).toEqual({
+      dashboard: "barChart",
       profile: "user",
       myWork: "book",
       labSharing: "link",
@@ -86,6 +87,7 @@ describe("iconForTab", () => {
 describe("titleForTab", () => {
   it("returns expected titles for every tab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, titleForTab(tab)]))).toEqual({
+      dashboard: "Dashboard",
       profile: "My Profile",
       myWork: "My Projects & Papers",
       labSharing: "Lab Sharing",
@@ -128,7 +130,8 @@ describe("titleForTab", () => {
 describe("subtitleForTab", () => {
   it("returns expected subtitles for every tab", () => {
     expect(Object.fromEntries(ALL_TABS.map((tab) => [tab, subtitleForTab(tab)]))).toEqual({
-      profile: "What needs you, your details, and anything still blank.",
+      dashboard: "What needs you, and where the lab stands.",
+      profile: "Your details, and anything still blank.",
       myWork: "What you are working on, and anything holding it up.",
       labSharing: "Shared lab resources. Not built yet.",
       chat: "Gateway chat for quick interventions.",
@@ -234,10 +237,10 @@ describe("tabFromPath", () => {
     expect(tabFromPath("/dreams")).toBe("dreams");
   });
 
-  // The dashboard folded into the profile, which is now what root resolves to for a signed-in
-  // viewer; app-render still coerces a visitor's root to the landing page.
-  it("returns the profile for root path", () => {
-    expect(tabFromPath("/")).toBe("profile");
+  // Root is the dashboard for a signed-in viewer; app-render still coerces a visitor's root to
+  // the landing page.
+  it("returns the dashboard for root path", () => {
+    expect(tabFromPath("/")).toBe("dashboard");
   });
 
   it("routes the Lab Sharing placeholder", () => {
@@ -285,6 +288,7 @@ describe("inferBasePathFromPathname", () => {
 describe("TAB_GROUPS", () => {
   it("contains all expected groups, member surfaces first and privileged ones last", () => {
     expect(TAB_GROUPS.map((g) => g.label)).toEqual([
+      "home",
       "myProfile",
       "myProjects",
       "generalTools",

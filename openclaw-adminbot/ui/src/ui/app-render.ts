@@ -44,12 +44,12 @@ import {
   renderChangePasswordPopover,
   renderChangePasswordTrigger,
 } from "./adminbot/views/change-password.ts";
+import { renderDashboard } from "./adminbot/views/dashboard.ts";
 import { renderLabSharing } from "./adminbot/views/lab-sharing.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate } from "./adminbot/views/login-gate.ts";
 import { renderMyWork } from "./adminbot/views/my-work.ts";
 import { renderOnboardingChecklist } from "./adminbot/views/onboarding-checklist.ts";
-import { renderProfileHome } from "./adminbot/views/profile-home.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
 import { renderPublicShell } from "./adminbot/views/public-shell.ts";
 import {
@@ -2710,9 +2710,9 @@ export function renderApp(state: AppViewState) {
                 ${headerError ? html`<div class="pill danger">${headerError}</div>` : nothing}
               </div>
             </section>`}
+        ${state.tab === "dashboard" ? renderDashboard(state, accessRole) : nothing}
         ${state.tab === "profile"
           ? html`
-              ${renderProfileHome(state, accessRole)}
               ${renderProfile(state, {
                 onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
               })}
@@ -2733,9 +2733,9 @@ export function renderApp(state: AppViewState) {
               onMemberChange: (memberId) => {
                 state.adminBotTimeAvailabilityMemberId = memberId;
               },
-              granularity: state.adminBotTimeAvailabilityGranularity,
-              onGranularityChange: (granularity) => {
-                state.adminBotTimeAvailabilityGranularity = granularity;
+              hoursUnit: state.adminBotTimeAvailabilityHoursUnit,
+              onHoursUnitChange: (unit) => {
+                state.adminBotTimeAvailabilityHoursUnit = unit;
               },
               viewerMemberId: state.memberId ?? null,
               draft: state.adminBotTimeAvailabilityDraft,
@@ -2888,8 +2888,8 @@ export function renderApp(state: AppViewState) {
               onSaveMember: (member) => void saveAdminBotMember(state, member),
               onSaveOwnProfile: (memberId, fields) =>
                 void saveAdminBotOwnProfile(state, memberId, fields),
-              // The checklist itself now lives on the dashboard instead of a popup, so "view
-              // onboarding checklist" from Lab Members just goes there.
+              // The checklist itself lives at the bottom of the profile page instead of in a
+              // popup, so "view onboarding checklist" from Lab Members just goes there.
               onShowOnboardingWelcome: () => state.setTab("profile"),
               onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
               onDeletePaper: (paper) => void deleteAdminBotPaper(state, paper),

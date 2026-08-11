@@ -38,8 +38,8 @@ function props(overrides: Partial<AdminBotTimeAvailabilityProps> = {}) {
     error: null,
     selectedMemberId: "m1",
     onMemberChange: () => {},
-    granularity: "week" as const,
-    onGranularityChange: () => {},
+    hoursUnit: "week" as const,
+    onHoursUnitChange: () => {},
     viewerMemberId: "m1",
     draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT },
     onDraftChange: () => {},
@@ -62,84 +62,91 @@ describe("allocationSegments", () => {
     { key: "a", name: "Alignment", start: "2026-03-02", end: "2026-03-15", hours: 20 },
   ]);
 
-  it("buckets by calendar week, Monday-aligned", () => {
-    const { segments } = allocationSegments(twoWeeks, "week");
-    // 2026-03-02 is a Monday, so the two weeks land exactly on two buckets.
-    expect(segments).toHaveLength(2);
+  // One commitment is one stretch, however long it runs: nothing changes inside it, so there is
+  // nothing to cut on. This is the whole difference from calendar bucketing, which would have made
+  // two bars of this because it happens to span two weeks.
+  it("makes one bar of a commitment that never changes", () => {
+    const { segments } = allocationSegments(twoWeeks);
+    expect(segments).toHaveLength(1);
     expect(segments[0].start).toBe("2026-03-02");
-    expect(segments[1].start).toBe("2026-03-09");
+    // The boundary is exclusive: the segment ends the day after the last day it covers.
+    expect(segments[0].end).toBe("2026-03-16");
     expect(segments[0].total).toBe(20);
   });
 
-  it("buckets by day", () => {
-    const { segments } = allocationSegments(twoWeeks, "day");
-    expect(segments).toHaveLength(14);
-    expect(segments[0].start).toBe("2026-03-02");
-    expect(segments.at(-1)?.start).toBe("2026-03-15");
-  });
-
-  it("buckets by calendar month, anchored to the first", () => {
+  // Every start and end is a breakpoint, so an overlap splits the timeline into before / during /
+  // after, and only the middle bar carries both.
+  it("cuts at every date the active set changes", () => {
     const { segments } = allocationSegments(
-      tasks([{ key: "a", name: "A", start: "2026-03-20", end: "2026-05-04", hours: 10 }]),
-      "month",
+      tasks([
+        { key: "a", name: "A", start: "2026-03-02", end: "2026-03-15", hours: 20 },
+        { key: "b", name: "B", start: "2026-03-09", end: "2026-03-22", hours: 10 },
+      ]),
     );
     expect(segments.map((segment) => segment.start)).toEqual([
-      "2026-03-01",
-      "2026-04-01",
-      "2026-05-01",
+      "2026-03-02",
+      "2026-03-09",
+      "2026-03-16",
     ]);
+    expect(segments.map((segment) => segment.total)).toEqual([20, 30, 10]);
+    expect(segments[1].allocations.map((allocation) => allocation.key)).toEqual(["a", "b"]);
   });
 
-  it("stacks overlapping commitments inside one bucket", () => {
+  it("stacks commitments that run over exactly the same dates into one bar", () => {
     const { segments } = allocationSegments(
       tasks([
         { key: "a", name: "A", start: "2026-03-02", end: "2026-03-08", hours: 20 },
         { key: "b", name: "B", start: "2026-03-02", end: "2026-03-08", hours: 10 },
       ]),
-      "week",
     );
     expect(segments).toHaveLength(1);
     expect(segments[0].total).toBe(30);
     expect(segments[0].allocations.map((allocation) => allocation.key)).toEqual(["a", "b"]);
   });
 
-  // A gap is information: "nothing booked in April" should not silently close up, or the timeline
-  // would misrepresent two distant commitments as adjacent.
-  it("keeps interior gaps but trims empty edges", () => {
+  // The gap between two commitments is a breakpoint pair with nothing active in it. Luke dropped
+  // those rather than drawing an empty bar, and so does this: the axis is the sequence of
+  // commitments, not elapsed time.
+  it("drops the empty stretch between two distant commitments", () => {
     const { segments } = allocationSegments(
       tasks([
         { key: "a", name: "A", start: "2026-03-01", end: "2026-03-31", hours: 20 },
         { key: "b", name: "B", start: "2026-06-01", end: "2026-06-30", hours: 20 },
       ]),
-      "month",
     );
-    expect(segments.map((segment) => segment.start)).toEqual([
-      "2026-03-01",
-      "2026-04-01",
-      "2026-05-01",
-      "2026-06-01",
-    ]);
-    expect(segments[1].allocations).toEqual([]);
-    expect(segments[0].allocations).not.toEqual([]);
-    expect(segments.at(-1)?.allocations).not.toEqual([]);
+    expect(segments.map((segment) => segment.start)).toEqual(["2026-03-01", "2026-06-01"]);
+    expect(segments.every((segment) => segment.allocations.length > 0)).toBe(true);
   });
 
-  // A day view over a multi-year range is thousands of unreadable bars and a giant SVG.
-  it("caps the bucket count and reports the truncation", () => {
+  it("labels a bar with the stretch it covers, ending on its last inclusive day", () => {
+    const { segments } = allocationSegments(twoWeeks);
+    expect(segments[0].label).toContain("Mar 2");
+    expect(segments[0].label).toContain("Mar 15");
+  });
+
+  // A long history of short overlapping rows can still outrun the axis.
+  it("caps the segment count and reports the truncation", () => {
     const { segments, truncated } = allocationSegments(
-      tasks([{ key: "a", name: "A", start: "2026-01-01", end: "2029-01-01", hours: 5 }]),
-      "day",
+      tasks(
+        Array.from({ length: 60 }, (_, index) => ({
+          key: `k${index}`,
+          name: `T${index}`,
+          start: `2026-01-${String((index % 28) + 1).padStart(2, "0")}`,
+          end: `2026-12-${String((index % 28) + 1).padStart(2, "0")}`,
+          hours: 1,
+        })),
+      ),
     );
-    expect(segments).toHaveLength(60);
+    expect(segments).toHaveLength(40);
     expect(truncated).toBe(true);
   });
 
   it("reports no truncation when everything fits", () => {
-    expect(allocationSegments(twoWeeks, "week").truncated).toBe(false);
+    expect(allocationSegments(twoWeeks).truncated).toBe(false);
   });
 
   it("returns nothing for no tasks", () => {
-    expect(allocationSegments([], "week")).toEqual({ segments: [], truncated: false });
+    expect(allocationSegments([])).toEqual({ segments: [], truncated: false });
   });
 });
 
@@ -176,28 +183,6 @@ describe("draftError", () => {
 });
 
 describe("renderAdminBotTimeAvailability", () => {
-  it("offers the three granularities and marks the active one", () => {
-    const container = renderView({ granularity: "month" });
-    const active = container.querySelector<HTMLButtonElement>(
-      '[data-testid="time-availability-granularity-month"]',
-    );
-    expect(active?.getAttribute("aria-pressed")).toBe("true");
-    expect(
-      container
-        .querySelector('[data-testid="time-availability-granularity-day"]')
-        ?.getAttribute("aria-pressed"),
-    ).toBe("false");
-  });
-
-  it("switches granularity on click", () => {
-    const onGranularityChange = vi.fn();
-    const container = renderView({ onGranularityChange });
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="time-availability-granularity-day"]')
-      ?.click();
-    expect(onGranularityChange).toHaveBeenCalledWith("day");
-  });
-
   // Editing is self-only: the service routes a member session to its own record, so showing the
   // form on someone else's schedule would only ever produce a 403.
   it("shows the editor on your own schedule and hides it on someone else's", () => {
@@ -261,11 +246,13 @@ describe("the holiday override", () => {
   const work = [{ key: "a", name: "Atlas", start: "2026-03-02", end: "2026-03-15", hours: 20 }];
 
   // A whole-day time-off row wins over whatever Jinesis work was scheduled underneath it: the
-  // member is away, so the hours are not happening.
-  it("zeroes a bucket a whole-day row covers entirely", () => {
-    const { segments } = allocationSegments(work, "week", [
+  // member is away, so the hours are not happening. The holiday's own dates become breakpoints,
+  // which is what lets it cut a commitment that would otherwise be one unbroken bar.
+  it("splits a commitment at the holiday and zeroes the covered part", () => {
+    const { segments } = allocationSegments(work, [
       { start: "2026-03-09", end: "2026-03-15", kind: "vacation", availability: "none" },
     ]);
+    expect(segments.map((segment) => segment.start)).toEqual(["2026-03-02", "2026-03-09"]);
     expect(segments[0].total).toBe(20);
     expect(segments[0].suppressed).toBe(false);
     expect(segments[1].total).toBe(0);
@@ -273,39 +260,116 @@ describe("the holiday override", () => {
     expect(segments[1].allocations).toEqual([]);
   });
 
-  // Half a week off does not zero the week, and there is no stored figure saying what it does.
+  // Half a week off does not zero anything, and there is no stored figure saying what it does.
   it("leaves a partial row alone", () => {
-    const { segments } = allocationSegments(work, "week", [
+    const { segments } = allocationSegments(work, [
       { start: "2026-03-09", end: "2026-03-15", kind: "course_load", availability: "partial" },
     ]);
-    expect(segments[1].total).toBe(20);
-    expect(segments[1].suppressed).toBe(false);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].total).toBe(20);
+    expect(segments[0].suppressed).toBe(false);
   });
 
-  // Covering three days of a week is not covering the week.
-  it("does not suppress a bucket the row only partly covers", () => {
-    const { segments } = allocationSegments(work, "week", [
-      { start: "2026-03-09", end: "2026-03-11", kind: "vacation", availability: "none" },
-    ]);
-    expect(segments[1].suppressed).toBe(false);
-    expect(segments[1].total).toBe(20);
-  });
-
-  // At day granularity the same row suppresses exactly its own days.
-  it("suppresses exactly the covered days at day granularity", () => {
-    const { segments } = allocationSegments(work, "day", [
+  // A holiday in the middle leaves work on both sides of it.
+  it("suppresses exactly the days the row covers", () => {
+    const { segments } = allocationSegments(work, [
       { start: "2026-03-09", end: "2026-03-10", kind: "vacation", availability: "none" },
     ]);
-    const suppressed = segments.filter((segment) => segment.suppressed).map((s) => s.start);
-    expect(suppressed).toEqual(["2026-03-09", "2026-03-10"]);
+    expect(
+      segments.map((segment) => ({ start: segment.start, off: segment.suppressed })),
+    ).toEqual([
+      { start: "2026-03-02", off: false },
+      { start: "2026-03-09", off: true },
+      { start: "2026-03-11", off: false },
+    ]);
   });
 
-  // A suppressed bucket is a holiday, not an absence of data, so the edge trim keeps it.
-  it("keeps a suppressed bucket at the edge of the range", () => {
-    const { segments } = allocationSegments(work, "week", [
+  it("keeps a suppressed segment at the start of the range", () => {
+    const { segments } = allocationSegments(work, [
       { start: "2026-03-02", end: "2026-03-08", kind: "vacation", availability: "none" },
     ]);
     expect(segments[0].suppressed).toBe(true);
+    expect(segments[0].start).toBe("2026-03-02");
+  });
+
+  // A holiday nowhere near the commitments must not stretch the axis over the empty months
+  // between them.
+  it("ignores time off outside the span the commitments cover", () => {
+    const { segments } = allocationSegments(work, [
+      { start: "2026-09-01", end: "2026-09-07", kind: "vacation", availability: "none" },
+    ]);
+    expect(segments).toHaveLength(1);
+    expect(segments[0].suppressed).toBe(false);
+  });
+});
+
+describe("the hours unit", () => {
+  const scaled = [
+    { start: "2026-03-02", end: "2026-03-15", project: "Atlas", hours_per_week: 21 },
+  ];
+
+  // The unit changes the number, never the bars: the segmentation is the same object in all three.
+  it("keeps the identical segments whatever the unit", () => {
+    const week = renderView({ hoursUnit: "week", members: [member({ availability: scaled })] });
+    const month = renderView({ hoursUnit: "month", members: [member({ availability: scaled })] });
+    const bars = (root: HTMLElement) => root.querySelectorAll(".adminbot-time-chart__segment");
+    expect(bars(week)).toHaveLength(bars(month).length);
+    expect(bars(week).length).toBeGreaterThan(0);
+  });
+
+  it("quotes stored hours as-is for the week unit", () => {
+    const container = renderView({ hoursUnit: "week", members: [member({ availability: scaled })] });
+    expect(container.textContent).toContain("21 h/wk");
+  });
+
+  // 21 h/wk is 3 h/day and 91 h/mo (52/12 weeks). Storage never changes; only the reading does.
+  it("rescales to hours per day", () => {
+    const container = renderView({ hoursUnit: "day", members: [member({ availability: scaled })] });
+    expect(container.textContent).toContain("3 h/day");
+  });
+
+  it("rescales to hours per month", () => {
+    const container = renderView({
+      hoursUnit: "month",
+      members: [member({ availability: scaled })],
+    });
+    expect(container.textContent).toContain("91 h/mo");
+  });
+
+  it("marks the active unit and switches on click", () => {
+    const onHoursUnitChange = vi.fn();
+    const container = renderView({ hoursUnit: "month", onHoursUnitChange });
+    expect(
+      container
+        .querySelector('[data-testid="time-availability-unit-month"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-unit-day"]')
+      ?.click();
+    expect(onHoursUnitChange).toHaveBeenCalledWith("day");
+  });
+});
+
+describe("the whole-day toggle", () => {
+  it("offers it for a time-away category, ticked by default", () => {
+    const container = renderView({
+      draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "vacation" },
+    });
+    const box = container.querySelector<HTMLInputElement>(
+      '[data-testid="time-availability-whole-day"]',
+    );
+    expect(box).not.toBeNull();
+    expect(box?.checked).toBe(true);
+  });
+
+  // Jinesis work is measured in hours, so "away the whole day" is not a question it answers.
+  it("hides it for a Jinesis commitment, which asks for hours instead", () => {
+    const container = renderView({
+      draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "jinesis" },
+    });
+    expect(container.querySelector('[data-testid="time-availability-whole-day"]')).toBeNull();
+    expect(container.querySelector('[data-testid="time-availability-hours"]')).not.toBeNull();
   });
 });
 
@@ -352,6 +416,22 @@ describe("draftToPatch", () => {
     expect(patch.time_off).toEqual([
       { start: "2026-12-24", end: "2027-01-02", kind: "vacation", availability: "none" },
     ]);
+  });
+
+  // "Whole day" is the default, not the only option: the table already renders imported "Partial"
+  // rows, so a member needs some way to record and correct one.
+  it("records reduced availability when the whole-day box is unticked", () => {
+    const patch = draftToPatch(
+      {
+        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+        category: "course_load",
+        wholeDay: false,
+        start: "2026-09-01",
+        end: "2026-12-15",
+      },
+      empty,
+    );
+    expect(patch.time_off?.[0]).toMatchObject({ availability: "partial" });
   });
 
   it("carries the member's own name through for the 'other' category", () => {

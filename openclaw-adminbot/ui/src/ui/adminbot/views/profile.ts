@@ -17,6 +17,7 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
 import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
+import { timezoneForLocation } from "../data/timezone-for-location.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 
 export type ProfileProps = {
@@ -237,11 +238,18 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "links",
   },
   {
+    // Mandatory, and the one field on this page nobody can fill in from what they already know:
+    // LinkedIn publishes no mapping from a vanity URL to a URN, so the value only exists once the
+    // member reads it off the collector below. The suggestion card in renderSuggestions is the
+    // hand-off, and it disappears the moment this is filled.
+    //
+    // The service already counts it in MANDATORY_PROFILE_FIELDS (kernel/service.ts), which is what
+    // drives the Slack reminder -- so leaving it optional here meant the lab nudged people about a
+    // field their own profile page marked as skippable.
     key: "linkedin_urn",
     labelKey: "profile.fields.linkedinUrn",
     example: "ACoAAB1234567",
     type: "short_text",
-    optional: true,
     group: "links",
   },
   {
@@ -451,6 +459,46 @@ function valueOf(member: LabMember, field: EditableField): string {
     return Array.isArray(raw) ? raw.filter(Boolean).join(", ") : "";
   }
   return raw === null || raw === undefined ? "" : String(raw);
+}
+
+// What the control shows, which is the stored value except when there is a prefill to offer.
+//
+// Only timezone has one: it is the single field on this page that is derivable from another field
+// the member already filled in, so making them restate it in a 400-entry dropdown was pure
+// friction. The suggestion is shown selected but is not stored until an autosave commits the form
+// like any other edit -- see renderPrefillHint, which says where the value came from so a wrong
+// guess is visible before it is saved.
+function displayValue(member: LabMember, field: EditableField): string {
+  const stored = valueOf(member, field);
+  if (stored || field.key !== "timezone") {
+    return stored;
+  }
+  return prefilledTimezone(member) ?? "";
+}
+
+function prefilledTimezone(member: LabMember): string | null {
+  if (String(member.timezone ?? "").trim()) {
+    return null;
+  }
+  return timezoneForLocation(String(member.location ?? ""));
+}
+
+function renderPrefillHint(member: LabMember, field: EditableField) {
+  if (field.key !== "timezone") {
+    return nothing;
+  }
+  const suggestion = prefilledTimezone(member);
+  if (!suggestion) {
+    return nothing;
+  }
+  return html`
+    <span class="profile__prefill" data-testid="profile-timezone-prefill">
+      ${t("profile.timezone.prefilled", {
+        zone: suggestion,
+        location: String(member.location ?? "").trim(),
+      })}
+    </span>
+  `;
 }
 
 export function blankFields(member: LabMember): EditableField[] {
@@ -780,8 +828,8 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                             >`
                           : nothing}
                       </span>
-                      ${renderFieldInput(field, valueOf(member, field))}
-                      ${renderAccountCheckStatus(state, field)}
+                      ${renderFieldInput(field, displayValue(member, field))}
+                      ${renderPrefillHint(member, field)} ${renderAccountCheckStatus(state, field)}
                     </label>
                   `,
                 )}

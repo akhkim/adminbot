@@ -83,8 +83,10 @@ describe("visibleTabsForRole", () => {
   });
 
   it("adds the roster, the paper list and chat for a member", () => {
-    // Sidebar order: profile, then own work, then the shared tools, then the unbuilt Lab Sharing.
+    // Sidebar order: the dashboard, then the profile, then own work, then the shared tools, then
+    // the unbuilt Lab Sharing.
     expect(visibleTabsForRole(ALL_TABS, "member")).toEqual([
+      "dashboard",
       "profile",
       "myWork",
       "chat",
@@ -136,7 +138,7 @@ describe("resolveAccessibleTab", () => {
   // rendering a privileged panel with no data behind it.
   it("falls back to the role's default when the tab is out of reach", () => {
     expect(resolveAccessibleTab("config", "anonymous")).toBe("adminbotDeadlines");
-    expect(resolveAccessibleTab("adminbotSettings", "member")).toBe("profile");
+    expect(resolveAccessibleTab("adminbotSettings", "member")).toBe("dashboard");
     expect(canAccessTab(defaultTabForRole("anonymous"), "anonymous")).toBe(true);
     expect(canAccessTab(defaultTabForRole("member"), "member")).toBe(true);
   });

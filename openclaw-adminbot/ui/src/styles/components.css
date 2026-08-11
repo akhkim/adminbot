@@ -8952,16 +8952,29 @@ details[open] > .ov-expandable-toggle::after {
 
 /* Granularity switch and the self-service commitment editor: added with the day/week/month views
    and the add-a-commitment form, which the ported branch did not have. */
-.adminbot-time-availability__granularity {
+.adminbot-time-availability__unit {
   display: inline-flex;
   gap: var(--space-2);
   align-items: center;
 }
 
-.adminbot-time-availability__granularity button[aria-pressed="true"] {
+.adminbot-time-availability__unit-label {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.adminbot-time-availability__unit button[aria-pressed="true"] {
   background: var(--bg-accent);
   color: var(--text);
   font-weight: 600;
+}
+
+/* A checkbox reads as a statement, not as a labelled value, so it sits inline with its text
+   rather than in the label-above-control stack the other fields use. */
+.adminbot-form__field--check {
+  flex-direction: row;
+  gap: var(--space-2);
+  align-items: center;
 }
 
 .adminbot-time-availability__editor {

@@ -2708,6 +2708,13 @@
   font-size: var(--control-ui-text-xs);
 }
 
+/* Says a value was inferred rather than typed. Muted like the other field-level notes: it is
+   context on the control above it, not a warning about it. */
+.profile__prefill {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
 .profile__account-check--checking {
   color: var(--muted);
 }

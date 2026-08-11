@@ -4,12 +4,13 @@ import type { IconName } from "./icons.js";
 import { normalizeLowercaseStringOrEmpty } from "./string-coerce.ts";
 
 // The sidebar is organised by what a person came here to do, not by which system owns the screen.
-// Four member groups answer "my record / my work / the shared tools / the lab", and the two
-// privileged groups sit below them: `admin` for lab governance, `openclaw` for the operator
-// surfaces inherited from upstream. A group whose every tab is out of reach renders no section at
-// all (app-render.ts), so a plain member never sees an "Admin" heading and a visitor sees only the
-// two open tools inside "General Tools".
+// Five member groups answer "where do I stand / my record / my work / the shared tools / the lab",
+// and the two privileged groups sit below them: `admin` for lab governance, `openclaw` for the
+// operator surfaces inherited from upstream. A group whose every tab is out of reach renders no
+// section at all (app-render.ts), so a plain member never sees an "Admin" heading and a visitor
+// sees only the two open tools inside "General Tools".
 export const TAB_GROUPS = [
+  { label: "home", tabs: ["dashboard"] },
   { label: "myProfile", tabs: ["profile"] },
   { label: "myProjects", tabs: ["myWork"] },
   {
@@ -58,6 +59,7 @@ export const TAB_GROUPS = [
 
 export type Tab =
   | "agents"
+  | "dashboard"
   | "profile"
   | "myWork"
   | "labSharing"
@@ -108,6 +110,7 @@ export const SETTINGS_TABS = [
 
 const TAB_PATHS: Record<Tab, string> = {
   agents: "/agents",
+  dashboard: "/dashboard",
   profile: "/profile",
   myWork: "/my-work",
   labSharing: "/lab-sharing",
@@ -218,11 +221,10 @@ export function tabFromPath(pathname: string, basePath = ""): Tab | null {
   if (normalized.endsWith("/index.html")) {
     normalized = "/";
   }
-  // The root is home: the profile for anyone signed in — it now carries what the dashboard used to,
-  // the attention stack and deadline board above the member's own record. Because a visitor may not
-  // see it, the coercion in app-render turns the same resolution into the landing page for them.
+  // The root is home: the dashboard for anyone signed in. Because a visitor may not see it, the
+  // coercion in app-render turns the same resolution into the landing page for them.
   if (normalized === "/") {
-    return "profile";
+    return "dashboard";
   }
   return PATH_TO_TAB.get(normalized) ?? null;
 }
@@ -253,6 +255,8 @@ export function iconForTab(tab: Tab): IconName {
   switch (tab) {
     case "agents":
       return "folder";
+    case "dashboard":
+      return "barChart";
     case "profile":
       return "user";
     case "myWork":

@@ -298,14 +298,74 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(filled.querySelector('[data-testid="suggestion-linkedin-urn"]')).toBeNull();
   });
 
-  it("keeps the URN editable, now optional rather than required", () => {
+  it("marks the URN required, matching the reminder the service already sends", () => {
     const container = renderPage(createState(createMember()), vi.fn());
     const input = container.querySelector<HTMLInputElement>('input[name="linkedin_urn"]');
     expect(input).not.toBeNull();
-    // Off the member sheet, so optional: only the sheet's own columns (plus the CV) are chased.
+    // MANDATORY_PROFILE_FIELDS in extensions/adminbot/src/kernel/service.ts counts it, so the
+    // Slack nudge chases it either way. Marking it optional here just hid that from the member.
     const row = input?.closest(".profile__form-row");
-    expect(row?.querySelector(".profile__optional")).not.toBeNull();
-    expect(row?.querySelector(".profile__mandatory")).toBeNull();
+    expect(row?.querySelector(".profile__mandatory")).not.toBeNull();
+    expect(row?.querySelector(".profile__optional")).toBeNull();
+  });
+
+  // Time zone is the one field derivable from another the member already filled in, so the control
+  // opens on a guess rather than on an empty 400-entry dropdown. See data/timezone-for-location.ts.
+  describe("time zone prefill", () => {
+    it("preselects a zone inferred from the location when none is stored", () => {
+      const container = renderPage(
+        createState(
+          createMember({ location: "Pittsburgh, PA", timezone: "" } as Partial<LabMember>),
+        ),
+        vi.fn(),
+      );
+      const select = container.querySelector<HTMLSelectElement>('select[name="timezone"]');
+      expect(select?.value).toBe("America/New_York");
+      // And says where the value came from, so a wrong guess is visible before it is saved.
+      const hint = container.querySelector('[data-testid="profile-timezone-prefill"]');
+      expect(hint?.textContent).toContain("America/New_York");
+      expect(hint?.textContent).toContain("Pittsburgh, PA");
+    });
+
+    it("leaves a stored zone alone and says nothing about it", () => {
+      const container = renderPage(
+        createState(
+          createMember({
+            location: "Pittsburgh, PA",
+            timezone: "Europe/Zurich",
+          } as Partial<LabMember>),
+        ),
+        vi.fn(),
+      );
+      const select = container.querySelector<HTMLSelectElement>('select[name="timezone"]');
+      expect(select?.value).toBe("Europe/Zurich");
+      expect(container.querySelector('[data-testid="profile-timezone-prefill"]')).toBeNull();
+    });
+
+    it("leaves the control empty when the location means nothing to it", () => {
+      const container = renderPage(
+        createState(
+          createMember({ location: "somewhere nice", timezone: "" } as Partial<LabMember>),
+        ),
+        vi.fn(),
+      );
+      expect(container.querySelector<HTMLSelectElement>('select[name="timezone"]')?.value).toBe("");
+      expect(container.querySelector('[data-testid="profile-timezone-prefill"]')).toBeNull();
+    });
+
+    // The guess reaches the record through the same autosave as anything the member typed, so it
+    // is never a silent write -- but it does stick once they touch the form.
+    it("commits the guess with the next autosave", () => {
+      const onSave = vi.fn();
+      const container = renderPage(
+        createState(createMember({ location: "Toronto", timezone: "" } as Partial<LabMember>)),
+        onSave,
+      );
+      const form = container.querySelector<HTMLFormElement>(".profile__form");
+      form?.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      expect(onSave).toHaveBeenCalled();
+      expect(onSave.mock.calls.at(-1)?.[1].timezone).toBe("America/Toronto");
+    });
   });
 
   // It is the member's own answers, not the lab's blank form. Google Forms only ever hands the

@@ -32,6 +32,7 @@ describe("TAB_GROUPS", () => {
 
   it("orders the sidebar member-first, with the two privileged groups last", () => {
     expect(TAB_GROUPS.map((group) => group.label)).toEqual([
+      "home",
       "myProfile",
       "myProjects",
       "generalTools",
@@ -44,6 +45,7 @@ describe("TAB_GROUPS", () => {
   it("groups the member surfaces by what a person came to do", () => {
     const byLabel = (label: string) => TAB_GROUPS.find((group) => group.label === label)?.tabs;
 
+    expect(byLabel("home")).toEqual(["dashboard"]);
     expect(byLabel("myProfile")).toEqual(["profile"]);
     // Active Papers is the lab-wide pipeline, so it lives under Admin now, not "my" work.
     expect(byLabel("myProjects")).toEqual(["myWork"]);

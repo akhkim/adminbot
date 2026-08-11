@@ -2,11 +2,11 @@ import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AccessRole } from "../access.ts";
-import { renderProfileHome } from "./profile-home.ts";
+import { renderDashboard } from "./dashboard.ts";
 
 function createState(overrides: Partial<AppViewState> = {}): AppViewState {
   return {
-    tab: "profile",
+    tab: "dashboard",
     adminBotOnboarding: null,
     adminBotOnboardingAcknowledged: true,
     adminBotData: { proposals: [] },
@@ -18,7 +18,7 @@ function createState(overrides: Partial<AppViewState> = {}): AppViewState {
 
 function renderPage(state: AppViewState, role: AccessRole = "admin"): HTMLElement {
   const container = document.createElement("div");
-  render(renderProfileHome(state, role), container);
+  render(renderDashboard(state, role), container);
   return container;
 }
 
@@ -28,7 +28,7 @@ function attentionIds(container: HTMLElement): string[] {
   );
 }
 
-describe("renderProfileHome", () => {
+describe("renderDashboard", () => {
   it("says nothing is waiting when nothing is", () => {
     const container = renderPage(createState());
     expect(attentionIds(container)).toEqual([]);
@@ -160,8 +160,8 @@ describe("renderProfileHome", () => {
   });
 
   // A blank mandatory field never blocks saving or leaving the profile editor (see profile.ts),
-  // so this card is how the gap gets surfaced. It now scrolls to the editor rather than navigating
-  // to it, because the editor is further down the same page.
+  // so this card is how the gap gets surfaced. It navigates to the editor, which is its own tab
+  // again.
   it("warns about blank required fields", () => {
     const container = renderPage(
       createState({
@@ -200,6 +200,7 @@ describe("renderProfileHome", () => {
               github_url: "https://github.com/ada",
               linkedin_url: "https://www.linkedin.com/in/ada",
               cv_url: "https://ada.dev/cv.pdf",
+              linkedin_urn: "ACoAAB1234567",
             },
           ],
         },

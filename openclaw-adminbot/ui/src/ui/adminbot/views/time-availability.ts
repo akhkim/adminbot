@@ -6,6 +6,21 @@
 // when a later dev→lab sync replaced the tree wholesale, so this is the surviving copy, moved into
 // the post-refactor layout and extended.
 //
+// The chart is Luke's segmentation, not a calendar one. This briefly rendered fixed day/week/month
+// buckets behind a granularity switch; that is a different picture of the same data and it lost the
+// property his method exists for. His breakpoints come from the schedule itself -- every commitment
+// start and end is a boundary, and each consecutive pair is one bar -- so within a bar the active
+// set of commitments never changes, which is what makes stacking overlapping hours meaningful. A
+// calendar bucket can straddle a change, so its stack is an average of two different weeks and its
+// total belongs to neither. Bars are equal width and touch, so the x axis reads as "what am I
+// committed to next, and next after that" rather than as elapsed time.
+//
+// Day / Week / Month therefore switch the *unit the hours are quoted in*, never the bars. The
+// segmentation is identical in all three; only the y axis, the totals and the table column change
+// between h/day, h/wk and h/mo. Nothing is ever bucketed or merged, so no view can round a
+// commitment away or blend two of them into one figure -- picking a unit is a reading preference,
+// not a different dataset.
+//
 // What the schedule is made of, and why it is three lists rather than one:
 //
 //   - `availability` rows are Jinesis commitments: hours per week over a date range.
@@ -51,14 +66,30 @@ type TimeAllocationSegment = {
   suppressed: boolean;
 };
 
-/** Calendar bucket width for the chart. */
-export type TimeAvailabilityGranularity = "day" | "week" | "month";
+/**
+ * The unit the chart and tables quote hours in. Purely a display choice — see the header: it never
+ * changes the bars, only the number written on them.
+ */
+export type TimeAvailabilityHoursUnit = "day" | "week" | "month";
 
-export const TIME_AVAILABILITY_GRANULARITIES: readonly TimeAvailabilityGranularity[] = [
+export const TIME_AVAILABILITY_HOURS_UNITS: readonly TimeAvailabilityHoursUnit[] = [
   "day",
   "week",
   "month",
 ];
+
+/**
+ * Weeks-per-unit, applied to the stored `hours_per_week` figure.
+ *
+ * A month is 52/12 weeks rather than a real calendar month: every bar spans an arbitrary stretch of
+ * days, so there is no particular month to take the length of. The average is the only figure that
+ * means the same thing on every bar, which is the whole point of this being a unit and not a bucket.
+ */
+const WEEKS_PER_UNIT: Record<TimeAvailabilityHoursUnit, number> = {
+  day: 1 / 7,
+  week: 1,
+  month: 52 / 12,
+};
 
 /**
  * What a commitment is, which decides both which table it lands in and which list it is stored on.
@@ -89,6 +120,16 @@ export type TimeAvailabilityDraft = {
   start: string;
   end: string;
   hoursPerWeek: string;
+  /**
+   * Non-Jinesis only: whether the member is away for the whole day.
+   *
+   * Defaults true, because someone recording a holiday means they are gone — and only a whole-day
+   * row suppresses the Jinesis hours underneath it, which is the override the tab exists to show.
+   * Unticking it records "around, but at a reduced rate", which the chart deliberately does not
+   * subtract from: nothing stored says by how much, and inventing a figure would put a number on
+   * the chart that the member never typed.
+   */
+  wholeDay: boolean;
   note: string;
   link: string;
 };
@@ -100,6 +141,7 @@ export const EMPTY_TIME_AVAILABILITY_DRAFT: TimeAvailabilityDraft = {
   start: "",
   end: "",
   hoursPerWeek: "",
+  wholeDay: true,
   note: "",
   link: "",
 };
@@ -125,8 +167,8 @@ export type AdminBotTimeAvailabilityProps = {
   error: string | null;
   selectedMemberId: string;
   onMemberChange: (memberId: string) => void;
-  granularity: TimeAvailabilityGranularity;
-  onGranularityChange: (granularity: TimeAvailabilityGranularity) => void;
+  hoursUnit: TimeAvailabilityHoursUnit;
+  onHoursUnitChange: (unit: TimeAvailabilityHoursUnit) => void;
   /** The signed-in member. The editor renders only when this matches the selected member. */
   viewerMemberId: string | null;
   draft: TimeAvailabilityDraft;
@@ -157,13 +199,10 @@ const CHART_COLORS = [
 ] as const;
 const CHART_NEUTRAL_COLOR = "#9AA0AA";
 
-// A day view over a multi-year schedule is thousands of bars nobody can read, and the SVG grows
-// with every one of them. Cap per granularity and say so, rather than rendering a smear.
-const MAX_BUCKETS: Record<TimeAvailabilityGranularity, number> = {
-  day: 60,
-  week: 26,
-  month: 18,
-};
+// One bar per change in the schedule keeps the count near the number of commitments, but a member
+// with a long history of short overlapping rows can still outrun the axis. Cap and say so, rather
+// than rendering a smear.
+const MAX_SEGMENTS = 40;
 
 // How many rows the side table shows before it stops being a summary.
 const BIG_DEADLINE_LIMIT = 6;
@@ -192,14 +231,6 @@ function shortDate(iso: string): string {
   }).format(new Date(dateMs(iso)));
 }
 
-function monthLabel(iso: string): string {
-  return new Intl.DateTimeFormat(i18n.getLocale(), {
-    month: "short",
-    year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(dateMs(iso)));
-}
-
 function tableDate(iso: string): string {
   return new Intl.DateTimeFormat(i18n.getLocale(), {
     month: "2-digit",
@@ -213,8 +244,20 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat(i18n.getLocale(), { maximumFractionDigits: 1 }).format(value);
 }
 
-function formatHours(value: number): string {
-  return t("adminbotTimeAvailability.hoursValue", { hours: formatNumber(value) });
+/**
+ * Rescales a stored weekly-hours figure into the unit on screen.
+ *
+ * Storage is always hours per week — that is what the member typed and what the service validates
+ * against 0–168 — so this is a display conversion and nothing writes the result back.
+ */
+export function hoursIn(weeklyHours: number, unit: TimeAvailabilityHoursUnit): number {
+  return weeklyHours * WEEKS_PER_UNIT[unit];
+}
+
+function formatHours(weeklyHours: number, unit: TimeAvailabilityHoursUnit): string {
+  return t(`adminbotTimeAvailability.hoursValue.${unit}`, {
+    hours: formatNumber(hoursIn(weeklyHours, unit)),
+  });
 }
 
 function taskName(project: string | undefined): string {
@@ -299,55 +342,34 @@ function taskColors(tasks: readonly TimeAllocationTask[]): Map<string, string> {
   );
 }
 
-// Weeks start Monday, matching data/availability.ts and the console's capacity view, so "this
-// week" is the same window everywhere.
-function startOfWeek(ms: number): number {
-  return ms - ((new Date(ms).getUTCDay() + 6) % 7) * DAY_MS;
-}
-
-function startOfMonth(ms: number): number {
-  const date = new Date(ms);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
-}
-
-function nextBucketStart(ms: number, granularity: TimeAvailabilityGranularity): number {
-  if (granularity === "day") {
-    return ms + DAY_MS;
-  }
-  if (granularity === "week") {
-    return ms + 7 * DAY_MS;
-  }
-  const date = new Date(ms);
-  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
-}
-
-function bucketStart(ms: number, granularity: TimeAvailabilityGranularity): number {
-  if (granularity === "day") {
-    return ms;
-  }
-  return granularity === "week" ? startOfWeek(ms) : startOfMonth(ms);
-}
-
-function bucketLabel(startIso: string, granularity: TimeAvailabilityGranularity): string {
-  return granularity === "month" ? monthLabel(startIso) : shortDate(startIso);
-}
-
 /**
- * Buckets the tasks into fixed calendar periods and sums the weekly hours active in each.
+ * Cuts the schedule at every date something changes, and sums the weekly hours active in each
+ * resulting stretch.
  *
- * A task counts toward a bucket when its inclusive date range overlaps that bucket at all. Empty
- * buckets are kept so a gap in the schedule reads as a gap rather than silently closing up; only
- * leading and trailing empties are trimmed.
+ * This is Luke's `buildSegments`, which he took from EffortStackChart: every commitment's start and
+ * its exclusive end is a breakpoint, and each consecutive pair of breakpoints becomes one stacked
+ * bar. The point of cutting this way rather than on calendar boundaries is that the active set of
+ * commitments cannot change inside a segment, which is what makes it correct to add up overlapping
+ * hours into one stack. Stored end dates are inclusive, so the boundary used for breakpoints and
+ * for overlap tests is the next calendar day.
  *
- * A bucket fully covered by a whole-day time-off row is zeroed and flagged `suppressed`: the
- * holiday wins over whatever Jinesis work was scheduled underneath it. Partial coverage is left
- * alone — half a week off does not zero the week, and there is no stored figure for what it does.
+ * Two departures from his version, both to carry features his branch did not have:
  *
- * `truncated` is true when the range exceeded the cap for this granularity and the tail was cut.
+ *   - Time-off dates are breakpoints too. He had no time-off list; without cutting on those dates a
+ *     holiday landing inside a commitment could not zero out its own days, because there would be
+ *     no segment boundary at the point the member goes away. This is what makes "holiday overrides
+ *     task duration" work.
+ *   - A segment fully covered by a whole-day time-off row is zeroed and flagged `suppressed`
+ *     instead of dropped, so it renders as "away" rather than as a gap. Partial coverage is left
+ *     alone: half a week off does not zero the week, and nothing stored says by how much it should.
+ *
+ * A segment with no allocations and no time off is dropped outright, as his did — those are the
+ * gaps between commitments, and a bar of nothing is not worth an axis slot.
+ *
+ * `truncated` is true when the schedule produced more segments than the axis can carry.
  */
 export function allocationSegments(
   tasks: readonly TimeAllocationTask[],
-  granularity: TimeAvailabilityGranularity,
   timeOff: readonly TimeOffRow[] = [],
 ): { segments: TimeAllocationSegment[]; truncated: boolean } {
   if (tasks.length === 0) {
@@ -355,24 +377,34 @@ export function allocationSegments(
   }
   const categories = taskCategories(tasks);
   const suppressed = suppressedRanges(timeOff);
-  const rangeStart = bucketStart(Math.min(...tasks.map((task) => dateMs(task.start))), granularity);
-  const rangeEnd = Math.max(...tasks.map((task) => dateMs(exclusiveEnd(task.end))));
+  // Time-off boundaries only matter where they fall inside the span the commitments cover; a
+  // holiday six months after the last commitment ends would otherwise stretch the axis over an
+  // empty year.
+  const firstDay = tasks.map((task) => task.start).reduce((a, b) => (a < b ? a : b));
+  const lastDay = tasks.map((task) => exclusiveEnd(task.end)).reduce((a, b) => (a > b ? a : b));
+  const breakpoints = [
+    ...new Set([
+      ...tasks.flatMap((task) => [task.start, exclusiveEnd(task.end)]),
+      ...suppressed
+        .flatMap((range) => [range.start, range.end])
+        .filter((day) => day > firstDay && day < lastDay),
+    ]),
+  ].toSorted();
 
-  const all: TimeAllocationSegment[] = [];
-  let cursor = rangeStart;
+  const segments: TimeAllocationSegment[] = [];
   let truncated = false;
-  while (cursor < rangeEnd) {
-    const next = nextBucketStart(cursor, granularity);
-    if (all.length >= MAX_BUCKETS[granularity]) {
+  for (let index = 0; index < breakpoints.length - 1; index += 1) {
+    if (segments.length >= MAX_SEGMENTS) {
       truncated = true;
       break;
     }
-    const start = isoDate(cursor);
-    const end = isoDate(next);
+    const start = breakpoints[index];
+    const end = breakpoints[index + 1];
     const isSuppressed = fullyCovered(start, end, suppressed);
     const byKey = new Map<string, number>();
     if (!isSuppressed) {
       for (const task of tasks) {
+        // Active while [task.start, exclusiveEnd(task.end)) overlaps this segment.
         if (task.start < end && exclusiveEnd(task.end) > start) {
           byKey.set(task.key, (byKey.get(task.key) ?? 0) + task.hours);
         }
@@ -382,50 +414,53 @@ export function allocationSegments(
       const hours = byKey.get(category.key);
       return hours ? [{ ...category, hours }] : [];
     });
-    all.push({
+    if (allocations.length === 0 && !isSuppressed) {
+      continue;
+    }
+    segments.push({
       start,
       end,
-      label: bucketLabel(start, granularity),
+      // His label: the stretch the bar covers, end shown as the inclusive last day it contains.
+      label: `${shortDate(start)} → ${shortDate(isoDate(dateMs(end) - DAY_MS))}`,
       allocations,
       total: allocations.reduce((sum, allocation) => sum + allocation.hours, 0),
       suppressed: isSuppressed,
     });
-    cursor = next;
   }
-
-  // Trim empty edges; interior gaps stay, because "nothing booked in April" is information. A
-  // suppressed bucket is not empty in that sense -- it is a holiday, which is worth showing -- so
-  // it survives the trim.
-  let first = 0;
-  let last = all.length - 1;
-  const blank = (segment: TimeAllocationSegment) =>
-    segment.allocations.length === 0 && !segment.suppressed;
-  while (first <= last && blank(all[first])) {
-    first += 1;
-  }
-  while (last >= first && blank(all[last])) {
-    last -= 1;
-  }
-  return { segments: all.slice(first, last + 1), truncated };
+  return { segments, truncated };
 }
 
-function yAxisMaximum(segments: readonly TimeAllocationSegment[], capacity: number): number {
-  const highest = Math.max(capacity, ...segments.map((segment) => segment.total), 1);
-  return Math.ceil(highest / 5) * 5;
+// Rounds up to a tick step that suits the magnitude, so an h/day axis does not jump in 5s (its
+// whole range is often under 8) and an h/mo axis does not need forty gridlines.
+function axisStep(highest: number): number {
+  if (highest <= 8) {
+    return 1;
+  }
+  return highest <= 40 ? 5 : 20;
+}
+
+// Works in the displayed unit, so the axis is round numbers of what is written on it.
+function yAxisMaximum(
+  segments: readonly TimeAllocationSegment[],
+  capacity: number,
+  unit: TimeAvailabilityHoursUnit,
+): number {
+  const highest = hoursIn(Math.max(capacity, ...segments.map((segment) => segment.total), 1), unit);
+  return Math.ceil(highest / axisStep(highest)) * axisStep(highest);
 }
 
 function renderTimeChart(
   tasks: readonly TimeAllocationTask[],
   memberName: string,
-  granularity: TimeAvailabilityGranularity,
   timeOff: readonly TimeOffRow[],
   capacity: number,
+  unit: TimeAvailabilityHoursUnit,
 ) {
-  const { segments, truncated } = allocationSegments(tasks, granularity, timeOff);
+  const { segments, truncated } = allocationSegments(tasks, timeOff);
   const colors = taskColors(tasks);
   const categories = taskCategories(tasks);
-  const yMaximum = yAxisMaximum(segments, capacity);
-  const tickStep = Math.max(5, Math.ceil(yMaximum / 4 / 5) * 5);
+  const yMaximum = yAxisMaximum(segments, capacity, unit);
+  const tickStep = axisStep(yMaximum);
   const hourTicks: number[] = [];
   for (let value = 0; value <= yMaximum; value += tickStep) {
     hourTicks.push(value);
@@ -438,7 +473,9 @@ function renderTimeChart(
   const plotWidth = chartWidth - CHART_LEFT - CHART_RIGHT;
   const plotHeight = CHART_HEIGHT - CHART_TOP - CHART_BOTTOM;
   const barWidth = plotWidth / Math.max(1, segments.length);
-  const y = (hours: number) => CHART_TOP + ((yMaximum - hours) / yMaximum) * plotHeight;
+  // Takes stored weekly hours and lands them on the axis, which is drawn in the display unit.
+  const y = (weeklyHours: number) =>
+    CHART_TOP + ((yMaximum - hoursIn(weeklyHours, unit)) / yMaximum) * plotHeight;
   const hasCapacity = capacity > 0;
   const segmentSummary = segments
     .map((segment) =>
@@ -451,9 +488,9 @@ function renderTimeChart(
             start: tableDate(segment.start),
             end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
             allocations: segment.allocations
-              .map((allocation) => `${allocation.name} ${formatHours(allocation.hours)}`)
+              .map((allocation) => `${allocation.name} ${formatHours(allocation.hours, unit)}`)
               .join(", "),
-            total: formatHours(segment.total),
+            total: formatHours(segment.total, unit),
           }),
     )
     .join(" ");
@@ -569,10 +606,10 @@ function renderTimeChart(
               >
                 <title>${t("adminbotTimeAvailability.segmentTooltip", {
                   task: allocation.name,
-                  hours: formatHours(allocation.hours),
+                  hours: formatHours(allocation.hours, unit),
                   start: tableDate(segment.start),
                   end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
-                  total: formatHours(segment.total),
+                  total: formatHours(segment.total, unit),
                 })}</title>
               </rect>
             `;
@@ -593,7 +630,7 @@ function renderTimeChart(
                   x=${barX + barWidth / 2}
                   y=${y(segment.total) - 8}
                   text-anchor="middle"
-                >${formatHours(segment.total)}</text>`
+                >${formatHours(segment.total, unit)}</text>`
                 : nothing
             }
             <text
@@ -608,9 +645,7 @@ function renderTimeChart(
     `}
     ${truncated
       ? html`<div class="adminbot-time-chart__capacity-note">
-          ${t("adminbotTimeAvailability.truncated", {
-            count: String(MAX_BUCKETS[granularity]),
-          })}
+          ${t("adminbotTimeAvailability.truncated", { count: String(MAX_SEGMENTS) })}
         </div>`
       : nothing}
     <div class="adminbot-time-chart__capacity-note">
@@ -621,24 +656,29 @@ function renderTimeChart(
   `;
 }
 
-function renderGranularitySwitch(props: AdminBotTimeAvailabilityProps) {
+// Labelled "Show hours per" rather than "Display by": it picks a unit, not a bucket width, and the
+// old wording is exactly the calendar-bucketing this chart does not do.
+function renderHoursUnitSwitch(props: AdminBotTimeAvailabilityProps) {
   return html`
     <div
-      class="adminbot-time-availability__granularity"
+      class="adminbot-time-availability__unit"
       role="group"
-      aria-label=${t("adminbotTimeAvailability.granularityLabel")}
+      aria-label=${t("adminbotTimeAvailability.hoursUnitLabel")}
     >
-      ${TIME_AVAILABILITY_GRANULARITIES.map(
-        (granularity) => html`
+      <span class="adminbot-time-availability__unit-label">
+        ${t("adminbotTimeAvailability.hoursUnitLabel")}
+      </span>
+      ${TIME_AVAILABILITY_HOURS_UNITS.map(
+        (unit) => html`
           <button
             type="button"
             class="btn btn--sm"
-            data-testid=${`time-availability-granularity-${granularity}`}
-            aria-pressed=${props.granularity === granularity}
-            ?disabled=${props.granularity === granularity}
-            @click=${() => props.onGranularityChange(granularity)}
+            data-testid=${`time-availability-unit-${unit}`}
+            aria-pressed=${props.hoursUnit === unit}
+            ?disabled=${props.hoursUnit === unit}
+            @click=${() => props.onHoursUnitChange(unit)}
           >
-            ${t(`adminbotTimeAvailability.granularity.${granularity}`)}
+            ${t(`adminbotTimeAvailability.hoursUnit.${unit}`)}
           </button>
         `,
       )}
@@ -739,9 +779,10 @@ export function draftToPatch(
         start: draft.start,
         end: draft.end,
         kind: draft.category,
-        // Whole day off by default: someone recording a holiday means they are away, and a
-        // partial day has no stored figure saying by how much.
-        availability: "none",
+        // Whole day off unless the member says otherwise -- see TimeAvailabilityDraft.wholeDay.
+        // Only "none" suppresses the Jinesis hours underneath; "partial" is recorded and shown but
+        // never subtracted, because no stored figure says by how much.
+        availability: draft.wholeDay ? "none" : "partial",
         ...(label ? { label } : {}),
         ...(note ? { note } : {}),
         ...(link ? { link } : {}),
@@ -839,9 +880,21 @@ function renderEditor(
                 @input=${field("hoursPerWeek")}
               />
             </label>`
-          : html`<p class="adminbot-time-availability__form-hint">
-              ${t("adminbotTimeAvailability.form.wholeDayHint")}
-            </p>`}
+          : html`<label class="adminbot-form__field adminbot-form__field--check">
+                <input
+                  type="checkbox"
+                  data-testid="time-availability-whole-day"
+                  .checked=${draft.wholeDay}
+                  @change=${(event: Event) =>
+                    update({ wholeDay: (event.currentTarget as HTMLInputElement).checked })}
+                />
+                <span>${t("adminbotTimeAvailability.form.wholeDay")}</span>
+              </label>
+              <p class="adminbot-time-availability__form-hint">
+                ${draft.wholeDay
+                  ? t("adminbotTimeAvailability.form.wholeDayHint")
+                  : t("adminbotTimeAvailability.form.partialHint")}
+              </p>`}
         <label class="adminbot-form__field">
           <span>${t("adminbotTimeAvailability.form.link")}</span>
           <input
@@ -1011,6 +1064,7 @@ function renderJinesisTable(
   rows: AvailabilityRow[],
   props: AdminBotTimeAvailabilityProps,
   editable: boolean,
+  unit: TimeAvailabilityHoursUnit,
 ) {
   const colors = taskColors(tasks);
   return html`
@@ -1022,7 +1076,7 @@ function renderJinesisTable(
             <th>${t("adminbotTimeAvailability.taskName")}</th>
             <th>${t("adminbotTimeAvailability.startDate")}</th>
             <th>${t("adminbotTimeAvailability.endDate")}</th>
-            <th>${t("adminbotTimeAvailability.hours")}</th>
+            <th>${t(`adminbotTimeAvailability.hoursColumn.${unit}`)}</th>
             <th></th>
           </tr>
         </thead>
@@ -1045,7 +1099,7 @@ function renderJinesisTable(
                 </td>
                 <td>${tableDate(task.start)}</td>
                 <td>${tableDate(task.end)}</td>
-                <td>${formatHours(task.hours)}</td>
+                <td>${formatHours(task.hours, unit)}</td>
                 <td>
                   ${renderLink(row?.link)}
                   ${editable
@@ -1184,7 +1238,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
             )}
           </select>
         </label>
-        ${renderGranularitySwitch(props)}
+        ${renderHoursUnitSwitch(props)}
       </div>
       ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
       ${selectedMember
@@ -1209,16 +1263,22 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                       ${renderTimeChart(
                         tasks,
                         selectedMember.name,
-                        props.granularity,
                         storedTimeOff,
                         capacity,
+                        props.hoursUnit,
                       )}
                     </div>`
                   : html`<div class="adminbot-time-availability__empty">
                       ${t("adminbotTimeAvailability.noAllocations")}
                     </div>`}
                 ${tasks.length
-                  ? renderJinesisTable(tasks, storedAvailability, props, editable)
+                  ? renderJinesisTable(
+                      tasks,
+                      storedAvailability,
+                      props,
+                      editable,
+                      props.hoursUnit,
+                    )
                   : nothing}
                 ${storedTimeOff.length ? renderOtherTable(storedTimeOff, props, editable) : nothing}
                 ${!hasAnything && !editable

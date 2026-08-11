@@ -8,7 +8,7 @@ import type {
 import type {
   MilestoneDraft,
   TimeAvailabilityDraft,
-  TimeAvailabilityGranularity,
+  TimeAvailabilityHoursUnit,
 } from "./adminbot/views/time-availability.ts";
 import type { ChatAbortOptions, ChatSendOptions } from "./app-chat.ts";
 import type { EventLogEntry } from "./app-events.ts";
@@ -350,11 +350,11 @@ export type AppViewState = {
   adminBotLoading: boolean;
   adminBotError: string | null;
   adminBotData: AdminBotDashboardData;
-  // Time Availability tab: whose schedule is on screen, at what bucket width, and the unsaved
-  // "add a commitment" draft. Draft lives here rather than in the view so a re-render (the roster
-  // reloading underneath, a notice appearing) does not wipe half-typed input.
+  // Time Availability tab: whose schedule is on screen, which unit its hours are quoted in, and
+  // the unsaved "add a commitment" draft. Draft lives here rather than in the view so a re-render
+  // (the roster reloading underneath, a notice appearing) does not wipe half-typed input.
   adminBotTimeAvailabilityMemberId: string;
-  adminBotTimeAvailabilityGranularity: TimeAvailabilityGranularity;
+  adminBotTimeAvailabilityHoursUnit: TimeAvailabilityHoursUnit;
   adminBotTimeAvailabilityDraft: TimeAvailabilityDraft;
   adminBotMilestoneDraft: MilestoneDraft;
   adminBotTimeAvailabilitySaving: boolean;
