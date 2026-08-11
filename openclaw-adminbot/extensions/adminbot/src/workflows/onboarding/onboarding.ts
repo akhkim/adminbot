@@ -210,7 +210,11 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       label: "Questions?",
       category: "Questions",
       required: false,
-      detail: "Read the guidebook, consult with our chatbot, or ask Andrew directly.",
+      // Ordered, not a menu: the guidebook answers most of what gets asked, and a question that
+      // reaches a person before it reaches the handbook costs two people's time instead of none.
+      detail:
+        "Check the guidebook first — it answers most questions. If it does not, ask our chatbot, " +
+        "then Andrew directly.",
     },
   ];
 }
