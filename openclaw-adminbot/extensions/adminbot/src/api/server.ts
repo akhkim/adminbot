@@ -22,6 +22,7 @@ import {
   type AdminBotServiceOptions,
   type AdminBotServiceResponse,
   type AdminBotServiceStore,
+  type AdminBotSlackChannelNamingEvent,
 } from "../kernel/service.js";
 import { createAdminBotSqliteService } from "../persistence/sqlite.js";
 import { createAdminBotPrivacyBroker, type AdminBotPrivacyBroker } from "../privacy/broker.js";
@@ -138,6 +139,8 @@ export type AdminBotMockServiceOptions = {
   //
   // Country/continent only, and deliberately never written to `location`, which is self-reported.
   geolocateIp?: (ip: string) => Promise<{ country?: string; continent?: string } | undefined>;
+  // Periodic sweep cadence for Slack channel naming enforcement. Disabled when unset.
+  slackChannelNamingSweepIntervalMs?: number;
 };
 
 export type DeviceTokenIssuance =
@@ -385,6 +388,14 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     trustProxyHeaders:
       options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
   };
+  const slackChannelNamingSweepIntervalMs = options.slackChannelNamingSweepIntervalMs;
+  const slackChannelNamingSweepTimer =
+    typeof slackChannelNamingSweepIntervalMs === "number" && slackChannelNamingSweepIntervalMs > 0
+      ? setInterval(() => {
+          void service.runSlackChannelNamingSweep("system:sweep");
+        }, slackChannelNamingSweepIntervalMs)
+      : undefined;
+  slackChannelNamingSweepTimer?.unref();
   const server = createServer(async (req, res) => {
     try {
       await routeRequest(req, res, ctx);
@@ -403,6 +414,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       return `http://${host}:${port}`;
     },
     close() {
+      if (slackChannelNamingSweepTimer) {
+        clearInterval(slackChannelNamingSweepTimer);
+      }
       closeDurable();
     },
   };
@@ -850,6 +864,40 @@ async function handleAuthenticatedRoute(
           ...(ctx.fetchSlackTimezones ? { fetchSlackTimezones: ctx.fetchSlackTimezones } : {}),
         },
         principalActor(principal),
+      ),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/slack/channel-naming/events") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const event: AdminBotSlackChannelNamingEvent = {
+      event_type: asString(body.event_type) as AdminBotSlackChannelNamingEvent["event_type"],
+      channel_id: asString(body.channel_id),
+      channel_name: asString(body.channel_name),
+      ...(asString(body.owner_user_id) ? { owner_user_id: asString(body.owner_user_id) } : {}),
+      ...(asString(body.purpose) ? { purpose: asString(body.purpose) } : {}),
+      ...(asString(body.topic) ? { topic: asString(body.topic) } : {}),
+    };
+    sendServiceResult(
+      res,
+      await service.processSlackChannelNamingEvent(event, principalActor(principal)),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/slack/channel-naming/sweep/run") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const now = asString(body.now);
+    sendServiceResult(
+      res,
+      await service.runSlackChannelNamingSweep(
+        principalActor(principal),
+        now || new Date().toISOString(),
       ),
     );
     return;

@@ -21,6 +21,7 @@ import { createGogAdminBotExecutor } from "../src/connectors/gog.js";
 import { createAdminBotMessageExecutor } from "../src/connectors/message.js";
 import { createAdminBotOpenReviewExecutor } from "../src/connectors/openreview.js";
 import { createAdminBotOverleafExecutor } from "../src/connectors/overleaf.js";
+import { createAdminBotSlackAdminExecutor } from "../src/connectors/slack-admin.js";
 import { createAdminBotSocialExecutor } from "../src/connectors/social.js";
 import { createAdminBotReimbursementWorkflow } from "../src/workflows/reimbursements/workflow.js";
 
@@ -410,6 +411,7 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     executor: createCompositeAdminBotExecutor([
       createAdminBotOverleafExecutor(),
       createAdminBotSocialExecutor(),
+      createAdminBotSlackAdminExecutor(),
       createAdminBotMessageExecutor({
         command: process.execPath,
         commandArgsPrefix: [path.join(repoRoot, "openclaw.mjs")],
@@ -440,6 +442,7 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     // the self-reported one — which the new contract explicitly forbids inferred data from
     // touching. createIpLocationResolver is now unwired; it and its tests can go once nothing
     // else wants a city-level lookup.
+    slackChannelNamingSweepIntervalMs: 60 * 60 * 1000,
     deviceTokenIssuer: createDeviceTokenIssuer(deps),
     devicePairingApprover: createDevicePairingApprover(deps),
   });

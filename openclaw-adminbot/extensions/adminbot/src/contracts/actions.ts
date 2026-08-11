@@ -9,6 +9,8 @@ export const adminBotActionTypes = [
   "slack.invite_guest",
   "slack.invite_member",
   "slack.send_message",
+  "slack.channel_naming_notify_owner",
+  "slack.rename_channel",
   "vector.invite",
   "calendar.create_tentative_hold",
   "calendar.send_invite",
@@ -658,7 +660,11 @@ export type AdminBotAuditEvent = {
     | "openreview.assignment_changed"
     | "member_map.refreshed"
     | "member_directory.slack_synced"
-    | "auth.login_location_updated";
+    | "auth.login_location_updated"
+    // Slack channel-naming enforcement. The sweep renames other people's channels, which is an
+    // external effect with no undo, so who triggered a pass and what it did is recorded here.
+    | "slack.channel_naming_checked"
+    | "slack.channel_naming_swept";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;

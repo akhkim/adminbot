@@ -18,8 +18,16 @@ import type {
 export function registerSlackChannelEvents(params: {
   ctx: SlackMonitorContext;
   trackEvent?: () => void;
+  onChannelNamingEvent?: (event: {
+    eventType: "channel_created" | "channel_rename";
+    channelId?: string;
+    channelName?: string;
+    ownerUserId?: string;
+    purpose?: string;
+    topic?: string;
+  }) => Promise<void>;
 }) {
-  const { ctx, trackEvent } = params;
+  const { ctx, trackEvent, onChannelNamingEvent } = params;
 
   const enqueueChannelSystemEvent = (paramsLocal: {
     kind: "created" | "renamed";
@@ -63,6 +71,14 @@ export function registerSlackChannelEvents(params: {
         const channelId = payload.channel?.id;
         const channelName = payload.channel?.name;
         enqueueChannelSystemEvent({ kind: "created", channelId, channelName });
+        await onChannelNamingEvent?.({
+          eventType: "channel_created",
+          channelId,
+          channelName,
+          ownerUserId: payload.channel?.creator,
+          purpose: payload.channel?.purpose?.value,
+          topic: payload.channel?.topic?.value,
+        });
       } catch (err) {
         ctx.runtime.error?.(
           danger(`slack channel created handler failed: ${formatErrorMessage(err)}`),
@@ -84,6 +100,11 @@ export function registerSlackChannelEvents(params: {
         const channelId = payload.channel?.id;
         const channelName = payload.channel?.name_normalized ?? payload.channel?.name;
         enqueueChannelSystemEvent({ kind: "renamed", channelId, channelName });
+        await onChannelNamingEvent?.({
+          eventType: "channel_rename",
+          channelId,
+          channelName,
+        });
       } catch (err) {
         ctx.runtime.error?.(
           danger(`slack channel rename handler failed: ${formatErrorMessage(err)}`),

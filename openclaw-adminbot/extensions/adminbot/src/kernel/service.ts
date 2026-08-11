@@ -119,6 +119,31 @@ export type AdminBotServiceStore = {
   touchSession(tokenHash: string, lastSeenAt: string): void;
   revokeSession(tokenHash: string, revokedAt: string): void;
   pruneSessionsBefore(cutoffIso: string): number;
+  saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void;
+  getSlackChannelNamingRecord(channelId: string): AdminBotSlackChannelNamingRecord | undefined;
+  listSlackChannelNamingRecords(): AdminBotSlackChannelNamingRecord[];
+  deleteSlackChannelNamingRecord(channelId: string): boolean;
+};
+
+export type AdminBotSlackChannelNamingEvent = {
+  event_type: "channel_created" | "channel_rename";
+  channel_id: string;
+  channel_name: string;
+  owner_user_id?: string;
+  purpose?: string;
+  topic?: string;
+};
+
+export type AdminBotSlackChannelNamingRecord = {
+  channel_id: string;
+  latest_channel_name: string;
+  owner_user_id?: string;
+  expected_prefix: SlackChannelNamingPrefix;
+  suggested_name: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  reminder_sent_at?: string;
+  reminder_action_id?: string;
 };
 
 // The in-memory store implementation lives in store/memory.ts alongside store/sqlite.ts;
@@ -144,6 +169,8 @@ const DEFAULT_ACTION_POLICIES = {
   "slack.invite_guest": approvalPolicy("T3", ["admin"]),
   "slack.invite_member": approvalPolicy("T3", ["admin"]),
   "slack.send_message": approvalPolicy("T3", ["admin"]),
+  "slack.channel_naming_notify_owner": autoPolicy("T1"),
+  "slack.rename_channel": autoPolicy("T1"),
   "vector.invite": approvalPolicy("T3", ["admin"]),
   "calendar.create_tentative_hold": approvalPolicy("T2", ["admin"]),
   "calendar.send_invite": approvalPolicy("T3", ["admin"]),
@@ -215,6 +242,19 @@ const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = 
 const DEFAULT_SETTINGS = {
   paper_escalation_business_days: 3,
 } as const satisfies Omit<AdminBotSettings, "updated_at">;
+
+const SLACK_CHANNEL_NAME_ALLOWED_PREFIXES = [
+  "proj",
+  "meeting",
+  "group",
+  "lab",
+  "students",
+  "etc",
+] as const;
+type SlackChannelNamingPrefix = (typeof SLACK_CHANNEL_NAME_ALLOWED_PREFIXES)[number];
+
+const SLACK_CHANNEL_NAME_RE = /^(proj|meeting|group|lab|students|etc)-[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+const SLACK_CHANNEL_NAMING_RENAME_AFTER_MS = 48 * 60 * 60 * 1000;
 
 // Least-privilege baseline for a member created without an explicit tier.
 const DEFAULT_MEMBER_PRIVILEGE_LEVEL: AdminBotPrivilegeLevel = "external_collaborator";
@@ -1417,6 +1457,236 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: { created, skipped } };
   }
 
+  async processSlackChannelNamingEvent(
+    event: AdminBotSlackChannelNamingEvent,
+    actor = "slack-monitor",
+  ): Promise<
+    AdminBotServiceResponse<{
+      status: "compliant" | "pending" | "reminder_sent";
+      channel_id: string;
+      channel_name: string;
+      suggested_name?: string;
+    }>
+  > {
+    const channelId = event.channel_id.trim();
+    const channelName = normalizeSlackChannelName(event.channel_name);
+    if (!channelId) {
+      return serviceError(400, "channel_id is required");
+    }
+    if (!channelName) {
+      return serviceError(400, "channel_name is required");
+    }
+    const naming = evaluateSlackChannelName({
+      channelName,
+      purpose: normalizeOptionalString(event.purpose),
+      topic: normalizeOptionalString(event.topic),
+    });
+    if (naming.valid) {
+      this.store.deleteSlackChannelNamingRecord(channelId);
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          status: "compliant",
+          channel_id: channelId,
+          channel_name: channelName,
+        },
+      };
+    }
+    const now = new Date().toISOString();
+    const existing = this.store.getSlackChannelNamingRecord(channelId);
+    const ownerUserId = normalizeOptionalString(event.owner_user_id) ?? existing?.owner_user_id;
+    let reminderSentAt = existing?.reminder_sent_at;
+    let reminderActionId = existing?.reminder_action_id;
+    if (!reminderSentAt && ownerUserId) {
+      const reminder = await this.sendSlackChannelNamingNotice({
+        ownerUserId,
+        channelId,
+        channelName,
+        suggestedName: naming.suggestedName,
+        mode: "reminder",
+      });
+      if (reminder.ok) {
+        reminderSentAt = now;
+        reminderActionId = reminder.payload.id;
+      }
+    }
+    this.store.saveSlackChannelNamingRecord({
+      channel_id: channelId,
+      latest_channel_name: channelName,
+      ...(ownerUserId ? { owner_user_id: ownerUserId } : {}),
+      expected_prefix: naming.expectedPrefix,
+      suggested_name: naming.suggestedName,
+      first_seen_at: existing?.first_seen_at ?? now,
+      last_seen_at: now,
+      ...(reminderSentAt ? { reminder_sent_at: reminderSentAt } : {}),
+      ...(reminderActionId ? { reminder_action_id: reminderActionId } : {}),
+    });
+    this.recordAudit({
+      type: "slack.channel_naming_checked",
+      actor,
+      details: {
+        channel_id: channelId,
+        channel_name: channelName,
+        suggested_name: naming.suggestedName,
+        reminded: Boolean(reminderSentAt),
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        status: reminderSentAt ? "reminder_sent" : "pending",
+        channel_id: channelId,
+        channel_name: channelName,
+        suggested_name: naming.suggestedName,
+      },
+    };
+  }
+
+  async runSlackChannelNamingSweep(
+    actor = "slack-monitor",
+    nowIso = new Date().toISOString(),
+  ): Promise<
+    AdminBotServiceResponse<{
+      scanned: number;
+      reminders_pending: number;
+      renamed: number;
+      skipped: number;
+    }>
+  > {
+    const records = this.store.listSlackChannelNamingRecords();
+    const dueBefore = new Date(
+      Date.parse(nowIso) - SLACK_CHANNEL_NAMING_RENAME_AFTER_MS,
+    ).toISOString();
+    let remindersPending = 0;
+    let renamed = 0;
+    let skipped = 0;
+    for (const record of records) {
+      const naming = evaluateSlackChannelName({ channelName: record.latest_channel_name });
+      if (naming.valid) {
+        this.store.deleteSlackChannelNamingRecord(record.channel_id);
+        continue;
+      }
+      if (!record.reminder_sent_at || record.reminder_sent_at > dueBefore) {
+        remindersPending += 1;
+        continue;
+      }
+      const rename = this.createProposal({
+        type: "slack.rename_channel",
+        summary: `Rename Slack channel #${record.latest_channel_name} to #${record.suggested_name}`,
+        target: {
+          service: "slack",
+          channel_id: record.channel_id,
+        },
+        proposed_payload: {
+          channel_id: record.channel_id,
+          new_name: record.suggested_name,
+        },
+        rationale:
+          "Channel naming policy auto-enforcement after a 48-hour reminder window elapsed.",
+        undo_plan:
+          "Rename the channel again if a lab admin decides another compliant name is better.",
+      });
+      if (!rename.ok) {
+        skipped += 1;
+        continue;
+      }
+      const renameExecuted = await this.execute(rename.payload.id, { dry_run: false });
+      if (!renameExecuted.ok) {
+        skipped += 1;
+        continue;
+      }
+      renamed += 1;
+      if (record.owner_user_id) {
+        await this.sendSlackChannelNamingNotice({
+          ownerUserId: record.owner_user_id,
+          channelId: record.channel_id,
+          channelName: record.latest_channel_name,
+          suggestedName: record.suggested_name,
+          mode: "renamed",
+        });
+      }
+      this.store.deleteSlackChannelNamingRecord(record.channel_id);
+    }
+    this.recordAudit({
+      type: "slack.channel_naming_swept",
+      actor,
+      details: { scanned: records.length, renamed, reminders_pending: remindersPending },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        scanned: records.length,
+        reminders_pending: remindersPending,
+        renamed,
+        skipped,
+      },
+    };
+  }
+
+  private async sendSlackChannelNamingNotice(
+    params: {
+      ownerUserId: string;
+      channelId: string;
+      channelName: string;
+      suggestedName: string;
+      mode: "reminder" | "renamed";
+    },
+    // No `actor` parameter: both call sites used to pass one and nothing here consumed it. The
+    // intent was presumably audit attribution, but this flow records no audit event of its own —
+    // createProposal/execute do their own. Reinstate it alongside a real audit type if the
+    // enforcement flow should name who triggered a notice.
+  ): Promise<AdminBotServiceResponse<AdminBotStoredProposal>> {
+    const message =
+      params.mode === "reminder"
+        ? [
+            `Hi <@${params.ownerUserId}>,`,
+            `the channel #${params.channelName} does not follow the lab naming policy.`,
+            `Please rename it to something like #${params.suggestedName} within 48 hours.`,
+            "Allowed prefixes: proj-, meeting-, group-, lab-, students-, etc-.",
+          ].join(" ")
+        : [
+            `Hi <@${params.ownerUserId}>,`,
+            `we renamed #${params.channelName} to #${params.suggestedName} because it stayed non-compliant for over 48 hours after the reminder.`,
+            "Allowed prefixes: proj-, meeting-, group-, lab-, students-, etc-.",
+          ].join(" ");
+    const proposal = this.createProposal({
+      type: "slack.channel_naming_notify_owner",
+      summary:
+        params.mode === "reminder"
+          ? `Remind Slack channel owner about naming policy for #${params.channelName}`
+          : `Notify Slack channel owner after automatic rename to #${params.suggestedName}`,
+      target: {
+        service: "slack",
+        owner_user_id: params.ownerUserId,
+        channel_id: params.channelId,
+      },
+      proposed_payload: {
+        owner_user_id: params.ownerUserId,
+        message,
+      },
+      rationale:
+        params.mode === "reminder"
+          ? "Owner notification before policy enforcement."
+          : "Owner notification after automatic policy enforcement.",
+      undo_plan: "Send a follow-up clarification if the channel context needs correction.",
+    });
+    if (!proposal.ok) {
+      return proposal;
+    }
+    const executed = await this.execute(proposal.payload.id, { dry_run: false });
+    if (!executed.ok) {
+      return executed;
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: this.store.getProposal(proposal.payload.id) ?? proposal.payload,
+    };
+  }
+
   pruneAuditEventsBefore(cutoffIso: string): number {
     return this.store.pruneAuditEventsBefore(cutoffIso);
   }
@@ -2340,6 +2610,72 @@ function replyAfterLastDm(reminder: { last_author_dm_at?: string; last_author_re
     reminder.last_author_reply_at &&
     reminder.last_author_reply_at > reminder.last_author_dm_at,
   );
+}
+
+function normalizeSlackChannelName(value: string): string {
+  return value
+    .trim()
+    .replace(/^#/u, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/gu, "-")
+    .replace(/-+/gu, "-")
+    .replace(/(^-|-$)/gu, "");
+}
+
+function evaluateSlackChannelName(params: {
+  channelName: string;
+  purpose?: string;
+  topic?: string;
+}): { valid: boolean; expectedPrefix: SlackChannelNamingPrefix; suggestedName: string } {
+  const normalized = normalizeSlackChannelName(params.channelName);
+  const valid = SLACK_CHANNEL_NAME_RE.test(normalized);
+  const expectedPrefix = inferSlackChannelPrefix({
+    channelName: normalized,
+    purpose: params.purpose,
+    topic: params.topic,
+  });
+  const remainder = SLACK_CHANNEL_NAME_ALLOWED_PREFIXES.some((prefix) =>
+    normalized.startsWith(`${prefix}-`),
+  )
+    ? normalized.replace(/^[a-z]+-/u, "")
+    : normalized;
+  const base = remainder || "untitled";
+  const suggestedName = `${expectedPrefix}-${base}`
+    .replace(/[^a-z0-9-]+/gu, "-")
+    .replace(/-+/gu, "-");
+  return {
+    valid,
+    expectedPrefix,
+    suggestedName: SLACK_CHANNEL_NAME_RE.test(suggestedName)
+      ? suggestedName
+      : `${expectedPrefix}-channel`,
+  };
+}
+
+function inferSlackChannelPrefix(params: {
+  channelName: string;
+  purpose?: string;
+  topic?: string;
+}): SlackChannelNamingPrefix {
+  const basis = [params.channelName, params.purpose, params.topic]
+    .map((part) => part?.toLowerCase() ?? "")
+    .join(" ");
+  if (/\b(student|students|phd|master|msc|undergrad)\b/u.test(basis)) {
+    return "students";
+  }
+  if (/\b(meeting|sync|standup|seminar|reading)\b/u.test(basis)) {
+    return "meeting";
+  }
+  if (/\b(group|toronto|location|cohort|team)\b/u.test(basis)) {
+    return "group";
+  }
+  if (/\b(lab|logistics|question|opportunit|lunch)\b/u.test(basis)) {
+    return "lab";
+  }
+  if (/\b(food|music|sport|social|fun|casual)\b/u.test(basis)) {
+    return "etc";
+  }
+  return "proj";
 }
 
 function normalizeOptionalString(value: string | undefined): string | undefined {
