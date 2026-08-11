@@ -9058,6 +9058,14 @@ details[open] > .ov-expandable-toggle::after {
   background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
 }
 
+/* Sits under the panel title, above the list: it explains what belongs in the list, so it has to
+   be read before the list rather than after it. */
+.adminbot-time-availability__deadline-hint {
+  margin: 0 0 var(--space-3);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
 .adminbot-time-availability__deadline-list {
   display: grid;
   gap: var(--space-2);

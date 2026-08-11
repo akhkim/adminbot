@@ -45,7 +45,6 @@ import {
   type MilestoneRow,
   type TimeOffRow,
 } from "../data/availability.ts";
-import { upcomingMajorDeadlines } from "../data/deadline-time.ts";
 
 type TimeAllocationTask = {
   key: string;
@@ -1055,11 +1054,14 @@ function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: M
 }
 
 /**
- * The side panel: the member's own milestones merged with the lab's conference deadlines.
+ * The side panel: this member's own dated milestones, and only theirs.
  *
- * Conference dates come from the bundled venue snapshot the Deadlines tab already ships rather than
- * being retyped per member — the lab tracks them once, and a member's list stays the handful of
- * dates only they know about.
+ * It used to merge in the lab's conference deadlines from the bundled venue snapshot. That made the
+ * panel read as a shared board — the same five conference dates on all 159 schedules — which buried
+ * the two or three dates that are actually personal to the member whose page you are looking at,
+ * and made "remove" available on some rows and not others for no reason a reader could see. The
+ * Deadlines tab already lists every conference date, for everyone, with countdowns; this panel is
+ * the part that cannot come from there.
  */
 function renderBigDeadlines(
   milestones: readonly MilestoneRow[],
@@ -1068,22 +1070,18 @@ function renderBigDeadlines(
 ) {
   const now = Date.now();
   const today = new Date(now).toISOString().slice(0, 10);
-  const own = milestones
+  const rows = milestones
     .filter((row) => row.date >= today)
-    .map((row) => ({ date: row.date, label: row.label, link: row.link, own: true }));
-  const venues = upcomingMajorDeadlines(now, BIG_DEADLINE_LIMIT).map((entry) => ({
-    date: entry.venue.deadline_aoe.slice(0, 10),
-    label: entry.venue.name,
-    link: entry.venue.link,
-    own: false,
-  }));
-  const rows = [...own, ...venues]
+    .map((row) => ({ date: row.date, label: row.label, link: row.link, own: true }))
     .toSorted((left, right) => left.date.localeCompare(right.date))
     .slice(0, BIG_DEADLINE_LIMIT);
 
   return html`
     <aside class="adminbot-time-availability__deadlines" data-testid="time-availability-deadlines">
       <div class="card-title">${t("adminbotTimeAvailability.milestones.title")}</div>
+      <p class="adminbot-time-availability__deadline-hint">
+        ${t("adminbotTimeAvailability.milestones.hint")}
+      </p>
       ${rows.length
         ? html`<ul class="adminbot-time-availability__deadline-list">
             ${rows.map(

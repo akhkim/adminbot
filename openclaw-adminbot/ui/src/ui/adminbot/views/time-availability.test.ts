@@ -544,12 +544,26 @@ describe("the split tables and the deadline panel", () => {
 
   // Conference dates come from the bundled snapshot the Deadlines tab already ships, so the lab
   // tracks them once instead of every member retyping them.
-  it("merges own milestones with the lab's conference deadlines", () => {
+  // Per user, not shared. The panel used to merge in the bundled conference snapshot, which put the
+  // same five dates on all 159 schedules and buried the two or three that are personal to whoever's
+  // page you are on. The Deadlines tab already lists conferences for everyone.
+  it("shows only this member's own milestones, not the lab's conference dates", () => {
     const panel = renderView({ members: [scheduled()] }).querySelector(
       '[data-testid="time-availability-deadlines"]',
     );
     expect(panel?.textContent).toContain("Graduation");
-    expect(panel?.textContent).toContain("ICLR 2027");
+    expect(panel?.textContent).not.toContain("ICLR");
+    expect(panel?.textContent).not.toContain("NeurIPS");
+  });
+
+  it("reminds the member that thesis deadlines belong here too", () => {
+    const panel = renderView({ members: [scheduled()] }).querySelector(
+      '[data-testid="time-availability-deadlines"]',
+    );
+    const hint = panel?.querySelector(".adminbot-time-availability__deadline-hint")?.textContent;
+    expect(hint).toContain("thesis");
+    // And that the list is theirs alone, which is the other half of the change.
+    expect(hint?.toLowerCase()).toContain("yours only");
   });
 
   it("offers the milestone form only on your own schedule", () => {

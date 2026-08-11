@@ -1389,10 +1389,11 @@ export const en: TranslationMap = {
     },
     milestones: {
       title: "Big deadlines",
+      hint: "Yours only — nobody else sees these. Add your thesis deadlines here too, not just conference ones.",
       date: "Date",
       label: "What",
       submit: "Add milestone",
-      empty: "No upcoming milestones or conference deadlines.",
+      empty: "No upcoming deadlines of your own yet.",
       errorDate: "Pick a date.",
       errorLabel: "Give the milestone a name.",
     },
