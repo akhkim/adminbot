@@ -75,6 +75,49 @@ describe("renderProfile autosave", () => {
     expect(container.querySelector('button[type="submit"]')).toBeNull();
   });
 
+  // The record keeps one phone string; the form offers a country picker plus the local number, so
+  // the two have to fold back together on save and split apart again on render.
+  it("saves the picked country code and the typed number as one whatsapp value", () => {
+    const state = createState(createMember({ whatsapp: "" } as Partial<LabMember>));
+    const onSave = vi.fn();
+    const container = renderPage(state, onSave);
+
+    const code = container.querySelector<HTMLSelectElement>('select[name="whatsapp__dial"]')!;
+    const number = container.querySelector<HTMLInputElement>('input[name="whatsapp"]')!;
+    code.value = "+44";
+    number.value = "7700 900123";
+    number.dispatchEvent(new Event("input", { bubbles: true }));
+    vi.advanceTimersByTime(1000);
+
+    expect(onSave).toHaveBeenCalledWith("pat", expect.objectContaining({ whatsapp: "+44 7700 900123" }));
+  });
+
+  // An example sitting in an empty box reads as somebody else's answer already on file, so every
+  // placeholder says it is one.
+  it("labels every example placeholder as an example", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+
+    const placeheld = [
+      ...container.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("[placeholder]"),
+    ];
+    expect(placeheld.length).toBeGreaterThan(0);
+    for (const control of placeheld) {
+      expect(control.placeholder.startsWith("ex. ")).toBe(true);
+    }
+  });
+
+  it("reopens a stored number with its country already selected", () => {
+    const container = renderPage(
+      createState(createMember({ whatsapp: "+91 98765 43210" } as Partial<LabMember>)),
+      vi.fn(),
+    );
+
+    const code = container.querySelector<HTMLSelectElement>('select[name="whatsapp__dial"]')!;
+    const number = container.querySelector<HTMLInputElement>('input[name="whatsapp"]')!;
+    expect(code.value).toBe("+91");
+    expect(number.value).toBe("98765 43210");
+  });
+
   it("flushes the pending save immediately when focus leaves the form", () => {
     const member = createMember();
     const state = createState(member);

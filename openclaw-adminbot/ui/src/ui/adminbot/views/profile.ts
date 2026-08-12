@@ -20,6 +20,11 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
 import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
+import {
+  joinPhoneNumber,
+  PHONE_COUNTRIES,
+  splitPhoneNumber,
+} from "../data/phone-country-codes.ts";
 import { timezoneForLocation } from "../data/timezone-for-location.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 
@@ -40,6 +45,9 @@ type ProfileFieldType =
   | "link"
   | "numeric"
   | "list"
+  // A country code picked from a list, plus the local number typed alongside it. Stored as the
+  // one joined string the roster column already holds.
+  | "phone"
   | "image";
 
 // Purely presentational clustering -- same fields, same keys, same validation -- so someone
@@ -191,8 +199,8 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "whatsapp",
     labelKey: "profile.fields.whatsapp",
-    example: "(+1) 555 0100",
-    type: "short_text",
+    example: "555 0100",
+    type: "phone",
     group: "identity",
   },
   {
@@ -554,7 +562,14 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
       continue;
     }
     const value = String(data.get(field.key) ?? "").trim();
-    if (field.type === "list") {
+    if (field.type === "phone") {
+      // The two controls are a picker and a text box; the record keeps one string.
+      setField(
+        fields,
+        field.key,
+        joinPhoneNumber(String(data.get(`${field.key}${PHONE_CODE_SUFFIX}`) ?? "").trim(), value),
+      );
+    } else if (field.type === "list") {
       setField(
         fields,
         field.key,
@@ -663,7 +678,53 @@ const PHONE_CODE_SUFFIX = "__dial";
 // regardless (a form is a UI convenience, never the trust boundary), but the earlier and more
 // specific the feedback, the less a bad save ever gets that far.
 function renderFieldInput(field: EditableField, currentValue: string) {
+  // An admin-owned answer is shown, never offered for editing. `disabled` also keeps the key out
+  // of the form's own collection, so an autosave cannot carry a value the service would drop.
+  if (field.adminOnly) {
+    return html`
+      <input
+        class="input"
+        name=${field.key}
+        type="text"
+        .value=${currentValue}
+        disabled
+        data-testid=${`profile-admin-only-${field.key}`}
+      />
+    `;
+  }
   switch (field.type) {
+    case "phone": {
+      // Country first, then the local number: the prefix is the part people cannot recall, and a
+      // list they pick from also spares the roster the four spellings of "+1 (416)".
+      const { dial, local } = splitPhoneNumber(currentValue);
+      return html`
+        <span class="profile__phone">
+          <select
+            class="input profile__phone-code"
+            name=${`${field.key}${PHONE_CODE_SUFFIX}`}
+            aria-label=${t("profile.basics.countryCode")}
+          >
+            <option value="" ?selected=${!dial}>${t("profile.basics.countryCodeNone")}</option>
+            ${PHONE_COUNTRIES.map(
+              (country) => html`
+                <option value=${country.dial} ?selected=${country.dial === dial}>
+                  ${country.name} (${country.dial})
+                </option>
+              `,
+            )}
+          </select>
+          <input
+            class="input profile__phone-number"
+            name=${field.key}
+            type="tel"
+            maxlength=${SHORT_TEXT_MAX_LENGTH}
+            placeholder=${exampleFor(field)}
+            .value=${local}
+            autocomplete="off"
+          />
+        </span>
+      `;
+    }
     case "dropdown":
       return html`
         <select class="input" name=${field.key}>
