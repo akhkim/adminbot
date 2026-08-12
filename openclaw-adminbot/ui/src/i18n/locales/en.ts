@@ -1339,6 +1339,8 @@ export const en: TranslationMap = {
       placeCount: "{place} — {count} members",
       plotAria: "Map of {count} lab members across {cities} cities",
       unplaced: "{count} members whose location could not be placed on the map.",
+      expand: "Expand",
+      collapse: "Collapse",
     },
     workSummary: {
       title: "My projects & papers",

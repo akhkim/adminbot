@@ -10,7 +10,7 @@
 // The list is not a fallback for the map; the two answer different questions. The plot shows spread
 // — how far apart the lab is, and which timezones it straddles. The list shows rank — where most
 // people actually are. Neither alone is the answer to "where is the lab".
-import { html, nothing, svg } from "lit";
+import { html, LitElement, nothing, svg } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { MemberMap, MemberMapPlace } from "../data/member-map.ts";
 
@@ -23,8 +23,10 @@ const LAT_LIMIT = 72;
 const MIN_RADIUS = 3;
 const MAX_RADIUS = 10;
 
-// How many cities the list names before it stops being a summary.
-const LIST_LIMIT = 5;
+// How many cities the list names. Collapsed it is a summary; expanded there is room for the roster
+// of places, which is most of what the gazetteer holds.
+const LIST_LIMIT = 6;
+const LIST_LIMIT_EXPANDED = 24;
 
 function projectX(lon: number): number {
   return ((lon + 180) / 360) * VIEW_WIDTH;
@@ -112,8 +114,8 @@ function renderPlot(map: MemberMap) {
   `;
 }
 
-function renderList(map: MemberMap) {
-  const shown = map.places.slice(0, LIST_LIMIT);
+function renderList(map: MemberMap, expanded: boolean) {
+  const shown = map.places.slice(0, expanded ? LIST_LIMIT_EXPANDED : LIST_LIMIT);
   const rest = map.places.length - shown.length;
   return html`
     <ul class="member-map__list">
@@ -135,31 +137,84 @@ function renderList(map: MemberMap) {
 }
 
 /**
- * The card, or nothing at all.
+ * The card.
  *
- * Nothing is the right answer for a service that has not answered yet, or that placed nobody: an
- * empty map is a worse thing to show a member than one card fewer, and this sits beside cards that
- * are actually waiting on them.
+ * A custom element rather than a render function because it owns one piece of state -- whether it
+ * is expanded -- and that has to survive the dashboard re-rendering underneath it, which happens
+ * every time any other card's data lands. Same reason the deadline board is one.
+ *
+ * Collapsed it spans the dashboard grid rather than taking a single column: a world map in a 288px
+ * column is a row of specks. Expanded it drops the list underneath and gives the plot the whole
+ * width, which is the only way the closer cities separate at all.
  */
+class AdminbotMemberMap extends LitElement {
+  static override properties = { map: { attribute: false }, expanded: { state: true } };
+
+  public map: MemberMap | null = null;
+
+  private expanded = false;
+
+  protected override createRenderRoot(): HTMLElement {
+    return this;
+  }
+
+  private toggle(): void {
+    this.expanded = !this.expanded;
+  }
+
+  protected override render() {
+    const map = this.map;
+    if (!map || map.places.length === 0) {
+      return nothing;
+    }
+    return html`
+      <article
+        class="dashboard-summary member-map"
+        data-testid="dashboard-member-map"
+        ?data-expanded=${this.expanded}
+      >
+        <div class="member-map__head">
+          <div>
+            <h3 class="dashboard-summary__title">${t("dashboard.memberMap.title")}</h3>
+            <p class="dashboard-summary__headline">
+              ${t("dashboard.memberMap.headline", {
+                count: String(map.counts.placed),
+                cities: String(map.places.length),
+              })}
+            </p>
+          </div>
+          <button
+            type="button"
+            class="btn btn--sm"
+            data-testid="member-map-toggle"
+            aria-expanded=${this.expanded ? "true" : "false"}
+            @click=${() => this.toggle()}
+          >
+            ${this.expanded
+              ? t("dashboard.memberMap.collapse")
+              : t("dashboard.memberMap.expand")}
+          </button>
+        </div>
+        <div class="member-map__body">
+          ${renderPlot(map)} ${renderList(map, this.expanded)}
+        </div>
+        ${map.unplaced > 0
+          ? html`<p class="dashboard-summary__detail" data-testid="member-map-unplaced">
+              ${t("dashboard.memberMap.unplaced", { count: String(map.unplaced) })}
+            </p>`
+          : nothing}
+      </article>
+    `;
+  }
+}
+
+if (!customElements.get("adminbot-member-map")) {
+  customElements.define("adminbot-member-map", AdminbotMemberMap);
+}
+
 export function renderMemberMap(map: MemberMap | null) {
   if (!map || map.places.length === 0) {
     return nothing;
   }
-  return html`
-    <article class="dashboard-summary member-map" data-testid="dashboard-member-map">
-      <h3 class="dashboard-summary__title">${t("dashboard.memberMap.title")}</h3>
-      <p class="dashboard-summary__headline">
-        ${t("dashboard.memberMap.headline", {
-          count: String(map.counts.placed),
-          cities: String(map.places.length),
-        })}
-      </p>
-      <div class="member-map__body">${renderPlot(map)} ${renderList(map)}</div>
-      ${map.unplaced > 0
-        ? html`<p class="dashboard-summary__detail" data-testid="member-map-unplaced">
-            ${t("dashboard.memberMap.unplaced", { count: String(map.unplaced) })}
-          </p>`
-        : nothing}
-    </article>
-  `;
+  return html`<adminbot-member-map .map=${map}></adminbot-member-map>`;
 }

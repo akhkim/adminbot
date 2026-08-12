@@ -1887,21 +1887,59 @@
 /* Plot and ranked list side by side: the plot shows spread, the list shows rank, and neither alone
    answers "where is the lab". Stacks under its own width rather than a viewport breakpoint, since
    the card sits in a grid whose column count already varies. */
+/* The card spans every column of the dashboard grid. That grid is
+   repeat(auto-fit, minmax(18rem, 1fr)), so a card taking one column gives the plot roughly 150px
+   once the list and the card padding are out — at which point a world map is a row of specks. A map
+   is wide by nature; this is the one card on the dashboard that has a natural aspect ratio. */
+.member-map {
+  grid-column: 1 / -1;
+}
+
+.member-map__head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+}
+
 .member-map__body {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-3);
+  gap: var(--space-4);
   align-items: flex-start;
+  width: 100%;
   margin-top: var(--space-2);
 }
 
+/* 2:1, the projection's own ratio, so the plot fills its width and takes the height that implies
+   rather than being squashed into a box that distorts every position on it. */
 .member-map__plot {
-  flex: 1 1 220px;
+  flex: 1 1 420px;
   min-width: 0;
+  aspect-ratio: 2 / 1;
   height: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--panel);
+}
+
+/* Expanded: the list moves under the plot so the map gets the full card width, which is what
+   separates cities that sit within a few degrees of each other. */
+.member-map[data-expanded] .member-map__body {
+  flex-direction: column;
+}
+
+.member-map[data-expanded] .member-map__plot {
+  flex: 1 1 auto;
+  width: 100%;
+}
+
+.member-map[data-expanded] .member-map__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0 var(--space-4);
+  width: 100%;
 }
 
 .member-map__grid {

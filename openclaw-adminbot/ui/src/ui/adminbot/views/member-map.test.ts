@@ -3,9 +3,14 @@ import { describe, expect, it } from "vitest";
 import { parseMemberMap, type MemberMap } from "../data/member-map.ts";
 import { renderMemberMap } from "./member-map.ts";
 
-function draw(map: MemberMap | null): HTMLElement {
+async function draw(map: MemberMap | null): Promise<HTMLElement> {
   const container = document.createElement("div");
+  document.body.append(container);
   render(renderMemberMap(map), container);
+  // The card is a custom element; its first render is scheduled asynchronously.
+  await (
+    container.querySelector("adminbot-member-map") as { updateComplete?: Promise<unknown> } | null
+  )?.updateComplete;
   return container;
 }
 
@@ -78,8 +83,8 @@ describe("parseMemberMap", () => {
 });
 
 describe("renderMemberMap", () => {
-  it("plots one dot per city and lists them by headcount", () => {
-    const container = draw(parseMemberMap(summary));
+  it("plots one dot per city and lists them by headcount", async () => {
+    const container = await draw(parseMemberMap(summary));
     expect(container.querySelectorAll(".member-map__dot")).toHaveLength(2);
     expect(
       [...container.querySelectorAll(".member-map__row-label")].map((node) => node.textContent),
@@ -87,16 +92,16 @@ describe("renderMemberMap", () => {
   });
 
   // Area is what the eye compares, so a busier city must be a visibly bigger dot.
-  it("sizes dots by headcount", () => {
-    const container = draw(parseMemberMap(summary));
+  it("sizes dots by headcount", async () => {
+    const container = await draw(parseMemberMap(summary));
     const [busy, quiet] = [...container.querySelectorAll(".member-map__dot")].map((dot) =>
       Number(dot.getAttribute("r")),
     );
     expect(busy).toBeGreaterThan(quiet);
   });
 
-  it("names who is where only when the service sent names", () => {
-    const withNames = draw(
+  it("names who is where only when the service sent names", async () => {
+    const withNames = await draw(
       parseMemberMap({
         mode: "full",
         places: [
@@ -115,13 +120,13 @@ describe("renderMemberMap", () => {
     );
     expect(withNames.querySelector(".member-map__dot title")?.textContent).toContain("Ada");
 
-    const anonymous = draw(parseMemberMap(summary));
+    const anonymous = await draw(parseMemberMap(summary));
     expect(anonymous.querySelector(".member-map__dot title")?.textContent).not.toContain("Ada");
     expect(anonymous.querySelector(".member-map__dot title")?.textContent).toContain("9");
   });
 
-  it("mentions members it could not place", () => {
-    const container = draw(
+  it("mentions members it could not place", async () => {
+    const container = await draw(
       parseMemberMap({ ...summary, unplaced: [{ member_id: "c", name: "Cy" }] }),
     );
     expect(container.querySelector('[data-testid="member-map-unplaced"]')?.textContent).toContain(
@@ -129,12 +134,52 @@ describe("renderMemberMap", () => {
     );
   });
 
+  // A world map in one dashboard column is a row of specks, so the card spans the grid and can be
+  // opened further. The state lives on the element so a dashboard re-render cannot close it.
+  it("expands and collapses, showing more places when open", async () => {
+    const many = {
+      ...summary,
+      places: Array.from({ length: 10 }, (_, index) => ({
+        key: `city-${index}`,
+        label: `City ${index}`,
+        country: "Somewhere",
+        lat: 10 + index,
+        lon: 10 + index,
+        count: 10 - index,
+      })),
+    };
+    const container = await draw(parseMemberMap(many));
+    const card = () => container.querySelector('[data-testid="dashboard-member-map"]')!;
+    const toggle = () =>
+      container.querySelector<HTMLButtonElement>('[data-testid="member-map-toggle"]')!;
+    const rows = () => container.querySelectorAll(".member-map__row-label").length;
+
+    expect(card().hasAttribute("data-expanded")).toBe(false);
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    const collapsedRows = rows();
+
+    toggle().click();
+    await (
+      container.querySelector("adminbot-member-map") as { updateComplete?: Promise<unknown> }
+    ).updateComplete;
+
+    expect(card().hasAttribute("data-expanded")).toBe(true);
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+    expect(rows()).toBeGreaterThan(collapsedRows);
+
+    toggle().click();
+    await (
+      container.querySelector("adminbot-member-map") as { updateComplete?: Promise<unknown> }
+    ).updateComplete;
+    expect(card().hasAttribute("data-expanded")).toBe(false);
+  });
+
   // One card fewer beats an empty map on a dashboard whose other cards are waiting on the member.
-  it("renders nothing at all when there is nothing to draw", () => {
+  it("renders nothing at all when there is nothing to draw", async () => {
     // lit leaves a comment marker where `nothing` was, so assert on the card, not the markup.
-    expect(draw(null).querySelector('[data-testid="dashboard-member-map"]')).toBeNull();
+    expect((await draw(null)).querySelector('[data-testid="dashboard-member-map"]')).toBeNull();
     expect(
-      draw(parseMemberMap({ ...summary, places: [] })).querySelector(
+      (await draw(parseMemberMap({ ...summary, places: [] }))).querySelector(
         '[data-testid="dashboard-member-map"]',
       ),
     ).toBeNull();
