@@ -1333,6 +1333,13 @@ export const en: TranslationMap = {
       summaryPlural: "{count} pending requests.",
       open: "Review",
     },
+    memberMap: {
+      title: "Where the lab is",
+      headline: "{count} members across {cities} cities",
+      placeCount: "{place} — {count} members",
+      plotAria: "Map of {count} lab members across {cities} cities",
+      unplaced: "{count} members whose location could not be placed on the map.",
+    },
     workSummary: {
       title: "My projects & papers",
       counts: "{count} project or paper",

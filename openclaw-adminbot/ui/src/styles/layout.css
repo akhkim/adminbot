@@ -1884,6 +1884,75 @@
   background: var(--bg-accent);
 }
 
+/* Plot and ranked list side by side: the plot shows spread, the list shows rank, and neither alone
+   answers "where is the lab". Stacks under its own width rather than a viewport breakpoint, since
+   the card sits in a grid whose column count already varies. */
+.member-map__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: flex-start;
+  margin-top: var(--space-2);
+}
+
+.member-map__plot {
+  flex: 1 1 220px;
+  min-width: 0;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+.member-map__grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  opacity: 0.45;
+}
+
+.member-map__grid--equator {
+  opacity: 0.75;
+}
+
+.member-map__dot {
+  fill: var(--accent, var(--text));
+  fill-opacity: 0.65;
+  stroke: var(--panel);
+  stroke-width: 1;
+}
+
+.member-map__list {
+  flex: 0 1 auto;
+  min-width: 120px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member-map__row {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 1px 0;
+  font-size: var(--control-ui-text-xs);
+}
+
+.member-map__row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-map__row-count {
+  font-family: var(--mono);
+  color: var(--muted);
+}
+
+.member-map__row--more {
+  color: var(--muted);
+}
+
 .dashboard-summary__title {
   display: flex;
   align-items: center;

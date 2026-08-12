@@ -10,6 +10,7 @@ import type {
   TimeAvailabilityDraft,
   TimeAvailabilityRange,
 } from "./adminbot/views/time-availability.ts";
+import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { ChatAbortOptions, ChatSendOptions } from "./app-chat.ts";
 import type { EventLogEntry } from "./app-events.ts";
 import type { CompactionStatus, FallbackStatus } from "./app-tool-stream.ts";
@@ -353,6 +354,10 @@ export type AppViewState = {
   // Time Availability tab: whose schedule is on screen, which unit its hours are quoted in, and
   // the unsaved "add a commitment" draft. Draft lives here rather than in the view so a re-render
   // (the roster reloading underneath, a notice appearing) does not wipe half-typed input.
+  // Where the lab is, for the dashboard card. Null until the first load; the card renders nothing
+  // rather than an empty map.
+  adminBotMemberMap: MemberMap | null;
+  adminBotMemberMapLoading: boolean;
   adminBotTimeAvailabilityMemberId: string;
   adminBotTimeAvailabilityRange: TimeAvailabilityRange;
   adminBotTimeAvailabilityDraft: TimeAvailabilityDraft;

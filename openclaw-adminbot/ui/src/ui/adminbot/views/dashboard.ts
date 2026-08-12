@@ -20,6 +20,7 @@ import { icons } from "../../icons.ts";
 import { iconForTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
 import { renderDeadlineSummary } from "./deadlines-summary.ts";
+import { renderMemberMap } from "./member-map.ts";
 import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
 import { blankFields, findOwnMember } from "./profile.ts";
 
@@ -263,6 +264,7 @@ export function renderDashboard(state: AppViewState, role: AccessRole) {
       <section class="dashboard__summaries">
         <div class="dashboard__grid">
           ${renderDeadlineSummary(state)} ${renderWorkSummary(state)}
+          ${renderMemberMap(state.adminBotMemberMap ?? null)}
         </div>
       </section>
     </div>

@@ -19,6 +19,7 @@ import {
   upsertLabMemberAsAdmin,
 } from "../auth/session.ts";
 import type { AvailabilityRow, MilestoneRow, TimeOffRow } from "../data/availability.js";
+import { loadMemberMap, type MemberMap } from "../data/member-map.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
 
@@ -359,6 +360,9 @@ export type GuestReimbursementHost = {
 export type AdminBotHost = {
   client: GatewayBrowserClient | null;
   connected: boolean;
+  // The dashboard's member-map card, loaded alongside the roster. See data/member-map.ts.
+  adminBotMemberMap: MemberMap | null;
+  adminBotMemberMapLoading: boolean;
   adminBotLoading: boolean;
   adminBotError: string | null;
   adminBotData: AdminBotDashboardData;
@@ -585,6 +589,9 @@ export async function loadAdminBot(
       sessionToken: stored.sessionToken,
       baseUrl: resolveAdminBotBaseUrl(host.settings),
     });
+    // Not awaited and never able to fail the load: the map is one dashboard card, and the roster
+    // and papers above it are what the page is actually for.
+    void loadMemberMap(host);
     return;
   }
   const unavailable = adminBotUnavailableError(host);

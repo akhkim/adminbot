@@ -31,6 +31,7 @@ import {
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
 import type { ProfileAccountCheck } from "./adminbot/views/profile-account-check.ts";
+import type { MemberMap } from "./adminbot/data/member-map.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
@@ -513,6 +514,8 @@ export class OpenClawApp extends LitElement {
   @state() adminBotData: AdminBotDashboardData = createEmptyAdminBotDashboardData();
   // Empty selection means "nobody picked yet"; app-render defaults it to the viewer's own row once
   // the roster arrives, since your own schedule is the one you came to look at.
+  @state() adminBotMemberMap: MemberMap | null = null;
+  @state() adminBotMemberMapLoading = false;
   @state() adminBotTimeAvailabilityMemberId = "";
   // A month of weekly bins is the span most schedules are planned over: long enough to see a
   // commitment start, short enough that each bar is still a real week.
