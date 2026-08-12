@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "corepack pnpm install --frozen-lockfile",
-  "buildCommand": "corepack pnpm ui:build && ADMINBOT_PUBLIC_URL=https://replication-affiliates-reunion-before.trycloudflare.com node scripts/vercel-postbuild-index.mjs",
+  "buildCommand": "corepack pnpm ui:build && ADMINBOT_PUBLIC_URL=https://replication-affiliates-reunion-before.trycloudflare.com ADMINBOT_PUBLIC_GATEWAY_URL=wss://running-barcelona-stay-accessing.trycloudflare.com node scripts/vercel-postbuild-index.mjs",
   "outputDirectory": "dist/control-ui",
   "rewrites": [
     {
