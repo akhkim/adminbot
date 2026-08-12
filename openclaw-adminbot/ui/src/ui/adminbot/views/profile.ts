@@ -225,6 +225,18 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "links",
   },
   {
+    // The only paragraph field on the page, and the only confidential one: the service strips it
+    // from every /lab/members reader but this member and admins (adminBotConfidentialMemberFields).
+    // It sits last in its group because it is the one field a person may want to think before
+    // answering, and optional because "nothing to declare" must never be something the form makes
+    // someone say out loud.
+    key: "personal_circumstances",
+    labelKey: "profile.fields.personalCircumstances",
+    example: "",
+    type: "paragraph",
+    group: "identity",
+  },
+  {
     key: "avatar_url",
     labelKey: "profile.fields.avatarUrl",
     example: "",
@@ -510,6 +522,7 @@ function prefilledTimezone(member: LabMember): string | null {
  * nothing left to check against.
  */
 const FIELD_HELP: Record<string, string> = {
+  personal_circumstances: "profile.help.personalCircumstances",
   linkedin_urn: "profile.help.linkedinUrn",
   intake_form_url: "profile.help.intakeFormUrl",
 };

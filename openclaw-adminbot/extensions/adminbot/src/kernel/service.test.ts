@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   adminBotMandatoryProfileFields,
   adminBotSlackActivityOf,
+  redactConfidentialMemberFields,
 } from "../contracts/actions.js";
 import { AdminBotService, payloadHash } from "./service.js";
 
@@ -1434,6 +1435,32 @@ describe("AdminBotService", () => {
   // admin session routes those through this method rather than through updateOwnProfile.
   // Whether a member counts as active in Slack. The sweep counts messages; the badge reads the
   // count. Both go through adminBotSlackActivityOf so they cannot disagree.
+  // Deleting the key rather than blanking it: an empty string is indistinguishable from a member
+  // who wrote nothing, which would quietly tell every reader that this person has nothing to
+  // declare -- itself a disclosure.
+  describe("confidential member fields", () => {
+    const ada = { id: "ada", name: "Ada", personal_circumstances: "on dialysis Tuesdays" };
+
+    it("keeps the field for the member themselves and for an admin", () => {
+      expect(redactConfidentialMemberFields(ada, { memberId: "ada", isAdmin: false })).toEqual(ada);
+      expect(redactConfidentialMemberFields(ada, { memberId: "bob", isAdmin: true })).toEqual(ada);
+    });
+
+    it("removes the key entirely for anyone else", () => {
+      const seen = redactConfidentialMemberFields(ada, { memberId: "bob", isAdmin: false });
+      expect("personal_circumstances" in seen).toBe(false);
+      expect(seen.name).toBe("Ada");
+      // The original is untouched -- this is a boundary rule, not storage.
+      expect(ada.personal_circumstances).toBe("on dialysis Tuesdays");
+    });
+
+    it("removes it for a caller with no member identity at all", () => {
+      expect(
+        "personal_circumstances" in redactConfidentialMemberFields(ada, { isAdmin: false }),
+      ).toBe(false);
+    });
+  });
+
   describe("slack activity", () => {
     it("classifies from the stored count against the shared threshold", () => {
       const base = { slack_user_id: "U1", slack_activity_checked_at: "2026-08-11T00:00:00.000Z" };

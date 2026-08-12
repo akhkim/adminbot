@@ -375,6 +375,23 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(container.querySelector('[data-testid="profile-slack-activity"]')).toBeNull();
   });
 
+  it("offers the personal-circumstances note as an optional paragraph with an explanation", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+    const field = container.querySelector<HTMLTextAreaElement>(
+      'textarea[name="personal_circumstances"]',
+    );
+    // A paragraph, not a one-line input: it is the only field on the page worth several sentences.
+    expect(field).not.toBeNull();
+    const row = field?.closest(".profile__form-row");
+    expect(row?.querySelector(".profile__optional")).not.toBeNull();
+    expect(row?.querySelector(".profile__mandatory")).toBeNull();
+    // And says who can read it, since that is the thing a person needs to know before answering.
+    const help = container.querySelector('[data-testid="profile-help-personal_circumstances"]');
+    expect(help).not.toBeNull();
+    const bubble = container.querySelector(`#${help!.getAttribute("aria-describedby")}`);
+    expect(bubble?.textContent).toContain("admins");
+  });
+
   it("offers a preferred name, optional, beside the roster name", () => {
     const container = renderPage(createState(createMember()), vi.fn());
     const input = container.querySelector<HTMLInputElement>('input[name="preferred_name"]');

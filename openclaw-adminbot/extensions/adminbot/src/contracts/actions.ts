@@ -206,6 +206,41 @@ export function adminBotSlackActivityOf(member: {
   return count >= adminBotSlackActivityThreshold ? "active" : "inactive";
 }
 
+/**
+ * Member-record fields nobody but the member and an admin may read.
+ *
+ * `GET /lab/members` serves whole member records to every signed-in member -- the roster loads at
+ * sign-in and the Control UI reads from it -- so a field on the record is readable by the whole lab
+ * in devtools no matter what the UI chooses to draw. That is the right default for a roster of
+ * names, topics and links. It is the wrong one for what a member discloses about their health or
+ * their family, which is written for one reader.
+ *
+ * So these are stripped on the way out unless the caller is the member themselves or an admin.
+ * The service keeps the full record for its own work; this is a boundary rule, not storage.
+ */
+export const adminBotConfidentialMemberFields = ["personal_circumstances"] as const;
+
+/**
+ * A member record with the confidential fields removed unless the viewer is entitled to them.
+ *
+ * Deletes the keys rather than blanking them: an empty string is indistinguishable from a member
+ * who wrote nothing, which would quietly tell every reader that this person has "nothing to
+ * declare" -- itself a disclosure.
+ */
+export function redactConfidentialMemberFields<T extends { id?: string }>(
+  member: T,
+  viewer: { memberId?: string; isAdmin: boolean },
+): T {
+  if (viewer.isAdmin || (viewer.memberId && viewer.memberId === member.id)) {
+    return member;
+  }
+  const copy = { ...member } as Record<string, unknown>;
+  for (const field of adminBotConfidentialMemberFields) {
+    delete copy[field];
+  }
+  return copy as T;
+}
+
 export const adminBotMemberStatuses = [
   "active",
   "part_time",
@@ -352,6 +387,11 @@ export type AdminBotLabMemberInput = {
   // Google Calendar, which is very often not their cs.toronto.edu address.
   calendar_email?: string;
   slack_user_id?: string;
+  /**
+   * Free text a member may share about health or family circumstances. Confidential: see
+   * adminBotConfidentialMemberFields, which strips it for every reader but the member and admins.
+   */
+  personal_circumstances?: string;
   /** Messages sent in the last adminBotSlackActivityWindowDays, stamped by the Slack sweep. */
   slack_messages_7d?: number;
   /** When that count was last measured. Absent means never, which reads as unknown, not zero. */

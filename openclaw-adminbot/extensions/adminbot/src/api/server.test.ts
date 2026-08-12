@@ -1385,6 +1385,22 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(body.skipped).toEqual([]);
   });
 
+  // What a member writes about their health or family is written for one reader, but /lab/members
+  // serves whole records to every signed-in member. These pin the boundary rule.
+  it("hides a member's personal circumstances from other members", async () => {
+    const { baseUrl } = await startService();
+    seedMember(baseUrl, "ada", {
+      name: "Ada",
+      personal_circumstances: "caring for a parent on Fridays",
+    });
+    const res = await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() });
+    const body = (await res.json()) as { members: Array<Record<string, unknown>> };
+    const ada = body.members.find((member) => member.id === "ada")!;
+    // The service principal drives agent tool calls for whoever is chatting, so it is not entitled.
+    expect(ada.name).toBe("Ada");
+    expect("personal_circumstances" in ada).toBe(false);
+  });
+
   it("reports members with incomplete mandatory profile fields to any caller", async () => {
     const { baseUrl } = await startService();
     seedMember(baseUrl, "blank", { name: "Blank" });

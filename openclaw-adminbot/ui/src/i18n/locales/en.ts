@@ -1538,6 +1538,8 @@ export const en: TranslationMap = {
       avatarUrl: "Profile picture",
       correspondenceEmail: "Correspondence email",
       whatsapp: "WhatsApp",
+      personalCircumstances:
+        "(Optional) Your medical conditions or your family situations that you think Zhijing should know",
       joinedMonth: "Joined month",
       graduatedMonth: "Graduated month",
       lesswrong: "LessWrong",
@@ -1572,6 +1574,8 @@ export const en: TranslationMap = {
     },
     help: {
       trigger: "What is {field}?",
+      personalCircumstances:
+        "Anything about your health or your family that would help Zhijing support you — a condition that affects how you work, a caring responsibility, a situation that may need flexibility. Entirely optional, and leaving it blank is never read as an answer. Only you and lab admins can see it: the lab roster that every member loads has this field stripped out of it.",
       linkedinUrn:
         "A stable id LinkedIn uses for your account internally — it looks like ACoAAB1234567 and never appears in LinkedIn's own interface. The lab needs it to tag you in posts about your work: LinkedIn's API addresses people by this id, not by profile URL, so a post cannot mention you without it. Nobody can look it up from your profile link, which is why the collector below exists.",
       intakeFormUrl:

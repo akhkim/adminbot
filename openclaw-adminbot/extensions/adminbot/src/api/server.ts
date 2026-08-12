@@ -1,7 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createIpinfoLiteGeolocator } from "../connectors/ip-geolocation.js";
-import { adminBotRegistrationStatuses } from "../contracts/actions.js";
+import {
+  adminBotRegistrationStatuses,
+  redactConfidentialMemberFields,
+} from "../contracts/actions.js";
 import type {
   AdminBotActionProposal,
   AdminBotApprovalRequest,
@@ -1016,7 +1019,28 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "GET" && url.pathname === "/lab/members") {
-    sendServiceResult(res, service.listLabMembers());
+    // The roster is lab-internal but not confidential, with one exception: what a member discloses
+    // about their health or family is written for one reader, and this response goes to all of
+    // them. Strip those fields for anyone who is not that member or an admin. The service principal
+    // drives agent tool calls on behalf of whoever is chatting, so it is not entitled either.
+    const viewer = {
+      ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
+      isAdmin: principal.kind === "member" && principal.member.privilege_level === "admin",
+    };
+    const result = service.listLabMembers();
+    sendServiceResult(
+      res,
+      result.ok
+        ? {
+            ...result,
+            payload: {
+              members: result.payload.members.map((member) =>
+                redactConfidentialMemberFields(member, viewer),
+              ),
+            },
+          }
+        : result,
+    );
     return;
   }
   if (req.method === "GET" && url.pathname === "/settings") {

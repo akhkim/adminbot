@@ -1823,6 +1823,9 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "graduated_month",
   "whatsapp",
   "correspondence_email",
+  // Confidential on read (see adminBotConfidentialMemberFields); self-editable like any other
+  // field a member writes about themselves.
+  "personal_circumstances",
   "lesswrong_url",
   "notes",
   "availability",
