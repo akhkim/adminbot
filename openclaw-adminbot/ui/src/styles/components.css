@@ -9091,7 +9091,7 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .input::placeholder {
-  color: var(--muted);
+  color: var(--placeholder);
 }
 
 /* Only when it is not already the focused field, so hover cannot mute the focus treatment. */

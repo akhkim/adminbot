@@ -2357,15 +2357,17 @@
   border-color: var(--accent-muted);
 }
 
+/* Top of the card's type hierarchy: section title, then group title, then field label, then the
+   placeholder example inside the control. Each step down is a step dimmer, so the level a piece of
+   text sits at is legible from its color alone. This was the mono micro-label at --muted, which
+   put the card's own title at the same weight as the examples four levels below it. */
 .profile__section-title,
 .my-work__section-title {
   margin: 0 0 var(--space-4);
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-xs);
-  font-weight: 500;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: var(--control-ui-text-xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
 }
 
 .profile__section-sub {
@@ -2395,28 +2397,33 @@
   gap: var(--space-6);
 }
 
+/* Space separates the groups, not rules. A hairline between every group turned the card into a
+   ledger and, with the read view's own row rules, stacked two lines a few pixels apart. */
 .profile__field-group + .profile__field-group {
   padding-top: var(--space-5);
-  border-top: 1px solid var(--border);
 }
 
-/* The read view's rows already rule themselves, so the group's own rule lands a hairline directly
-   under the previous group's last row and reads as a printing error. Spacing alone separates them
-   there; the forms, whose rows carry no rules, keep the border. */
-.profile__fields .profile__field-group + .profile__field-group {
-  border-top: none;
+/* The read-only Account rows sit above the form's first group, so the gap between them has to come
+   from here -- the form's own `gap` never spans the two. */
+.profile__fields {
+  margin-bottom: var(--space-6);
 }
 
+/* Second level: below the section title, above the field labels it heads. */
 .profile__group-title {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   margin: 0 0 var(--space-4);
-  font-size: var(--control-ui-text-xs);
+  font-size: var(--control-ui-text-lg);
   font-weight: 600;
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   color: var(--text-strong);
+}
+
+.profile__group-title .profile__group-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .profile__group-icon {
@@ -2514,11 +2521,26 @@
   gap: 6px;
 }
 
+/* Third level. A label names an answer the member has to give, so it reads at full text color --
+   the examples inside the empty controls below sit two steps dimmer, which is what keeps a
+   placeholder from being mistaken for an answer already given. */
 .profile__form-label {
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text);
+}
+
+/* The country picker takes the width its longest country name needs and no more; the number takes
+   the rest of the row. */
+.profile__phone {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.profile__phone-code {
+  min-width: 0;
 }
 
 .profile__optional {
