@@ -218,13 +218,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "work",
   },
   {
-    key: "lesswrong_url",
-    labelKey: "profile.fields.lesswrong",
-    example: "https://www.lesswrong.com/users/ada",
-    type: "link",
-    group: "links",
-  },
-  {
     // The only paragraph field on the page, and the only confidential one: the service strips it
     // from every /lab/members reader but this member and admins (adminBotConfidentialMemberFields).
     // It sits last in its group because it is the one field a person may want to think before
@@ -242,13 +235,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     example: "",
     type: "image",
     group: "identity",
-  },
-  {
-    key: "personal_website",
-    labelKey: "profile.fields.personalWebsite",
-    example: "https://ada.dev",
-    type: "link",
-    group: "links",
   },
   {
     key: "github_url",
@@ -293,13 +279,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "links",
   },
   {
-    key: "scholar_url",
-    labelKey: "profile.fields.scholar",
-    example: "https://scholar.google.com/citations?user=abc123",
-    type: "link",
-    group: "links",
-  },
-  {
     key: "openreview_id",
     labelKey: "profile.fields.openreviewId",
     example: "~Ada_Lovelace1",
@@ -310,6 +289,27 @@ const PROFILE_FIELDS: ProfileField[] = [
     key: "twitter_url",
     labelKey: "profile.fields.twitter",
     example: "https://x.com/ada",
+    type: "link",
+    group: "links",
+  },
+  {
+    key: "personal_website",
+    labelKey: "profile.fields.personalWebsite",
+    example: "https://ada.dev",
+    type: "link",
+    group: "links",
+  },
+  {
+    key: "scholar_url",
+    labelKey: "profile.fields.scholar",
+    example: "https://scholar.google.com/citations?user=abc123",
+    type: "link",
+    group: "links",
+  },
+  {
+    key: "lesswrong_url",
+    labelKey: "profile.fields.lesswrong",
+    example: "https://www.lesswrong.com/users/ada",
     type: "link",
     group: "links",
   },
