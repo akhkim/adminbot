@@ -1548,8 +1548,7 @@ export const en: TranslationMap = {
       avatarUrl: "Profile picture",
       correspondenceEmail: "Correspondence email",
       whatsapp: "WhatsApp",
-      personalCircumstances:
-        "(Optional) Your medical conditions or your family situations that you think Zhijing should know",
+      personalCircumstances: "Medical conditions",
       joinedMonth: "Joined month",
       graduatedMonth: "Graduated month",
       lesswrong: "LessWrong",
