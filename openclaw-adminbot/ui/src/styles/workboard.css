@@ -366,9 +366,8 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
   line-height: 1.2;
-  text-transform: uppercase;
 }
 
 .workboard-field .input {
@@ -646,8 +645,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .workboard-column__header span {
@@ -1360,8 +1358,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .workboard-detail__section p {
@@ -1391,8 +1388,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .workboard-detail__row strong {

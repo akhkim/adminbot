@@ -666,8 +666,7 @@ details.usage-filter-select summary::-webkit-details-marker,
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .usage-summary-value,

@@ -384,8 +384,7 @@
   cursor: pointer;
   color: var(--muted);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .login-gate__failure-detail summary:focus-visible {
@@ -421,8 +420,7 @@
 .login-gate__help-title {
   font-weight: 600;
   font-size: var(--control-ui-text-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
   margin-bottom: var(--space-4);
   color: var(--muted);
 }
@@ -521,7 +519,6 @@
 .adminbot-welcome__category-title {
   font-size: var(--control-ui-text-xs);
   font-weight: 700;
-  text-transform: uppercase;
   letter-spacing: var(--tracking-wide, 0.06em);
   color: var(--muted);
   margin: 0 0 var(--space-3);
@@ -814,8 +811,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-metric__value {
@@ -909,7 +905,6 @@
 .adminbot-registration__field dt {
   font-size: var(--control-ui-text-xs);
   letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -997,8 +992,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-form :is(input, select, textarea) {
@@ -1318,8 +1312,7 @@
   padding-bottom: var(--space-2);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-table__row:not(.adminbot-table__row--head):hover {
@@ -1488,8 +1481,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-member-filters :is(input, select),
@@ -1568,8 +1560,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   white-space: nowrap;
 }
 
@@ -1708,8 +1699,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   font-variant-numeric: tabular-nums;
   border-bottom: 1px solid var(--border-strong);
 }
@@ -1983,8 +1973,7 @@
   color: var(--warn);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-nudge p {
@@ -2217,8 +2206,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .stat-value {
@@ -2335,8 +2323,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .pill {
@@ -2878,8 +2865,7 @@
 .field:not(.checkbox) > span {
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
   color: var(--muted);
 }
 
@@ -3012,7 +2998,6 @@
   color: var(--muted);
   font-size: 12px; /* was 11px */
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
@@ -3383,7 +3368,6 @@
   font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.02em;
-  text-transform: uppercase;
   margin-bottom: 6px;
 }
 
@@ -3838,7 +3822,6 @@
   font-size: 12px; /* was 11px */
   font-weight: 700;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--info);
 }
 
@@ -4276,7 +4259,6 @@
   font-size: 12px; /* was 11px */
   font-weight: 600;
   letter-spacing: 0.03em;
-  text-transform: uppercase;
   padding: 4px 8px;
   background: var(--secondary);
   border-radius: var(--radius-sm);
@@ -4308,7 +4290,6 @@
   font-size: 12px; /* was 10px */
   font-weight: 600;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .cron-job-state-value {
@@ -4461,8 +4442,7 @@
 .table-head {
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
   color: var(--muted);
   padding: 0 var(--space-3) var(--space-2);
   border-bottom: 1px solid var(--border-strong);
@@ -4609,7 +4589,6 @@
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
   user-select: none;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
@@ -4975,7 +4954,6 @@
   font-size: 12px; /* was 11px */
   font-weight: 650;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .session-details-panel__title {
@@ -5012,7 +4990,6 @@
   font-size: 12px; /* was 11px */
   font-weight: 650;
   letter-spacing: 0.03em;
-  text-transform: uppercase;
 }
 
 .session-detail-stat__value {
@@ -5281,7 +5258,6 @@ td.data-table-key-col {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  text-transform: uppercase;
 }
 
 .sessions-filter-panel__toggle {
@@ -6298,7 +6274,6 @@ td.data-table-key-col {
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
 }
 
 .exec-approval-list__main {
@@ -6543,7 +6518,6 @@ td.data-table-key-col {
   font-size: 12px; /* was 11px */
   color: var(--muted);
   background: var(--secondary);
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
@@ -6621,7 +6595,6 @@ td.data-table-key-col {
   margin-left: 4px;
   font-size: 12px; /* was 9px */
   font-weight: 700;
-  text-transform: uppercase;
   color: var(--warn);
   opacity: 0.8;
 }
@@ -6859,7 +6832,6 @@ td.data-table-key-col {
   font-size: 12px; /* was 11px */
   font-weight: 700;
   letter-spacing: 0.14em;
-  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -7448,7 +7420,6 @@ td.data-table-key-col {
   color: var(--muted);
   font-size: 12px; /* was 11px */
   font-variant-numeric: tabular-nums;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
@@ -7729,7 +7700,6 @@ td.data-table-key-col {
   align-items: center;
   font-weight: 600;
   font-size: 13px;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
   cursor: pointer;
@@ -7889,7 +7859,6 @@ td.data-table-key-col {
   color: var(--muted);
   font-size: 12px; /* was 11px */
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
@@ -7998,7 +7967,6 @@ td.data-table-key-col {
   font-size: 12px; /* was 11px */
   font-weight: 600;
   color: var(--muted);
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
@@ -8134,7 +8102,6 @@ td.data-table-key-col {
   font-size: 13px;
   font-weight: 600;
   color: var(--muted);
-  text-transform: uppercase;
   letter-spacing: 0.04em;
   margin: 0 0 10px;
 }
@@ -8575,8 +8542,7 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-reimbursement-message p {
@@ -8652,8 +8618,7 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--text);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   cursor: pointer;
   transition: border-color var(--duration-fast) var(--ease-out);
 }
@@ -8701,8 +8666,7 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-reimbursement-fields dd {
@@ -8755,8 +8719,7 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   white-space: nowrap;
 }
 
@@ -8933,7 +8896,6 @@ details[open] > .ov-expandable-toggle::after {
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .adminbot-time-allocation-table tbody tr:last-child td {

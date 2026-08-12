@@ -140,8 +140,7 @@
   border-radius: var(--radius-full);
   background: var(--bg-muted);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .chat-divider__details {

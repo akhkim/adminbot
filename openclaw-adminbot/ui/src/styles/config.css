@@ -649,7 +649,6 @@
 .settings-theme-import__label {
   font-size: 12px; /* was 11px */
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
   color: var(--muted);
 }
@@ -694,7 +693,6 @@
 .settings-theme-import__meta-label {
   font-size: 12px; /* was 11px */
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
   color: var(--muted);
 }
@@ -849,7 +847,6 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--muted);
-  text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
 }
 
@@ -1005,7 +1002,6 @@
   font-size: 12px; /* was 11px */
   font-weight: 650;
   letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -1843,7 +1839,6 @@
   font-size: 12px; /* was 11px */
   font-weight: 600;
   color: var(--muted);
-  text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
 }
 
@@ -2116,7 +2111,6 @@
   flex-wrap: wrap;
   color: var(--muted);
   font-size: 12px; /* was 11px */
-  text-transform: uppercase;
   letter-spacing: var(--tracking-wide);
 }
 
