@@ -2349,6 +2349,12 @@
   background: var(--bg-elevated);
 }
 
+/* The picture control leads the card it saves into, so it needs the same gap under it that the
+   field groups keep between themselves. */
+.profile__section .profile__upload {
+  margin-bottom: var(--space-5);
+}
+
 /* The one section asking for something rather than just showing it. Its whole edge carries the
    accent, without the accent wash it used to sit on: the wash tinted every input inside the card,
    which made the controls the member is supposed to type into read as less editable than the ones
@@ -2468,14 +2474,12 @@
   grid-template-columns: 8.5rem 1fr;
   align-items: baseline;
   gap: var(--space-4);
-  padding: 7px 0;
-  border-bottom: 1px solid var(--border);
+  padding: var(--space-2) 0;
 }
 
 .profile-field__label {
   font-size: var(--control-ui-text-xs);
   letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -2503,15 +2507,30 @@
   color: var(--accent);
   font-family: var(--mono);
   font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
+}
+
+/* The governed labels carry their rule in the label itself ("Email (@cs.toronto.edu)"), which is
+   wider than the 8.5rem column and broke across two lines. Let the column take what the longest
+   label needs instead of wrapping a single label onto two rows. */
+.profile-field--locked {
+  grid-template-columns: max-content 1fr;
+}
+
+.profile-field--locked .profile-field__label {
+  white-space: nowrap;
 }
 
 /* Under the label rather than beside it once there is no room for two columns. */
 @media (max-width: 640px) {
-  .profile-field {
+  .profile-field,
+  .profile-field--locked {
     grid-template-columns: 1fr;
     gap: 2px;
+  }
+
+  .profile-field--locked .profile-field__label {
+    white-space: normal;
   }
 }
 
