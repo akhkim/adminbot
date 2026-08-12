@@ -43,6 +43,28 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       links: optionalLink("Open the lab calendar", LAB_EMAIL_ENV, labCalendarEmbedUrl),
     },
     {
+      // Information, not a task. The old "Set up your Google Drive project folder" step was
+      // removed because drive-workspace.ts already provisions the folder when the guide is sent --
+      // it asked members to do by hand what onboarding had done for them. What was worth keeping
+      // is what the folder *is* and what is already in it, which is this.
+      id: "drive_folder",
+      label: "Your shared Google Drive folder",
+      category: "Getting started",
+      required: true,
+      detail:
+        "A 1:1 Google Drive folder with Zhijing is shared with you when your account is " +
+        "approved — no action needed to create it.",
+      bullets: [
+        {
+          text: "The internal mentee handbook should already be in it.",
+          points: [
+            "Check it first when a question comes up — it answers most of them.",
+            "Still stuck after that? See Questions? at the end of this checklist.",
+          ],
+        },
+      ],
+    },
+    {
       id: "profile_photo",
       label: "Upload a professional profile photo",
       category: "Getting started",
