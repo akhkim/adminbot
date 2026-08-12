@@ -1459,7 +1459,7 @@ export const en: TranslationMap = {
       adminFilled: "(filled out by admin)",
       mandatory: "required",
       countryCode: "Country code",
-      countryCodeNone: "Country code",
+      countryCodeNone: "Code",
       example: "ex. {example}",
       autosaveHint: "Changes save automatically.",
     },

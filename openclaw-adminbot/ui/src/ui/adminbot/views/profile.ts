@@ -749,7 +749,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
             ${PHONE_COUNTRIES.map(
               (country) => html`
                 <option value=${country.dial} ?selected=${country.dial === dial}>
-                  ${country.name} (${country.dial})
+                  ${country.dial} ${country.name}
                 </option>
               `,
             )}

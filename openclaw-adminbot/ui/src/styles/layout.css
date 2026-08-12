@@ -2574,16 +2574,19 @@
   color: var(--text);
 }
 
-/* The country picker takes the width its longest country name needs and no more; the number takes
-   the rest of the row. */
+/* The picker is the short half of the row: the number is what a member is actually typing, so it
+   gets the width. The dial code leads each option's text (see renderFieldInput), which keeps the
+   part that identifies the choice visible when a long country name truncates. */
 .profile__phone {
   display: grid;
-  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr);
   gap: var(--space-2);
 }
 
 .profile__phone-code {
   min-width: 0;
+  padding-right: var(--space-2);
+  text-overflow: ellipsis;
 }
 
 .profile__optional {
