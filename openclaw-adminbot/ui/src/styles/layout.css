@@ -1924,8 +1924,10 @@
   background: var(--panel);
 }
 
-/* Expanded: the list moves under the plot so the map gets the full card width, which is what
-   separates cities that sit within a few degrees of each other. */
+/* Expanded: the plot takes the full card width and as much height as the viewport can spare, with
+   the list moved underneath. Width alone was not enough — the card is bounded by the dashboard
+   column, so "bigger" has to come from height, and 2:1 means the only way to get height is to stop
+   sharing the row. */
 .member-map[data-expanded] .member-map__body {
   flex-direction: column;
 }
@@ -1933,6 +1935,10 @@
 .member-map[data-expanded] .member-map__plot {
   flex: 1 1 auto;
   width: 100%;
+  /* aspect-ratio still governs; this stops a wide screen from pushing the map past the fold. */
+  max-height: 72vh;
+  aspect-ratio: 2 / 1;
+  object-fit: contain;
 }
 
 .member-map[data-expanded] .member-map__list {
@@ -1942,21 +1948,56 @@
   width: 100%;
 }
 
+/* Land is a filled shape, not an outline: at 1:110m the coastline is the only cue telling you which
+   dot is which, and a hairline stroke of it disappears at card size. Ocean is barely separated from
+   the card so the map reads as part of the page rather than as a pasted-in graphic. */
+.member-map__ocean {
+  fill: var(--panel);
+}
+
+.member-map__land {
+  fill: var(--bg-accent);
+  stroke: var(--border-strong);
+  stroke-width: 0.3;
+  stroke-linejoin: round;
+}
+
+/* Under the dots and over the land, so it reads as a reference rather than as a border between
+   countries — which is what a stronger grid on top of a coastline starts to look like. */
 .member-map__grid {
-  stroke: var(--border);
-  stroke-width: 1;
-  opacity: 0.45;
+  stroke: var(--border-strong);
+  stroke-width: 0.3;
+  opacity: 0.35;
 }
 
 .member-map__grid--equator {
-  opacity: 0.75;
+  opacity: 0.6;
+}
+
+/* A ring of the ocean color behind each dot, so a city sitting on a coast is still a disc rather
+   than a shape bleeding into the landmass under it. */
+.member-map__halo {
+  fill: var(--panel);
+  fill-opacity: 0.85;
 }
 
 .member-map__dot {
   fill: var(--accent, var(--text));
-  fill-opacity: 0.65;
+  fill-opacity: 0.9;
+}
+
+.member-map__place:hover .member-map__dot {
+  fill-opacity: 1;
+}
+
+.member-map__label {
+  fill: var(--text);
+  font-size: 5px;
+  font-weight: 600;
+  paint-order: stroke;
   stroke: var(--panel);
-  stroke-width: 1;
+  stroke-width: 1.6;
+  stroke-linejoin: round;
 }
 
 .member-map__list {

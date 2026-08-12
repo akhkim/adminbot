@@ -1,11 +1,13 @@
 // Where the lab is, as a dashboard card.
 //
-// An equirectangular plot: longitude maps linearly to x, latitude to y. No landmasses are drawn.
-// That is a decision, not a shortcut — a coarse coastline at this size is a smear that reads as
-// decoration, and the honest alternatives are a CDN tile layer (which the served page at
-// /lab_stats/member_map already provides, and which the Control UI should not take a network
-// dependency on) or a graticule. The graticule plus a named ranked list makes every dot
-// identifiable without asking the reader to recognise a continent from its silhouette.
+// An equirectangular plot: longitude maps linearly to x, latitude to y, over a real coastline.
+//
+// The coastline is Natural Earth 1:110m, pre-projected into this viewBox by
+// scripts/generate-world-outline.mjs and committed as a 44kB path. Bundling it rather than pulling
+// tiles keeps the card free of the network dependency the standalone Leaflet page carries, and
+// pre-projecting keeps the browser from doing the arithmetic on every render. A graticule alone was
+// the first attempt and it was unreadable: without continents nobody can tell which dot is which,
+// and the card is meant to be glanceable.
 //
 // The list is not a fallback for the map; the two answer different questions. The plot shows spread
 // — how far apart the lab is, and which timezones it straddles. The list shows rank — where most
@@ -13,12 +15,15 @@
 import { html, LitElement, nothing, svg } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { MemberMap, MemberMapPlace } from "../data/member-map.ts";
+import { WORLD_OUTLINE_PATH, WORLD_OUTLINE_VIEW } from "../data/world-outline.ts";
 
-const VIEW_WIDTH = 360;
-const VIEW_HEIGHT = 180;
+// Taken from the generated outline rather than declared twice: the path is baked into this exact
+// projection, so a mismatch here would slide every dot off the coastline it belongs on.
+const VIEW_WIDTH = WORLD_OUTLINE_VIEW.width;
+const VIEW_HEIGHT = WORLD_OUTLINE_VIEW.height;
 // Latitude is clipped well short of the poles: nobody in the gazetteer lives past these, and the
 // full ±90 range wastes a third of the height on empty ice.
-const LAT_LIMIT = 72;
+const LAT_LIMIT = WORLD_OUTLINE_VIEW.latLimit;
 
 const MIN_RADIUS = 3;
 const MAX_RADIUS = 10;
@@ -60,8 +65,13 @@ function placeTitle(place: MemberMapPlace): string {
     : t("dashboard.memberMap.placeCount", { place: where, count: String(place.count) });
 }
 
+// How many of the busiest cities are named on the plot itself. Enough to anchor the reader without
+// the labels colliding into a smear across Europe, which is where most of them land.
+const LABELLED_PLACES = 5;
+
 function renderPlot(map: MemberMap) {
   const busiest = Math.max(...map.places.map((place) => place.count), 1);
+  const labelled = new Set(map.places.slice(0, LABELLED_PLACES).map((place) => place.key));
   return svg`
     <svg
       class="member-map__plot"
@@ -76,6 +86,8 @@ function renderPlot(map: MemberMap) {
         cities: String(map.places.length),
         count: String(map.counts.placed),
       })}</title>
+      <rect class="member-map__ocean" x="0" y="0" width=${VIEW_WIDTH} height=${VIEW_HEIGHT}></rect>
+      <path class="member-map__land" d=${WORLD_OUTLINE_PATH}></path>
       ${[-120, -60, 0, 60, 120].map(
         (lon) => svg`
           <line
@@ -98,18 +110,29 @@ function renderPlot(map: MemberMap) {
           ></line>
         `,
       )}
-      ${map.places.map(
-        (place) => svg`
-          <circle
-            class="member-map__dot"
-            cx=${projectX(place.lon)}
-            cy=${projectY(place.lat)}
-            r=${radiusFor(place.count, busiest)}
-          >
-            <title>${placeTitle(place)}</title>
-          </circle>
-        `,
-      )}
+      ${map.places.map((place) => {
+        const x = projectX(place.lon);
+        const y = projectY(place.lat);
+        const r = radiusFor(place.count, busiest);
+        return svg`
+          <g class="member-map__place">
+            <circle class="member-map__halo" cx=${x} cy=${y} r=${r + 2}></circle>
+            <circle class="member-map__dot" cx=${x} cy=${y} r=${r}>
+              <title>${placeTitle(place)}</title>
+            </circle>
+            ${
+              labelled.has(place.key)
+                ? svg`<text
+                    class="member-map__label"
+                    x=${x}
+                    y=${y - r - 2.5}
+                    text-anchor=${x > VIEW_WIDTH - 40 ? "end" : x < 40 ? "start" : "middle"}
+                  >${place.label}</text>`
+                : nothing
+            }
+          </g>
+        `;
+      })}
     </svg>
   `;
 }

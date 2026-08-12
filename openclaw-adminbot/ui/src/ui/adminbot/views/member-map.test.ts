@@ -1,6 +1,7 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import { parseMemberMap, type MemberMap } from "../data/member-map.ts";
+import { WORLD_OUTLINE_VIEW } from "../data/world-outline.ts";
 import { renderMemberMap } from "./member-map.ts";
 
 async function draw(map: MemberMap | null): Promise<HTMLElement> {
@@ -132,6 +133,38 @@ describe("renderMemberMap", () => {
     expect(container.querySelector('[data-testid="member-map-unplaced"]')?.textContent).toContain(
       "1",
     );
+  });
+
+  // The coastline is what makes a dot identifiable; a graticule alone was unreadable.
+  it("draws the world outline under the dots", async () => {
+    const container = await draw(parseMemberMap(summary));
+    const land = container.querySelector(".member-map__land");
+    expect(land).not.toBeNull();
+    expect((land?.getAttribute("d") ?? "").length).toBeGreaterThan(1000);
+    // Land is painted before the dots, so a coastal city sits on top of its coastline.
+    const svgEl = container.querySelector(".member-map__plot")!;
+    const nodes = [...svgEl.querySelectorAll(".member-map__land, .member-map__dot")];
+    expect(nodes[0]?.classList.contains("member-map__land")).toBe(true);
+  });
+
+  // The path is baked into one projection. If the view's constants drifted from the generator's,
+  // every dot would slide off the coastline it belongs on and nothing would look obviously broken.
+  it("projects dots with the same viewBox the outline was generated for", async () => {
+    const container = await draw(parseMemberMap(summary));
+    expect(container.querySelector(".member-map__plot")?.getAttribute("viewBox")).toBe(
+      `0 0 ${WORLD_OUTLINE_VIEW.width} ${WORLD_OUTLINE_VIEW.height}`,
+    );
+
+    // Toronto (43.65N, 79.38W) lands in the upper-left quadrant; Zurich (47.37N, 8.54E) just right
+    // of centre. Wrong axis signs would put them in the ocean and still render.
+    const dots = [...container.querySelectorAll(".member-map__dot")];
+    const toronto = dots[0];
+    const zurich = dots[1];
+    expect(Number(toronto.getAttribute("cx"))).toBeLessThan(WORLD_OUTLINE_VIEW.width / 2);
+    expect(Number(zurich.getAttribute("cx"))).toBeGreaterThan(WORLD_OUTLINE_VIEW.width / 2);
+    for (const dot of [toronto, zurich]) {
+      expect(Number(dot.getAttribute("cy"))).toBeLessThan(WORLD_OUTLINE_VIEW.height / 2);
+    }
   });
 
   // A world map in one dashboard column is a row of specks, so the card spans the grid and can be
