@@ -1806,6 +1806,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "hours_per_week",
   "availability",
   "location",
+  "current_city",
   "affiliation",
   "timezone",
   "personal_website",

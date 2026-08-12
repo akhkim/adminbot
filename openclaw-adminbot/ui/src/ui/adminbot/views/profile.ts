@@ -153,8 +153,17 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "identity",
   },
   {
-    // Sits with location because it is derived from it -- see displayValue, which prefills this
-    // control from whatever the member typed one field earlier.
+    // Where the member currently is, kept distinct from their resident location above. Purely
+    // informational: the timezone suggestion and the member map stay keyed on `location`.
+    key: "current_city",
+    labelKey: "profile.fields.currentCity",
+    example: "San Francisco, CA",
+    type: "short_text",
+    group: "identity",
+  },
+  {
+    // Derived from the resident `location` field, looked up by key in prefilledTimezone (not by
+    // position), so the current_city field sitting between them does not affect it.
     key: "timezone",
     labelKey: "profile.fields.timezone",
     example: "America/Toronto",

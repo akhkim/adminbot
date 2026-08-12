@@ -74,6 +74,8 @@ export type LabMember = {
   availability?: AvailabilityRow[] | null;
   time_off?: TimeOffRow[] | null;
   location?: string | null;
+  // Where the member currently is, distinct from resident `location`. Informational only.
+  current_city?: string | null;
   affiliation?: string | null;
   timezone?: string | null;
   personal_website?: string | null;
@@ -102,6 +104,7 @@ export type MemberProfileUpdate = {
   hours_per_week?: number;
   availability?: string;
   location?: string;
+  current_city?: string;
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
