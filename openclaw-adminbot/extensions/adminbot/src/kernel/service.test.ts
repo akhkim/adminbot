@@ -456,6 +456,42 @@ describe("AdminBotService", () => {
     }
   });
 
+  // The URN is looked up by the lab, not typed by the member, so a self update carrying one is
+  // dropped like any other non-whitelisted key -- the disabled control on the profile page is the
+  // label for this rule, never the rule itself.
+  it("ignores a linkedin_urn sent through a self profile update, but lets an admin set it", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        id: "urn-member",
+        name: "URN Member",
+        email: "urn-member@cs.toronto.edu",
+        privilege_level: "member",
+      }),
+    );
+
+    const selfEdited = unwrap(
+      service.updateOwnProfile("urn-member", {
+        linkedin_urn: "ACoAAB7654321",
+        role: "Postdoc",
+      }),
+    );
+    expect(selfEdited.linkedin_urn ?? "").toBe("");
+    // The rest of the same update still lands: the key is dropped, the request is not refused.
+    expect(selfEdited.role).toBe("Postdoc");
+
+    const byAdmin = unwrap(
+      service.upsertLabMember({
+        id: "urn-member",
+        name: "URN Member",
+        email: "urn-member@cs.toronto.edu",
+        privilege_level: "member",
+        linkedin_urn: "ACoAAB1234567",
+      }),
+    );
+    expect(byAdmin.linkedin_urn).toBe("ACoAAB1234567");
+  });
+
   it("lets a member self-edit availability and time off, and validates both", () => {
     const service = new AdminBotService();
     unwrap(service.upsertLabMember({ id: "sched", name: "Sched", privilege_level: "member" }));

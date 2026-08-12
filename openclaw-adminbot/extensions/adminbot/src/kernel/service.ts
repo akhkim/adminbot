@@ -1755,7 +1755,9 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "cv_url",
   "intake_form_url",
   "linkedin_url",
-  "linkedin_urn",
+  // linkedin_urn is deliberately absent: LinkedIn publishes no vanity-URL-to-URN mapping, so the
+  // lab looks the value up and an admin writes it. A self update that carries one is dropped here,
+  // which is what makes the disabled control on the profile page an actual rule rather than a hint.
   "twitter_url",
   "github_url",
   "scholar_url",
