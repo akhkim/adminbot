@@ -1,5 +1,5 @@
 import { render } from "lit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AccessRole } from "../access.ts";
 import { renderDashboard } from "./dashboard.ts";
@@ -176,6 +176,43 @@ describe("renderDashboard", () => {
 
     expect(attentionIds(container)).toContain("mandatoryFields");
     expect(container.textContent).toContain("required fields are still blank");
+  });
+
+  // Naming a blank field is only half the help: the name is the shortest route to the box that
+  // answers it.
+  it("lists each blank field as a button that opens the profile", () => {
+    const state = createState({
+      memberId: "m1",
+      setTab: vi.fn(),
+      adminBotData: {
+        proposals: [],
+        members: [{ id: "m1", name: "Ada" }],
+      },
+    } as unknown as Partial<AppViewState>);
+    const container = renderPage(state, "member");
+
+    const chip = container.querySelector<HTMLButtonElement>('[data-testid="dashboard-blank-cv_url"]');
+    expect(chip).not.toBeNull();
+    expect(chip?.tagName).toBe("BUTTON");
+    chip?.click();
+    expect(state.setTab).toHaveBeenCalledWith("profile");
+  });
+
+  // The URN is filled in by an admin, so chasing the member for it names a field whose control on
+  // the profile page is disabled.
+  it("never lists an admin-filled field among the blanks", () => {
+    const container = renderPage(
+      createState({
+        memberId: "m1",
+        adminBotData: {
+          proposals: [],
+          members: [{ id: "m1", name: "Ada" }],
+        },
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
+
+    expect(container.querySelector('[data-testid="dashboard-blank-linkedin_urn"]')).toBeNull();
   });
 
   it("drops the mandatory-fields item once every required field is filled in", () => {

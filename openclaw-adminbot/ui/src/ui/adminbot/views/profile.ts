@@ -455,6 +455,11 @@ function labelFor(key: string): string {
   return t(FIELD_LABEL_KEYS[key] ?? key);
 }
 
+/** The on-screen name of a field, for surfaces outside this page that list fields by key. */
+export function fieldLabel(key: string): string {
+  return labelFor(key);
+}
+
 export function findOwnMember(state: AppViewState): LabMember | null {
   const memberId = state.memberId;
   if (!memberId) {
@@ -511,13 +516,49 @@ function renderPrefillHint(member: LabMember, field: EditableField) {
   `;
 }
 
+// What the lab is still waiting on *from this member*. Admin-owned fields are required of the
+// record but not answerable here, so they stay out of the blanks list, the dashboard card that
+// chases it, and the denominator below -- otherwise the ledger could never reach complete and the
+// card would name a field whose control is disabled.
+function isMemberAnswerable(field: EditableField): boolean {
+  return !isOptional(field) && !field.adminOnly;
+}
+
 export function blankFields(member: LabMember): EditableField[] {
-  return EDITABLE_FIELDS.filter((field) => !isOptional(field) && !valueOf(member, field).trim());
+  return EDITABLE_FIELDS.filter(
+    (field) => isMemberAnswerable(field) && !valueOf(member, field).trim(),
+  );
 }
 
 // Everything a member may set, blank or not -- what the full editor offers.
 export function requiredFieldCount(): number {
-  return EDITABLE_FIELDS.filter((field) => !isOptional(field)).length;
+  return EDITABLE_FIELDS.filter(isMemberAnswerable).length;
+}
+
+// A one-shot hand-off from the dashboard: it names the field a member clicked, and the profile
+// page focuses that control on its next render. Kept as module state rather than on AppViewState
+// because it is consumed immediately and never re-read -- it must not survive into a later render
+// and steal focus from whatever the member is typing in by then.
+let pendingFocusFieldKey: string | null = null;
+
+export function focusProfileField(key: string): void {
+  pendingFocusFieldKey = key;
+}
+
+function consumePendingFieldFocus(): void {
+  const key = pendingFocusFieldKey;
+  pendingFocusFieldKey = null;
+  if (!key || typeof document === "undefined") {
+    return;
+  }
+  // After paint: the control this names is rendered by the same template that is running now.
+  requestAnimationFrame(() => {
+    const control = document.querySelector<HTMLElement>(
+      `.profile__form-row [name="${CSS.escape(key)}"]`,
+    );
+    control?.scrollIntoView({ block: "center" });
+    control?.focus();
+  });
 }
 
 // Badges are earned, so each one is derived from a fact on the record rather than stored. A badge
@@ -1242,6 +1283,7 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
     return html`<p class="profile__empty">${t("profile.blanks.signInRequired")}</p>`;
   }
   const name = member.name?.trim() || member.email?.trim() || "";
+  consumePendingFieldFocus();
   return html`
     <div class="profile">
       ${renderSaveToast(state)}

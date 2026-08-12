@@ -1840,6 +1840,28 @@
   color: var(--muted);
 }
 
+/* A chip that goes somewhere. Same pill as its static siblings, plus the affordances that say so:
+   a pointer, a hover lift, and the focus ring keyboard users navigate by. */
+.dashboard-card__step--action {
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.dashboard-card__step--action:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+  color: var(--text-strong);
+}
+
+.dashboard-card__step--action:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 .dashboard-card__action {
   flex-shrink: 0;
 }

@@ -21,7 +21,7 @@ import { iconForTab, type Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
 import { renderDeadlineSummary } from "./deadlines-summary.ts";
 import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
-import { blankFields, findOwnMember } from "./profile.ts";
+import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile.ts";
 
 // One thing waiting on the viewer. `detail` is optional supporting text -- the queue items say
 // everything in their summary.
@@ -52,12 +52,36 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
     blanks.length === 1
       ? "dashboard.mandatoryFields.summary"
       : "dashboard.mandatoryFields.summaryPlural";
+  // Naming the blanks is only half the help; each name is the shortest route to the box that
+  // answers it, so each one is a button that opens the profile with that control focused.
+  const openField = (fieldKey: string) => () => {
+    focusProfileField(fieldKey);
+    state.setTab("profile");
+  };
   return {
     id: "mandatoryFields",
     title: t("dashboard.mandatoryFields.title"),
     summary: t(key, { count: String(blanks.length) }),
     actionLabel: t("dashboard.mandatoryFields.open"),
     onAction: () => state.setTab("profile"),
+    detail: html`
+      <ul class="dashboard-card__steps">
+        ${blanks.map(
+          (field) => html`
+            <li>
+              <button
+                type="button"
+                class="dashboard-card__step dashboard-card__step--action"
+                data-testid=${`dashboard-blank-${field.key}`}
+                @click=${openField(field.key)}
+              >
+                ${fieldLabel(field.key)}
+              </button>
+            </li>
+          `,
+        )}
+      </ul>
+    `,
   };
 }
 
