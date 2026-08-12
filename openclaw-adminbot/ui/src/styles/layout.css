@@ -2352,7 +2352,7 @@
 /* The picture control leads the card it saves into, so it needs the same gap under it that the
    field groups keep between themselves. */
 .profile__section .profile__upload {
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-3);
 }
 
 /* The one section asking for something rather than just showing it. Its whole edge carries the
@@ -2400,19 +2400,21 @@
 .profile__form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-3);
 }
 
 /* Space separates the groups, not rules. A hairline between every group turned the card into a
-   ledger and, with the read view's own row rules, stacked two lines a few pixels apart. */
+   ledger and, with the read view's own row rules, stacked two lines a few pixels apart.
+   One gap, not two: this pad and the flex `gap` above it both land between the same pair of
+   groups, so together they set the whole distance. */
 .profile__field-group + .profile__field-group {
-  padding-top: var(--space-5);
+  padding-top: var(--space-3);
 }
 
 /* The read-only Account rows sit above the form's first group, so the gap between them has to come
    from here -- the form's own `gap` never spans the two. */
 .profile__fields {
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-3);
 }
 
 /* Second level: below the section title, above the field labels it heads. */
@@ -2420,7 +2422,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin: 0 0 var(--space-4);
+  margin: 0 0 var(--space-3);
   font-size: var(--control-ui-text-lg);
   font-weight: 600;
   letter-spacing: var(--tracking-tight);
@@ -2584,12 +2586,13 @@
   background: var(--danger);
 }
 
+/* No rule and no pad above it any more: both existed to fence the picture off from the fields when
+   it trailed the form, and now that it leads the Account group they draw a line directly under
+   that heading. */
 .profile__upload {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding-top: var(--space-5);
-  border-top: 1px solid var(--border);
 }
 
 .profile__upload-row {
