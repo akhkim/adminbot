@@ -18,6 +18,7 @@ import type {
   AdminBotPaperSaveInput,
   AdminBotPaperStep,
 } from "../controllers/admin.ts";
+import { nextStepFor } from "../next-step.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { findOwnMember } from "./profile.ts";
 
@@ -232,8 +233,37 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
             : stepLabel(paper.current_step)}
         </span>
       </div>
+      ${renderNextStep(paper)}
       ${renderStepControls(paper, props)}
     </article>
+  `;
+}
+
+// What to do next on this paper, derived from the PaperFlow dependency graph rather than typed by
+// hand. Read-only: it computes from `current_step` and writes nothing.
+function renderNextStep(paper: AdminBotPaperRecord) {
+  const next = nextStepFor(paper);
+  if (!next) {
+    return nothing;
+  }
+  if (next.done) {
+    return html`<p class="my-work-item__next my-work-item__next--done">
+      ${icons.check} <span>Everything on this paper is finished.</span>
+    </p>`;
+  }
+  return html`
+    <p class="my-work-item__next">
+      ${icons.cornerDownRight}
+      <span>
+        <strong>Next: ${next.headline}</strong>
+        ${next.unblocks ? html`<span class="my-work-item__next-why"> — unblocks ${next.unblocks}</span>` : nothing}
+      </span>
+    </p>
+    ${next.alsoOpen.length > 0
+      ? html`<p class="my-work-item__next-also">
+          Also open now: ${next.alsoOpen.join(", ")}
+        </p>`
+      : nothing}
   `;
 }
 

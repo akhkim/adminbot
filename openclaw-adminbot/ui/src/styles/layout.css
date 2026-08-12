@@ -3558,6 +3558,49 @@
   color: var(--muted);
 }
 
+/* The computed next step. Deliberately the loudest thing on the card after the title: it is the
+   one line that tells someone what to actually do. */
+.my-work-item__next {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised, rgb(255 255 255 / 4%));
+  border-left: 2px solid var(--accent);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.45;
+}
+
+.my-work-item__next svg {
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+  margin-top: 0.15em;
+  color: var(--accent);
+}
+
+.my-work-item__next--done {
+  border-left-color: var(--ok, var(--muted));
+}
+
+.my-work-item__next--done svg {
+  color: var(--ok, var(--muted));
+}
+
+/* Why it matters, not just what it is — kept quieter than the step itself. */
+.my-work-item__next-why {
+  color: var(--muted);
+}
+
+.my-work-item__next-also {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-3);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
 .my-work-item__controls {
   display: flex;
   align-items: center;
@@ -4732,4 +4775,63 @@
 
 .profile__urn-status--set {
   color: var(--ok, var(--muted-strong));
+}
+
+/* Next step per paper — the admin counterpart to the time-based nudge list. */
+.adminbot-next-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.adminbot-next {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--line, rgb(255 255 255 / 10%));
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+/* An approval reads differently from work: nobody can do it but the approver. */
+.adminbot-next--approval {
+  border-left-color: var(--warn, var(--accent));
+}
+
+.adminbot-next--done {
+  border-left-color: var(--ok, var(--muted));
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.adminbot-next__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.adminbot-next__waiting {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.adminbot-next__step {
+  font-weight: 600;
+}
+
+.adminbot-next__why,
+.adminbot-next__also {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-next__actions {
+  margin-top: var(--space-1);
 }
