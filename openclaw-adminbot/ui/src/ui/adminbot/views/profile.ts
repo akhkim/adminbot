@@ -525,6 +525,7 @@ const FIELD_HELP: Record<string, string> = {
   personal_circumstances: "profile.help.personalCircumstances",
   linkedin_urn: "profile.help.linkedinUrn",
   intake_form_url: "profile.help.intakeFormUrl",
+  cv_url: "profile.help.cvUrl",
 };
 
 // Hover or focus reveals it; `aria-describedby` is what makes it reachable without a pointer.

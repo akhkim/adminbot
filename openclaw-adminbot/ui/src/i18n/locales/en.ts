@@ -1589,6 +1589,8 @@ export const en: TranslationMap = {
         "A stable id LinkedIn uses for your account internally — it looks like ACoAAB1234567 and never appears in LinkedIn's own interface. The lab needs it to tag you in posts about your work: LinkedIn's API addresses people by this id, not by profile URL, so a post cannot mention you without it. Nobody can look it up from your profile link, which is why the collector below exists.",
       intakeFormUrl:
         "The link to your own submitted answers on the lab's application form. Google Forms emails it only to the person who responded, so nobody else — the lab included — can produce it for you. It lets you review and edit what you told us when you applied.",
+      cvUrl:
+        "A link to your CV. A Google Drive link is completely fine — if you use one, set the sharing to \"anyone with the link can view\", otherwise it will open for you but not for anyone else.",
     },
   },
   myWork: {
