@@ -86,7 +86,9 @@ describe("parseMemberMap", () => {
 describe("renderMemberMap", () => {
   it("plots one dot per city and lists them by headcount", async () => {
     const container = await draw(parseMemberMap(summary));
-    expect(container.querySelectorAll(".member-map__dot")).toHaveLength(2);
+    // Scoped to the card: the full-screen view renders its own copy of the plot.
+    const card = container.querySelector(".member-map__body")!;
+    expect(card.querySelectorAll(".member-map__dot")).toHaveLength(2);
     expect(
       [...container.querySelectorAll(".member-map__row-label")].map((node) => node.textContent),
     ).toEqual(["Toronto", "Zurich"]);
@@ -167,44 +169,63 @@ describe("renderMemberMap", () => {
     }
   });
 
-  // A world map in one dashboard column is a row of specks, so the card spans the grid and can be
-  // opened further. The state lives on the element so a dashboard re-render cannot close it.
-  it("expands and collapses, showing more places when open", async () => {
-    const many = {
-      ...summary,
-      places: Array.from({ length: 10 }, (_, index) => ({
-        key: `city-${index}`,
-        label: `City ${index}`,
-        country: "Somewhere",
-        lat: 10 + index,
-        lon: 10 + index,
-        count: 10 - index,
-      })),
+  // "Bigger" means the whole screen. A native <dialog> gets the top layer, Escape and focus
+  // trapping; the panel only exists while open so the 44kB coastline is not in the DOM twice.
+  it("opens full screen from the button and from the map itself, then closes", async () => {
+    const container = await draw(parseMemberMap(summary));
+    const element = container.querySelector("adminbot-member-map") as HTMLElement & {
+      updateComplete: Promise<unknown>;
     };
-    const container = await draw(parseMemberMap(many));
-    const card = () => container.querySelector('[data-testid="dashboard-member-map"]')!;
-    const toggle = () =>
-      container.querySelector<HTMLButtonElement>('[data-testid="member-map-toggle"]')!;
-    const rows = () => container.querySelectorAll(".member-map__row-label").length;
+    const dialog = () =>
+      container.querySelector<HTMLDialogElement>('[data-testid="member-map-dialog"]')!;
+    const settled = async () => {
+      await element.updateComplete;
+      await element.updateComplete;
+    };
 
-    expect(card().hasAttribute("data-expanded")).toBe(false);
-    expect(toggle().getAttribute("aria-expanded")).toBe("false");
-    const collapsedRows = rows();
+    expect(dialog().open).toBe(false);
+    expect(dialog().querySelector(".member-map__dialog-panel")).toBeNull();
 
-    toggle().click();
-    await (
-      container.querySelector("adminbot-member-map") as { updateComplete?: Promise<unknown> }
-    ).updateComplete;
+    container.querySelector<HTMLButtonElement>('[data-testid="member-map-toggle"]')!.click();
+    await settled();
+    expect(dialog().open).toBe(true);
+    expect(dialog().querySelector(".member-map__dialog-panel")).not.toBeNull();
+    // The full-screen list is the long one.
+    expect(dialog().querySelectorAll(".member-map__row-label").length).toBeGreaterThan(0);
 
-    expect(card().hasAttribute("data-expanded")).toBe(true);
-    expect(toggle().getAttribute("aria-expanded")).toBe("true");
-    expect(rows()).toBeGreaterThan(collapsedRows);
+    container.querySelector<HTMLButtonElement>('[data-testid="member-map-close"]')!.click();
+    await settled();
+    expect(dialog().open).toBe(false);
+    expect(dialog().querySelector(".member-map__dialog-panel")).toBeNull();
 
-    toggle().click();
-    await (
-      container.querySelector("adminbot-member-map") as { updateComplete?: Promise<unknown> }
-    ).updateComplete;
-    expect(card().hasAttribute("data-expanded")).toBe(false);
+    // The map itself is the affordance too — a map you cannot click to enlarge is one people squint
+    // at.
+    container.querySelector<HTMLButtonElement>('[data-testid="member-map-plot-button"]')!.click();
+    await settled();
+    expect(dialog().open).toBe(true);
+  });
+
+  it("closes when the dialog reports itself closed, as Escape does", async () => {
+    const container = await draw(parseMemberMap(summary));
+    const element = container.querySelector("adminbot-member-map") as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    container.querySelector<HTMLButtonElement>('[data-testid="member-map-toggle"]')!.click();
+    await element.updateComplete;
+    await element.updateComplete;
+
+    const dialog = container.querySelector<HTMLDialogElement>(
+      '[data-testid="member-map-dialog"]',
+    )!;
+    // Escape closes the dialog natively and fires `close` without routing through our handler.
+    // jsdom implements neither showModal nor close, so the component's fallback is what runs here —
+    // which is the path this asserts.
+    dialog.open = false;
+    dialog.dispatchEvent(new Event("close"));
+    await element.updateComplete;
+    expect(
+      container.querySelector('[data-testid="member-map-dialog"] .member-map__dialog-panel'),
+    ).toBeNull();
   });
 
   // One card fewer beats an empty map on a dashboard whose other cards are waiting on the member.

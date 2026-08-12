@@ -1924,24 +1924,90 @@
   background: var(--panel);
 }
 
-/* Expanded: the plot takes the full card width and as much height as the viewport can spare, with
-   the list moved underneath. Width alone was not enough — the card is bounded by the dashboard
-   column, so "bigger" has to come from height, and 2:1 means the only way to get height is to stop
-   sharing the row. */
-.member-map[data-expanded] .member-map__body {
-  flex-direction: column;
+/* The plot doubles as the button that opens the full-screen view, so it carries no button chrome —
+   the map is the affordance. */
+.member-map__plot-button {
+  flex: 1 1 420px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
 }
 
-.member-map[data-expanded] .member-map__plot {
-  flex: 1 1 auto;
+.member-map__plot-button .member-map__plot {
   width: 100%;
-  /* aspect-ratio still governs; this stops a wide screen from pushing the map past the fold. */
-  max-height: 72vh;
-  aspect-ratio: 2 / 1;
-  object-fit: contain;
 }
 
-.member-map[data-expanded] .member-map__list {
+.member-map__plot-button:hover .member-map__land {
+  fill: color-mix(in srgb, var(--bg-accent) 88%, var(--text));
+}
+
+.member-map__plot-button:focus-visible {
+  outline: 2px solid var(--accent, var(--text));
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Full screen, in the top layer. A native dialog gets Escape, focus trapping and stacking for
+   free; the alternative is a fixed overlay that reimplements all three. */
+.member-map__dialog {
+  width: 100vw;
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 0;
+  border: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.member-map__dialog::backdrop {
+  background: rgb(0 0 0 / 65%);
+}
+
+.member-map__dialog-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-5) var(--space-6);
+}
+
+/* The plot takes every pixel the header and list leave it. min-height:0 is what lets a flex child
+   actually shrink to its container instead of overflowing at its intrinsic size. */
+.member-map__dialog-plot {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.member-map__dialog-plot .member-map__plot {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 100%;
+}
+
+.member-map__dialog .member-map__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0 var(--space-4);
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+/* Labels and dots are sized for the card; at full screen the same viewBox units are three times
+   the pixels, so they are scaled back to keep the map from looking like a diagram. */
+.member-map__dialog .member-map__label {
+  font-size: 3px;
+  stroke-width: 1;
+}
+
+.member-map__list {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
   gap: 0 var(--space-4);

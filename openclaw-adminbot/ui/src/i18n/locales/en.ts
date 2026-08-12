@@ -1340,7 +1340,8 @@ export const en: TranslationMap = {
       plotAria: "Map of {count} lab members across {cities} cities",
       unplaced: "{count} members whose location could not be placed on the map.",
       expand: "Expand",
-      collapse: "Collapse",
+      expandAria: "Expand the member map to full screen",
+      collapse: "Close",
     },
     workSummary: {
       title: "My projects & papers",

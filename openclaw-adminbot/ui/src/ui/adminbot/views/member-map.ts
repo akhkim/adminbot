@@ -160,29 +160,62 @@ function renderList(map: MemberMap, expanded: boolean) {
 }
 
 /**
- * The card.
+ * The card, plus the full-screen view behind it.
  *
- * A custom element rather than a render function because it owns one piece of state -- whether it
- * is expanded -- and that has to survive the dashboard re-rendering underneath it, which happens
- * every time any other card's data lands. Same reason the deadline board is one.
+ * A native <dialog> rather than a positioned overlay: it renders in the top layer so no z-index in
+ * the app can cover it, closes on Escape, and traps focus — all of which a hand-rolled overlay has
+ * to reimplement and usually gets half right.
  *
- * Collapsed it spans the dashboard grid rather than taking a single column: a world map in a 288px
- * column is a row of specks. Expanded it drops the list underneath and gives the plot the whole
- * width, which is the only way the closer cities separate at all.
+ * A custom element because the open state has to survive the dashboard re-rendering underneath it,
+ * which happens every time any other card's data lands. The deadline board is one for the same
+ * reason.
  */
 class AdminbotMemberMap extends LitElement {
-  static override properties = { map: { attribute: false }, expanded: { state: true } };
+  static override properties = { map: { attribute: false }, opened: { state: true } };
 
   public map: MemberMap | null = null;
 
-  private expanded = false;
+  // The full-screen panel is only in the DOM while it is open. The coastline is a 44kB path
+  // attribute, and rendering a second copy of it behind a closed dialog is the largest thing on
+  // this page duplicated for nothing.
+  private opened = false;
 
   protected override createRenderRoot(): HTMLElement {
     return this;
   }
 
-  private toggle(): void {
-    this.expanded = !this.expanded;
+  private dialog(): HTMLDialogElement | null {
+    return this.querySelector("dialog");
+  }
+
+  private open(): void {
+    this.opened = true;
+    // The panel renders on the next update, so the dialog is only shown once its contents exist.
+    void this.updateComplete.then(() => {
+      const dialog = this.dialog();
+      if (!dialog || dialog.open) {
+        return;
+      }
+      // showModal is what puts it in the top layer and traps focus. The fallback keeps the view
+      // reachable where it is not implemented rather than making the card dead.
+      if (typeof dialog.showModal === "function") {
+        dialog.showModal();
+      } else {
+        dialog.open = true;
+      }
+    });
+  }
+
+  private close(): void {
+    const dialog = this.dialog();
+    if (dialog?.open) {
+      if (typeof dialog.close === "function") {
+        dialog.close();
+      } else {
+        dialog.open = false;
+      }
+    }
+    this.opened = false;
   }
 
   protected override render() {
@@ -190,42 +223,84 @@ class AdminbotMemberMap extends LitElement {
     if (!map || map.places.length === 0) {
       return nothing;
     }
+    const headline = t("dashboard.memberMap.headline", {
+      count: String(map.counts.placed),
+      cities: String(map.places.length),
+    });
     return html`
-      <article
-        class="dashboard-summary member-map"
-        data-testid="dashboard-member-map"
-        ?data-expanded=${this.expanded}
-      >
+      <article class="dashboard-summary member-map" data-testid="dashboard-member-map">
         <div class="member-map__head">
           <div>
             <h3 class="dashboard-summary__title">${t("dashboard.memberMap.title")}</h3>
-            <p class="dashboard-summary__headline">
-              ${t("dashboard.memberMap.headline", {
-                count: String(map.counts.placed),
-                cities: String(map.places.length),
-              })}
-            </p>
+            <p class="dashboard-summary__headline">${headline}</p>
           </div>
           <button
             type="button"
             class="btn btn--sm"
             data-testid="member-map-toggle"
-            aria-expanded=${this.expanded ? "true" : "false"}
-            @click=${() => this.toggle()}
+            @click=${() => this.open()}
           >
-            ${this.expanded
-              ? t("dashboard.memberMap.collapse")
-              : t("dashboard.memberMap.expand")}
+            ${t("dashboard.memberMap.expand")}
           </button>
         </div>
         <div class="member-map__body">
-          ${renderPlot(map)} ${renderList(map, this.expanded)}
+          <!-- The plot is the affordance as well as the picture: a map you cannot click to enlarge
+               is a map people squint at. -->
+          <button
+            type="button"
+            class="member-map__plot-button"
+            data-testid="member-map-plot-button"
+            title=${t("dashboard.memberMap.expand")}
+            aria-label=${t("dashboard.memberMap.expandAria")}
+            @click=${() => this.open()}
+          >
+            ${renderPlot(map)}
+          </button>
+          ${renderList(map, false)}
         </div>
         ${map.unplaced > 0
           ? html`<p class="dashboard-summary__detail" data-testid="member-map-unplaced">
               ${t("dashboard.memberMap.unplaced", { count: String(map.unplaced) })}
             </p>`
           : nothing}
+
+        <dialog
+          class="member-map__dialog"
+          data-testid="member-map-dialog"
+          aria-label=${t("dashboard.memberMap.title")}
+          @close=${() => {
+            // Fires for Escape too, which never routes through close().
+            this.opened = false;
+          }}
+          @click=${(event: Event) => {
+            // Clicking the backdrop closes. The panel below is a child, so a click inside it never
+            // reaches the dialog element itself.
+            if (event.target === event.currentTarget) {
+              this.close();
+            }
+          }}
+        >
+          ${this.opened
+            ? html`<div class="member-map__dialog-panel">
+            <div class="member-map__head">
+              <div>
+                <h2 class="dashboard-summary__title">${t("dashboard.memberMap.title")}</h2>
+                <p class="dashboard-summary__headline">${headline}</p>
+              </div>
+              <button
+                type="button"
+                class="btn btn--sm"
+                data-testid="member-map-close"
+                @click=${() => this.close()}
+              >
+                ${t("dashboard.memberMap.collapse")}
+              </button>
+            </div>
+              <div class="member-map__dialog-plot">${renderPlot(map)}</div>
+              ${renderList(map, true)}
+            </div>`
+            : nothing}
+        </dialog>
       </article>
     `;
   }
