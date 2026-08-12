@@ -1455,8 +1455,12 @@ export const en: TranslationMap = {
       done: "Done",
       cancel: "Cancel",
       managed: "{fields} are set by the lab and cannot be edited here.",
-      optional: "optional",
+      optional: "(optional)",
+      adminFilled: "(filled out by admin)",
       mandatory: "required",
+      countryCode: "Country code",
+      countryCodeNone: "Country code",
+      example: "ex. {example}",
       autosaveHint: "Changes save automatically.",
     },
     blanks: {

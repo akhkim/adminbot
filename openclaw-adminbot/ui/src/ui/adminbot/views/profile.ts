@@ -71,6 +71,10 @@ type ProfileField = {
   type: ProfileFieldType;
   // Dropdown-only: the closed set of values the control (and the server) accept.
   options?: readonly string[];
+  // An answer only the lab can give. The control renders disabled and says who fills it, and the
+  // service leaves the key off the self-edit whitelist -- this flag is the label, never the
+  // enforcement.
+  adminOnly?: true;
   group: ProfileFieldGroup;
 };
 
@@ -243,14 +247,14 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "links",
   },
   {
-    // The one field on this page nobody can fill in from what they already know: LinkedIn
-    // publishes no mapping from a vanity URL to a URN, so the value only exists once the member
-    // reads it off the collector below. The suggestion card in renderSuggestions is the hand-off,
-    // and it disappears the moment this is filled.
+    // LinkedIn publishes no mapping from a vanity URL to a URN, so this value cannot be derived
+    // from anything else on the page. The lab looks it up and fills it in; a member reading a
+    // string of digits off a collector site was a step nobody could be expected to get right.
     key: "linkedin_urn",
     labelKey: "profile.fields.linkedinUrn",
     example: "ACoAAB1234567",
     type: "short_text",
+    adminOnly: true,
     group: "links",
   },
   {
@@ -640,8 +644,18 @@ function renderAvatarUpload(state: AppViewState, member: LabMember, props: Profi
   `;
 }
 
+// Every example answer is prefixed on the way into a placeholder. A bare "ada@cs.toronto.edu"
+// sitting in an empty box reads as somebody else's address already saved to the profile; "ex."
+// says the box is empty and this is only the shape of the answer.
+function exampleFor(field: EditableField): string {
+  return field.example ? t("profile.basics.example", { example: field.example }) : "";
+}
+
 const SHORT_TEXT_MAX_LENGTH = 200;
 const PARAGRAPH_MAX_LENGTH = 2000;
+// The country picker that accompanies a phone field. Suffixed rather than named after the record
+// key, because the record has no column for it -- collectBasics folds it back into the number.
+const PHONE_CODE_SUFFIX = "__dial";
 
 // One control per answer type, so the shape a field expects is enforced by what you can
 // physically type into it -- a dropdown can't hold a value off its own list, a numeric input
@@ -668,7 +682,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           name=${field.key}
           rows="3"
           maxlength=${PARAGRAPH_MAX_LENGTH}
-          placeholder=${field.example}
+          placeholder=${exampleFor(field)}
           .value=${currentValue}
         ></textarea>
       `;
@@ -680,7 +694,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           class="input"
           name=${field.key}
           type="url"
-          placeholder=${field.example}
+          placeholder=${exampleFor(field)}
           .value=${currentValue}
           autocomplete="off"
         />
@@ -691,7 +705,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           class="input"
           name=${field.key}
           type="number"
-          placeholder=${field.example}
+          placeholder=${exampleFor(field)}
           .value=${currentValue}
         />
       `;
@@ -703,7 +717,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           name=${field.key}
           type="text"
           maxlength=${PARAGRAPH_MAX_LENGTH}
-          placeholder=${field.example}
+          placeholder=${exampleFor(field)}
           .value=${currentValue}
           autocomplete="off"
         />
@@ -716,7 +730,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           name=${field.key}
           type="text"
           maxlength=${SHORT_TEXT_MAX_LENGTH}
-          placeholder=${field.example}
+          placeholder=${exampleFor(field)}
           .value=${currentValue}
           autocomplete="off"
         />
@@ -728,11 +742,14 @@ function renderFieldInput(field: EditableField, currentValue: string) {
 // which flushes and exits regardless of what's filled in. The dashboard warning and the daily
 // Slack reminder are what actually follow up on a field that stays blank.
 //
-// A dot rather than a red asterisk: nothing on this page rejects a blank, so borrowing the error
-// color to say "required" claimed a consequence the form does not have. The dot carries the same
-// mark in the accent the rest of the page already uses for "the lab is waiting on this".
-function renderMandatoryMark(field: EditableField) {
-  if (isOptional(field)) {
+// Only what is still outstanding gets marked. A required field the member has already answered
+// needs no flag -- the answer in the control is the proof -- so the dot appears on a required
+// field only while it is blank, and it carries the alert color because a blank one is the thing
+// the lab is chasing. Optional fields say so in words instead (see the label below).
+function renderMandatoryMark(field: EditableField, value: string) {
+  // An admin-owned field says who fills it instead. Dotting it would chase the member for an
+  // answer the form does not let them give.
+  if (isOptional(field) || field.adminOnly || value.trim()) {
     return nothing;
   }
   return html`<span class="profile__mandatory" aria-hidden="true"></span
@@ -763,6 +780,10 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
             <span class="profile__group-icon" aria-hidden="true">${icons.lock}</span>
             ${t("profile.groups.account")}
           </h3>
+          <!-- Leads the Account group rather than trailing the form at the bottom of the card,
+               where it sat below every text field and nobody scrolled to it. It saves through its
+               own handler, so it does not need to be inside the autosaving form. -->
+          ${renderAvatarUpload(state, member, props)}
           <div class="profile__field-grid">
             ${GOVERNED_FIELDS.map(
               (key) => html`
@@ -819,12 +840,19 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                   (field) => html`
                     <label class="profile__form-row">
                       <span class="profile__form-label">
-                        ${labelFor(field.key)}${renderMandatoryMark(field)}
-                        ${isOptional(field)
+                        ${labelFor(field.key)}${renderMandatoryMark(
+                          field,
+                          displayValue(member, field),
+                        )}
+                        ${field.adminOnly
                           ? html`<span class="profile__optional"
-                              >${t("profile.basics.optional")}</span
+                              >${t("profile.basics.adminFilled")}</span
                             >`
-                          : nothing}
+                          : isOptional(field)
+                            ? html`<span class="profile__optional"
+                                >${t("profile.basics.optional")}</span
+                              >`
+                            : nothing}
                       </span>
                       ${renderFieldInput(field, displayValue(member, field))}
                       ${renderPrefillHint(member, field)} ${renderAccountCheckStatus(state, field)}
@@ -835,7 +863,6 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
             </div>
           `,
         )}
-        ${renderAvatarUpload(state, member, props)}
         <p class="profile__managed">
           ${t("profile.basics.managed", {
             fields: GOVERNED_FIELDS.map((key) => labelFor(key)).join(", "),
@@ -972,18 +999,9 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
     .map((step) => `${step.id} ${step.label}`.toLowerCase())
     .join(" ");
 
-  // The URN cannot be looked up from the profile URL -- LinkedIn exposes no mapping -- so the only
-  // route is the member reading it off the collector and pasting it back. The card is the handoff
-  // between those two steps, and disappears the moment the field is filled.
-  if (!String(member.linkedin_urn ?? "").trim()) {
-    suggestions.push({
-      id: "linkedin-urn",
-      title: t("profile.suggestions.urnTitle"),
-      body: t("profile.suggestions.urnBody"),
-      label: t("profile.suggestions.urnLink"),
-      href: LINKEDIN_URN_COLLECTOR_URL,
-    });
-  }
+  // No URN card here any more: the lab fills that field now (see its `adminOnly` flag), and a
+  // suggestion pointing a member at the collector site asked them to do a job the form no longer
+  // accepts from them.
 
   // The intake form used to be pushed here unconditionally. It never had a "done" state, so it sat
   // permanently in a stack whose whole meaning is "still outstanding" and quietly taught people to

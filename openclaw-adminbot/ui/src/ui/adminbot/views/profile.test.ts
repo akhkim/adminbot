@@ -166,8 +166,8 @@ describe("renderProfile autosave", () => {
 });
 
 describe("renderProfile mandatory fields", () => {
-  it("marks a mandatory field with a star but leaves an optional one unmarked", () => {
-    const member = createMember();
+  it("marks a blank mandatory field but leaves an optional one unmarked", () => {
+    const member = createMember({ name: "" });
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
@@ -181,20 +181,36 @@ describe("renderProfile mandatory fields", () => {
     expect(websiteRow?.querySelector(".profile__optional")).not.toBeNull();
   });
 
-  it("marks every mandatory field and leaves the optional ones unmarked", () => {
+  // The mark chases what is still missing, so answering a required field clears it. Otherwise a
+  // fully filled profile would still show a page of dots saying nothing.
+  it("drops the mark once a mandatory field is answered", () => {
+    const container = renderPage(createState(createMember({ name: "Pat Doe" })), vi.fn());
+
+    const nameRow = container.querySelector('input[name="name"]')?.closest(".profile__form-row");
+    expect(nameRow?.querySelector(".profile__mandatory")).toBeNull();
+  });
+
+  it("labels every unmarked, non-mandatory field optional", () => {
     const member = createMember({ role: "", location: "" });
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
     const basics = container.querySelector('[data-testid="profile-basics"]')!;
-    const marks = basics.querySelectorAll(".profile__mandatory");
+    const rows = [...basics.querySelectorAll(".profile__form-row")];
     const optional = basics.querySelectorAll(".profile__optional");
-    expect(marks.length).toBeGreaterThan(0);
     expect(optional.length).toBeGreaterThan(0);
-    // Every field is on the page now, so the two sets together account for all of them.
-    expect(marks.length + optional.length).toBe(
-      basics.querySelectorAll(".profile__form-row").length,
+    // Nothing carries both marks, and no row is left without either a dot or an "(optional)".
+    for (const row of rows) {
+      const dot = row.querySelector(".profile__mandatory");
+      const opt = row.querySelector(".profile__optional");
+      expect(Boolean(dot && opt)).toBe(false);
+    }
+    const answeredMandatory = rows.filter(
+      (row) => !row.querySelector(".profile__mandatory") && !row.querySelector(".profile__optional"),
     );
+    for (const row of answeredMandatory) {
+      expect(row.querySelector<HTMLInputElement>("[name]")?.value).toBeTruthy();
+    }
   });
 });
 
@@ -284,13 +300,9 @@ describe("renderProfile onboarding suggestions", () => {
 });
 
 describe("renderProfile LinkedIn URN and intake form", () => {
-  it("offers the URN collector until the field is filled, then stops", () => {
+  it("never points a member at the URN collector, filled or blank", () => {
     const without = renderPage(createState(createMember()), vi.fn());
-    const card = without.querySelector('[data-testid="suggestion-linkedin-urn"]')!;
-    expect(card).not.toBeNull();
-    expect(card.querySelector<HTMLAnchorElement>(".profile-suggestion__link")?.href).toBe(
-      "https://linkedin-urn-collector.vercel.app/",
-    );
+    expect(without.querySelector('[data-testid="suggestion-linkedin-urn"]')).toBeNull();
 
     const filled = renderPage(
       createState(createMember({ linkedin_urn: "ACoAAB1234567" } as Partial<LabMember>)),
@@ -299,24 +311,47 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(filled.querySelector('[data-testid="suggestion-linkedin-urn"]')).toBeNull();
   });
 
-  it("marks the URN required, matching the reminder the service already sends", () => {
-    const container = renderPage(createState(createMember()), vi.fn());
+  it("shows the URN as an admin-filled value the member cannot edit or be chased for", () => {
+    const container = renderPage(
+      createState(createMember({ linkedin_urn: "ACoAAB1234567" } as Partial<LabMember>)),
+      vi.fn(),
+    );
     const input = container.querySelector<HTMLInputElement>('input[name="linkedin_urn"]');
     expect(input).not.toBeNull();
+    expect(input?.disabled).toBe(true);
+    expect(input?.value).toBe("ACoAAB1234567");
+
     const row = input?.closest(".profile__form-row");
-    expect(row?.querySelector(".profile__mandatory")).not.toBeNull();
-    expect(row?.querySelector(".profile__optional")).toBeNull();
+    // No required dot even while blank -- the member has no way to answer it.
+    expect(row?.querySelector(".profile__mandatory")).toBeNull();
+    expect(row?.querySelector(".profile__optional")?.textContent).toContain("admin");
   });
 
   // The page's required marks and the service's daily reminder read one list, so neither can chase
   // a field the other calls skippable. They used to be two hand-kept lists that never agreed.
-  it("marks exactly the shared mandatory list required, and nothing else", () => {
-    const container = renderPage(createState(createMember()), vi.fn());
+  //
+  // The one documented exception is linkedin_urn: still mandatory for the record, but filled by an
+  // admin, so the member's own page does not dot it. The service reminder still names it.
+  it("marks exactly the shared mandatory list required, minus the admin-filled ones", () => {
+    // Every mandatory field blank, so the marks stand for the whole list rather than the subset
+    // this fixture happens to leave unanswered.
+    const blanks = Object.fromEntries(
+      adminBotMandatoryProfileFields.map((key) => {
+        const current = createMember()[key as keyof LabMember];
+        return [key, Array.isArray(current) ? [] : typeof current === "number" ? undefined : ""];
+      }),
+    ) as Partial<LabMember>;
+    const container = renderPage(createState(createMember(blanks)), vi.fn());
     const marked = [...container.querySelectorAll<HTMLElement>(".profile__form-row")]
       .filter((row) => row.querySelector(".profile__mandatory"))
-      .map((row) => row.querySelector<HTMLElement>("[name]")?.getAttribute("name"))
+      // `:not` skips the phone field's country picker, which is a control of the form rather than
+      // a column of the record.
+      .map((row) => row.querySelector<HTMLElement>('[name]:not([name$="__dial"])'))
+      .map((control) => control?.getAttribute("name"))
       .filter((name): name is string => Boolean(name));
-    expect(marked.toSorted()).toEqual([...adminBotMandatoryProfileFields].toSorted());
+    expect(marked.toSorted()).toEqual(
+      [...adminBotMandatoryProfileFields].filter((key) => key !== "linkedin_urn").toSorted(),
+    );
   });
 
   // Time zone is the one field derivable from another the member already filled in, so the control
@@ -492,6 +527,22 @@ describe("renderProfile visual structure", () => {
       group.querySelector(".profile__group-title")?.textContent?.includes("Account"),
     );
     expect(accountGroup?.textContent).toContain("pat@example.com");
+  });
+
+  it("puts the picture field under the Account heading, keeping the avatar in the header", () => {
+    const member = createMember();
+    const state = createState(member);
+    const container = renderPage(state, vi.fn());
+
+    // The upload control sits under the Account heading, ahead of that group's fields, rather
+    // than trailing the form at the bottom of the card.
+    const basics = container.querySelector('[data-testid="profile-basics"]')!;
+    const accountGroup = basics.querySelector(".profile__field-group")!;
+    const upload = accountGroup.querySelector(".profile__upload")!;
+    const grid = accountGroup.querySelector(".profile__field-grid")!;
+    expect(upload).not.toBeNull();
+    expect(upload.compareDocumentPosition(grid)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(container.querySelector(".profile__hero .profile__avatar-slot")).not.toBeNull();
   });
 
   it("shows badges and a completeness indicator in the identity header", () => {
