@@ -1302,7 +1302,16 @@ export const en: TranslationMap = {
       steps: "{done} of {total} done",
       allDone: "Every step is done — welcome aboard.",
     },
-  },
+    optional: "Optional",
+    back: "Back",
+    next: "Next",
+    finish: "Finish",
+    autoGranted: "Nothing to do, granted automatically",
+    saving: "Saving…",
+    undo: "Undo",
+    markDone: "Mark done",
+    blockedNote: "This step is required, mark it done to continue.",
+},
   dashboard: {
     more: "+{count} more",
     attention: {
@@ -1532,6 +1541,8 @@ export const en: TranslationMap = {
       formBody:
         "Your original responses — including your career ambitions — are what the lab recaps from. Open the form to submit an updated response if anything has changed.",
       formLink: "Open the intake form",
+      fromOnboarding: "From Onboarding",
+      other: "Other Suggestions",
     },
     fields: {
       name: "Name",

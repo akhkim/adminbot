@@ -1,9 +1,12 @@
 // The signed-in member's onboarding checklist, rendered as a standing warning card on the
 // dashboard rather than a first-login popup: it shows on every login/reload until the member
-// explicitly clicks "I have read this" (acknowledgeOnboardingChecklist in auth/flow.ts), which is
-// deliberately independent of finishing the steps themselves -- someone can acknowledge having
-// read the checklist and still have work left on it, same as any other required-reading sign-off.
+// has walked every step (acknowledgeOnboardingChecklist in auth/flow.ts).
+//
+// Steps are walked one at a time rather than shown as a wall of text. A required, incomplete step
+// blocks "Next" -- "Back" is always available, and undoing a previously-marked step is always
+// allowed, whether or not it's required. The block only ever applies going forward.
 import { html, nothing } from "lit";
+import { createRef, ref } from "lit/directives/ref.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
@@ -11,9 +14,9 @@ import { acknowledgeOnboardingChecklist, toggleOnboardingStep } from "../auth/fl
 import type { MemberOnboardingStep } from "../auth/session.ts";
 
 // Auto-granted at registration approval (see auth.ts); there is nothing for the member to do,
-// so it gets no self-attestation toggle.
+// so it gets no self-attestation toggle and never blocks "Next".
 const AUTO_GRANTED_STEP_IDS = new Set(["calendar_invite"]);
-
+const stepCardRef = createRef<HTMLDivElement>();
 // Fixed display order for step categories; any category not listed here (there shouldn't be one)
 // falls back to appearing after all known ones, in first-seen order.
 const CATEGORY_ORDER = [
@@ -54,16 +57,26 @@ function groupStepsByCategory(
   }));
 }
 
+// Flattened walk order: category grouping decides sequence, but navigation is a single linear
+// list -- "step 4 of 11" means the same thing regardless of which category it falls in.
+function flattenOrderedSteps(
+  steps: MemberOnboardingStep[],
+): Array<{ category: string; step: MemberOnboardingStep }> {
+  return groupStepsByCategory(steps).flatMap((group) =>
+    group.steps.map((step) => ({ category: group.category, step })),
+  );
+}
+
 function renderStepLinks(step: MemberOnboardingStep) {
   if (!step.links?.length) {
     return nothing;
   }
   return html`
-    <div class="adminbot-welcome__step-links">
+    <div class="onboarding-step-card__links">
       ${step.links.map(
         (link) => html`
           <a
-            class="btn btn--sm adminbot-welcome__step-link"
+            class="btn onboarding-step-card__link"
             href=${link.url}
             target=${EXTERNAL_LINK_TARGET}
             rel=${buildExternalLinkRel()}
@@ -75,8 +88,8 @@ function renderStepLinks(step: MemberOnboardingStep) {
   `;
 }
 
-// Completion is self-attested: no external service can verify these steps (LinkedIn exposes no
-// membership API at all), so the member's own toggle is the record the onboarding nudge keys off.
+// Completion is self-attested. Undoing is always allowed, required or not -- the required
+// constraint only ever blocks moving forward, never blocks correcting a mistaken "done".
 function renderStepToggle(state: AppViewState, step: MemberOnboardingStep) {
   if (AUTO_GRANTED_STEP_IDS.has(step.id)) {
     return nothing;
@@ -86,90 +99,171 @@ function renderStepToggle(state: AppViewState, step: MemberOnboardingStep) {
   return html`
     <button
       type="button"
-      class="btn btn--sm adminbot-welcome__step-toggle"
+      class="btn onboarding-step-card__toggle"
       ?disabled=${busy || state.adminBotOnboardingBusyStepId !== null}
-      @click=${() => void toggleOnboardingStep(state, step.id, !complete)}
+      @click=${async () => {
+        await toggleOnboardingStep(state, step.id, !complete);
+        scrollToStepCard();
+      }}
     >
-      ${busy ? "Saving…" : complete ? "Undo" : "Mark done"}
+      ${busy
+        ? t("adminbotWelcome.saving")
+        : complete
+          ? t("adminbotWelcome.undo")
+          : t("adminbotWelcome.markDone")}
     </button>
   `;
 }
 
-function renderStep(state: AppViewState, step: MemberOnboardingStep) {
+// The auto-granted calendar step is complete from the start and has no toggle, so opening the walk
+// on definition order would show a card nothing can be done with. Start on the first step that
+// still needs the member; once they have navigated, their explicit position wins over the default.
+function firstUnwalkedStepIndex(
+  ordered: Array<{ category: string; step: MemberOnboardingStep }>,
+): number {
+  const index = ordered.findIndex((entry) => entry.step.status !== "complete");
+  return Math.max(0, index);
+}
+
+function currentStepIndex(
+  state: AppViewState,
+  ordered: Array<{ category: string; step: MemberOnboardingStep }>,
+): number {
+  const raw = state.adminBotOnboardingStepIndex ?? firstUnwalkedStepIndex(ordered);
+  return Math.max(0, Math.min(raw, ordered.length - 1));
+}
+
+function goToStep(state: AppViewState, index: number, total: number) {
+  state.adminBotOnboardingStepIndex = Math.max(0, Math.min(index, total - 1));
+  scrollToStepCard();
+}
+
+// Smooth-scrolls the current step card into view. lit commits the state change rendered inside the
+// click that called this (goToStep/toggle) in a microtask, so scrolling synchronously would measure
+// the card that is about to be replaced -- and a layout mutation during a smooth scroll is what
+// leaves that black band across tall steps. Waiting a frame means the newly committed card is the
+// one measured and scrolled.
+function scrollToStepCard(): void {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      // `block: "start"` would drive the whole page until the card top meets the viewport edge --
+      // for a tall step (e.g. Compute Canada) it scrolls away every bit of context above, and the
+      // dark card plus the empty pane below reads as a huge black rectangle. `nearest` only moves
+      // the page as much as needed to reveal the card, and not at all when it is already visible.
+      stepCardRef.value?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  });
+}
+
+// A required, not-yet-complete step blocks "Next". Auto-granted steps never block -- there is
+// nothing the member can do about them -- and completed steps never block regardless of how they
+// got that way.
+function blocksAdvance(step: MemberOnboardingStep): boolean {
+  if (AUTO_GRANTED_STEP_IDS.has(step.id)) {
+    return false;
+  }
+  return step.required && step.status !== "complete";
+}
+
+function renderStepCard(
+  state: AppViewState,
+  entry: { category: string; step: MemberOnboardingStep },
+  index: number,
+  total: number,
+) {
+  const { category, step } = entry;
+  const isFirst = index === 0;
+  const isLast = index === total - 1;
+  const blocked = blocksAdvance(step);
+
   return html`
-    <li class="adminbot-welcome__step" data-status=${step.status}>
-      <div class="adminbot-welcome__step-header">
-        <span class="adminbot-welcome__step-label">${step.label}</span>
-        <span class="adminbot-welcome__step-badges">
+    <div class="onboarding-step-card" ${ref(stepCardRef)}>
+      <div class="onboarding-step-card__row onboarding-step-card__row--category">
+        <span class="onboarding-step-card__category">${category}</span>
+        <span class="onboarding-step-card__count">${index + 1} / ${total}</span>
+      </div>
+
+      <div class="onboarding-step-card__row onboarding-step-card__row--task">
+        <div class="onboarding-step-card__task">
+          <span class="onboarding-step-card__number">${index + 1}</span>
+          <span class="onboarding-step-card__label">${step.label}</span>
+        </div>
+        <div class="onboarding-step-card__badges">
           ${step.required
-            ? html`<span class="adminbot-welcome__badge adminbot-welcome__badge--required"
+            ? html`<span class="onboarding-step-card__badge onboarding-step-card__badge--required"
                 >${t("adminbotWelcome.required")}</span
               >`
-            : nothing}
+            : html`<span class="onboarding-step-card__badge onboarding-step-card__badge--optional"
+                >${t("adminbotWelcome.optional")}</span
+              >`}
           <span
-            class="adminbot-welcome__badge adminbot-welcome__badge--status"
+            class="onboarding-step-card__badge onboarding-step-card__badge--status"
             data-status=${step.status}
             >${statusLabel(step.status)}</span
           >
-          ${renderStepToggle(state, step)}
-        </span>
+        </div>
       </div>
-      ${step.detail ? html`<p class="adminbot-welcome__step-detail">${step.detail}</p>` : nothing}
-      ${step.bullets?.length
-        ? html`<ul class="adminbot-welcome__step-bullets">
-            ${step.bullets.map(
-              (bullet) => html`<li>
-                <span class="adminbot-welcome__bullet-text">${bullet.text}</span>
-                ${bullet.points?.length
-                  ? html`<ul class="adminbot-welcome__step-points">
-                      ${bullet.points.map((point) => html`<li>${point}</li>`)}
-                    </ul>`
-                  : nothing}
-              </li>`,
-            )}
-          </ul>`
+
+      <div class="onboarding-step-card__body">
+        ${step.detail ? html`<p class="onboarding-step-card__detail">${step.detail}</p>` : nothing}
+        ${step.bullets?.length
+          ? html`<ul class="onboarding-step-card__bullets">
+              ${step.bullets.map(
+                (bullet) => html`<li>
+                  <span class="onboarding-step-card__bullet-text">${bullet.text}</span>
+                  ${bullet.points?.length
+                    ? html`<ul class="onboarding-step-card__points">
+                        ${bullet.points.map((point) => html`<li>${point}</li>`)}
+                      </ul>`
+                    : nothing}
+                </li>`,
+              )}
+            </ul>`
+          : nothing}
+        ${renderStepLinks(step)}
+      </div>
+
+      ${blocked
+        ? html`<p class="onboarding-step-card__blocked-note" role="alert">
+            ${t("adminbotWelcome.blockedNote")}
+          </p>`
         : nothing}
-      ${renderStepLinks(step)}
-    </li>
+
+      <div class="onboarding-step-card__footer">
+        ${!isFirst
+          ? html`
+              <button
+                type="button"
+                class="btn onboarding-step-card__back"
+                @click=${() => goToStep(state, index - 1, total)}
+              >
+                ${t("adminbotWelcome.back")}
+              </button>
+            `
+          : nothing}
+        ${renderStepToggle(state, step)}
+        <button
+          type="button"
+          class="btn primary onboarding-step-card__next"
+          ?disabled=${blocked}
+          @click=${() => {
+            if (isLast) {
+              acknowledgeOnboardingChecklist(state);
+            } else {
+              goToStep(state, index + 1, total);
+            }
+          }}
+        >
+          ${isLast ? t("adminbotWelcome.finish") : t("adminbotWelcome.next")}
+        </button>
+      </div>
+    </div>
   `;
 }
 
-function renderCategory(
-  state: AppViewState,
-  group: { category: string; steps: MemberOnboardingStep[] },
-) {
-  return html`
-    <section class="adminbot-welcome__category">
-      <h3 class="adminbot-welcome__category-title">${group.category}</h3>
-      <ol class="adminbot-welcome__list">
-        ${group.steps.map((step) => renderStep(state, step))}
-      </ol>
-    </section>
-  `;
-}
-
-// A single line of "where am I", so the card opens with the shape of the work instead of a wall
-// of steps. Counts steps actually finished; the automatic calendar grant counts like any other.
-function renderStepProgress(steps: MemberOnboardingStep[]) {
-  if (!steps.length) {
-    return nothing;
-  }
-  const done = steps.filter((step) => step.status === "complete").length;
-  return html`
-    <p class="adminbot-welcome__progress" data-complete=${done === steps.length ? "true" : "false"}>
-      ${done === steps.length
-        ? t("adminbotWelcome.progress.allDone")
-        : t("adminbotWelcome.progress.steps", {
-            done: String(done),
-            total: String(steps.length),
-          })}
-    </p>
-  `;
-}
-
-// True whenever the card in renderOnboardingChecklist below has something to show -- i.e. there
-// is a checklist and the member has not acknowledged it yet. Dashboard.ts checks this before
-// deciding whether the warning occupies the top of the page.
+// True whenever the card below has something to show -- there is a checklist and the member has
+// not acknowledged it yet. Dashboard.ts checks this before deciding whether the warning occupies
+// the top of the page.
 export function hasUnacknowledgedOnboarding(state: AppViewState): boolean {
   return Boolean(state.adminBotOnboarding) && !state.adminBotOnboardingAcknowledged;
 }
@@ -179,25 +273,24 @@ export function renderOnboardingChecklist(state: AppViewState) {
   if (!onboarding || state.adminBotOnboardingAcknowledged) {
     return nothing;
   }
+  const ordered = flattenOrderedSteps(onboarding.steps);
+  if (ordered.length === 0) {
+    return nothing;
+  }
+  const index = currentStepIndex(state, ordered);
+
   return html`
     <section class="dashboard-onboarding" data-testid="dashboard-onboarding-warning">
       <div class="dashboard-onboarding__header">
         <div class="dashboard-onboarding__title">${t("dashboard.onboardingWarning.title")}</div>
         <div class="dashboard-onboarding__sub">${t("dashboard.onboardingWarning.subtitle")}</div>
       </div>
-      ${renderStepProgress(onboarding.steps)}
-      ${groupStepsByCategory(onboarding.steps).map((group) => renderCategory(state, group))}
       ${state.adminBotOnboardingError
-        ? html`<p class="adminbot-welcome__error" role="alert">${state.adminBotOnboardingError}</p>`
+        ? html`<p class="onboarding-step-card__error" role="alert">
+            ${state.adminBotOnboardingError}
+          </p>`
         : nothing}
-      <button
-        type="button"
-        class="btn primary dashboard-onboarding__acknowledge"
-        data-testid="dashboard-onboarding-acknowledge"
-        @click=${() => acknowledgeOnboardingChecklist(state)}
-      >
-        ${t("dashboard.onboardingWarning.acknowledge")}
-      </button>
+      ${renderStepCard(state, ordered[index], index, ordered.length)}
     </section>
   `;
 }
