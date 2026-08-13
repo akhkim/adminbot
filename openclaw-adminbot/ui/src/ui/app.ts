@@ -28,6 +28,12 @@ import {
   type AdminBotReimbursementState,
   sendOnboardingGuide as sendOnboardingGuideController,
 } from "./adminbot/controllers/admin.ts";
+import {
+  loadAdminBotCalendar,
+  proposeAdminBotCalendarEvent,
+  proposeAdminBotCalendarInvite,
+  requestAdminBotCalendarDraft,
+} from "./adminbot/controllers/calendar.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
 import type { ProfileAccountCheck } from "./adminbot/views/profile-account-check.ts";
@@ -1433,6 +1439,36 @@ export class OpenClawApp extends LitElement {
     return sendOnboardingGuideController(
       this as unknown as Parameters<typeof sendOnboardingGuideController>[0],
       options,
+    );
+  }
+
+  loadCalendarEvents(): Promise<void> {
+    return loadAdminBotCalendar(this as unknown as Parameters<typeof loadAdminBotCalendar>[0]);
+  }
+
+  requestCalendarDraft(): Promise<void> {
+    return requestAdminBotCalendarDraft(
+      this as unknown as Parameters<typeof requestAdminBotCalendarDraft>[0],
+    );
+  }
+
+  proposeCalendarEvent(): Promise<void> {
+    return proposeAdminBotCalendarEvent(
+      this as unknown as Parameters<typeof proposeAdminBotCalendarEvent>[0],
+    );
+  }
+
+  // The view owns the selection, so it composes the addresses and the reason; the controller only
+  // files what it is handed.
+  async proposeCalendarInvite(): Promise<void> {
+    const { calendarInviteSelection } = await import("./adminbot/views/calendar.ts");
+    const selection = calendarInviteSelection(this as unknown as AppViewState);
+    if (!selection.event || !selection.emails.length) {
+      return;
+    }
+    await proposeAdminBotCalendarInvite(
+      this as unknown as Parameters<typeof proposeAdminBotCalendarInvite>[0],
+      { event: selection.event, emails: selection.emails, reason: selection.reason },
     );
   }
 

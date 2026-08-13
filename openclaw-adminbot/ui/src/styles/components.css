@@ -9016,6 +9016,120 @@ details[open] > .ov-expandable-toggle::after {
   outline-offset: 1px;
 }
 
+/* Calendar tab. Two stacked panels rather than side-by-side columns: drafting an event and
+   inviting people to one are separate jobs done at separate times, and putting them shoulder to
+   shoulder made each one half as wide for no gain. */
+.adminbot-calendar {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.adminbot-calendar__panel {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.adminbot-calendar__panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.adminbot-calendar__prompt textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.adminbot-calendar__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+.adminbot-calendar__draft {
+  display: grid;
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border);
+}
+
+.adminbot-calendar__draft-fields,
+.adminbot-calendar__filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.adminbot-calendar__wide {
+  grid-column: 1 / -1;
+}
+
+.adminbot-calendar__note {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* The event list and the match list are both scannable columns of one-line rows, so they share a
+   shape: a control, then the fact, then the quieter detail. */
+.adminbot-calendar__events,
+.adminbot-calendar__matches {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-calendar__events li,
+.adminbot-calendar__matches li {
+  background: var(--panel, var(--bg));
+}
+
+.adminbot-calendar__events label,
+.adminbot-calendar__matches label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.adminbot-calendar__events input,
+.adminbot-calendar__matches input {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.adminbot-calendar__event-when,
+.adminbot-calendar__match-email {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.adminbot-calendar__event-name,
+.adminbot-calendar__match-name {
+  font-weight: 600;
+}
+
+/* Why this person is on the list. Pushed to the end of the row and quietened: it is the answer to
+   a question the operator only asks about one or two of the names. */
+.adminbot-calendar__event-where,
+.adminbot-calendar__match-why {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  text-align: right;
+}
+
 .adminbot-time-allocation-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);

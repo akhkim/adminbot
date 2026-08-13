@@ -96,6 +96,25 @@ export type AppViewState = {
   onboardingMissing?: string[];
   onboardingResult?: import("./adminbot/controllers/admin.ts").AdminBotOnboardingResult | null;
   sendOnboardingGuide?: (options: { preview: boolean }) => Promise<void>;
+  // Calendar tab. Two halves that share the roster the tab already has: a prompt that drafts an
+  // event, and a picker that turns member facets into an invite list. Both end in a proposal.
+  calendarEvents?: import("./adminbot/auth/session.ts").CalendarEvent[];
+  calendarEventsLoading?: boolean;
+  calendarEventsError?: string | null;
+  calendarPrompt?: string;
+  calendarDraft?: import("./adminbot/auth/session.ts").CalendarEventDraft | null;
+  calendarDraftBusy?: boolean;
+  calendarDraftError?: string | null;
+  calendarSelectedEventId?: string | null;
+  calendarAudience?: import("./adminbot/calendar-audience.ts").AudienceFilter;
+  // Ids the operator unticked from the matched list, so a filter that is right for 39 of 40 people
+  // does not have to be abandoned for the one exception.
+  calendarExcludedMemberIds?: string[];
+  calendarBusy?: boolean;
+  loadCalendarEvents?: () => Promise<void>;
+  requestCalendarDraft?: () => Promise<void>;
+  proposeCalendarEvent?: () => Promise<void>;
+  proposeCalendarInvite?: () => Promise<void>;
   rosterMembers: import("./adminbot/auth/session.ts").RosterMember[];
   rosterLoading: boolean;
   rosterError: import("./adminbot/auth/flow.ts").RosterError;

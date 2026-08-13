@@ -48,6 +48,8 @@ import { allowedGatewayScopesForPrivilege } from "../workflows/identity/device-p
 import { toPublicMemberMapSummary } from "../workflows/members/member-map.js";
 import { createCalendarInviteRunner } from "../workflows/onboarding/calendar-invite.js";
 import { createDcsFormRunner } from "../workflows/onboarding/dcs-form.js";
+import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
+import { createCalendarEventsReader } from "../workflows/calendar/events.js";
 import { createDriveWorkspaceProvisioner } from "../workflows/onboarding/drive-workspace.js";
 import {
   createAdminBotOnboardingSender,
@@ -101,6 +103,12 @@ export type AdminBotMockServiceOptions = {
   // Overrides the default `gws` CLI-backed calendar invite runner — used by tests to avoid
   // shelling out to a real `gws` binary.
   calendarInviteRunner?: (email: string) => Promise<void>;
+  // Reads upcoming events for the Calendar tab. Injected so tests never shell out to `gog`, and
+  // so a deployment without the CLI simply has no picker rather than a broken route.
+  calendarEventsReader?: import("../workflows/calendar/events.js").CalendarEventsReader;
+  // Drafts an event from a sentence. Defaults to the privacy broker, so a prompt naming a member
+  // gets the same placeholder treatment every other reasoning task gets.
+  calendarEventDrafter?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
   // Same for the `gog` CLI-backed "your account is approved" email.
   accountApprovedEmailRunner?: (params: { email: string; name?: string }) => Promise<void>;
   passwordResetEmailRunner?: (params: {
@@ -269,6 +277,8 @@ type AdminBotRouteContext = {
     channelIds: string[],
   ) => Promise<ReadonlyMap<string, number>>;
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
+  readCalendarEvents?: import("../workflows/calendar/events.js").CalendarEventsReader;
+  draftCalendarEvent?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
   deviceTokenIssuer?: DeviceTokenIssuer;
@@ -408,6 +418,12 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.resolveSlackUserIdsByEmail
       ? { resolveSlackUserIdsByEmail: options.resolveSlackUserIdsByEmail }
       : {}),
+    // The reader shells out to `gog`, so it is built unconditionally but only ever runs when the
+    // Calendar tab asks. The drafter defaults to the same broker `adminbot_reason` uses.
+    readCalendarEvents: options.calendarEventsReader ?? createCalendarEventsReader(),
+    draftCalendarEvent:
+      options.calendarEventDrafter ??
+      createEventDraftRunner((request) => privacyBroker.handle(request)),
     allowedOrigins,
     anonymousRateLimiter: createAnonymousRateLimiter(),
     trustProxyHeaders:
@@ -1033,6 +1049,85 @@ async function handleAuthenticatedRoute(
   if (req.method === "POST" && url.pathname === "/proposals") {
     const body = (await readJson(req)) as AdminBotActionProposal;
     sendServiceResult(res, service.createProposal(body));
+    return;
+  }
+  // Both calendar routes are admin-member only. They read the lab's calendar and spend model time,
+  // which is not something a plain member session or the shared service principal should be able
+  // to do — and neither route writes anything: creating an event or inviting anyone still goes
+  // through POST /proposals as a typed calendar.* action, approval, and the gog connector.
+  if (req.method === "GET" && url.pathname === "/calendar/events") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.readCalendarEvents) {
+      sendJson(res, 503, { error: { message: "calendar reading is not configured" } });
+      return;
+    }
+    const max = Number(url.searchParams.get("max") ?? "");
+    try {
+      const calendarId = url.searchParams.get("calendar_id") ?? "";
+      const from = url.searchParams.get("from") ?? "";
+      const to = url.searchParams.get("to") ?? "";
+      const query = url.searchParams.get("query") ?? "";
+      const events = await ctx.readCalendarEvents({
+        ...(calendarId ? { calendarId } : {}),
+        ...(from ? { from } : {}),
+        ...(to ? { to } : {}),
+        ...(query ? { query } : {}),
+        ...(Number.isFinite(max) && max > 0 ? { max: Math.min(max, 250) } : {}),
+      });
+      sendJson(res, 200, { events });
+    } catch (error) {
+      // The CLI is missing, unauthenticated, or its keyring is locked. Say so rather than
+      // returning an empty list, which reads as "your calendar is empty".
+      sendJson(res, 502, {
+        error: {
+          message: `could not read the calendar: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        },
+      });
+    }
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/calendar/event-draft") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.draftCalendarEvent) {
+      sendJson(res, 503, { error: { message: "event drafting is not configured" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const prompt = asString(body.prompt);
+    if (!prompt) {
+      sendJson(res, 400, { error: { message: "prompt is required" } });
+      return;
+    }
+    try {
+      const timezone = asString(body.timezone);
+      const now = asString(body.now);
+      const result = await ctx.draftCalendarEvent({
+        prompt,
+        ...(timezone ? { timezone } : {}),
+        ...(now ? { now } : {}),
+      });
+      if (!result.ok) {
+        // A model that could not produce a usable event is a 400 naming what was wrong with the
+        // draft, so the operator can rewrite the sentence rather than guess.
+        sendJson(res, 400, { error: { message: result.error } });
+        return;
+      }
+      sendJson(res, 200, { draft: result.draft });
+    } catch (error) {
+      sendJson(res, 502, {
+        error: {
+          message: `the drafting model failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        },
+      });
+    }
     return;
   }
   if (req.method === "POST" && url.pathname === "/privacy/tasks") {

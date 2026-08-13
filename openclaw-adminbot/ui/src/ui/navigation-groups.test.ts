@@ -62,6 +62,7 @@ describe("TAB_GROUPS", () => {
       "adminbotPapers",
       "adminbotRegistrations",
       "adminbotOnboarding",
+      "adminbotCalendar",
       "adminbotAnnouncements",
       "adminbotSettings",
     ]);

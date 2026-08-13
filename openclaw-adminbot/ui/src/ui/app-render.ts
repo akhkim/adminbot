@@ -532,6 +532,10 @@ const lazyAdminBotOnboarding = createLazyView(
   () => import("./adminbot/views/onboarding.ts"),
   notifyLazyViewChanged,
 );
+const lazyAdminBotCalendar = createLazyView(
+  () => import("./adminbot/views/calendar.ts"),
+  notifyLazyViewChanged,
+);
 
 function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminBotPanel | null {
   if (mode === "general") {
@@ -2917,6 +2921,9 @@ export function renderApp(state: AppViewState) {
           : nothing}
         ${state.tab === "adminbotOnboarding" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotOnboarding, (m) => m.renderAdminBotOnboarding(state))
+          : nothing}
+        ${state.tab === "adminbotCalendar" && adminBotMode === "admin"
+          ? renderLazyView(lazyAdminBotCalendar, (m) => m.renderAdminBotCalendar(state))
           : nothing}
         ${state.tab === "adminbotDeadlines"
           ? renderLazyView(lazyDeadlines, (m) => m.renderDeadlines())

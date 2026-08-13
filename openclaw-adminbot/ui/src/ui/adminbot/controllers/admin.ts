@@ -2,6 +2,8 @@ import type { GatewayBrowserClient } from "../../gateway.ts";
 import type { UiSettings } from "../../storage.ts";
 // Control UI controller for the AdminBot dashboard surface.
 import {
+  type CalendarEvent,
+  type CalendarEventDraft,
   type MemberNudgeChannel,
   type MemberProfileUpdate,
   type MemberScheduleUpdate,
@@ -64,10 +66,14 @@ export type AdminBotLabMember = {
   time_off?: TimeOffRow[];
   milestones?: MilestoneRow[];
   location?: string;
+  // Where they are right now, when that is not `location`. The Calendar tab filters on both, and
+  // never lets one stand in for the other.
+  current_city?: string;
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
   calendar_email?: string;
+  correspondence_email?: string;
   github_url?: string;
   joined_month?: string;
   whatsapp?: string;
@@ -374,6 +380,16 @@ export type AdminBotHost = {
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
+  // Calendar tab. Written by controllers/calendar.ts, which shares this host rather than owning a
+  // second one: the invite half reads the same roster and papers the rest of the tab loaded.
+  calendarEvents?: CalendarEvent[];
+  calendarEventsLoading?: boolean;
+  calendarEventsError?: string | null;
+  calendarPrompt?: string;
+  calendarDraft?: CalendarEventDraft | null;
+  calendarDraftBusy?: boolean;
+  calendarDraftError?: string | null;
+  calendarBusy?: boolean;
   // Needed to resolve the AdminBot HTTP base URL for the direct admin-write path in
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
   settings: UiSettings;
@@ -411,7 +427,7 @@ type ToolsInvokeResult = {
   error?: { code: string; message: string };
 };
 
-const ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE =
+export const ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE =
   "AdminBot tools are not available in this Gateway. Enable the adminbot plugin for the adminbot agent, then restart or reload OpenClaw.";
 
 export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
