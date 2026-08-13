@@ -367,6 +367,21 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(filled.querySelector('[data-testid="suggestion-linkedin-urn"]')).toBeNull();
   });
 
+  // The service refuses a GitHub link that points at a repository, a LinkedIn link without /in/,
+  // and an OpenReview id that is not a tilde handle. A member used to meet those rules only as a
+  // rejected save.
+  it("states the accepted shape under the fields that have one", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+
+    const hint = (key: string) =>
+      container.querySelector(`[data-testid="profile-hint-${key}"]`)?.textContent?.trim();
+    expect(hint("github_url")).toContain("github.com/username");
+    expect(hint("linkedin_url")).toContain("linkedin.com/in/username");
+    expect(hint("openreview_id")).toContain("~Ada_Lovelace1");
+    // The obvious ones stay quiet -- a hint on every row is a page nobody reads.
+    expect(container.querySelector('[data-testid="profile-hint-name"]')).toBeNull();
+  });
+
   it("shows the URN as an admin-filled value the member cannot edit or be chased for", () => {
     const container = renderPage(
       createState(createMember({ linkedin_urn: "ACoAAB1234567" } as Partial<LabMember>)),

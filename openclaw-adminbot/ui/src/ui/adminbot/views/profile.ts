@@ -83,6 +83,12 @@ type ProfileField = {
   // service leaves the key off the self-edit whitelist -- this flag is the label, never the
   // enforcement.
   adminOnly?: true;
+  // A persistent line under the control, for the fields whose accepted shape is not guessable from
+  // the label. The service enforces these shapes exactly (SOCIAL_URL_FIELDS and
+  // validateOpenReviewId in kernel/service.ts); without the hint a member only ever meets the rule
+  // as a rejected save. Kept off the fields whose format is obvious -- a hint on every row is a
+  // page nobody reads.
+  hintKey?: string;
   group: ProfileFieldGroup;
 };
 
@@ -135,6 +141,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.calendarEmail",
     example: "ada.lovelace@gmail.com",
     type: "short_text",
+    hintKey: "profile.hints.calendarEmail",
     group: "identity",
   },
   {
@@ -194,6 +201,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.correspondenceEmail",
     example: "ada@cs.toronto.edu",
     type: "short_text",
+    hintKey: "profile.hints.correspondenceEmail",
     group: "identity",
   },
   {
@@ -208,6 +216,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.joinedMonth",
     example: "2026-03",
     type: "short_text",
+    hintKey: "profile.hints.month",
     group: "work",
   },
   {
@@ -217,6 +226,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.graduatedMonth",
     example: "2027-06",
     type: "short_text",
+    hintKey: "profile.hints.month",
     group: "work",
   },
   {
@@ -245,6 +255,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.github",
     example: "https://github.com/ada",
     type: "link",
+    hintKey: "profile.hints.github",
     group: "links",
   },
   {
@@ -252,6 +263,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.linkedin",
     example: "https://www.linkedin.com/in/ada",
     type: "link",
+    hintKey: "profile.hints.linkedin",
     group: "links",
   },
   {
@@ -273,6 +285,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.intakeFormUrl",
     example: "https://docs.google.com/forms/d/e/.../viewform?edit2=...",
     type: "link",
+    hintKey: "profile.hints.intakeFormUrl",
     group: "links",
   },
   {
@@ -287,6 +300,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.scholar",
     example: "https://scholar.google.com/citations?user=abc123",
     type: "link",
+    hintKey: "profile.hints.scholar",
     group: "links",
   },
   {
@@ -294,6 +308,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.openreviewId",
     example: "~Ada_Lovelace1",
     type: "short_text",
+    hintKey: "profile.hints.openreviewId",
     group: "links",
   },
   {
@@ -301,6 +316,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.twitter",
     example: "https://x.com/ada",
     type: "link",
+    hintKey: "profile.hints.twitter",
     group: "links",
   },
 ];
@@ -521,6 +537,18 @@ function prefilledTimezone(member: LabMember): string | null {
     return null;
   }
   return timezoneForLocation(String(member.location ?? ""));
+}
+
+// The shape rule for fields that have one, stated where the answer is typed. The service refuses a
+// link whose host or path is wrong, and until now that rule only ever reached the member as a
+// rejected save naming a field they had to go find.
+function renderFieldHint(field: EditableField) {
+  if (!field.hintKey) {
+    return nothing;
+  }
+  return html`<span class="profile__field-hint" data-testid=${`profile-hint-${field.key}`}
+    >${t(field.hintKey)}</span
+  >`;
 }
 
 function renderPrefillHint(member: LabMember, field: EditableField) {
@@ -982,7 +1010,8 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                             : nothing}
                       </span>
                       ${renderFieldInput(field, displayValue(member, field))}
-                      ${renderPrefillHint(member, field)} ${renderAccountCheckStatus(state, field)}
+                      ${renderFieldHint(field)} ${renderPrefillHint(member, field)}
+                      ${renderAccountCheckStatus(state, field)}
                     </label>
                   `,
                 )}

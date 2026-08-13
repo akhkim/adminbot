@@ -1567,6 +1567,19 @@ export const en: TranslationMap = {
     timezone: {
       prefilled: "Filled in as {zone} from “{location}”. Change it if that is wrong.",
     },
+    // The shapes the service accepts, stated where the answer is typed. Each one mirrors a rule in
+    // SOCIAL_URL_FIELDS or validateOpenReviewId; keep them in step if those change.
+    hints: {
+      calendarEmail: "The Google account your calendar invites should go to.",
+      correspondenceEmail: "Where the lab writes to you. Often not your @cs.toronto.edu address.",
+      github: "Your profile page, not a repository: github.com/username",
+      linkedin: "Your profile page: linkedin.com/in/username",
+      twitter: "Your profile page: x.com/username",
+      scholar: "Your citations page, including the ?user= part of the address.",
+      intakeFormUrl: "The “edit your response” link Google Forms emailed you after you applied.",
+      openreviewId: "The id in your OpenReview profile address, like ~Ada_Lovelace1",
+      month: "Year and month, like 2026-03.",
+    },
   },
   myWork: {
     items: {

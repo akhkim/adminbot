@@ -2724,6 +2724,14 @@
   color: var(--muted);
 }
 
+/* Sits at the same level as the placeholder example it explains -- quieter than the label above,
+   loud enough to read before typing rather than after a save comes back refused. */
+.profile__field-hint {
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.45;
+  color: var(--muted);
+}
+
 .profile__account-check--checking {
   color: var(--muted);
 }
