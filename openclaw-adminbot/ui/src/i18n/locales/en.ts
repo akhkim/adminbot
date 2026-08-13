@@ -1406,6 +1406,7 @@ export const en: TranslationMap = {
       availability: "Availability",
       wholeDay: "Whole day off",
       partial: "Partly available",
+      note: "Note",
     },
     milestones: {
       title: "Big deadlines",
@@ -1423,6 +1424,7 @@ export const en: TranslationMap = {
     noAllocations: "No commitments recorded yet.",
     openLink: "Open link",
     segmentTooltip: "{task}: {hours} from {start} to {end}. Total for this period: {total}.",
+    segmentTooltipNote: "Note: {note}",
     segmentTooltipOff: "Time off from {start} to {end}.",
     segmentSummary: "{start} to {end}: {allocations}; total {total}.",
     segmentSummaryOff: "{start} to {end}: time off.",

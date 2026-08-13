@@ -602,6 +602,81 @@ describe("the split tables and the deadline panel", () => {
     expect(options).toContain("vacation");
   });
 
+  // A note is the half of a commitment that the dates and hours cannot carry, and until now it was
+  // write-only: the form stored it and nothing ever showed it back.
+  it("shows the note on a commitment as a closed disclosure under its row", () => {
+    const container = renderView({
+      members: [
+        member({
+          availability: [
+            {
+              start: "2026-03-02",
+              end: "2026-03-15",
+              project: "Alignment",
+              hours_per_week: 20,
+              note: "Only until the submission",
+            },
+          ],
+        }),
+      ],
+    });
+    const details = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="time-availability-jinesis-table"] .adminbot-time-allocation-table__note',
+    );
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
+    expect(details?.textContent).toContain("Only until the submission");
+  });
+
+  it("shows the note on time away too", () => {
+    const container = renderView({
+      members: [
+        member({
+          time_off: [
+            {
+              start: "2026-12-24",
+              end: "2027-01-02",
+              kind: "vacation",
+              availability: "none",
+              note: "Family, phone off",
+            },
+          ],
+        }),
+      ],
+    });
+    expect(
+      container.querySelector('[data-testid="time-availability-other-table"]')?.textContent,
+    ).toContain("Family, phone off");
+  });
+
+  // No note, no row: an empty disclosure on every commitment would be pure furniture.
+  it("adds no note row to a commitment without one", () => {
+    expect(renderView().querySelector(".adminbot-time-allocation-table__note-row")).toBeNull();
+  });
+
+  it("carries the note into the bar's hover text as well", () => {
+    const container = renderView({
+      range: "month",
+      members: [
+        member({
+          availability: [
+            {
+              start: "2026-03-02",
+              end: "2027-03-15",
+              project: "Alignment",
+              hours_per_week: 20,
+              note: "Shared with Mei",
+            },
+          ],
+        }),
+      ],
+    });
+    const titles = [...container.querySelectorAll(".time-chart__bar title")].map(
+      (title) => title.textContent ?? "",
+    );
+    expect(titles.some((title) => title.includes("Shared with Mei"))).toBe(true);
+  });
+
   it("asks for a custom name only for the 'other' category", () => {
     expect(renderView().querySelector('[data-testid="time-availability-custom-label"]')).toBeNull();
     expect(

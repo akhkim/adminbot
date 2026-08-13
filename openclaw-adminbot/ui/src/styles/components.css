@@ -9047,14 +9047,86 @@ details[open] > .ov-expandable-toggle::after {
   border-bottom: 0;
 }
 
+/* The name cell holds a colour swatch and a label, but it stays a table cell: `display: flex` here
+   took the first cell out of table layout entirely, so its column no longer sized with its header
+   and the name column drifted out of line with the one above it. Inline layout inside the cell
+   gets the same swatch-then-label line without costing the column. */
 .adminbot-time-allocation-table td:first-child {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  white-space: nowrap;
 }
 
+/* Sized here rather than inherited from the legend: the legend rule was renamed with the chart
+   (.time-chart__legend-item i) and this selector was left behind with no box at all, so the swatch
+   rendered 0x0 and the tables lost the colour that ties a row to its bar. */
 .adminbot-time-allocation-table__task {
   display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: var(--space-2);
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+/* A commitment's note, as a row of its own under the commitment.
+   A note is free text and often a sentence or two, so a column of its own would either wrap the
+   whole table into prose or truncate away the one thing the note was written to say. Closed, the
+   table stays as scannable as it was; open, the note gets the full width of the table. */
+.adminbot-time-allocation-table__note-row td {
+  padding-top: 0;
+  white-space: normal;
+}
+
+/* The note belongs to the row above it, so the divider between the two comes off: one commitment
+   reads as one block whether or not it carries a note. */
+.adminbot-time-allocation-table tbody tr:has(+ .adminbot-time-allocation-table__note-row) td {
+  border-bottom: 0;
+}
+
+.adminbot-time-allocation-table__note {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.adminbot-time-allocation-table__note summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-muted);
+}
+
+.adminbot-time-allocation-table__note summary::-webkit-details-marker {
+  display: none;
+}
+
+/* The caret is the only thing saying the row opens, so it is drawn rather than left to the
+   platform marker, which the rule above has to hide to keep the summary on one line. */
+.adminbot-time-allocation-table__note summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid currentcolor;
+  transition: transform 120ms ease-out;
+}
+
+.adminbot-time-allocation-table__note[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.adminbot-time-allocation-table__note summary:focus-visible {
+  outline: 2px solid var(--accent, var(--text));
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.adminbot-time-allocation-table__note p {
+  margin: var(--space-2) 0 0;
+  max-width: 72ch;
+  white-space: pre-wrap;
+  color: var(--text);
 }
 
 /* Granularity switch and the self-service commitment editor: added with the day/week/month views
@@ -9138,6 +9210,22 @@ details[open] > .ov-expandable-toggle::after {
   align-items: center;
   margin-right: var(--space-2);
   color: var(--text-muted);
+}
+
+/* The icon carries no intrinsic size, so without this the anchor laid out at zero and a row's
+   supporting page was in the markup but invisible on screen. Same box and stroke as the other
+   icon buttons. */
+.adminbot-time-allocation-table__link svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+}
+
+.adminbot-time-allocation-table__link:hover {
+  color: var(--text);
 }
 
 .adminbot-time-availability__deadlines {
