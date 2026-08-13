@@ -1891,51 +1891,90 @@
   height: 24px;
 }
 
+/* State drives the treatment, not a per-step hue.
+   A different colour for every step made the bar a rainbow that encoded nothing: the eye had no
+   way to find "where is this paper now". Three states carry all the meaning -- done recedes,
+   current is the only thing that catches the eye, upcoming stays visible but quiet so the shape
+   of the remaining plan is still readable. */
 .adminbot-paper-timeline__bar {
   position: absolute;
   top: 4px;
   display: flex;
   align-items: center;
+  gap: var(--space-1);
   min-width: 40px;
   height: 22px;
-  border: 1px solid
-    color-mix(in srgb, var(--adminbot-paper-timeline-color, var(--accent)) 60%, var(--border));
+  padding-left: var(--space-1);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: color-mix(
-    in srgb,
-    var(--adminbot-paper-timeline-color, var(--accent)) 18%,
-    var(--bg-muted)
-  );
-  color: var(--text);
+  background: transparent;
+  color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 500;
   line-height: 1;
-  opacity: 0.7;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
 }
 
 .adminbot-paper-timeline__bar span {
   min-width: 0;
   overflow: hidden;
-  padding: 0 var(--space-2);
+  padding-right: var(--space-2);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* Done: context, not something to act on. A tick reads faster than a colour. */
 .adminbot-paper-timeline__bar--complete {
-  opacity: 0.9;
+  border-color: color-mix(in srgb, var(--ok) 30%, var(--border));
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
+  color: color-mix(in srgb, var(--ok) 70%, var(--muted));
 }
 
+.adminbot-paper-timeline__bar--complete::before {
+  content: "✓";
+  flex-shrink: 0;
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+/* Now: the single thing the row exists to communicate. */
 .adminbot-paper-timeline__bar--current {
   border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
   color: var(--text-strong);
-  opacity: 1;
+  font-weight: 650;
+}
+
+.adminbot-paper-timeline__bar--current::before {
+  content: "";
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Not yet: dashed so it reads as planned rather than started. */
+.adminbot-paper-timeline__bar--upcoming {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+  color: color-mix(in srgb, var(--muted) 75%, transparent);
 }
 
 .adminbot-paper-timeline__bar--blocked {
   border-color: var(--danger-muted);
   background: var(--danger-subtle);
   color: var(--danger);
-  opacity: 1;
+  font-weight: 600;
+}
+
+.adminbot-paper-timeline__bar--blocked::before {
+  content: "!";
+  flex-shrink: 0;
+  font-weight: 700;
 }
 
 .adminbot-paper-timeline__legend {

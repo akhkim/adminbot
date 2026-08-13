@@ -213,7 +213,10 @@ function paperTimelineBarStyle(
   const duration = Math.max(1, item.duration_business_days);
   const left = Math.round((start / total) * 1000) / 10;
   const width = Math.max(5, Math.round((duration / total) * 1000) / 10);
-  return `left: ${left}%; width: ${width}%; --adminbot-paper-timeline-color: ${item.color};`;
+  // Position only. `item.color` is deliberately not emitted: a per-step hue made the row a
+  // rainbow that encoded nothing, and hid the one thing worth seeing -- which step is current.
+  // The status class carries the meaning instead.
+  return `left: ${left}%; width: ${width}%;`;
 }
 
 function filterPaperOverview(event: Event): void {
