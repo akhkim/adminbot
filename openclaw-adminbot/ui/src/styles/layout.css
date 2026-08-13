@@ -2852,12 +2852,6 @@
   background: var(--bg-elevated);
 }
 
-/* The picture control leads the card it saves into, so it needs the same gap under it that the
-   field groups keep between themselves. */
-.profile__section .profile__upload {
-  margin-bottom: var(--space-3);
-}
-
 /* Top of the card's type hierarchy: section title, then group title, then field label, then the
    placeholder example inside the control. Each step down is a step dimmer, so the level a piece of
    text sits at is legible from its color alone. This was the mono micro-label at --muted, which
@@ -3148,44 +3142,6 @@
   vertical-align: 0.35em;
   border-radius: var(--radius-full);
   background: var(--danger);
-}
-
-/* No rule and no pad above it any more: both existed to fence the picture off from the fields when
-   it trailed the form, and now that it leads the Account group they draw a line directly under
-   that heading. */
-.profile__upload {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.profile__upload-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-5);
-}
-
-.profile__upload-preview {
-  width: 76px;
-  height: 76px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border-strong);
-  background: var(--bg-muted);
-  object-fit: cover;
-}
-
-.profile__upload-preview--empty {
-  display: inline-block;
-}
-
-.profile__upload-button {
-  cursor: pointer;
-}
-
-.profile__upload-hint {
-  margin: 0;
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
 }
 
 /* ===========================================

@@ -859,20 +859,17 @@ describe("renderProfile visual structure", () => {
     expect(accountGroup?.textContent).toContain("pat@example.com");
   });
 
-  it("leads the card with the picture field, keeping the avatar in the header", () => {
+  // One control per value: the header card's avatar is click-to-edit and saves through the same
+  // handler, so a second uploader inside the basics card was the same field asked for twice.
+  it("keeps the picture in the header and not in the basics card", () => {
     const member = createMember();
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
-    // The upload control comes before the first field group, not inside it and not trailing the
-    // form at the bottom of the card. Everything else keeps its own order underneath.
-    const basics = container.querySelector('[data-testid="profile-basics"]')!;
-    const upload = basics.querySelector(".profile__upload")!;
-    const firstGroup = basics.querySelector(".profile__field-group")!;
-    expect(upload).not.toBeNull();
-    expect(upload.parentElement?.classList.contains("profile__field-group")).toBe(false);
-    expect(upload.compareDocumentPosition(firstGroup)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(container.querySelector(".profile__hero .profile__avatar-slot")).not.toBeNull();
+    const basics = container.querySelector('[data-testid="profile-basics"]')!;
+    expect(basics.querySelector(".profile__upload")).toBeNull();
+    expect(basics.querySelector('[data-testid="profile-avatar-upload-field"]')).toBeNull();
   });
 
   // Role is stated once, in the pill beside the name. It used to be pushed into the badge list as

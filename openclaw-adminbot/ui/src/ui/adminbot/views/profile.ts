@@ -860,43 +860,6 @@ async function acceptAvatarFile(
   input.value = "";
 }
 
-function renderAvatarUpload(state: AppViewState, member: LabMember, props: ProfileProps) {
-  const current = String(member.avatar_url ?? "").trim();
-  return html`
-    <div class="profile__upload">
-      <span class="profile__form-label">${labelFor("avatar_url")}</span>
-      <div class="profile__upload-row">
-        ${current
-          ? html`<img class="profile__upload-preview" src=${current} alt="" />`
-          : html`<span class="profile__upload-preview profile__upload-preview--empty"></span>`}
-        <label class="btn btn--sm profile__upload-button">
-          ${current ? t("profile.picture.replace") : t("profile.picture.choose")}
-          <input
-            class="sr-only"
-            type="file"
-            accept="image/*"
-            data-testid="profile-avatar-upload-field"
-            @change=${(event: Event) => void acceptAvatarFile(state, member, props, event)}
-          />
-        </label>
-        ${current
-          ? html`
-              <button
-                type="button"
-                class="btn btn--sm"
-                data-testid="profile-avatar-remove"
-                @click=${() => member.id && props.onSave(member.id, { avatar_url: "" })}
-              >
-                ${t("profile.picture.remove")}
-              </button>
-            `
-          : nothing}
-      </div>
-      <p class="profile__upload-hint">${t("profile.picture.hint")}</p>
-    </div>
-  `;
-}
-
 // Every example answer is prefixed on the way into a placeholder. A bare "zhijing@cs.toronto.edu"
 // sitting in an empty box reads as somebody else's address already saved to the profile; "ex."
 // says the box is empty and this is only the shape of the answer.
@@ -1063,11 +1026,6 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
         <h2 class="profile__section-title">${t("profile.basics.title")}</h2>
         <span class="profile__autosave-hint">${t("profile.basics.autosaveHint")}</span>
       </div>
-      <!-- Leads the card, ahead of the groups rather than inside the first one: the picture is
-           the first thing a member fills in, and it used to trail the form below every text field
-           where nobody scrolled to it. It saves through its own handler, so it does not need to be
-           inside the autosaving form. -->
-      ${renderAvatarUpload(state, member, props)}
       <div class="profile__fields">
         <div class="profile__field-group">
           <h3 class="profile__group-title">
