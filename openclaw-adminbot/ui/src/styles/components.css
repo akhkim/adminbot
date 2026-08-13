@@ -2918,12 +2918,8 @@
   box-shadow: 0 0 0 3px var(--focus);
 }
 
+/* Native arrow, for the reason given at `select.input`. */
 .field select {
-  appearance: none;
-  padding-right: 32px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
   cursor: pointer;
 }
 
@@ -9131,20 +9127,18 @@ textarea.input {
   resize: vertical;
 }
 
-/* The native select arrow is drawn by the platform and ignores the theme, which is the other half
-   of why these looked like grey boxes. Replaced with a chevron in the same stroke as the icon set. */
+/* The arrow is the platform's own. It used to be suppressed with `appearance: none` and redrawn as
+   a background chevron, because the native one rendered as a grey box against the dark UI -- but
+   `color-scheme: dark` (base.css) now tells the platform to draw its controls dark, so the native
+   arrow themes itself and the override costs more than it buys: Chrome repaints the control strip
+   while a select's popup is open, and a background chevron tiles across it, so opening a dropdown
+   drew a row of three to six arrows across the closed box with the label smeared underneath.
+   Nothing paints over the arrow now, so there is nothing to repeat. */
 select.input {
-  padding-right: 30px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238f8f98' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  background-size: 14px 14px;
-  appearance: none;
+  padding-right: var(--space-2);
 }
 
 select.input:focus {
-  /* Keep the chevron over the focus surface rather than letting the lift paint it out. */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238f8f98' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-color: var(--bg-accent);
 }
 
