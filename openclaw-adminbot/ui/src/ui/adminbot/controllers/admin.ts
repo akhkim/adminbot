@@ -105,7 +105,11 @@ export type AdminBotLabMemberSaveInput = {
   researchTopics?: string[];
   projects?: string[];
   hoursPerWeek?: number;
-  availability?: string;
+  // No `availability` here on purpose. The stored schedule is a list of rows the service validates
+  // as one (validateAvailability in extensions/adminbot/src/kernel/service.ts), written from the
+  // Time Availability tab; this form has no schedule control at all. It used to carry a free-text
+  // `availability` string, which every save sent as "" and the service rejected with 400 "member
+  // availability must be a list" — the whole edit lost to a field nobody could see or fill in.
   location?: string;
   affiliation?: string;
   timezone?: string;
@@ -816,7 +820,6 @@ function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
     ...(member.researchTopics ? { research_topics: member.researchTopics } : {}),
     ...(member.projects ? { projects: member.projects } : {}),
     ...(member.hoursPerWeek !== undefined ? { hours_per_week: member.hoursPerWeek } : {}),
-    ...(member.availability !== undefined ? { availability: member.availability } : {}),
     ...(member.location ? { location: member.location } : {}),
     ...(member.affiliation ? { affiliation: member.affiliation } : {}),
     ...(member.timezone ? { timezone: member.timezone } : {}),
@@ -859,7 +862,12 @@ export async function saveAdminBotMember(
             ? "Your session no longer has admin access — sign in again and retry."
             : result.kind === "rate-limited"
               ? "Too many attempts. Wait a moment and try again."
-              : "Couldn't save this member. Check the values and try again.";
+              : // A validation refusal names the value it rejected ("member role must be one of:
+                // ..."); the generic line below cannot, and the whole record is sent on every save,
+                // so without the service's own sentence one bad field reads as the editor being
+                // broken. Same reasoning as saveAdminBotOwnProfile.
+                (result.message ??
+                "Couldn't save this member. Check the values and try again.");
       host.adminBotNotice = { kind: "error", text: message };
       return;
     }
@@ -881,7 +889,6 @@ export async function saveAdminBotMember(
       ...(member.researchTopics ? { researchTopics: member.researchTopics } : {}),
       ...(member.projects ? { projects: member.projects } : {}),
       ...(member.hoursPerWeek !== undefined ? { hoursPerWeek: member.hoursPerWeek } : {}),
-      ...(member.availability !== undefined ? { availability: member.availability } : {}),
       ...(member.location ? { location: member.location } : {}),
       ...(member.affiliation ? { affiliation: member.affiliation } : {}),
       ...(member.timezone ? { timezone: member.timezone } : {}),

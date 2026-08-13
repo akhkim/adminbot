@@ -102,7 +102,10 @@ export type MemberProfileUpdate = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
-  availability?: string;
+  // The schedule is not a profile field: it is the row lists MemberScheduleUpdate carries, and the
+  // service validates it as such. A free-text `availability` string used to live here, and the Lab
+  // Members form sent it empty on every save, so the service answered 400 "member availability must
+  // be a list" and the whole edit was lost.
   location?: string;
   current_city?: string;
   affiliation?: string;
@@ -139,7 +142,6 @@ export type AdminLabMemberUpdate = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
-  availability?: string;
   location?: string;
   affiliation?: string;
   timezone?: string;
@@ -195,7 +197,6 @@ export type SignupProfile = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
-  availability?: string;
   location?: string;
   timezone?: string;
   personal_website?: string;
@@ -422,11 +423,12 @@ export type MemberScheduleUpdate = {
 /**
  * Self-service schedule edit (PUT /lab/members/:id) with the member session.
  *
- * Deliberately separate from `updateOwnProfile` rather than fields on `MemberProfileUpdate`: that
- * type declares `availability` as a free-text string, which is what the admin member form sends,
- * while the stored schedule the service validates is a list of rows (SELF_PROFILE_EDITABLE_FIELDS
- * and validateMember in extensions/adminbot/src/kernel/service.ts). Widening the one field to carry
- * both shapes would let the wrong one through at either call site.
+ * Deliberately separate from `updateOwnProfile`: a schedule is whole lists of validated rows
+ * (SELF_PROFILE_EDITABLE_FIELDS and validateAvailability in
+ * extensions/adminbot/src/kernel/service.ts), while a profile update is scalar fields. They were
+ * once the same field — `MemberProfileUpdate.availability` as free text — and the profile forms
+ * kept sending that string over the list the service expects, failing every save with 400 "member
+ * availability must be a list".
  *
  * All three lists are self-editable, so this needs no approval gate — but the service still
  * re-validates everything (date ranges, 0–168 hours, https-only links, 200-row caps) and stamps

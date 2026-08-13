@@ -506,7 +506,6 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
     ...(getFormValue(data, "hoursPerWeek") && Number.isFinite(hoursPerWeek)
       ? { hoursPerWeek }
       : {}),
-    availability: getFormValue(data, "availability"),
     ...(getFormValue(data, "location") ? { location: getFormValue(data, "location") } : {}),
     ...(getFormValue(data, "affiliation")
       ? { affiliation: getFormValue(data, "affiliation") }
@@ -567,7 +566,6 @@ function collectSelfProfileFields(form: HTMLFormElement): MemberProfileUpdate {
     ...(getFormValue(data, "hoursPerWeek") && Number.isFinite(hoursPerWeek)
       ? { hours_per_week: hoursPerWeek }
       : {}),
-    availability: getFormValue(data, "availability"),
     location,
     affiliation: getFormValue(data, "affiliation"),
     timezone: getFormValue(data, "timezone"),
