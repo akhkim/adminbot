@@ -150,7 +150,7 @@ function scrollToStepCard(): void {
       // for a tall step (e.g. Compute Canada) it scrolls away every bit of context above, and the
       // dark card plus the empty pane below reads as a huge black rectangle. `nearest` only moves
       // the page as much as needed to reveal the card, and not at all when it is already visible.
-      stepCardRef.value?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      stepCardRef.value?.scrollIntoView?.({ behavior: "smooth", block: "nearest" });
     });
   });
 }

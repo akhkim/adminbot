@@ -1,5 +1,5 @@
 import { render } from "lit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { AccessRole } from "../access.ts";
 import { renderDashboard } from "./dashboard.ts";
@@ -178,9 +178,31 @@ describe("renderDashboard", () => {
     expect(container.textContent).toContain("required fields are still blank");
   });
 
-  // A count alone ("6 required fields are still blank") says there is work without saying what it
-  // is, so the card cannot be acted on without opening the profile and hunting.
-  it("names the first three blank fields and counts the rest", () => {
+  // Naming a blank field is only half the help: the name is the shortest route to the box that
+  // answers it.
+  it("lists each blank field as a button that opens the profile", () => {
+    const state = createState({
+      memberId: "m1",
+      setTab: vi.fn(),
+      adminBotData: {
+        proposals: [],
+        members: [{ id: "m1", name: "Ada" }],
+      },
+    } as unknown as Partial<AppViewState>);
+    const container = renderPage(state, "member");
+
+    const chips = [
+      ...container.querySelectorAll<HTMLButtonElement>('[data-testid^="dashboard-blank-"]'),
+    ];
+    expect(chips.length).toBeGreaterThan(0);
+    expect(chips.every((chip) => chip.tagName === "BUTTON")).toBe(true);
+    chips[0]?.click();
+    expect(state.setTab).toHaveBeenCalledWith("profile");
+  });
+
+  // A new member has a dozen blanks. Naming them all wrapped the card to four rows and pushed
+  // everything under it off the screen, so the card names the first few and counts the rest.
+  it("caps the named blanks and counts the remainder", () => {
     const container = renderPage(
       createState({
         memberId: "m1",
@@ -192,50 +214,29 @@ describe("renderDashboard", () => {
       "member",
     );
 
-    const chips = [
-      ...container.querySelectorAll('[data-testid="dashboard-mandatory-fields"] .dashboard-card__field'),
-    ].map((node) => node.textContent?.trim() ?? "");
-    // Three names plus one "+N more".
-    expect(chips).toHaveLength(4);
-    expect(chips.at(-1)).toMatch(/^\+\d+ more$/u);
-    for (const chip of chips.slice(0, 3)) {
-      expect(chip).not.toBe("");
-      expect(chip.endsWith("more")).toBe(false);
-    }
+    const card = container.querySelector('[data-testid="dashboard-attention-mandatoryFields"]')!;
+    const chips = card.querySelectorAll('[data-testid^="dashboard-blank-"]');
+    expect(chips.length).toBe(5);
+    expect(card.querySelector(".dashboard-card__step--more")?.textContent?.trim()).toMatch(
+      /^\+\d+ more$/u,
+    );
   });
 
-  it("names them without a 'more' chip when three or fewer are blank", () => {
+  // The URN is filled in by an admin, so chasing the member for it names a field whose control on
+  // the profile page is disabled.
+  it("never lists an admin-filled field among the blanks", () => {
     const container = renderPage(
       createState({
         memberId: "m1",
         adminBotData: {
           proposals: [],
-          members: [
-            {
-              id: "m1",
-              name: "Ada",
-              location: "Toronto",
-              research_topics: ["alignment"],
-              joined_month: "2026-03",
-              correspondence_email: "ada@cs.toronto.edu",
-              whatsapp: "+1 555 0100",
-              openreview_id: "~Ada_Lovelace1",
-              github_url: "https://github.com/ada",
-              linkedin_url: "https://www.linkedin.com/in/ada",
-              linkedin_urn: "ACoAAB1234567",
-              // calendar_email and cv_url left blank: exactly two.
-            },
-          ],
+          members: [{ id: "m1", name: "Ada" }],
         },
       } as unknown as Partial<AppViewState>),
       "member",
     );
 
-    const chips = [
-      ...container.querySelectorAll('[data-testid="dashboard-mandatory-fields"] .dashboard-card__field'),
-    ];
-    expect(chips).toHaveLength(2);
-    expect(chips.some((chip) => (chip.textContent ?? "").trim().endsWith("more"))).toBe(false);
+    expect(container.querySelector('[data-testid="dashboard-blank-linkedin_urn"]')).toBeNull();
   });
 
   it("drops the mandatory-fields item once every required field is filled in", () => {

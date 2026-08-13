@@ -460,6 +460,85 @@ describe("AdminBotService", () => {
     }
   });
 
+  // The lab runs no object storage, so an uploaded picture lives on the record as a data URL. It
+  // used to fail the https check that guards the link fields, which made the upload control inert.
+  it("stores an uploaded profile photo inline, within the size and type limits", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        id: "photo",
+        name: "Photo Member",
+        email: "photo@cs.toronto.edu",
+        privilege_level: "member",
+      }),
+    );
+
+    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+    expect(unwrap(service.updateOwnProfile("photo", { avatar_url: png })).avatar_url).toBe(png);
+
+    // An SVG is a document that can carry script, and this value is rendered as an <img src>.
+    expect(
+      service.updateOwnProfile("photo", {
+        avatar_url: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
+
+    // Over the 512 KB cap the upload control already enforces client-side.
+    const oversized = `data:image/png;base64,${"A".repeat(1024 * 1024)}`;
+    expect(service.updateOwnProfile("photo", { avatar_url: oversized })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+
+    // A link out is still a link: the other fields keep refusing data URLs.
+    expect(service.updateOwnProfile("photo", { cv_url: png })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+
+    // And a real https photo URL still works.
+    const hosted = "https://example.test/avatar.png";
+    expect(unwrap(service.updateOwnProfile("photo", { avatar_url: hosted })).avatar_url).toBe(
+      hosted,
+    );
+  });
+
+  // The URN is looked up by the lab, not typed by the member, so a self update carrying one is
+  // dropped like any other non-whitelisted key -- the disabled control on the profile page is the
+  // label for this rule, never the rule itself.
+  it("ignores a linkedin_urn sent through a self profile update, but lets an admin set it", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        id: "urn-member",
+        name: "URN Member",
+        email: "urn-member@cs.toronto.edu",
+        privilege_level: "member",
+      }),
+    );
+
+    const selfEdited = unwrap(
+      service.updateOwnProfile("urn-member", {
+        linkedin_urn: "ACoAAB7654321",
+        role: "Postdoc",
+      }),
+    );
+    expect(selfEdited.linkedin_urn ?? "").toBe("");
+    // The rest of the same update still lands: the key is dropped, the request is not refused.
+    expect(selfEdited.role).toBe("Postdoc");
+
+    const byAdmin = unwrap(
+      service.upsertLabMember({
+        id: "urn-member",
+        name: "URN Member",
+        email: "urn-member@cs.toronto.edu",
+        privilege_level: "member",
+        linkedin_urn: "ACoAAB1234567",
+      }),
+    );
+    expect(byAdmin.linkedin_urn).toBe("ACoAAB1234567");
+  });
+
   it("lets a member self-edit availability and time off, and validates both", () => {
     const service = new AdminBotService();
     unwrap(service.upsertLabMember({ id: "sched", name: "Sched", privilege_level: "member" }));

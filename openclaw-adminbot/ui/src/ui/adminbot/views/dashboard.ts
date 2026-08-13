@@ -22,7 +22,7 @@ import type { AccessRole } from "../access.ts";
 import { renderDeadlineSummary } from "./deadlines-summary.ts";
 import { renderMemberMap } from "./member-map.ts";
 import { ownPapers, paperProgress, stepLabel } from "./my-work.ts";
-import { blankFields, findOwnMember } from "./profile.ts";
+import { blankFields, fieldLabel, findOwnMember, focusProfileField } from "./profile.ts";
 
 // One thing waiting on the viewer. `detail` is optional supporting text -- the queue items say
 // everything in their summary.
@@ -40,6 +40,11 @@ type AttentionItem = {
 // instead. blankFields() is already mandatory-only: optional fields never appear in it.
 //
 // The fields live on another tab again, so this navigates rather than scrolling.
+//
+// Same idea as SUMMARY_PREVIEW_LIMIT below, one card up: enough blanks named to be a route into
+// the profile, not so many that this card outgrows the stack it lives in.
+const BLANK_FIELD_PREVIEW_LIMIT = 5;
+
 function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
   const member = findOwnMember(state);
   if (!member) {
@@ -53,37 +58,50 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
     blanks.length === 1
       ? "dashboard.mandatoryFields.summary"
       : "dashboard.mandatoryFields.summaryPlural";
+  // Naming the blanks is only half the help; each name is the shortest route to the box that
+  // answers it, so each one is a button that opens the profile with that control focused.
+  const openField = (fieldKey: string) => () => {
+    focusProfileField(fieldKey);
+    state.setTab("profile");
+  };
+  // A new member has a dozen blanks, which wrapped to four rows and made one card in the stack
+  // three times the height of its siblings -- pushing everything below it off the screen. The
+  // first few are a route in; the count in the summary above already carries the total, and the
+  // Open profile action carries the rest.
+  const shown = blanks.slice(0, BLANK_FIELD_PREVIEW_LIMIT);
+  const hidden = blanks.length - shown.length;
   return {
     id: "mandatoryFields",
     title: t("dashboard.mandatoryFields.title"),
     summary: t(key, { count: String(blanks.length) }),
     actionLabel: t("dashboard.mandatoryFields.open"),
     onAction: () => state.setTab("profile"),
-    // Name the first few rather than only counting them. "6 required fields are still blank" tells
-    // someone they have work without telling them what it is, so the card cannot be acted on
-    // without opening the profile and hunting. Three is the cutoff because the point is to make
-    // the gap concrete, not to reproduce the form -- past that the card is the form.
-    detail: renderBlankFieldNames(blanks),
+    detail: html`
+      <ul class="dashboard-card__steps">
+        ${shown.map(
+          (field) => html`
+            <li>
+              <button
+                type="button"
+                class="dashboard-card__step dashboard-card__step--action"
+                data-testid=${`dashboard-blank-${field.key}`}
+                @click=${openField(field.key)}
+              >
+                ${fieldLabel(field.key)}
+              </button>
+            </li>
+          `,
+        )}
+        ${hidden > 0
+          ? html`<li class="dashboard-card__step dashboard-card__step--more">
+              ${t("dashboard.more", { count: String(hidden) })}
+            </li>`
+          : nothing}
+      </ul>
+    `,
   };
 }
 
-// How many blank fields the card names before it stops being a summary.
-const BLANK_FIELD_PREVIEW = 3;
-
-function renderBlankFieldNames(blanks: ReadonlyArray<{ labelKey: string }>) {
-  const named = blanks.slice(0, BLANK_FIELD_PREVIEW).map((field) => t(field.labelKey));
-  const rest = blanks.length - named.length;
-  return html`
-    <p class="dashboard-card__fields" data-testid="dashboard-mandatory-fields">
-      ${named.map((label) => html`<span class="dashboard-card__field">${label}</span>`)}
-      ${rest > 0
-        ? html`<span class="dashboard-card__field dashboard-card__field--more"
-            >${t("dashboard.mandatoryFields.more", { count: String(rest) })}</span
-          >`
-        : nothing}
-    </p>
-  `;
-}
 
 function proposalsItem(state: AppViewState, role: AccessRole): AttentionItem | null {
   if (role !== "admin") {
@@ -161,7 +179,13 @@ function renderAttention(state: AppViewState, role: AccessRole) {
     <section class="dashboard__attention" data-testid="dashboard-attention">
       <h2 class="dashboard__section-title">
         ${t("dashboard.attention.title")}
-        ${items.length ? html`<span class="dashboard__count">${items.length}</span>` : nothing}
+        ${items.length
+          ? html`<span
+              class="dashboard__count"
+              aria-label=${t("dashboard.attention.countLabel", { count: String(items.length) })}
+              >${items.length}</span
+            >`
+          : nothing}
       </h2>
       ${items.length
         ? html`<div class="dashboard__stack">${items.map(renderAttentionCard)}</div>`
@@ -239,7 +263,14 @@ function renderWorkSummary(state: AppViewState) {
             return html`
               <li class="dashboard-summary__row">
                 <span class="dashboard-summary__row-label">${paper.title}</span>
-                <span class="dashboard-summary__bar">
+                <span
+                  class="dashboard-summary__bar"
+                  role="progressbar"
+                  aria-valuenow=${percent}
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-label=${t("dashboard.myWork.progressLabel", { title: paper.title })}
+                >
                   <span class="dashboard-summary__bar-fill" style=${`width:${percent}%`}></span>
                 </span>
                 <span class="dashboard-summary__row-step">${stepLabel(paper.current_step)}</span>

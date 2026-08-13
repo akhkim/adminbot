@@ -1317,6 +1317,7 @@ export const en: TranslationMap = {
     attention: {
       title: "Needs you",
       empty: "Nothing waiting on you. Ask AdminBot anything, or check what's coming up.",
+      countLabel: "{count} waiting on you",
     },
     onboardingWarning: {
       title: "Finish onboarding before you go further",
@@ -1360,6 +1361,9 @@ export const en: TranslationMap = {
       blockersPlural: "{count} blockers awaiting review.",
       clear: "Nothing is blocked.",
       open: "Open my work",
+    },
+    myWork: {
+      progressLabel: "{title} progress",
     },
   },
   adminbotTimeAvailability: {
@@ -1474,8 +1478,12 @@ export const en: TranslationMap = {
       done: "Done",
       cancel: "Cancel",
       managed: "{fields} are set by the lab and cannot be edited here.",
-      optional: "optional",
+      optional: "(optional)",
+      adminFilled: "(filled out by admin)",
       mandatory: "required",
+      countryCode: "Country code",
+      countryCodeNone: "Code",
+      example: "ex. {example}",
       autosaveHint: "Changes save automatically.",
     },
     blanks: {
@@ -1603,6 +1611,19 @@ export const en: TranslationMap = {
         "The link to your own submitted answers on the lab's application form. Google Forms emails it only to the person who responded, so nobody else — the lab included — can produce it for you. It lets you review and edit what you told us when you applied.",
       cvUrl:
         "A link to your CV. A Google Drive link is completely fine — if you use one, set the sharing to \"anyone with the link can view\", otherwise it will open for you but not for anyone else.",
+    },
+    // The shapes the service accepts, stated where the answer is typed. Each one mirrors a rule in
+    // SOCIAL_URL_FIELDS or validateOpenReviewId; keep them in step if those change.
+    hints: {
+      calendarEmail: "The Google account your calendar invites should go to.",
+      correspondenceEmail: "Where the lab writes to you. Often not your @cs.toronto.edu address.",
+      github: "Your profile page, not a repository: github.com/username",
+      linkedin: "Your profile page: linkedin.com/in/username",
+      twitter: "Your profile page: x.com/username",
+      scholar: "Your citations page, including the ?user= part of the address.",
+      intakeFormUrl: "The “edit your response” link Google Forms emailed you after you applied.",
+      openreviewId: "The id in your OpenReview profile address, like ~Zhijing_Jin1",
+      month: "Year and month, like 2026-03.",
     },
   },
   myWork: {

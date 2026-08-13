@@ -31,6 +31,11 @@
   --muted: #8f8f98;
   --muted-strong: #a1a1aa;
   --muted-foreground: #8f8f98;
+  /* Example text inside an empty control: the dimmest ink in the ramp, because it has to read as
+     "what could go here", never as an answer already on record. It was --muted, the same value as
+     the labels above it, which made an example indistinguishable from a filled-in field. Mixed
+     from the two themed tokens rather than a literal hex so a custom theme dims it too. */
+  --placeholder: color-mix(in srgb, var(--muted) 70%, var(--bg) 30%);
 
   /* Border — hairline. --border is the default rule everywhere. */
   --border: #1f1f23;

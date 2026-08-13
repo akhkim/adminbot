@@ -11,6 +11,7 @@
 // Saving goes through the same self-edit path the Lab Members table uses, whose server-side
 // whitelist drops governance fields. Nothing here can write privilege_level, status, or email.
 import { html, nothing } from "lit";
+import { ifDefined } from "lit/directives/if-defined.js";
 import {
   adminBotMandatoryProfileFields,
   adminBotMemberRoles,
@@ -23,7 +24,13 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
 import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
+import {
+  joinPhoneNumber,
+  resolvePhoneDial,
+  splitPhoneNumber,
+} from "../data/phone-country-codes.ts";
 import { timezoneForLocation } from "../data/timezone-for-location.ts";
+import { renderCountrySelect } from "./country-select.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 
 export type ProfileProps = {
@@ -43,6 +50,9 @@ type ProfileFieldType =
   | "link"
   | "numeric"
   | "list"
+  // A country code picked from a list, plus the local number typed alongside it. Stored as the
+  // one joined string the roster column already holds.
+  | "phone"
   | "image";
 
 // Purely presentational clustering -- same fields, same keys, same validation -- so someone
@@ -74,6 +84,16 @@ type ProfileField = {
   type: ProfileFieldType;
   // Dropdown-only: the closed set of values the control (and the server) accept.
   options?: readonly string[];
+  // An answer only the lab can give. The control renders disabled and says who fills it, and the
+  // service leaves the key off the self-edit whitelist -- this flag is the label, never the
+  // enforcement.
+  adminOnly?: true;
+  // A persistent line under the control, for the fields whose accepted shape is not guessable from
+  // the label. The service enforces these shapes exactly (SOCIAL_URL_FIELDS and
+  // validateOpenReviewId in kernel/service.ts); without the hint a member only ever meets the rule
+  // as a rejected save. Kept off the fields whose format is obvious -- a hint on every row is a
+  // page nobody reads.
+  hintKey?: string;
   group: ProfileFieldGroup;
 };
 
@@ -109,7 +129,7 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "name",
     labelKey: "profile.fields.name",
-    example: "Ada Lovelace",
+    example: "Zhijing Jin",
     type: "short_text",
     group: "identity",
   },
@@ -134,8 +154,9 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "calendar_email",
     labelKey: "profile.fields.calendarEmail",
-    example: "ada.lovelace@gmail.com",
+    example: "zhijing.jin@gmail.com",
     type: "short_text",
+    hintKey: "profile.hints.calendarEmail",
     group: "identity",
   },
   {
@@ -150,7 +171,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.location",
     example: "Toronto, ON",
     type: "short_text",
-    group: "identity",
+    group: "work",
   },
   {
     // Where the member currently is, kept distinct from their resident location above. Purely
@@ -162,14 +183,12 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "identity",
   },
   {
-    // Derived from the resident `location` field, looked up by key in prefilledTimezone (not by
-    // position), so the current_city field sitting between them does not affect it.
     key: "timezone",
     labelKey: "profile.fields.timezone",
     example: "America/Toronto",
     type: "dropdown",
     options: timezoneOptions(),
-    group: "identity",
+    group: "work",
   },
   {
     key: "hours_per_week",
@@ -181,7 +200,7 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "research_topics",
     labelKey: "profile.fields.researchTopics",
-    example: "reasoning, alignment",
+    example: "causal inference, NLP",
     type: "list",
     group: "research",
   },
@@ -197,17 +216,16 @@ const PROFILE_FIELDS: ProfileField[] = [
     // and `calendar_email` (the Google account invites go to). It is frequently neither.
     key: "correspondence_email",
     labelKey: "profile.fields.correspondenceEmail",
-    example: "ada@cs.toronto.edu",
+    example: "zhijing@cs.toronto.edu",
     type: "short_text",
+    hintKey: "profile.hints.correspondenceEmail",
     group: "identity",
   },
   {
-    // The country code is not optional in practice: a bare local number is not dialable by anyone
-    // outside the member's own country, and this roster spans a dozen of them.
     key: "whatsapp",
     labelKey: "profile.fields.whatsapp",
-    example: "+1 555 0100",
-    type: "short_text",
+    example: "555 0100",
+    type: "phone",
     group: "identity",
   },
   {
@@ -215,6 +233,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.joinedMonth",
     example: "2026-03",
     type: "short_text",
+    hintKey: "profile.hints.month",
     group: "work",
   },
   {
@@ -224,6 +243,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.graduatedMonth",
     example: "2027-06",
     type: "short_text",
+    hintKey: "profile.hints.month",
     group: "work",
   },
   {
@@ -248,26 +268,28 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "github_url",
     labelKey: "profile.fields.github",
-    example: "https://github.com/ada",
+    example: "https://github.com/zhijing-jin",
     type: "link",
+    hintKey: "profile.hints.github",
     group: "links",
   },
   {
     key: "linkedin_url",
     labelKey: "profile.fields.linkedin",
-    example: "https://www.linkedin.com/in/ada",
+    example: "https://www.linkedin.com/in/zhijing-jin",
     type: "link",
+    hintKey: "profile.hints.linkedin",
     group: "links",
   },
   {
-    // The one field on this page nobody can fill in from what they already know: LinkedIn
-    // publishes no mapping from a vanity URL to a URN, so the value only exists once the member
-    // reads it off the collector below. The suggestion card in renderSuggestions is the hand-off,
-    // and it disappears the moment this is filled.
+    // LinkedIn publishes no mapping from a vanity URL to a URN, so this value cannot be derived
+    // from anything else on the page. The lab looks it up and fills it in; a member reading a
+    // string of digits off a collector site was a step nobody could be expected to get right.
     key: "linkedin_urn",
     labelKey: "profile.fields.linkedinUrn",
     example: "ACoAAB1234567",
     type: "short_text",
+    adminOnly: true,
     group: "links",
   },
   {
@@ -278,47 +300,51 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.intakeFormUrl",
     example: "https://docs.google.com/forms/d/e/.../viewform?edit2=...",
     type: "link",
+    hintKey: "profile.hints.intakeFormUrl",
     group: "links",
   },
   {
     key: "cv_url",
     labelKey: "profile.fields.cvUrl",
-    example: "https://ada.dev/cv.pdf",
+    example: "https://zhijing-jin.com/files/CV.pdf",
     type: "link",
     group: "links",
   },
   {
     key: "openreview_id",
     labelKey: "profile.fields.openreviewId",
-    example: "~Ada_Lovelace1",
+    example: "~Zhijing_Jin1",
     type: "short_text",
+    hintKey: "profile.hints.openreviewId",
     group: "links",
   },
   {
     key: "twitter_url",
     labelKey: "profile.fields.twitter",
-    example: "https://x.com/ada",
+    example: "https://x.com/ZhijingJin",
     type: "link",
+    hintKey: "profile.hints.twitter",
     group: "links",
   },
   {
     key: "personal_website",
     labelKey: "profile.fields.personalWebsite",
-    example: "https://ada.dev",
+    example: "https://zhijing-jin.com",
     type: "link",
     group: "links",
   },
   {
     key: "scholar_url",
     labelKey: "profile.fields.scholar",
-    example: "https://scholar.google.com/citations?user=abc123",
+    example: "https://scholar.google.com/citations?user=Mdr6wjUAAAAJ",
     type: "link",
+    hintKey: "profile.hints.scholar",
     group: "links",
   },
   {
     key: "lesswrong_url",
     labelKey: "profile.fields.lesswrong",
-    example: "https://www.lesswrong.com/users/ada",
+    example: "https://www.lesswrong.com/users/zhijing-jin",
     type: "link",
     group: "links",
   },
@@ -383,15 +409,21 @@ function scheduleAutosave(
   );
 }
 
+// Commits an edit that is still inside its debounce window, because focus leaving the form means
+// the member is done with it. With no timer pending there is nothing to flush: leaving a form
+// nobody typed in used to fire a full-record PUT, a "saved" toast for a save that changed nothing,
+// and an outbound account check per checkable field -- so merely tabbing through the page burned
+// GitHub's 60-request unauthenticated hourly budget, which a whole lab shares behind one campus IP.
 function flushAutosave(
   timer: ReturnType<typeof setTimeout> | undefined,
   set: (next: ReturnType<typeof setTimeout> | undefined) => void,
   commit: () => void,
 ): void {
-  if (timer) {
-    clearTimeout(timer);
-    set(undefined);
+  if (!timer) {
+    return;
   }
+  clearTimeout(timer);
+  set(undefined);
   commit();
 }
 
@@ -405,12 +437,17 @@ function focusLeftForm(form: HTMLFormElement, event: FocusEvent): boolean {
 // exist" check (see profile-account-check.ts). A superseded check aborts its own in-flight
 // fetch, so typing a second GitHub handle before the first lookup returns can never let the
 // first response land after the second and show a stale result.
-let accountCheckAbort: AbortController | undefined;
+// One controller per field, not one per run: a shared controller made an edit to either field
+// cancel the other's in-flight lookup, so the two checks superseded each other rather than only
+// themselves.
+const accountCheckAborts = new Map<string, AbortController>();
+
+// The last value each field was actually looked up with. A commit sends the whole record, so
+// without this every save re-checked both accounts whether or not they had changed -- and GitHub
+// allows 60 unauthenticated requests an hour per IP, which a lab shares behind one campus address.
+const accountCheckedValues = new Map<string, string>();
 
 function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
-  accountCheckAbort?.abort();
-  const controller = new AbortController();
-  accountCheckAbort = controller;
   const data = new FormData(form);
   for (const field of ["github_url", "openreview_id"] as const) {
     if (!data.has(field)) {
@@ -418,6 +455,9 @@ function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
     }
     const value = String(data.get(field) ?? "").trim();
     if (!value) {
+      accountCheckAborts.get(field)?.abort();
+      accountCheckAborts.delete(field);
+      accountCheckedValues.delete(field);
       if (state.profileAccountChecks[field]) {
         const next = { ...state.profileAccountChecks };
         delete next[field];
@@ -425,6 +465,17 @@ function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
       }
       continue;
     }
+    // Already answered for this exact value, and not still in flight.
+    if (
+      accountCheckedValues.get(field) === value &&
+      state.profileAccountChecks[field]?.status !== "checking"
+    ) {
+      continue;
+    }
+    accountCheckAborts.get(field)?.abort();
+    const controller = new AbortController();
+    accountCheckAborts.set(field, controller);
+    accountCheckedValues.set(field, value);
     state.profileAccountChecks = {
       ...state.profileAccountChecks,
       [field]: { status: "checking" },
@@ -472,6 +523,11 @@ const FIELD_LABEL_KEYS: Record<string, string> = {
 
 function labelFor(key: string): string {
   return t(FIELD_LABEL_KEYS[key] ?? key);
+}
+
+/** The on-screen name of a field, for surfaces outside this page that list fields by key. */
+export function fieldLabel(key: string): string {
+  return labelFor(key);
 }
 
 export function findOwnMember(state: AppViewState): LabMember | null {
@@ -564,28 +620,7 @@ function renderFieldHelp(field: EditableField) {
   `;
 }
 
-// The one field nobody can fill in from what they already know: LinkedIn publishes no mapping from
-// a vanity URL to a URN, so the value only exists once the member reads it off the collector. That
-// hand-off belongs against the input it feeds, not in a card elsewhere on the page.
-const LINKEDIN_URN_COLLECTOR_URL = "https://linkedin-urn-collector.vercel.app";
 
-function renderFieldAction(field: EditableField) {
-  if (field.key !== "linkedin_urn") {
-    return nothing;
-  }
-  return html`
-    <a
-      class="profile__field-action"
-      href=${LINKEDIN_URN_COLLECTOR_URL}
-      target=${EXTERNAL_LINK_TARGET}
-      rel=${buildExternalLinkRel()}
-      data-testid="profile-urn-collector"
-    >
-      ${t("profile.suggestions.urnLink")}
-      <span class="profile__field-action-icon" aria-hidden="true">${icons.externalLink}</span>
-    </a>
-  `;
-}
 
 function renderWhatsappHint(member: LabMember, field: EditableField) {
   if (field.key !== "whatsapp") {
@@ -601,6 +636,17 @@ function renderWhatsappHint(member: LabMember, field: EditableField) {
     </span>
   `;
 }
+
+// The shape rule for fields that have one, stated where the answer is typed. The service refuses a
+// link whose host or path is wrong, and until now that rule only ever reached the member as a
+// rejected save naming a field they had to go find.
+function renderFieldHint(field: EditableField) {
+  if (!field.hintKey) {
+    return nothing;
+  }
+  return html`<span class="profile__field-hint" data-testid=${`profile-hint-${field.key}`}
+    >${t(field.hintKey)}</span
+  >`;}
 
 function renderPrefillHint(member: LabMember, field: EditableField) {
   if (field.key !== "timezone") {
@@ -620,13 +666,49 @@ function renderPrefillHint(member: LabMember, field: EditableField) {
   `;
 }
 
+// What the lab is still waiting on *from this member*. Admin-owned fields are required of the
+// record but not answerable here, so they stay out of the blanks list, the dashboard card that
+// chases it, and the denominator below -- otherwise the ledger could never reach complete and the
+// card would name a field whose control is disabled.
+function isMemberAnswerable(field: EditableField): boolean {
+  return !isOptional(field) && !field.adminOnly;
+}
+
 export function blankFields(member: LabMember): EditableField[] {
-  return EDITABLE_FIELDS.filter((field) => !isOptional(field) && !valueOf(member, field).trim());
+  return EDITABLE_FIELDS.filter(
+    (field) => isMemberAnswerable(field) && !valueOf(member, field).trim(),
+  );
 }
 
 // Everything a member may set, blank or not -- what the full editor offers.
 export function requiredFieldCount(): number {
-  return EDITABLE_FIELDS.filter((field) => !isOptional(field)).length;
+  return EDITABLE_FIELDS.filter(isMemberAnswerable).length;
+}
+
+// A one-shot hand-off from the dashboard: it names the field a member clicked, and the profile
+// page focuses that control on its next render. Kept as module state rather than on AppViewState
+// because it is consumed immediately and never re-read -- it must not survive into a later render
+// and steal focus from whatever the member is typing in by then.
+let pendingFocusFieldKey: string | null = null;
+
+export function focusProfileField(key: string): void {
+  pendingFocusFieldKey = key;
+}
+
+function consumePendingFieldFocus(): void {
+  const key = pendingFocusFieldKey;
+  pendingFocusFieldKey = null;
+  if (!key || typeof document === "undefined") {
+    return;
+  }
+  // After paint: the control this names is rendered by the same template that is running now.
+  requestAnimationFrame(() => {
+    const control = document.querySelector<HTMLElement>(
+      `.profile__form-row [name="${CSS.escape(key)}"]`,
+    );
+    control?.scrollIntoView({ block: "center" });
+    control?.focus();
+  });
 }
 
 // Badges are earned, so each one is derived from a fact on the record rather than stored. A badge
@@ -654,9 +736,9 @@ export function badgesFor(state: AppViewState, member: LabMember): string[] {
   if (papers.some((paper) => paper.mentor_member_id === member.id)) {
     badges.push(t("profile.badges.mentor"));
   }
-  if (member.role?.trim()) {
-    badges.push(member.role.trim());
-  }
+  // Role is deliberately absent: the header already states it in the pill beside the name, and a
+  // badge is meant to be something earned from the record rather than a second copy of a field the
+  // member picked from a dropdown.
   return badges;
 }
 
@@ -671,7 +753,19 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
       continue;
     }
     const value = String(data.get(field.key) ?? "").trim();
-    if (field.type === "list") {
+    if (field.type === "phone") {
+      // The two controls are a country box and a number box; the record keeps one string. The
+      // country box is free text with a suggestion list, so what it holds is resolved back to a
+      // dial code rather than trusted as one.
+      setField(
+        fields,
+        field.key,
+        joinPhoneNumber(
+          resolvePhoneDial(String(data.get(`${field.key}${PHONE_CODE_SUFFIX}`) ?? "")),
+          value,
+        ),
+      );
+    } else if (field.type === "list") {
       setField(
         fields,
         field.key,
@@ -761,8 +855,20 @@ function renderAvatarUpload(state: AppViewState, member: LabMember, props: Profi
   `;
 }
 
+// Every example answer is prefixed on the way into a placeholder. A bare "zhijing@cs.toronto.edu"
+// sitting in an empty box reads as somebody else's address already saved to the profile; "ex."
+// says the box is empty and this is only the shape of the answer.
+// Returns undefined rather than "" for a field with no example, so the control renders no
+// placeholder attribute at all instead of an empty one that reads as an unlabeled example.
+function exampleFor(field: EditableField): string | undefined {
+  return field.example ? t("profile.basics.example", { example: field.example }) : undefined;
+}
+
 const SHORT_TEXT_MAX_LENGTH = 200;
 const PARAGRAPH_MAX_LENGTH = 2000;
+// The country picker that accompanies a phone field. Suffixed rather than named after the record
+// key, because the record has no column for it -- collectBasics folds it back into the number.
+const PHONE_CODE_SUFFIX = "__dial";
 
 // One control per answer type, so the shape a field expects is enforced by what you can
 // physically type into it -- a dropdown can't hold a value off its own list, a numeric input
@@ -770,7 +876,40 @@ const PARAGRAPH_MAX_LENGTH = 2000;
 // regardless (a form is a UI convenience, never the trust boundary), but the earlier and more
 // specific the feedback, the less a bad save ever gets that far.
 function renderFieldInput(field: EditableField, currentValue: string) {
+  // An admin-owned answer is shown, never offered for editing. `disabled` also keeps the key out
+  // of the form's own collection, so an autosave cannot carry a value the service would drop.
+  if (field.adminOnly) {
+    return html`
+      <input
+        class="input"
+        name=${field.key}
+        type="text"
+        .value=${currentValue}
+        disabled
+        data-testid=${`profile-admin-only-${field.key}`}
+      />
+    `;
+  }
   switch (field.type) {
+    case "phone": {
+      // Country first, then the local number: the prefix is the part people cannot recall, and a
+      // list they pick from also spares the roster the four spellings of "+1 (416)".
+      const { dial, local } = splitPhoneNumber(currentValue);
+      return html`
+        <span class="profile__phone">
+          ${renderCountrySelect({ name: `${field.key}${PHONE_CODE_SUFFIX}`, value: dial })}
+          <input
+            class="input profile__phone-number"
+            name=${field.key}
+            type="tel"
+            maxlength=${SHORT_TEXT_MAX_LENGTH}
+            placeholder=${ifDefined(exampleFor(field))}
+            .value=${local}
+            autocomplete="off"
+          />
+        </span>
+      `;
+    }
     case "dropdown":
       return html`
         <select class="input" name=${field.key}>
@@ -789,7 +928,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           name=${field.key}
           rows="3"
           maxlength=${PARAGRAPH_MAX_LENGTH}
-          placeholder=${field.example}
+          placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
         ></textarea>
       `;
@@ -801,7 +940,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           class="input"
           name=${field.key}
           type="url"
-          placeholder=${field.example}
+          placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
           autocomplete="off"
         />
@@ -812,7 +951,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           class="input"
           name=${field.key}
           type="number"
-          placeholder=${field.example}
+          placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
         />
       `;
@@ -824,7 +963,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           name=${field.key}
           type="text"
           maxlength=${PARAGRAPH_MAX_LENGTH}
-          placeholder=${field.example}
+          placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
           autocomplete="off"
         />
@@ -837,7 +976,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           name=${field.key}
           type="text"
           maxlength=${SHORT_TEXT_MAX_LENGTH}
-          placeholder=${field.example}
+          placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
           autocomplete="off"
         />
@@ -849,11 +988,14 @@ function renderFieldInput(field: EditableField, currentValue: string) {
 // which flushes and exits regardless of what's filled in. The dashboard warning and the daily
 // Slack reminder are what actually follow up on a field that stays blank.
 //
-// A dot rather than a red asterisk: nothing on this page rejects a blank, so borrowing the error
-// color to say "required" claimed a consequence the form does not have. The dot carries the same
-// mark in the accent the rest of the page already uses for "the lab is waiting on this".
-function renderMandatoryMark(field: EditableField) {
-  if (isOptional(field)) {
+// Only what is still outstanding gets marked. A required field the member has already answered
+// needs no flag -- the answer in the control is the proof -- so the dot appears on a required
+// field only while it is blank, and it carries the alert color because a blank one is the thing
+// the lab is chasing. Optional fields say so in words instead (see the label below).
+function renderMandatoryMark(field: EditableField, value: string) {
+  // An admin-owned field says who fills it instead. Dotting it would chase the member for an
+  // answer the form does not let them give.
+  if (isOptional(field) || field.adminOnly || value.trim()) {
     return nothing;
   }
   return html`<span class="profile__mandatory" aria-hidden="true"></span
@@ -878,6 +1020,11 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
         <h2 class="profile__section-title">${t("profile.basics.title")}</h2>
         <span class="profile__autosave-hint">${t("profile.basics.autosaveHint")}</span>
       </div>
+      <!-- Leads the card, ahead of the groups rather than inside the first one: the picture is
+           the first thing a member fills in, and it used to trail the form below every text field
+           where nobody scrolled to it. It saves through its own handler, so it does not need to be
+           inside the autosaving form. -->
+      ${renderAvatarUpload(state, member, props)}
       <div class="profile__fields">
         <div class="profile__field-group">
           <h3 class="profile__group-title">
@@ -940,15 +1087,22 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                   (field) => html`
                     <label class="profile__form-row">
                       <span class="profile__form-label">
-                        ${labelFor(field.key)}${renderMandatoryMark(field)}${renderFieldHelp(field)}
-                        ${isOptional(field)
+                        ${labelFor(field.key)}${renderMandatoryMark(
+                          field,
+                          displayValue(member, field),
+                        )}${renderFieldHelp(field)}
+                        ${field.adminOnly
                           ? html`<span class="profile__optional"
-                              >${t("profile.basics.optional")}</span
+                              >${t("profile.basics.adminFilled")}</span
                             >`
-                          : nothing}
+                          : isOptional(field)
+                            ? html`<span class="profile__optional"
+                                >${t("profile.basics.optional")}</span
+                              >`
+                            : nothing}
                       </span>
                       ${renderFieldInput(field, displayValue(member, field))}
-                      ${renderFieldAction(field)}
+                      ${renderFieldHint(field)}
                       ${renderPrefillHint(member, field)}
                       ${renderWhatsappHint(member, field)} ${renderAccountCheckStatus(state, field)}
                     </label>
@@ -958,7 +1112,6 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
             </div>
           `,
         )}
-        ${renderAvatarUpload(state, member, props)}
         <p class="profile__managed">
           ${t("profile.basics.managed", {
             fields: GOVERNED_FIELDS.map((key) => labelFor(key)).join(", "),
@@ -986,9 +1139,14 @@ function renderCompletionLedger(member: LabMember) {
   const total = requiredFieldCount();
   const done = total - blanks.size;
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+  // Same filter as `total` above. Ticking every non-optional field instead drew one tick more than
+  // the count claimed, and the extra was the admin-owned URN -- which, never being in `blanks`,
+  // always drew as filled whether or not the lab had supplied it.
   const groups = PROFILE_FIELD_GROUPS.map((group) => ({
     id: group.id,
-    fields: EDITABLE_FIELDS.filter((field) => !isOptional(field) && field.group === group.id),
+    fields: EDITABLE_FIELDS.filter(
+      (field) => isMemberAnswerable(field) && field.group === group.id,
+    ),
   })).filter((group) => group.fields.length > 0);
   return html`
     <div
@@ -1125,6 +1283,13 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
     .map((step) => `${step.id} ${step.label}`.toLowerCase())
     .join(" ");
 
+  // No URN card here any more: the lab fills that field now (see its `adminOnly` flag), and a
+  // suggestion pointing a member at the collector site asked them to do a job the form no longer
+  // accepts from them.
+
+  // The intake form used to be pushed here unconditionally. It never had a "done" state, so it sat
+  // permanently in a stack whose whole meaning is "still outstanding" and quietly taught people to
+  // read past it. It lives with the links now, where a permanent destination belongs.
   const topics = (member.research_topics ?? []).join(" ").toLowerCase();
   if (
     !coveredByOnboarding.includes("gpu") &&
@@ -1295,13 +1460,19 @@ function renderSaveToast(state: AppViewState) {
     toastNoticeText = notice.text;
     if (toastDismissTimer) {
       clearTimeout(toastDismissTimer);
-    }
-    toastDismissTimer = setTimeout(() => {
       toastDismissTimer = undefined;
-      if (state.adminBotNotice?.text === notice.text) {
-        state.adminBotNotice = null;
-      }
-    }, SAVE_TOAST_MS);
+    }
+    // Only a success self-clears. A rejected save leaves the record different from what is on
+    // screen, and the message names the field to fix -- a notice that erases itself after a beat
+    // is one a member reading another part of the page never sees at all.
+    if (notice.kind === "success") {
+      toastDismissTimer = setTimeout(() => {
+        toastDismissTimer = undefined;
+        if (state.adminBotNotice?.text === notice.text) {
+          state.adminBotNotice = null;
+        }
+      }, SAVE_TOAST_MS);
+    }
   }
   return html`
     <div
@@ -1321,6 +1492,7 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
     return html`<p class="profile__empty">${t("profile.blanks.signInRequired")}</p>`;
   }
   const name = member.name?.trim() || member.email?.trim() || "";
+  consumePendingFieldFocus();
   return html`
     <div class="profile">
       ${renderSaveToast(state)}

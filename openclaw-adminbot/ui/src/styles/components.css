@@ -384,8 +384,7 @@
   cursor: pointer;
   color: var(--muted);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .login-gate__failure-detail summary:focus-visible {
@@ -421,8 +420,7 @@
 .login-gate__help-title {
   font-weight: 600;
   font-size: var(--control-ui-text-xs);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
   margin-bottom: var(--space-4);
   color: var(--muted);
 }
@@ -521,7 +519,6 @@
 .adminbot-welcome__category-title {
   font-size: var(--control-ui-text-xs);
   font-weight: 700;
-  text-transform: uppercase;
   letter-spacing: var(--tracking-wide, 0.06em);
   color: var(--muted);
   margin: 0 0 var(--space-3);
@@ -814,8 +811,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-metric__value {
@@ -909,7 +905,6 @@
 .adminbot-registration__field dt {
   font-size: var(--control-ui-text-xs);
   letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -997,8 +992,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-form :is(input, select, textarea) {
@@ -1318,8 +1312,7 @@
   padding-bottom: var(--space-2);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-table__row:not(.adminbot-table__row--head):hover {
@@ -1488,8 +1481,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-member-filters :is(input, select),
@@ -1568,8 +1560,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   white-space: nowrap;
 }
 
@@ -1708,8 +1699,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   font-variant-numeric: tabular-nums;
   border-bottom: 1px solid var(--border-strong);
 }
@@ -1983,8 +1973,7 @@
   color: var(--warn);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-nudge p {
@@ -2217,8 +2206,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .stat-value {
@@ -2335,8 +2323,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .pill {
@@ -2878,8 +2865,7 @@
 .field:not(.checkbox) > span {
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
   color: var(--muted);
 }
 
@@ -2932,12 +2918,8 @@
   box-shadow: 0 0 0 3px var(--focus);
 }
 
+/* Native arrow, for the reason given at `select.input`. */
 .field select {
-  appearance: none;
-  padding-right: 32px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
   cursor: pointer;
 }
 
@@ -3012,7 +2994,6 @@
   color: var(--muted);
   font-size: 12px; /* was 11px */
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
@@ -3383,7 +3364,6 @@
   font-size: 13px;
   font-weight: 650;
   letter-spacing: 0.02em;
-  text-transform: uppercase;
   margin-bottom: 6px;
 }
 
@@ -3838,7 +3818,6 @@
   font-size: 12px; /* was 11px */
   font-weight: 700;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
   color: var(--info);
 }
 
@@ -4276,7 +4255,6 @@
   font-size: 12px; /* was 11px */
   font-weight: 600;
   letter-spacing: 0.03em;
-  text-transform: uppercase;
   padding: 4px 8px;
   background: var(--secondary);
   border-radius: var(--radius-sm);
@@ -4308,7 +4286,6 @@
   font-size: 12px; /* was 10px */
   font-weight: 600;
   letter-spacing: 0.05em;
-  text-transform: uppercase;
 }
 
 .cron-job-state-value {
@@ -4461,8 +4438,7 @@
 .table-head {
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
   color: var(--muted);
   padding: 0 var(--space-3) var(--space-2);
   border-bottom: 1px solid var(--border-strong);
@@ -4609,7 +4585,6 @@
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
   user-select: none;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
@@ -4975,7 +4950,6 @@
   font-size: 12px; /* was 11px */
   font-weight: 650;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .session-details-panel__title {
@@ -5012,7 +4986,6 @@
   font-size: 12px; /* was 11px */
   font-weight: 650;
   letter-spacing: 0.03em;
-  text-transform: uppercase;
 }
 
 .session-detail-stat__value {
@@ -5281,7 +5254,6 @@ td.data-table-key-col {
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  text-transform: uppercase;
 }
 
 .sessions-filter-panel__toggle {
@@ -6298,7 +6270,6 @@ td.data-table-key-col {
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
 }
 
 .exec-approval-list__main {
@@ -6543,7 +6514,6 @@ td.data-table-key-col {
   font-size: 12px; /* was 11px */
   color: var(--muted);
   background: var(--secondary);
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
@@ -6621,7 +6591,6 @@ td.data-table-key-col {
   margin-left: 4px;
   font-size: 12px; /* was 9px */
   font-weight: 700;
-  text-transform: uppercase;
   color: var(--warn);
   opacity: 0.8;
 }
@@ -6859,7 +6828,6 @@ td.data-table-key-col {
   font-size: 12px; /* was 11px */
   font-weight: 700;
   letter-spacing: 0.14em;
-  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -7448,7 +7416,6 @@ td.data-table-key-col {
   color: var(--muted);
   font-size: 12px; /* was 11px */
   font-variant-numeric: tabular-nums;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
@@ -7729,7 +7696,6 @@ td.data-table-key-col {
   align-items: center;
   font-weight: 600;
   font-size: 13px;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--muted);
   cursor: pointer;
@@ -7889,7 +7855,6 @@ td.data-table-key-col {
   color: var(--muted);
   font-size: 12px; /* was 11px */
   font-weight: 600;
-  text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
@@ -7998,7 +7963,6 @@ td.data-table-key-col {
   font-size: 12px; /* was 11px */
   font-weight: 600;
   color: var(--muted);
-  text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
@@ -8134,7 +8098,6 @@ td.data-table-key-col {
   font-size: 13px;
   font-weight: 600;
   color: var(--muted);
-  text-transform: uppercase;
   letter-spacing: 0.04em;
   margin: 0 0 10px;
 }
@@ -8575,8 +8538,7 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-reimbursement-message p {
@@ -8652,8 +8614,7 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--text);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   cursor: pointer;
   transition: border-color var(--duration-fast) var(--ease-out);
 }
@@ -8701,8 +8662,7 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .adminbot-reimbursement-fields dd {
@@ -8755,8 +8715,7 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   white-space: nowrap;
 }
 
@@ -9035,7 +8994,6 @@ details[open] > .ov-expandable-toggle::after {
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .adminbot-time-allocation-table tbody tr:last-child td {
@@ -9231,7 +9189,17 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .input::placeholder {
-  color: var(--muted);
+  color: var(--placeholder);
+}
+
+/* Mobile Safari zooms the viewport when a focused control's text is under 16px, and leaves it
+   zoomed -- so tapping one field silently rescales the whole page. `--control-ui-input-text-size`
+   exists for exactly this and the app's other input surfaces already use it; this is the generic
+   control catching up, at the widths where it matters rather than everywhere. */
+@media (max-width: 768px) {
+  .input {
+    font-size: var(--control-ui-input-text-size);
+  }
 }
 
 /* Only when it is not already the focused field, so hover cannot mute the focus treatment. */
@@ -9261,20 +9229,18 @@ textarea.input {
   resize: vertical;
 }
 
-/* The native select arrow is drawn by the platform and ignores the theme, which is the other half
-   of why these looked like grey boxes. Replaced with a chevron in the same stroke as the icon set. */
+/* The arrow is the platform's own. It used to be suppressed with `appearance: none` and redrawn as
+   a background chevron, because the native one rendered as a grey box against the dark UI -- but
+   `color-scheme: dark` (base.css) now tells the platform to draw its controls dark, so the native
+   arrow themes itself and the override costs more than it buys: Chrome repaints the control strip
+   while a select's popup is open, and a background chevron tiles across it, so opening a dropdown
+   drew a row of three to six arrows across the closed box with the label smeared underneath.
+   Nothing paints over the arrow now, so there is nothing to repeat. */
 select.input {
-  padding-right: 30px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238f8f98' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 10px center;
-  background-size: 14px 14px;
-  appearance: none;
+  padding-right: var(--space-2);
 }
 
 select.input:focus {
-  /* Keep the chevron over the focus surface rather than letting the lift paint it out. */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238f8f98' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-color: var(--bg-accent);
 }
 
