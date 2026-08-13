@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AdminBotEmailPayload, AdminBotStoredProposal } from "../contracts/actions.js";
 import { emailPayloadSchema } from "../contracts/tool-schemas.js";
 import { AdminBotService } from "../kernel/service.js";
+import { renderEmailBodyHtml } from "./email-html.js";
 import { createGogAdminBotExecutor, readGogSheetRows } from "./gog.js";
 
 function proposal(
@@ -51,6 +52,8 @@ describe("createGogAdminBotExecutor", () => {
       "Lab update",
       "--body",
       "The draft was approved.",
+      "--body-html",
+      "<p>The draft was approved.</p>",
     ]);
   });
 
@@ -114,11 +117,16 @@ describe("createGogAdminBotExecutor", () => {
       expect.arrayContaining(["gmail.drafts.create", "drafts", "create"]),
     );
 
-    // Same payload minus the new field: no --body-html anywhere.
+    // Same payload minus the field: the connector renders the alternative itself rather than
+    // falling back to text/plain, because the agent's proposal pipeline never supplies one and a
+    // text-only send is exactly what wraps mid-paragraph.
     const { body_html: _omitted, ...legacy } = payload;
     run.mockClear();
     await executor.execute(proposal("email.send", legacy));
-    expect(run.mock.calls[0]?.[0]).not.toContain("--body-html");
+    const rendered = run.mock.calls[0]?.[0] as string[];
+    expect(
+      rendered.slice(rendered.indexOf("--body-html"), rendered.indexOf("--body-html") + 2),
+    ).toEqual(["--body-html", renderEmailBodyHtml(legacy.body)]);
 
     // The schema round-trips both shapes, and still refuses a non-string html body.
     expect(Value.Check(emailPayloadSchema, payload)).toBe(true);
