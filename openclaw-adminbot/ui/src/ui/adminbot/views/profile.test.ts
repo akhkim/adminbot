@@ -436,18 +436,27 @@ describe("renderProfile onboarding suggestions", () => {
 });
 
 describe("renderProfile LinkedIn URN and intake form", () => {
-  it("never points a member at the URN collector, filled or blank", () => {
+  // The collector link sits on the field it feeds rather than in a card elsewhere on the page, and
+  // it stays there once the field is filled: a hand-off that vanishes on completion leaves anyone
+  // correcting a wrong value with nowhere to go.
+  it("puts the URN collector link on the field itself, filled or not", () => {
+    const linkIn = (container: HTMLElement) =>
+      container.querySelector<HTMLAnchorElement>('[data-testid="profile-urn-collector"]');
+
     const without = renderPage(createState(createMember()), vi.fn());
-    expect(without.querySelector('[data-testid="suggestion-linkedin-urn"]')).toBeNull();
+    expect(linkIn(without)?.href).toBe("https://linkedin-urn-collector.vercel.app/");
+    // It is next to the input it feeds, not adrift on the page.
+    expect(without.querySelector('[name="linkedin_urn"]')?.closest(".profile__form-row")).toBe(
+      linkIn(without)?.closest(".profile__form-row"),
+    );
 
     const filled = renderPage(
       createState(createMember({ linkedin_urn: "ACoAAB1234567" } as Partial<LabMember>)),
       vi.fn(),
     );
-    // Neither the suggestion card nor the on-field link: an admin fills this now.
-    expect(filled.querySelector('[data-testid="suggestion-linkedin-urn"]')).toBeNull();
-    expect(filled.querySelector('[data-testid="profile-urn-collector"]')).toBeNull();
-    expect(without.querySelector('[data-testid="profile-urn-collector"]')).toBeNull();
+    expect(linkIn(filled)).not.toBeNull();
+    // And the old suggestion card is gone, not duplicated.
+    expect(without.querySelector('[data-testid="suggestion-linkedin-urn"]')).toBeNull();
   });
 
   // Both fields ask for something a member has no reason to have heard of, so each carries an
@@ -484,20 +493,15 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(container.querySelector('[data-testid="profile-hint-name"]')).toBeNull();
   });
 
-  it("shows the URN as an admin-filled value the member cannot edit or be chased for", () => {
+  it("lets the member edit their own URN", () => {
     const container = renderPage(
       createState(createMember({ linkedin_urn: "ACoAAB1234567" } as Partial<LabMember>)),
       vi.fn(),
     );
     const input = container.querySelector<HTMLInputElement>('input[name="linkedin_urn"]');
     expect(input).not.toBeNull();
-    expect(input?.disabled).toBe(true);
+    expect(input?.disabled).toBe(false);
     expect(input?.value).toBe("ACoAAB1234567");
-
-    const row = input?.closest(".profile__form-row");
-    // No required dot even while blank -- the member has no way to answer it.
-    expect(row?.querySelector(".profile__mandatory")).toBeNull();
-    expect(row?.querySelector(".profile__optional")?.textContent).toContain("admin");
   });
 
   // Three states, not two. "Unknown" renders nothing, because labelling someone Inactive from a
@@ -571,17 +575,16 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(container.querySelector('[name="slack_user_id"]')).toBeNull();
   });
 
-  it("groups location and time zone with work logistics", () => {
+  it("groups location and time zone with identity rather than work logistics", () => {
     const container = renderPage(createState(createMember()), vi.fn());
     const groupOf = (name: string) =>
       container
         .querySelector(`[name="${name}"]`)
         ?.closest(".profile__field-group")
         ?.querySelector(".profile__group-title")?.textContent?.trim();
-    const work = groupOf("hours_per_week");
-    expect(groupOf("location")).toBe(work);
-    expect(groupOf("timezone")).toBe(work);
-    expect(groupOf("name")).not.toBe(work);
+    const identity = groupOf("name");
+    expect(groupOf("location")).toBe(identity);
+    expect(groupOf("timezone")).toBe(identity);
   });
 
   // Advisory only: most imported numbers have no country code, and this form PUTs every field on
@@ -613,7 +616,7 @@ describe("renderProfile LinkedIn URN and intake form", () => {
   //
   // The one documented exception is linkedin_urn: still mandatory for the record, but filled by an
   // admin, so the member's own page does not dot it. The service reminder still names it.
-  it("marks exactly the shared mandatory list required, minus the admin-filled ones", () => {
+  it("marks exactly the shared mandatory list required", () => {
     // Every mandatory field blank, so the marks stand for the whole list rather than the subset
     // this fixture happens to leave unanswered.
     const blanks = Object.fromEntries(
@@ -630,9 +633,7 @@ describe("renderProfile LinkedIn URN and intake form", () => {
       .map((row) => row.querySelector<HTMLElement>('[name]:not([name$="__dial"])'))
       .map((control) => control?.getAttribute("name"))
       .filter((name): name is string => Boolean(name));
-    expect(marked.toSorted()).toEqual(
-      [...adminBotMandatoryProfileFields].filter((key) => key !== "linkedin_urn").toSorted(),
-    );
+    expect(marked.toSorted()).toEqual([...adminBotMandatoryProfileFields].toSorted());
   });
 
   // Time zone is the one field derivable from another the member already filled in, so the control

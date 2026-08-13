@@ -171,7 +171,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.location",
     example: "Toronto, ON",
     type: "short_text",
-    group: "work",
+    group: "identity",
   },
   {
     // Where the member currently is, kept distinct from their resident location above. Purely
@@ -188,7 +188,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     example: "America/Toronto",
     type: "dropdown",
     options: timezoneOptions(),
-    group: "work",
+    group: "identity",
   },
   {
     key: "hours_per_week",
@@ -266,6 +266,24 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "identity",
   },
   {
+    // The member's own intake answers. Google Forms mails each respondent a link to their single
+    // submitted response, so nobody else -- the lab included -- can produce this URL for them;
+    // that is why it is a field they paste into rather than a link the profile renders.
+    key: "intake_form_url",
+    labelKey: "profile.fields.intakeFormUrl",
+    example: "https://docs.google.com/forms/d/e/.../viewform?edit2=...",
+    type: "link",
+    hintKey: "profile.hints.intakeFormUrl",
+    group: "links",
+  },
+  {
+    key: "cv_url",
+    labelKey: "profile.fields.cvUrl",
+    example: "https://zhijing-jin.com/files/CV.pdf",
+    type: "link",
+    group: "links",
+  },
+  {
     key: "github_url",
     labelKey: "profile.fields.github",
     example: "https://github.com/zhijing-jin",
@@ -289,25 +307,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.linkedinUrn",
     example: "ACoAAB1234567",
     type: "short_text",
-    adminOnly: true,
-    group: "links",
-  },
-  {
-    // The member's own intake answers. Google Forms mails each respondent a link to their single
-    // submitted response, so nobody else -- the lab included -- can produce this URL for them;
-    // that is why it is a field they paste into rather than a link the profile renders.
-    key: "intake_form_url",
-    labelKey: "profile.fields.intakeFormUrl",
-    example: "https://docs.google.com/forms/d/e/.../viewform?edit2=...",
-    type: "link",
-    hintKey: "profile.hints.intakeFormUrl",
-    group: "links",
-  },
-  {
-    key: "cv_url",
-    labelKey: "profile.fields.cvUrl",
-    example: "https://zhijing-jin.com/files/CV.pdf",
-    type: "link",
     group: "links",
   },
   {
@@ -634,6 +633,29 @@ function renderWhatsappHint(member: LabMember, field: EditableField) {
     <span class="profile__prefill" data-testid="profile-whatsapp-hint">
       ${t("profile.whatsapp.needsCountryCode")}
     </span>
+  `;
+}
+
+// The one field nobody can fill in from what they already know: LinkedIn publishes no mapping from
+// a vanity URL to a URN, so the value only exists once the member reads it off the collector. That
+// hand-off belongs against the input it feeds, not in a card elsewhere on the page.
+const LINKEDIN_URN_COLLECTOR_URL = "https://linkedin-urn-collector.vercel.app";
+
+function renderFieldAction(field: EditableField) {
+  if (field.key !== "linkedin_urn") {
+    return nothing;
+  }
+  return html`
+    <a
+      class="profile__field-action"
+      href=${LINKEDIN_URN_COLLECTOR_URL}
+      target=${EXTERNAL_LINK_TARGET}
+      rel=${buildExternalLinkRel()}
+      data-testid="profile-urn-collector"
+    >
+      ${t("profile.suggestions.urnLink")}
+      <span class="profile__field-action-icon" aria-hidden="true">${icons.externalLink}</span>
+    </a>
   `;
 }
 
@@ -1102,7 +1124,7 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                             : nothing}
                       </span>
                       ${renderFieldInput(field, displayValue(member, field))}
-                      ${renderFieldHint(field)}
+                      ${renderFieldAction(field)} ${renderFieldHint(field)}
                       ${renderPrefillHint(member, field)}
                       ${renderWhatsappHint(member, field)} ${renderAccountCheckStatus(state, field)}
                     </label>
@@ -1283,9 +1305,8 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
     .map((step) => `${step.id} ${step.label}`.toLowerCase())
     .join(" ");
 
-  // No URN card here any more: the lab fills that field now (see its `adminOnly` flag), and a
-  // suggestion pointing a member at the collector site asked them to do a job the form no longer
-  // accepts from them.
+  // No URN card here any more: the collector hand-off sits on the field it feeds (see
+  // renderFieldAction), where it stays reachable after the field is filled.
 
   // The intake form used to be pushed here unconditionally. It never had a "done" state, so it sat
   // permanently in a stack whose whole meaning is "still outstanding" and quietly taught people to
