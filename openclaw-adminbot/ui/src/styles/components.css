@@ -9094,6 +9094,16 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--placeholder);
 }
 
+/* Mobile Safari zooms the viewport when a focused control's text is under 16px, and leaves it
+   zoomed -- so tapping one field silently rescales the whole page. `--control-ui-input-text-size`
+   exists for exactly this and the app's other input surfaces already use it; this is the generic
+   control catching up, at the widths where it matters rather than everywhere. */
+@media (max-width: 768px) {
+  .input {
+    font-size: var(--control-ui-input-text-size);
+  }
+}
+
 /* Only when it is not already the focused field, so hover cannot mute the focus treatment. */
 .input:hover:not(:disabled):not(:focus) {
   border-color: var(--border-hover);

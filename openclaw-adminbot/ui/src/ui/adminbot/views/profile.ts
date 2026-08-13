@@ -611,9 +611,9 @@ export function badgesFor(state: AppViewState, member: LabMember): string[] {
   if (papers.some((paper) => paper.mentor_member_id === member.id)) {
     badges.push(t("profile.badges.mentor"));
   }
-  if (member.role?.trim()) {
-    badges.push(member.role.trim());
-  }
+  // Role is deliberately absent: the header already states it in the pill beside the name, and a
+  // badge is meant to be something earned from the record rather than a second copy of a field the
+  // member picked from a dropdown.
   return badges;
 }
 

@@ -2365,14 +2365,6 @@
   margin-bottom: var(--space-3);
 }
 
-/* The one section asking for something rather than just showing it. Its whole edge carries the
-   accent, without the accent wash it used to sit on: the wash tinted every input inside the card,
-   which made the controls the member is supposed to type into read as less editable than the ones
-   in the plain card below. */
-.profile__section--highlight {
-  border-color: var(--accent-muted);
-}
-
 /* Top of the card's type hierarchy: section title, then group title, then field label, then the
    placeholder example inside the control. Each step down is a step dimmer, so the level a piece of
    text sits at is legible from its color alone. This was the mono micro-label at --muted, which
@@ -2384,12 +2376,6 @@
   font-weight: 600;
   letter-spacing: var(--tracking-tight);
   color: var(--text-strong);
-}
-
-.profile__section-sub {
-  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
 }
 
 .profile__empty,
@@ -2503,25 +2489,6 @@
   overflow-wrap: anywhere;
 }
 
-/* A blank is information too, so it is stated rather than left as an empty row. */
-.profile-field__value--empty {
-  color: var(--muted);
-}
-
-/* A required field with no answer is the one blank worth interrupting the column for. */
-.profile-field__owed {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px var(--space-2);
-  border: 1px solid var(--accent-muted);
-  border-radius: var(--radius-sm);
-  background: var(--accent-subtle);
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-tight);
-}
-
 /* The governed labels carry their rule in the label itself ("Email (@cs.toronto.edu)"), which is
    wider than the 8.5rem column and broke across two lines. Let the column take what the longest
    label needs instead of wrapping a single label onto two rows. */
@@ -2550,6 +2517,14 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* An unanswered field looks unanswered. Twenty-four identical boxes made "what is left" a question
+   only the ledger and the dashboard card could answer, which is why both had to exist; a recessed
+   fill says it at the field itself. Scoped to this page's own rows, and to the controls that can
+   report emptiness -- a <select> always has a value, so it never dims. */
+.profile__form-row .input:placeholder-shown {
+  background: var(--bg-muted);
 }
 
 /* Third level. A label names an answer the member has to give, so it reads at full text color --
@@ -2731,30 +2706,6 @@
 .profile__section-head .profile__section-title,
 .my-work__section-head .my-work__section-title {
   margin-bottom: 0;
-}
-
-.profile__edit-icon {
-  display: inline-flex;
-  width: 13px;
-  height: 13px;
-  margin-right: 6px;
-}
-
-.profile__edit-icon svg {
-  width: 13px;
-  height: 13px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.5px;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.profile__form-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
 }
 
 .profile__autosave-hint {

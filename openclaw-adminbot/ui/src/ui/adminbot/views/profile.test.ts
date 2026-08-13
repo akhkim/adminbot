@@ -632,9 +632,31 @@ describe("renderProfile visual structure", () => {
     expect(container.querySelector(".profile__hero .profile__avatar-slot")).not.toBeNull();
   });
 
+  // Role is stated once, in the pill beside the name. It used to be pushed into the badge list as
+  // well, so every member carried a "badge" that was just a copy of a dropdown they had answered.
+  it("does not repeat the role as a badge", () => {
+    const container = renderPage(
+      createState(createMember({ role: "Postdoc" } as Partial<LabMember>)),
+      vi.fn(),
+    );
+
+    expect(container.querySelector(".profile__role-pill")?.textContent?.trim()).toBe("Postdoc");
+    const badges = [...container.querySelectorAll(".profile-badge")].map((badge) =>
+      badge.textContent?.trim(),
+    );
+    expect(badges).not.toContain("Postdoc");
+  });
+
   it("shows badges and a completeness indicator in the identity header", () => {
+    // A badge is something the record earns, so the fixture has to earn one: authorship of a paper
+    // it submitted. (Role is not a badge -- see the test above.)
     const member = createMember();
-    const state = createState(member);
+    const state = createState(member, {
+      adminBotData: {
+        members: [member],
+        papers: [{ id: "p1", title: "A paper", submitted_by_member_id: member.id }],
+      },
+    } as unknown as Partial<AppViewState>);
     const container = renderPage(state, vi.fn());
 
     const hero = container.querySelector(".profile__hero")!;
