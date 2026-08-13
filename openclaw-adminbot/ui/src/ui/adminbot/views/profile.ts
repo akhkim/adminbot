@@ -167,27 +167,27 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "work",
   },
   {
+    // The sheet's correspondence address, deliberately distinct from `email` (the login identity)
+    // and `calendar_email` (the Google account invites go to). It is frequently neither.
+    key: "correspondence_email",
+    labelKey: "profile.fields.correspondenceEmail",
+    example: "zhijing@cs.toronto.edu",
+    type: "short_text",
+    hintKey: "profile.hints.correspondenceEmail",
+    group: "identity",
+  },
+  {
+    key: "whatsapp",
+    labelKey: "profile.fields.whatsapp",
+    example: "555 0100",
+    type: "phone",
+    group: "identity",
+  },
+  {
     key: "location",
     labelKey: "profile.fields.location",
     example: "Toronto, ON",
     type: "short_text",
-    group: "identity",
-  },
-  {
-    // Where the member currently is, kept distinct from their resident location above. Purely
-    // informational: the timezone suggestion and the member map stay keyed on `location`.
-    key: "current_city",
-    labelKey: "profile.fields.currentCity",
-    example: "San Francisco, CA",
-    type: "short_text",
-    group: "identity",
-  },
-  {
-    key: "timezone",
-    labelKey: "profile.fields.timezone",
-    example: "America/Toronto",
-    type: "dropdown",
-    options: timezoneOptions(),
     group: "identity",
   },
   {
@@ -212,20 +212,20 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "research",
   },
   {
-    // The sheet's correspondence address, deliberately distinct from `email` (the login identity)
-    // and `calendar_email` (the Google account invites go to). It is frequently neither.
-    key: "correspondence_email",
-    labelKey: "profile.fields.correspondenceEmail",
-    example: "zhijing@cs.toronto.edu",
+    // Where the member currently is, kept distinct from their resident location above. Purely
+    // informational: the timezone suggestion and the member map stay keyed on `location`.
+    key: "current_city",
+    labelKey: "profile.fields.currentCity",
+    example: "San Francisco, CA",
     type: "short_text",
-    hintKey: "profile.hints.correspondenceEmail",
     group: "identity",
   },
   {
-    key: "whatsapp",
-    labelKey: "profile.fields.whatsapp",
-    example: "555 0100",
-    type: "phone",
+    key: "timezone",
+    labelKey: "profile.fields.timezone",
+    example: "America/Toronto",
+    type: "dropdown",
+    options: timezoneOptions(),
     group: "identity",
   },
   {
