@@ -1598,6 +1598,10 @@ export const en: TranslationMap = {
       inactiveDetail:
         "{count} Slack messages in the last {days} days — under the {threshold} that counts as active.",
     },
+    urn: {
+      set: "On file",
+      unset: "Not on file yet — use the collector",
+    },
     whatsapp: {
       needsCountryCode: "Add a country code (e.g. +1) so the number is dialable from abroad.",
     },

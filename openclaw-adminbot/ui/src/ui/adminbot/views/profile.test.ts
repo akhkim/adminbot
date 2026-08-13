@@ -493,15 +493,27 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     expect(container.querySelector('[data-testid="profile-hint-name"]')).toBeNull();
   });
 
-  it("lets the member edit their own URN", () => {
-    const container = renderPage(
+  // The member cannot type a URN in; all they need is whether the lab has one yet, and the
+  // collector link while it does not.
+  it("shows the URN as a state the member reads rather than a value they edit", () => {
+    const filled = renderPage(
       createState(createMember({ linkedin_urn: "ACoAAB1234567" } as Partial<LabMember>)),
       vi.fn(),
     );
-    const input = container.querySelector<HTMLInputElement>('input[name="linkedin_urn"]');
-    expect(input).not.toBeNull();
-    expect(input?.disabled).toBe(false);
-    expect(input?.value).toBe("ACoAAB1234567");
+    expect(filled.querySelector<HTMLInputElement>('input[name="linkedin_urn"]')?.disabled).toBe(
+      true,
+    );
+    expect(filled.querySelector('[data-testid="profile-urn-status"]')?.textContent?.trim()).toBe(
+      "On file",
+    );
+
+    const blank = renderPage(createState(createMember()), vi.fn());
+    expect(blank.querySelector('[data-testid="profile-urn-status"]')?.textContent?.trim()).toBe(
+      "Not on file yet — use the collector",
+    );
+    // No required dot: the form does not let them answer it, so it must not chase them for one.
+    const row = blank.querySelector('[name="linkedin_urn"]')?.closest(".profile__form-row");
+    expect(row?.querySelector(".profile__mandatory")).toBeNull();
   });
 
   // Three states, not two. "Unknown" renders nothing, because labelling someone Inactive from a
@@ -616,7 +628,7 @@ describe("renderProfile LinkedIn URN and intake form", () => {
   //
   // The one documented exception is linkedin_urn: still mandatory for the record, but filled by an
   // admin, so the member's own page does not dot it. The service reminder still names it.
-  it("marks exactly the shared mandatory list required", () => {
+  it("marks exactly the shared mandatory list required, minus the admin-filled ones", () => {
     // Every mandatory field blank, so the marks stand for the whole list rather than the subset
     // this fixture happens to leave unanswered.
     const blanks = Object.fromEntries(
@@ -633,7 +645,9 @@ describe("renderProfile LinkedIn URN and intake form", () => {
       .map((row) => row.querySelector<HTMLElement>('[name]:not([name$="__dial"])'))
       .map((control) => control?.getAttribute("name"))
       .filter((name): name is string => Boolean(name));
-    expect(marked.toSorted()).toEqual([...adminBotMandatoryProfileFields].toSorted());
+    expect(marked.toSorted()).toEqual(
+      [...adminBotMandatoryProfileFields].filter((key) => key !== "linkedin_urn").toSorted(),
+    );
   });
 
   // Time zone is the one field derivable from another the member already filled in, so the control

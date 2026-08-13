@@ -4765,3 +4765,15 @@
     gap: 2px;
   }
 }
+
+/* The URN is filled in by the lab, so the member gets a state rather than a value: "on file" is
+   the whole answer they need, and "not on file yet" is what makes the collector link next to it
+   worth following. */
+.profile__urn-status {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.profile__urn-status--set {
+  color: var(--ok, var(--muted-strong));
+}

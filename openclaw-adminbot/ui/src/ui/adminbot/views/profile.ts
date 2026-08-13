@@ -307,6 +307,9 @@ const PROFILE_FIELDS: ProfileField[] = [
     labelKey: "profile.fields.linkedinUrn",
     example: "ACoAAB1234567",
     type: "short_text",
+    // Read-only for the member: they see whether it is on file and, if not, follow the collector
+    // link that produces it. Typing a 13-digit id off another site was the step that never worked.
+    adminOnly: true,
     group: "links",
   },
   {
@@ -620,6 +623,23 @@ function renderFieldHelp(field: EditableField) {
 }
 
 
+
+// The member cannot type this one in, so the only thing they need from it is whether it is on
+// file yet -- and, while it is not, the collector link that produces it (renderFieldAction).
+function renderUrnStatus(member: LabMember, field: EditableField) {
+  if (field.key !== "linkedin_urn") {
+    return nothing;
+  }
+  const isSet = Boolean(String(member.linkedin_urn ?? "").trim());
+  return html`
+    <span
+      class=${`profile__urn-status ${isSet ? "profile__urn-status--set" : "profile__urn-status--unset"}`}
+      data-testid="profile-urn-status"
+    >
+      ${isSet ? t("profile.urn.set") : t("profile.urn.unset")}
+    </span>
+  `;
+}
 
 function renderWhatsappHint(member: LabMember, field: EditableField) {
   if (field.key !== "whatsapp") {
@@ -1124,7 +1144,8 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
                             : nothing}
                       </span>
                       ${renderFieldInput(field, displayValue(member, field))}
-                      ${renderFieldAction(field)} ${renderFieldHint(field)}
+                      ${renderUrnStatus(member, field)} ${renderFieldAction(field)}
+                      ${renderFieldHint(field)}
                       ${renderPrefillHint(member, field)}
                       ${renderWhatsappHint(member, field)} ${renderAccountCheckStatus(state, field)}
                     </label>
