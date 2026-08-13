@@ -357,6 +357,19 @@ export type AppViewState = {
   adminBotLoading: boolean;
   adminBotError: string | null;
   adminBotData: AdminBotDashboardData;
+  // Lab Sharing tab: the project the member is asking for help on, and the draft of their request. The
+  // search query for finding other members' requests, and the list of members invited to help on
+  // the member's own request. The list of requests the member has already responded to, and the
+  // index of the open request in the search results (null = none open).
+  labSharingAskProjectId?: string;
+  labSharingAskComment?: string;
+  labSharingAskMembers?: number;
+  labSharingAskHours?: number;
+  labSharingAskTags?: string[];
+  labSharingSearchQuery?: string;
+  labSharingInvitedMemberIds?: string[];
+  labSharingRespondedInviteIds?: string[];
+  labSharingOpenProjectIndex?: number;
   // Time Availability tab: whose schedule is on screen, which unit its hours are quoted in, and
   // the unsaved "add a commitment" draft. Draft lives here rather than in the view so a re-render
   // (the roster reloading underneath, a notice appearing) does not wipe half-typed input.

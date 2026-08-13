@@ -62,8 +62,8 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // beyond having an account.
   profile: "member",
   myWork: "member",
-  // Not built yet — the tab renders a placeholder. Declared at member tier so the group appears
-  // for the audience it is being built for rather than silently defaulting to admin-only.
+  // Lab Sharing is the collaboration surface for every member -- ask for help, answer invites,
+  // browse open projects. No data on it requires operator privilege.
   labSharing: "member",
 
   // Everything else is an operator or governance surface.
