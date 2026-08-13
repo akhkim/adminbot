@@ -364,15 +364,21 @@ function scheduleAutosave(
   );
 }
 
+// Commits an edit that is still inside its debounce window, because focus leaving the form means
+// the member is done with it. With no timer pending there is nothing to flush: leaving a form
+// nobody typed in used to fire a full-record PUT, a "saved" toast for a save that changed nothing,
+// and an outbound account check per checkable field -- so merely tabbing through the page burned
+// GitHub's 60-request unauthenticated hourly budget, which a whole lab shares behind one campus IP.
 function flushAutosave(
   timer: ReturnType<typeof setTimeout> | undefined,
   set: (next: ReturnType<typeof setTimeout> | undefined) => void,
   commit: () => void,
 ): void {
-  if (timer) {
-    clearTimeout(timer);
-    set(undefined);
+  if (!timer) {
+    return;
   }
+  clearTimeout(timer);
+  set(undefined);
   commit();
 }
 
@@ -386,12 +392,17 @@ function focusLeftForm(form: HTMLFormElement, event: FocusEvent): boolean {
 // exist" check (see profile-account-check.ts). A superseded check aborts its own in-flight
 // fetch, so typing a second GitHub handle before the first lookup returns can never let the
 // first response land after the second and show a stale result.
-let accountCheckAbort: AbortController | undefined;
+// One controller per field, not one per run: a shared controller made an edit to either field
+// cancel the other's in-flight lookup, so the two checks superseded each other rather than only
+// themselves.
+const accountCheckAborts = new Map<string, AbortController>();
+
+// The last value each field was actually looked up with. A commit sends the whole record, so
+// without this every save re-checked both accounts whether or not they had changed -- and GitHub
+// allows 60 unauthenticated requests an hour per IP, which a lab shares behind one campus address.
+const accountCheckedValues = new Map<string, string>();
 
 function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
-  accountCheckAbort?.abort();
-  const controller = new AbortController();
-  accountCheckAbort = controller;
   const data = new FormData(form);
   for (const field of ["github_url", "openreview_id"] as const) {
     if (!data.has(field)) {
@@ -399,6 +410,9 @@ function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
     }
     const value = String(data.get(field) ?? "").trim();
     if (!value) {
+      accountCheckAborts.get(field)?.abort();
+      accountCheckAborts.delete(field);
+      accountCheckedValues.delete(field);
       if (state.profileAccountChecks[field]) {
         const next = { ...state.profileAccountChecks };
         delete next[field];
@@ -406,6 +420,17 @@ function runAccountChecks(form: HTMLFormElement, state: AppViewState): void {
       }
       continue;
     }
+    // Already answered for this exact value, and not still in flight.
+    if (
+      accountCheckedValues.get(field) === value &&
+      state.profileAccountChecks[field]?.status !== "checking"
+    ) {
+      continue;
+    }
+    accountCheckAborts.get(field)?.abort();
+    const controller = new AbortController();
+    accountCheckAborts.set(field, controller);
+    accountCheckedValues.set(field, value);
     state.profileAccountChecks = {
       ...state.profileAccountChecks,
       [field]: { status: "checking" },
@@ -992,9 +1017,14 @@ function renderCompletionLedger(member: LabMember) {
   const total = requiredFieldCount();
   const done = total - blanks.size;
   const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+  // Same filter as `total` above. Ticking every non-optional field instead drew one tick more than
+  // the count claimed, and the extra was the admin-owned URN -- which, never being in `blanks`,
+  // always drew as filled whether or not the lab had supplied it.
   const groups = PROFILE_FIELD_GROUPS.map((group) => ({
     id: group.id,
-    fields: EDITABLE_FIELDS.filter((field) => !isOptional(field) && field.group === group.id),
+    fields: EDITABLE_FIELDS.filter(
+      (field) => isMemberAnswerable(field) && field.group === group.id,
+    ),
   })).filter((group) => group.fields.length > 0);
   return html`
     <div
@@ -1257,13 +1287,19 @@ function renderSaveToast(state: AppViewState) {
     toastNoticeText = notice.text;
     if (toastDismissTimer) {
       clearTimeout(toastDismissTimer);
-    }
-    toastDismissTimer = setTimeout(() => {
       toastDismissTimer = undefined;
-      if (state.adminBotNotice?.text === notice.text) {
-        state.adminBotNotice = null;
-      }
-    }, SAVE_TOAST_MS);
+    }
+    // Only a success self-clears. A rejected save leaves the record different from what is on
+    // screen, and the message names the field to fix -- a notice that erases itself after a beat
+    // is one a member reading another part of the page never sees at all.
+    if (notice.kind === "success") {
+      toastDismissTimer = setTimeout(() => {
+        toastDismissTimer = undefined;
+        if (state.adminBotNotice?.text === notice.text) {
+          state.adminBotNotice = null;
+        }
+      }, SAVE_TOAST_MS);
+    }
   }
   return html`
     <div

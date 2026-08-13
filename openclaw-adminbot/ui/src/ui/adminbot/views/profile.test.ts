@@ -118,6 +118,19 @@ describe("renderProfile autosave", () => {
     expect(number.value).toBe("98765 43210");
   });
 
+  // Leaving a form nobody edited used to fire a full-record PUT, a "saved" toast for a save that
+  // changed nothing, and an outbound account check per checkable field.
+  it("saves nothing when focus leaves a form that was never edited", () => {
+    const state = createState(createMember());
+    const onSave = vi.fn();
+    const container = renderPage(state, onSave);
+
+    const form = container.querySelector("form.profile__form")!;
+    form.dispatchEvent(new FocusEvent("focusout", { bubbles: false, relatedTarget: null }));
+
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it("flushes the pending save immediately when focus leaves the form", () => {
     const member = createMember();
     const state = createState(member);
@@ -450,7 +463,17 @@ describe("renderProfile LinkedIn URN and intake form", () => {
         onSave,
       );
       const form = container.querySelector<HTMLFormElement>(".profile__form");
+
+      // Merely passing through the form saves nothing -- the guess rides the member's own next
+      // edit, so an untouched page never writes a value they did not choose.
       form?.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+      expect(onSave).not.toHaveBeenCalled();
+
+      const nameInput = container.querySelector<HTMLInputElement>('input[name="name"]')!;
+      nameInput.value = "Pat Edited";
+      nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+      form?.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+
       expect(onSave).toHaveBeenCalled();
       expect(onSave.mock.calls.at(-1)?.[1].timezone).toBe("America/Toronto");
     });
@@ -534,6 +557,27 @@ describe("renderProfile field types", () => {
     expect(container.querySelector('[data-testid="profile-basics"]')?.textContent).not.toMatch(
       /privilege/i,
     );
+  });
+});
+
+describe("renderProfile completion ledger", () => {
+  // The ledger drew one tick per non-optional field but counted only the member-answerable ones,
+  // so it claimed "N of 12" under 13 marks -- and the extra, the admin-owned URN, was never in
+  // blankFields and so always drew as filled whether or not the lab had supplied it.
+  it("draws exactly one tick per field it counts, and none for admin-filled ones", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+
+    const ledger = container.querySelector('[data-testid="profile-ledger"]')!;
+    const ticks = ledger.querySelectorAll(".profile__tick");
+    const total = Number(
+      /of (\d+)/u.exec(
+        container.querySelector(".profile__completeness")?.getAttribute("aria-label") ?? "",
+      )?.[1],
+    );
+
+    expect(total).toBeGreaterThan(0);
+    expect(ticks.length).toBe(total);
+    expect([...ticks].map((tick) => tick.getAttribute("title"))).not.toContain("LinkedIn URN");
   });
 });
 

@@ -229,7 +229,11 @@ export type AuthErrorKind =
 
 export type AuthResult<T> =
   | { ok: true; value: T }
-  | { ok: false; kind: AuthErrorKind; retryAfterSeconds?: number };
+  // `message` carries the service's own explanation, and is only ever populated for a 400 --
+  // a validation refusal names the field it rejected ("LinkedIn link must be a profile URL"),
+  // which no generic client-side string can. Auth and rate-limit failures deliberately keep
+  // their fixed copy, so nothing from an unauthenticated path reaches the screen verbatim.
+  | { ok: false; kind: AuthErrorKind; retryAfterSeconds?: number; message?: string };
 
 export function resolveAdminBotBaseUrl(settings?: Pick<UiSettings, "adminBotUrl"> | null): string {
   const override = normalizeOptionalString(settings?.adminBotUrl);
@@ -268,12 +272,20 @@ function mapErrorResponse(
   response: Response,
   body: unknown,
   opts: { weakOn400: boolean; pendingOn403?: boolean },
-): { kind: AuthErrorKind; retryAfterSeconds?: number } {
+): { kind: AuthErrorKind; retryAfterSeconds?: number; message?: string } {
   if (response.status === 429) {
     return { kind: "rate-limited", retryAfterSeconds: parseRetryAfterSeconds(body, response) };
   }
   if (opts.weakOn400 && response.status === 400) {
     return { kind: "weak-password" };
+  }
+  // A 400 is the service refusing a value it can name. Carry that sentence up; every other status
+  // keeps its fixed client-side copy (see AuthResult).
+  if (response.status === 400) {
+    const message = (body as { error?: { message?: unknown } } | null)?.error?.message;
+    return typeof message === "string" && message.trim()
+      ? { kind: "auth-failed", message: message.trim() }
+      : { kind: "auth-failed" };
   }
   if (
     opts.pendingOn403 &&

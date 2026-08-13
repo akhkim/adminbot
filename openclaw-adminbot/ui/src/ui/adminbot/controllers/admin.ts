@@ -921,9 +921,13 @@ export async function saveAdminBotOwnProfile(
         ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
         : result.kind === "rate-limited"
           ? "Too many attempts. Wait a moment and try again."
-          : // 403 (editing someone else's id) folds into auth-failed here; the UI never
-            // offers this affordance on another member's row, so it reads as a stale session.
-            "Couldn't save your profile. Sign in again, check the values, and retry.";
+          : // A validation refusal names the value it rejected ("LinkedIn link must be a profile
+            // URL"); the generic line below cannot, and the whole record is sent on every save, so
+            // without the service's own sentence one bad field silently freezes every other edit.
+            // 403 (editing someone else's id) folds into auth-failed here; the UI never offers
+            // this affordance on another member's row, so it reads as a stale session.
+            (result.message ??
+            "Couldn't save your profile. Sign in again, check the values, and retry.");
     host.adminBotNotice = { kind: "error", text: message };
     return;
   }
