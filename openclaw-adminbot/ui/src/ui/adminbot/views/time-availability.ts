@@ -192,14 +192,14 @@ export type AdminBotTimeAvailabilityProps = {
 };
 
 const DAY_MS = 86_400_000;
-const CHART_HEIGHT = 360;
+const CHART_HEIGHT = 340;
 const CHART_LEFT = 58;
 const CHART_RIGHT = 20;
 const CHART_TOP = 28;
 const CHART_BOTTOM = 64;
 // A fixed viewBox scaled to the container: the bin count is fixed per range, so the chart never
 // needs to grow horizontally or scroll.
-const CHART_WIDTH = 720;
+const CHART_WIDTH = 1200;
 // Copied from EffortStackChart: stable color per task name, assigned in first-seen order.
 const CHART_COLORS = [
   "#3575DA",
@@ -560,7 +560,9 @@ function renderTimeChart(
   const slot = plotWidth / Math.max(1, segments.length);
   // Bars sit in their slot with air either side rather than touching, so each bin reads as its own
   // unit of time instead of as a continuous area.
-  const barWidth = Math.min(slot * 0.62, 56);
+  const barWidth = Math.min(slot * 0.55, 64);
+  // A short date needs about this much room; below it the labels touch, so only every Nth is drawn.
+  const labelEvery = Math.max(1, Math.ceil(70 / slot));
   const y = (hours: number) => CHART_TOP + ((yMaximum - hours) / yMaximum) * plotHeight;
   const hasCapacity = capacityHours > 0;
 
@@ -701,12 +703,16 @@ function renderTimeChart(
                     >${formatNumber(Math.round(segment.total * 10) / 10)}</text>`
                   : nothing
               }
-              <text
-                class="time-chart__bin"
-                x=${slotX + slot / 2}
-                y=${baseline + 20}
-                text-anchor="middle"
-              >${segment.label}</text>
+              ${
+                index % labelEvery === 0
+                  ? svg`<text
+                      class="time-chart__bin"
+                      x=${slotX + slot / 2}
+                      y=${baseline + 20}
+                      text-anchor="middle"
+                    >${segment.label}</text>`
+                  : nothing
+              }
             `;
           })}
 

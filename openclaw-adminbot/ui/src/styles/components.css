@@ -8778,11 +8778,8 @@ details[open] > .ov-expandable-toggle::after {
   text-align: center;
 }
 
-/* A bar chart of seven bins does not get wider than it is useful: past this the bars turn into
-   slabs and the eye has to travel the whole page to compare the first bin with the last. */
 .adminbot-time-chart-wrap {
   margin-bottom: var(--space-4);
-  max-width: 760px;
 }
 
 /* The schedule chart. Read as a calendar: equal bins left to right, the soonest first. Ink is spent
@@ -8827,10 +8824,14 @@ details[open] > .ov-expandable-toggle::after {
 /* Height follows the viewBox instead of being pinned, so the drawing scales uniformly: a fixed
    height with a stretched aspect ratio was what inflated the bars and smeared the axis labels on a
    wide screen. */
+/* Height follows the viewBox so the drawing scales uniformly -- a pinned height with a stretched
+   aspect ratio was what inflated the bars and smeared the axis labels. The min-height keeps a
+   narrow column from squashing the plot into a strip. */
 .time-chart__svg {
   width: 100%;
   height: auto;
-  aspect-ratio: 2 / 1;
+  aspect-ratio: 1200 / 340;
+  min-height: 240px;
   overflow: visible;
 }
 
