@@ -38,6 +38,7 @@ import { renderMemberMapWebUi } from "../web/member-map/index.js";
 import { renderDeadlinesWebUi } from "../workflows/deadlines/board.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
+import { createPasswordResetEmailRunner } from "../workflows/identity/password-reset-email.js";
 import {
   AdminBotAuthService,
   type AdminBotAuthResponse,
@@ -102,6 +103,12 @@ export type AdminBotMockServiceOptions = {
   calendarInviteRunner?: (email: string) => Promise<void>;
   // Same for the `gog` CLI-backed "your account is approved" email.
   accountApprovedEmailRunner?: (params: { email: string; name?: string }) => Promise<void>;
+  passwordResetEmailRunner?: (params: {
+    email: string;
+    name?: string;
+    token: string;
+    expiresInMinutes: number;
+  }) => Promise<void>;
   // Overrides the default DCS-form-submission runner outright (tests use this to assert on the
   // call without launching a real browser). If unset, dcsFormScriptPath decides whether one gets
   // built at all.
@@ -316,6 +323,8 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     inviteToLabCalendar: options.calendarInviteRunner ?? createCalendarInviteRunner(),
     sendAccountApprovedEmail:
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
+    sendPasswordResetEmail:
+      options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
     ...(() => {
       const submitDcsForm =
         options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
@@ -594,6 +603,30 @@ async function handleAuthRoute(
     }
     clearSessionCookie(res);
     sendJson(res, 200, { logged_out: true });
+    return;
+  }
+  // Both reset routes are deliberately unauthenticated: the whole point is that the caller cannot
+  // sign in. The auth service rate-limits them and keeps the response identical for known and
+  // unknown addresses, so neither leaks roster membership.
+  if (req.method === "POST" && url.pathname === "/auth/password-reset") {
+    const body = readRecord(await readJson(req));
+    const result = ctx.auth.requestPasswordReset({
+      email: asString(body.email),
+      ...(() => {
+        const ip = remoteIp(req, ctx.trustProxyHeaders);
+        return ip ? { remoteIp: ip } : {};
+      })(),
+    });
+    sendAuthResult(res, result);
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/auth/password-reset/confirm") {
+    const body = readRecord(await readJson(req));
+    const result = ctx.auth.resetPassword({
+      token: asString(body.token),
+      newPassword: asString(body.new_password),
+    });
+    sendAuthResult(res, result);
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/password") {

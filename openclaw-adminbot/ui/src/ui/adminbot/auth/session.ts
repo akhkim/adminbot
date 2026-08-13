@@ -882,6 +882,48 @@ export async function issueDeviceToken(
   };
 }
 
+/**
+ * Starts a password reset (POST /auth/password-reset). The service answers identically whether or
+ * not the address has an account, so this resolves ok for any well-formed email — the UI must not
+ * present the outcome as confirmation that an account exists.
+ */
+export async function requestPasswordReset(
+  email: string,
+  baseUrl: string,
+): Promise<AuthResult<{ requested: true }>> {
+  const result = await postJson(baseUrl, "/auth/password-reset", { email });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: { requested: true } };
+}
+
+/**
+ * Redeems a reset token and sets the new password (POST /auth/password-reset/confirm). A 400 here
+ * is overloaded — an expired/used link or a too-short password — so it maps to weak-password only
+ * when the caller knows the length was fine; the service message carries the distinction.
+ */
+export async function confirmPasswordReset(
+  token: string,
+  newPassword: string,
+  baseUrl: string,
+): Promise<AuthResult<{ reset: true }>> {
+  const result = await postJson(baseUrl, "/auth/password-reset/confirm", {
+    token,
+    new_password: newPassword,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: { reset: true } };
+}
+
 // Change the member's login email (POST /auth/email). 401 wrong password folds to
 // auth-failed; 409 collision to email-unavailable; 429 to rate-limited.
 export async function changeMemberEmail(

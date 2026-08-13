@@ -1652,6 +1652,22 @@ export const en: TranslationMap = {
       errorMismatch: "Passwords do not match.",
       errorNoSelection: "Select your profile from the list.",
       errorNameRequired: "Enter your name.",
+      errorEmailRequired: "Enter your email.",
+      reset: {
+        forgot: "Forgot my password",
+        intro:
+          "Enter the email you sign in with and we'll send you a link to choose a new password.",
+        sendLink: "Send reset link",
+        // Deliberately non-committal about whether the address has an account: the service answers
+        // the same either way so the form cannot be used to test who is on the roster.
+        sent: "If that email has an account, a reset link is on its way. The link expires in an hour.",
+        confirmIntro: "Choose a new password for your account.",
+        setPassword: "Set new password",
+        done: "Your password has been changed. Sign in with your new password.",
+        errorInvalidLink:
+          "This reset link is invalid or has expired. Request a new one from the sign-in screen.",
+        errorUnreachable: "Could not reach the AdminBot service. Try again in a moment.",
+      },
       changePassword: {
         trigger: "Change password",
         title: "Change your password",

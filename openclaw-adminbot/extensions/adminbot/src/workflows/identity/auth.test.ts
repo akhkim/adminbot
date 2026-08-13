@@ -33,6 +33,12 @@ function setup(
       email: string;
     }) => Promise<void>;
     geolocateIp?: (ip: string) => Promise<{ country?: string; continent?: string } | undefined>;
+    sendPasswordResetEmail?: (params: {
+      email: string;
+      name?: string;
+      token: string;
+      expiresInMinutes: number;
+    }) => Promise<void>;
   } = {},
 ) {
   const store = new AdminBotMemoryStore();
@@ -51,6 +57,9 @@ function setup(
     ...(options.now ? { now: options.now } : {}),
     ...(options.submitDcsForm ? { submitDcsForm: options.submitDcsForm } : {}),
     ...(options.geolocateIp ? { geolocateIp: options.geolocateIp } : {}),
+    ...(options.sendPasswordResetEmail
+      ? { sendPasswordResetEmail: options.sendPasswordResetEmail }
+      : {}),
   });
   return { store, auth };
 }
@@ -788,5 +797,156 @@ describe("login IP location update", () => {
     await flushMicrotasks();
 
     expect(store.getLabMember("ada")?.location).toBeUndefined();
+  });
+});
+
+describe("AdminBotAuthService password reset", () => {
+  function setupWithMail() {
+    const sent: Array<{ email: string; token: string; expiresInMinutes: number }> = [];
+    const { store, auth } = setup({
+      sendPasswordResetEmail: async (params) => {
+        sent.push({
+          email: params.email,
+          token: params.token,
+          expiresInMinutes: params.expiresInMinutes,
+        });
+      },
+    });
+    return { store, auth, sent };
+  }
+
+  it("mails a reset link to a member who has an account", async () => {
+    const { store, auth, sent } = setupWithMail();
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    const result = auth.requestPasswordReset({ email: "ada@example.com" });
+
+    expect(result.ok).toBe(true);
+    await flushMicrotasks();
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.email).toBe("ada@example.com");
+    expect(sent[0]?.token).toBeTruthy();
+  });
+
+  it("answers identically for an unknown address and mails nothing", async () => {
+    const { auth, sent } = setupWithMail();
+
+    const result = auth.requestPasswordReset({ email: "nobody@example.com" });
+
+    // Same shape as the known-address case: this route must not reveal who is on the roster.
+    expect(result.ok).toBe(true);
+    await flushMicrotasks();
+    expect(sent).toHaveLength(0);
+  });
+
+  it("stores only the hash of the emailed token", async () => {
+    const { store, auth, sent } = setupWithMail();
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+    auth.requestPasswordReset({ email: "ada@example.com" });
+    await flushMicrotasks();
+
+    const rawToken = sent[0]?.token ?? "";
+    expect(store.getPasswordResetByTokenHash(rawToken)).toBeUndefined();
+  });
+
+  it("resets the password, so the new one logs in and the old one does not", async () => {
+    const { store, auth, sent } = setupWithMail();
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+    auth.requestPasswordReset({ email: "ada@example.com" });
+    await flushMicrotasks();
+
+    const result = auth.resetPassword({
+      token: sent[0]?.token ?? "",
+      newPassword: "brand-new-passphrase",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(auth.login({ email: "ada@example.com", password: "brand-new-passphrase" }).ok).toBe(true);
+    expect(auth.login({ email: "ada@example.com", password: "correcthorse" }).ok).toBe(false);
+  });
+
+  it("burns the token so the same link cannot be replayed", async () => {
+    const { store, auth, sent } = setupWithMail();
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+    auth.requestPasswordReset({ email: "ada@example.com" });
+    await flushMicrotasks();
+    const token = sent[0]?.token ?? "";
+    auth.resetPassword({ token, newPassword: "brand-new-passphrase" });
+
+    const replay = auth.resetPassword({ token, newPassword: "another-passphrase-x" });
+
+    expect(replay.ok).toBe(false);
+    expect(auth.login({ email: "ada@example.com", password: "another-passphrase-x" }).ok).toBe(
+      false,
+    );
+  });
+
+  it("rejects an expired link", async () => {
+    let now = new Date("2026-01-01T00:00:00.000Z");
+    const sent: Array<{ token: string }> = [];
+    const store = new AdminBotMemoryStore();
+    const service = new AdminBotService(store);
+    const auth = new AdminBotAuthService({
+      store,
+      createMember: (input) => {
+        const result = service.upsertLabMember(input);
+        if (!result.ok) {
+          throw new Error(result.error.message);
+        }
+        return result.payload;
+      },
+      gatewayUrl: GATEWAY_URL,
+      now: () => now,
+      sendPasswordResetEmail: async (params) => {
+        sent.push({ token: params.token });
+      },
+    });
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+    auth.requestPasswordReset({ email: "ada@example.com" });
+    await flushMicrotasks();
+    // Tokens live an hour; step just past it.
+    now = new Date("2026-01-01T01:00:01.000Z");
+
+    const result = auth.resetPassword({
+      token: sent[0]?.token ?? "",
+      newPassword: "brand-new-passphrase",
+    });
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects an unknown token", () => {
+    const { store, auth } = setupWithMail();
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+
+    const result = auth.resetPassword({ token: "not-a-real-token", newPassword: "long-enough-pw" });
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects a too-short new password and leaves the old one working", async () => {
+    const { store, auth, sent } = setupWithMail();
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+    auth.requestPasswordReset({ email: "ada@example.com" });
+    await flushMicrotasks();
+
+    const result = auth.resetPassword({ token: sent[0]?.token ?? "", newPassword: "short" });
+
+    expect(result.ok).toBe(false);
+    expect(auth.login({ email: "ada@example.com", password: "correcthorse" }).ok).toBe(true);
+  });
+
+  it("signs existing sessions out, because a reset means the account may be compromised", async () => {
+    const { store, auth, sent } = setupWithMail();
+    claimAndApprove(store, auth, "ada", "ada@example.com");
+    const login = auth.login({ email: "ada@example.com", password: "correcthorse" });
+    const sessionToken = login.ok ? login.payload.session_token : "";
+    expect(auth.resolveSession(sessionToken)).toBeTruthy();
+    auth.requestPasswordReset({ email: "ada@example.com" });
+    await flushMicrotasks();
+
+    auth.resetPassword({ token: sent[0]?.token ?? "", newPassword: "brand-new-passphrase" });
+
+    expect(auth.resolveSession(sessionToken)).toBeFalsy();
   });
 });

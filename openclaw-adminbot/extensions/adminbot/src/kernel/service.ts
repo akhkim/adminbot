@@ -24,6 +24,7 @@ import type {
   AdminBotPaperArtifactLinks,
   AdminBotPaperNudge,
   AdminBotPaperRecord,
+  AdminBotPasswordReset,
   AdminBotPaperRecordInput,
   AdminBotPaperStep,
   AdminBotPaperTimeline,
@@ -105,6 +106,9 @@ export type AdminBotServiceStore = {
   getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined;
   saveCredential(credential: AdminBotMemberCredential): void;
   updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void;
+  savePasswordReset(reset: AdminBotPasswordReset): void;
+  getPasswordResetByTokenHash(tokenHash: string): AdminBotPasswordReset | undefined;
+  markPasswordResetsUsedForMember(memberId: string, usedAt: string): void;
   saveAccountRegistration(registration: AdminBotAccountRegistration): void;
   getAccountRegistration(id: string): AdminBotAccountRegistration | undefined;
   listAccountRegistrations(status?: AdminBotRegistrationStatus): AdminBotAccountRegistration[];
@@ -120,6 +124,7 @@ export type AdminBotServiceStore = {
   getSession(tokenHash: string): AdminBotAuthSession | undefined;
   touchSession(tokenHash: string, lastSeenAt: string): void;
   revokeSession(tokenHash: string, revokedAt: string): void;
+  revokeSessionsForMember(memberId: string, revokedAt: string): void;
   pruneSessionsBefore(cutoffIso: string): number;
   saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void;
   getSlackChannelNamingRecord(channelId: string): AdminBotSlackChannelNamingRecord | undefined;

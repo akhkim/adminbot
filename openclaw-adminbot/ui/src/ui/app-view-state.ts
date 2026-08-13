@@ -71,6 +71,9 @@ export type AppViewState = {
   memberPassword: string;
   memberPasswordConfirm: string;
   loginMode: import("./adminbot/auth/flow.ts").LoginMode;
+  passwordResetToken: string;
+  passwordResetSent: boolean;
+  passwordResetDone: boolean;
   loginShowMemberPassword: boolean;
   memberAuthBusy: boolean;
   memberAuthFailure: import("./adminbot/auth/flow.ts").MemberAuthFailure | null;

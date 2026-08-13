@@ -121,6 +121,8 @@ type SettingsHost = {
   guestReimbursements?: boolean;
   systemThemeCleanup?: (() => void) | null;
   pendingGatewayToken?: string | null;
+  passwordResetToken?: string;
+  loginMode?: import("./adminbot/auth/flow.ts").LoginMode;
   requestUpdate?: () => void;
   updateComplete?: Promise<unknown>;
   controlUiRefreshSeq?: number;
@@ -336,6 +338,21 @@ export function applySettingsFromUrl(host: SettingsHost) {
   // AdminBot base URL is non-secret; static deployments (e.g. Vercel) pass it as
   // a param so the member login gate can reach the AdminBot service when the
   // page host cannot serve it on :8765.
+  // The one-time token from a password-reset email. Consumed into state and stripped from the URL
+  // in the same pass as the others, so it never lingers in the address bar, history, or a shared
+  // link after the form has it.
+  const passwordResetRaw = params.get("passwordReset") ?? hashParams.get("passwordReset");
+  if (passwordResetRaw != null) {
+    const token = normalizeOptionalString(passwordResetRaw);
+    if (token) {
+      host.passwordResetToken = token;
+      host.loginMode = "reset-confirm";
+    }
+    params.delete("passwordReset");
+    hashParams.delete("passwordReset");
+    shouldCleanUrl = true;
+  }
+
   const adminBotUrlRaw = params.get("adminBotUrl") ?? hashParams.get("adminBotUrl");
   if (adminBotUrlRaw != null) {
     const nextAdminBotUrl = normalizeOptionalString(adminBotUrlRaw);

@@ -804,6 +804,10 @@ export type AdminBotAuditEvent = {
     | "auth.rate_limited"
     | "auth.logged_out"
     | "auth.password_changed"
+    | "auth.password_reset_requested"
+    | "auth.password_reset_completed"
+    | "auth.password_reset_email_sent"
+    | "auth.password_reset_email_failed"
     | "auth.email_changed"
     | "auth.registration_submitted"
     | "auth.registration_approved"
@@ -844,6 +848,17 @@ export type AdminBotMemberCredential = {
   password_scrypt: string;
   claimed_at: string;
   updated_at: string;
+};
+
+// A single outstanding "forgot my password" request. Only the SHA-256 of the emailed token is
+// stored, so a database reader cannot mint a reset link; `used_at` is stamped instead of deleting
+// the row so a replayed link is distinguishable from an expired one in the audit trail.
+export type AdminBotPasswordReset = {
+  token_hash: string;
+  member_id: string;
+  created_at: string;
+  expires_at: string;
+  used_at?: string | null;
 };
 
 export const adminBotRegistrationKinds = ["claim", "signup"] as const;

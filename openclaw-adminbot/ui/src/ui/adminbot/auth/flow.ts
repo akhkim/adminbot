@@ -24,6 +24,7 @@ import {
   changeMemberPassword,
   claimMember,
   clearStoredMemberSession,
+  confirmPasswordReset,
   fetchMemberSession,
   fetchRoster,
   hasAcknowledgedOnboardingChecklist,
@@ -32,6 +33,7 @@ import {
   loginMember,
   logoutMember,
   markOnboardingChecklistAcknowledged,
+  requestPasswordReset,
   resolveAdminBotBaseUrl,
   saveStoredMemberSession,
   setOnboardingStep,
@@ -40,7 +42,9 @@ import {
 
 const MIN_CLAIM_PASSWORD_LENGTH = 10;
 
-export type LoginMode = "signin" | "claim" | "signup";
+// "reset-request" asks for the email to mail a link to; "reset-confirm" is what the emailed link
+// lands on, where the member types the new password.
+export type LoginMode = "signin" | "claim" | "signup" | "reset-request" | "reset-confirm";
 
 // Closed roster-load failure surface for the claim picker. `unreachable` is the
 // AdminBot origin being down; `failed` is any other non-ok response.
@@ -72,6 +76,13 @@ export type MemberAuthHost = {
   memberAuthFailure: MemberAuthFailure | null;
   memberFormError: string | null;
   loginPendingNotice: boolean;
+  // Set from the ?passwordReset= link; the raw token is never persisted, so a reload of the
+  // dashboard without the query parameter drops back to the normal gate.
+  passwordResetToken: string;
+  // Shown after a reset request so the member sees an acknowledgement without it implying the
+  // address exists (the service answers the same either way).
+  passwordResetSent: boolean;
+  passwordResetDone: boolean;
   rosterMembers: RosterMember[];
   rosterLoading: boolean;
   rosterError: RosterError;
@@ -299,12 +310,87 @@ async function applyMemberSession(host: MemberAuthHost, session: MemberSession) 
   await connectAsMember(host, session, session.session_token);
 }
 
+/**
+ * Asks the service to mail a reset link. Succeeds for any well-formed address — the service will
+ * not say whether an account exists — so the acknowledgement is phrased as "if that address has an
+ * account" rather than as confirmation.
+ */
+async function submitPasswordResetRequest(host: MemberAuthHost, email: string): Promise<void> {
+  if (!email) {
+    host.memberFormError = t("login.member.errorEmailRequired");
+    return;
+  }
+  host.memberAuthBusy = true;
+  try {
+    const result = await requestPasswordReset(email, resolveAdminBotBaseUrl(host.settings));
+    if (!result.ok) {
+      host.memberAuthFailure = toMemberAuthFailure(result.kind, result.retryAfterSeconds, "signin");
+      return;
+    }
+    host.passwordResetSent = true;
+  } finally {
+    host.memberAuthBusy = false;
+  }
+}
+
+/** Redeems the token from the emailed link. On success the member is sent back to a clean sign-in. */
+async function submitPasswordResetConfirm(host: MemberAuthHost, password: string): Promise<void> {
+  if (!password) {
+    host.memberFormError = t("login.member.errorRequired");
+    return;
+  }
+  if (password.length < MIN_CLAIM_PASSWORD_LENGTH) {
+    host.memberFormError = t("login.member.errorTooShort", {
+      min: String(MIN_CLAIM_PASSWORD_LENGTH),
+    });
+    return;
+  }
+  if (password !== host.memberPasswordConfirm) {
+    host.memberFormError = t("login.member.errorMismatch");
+    return;
+  }
+  host.memberAuthBusy = true;
+  try {
+    const result = await confirmPasswordReset(
+      host.passwordResetToken,
+      password,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      // An expired or already-used link is the common case here and is not a credential failure,
+      // so it reads as a form error with a way forward rather than a sign-in failure panel.
+      host.memberFormError =
+        result.kind === "unreachable"
+          ? t("login.member.reset.errorUnreachable")
+          : t("login.member.reset.errorInvalidLink");
+      return;
+    }
+    host.memberPassword = "";
+    host.memberPasswordConfirm = "";
+    host.passwordResetToken = "";
+    host.passwordResetDone = true;
+    host.loginMode = "signin";
+  } finally {
+    host.memberAuthBusy = false;
+  }
+}
+
 export async function submitMemberAuth(host: MemberAuthHost): Promise<void> {
   host.memberFormError = null;
   host.memberAuthFailure = null;
   const mode = host.loginMode;
   const email = host.memberEmail.trim();
   const password = host.memberPassword;
+  // The two reset modes each use only half of this form (an email, or a new password), so they are
+  // handled before the shared "both fields required" guard below.
+  if (mode === "reset-request") {
+    await submitPasswordResetRequest(host, email);
+    return;
+  }
+  if (mode === "reset-confirm") {
+    await submitPasswordResetConfirm(host, password);
+    return;
+  }
   if (!email || !password) {
     host.memberFormError = t("login.member.errorRequired");
     return;

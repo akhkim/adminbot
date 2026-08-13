@@ -24,6 +24,11 @@ const MIN_PASSWORD_LENGTH = 10;
 const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_TOKEN_BYTES = 32;
 
+// Reset links are mailed, so they live long enough to survive a slow inbox but not long enough to
+// sit in one as a standing credential.
+const PASSWORD_RESET_TTL_MINUTES = 60;
+const PASSWORD_RESET_TOKEN_BYTES = 32;
+
 // Sliding-window brute-force guard: at most this many failures per key inside the window.
 const RATE_LIMIT_MAX_FAILURES = 10;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
@@ -87,6 +92,15 @@ export type AdminBotAuthServiceOptions = {
   // member their account is live. Same contract as inviteToLabCalendar: audited either way, never
   // fails or delays the approval response.
   sendAccountApprovedEmail?: (params: { email: string; name?: string }) => Promise<void>;
+  // Best-effort side effect fired (not awaited) when a member asks to reset their password. Same
+  // contract as sendAccountApprovedEmail: audited either way, and a failure must never change the
+  // response (which is identical for known and unknown addresses by design).
+  sendPasswordResetEmail?: (params: {
+    email: string;
+    name?: string;
+    token: string;
+    expiresInMinutes: number;
+  }) => Promise<void>;
   // Best-effort side effect fired (not awaited) when a registration is approved, filing the DCS
   // Slack-access request form on the new member's behalf. Same contract as the two above.
   submitDcsForm?: (params: { firstName: string; lastName: string; email: string }) => Promise<void>;
@@ -165,6 +179,12 @@ export class AdminBotAuthService {
     email: string;
     name?: string;
   }) => Promise<void>;
+  private readonly sendPasswordResetEmail?: (params: {
+    email: string;
+    name?: string;
+    token: string;
+    expiresInMinutes: number;
+  }) => Promise<void>;
   private readonly submitDcsForm?: (params: {
     firstName: string;
     lastName: string;
@@ -187,6 +207,7 @@ export class AdminBotAuthService {
     this.createMember = options.createMember;
     this.inviteToLabCalendar = options.inviteToLabCalendar;
     this.sendAccountApprovedEmail = options.sendAccountApprovedEmail;
+    this.sendPasswordResetEmail = options.sendPasswordResetEmail;
     this.submitDcsForm = options.submitDcsForm;
     this.geolocateIp = options.geolocateIp;
     this.gatewayToken = options.gatewayToken?.trim() || undefined;
@@ -386,6 +407,108 @@ export class AdminBotAuthService {
     });
     this.audit("auth.password_changed", memberId, {});
     return { ok: true, status: 200, payload: { changed: true } };
+  }
+
+  /**
+   * Starts a "forgot my password" flow. The response is deliberately identical whether or not the
+   * address has an account: this route is unauthenticated, so a distinguishable answer would turn
+   * it into a membership oracle for the whole roster. Rate-limited on the same keys as login so it
+   * cannot be used to spray mail at an address either.
+   */
+  requestPasswordReset(request: {
+    email: string;
+    remoteIp?: string;
+  }): AdminBotAuthResponse<{ requested: true }> {
+    const email = request.email.trim().toLowerCase();
+    const keys = rateLimitKeys(email, request.remoteIp);
+    const limited = this.checkRateLimit(keys, email, request.remoteIp);
+    if (limited) {
+      return limited;
+    }
+    this.recordFailure(keys);
+    const credential = this.store.getCredentialByEmail(email);
+    if (credential) {
+      const nowMs = this.now().getTime();
+      const token = randomBytes(PASSWORD_RESET_TOKEN_BYTES).toString("base64url");
+      this.store.savePasswordReset({
+        token_hash: hashToken(token),
+        member_id: credential.member_id,
+        created_at: new Date(nowMs).toISOString(),
+        expires_at: new Date(nowMs + PASSWORD_RESET_TTL_MINUTES * 60_000).toISOString(),
+        used_at: null,
+      });
+      this.audit("auth.password_reset_requested", credential.member_id, { email });
+      this.notifyPasswordReset(credential.email, credential.member_id, token);
+    } else {
+      // Audited so a burst against unknown addresses is still visible, keyed by the attempted
+      // address because there is no member to attribute it to.
+      this.audit("auth.password_reset_requested", email, { email, unknown: true });
+    }
+    return { ok: true, status: 200, payload: { requested: true } };
+  }
+
+  /**
+   * Redeems a reset token and sets the new password. Every outstanding token for the member is
+   * burned on success, and so is every live session: a password reset is exactly the moment where
+   * "somebody else may be signed in as me" has to stop being true.
+   */
+  resetPassword(request: {
+    token: string;
+    newPassword: string;
+  }): AdminBotAuthResponse<{ reset: true }> {
+    const token = request.token.trim();
+    if (!token) {
+      return authError(400, "reset link is invalid or has expired");
+    }
+    const reset = this.store.getPasswordResetByTokenHash(hashToken(token));
+    const nowIso = this.now().toISOString();
+    // One message for missing/used/expired alike: which of the three it is tells an attacker
+    // whether a guessed token ever existed.
+    if (!reset || reset.used_at || reset.expires_at <= nowIso) {
+      return authError(400, "reset link is invalid or has expired");
+    }
+    if (request.newPassword.length < MIN_PASSWORD_LENGTH) {
+      return authError(400, `password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+    }
+    const credential = this.store.getCredentialByMemberId(reset.member_id);
+    if (!credential) {
+      return authError(400, "reset link is invalid or has expired");
+    }
+    this.store.saveCredential({
+      ...credential,
+      password_scrypt: hashPassword(request.newPassword),
+      updated_at: nowIso,
+    });
+    this.store.markPasswordResetsUsedForMember(reset.member_id, nowIso);
+    this.store.revokeSessionsForMember(reset.member_id, nowIso);
+    this.audit("auth.password_reset_completed", reset.member_id, {});
+    return { ok: true, status: 200, payload: { reset: true } };
+  }
+
+  // Best-effort, same contract as the account-approved mail: the token row is already written, so a
+  // failed send is audited for follow-up rather than rolled back into an error the caller sees
+  // (which would also leak whether the address exists).
+  private notifyPasswordReset(email: string, memberId: string, token: string): void {
+    if (!this.sendPasswordResetEmail) {
+      return;
+    }
+    const member = this.store.getLabMember(memberId);
+    const name = typeof member?.name === "string" ? member.name : undefined;
+    void this.sendPasswordResetEmail({
+      email,
+      ...(name ? { name } : {}),
+      token,
+      expiresInMinutes: PASSWORD_RESET_TTL_MINUTES,
+    })
+      .then(() => {
+        this.audit("auth.password_reset_email_sent", memberId, { email });
+      })
+      .catch((error: unknown) => {
+        this.audit("auth.password_reset_email_failed", memberId, {
+          email,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 
   // Self-service change of the member's login email. Reverifies the current password (rate-limited
