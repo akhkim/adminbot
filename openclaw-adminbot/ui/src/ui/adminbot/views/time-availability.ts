@@ -506,7 +506,7 @@ export function allocationBins(
 // Round numbers on the axis, chosen from the magnitude so an h/day chart does not tick in 20s and
 // an h/month chart does not need forty gridlines.
 function axisStep(highest: number): number {
-  for (const step of [1, 2, 5, 10, 20, 50, 100]) {
+  for (const step of [0.25, 0.5, 1, 2, 5, 10, 20, 50, 100]) {
     if (highest / step <= 5) {
       return step;
     }
@@ -597,7 +597,6 @@ function renderTimeChart(
         <svg
           class="time-chart__svg"
           viewBox="0 0 ${CHART_WIDTH} ${CHART_HEIGHT}"
-          preserveAspectRatio="none"
           role="img"
           aria-label=${t("adminbotTimeAvailability.chartAria", { member: memberName })}
         >
