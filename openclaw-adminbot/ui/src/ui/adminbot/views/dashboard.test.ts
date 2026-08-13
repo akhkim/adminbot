@@ -260,6 +260,7 @@ describe("renderDashboard", () => {
               github_url: "https://github.com/ada",
               linkedin_url: "https://www.linkedin.com/in/ada",
               cv_url: "https://ada.dev/cv.pdf",
+              intake_form_url: "https://docs.google.com/forms/d/e/ada/viewform",
               linkedin_urn: "ACoAAB1234567",
             },
           ],

@@ -1030,14 +1030,15 @@ function renderFieldInput(field: EditableField, currentValue: string) {
 // which flushes and exits regardless of what's filled in. The dashboard warning and the daily
 // Slack reminder are what actually follow up on a field that stays blank.
 //
-// Only what is still outstanding gets marked. A required field the member has already answered
-// needs no flag -- the answer in the control is the proof -- so the dot appears on a required
-// field only while it is blank, and it carries the alert color because a blank one is the thing
-// the lab is chasing. Optional fields say so in words instead (see the label below).
-function renderMandatoryMark(field: EditableField, value: string) {
+// The dot means "this one is required", not "this one is still empty. It therefore stays put once
+// the field is answered: a mark that disappears on completion cannot be used to tell, at a glance,
+// which fields the lab actually asks for -- and a member correcting an answer would have no way to
+// see that the box they are about to clear is one they have to refill. Optional fields say so in
+// words instead (see the label below).
+function renderMandatoryMark(field: EditableField, _value: string) {
   // An admin-owned field says who fills it instead. Dotting it would chase the member for an
   // answer the form does not let them give.
-  if (isOptional(field) || field.adminOnly || value.trim()) {
+  if (isOptional(field) || field.adminOnly) {
     return nothing;
   }
   return html`<span class="profile__mandatory" aria-hidden="true"></span

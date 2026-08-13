@@ -319,11 +319,13 @@ describe("renderProfile mandatory fields", () => {
 
   // The mark chases what is still missing, so answering a required field clears it. Otherwise a
   // fully filled profile would still show a page of dots saying nothing.
-  it("drops the mark once a mandatory field is answered", () => {
+  // The mark says the field is required, not that it is empty -- so it stays once answered, and a
+  // member can see at a glance which boxes they must not clear.
+  it("keeps the mark once a mandatory field is answered", () => {
     const container = renderPage(createState(createMember({ name: "Pat Doe" })), vi.fn());
 
     const nameRow = container.querySelector('input[name="name"]')?.closest(".profile__form-row");
-    expect(nameRow?.querySelector(".profile__mandatory")).toBeNull();
+    expect(nameRow?.querySelector(".profile__mandatory")).not.toBeNull();
   });
 
   it("labels every unmarked, non-mandatory field optional", () => {
@@ -722,7 +724,7 @@ describe("renderProfile LinkedIn URN and intake form", () => {
   // It is the member's own answers, not the lab's blank form. Google Forms only ever hands the
   // edit link to the respondent, so nobody else can produce it for them -- which is why this is a
   // field they paste into rather than a link the profile could render.
-  it("collects the member's own application form URL as a field, not a shared link", () => {
+  it("collects the member's own application form URL as a required field, not a shared link", () => {
     const complete = createMember({
       linkedin_urn: "ACoAAB1234567",
       personal_website: "https://ada.dev",
@@ -735,9 +737,10 @@ describe("renderProfile LinkedIn URN and intake form", () => {
     const basics = container.querySelector('[data-testid="profile-basics"]')!;
     const input = basics.querySelector<HTMLInputElement>('[name="intake_form_url"]');
     expect(input).not.toBeNull();
-    // Optional, and in the links group beside the other places a member's details live.
+    // Required, and in the links group beside the other places a member's details live.
     const row = input?.closest(".profile__form-row");
-    expect(row?.querySelector(".profile__optional")).not.toBeNull();
+    expect(row?.querySelector(".profile__optional")).toBeNull();
+    expect(row?.querySelector(".profile__mandatory")).not.toBeNull();
   });
 });
 

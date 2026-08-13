@@ -3138,8 +3138,8 @@
 
 /* The required dot. Sits on the label's baseline row rather than after the text so a two-line
    label does not push it onto a line of its own. */
-/* Marks a required answer the lab is still missing, so it carries the alert color rather than the
-   accent -- it only ever appears on a blank, never beside an answer already given. */
+/* Marks a field as required, answered or not, so the set the lab asks for is readable at a glance
+   rather than only while it is incomplete. */
 .profile__mandatory {
   display: inline-block;
   width: 4px;

@@ -137,6 +137,7 @@ export const adminBotMandatoryProfileFields = [
   "linkedin_url",
   "linkedin_urn",
   "cv_url",
+  "intake_form_url",
   "openreview_id",
 ] as const;
 
@@ -161,6 +162,7 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   linkedin_url: "LinkedIn",
   linkedin_urn: "LinkedIn URN",
   cv_url: "CV",
+  intake_form_url: "Application form answers",
   openreview_id: "OpenReview",
 };
 

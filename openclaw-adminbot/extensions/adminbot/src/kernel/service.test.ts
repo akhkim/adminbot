@@ -1708,6 +1708,7 @@ describe("AdminBotService", () => {
           linkedin_url: "https://www.linkedin.com/in/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
+          intake_form_url: "https://docs.google.com/forms/d/e/full/viewform",
           openreview_id: "~Full_Member1",
         }),
       );
@@ -1727,6 +1728,7 @@ describe("AdminBotService", () => {
           "linkedin_url",
           "linkedin_urn",
           "cv_url",
+          "intake_form_url",
           "openreview_id",
         ]),
       );
@@ -1777,6 +1779,7 @@ describe("AdminBotService", () => {
           linkedin_url: "https://www.linkedin.com/in/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
+          intake_form_url: "https://docs.google.com/forms/d/e/full/viewform",
           openreview_id: "~Full_Member1",
         }),
       );
@@ -1840,6 +1843,7 @@ describe("AdminBotService", () => {
           linkedin_url: "https://www.linkedin.com/in/full",
           linkedin_urn: "ACoAAB1234567",
           cv_url: "https://example.com/cv.pdf",
+          intake_form_url: "https://docs.google.com/forms/d/e/full/viewform",
           openreview_id: "~Full_Member1",
         }),
       );
