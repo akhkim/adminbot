@@ -2537,12 +2537,12 @@
   color: var(--text);
 }
 
-/* The picker is the short half of the row: the number is what a member is actually typing, so it
-   gets the width. The dial code leads each option's text (see renderFieldInput), which keeps the
+/* The country box is the short half of the row: the number is what a member is actually typing, so
+   it gets the width. The dial code leads each suggestion (see renderFieldInput), which keeps the
    part that identifies the choice visible when a long country name truncates. */
 .profile__phone {
   display: grid;
-  grid-template-columns: minmax(0, 7.5rem) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
   gap: var(--space-2);
 }
 
@@ -2550,6 +2550,58 @@
   min-width: 0;
   padding-right: var(--space-2);
   text-overflow: ellipsis;
+}
+
+/* The country list, drawn here rather than by the browser: a `<datalist>` popup renders at the
+   platform's own size and colours and cannot be styled, which left a list that belonged to a
+   different application sitting under the field. */
+.country-select {
+  position: relative;
+}
+
+.country-select__list {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 15rem;
+  margin: 0;
+  padding: var(--space-1);
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--popover);
+  box-shadow: var(--shadow-md);
+}
+
+.country-select__option {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 5px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--control-ui-text-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* One highlight, driven by the keyboard and by hover alike, so arrowing and pointing agree. */
+.country-select__option--active {
+  background: var(--bg-hover);
+}
+
+.country-select__dial {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.country-select__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile__optional {

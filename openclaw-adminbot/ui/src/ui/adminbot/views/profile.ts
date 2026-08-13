@@ -22,10 +22,11 @@ import { icons } from "../../icons.ts";
 import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
 import {
   joinPhoneNumber,
-  PHONE_COUNTRIES,
+  resolvePhoneDial,
   splitPhoneNumber,
 } from "../data/phone-country-codes.ts";
 import { timezoneForLocation } from "../data/timezone-for-location.ts";
+import { renderCountrySelect } from "./country-select.ts";
 import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 
 export type ProfileProps = {
@@ -657,11 +658,16 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
     }
     const value = String(data.get(field.key) ?? "").trim();
     if (field.type === "phone") {
-      // The two controls are a picker and a text box; the record keeps one string.
+      // The two controls are a country box and a number box; the record keeps one string. The
+      // country box is free text with a suggestion list, so what it holds is resolved back to a
+      // dial code rather than trusted as one.
       setField(
         fields,
         field.key,
-        joinPhoneNumber(String(data.get(`${field.key}${PHONE_CODE_SUFFIX}`) ?? "").trim(), value),
+        joinPhoneNumber(
+          resolvePhoneDial(String(data.get(`${field.key}${PHONE_CODE_SUFFIX}`) ?? "")),
+          value,
+        ),
       );
     } else if (field.type === "list") {
       setField(
@@ -793,20 +799,7 @@ function renderFieldInput(field: EditableField, currentValue: string) {
       const { dial, local } = splitPhoneNumber(currentValue);
       return html`
         <span class="profile__phone">
-          <select
-            class="input profile__phone-code"
-            name=${`${field.key}${PHONE_CODE_SUFFIX}`}
-            aria-label=${t("profile.basics.countryCode")}
-          >
-            <option value="" ?selected=${!dial}>${t("profile.basics.countryCodeNone")}</option>
-            ${PHONE_COUNTRIES.map(
-              (country) => html`
-                <option value=${country.dial} ?selected=${country.dial === dial}>
-                  ${country.dial} ${country.name}
-                </option>
-              `,
-            )}
-          </select>
+          ${renderCountrySelect({ name: `${field.key}${PHONE_CODE_SUFFIX}`, value: dial })}
           <input
             class="input profile__phone-number"
             name=${field.key}

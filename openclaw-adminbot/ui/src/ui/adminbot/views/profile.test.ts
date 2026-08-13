@@ -44,6 +44,23 @@ function renderPage(
   return container;
 }
 
+// The country box is a custom element, and a custom element only upgrades once it is in the
+// document -- rendering into a detached div leaves it inert. Tests that read or drive that control
+// mount the page for real and wait for its first update.
+async function renderMountedPage(
+  state: AppViewState,
+  onSave: (memberId: string, fields: MemberProfileUpdate) => void,
+): Promise<HTMLElement> {
+  const container = document.createElement("div");
+  document.body.append(container);
+  render(renderProfile(state, { onSave }), container);
+  const countrySelect = container.querySelector("adminbot-country-select") as
+    | (HTMLElement & { updateComplete?: Promise<unknown> })
+    | null;
+  await countrySelect?.updateComplete;
+  return container;
+}
+
 describe("renderProfile autosave", () => {
   beforeEach(() => {
     vi.useFakeTimers();
@@ -77,19 +94,46 @@ describe("renderProfile autosave", () => {
 
   // The record keeps one phone string; the form offers a country picker plus the local number, so
   // the two have to fold back together on save and split apart again on render.
-  it("saves the picked country code and the typed number as one whatsapp value", () => {
+  it("saves the picked country code and the typed number as one whatsapp value", async () => {
     const state = createState(createMember({ whatsapp: "" } as Partial<LabMember>));
     const onSave = vi.fn();
-    const container = renderPage(state, onSave);
+    const container = await renderMountedPage(state, onSave);
 
-    const code = container.querySelector<HTMLSelectElement>('select[name="whatsapp__dial"]')!;
+    const code = container.querySelector<HTMLInputElement>('input[name="whatsapp__dial"]')!;
     const number = container.querySelector<HTMLInputElement>('input[name="whatsapp"]')!;
-    code.value = "+44";
+    code.value = "+44 United Kingdom";
     number.value = "7700 900123";
     number.dispatchEvent(new Event("input", { bubbles: true }));
     vi.advanceTimersByTime(1000);
 
-    expect(onSave).toHaveBeenCalledWith("pat", expect.objectContaining({ whatsapp: "+44 7700 900123" }));
+    expect(onSave).toHaveBeenCalledWith(
+      "pat",
+      expect.objectContaining({ whatsapp: "+44 7700 900123" }),
+    );
+  });
+
+  // The country box is free text with a suggestion list, so a member can leave it holding a bare
+  // code or a country name they typed without picking. All three resolve to the same stored value.
+  it("accepts a bare code or a typed country name in the country box", async () => {
+    for (const typed of ["+44", "44", "united kingdom"]) {
+      const onSave = vi.fn();
+      const container = await renderMountedPage(
+        createState(createMember({ whatsapp: "" } as Partial<LabMember>)),
+        onSave,
+      );
+
+      const code = container.querySelector<HTMLInputElement>('input[name="whatsapp__dial"]')!;
+      const number = container.querySelector<HTMLInputElement>('input[name="whatsapp"]')!;
+      code.value = typed;
+      number.value = "7700 900123";
+      number.dispatchEvent(new Event("input", { bubbles: true }));
+      vi.advanceTimersByTime(1000);
+
+      expect(onSave).toHaveBeenCalledWith(
+        "pat",
+        expect.objectContaining({ whatsapp: "+44 7700 900123" }),
+      );
+    }
   });
 
   // An example sitting in an empty box reads as somebody else's answer already on file, so every
@@ -97,8 +141,12 @@ describe("renderProfile autosave", () => {
   it("labels every example placeholder as an example", () => {
     const container = renderPage(createState(createMember()), vi.fn());
 
+    // The country box is excluded: its placeholder names the box ("Code") rather than showing an
+    // example answer, because the suggestion list is where its answers come from.
     const placeheld = [
-      ...container.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("[placeholder]"),
+      ...container.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+        "[placeholder]:not(.profile__phone-code)",
+      ),
     ];
     expect(placeheld.length).toBeGreaterThan(0);
     for (const control of placeheld) {
@@ -106,16 +154,48 @@ describe("renderProfile autosave", () => {
     }
   });
 
-  it("reopens a stored number with its country already selected", () => {
-    const container = renderPage(
+  it("reopens a stored number with its country already filled in", async () => {
+    const container = await renderMountedPage(
       createState(createMember({ whatsapp: "+91 98765 43210" } as Partial<LabMember>)),
       vi.fn(),
     );
 
-    const code = container.querySelector<HTMLSelectElement>('select[name="whatsapp__dial"]')!;
+    const code = container.querySelector<HTMLInputElement>('input[name="whatsapp__dial"]')!;
     const number = container.querySelector<HTMLInputElement>('input[name="whatsapp"]')!;
-    expect(code.value).toBe("+91");
+    // Named, not just coded, so the box says which country it means.
+    expect(code.value).toBe("+91 India");
     expect(number.value).toBe("98765 43210");
+  });
+
+  // Typing a country name has to narrow the list: it is the reason this control is not a <select>,
+  // whose type-ahead only matches the dial code the option text starts with.
+  it("filters the country list by name, dial code, or ISO code", async () => {
+    const container = await renderMountedPage(
+      createState(createMember({ whatsapp: "" } as Partial<LabMember>)),
+      vi.fn(),
+    );
+    const element = container.querySelector("adminbot-country-select") as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    const code = container.querySelector<HTMLInputElement>('input[name="whatsapp__dial"]')!;
+
+    const optionsFor = async (typed: string) => {
+      code.focus();
+      code.value = typed;
+      code.dispatchEvent(new Event("input", { bubbles: true }));
+      await element.updateComplete;
+      return [...container.querySelectorAll(".country-select__option")].map((option) =>
+        option.textContent?.replace(/\s+/gu, " ").trim(),
+      );
+    };
+
+    expect(await optionsFor("canad")).toEqual(["+1 Canada"]);
+    expect(await optionsFor("+353")).toEqual(["+353 Ireland"]);
+    expect(await optionsFor("jp")).toEqual(["+81 Japan"]);
+
+    // Typing scheduled an autosave on the module-level timer these tests share; let it fire here
+    // rather than leaving it to flush inside whichever test runs next.
+    vi.advanceTimersByTime(1000);
   });
 
   // Leaving a form nobody edited used to fire a full-record PUT, a "saved" toast for a save that

@@ -161,3 +161,40 @@ export function joinPhoneNumber(dial: string, local: string): string {
   }
   return dial ? `${dial} ${number}` : number;
 }
+
+/** What the country picker displays for a country: the code first, then the name to search by. */
+export function phoneCountryLabel(country: PhoneCountry): string {
+  return `${country.dial} ${country.name}`;
+}
+
+/**
+ * Resolves whatever is in the country box back to a dial code.
+ *
+ * The control is a text input with a suggestion list rather than a `<select>`, so that a member
+ * can find their country by typing its name -- a native select only type-ahead-matches from the
+ * start of the option text, which here is the dial code. That freedom means the box can hold
+ * anything, so this accepts the three things a person plausibly leaves in it: a full suggestion
+ * ("+44 United Kingdom"), a bare code ("+44", with or without the plus), or a country name typed
+ * without picking from the list ("united kingdom"). Anything else resolves to no code, and the
+ * number is stored exactly as typed.
+ */
+export function resolvePhoneDial(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const byLabel = PHONE_COUNTRIES.find(
+    (country) => phoneCountryLabel(country).toLowerCase() === trimmed.toLowerCase(),
+  );
+  if (byLabel) {
+    return byLabel.dial;
+  }
+  const dialCandidate = trimmed.startsWith("+") ? trimmed : `+${trimmed}`;
+  if (PHONE_COUNTRIES.some((country) => country.dial === dialCandidate)) {
+    return dialCandidate;
+  }
+  const byName = PHONE_COUNTRIES.find(
+    (country) => country.name.toLowerCase() === trimmed.toLowerCase(),
+  );
+  return byName?.dial ?? "";
+}
