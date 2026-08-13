@@ -1308,6 +1308,7 @@ export const en: TranslationMap = {
     attention: {
       title: "Needs you",
       empty: "Nothing waiting on you. Ask AdminBot anything, or check what's coming up.",
+      countLabel: "{count} waiting on you",
     },
     onboardingWarning: {
       title: "Finish onboarding before you go further",
@@ -1340,6 +1341,9 @@ export const en: TranslationMap = {
       blockersPlural: "{count} blockers awaiting review.",
       clear: "Nothing is blocked.",
       open: "Open my work",
+    },
+    myWork: {
+      progressLabel: "{title} progress",
     },
   },
   adminbotTimeAvailability: {

@@ -191,11 +191,35 @@ describe("renderDashboard", () => {
     } as unknown as Partial<AppViewState>);
     const container = renderPage(state, "member");
 
-    const chip = container.querySelector<HTMLButtonElement>('[data-testid="dashboard-blank-cv_url"]');
-    expect(chip).not.toBeNull();
-    expect(chip?.tagName).toBe("BUTTON");
-    chip?.click();
+    const chips = [
+      ...container.querySelectorAll<HTMLButtonElement>('[data-testid^="dashboard-blank-"]'),
+    ];
+    expect(chips.length).toBeGreaterThan(0);
+    expect(chips.every((chip) => chip.tagName === "BUTTON")).toBe(true);
+    chips[0]?.click();
     expect(state.setTab).toHaveBeenCalledWith("profile");
+  });
+
+  // A new member has a dozen blanks. Naming them all wrapped the card to four rows and pushed
+  // everything under it off the screen, so the card names the first few and counts the rest.
+  it("caps the named blanks and counts the remainder", () => {
+    const container = renderPage(
+      createState({
+        memberId: "m1",
+        adminBotData: {
+          proposals: [],
+          members: [{ id: "m1", name: "Ada" }], // every required field but name is blank
+        },
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
+
+    const card = container.querySelector('[data-testid="dashboard-attention-mandatoryFields"]')!;
+    const chips = card.querySelectorAll('[data-testid^="dashboard-blank-"]');
+    expect(chips.length).toBe(5);
+    expect(card.querySelector(".dashboard-card__step--more")?.textContent?.trim()).toMatch(
+      /^\+\d+ more$/u,
+    );
   });
 
   // The URN is filled in by an admin, so chasing the member for it names a field whose control on

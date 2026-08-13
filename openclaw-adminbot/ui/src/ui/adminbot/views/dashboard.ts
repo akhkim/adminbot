@@ -39,6 +39,11 @@ type AttentionItem = {
 // instead. blankFields() is already mandatory-only: optional fields never appear in it.
 //
 // The fields live on another tab again, so this navigates rather than scrolling.
+//
+// Same idea as SUMMARY_PREVIEW_LIMIT below, one card up: enough blanks named to be a route into
+// the profile, not so many that this card outgrows the stack it lives in.
+const BLANK_FIELD_PREVIEW_LIMIT = 5;
+
 function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
   const member = findOwnMember(state);
   if (!member) {
@@ -58,6 +63,12 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
     focusProfileField(fieldKey);
     state.setTab("profile");
   };
+  // A new member has a dozen blanks, which wrapped to four rows and made one card in the stack
+  // three times the height of its siblings -- pushing everything below it off the screen. The
+  // first few are a route in; the count in the summary above already carries the total, and the
+  // Open profile action carries the rest.
+  const shown = blanks.slice(0, BLANK_FIELD_PREVIEW_LIMIT);
+  const hidden = blanks.length - shown.length;
   return {
     id: "mandatoryFields",
     title: t("dashboard.mandatoryFields.title"),
@@ -66,7 +77,7 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
     onAction: () => state.setTab("profile"),
     detail: html`
       <ul class="dashboard-card__steps">
-        ${blanks.map(
+        ${shown.map(
           (field) => html`
             <li>
               <button
@@ -80,6 +91,11 @@ function mandatoryFieldsItem(state: AppViewState): AttentionItem | null {
             </li>
           `,
         )}
+        ${hidden > 0
+          ? html`<li class="dashboard-card__step dashboard-card__step--more">
+              ${t("dashboard.more", { count: String(hidden) })}
+            </li>`
+          : nothing}
       </ul>
     `,
   };
@@ -161,7 +177,13 @@ function renderAttention(state: AppViewState, role: AccessRole) {
     <section class="dashboard__attention" data-testid="dashboard-attention">
       <h2 class="dashboard__section-title">
         ${t("dashboard.attention.title")}
-        ${items.length ? html`<span class="dashboard__count">${items.length}</span>` : nothing}
+        ${items.length
+          ? html`<span
+              class="dashboard__count"
+              aria-label=${t("dashboard.attention.countLabel", { count: String(items.length) })}
+              >${items.length}</span
+            >`
+          : nothing}
       </h2>
       ${items.length
         ? html`<div class="dashboard__stack">${items.map(renderAttentionCard)}</div>`
@@ -239,7 +261,14 @@ function renderWorkSummary(state: AppViewState) {
             return html`
               <li class="dashboard-summary__row">
                 <span class="dashboard-summary__row-label">${paper.title}</span>
-                <span class="dashboard-summary__bar">
+                <span
+                  class="dashboard-summary__bar"
+                  role="progressbar"
+                  aria-valuenow=${percent}
+                  aria-valuemin="0"
+                  aria-valuemax="100"
+                  aria-label=${t("dashboard.myWork.progressLabel", { title: paper.title })}
+                >
                   <span class="dashboard-summary__bar-fill" style=${`width:${percent}%`}></span>
                 </span>
                 <span class="dashboard-summary__row-step">${stepLabel(paper.current_step)}</span>
