@@ -125,7 +125,7 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "name",
     labelKey: "profile.fields.name",
-    example: "Ada Lovelace",
+    example: "Zhijing Jin",
     type: "short_text",
     group: "identity",
   },
@@ -140,7 +140,7 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "calendar_email",
     labelKey: "profile.fields.calendarEmail",
-    example: "ada.lovelace@gmail.com",
+    example: "zhijing.jin@gmail.com",
     type: "short_text",
     hintKey: "profile.hints.calendarEmail",
     group: "identity",
@@ -184,7 +184,7 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "research_topics",
     labelKey: "profile.fields.researchTopics",
-    example: "reasoning, alignment",
+    example: "causal inference, NLP",
     type: "list",
     group: "research",
   },
@@ -200,7 +200,7 @@ const PROFILE_FIELDS: ProfileField[] = [
     // and `calendar_email` (the Google account invites go to). It is frequently neither.
     key: "correspondence_email",
     labelKey: "profile.fields.correspondenceEmail",
-    example: "ada@cs.toronto.edu",
+    example: "zhijing@cs.toronto.edu",
     type: "short_text",
     hintKey: "profile.hints.correspondenceEmail",
     group: "identity",
@@ -233,7 +233,7 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "lesswrong_url",
     labelKey: "profile.fields.lesswrong",
-    example: "https://www.lesswrong.com/users/ada",
+    example: "https://www.lesswrong.com/users/zhijing-jin",
     type: "link",
     group: "links",
   },
@@ -247,14 +247,14 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "personal_website",
     labelKey: "profile.fields.personalWebsite",
-    example: "https://ada.dev",
+    example: "https://zhijing-jin.com",
     type: "link",
     group: "links",
   },
   {
     key: "github_url",
     labelKey: "profile.fields.github",
-    example: "https://github.com/ada",
+    example: "https://github.com/zhijing-jin",
     type: "link",
     hintKey: "profile.hints.github",
     group: "links",
@@ -262,7 +262,7 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "linkedin_url",
     labelKey: "profile.fields.linkedin",
-    example: "https://www.linkedin.com/in/ada",
+    example: "https://www.linkedin.com/in/zhijing-jin",
     type: "link",
     hintKey: "profile.hints.linkedin",
     group: "links",
@@ -292,14 +292,14 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "cv_url",
     labelKey: "profile.fields.cvUrl",
-    example: "https://ada.dev/cv.pdf",
+    example: "https://zhijing-jin.com/files/CV.pdf",
     type: "link",
     group: "links",
   },
   {
     key: "scholar_url",
     labelKey: "profile.fields.scholar",
-    example: "https://scholar.google.com/citations?user=abc123",
+    example: "https://scholar.google.com/citations?user=Mdr6wjUAAAAJ",
     type: "link",
     hintKey: "profile.hints.scholar",
     group: "links",
@@ -307,7 +307,7 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "openreview_id",
     labelKey: "profile.fields.openreviewId",
-    example: "~Ada_Lovelace1",
+    example: "~Zhijing_Jin1",
     type: "short_text",
     hintKey: "profile.hints.openreviewId",
     group: "links",
@@ -315,7 +315,7 @@ const PROFILE_FIELDS: ProfileField[] = [
   {
     key: "twitter_url",
     labelKey: "profile.fields.twitter",
-    example: "https://x.com/ada",
+    example: "https://x.com/ZhijingJin",
     type: "link",
     hintKey: "profile.hints.twitter",
     group: "links",
@@ -759,7 +759,7 @@ function renderAvatarUpload(state: AppViewState, member: LabMember, props: Profi
   `;
 }
 
-// Every example answer is prefixed on the way into a placeholder. A bare "ada@cs.toronto.edu"
+// Every example answer is prefixed on the way into a placeholder. A bare "zhijing@cs.toronto.edu"
 // sitting in an empty box reads as somebody else's address already saved to the profile; "ex."
 // says the box is empty and this is only the shape of the answer.
 function exampleFor(field: EditableField): string {

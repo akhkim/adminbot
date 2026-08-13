@@ -457,7 +457,7 @@ describe("renderProfile LinkedIn URN and intake form", () => {
       container.querySelector(`[data-testid="profile-hint-${key}"]`)?.textContent?.trim();
     expect(hint("github_url")).toContain("github.com/username");
     expect(hint("linkedin_url")).toContain("linkedin.com/in/username");
-    expect(hint("openreview_id")).toContain("~Ada_Lovelace1");
+    expect(hint("openreview_id")).toContain("~Zhijing_Jin1");
     // The obvious ones stay quiet -- a hint on every row is a page nobody reads.
     expect(container.querySelector('[data-testid="profile-hint-name"]')).toBeNull();
   });

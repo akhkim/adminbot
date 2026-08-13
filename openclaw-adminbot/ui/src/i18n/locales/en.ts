@@ -1577,7 +1577,7 @@ export const en: TranslationMap = {
       twitter: "Your profile page: x.com/username",
       scholar: "Your citations page, including the ?user= part of the address.",
       intakeFormUrl: "The “edit your response” link Google Forms emailed you after you applied.",
-      openreviewId: "The id in your OpenReview profile address, like ~Ada_Lovelace1",
+      openreviewId: "The id in your OpenReview profile address, like ~Zhijing_Jin1",
       month: "Year and month, like 2026-03.",
     },
   },
