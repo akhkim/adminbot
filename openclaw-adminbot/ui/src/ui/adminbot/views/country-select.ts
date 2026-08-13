@@ -10,15 +10,16 @@
 // FormData collects and the form's own autosave sees; this element adds the list, not the value.
 import { html, LitElement } from "lit";
 import { t } from "../../../i18n/index.ts";
+import { icons } from "../../icons.ts";
 import {
   PHONE_COUNTRIES,
   phoneCountryLabel,
   type PhoneCountry,
 } from "../data/phone-country-codes.ts";
 
-// Enough of the list to show it is long and scrollable, few enough that the panel never covers the
-// fields under it. Typing narrows the list rather than paging through it.
-const VISIBLE_LIMIT = 8;
+// The whole list renders and the panel scrolls, the way the native control did: typing is the
+// fast path, but someone who does not know their code has to be able to look for it. The panel's
+// own max-height (layout.css) is what keeps it from covering the fields underneath.
 
 function matches(country: PhoneCountry, query: string): boolean {
   const needle = query.trim().toLowerCase();
@@ -66,10 +67,17 @@ class AdminbotCountrySelect extends LitElement {
   }
 
   private get filtered(): PhoneCountry[] {
-    return PHONE_COUNTRIES.filter((country) => matches(country, this.query)).slice(
-      0,
-      VISIBLE_LIMIT,
-    );
+    return PHONE_COUNTRIES.filter((country) => matches(country, this.query));
+  }
+
+  // Arrowing past the edge of the panel has to bring the row with it, or the highlight walks off
+  // screen and the list stops answering the keyboard.
+  protected override updated(): void {
+    if (!this.open) {
+      return;
+    }
+    // Optional call: jsdom (the unit-test environment) implements no scrolling at all.
+    this.querySelector(".country-select__option--active")?.scrollIntoView?.({ block: "nearest" });
   }
 
   private get input(): HTMLInputElement | null {
@@ -152,6 +160,11 @@ class AdminbotCountrySelect extends LitElement {
             }, 120);
           }}
         />
+        <!-- The affordance that says this box has a list behind it. Drawn as an element rather
+             than a background image, and never sitting over a native popup, so it cannot tile the
+             way the old select chevrons did. It ignores pointer events, so a click on the chevron
+             lands on the input underneath, which is what opens the list. -->
+        <span class="country-select__chevron" aria-hidden="true">${icons.chevronDown}</span>
         ${this.open && options.length
           ? html`
               <ul class="country-select__list" id=${listId} role="listbox">

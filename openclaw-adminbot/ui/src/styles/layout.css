@@ -2563,6 +2563,33 @@
   position: relative;
 }
 
+/* Room for the chevron, so a long country name stops before it rather than running underneath. */
+.country-select .profile__phone-code {
+  padding-right: 26px;
+}
+
+.country-select__chevron {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.country-select__chevron svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .country-select__list {
   position: absolute;
   z-index: var(--z-dropdown);
