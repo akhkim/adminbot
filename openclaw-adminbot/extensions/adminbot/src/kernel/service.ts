@@ -2047,11 +2047,40 @@ type SocialUrlFieldSpec = {
   hosts?: Set<string>;
   path?: RegExp;
   requireQueryParam?: string;
+  // The field may also hold an inline `data:` image instead of a link out. Only the profile photo
+  // does: the lab runs no object storage, so an uploaded picture is stored on the record itself
+  // (see the Control UI's own upload control, which reads the file and sends a data URL). Without
+  // this, every upload failed the https check below and the whole feature was inert.
+  allowInlineImage?: true;
 };
+
+// Raster types only, and never image/svg+xml: an SVG is a document that can carry script, and this
+// value is handed straight to an <img src> in the Control UI.
+const INLINE_IMAGE_PATTERN = /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
+
+// Matches MAX_AVATAR_BYTES in the Control UI's upload control. The client already refuses a larger
+// file; this is the same limit enforced where it counts, against the decoded bytes rather than the
+// ~33%-larger base64 text.
+const MAX_INLINE_IMAGE_BYTES = 512 * 1024;
+
+/** Validates an inline image payload, returning an error message when it is not storable. */
+function validateInlineImage(value: string, spec: SocialUrlFieldSpec): string | undefined {
+  const match = INLINE_IMAGE_PATTERN.exec(value);
+  if (!match) {
+    return `${spec.label} must be a PNG, JPEG, GIF, or WebP image`;
+  }
+  const base64 = match[1] ?? "";
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  const decodedBytes = Math.floor((base64.length * 3) / 4) - padding;
+  if (decodedBytes > MAX_INLINE_IMAGE_BYTES) {
+    return `${spec.label} must be ${Math.floor(MAX_INLINE_IMAGE_BYTES / 1024)} KB or smaller`;
+  }
+  return undefined;
+}
 
 const SOCIAL_URL_FIELDS: SocialUrlFieldSpec[] = [
   { field: "personal_website", label: "personal website" },
-  { field: "avatar_url", label: "profile photo" },
+  { field: "avatar_url", label: "profile photo", allowInlineImage: true },
   { field: "cv_url", label: "CV" },
   {
     // A member's own intake answers. Google Forms hands each respondent a link to their single
@@ -2097,6 +2126,11 @@ function validateSocialUrl(value: unknown, spec: SocialUrlFieldSpec): string | u
   // Empty clears the link.
   if (!trimmed) {
     return undefined;
+  }
+  if (trimmed.startsWith("data:")) {
+    return spec.allowInlineImage
+      ? validateInlineImage(trimmed, spec)
+      : `${spec.label} link must use https`;
   }
   let parsed: URL;
   try {
