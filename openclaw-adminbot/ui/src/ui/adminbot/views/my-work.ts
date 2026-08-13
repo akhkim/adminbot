@@ -19,6 +19,7 @@ import type {
   AdminBotPaperStep,
 } from "../controllers/admin.ts";
 import { nextStepFor } from "../next-step.ts";
+import { openPaperFlowMap } from "../paperflow-map.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { findOwnMember } from "./profile.ts";
 
@@ -95,23 +96,14 @@ function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
   const next = index >= 0 && index < paperSteps.length - 1 ? paperSteps[index + 1] : null;
   return html`
     <div class="my-work-item__controls">
-      <label class="my-work-item__step-picker">
-        <span class="sr-only">${t("myWork.items.stepLabel")}</span>
-        <select
-          class="input"
-          data-testid=${`my-work-step-${paper.id}`}
-          @change=${(event: Event) =>
-            saveStep(props, paper, (event.target as HTMLSelectElement).value as AdminBotPaperStep)}
-        >
-          ${paperSteps.map(
-            (step) => html`
-              <option value=${step} ?selected=${step === paper.current_step}>
-                ${stepLabel(step)}
-              </option>
-            `,
-          )}
-        </select>
-      </label>
+      <button
+        type="button"
+        class="btn btn--sm"
+        data-testid=${`my-work-map-${paper.id}`}
+        @click=${() => openPaperFlowMap(paper)}
+      >
+        View PaperFlow
+      </button>
       ${next
         ? html`
             <button
@@ -212,30 +204,75 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
         </div>
         ${renderBlockerForm(state, paper)}
       </div>
-      <div class="my-work-item__progress">
-        <div
-          class="my-work-item__bar"
-          role="progressbar"
-          aria-valuenow=${percent}
-          aria-valuemin="0"
-          aria-valuemax="100"
-          aria-label=${paper.title}
-        >
-          <span class="my-work-item__fill" style=${`transform:scaleX(${percent / 100})`}></span>
-        </div>
-        <span class="my-work-item__step">
-          ${index >= 0
-            ? t("myWork.items.stepOf", {
-                step: stepLabel(paper.current_step),
-                index: String(index + 1),
-                total: String(paperSteps.length),
-              })
-            : stepLabel(paper.current_step)}
-        </span>
-      </div>
+      ${renderStepper(paper, props, index)}
       ${renderNextStep(paper)}
       ${renderStepControls(paper, props)}
     </article>
+  `;
+}
+
+/**
+ * The pipeline as a stepper, and the stepper as the control.
+ *
+ * This replaces a percentage bar plus a select. The bar said "56%", which is not a thing anyone
+ * can act on, and the select listed all eight steps as equals, so jumping from Brainstorming docs
+ * to Social posts was one click and asserted five things had happened that had not.
+ *
+ * Clicking a dot moves the paper there. Backwards is free -- correcting a mis-click, or a genuine
+ * regression like a rejection, is normal. Skipping *forward* past unfinished steps asks first,
+ * because that is the move that silently marks work done and makes every later nudge wrong.
+ */
+const STEPPER_SHORT_LABELS: Record<string, string> = {
+  brainstorming_docs: "Brainstorm",
+  overleaf_writing: "Overleaf",
+  submission: "Submission",
+  google_drive_pdf: "Drive PDF",
+  arxiv_polish: "arXiv",
+  social_posts: "Social",
+  slide_making: "Slides",
+  poster_making: "Poster",
+};
+
+function renderStepper(paper: AdminBotPaperRecord, props: MyWorkProps, currentIndex: number) {
+  const move = (step: AdminBotPaperStep, targetIndex: number) => {
+    const skipped = targetIndex - currentIndex;
+    if (skipped > 1) {
+      const names = paperSteps
+        .slice(currentIndex, targetIndex)
+        .map((value) => stepLabel(value))
+        .join(", ");
+      if (!globalThis.confirm(`Jumping to ${stepLabel(step)} marks these as done: ${names}.\n\nContinue?`)) {
+        return;
+      }
+    }
+    saveStep(props, paper, step);
+  };
+
+  return html`
+    <div class="stepper" role="group" aria-label=${`${paper.title} progress`}>
+      <ol class="stepper__track">
+        ${paperSteps.map((step, index) => {
+          const state =
+            index < currentIndex ? "done" : index === currentIndex ? "current" : "todo";
+          return html`
+            <li class=${`stepper__step stepper__step--${state}`}>
+              <button
+                type="button"
+                class="stepper__dot"
+                data-testid=${`step-${paper.id}-${step}`}
+                aria-current=${state === "current" ? "step" : "false"}
+                title=${`Move to ${stepLabel(step)}`}
+                @click=${() => move(step, index)}
+              >
+                <span class="sr-only">${stepLabel(step)}</span>
+                ${state === "done" ? html`<span aria-hidden="true">✓</span>` : nothing}
+              </button>
+              <span class="stepper__label">${STEPPER_SHORT_LABELS[step] ?? stepLabel(step)}</span>
+            </li>
+          `;
+        })}
+      </ol>
+    </div>
   `;
 }
 

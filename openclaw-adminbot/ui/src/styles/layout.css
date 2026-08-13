@@ -4835,3 +4835,231 @@
 .adminbot-next__actions {
   margin-top: var(--space-1);
 }
+
+/* Pipeline stepper — the Amazon/GCP order-status pattern.
+   A percentage is not actionable; a stepper shows where the work is, what is behind it, and what
+   is left, in one glance. The dots are also the control, so the picture and the action are the
+   same object rather than a bar plus a separate select. */
+.stepper {
+  margin: var(--space-3) 0 var(--space-2);
+  overflow-x: auto;
+}
+
+.stepper__track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 30rem;
+}
+
+.stepper__step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+/* The connector is drawn by each step to its left neighbour, so the line always matches the
+   states either side of it rather than being one bar underneath. */
+.stepper__step:not(:first-child)::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  right: 50%;
+  left: -50%;
+  height: 2px;
+  background: var(--border);
+}
+
+.stepper__step--done::before,
+.stepper__step--current::before {
+  background: var(--ok, var(--accent));
+}
+
+.stepper__dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg);
+  color: transparent;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.stepper__dot:hover {
+  border-color: var(--accent);
+  transform: scale(1.12);
+}
+
+.stepper__dot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.stepper__step--done .stepper__dot {
+  border-color: var(--ok, var(--accent));
+  background: var(--ok, var(--accent));
+  color: var(--bg);
+}
+
+/* The current step is the one thing that should read at a glance: filled ring, larger, and the
+   only label with weight. */
+.stepper__step--current .stepper__dot {
+  border-color: var(--accent);
+  background: var(--bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+  transform: scale(1.15);
+}
+
+.stepper__label {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  line-height: 1.25;
+  max-width: 10ch;
+  /* Break between words only. `anywhere` split "Submission" into "Submissio n". */
+  overflow-wrap: normal;
+}
+
+.stepper__step--current .stepper__label {
+  color: var(--text-strong);
+  font-weight: 650;
+}
+
+.stepper__step--done .stepper__label {
+  color: color-mix(in srgb, var(--muted) 85%, transparent);
+}
+
+/* PaperFlow map overlay. The chart is a light-mode export, so it sits on its own white sheet
+   rather than being force-inverted — a map reads as a printed thing, and inverting it would
+   wreck the node fills the diagram uses to separate branches. */
+.flowmap {
+  width: min(94vw, 1200px);
+  height: min(88vh, 900px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised, var(--bg));
+  color: var(--text);
+  overflow: hidden;
+}
+
+.flowmap::backdrop {
+  background: rgb(0 0 0 / 55%);
+  backdrop-filter: blur(2px);
+}
+
+.flowmap__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.flowmap__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.flowmap__subtitle {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flowmap__tools {
+  display: flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.flowmap__canvas {
+  position: relative;
+  height: calc(100% - 104px);
+  overflow: hidden;
+  background: #fff;
+  cursor: grab;
+  touch-action: none;
+}
+
+.flowmap__canvas.is-dragging {
+  cursor: grabbing;
+}
+
+.flowmap__stage {
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.flowmap__svg {
+  display: block;
+  max-width: none;
+}
+
+.flowmap__hint {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* Done steps recede so the pin reads as a position, not a lone dot. */
+.flowmap__node--done {
+  opacity: 0.4;
+}
+
+/* "You are here". The ring pulses because on a chart this size a static outline is easy to miss
+   after panning away and back. */
+.flowmap__node--here > rect,
+.flowmap__node--here > polygon,
+.flowmap__node--here > path {
+  stroke: #d92d20 !important;
+  stroke-width: 3px !important;
+}
+
+.flowmap__node--here::after {
+  content: "";
+}
+
+.flowmap__node--here {
+  animation: flowmap-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes flowmap-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 0 rgb(217 45 32 / 55%));
+  }
+  50% {
+    filter: drop-shadow(0 0 7px rgb(217 45 32 / 85%));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flowmap__node--here {
+    animation: none;
+    filter: drop-shadow(0 0 5px rgb(217 45 32 / 80%));
+  }
+}
