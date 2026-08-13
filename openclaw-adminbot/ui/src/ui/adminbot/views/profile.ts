@@ -929,16 +929,17 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
         <h2 class="profile__section-title">${t("profile.basics.title")}</h2>
         <span class="profile__autosave-hint">${t("profile.basics.autosaveHint")}</span>
       </div>
+      <!-- Leads the card, ahead of the groups rather than inside the first one: the picture is
+           the first thing a member fills in, and it used to trail the form below every text field
+           where nobody scrolled to it. It saves through its own handler, so it does not need to be
+           inside the autosaving form. -->
+      ${renderAvatarUpload(state, member, props)}
       <div class="profile__fields">
         <div class="profile__field-group">
           <h3 class="profile__group-title">
             <span class="profile__group-icon" aria-hidden="true">${icons.lock}</span>
             ${t("profile.groups.account")}
           </h3>
-          <!-- Leads the Account group rather than trailing the form at the bottom of the card,
-               where it sat below every text field and nobody scrolled to it. It saves through its
-               own handler, so it does not need to be inside the autosaving form. -->
-          ${renderAvatarUpload(state, member, props)}
           <div class="profile__field-grid">
             ${GOVERNED_FIELDS.map(
               (key) => html`

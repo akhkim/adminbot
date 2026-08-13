@@ -631,19 +631,19 @@ describe("renderProfile visual structure", () => {
     expect(accountGroup?.textContent).toContain("pat@example.com");
   });
 
-  it("puts the picture field under the Account heading, keeping the avatar in the header", () => {
+  it("leads the card with the picture field, keeping the avatar in the header", () => {
     const member = createMember();
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
-    // The upload control sits under the Account heading, ahead of that group's fields, rather
-    // than trailing the form at the bottom of the card.
+    // The upload control comes before the first field group, not inside it and not trailing the
+    // form at the bottom of the card. Everything else keeps its own order underneath.
     const basics = container.querySelector('[data-testid="profile-basics"]')!;
-    const accountGroup = basics.querySelector(".profile__field-group")!;
-    const upload = accountGroup.querySelector(".profile__upload")!;
-    const grid = accountGroup.querySelector(".profile__field-grid")!;
+    const upload = basics.querySelector(".profile__upload")!;
+    const firstGroup = basics.querySelector(".profile__field-group")!;
     expect(upload).not.toBeNull();
-    expect(upload.compareDocumentPosition(grid)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(upload.parentElement?.classList.contains("profile__field-group")).toBe(false);
+    expect(upload.compareDocumentPosition(firstGroup)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(container.querySelector(".profile__hero .profile__avatar-slot")).not.toBeNull();
   });
 
