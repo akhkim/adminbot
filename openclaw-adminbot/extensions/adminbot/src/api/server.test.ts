@@ -2427,7 +2427,10 @@ describe("the calendar routes", () => {
     expect(executed[0]?.payload).toMatchObject({
       calendar_id: "jinesis.lab@gmail.com",
       summary: "Reading group lunch",
-      from: "2026-08-18T13:00",
+      // Resolved to an instant: the wall-clock time the draft carries is not RFC3339, and Google
+      // answers `400 badRequest` for it. 13:00 Toronto in August is 17:00Z.
+      from: "2026-08-18T17:00:00.000Z",
+      to: "2026-08-18T18:00:00.000Z",
       timezone: "America/Toronto",
     });
 
@@ -2469,6 +2472,44 @@ describe("the calendar routes", () => {
     // An invite that carried a title or a time could rewrite the event as a side effect.
     expect(executed[0]?.payload.summary).toBeUndefined();
     expect(executed[0]?.payload.from).toBeUndefined();
+  });
+
+  // Every calendar write failed with `Google API error (400 badRequest)` because the wall-clock
+  // time went to Google unresolved. An already-absolute time must still pass through untouched.
+  it("passes an already-absolute time through unchanged", async () => {
+    const executed: Array<Record<string, unknown>> = [];
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal.proposed_payload as Record<string, unknown>);
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    await fetch(`${baseUrl}/calendar/events`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        summary: "Already absolute",
+        start: "2026-08-18T13:00:00-04:00",
+        end: "2026-08-18T14:00:00-04:00",
+      }),
+    });
+    expect(executed[0]?.from).toBe("2026-08-18T13:00:00-04:00");
+  });
+
+  it("refuses a start it cannot read rather than sending it to Google", async () => {
+    const { baseUrl } = await startService();
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ summary: "Vague", start: "next Tuesday", end: "2026-08-18T14:00" }),
+    });
+    expect(response.status).toBe(400);
   });
 
   it("refuses an invite that names nobody, and an event with no times", async () => {

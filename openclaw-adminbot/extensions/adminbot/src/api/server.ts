@@ -35,22 +35,23 @@ import {
 } from "../privacy/sensitive-info-doc.js";
 import { renderAdminBotWebUi } from "../web/console/index.js";
 import { renderMemberMapWebUi } from "../web/member-map/index.js";
+import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
+import { createCalendarEventsReader } from "../workflows/calendar/events.js";
+import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import { toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
 import { renderDeadlinesWebUi } from "../workflows/deadlines/board.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
-import { createPasswordResetEmailRunner } from "../workflows/identity/password-reset-email.js";
 import {
   AdminBotAuthService,
   type AdminBotAuthResponse,
   type AdminBotMemberPrincipal,
 } from "../workflows/identity/auth.js";
 import { allowedGatewayScopesForPrivilege } from "../workflows/identity/device-pairing-scopes.js";
+import { createPasswordResetEmailRunner } from "../workflows/identity/password-reset-email.js";
 import { toPublicMemberMapSummary } from "../workflows/members/member-map.js";
 import { createCalendarInviteRunner } from "../workflows/onboarding/calendar-invite.js";
 import { createDcsFormRunner } from "../workflows/onboarding/dcs-form.js";
-import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
-import { createCalendarEventsReader } from "../workflows/calendar/events.js";
-import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { createDriveWorkspaceProvisioner } from "../workflows/onboarding/drive-workspace.js";
 import {
   createAdminBotOnboardingSender,
@@ -336,8 +337,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     inviteToLabCalendar: options.calendarInviteRunner ?? createCalendarInviteRunner(),
     sendAccountApprovedEmail:
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
-    sendPasswordResetEmail:
-      options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
+    sendPasswordResetEmail: options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
     ...(() => {
       const submitDcsForm =
         options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
@@ -920,7 +920,11 @@ async function handleAuthenticatedRoute(
     if (!requirePrivileged(res, principal)) {
       return;
     }
-    if (!ctx.resolveSlackUserIdsByEmail && !ctx.fetchSlackTimezones && !ctx.fetchSlackMessageCounts) {
+    if (
+      !ctx.resolveSlackUserIdsByEmail &&
+      !ctx.fetchSlackTimezones &&
+      !ctx.fetchSlackMessageCounts
+    ) {
       sendJson(res, 503, { error: { message: "slack directory sync is not configured" } });
       return;
     }
@@ -1111,10 +1115,15 @@ async function handleAuthenticatedRoute(
     }
     const body = readRecord(await readJson(req));
     const summary = asString(body.summary);
-    const from = asString(body.start);
-    const to = asString(body.end);
+    const timezone = asString(body.timezone) || ctx.labCalendar.timezone;
+    // The draft carries a wall-clock time ("2026-09-01T13:00"), which is not RFC3339 and which
+    // Google rejects outright as `400 badRequest`. Resolve it against the calendar's zone first.
+    const from = toAbsoluteRfc3339(asString(body.start), timezone);
+    const to = toAbsoluteRfc3339(asString(body.end), timezone);
     if (!summary || !from || !to) {
-      sendJson(res, 400, { error: { message: "summary, start and end are required" } });
+      sendJson(res, 400, {
+        error: { message: "summary, and a readable start and end time, are required" },
+      });
       return;
     }
     const attendees = readStringList(body.attendees);
@@ -1128,7 +1137,7 @@ async function handleAuthenticatedRoute(
         summary,
         from,
         to,
-        timezone: asString(body.timezone) || ctx.labCalendar.timezone,
+        timezone,
         ...(asString(body.location) ? { location: asString(body.location) } : {}),
         ...(asString(body.description) ? { description: asString(body.description) } : {}),
         ...(attendees.length ? { attendees } : {}),
@@ -1145,10 +1154,13 @@ async function handleAuthenticatedRoute(
     const eventId = decodeURIComponent(calendarEvent[1]);
     const body = readRecord(await readJson(req));
     const summary = asString(body.summary);
-    const from = asString(body.start);
-    const to = asString(body.end);
+    const timezone = asString(body.timezone) || ctx.labCalendar.timezone;
+    const from = toAbsoluteRfc3339(asString(body.start), timezone);
+    const to = toAbsoluteRfc3339(asString(body.end), timezone);
     if (!summary || !from || !to) {
-      sendJson(res, 400, { error: { message: "summary, start and end are required" } });
+      sendJson(res, 400, {
+        error: { message: "summary, and a readable start and end time, are required" },
+      });
       return;
     }
     await runCalendarAction(res, service, principal, {
@@ -1163,7 +1175,7 @@ async function handleAuthenticatedRoute(
         summary,
         from,
         to,
-        timezone: asString(body.timezone) || ctx.labCalendar.timezone,
+        timezone,
         ...(asString(body.location) ? { location: asString(body.location) } : {}),
         ...(asString(body.description) ? { description: asString(body.description) } : {}),
       },
@@ -1224,9 +1236,7 @@ async function handleAuthenticatedRoute(
               summary: editingSummary,
               start: editingStart,
               ...(asString(editingRaw.end) ? { end: asString(editingRaw.end) } : {}),
-              ...(asString(editingRaw.location)
-                ? { location: asString(editingRaw.location) }
-                : {}),
+              ...(asString(editingRaw.location) ? { location: asString(editingRaw.location) } : {}),
               ...(asString(editingRaw.description)
                 ? { description: asString(editingRaw.description) }
                 : {}),
@@ -1625,7 +1635,9 @@ function readStringList(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
   }
-  return value.flatMap((entry) => (typeof entry === "string" && entry.trim() ? [entry.trim()] : []));
+  return value.flatMap((entry) =>
+    typeof entry === "string" && entry.trim() ? [entry.trim()] : [],
+  );
 }
 
 /**
