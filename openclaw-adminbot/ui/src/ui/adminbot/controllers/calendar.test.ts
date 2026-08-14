@@ -2,18 +2,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchCalendarEvents = vi.fn();
 const draftCalendarEvent = vi.fn();
+const createCalendarEvent = vi.fn();
+const updateCalendarEvent = vi.fn();
 
 vi.mock("../auth/session.ts", () => ({
   fetchCalendarEvents: (...args: unknown[]) => fetchCalendarEvents(...args),
   draftCalendarEvent: (...args: unknown[]) => draftCalendarEvent(...args),
-  createCalendarEvent: vi.fn(),
-  updateCalendarEvent: vi.fn(),
+  createCalendarEvent: (...args: unknown[]) => createCalendarEvent(...args),
+  updateCalendarEvent: (...args: unknown[]) => updateCalendarEvent(...args),
   inviteToCalendarEvent: vi.fn(),
   loadStoredMemberSession: () => ({ sessionToken: "token" }),
   resolveAdminBotBaseUrl: () => "http://localhost",
 }));
 
-const { loadAdminBotCalendar, requestAdminBotCalendarDraft } = await import("./calendar.ts");
+const { loadAdminBotCalendar, requestAdminBotCalendarDraft, saveAdminBotCalendarEvent } =
+  await import("./calendar.ts");
 
 type Host = Parameters<typeof loadAdminBotCalendar>[0];
 
@@ -24,6 +27,14 @@ function host(overrides: Partial<Host> = {}): Host {
 beforeEach(() => {
   vi.clearAllMocks();
   fetchCalendarEvents.mockResolvedValue({ ok: true, value: { events: [], calendar: null } });
+  createCalendarEvent.mockResolvedValue({
+    ok: true,
+    value: { action_id: "a", status: "executed" },
+  });
+  updateCalendarEvent.mockResolvedValue({
+    ok: true,
+    value: { action_id: "a", status: "executed" },
+  });
 });
 
 describe("loadAdminBotCalendar", () => {
@@ -128,5 +139,58 @@ describe("requestAdminBotCalendarDraft", () => {
 
     const [request] = draftCalendarEvent.mock.calls[0] as [{ editing?: { summary: string } }];
     expect(request.editing).toMatchObject({ summary: "Retreat", location: "Lounge" });
+  });
+});
+
+describe("saveAdminBotCalendarEvent", () => {
+  const draft = {
+    summary: "Reading group lunch",
+    start: "2026-09-18T13:00",
+    end: "2026-09-18T14:00",
+  };
+
+  // Drafting "next Tuesday" while looking at August can land the event in September. Reloading the
+  // month on screen would then show nothing, which looks exactly like the save having failed.
+  it("moves the grid to the month the event landed in", async () => {
+    const app = host({ calendarMonth: "2026-08-01", calendarDraft: draft });
+    await saveAdminBotCalendarEvent(app);
+
+    expect(createCalendarEvent).toHaveBeenCalledTimes(1);
+    expect(app.calendarMonth).toBe("2026-09-01");
+    // And reloads, so the new event is actually on the grid.
+    const [params] = fetchCalendarEvents.mock.calls[0] as [{ from: string }];
+    expect(params.from).toBe("2026-09-01T00:00:00.000Z");
+  });
+
+  // The failure the operator was hitting: the write failed and nothing on screen said so.
+  it("reports a failure with the service's own words", async () => {
+    createCalendarEvent.mockResolvedValue({
+      ok: false,
+      kind: "auth-failed",
+      message: "gog calendar create failed: token expired",
+    });
+    const app = host({ calendarDraft: draft });
+    await saveAdminBotCalendarEvent(app);
+
+    expect(app.adminBotNotice).toEqual({
+      kind: "error",
+      text: "gog calendar create failed: token expired",
+    });
+    // The draft survives a failure, so the operator can retry rather than retype it.
+    expect(app.calendarDraft).toEqual(draft);
+  });
+
+  it("updates instead of creating when an event is being edited", async () => {
+    const app = host({
+      calendarDraft: draft,
+      calendarEditingEventId: "evt-1",
+      calendarEvents: [{ id: "evt-1", summary: "Old", start: "2026-09-18T13:00:00-04:00" }],
+    });
+    await saveAdminBotCalendarEvent(app);
+
+    expect(updateCalendarEvent).toHaveBeenCalledTimes(1);
+    expect(createCalendarEvent).not.toHaveBeenCalled();
+    expect(updateCalendarEvent.mock.calls[0][0]).toBe("evt-1");
+    expect(app.calendarEditingEventId).toBeNull();
   });
 });

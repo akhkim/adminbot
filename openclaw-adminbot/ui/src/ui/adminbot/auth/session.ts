@@ -866,7 +866,7 @@ export async function fetchCalendarEvents(
   if (!result.response.ok) {
     // 502 means the CLI is missing, unauthenticated, or its keyring is locked — the service says
     // which, and that sentence is far more use than "could not load".
-    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+    return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   const body = result.body as { events?: CalendarEvent[]; calendar?: LabCalendar } | null;
   return { ok: true, value: { events: body?.events ?? [], calendar: body?.calendar ?? null } };
@@ -899,7 +899,7 @@ export async function draftCalendarEvent(
   if (!result.response.ok) {
     // A 400 here names what was wrong with the draft ("the draft ends before it starts"), which is
     // the sentence that tells the operator how to rewrite their instruction.
-    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+    return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   const body = result.body as { draft?: CalendarEventDraft } | null;
   if (!body?.draft) {
@@ -968,6 +968,29 @@ export async function inviteToCalendarEvent(
   );
 }
 
+/**
+ * The calendar routes' failures, with the service's own sentence kept.
+ *
+ * `mapErrorResponse` only carries a message for a 400, because every other status has fixed
+ * client-side copy elsewhere. That is exactly wrong here: the interesting calendar failures are
+ * execution failures — 501 "no live connector handles…", 502 "gog: token expired" — and the
+ * message is the entire diagnosis. Without it the operator gets "Could not save that event" and
+ * has nothing to act on.
+ */
+function calendarFailure(
+  response: Response,
+  body: unknown,
+): { kind: AuthErrorKind; retryAfterSeconds?: number; message?: string } {
+  const mapped = mapErrorResponse(response, body, { weakOn400: false });
+  if (mapped.message) {
+    return mapped;
+  }
+  const message = (body as { error?: { message?: unknown } } | null)?.error?.message;
+  return typeof message === "string" && message.trim()
+    ? { ...mapped, message: message.trim() }
+    : mapped;
+}
+
 async function calendarWrite(
   path: string,
   body: Record<string, unknown>,
@@ -979,9 +1002,7 @@ async function calendarWrite(
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
-    // An execution failure comes back with the connector's own sentence ("gog: no token"), which is
-    // the difference between "fix your input" and "the box cannot reach Google".
-    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+    return { ok: false, ...calendarFailure(result.response, result.body) };
   }
   return { ok: true, value: (result.body ?? {}) as CalendarActionResult };
 }

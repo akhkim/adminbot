@@ -597,6 +597,39 @@ describe("the event card", () => {
   });
 });
 
+// The controller had been setting adminBotNotice all along and nothing on this tab displayed it,
+// so a failed "Add to calendar" was indistinguishable from a click that did nothing.
+describe("the result of a write", () => {
+  it("shows a failure where the operator is looking", () => {
+    const container = renderToDiv(
+      state({
+        adminBotNotice: { kind: "error", text: "gog calendar create failed: token expired" },
+      } as Partial<AppViewState>),
+    );
+    const notice = container.querySelector('[data-testid="calendar-notice"]');
+    expect(notice?.textContent).toContain("token expired");
+    expect(notice?.getAttribute("role")).toBe("alert");
+  });
+
+  it("shows a success too, and can be dismissed", () => {
+    const view = state({
+      adminBotNotice: { kind: "success", text: "Event added to the calendar." },
+    } as Partial<AppViewState>);
+    const container = renderToDiv(view);
+    expect(container.querySelector('[data-testid="calendar-notice"]')?.getAttribute("role")).toBe(
+      "status",
+    );
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="calendar-notice-dismiss"]')
+      ?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(view.adminBotNotice).toBeNull();
+  });
+
+  it("shows nothing when there is nothing to report", () => {
+    expect(renderToDiv(state()).querySelector('[data-testid="calendar-notice"]')).toBeNull();
+  });
+});
+
 describe("the assistant", () => {
   it("greets with an example instead of an empty box", () => {
     const container = renderToDiv(state());

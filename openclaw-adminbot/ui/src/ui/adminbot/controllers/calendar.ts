@@ -221,7 +221,13 @@ export async function saveAdminBotCalendarEvent(host: AdminBotHost): Promise<voi
     host.calendarDraft = null;
     host.calendarPrompt = "";
     host.calendarEditingEventId = null;
-    // The embed and the list are both now stale, and the list is what the invite half points at.
+    // Show the month the event actually landed in. Drafting "next Tuesday" while looking at August
+    // can easily produce a September event, and reloading the month on screen would then show
+    // nothing — indistinguishable from the save having failed.
+    const savedMonth = monthStartKey(draft.start.slice(0, 10));
+    if (/^\d{4}-\d{2}-\d{2}$/u.test(savedMonth)) {
+      host.calendarMonth = savedMonth;
+    }
     await loadAdminBotCalendar(host);
   } finally {
     host.calendarBusy = false;

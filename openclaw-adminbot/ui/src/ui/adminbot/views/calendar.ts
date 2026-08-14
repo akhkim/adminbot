@@ -876,10 +876,45 @@ function renderInvitePanel(state: AppViewState) {
   `;
 }
 
+/**
+ * The result of the last write.
+ *
+ * This tab renders its own, because `renderAdminBot` — where `adminBotNotice` is normally shown —
+ * is only mounted for tabs that map to an AdminBot panel, and this one deliberately does not. The
+ * controller had been setting the notice all along and nothing was displaying it, so a failed
+ * "Add to calendar" looked exactly like a click that did nothing.
+ */
+function renderNotice(state: AppViewState) {
+  const notice = state.adminBotNotice;
+  if (!notice) {
+    return nothing;
+  }
+  return html`
+    <div
+      class=${`callout ${notice.kind === "error" ? "danger" : "ok"} adminbot-calendar__notice`}
+      role=${notice.kind === "error" ? "alert" : "status"}
+      data-testid="calendar-notice"
+    >
+      <span>${notice.text}</span>
+      <button
+        type="button"
+        class="btn btn--sm"
+        data-testid="calendar-notice-dismiss"
+        @click=${() => {
+          state.adminBotNotice = null;
+        }}
+      >
+        Dismiss
+      </button>
+    </div>
+  `;
+}
+
 export function renderAdminBotCalendar(state: AppViewState) {
   return html`
     <div class="adminbot-calendar">
-      ${renderMonth(state)} ${renderDraftPanel(state)} ${renderInvitePanel(state)}
+      ${renderNotice(state)} ${renderMonth(state)} ${renderDraftPanel(state)}
+      ${renderInvitePanel(state)}
       ${renderCards(
         state,
         state.calendarSource?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
