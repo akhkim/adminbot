@@ -710,7 +710,7 @@ function renderMemberForm(state: AppViewState) {
         ? html`
             <button
               type="button"
-              class="session-link login-gate__forgot"
+              class="login-gate__mode-toggle session-link login-gate__forgot"
               @click=${() => switchLoginMode(state, "reset-request")}
             >
               ${t("login.member.reset.forgot")}

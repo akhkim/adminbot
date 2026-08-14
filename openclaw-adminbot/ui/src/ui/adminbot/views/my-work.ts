@@ -22,6 +22,7 @@ import { nextStepFor, nextTasksFor } from "../next-step.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { findOwnMember } from "./profile.ts";
+import "../../components/feedback-widget.ts";
 
 export type MyWorkProps = {
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
@@ -298,57 +299,41 @@ function renderNextStep(paper: AdminBotPaperRecord) {
   // compiles, slides, social and archival are all open. Listing them as cards says "these can
   // happen in parallel", which a single "Next:" line actively hid.
   return html`
-    <div class="tasks">
-      <p class="tasks__title">
-        What can be done now
-        ${tasks.length > 1
-          ? html`<span class="tasks__count">${tasks.length} in parallel</span>`
-          : nothing}
-      </p>
-      <ul class="tasks__grid">
-        ${tasks.map(
-          (task) => html`
-            <li
-              class=${`task ${task.isApproval ? "task--approval" : ""} ${
-                task.optional ? "task--optional" : ""
-              }`}
-            >
-              <span class="task__branch">${task.branch || "Task"}</span>
-              <strong class="task__label">${task.label}</strong>
-              <span class="task__who">
-                ${task.isApproval ? `Approval from ${task.waitingOn}` : `Owner: ${task.waitingOn}`}
-              </span>
-              <span class="task__unblocks">
-                ${task.optional
-                  ? "Blocks nothing"
-                  : task.unblocks.length
-                    ? `Unblocks ${task.unblocks.slice(0, 2).join(", ")}`
-                    : "Last step on this branch"}
-              </span>
-            </li>
-          `,
-        )}
-      </ul>
-    </div>
+    <p class="my-work-item__next">
+      ${icons.chevronRight}
+      <span>
+        <strong>Next: ${next.headline}</strong>
+        ${next.unblocks ? html`<span class="my-work-item__next-why"> — unblocks ${next.unblocks}</span>` : nothing}
+      </span>
+    </p>
+    ${next.alsoOpen.length > 0
+      ? html`<p class="my-work-item__next-also">
+          Also open now: ${next.alsoOpen.join(", ")}
+        </p>`
+      : nothing}
   `;
 }
 
-function renderAdd(state: AppViewState, props: MyWorkProps) {
-  const draft = state.myWorkProjectDraft;
-  if (draft === null) {
-    return html`
-      <button
-        type="button"
-        class="btn my-work__add"
-        data-testid="my-work-add-project"
-        @click=${() => {
-          state.myWorkProjectDraft = "";
-        }}
-      >
-        ${t("myWork.items.add")}
-      </button>
-    `;
-  }
+// Adding writes a new paper row at the first step, with the member as its author -- the same
+// record the Active Papers page lists, so it appears there too. The button lives in the section
+// head; clicking it drops a simple inline form in below the list, no overlay.
+function renderAddButton(state: AppViewState) {
+  return html`
+    <button
+      type="button"
+      class="btn my-work__add"
+      data-testid="my-work-add-project"
+      @click=${() => {
+        state.myWorkProjectDraft = "";
+      }}
+    >
+      ${t("myWork.items.add")}
+    </button>
+  `;
+}
+
+function renderAddForm(state: AppViewState, props: MyWorkProps) {
+  const draft = state.myWorkProjectDraft ?? "";
   const member = findOwnMember(state);
   return html`
     <form
@@ -382,7 +367,7 @@ function renderAdd(state: AppViewState, props: MyWorkProps) {
           state.myWorkProjectDraft = (event.target as HTMLInputElement).value;
         }}
       />
-      <button type="submit" class="btn primary">${t("myWork.items.addSubmit")}</button>
+      <button type="submit" class="btn">${t("myWork.items.addSubmit")}</button>
       <button
         type="button"
         class="btn"
@@ -434,7 +419,7 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
       <section class="my-work__section">
         <div class="my-work__section-head">
           <h2 class="my-work__section-title">${t("myWork.items.title")}</h2>
-          ${renderAdd(state, props)}
+          ${renderAddButton(state)}
         </div>
         ${items.length
           ? html`<div class="my-work__items">
@@ -442,7 +427,9 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
             </div>`
           : html`<p class="my-work__empty">${t("myWork.items.empty")}</p>`}
         <p class="my-work__notice">${t("myWork.items.syncNotice")}</p>
+        ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
       </section>
+      <adminbot-feedback-widget feature-id="my-work"></adminbot-feedback-widget>
     </div>
   `;
 }

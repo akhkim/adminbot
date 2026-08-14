@@ -451,7 +451,7 @@ export const en: TranslationMap = {
     dashboard: "What needs you, and where the lab stands.",
     profile: "Your details, and anything still blank.",
     myWork: "What you are working on, and anything holding it up.",
-    labSharing: "Share resources, ideas, and collaborate.",
+    labSharing: "Shared lab resources. Not built yet.",
     agents: "Workspaces, tools, identities.",
     adminbot: "Approval queue and execution controls.",
     adminbotRegistrations: "Approve or reject pending member signups and roster claims.",
@@ -1468,8 +1468,7 @@ export const en: TranslationMap = {
     empty: "No upcoming conference deadlines in the current snapshot.",
     open: "Open the deadline board",
   },
-  labSharing: {
-    director: {
+      director: {
       availabilityAvailable: "Available",
       availabilityBusy: "Busy",
       availabilityAway: "Away",
@@ -1539,7 +1538,6 @@ export const en: TranslationMap = {
       send: "Send announcement",
       cancel: "Cancel",
     },
-  },
   profile: {
     basics: {
       title: "Basic info",
@@ -1570,7 +1568,7 @@ export const en: TranslationMap = {
       failed: "Couldn't save",
     },
     badges: {
-      empty: "No badges yet, they arrive as you finish onboarding and ship work.",
+      empty: "No badges yet — they arrive as you finish onboarding and ship work.",
       onboarded: "Onboarded",
       profileComplete: "Profile complete",
       author: "Author",
@@ -1761,7 +1759,7 @@ export const en: TranslationMap = {
       errorNameRequired: "Enter your name.",
       errorEmailRequired: "Enter your email.",
       reset: {
-        forgot: "Forgot my password",
+        forgot: "Forgot your password?",
         intro:
           "Enter the email you sign in with and we'll send you a link to choose a new password.",
         sendLink: "Send reset link",
@@ -1770,7 +1768,7 @@ export const en: TranslationMap = {
         sent: "If that email has an account, a reset link is on its way. The link expires in an hour.",
         confirmIntro: "Choose a new password for your account.",
         setPassword: "Set new password",
-        done: "Your password has been changed. Sign in with your new password.",
+        done: "Your password has been changed. Signp in with your new password.",
         errorInvalidLink:
           "This reset link is invalid or has expired. Request a new one from the sign-in screen.",
         errorUnreachable: "Could not reach the AdminBot service. Try again in a moment.",
@@ -2363,5 +2361,78 @@ export const en: TranslationMap = {
       nameRequiredShort: "Name required.",
     },
   },
-  
+  labSharing: {
+    director: {
+      availabilityAvailable: "Available",
+      availabilityBusy: "Busy",
+      availabilityAway: "Away",
+      contactBlocker: "Contact about a blocker",
+    },
+    seekHelp: {
+      title: "Need help on one of your projects?",
+      subtitle: "Find lab members by name, project, or interests. Or, create a general call for assistance on a project.",
+      searchPlaceholder: "Search by name, project, or interest…",
+      generalCall: "Post a general call for help",
+      projectLabel: "Project",
+      commentLabel: "What do you need?",
+      commentPlaceholder: "Describe the task, what help looks like, target venues, and any deadlines…",
+      membersLabel: "Members needed",
+      hoursLabel: "Hours / week",
+      tags: "Tags",
+      addTag: "Add tag",
+      addTagPlaceholder: "Type and press Enter…",
+      searchHeading: "Find a member directly",
+      or: "or",
+      invite: "Invite to help",
+      invited: "Invited",
+      askMemberTitle: "Ask {name} for help",
+      specialMessageLabel: "Special message for {name} (optional)",
+      specialMessagePlaceholder: "I think your skills would be a great fit for this.",
+      sendInvite: "Send invite",
+      cancel: "Cancel",
+      confirmCallTitle: "Post a general call for help",
+      postCall: "Post call",
+      noSummary: "Looking for help on this project",
+      projects: "Projects:",
+      interests: "Interests:",
+      message: "Message",
+      empty: "No members match that search.",
+      searchPrompt: "Type to search for a member by name, project, or interests.",
+    },
+    invites: {
+      title: "Your invites",
+      view: "View",
+      viewTitle: "Project details",
+      from: "Invited by {name}",
+      owner: "Owner",
+      membersNeeded: "Members needed",
+      hoursPerWeek: "Hours / week",
+      respond: "Respond in Slack",
+      close: "Close",
+    },
+    openProjects: {
+      title: "Open projects",
+      offerHelp: "Offer to help",
+      stats: "{members} members · {hours} hrs/week",
+      previous: "Previous project",
+      next: "Next project",
+      empty: "No open projects right now.",
+    },
+    requests: {
+      title: "Your requests",
+      stats: "{members} members · {hours} hrs/week",
+      delete: "Delete",
+      empty: "You haven't posted any help requests yet.",
+      confirmDelete: "Delete",
+      cancelDelete: "Cancel",
+    },
+    announcements: {
+      title: "Announcements",
+      add: "Add",
+      composeTitle: "New announcement",
+      bodyPlaceholder: "What do people need to know?",
+      send: "Send announcement",
+      cancel: "Cancel",
+    },
+  }
 };

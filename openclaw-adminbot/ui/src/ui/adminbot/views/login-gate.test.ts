@@ -415,7 +415,9 @@ describe("renderLoginGate", () => {
     expect(emailInput).not.toBeNull();
     const submit = container.querySelector<HTMLButtonElement>(".login-gate__connect");
     expect(submit?.textContent?.trim()).toBe("Sign in");
-    const toggle = container.querySelector<HTMLButtonElement>(".login-gate__mode-toggle");
+    const toggle = container.querySelector<HTMLButtonElement>(
+      ".login-gate__mode-toggle:not(.login-gate__forgot)",
+    );
     expect(toggle?.textContent?.trim()).toBe("First time here? Claim your profile");
     expect(container.querySelector(".login-gate__advanced")).toBeNull();
   });

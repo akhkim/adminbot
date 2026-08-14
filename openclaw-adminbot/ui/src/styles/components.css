@@ -153,6 +153,12 @@
   cursor: pointer;
 }
 
+/* The "forgot my password" action matches the claim toggle so the auth links read as one family,
+   but is a hair larger so it stands apart as its own escape hatch. */
+.login-gate .login-gate__forgot {
+  font-size: calc(var(--control-ui-text-sm) + 0.0625rem);
+}
+
 .login-gate .login-gate__mode-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -207,17 +213,44 @@
 }
 
 /* The reimbursement body is a full working surface (chat, receipts, draft table), so the guest
-   screen is far wider than the sign-in card it replaces. */
+   screen is far wider than the sign-in card it replaces. The base `.login-gate__card` sets a
+   form-sized max-width, so override both width and max-width here or the workspace gets clamped. */
 .guest-reimbursements__card {
-  width: min(920px, 100%);
+  width: min(1080px, 100%);
+  max-width: min(1080px, 100%);
 }
 
+/* The way back to sign-in mirrors the "Submit a reimbursement" CTA from the login gate — same
+   border, radius, type, and hover — but sized to its own label rather than spanning the full
+   workspace, so the two reads as the same kind of action at different widths. */
 .guest-reimbursements__back {
-  display: block;
-  margin: var(--space-4) auto 0;
-  background: none;
-  border: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-h-lg);
+  width: fit-content;
+  margin: var(--space-5) auto 0;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-md);
+  font-weight: 400;
+  text-decoration: none;
   cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
+}
+
+.guest-reimbursements__back:hover,
+.guest-reimbursements__back:focus-visible {
+  background: color-mix(in srgb, var(--muted-strong) 12%, transparent);
+  border-color: var(--muted-strong);
+  color: var(--text-strong);
+  text-decoration: none;
 }
 
 .login-gate__picker {
@@ -8523,8 +8556,8 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-reimbursement-workspace {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);
-  gap: var(--space-4);
-  min-height: 620px;
+  gap: var(--space-5);
+  min-height: 640px;
 }
 
 .adminbot-reimbursement-chat,
@@ -8535,7 +8568,7 @@ details[open] > .ov-expandable-toggle::after {
   min-width: 0;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4);
+  padding: var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-accent);
@@ -8548,6 +8581,15 @@ details[open] > .ov-expandable-toggle::after {
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
+}
+
+/* The reset action shares the heading with the title; it needs to read as a real button next to
+   it, so give it more presence than the tiny `btn--sm` defaults. */
+.adminbot-reimbursement-chat__reset {
+  min-width: 6rem;
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-4);
+  font-size: var(--control-ui-text-sm);
 }
 
 .adminbot-ready {

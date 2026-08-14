@@ -167,7 +167,7 @@ export function renderAdminBotReimbursements(props: AdminBotReimbursementProps) 
             <div class="card-sub">Receipt and personal data stays on the local AdminBot model.</div>
           </div>
           <button
-            class="btn btn--sm"
+            class="btn btn--sm adminbot-reimbursement-chat__reset"
             type="button"
             ?disabled=${props.state.busy}
             @click=${props.onReset}
