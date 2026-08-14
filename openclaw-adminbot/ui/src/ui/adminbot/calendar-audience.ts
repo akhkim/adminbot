@@ -220,6 +220,26 @@ export function selectAudience(
   return { matches, unreachable };
 }
 
+/**
+ * Roster names by every address they might be invited at.
+ *
+ * An attendee list is a column of raw addresses otherwise, and "who is on this meeting" is a
+ * question about people. Falls back to the address for anyone outside the lab, which is most guests
+ * on most events.
+ */
+export function memberNamesByEmail(members: readonly AdminBotLabMember[]): Map<string, string> {
+  const byEmail = new Map<string, string>();
+  for (const member of members) {
+    for (const candidate of [member.calendar_email, member.email, member.correspondence_email]) {
+      const key = typeof candidate === "string" ? candidate.trim().toLowerCase() : "";
+      if (key && !byEmail.has(key)) {
+        byEmail.set(key, member.name);
+      }
+    }
+  }
+  return byEmail;
+}
+
 /** The distinct venues on record, for the tab's conference picker. */
 export function knownConferences(papers: readonly AdminBotPaperRecord[]): string[] {
   const seen = new Map<string, string>();

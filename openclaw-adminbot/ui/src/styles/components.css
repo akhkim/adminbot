@@ -9191,6 +9191,116 @@ details[open] > .ov-expandable-toggle::after {
   font-size: var(--control-ui-text-sm);
 }
 
+/* "N more". Sits where the fifth event would have been, so a busy day reads as busy rather than
+   as a cell that quietly stops listing. */
+.adminbot-calendar__more {
+  align-self: flex-start;
+  padding: 1px var(--space-1, 4px);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.adminbot-calendar__more:hover {
+  color: var(--text);
+  background: var(--bg-accent);
+}
+
+/* The day list and the event details open over the grid rather than anchored to their square:
+   anchoring clips at the edges of the month and needs re-measuring on resize, and the thing being
+   shown — a whole day, or a whole guest list — is usually taller than the cell it came from. */
+.adminbot-calendar__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+
+.adminbot-calendar__card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(30rem, 100%);
+  max-height: min(32rem, 80vh);
+  overflow-y: auto;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card, var(--panel));
+  box-shadow: 0 18px 48px rgb(0 0 0 / 45%);
+}
+
+.adminbot-calendar__card-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+.adminbot-calendar__card-head {
+  display: grid;
+  gap: var(--space-1, 4px);
+  padding-right: var(--space-5);
+}
+
+.adminbot-calendar__card-list {
+  display: grid;
+  gap: var(--space-1, 4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adminbot-calendar__card-line,
+.adminbot-calendar__card-description {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--text);
+}
+
+.adminbot-calendar__card-description {
+  white-space: pre-wrap;
+  color: var(--text-muted);
+}
+
+.adminbot-calendar__card-guests {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.adminbot-calendar__guests {
+  display: grid;
+  gap: var(--space-1, 4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-calendar__guests li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+/* The address stays visible next to a resolved name: two people can share a first name, and the
+   address is what the invite actually goes to. */
+.adminbot-calendar__guest-email {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
 .adminbot-calendar__month-nav {
   display: flex;
   flex: 0 0 auto;

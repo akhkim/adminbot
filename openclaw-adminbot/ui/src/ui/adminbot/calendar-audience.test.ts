@@ -3,6 +3,7 @@ import {
   invitableEmail,
   knownCities,
   knownConferences,
+  memberNamesByEmail,
   memberIdsWritingFor,
   selectAudience,
 } from "./calendar-audience.ts";
@@ -129,6 +130,26 @@ describe("invitableEmail", () => {
       invitableEmail(member({ email: undefined, correspondence_email: "ada@example.com" })),
     ).toBe("ada@example.com");
     expect(invitableEmail(member({ email: undefined }))).toBeUndefined();
+  });
+});
+
+describe("memberNamesByEmail", () => {
+  it("resolves a member by any address they might be invited at", () => {
+    const map = memberNamesByEmail([
+      member({
+        name: "Ada Lovelace",
+        calendar_email: "ada@gmail.com",
+        email: "ada@cs.toronto.edu",
+      }),
+    ]);
+    expect(map.get("ada@gmail.com")).toBe("Ada Lovelace");
+    expect(map.get("ada@cs.toronto.edu")).toBe("Ada Lovelace");
+  });
+
+  it("matches regardless of case, and leaves outsiders unmapped", () => {
+    const map = memberNamesByEmail([member({ email: "Ada@CS.toronto.edu" })]);
+    expect(map.get("ada@cs.toronto.edu")).toBe("Ada Lovelace");
+    expect(map.get("guest@example.com")).toBeUndefined();
   });
 });
 

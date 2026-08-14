@@ -5,12 +5,12 @@ import type {
   AdminBotMemberNudgeState,
   AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
+import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type {
   MilestoneDraft,
   TimeAvailabilityDraft,
   TimeAvailabilityRange,
 } from "./adminbot/views/time-availability.ts";
-import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { ChatAbortOptions, ChatSendOptions } from "./app-chat.ts";
 import type { EventLogEntry } from "./app-events.ts";
 import type { CompactionStatus, FallbackStatus } from "./app-tool-stream.ts";
@@ -106,6 +106,10 @@ export type AppViewState = {
   calendarDraftBusy?: boolean;
   calendarDraftError?: string | null;
   calendarSelectedEventId?: string | null;
+  /** The day whose "N more" card is open, `YYYY-MM-DD`. */
+  calendarOpenDay?: string | null;
+  /** The event whose detail card is open. */
+  calendarOpenEventId?: string | null;
   // Set while the prompt box is being used to change an event rather than compose a new one.
   calendarEditingEventId?: string | null;
   calendarSource?: import("./adminbot/auth/session.ts").LabCalendar | null;

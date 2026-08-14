@@ -283,6 +283,8 @@ export class OpenClawApp extends LitElement {
   @state() calendarDraftBusy = false;
   @state() calendarDraftError: string | null = null;
   @state() calendarSelectedEventId: string | null = null;
+  @state() calendarOpenDay: string | null = null;
+  @state() calendarOpenEventId: string | null = null;
   @state() calendarEditingEventId: string | null = null;
   @state() calendarAudience: AudienceFilter = {};
   @state() calendarExcludedMemberIds: string[] = [];

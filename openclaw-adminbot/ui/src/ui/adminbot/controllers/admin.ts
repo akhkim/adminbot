@@ -396,6 +396,8 @@ export type AdminBotHost = {
   // Which calendar the service read, so the tab embeds and writes to the same one.
   calendarSource?: LabCalendar | null;
   calendarMonth?: string;
+  calendarOpenDay?: string | null;
+  calendarOpenEventId?: string | null;
   calendarMessages?: Array<{ role: "user" | "assistant"; content: string }>;
   // Needed to resolve the AdminBot HTTP base URL for the direct admin-write path in
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.

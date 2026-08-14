@@ -20,11 +20,13 @@ import type { CalendarEvent } from "../auth/session.ts";
 import {
   knownCities,
   knownConferences,
+  memberNamesByEmail,
   selectAudience,
   type AudienceFilter,
 } from "../calendar-audience.ts";
 import {
   dayKeyInZone,
+  eventDayKey,
   eventTimeLabel,
   eventsByDay,
   monthGrid,
@@ -34,6 +36,10 @@ import {
 } from "../calendar-month.ts";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+// How many events a square shows before the rest collapse into "N more". Four is what fits the
+// cell height below without the row growing to fit its busiest day, which is what makes a month
+// with one heavy day unreadable everywhere else.
+const CHIPS_PER_DAY = 4;
 const PRIVILEGE_LEVELS = ["external_collaborator", "trial", "member", "admin"] as const;
 const STATUSES = ["active", "part_time", "on_leave", "alumni", "external"] as const;
 
@@ -66,6 +72,216 @@ function eventDateLabel(event: CalendarEvent): string {
         hour: "numeric",
         minute: "2-digit",
       });
+}
+
+/**
+ * One event on the grid.
+ *
+ * Clicking opens its details and selects it, the way a calendar behaves — the invite panel below
+ * follows the selection, so picking an event to look at is also picking the one you would invite
+ * people to.
+ */
+function renderChip(state: AppViewState, event: CalendarEvent, timezone: string) {
+  return html`
+    <button
+      type="button"
+      class=${`adminbot-calendar__chip${
+        state.calendarSelectedEventId === event.id ? " adminbot-calendar__chip--selected" : ""
+      }`}
+      title=${event.summary}
+      data-testid=${`calendar-chip-${event.id}`}
+      @click=${() => {
+        state.calendarOpenEventId = event.id;
+        state.calendarSelectedEventId = event.id;
+        state.calendarOpenDay = null;
+      }}
+    >
+      <span class="adminbot-calendar__chip-time"
+        >${eventTimeLabel(event, timezone, i18n.getLocale())}</span
+      >
+      <span class="adminbot-calendar__chip-name">${event.summary}</span>
+    </button>
+  `;
+}
+
+/** Closes whichever card is open. Used by the backdrop, the close button and Escape. */
+function closeCards(state: AppViewState): void {
+  state.calendarOpenDay = null;
+  state.calendarOpenEventId = null;
+}
+
+/**
+ * The cards that open over the grid: a day's full list, and one event's details.
+ *
+ * Rendered as one overlay rather than positioned against their cell. Anchoring to a square means
+ * clipping at the edges of the month and re-measuring on every resize, and the thing a reader wants
+ * — the whole list, or the whole guest list — is often taller than the cell it came from.
+ */
+function renderCards(state: AppViewState, timezone: string) {
+  const events = state.calendarEvents ?? [];
+  const openEvent = state.calendarOpenEventId
+    ? events.find((event) => event.id === state.calendarOpenEventId)
+    : undefined;
+  const openDay = state.calendarOpenDay;
+  if (!openEvent && !openDay) {
+    return nothing;
+  }
+  const dayEvents = openDay ? (eventsByDay(events, timezone).get(openDay) ?? []) : [];
+  return html`
+    <div
+      class="adminbot-calendar__overlay"
+      data-testid="calendar-overlay"
+      @click=${(event: Event) => {
+        // Only the backdrop itself dismisses; a click that started inside the card is not a
+        // request to close it.
+        if (event.target === event.currentTarget) {
+          closeCards(state);
+        }
+      }}
+      @keydown=${(event: KeyboardEvent) => {
+        // Reaches here by bubbling from whatever inside the card has focus, which is why the close
+        // button takes focus when the card opens: a handler on a container nothing focuses would
+        // never see the key.
+        if (event.key === "Escape") {
+          closeCards(state);
+        }
+      }}
+    >
+      <section
+        class="adminbot-calendar__card"
+        role="dialog"
+        aria-modal="true"
+        aria-label=${openEvent ? openEvent.summary : "Events on this day"}
+        tabindex="-1"
+        data-testid=${openEvent ? "calendar-event-card" : "calendar-day-card"}
+      >
+        <button
+          type="button"
+          class="btn btn--sm adminbot-calendar__card-close"
+          data-testid="calendar-card-close"
+          aria-label="Close"
+          autofocus
+          @click=${() => closeCards(state)}
+        >
+          ✕
+        </button>
+        ${openEvent
+          ? renderEventCard(state, openEvent, timezone)
+          : renderDayCard(state, openDay ?? "", dayEvents, timezone)}
+      </section>
+    </div>
+  `;
+}
+
+function renderDayCard(
+  state: AppViewState,
+  dayKey: string,
+  events: readonly CalendarEvent[],
+  timezone: string,
+) {
+  return html`
+    <div class="adminbot-calendar__card-head">
+      <div class="card-title">${dayCardLabel(dayKey)}</div>
+      <div class="card-sub">${events.length} ${events.length === 1 ? "event" : "events"}</div>
+    </div>
+    <ul class="adminbot-calendar__card-list">
+      ${events.map((event) => html`<li>${renderChip(state, event, timezone)}</li>`)}
+    </ul>
+  `;
+}
+
+function renderEventCard(state: AppViewState, event: CalendarEvent, timezone: string) {
+  const members = state.adminBotData?.members ?? [];
+  const names = memberNamesByEmail(members);
+  const attendees = event.attendees ?? [];
+  return html`
+    <div class="adminbot-calendar__card-head">
+      <div class="card-title">${event.summary}</div>
+      <div class="card-sub">${eventCardWhen(event, timezone)}</div>
+    </div>
+    ${event.location
+      ? html`<p class="adminbot-calendar__card-line" data-testid="calendar-event-location">
+          ${event.location}
+        </p>`
+      : nothing}
+    ${event.description
+      ? html`<p class="adminbot-calendar__card-description">${event.description}</p>`
+      : nothing}
+    <div class="adminbot-calendar__card-guests">
+      <div class="card-sub">
+        ${attendees.length
+          ? `${attendees.length} ${attendees.length === 1 ? "guest" : "guests"}`
+          : "No guests"}
+      </div>
+      ${attendees.length
+        ? html`<ul class="adminbot-calendar__guests" data-testid="calendar-event-guests">
+            ${attendees.map((email) => {
+              // A name where the roster knows one, the address otherwise — most guests on most
+              // events are not lab members.
+              const name = names.get(email.trim().toLowerCase());
+              return html`<li>
+                <span class="adminbot-calendar__guest-name">${name ?? email}</span>
+                ${name
+                  ? html`<span class="adminbot-calendar__guest-email">${email}</span>`
+                  : nothing}
+              </li>`;
+            })}
+          </ul>`
+        : nothing}
+    </div>
+    <div class="adminbot-calendar__actions">
+      ${event.html_link
+        ? html`<a
+            class="btn btn--sm"
+            href=${event.html_link}
+            target=${EXTERNAL_LINK_TARGET}
+            rel=${buildExternalLinkRel()}
+            >Open in Google</a
+          >`
+        : nothing}
+      <button
+        type="button"
+        class="btn btn--sm primary"
+        data-testid="calendar-event-change"
+        @click=${() => {
+          // Aims the assistant at this event and gets out of the way, since the instruction box is
+          // below the grid.
+          state.calendarEditingEventId = event.id;
+          state.calendarSelectedEventId = event.id;
+          state.calendarDraft = null;
+          state.calendarConfirming = null;
+          closeCards(state);
+        }}
+      >
+        Change with a prompt
+      </button>
+    </div>
+  `;
+}
+
+/** "Wednesday, 26 August" for a day card heading. */
+function dayCardLabel(dayKey: string): string {
+  const parsed = Date.parse(`${dayKey}T00:00:00Z`);
+  if (Number.isNaN(parsed)) {
+    return dayKey;
+  }
+  return new Intl.DateTimeFormat(i18n.getLocale(), {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "UTC",
+  }).format(parsed);
+}
+
+/** The line under an event's title: the day, and the hours it runs. */
+function eventCardWhen(event: CalendarEvent, timezone: string): string {
+  const day = dayCardLabel(eventDayKey(event, timezone));
+  if (event.all_day || !event.end) {
+    return event.all_day ? `${day} · All day` : day;
+  }
+  const from = eventTimeLabel(event, timezone, i18n.getLocale());
+  const to = eventTimeLabel({ start: event.end }, timezone, i18n.getLocale());
+  return to ? `${day} · ${from} – ${to}` : `${day} · ${from}`;
 }
 
 function renderMonth(state: AppViewState) {
@@ -149,34 +365,20 @@ function renderMonth(state: AppViewState) {
               data-testid=${`calendar-day-${day.key}`}
             >
               <span class="adminbot-calendar__day-number">${day.day}</span>
-              ${events.map(
-                (event) => html`
-                  <button
+              ${events.slice(0, CHIPS_PER_DAY).map((event) => renderChip(state, event, timezone))}
+              ${events.length > CHIPS_PER_DAY
+                ? html`<button
                     type="button"
-                    class=${`adminbot-calendar__chip${
-                      state.calendarSelectedEventId === event.id
-                        ? " adminbot-calendar__chip--selected"
-                        : ""
-                    }`}
-                    title=${event.summary}
-                    data-testid=${`calendar-chip-${event.id}`}
+                    class="adminbot-calendar__more"
+                    data-testid=${`calendar-more-${day.key}`}
                     @click=${() => {
-                      // One click picks the event for the invite panel and aims the instruction box
-                      // at it, since both of the things you can do to an existing event need it
-                      // selected.
-                      state.calendarSelectedEventId = event.id;
-                      state.calendarEditingEventId = event.id;
-                      state.calendarDraft = null;
-                      state.calendarConfirming = null;
+                      state.calendarOpenDay = day.key;
+                      state.calendarOpenEventId = null;
                     }}
                   >
-                    <span class="adminbot-calendar__chip-time"
-                      >${eventTimeLabel(event, timezone, i18n.getLocale())}</span
-                    >
-                    <span class="adminbot-calendar__chip-name">${event.summary}</span>
-                  </button>
-                `,
-              )}
+                    ${events.length - CHIPS_PER_DAY} more
+                  </button>`
+                : nothing}
             </div>
           `;
         })}
@@ -673,6 +875,10 @@ export function renderAdminBotCalendar(state: AppViewState) {
   return html`
     <div class="adminbot-calendar">
       ${renderMonth(state)} ${renderDraftPanel(state)} ${renderInvitePanel(state)}
+      ${renderCards(
+        state,
+        state.calendarSource?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+      )}
     </div>
   `;
 }

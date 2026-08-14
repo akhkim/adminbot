@@ -263,9 +263,11 @@ describe("the two-step send", () => {
 describe("editing an event with a prompt", () => {
   // Clicking the event on the calendar is how you aim the assistant at it — there is one picker,
   // and picking is what starts an edit.
-  it("aims the assistant at the event and clears the draft that was there", () => {
+  // Starting an edit clears a draft that was about something else.
+  it("clears the previous draft when an edit starts from the card", () => {
     const view = state({
       calendarMonth: "2026-09-01",
+      calendarOpenEventId: "evt-1",
       calendarEvents: [{ id: "evt-1", summary: "Lab retreat", start: "2026-09-15T13:00:00-04:00" }],
       calendarDraft: {
         summary: "Old draft",
@@ -275,7 +277,7 @@ describe("editing an event with a prompt", () => {
     } as Partial<AppViewState>);
     const container = renderToDiv(view);
     container
-      .querySelector<HTMLButtonElement>('[data-testid="calendar-chip-evt-1"]')
+      .querySelector<HTMLButtonElement>('[data-testid="calendar-event-change"]')
       ?.dispatchEvent(new Event("click", { bubbles: true }));
     expect(view.calendarEditingEventId).toBe("evt-1");
     expect(view.calendarDraft).toBeNull();
@@ -368,15 +370,15 @@ describe("the month grid", () => {
     expect(loadCalendarEvents).toHaveBeenCalledTimes(1);
   });
 
-  // One click on an event is how you reach both of the things you can do to an existing one.
-  it("selects an event and aims the assistant at it when a chip is clicked", () => {
+  // Clicking an event opens it and selects it; the invite panel below follows that selection.
+  it("opens and selects an event when its chip is clicked", () => {
     const view = state(september);
     const container = renderToDiv(view);
     container
       .querySelector<HTMLButtonElement>('[data-testid="calendar-chip-evt-1"]')
       ?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(view.calendarOpenEventId).toBe("evt-1");
     expect(view.calendarSelectedEventId).toBe("evt-1");
-    expect(view.calendarEditingEventId).toBe("evt-1");
   });
 
   // An empty grid looks identical whether the month is genuinely free or nothing was ever read,
@@ -412,6 +414,142 @@ describe("the month grid", () => {
     expect(container.querySelector('[data-testid="calendar-month"]')?.textContent).toContain(
       "could not read the calendar",
     );
+  });
+});
+
+describe("a busy day", () => {
+  const busy = (count: number) =>
+    ({
+      calendarMonth: "2026-09-01",
+      calendarSource: {
+        id: "jinesis.lab@gmail.com",
+        timezone: "America/Toronto",
+        embed_url: "u",
+      },
+      calendarEvents: Array.from({ length: count }, (_, index) => ({
+        id: `evt-${index}`,
+        summary: `Event ${index}`,
+        start: `2026-09-15T${String(9 + index).padStart(2, "0")}:00:00-04:00`,
+      })),
+    }) as Partial<AppViewState>;
+
+  // A cell that grows to fit its busiest day makes every other row of the month unreadable.
+  it("shows only the first few and collapses the rest into a count", () => {
+    const container = renderToDiv(state(busy(7)));
+    const day = container.querySelector('[data-testid="calendar-day-2026-09-15"]');
+    expect(day?.querySelectorAll(".adminbot-calendar__chip")).toHaveLength(4);
+    expect(day?.querySelector('[data-testid="calendar-more-2026-09-15"]')?.textContent).toContain(
+      "3 more",
+    );
+  });
+
+  it("adds no count when the day fits", () => {
+    const container = renderToDiv(state(busy(3)));
+    expect(container.querySelector('[data-testid="calendar-more-2026-09-15"]')).toBeNull();
+  });
+
+  it("opens the whole day when the count is clicked", () => {
+    const view = state(busy(7));
+    let container = renderToDiv(view);
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="calendar-more-2026-09-15"]')
+      ?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(view.calendarOpenDay).toBe("2026-09-15");
+
+    container = renderToDiv(view);
+    const card = container.querySelector('[data-testid="calendar-day-card"]');
+    expect(card?.textContent).toContain("7 events");
+    // Every event, not just the ones that fit on the square.
+    expect(card?.querySelectorAll(".adminbot-calendar__chip")).toHaveLength(7);
+  });
+});
+
+describe("the event card", () => {
+  const withGuests = {
+    calendarMonth: "2026-09-01",
+    calendarOpenEventId: "evt-1",
+    calendarSource: { id: "jinesis.lab@gmail.com", timezone: "America/Toronto", embed_url: "u" },
+    calendarEvents: [
+      {
+        id: "evt-1",
+        summary: "NeurIPS dry runs",
+        start: "2026-09-15T13:00:00-04:00",
+        end: "2026-09-15T15:00:00-04:00",
+        location: "BA 5256",
+        description: "Five minutes each.",
+        html_link: "https://calendar.google.com/event?eid=evt-1",
+        attendees: ["ada@cs.toronto.edu", "outsider@example.com"],
+      },
+    ],
+  } as Partial<AppViewState>;
+
+  it("shows when it runs, where, and what it says", () => {
+    const container = renderToDiv(state(withGuests));
+    const card = container.querySelector('[data-testid="calendar-event-card"]');
+    expect(card?.textContent).toContain("NeurIPS dry runs");
+    expect(card?.textContent).toContain("1:00 PM");
+    expect(card?.textContent).toContain("3:00 PM");
+    expect(card?.textContent).toContain("BA 5256");
+    expect(card?.textContent).toContain("Five minutes each.");
+  });
+
+  // "Who is on this meeting" is a question about people, so the roster answers it where it can.
+  it("names the guests it recognises and keeps the address for the ones it does not", () => {
+    const container = renderToDiv(state(withGuests));
+    const guests = container.querySelector('[data-testid="calendar-event-guests"]');
+    expect(guests?.textContent).toContain("Ada Lovelace");
+    expect(guests?.textContent).toContain("ada@cs.toronto.edu");
+    expect(guests?.textContent).toContain("outsider@example.com");
+    expect(guests?.querySelectorAll("li")).toHaveLength(2);
+  });
+
+  it("says so when nobody is invited", () => {
+    const container = renderToDiv(
+      state({
+        ...withGuests,
+        calendarEvents: [{ id: "evt-1", summary: "Solo hold", start: "2026-09-15T13:00:00-04:00" }],
+      } as Partial<AppViewState>),
+    );
+    expect(container.querySelector('[data-testid="calendar-event-card"]')?.textContent).toContain(
+      "No guests",
+    );
+    expect(container.querySelector('[data-testid="calendar-event-guests"]')).toBeNull();
+  });
+
+  it("closes on the close button and on the backdrop, but not on a click inside", () => {
+    const view = state(withGuests);
+    let container = renderToDiv(view);
+    container
+      .querySelector<HTMLElement>('[data-testid="calendar-event-card"]')
+      ?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(view.calendarOpenEventId).toBe("evt-1");
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="calendar-card-close"]')
+      ?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(view.calendarOpenEventId).toBeNull();
+
+    view.calendarOpenEventId = "evt-1";
+    container = renderToDiv(view);
+    container
+      .querySelector<HTMLElement>('[data-testid="calendar-overlay"]')
+      ?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(view.calendarOpenEventId).toBeNull();
+  });
+
+  // The close button takes focus when the card opens, so Escape from inside it bubbles to the
+  // handler — a listener on a container nothing focuses would never see the key.
+  it("closes on Escape from inside the card", () => {
+    const view = state(withGuests);
+    const container = renderToDiv(view);
+    const close = container.querySelector<HTMLButtonElement>('[data-testid="calendar-card-close"]');
+    expect(close?.hasAttribute("autofocus")).toBe(true);
+    close?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(view.calendarOpenEventId).toBeNull();
+  });
+
+  it("shows no overlay when nothing is open", () => {
+    expect(renderToDiv(state()).querySelector('[data-testid="calendar-overlay"]')).toBeNull();
   });
 });
 
