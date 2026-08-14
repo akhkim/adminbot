@@ -506,6 +506,8 @@ export class OpenClawApp extends LitElement {
   @state() adminBotData: AdminBotDashboardData = createEmptyAdminBotDashboardData();
   @state() adminBotBusyActionId: string | null = null;
   @state() adminBotNotice: { kind: "success" | "error"; text: string } | null = null;
+  @state() adminBotPhotoPolishBusy = false;
+  @state() adminBotPhotoApplyBusy = false;
   @state() adminBotReimbursement: AdminBotReimbursementState =
     createEmptyAdminBotReimbursementState();
   @state() adminBotMemberNudge: AdminBotMemberNudgeState = createEmptyAdminBotMemberNudgeState();

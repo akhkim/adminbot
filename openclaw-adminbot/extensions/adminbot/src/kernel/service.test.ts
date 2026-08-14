@@ -1307,6 +1307,82 @@ describe("AdminBotService", () => {
     });
   });
 
+  describe("profile photo review and polish", () => {
+    it("reviews active/part-time/on-leave members and nudges non-compliant ones", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const reviewSlackProfilePhoto = vi.fn(async ({ slackUserId }: { slackUserId: string }) => {
+        return {
+          compliant: slackUserId === "U-GOOD",
+          issues: slackUserId === "U-GOOD" ? [] : ["face_not_clear"],
+          summary: slackUserId === "U-GOOD" ? "Looks good." : "Face is not clearly visible.",
+          source: "ai" as const,
+        };
+      });
+      const service = new AdminBotService(undefined, { executor, reviewSlackProfilePhoto });
+      unwrap(
+        service.upsertLabMember({
+          id: "bad",
+          name: "Needs Update",
+          status: "active",
+          slack_user_id: "U-BAD",
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          id: "good",
+          name: "Compliant",
+          status: "part_time",
+          slack_user_id: "U-GOOD",
+        }),
+      );
+      unwrap(
+        service.upsertLabMember({
+          id: "skip",
+          name: "Alumni",
+          status: "alumni",
+          slack_user_id: "U-SKIP",
+        }),
+      );
+
+      const result = unwrap(await service.runProfilePhotoReviewAndReminders("cron"));
+      expect(result.reviewed).toBe(2);
+      expect(result.non_compliant).toBe(1);
+      expect(result.nudges_created).toBe(1);
+      expect(reviewSlackProfilePhoto).toHaveBeenCalledTimes(2);
+      const reviewedMember = unwrap(service.listLabMembers()).members.find((member) => member.id === "bad");
+      expect(reviewedMember?.profile_photo_review?.assessment?.issues).toContain("face_not_clear");
+    });
+
+    it("stores polished variants and applies one through a proposal execution", async () => {
+      const executor = {
+        execute: vi.fn(async (proposal: { type: string }) => ({
+          handled: proposal.type === "slack.profile_photo_update",
+        })),
+      };
+      const polishSlackProfilePhoto = vi.fn(async () => ({
+        image_data_url: "data:image/png;base64,aGVsbG8=",
+      }));
+      const service = new AdminBotService(undefined, { executor, polishSlackProfilePhoto });
+      unwrap(
+        service.upsertLabMember({
+          id: "sam",
+          name: "Sam",
+          slack_user_id: "U-SAM",
+          status: "active",
+        }),
+      );
+
+      const polished = unwrap(await service.polishOwnProfilePhoto("sam"));
+      expect(polished.variants).toHaveLength(1);
+      const variantId = polished.variant.id;
+      const applied = unwrap(await service.applyOwnPolishedProfilePhoto("sam", variantId));
+      expect(applied.variant_id).toBe(variantId);
+      const updated = unwrap(service.listLabMembers()).members.find((member) => member.id === "sam");
+      expect(updated?.profile_photo_review?.selected_variant_id).toBe(variantId);
+      expect(executor.execute).toHaveBeenCalled();
+    });
+  });
+
   describe("refreshMemberDirectoryFromSlack", () => {
     it("backfills slack_user_id by email match and leaves an already-linked member alone", async () => {
       const service = new AdminBotService();

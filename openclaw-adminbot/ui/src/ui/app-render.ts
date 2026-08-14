@@ -13,11 +13,13 @@ import {
   type AccessRole,
 } from "./adminbot/access.ts";
 import {
+  applyAdminBotOwnProfilePhoto,
   approveAdminBotAction,
   deleteAdminBotPaper,
   executeAdminBotAction,
   generateAdminBotReimbursement,
   loadAdminBot,
+  polishAdminBotOwnProfilePhoto,
   removePendingAdminBotAction,
   resetAdminBotReimbursement,
   saveAdminBotMember,
@@ -2676,6 +2678,8 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "profile"
           ? renderProfile(state, {
               onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
+              onPolishPhoto: () => void polishAdminBotOwnProfilePhoto(state),
+              onApplyPolishedPhoto: (variantId) => void applyAdminBotOwnProfilePhoto(state, variantId),
             })
           : nothing}
         ${state.tab === "myWork"

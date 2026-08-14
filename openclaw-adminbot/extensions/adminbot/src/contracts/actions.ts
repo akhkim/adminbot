@@ -9,6 +9,7 @@ export const adminBotActionTypes = [
   "slack.invite_guest",
   "slack.invite_member",
   "slack.send_message",
+  "slack.profile_photo_update",
   "vector.invite",
   "calendar.create_tentative_hold",
   "calendar.send_invite",
@@ -145,6 +146,29 @@ export type AdminBotMemberOnboarding = {
   remaining: AdminBotMemberOnboardingStep[];
   steps: AdminBotMemberOnboardingStep[];
 };
+
+export type AdminBotProfilePhotoAssessment = {
+  compliant: boolean;
+  issues: string[];
+  summary: string;
+  checked_at: string;
+  photo_url?: string;
+  source: "ai" | "heuristic";
+};
+
+export type AdminBotProfilePhotoPolishVariant = {
+  id: string;
+  image_data_url: string;
+  created_at: string;
+  note?: string;
+};
+
+export type AdminBotProfilePhotoReviewState = {
+  assessment?: AdminBotProfilePhotoAssessment;
+  last_guideline_dm_at?: string;
+  variants?: AdminBotProfilePhotoPolishVariant[];
+  selected_variant_id?: string;
+};
 export const adminBotTimeOffKinds = [
   "vacation",
   "internship",
@@ -232,6 +256,7 @@ export type AdminBotLabMemberInput = {
   // because the reviewing-cycle automation maps OpenReview profiles back to members
   // with it, and posts assignment edges against it.
   openreview_id?: string;
+  avatar_url?: string;
   // Account links, each validated server-side against its platform's real URL shape
   // (see SOCIAL_URL_FIELDS in kernel/service.ts) so a self-edit can't stash an arbitrary
   // redirect or lookalike link behind a "GitHub" label.
@@ -249,6 +274,7 @@ export type AdminBotLabMemberInput = {
   // `location` is what they told us when they joined, this is what Slack knows now.
   slack_location?: string;
   slack_location_updated_at?: string;
+  profile_photo_review?: AdminBotProfilePhotoReviewState;
   availability?: AdminBotAvailabilityRow[];
   time_off?: AdminBotTimeOffRow[];
   // Link to the member's own planning doc in Drive, which the availability importer reads to
@@ -597,7 +623,11 @@ export type AdminBotAuditEvent = {
     | "openreview.milestone_blocked"
     | "openreview.assignment_changed"
     | "member_map.refreshed"
-    | "member_directory.slack_synced";
+    | "member_directory.slack_synced"
+    | "profile_photo.reviewed"
+    | "profile_photo.guideline_nudged"
+    | "profile_photo.polished"
+    | "profile_photo.applied";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;

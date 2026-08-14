@@ -124,6 +124,8 @@ export type AdminBotMockServiceOptions = {
   // member typing it in. Injected because reaching a public geolocation API is a composition-
   // layer concern, same as the Slack reads above; absent here means location never auto-updates.
   geolocateIp?: (ip: string) => Promise<string | undefined>;
+  reviewSlackProfilePhoto?: NonNullable<AdminBotServiceOptions["reviewSlackProfilePhoto"]>;
+  polishSlackProfilePhoto?: NonNullable<AdminBotServiceOptions["polishSlackProfilePhoto"]>;
 };
 
 export type DeviceTokenIssuance =
@@ -376,6 +378,12 @@ function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOpt
       ? { auditRetentionDays: options.auditRetentionDays }
       : {}),
     ...(options.executor ? { executor: options.executor } : {}),
+    ...(options.reviewSlackProfilePhoto
+      ? { reviewSlackProfilePhoto: options.reviewSlackProfilePhoto }
+      : {}),
+    ...(options.polishSlackProfilePhoto
+      ? { polishSlackProfilePhoto: options.polishSlackProfilePhoto }
+      : {}),
   };
 }
 
@@ -1142,6 +1150,40 @@ async function handleAuthenticatedRoute(
       res,
       await service.sendMandatoryFieldsReminders(principalActor(principal)),
     );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/profile-photo/review/run") {
+    // Recipients and message content are fully server-computed, same safety model as
+    // /members/mandatory-fields-reminder/run.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      await service.runProfilePhotoReviewAndReminders(principalActor(principal)),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/profile-photo/polish") {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    sendServiceResult(res, await service.polishOwnProfilePhoto(principal.member.id));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/profile-photo/apply") {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const variantId = asString(body.variant_id);
+    if (!variantId) {
+      sendJson(res, 400, { error: { message: "variant_id is required" } });
+      return;
+    }
+    sendServiceResult(res, await service.applyOwnPolishedProfilePhoto(principal.member.id, variantId));
     return;
   }
   const remove = /^\/proposals\/([^/]+)\/remove$/u.exec(url.pathname);
