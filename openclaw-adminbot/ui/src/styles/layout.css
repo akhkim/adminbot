@@ -5063,3 +5063,77 @@
     filter: drop-shadow(0 0 5px rgb(217 45 32 / 80%));
   }
 }
+
+/* Parallel tasks. The frontier is usually several nodes at once, so they are laid out as peers
+   rather than one headline plus a footnote — the point being that three people can start now. */
+.tasks {
+  margin-top: var(--space-3);
+}
+
+.tasks__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tasks__count {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.tasks__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted, transparent);
+}
+
+/* An approval is someone else's move, so it should not look like work you can pick up. */
+.task--approval {
+  border-left-color: var(--danger, var(--warn));
+}
+
+.task--optional {
+  border-left-color: var(--border);
+  opacity: 0.75;
+}
+
+.task__branch {
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.task__label {
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.3;
+}
+
+.task__who,
+.task__unblocks {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
