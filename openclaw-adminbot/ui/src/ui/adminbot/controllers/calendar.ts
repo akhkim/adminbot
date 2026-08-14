@@ -27,13 +27,30 @@ import {
   type CalendarEventDraft,
 } from "../auth/session.ts";
 import { dayKeyInZone, monthStartKey, monthWindow } from "../calendar-month.ts";
-import { ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE, type AdminBotHost } from "./admin.ts";
+import type { AdminBotHost } from "./admin.ts";
 
 const SIGN_IN_FIRST = "Sign in with an admin account to use the calendar.";
 
-function failureText(result: { kind: string; message?: string }, fallback: string): string {
+/**
+ * What to tell the operator when a calendar call fails.
+ *
+ * `unreachable` deliberately does not reuse ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE. That sentence is
+ * about enabling a plugin for the agent in the Gateway, which has nothing to do with an HTTP
+ * request to the AdminBot service failing — it sent the operator to look at plugin configuration
+ * when the service was simply not answering. `unreachable` means the browser could not complete
+ * the request at all: the service is down, the origin is not in ADMINBOT_ALLOWED_ORIGINS so the
+ * response was refused, or the URL is wrong. Name the address, since that is the one fact that
+ * narrows it.
+ */
+function failureText(
+  result: { kind: string; message?: string },
+  fallback: string,
+  baseUrl?: string,
+): string {
   if (result.kind === "unreachable") {
-    return ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE;
+    return baseUrl
+      ? `Could not reach the AdminBot service at ${baseUrl}. Check that it is running, and that this site's address is in ADMINBOT_ALLOWED_ORIGINS.`
+      : "Could not reach the AdminBot service. Check that it is running.";
   }
   if (result.kind === "forbidden") {
     return "Your session no longer has admin access — sign in again and retry.";
@@ -69,14 +86,15 @@ export async function loadAdminBotCalendar(host: AdminBotHost): Promise<void> {
         ),
       );
     host.calendarMonth = month;
+    const baseUrl = resolveAdminBotBaseUrl(host.settings);
     const result = await fetchCalendarEvents(
       // 250 is the service's own ceiling; a month past it is a calendar no grid could show anyway.
       { ...monthWindow(month), max: 250 },
       stored.sessionToken,
-      resolveAdminBotBaseUrl(host.settings),
+      baseUrl,
     );
     if (!result.ok) {
-      host.calendarEventsError = failureText(result, "Could not read the calendar.");
+      host.calendarEventsError = failureText(result, "Could not read the calendar.", baseUrl);
       host.calendarEvents = [];
       return;
     }
@@ -152,7 +170,11 @@ export async function requestAdminBotCalendarDraft(host: AdminBotHost): Promise<
       resolveAdminBotBaseUrl(host.settings),
     );
     if (!result.ok) {
-      const text = failureText(result, "Could not draft that event.");
+      const text = failureText(
+        result,
+        "Could not draft that event.",
+        resolveAdminBotBaseUrl(host.settings),
+      );
       host.calendarDraftError = text;
       // Said in the transcript as well as in the callout: the conversation is where the reader is
       // looking, and a refusal is part of it.
@@ -209,7 +231,7 @@ export async function saveAdminBotCalendarEvent(host: AdminBotHost): Promise<voi
     if (!result.ok) {
       host.adminBotNotice = {
         kind: "error",
-        text: failureText(result, "Could not save that event."),
+        text: failureText(result, "Could not save that event.", baseUrl),
       };
       return;
     }
@@ -246,6 +268,7 @@ export async function inviteAdminBotCalendarAudience(
     host.adminBotNotice = { kind: "error", text: SIGN_IN_FIRST };
     return;
   }
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
   host.calendarBusy = true;
   try {
     const result = await inviteToCalendarEvent(
@@ -258,12 +281,12 @@ export async function inviteAdminBotCalendarAudience(
         rationale: params.reason,
       },
       stored.sessionToken,
-      resolveAdminBotBaseUrl(host.settings),
+      baseUrl,
     );
     if (!result.ok) {
       host.adminBotNotice = {
         kind: "error",
-        text: failureText(result, "Could not send those invites."),
+        text: failureText(result, "Could not send those invites.", baseUrl),
       };
       return;
     }

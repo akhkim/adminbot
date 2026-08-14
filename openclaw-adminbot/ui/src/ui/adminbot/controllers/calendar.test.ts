@@ -142,6 +142,32 @@ describe("requestAdminBotCalendarDraft", () => {
   });
 });
 
+// "AdminBot tools are not available in this Gateway. Enable the adminbot plugin…" is about the
+// agent's plugin configuration and has nothing to do with an HTTP call failing. Reusing it here
+// sent the operator to look in entirely the wrong place.
+describe("an unreachable service", () => {
+  it("names the address it could not reach, not the Gateway plugin", async () => {
+    fetchCalendarEvents.mockResolvedValue({ ok: false, kind: "unreachable" });
+    const app = host();
+    await loadAdminBotCalendar(app);
+
+    expect(app.calendarEventsError).toContain("http://localhost");
+    expect(app.calendarEventsError).toContain("ADMINBOT_ALLOWED_ORIGINS");
+    expect(app.calendarEventsError).not.toContain("Gateway");
+  });
+
+  it("says the same on a failed write", async () => {
+    createCalendarEvent.mockResolvedValue({ ok: false, kind: "unreachable" });
+    const app = host({
+      calendarDraft: { summary: "x", start: "2026-09-18T13:00", end: "2026-09-18T14:00" },
+    });
+    await saveAdminBotCalendarEvent(app);
+
+    expect(app.adminBotNotice?.text).toContain("Could not reach the AdminBot service");
+    expect(app.adminBotNotice?.text).not.toContain("plugin");
+  });
+});
+
 describe("saveAdminBotCalendarEvent", () => {
   const draft = {
     summary: "Reading group lunch",
