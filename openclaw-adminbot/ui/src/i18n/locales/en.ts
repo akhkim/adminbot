@@ -1657,7 +1657,6 @@ export const en: TranslationMap = {
       done: "Done",
       cancel: "Cancel",
       managed: "{fields} are set by the lab and cannot be edited here.",
-      managedEmail: "Your login email is set by the lab and cannot be edited here.",
       optional: "(optional)",
       adminFilled: "(filled out by admin)",
       mandatory: "required",
@@ -1695,7 +1694,6 @@ export const en: TranslationMap = {
       work: "Work & availability",
       research: "Research",
       links: "Links",
-      personal: "Health & personal circumstances",
     },
     picture: {
       edit: "Change profile picture",

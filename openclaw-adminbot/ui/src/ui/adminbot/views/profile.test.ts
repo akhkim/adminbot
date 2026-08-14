@@ -408,21 +408,22 @@ describe("renderProfile onboarding suggestions", () => {
     expect(suggestions.querySelector('[data-testid="suggestion-onboarding-calendar"]')).toBeNull();
   });
 
-  // The photo rules are advice with an optional action attached, which is what the suggestions
-  // stack is for. As its own full-width section it sat between the identity header and the
-  // member's own fields, pushing the record people came for below the fold.
-  it("carries the Slack photo guideline inside the suggestions section", () => {
+  // The photo rules are their own section, after the record: reference a member reads once plus a
+  // real action, which is more than a suggestion card carries -- but still behind the fields the
+  // page exists for.
+  it("shows the Slack photo guideline as its own section after basic info", () => {
     const container = renderPage(createState(createMember()), vi.fn());
 
-    const suggestions = container.querySelector('[data-testid="profile-suggestions"]')!;
+    const basics = container.querySelector('[data-testid="profile-basics"]')!;
     const guidelines = container.querySelector('[data-testid="profile-photo-guidelines"]')!;
     expect(guidelines).not.toBeNull();
-    expect(suggestions.contains(guidelines)).toBe(true);
-    // Not above the record any more.
-    const basics = container.querySelector('[data-testid="profile-basics"]')!;
+    expect(guidelines.tagName).toBe("SECTION");
+    // After the record, and outside the suggestions stack.
     expect(basics.compareDocumentPosition(guidelines) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
+    const suggestions = container.querySelector('[data-testid="profile-suggestions"]');
+    expect(suggestions?.contains(guidelines) ?? false).toBe(false);
   });
 
   it("carries each step's own status, detail and link through from the checklist", () => {
@@ -990,10 +991,11 @@ describe("renderProfile visual structure", () => {
     const container = renderPage(state, vi.fn());
 
     const basics = container.querySelector('[data-testid="profile-basics"]')!;
-    // Email is the lab's to set: no input to type into, and no locked row repeating what the hero
-    // already shows -- just the closing line naming who owns it.
+    // Email is the lab's to set, and the form simply does not mention it: no input, no locked row
+    // repeating what the hero already shows, and no standing sentence about a field that is not
+    // on the page.
     expect(basics.querySelector('input[name="email"]')).toBeNull();
     expect(basics.querySelector(".profile-field--locked")).toBeNull();
-    expect(basics.querySelector(".profile__managed")?.textContent).toContain("login email");
+    expect(basics.querySelector(".profile__managed")).toBeNull();
   });
 });

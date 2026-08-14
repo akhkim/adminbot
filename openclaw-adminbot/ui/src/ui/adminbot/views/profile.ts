@@ -59,7 +59,7 @@ type ProfileFieldType =
 
 // Purely presentational clustering -- same fields, same keys, same validation -- so someone
 // scanning 18 inputs meets four short, labeled groups instead of one wall of text boxes.
-type ProfileFieldGroup = "identity" | "work" | "research" | "links" | "personal";
+type ProfileFieldGroup = "identity" | "work" | "research" | "links";
 
 const PROFILE_FIELD_GROUPS: Array<{
   id: ProfileFieldGroup;
@@ -67,15 +67,12 @@ const PROFILE_FIELD_GROUPS: Array<{
   icon: keyof typeof icons;
 }> = [
   // Order is the reading order of the page: who the person is, what they work on, where to find
-  // them, then the scheduling detail -- which is the part a member revisits least often and the
-  // only group whose answers go stale on their own -- and last of all the health and personal
-  // circumstances group, which is the one thing on the page nobody should meet on their way to
-  // something else.
+  // them, and last the scheduling detail -- the part a member revisits least often, and the group
+  // that ends with the one field somebody may want to think before answering.
   { id: "identity", labelKey: "profile.groups.identity", icon: "user" },
   { id: "research", labelKey: "profile.groups.research", icon: "brain" },
   { id: "links", labelKey: "profile.groups.links", icon: "link" },
   { id: "work", labelKey: "profile.groups.work", icon: "clock" },
-  { id: "personal", labelKey: "profile.groups.personal", icon: "lock" },
 ];
 
 type ProfileField = {
@@ -250,15 +247,15 @@ const PROFILE_FIELDS: ProfileField[] = [
   },
   {
     // The only confidential field on the page: the service strips it from every /lab/members
-    // reader but this member and admins (adminBotConfidentialMemberFields). It sits alone in the
-    // last group on the page, after every other answer, because it is the one field a person may
-    // want to think before answering -- and optional because "nothing to declare" must never be
-    // something the form makes someone say out loud on their way to filling in a phone number.
+    // reader but this member and admins (adminBotConfidentialMemberFields). Last row of the last
+    // group, so it comes after every other answer -- it is the one field a person may want to
+    // think before answering, and optional because "nothing to declare" must never be something
+    // the form makes someone say out loud on their way to filling in a phone number.
     key: "personal_circumstances",
     labelKey: "profile.fields.personalCircumstances",
     example: "",
     type: "paragraph",
-    group: "personal",
+    group: "work",
   },
   {
     key: "avatar_url",
@@ -1103,7 +1100,6 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
             </div>
           `,
         )}
-        <p class="profile__managed">${t("profile.basics.managedEmail")}</p>
       </form>
     </section>
   `;
@@ -1224,21 +1220,18 @@ function renderBadges(state: AppViewState, member: LabMember) {
 
 // The Slack photo rules, the last automated check, and the polish controls that act on them.
 //
-// Rendered as one card inside the suggestions stack rather than as its own section above the
-// record: it is advice plus an optional action, which is exactly what that stack is for, and as a
-// full-width section between the identity header and the member's own fields it pushed the thing
-// people come to this page to do below the fold.
+// Its own section, directly after the record: the rules are reference a member reads once and the
+// polish controls are a real action, which is more than a card in the suggestions stack carries.
+// It sits after the fields rather than before them so the thing people came to this page to do is
+// still the first thing they meet.
 function renderPhotoCompliance(state: AppViewState, member: LabMember, props: ProfileProps) {
   const review = member.profile_photo_review;
   const assessment = review?.assessment;
   const variants = review?.variants ?? [];
   const selectedId = review?.selected_variant_id;
   return html`
-    <article
-      class="profile-suggestion profile-suggestion--photo"
-      data-testid="profile-photo-guidelines"
-    >
-      <h4 class="profile-suggestion__title">Slack profile photo guidelines</h4>
+    <section class="profile__section" data-testid="profile-photo-guidelines">
+      <h2 class="profile__section-title">Slack profile photo guidelines</h2>
       <p>
         We directly link member photos from Slack on team/collaborator pages and the lab public
         website, so a professional profile photo is strongly recommended.
@@ -1319,7 +1312,7 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
             </div>
           `
         : nothing}
-    </article>
+    </section>
   `;
 }
 
@@ -1331,7 +1324,7 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
 // service generated for this member, so this list and the checklist itself can never drift. The
 // section is named for them, not for the advice underneath: "Suggested for you" over a stack whose
 // top half is a list of things somebody is waiting on read as optional, which they are not.
-function renderSuggestions(state: AppViewState, member: LabMember, props: ProfileProps) {
+function renderSuggestions(state: AppViewState, member: LabMember) {
   const blanks = new Set(blankFields(member).map((field) => field.key));
 
   type Suggestion = {
@@ -1451,10 +1444,7 @@ function renderSuggestions(state: AppViewState, member: LabMember, props: Profil
         : nothing}
       <div class="profile__suggestions-group">
         <h3 class="profile__suggestions-group-title">${t("profile.suggestions.other")}</h3>
-        <div class="profile__suggestions">
-          ${otherSuggestions.map(renderCard)}
-          ${renderPhotoCompliance(state, member, props)}
-        </div>
+        <div class="profile__suggestions">${otherSuggestions.map(renderCard)}</div>
       </div>
     </section>
   `;
@@ -1591,7 +1581,8 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         </div>
         ${renderCompletionLedger(member)}
       </header>
-      ${renderBasics(state, member, props)} ${renderSuggestions(state, member, props)}
+      ${renderBasics(state, member, props)} ${renderPhotoCompliance(state, member, props)}
+      ${renderSuggestions(state, member)}
     </div>
   `;
 }
