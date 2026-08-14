@@ -393,12 +393,18 @@ least-privileged tier. Set `privilege_level` explicitly to grant more.
 **Map** tab in the console (`/adminbot`), and its own standalone page at
 `GET /lab_stats/member_map` (an interactive Leaflet world map, embedded into
 the console tab by iframe so the two never drift into different maps).
-Alumni are left off both.
+Alumni are left off both. Both Slack actions -- "Refresh from Slack"
+(`POST /member-map/refresh`, below) and "Sync Slack IDs & timezones"
+(`POST /members/directory/refresh-slack`) -- live solely in the standalone
+page's own toolbar; the console tab carries no chrome of its own around the
+iframe, so there is exactly one place to trigger either.
 
 The endpoint is public, but its response shape depends on who's asking:
 
 - Signed in as **admin**: `{ mode: "full", places: [...{ ...place, members:
-  [{ member_id, name, source }] } ], unplaced, counts }` -- names included.
+  [{ member_id, name, source, avatar_url?, last_login_at? }] } ], unplaced,
+  counts }` -- names included, plus each member's Slack avatar and last login
+  time where known, for the recently-active faces shown per city.
 - Anyone else (anonymous, or a signed-in non-admin member):
   `{ mode: "summary", places: [...{ ...place, count }], counts }` -- a
   headcount per city, no names, no `unplaced` list (the header counts already

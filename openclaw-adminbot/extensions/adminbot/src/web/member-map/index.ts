@@ -56,7 +56,7 @@ export function renderMemberMapWebUi(): string {
     }
     h1 { font-size: 18px; margin: 0; }
     .subtitle { color: var(--muted); font-size: 13px; }
-    .toolbar { display: flex; align-items: center; gap: 10px; }
+    .toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .button {
       appearance: none;
       border: 1px solid var(--line);
@@ -116,10 +116,55 @@ export function renderMemberMapWebUi(): string {
       color: var(--muted);
     }
     .place-row .members { color: var(--muted); font-size: 12px; margin-top: 4px; }
+    /* Recently-active faces per place. Overlapping like a classic avatar stack; a name only
+       appears as a hover title on its circle, not as visible text next to the row. */
+    .member-avatars { display: inline-flex; align-items: center; }
+    .member-avatar {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      object-fit: cover;
+      outline: 1.5px solid var(--panel);
+      margin-left: -6px;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--accent-strong);
+      background: #dfeaee;
+    }
+    .member-avatar:first-child { margin-left: 0; }
+    .member-avatar-more { margin-left: 4px; color: var(--muted); font-size: 12px; }
+    .place-expand-btn {
+      appearance: none;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      width: 100%;
+      border: 0;
+      background: none;
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1;
+      padding: 6px 0 0;
+      margin-top: 4px;
+      border-top: 1px solid var(--line);
+      cursor: pointer;
+    }
+    .place-expand-btn:hover { color: var(--accent-strong); }
+    .place-expand-caret { font-size: 15px; }
+    .member-name-list {
+      margin: 6px 0 0;
+      padding: 0;
+      list-style: none;
+      color: var(--text);
+      font-size: 12px;
+    }
+    .member-name-list li { padding: 1px 0; }
     .leaflet-popup-content { font-size: 13px; margin: 10px 12px; }
     .map-tooltip-title { font-weight: 600; font-size: 13.5px; margin-bottom: 4px; }
-    .map-tooltip-list { margin: 0; padding: 0; list-style: none; color: var(--muted); }
-    .map-tooltip-list li { padding: 1px 0; }
     .place-row sup, .map-tooltip-title sup { color: var(--muted); }
     .approx-footnote { font-size: 11px; color: var(--muted); margin: 4px 0 0; }
     .member-map-marker {
@@ -177,6 +222,8 @@ export function renderMemberMapWebUi(): string {
       <span class="status" id="map-status"></span>
       <button class="button" id="map-places-toggle">Places</button>
       <button class="button" id="map-refresh">Refresh from Slack</button>
+      <span class="status" id="directory-status"></span>
+      <button class="button" id="directory-sync">Sync Slack IDs &amp; timezones</button>
       <a class="button primary" id="open-console" href="/adminbot" target="_top">Open console</a>
     </div>
   </header>
@@ -204,8 +251,8 @@ export function renderMemberMapWebUi(): string {
       }[ch]));
     }
 
-    function setStatus(message, kind) {
-      const el = document.getElementById("map-status");
+    function setStatus(id, message, kind) {
+      const el = document.getElementById(id);
       el.textContent = message || "";
       el.className = "status" + (kind ? " " + kind : "");
     }
@@ -253,6 +300,46 @@ export function renderMemberMapWebUi(): string {
     let markers = [];
     let openPopup = null;
     let currentData = null;
+    // Place keys whose sidebar row is showing every member instead of the capped 3, toggled by
+    // that row's expand button. Kept outside buildSidebarHtml/avatarsHtml so both stay pure
+    // functions of their arguments.
+    const expandedPlaces = new Set();
+
+    // The limit most recently logged-in members, most recent first. A member with no
+    // last_login_at sorts after everyone who has one, rather than colliding at a fake epoch.
+    function recentActiveMembers(members, limit) {
+      return members.slice().sort(function (a, b) {
+        if (!a.last_login_at && !b.last_login_at) return 0;
+        if (!a.last_login_at) return 1;
+        if (!b.last_login_at) return -1;
+        return b.last_login_at.localeCompare(a.last_login_at);
+      }).slice(0, limit || 3);
+    }
+
+    // Circular faces for a place's 3 most recently active members. Names live in each circle's
+    // title tooltip (hover/focus) rather than as visible text, so the row/popup stays glanceable.
+    // Always capped, even where a caller can also show the full name list (see nameListHtml) —
+    // the point of the cap is the row staying scannable, not a shortage of space to fill.
+    function avatarsHtml(members) {
+      const shown = recentActiveMembers(members, 3);
+      const circles = shown.map((m) => {
+        const name = escapeHtml(m.name);
+        return m.avatar_url
+          ? '<img class="member-avatar" src="' + escapeHtml(m.avatar_url) + '" alt="" title="' + name + '">'
+          : '<span class="member-avatar" title="' + name + '">' + escapeHtml((m.name || "?").slice(0, 1).toUpperCase()) + '</span>';
+      }).join("");
+      const more = members.length > shown.length ? '<span class="member-avatar-more">&hellip;</span>' : "";
+      return '<span class="member-avatars">' + circles + more + '</span>';
+    }
+
+    // The readable list an expanded place row shows below its avatars — actual names, not more
+    // circles someone would have to hover one at a time to read off. Alphabetical (the order the
+    // service already sorts members in), since this is for finding a name, not for recency.
+    function nameListHtml(members) {
+      return '<ul class="member-name-list">' +
+        members.map((m) => "<li>" + escapeHtml(m.name) + "</li>").join("") +
+        "</ul>";
+    }
 
     // Full mode has a "members" array per place (with names); summary mode has only a "count".
     // Every place-count read in this file goes through this rather than picking one field, so
@@ -262,8 +349,10 @@ export function renderMemberMapWebUi(): string {
     }
 
     // Builds the sidebar's HTML without touching whether it's shown — the sidebar only opens on
-    // demand (a marker click, or the "Places" toggle), not just because data loaded.
-    function buildSidebarHtml(data) {
+    // demand (a marker click, or the "Places" toggle), not just because data loaded. Pure in
+    // expandedKeys too, rather than reading the module-level expandedPlaces directly, so this
+    // stays testable as a plain function of its inputs (see index.test.ts).
+    function buildSidebarHtml(data, expandedKeys) {
       const isFull = data.mode === "full";
       const places = data.places || [];
       // A "country:"-keyed place came from last-login geolocation, which only ever gives a
@@ -273,13 +362,25 @@ export function renderMemberMapWebUi(): string {
       let html = places.map((place) => {
         const isApprox = place.key.startsWith("country:");
         if (isApprox) hasApprox = true;
-        const detail = isFull
-          ? escapeHtml(place.country) + ' · ' + place.members.map((m) => escapeHtml(m.name)).join(", ")
-          : escapeHtml(place.country);
+        const expanded = isFull && expandedKeys.has(place.key);
+        const canExpand = isFull && place.members.length > 3;
+        // Its own row below the count, not squeezed inline with the avatars — a bigger target
+        // that reads as "there's more here" rather than a stray mark next to the last face.
+        const expandBtn = canExpand
+          ? '<button type="button" class="place-expand-btn" data-key="' + escapeHtml(place.key) +
+            '" aria-expanded="' + (expanded ? "true" : "false") + '">' +
+            '<span class="place-expand-caret">' + (expanded ? "&#9652;" : "&#9662;") + '</span>' +
+            (expanded ? "Show less" : "Show all " + place.members.length) +
+            '</button>'
+          : "";
+        const detail = isFull ? escapeHtml(place.country) + ' · ' + avatarsHtml(place.members) : escapeHtml(place.country);
         return '<div class="place-row" data-key="' + escapeHtml(place.key) + '"><div class="head"><strong>' +
           escapeHtml(place.label) + (isApprox ? "<sup>*</sup>" : "") +
           '</strong><span class="pill">' + placeCount(place) + '</span></div>' +
-          '<div class="members">' + detail + '</div></div>';
+          '<div class="members">' + detail + '</div>' +
+          expandBtn +
+          (expanded ? nameListHtml(place.members) : "") +
+          '</div>';
       }).join("");
       // Names of the unplaced only ever come with full data; summary mode already covers this
       // with the counts in the header ("N not placed"), so there is nothing further to list.
@@ -300,7 +401,7 @@ export function renderMemberMapWebUi(): string {
     // omit highlightKey to just browse the full list (the "Places" toggle).
     function showSidebar(highlightKey) {
       if (!currentData) return;
-      document.getElementById("place-list").innerHTML = buildSidebarHtml(currentData);
+      document.getElementById("place-list").innerHTML = buildSidebarHtml(currentData, expandedPlaces);
       document.getElementById("sidebar").hidden = false;
       if (highlightKey) {
         const row = document.querySelector('.place-row[data-key="' + CSS.escape(highlightKey) + '"]');
@@ -322,6 +423,19 @@ export function renderMemberMapWebUi(): string {
       } else {
         hideSidebar();
       }
+    });
+    // Delegated: rows are rebuilt wholesale on every render, so a listener on each button would
+    // be lost the moment its row re-renders.
+    document.getElementById("place-list").addEventListener("click", (event) => {
+      const button = event.target.closest(".place-expand-btn");
+      if (!button || !currentData) return;
+      const key = button.getAttribute("data-key");
+      if (expandedPlaces.has(key)) {
+        expandedPlaces.delete(key);
+      } else {
+        expandedPlaces.add(key);
+      }
+      document.getElementById("place-list").innerHTML = buildSidebarHtml(currentData, expandedPlaces);
     });
 
     function renderPlaces(data) {
@@ -367,11 +481,7 @@ export function renderMemberMapWebUi(): string {
         const tooltipHtml =
           '<div class="map-tooltip-title">' + escapeHtml(place.label) + (isApprox ? "<sup>*</sup>" : "") +
           " (" + count + ")</div>" +
-          (isFull
-            ? '<ul class="map-tooltip-list">' +
-              place.members.map((m) => "<li>" + escapeHtml(m.name) + "</li>").join("") +
-              "</ul>"
-            : "");
+          (isFull ? avatarsHtml(place.members) : "");
         const marker = L.marker([place.lat, place.lon], { icon }).addTo(map);
         marker.bindPopup(tooltipHtml, { closeButton: false, autoPan: false });
         // A mouse gets the tooltip on hover; a touchscreen has no hover, so Leaflet's default
@@ -402,22 +512,46 @@ export function renderMemberMapWebUi(): string {
         // Reading and reacting to individual member locations by name is the privileged action;
         // triggering a real Slack lookup on their behalf is too, so both stay admin-only.
         document.getElementById("map-refresh").hidden = data.mode !== "full";
+        document.getElementById("directory-sync").hidden = data.mode !== "full";
         renderPlaces(data);
       } catch (error) {
-        setStatus(error.message, "error");
+        setStatus("map-status", error.message, "error");
       }
     }
 
     document.getElementById("map-refresh").addEventListener("click", async (event) => {
       const button = event.currentTarget;
       button.disabled = true;
-      setStatus("Reading Slack profiles…", "");
+      setStatus("map-status", "Reading Slack profiles…", "");
       try {
         const result = await api("/member-map/refresh", { method: "POST" });
-        setStatus("Checked " + result.checked + " Slack profile(s); " + result.updated + " location(s) changed.", "ok");
+        setStatus("map-status", "Checked " + result.checked + " Slack profile(s); " + result.updated + " location(s) changed.", "ok");
         await load();
       } catch (error) {
-        setStatus(error.message, "error");
+        setStatus("map-status", error.message, "error");
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    // Distinct from "Refresh from Slack": that re-reads each already-linked member's profile for
+    // a location, this links a member to their Slack account and timezone in the first place --
+    // formerly console-only, moved in here so both Slack actions live in one place.
+    document.getElementById("directory-sync").addEventListener("click", async (event) => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      setStatus("directory-status", "Reading Slack directory…", "");
+      try {
+        const result = await api("/members/directory/refresh-slack", { method: "POST" });
+        setStatus(
+          "directory-status",
+          "Linked " + result.idsResolved + " Slack id(s); " +
+            result.timezonesUpdated + " of " + result.timezonesChecked + " timezone(s) changed.",
+          "ok",
+        );
+        await load();
+      } catch (error) {
+        setStatus("directory-status", error.message, "error");
       } finally {
         button.disabled = false;
       }

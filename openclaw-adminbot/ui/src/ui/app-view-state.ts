@@ -417,6 +417,8 @@ export type AppViewState = {
   adminBotTimeAvailabilitySaving: boolean;
   adminBotBusyActionId: string | null;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
+  adminBotPhotoPolishBusy: boolean;
+  adminBotPhotoApplyBusy: boolean;
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
   // Prototype-only: blockers a member raises from My Projects & Papers. Held in the browser

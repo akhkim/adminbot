@@ -978,7 +978,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: 12px;
   /* Pointer-sized rows are the mobile layout's job (layout.mobile.css keeps 40px there); on a
      desktop sidebar the extra height only spreads a group out. */
   min-height: 34px;
@@ -1021,6 +1021,7 @@
 .nav-item__text {
   font-size: var(--control-ui-text-sm);
   font-weight: 500;
+  line-height: 3;
   letter-spacing: var(--tracking-tight);
   white-space: nowrap;
 }
@@ -2351,26 +2352,114 @@
 
 .member-map__row {
   display: flex;
+  flex-direction: column;
+  padding: 1px 0;
+  font-size: var(--control-ui-text-xs);
+}
+
+.member-map__row-top {
+  display: flex;
   gap: var(--space-3);
   align-items: baseline;
   justify-content: space-between;
-  padding: 1px 0;
-  font-size: var(--control-ui-text-xs);
+}
+
+.member-map__row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
 .member-map__row-label {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  min-width: 0;
 }
 
 .member-map__row-count {
   font-family: var(--mono);
   color: var(--muted);
+  flex-shrink: 0;
 }
 
 .member-map__row--more {
   color: var(--muted);
+}
+
+/* Recently-active faces per city. Overlapping like a classic avatar stack; names live in each
+   circle's title tooltip rather than as visible text, so the row stays glanceable. */
+.member-map__avatars {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.member-map__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  outline: 1.5px solid var(--panel);
+  margin-left: -6px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-strong);
+  background: linear-gradient(160deg, var(--accent-subtle), var(--bg-muted));
+}
+
+.member-map__avatar:first-child {
+  margin-left: 0;
+}
+
+.member-map__avatar-more {
+  margin-left: var(--space-1);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* Its own row below the count, not squeezed inline with the avatars -- a bigger target that
+   reads as "there's more here" rather than a stray mark next to the last face. */
+.member-map__expand-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--accent, var(--text));
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  padding: 3px 0 0;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.member-map__expand-btn:hover {
+  color: var(--text-strong);
+}
+
+.member-map__expand-caret {
+  font-size: 0.9em;
+}
+
+/* The readable list an expanded row shows below its avatars -- actual names, not more circles
+   someone would have to hover one at a time to read off. */
+.member-map__name-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text);
+  font-size: var(--control-ui-text-xs);
+}
+
+.member-map__name-list li {
+  padding: 1px 0;
 }
 
 .dashboard-summary__title {
@@ -3186,6 +3275,7 @@
   border-radius: var(--radius-full);
   background: var(--danger);
 }
+
 
 /* ===========================================
    Suggestions

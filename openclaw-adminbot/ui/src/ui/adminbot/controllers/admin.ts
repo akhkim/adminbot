@@ -9,10 +9,12 @@ import {
   type MemberProfileUpdate,
   type MemberScheduleUpdate,
   approveActionAsMember,
+  applyOwnPolishedProfilePhoto,
   executeActionAsMember,
   removePendingAction,
   fetchMemberResource,
   loadStoredMemberSession,
+  polishOwnProfilePhoto,
   resolveAdminBotBaseUrl,
   sendOnboardingGuide as sendOnboardingGuideRequest,
   saveOwnPaper,
@@ -379,6 +381,8 @@ export type AdminBotHost = {
   adminBotData: AdminBotDashboardData;
   adminBotBusyActionId: string | null;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
+  adminBotPhotoPolishBusy: boolean;
+  adminBotPhotoApplyBusy: boolean;
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
   // Calendar tab. Written by controllers/calendar.ts, which shares this host rather than owning a
@@ -972,6 +976,82 @@ export async function saveAdminBotOwnProfile(
   }
   host.adminBotNotice = { kind: "success", text: "Saved your profile." };
   await loadAdminBot(host);
+}
+
+export async function polishAdminBotOwnProfilePhoto(host: AdminBotHost): Promise<void> {
+  host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your member account to polish your profile photo.",
+    };
+    return;
+  }
+  host.adminBotPhotoPolishBusy = true;
+  try {
+    const result = await polishOwnProfilePhoto(
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      const message =
+        result.kind === "unreachable"
+          ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+          : result.kind === "rate-limited"
+            ? "Too many attempts. Wait a moment and try again."
+            : "Couldn't generate a polished photo right now.";
+      host.adminBotNotice = { kind: "error", text: message };
+      return;
+    }
+    host.adminBotNotice = {
+      kind: "success",
+      text: "Generated a polished photo option. Review it below and apply if you like it.",
+    };
+    await loadAdminBot(host, "general");
+  } finally {
+    host.adminBotPhotoPolishBusy = false;
+  }
+}
+
+export async function applyAdminBotOwnProfilePhoto(
+  host: AdminBotHost,
+  variantId: string,
+): Promise<void> {
+  host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your member account to apply a profile photo.",
+    };
+    return;
+  }
+  host.adminBotPhotoApplyBusy = true;
+  try {
+    const result = await applyOwnPolishedProfilePhoto(
+      variantId,
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      const message =
+        result.kind === "unreachable"
+          ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+          : result.kind === "rate-limited"
+            ? "Too many attempts. Wait a moment and try again."
+            : "Couldn't apply that photo to Slack. Try another variant or retry.";
+      host.adminBotNotice = { kind: "error", text: message };
+      return;
+    }
+    host.adminBotNotice = {
+      kind: "success",
+      text: "Updated your Slack profile photo to the selected version.",
+    };
+    await loadAdminBot(host, "general");
+  } finally {
+    host.adminBotPhotoApplyBusy = false;
+  }
 }
 
 /**

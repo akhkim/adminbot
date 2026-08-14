@@ -35,6 +35,8 @@ import { checkAccount, isCheckableField } from "./profile-account-check.ts";
 
 export type ProfileProps = {
   onSave: (memberId: string, fields: MemberProfileUpdate) => void;
+  onPolishPhoto: () => void;
+  onApplyPolishedPhoto: (variantId: string) => void;
 };
 
 // The answer type a field takes, which decides both which control renders it (select vs
@@ -537,7 +539,8 @@ export function findOwnMember(state: AppViewState): LabMember | null {
   if (!memberId) {
     return null;
   }
-  return (state.adminBotData?.members ?? []).find((member) => member.id === memberId) ?? null;
+  const member = (state.adminBotData?.members ?? []).find((entry) => entry.id === memberId);
+  return (member as unknown as LabMember | undefined) ?? null;
 }
 
 function valueOf(member: LabMember, field: EditableField): string {
@@ -1237,6 +1240,98 @@ function renderBadges(state: AppViewState, member: LabMember) {
   `;
 }
 
+function renderPhotoCompliance(state: AppViewState, member: LabMember, props: ProfileProps) {
+  const review = member.profile_photo_review;
+  const assessment = review?.assessment;
+  const variants = review?.variants ?? [];
+  const selectedId = review?.selected_variant_id;
+  return html`
+    <section class="profile__section" data-testid="profile-photo-guidelines">
+      <h2 class="profile__section-title">Slack profile photo guidelines</h2>
+      <p>
+        We directly link member photos from Slack on team/collaborator pages and the lab public
+        website, so a professional profile photo is strongly recommended.
+      </p>
+      <ul>
+        <li>Big enough headshot.</li>
+        <li>Face clearly visible, preferably front-facing.</li>
+        <li>
+          Clean background (blurred, single color, or at least easy to convert with a background
+          remover).
+        </li>
+      </ul>
+      <p>
+        How-To: use portrait mode with a high-quality back camera and have someone take the photo.
+        You can blur/change the background in phone editors, or use
+        <a href="https://www.remove.bg/" target=${EXTERNAL_LINK_TARGET} rel=${buildExternalLinkRel()}
+          >remove.bg</a
+        >. Chest-up framing with shoulders usually works best.
+      </p>
+      ${assessment
+        ? html`
+            <p>
+              <strong>Latest check:</strong>
+              ${assessment.compliant ? "Compliant" : "Needs update"} (${assessment.source})
+              ${assessment.summary ? `- ${assessment.summary}` : ""}
+            </p>
+            ${assessment.issues.length
+              ? html`<p><strong>Issues:</strong> ${assessment.issues.join(", ")}</p>`
+              : nothing}
+          `
+        : html`<p>No automated check result is available yet.</p>`}
+      <div class="profile__form-actions">
+        <button
+          type="button"
+          class="btn"
+          ?disabled=${state.adminBotPhotoPolishBusy}
+          @click=${() => props.onPolishPhoto()}
+        >
+          ${state.adminBotPhotoPolishBusy ? "Polishing..." : "Polish my current Slack photo with AI"}
+        </button>
+      </div>
+      ${variants.length
+        ? html`
+            <div class="profile__field-group">
+              <h3 class="profile__group-title">AI polished options</h3>
+              <div class="profile__field-grid">
+                ${variants
+                  .slice()
+                  .reverse()
+                  .map(
+                    (variant) => html`
+                      <div class="profile-field">
+                        <dt class="profile-field__label">
+                          ${variant.id === selectedId ? "Selected for Slack" : "Candidate"}
+                        </dt>
+                        <dd class="profile-field__value">
+                          <img class="profile__upload-preview" src=${variant.image_data_url} alt="" />
+                          <div class="profile__form-actions">
+                            <button
+                              type="button"
+                              class="btn btn--sm primary"
+                              ?disabled=${state.adminBotPhotoApplyBusy || variant.id === selectedId}
+                              @click=${() => props.onApplyPolishedPhoto(variant.id)}
+                            >
+                              ${variant.id === selectedId
+                                ? "Applied"
+                                : state.adminBotPhotoApplyBusy
+                                  ? "Applying..."
+                                  : "Use this photo for Slack"}
+                            </button>
+                          </div>
+                          ${variant.note ? html`<p>${variant.note}</p>` : nothing}
+                        </dd>
+                      </div>
+                    `,
+                  )}
+              </div>
+            </div>
+          `
+        : nothing}
+    </section>
+  `;
+}
+
 // What is still outstanding for this person, in one place: the onboarding steps they have not
 // finished, then the guidebook pointers derived from what their record is missing.
 //
@@ -1512,6 +1607,7 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         </div>
         ${renderCompletionLedger(member)}
       </header>
+      ${renderPhotoCompliance(state, member, props)}
       ${renderBasics(state, member, props)} ${renderSuggestions(state, member)}
     </div>
   `;
