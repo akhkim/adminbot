@@ -286,6 +286,7 @@ type AdminBotRouteContext = {
   deviceTokenIssuer?: DeviceTokenIssuer;
   onboardingSender: AdminBotOnboardingSender;
   allowedOrigins: Set<string>;
+  refusedOrigins: Set<string>;
   anonymousRateLimiter: AnonymousRateLimiter;
   // Only true when this process is known to sit behind a trusted reverse proxy (Render, Fly,
   // etc.) that sets X-Forwarded-For itself. Otherwise a caller could hand-write that header to
@@ -428,6 +429,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       options.calendarEventDrafter ??
       createEventDraftRunner((request) => privacyBroker.handle(request)),
     allowedOrigins,
+    refusedOrigins: new Set<string>(),
     anonymousRateLimiter: createAnonymousRateLimiter(),
     trustProxyHeaders:
       options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
@@ -477,7 +479,7 @@ function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOpt
 
 async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: AdminBotRouteContext) {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
-  applyCors(req, res, ctx.allowedOrigins);
+  applyCors(req, res, ctx.allowedOrigins, ctx.refusedOrigins);
   if (req.method === "OPTIONS") {
     // CORS preflight: headers already set by applyCors; body-less 204.
     res.statusCode = 204;
@@ -1722,9 +1724,32 @@ function resolvePrincipal(
   return undefined;
 }
 
-function applyCors(req: IncomingMessage, res: ServerResponse, allowedOrigins: Set<string>): void {
+function applyCors(
+  req: IncomingMessage,
+  res: ServerResponse,
+  allowedOrigins: Set<string>,
+  // Origins already reported, so the warning fires once each rather than once per request. Held by
+  // the service rather than the module so two services in one process cannot silence each other.
+  refusedOrigins: Set<string>,
+): void {
   const origin = req.headers.origin;
-  if (typeof origin !== "string" || !allowedOrigins.has(origin)) {
+  if (typeof origin !== "string") {
+    return;
+  }
+  if (!allowedOrigins.has(origin)) {
+    // A refused origin is otherwise completely silent: the service answers normally, the browser
+    // discards the response for want of a header, and the page reports only that it could not
+    // reach anything. Naming the rejected origin next to the allowed ones turns "it does not work"
+    // into a diff — a scheme, a subdomain or a port is usually the whole story. Once per origin,
+    // so a misconfigured client cannot flood the log.
+    if (!refusedOrigins.has(origin)) {
+      refusedOrigins.add(origin);
+      console.warn(
+        `[adminbot] refused cross-origin request from ${origin}; ADMINBOT_ALLOWED_ORIGINS is ${
+          [...allowedOrigins].join(", ") || "(empty)"
+        }`,
+      );
+    }
     return;
   }
   res.setHeader("Access-Control-Allow-Origin", origin);

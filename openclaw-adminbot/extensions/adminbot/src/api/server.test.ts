@@ -1111,7 +1111,12 @@ describe("AdminBot mock service", () => {
       timezonesChecked: number;
       timezonesUpdated: number;
     };
-    expect(body).toEqual({ idsResolved: 1, timezonesChecked: 1, timezonesUpdated: 1, activityChecked: 0 });
+    expect(body).toEqual({
+      idsResolved: 1,
+      timezonesChecked: 1,
+      timezonesUpdated: 1,
+      activityChecked: 0,
+    });
 
     const roster = await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() });
     const members = (await roster.json()) as {
@@ -2235,6 +2240,49 @@ describe("anonymous reimbursement access", () => {
 
 // The Calendar tab is admin-only and its buttons send for real, so the routes below are the whole
 // safety boundary: who may reach them, and what lands in the ledger when they do.
+// A refused origin is otherwise invisible: the service answers normally and the browser discards
+// the response, so the page can only report that it reached nothing.
+describe("cross-origin refusals", () => {
+  it("answers an allowed origin with the header, and a refused one without", async () => {
+    const { baseUrl } = await startService({
+      allowedOrigins: ["https://admin.safe.eu"],
+    });
+
+    const allowed = await fetch(`${baseUrl}/adminbot`, {
+      headers: { Origin: "https://admin.safe.eu" },
+    });
+    expect(allowed.headers.get("access-control-allow-origin")).toBe("https://admin.safe.eu");
+
+    // A different scheme, host or port is a different origin — the usual cause of this failure.
+    for (const origin of [
+      "http://admin.safe.eu",
+      "https://www.admin.safe.eu",
+      "https://admin.safe.eu:8443",
+    ]) {
+      const refused = await fetch(`${baseUrl}/adminbot`, { headers: { Origin: origin } });
+      expect(refused.headers.get("access-control-allow-origin"), origin).toBeNull();
+    }
+  });
+
+  it("names the refused origin and the configured list in the log", async () => {
+    const warnings: string[] = [];
+    const warn = console.warn;
+    console.warn = (...args: unknown[]) => warnings.push(args.join(" "));
+    try {
+      const { baseUrl } = await startService({ allowedOrigins: ["https://admin.safe.eu"] });
+      await fetch(`${baseUrl}/adminbot`, { headers: { Origin: "http://admin.safe.eu" } });
+      await fetch(`${baseUrl}/adminbot`, { headers: { Origin: "http://admin.safe.eu" } });
+    } finally {
+      console.warn = warn;
+    }
+    const refusals = warnings.filter((line) => line.includes("refused cross-origin request"));
+    // Once per origin, not once per request.
+    expect(refusals).toHaveLength(1);
+    expect(refusals[0]).toContain("http://admin.safe.eu");
+    expect(refusals[0]).toContain("https://admin.safe.eu");
+  });
+});
+
 describe("the calendar routes", () => {
   async function adminSession(baseUrl: string): Promise<Record<string, string>> {
     await seedMember(baseUrl, "boss", {
@@ -2285,7 +2333,11 @@ describe("the calendar routes", () => {
         {
           method: "POST",
           headers,
-          body: JSON.stringify({ summary: "x", start: "2026-09-01T13:00", end: "2026-09-01T14:00" }),
+          body: JSON.stringify({
+            summary: "x",
+            start: "2026-09-01T13:00",
+            end: "2026-09-01T14:00",
+          }),
         },
       ],
       [
@@ -2293,7 +2345,11 @@ describe("the calendar routes", () => {
         {
           method: "POST",
           headers,
-          body: JSON.stringify({ summary: "x", start: "2026-09-01T13:00", end: "2026-09-01T14:00" }),
+          body: JSON.stringify({
+            summary: "x",
+            start: "2026-09-01T13:00",
+            end: "2026-09-01T14:00",
+          }),
         },
       ],
       [
@@ -2308,9 +2364,9 @@ describe("the calendar routes", () => {
   it("keeps a signed-out visitor out of every calendar route", async () => {
     const { baseUrl } = await startService({ calendarEventsReader: async () => [] });
 
-    for (const [path, init] of calendarRoutes({ "Content-Type": "application/json" })) {
-      const response = await fetch(`${baseUrl}${path}`, init);
-      expect(response.status, path).toBe(401);
+    for (const [route, init] of calendarRoutes({ "Content-Type": "application/json" })) {
+      const response = await fetch(`${baseUrl}${route}`, init);
+      expect(response.status, route).toBe(401);
     }
   });
 
@@ -2319,11 +2375,11 @@ describe("the calendar routes", () => {
   it("keeps the service principal out of every calendar route", async () => {
     const { baseUrl } = await startService({ calendarEventsReader: async () => [] });
 
-    for (const [path, init] of calendarRoutes(
+    for (const [route, init] of calendarRoutes(
       serviceHeaders({ "Content-Type": "application/json" }),
     )) {
-      const response = await fetch(`${baseUrl}${path}`, init);
-      expect(response.status, path).toBe(403);
+      const response = await fetch(`${baseUrl}${route}`, init);
+      expect(response.status, route).toBe(403);
     }
   });
 
@@ -2331,9 +2387,9 @@ describe("the calendar routes", () => {
     const { baseUrl } = await startService({ calendarEventsReader: async () => [] });
     const headers = await memberSession(baseUrl);
 
-    for (const [path, init] of calendarRoutes(headers)) {
-      const response = await fetch(`${baseUrl}${path}`, init);
-      expect(response.status, path).toBe(403);
+    for (const [route, init] of calendarRoutes(headers)) {
+      const response = await fetch(`${baseUrl}${route}`, init);
+      expect(response.status, route).toBe(403);
     }
   });
 
