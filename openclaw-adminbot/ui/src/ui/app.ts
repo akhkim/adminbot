@@ -18,7 +18,11 @@ import type {
   MemberOnboarding,
   MemberRegistration,
   RosterMember,
+  CalendarEvent,
+  CalendarEventDraft,
+  LabCalendar,
 } from "./adminbot/auth/session.ts";
+import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberNudgeState,
@@ -28,10 +32,16 @@ import {
   type AdminBotReimbursementState,
   sendOnboardingGuide as sendOnboardingGuideController,
 } from "./adminbot/controllers/admin.ts";
+import {
+  inviteAdminBotCalendarAudience,
+  loadAdminBotCalendar,
+  requestAdminBotCalendarDraft,
+  saveAdminBotCalendarEvent,
+} from "./adminbot/controllers/calendar.ts";
+import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
 import type { ProfileAccountCheck } from "./adminbot/views/profile-account-check.ts";
-import type { MemberMap } from "./adminbot/data/member-map.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
@@ -258,6 +268,28 @@ export class OpenClawApp extends LitElement {
   @state() onboardingResult:
     | import("./adminbot/controllers/admin.ts").AdminBotOnboardingResult
     | null = null;
+  // Calendar tab. Declared here, not merely typed on AppViewState: an undeclared field is not a
+  // reactive property, so writing one from a controller changes nothing on screen. That is what
+  // made the whole tab inert — events loaded and never appeared, and typing in the assistant did
+  // not re-render. The view tests could not catch it because they render with a plain object.
+  @state() calendarEvents?: CalendarEvent[];
+  @state() calendarEventsLoading = false;
+  @state() calendarEventsError: string | null = null;
+  @state() calendarSource: LabCalendar | null = null;
+  @state() calendarMonth?: string;
+  @state() calendarPrompt = "";
+  @state() calendarMessages: Array<{ role: "user" | "assistant"; content: string }> = [];
+  @state() calendarDraft: CalendarEventDraft | null = null;
+  @state() calendarDraftBusy = false;
+  @state() calendarDraftError: string | null = null;
+  @state() calendarSelectedEventId: string | null = null;
+  @state() calendarOpenDay: string | null = null;
+  @state() calendarOpenEventId: string | null = null;
+  @state() calendarEditingEventId: string | null = null;
+  @state() calendarAudience: AudienceFilter = {};
+  @state() calendarExcludedMemberIds: string[] = [];
+  @state() calendarBusy = false;
+  @state() calendarConfirming: "save" | "invite" | null = null;
   @state() rosterMembers: RosterMember[] = [];
   @state() rosterLoading = false;
   @state() rosterError: RosterError = null;
@@ -1433,6 +1465,36 @@ export class OpenClawApp extends LitElement {
     return sendOnboardingGuideController(
       this as unknown as Parameters<typeof sendOnboardingGuideController>[0],
       options,
+    );
+  }
+
+  loadCalendarEvents(): Promise<void> {
+    return loadAdminBotCalendar(this as unknown as Parameters<typeof loadAdminBotCalendar>[0]);
+  }
+
+  requestCalendarDraft(): Promise<void> {
+    return requestAdminBotCalendarDraft(
+      this as unknown as Parameters<typeof requestAdminBotCalendarDraft>[0],
+    );
+  }
+
+  saveCalendarEvent(): Promise<void> {
+    return saveAdminBotCalendarEvent(
+      this as unknown as Parameters<typeof saveAdminBotCalendarEvent>[0],
+    );
+  }
+
+  // The view owns the selection, so it composes the addresses and the reason; the controller only
+  // sends what it is handed.
+  async sendCalendarInvites(): Promise<void> {
+    const { calendarInviteSelection } = await import("./adminbot/views/calendar.ts");
+    const selection = calendarInviteSelection(this as unknown as AppViewState);
+    if (!selection.event || !selection.emails.length) {
+      return;
+    }
+    await inviteAdminBotCalendarAudience(
+      this as unknown as Parameters<typeof inviteAdminBotCalendarAudience>[0],
+      { event: selection.event, emails: selection.emails, reason: selection.reason },
     );
   }
 

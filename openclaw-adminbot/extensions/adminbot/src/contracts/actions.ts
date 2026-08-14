@@ -14,6 +14,10 @@ export const adminBotActionTypes = [
   "vector.invite",
   "calendar.create_tentative_hold",
   "calendar.send_invite",
+  // Adds people to an event that already exists. Distinct from `calendar.reschedule`, which is the
+  // only other way to touch an existing event: that one writes the whole attendee list, so using it
+  // to invite two people would uninvite everyone already on the event.
+  "calendar.add_attendees",
   "calendar.reschedule",
   "calendar.cancel",
   "email.draft",
@@ -411,7 +415,12 @@ export type AdminBotLabMemberInput = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
+  // Where the member lives. The member map and the timezone suggestion are keyed on this one.
   location?: string;
+  // Where the member is right now, when that is not `location` — a conference trip, a term
+  // abroad, an internship. Self-editable and stored, but it was never declared here, so every
+  // reader had to reach for it untyped. Audience filters on the Calendar tab read both.
+  current_city?: string;
   affiliation?: string;
   timezone?: string;
   personal_website?: string;

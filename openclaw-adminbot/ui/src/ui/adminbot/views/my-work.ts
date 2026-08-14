@@ -18,7 +18,7 @@ import type {
   AdminBotPaperSaveInput,
   AdminBotPaperStep,
 } from "../controllers/admin.ts";
-import { nextStepFor } from "../next-step.ts";
+import { nextStepFor, nextTasksFor } from "../next-step.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { findOwnMember } from "./profile.ts";
@@ -288,24 +288,51 @@ function renderNextStep(paper: AdminBotPaperRecord) {
       ${icons.check} <span>Everything on this paper is finished.</span>
     </p>`;
   }
+
+  const tasks = nextTasksFor(paper);
+  if (tasks.length === 0) {
+    return nothing;
+  }
+
+  // The graph fans out, so the frontier is usually several tasks at once -- after the PDF
+  // compiles, slides, social and archival are all open. Listing them as cards says "these can
+  // happen in parallel", which a single "Next:" line actively hid.
   return html`
-    <p class="my-work-item__next">
-      ${icons.cornerDownRight}
-      <span>
-        <strong>Next: ${next.headline}</strong>
-        ${next.unblocks ? html`<span class="my-work-item__next-why"> — unblocks ${next.unblocks}</span>` : nothing}
-      </span>
-    </p>
-    ${next.alsoOpen.length > 0
-      ? html`<p class="my-work-item__next-also">
-          Also open now: ${next.alsoOpen.join(", ")}
-        </p>`
-      : nothing}
+    <div class="tasks">
+      <p class="tasks__title">
+        What can be done now
+        ${tasks.length > 1
+          ? html`<span class="tasks__count">${tasks.length} in parallel</span>`
+          : nothing}
+      </p>
+      <ul class="tasks__grid">
+        ${tasks.map(
+          (task) => html`
+            <li
+              class=${`task ${task.isApproval ? "task--approval" : ""} ${
+                task.optional ? "task--optional" : ""
+              }`}
+            >
+              <span class="task__branch">${task.branch || "Task"}</span>
+              <strong class="task__label">${task.label}</strong>
+              <span class="task__who">
+                ${task.isApproval ? `Approval from ${task.waitingOn}` : `Owner: ${task.waitingOn}`}
+              </span>
+              <span class="task__unblocks">
+                ${task.optional
+                  ? "Blocks nothing"
+                  : task.unblocks.length
+                    ? `Unblocks ${task.unblocks.slice(0, 2).join(", ")}`
+                    : "Last step on this branch"}
+              </span>
+            </li>
+          `,
+        )}
+      </ul>
+    </div>
   `;
 }
 
-// Adding writes a new paper row at the first step, with the member as its author -- the same
-// record the Active Papers page lists, so it appears there too.
 function renderAdd(state: AppViewState, props: MyWorkProps) {
   const draft = state.myWorkProjectDraft;
   if (draft === null) {

@@ -35,16 +35,20 @@ import {
 } from "../privacy/sensitive-info-doc.js";
 import { renderAdminBotWebUi } from "../web/console/index.js";
 import { renderMemberMapWebUi } from "../web/member-map/index.js";
+import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
+import { createCalendarEventsReader } from "../workflows/calendar/events.js";
+import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import { toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
 import { renderDeadlinesWebUi } from "../workflows/deadlines/board.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
-import { createPasswordResetEmailRunner } from "../workflows/identity/password-reset-email.js";
 import {
   AdminBotAuthService,
   type AdminBotAuthResponse,
   type AdminBotMemberPrincipal,
 } from "../workflows/identity/auth.js";
 import { allowedGatewayScopesForPrivilege } from "../workflows/identity/device-pairing-scopes.js";
+import { createPasswordResetEmailRunner } from "../workflows/identity/password-reset-email.js";
 import { toPublicMemberMapSummary } from "../workflows/members/member-map.js";
 import { createCalendarInviteRunner } from "../workflows/onboarding/calendar-invite.js";
 import { createDcsFormRunner } from "../workflows/onboarding/dcs-form.js";
@@ -101,6 +105,12 @@ export type AdminBotMockServiceOptions = {
   // Overrides the default `gws` CLI-backed calendar invite runner — used by tests to avoid
   // shelling out to a real `gws` binary.
   calendarInviteRunner?: (email: string) => Promise<void>;
+  // Reads upcoming events for the Calendar tab. Injected so tests never shell out to `gog`, and
+  // so a deployment without the CLI simply has no picker rather than a broken route.
+  calendarEventsReader?: import("../workflows/calendar/events.js").CalendarEventsReader;
+  // Drafts an event from a sentence. Defaults to the privacy broker, so a prompt naming a member
+  // gets the same placeholder treatment every other reasoning task gets.
+  calendarEventDrafter?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
   // Same for the `gog` CLI-backed "your account is approved" email.
   accountApprovedEmailRunner?: (params: { email: string; name?: string }) => Promise<void>;
   passwordResetEmailRunner?: (params: {
@@ -269,11 +279,15 @@ type AdminBotRouteContext = {
     channelIds: string[],
   ) => Promise<ReadonlyMap<string, number>>;
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
+  readCalendarEvents?: import("../workflows/calendar/events.js").CalendarEventsReader;
+  draftCalendarEvent?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
+  labCalendar: import("../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
   deviceTokenIssuer?: DeviceTokenIssuer;
   onboardingSender: AdminBotOnboardingSender;
   allowedOrigins: Set<string>;
+  refusedOrigins: Set<string>;
   anonymousRateLimiter: AnonymousRateLimiter;
   // Only true when this process is known to sit behind a trusted reverse proxy (Render, Fly,
   // etc.) that sets X-Forwarded-For itself. Otherwise a caller could hand-write that header to
@@ -323,8 +337,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     inviteToLabCalendar: options.calendarInviteRunner ?? createCalendarInviteRunner(),
     sendAccountApprovedEmail:
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
-    sendPasswordResetEmail:
-      options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
+    sendPasswordResetEmail: options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
     ...(() => {
       const submitDcsForm =
         options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
@@ -408,7 +421,15 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.resolveSlackUserIdsByEmail
       ? { resolveSlackUserIdsByEmail: options.resolveSlackUserIdsByEmail }
       : {}),
+    // The reader shells out to `gog`, so it is built unconditionally but only ever runs when the
+    // Calendar tab asks. The drafter defaults to the same broker `adminbot_reason` uses.
+    readCalendarEvents: options.calendarEventsReader ?? createCalendarEventsReader(),
+    labCalendar: resolveLabCalendar(),
+    draftCalendarEvent:
+      options.calendarEventDrafter ??
+      createEventDraftRunner((request) => privacyBroker.handle(request)),
     allowedOrigins,
+    refusedOrigins: new Set<string>(),
     anonymousRateLimiter: createAnonymousRateLimiter(),
     trustProxyHeaders:
       options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
@@ -458,7 +479,7 @@ function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOpt
 
 async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: AdminBotRouteContext) {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
-  applyCors(req, res, ctx.allowedOrigins);
+  applyCors(req, res, ctx.allowedOrigins, ctx.refusedOrigins);
   if (req.method === "OPTIONS") {
     // CORS preflight: headers already set by applyCors; body-less 204.
     res.statusCode = 204;
@@ -899,7 +920,11 @@ async function handleAuthenticatedRoute(
     if (!requirePrivileged(res, principal)) {
       return;
     }
-    if (!ctx.resolveSlackUserIdsByEmail && !ctx.fetchSlackTimezones && !ctx.fetchSlackMessageCounts) {
+    if (
+      !ctx.resolveSlackUserIdsByEmail &&
+      !ctx.fetchSlackTimezones &&
+      !ctx.fetchSlackMessageCounts
+    ) {
       sendJson(res, 503, { error: { message: "slack directory sync is not configured" } });
       return;
     }
@@ -1033,6 +1058,212 @@ async function handleAuthenticatedRoute(
   if (req.method === "POST" && url.pathname === "/proposals") {
     const body = (await readJson(req)) as AdminBotActionProposal;
     sendServiceResult(res, service.createProposal(body));
+    return;
+  }
+  // Both calendar routes are admin-member only. They read the lab's calendar and spend model time,
+  // which is not something a plain member session or the shared service principal should be able
+  // to do — and neither route writes anything: creating an event or inviting anyone still goes
+  // through POST /proposals as a typed calendar.* action, approval, and the gog connector.
+  if (req.method === "GET" && url.pathname === "/calendar/events") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.readCalendarEvents) {
+      sendJson(res, 503, { error: { message: "calendar reading is not configured" } });
+      return;
+    }
+    const max = Number(url.searchParams.get("max") ?? "");
+    try {
+      const calendarId = url.searchParams.get("calendar_id") ?? ctx.labCalendar.id;
+      const from = url.searchParams.get("from") ?? "";
+      const to = url.searchParams.get("to") ?? "";
+      const query = url.searchParams.get("query") ?? "";
+      const events = await ctx.readCalendarEvents({
+        ...(calendarId ? { calendarId } : {}),
+        ...(from ? { from } : {}),
+        ...(to ? { to } : {}),
+        ...(query ? { query } : {}),
+        ...(Number.isFinite(max) && max > 0 ? { max: Math.min(max, 250) } : {}),
+      });
+      // The calendar travels with its events so the tab embeds, lists and writes to the same one.
+      sendJson(res, 200, { events, calendar: ctx.labCalendar });
+    } catch (error) {
+      // The CLI is missing, unauthenticated, or its keyring is locked. Say so rather than
+      // returning an empty list, which reads as "your calendar is empty".
+      sendJson(res, 502, {
+        error: {
+          message: `could not read the calendar: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        },
+      });
+    }
+    return;
+  }
+  // The three writes. Each one creates the typed action, records the signed-in admin as its
+  // approver, and executes it in the same call.
+  //
+  // This is a deliberate exception to "propose, then approve on the Actions tab", made because the
+  // tab is admin-only and the person clicking is the person who would have approved it anyway. The
+  // exception is in the *number of clicks*, not in the governance: the proposal, the named
+  // approver and the execution all still land in the ledger, so "who put this on the calendar" is
+  // answerable afterwards exactly as it is for every other action. A non-admin never reaches here
+  // — requireMemberPrivileged refuses plain members and the service principal both.
+  if (req.method === "POST" && url.pathname === "/calendar/events") {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const summary = asString(body.summary);
+    const timezone = asString(body.timezone) || ctx.labCalendar.timezone;
+    // The draft carries a wall-clock time ("2026-09-01T13:00"), which is not RFC3339 and which
+    // Google rejects outright as `400 badRequest`. Resolve it against the calendar's zone first.
+    const from = toAbsoluteRfc3339(asString(body.start), timezone);
+    const to = toAbsoluteRfc3339(asString(body.end), timezone);
+    if (!summary || !from || !to) {
+      sendJson(res, 400, {
+        error: { message: "summary, and a readable start and end time, are required" },
+      });
+      return;
+    }
+    const attendees = readStringList(body.attendees);
+    await runCalendarAction(res, service, principal, {
+      // With attendees the create has to mail them, which is a different action type and a higher
+      // tier; without, it is a hold nobody hears about.
+      type: attendees.length ? "calendar.send_invite" : "calendar.create_tentative_hold",
+      summary: `Create "${summary}"`,
+      payload: {
+        calendar_id: asString(body.calendar_id) || ctx.labCalendar.id,
+        summary,
+        from,
+        to,
+        timezone,
+        ...(asString(body.location) ? { location: asString(body.location) } : {}),
+        ...(asString(body.description) ? { description: asString(body.description) } : {}),
+        ...(attendees.length ? { attendees } : {}),
+      },
+      rationale: "Created from the Calendar tab by an admin.",
+    });
+    return;
+  }
+  const calendarEvent = /^\/calendar\/events\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "POST" && calendarEvent?.[1]) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const eventId = decodeURIComponent(calendarEvent[1]);
+    const body = readRecord(await readJson(req));
+    const summary = asString(body.summary);
+    const timezone = asString(body.timezone) || ctx.labCalendar.timezone;
+    const from = toAbsoluteRfc3339(asString(body.start), timezone);
+    const to = toAbsoluteRfc3339(asString(body.end), timezone);
+    if (!summary || !from || !to) {
+      sendJson(res, 400, {
+        error: { message: "summary, and a readable start and end time, are required" },
+      });
+      return;
+    }
+    await runCalendarAction(res, service, principal, {
+      type: "calendar.reschedule",
+      summary: `Update "${summary}"`,
+      // No attendees here on purpose: the connector's update path *replaces* the guest list, so an
+      // edit that carried one would uninvite everyone the edit did not mention. Inviting is the
+      // route below.
+      payload: {
+        calendar_id: asString(body.calendar_id) || ctx.labCalendar.id,
+        event_id: eventId,
+        summary,
+        from,
+        to,
+        timezone,
+        ...(asString(body.location) ? { location: asString(body.location) } : {}),
+        ...(asString(body.description) ? { description: asString(body.description) } : {}),
+      },
+      rationale: asString(body.rationale) || "Edited from the Calendar tab by an admin.",
+    });
+    return;
+  }
+  const calendarInvite = /^\/calendar\/events\/([^/]+)\/invite$/u.exec(url.pathname);
+  if (req.method === "POST" && calendarInvite?.[1]) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const eventId = decodeURIComponent(calendarInvite[1]);
+    const body = readRecord(await readJson(req));
+    const attendees = readStringList(body.attendees);
+    if (!attendees.length) {
+      sendJson(res, 400, { error: { message: "attendees are required" } });
+      return;
+    }
+    await runCalendarAction(res, service, principal, {
+      type: "calendar.add_attendees",
+      summary: `Invite ${attendees.length} to ${asString(body.summary) || eventId}`,
+      payload: {
+        calendar_id: asString(body.calendar_id) || ctx.labCalendar.id,
+        event_id: eventId,
+        attendees,
+      },
+      rationale: asString(body.rationale) || "Invited from the Calendar tab by an admin.",
+    });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/calendar/event-draft") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.draftCalendarEvent) {
+      sendJson(res, 503, { error: { message: "event drafting is not configured" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const prompt = asString(body.prompt);
+    if (!prompt) {
+      sendJson(res, 400, { error: { message: "prompt is required" } });
+      return;
+    }
+    try {
+      const timezone = asString(body.timezone) || ctx.labCalendar.timezone;
+      const now = asString(body.now);
+      // An `editing` block turns the same route into "apply this instruction to that event". The
+      // caller sends what the event currently says; nothing is read back from Google here, so the
+      // model can never be handed an event the operator was not looking at.
+      const editingRaw = readRecord(body.editing);
+      const editingSummary = asString(editingRaw.summary);
+      const editingStart = asString(editingRaw.start);
+      const editing =
+        editingSummary && editingStart
+          ? {
+              summary: editingSummary,
+              start: editingStart,
+              ...(asString(editingRaw.end) ? { end: asString(editingRaw.end) } : {}),
+              ...(asString(editingRaw.location) ? { location: asString(editingRaw.location) } : {}),
+              ...(asString(editingRaw.description)
+                ? { description: asString(editingRaw.description) }
+                : {}),
+            }
+          : undefined;
+      const result = await ctx.draftCalendarEvent({
+        prompt,
+        ...(timezone ? { timezone } : {}),
+        ...(now ? { now } : {}),
+        ...(editing ? { editing } : {}),
+      });
+      if (!result.ok) {
+        // A model that could not produce a usable event is a 400 naming what was wrong with the
+        // draft, so the operator can rewrite the sentence rather than guess.
+        sendJson(res, 400, { error: { message: result.error } });
+        return;
+      }
+      sendJson(res, 200, { draft: result.draft });
+    } catch (error) {
+      sendJson(res, 502, {
+        error: {
+          message: `the drafting model failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        },
+      });
+    }
     return;
   }
   if (req.method === "POST" && url.pathname === "/privacy/tasks") {
@@ -1400,6 +1631,67 @@ function requirePrivileged(res: ServerResponse, principal: AdminBotPrincipal): b
   return false;
 }
 
+function readStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry) =>
+    typeof entry === "string" && entry.trim() ? [entry.trim()] : [],
+  );
+}
+
+/**
+ * Files a calendar action, records the caller as its approver, and executes it.
+ *
+ * The approval is recorded against the member id and role of the person who clicked, not against a
+ * generic "system" actor — that is what keeps the ledger answerable. Execution is the same path
+ * every other action takes, so a missing `gog`, a locked keyring or a Google refusal comes back as
+ * the same execution failure it would anywhere else, and the proposal stays in the queue rather
+ * than being reported as done.
+ */
+async function runCalendarAction(
+  res: ServerResponse,
+  service: AdminBotService,
+  principal: Extract<AdminBotPrincipal, { kind: "member" }>,
+  action: {
+    type: string;
+    summary: string;
+    payload: Record<string, unknown>;
+    rationale: string;
+  },
+): Promise<void> {
+  const created = service.createProposal({
+    type: action.type as AdminBotActionProposal["type"],
+    summary: action.summary,
+    proposed_payload: action.payload,
+    rationale: action.rationale,
+  });
+  if (!created.ok) {
+    sendServiceResult(res, created);
+    return;
+  }
+  const approved = service.approve(created.payload.id, {
+    payload_hash: created.payload.payload_hash,
+    approver_role: "admin",
+    approver_id: principal.member.id,
+    note: "Admin acted directly from the Calendar tab.",
+  });
+  if (!approved.ok) {
+    sendServiceResult(res, approved);
+    return;
+  }
+  const executed = await service.execute(created.payload.id, { dry_run: false });
+  if (!executed.ok) {
+    sendServiceResult(res, executed);
+    return;
+  }
+  sendJson(res, 200, {
+    action_id: created.payload.id,
+    status: executed.payload.status,
+    executed_at: executed.payload.executed_at,
+  });
+}
+
 // Escalation-sensitive governance (global settings, sensitive-info read/write, registration
 // approve/reject) must be driven by a real member session. The shared service principal is used by
 // every agent tool call regardless of which member is chatting, so treating it as admin here would
@@ -1444,9 +1736,32 @@ function resolvePrincipal(
   return undefined;
 }
 
-function applyCors(req: IncomingMessage, res: ServerResponse, allowedOrigins: Set<string>): void {
+function applyCors(
+  req: IncomingMessage,
+  res: ServerResponse,
+  allowedOrigins: Set<string>,
+  // Origins already reported, so the warning fires once each rather than once per request. Held by
+  // the service rather than the module so two services in one process cannot silence each other.
+  refusedOrigins: Set<string>,
+): void {
   const origin = req.headers.origin;
-  if (typeof origin !== "string" || !allowedOrigins.has(origin)) {
+  if (typeof origin !== "string") {
+    return;
+  }
+  if (!allowedOrigins.has(origin)) {
+    // A refused origin is otherwise completely silent: the service answers normally, the browser
+    // discards the response for want of a header, and the page reports only that it could not
+    // reach anything. Naming the rejected origin next to the allowed ones turns "it does not work"
+    // into a diff — a scheme, a subdomain or a port is usually the whole story. Once per origin,
+    // so a misconfigured client cannot flood the log.
+    if (!refusedOrigins.has(origin)) {
+      refusedOrigins.add(origin);
+      console.warn(
+        `[adminbot] refused cross-origin request from ${origin}; ADMINBOT_ALLOWED_ORIGINS is ${
+          [...allowedOrigins].join(", ") || "(empty)"
+        }`,
+      );
+    }
     return;
   }
   res.setHeader("Access-Control-Allow-Origin", origin);

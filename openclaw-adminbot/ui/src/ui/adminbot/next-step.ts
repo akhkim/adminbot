@@ -181,6 +181,15 @@ export type NextStep = {
   evidenceCount: number;
 };
 
+/** Which parallel track a task belongs to, for the grouping label on each card. */
+const BRANCH_LABELS: Record<string, string> = {
+  core: "Writing",
+  talk: "Presentation",
+  social: "Social",
+  archive: "Archival",
+  venue: "Venue",
+};
+
 const ROLE_LABELS: Record<string, string> = {
   first_author: "the first author",
   coauthors: "the coauthors",
@@ -248,4 +257,46 @@ export function nextStepFor(paper: AdminBotPaperRecord): NextStep | undefined {
     message: nudgeText(paperflow, first),
     evidenceCount,
   };
+}
+
+
+/** One actionable task on the frontier, ready to render as a card. */
+export type NextTask = {
+  node: NodeId;
+  label: string;
+  waitingOn: string;
+  unblocks: string[];
+  isApproval: boolean;
+  optional: boolean;
+  branch: string;
+};
+
+/**
+ * Every task that is actionable right now, not just the top one.
+ *
+ * The graph fans out -- once the PDF compiles, slides, social and archival open simultaneously --
+ * so collapsing the frontier to a single "next" hid the fact that three people could be working
+ * at once. Returning the whole frontier lets the UI show parallel work as parallel.
+ */
+export function nextTasksFor(paper: AdminBotPaperRecord): NextTask[] {
+  const result = tick(paperflow, paperToState(paper));
+  if (result.outcome !== "nudges") {
+    return [];
+  }
+  const byId = new Map(paperflow.nodes.map((node) => [node.id, node]));
+
+  return result.batches
+    .flatMap((batch) => batch.nudges)
+    .map((nudge) => {
+      const node = byId.get(nudge.node);
+      return {
+        node: nudge.node,
+        label: nudge.nodeLabel,
+        waitingOn: ROLE_LABELS[nudge.recipient] ?? nudge.recipient,
+        unblocks: nudge.unblocks.map((id) => NODE_LABELS.get(id) ?? id),
+        isApproval: nudge.kind === "approval",
+        optional: nudge.kind === "optional",
+        branch: BRANCH_LABELS[node?.branch ?? ""] ?? "",
+      };
+    });
 }

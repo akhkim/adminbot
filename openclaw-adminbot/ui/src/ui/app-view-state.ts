@@ -5,12 +5,12 @@ import type {
   AdminBotMemberNudgeState,
   AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
+import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type {
   MilestoneDraft,
   TimeAvailabilityDraft,
   TimeAvailabilityRange,
 } from "./adminbot/views/time-availability.ts";
-import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { ChatAbortOptions, ChatSendOptions } from "./app-chat.ts";
 import type { EventLogEntry } from "./app-events.ts";
 import type { CompactionStatus, FallbackStatus } from "./app-tool-stream.ts";
@@ -96,6 +96,38 @@ export type AppViewState = {
   onboardingMissing?: string[];
   onboardingResult?: import("./adminbot/controllers/admin.ts").AdminBotOnboardingResult | null;
   sendOnboardingGuide?: (options: { preview: boolean }) => Promise<void>;
+  // Calendar tab. Two halves that share the roster the tab already has: a prompt that drafts an
+  // event, and a picker that turns member facets into an invite list. Both end in a proposal.
+  calendarEvents?: import("./adminbot/auth/session.ts").CalendarEvent[];
+  calendarEventsLoading?: boolean;
+  calendarEventsError?: string | null;
+  calendarPrompt?: string;
+  calendarDraft?: import("./adminbot/auth/session.ts").CalendarEventDraft | null;
+  calendarDraftBusy?: boolean;
+  calendarDraftError?: string | null;
+  calendarSelectedEventId?: string | null;
+  /** The day whose "N more" card is open, `YYYY-MM-DD`. */
+  calendarOpenDay?: string | null;
+  /** The event whose detail card is open. */
+  calendarOpenEventId?: string | null;
+  // Set while the prompt box is being used to change an event rather than compose a new one.
+  calendarEditingEventId?: string | null;
+  calendarSource?: import("./adminbot/auth/session.ts").LabCalendar | null;
+  /** First of the month the grid is showing, `YYYY-MM-01`. Defaults to the month containing today. */
+  calendarMonth?: string;
+  /** The assistant conversation, oldest first. */
+  calendarMessages?: Array<{ role: "user" | "assistant"; content: string }>;
+  // Two-step confirm on the sends other people can see, since these buttons really do send.
+  calendarConfirming?: "save" | "invite" | null;
+  calendarAudience?: import("./adminbot/calendar-audience.ts").AudienceFilter;
+  // Ids the operator unticked from the matched list, so a filter that is right for 39 of 40 people
+  // does not have to be abandoned for the one exception.
+  calendarExcludedMemberIds?: string[];
+  calendarBusy?: boolean;
+  loadCalendarEvents?: () => Promise<void>;
+  requestCalendarDraft?: () => Promise<void>;
+  saveCalendarEvent?: () => Promise<void>;
+  sendCalendarInvites?: () => Promise<void>;
   rosterMembers: import("./adminbot/auth/session.ts").RosterMember[];
   rosterLoading: boolean;
   rosterError: import("./adminbot/auth/flow.ts").RosterError;

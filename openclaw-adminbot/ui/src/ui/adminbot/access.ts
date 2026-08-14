@@ -75,6 +75,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotOnboarding: "admin",
   adminbotSettings: "admin",
   adminbotAnnouncements: "admin",
+  // Reads the lab calendar and spends model time on drafting, and every button on it files a
+  // governance-gated action. Admin, and the service re-checks both routes independently.
+  adminbotCalendar: "admin",
   activity: "admin",
   agents: "admin",
   aiAgents: "admin",
