@@ -2,8 +2,8 @@
 //
 // Four things happen here:
 //
-//   1. Reading upcoming events from the lab calendar, which also tells the tab which calendar it
-//      is looking at so the embed, the list and every write name the same one.
+//   1. Reading the displayed month from the lab calendar, which also tells the tab which calendar
+//      it is looking at so the grid and every write name the same one.
 //   2. Asking the model to turn a sentence into a draft — either a new event, or the changes to an
 //      event that already exists. Drafts come back to the screen; the operator edits them there.
 //   3. Creating or editing an event.
@@ -26,7 +26,7 @@ import {
   type CalendarEvent,
   type CalendarEventDraft,
 } from "../auth/session.ts";
-import { monthWindow } from "../calendar-month.ts";
+import { dayKeyInZone, monthStartKey, monthWindow } from "../calendar-month.ts";
 import { ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE, type AdminBotHost } from "./admin.ts";
 
 const SIGN_IN_FIRST = "Sign in with an admin account to use the calendar.";
@@ -55,11 +55,23 @@ export async function loadAdminBotCalendar(host: AdminBotHost): Promise<void> {
   host.calendarEventsLoading = true;
   host.calendarEventsError = null;
   try {
-    // Whatever month the grid is on, not a rolling window: navigating to November and seeing
-    // nothing because the first load only covered two months would look like an empty calendar.
-    const month = host.calendarMonth;
+    // Always the month the grid is showing, never a rolling window. Left unset on the first load
+    // the service answers "now to +60 days", which silently drops everything earlier this month —
+    // the grid would draw the 1st to today as empty days that in fact have events on them. Pinning
+    // the month here keeps what is fetched and what is drawn the same thing, and the view resolves
+    // "today" the same way.
+    const month =
+      host.calendarMonth ??
+      monthStartKey(
+        dayKeyInZone(
+          Date.now(),
+          host.calendarSource?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+        ),
+      );
+    host.calendarMonth = month;
     const result = await fetchCalendarEvents(
-      { ...(month ? monthWindow(month) : {}), max: 250 },
+      // 250 is the service's own ceiling; a month past it is a calendar no grid could show anyway.
+      { ...monthWindow(month), max: 250 },
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
