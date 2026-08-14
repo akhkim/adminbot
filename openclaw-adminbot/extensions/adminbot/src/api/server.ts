@@ -50,6 +50,7 @@ import { createCalendarInviteRunner } from "../workflows/onboarding/calendar-inv
 import { createDcsFormRunner } from "../workflows/onboarding/dcs-form.js";
 import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
 import { createCalendarEventsReader } from "../workflows/calendar/events.js";
+import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { createDriveWorkspaceProvisioner } from "../workflows/onboarding/drive-workspace.js";
 import {
   createAdminBotOnboardingSender,
@@ -279,6 +280,7 @@ type AdminBotRouteContext = {
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
   readCalendarEvents?: import("../workflows/calendar/events.js").CalendarEventsReader;
   draftCalendarEvent?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
+  labCalendar: import("../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
   deviceTokenIssuer?: DeviceTokenIssuer;
@@ -421,6 +423,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     // The reader shells out to `gog`, so it is built unconditionally but only ever runs when the
     // Calendar tab asks. The drafter defaults to the same broker `adminbot_reason` uses.
     readCalendarEvents: options.calendarEventsReader ?? createCalendarEventsReader(),
+    labCalendar: resolveLabCalendar(),
     draftCalendarEvent:
       options.calendarEventDrafter ??
       createEventDraftRunner((request) => privacyBroker.handle(request)),
@@ -1065,7 +1068,7 @@ async function handleAuthenticatedRoute(
     }
     const max = Number(url.searchParams.get("max") ?? "");
     try {
-      const calendarId = url.searchParams.get("calendar_id") ?? "";
+      const calendarId = url.searchParams.get("calendar_id") ?? ctx.labCalendar.id;
       const from = url.searchParams.get("from") ?? "";
       const to = url.searchParams.get("to") ?? "";
       const query = url.searchParams.get("query") ?? "";
@@ -1076,7 +1079,8 @@ async function handleAuthenticatedRoute(
         ...(query ? { query } : {}),
         ...(Number.isFinite(max) && max > 0 ? { max: Math.min(max, 250) } : {}),
       });
-      sendJson(res, 200, { events });
+      // The calendar travels with its events so the tab embeds, lists and writes to the same one.
+      sendJson(res, 200, { events, calendar: ctx.labCalendar });
     } catch (error) {
       // The CLI is missing, unauthenticated, or its keyring is locked. Say so rather than
       // returning an empty list, which reads as "your calendar is empty".
@@ -1088,6 +1092,105 @@ async function handleAuthenticatedRoute(
         },
       });
     }
+    return;
+  }
+  // The three writes. Each one creates the typed action, records the signed-in admin as its
+  // approver, and executes it in the same call.
+  //
+  // This is a deliberate exception to "propose, then approve on the Actions tab", made because the
+  // tab is admin-only and the person clicking is the person who would have approved it anyway. The
+  // exception is in the *number of clicks*, not in the governance: the proposal, the named
+  // approver and the execution all still land in the ledger, so "who put this on the calendar" is
+  // answerable afterwards exactly as it is for every other action. A non-admin never reaches here
+  // — requireMemberPrivileged refuses plain members and the service principal both.
+  if (req.method === "POST" && url.pathname === "/calendar/events") {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const summary = asString(body.summary);
+    const from = asString(body.start);
+    const to = asString(body.end);
+    if (!summary || !from || !to) {
+      sendJson(res, 400, { error: { message: "summary, start and end are required" } });
+      return;
+    }
+    const attendees = readStringList(body.attendees);
+    await runCalendarAction(res, service, principal, {
+      // With attendees the create has to mail them, which is a different action type and a higher
+      // tier; without, it is a hold nobody hears about.
+      type: attendees.length ? "calendar.send_invite" : "calendar.create_tentative_hold",
+      summary: `Create "${summary}"`,
+      payload: {
+        calendar_id: asString(body.calendar_id) || ctx.labCalendar.id,
+        summary,
+        from,
+        to,
+        timezone: asString(body.timezone) || ctx.labCalendar.timezone,
+        ...(asString(body.location) ? { location: asString(body.location) } : {}),
+        ...(asString(body.description) ? { description: asString(body.description) } : {}),
+        ...(attendees.length ? { attendees } : {}),
+      },
+      rationale: "Created from the Calendar tab by an admin.",
+    });
+    return;
+  }
+  const calendarEvent = /^\/calendar\/events\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "POST" && calendarEvent?.[1]) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const eventId = decodeURIComponent(calendarEvent[1]);
+    const body = readRecord(await readJson(req));
+    const summary = asString(body.summary);
+    const from = asString(body.start);
+    const to = asString(body.end);
+    if (!summary || !from || !to) {
+      sendJson(res, 400, { error: { message: "summary, start and end are required" } });
+      return;
+    }
+    await runCalendarAction(res, service, principal, {
+      type: "calendar.reschedule",
+      summary: `Update "${summary}"`,
+      // No attendees here on purpose: the connector's update path *replaces* the guest list, so an
+      // edit that carried one would uninvite everyone the edit did not mention. Inviting is the
+      // route below.
+      payload: {
+        calendar_id: asString(body.calendar_id) || ctx.labCalendar.id,
+        event_id: eventId,
+        summary,
+        from,
+        to,
+        timezone: asString(body.timezone) || ctx.labCalendar.timezone,
+        ...(asString(body.location) ? { location: asString(body.location) } : {}),
+        ...(asString(body.description) ? { description: asString(body.description) } : {}),
+      },
+      rationale: asString(body.rationale) || "Edited from the Calendar tab by an admin.",
+    });
+    return;
+  }
+  const calendarInvite = /^\/calendar\/events\/([^/]+)\/invite$/u.exec(url.pathname);
+  if (req.method === "POST" && calendarInvite?.[1]) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const eventId = decodeURIComponent(calendarInvite[1]);
+    const body = readRecord(await readJson(req));
+    const attendees = readStringList(body.attendees);
+    if (!attendees.length) {
+      sendJson(res, 400, { error: { message: "attendees are required" } });
+      return;
+    }
+    await runCalendarAction(res, service, principal, {
+      type: "calendar.add_attendees",
+      summary: `Invite ${attendees.length} to ${asString(body.summary) || eventId}`,
+      payload: {
+        calendar_id: asString(body.calendar_id) || ctx.labCalendar.id,
+        event_id: eventId,
+        attendees,
+      },
+      rationale: asString(body.rationale) || "Invited from the Calendar tab by an admin.",
+    });
     return;
   }
   if (req.method === "POST" && url.pathname === "/calendar/event-draft") {
@@ -1105,12 +1208,33 @@ async function handleAuthenticatedRoute(
       return;
     }
     try {
-      const timezone = asString(body.timezone);
+      const timezone = asString(body.timezone) || ctx.labCalendar.timezone;
       const now = asString(body.now);
+      // An `editing` block turns the same route into "apply this instruction to that event". The
+      // caller sends what the event currently says; nothing is read back from Google here, so the
+      // model can never be handed an event the operator was not looking at.
+      const editingRaw = readRecord(body.editing);
+      const editingSummary = asString(editingRaw.summary);
+      const editingStart = asString(editingRaw.start);
+      const editing =
+        editingSummary && editingStart
+          ? {
+              summary: editingSummary,
+              start: editingStart,
+              ...(asString(editingRaw.end) ? { end: asString(editingRaw.end) } : {}),
+              ...(asString(editingRaw.location)
+                ? { location: asString(editingRaw.location) }
+                : {}),
+              ...(asString(editingRaw.description)
+                ? { description: asString(editingRaw.description) }
+                : {}),
+            }
+          : undefined;
       const result = await ctx.draftCalendarEvent({
         prompt,
         ...(timezone ? { timezone } : {}),
         ...(now ? { now } : {}),
+        ...(editing ? { editing } : {}),
       });
       if (!result.ok) {
         // A model that could not produce a usable event is a 400 naming what was wrong with the
@@ -1500,6 +1624,65 @@ function requirePrivileged(res: ServerResponse, principal: AdminBotPrincipal): b
 // every agent tool call regardless of which member is chatting, so treating it as admin here would
 // let any signed-in member perform these actions through the agent. Require an admin member
 // Bearer session and deny the service principal outright.
+function readStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry) => (typeof entry === "string" && entry.trim() ? [entry.trim()] : []));
+}
+
+/**
+ * Files a calendar action, records the caller as its approver, and executes it.
+ *
+ * The approval is recorded against the member id and role of the person who clicked, not against a
+ * generic "system" actor — that is what keeps the ledger answerable. Execution is the same path
+ * every other action takes, so a missing `gog`, a locked keyring or a Google refusal comes back as
+ * the same execution failure it would anywhere else, and the proposal stays in the queue rather
+ * than being reported as done.
+ */
+async function runCalendarAction(
+  res: ServerResponse,
+  service: AdminBotService,
+  principal: Extract<AdminBotPrincipal, { kind: "member" }>,
+  action: {
+    type: string;
+    summary: string;
+    payload: Record<string, unknown>;
+    rationale: string;
+  },
+): Promise<void> {
+  const created = service.createProposal({
+    type: action.type as AdminBotActionProposal["type"],
+    summary: action.summary,
+    proposed_payload: action.payload,
+    rationale: action.rationale,
+  });
+  if (!created.ok) {
+    sendServiceResult(res, created);
+    return;
+  }
+  const approved = service.approve(created.payload.id, {
+    payload_hash: created.payload.payload_hash,
+    approver_role: "admin",
+    approver_id: principal.member.id,
+    note: "Admin acted directly from the Calendar tab.",
+  });
+  if (!approved.ok) {
+    sendServiceResult(res, approved);
+    return;
+  }
+  const executed = await service.execute(created.payload.id, { dry_run: false });
+  if (!executed.ok) {
+    sendServiceResult(res, executed);
+    return;
+  }
+  sendJson(res, 200, {
+    action_id: created.payload.id,
+    status: executed.payload.status,
+    executed_at: executed.payload.executed_at,
+  });
+}
+
 function requireMemberPrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {
   if (principal.kind === "service") {
     sendJson(res, 403, {

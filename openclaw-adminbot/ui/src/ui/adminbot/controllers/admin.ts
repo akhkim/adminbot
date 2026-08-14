@@ -4,6 +4,7 @@ import type { UiSettings } from "../../storage.ts";
 import {
   type CalendarEvent,
   type CalendarEventDraft,
+  type LabCalendar,
   type MemberNudgeChannel,
   type MemberProfileUpdate,
   type MemberScheduleUpdate,
@@ -390,6 +391,10 @@ export type AdminBotHost = {
   calendarDraftBusy?: boolean;
   calendarDraftError?: string | null;
   calendarBusy?: boolean;
+  // The event the prompt box is editing, when it is editing one rather than composing a new event.
+  calendarEditingEventId?: string | null;
+  // Which calendar the service read, so the tab embeds and writes to the same one.
+  calendarSource?: LabCalendar | null;
   // Needed to resolve the AdminBot HTTP base URL for the direct admin-write path in
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
   settings: UiSettings;

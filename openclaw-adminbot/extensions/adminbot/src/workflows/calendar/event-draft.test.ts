@@ -20,6 +20,43 @@ describe("buildEventDraftPrompt", () => {
   });
 });
 
+describe("buildEventDraftPrompt, editing an event", () => {
+  const editing = {
+    summary: "Lab retreat planning",
+    start: "2026-09-01T13:00",
+    end: "2026-09-01T14:00",
+    location: "DCS lounge",
+  };
+
+  it("tells the model what the event currently says", () => {
+    const prompt = buildEventDraftPrompt({
+      prompt: "move it to Thursday at 3",
+      timezone: "America/Toronto",
+      editing,
+    });
+    expect(prompt).toContain("already exists");
+    expect(prompt).toContain("Lab retreat planning");
+    expect(prompt).toContain("2026-09-01T13:00");
+    expect(prompt).toContain("DCS lounge");
+  });
+
+  // The update writes what it is given, so a model that returns `{start, end}` alone would blank
+  // the title and the location. The prompt has to ask for the whole event back.
+  it("asks for every field back, not just the changed ones", () => {
+    const prompt = buildEventDraftPrompt({ prompt: "move it to Thursday", editing });
+    expect(prompt).toContain("every field");
+    expect(prompt).toContain("Change only what it asks for");
+  });
+
+  it("names a field the event has not set rather than omitting the line", () => {
+    const prompt = buildEventDraftPrompt({
+      prompt: "add the zoom link",
+      editing: { summary: "Sync", start: "2026-09-01T13:00" },
+    });
+    expect(prompt).toContain("(not set)");
+  });
+});
+
 describe("parseEventDraft", () => {
   const good = JSON.stringify({
     summary: "Reading group lunch",

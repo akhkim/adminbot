@@ -9066,6 +9066,45 @@ details[open] > .ov-expandable-toggle::after {
   grid-column: 1 / -1;
 }
 
+/* The calendar itself, as Google renders it. Read-only and deliberately not the source of truth
+   for anything the tab does — the list below it is what the writes act on — but seeing the week
+   you are editing beats trusting a list of rows. */
+.adminbot-calendar__embed {
+  width: 100%;
+  height: 520px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel, var(--bg));
+}
+
+/* States that the instruction box is aimed at one event rather than composing a new one. Loud
+   enough that nobody types a new event into it by accident. */
+.adminbot-calendar__editing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--accent, var(--border-strong));
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-accent);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* The sentence that appears between the first click and the second, saying what the second one
+   does. Not a warning colour: this is the normal path, not a mistake. */
+.adminbot-calendar__confirm {
+  margin-right: auto;
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-calendar__event-edit {
+  margin-left: var(--space-3);
+  flex: 0 0 auto;
+}
+
 .adminbot-calendar__note {
   margin: 0;
   font-size: var(--control-ui-text-xs);
@@ -9091,6 +9130,19 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-calendar__events li,
 .adminbot-calendar__matches li {
   background: var(--panel, var(--bg));
+}
+
+/* An event row is its label plus an edit button, so the row is the flex container and the label
+   takes the space the button does not. */
+.adminbot-calendar__events li {
+  display: flex;
+  align-items: center;
+  padding-right: var(--space-3);
+}
+
+.adminbot-calendar__events li label {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .adminbot-calendar__events label,

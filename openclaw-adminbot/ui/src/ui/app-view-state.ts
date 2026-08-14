@@ -106,6 +106,11 @@ export type AppViewState = {
   calendarDraftBusy?: boolean;
   calendarDraftError?: string | null;
   calendarSelectedEventId?: string | null;
+  // Set while the prompt box is being used to change an event rather than compose a new one.
+  calendarEditingEventId?: string | null;
+  calendarSource?: import("./adminbot/auth/session.ts").LabCalendar | null;
+  // Two-step confirm on the sends other people can see, since these buttons really do send.
+  calendarConfirming?: "save" | "invite" | null;
   calendarAudience?: import("./adminbot/calendar-audience.ts").AudienceFilter;
   // Ids the operator unticked from the matched list, so a filter that is right for 39 of 40 people
   // does not have to be abandoned for the one exception.
@@ -113,8 +118,8 @@ export type AppViewState = {
   calendarBusy?: boolean;
   loadCalendarEvents?: () => Promise<void>;
   requestCalendarDraft?: () => Promise<void>;
-  proposeCalendarEvent?: () => Promise<void>;
-  proposeCalendarInvite?: () => Promise<void>;
+  saveCalendarEvent?: () => Promise<void>;
+  sendCalendarInvites?: () => Promise<void>;
   rosterMembers: import("./adminbot/auth/session.ts").RosterMember[];
   rosterLoading: boolean;
   rosterError: import("./adminbot/auth/flow.ts").RosterError;

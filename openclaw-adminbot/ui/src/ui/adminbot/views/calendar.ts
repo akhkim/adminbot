@@ -1,17 +1,20 @@
-// The Calendar tab: draft an event from a sentence, and invite people the roster can already
-// describe.
+// The Calendar tab: the lab calendar, an instruction box that writes to it, and an invite list
+// built from what the roster already knows about people.
 //
-// Two panels because they are two jobs. The top one turns "lunch with the reading group next
-// Tuesday at 1 in the DCS lounge" into fields you can check and correct. The bottom one starts from
-// an event that already exists and answers the lab's real invite questions — everyone writing for
-// this conference, everyone actually in this city right now, everyone based here — instead of
-// making you remember who is where.
+// The embed at the top is the same calendar every read and write below uses — the service says
+// which one, so the picture and the actions cannot drift apart.
 //
-// Neither panel sends anything. Both end in a proposal that an admin approves on the Actions tab,
-// which is why every submit button says "Propose". That is the service's rule for anything with an
-// external effect, and a mail to forty people is about as external as it gets.
+// The instruction box does double duty. With nothing selected it composes a new event; with an
+// event selected for editing it applies the instruction to that event and shows what the change
+// would leave behind. Either way the draft is editable before it goes anywhere.
+//
+// These buttons really do send: the tab is admin-only, so a write files its action, records the
+// admin as approver and executes in one request. The two that other people can see — putting an
+// event on the shared calendar, and mailing invitations — ask for a second click first, because
+// there is no approval queue standing between a typo and forty inboxes.
 import { html, nothing } from "lit";
 import type { AppViewState } from "../../app-view-state.ts";
+import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import type { CalendarEvent } from "../auth/session.ts";
 import {
   knownCities,
@@ -30,8 +33,10 @@ function filterOf(state: AppViewState): AudienceFilter {
 function setFilter(state: AppViewState, patch: Partial<AudienceFilter>): void {
   state.calendarAudience = { ...filterOf(state), ...patch };
   // A changed filter means a different set of people, so a tick the operator made against the old
-  // set is not an opinion about the new one.
+  // set is not an opinion about the new one — and a confirmation given for the old set is not
+  // consent to mail the new one.
   state.calendarExcludedMemberIds = [];
+  state.calendarConfirming = null;
 }
 
 function eventDateLabel(event: CalendarEvent): string {
@@ -52,16 +57,77 @@ function eventDateLabel(event: CalendarEvent): string {
       });
 }
 
+function renderEmbed(state: AppViewState) {
+  const source = state.calendarSource ?? null;
+  if (!source) {
+    return nothing;
+  }
+  return html`
+    <section class="card adminbot-card adminbot-calendar__panel" data-testid="calendar-embed">
+      <div class="adminbot-calendar__panel-head">
+        <div>
+          <div class="card-title">${source.id}</div>
+          <div class="card-sub">
+            Everything below reads and writes this calendar (${source.timezone}).
+          </div>
+        </div>
+        <a
+          class="btn btn--sm"
+          href=${source.embed_url}
+          target=${EXTERNAL_LINK_TARGET}
+          rel=${buildExternalLinkRel()}
+          data-testid="calendar-embed-link"
+          >Open in Google Calendar</a
+        >
+      </div>
+      <iframe
+        class="adminbot-calendar__embed"
+        title="Lab calendar"
+        src=${source.embed_url}
+        loading="lazy"
+      ></iframe>
+      <!-- Google renders a sign-in wall inside the frame for anyone whose browser has no session
+           with access to this calendar. Nothing the app can fix from here, so the link above is
+           always offered rather than only when the frame fails — the frame cannot tell us. -->
+      <p class="adminbot-calendar__note">
+        Not showing? The embed needs a Google session with access to this calendar. The list below
+        comes from the service and does not.
+      </p>
+    </section>
+  `;
+}
+
 function renderDraftPanel(state: AppViewState) {
   const draft = state.calendarDraft ?? null;
   const busy = Boolean(state.calendarDraftBusy);
+  const editing = state.calendarEditingEventId
+    ? (state.calendarEvents ?? []).find((event) => event.id === state.calendarEditingEventId)
+    : undefined;
   return html`
     <section class="card adminbot-card adminbot-calendar__panel" data-testid="calendar-draft-panel">
-      <div class="card-title">Draft an event</div>
+      <div class="card-title">${editing ? "Change an event" : "Add an event"}</div>
       <div class="card-sub">
-        Write it the way you would say it. The draft comes back here to check before anything is
-        filed.
+        ${editing
+          ? html`Say what to change about <strong>${editing.summary}</strong>. The change comes back
+              here to check first.`
+          : "Write it the way you would say it. The draft comes back here to check first."}
       </div>
+      ${editing
+        ? html`<div class="adminbot-calendar__editing" data-testid="calendar-editing">
+            <span>Editing "${editing.summary}"</span>
+            <button
+              type="button"
+              class="btn btn--sm"
+              data-testid="calendar-editing-clear"
+              @click=${() => {
+                state.calendarEditingEventId = null;
+                state.calendarDraft = null;
+              }}
+            >
+              Compose a new event instead
+            </button>
+          </div>`
+        : nothing}
       <form
         class="adminbot-form"
         @submit=${(event: Event) => {
@@ -74,7 +140,9 @@ function renderDraftPanel(state: AppViewState) {
           <textarea
             rows="3"
             data-testid="calendar-prompt"
-            placeholder="lunch with the reading group next Tuesday at 1, in the DCS lounge"
+            placeholder=${state.calendarEditingEventId
+              ? "move it to Thursday at 3, and change the room to BA 5256"
+              : "lunch with the reading group next Tuesday at 1, in the DCS lounge"}
             .value=${state.calendarPrompt ?? ""}
             @input=${(event: Event) => {
               state.calendarPrompt = (event.target as HTMLTextAreaElement).value;
@@ -169,11 +237,19 @@ function renderDraftPanel(state: AppViewState) {
                 ? html`<p class="adminbot-calendar__note">Times are read as ${draft.timezone}.</p>`
                 : nothing}
               <div class="adminbot-calendar__actions">
+                ${state.calendarConfirming === "save"
+                  ? html`<span class="adminbot-calendar__confirm" role="status">
+                      ${editing
+                        ? "This updates the event for everyone already on it."
+                        : "This puts the event on the shared calendar."}
+                    </span>`
+                  : nothing}
                 <button
                   type="button"
                   class="btn"
                   @click=${() => {
                     state.calendarDraft = null;
+                    state.calendarConfirming = null;
                   }}
                 >
                   Discard
@@ -181,11 +257,25 @@ function renderDraftPanel(state: AppViewState) {
                 <button
                   type="button"
                   class="btn primary"
-                  data-testid="calendar-propose-event"
+                  data-testid="calendar-save-event"
                   ?disabled=${Boolean(state.calendarBusy) || !draft.summary.trim()}
-                  @click=${() => void state.proposeCalendarEvent?.()}
+                  @click=${() => {
+                    // Two clicks, because the first one is where a typo still costs nothing.
+                    if (state.calendarConfirming !== "save") {
+                      state.calendarConfirming = "save";
+                      return;
+                    }
+                    state.calendarConfirming = null;
+                    void state.saveCalendarEvent?.();
+                  }}
                 >
-                  Propose this event
+                  ${state.calendarConfirming === "save"
+                    ? editing
+                      ? "Confirm update"
+                      : "Confirm — add it"
+                    : editing
+                      ? "Update this event"
+                      : "Add to calendar"}
                 </button>
               </div>
             </div>
@@ -229,6 +319,21 @@ function renderEventList(state: AppViewState) {
                 ? html`<span class="adminbot-calendar__event-where">${event.location}</span>`
                 : nothing}
             </label>
+            <button
+              type="button"
+              class="btn btn--sm adminbot-calendar__event-edit"
+              data-testid=${`calendar-edit-${event.id}`}
+              @click=${() => {
+                // Sends the instruction box up to this event. The draft and any half-typed
+                // instruction go with it: they were about a different event.
+                state.calendarEditingEventId = event.id;
+                state.calendarDraft = null;
+                state.calendarPrompt = "";
+                state.calendarConfirming = null;
+              }}
+            >
+              Change with a prompt
+            </button>
           </li>
         `,
       )}
@@ -398,14 +503,36 @@ function renderInvitePanel(state: AppViewState) {
         : nothing}
 
       <div class="adminbot-calendar__actions">
+        ${state.calendarConfirming === "invite" && selected
+          ? html`<span
+              class="adminbot-calendar__confirm"
+              role="status"
+              data-testid="calendar-invite-confirm"
+            >
+              ${chosen.length} ${chosen.length === 1 ? "person gets" : "people get"} a Google
+              Calendar invitation to "${selected.summary}".
+            </span>`
+          : nothing}
         <button
           type="button"
           class="btn primary"
-          data-testid="calendar-propose-invite"
+          data-testid="calendar-send-invite"
           ?disabled=${Boolean(state.calendarBusy) || !selected || chosen.length === 0}
-          @click=${() => void state.proposeCalendarInvite?.()}
+          @click=${() => {
+            // Two clicks, because nothing stands between this button and forty inboxes.
+            if (state.calendarConfirming !== "invite") {
+              state.calendarConfirming = "invite";
+              return;
+            }
+            state.calendarConfirming = null;
+            void state.sendCalendarInvites?.();
+          }}
         >
-          ${selected ? `Propose invites (${chosen.length})` : "Pick an event to invite people to"}
+          ${!selected
+            ? "Pick an event to invite people to"
+            : state.calendarConfirming === "invite"
+              ? `Confirm — send ${chosen.length}`
+              : `Send invites (${chosen.length})`}
         </button>
       </div>
     </section>
@@ -414,11 +541,13 @@ function renderInvitePanel(state: AppViewState) {
 
 export function renderAdminBotCalendar(state: AppViewState) {
   return html`
-    <div class="adminbot-calendar">${renderDraftPanel(state)} ${renderInvitePanel(state)}</div>
+    <div class="adminbot-calendar">
+      ${renderEmbed(state)} ${renderDraftPanel(state)} ${renderInvitePanel(state)}
+    </div>
   `;
 }
 
-/** The addresses and the reason behind the current selection, for the proposal the controller files. */
+/** The addresses and the reason behind the current selection, for the send the controller makes. */
 export function calendarInviteSelection(state: AppViewState): {
   event: CalendarEvent | undefined;
   emails: string[];

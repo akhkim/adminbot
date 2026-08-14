@@ -840,11 +840,13 @@ export type CalendarEventDraft = {
   attendees?: string[];
 };
 
+export type LabCalendar = { id: string; timezone: string; embed_url: string };
+
 export async function fetchCalendarEvents(
   params: { calendarId?: string; from?: string; to?: string; query?: string; max?: number },
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<CalendarEvent[]>> {
+): Promise<AuthResult<{ events: CalendarEvent[]; calendar: LabCalendar | null }>> {
   const search = new URLSearchParams();
   if (params.calendarId) search.set("calendar_id", params.calendarId);
   if (params.from) search.set("from", params.from);
@@ -866,18 +868,30 @@ export async function fetchCalendarEvents(
     // which, and that sentence is far more use than "could not load".
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  const body = result.body as { events?: CalendarEvent[] } | null;
-  return { ok: true, value: body?.events ?? [] };
+  const body = result.body as { events?: CalendarEvent[]; calendar?: LabCalendar } | null;
+  return { ok: true, value: { events: body?.events ?? [], calendar: body?.calendar ?? null } };
 }
 
 export async function draftCalendarEvent(
-  request: { prompt: string; timezone?: string },
+  request: {
+    prompt: string;
+    timezone?: string;
+    /** Present when the instruction is an edit to this event rather than a new one. */
+    editing?: {
+      summary: string;
+      start: string;
+      end?: string;
+      location?: string;
+      description?: string;
+    };
+  },
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<CalendarEventDraft>> {
   const result = await authedJson(baseUrl, "/calendar/event-draft", "POST", sessionToken, {
     prompt: request.prompt,
     ...(request.timezone ? { timezone: request.timezone } : {}),
+    ...(request.editing ? { editing: request.editing } : {}),
   });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -895,36 +909,81 @@ export async function draftCalendarEvent(
 }
 
 /**
- * Files a calendar action for approval (POST /proposals).
+ * The Calendar tab's three writes. Each one goes straight through: the service files the typed
+ * action, records the signed-in admin as its approver, and executes it in the same request.
  *
- * Nothing here reaches Google. `calendar.create_tentative_hold` and `calendar.send_invite` are
- * typed actions the service risk-tiers (T2 and T3) and an admin approves; only then does
- * connectors/gog.ts run them. The tab is a composer, not a sender — which is why its buttons say
- * "Propose".
+ * The tab is admin-only, so the person clicking is the person who would have approved it anyway.
+ * The ledger still gets the proposal, the named approver and the execution — one click, same audit.
  */
-export async function createCalendarProposal(
-  proposal: {
-    type: "calendar.create_tentative_hold" | "calendar.send_invite";
+export type CalendarActionResult = { action_id: string; status: string; executed_at?: string };
+
+export async function createCalendarEvent(
+  event: {
     summary: string;
-    payload: Record<string, unknown>;
-    rationale?: string;
+    start: string;
+    end: string;
+    timezone?: string;
+    location?: string;
+    description?: string;
+    attendees?: string[];
   },
   sessionToken: string,
   baseUrl: string,
-): Promise<AuthResult<{ id: string }>> {
-  const result = await authedJson(baseUrl, "/proposals", "POST", sessionToken, {
-    type: proposal.type,
-    summary: proposal.summary,
-    proposed_payload: proposal.payload,
-    ...(proposal.rationale ? { rationale: proposal.rationale } : {}),
-  });
+): Promise<AuthResult<CalendarActionResult>> {
+  return await calendarWrite("/calendar/events", event, sessionToken, baseUrl);
+}
+
+export async function updateCalendarEvent(
+  eventId: string,
+  event: {
+    summary: string;
+    start: string;
+    end: string;
+    timezone?: string;
+    location?: string;
+    description?: string;
+  },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<CalendarActionResult>> {
+  return await calendarWrite(
+    `/calendar/events/${encodeURIComponent(eventId)}`,
+    event,
+    sessionToken,
+    baseUrl,
+  );
+}
+
+export async function inviteToCalendarEvent(
+  eventId: string,
+  request: { attendees: string[]; summary?: string; rationale?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<CalendarActionResult>> {
+  return await calendarWrite(
+    `/calendar/events/${encodeURIComponent(eventId)}/invite`,
+    request,
+    sessionToken,
+    baseUrl,
+  );
+}
+
+async function calendarWrite(
+  path: string,
+  body: Record<string, unknown>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<CalendarActionResult>> {
+  const result = await authedJson(baseUrl, path, "POST", sessionToken, body);
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
+    // An execution failure comes back with the connector's own sentence ("gog: no token"), which is
+    // the difference between "fix your input" and "the box cannot reach Google".
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
-  return { ok: true, value: (result.body ?? {}) as { id: string } };
+  return { ok: true, value: (result.body ?? {}) as CalendarActionResult };
 }
 
 export async function fetchMemberResource(

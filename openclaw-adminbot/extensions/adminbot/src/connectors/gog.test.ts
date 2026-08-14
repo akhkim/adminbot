@@ -84,6 +84,45 @@ describe("createGogAdminBotExecutor", () => {
     );
   });
 
+  // Inviting people to a standing meeting must not uninvite everyone already on it, which is what
+  // --attendees (replace) would do. The add path also passes nothing else, so an invite can never
+  // move the event or rewrite its title as a side effect.
+  it("adds attendees to an existing event without replacing the guest list", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+
+    await executor.execute(
+      proposal("calendar.add_attendees", {
+        calendar_id: "jinesis.lab@gmail.com",
+        event_id: "event-9",
+        attendees: ["ada@cs.toronto.edu", "mei@cs.toronto.edu"],
+      }),
+    );
+
+    const args = run.mock.calls[0]?.[0] as string[];
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "calendar.update",
+        "jinesis.lab@gmail.com",
+        "event-9",
+        "--add-attendee",
+        "ada@cs.toronto.edu,mei@cs.toronto.edu",
+        "--send-updates",
+        "all",
+      ]),
+    );
+    expect(args).not.toContain("--attendees");
+    expect(args).not.toContain("--summary");
+    expect(args).not.toContain("--from");
+  });
+
+  it("refuses an add-attendees action that names nobody", async () => {
+    const executor = createGogAdminBotExecutor({ run: vi.fn(async () => {}) });
+    await expect(
+      executor.execute(proposal("calendar.add_attendees", { event_id: "event-9", attendees: [] })),
+    ).rejects.toThrow(/attendees is required/u);
+  });
+
   // The wrap the operator sees mid-paragraph comes from delivering text/plain, so an approved
   // payload may carry an html alternative. It is optional and additive: the flag appears only when
   // the payload has one, immediately after --body and before the recipient flags, and the payload

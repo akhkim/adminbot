@@ -14,6 +14,10 @@ export const adminBotActionTypes = [
   "vector.invite",
   "calendar.create_tentative_hold",
   "calendar.send_invite",
+  // Adds people to an event that already exists. Distinct from `calendar.reschedule`, which is the
+  // only other way to touch an existing event: that one writes the whole attendee list, so using it
+  // to invite two people would uninvite everyone already on the event.
+  "calendar.add_attendees",
   "calendar.reschedule",
   "calendar.cancel",
   "email.draft",

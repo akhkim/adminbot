@@ -132,12 +132,12 @@ describe("the invite panel", () => {
     expect(matches?.textContent).toContain("writing for NeurIPS 2026");
   });
 
-  it("cannot propose until an event is picked", () => {
+  it("cannot send until an event is picked", () => {
     const container = renderToDiv(
       state({ calendarAudience: { conference: "NeurIPS 2026" } } as Partial<AppViewState>),
     );
     const button = container.querySelector<HTMLButtonElement>(
-      '[data-testid="calendar-propose-invite"]',
+      '[data-testid="calendar-send-invite"]',
     );
     expect(button?.disabled).toBe(true);
     expect(button?.textContent).toContain("Pick an event");
@@ -151,7 +151,7 @@ describe("the invite panel", () => {
       } as Partial<AppViewState>),
     );
     const button = container.querySelector<HTMLButtonElement>(
-      '[data-testid="calendar-propose-invite"]',
+      '[data-testid="calendar-send-invite"]',
     );
     expect(button?.disabled).toBe(false);
     expect(button?.textContent).toContain("(1)");
@@ -189,6 +189,120 @@ describe("the invite panel", () => {
     );
     expect(container.textContent).toContain("could not read the calendar");
     expect(container.querySelector('[data-testid="calendar-events-empty"]')).toBeNull();
+  });
+});
+
+// These buttons really send, so the second click is the safety. A first click only arms it.
+describe("the two-step send", () => {
+  const armed = {
+    calendarAudience: { conference: "NeurIPS 2026" },
+    calendarSelectedEventId: "evt-1",
+  } as Partial<AppViewState>;
+
+  it("arms on the first click and sends on the second", () => {
+    const sendCalendarInvites = vi.fn().mockResolvedValue(undefined);
+    const view = state({ ...armed, sendCalendarInvites } as Partial<AppViewState>);
+    let container = renderToDiv(view);
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="calendar-send-invite"]')
+      ?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(sendCalendarInvites).not.toHaveBeenCalled();
+    expect(view.calendarConfirming).toBe("invite");
+
+    container = renderToDiv(view);
+    expect(
+      container.querySelector('[data-testid="calendar-invite-confirm"]')?.textContent,
+    ).toContain("Lab retreat");
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="calendar-send-invite"]')
+      ?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(sendCalendarInvites).toHaveBeenCalledTimes(1);
+  });
+
+  // Consent to mail one set of people is not consent to mail a different one.
+  it("disarms when the filter changes", () => {
+    const view = state({ ...armed, calendarConfirming: "invite" } as Partial<AppViewState>);
+    const container = renderToDiv(view);
+    const select = container.querySelector<HTMLSelectElement>(
+      '[data-testid="calendar-filter-home-city"]',
+    );
+    select!.value = "";
+    select!.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(view.calendarConfirming).toBeNull();
+  });
+});
+
+describe("editing an event with a prompt", () => {
+  it("aims the instruction box at the event and clears what was there", () => {
+    const view = state({
+      calendarPrompt: "half-typed instruction for something else",
+      calendarDraft: {
+        summary: "Old draft",
+        start: "2026-08-18T13:00",
+        end: "2026-08-18T14:00",
+      },
+    } as Partial<AppViewState>);
+    const container = renderToDiv(view);
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="calendar-edit-evt-1"]')
+      ?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(view.calendarEditingEventId).toBe("evt-1");
+    expect(view.calendarPrompt).toBe("");
+    expect(view.calendarDraft).toBeNull();
+  });
+
+  it("says which event it is changing, and offers a way out", () => {
+    const view = state({ calendarEditingEventId: "evt-1" } as Partial<AppViewState>);
+    const container = renderToDiv(view);
+    expect(container.querySelector('[data-testid="calendar-editing"]')?.textContent).toContain(
+      "Lab retreat",
+    );
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="calendar-editing-clear"]')
+      ?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(view.calendarEditingEventId).toBeNull();
+  });
+
+  it("labels the save as an update while an event is being edited", () => {
+    const container = renderToDiv(
+      state({
+        calendarEditingEventId: "evt-1",
+        calendarDraft: {
+          summary: "Lab retreat",
+          start: "2026-09-01T15:00",
+          end: "2026-09-01T17:00",
+        },
+      } as Partial<AppViewState>),
+    );
+    expect(container.querySelector('[data-testid="calendar-save-event"]')?.textContent).toContain(
+      "Update this event",
+    );
+  });
+});
+
+describe("the embed", () => {
+  it("shows the calendar the service says it read", () => {
+    const container = renderToDiv(
+      state({
+        calendarSource: {
+          id: "jinesis.lab@gmail.com",
+          timezone: "America/Toronto",
+          embed_url:
+            "https://calendar.google.com/calendar/embed?src=jinesis.lab%40gmail.com&ctz=America%2FToronto",
+        },
+      } as Partial<AppViewState>),
+    );
+    const frame = container.querySelector<HTMLIFrameElement>(".adminbot-calendar__embed");
+    expect(frame?.getAttribute("src")).toContain("jinesis.lab%40gmail.com");
+    expect(container.querySelector('[data-testid="calendar-embed"]')?.textContent).toContain(
+      "America/Toronto",
+    );
+  });
+
+  // Before the first read the tab does not know which calendar it is on, and guessing one would
+  // show a calendar the writes do not touch.
+  it("shows no calendar until the service names one", () => {
+    expect(renderToDiv(state()).querySelector('[data-testid="calendar-embed"]')).toBeNull();
   });
 });
 

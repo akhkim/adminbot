@@ -30,6 +30,20 @@ export type AdminBotCalendarDraftRequest = {
   timezone?: string;
   /** Overridable so a test pins "next Tuesday" to a known week. */
   now?: string;
+  /**
+   * The event being edited, when this is an edit rather than a new event.
+   *
+   * Present, the model is told what the event currently says and to change only what the
+   * instruction asks for. Absent, it is composing from nothing. Same JSON either way, so the parser
+   * and the review form below do not fork.
+   */
+  editing?: {
+    summary: string;
+    start: string;
+    end?: string;
+    location?: string;
+    description?: string;
+  };
 };
 
 const ISO_LOCAL = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?$/u;
@@ -44,8 +58,11 @@ const MAX_PROMPT_CHARS = 2000;
 export function buildEventDraftPrompt(request: AdminBotCalendarDraftRequest): string {
   const now = request.now ?? new Date().toISOString();
   const timezone = request.timezone?.trim() || "UTC";
+  const editing = request.editing;
   return [
-    "You turn a short scheduling instruction into one calendar event.",
+    editing
+      ? "You apply a short instruction to one calendar event that already exists."
+      : "You turn a short scheduling instruction into one calendar event.",
     "",
     `The current time is ${now}. The person writing is in the ${timezone} timezone;`,
     "resolve every relative date and time against that, not against UTC.",
@@ -60,8 +77,25 @@ export function buildEventDraftPrompt(request: AdminBotCalendarDraftRequest): st
     '  "attendees"   — array of email addresses the instruction names. Omit if none.',
     "",
     "Never invent an attendee, a room, or a video link that was not asked for.",
-    "If the instruction does not say what the event is, use its own words as the summary",
-    "rather than guessing a purpose.",
+    editing
+      ? // The whole event comes back every time, so an edit that only moves the time still has to
+        // repeat the title. Saying so is what stops a model returning `{start, end}` alone and the
+        // update wiping the fields it left out.
+        [
+          "Return the event as it should be AFTER the change, with every field filled in —",
+          "including the ones the instruction does not mention. Change only what it asks for.",
+          "",
+          "The event currently reads:",
+          `  title:       ${editing.summary}`,
+          `  starts:      ${editing.start}`,
+          `  ends:        ${editing.end ?? "(not set)"}`,
+          `  location:    ${editing.location ?? "(not set)"}`,
+          `  description: ${editing.description ?? "(not set)"}`,
+        ].join("\n")
+      : [
+          "If the instruction does not say what the event is, use its own words as the summary",
+          "rather than guessing a purpose.",
+        ].join("\n"),
     "",
     "Instruction:",
     request.prompt.trim().slice(0, MAX_PROMPT_CHARS),

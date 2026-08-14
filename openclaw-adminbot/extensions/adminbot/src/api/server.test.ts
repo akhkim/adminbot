@@ -2232,3 +2232,186 @@ describe("anonymous reimbursement access", () => {
     expect(anonymous.filter((event) => event.details?.outcome === "rate_limited")).toHaveLength(2);
   });
 });
+
+// The Calendar tab is admin-only and its buttons send for real, so the routes below are the whole
+// safety boundary: who may reach them, and what lands in the ledger when they do.
+describe("the calendar routes", () => {
+  async function adminSession(baseUrl: string): Promise<Record<string, string>> {
+    await seedMember(baseUrl, "boss", {
+      name: "Boss",
+      email: "boss@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    await approveClaim(baseUrl, "boss", "boss@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "boss@cs.toronto.edu");
+    return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  }
+
+  async function memberSession(baseUrl: string): Promise<Record<string, string>> {
+    await seedMember(baseUrl, "plain", {
+      name: "Plain",
+      email: "plain@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "plain", "plain@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "plain@cs.toronto.edu");
+    return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  }
+
+  it("names the calendar it read alongside the events", async () => {
+    const { baseUrl } = await startService({
+      calendarEventsReader: async () => [
+        { id: "evt-1", summary: "Lab retreat", start: "2026-09-01T13:00:00-04:00" },
+      ],
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events`, { headers });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      events: [{ id: "evt-1", summary: "Lab retreat" }],
+      calendar: { id: "jinesis.lab@gmail.com", timezone: "America/Toronto" },
+    });
+  });
+
+  it("keeps a plain member out of every calendar route", async () => {
+    const { baseUrl } = await startService({ calendarEventsReader: async () => [] });
+    const headers = await memberSession(baseUrl);
+
+    for (const [path, init] of [
+      ["/calendar/events", { headers }],
+      ["/calendar/event-draft", { method: "POST", headers, body: JSON.stringify({ prompt: "x" }) }],
+      [
+        "/calendar/events",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ summary: "x", start: "2026-09-01T13:00", end: "2026-09-01T14:00" }),
+        },
+      ],
+      [
+        "/calendar/events/evt-1/invite",
+        { method: "POST", headers, body: JSON.stringify({ attendees: ["a@b.com"] }) },
+      ],
+    ] as const) {
+      const response = await fetch(`${baseUrl}${path}`, init as RequestInit);
+      expect(response.status).toBe(403);
+    }
+  });
+
+  // One click, but the full ledger: the action is filed, the admin who clicked is recorded as its
+  // approver, and the execution is the same path every other action takes.
+  it("files, approves and executes a created event in one call", async () => {
+    const executed: Array<{ type: string; payload: unknown }> = [];
+    const { baseUrl, mock } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push({ type: proposal.type, payload: proposal.proposed_payload });
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        summary: "Reading group lunch",
+        start: "2026-08-18T13:00",
+        end: "2026-08-18T14:00",
+        location: "DCS lounge",
+      }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { action_id: string; status: string };
+    expect(body.status).toBe("executed");
+
+    // No attendees, so it is a hold rather than something that mails anyone.
+    expect(executed).toHaveLength(1);
+    expect(executed[0]?.type).toBe("calendar.create_tentative_hold");
+    expect(executed[0]?.payload).toMatchObject({
+      calendar_id: "jinesis.lab@gmail.com",
+      summary: "Reading group lunch",
+      from: "2026-08-18T13:00",
+      timezone: "America/Toronto",
+    });
+
+    const stored = mock.service.getProposal(body.action_id);
+    expect(stored?.status).toBe("executed");
+    expect(stored?.approvals?.[0]).toMatchObject({ approver_role: "admin", approver_id: "boss" });
+  });
+
+  it("invites without touching anything else about the event", async () => {
+    const executed: Array<{ type: string; payload: Record<string, unknown> }> = [];
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push({
+            type: proposal.type,
+            payload: proposal.proposed_payload as Record<string, unknown>,
+          });
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        attendees: ["ada@cs.toronto.edu"],
+        summary: "Lab retreat",
+        rationale: "writing for NeurIPS 2026",
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(executed[0]?.type).toBe("calendar.add_attendees");
+    expect(executed[0]?.payload).toMatchObject({
+      event_id: "evt-9",
+      attendees: ["ada@cs.toronto.edu"],
+    });
+    // An invite that carried a title or a time could rewrite the event as a side effect.
+    expect(executed[0]?.payload.summary).toBeUndefined();
+    expect(executed[0]?.payload.from).toBeUndefined();
+  });
+
+  it("refuses an invite that names nobody, and an event with no times", async () => {
+    const { baseUrl } = await startService();
+    const headers = await adminSession(baseUrl);
+
+    const noAttendees = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ attendees: [] }),
+    });
+    expect(noAttendees.status).toBe(400);
+
+    const noTimes = await fetch(`${baseUrl}/calendar/events`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ summary: "Untimed" }),
+    });
+    expect(noTimes.status).toBe(400);
+  });
+
+  // A connector that cannot reach Google must not be reported as a send that happened.
+  it("reports an execution failure rather than claiming success", async () => {
+    const { baseUrl } = await startService({
+      executor: { execute: async () => ({ handled: false }) },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        summary: "Reading group lunch",
+        start: "2026-08-18T13:00",
+        end: "2026-08-18T14:00",
+      }),
+    });
+    expect(response.status).toBe(501);
+  });
+});

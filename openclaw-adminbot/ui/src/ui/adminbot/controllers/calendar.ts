@@ -1,23 +1,28 @@
 // The Calendar tab's side of the wire.
 //
-// Three things happen here and none of them touches Google directly:
+// Four things happen here:
 //
-//   1. Reading upcoming events, so the invite half has real events to point at.
-//   2. Asking the model to turn a sentence into a draft event. The draft comes back to the screen;
-//      the operator can edit every field before anything else happens.
-//   3. Filing a `calendar.*` proposal. That is where this tab stops — the service risk-tiers the
-//      action, an admin approves it on the Actions tab, and only then does the gog connector run
-//      it. The buttons say "Propose" for that reason, not out of shyness.
+//   1. Reading upcoming events from the lab calendar, which also tells the tab which calendar it
+//      is looking at so the embed, the list and every write name the same one.
+//   2. Asking the model to turn a sentence into a draft — either a new event, or the changes to an
+//      event that already exists. Drafts come back to the screen; the operator edits them there.
+//   3. Creating or editing an event.
+//   4. Inviting people to one.
 //
-// Everything is on the member Bearer session. The shared service principal is refused by both
-// calendar routes, and a plain member session is refused too: reading the lab's calendar and
-// spending model time are admin acts.
+// Writes go straight through: the service files the typed action, records the signed-in admin as
+// its approver and executes it in the same request. The tab is admin-only and the person clicking
+// is the person who would have approved it anyway, so the second click bought nothing — but the
+// ledger still gets the proposal, the approver and the execution, so "who put this on the calendar"
+// stays answerable. That means the buttons on this tab really do send; the view asks for a
+// confirmation before the two that other people can see.
 import {
-  createCalendarProposal,
+  createCalendarEvent,
   draftCalendarEvent,
   fetchCalendarEvents,
+  inviteToCalendarEvent,
   loadStoredMemberSession,
   resolveAdminBotBaseUrl,
+  updateCalendarEvent,
   type CalendarEvent,
   type CalendarEventDraft,
 } from "../auth/session.ts";
@@ -59,12 +64,22 @@ export async function loadAdminBotCalendar(host: AdminBotHost): Promise<void> {
       host.calendarEvents = [];
       return;
     }
-    host.calendarEvents = result.value;
+    host.calendarEvents = result.value.events;
+    if (result.value.calendar) {
+      host.calendarSource = result.value.calendar;
+    }
   } finally {
     host.calendarEventsLoading = false;
   }
 }
 
+/**
+ * Drafts from the prompt box.
+ *
+ * With an event selected and edit mode on, the instruction is applied to that event and the model
+ * is told what it currently says; otherwise it composes a new one. Same draft shape either way, so
+ * the review form does not fork.
+ */
 export async function requestAdminBotCalendarDraft(host: AdminBotHost): Promise<void> {
   const prompt = (host.calendarPrompt ?? "").trim();
   if (!prompt) {
@@ -76,6 +91,9 @@ export async function requestAdminBotCalendarDraft(host: AdminBotHost): Promise<
     host.calendarDraftError = SIGN_IN_FIRST;
     return;
   }
+  const editing = host.calendarEditingEventId
+    ? (host.calendarEvents ?? []).find((event) => event.id === host.calendarEditingEventId)
+    : undefined;
   host.calendarDraftBusy = true;
   host.calendarDraftError = null;
   try {
@@ -84,6 +102,17 @@ export async function requestAdminBotCalendarDraft(host: AdminBotHost): Promise<
         prompt,
         // The browser's zone, so "1pm" is the operator's 1pm rather than the server's.
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        ...(editing
+          ? {
+              editing: {
+                summary: editing.summary,
+                start: editing.start,
+                ...(editing.end ? { end: editing.end } : {}),
+                ...(editing.location ? { location: editing.location } : {}),
+                ...(editing.description ? { description: editing.description } : {}),
+              },
+            }
+          : {}),
       },
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
@@ -103,7 +132,13 @@ export function currentCalendarDraft(host: AdminBotHost): CalendarEventDraft | n
   return host.calendarDraft ?? null;
 }
 
-export async function proposeAdminBotCalendarEvent(host: AdminBotHost): Promise<void> {
+/**
+ * Puts the draft on the calendar — as a new event, or as changes to the one being edited.
+ *
+ * An edit sends the whole event rather than a patch, because the underlying update writes what it
+ * is given: sending only the changed fields would clear the rest.
+ */
+export async function saveAdminBotCalendarEvent(host: AdminBotHost): Promise<void> {
   const draft = currentCalendarDraft(host);
   if (!draft) {
     return;
@@ -113,48 +148,47 @@ export async function proposeAdminBotCalendarEvent(host: AdminBotHost): Promise<
     host.adminBotNotice = { kind: "error", text: SIGN_IN_FIRST };
     return;
   }
+  const editingId = host.calendarEditingEventId ?? null;
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  const payload = {
+    summary: draft.summary,
+    start: draft.start,
+    end: draft.end,
+    ...(draft.timezone ? { timezone: draft.timezone } : {}),
+    ...(draft.location ? { location: draft.location } : {}),
+    ...(draft.description ? { description: draft.description } : {}),
+  };
   host.calendarBusy = true;
   try {
-    const result = await createCalendarProposal(
-      {
-        // A hold rather than an invite: an event drafted from a sentence has no attendees the
-        // operator has confirmed, and `send_invite` is what mails people. Inviting is the other
-        // half of this tab, done deliberately against a chosen event.
-        type: "calendar.create_tentative_hold",
-        summary: `Create "${draft.summary}"`,
-        payload: {
-          summary: draft.summary,
-          from: draft.start,
-          to: draft.end,
-          ...(draft.timezone ? { timezone: draft.timezone } : {}),
-          ...(draft.location ? { location: draft.location } : {}),
-          ...(draft.description ? { description: draft.description } : {}),
-          ...(draft.attendees?.length ? { attendees: draft.attendees } : {}),
-        },
-        rationale: "Drafted from a written instruction on the Calendar tab and reviewed on screen.",
-      },
-      stored.sessionToken,
-      resolveAdminBotBaseUrl(host.settings),
-    );
+    const result = editingId
+      ? await updateCalendarEvent(editingId, payload, stored.sessionToken, baseUrl)
+      : await createCalendarEvent(
+          { ...payload, ...(draft.attendees?.length ? { attendees: draft.attendees } : {}) },
+          stored.sessionToken,
+          baseUrl,
+        );
     if (!result.ok) {
       host.adminBotNotice = {
         kind: "error",
-        text: failureText(result, "Could not file that proposal."),
+        text: failureText(result, "Could not save that event."),
       };
       return;
     }
     host.adminBotNotice = {
       kind: "success",
-      text: "Filed for approval. Approve it on the Actions tab to put it on the calendar.",
+      text: editingId ? "Event updated." : "Event added to the calendar.",
     };
     host.calendarDraft = null;
     host.calendarPrompt = "";
+    host.calendarEditingEventId = null;
+    // The embed and the list are both now stale, and the list is what the invite half points at.
+    await loadAdminBotCalendar(host);
   } finally {
     host.calendarBusy = false;
   }
 }
 
-export async function proposeAdminBotCalendarInvite(
+export async function inviteAdminBotCalendarAudience(
   host: AdminBotHost,
   params: { event: CalendarEvent; emails: string[]; reason: string },
 ): Promise<void> {
@@ -168,21 +202,13 @@ export async function proposeAdminBotCalendarInvite(
   }
   host.calendarBusy = true;
   try {
-    const result = await createCalendarProposal(
+    const result = await inviteToCalendarEvent(
+      params.event.id,
       {
-        type: "calendar.send_invite",
-        summary: `Invite ${params.emails.length} to "${params.event.summary}"`,
-        payload: {
-          summary: params.event.summary,
-          from: params.event.start,
-          to: params.event.end ?? params.event.start,
-          attendees: params.emails,
-          ...(params.event.location ? { location: params.event.location } : {}),
-          ...(params.event.calendar_id ? { calendar_id: params.event.calendar_id } : {}),
-          ...(params.event.description ? { description: params.event.description } : {}),
-        },
-        // The filter that produced this list, recorded on the proposal so the approver sees who is
-        // being mailed and why without reconstructing it from the address list.
+        attendees: params.emails,
+        summary: params.event.summary,
+        // The filter that produced this list, recorded on the action so the ledger says who was
+        // mailed and why without reconstructing it from the address list.
         rationale: params.reason,
       },
       stored.sessionToken,
@@ -191,16 +217,17 @@ export async function proposeAdminBotCalendarInvite(
     if (!result.ok) {
       host.adminBotNotice = {
         kind: "error",
-        text: failureText(result, "Could not file that invite."),
+        text: failureText(result, "Could not send those invites."),
       };
       return;
     }
     host.adminBotNotice = {
       kind: "success",
-      text: `Filed for approval. ${params.emails.length} ${
+      text: `Invited ${params.emails.length} ${
         params.emails.length === 1 ? "person" : "people"
-      } will be invited once it is approved.`,
+      } to "${params.event.summary}".`,
     };
+    await loadAdminBotCalendar(host);
   } finally {
     host.calendarBusy = false;
   }
