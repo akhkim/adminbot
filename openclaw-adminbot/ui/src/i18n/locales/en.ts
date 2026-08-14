@@ -1354,6 +1354,8 @@ export const en: TranslationMap = {
       expand: "Expand",
       expandAria: "Expand the member map to full screen",
       collapse: "Close",
+      showAllMembers: "Show all {count}",
+      showFewerMembers: "Show fewer",
     },
     workSummary: {
       title: "My projects & papers",

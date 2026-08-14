@@ -353,6 +353,10 @@ export type AdminBotMapMember = {
   member_id: string;
   name: string;
   source: AdminBotMapSource;
+  // Both optional: not every member has a synced Slack avatar or a recorded login. Present so
+  // the lab-insider map can show recently-active faces per city without a second round trip.
+  avatar_url?: string;
+  last_login_at?: string;
 };
 
 export type AdminBotMapPlaceGroup = AdminBotMapPlace & {
@@ -439,7 +443,13 @@ export function buildMemberMap(
       continue;
     }
     const group = groups.get(resolution.place.key) ?? { ...resolution.place, members: [] };
-    group.members.push({ member_id: member.id, name: member.name, source: resolution.source });
+    group.members.push({
+      member_id: member.id,
+      name: member.name,
+      source: resolution.source,
+      ...(member.avatar_url ? { avatar_url: member.avatar_url } : {}),
+      ...(member.last_login_at ? { last_login_at: member.last_login_at } : {}),
+    });
     groups.set(resolution.place.key, group);
   }
 

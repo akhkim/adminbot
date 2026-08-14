@@ -93,6 +93,29 @@ describe("buildMemberMap", () => {
     expect(map.places[0]?.members).toEqual([{ member_id: "a", name: "Ada", source: "login" }]);
   });
 
+  it("carries avatar_url and last_login_at through when present, and omits them when absent", () => {
+    const map = buildMemberMap([
+      member({
+        id: "a",
+        name: "Ada",
+        last_login_country: "Switzerland",
+        avatar_url: "https://example.com/ada.png",
+        last_login_at: "2026-01-05T00:00:00.000Z",
+      }),
+      member({ id: "b", name: "Bo", last_login_country: "Switzerland" }),
+    ]);
+    expect(map.places[0]?.members).toEqual([
+      {
+        member_id: "a",
+        name: "Ada",
+        source: "login",
+        avatar_url: "https://example.com/ada.png",
+        last_login_at: "2026-01-05T00:00:00.000Z",
+      },
+      { member_id: "b", name: "Bo", source: "login" },
+    ]);
+  });
+
   it("tries Slack, then last-login, then roster, in that order", () => {
     const map = buildMemberMap(
       [
