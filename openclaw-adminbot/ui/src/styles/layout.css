@@ -966,11 +966,11 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: 12px;
   /* Pointer-sized rows are the mobile layout's job (layout.mobile.css keeps 40px there); on a
      desktop sidebar the extra height only spreads a group out. */
   min-height: 30px;
-  padding: 0 9px;
+  padding: 0 10px;
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   background: transparent;
@@ -1009,6 +1009,7 @@
 .nav-item__text {
   font-size: var(--control-ui-text-sm);
   font-weight: 500;
+  line-height: 3;
   letter-spacing: var(--tracking-tight);
   white-space: nowrap;
 }
@@ -3143,6 +3144,7 @@
   border-radius: var(--radius-full);
   background: var(--danger);
 }
+
 
 /* ===========================================
    Suggestions

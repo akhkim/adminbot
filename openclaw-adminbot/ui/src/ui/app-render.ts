@@ -2739,7 +2739,7 @@ export function renderApp(state: AppViewState) {
               ${renderOnboardingChecklist(state)}
             `
           : nothing}
-        ${state.tab === "labSharing" ? renderLabSharing() : nothing}
+        ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}
         ${state.tab === "adminbotTimeAvailability"
           ? renderAdminBotTimeAvailability({
               members: state.adminBotData.members ?? [],
