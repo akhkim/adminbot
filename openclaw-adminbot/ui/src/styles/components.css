@@ -9267,8 +9267,26 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-calendar__card-description {
-  white-space: pre-wrap;
+  display: grid;
+  gap: var(--space-2);
   color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.adminbot-calendar__card-description p {
+  margin: 0;
+}
+
+.adminbot-calendar__card-description :is(ul, ol) {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+/* A description is mostly links — Zoom, Drive, Overleaf — so they have to be obviously clickable
+   and must not push the card wide when they are long. */
+.adminbot-calendar__card-description a {
+  color: var(--accent, var(--text));
+  overflow-wrap: anywhere;
 }
 
 .adminbot-calendar__card-guests {

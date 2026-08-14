@@ -13,6 +13,7 @@
 // event on the shared calendar, and mailing invitations — ask for a second click first, because
 // there is no approval queue standing between a typo and forty inboxes.
 import { html, nothing } from "lit";
+import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import { i18n } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
@@ -24,6 +25,7 @@ import {
   selectAudience,
   type AudienceFilter,
 } from "../calendar-audience.ts";
+import { sanitizeEventDescription } from "../calendar-description.ts";
 import {
   dayKeyInZone,
   eventDayKey,
@@ -191,6 +193,7 @@ function renderDayCard(
 }
 
 function renderEventCard(state: AppViewState, event: CalendarEvent, timezone: string) {
+  const description = sanitizeEventDescription(event.description);
   const members = state.adminBotData?.members ?? [];
   const names = memberNamesByEmail(members);
   const attendees = event.attendees ?? [];
@@ -204,8 +207,10 @@ function renderEventCard(state: AppViewState, event: CalendarEvent, timezone: st
           ${event.location}
         </p>`
       : nothing}
-    ${event.description
-      ? html`<p class="adminbot-calendar__card-description">${event.description}</p>`
+    ${description
+      ? // Google sends HTML here, so it is rendered as HTML — sanitized first, because anyone who
+        // can put an event on this calendar controls the string.
+        html`<div class="adminbot-calendar__card-description">${unsafeHTML(description)}</div>`
       : nothing}
     <div class="adminbot-calendar__card-guests">
       <div class="card-sub">

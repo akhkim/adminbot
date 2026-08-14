@@ -493,6 +493,50 @@ describe("the event card", () => {
     expect(card?.textContent).toContain("Five minutes each.");
   });
 
+  // Google sends the description as HTML. Rendered as text it put raw tags on screen.
+  it("renders a Google HTML description as links, not as markup", () => {
+    const container = renderToDiv(
+      state({
+        ...withGuests,
+        calendarEvents: [
+          {
+            id: "evt-1",
+            summary: "Causality",
+            start: "2026-09-15T13:00:00-04:00",
+            description:
+              '<p>Zoom: <a href="https://utoronto.zoom.us/j/869">join</a></p>Docs: <a href="https://docs.google.com/document/d/1W/edit">doc</a>',
+          },
+        ],
+      } as Partial<AppViewState>),
+    );
+    const card = container.querySelector('[data-testid="calendar-event-card"]');
+    expect(card?.textContent).not.toContain("<a href");
+    const links = card?.querySelectorAll(".adminbot-calendar__card-description a");
+    expect(links).toHaveLength(2);
+    expect(links?.[0]?.getAttribute("href")).toBe("https://utoronto.zoom.us/j/869");
+    expect(links?.[0]?.getAttribute("rel")).toBe("noreferrer noopener");
+  });
+
+  it("does not execute markup someone put in a description", () => {
+    const container = renderToDiv(
+      state({
+        ...withGuests,
+        calendarEvents: [
+          {
+            id: "evt-1",
+            summary: "Hostile",
+            start: "2026-09-15T13:00:00-04:00",
+            description: '<img src=x onerror="alert(1)"><script>alert(2)</script>text',
+          },
+        ],
+      } as Partial<AppViewState>),
+    );
+    const card = container.querySelector('[data-testid="calendar-event-card"]');
+    expect(card?.querySelector("script")).toBeNull();
+    expect(card?.querySelector("img")).toBeNull();
+    expect(card?.textContent).toContain("text");
+  });
+
   // "Who is on this meeting" is a question about people, so the roster answers it where it can.
   it("names the guests it recognises and keeps the address for the ones it does not", () => {
     const container = renderToDiv(state(withGuests));
