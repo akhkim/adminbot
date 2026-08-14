@@ -2,25 +2,32 @@ import { describe, expect, it } from "vitest";
 import { feedbackConfigForTab } from "./feedback-tab.ts";
 
 describe("feedbackConfigForTab", () => {
-  it("returns a config for every AdminBot feature tab", () => {
+  it("returns a config for every member-visible AdminBot tab", () => {
     for (const tab of [
       "dashboard",
       "profile",
       "adminbotTimeAvailability",
       "myWork",
       "labSharing",
-      "adminbot",
-      "adminbotRegistrations",
-      "adminbotOnboarding",
-      "adminbotReimbursements",
-      "adminbotSettings",
       "adminbotMembers",
-      "adminbotPapers",
-      "adminbotAnnouncements",
-      "adminbotCalendar",
+      "adminbotReimbursements",
       "adminbotDeadlines",
     ] as const) {
       expect(feedbackConfigForTab(tab)).not.toBeNull();
+    }
+  });
+
+  it("returns null for admin-only AdminBot tabs", () => {
+    for (const tab of [
+      "adminbot",
+      "adminbotRegistrations",
+      "adminbotOnboarding",
+      "adminbotSettings",
+      "adminbotPapers",
+      "adminbotAnnouncements",
+      "adminbotCalendar",
+    ] as const) {
+      expect(feedbackConfigForTab(tab)).toBeNull();
     }
   });
 

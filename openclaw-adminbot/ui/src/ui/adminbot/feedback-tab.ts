@@ -23,15 +23,8 @@ export const FEEDBACK_TABS: Partial<Record<Tab, FeedbackConfig>> = {
   },
   myWork: { featureId: "my-work", githubFile: file("my-work.ts") },
   labSharing: { featureId: "lab-sharing", githubFile: file("lab-sharing.ts") },
-  adminbot: { featureId: "actions", githubFile: file("admin.ts") },
-  adminbotRegistrations: { featureId: "registrations", githubFile: file("registrations.ts") },
-  adminbotOnboarding: { featureId: "onboarding", githubFile: file("onboarding.ts") },
-  adminbotReimbursements: { featureId: "reimbursements", githubFile: file("reimbursements.ts") },
-  adminbotSettings: { featureId: "settings", githubFile: file("admin.ts") },
   adminbotMembers: { featureId: "members", githubFile: file("admin.ts") },
-  adminbotPapers: { featureId: "papers", githubFile: file("admin.ts") },
-  adminbotAnnouncements: { featureId: "announcements", githubFile: file("admin.ts") },
-  adminbotCalendar: { featureId: "calendar", githubFile: file("calendar.ts") },
+  adminbotReimbursements: { featureId: "reimbursements", githubFile: file("reimbursements.ts") },
   adminbotDeadlines: { featureId: "deadlines", githubFile: file("deadlines.ts") },
 };
 
