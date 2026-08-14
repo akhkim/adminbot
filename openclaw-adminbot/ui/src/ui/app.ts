@@ -28,10 +28,18 @@ import {
   type AdminBotReimbursementState,
   sendOnboardingGuide as sendOnboardingGuideController,
 } from "./adminbot/controllers/admin.ts";
+import {
+  createSchoolRow,
+  restoreAdminBotLettersDraft,
+  restoreAdminBotLogisticsDraft,
+  type RecommendationSchool,
+} from "./adminbot/data/logistics-draft.ts";
+import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
+import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { RegistrationsLoadError } from "./adminbot/data/registrations.ts";
+import type { LogisticsMode, LogisticsTemplate } from "./adminbot/views/logistics.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
 import type { ProfileAccountCheck } from "./adminbot/views/profile-account-check.ts";
-import type { MemberMap } from "./adminbot/data/member-map.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
@@ -523,6 +531,27 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMemberMap: MemberMap | null = null;
   @state() adminBotMemberMapLoading = false;
   @state() adminBotTimeAvailabilityMemberId = "";
+  @state() adminBotLogisticsSignatureFiles: File[] = [];
+  @state() adminBotLogisticsDescription = "";
+  @state() adminBotLogisticsAttachments: File[] = [];
+  @state() adminBotLogisticsSaving = false;
+  @state() adminBotLogisticsSavedAt: number | null = null;
+  @state() adminBotLogisticsSaveError: string | null = null;
+  // Document Signature is the template the tab opens on: it is the request members make most, and
+  // landing on the picker alone would leave the page with nothing to do.
+  @state() adminBotLogisticsTemplate: LogisticsTemplate = "documentSignature";
+  // Admins land on the same page members do; reading everyone's requests is a deliberate step.
+  @state() adminBotLogisticsMode: LogisticsMode = "make";
+  @state() adminBotLogisticsRequests: LogisticsRequest[] = [];
+  @state() adminBotLogisticsRequestsLoading = false;
+  @state() adminBotLogisticsOpenRequestId: string | null = null;
+  // One blank row so the table opens ready to type in rather than empty.
+  @state() adminBotLettersSchools: RecommendationSchool[] = [createSchoolRow()];
+  @state() adminBotLettersCvOverleafUrl = "";
+  @state() adminBotLettersDriveFolderUrl = "";
+  @state() adminBotLettersSaving = false;
+  @state() adminBotLettersSavedAt: number | null = null;
+  @state() adminBotLettersSaveError: string | null = null;
   // A month of weekly bins is the span most schedules are planned over: long enough to see a
   // commitment start, short enough that each bar is still a real week.
   @state() adminBotTimeAvailabilityRange: TimeAvailabilityRange = "month";
@@ -912,6 +941,11 @@ export class OpenClawApp extends LitElement {
     handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
     this.nativeBridgeCleanup = initNativeBridge(this);
     void this.initWebPushState();
+    // Put saved logistics drafts back on screen, one per request template. Fire-and-forget and
+    // silent on failure: it is a convenience the member did not ask for on this visit, so it must
+    // never block the first paint or surface an error of its own.
+    void restoreAdminBotLogisticsDraft(this);
+    void restoreAdminBotLettersDraft(this);
   }
 
   protected override firstUpdated() {

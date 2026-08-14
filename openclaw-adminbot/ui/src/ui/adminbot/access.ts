@@ -54,6 +54,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Whose time is committed where is lab-internal planning, not governance: any member may read
   // any member's schedule. Writing is separately restricted to your own record by the service.
   adminbotTimeAvailability: "member",
+  // Each template starts a request made in the viewer's own name, so it needs an account behind
+  // it -- a visitor has no identity for AdminBot to route the signature or the letter back to.
+  adminbotLogistics: "member",
   chat: "member",
   // Home for anyone signed in. Every card on it is gated on the viewer's own role, so the page
   // never needs privilege beyond having an account.

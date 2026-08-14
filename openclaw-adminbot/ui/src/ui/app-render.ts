@@ -36,6 +36,11 @@ import {
 } from "./adminbot/controllers/admin.ts";
 import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
 import {
+  saveAdminBotLettersDraft,
+  saveAdminBotLogisticsDraft,
+} from "./adminbot/data/logistics-draft.ts";
+import { loadAdminBotLogisticsRequests } from "./adminbot/data/logistics-requests.ts";
+import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
@@ -48,6 +53,7 @@ import { renderDashboard } from "./adminbot/views/dashboard.ts";
 import { renderLabSharing } from "./adminbot/views/lab-sharing.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate } from "./adminbot/views/login-gate.ts";
+import { renderAdminBotLogistics } from "./adminbot/views/logistics.ts";
 import { renderMyWork } from "./adminbot/views/my-work.ts";
 import { renderOnboardingChecklist } from "./adminbot/views/onboarding-checklist.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
@@ -274,6 +280,21 @@ function runUiTask<Args extends unknown[]>(
   return (...args) => {
     void task(...args);
   };
+}
+
+/**
+ * Who a request saved in this browser belongs to.
+ *
+ * The drafts carry no owner -- they never leave the device that typed them, so there was nobody
+ * else they could belong to. The roster name is what an admin recognises; the member id is the
+ * fallback while the roster is still loading, and the last resort names the device's user at all.
+ */
+function adminBotViewerName(state: AppViewState): string {
+  const memberId = state.memberId;
+  const member = memberId
+    ? state.adminBotData.members?.find((candidate) => candidate.id === memberId)
+    : undefined;
+  return member?.name?.trim() || memberId || t("logistics.requests.you");
 }
 
 function renderSettingsSectionNav(state: AppViewState) {
@@ -2722,6 +2743,69 @@ export function renderApp(state: AppViewState) {
             `
           : nothing}
         ${state.tab === "labSharing" ? renderLabSharing() : nothing}
+        ${state.tab === "adminbotLogistics"
+          ? renderAdminBotLogistics({
+              role: accessRole,
+              mode: state.adminBotLogisticsMode,
+              onModeChange: (mode) => {
+                state.adminBotLogisticsMode = mode;
+                state.adminBotLogisticsOpenRequestId = null;
+                if (mode === "view") {
+                  // Re-read on every entry rather than once: the admin may have saved a request
+                  // themselves since the last look, and the list is cheap.
+                  void loadAdminBotLogisticsRequests(state, adminBotViewerName(state));
+                }
+              },
+              requests: {
+                requests: state.adminBotLogisticsRequests,
+                loading: state.adminBotLogisticsRequestsLoading,
+                openRequestId: state.adminBotLogisticsOpenRequestId,
+                onOpenRequest: (requestId) => {
+                  state.adminBotLogisticsOpenRequestId = requestId;
+                },
+              },
+              template: state.adminBotLogisticsTemplate,
+              onTemplateChange: (template) => {
+                state.adminBotLogisticsTemplate = template;
+              },
+              signature: {
+                files: state.adminBotLogisticsSignatureFiles,
+                onFilesChange: (files) => {
+                  state.adminBotLogisticsSignatureFiles = files;
+                },
+                description: state.adminBotLogisticsDescription,
+                onDescriptionChange: (description) => {
+                  state.adminBotLogisticsDescription = description;
+                },
+                attachments: state.adminBotLogisticsAttachments,
+                onAttachmentsChange: (files) => {
+                  state.adminBotLogisticsAttachments = files;
+                },
+                saving: state.adminBotLogisticsSaving,
+                savedAt: state.adminBotLogisticsSavedAt,
+                saveError: state.adminBotLogisticsSaveError,
+                onSave: () => void saveAdminBotLogisticsDraft(state),
+              },
+              letters: {
+                schools: state.adminBotLettersSchools,
+                onSchoolsChange: (schools) => {
+                  state.adminBotLettersSchools = schools;
+                },
+                cvOverleafUrl: state.adminBotLettersCvOverleafUrl,
+                onCvOverleafUrlChange: (url) => {
+                  state.adminBotLettersCvOverleafUrl = url;
+                },
+                driveFolderUrl: state.adminBotLettersDriveFolderUrl,
+                onDriveFolderUrlChange: (url) => {
+                  state.adminBotLettersDriveFolderUrl = url;
+                },
+                saving: state.adminBotLettersSaving,
+                savedAt: state.adminBotLettersSavedAt,
+                saveError: state.adminBotLettersSaveError,
+                onSave: () => void saveAdminBotLettersDraft(state),
+              },
+            })
+          : nothing}
         ${state.tab === "adminbotTimeAvailability"
           ? renderAdminBotTimeAvailability({
               members: state.adminBotData.members ?? [],

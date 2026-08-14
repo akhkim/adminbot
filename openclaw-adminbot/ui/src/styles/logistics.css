@@ -1,0 +1,553 @@
+/* Logistics Requests — the template picker.
+   Card, title and button chrome all come from components.css; this only lays the three templates
+   out and gives them a size the page-level .btn does not. */
+
+.logistics__templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+/* Wide enough that the three labels sit on one line each, and equal so the row reads as a set of
+   peers rather than three buttons sized by how long their text happens to be. */
+.logistics__template {
+  flex: 0 1 auto;
+  min-height: var(--control-h-lg);
+  padding: 0 var(--space-4);
+}
+
+.logistics__template-icon {
+  display: inline-flex;
+  color: var(--muted);
+  transition: color var(--duration-fast) var(--ease-out);
+}
+
+.logistics__template:hover .logistics__template-icon,
+.logistics__template.active .logistics__template-icon {
+  color: var(--accent);
+}
+
+/* The signature uploader sits in its own card under the templates. */
+
+.logistics-upload {
+  margin-top: var(--space-4);
+}
+
+/* Dashed border is the whole affordance -- it reads as "put something here" before any text is
+   read, and separates the zone from the solid-bordered cards around it. */
+.logistics-upload__drop {
+  display: grid;
+  justify-items: center;
+  gap: var(--space-1);
+  margin-top: var(--space-4);
+  padding: var(--space-8) var(--space-4);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg);
+  cursor: pointer;
+  text-align: center;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.logistics-upload__drop:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+}
+
+/* The file input inside is .sr-only, so it takes focus without being visible. Without this the
+   zone gives a keyboard user no indication of where they are. */
+.logistics-upload__drop:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+/* Toggled directly by the drag handlers rather than through app state. */
+.logistics-upload__drop.is-dragging {
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--accent-subtle);
+}
+
+.logistics-upload__drop-icon {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.logistics-upload__drop.is-dragging .logistics-upload__drop-icon {
+  color: var(--accent);
+}
+
+.logistics-upload__drop-title {
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+}
+
+.logistics-upload__drop-hint {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.logistics-upload__files {
+  display: grid;
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.logistics-upload__file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  font-size: var(--control-ui-text-sm);
+}
+
+.logistics-upload__file-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+/* Takes the slack so the size and the remove button stay pinned right, and a long filename
+   truncates instead of pushing them off the row. */
+.logistics-upload__file-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logistics-upload__file-size {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* The whole request lives in one card: two sections and an action row. A rule between them does
+   the separating that two separate cards used to, without the gap reading as "unrelated". */
+
+.logistics-request__section + .logistics-request__section {
+  margin-top: var(--space-6);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border);
+}
+
+/* .card-title and .card-sub are worn by an h3 and a p here, which arrive with UA margins. */
+.logistics-request__section > .card-title,
+.logistics-request__section > .card-sub {
+  margin: 0;
+}
+
+.logistics-request__section > .card-sub {
+  margin-top: var(--space-1);
+}
+
+.logistics-request__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+/* Takes the slack so both buttons sit hard right, and the status text stays next to them. */
+.logistics-request__status {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.logistics-request__status--error {
+  color: var(--danger);
+}
+
+@media (max-width: 640px) {
+  .logistics-request__actions {
+    flex-wrap: wrap;
+  }
+
+  /* Full width so the status never squeezes the buttons into two lines of their own. */
+  .logistics-request__status {
+    flex: 1 0 100%;
+  }
+}
+
+/* Supporting Content — two labelled fields inside the shared card. */
+
+.logistics-supporting__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin-top: var(--space-4);
+}
+
+/* The attachments group is labelled by a span rather than a <label>, since its drop zone is
+   already one and labels cannot nest. Match the field labels beside it so the two read as peers. */
+.logistics-supporting__label {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+}
+
+/* The shared drop zone carries its own top margin for the signature card, where it follows the
+   card subtitle. Here it follows a field label, which supplies the gap. */
+.logistics-supporting__field .logistics-upload__drop {
+  margin-top: 0;
+}
+
+/* .adminbot-form's input rules are scoped to that parent class and pin a control-height, which
+   would squash a textarea -- so this surface styles its own, as the reimbursement composer does. */
+.logistics-supporting__description {
+  width: 100%;
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--control-ui-input-text-size);
+  line-height: 1.55;
+  resize: vertical;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.logistics-supporting__description::placeholder {
+  color: var(--placeholder);
+}
+
+.logistics-supporting__description:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+  outline: none;
+}
+
+/* List of Schools — the table a Recommendation Letters request is built from.
+
+   Eight columns of typed-in text is more than any laptop fits, so the table keeps a width its
+   fields can actually be read at and the wrapper scrolls sideways. */
+
+.logistics-schools__scroll {
+  overflow-x: auto;
+  margin-top: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.logistics-schools__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--control-ui-text-sm);
+}
+
+.logistics-schools__head,
+.logistics-schools__cell {
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.logistics-schools__head {
+  border-bottom: 1px solid var(--border-strong);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+}
+
+/* The qualifier a column name needs to be understood ("if different"), under the name rather than
+   beside it so the heading row stays one line of names. */
+.logistics-schools__head-hint {
+  display: block;
+  max-width: 18rem;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 400;
+  white-space: normal;
+}
+
+.logistics-schools__table tbody tr:last-child .logistics-schools__cell {
+  border-bottom: 0;
+}
+
+/* Cells hold controls rather than text, so the row highlight lands on the gaps between them and
+   marks which row the pointer is on without tinting the inputs themselves. */
+.logistics-schools__row:hover .logistics-schools__cell {
+  background: var(--bg-hover);
+}
+
+/* Every typed field on this surface, in the table and beside it. .adminbot-form's input rules are
+   scoped to that parent class and pin a control height, so these carry their own box. */
+.logistics-schools__input,
+.logistics-link__input {
+  width: 100%;
+  border: 1px solid var(--input);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: var(--control-ui-input-text-size);
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
+}
+
+.logistics-schools__input::placeholder,
+.logistics-link__input::placeholder {
+  color: var(--placeholder);
+}
+
+.logistics-schools__input:focus-visible,
+.logistics-link__input:focus-visible {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--focus);
+  outline: none;
+}
+
+/* Tighter than a standalone field: a table row packs eight of these onto one line. */
+.logistics-schools__input {
+  min-width: 9rem;
+  padding: var(--space-1) var(--space-2);
+}
+
+/* A school name and a program title are the two long strings in a row; a note is a sentence. */
+.logistics-schools__cell--school .logistics-schools__input,
+.logistics-schools__cell--program .logistics-schools__input,
+.logistics-schools__cell--programLink .logistics-schools__input {
+  min-width: 12rem;
+}
+
+.logistics-schools__notes {
+  min-width: 16rem;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+/* Shrink-to-fit: the remove button is the one column that must not take width from the fields. */
+.logistics-schools__head--remove,
+.logistics-schools__cell--remove {
+  width: 1%;
+}
+
+.logistics-schools__empty {
+  padding: var(--space-8) var(--space-4);
+  color: var(--muted);
+  text-align: center;
+}
+
+.logistics-schools__actions {
+  display: flex;
+  margin-top: var(--space-4);
+}
+
+/* The two link fields under the table. A URL is one line however wide the card is, so the box stops
+   well short of the full width rather than stretching a 60-character link across the page. */
+.logistics-link__input {
+  max-width: 44rem;
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+}
+
+/* The way out to the lab's template folder, sitting at the end of the sentence that sends you
+   there. Small and inline, so it reads as part of the instruction rather than a button. */
+.logistics-link__folder {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--accent);
+  font-size: var(--control-ui-text-sm);
+  white-space: nowrap;
+}
+
+.logistics-link__folder svg {
+  width: 0.875em;
+  height: 0.875em;
+}
+
+/* The admin band above the templates, and the request list it opens. */
+
+.logistics-admin__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* Says who this band is for. An admin sharing a screen with a member should be able to see at a
+   glance which parts of the page the member does not have. */
+.logistics-admin__heading .pill {
+  flex: none;
+}
+
+.logistics-requests__scope {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.logistics-requests__scroll {
+  overflow-x: auto;
+  margin-top: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.logistics-requests__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--control-ui-text-sm);
+}
+
+.logistics-requests__head,
+.logistics-requests__cell {
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.logistics-requests__head {
+  border-bottom: 1px solid var(--border-strong);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  white-space: nowrap;
+}
+
+.logistics-requests__table tbody tr:last-child .logistics-requests__cell {
+  border-bottom: 0;
+}
+
+/* The whole row opens the request, so it has to look like it does. */
+.logistics-requests__row {
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.logistics-requests__row:hover {
+  background: var(--bg-hover);
+}
+
+/* The keyboard's way in, which is why it stays a real button rather than the row's click handler
+   wearing a role. Styled as the row's first column, not as a control. */
+.logistics-requests__open {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-strong);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.logistics-requests__open:hover {
+  color: var(--accent);
+}
+
+.logistics-requests__open:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.logistics-requests__empty {
+  margin: var(--space-6) 0 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* One saved request, opened. Read-only throughout: an admin reads here and acts elsewhere. */
+
+.logistics-detail__back {
+  margin-bottom: var(--space-4);
+}
+
+.logistics-detail__field {
+  margin-top: var(--space-6);
+}
+
+.logistics-detail__label {
+  display: block;
+  margin-bottom: var(--space-2);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+}
+
+.logistics-detail__value {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+  /* A description is typed into a textarea, so the line breaks in it are the member's own. */
+  white-space: pre-wrap;
+}
+
+.logistics-detail__link {
+  color: var(--accent);
+  font-size: var(--control-ui-text-sm);
+  overflow-wrap: anywhere;
+}
+
+.logistics-detail__files {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--control-ui-text-sm);
+}
+
+.logistics-detail__files li {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.logistics-detail__file-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--muted);
+}
+
+/* The read-only table borrows the form's column widths, but its cells hold text rather than
+   inputs, so they need the padding the inputs were providing. */
+.logistics-detail__cell {
+  padding: var(--space-3) var(--space-2);
+  color: var(--text);
+}
+
+/* Stack on a phone: three side-by-side buttons wrap into a ragged two-then-one row that reads as
+   an accident. Full-width rows keep the set legible. */
+@media (max-width: 640px) {
+  .logistics__templates {
+    flex-direction: column;
+  }
+
+  .logistics__template {
+    width: 100%;
+    justify-content: flex-start;
+  }
+}

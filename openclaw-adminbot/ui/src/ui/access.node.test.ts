@@ -94,6 +94,7 @@ describe("visibleTabsForRole", () => {
       "adminbotReimbursements",
       "adminbotMembers",
       "adminbotTimeAvailability",
+      "adminbotLogistics",
       "labSharing",
     ]);
   });
