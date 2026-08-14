@@ -2274,11 +2274,10 @@ describe("the calendar routes", () => {
     });
   });
 
-  it("keeps a plain member out of every calendar route", async () => {
-    const { baseUrl } = await startService({ calendarEventsReader: async () => [] });
-    const headers = await memberSession(baseUrl);
-
-    for (const [path, init] of [
+  // Every calendar route, listed once and reused by the three refusal tests below, so a route added
+  // later is either added here or visibly missing from all three.
+  function calendarRoutes(headers: Record<string, string>): Array<[string, RequestInit]> {
+    return [
       ["/calendar/events", { headers }],
       ["/calendar/event-draft", { method: "POST", headers, body: JSON.stringify({ prompt: "x" }) }],
       [
@@ -2290,12 +2289,51 @@ describe("the calendar routes", () => {
         },
       ],
       [
+        "/calendar/events/evt-1",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ summary: "x", start: "2026-09-01T13:00", end: "2026-09-01T14:00" }),
+        },
+      ],
+      [
         "/calendar/events/evt-1/invite",
         { method: "POST", headers, body: JSON.stringify({ attendees: ["a@b.com"] }) },
       ],
-    ] as const) {
-      const response = await fetch(`${baseUrl}${path}`, init as RequestInit);
-      expect(response.status).toBe(403);
+    ];
+  }
+
+  // A visitor never gets as far as the privilege check: the anonymous boundary refuses anything
+  // outside ANONYMOUS_ROUTES, and no calendar route is on that list.
+  it("keeps a signed-out visitor out of every calendar route", async () => {
+    const { baseUrl } = await startService({ calendarEventsReader: async () => [] });
+
+    for (const [path, init] of calendarRoutes({ "Content-Type": "application/json" })) {
+      const response = await fetch(`${baseUrl}${path}`, init);
+      expect(response.status, path).toBe(401);
+    }
+  });
+
+  // The shared service principal drives every agent tool call regardless of who is chatting, so
+  // treating it as admin here would let any member send calendar mail by asking the bot to.
+  it("keeps the service principal out of every calendar route", async () => {
+    const { baseUrl } = await startService({ calendarEventsReader: async () => [] });
+
+    for (const [path, init] of calendarRoutes(
+      serviceHeaders({ "Content-Type": "application/json" }),
+    )) {
+      const response = await fetch(`${baseUrl}${path}`, init);
+      expect(response.status, path).toBe(403);
+    }
+  });
+
+  it("keeps a plain member out of every calendar route", async () => {
+    const { baseUrl } = await startService({ calendarEventsReader: async () => [] });
+    const headers = await memberSession(baseUrl);
+
+    for (const [path, init] of calendarRoutes(headers)) {
+      const response = await fetch(`${baseUrl}${path}`, init);
+      expect(response.status, path).toBe(403);
     }
   });
 

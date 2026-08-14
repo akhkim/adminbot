@@ -100,13 +100,40 @@ describe("visibleTabsForRole", () => {
 
   it("keeps governance and operator surfaces out of a member's sidebar", () => {
     const member = visibleTabsForRole(ALL_TABS, "member");
-    for (const tab of ["adminbot", "adminbotSettings", "adminbotAnnouncements", "cron", "config"]) {
+    for (const tab of [
+      "adminbot",
+      "adminbotSettings",
+      "adminbotAnnouncements",
+      // Writes to the shared calendar and mails people, with no approval queue behind it.
+      "adminbotCalendar",
+      "cron",
+      "config",
+    ]) {
       expect(member).not.toContain(tab);
     }
   });
 
   it("shows an admin everything", () => {
     expect(visibleTabsForRole(ALL_TABS, "admin")).toEqual([...ALL_TABS]);
+  });
+});
+
+// The Calendar tab sends for real — a member or a visitor reaching it, even by typing the path,
+// would be looking at controls that mail the lab.
+describe("the Calendar tab", () => {
+  it("is admin-only in the table", () => {
+    expect(minimumRoleForTab("adminbotCalendar")).toBe("admin");
+  });
+
+  it("sends a visitor and a plain member somewhere else when they deep-link to it", () => {
+    expect(resolveAccessibleTab("adminbotCalendar", "anonymous")).not.toBe("adminbotCalendar");
+    expect(resolveAccessibleTab("adminbotCalendar", "member")).not.toBe("adminbotCalendar");
+    expect(resolveAccessibleTab("adminbotCalendar", "admin")).toBe("adminbotCalendar");
+  });
+
+  it("is not in a visitor's or a member's sidebar", () => {
+    expect(visibleTabsForRole(ALL_TABS, "anonymous")).not.toContain("adminbotCalendar");
+    expect(visibleTabsForRole(ALL_TABS, "member")).not.toContain("adminbotCalendar");
   });
 });
 

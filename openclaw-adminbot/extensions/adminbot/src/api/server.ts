@@ -1619,11 +1619,6 @@ function requirePrivileged(res: ServerResponse, principal: AdminBotPrincipal): b
   return false;
 }
 
-// Escalation-sensitive governance (global settings, sensitive-info read/write, registration
-// approve/reject) must be driven by a real member session. The shared service principal is used by
-// every agent tool call regardless of which member is chatting, so treating it as admin here would
-// let any signed-in member perform these actions through the agent. Require an admin member
-// Bearer session and deny the service principal outright.
 function readStringList(value: unknown): string[] {
   if (!Array.isArray(value)) {
     return [];
@@ -1683,6 +1678,11 @@ async function runCalendarAction(
   });
 }
 
+// Escalation-sensitive governance (global settings, sensitive-info read/write, registration
+// approve/reject) must be driven by a real member session. The shared service principal is used by
+// every agent tool call regardless of which member is chatting, so treating it as admin here would
+// let any signed-in member perform these actions through the agent. Require an admin member
+// Bearer session and deny the service principal outright.
 function requireMemberPrivileged(res: ServerResponse, principal: AdminBotPrincipal): boolean {
   if (principal.kind === "service") {
     sendJson(res, 403, {
