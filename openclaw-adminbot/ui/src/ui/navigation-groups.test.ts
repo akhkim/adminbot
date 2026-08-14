@@ -46,7 +46,9 @@ describe("TAB_GROUPS", () => {
     const byLabel = (label: string) => TAB_GROUPS.find((group) => group.label === label)?.tabs;
 
     expect(byLabel("home")).toEqual(["dashboard"]);
-    expect(byLabel("myProfile")).toEqual(["profile"]);
+    // Your own schedule is a thing you edit about yourself, so it sits with your profile rather
+    // than among the shared tools.
+    expect(byLabel("myProfile")).toEqual(["profile", "adminbotTimeAvailability"]);
     // Active Papers is the lab-wide pipeline, so it lives under Admin now, not "my" work.
     expect(byLabel("myProjects")).toEqual(["myWork"]);
     expect(byLabel("generalTools")).toEqual([
@@ -54,7 +56,6 @@ describe("TAB_GROUPS", () => {
       "adminbotDeadlines",
       "adminbotReimbursements",
       "adminbotMembers",
-      "adminbotTimeAvailability",
     ]);
     expect(byLabel("labSharing")).toEqual(["labSharing"]);
     expect(byLabel("admin")).toEqual([

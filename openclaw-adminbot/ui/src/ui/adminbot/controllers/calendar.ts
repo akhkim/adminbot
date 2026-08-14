@@ -26,6 +26,7 @@ import {
   type CalendarEvent,
   type CalendarEventDraft,
 } from "../auth/session.ts";
+import { monthWindow } from "../calendar-month.ts";
 import { ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE, type AdminBotHost } from "./admin.ts";
 
 const SIGN_IN_FIRST = "Sign in with an admin account to use the calendar.";
@@ -54,8 +55,11 @@ export async function loadAdminBotCalendar(host: AdminBotHost): Promise<void> {
   host.calendarEventsLoading = true;
   host.calendarEventsError = null;
   try {
+    // Whatever month the grid is on, not a rolling window: navigating to November and seeing
+    // nothing because the first load only covered two months would look like an empty calendar.
+    const month = host.calendarMonth;
     const result = await fetchCalendarEvents(
-      {},
+      { ...(month ? monthWindow(month) : {}), max: 250 },
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
@@ -73,12 +77,26 @@ export async function loadAdminBotCalendar(host: AdminBotHost): Promise<void> {
   }
 }
 
+/** Appends one turn to the transcript the chat panel renders. */
+function say(host: AdminBotHost, role: "user" | "assistant", content: string): void {
+  host.calendarMessages = [...(host.calendarMessages ?? []), { role, content }];
+}
+
+/** What the assistant says back once it has a draft, in the words a person would use. */
+function describeDraft(draft: CalendarEventDraft, editing: boolean): string {
+  const when = draft.end ? `${draft.start} to ${draft.end}` : draft.start;
+  const where = draft.location ? `, at ${draft.location}` : "";
+  return editing
+    ? `That would leave it as "${draft.summary}", ${when}${where}. Check it on the right, then update the event.`
+    : `Drafted "${draft.summary}", ${when}${where}. Check it on the right, then add it to the calendar.`;
+}
+
 /**
- * Drafts from the prompt box.
+ * One turn of the conversation: the instruction goes up, a draft comes back.
  *
- * With an event selected and edit mode on, the instruction is applied to that event and the model
- * is told what it currently says; otherwise it composes a new one. Same draft shape either way, so
- * the review form does not fork.
+ * With an event selected the instruction is applied to that event and the model is told what it
+ * currently says; otherwise it composes a new one. Same draft shape either way, so the card beside
+ * the conversation does not fork.
  */
 export async function requestAdminBotCalendarDraft(host: AdminBotHost): Promise<void> {
   const prompt = (host.calendarPrompt ?? "").trim();
@@ -94,6 +112,10 @@ export async function requestAdminBotCalendarDraft(host: AdminBotHost): Promise<
   const editing = host.calendarEditingEventId
     ? (host.calendarEvents ?? []).find((event) => event.id === host.calendarEditingEventId)
     : undefined;
+  // The instruction joins the transcript and leaves the box, the way a chat does — retyping it
+  // after every answer is what makes a form feel like a form.
+  say(host, "user", prompt);
+  host.calendarPrompt = "";
   host.calendarDraftBusy = true;
   host.calendarDraftError = null;
   try {
@@ -118,10 +140,15 @@ export async function requestAdminBotCalendarDraft(host: AdminBotHost): Promise<
       resolveAdminBotBaseUrl(host.settings),
     );
     if (!result.ok) {
-      host.calendarDraftError = failureText(result, "Could not draft that event.");
+      const text = failureText(result, "Could not draft that event.");
+      host.calendarDraftError = text;
+      // Said in the transcript as well as in the callout: the conversation is where the reader is
+      // looking, and a refusal is part of it.
+      say(host, "assistant", text);
       return;
     }
     host.calendarDraft = result.value;
+    say(host, "assistant", describeDraft(result.value, Boolean(editing)));
   } finally {
     host.calendarDraftBusy = false;
   }
@@ -178,6 +205,7 @@ export async function saveAdminBotCalendarEvent(host: AdminBotHost): Promise<voi
       kind: "success",
       text: editingId ? "Event updated." : "Event added to the calendar.",
     };
+    say(host, "assistant", editingId ? "Updated." : "Added to the calendar.");
     host.calendarDraft = null;
     host.calendarPrompt = "";
     host.calendarEditingEventId = null;

@@ -132,6 +132,34 @@ describe("the invite panel", () => {
     expect(matches?.textContent).toContain("writing for NeurIPS 2026");
   });
 
+  it("points back at the calendar when no event is selected", () => {
+    const container = renderToDiv(state());
+    expect(container.querySelector('[data-testid="calendar-no-event"]')?.textContent).toContain(
+      "Pick an event on the calendar above",
+    );
+    expect(container.querySelector('[data-testid="calendar-selected-event"]')).toBeNull();
+  });
+
+  it("names the selected event, and what it already has", () => {
+    const container = renderToDiv(
+      state({
+        calendarSelectedEventId: "evt-1",
+        calendarEvents: [
+          {
+            id: "evt-1",
+            summary: "Lab retreat",
+            start: "2026-09-01T13:00:00-04:00",
+            location: "DCS lounge",
+            attendees: ["ada@cs.toronto.edu"],
+          },
+        ],
+      } as Partial<AppViewState>),
+    );
+    const selected = container.querySelector('[data-testid="calendar-selected-event"]');
+    expect(selected?.textContent).toContain("Lab retreat");
+    expect(selected?.textContent).toContain("1 already invited");
+  });
+
   it("cannot send until an event is picked", () => {
     const container = renderToDiv(
       state({ calendarAudience: { conference: "NeurIPS 2026" } } as Partial<AppViewState>),
@@ -233,9 +261,12 @@ describe("the two-step send", () => {
 });
 
 describe("editing an event with a prompt", () => {
-  it("aims the instruction box at the event and clears what was there", () => {
+  // Clicking the event on the calendar is how you aim the assistant at it — there is one picker,
+  // and picking is what starts an edit.
+  it("aims the assistant at the event and clears the draft that was there", () => {
     const view = state({
-      calendarPrompt: "half-typed instruction for something else",
+      calendarMonth: "2026-09-01",
+      calendarEvents: [{ id: "evt-1", summary: "Lab retreat", start: "2026-09-15T13:00:00-04:00" }],
       calendarDraft: {
         summary: "Old draft",
         start: "2026-08-18T13:00",
@@ -244,10 +275,9 @@ describe("editing an event with a prompt", () => {
     } as Partial<AppViewState>);
     const container = renderToDiv(view);
     container
-      .querySelector<HTMLButtonElement>('[data-testid="calendar-edit-evt-1"]')
+      .querySelector<HTMLButtonElement>('[data-testid="calendar-chip-evt-1"]')
       ?.dispatchEvent(new Event("click", { bubbles: true }));
     expect(view.calendarEditingEventId).toBe("evt-1");
-    expect(view.calendarPrompt).toBe("");
     expect(view.calendarDraft).toBeNull();
   });
 
@@ -280,29 +310,137 @@ describe("editing an event with a prompt", () => {
   });
 });
 
-describe("the embed", () => {
-  it("shows the calendar the service says it read", () => {
-    const container = renderToDiv(
-      state({
-        calendarSource: {
-          id: "jinesis.lab@gmail.com",
-          timezone: "America/Toronto",
-          embed_url:
-            "https://calendar.google.com/calendar/embed?src=jinesis.lab%40gmail.com&ctz=America%2FToronto",
-        },
-      } as Partial<AppViewState>),
-    );
-    const frame = container.querySelector<HTMLIFrameElement>(".adminbot-calendar__embed");
-    expect(frame?.getAttribute("src")).toContain("jinesis.lab%40gmail.com");
-    expect(container.querySelector('[data-testid="calendar-embed"]')?.textContent).toContain(
-      "America/Toronto",
-    );
+describe("the month grid", () => {
+  const september = {
+    calendarMonth: "2026-09-01",
+    calendarEvents: [
+      {
+        id: "evt-1",
+        summary: "Lab retreat",
+        start: "2026-09-15T13:00:00-04:00",
+        end: "2026-09-15T17:00:00-04:00",
+      },
+      { id: "evt-2", summary: "Reading week", start: "2026-09-21", all_day: true },
+    ],
+    calendarSource: {
+      id: "jinesis.lab@gmail.com",
+      timezone: "America/Toronto",
+      embed_url:
+        "https://calendar.google.com/calendar/embed?src=jinesis.lab%40gmail.com&ctz=America%2FToronto",
+    },
+  } as Partial<AppViewState>;
+
+  it("draws the month with a cell per day and the events on their own days", () => {
+    const container = renderToDiv(state(september));
+    expect(container.querySelector('[data-testid="calendar-grid"]')).not.toBeNull();
+    expect(
+      container.querySelector('[data-testid="calendar-day-2026-09-15"]')?.textContent,
+    ).toContain("Lab retreat");
+    expect(
+      container.querySelector('[data-testid="calendar-day-2026-09-21"]')?.textContent,
+    ).toContain("Reading week");
+    // Not on a day it does not belong to.
+    expect(
+      container.querySelector('[data-testid="calendar-day-2026-09-16"]')?.textContent,
+    ).not.toContain("Lab retreat");
   });
 
-  // Before the first read the tab does not know which calendar it is on, and guessing one would
-  // show a calendar the writes do not touch.
-  it("shows no calendar until the service names one", () => {
-    expect(renderToDiv(state()).querySelector('[data-testid="calendar-embed"]')).toBeNull();
+  it("names the month and offers the calendar it is drawing", () => {
+    const container = renderToDiv(state(september));
+    expect(container.querySelector('[data-testid="calendar-month"]')?.textContent).toContain(
+      "September 2026",
+    );
+    expect(
+      container.querySelector('[data-testid="calendar-embed-link"]')?.getAttribute("href"),
+    ).toContain("jinesis.lab%40gmail.com");
+  });
+
+  // Moving months has to fetch that month, or the grid is empty past whatever the first load
+  // happened to cover.
+  it("reloads when the month changes", () => {
+    const loadCalendarEvents = vi.fn().mockResolvedValue(undefined);
+    const view = state({ ...september, loadCalendarEvents } as Partial<AppViewState>);
+    const container = renderToDiv(view);
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="calendar-month-next"]')
+      ?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(view.calendarMonth).toBe("2026-10-01");
+    expect(loadCalendarEvents).toHaveBeenCalledTimes(1);
+  });
+
+  // One click on an event is how you reach both of the things you can do to an existing one.
+  it("selects an event and aims the assistant at it when a chip is clicked", () => {
+    const view = state(september);
+    const container = renderToDiv(view);
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="calendar-chip-evt-1"]')
+      ?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(view.calendarSelectedEventId).toBe("evt-1");
+    expect(view.calendarEditingEventId).toBe("evt-1");
+  });
+
+  it("reports an unreadable calendar on the grid itself", () => {
+    const container = renderToDiv(
+      state({
+        ...september,
+        calendarEvents: [],
+        calendarEventsError: "could not read the calendar: gog: no token",
+      } as Partial<AppViewState>),
+    );
+    expect(container.querySelector('[data-testid="calendar-month"]')?.textContent).toContain(
+      "could not read the calendar",
+    );
+  });
+});
+
+describe("the assistant", () => {
+  it("greets with an example instead of an empty box", () => {
+    const container = renderToDiv(state());
+    expect(
+      container.querySelector('[data-testid="calendar-chat-greeting"]')?.textContent,
+    ).toContain("reading group");
+  });
+
+  it("shows the exchange as a conversation", () => {
+    const container = renderToDiv(
+      state({
+        calendarMessages: [
+          { role: "user", content: "lunch tuesday at 1" },
+          { role: "assistant", content: 'Drafted "Reading group lunch".' },
+        ],
+      } as Partial<AppViewState>),
+    );
+    const log = container.querySelector('[role="log"]');
+    expect(log?.textContent).toContain("lunch tuesday at 1");
+    expect(log?.textContent).toContain("Reading group lunch");
+    expect(log?.querySelectorAll(".adminbot-calendar__message--user")).toHaveLength(1);
+    expect(log?.querySelectorAll(".adminbot-calendar__message--assistant")).toHaveLength(1);
+  });
+
+  it("says it is working while a draft is in flight", () => {
+    const container = renderToDiv(state({ calendarDraftBusy: true } as Partial<AppViewState>));
+    expect(container.querySelector('[data-testid="calendar-chat-thinking"]')).not.toBeNull();
+  });
+
+  it("clears the conversation on Start over", () => {
+    const view = state({
+      calendarMessages: [{ role: "user", content: "x" }],
+      calendarDraft: { summary: "x", start: "2026-08-18T13:00", end: "2026-08-18T14:00" },
+      calendarEditingEventId: "evt-1",
+    } as Partial<AppViewState>);
+    const container = renderToDiv(view);
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="calendar-chat-reset"]')
+      ?.dispatchEvent(new Event("click", { bubbles: true }));
+    expect(view.calendarMessages).toEqual([]);
+    expect(view.calendarDraft).toBeNull();
+    expect(view.calendarEditingEventId).toBeNull();
+  });
+
+  it("says the draft card is empty rather than showing blank fields", () => {
+    const container = renderToDiv(state());
+    expect(container.querySelector('[data-testid="calendar-draft-empty"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="calendar-draft"]')).toBeNull();
   });
 });
 

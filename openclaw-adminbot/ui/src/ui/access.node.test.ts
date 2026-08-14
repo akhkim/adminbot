@@ -88,12 +88,13 @@ describe("visibleTabsForRole", () => {
     expect(visibleTabsForRole(ALL_TABS, "member")).toEqual([
       "dashboard",
       "profile",
+      // Your own schedule, next to your own record.
+      "adminbotTimeAvailability",
       "myWork",
       "chat",
       "adminbotDeadlines",
       "adminbotReimbursements",
       "adminbotMembers",
-      "adminbotTimeAvailability",
       "labSharing",
     ]);
   });

@@ -13,6 +13,7 @@
 // event on the shared calendar, and mailing invitations — ask for a second click first, because
 // there is no approval queue standing between a typo and forty inboxes.
 import { html, nothing } from "lit";
+import { i18n } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import type { CalendarEvent } from "../auth/session.ts";
@@ -22,7 +23,17 @@ import {
   selectAudience,
   type AudienceFilter,
 } from "../calendar-audience.ts";
+import {
+  dayKeyInZone,
+  eventTimeLabel,
+  eventsByDay,
+  monthGrid,
+  monthLabel,
+  monthStartKey,
+  shiftMonth,
+} from "../calendar-month.ts";
 
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 const PRIVILEGE_LEVELS = ["external_collaborator", "trial", "member", "admin"] as const;
 const STATUSES = ["active", "part_time", "on_leave", "alumni", "external"] as const;
 
@@ -57,287 +68,397 @@ function eventDateLabel(event: CalendarEvent): string {
       });
 }
 
-function renderEmbed(state: AppViewState) {
+function renderMonth(state: AppViewState) {
   const source = state.calendarSource ?? null;
-  if (!source) {
-    return nothing;
-  }
+  const timezone = source?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const todayKey = dayKeyInZone(Date.now(), timezone);
+  const monthKey = state.calendarMonth ?? monthStartKey(todayKey);
+  const weeks = monthGrid(monthKey, todayKey);
+  const byDay = eventsByDay(state.calendarEvents ?? [], timezone);
+  const step = (months: number) => () => {
+    state.calendarMonth = shiftMonth(monthKey, months);
+    // The first load covered a window, not a month, so moving off it has to fetch what it shows.
+    void state.loadCalendarEvents?.();
+  };
+
   return html`
-    <section class="card adminbot-card adminbot-calendar__panel" data-testid="calendar-embed">
+    <section class="card adminbot-card adminbot-calendar__panel" data-testid="calendar-month">
       <div class="adminbot-calendar__panel-head">
         <div>
-          <div class="card-title">${source.id}</div>
+          <div class="card-title">${monthLabel(monthKey, i18n.getLocale())}</div>
           <div class="card-sub">
-            Everything below reads and writes this calendar (${source.timezone}).
+            ${source
+              ? `${source.id} · ${source.timezone}`
+              : "The lab calendar, as the service reads it."}
           </div>
         </div>
-        <a
-          class="btn btn--sm"
-          href=${source.embed_url}
-          target=${EXTERNAL_LINK_TARGET}
-          rel=${buildExternalLinkRel()}
-          data-testid="calendar-embed-link"
-          >Open in Google Calendar</a
-        >
+        <div class="adminbot-calendar__month-nav">
+          <button
+            type="button"
+            class="btn btn--sm"
+            data-testid="calendar-month-prev"
+            aria-label="Previous month"
+            @click=${step(-1)}
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            class="btn btn--sm"
+            data-testid="calendar-month-today"
+            @click=${() => {
+              state.calendarMonth = monthStartKey(todayKey);
+              void state.loadCalendarEvents?.();
+            }}
+          >
+            Today
+          </button>
+          <button
+            type="button"
+            class="btn btn--sm"
+            data-testid="calendar-month-next"
+            aria-label="Next month"
+            @click=${step(1)}
+          >
+            ›
+          </button>
+          ${source
+            ? html`<a
+                class="btn btn--sm"
+                href=${source.embed_url}
+                target=${EXTERNAL_LINK_TARGET}
+                rel=${buildExternalLinkRel()}
+                data-testid="calendar-embed-link"
+                >Open in Google</a
+              >`
+            : nothing}
+        </div>
       </div>
-      <iframe
-        class="adminbot-calendar__embed"
-        title="Lab calendar"
-        src=${source.embed_url}
-        loading="lazy"
-      ></iframe>
-      <!-- Google renders a sign-in wall inside the frame for anyone whose browser has no session
-           with access to this calendar. Nothing the app can fix from here, so the link above is
-           always offered rather than only when the frame fails — the frame cannot tell us. -->
-      <p class="adminbot-calendar__note">
-        Not showing? The embed needs a Google session with access to this calendar. The list below
-        comes from the service and does not.
-      </p>
+      ${state.calendarEventsError
+        ? html`<div class="callout danger" role="alert">${state.calendarEventsError}</div>`
+        : nothing}
+      <div class="adminbot-calendar__grid" data-testid="calendar-grid">
+        ${WEEKDAYS.map((day) => html`<div class="adminbot-calendar__weekday">${day}</div>`)}
+        ${weeks.flat().map((day) => {
+          const events = byDay.get(day.key) ?? [];
+          return html`
+            <div
+              class=${`adminbot-calendar__day${day.inMonth ? "" : " adminbot-calendar__day--muted"}${
+                day.isToday ? " adminbot-calendar__day--today" : ""
+              }`}
+              data-testid=${`calendar-day-${day.key}`}
+            >
+              <span class="adminbot-calendar__day-number">${day.day}</span>
+              ${events.map(
+                (event) => html`
+                  <button
+                    type="button"
+                    class=${`adminbot-calendar__chip${
+                      state.calendarSelectedEventId === event.id
+                        ? " adminbot-calendar__chip--selected"
+                        : ""
+                    }`}
+                    title=${event.summary}
+                    data-testid=${`calendar-chip-${event.id}`}
+                    @click=${() => {
+                      // One click picks the event for the invite panel and aims the instruction box
+                      // at it, since both of the things you can do to an existing event need it
+                      // selected.
+                      state.calendarSelectedEventId = event.id;
+                      state.calendarEditingEventId = event.id;
+                      state.calendarDraft = null;
+                      state.calendarConfirming = null;
+                    }}
+                  >
+                    <span class="adminbot-calendar__chip-time"
+                      >${eventTimeLabel(event, timezone, i18n.getLocale())}</span
+                    >
+                    <span class="adminbot-calendar__chip-name">${event.summary}</span>
+                  </button>
+                `,
+              )}
+            </div>
+          `;
+        })}
+      </div>
+      ${state.calendarEventsLoading
+        ? html`<p class="adminbot-calendar__note">Reading the calendar…</p>`
+        : nothing}
     </section>
   `;
 }
 
+/**
+ * The assistant half: a conversation, and the draft it has produced so far.
+ *
+ * Laid out like the reimbursement assistant because it is the same act — you describe something in
+ * words, a local model answers, and a structured result builds up beside the conversation. Reusing
+ * the shape means nobody has to learn a second way of talking to AdminBot.
+ */
 function renderDraftPanel(state: AppViewState) {
   const draft = state.calendarDraft ?? null;
   const busy = Boolean(state.calendarDraftBusy);
   const editing = state.calendarEditingEventId
     ? (state.calendarEvents ?? []).find((event) => event.id === state.calendarEditingEventId)
     : undefined;
+  const messages = state.calendarMessages ?? [];
+
   return html`
-    <section class="card adminbot-card adminbot-calendar__panel" data-testid="calendar-draft-panel">
-      <div class="card-title">${editing ? "Change an event" : "Add an event"}</div>
-      <div class="card-sub">
-        ${editing
-          ? html`Say what to change about <strong>${editing.summary}</strong>. The change comes back
-              here to check first.`
-          : "Write it the way you would say it. The draft comes back here to check first."}
-      </div>
-      ${editing
-        ? html`<div class="adminbot-calendar__editing" data-testid="calendar-editing">
-            <span>Editing "${editing.summary}"</span>
-            <button
-              type="button"
-              class="btn btn--sm"
-              data-testid="calendar-editing-clear"
-              @click=${() => {
-                state.calendarEditingEventId = null;
-                state.calendarDraft = null;
-              }}
-            >
-              Compose a new event instead
-            </button>
-          </div>`
-        : nothing}
-      <form
-        class="adminbot-form"
-        @submit=${(event: Event) => {
-          event.preventDefault();
-          void state.requestCalendarDraft?.();
-        }}
+    <div class="adminbot-calendar__workspace">
+      <section
+        class="card adminbot-card adminbot-calendar__chat"
+        aria-label="Calendar assistant"
+        data-testid="calendar-draft-panel"
       >
-        <label class="adminbot-form__field adminbot-calendar__prompt">
-          <span>What is the event</span>
-          <textarea
-            rows="3"
-            data-testid="calendar-prompt"
-            placeholder=${state.calendarEditingEventId
-              ? "move it to Thursday at 3, and change the room to BA 5256"
-              : "lunch with the reading group next Tuesday at 1, in the DCS lounge"}
-            .value=${state.calendarPrompt ?? ""}
-            @input=${(event: Event) => {
-              state.calendarPrompt = (event.target as HTMLTextAreaElement).value;
+        <div class="adminbot-calendar__chat-heading">
+          <div>
+            <div class="card-title">Calendar assistant</div>
+            <div class="card-sub">
+              Say what you want in words. Runs on the local AdminBot model, and nothing reaches the
+              calendar until you press the button.
+            </div>
+          </div>
+          <button
+            type="button"
+            class="btn btn--sm"
+            data-testid="calendar-chat-reset"
+            ?disabled=${busy}
+            @click=${() => {
+              state.calendarMessages = [];
+              state.calendarDraft = null;
+              state.calendarPrompt = "";
+              state.calendarEditingEventId = null;
+              state.calendarConfirming = null;
             }}
-          ></textarea>
-        </label>
-        <div class="adminbot-calendar__actions">
+          >
+            Start over
+          </button>
+        </div>
+        ${editing
+          ? html`<div class="adminbot-calendar__editing" data-testid="calendar-editing">
+              <span>Changing "${editing.summary}"</span>
+              <button
+                type="button"
+                class="btn btn--sm"
+                data-testid="calendar-editing-clear"
+                @click=${() => {
+                  state.calendarEditingEventId = null;
+                  state.calendarDraft = null;
+                }}
+              >
+                Add a new event instead
+              </button>
+            </div>`
+          : nothing}
+        <div class="adminbot-calendar__messages" role="log" aria-live="polite">
+          ${messages.length === 0
+            ? html`<div
+                class="adminbot-calendar__message adminbot-calendar__message--assistant"
+                data-testid="calendar-chat-greeting"
+              >
+                <span>AdminBot</span>
+                <p>
+                  ${editing
+                    ? `Tell me what to change about "${editing.summary}" — for example, "move it to Thursday at 3 and put it in BA 5256".`
+                    : 'Describe an event and I will draft it. For example, "lunch with the reading group next Tuesday at 1, in the DCS lounge".'}
+                </p>
+              </div>`
+            : messages.map(
+                (message) => html`
+                  <div
+                    class="adminbot-calendar__message adminbot-calendar__message--${message.role}"
+                  >
+                    <span>${message.role === "assistant" ? "AdminBot" : "You"}</span>
+                    <p>${message.content}</p>
+                  </div>
+                `,
+              )}
+          ${busy
+            ? html`<div
+                class="adminbot-calendar__message adminbot-calendar__message--assistant"
+                data-testid="calendar-chat-thinking"
+              >
+                <span>AdminBot</span>
+                <p>Working on it…</p>
+              </div>`
+            : nothing}
+        </div>
+        ${state.calendarDraftError
+          ? html`<div class="callout danger" role="alert">${state.calendarDraftError}</div>`
+          : nothing}
+        <form
+          class="adminbot-calendar__composer"
+          @submit=${(event: Event) => {
+            event.preventDefault();
+            void state.requestCalendarDraft?.();
+          }}
+        >
+          <label class="adminbot-form__field">
+            <span>${editing ? "What should change" : "What is the event"}</span>
+            <textarea
+              name="prompt"
+              rows="3"
+              data-testid="calendar-prompt"
+              placeholder=${editing
+                ? "move it to Thursday at 3, and change the room to BA 5256"
+                : "lunch with the reading group next Tuesday at 1, in the DCS lounge"}
+              ?disabled=${busy}
+              .value=${state.calendarPrompt ?? ""}
+              @input=${(event: Event) => {
+                state.calendarPrompt = (event.target as HTMLTextAreaElement).value;
+              }}
+            ></textarea>
+          </label>
           <button
             type="submit"
-            class="btn"
+            class="btn btn--sm primary"
             data-testid="calendar-draft-submit"
             ?disabled=${busy || !(state.calendarPrompt ?? "").trim()}
           >
-            ${busy ? "Drafting…" : "Draft it"}
+            ${busy ? "Drafting…" : "Send to assistant"}
           </button>
-        </div>
-      </form>
-      ${state.calendarDraftError
-        ? html`<div class="callout danger" role="alert">${state.calendarDraftError}</div>`
+        </form>
+      </section>
+      ${renderDraftCard(state, draft, editing)}
+    </div>
+  `;
+}
+
+/** The structured result, beside the conversation — the reimbursement draft card's counterpart. */
+function renderDraftCard(
+  state: AppViewState,
+  draft: AppViewState["calendarDraft"],
+  editing: CalendarEvent | undefined,
+) {
+  if (!draft) {
+    return html`
+      <section class="card adminbot-card adminbot-calendar__draft-card">
+        <div class="card-title">Draft</div>
+        <p class="adminbot-calendar__note" data-testid="calendar-draft-empty">
+          Nothing drafted yet. What the assistant proposes shows up here, editable, before it
+          reaches the calendar.
+        </p>
+      </section>
+    `;
+  }
+  const field = (
+    label: string,
+    value: string,
+    key: "summary" | "start" | "end" | "location",
+    testId?: string,
+  ) => html`
+    <label class="adminbot-form__field">
+      <span>${label}</span>
+      <input
+        data-testid=${testId ?? ""}
+        .value=${value}
+        @input=${(event: Event) => {
+          state.calendarDraft = { ...draft, [key]: (event.target as HTMLInputElement).value };
+        }}
+      />
+    </label>
+  `;
+  return html`
+    <section class="card adminbot-card adminbot-calendar__draft-card" data-testid="calendar-draft">
+      <div class="card-title">${editing ? "After the change" : "Draft"}</div>
+      <div class="card-sub">Every field is editable before it reaches the calendar.</div>
+      <div class="adminbot-form adminbot-calendar__draft-fields">
+        ${field("Title", draft.summary, "summary", "calendar-draft-summary")}
+        ${field("Starts", draft.start, "start", "calendar-draft-start")}
+        ${field("Ends", draft.end, "end", "calendar-draft-end")}
+        ${field("Where", draft.location ?? "", "location")}
+        <label class="adminbot-form__field adminbot-calendar__wide">
+          <span>Details</span>
+          <textarea
+            rows="2"
+            .value=${draft.description ?? ""}
+            @input=${(event: Event) => {
+              state.calendarDraft = {
+                ...draft,
+                description: (event.target as HTMLTextAreaElement).value,
+              };
+            }}
+          ></textarea>
+        </label>
+      </div>
+      ${draft.timezone
+        ? html`<p class="adminbot-calendar__note">Times are read as ${draft.timezone}.</p>`
         : nothing}
-      ${draft
-        ? html`
-            <div class="adminbot-calendar__draft" data-testid="calendar-draft">
-              <div class="card-sub">Check this before filing it — every field is editable.</div>
-              <div class="adminbot-form adminbot-calendar__draft-fields">
-                <label class="adminbot-form__field">
-                  <span>Title</span>
-                  <input
-                    data-testid="calendar-draft-summary"
-                    .value=${draft.summary}
-                    @input=${(event: Event) => {
-                      state.calendarDraft = {
-                        ...draft,
-                        summary: (event.target as HTMLInputElement).value,
-                      };
-                    }}
-                  />
-                </label>
-                <label class="adminbot-form__field">
-                  <span>Starts</span>
-                  <input
-                    data-testid="calendar-draft-start"
-                    .value=${draft.start}
-                    @input=${(event: Event) => {
-                      state.calendarDraft = {
-                        ...draft,
-                        start: (event.target as HTMLInputElement).value,
-                      };
-                    }}
-                  />
-                </label>
-                <label class="adminbot-form__field">
-                  <span>Ends</span>
-                  <input
-                    data-testid="calendar-draft-end"
-                    .value=${draft.end}
-                    @input=${(event: Event) => {
-                      state.calendarDraft = {
-                        ...draft,
-                        end: (event.target as HTMLInputElement).value,
-                      };
-                    }}
-                  />
-                </label>
-                <label class="adminbot-form__field">
-                  <span>Where</span>
-                  <input
-                    .value=${draft.location ?? ""}
-                    @input=${(event: Event) => {
-                      state.calendarDraft = {
-                        ...draft,
-                        location: (event.target as HTMLInputElement).value,
-                      };
-                    }}
-                  />
-                </label>
-                <label class="adminbot-form__field adminbot-calendar__wide">
-                  <span>Details</span>
-                  <textarea
-                    rows="2"
-                    .value=${draft.description ?? ""}
-                    @input=${(event: Event) => {
-                      state.calendarDraft = {
-                        ...draft,
-                        description: (event.target as HTMLTextAreaElement).value,
-                      };
-                    }}
-                  ></textarea>
-                </label>
-              </div>
-              ${draft.timezone
-                ? html`<p class="adminbot-calendar__note">Times are read as ${draft.timezone}.</p>`
-                : nothing}
-              <div class="adminbot-calendar__actions">
-                ${state.calendarConfirming === "save"
-                  ? html`<span class="adminbot-calendar__confirm" role="status">
-                      ${editing
-                        ? "This updates the event for everyone already on it."
-                        : "This puts the event on the shared calendar."}
-                    </span>`
-                  : nothing}
-                <button
-                  type="button"
-                  class="btn"
-                  @click=${() => {
-                    state.calendarDraft = null;
-                    state.calendarConfirming = null;
-                  }}
-                >
-                  Discard
-                </button>
-                <button
-                  type="button"
-                  class="btn primary"
-                  data-testid="calendar-save-event"
-                  ?disabled=${Boolean(state.calendarBusy) || !draft.summary.trim()}
-                  @click=${() => {
-                    // Two clicks, because the first one is where a typo still costs nothing.
-                    if (state.calendarConfirming !== "save") {
-                      state.calendarConfirming = "save";
-                      return;
-                    }
-                    state.calendarConfirming = null;
-                    void state.saveCalendarEvent?.();
-                  }}
-                >
-                  ${state.calendarConfirming === "save"
-                    ? editing
-                      ? "Confirm update"
-                      : "Confirm — add it"
-                    : editing
-                      ? "Update this event"
-                      : "Add to calendar"}
-                </button>
-              </div>
-            </div>
-          `
-        : nothing}
+      <div class="adminbot-calendar__actions">
+        ${state.calendarConfirming === "save"
+          ? html`<span class="adminbot-calendar__confirm" role="status">
+              ${editing
+                ? "This updates the event for everyone already on it."
+                : "This puts the event on the shared calendar."}
+            </span>`
+          : nothing}
+        <button
+          type="button"
+          class="btn"
+          @click=${() => {
+            state.calendarDraft = null;
+            state.calendarConfirming = null;
+          }}
+        >
+          Discard
+        </button>
+        <button
+          type="button"
+          class="btn primary"
+          data-testid="calendar-save-event"
+          ?disabled=${Boolean(state.calendarBusy) || !draft.summary.trim()}
+          @click=${() => {
+            // Two clicks, because the first one is where a typo still costs nothing.
+            if (state.calendarConfirming !== "save") {
+              state.calendarConfirming = "save";
+              return;
+            }
+            state.calendarConfirming = null;
+            void state.saveCalendarEvent?.();
+          }}
+        >
+          ${state.calendarConfirming === "save"
+            ? editing
+              ? "Confirm update"
+              : "Confirm — add it"
+            : editing
+              ? "Update this event"
+              : "Add to calendar"}
+        </button>
+      </div>
     </section>
   `;
 }
 
-function renderEventList(state: AppViewState) {
-  const events = state.calendarEvents ?? [];
-  if (state.calendarEventsLoading) {
-    return html`<p class="adminbot-calendar__note">Reading the calendar…</p>`;
-  }
-  if (state.calendarEventsError) {
-    return html`<div class="callout danger" role="alert">${state.calendarEventsError}</div>`;
-  }
-  if (!events.length) {
-    return html`<p class="adminbot-calendar__note" data-testid="calendar-events-empty">
-      Nothing on the calendar in the next two months.
+/**
+ * Which event the invites would go to.
+ *
+ * Not a second picker: the month above is the picker, and two lists of the same events with
+ * different selections is how an operator invites people to the wrong one. This states what the
+ * calendar currently has selected and sends them back up if it is nothing.
+ */
+function renderSelectedEvent(state: AppViewState) {
+  const selected = (state.calendarEvents ?? []).find(
+    (event) => event.id === state.calendarSelectedEventId,
+  );
+  if (!selected) {
+    return html`<p class="adminbot-calendar__note" data-testid="calendar-no-event">
+      Pick an event on the calendar above to invite people to it.
     </p>`;
   }
   return html`
-    <ul class="adminbot-calendar__events" data-testid="calendar-events">
-      ${events.map(
-        (event) => html`
-          <li>
-            <label>
-              <input
-                type="radio"
-                name="calendarEvent"
-                value=${event.id}
-                ?checked=${state.calendarSelectedEventId === event.id}
-                @change=${() => {
-                  state.calendarSelectedEventId = event.id;
-                }}
-              />
-              <span class="adminbot-calendar__event-when">${eventDateLabel(event)}</span>
-              <span class="adminbot-calendar__event-name">${event.summary}</span>
-              ${event.location
-                ? html`<span class="adminbot-calendar__event-where">${event.location}</span>`
-                : nothing}
-            </label>
-            <button
-              type="button"
-              class="btn btn--sm adminbot-calendar__event-edit"
-              data-testid=${`calendar-edit-${event.id}`}
-              @click=${() => {
-                // Sends the instruction box up to this event. The draft and any half-typed
-                // instruction go with it: they were about a different event.
-                state.calendarEditingEventId = event.id;
-                state.calendarDraft = null;
-                state.calendarPrompt = "";
-                state.calendarConfirming = null;
-              }}
-            >
-              Change with a prompt
-            </button>
-          </li>
-        `,
-      )}
-    </ul>
+    <div class="adminbot-calendar__selected" data-testid="calendar-selected-event">
+      <span class="adminbot-calendar__event-when">${eventDateLabel(selected)}</span>
+      <span class="adminbot-calendar__event-name">${selected.summary}</span>
+      ${selected.location
+        ? html`<span class="adminbot-calendar__event-where">${selected.location}</span>`
+        : nothing}
+      ${selected.attendees?.length
+        ? html`<span class="adminbot-calendar__event-where"
+            >${selected.attendees.length} already invited</span
+          >`
+        : nothing}
+    </div>
   `;
 }
 
@@ -407,7 +528,7 @@ function renderInvitePanel(state: AppViewState) {
         </button>
       </div>
 
-      ${renderEventList(state)}
+      ${renderSelectedEvent(state)}
 
       <div class="adminbot-form adminbot-calendar__filters">
         ${renderFilterSelect({
@@ -542,7 +663,7 @@ function renderInvitePanel(state: AppViewState) {
 export function renderAdminBotCalendar(state: AppViewState) {
   return html`
     <div class="adminbot-calendar">
-      ${renderEmbed(state)} ${renderDraftPanel(state)} ${renderInvitePanel(state)}
+      ${renderMonth(state)} ${renderDraftPanel(state)} ${renderInvitePanel(state)}
     </div>
   `;
 }

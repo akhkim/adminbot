@@ -11,17 +11,14 @@ import { normalizeLowercaseStringOrEmpty } from "./string-coerce.ts";
 // sees only the two open tools inside "General Tools".
 export const TAB_GROUPS = [
   { label: "home", tabs: ["dashboard"] },
-  { label: "myProfile", tabs: ["profile"] },
+  // Time Availability sits here rather than in the shared tools: it is the viewer's own schedule
+  // that they edit, and only incidentally other people's that they read. Someone looking for
+  // "where do I say when I am free" looks under their own profile.
+  { label: "myProfile", tabs: ["profile", "adminbotTimeAvailability"] },
   { label: "myProjects", tabs: ["myWork"] },
   {
     label: "generalTools",
-    tabs: [
-      "chat",
-      "adminbotDeadlines",
-      "adminbotReimbursements",
-      "adminbotMembers",
-      "adminbotTimeAvailability",
-    ],
+    tabs: ["chat", "adminbotDeadlines", "adminbotReimbursements", "adminbotMembers"],
   },
   { label: "labSharing", tabs: ["labSharing"] },
   {

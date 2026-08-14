@@ -8528,7 +8528,9 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-reimbursement-chat,
-.adminbot-reimbursement-summary {
+.adminbot-reimbursement-summary,
+.adminbot-calendar__chat,
+.adminbot-calendar__draft-card {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -8540,7 +8542,8 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-reimbursement-chat__heading,
-.adminbot-reimbursement-summary__header {
+.adminbot-reimbursement-summary__header,
+.adminbot-calendar__chat-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -8553,7 +8556,8 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--ok);
 }
 
-.adminbot-reimbursement-messages {
+.adminbot-reimbursement-messages,
+.adminbot-calendar__messages {
   display: flex;
   min-height: 280px;
   max-height: 440px;
@@ -8567,11 +8571,13 @@ details[open] > .ov-expandable-toggle::after {
   background: var(--bg);
 }
 
-.adminbot-reimbursement-message {
+.adminbot-reimbursement-message,
+.adminbot-calendar__message {
   max-width: 88%;
 }
 
-.adminbot-reimbursement-message > span {
+.adminbot-reimbursement-message > span,
+.adminbot-calendar__message > span {
   display: block;
   margin: 0 0 var(--space-1) var(--space-2);
   color: var(--muted);
@@ -8580,7 +8586,8 @@ details[open] > .ov-expandable-toggle::after {
   letter-spacing: var(--tracking-tight);
 }
 
-.adminbot-reimbursement-message p {
+.adminbot-reimbursement-message p,
+.adminbot-calendar__message p {
   margin: 0;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
@@ -8593,26 +8600,31 @@ details[open] > .ov-expandable-toggle::after {
   overflow-wrap: anywhere;
 }
 
-.adminbot-reimbursement-message--user {
+.adminbot-reimbursement-message--user,
+.adminbot-calendar__message--user {
   align-self: flex-end;
 }
 
-.adminbot-reimbursement-message--user > span {
+.adminbot-reimbursement-message--user > span,
+.adminbot-calendar__message--user > span {
   margin-right: var(--space-2);
   text-align: right;
 }
 
-.adminbot-reimbursement-message--user p {
+.adminbot-reimbursement-message--user p,
+.adminbot-calendar__message--user p {
   border-color: var(--accent-2-muted);
   background: var(--accent-subtle);
 }
 
-.adminbot-reimbursement-composer {
+.adminbot-reimbursement-composer,
+.adminbot-calendar__composer {
   display: grid;
   gap: var(--space-3);
 }
 
-.adminbot-reimbursement-composer :is(input:not([type="file"]), textarea) {
+.adminbot-reimbursement-composer :is(input:not([type="file"]), textarea),
+.adminbot-calendar__composer textarea {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--input);
@@ -8778,7 +8790,8 @@ details[open] > .ov-expandable-toggle::after {
     grid-template-columns: 1fr;
   }
 
-  .adminbot-reimbursement-message {
+  .adminbot-reimbursement-message,
+  .adminbot-calendar__message {
     max-width: 100%;
   }
 }
@@ -9036,22 +9049,10 @@ details[open] > .ov-expandable-toggle::after {
   gap: var(--space-3);
 }
 
-.adminbot-calendar__prompt textarea {
-  width: 100%;
-  resize: vertical;
-}
-
 .adminbot-calendar__actions {
   display: flex;
   justify-content: flex-end;
   gap: var(--space-3);
-}
-
-.adminbot-calendar__draft {
-  display: grid;
-  gap: var(--space-3);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
 }
 
 .adminbot-calendar__draft-fields,
@@ -9066,15 +9067,154 @@ details[open] > .ov-expandable-toggle::after {
   grid-column: 1 / -1;
 }
 
-/* The calendar itself, as Google renders it. Read-only and deliberately not the source of truth
-   for anything the tab does — the list below it is what the writes act on — but seeing the week
-   you are editing beats trusting a list of rows. */
-.adminbot-calendar__embed {
-  width: 100%;
-  height: 520px;
+/* Flex lets the heading's button shrink until its label wraps to two lines. It is a fixed-width
+   control next to elastic text, so it should not shrink at all. */
+.adminbot-calendar__chat-heading .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* The month, drawn from the events the service read rather than embedded from Google. An iframe
+   showed a sign-in wall to anyone whose browser had no session on the calendar, and the app cannot
+   see inside the frame to know. Seven columns, one row per week the month touches. */
+.adminbot-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.adminbot-calendar__weekday {
+  padding: var(--space-2) var(--space-2);
+  background: var(--bg-accent);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.adminbot-calendar__day {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 96px;
+  padding: var(--space-2);
   background: var(--panel, var(--bg));
+}
+
+/* The neighbouring month's days are context, not content. */
+.adminbot-calendar__day--muted {
+  background: var(--bg);
+}
+
+.adminbot-calendar__day--muted .adminbot-calendar__day-number {
+  opacity: 0.45;
+}
+
+/* Today is marked by a ring on the number rather than a filled cell, so it stays readable behind
+   however many events sit on it. */
+.adminbot-calendar__day--today .adminbot-calendar__day-number {
+  border-radius: 999px;
+  background: var(--accent, var(--text));
+  color: var(--bg);
+  font-weight: 700;
+}
+
+.adminbot-calendar__day-number {
+  align-self: flex-start;
+  min-width: 1.4em;
+  padding: 1px 5px;
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* One event. A button, because clicking it selects the event for both of the things you can do to
+   an existing one. */
+.adminbot-calendar__chip {
+  display: flex;
+  gap: var(--space-1, 4px);
+  align-items: baseline;
+  width: 100%;
+  padding: 2px var(--space-1, 4px);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--bg-accent);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--control-ui-text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.adminbot-calendar__chip:hover {
+  border-color: var(--border-strong);
+}
+
+.adminbot-calendar__chip--selected {
+  border-color: var(--accent, var(--text));
+  background: var(--accent-subtle, var(--bg-accent));
+}
+
+.adminbot-calendar__chip:focus-visible {
+  outline: 2px solid var(--accent, var(--text));
+  outline-offset: 1px;
+}
+
+.adminbot-calendar__chip-time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.adminbot-calendar__chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The event the invites would go to. A statement, not a control — the month above is the picker. */
+.adminbot-calendar__selected {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-accent);
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-calendar__month-nav {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* Conversation on the left, the draft it produced on the right — the reimbursement assistant's
+   layout, because it is the same act. Stacks below the same breakpoint that one uses. */
+.adminbot-calendar__workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .adminbot-calendar__workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .adminbot-calendar__day {
+    min-height: 72px;
+  }
 }
 
 /* States that the instruction box is aimed at one event rather than composing a new one. Loud
@@ -9100,11 +9240,6 @@ details[open] > .ov-expandable-toggle::after {
   font-size: var(--control-ui-text-xs);
 }
 
-.adminbot-calendar__event-edit {
-  margin-left: var(--space-3);
-  flex: 0 0 auto;
-}
-
 .adminbot-calendar__note {
   margin: 0;
   font-size: var(--control-ui-text-xs);
@@ -9113,7 +9248,6 @@ details[open] > .ov-expandable-toggle::after {
 
 /* The event list and the match list are both scannable columns of one-line rows, so they share a
    shape: a control, then the fact, then the quieter detail. */
-.adminbot-calendar__events,
 .adminbot-calendar__matches {
   display: grid;
   gap: 1px;
@@ -9127,25 +9261,10 @@ details[open] > .ov-expandable-toggle::after {
   font-size: var(--control-ui-text-sm);
 }
 
-.adminbot-calendar__events li,
 .adminbot-calendar__matches li {
   background: var(--panel, var(--bg));
 }
 
-/* An event row is its label plus an edit button, so the row is the flex container and the label
-   takes the space the button does not. */
-.adminbot-calendar__events li {
-  display: flex;
-  align-items: center;
-  padding-right: var(--space-3);
-}
-
-.adminbot-calendar__events li label {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-.adminbot-calendar__events label,
 .adminbot-calendar__matches label {
   display: flex;
   align-items: baseline;
@@ -9154,7 +9273,6 @@ details[open] > .ov-expandable-toggle::after {
   cursor: pointer;
 }
 
-.adminbot-calendar__events input,
 .adminbot-calendar__matches input {
   flex: 0 0 auto;
   align-self: center;

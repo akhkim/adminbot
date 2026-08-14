@@ -109,6 +109,10 @@ export type AppViewState = {
   // Set while the prompt box is being used to change an event rather than compose a new one.
   calendarEditingEventId?: string | null;
   calendarSource?: import("./adminbot/auth/session.ts").LabCalendar | null;
+  /** First of the month the grid is showing, `YYYY-MM-01`. Defaults to the month containing today. */
+  calendarMonth?: string;
+  /** The assistant conversation, oldest first. */
+  calendarMessages?: Array<{ role: "user" | "assistant"; content: string }>;
   // Two-step confirm on the sends other people can see, since these buttons really do send.
   calendarConfirming?: "save" | "invite" | null;
   calendarAudience?: import("./adminbot/calendar-audience.ts").AudienceFilter;
