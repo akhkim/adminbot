@@ -145,17 +145,20 @@ export function parseCalendarEvents(stdout: string): AdminBotCalendarEvent[] {
   try {
     payload = JSON.parse(trimmed);
   } catch {
-    throw new Error("gog calendar events did not return JSON");
+    // Not JSON at all — usually gog's own refusal ("missing --account", an auth error) on a path
+    // where it still exits 0. Carry the text: it is the whole diagnosis.
+    throw new Error(`gog calendar events did not return JSON: ${trimmed.slice(0, 200)}`);
   }
   const list = Array.isArray(payload)
     ? payload
     : payload && typeof payload === "object"
-      ? ((payload as Record<string, unknown>).events ??
-        (payload as Record<string, unknown>).items ??
-        [])
-      : [];
+      ? ((payload as Record<string, unknown>).events ?? (payload as Record<string, unknown>).items)
+      : undefined;
+  // Anything else is a shape we do not understand, and reporting it as an empty calendar is the
+  // worst possible answer: the month renders blank and nobody can tell "nothing booked" from "we
+  // could not read it". Say what came back instead.
   if (!Array.isArray(list)) {
-    return [];
+    throw new Error(`gog calendar events returned an unexpected shape: ${trimmed.slice(0, 200)}`);
   }
   return list.flatMap((entry) => {
     const event = parseCalendarEvent(entry);
@@ -179,7 +182,16 @@ export function createCalendarEventsReader(
   return async (params) => {
     const from = params.from ?? isoDate(now());
     const to = params.to ?? isoDate(now() + DEFAULT_WINDOW_DAYS * 86_400_000);
-    const args = ["calendar", "events", "list"];
+    // `--no-input` and `--account` for the same reasons connectors/gog.ts passes them: a CLI that
+    // can prompt will hang a service until the timeout instead of failing, and gog refuses outright
+    // ("missing --account") when it cannot tell which stored token to use. GOG_ACCOUNT is the
+    // deployment's answer to that, so it is passed explicitly rather than left to be inherited.
+    const args = ["--no-input"];
+    const account = (options.env ?? process.env).GOG_ACCOUNT?.trim();
+    if (account) {
+      args.push("--account", account);
+    }
+    args.push("calendar", "events", "list");
     if (params.calendarId) {
       args.push(params.calendarId);
     }

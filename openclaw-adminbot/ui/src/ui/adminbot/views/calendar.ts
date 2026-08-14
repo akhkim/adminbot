@@ -183,7 +183,16 @@ function renderMonth(state: AppViewState) {
       </div>
       ${state.calendarEventsLoading
         ? html`<p class="adminbot-calendar__note">Reading the calendar…</p>`
-        : nothing}
+        : (state.calendarEvents ?? []).length === 0 && !state.calendarEventsError
+          ? // An empty grid is ambiguous on its own — it looks the same whether the month is free
+            // or the calendar was never read. Naming the calendar and the month turns it into a
+            // statement someone can check.
+            html`<p class="adminbot-calendar__note" data-testid="calendar-empty-month">
+              Nothing on ${source?.id ?? "the lab calendar"} in
+              ${monthLabel(monthKey, i18n.getLocale())}. If that looks wrong, the service reads this
+              calendar as the AdminBot Google account — it has to be shared with that account.
+            </p>`
+          : nothing}
     </section>
   `;
 }

@@ -66,6 +66,33 @@ describe("parseCalendarEvents", () => {
     expect(parseCalendarEvents("   ")).toEqual([]);
     expect(() => parseCalendarEvents("not json")).toThrow(/did not return JSON/u);
   });
+
+  // gog writes some refusals to stdout and still exits 0, so the text is the whole diagnosis.
+  it("carries gog's own words when the output is not JSON", () => {
+    expect(() => parseCalendarEvents("missing --account (or set GOG_ACCOUNT...)")).toThrow(
+      /missing --account/u,
+    );
+  });
+
+  // Reporting an unknown shape as an empty calendar draws a blank month that nobody can tell apart
+  // from a free one. This is the failure that hid a broken read behind a plausible-looking grid.
+  it("refuses a payload whose shape it does not recognise instead of reporting no events", () => {
+    expect(() => parseCalendarEvents(JSON.stringify({ calendars: [] }))).toThrow(
+      /unexpected shape/u,
+    );
+    expect(() => parseCalendarEvents(JSON.stringify({ events: "nope" }))).toThrow(
+      /unexpected shape/u,
+    );
+  });
+
+  // An explicit empty list is a real answer and must stay one.
+  it.each([
+    ["a bare empty array", "[]"],
+    ["an empty events wrapper", JSON.stringify({ events: [] })],
+    ["an empty items wrapper", JSON.stringify({ items: [] })],
+  ])("accepts %s as genuinely no events", (_label, payload) => {
+    expect(parseCalendarEvents(payload)).toEqual([]);
+  });
 });
 
 describe("createCalendarEventsReader", () => {
@@ -78,12 +105,30 @@ describe("createCalendarEventsReader", () => {
     const events = await reader({});
     expect(events).toHaveLength(1);
     const args: string[] = run.mock.calls[0][0];
-    expect(args.slice(0, 3)).toEqual(["calendar", "events", "list"]);
+    expect(args.slice(args.indexOf("calendar"), args.indexOf("calendar") + 3)).toEqual([
+      "calendar",
+      "events",
+      "list",
+    ]);
+    // A CLI that can prompt hangs a service until the timeout instead of failing.
+    expect(args).toContain("--no-input");
     expect(args).toContain("--json");
     expect(args[args.indexOf("--order") + 1]).toBe("asc");
     expect(args[args.indexOf("--from") + 1]).toBe("2026-08-13T00:00:00.000Z");
     // Two months forward by default: enough for the next conference block, not a year of standups.
     expect(args[args.indexOf("--to") + 1]).toBe("2026-10-12T00:00:00.000Z");
+  });
+
+  // gog refuses outright ("missing --account") when it cannot tell which stored token to use, so
+  // the deployment's answer is passed explicitly rather than left to be inherited.
+  it("names the account from the environment", async () => {
+    const run = vi.fn().mockResolvedValue("[]");
+    await createCalendarEventsReader({
+      run,
+      env: { GOG_ACCOUNT: "jinesis.adminbot@gmail.com" } as NodeJS.ProcessEnv,
+    })({});
+    const args: string[] = run.mock.calls[0][0];
+    expect(args[args.indexOf("--account") + 1]).toBe("jinesis.adminbot@gmail.com");
   });
 
   it("passes a named calendar, a window and a search through", async () => {
@@ -97,7 +142,7 @@ describe("createCalendarEventsReader", () => {
       query: "retreat",
     });
     const args: string[] = run.mock.calls[0][0];
-    expect(args[3]).toBe("lab@jinesis.ai");
+    expect(args[args.indexOf("list") + 1]).toBe("lab@jinesis.ai");
     expect(args[args.indexOf("--max") + 1]).toBe("5");
     expect(args[args.indexOf("--query") + 1]).toBe("retreat");
   });

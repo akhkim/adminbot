@@ -379,6 +379,28 @@ describe("the month grid", () => {
     expect(view.calendarEditingEventId).toBe("evt-1");
   });
 
+  // An empty grid looks identical whether the month is genuinely free or nothing was ever read,
+  // which is exactly the confusion that cost a debugging session.
+  it("says which calendar and month were empty rather than just drawing nothing", () => {
+    const container = renderToDiv(
+      state({ ...september, calendarEvents: [] } as Partial<AppViewState>),
+    );
+    const note = container.querySelector('[data-testid="calendar-empty-month"]')?.textContent;
+    expect(note).toContain("jinesis.lab@gmail.com");
+    expect(note).toContain("September 2026");
+  });
+
+  it("does not claim the month is empty when the read failed", () => {
+    const container = renderToDiv(
+      state({
+        ...september,
+        calendarEvents: [],
+        calendarEventsError: "could not read the calendar",
+      } as Partial<AppViewState>),
+    );
+    expect(container.querySelector('[data-testid="calendar-empty-month"]')).toBeNull();
+  });
+
   it("reports an unreadable calendar on the grid itself", () => {
     const container = renderToDiv(
       state({
