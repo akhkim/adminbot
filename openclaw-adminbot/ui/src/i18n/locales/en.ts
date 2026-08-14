@@ -1532,6 +1532,8 @@ export const en: TranslationMap = {
       stats: "{members} members · {hours} hrs/week",
       delete: "Delete",
       empty: "You haven't posted any help requests yet.",
+      confirmDelete: "Delete",
+      cancelDelete: "Cancel",
     },
     announcements: {
       title: "Announcements",
@@ -1727,6 +1729,16 @@ export const en: TranslationMap = {
       prototypeNotice: "Prototype: blockers stay in this browser and are not sent anywhere yet.",
     },
   },
+  feedback: {
+    openLabel: "Feedback",
+    prompt: "How was this function?",
+    starTitle: "{rating} of 5 stars",
+    commentPlaceholder: "What could be better? (optional)",
+    send: "Send",
+    close: "Close",
+    countRemaining: "{remaining} characters remaining",
+    infoTitle: "Improve this function on GitHub and open a PR",
+  },
   landing: {
     eyebrow: "Lab operations",
     tagline: "The admin side of research, in one place.",
@@ -1763,7 +1775,7 @@ export const en: TranslationMap = {
       errorNameRequired: "Enter your name.",
       errorEmailRequired: "Enter your email.",
       reset: {
-        forgot: "Forgot my password",
+        forgot: "Forgot your password?",
         intro:
           "Enter the email you sign in with and we'll send you a link to choose a new password.",
         sendLink: "Send reset link",
@@ -1772,7 +1784,7 @@ export const en: TranslationMap = {
         sent: "If that email has an account, a reset link is on its way. The link expires in an hour.",
         confirmIntro: "Choose a new password for your account.",
         setPassword: "Set new password",
-        done: "Your password has been changed. Sign in with your new password.",
+        done: "Your password has been changed. Signp in with your new password.",
         errorInvalidLink:
           "This reset link is invalid or has expired. Request a new one from the sign-in screen.",
         errorUnreachable: "Could not reach the AdminBot service. Try again in a moment.",

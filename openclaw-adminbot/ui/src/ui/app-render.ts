@@ -42,6 +42,8 @@ import {
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
 import { renderAdminBot, type AdminBotPanel } from "./adminbot/views/admin.ts";
+import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
+import "./components/feedback-widget.ts";
 import {
   renderChangePasswordPopover,
   renderChangePasswordTrigger,
@@ -571,6 +573,20 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
     default:
       return null;
   }
+}
+
+// A floating bottom-right feedback widget appears on AdminBot feature tabs only. A changed tab
+// re-renders the widget element with the new feature id, and the widget itself reloads its stored
+// vote when the feature id attribute changes.
+function renderFeedbackWidget(state: AppViewState) {
+  const config = feedbackConfigForTab(state.tab);
+  if (!config) {
+    return nothing;
+  }
+  return html`
+    <adminbot-feedback-widget feature-id=${config.featureId} github-file=${config.githubFile}>
+    </adminbot-feedback-widget>
+  `;
 }
 
 // Deep links and sign-out both leave `state.tab` pointing at a surface the current role may not
@@ -4123,6 +4139,7 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
       </main>
+      ${renderFeedbackWidget(state)}
       ${renderExecApprovalPrompt(state)} ${renderGatewayUrlConfirmation(state)}
       ${renderDreamingRestartConfirmation({
         open: state.dreamingRestartConfirmOpen,
