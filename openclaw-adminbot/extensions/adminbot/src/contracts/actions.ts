@@ -167,7 +167,7 @@ export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfil
   linkedin_url: "LinkedIn",
   linkedin_urn: "LinkedIn URN",
   cv_url: "CV",
-  intake_form_url: "Application form answers",
+  intake_form_url: "Application form response link",
   openreview_id: "OpenReview",
 };
 
@@ -491,7 +491,13 @@ export type AdminBotLabMemberInput = {
   // `calendar_email` (the Google account invites go to). The roster spreadsheet has one for every
   // member, and it is frequently neither of the other two.
   correspondence_email?: string;
+  // Kept for the rows the member-sheet import filled in; the profile page no longer offers it.
+  // One named column per platform only ever covered the platforms someone thought of, so what the
+  // page asks for now is `other_socials` below.
   lesswrong_url?: string;
+  // Anywhere else the member posts, as free text: several links and the labels saying what they
+  // are. Deliberately unvalidated as a URL -- it is a paragraph, not an address.
+  other_socials?: string;
   // Profile photo, normally the member's Slack avatar carried over by the directory sync. Stored
   // as a URL rather than bytes: Slack already hosts and resizes it, and copying it would leave the
   // roster serving a stale face after someone changes theirs.

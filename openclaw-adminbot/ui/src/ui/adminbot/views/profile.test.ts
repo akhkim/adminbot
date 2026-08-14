@@ -408,6 +408,23 @@ describe("renderProfile onboarding suggestions", () => {
     expect(suggestions.querySelector('[data-testid="suggestion-onboarding-calendar"]')).toBeNull();
   });
 
+  // The photo rules are advice with an optional action attached, which is what the suggestions
+  // stack is for. As its own full-width section it sat between the identity header and the
+  // member's own fields, pushing the record people came for below the fold.
+  it("carries the Slack photo guideline inside the suggestions section", () => {
+    const container = renderPage(createState(createMember()), vi.fn());
+
+    const suggestions = container.querySelector('[data-testid="profile-suggestions"]')!;
+    const guidelines = container.querySelector('[data-testid="profile-photo-guidelines"]')!;
+    expect(guidelines).not.toBeNull();
+    expect(suggestions.contains(guidelines)).toBe(true);
+    // Not above the record any more.
+    const basics = container.querySelector('[data-testid="profile-basics"]')!;
+    expect(basics.compareDocumentPosition(guidelines) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+  });
+
   it("carries each step's own status, detail and link through from the checklist", () => {
     const member = createMember();
     const state = createState(member, {
@@ -789,15 +806,15 @@ describe("renderProfile field types", () => {
     expect(container.querySelector('textarea[name="notes"]')).toBeNull();
   });
 
-  it("renders hours_per_week as a numeric input and github_url as a url input", () => {
+  it("renders github_url as a url input and no longer asks for hours per week", () => {
     const member = createMember();
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
-    expect(container.querySelector<HTMLInputElement>('input[name="hours_per_week"]')?.type).toBe(
-      "number",
-    );
     expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe("url");
+    // Hours per week was a number nobody could answer honestly for a research week; the record
+    // still carries the column for the rows that have one, but the page stopped asking.
+    expect(container.querySelector('input[name="hours_per_week"]')).toBeNull();
   });
 
   it("offers a calendar email field distinct from the governed directory email", () => {
@@ -873,11 +890,36 @@ describe("renderProfile visual structure", () => {
     const basics = container.querySelector('[data-testid="profile-basics"]')!;
     const groups = [...basics.querySelectorAll(".profile__field-group")];
     expect(groups.length).toBeGreaterThan(1);
-    // The locked directory email still renders, now inside its own "Account" group.
-    const accountGroup = groups.find((group) =>
-      group.querySelector(".profile__group-title")?.textContent?.includes("Account"),
-    );
-    expect(accountGroup?.textContent).toContain("pat@example.com");
+    // No "Account" group any more: it held one row, the directory email, which the hero already
+    // prints under the member's name. The closing line says who owns that address instead.
+    expect(
+      groups.some((group) =>
+        group.querySelector(".profile__group-title")?.textContent?.includes("Account"),
+      ),
+    ).toBe(false);
+    expect(basics.textContent).not.toContain("pat@example.com");
+  });
+
+  // The one field on the page a member may want to think before answering, and the one the lab
+  // hides from every other reader. It comes last so nobody meets it on the way to a phone number.
+  it("puts medical conditions in the last group on the page", () => {
+    const member = createMember();
+    const state = createState(member);
+    const container = renderPage(state, vi.fn());
+
+    const basics = container.querySelector('[data-testid="profile-basics"]')!;
+    const groups = [...basics.querySelectorAll(".profile__field-group")];
+    const last = groups.at(-1);
+    expect(last?.querySelector('textarea[name="personal_circumstances"]')).not.toBeNull();
+  });
+
+  it("asks for other social media as a paragraph instead of a LessWrong link", () => {
+    const member = createMember();
+    const state = createState(member);
+    const container = renderPage(state, vi.fn());
+
+    expect(container.querySelector('textarea[name="other_socials"]')).not.toBeNull();
+    expect(container.querySelector('input[name="lesswrong_url"]')).toBeNull();
   });
 
   // One control per value: the header card's avatar is click-to-edit and saves through the same
@@ -942,16 +984,16 @@ describe("renderProfile visual structure", () => {
     expect(basics.querySelector(".btn.primary")).toBeNull();
   });
 
-  it("keeps the governed fields read-only inside the always-editable record", () => {
+  it("keeps the governed email out of the always-editable record", () => {
     const member = createMember();
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
     const basics = container.querySelector('[data-testid="profile-basics"]')!;
-    // Email is the lab's to set: it renders as a locked row, never as an input to type into.
+    // Email is the lab's to set: no input to type into, and no locked row repeating what the hero
+    // already shows -- just the closing line naming who owns it.
     expect(basics.querySelector('input[name="email"]')).toBeNull();
-    expect(basics.querySelector(".profile-field--locked")?.textContent).toContain(
-      "pat@example.com",
-    );
+    expect(basics.querySelector(".profile-field--locked")).toBeNull();
+    expect(basics.querySelector(".profile__managed")?.textContent).toContain("login email");
   });
 });

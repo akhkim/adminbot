@@ -2117,6 +2117,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   // field a member writes about themselves.
   "personal_circumstances",
   "lesswrong_url",
+  "other_socials",
   "notes",
   "availability",
   "time_off",

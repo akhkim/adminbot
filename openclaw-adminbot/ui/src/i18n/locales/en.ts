@@ -1657,6 +1657,7 @@ export const en: TranslationMap = {
       done: "Done",
       cancel: "Cancel",
       managed: "{fields} are set by the lab and cannot be edited here.",
+      managedEmail: "Your login email is set by the lab and cannot be edited here.",
       optional: "(optional)",
       adminFilled: "(filled out by admin)",
       mandatory: "required",
@@ -1694,6 +1695,7 @@ export const en: TranslationMap = {
       work: "Work & availability",
       research: "Research",
       links: "Links",
+      personal: "Health & personal circumstances",
     },
     picture: {
       edit: "Change profile picture",
@@ -1713,7 +1715,7 @@ export const en: TranslationMap = {
       openreview: "OpenReview",
     },
     suggestions: {
-      title: "Suggested for you",
+      title: "Onboarding steps",
       gpuTitle: "Get GPU access",
       gpuBody: "You have not recorded compute access yet. The guidebook walks through the request.",
       gpuLink: "Guidebook: GPU onboarding",
@@ -1728,8 +1730,8 @@ export const en: TranslationMap = {
       formBody:
         "Your original responses — including your career ambitions — are what the lab recaps from. Open the form to submit an updated response if anything has changed.",
       formLink: "Open the intake form",
-      fromOnboarding: "From Onboarding",
-      other: "Other Suggestions",
+      fromOnboarding: "Steps to finish",
+      other: "Suggested for you",
     },
     fields: {
       name: "Name",
@@ -1737,7 +1739,7 @@ export const en: TranslationMap = {
       email: "Email (@cs.toronto.edu)",
       role: "Role",
       calendarEmail: "Calendar email",
-      affiliation: "Affiliation",
+      affiliation: "Main affiliation",
       location: "Resident location",
       currentCity: "Current city",
       timezone: "Timezone",
@@ -1749,10 +1751,11 @@ export const en: TranslationMap = {
       whatsapp: "WhatsApp",
       personalCircumstances: "Medical conditions",
       joinedMonth: "Joined month",
-      graduatedMonth: "Graduated month",
+      graduatedMonth: "Potential offboarding month",
       lesswrong: "LessWrong",
+      otherSocials: "Other social media",
       cvUrl: "CV (PDF link)",
-      intakeFormUrl: "Application form answers",
+      intakeFormUrl: "Application form response link",
       linkedin: "LinkedIn",
       linkedinUrn: "LinkedIn member ID (URN)",
       twitter: "X / Twitter",
@@ -1792,6 +1795,8 @@ export const en: TranslationMap = {
         "A stable id LinkedIn uses for your account internally — it looks like ACoAAB1234567 and never appears in LinkedIn's own interface. The lab needs it to tag you in posts about your work: LinkedIn's API addresses people by this id, not by profile URL, so a post cannot mention you without it. Nobody can look it up from your profile link, which is why the collector below exists.",
       intakeFormUrl:
         "The link to your own submitted answers on the lab's application form. Google Forms emails it only to the person who responded, so nobody else — the lab included — can produce it for you. It lets you review and edit what you told us when you applied.",
+      currentCity:
+        "Where you are based right now, if that is not your resident location above — a conference trip, a term abroad, an internship. The lab uses it to organize events and in-person meetups: it decides who gets invited to something happening in a given city, and which time of day a session is scheduled for.",
       cvUrl:
         "A link to your CV. A Google Drive link is completely fine — if you use one, set the sharing to \"anyone with the link can view\", otherwise it will open for you but not for anyone else.",
     },
@@ -1807,6 +1812,8 @@ export const en: TranslationMap = {
       intakeFormUrl: "The “edit your response” link Google Forms emailed you after you applied.",
       openreviewId: "The id in your OpenReview profile address, like ~Zhijing_Jin1",
       month: "Year and month, like 2026-03.",
+      offboardingMonth:
+        "The year and month you plan on leaving Jinesis for a new job or stage, like 2027-06. An estimate is fine — it is not a commitment.",
     },
   },
   myWork: {

@@ -59,20 +59,23 @@ type ProfileFieldType =
 
 // Purely presentational clustering -- same fields, same keys, same validation -- so someone
 // scanning 18 inputs meets four short, labeled groups instead of one wall of text boxes.
-type ProfileFieldGroup = "identity" | "work" | "research" | "links";
+type ProfileFieldGroup = "identity" | "work" | "research" | "links" | "personal";
 
 const PROFILE_FIELD_GROUPS: Array<{
   id: ProfileFieldGroup;
   labelKey: string;
   icon: keyof typeof icons;
 }> = [
-  // Order is the reading order of the page: who the account is, who the person is, what they work
-  // on, where to find them, and last the scheduling detail -- which is the part a member revisits
-  // least often and the only group whose answers go stale on their own.
+  // Order is the reading order of the page: who the person is, what they work on, where to find
+  // them, then the scheduling detail -- which is the part a member revisits least often and the
+  // only group whose answers go stale on their own -- and last of all the health and personal
+  // circumstances group, which is the one thing on the page nobody should meet on their way to
+  // something else.
   { id: "identity", labelKey: "profile.groups.identity", icon: "user" },
   { id: "research", labelKey: "profile.groups.research", icon: "brain" },
   { id: "links", labelKey: "profile.groups.links", icon: "link" },
   { id: "work", labelKey: "profile.groups.work", icon: "clock" },
+  { id: "personal", labelKey: "profile.groups.personal", icon: "lock" },
 ];
 
 type ProfileField = {
@@ -193,13 +196,6 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "identity",
   },
   {
-    key: "hours_per_week",
-    labelKey: "profile.fields.hoursPerWeek",
-    example: "20",
-    type: "numeric",
-    group: "work",
-  },
-  {
     key: "research_topics",
     labelKey: "profile.fields.researchTopics",
     example: "causal inference, NLP",
@@ -215,7 +211,9 @@ const PROFILE_FIELDS: ProfileField[] = [
   },
   {
     // Where the member currently is, kept distinct from their resident location above. Purely
-    // informational: the timezone suggestion and the member map stay keyed on `location`.
+    // informational: the timezone suggestion and the member map stay keyed on `location`. What it
+    // is actually *for* is not guessable from the label, so it carries a help bubble (FIELD_HELP)
+    // saying so -- people were reading it as a duplicate of the resident location above.
     key: "current_city",
     labelKey: "profile.fields.currentCity",
     example: "San Francisco, CA",
@@ -240,25 +238,27 @@ const PROFILE_FIELDS: ProfileField[] = [
   },
   {
     // Empty for every row on the sheet today; it is the column alumni will eventually be aged out
-    // by, which is why it is off the mandatory list -- a current member has no answer for it.
+    // by, which is why it is off the mandatory list -- and why it asks for a *plan* rather than a
+    // fact. Nobody can state the month they left before they leave, so the question people can
+    // actually answer is when they expect to move on.
     key: "graduated_month",
     labelKey: "profile.fields.graduatedMonth",
     example: "2027-06",
     type: "short_text",
-    hintKey: "profile.hints.month",
+    hintKey: "profile.hints.offboardingMonth",
     group: "work",
   },
   {
-    // The only paragraph field on the page, and the only confidential one: the service strips it
-    // from every /lab/members reader but this member and admins (adminBotConfidentialMemberFields).
-    // It sits last in its group because it is the one field a person may want to think before
-    // answering, and optional because "nothing to declare" must never be something the form makes
-    // someone say out loud.
+    // The only confidential field on the page: the service strips it from every /lab/members
+    // reader but this member and admins (adminBotConfidentialMemberFields). It sits alone in the
+    // last group on the page, after every other answer, because it is the one field a person may
+    // want to think before answering -- and optional because "nothing to declare" must never be
+    // something the form makes someone say out loud on their way to filling in a phone number.
     key: "personal_circumstances",
     labelKey: "profile.fields.personalCircumstances",
     example: "",
     type: "paragraph",
-    group: "identity",
+    group: "personal",
   },
   {
     key: "avatar_url",
@@ -346,10 +346,14 @@ const PROFILE_FIELDS: ProfileField[] = [
     group: "links",
   },
   {
-    key: "lesswrong_url",
-    labelKey: "profile.fields.lesswrong",
-    example: "https://www.lesswrong.com/users/zhijing-jin",
-    type: "link",
+    // Replaces the old single-purpose LessWrong link. One named field per platform only ever fit
+    // the platforms someone thought of, so the answer is a paragraph: anywhere else the member
+    // posts, in whatever form they keep it. Free text rather than a URL control on purpose -- it
+    // holds several links and the labels that say what they are.
+    key: "other_socials",
+    labelKey: "profile.fields.otherSocials",
+    example: "Bluesky: https://bsky.app/profile/zhijing-jin",
+    type: "paragraph",
     group: "links",
   },
 ];
@@ -515,11 +519,10 @@ function renderAccountCheckStatus(state: AppViewState, field: EditableField) {
   `;
 }
 
-// Read-only context the lab owns rather than the member. Just the directory email now -- status
-// and privilege level are governance bookkeeping a member has no action to take on, so showing
-// them here was signal only an admin could use, not the member reading their own page.
-const GOVERNED_FIELDS = ["email"] as const;
-
+// There is no read-only "Account" group any more. It held one row -- the directory email -- which
+// the hero already prints under the member's name, so the group was a second copy of a fact three
+// lines above it, under a heading whose only content was that copy. Status and privilege level had
+// already gone the same way: governance bookkeeping a member has no action to take on.
 const FIELD_LABEL_KEYS: Record<string, string> = {
   email: "profile.fields.email",
   ...Object.fromEntries(PROFILE_FIELDS.map((field) => [field.key, field.labelKey])),
@@ -593,6 +596,7 @@ function prefilledTimezone(member: LabMember): string | null {
  */
 const FIELD_HELP: Record<string, string> = {
   personal_circumstances: "profile.help.personalCircumstances",
+  current_city: "profile.help.currentCity",
   linkedin_urn: "profile.help.linkedinUrn",
   intake_form_url: "profile.help.intakeFormUrl",
   cv_url: "profile.help.cvUrl",
@@ -820,9 +824,11 @@ function collectBasics(form: HTMLFormElement): MemberProfileUpdate {
           .filter(Boolean),
       );
     } else if (field.type === "numeric") {
+      // A blank or unparseable number is left off the update rather than sent as 0 -- the record
+      // has no way to tell a real zero from a box nobody filled in.
       const parsed = Number(value);
-      if (Number.isFinite(parsed) && value) {
-        fields.hours_per_week = parsed;
+      if (value && Number.isFinite(parsed)) {
+        setField(fields, field.key, parsed);
       }
     } else {
       setField(fields, field.key, value);
@@ -1016,8 +1022,9 @@ function renderMandatoryMark(field: EditableField, _value: string) {
 // ever stood between them and a correction they had already decided to make. Every control commits
 // itself a beat after typing stops, so the page holds no draft that can be lost by navigating away.
 //
-// Two things stay uneditable and say so: the fields the lab governs (email), and the picture,
-// which has its own upload control because a file is not a text field.
+// Two things stay uneditable: the login email, which the lab governs and the closing line says so
+// rather than a locked row nobody can act on, and the picture, which has its own upload control
+// because a file is not a text field.
 function renderBasics(state: AppViewState, member: LabMember, props: ProfileProps) {
   const commit = (form: HTMLFormElement) => () => {
     member.id && props.onSave(member.id, collectBasics(form));
@@ -1028,27 +1035,6 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
       <div class="profile__section-head">
         <h2 class="profile__section-title">${t("profile.basics.title")}</h2>
         <span class="profile__autosave-hint">${t("profile.basics.autosaveHint")}</span>
-      </div>
-      <div class="profile__fields">
-        <div class="profile__field-group">
-          <h3 class="profile__group-title">
-            <span class="profile__group-icon" aria-hidden="true">${icons.lock}</span>
-            ${t("profile.groups.account")}
-          </h3>
-          <div class="profile__field-grid">
-            ${GOVERNED_FIELDS.map(
-              (key) => html`
-                <div class="profile-field profile-field--locked">
-                  <dt class="profile-field__label">
-                    ${labelFor(key)}
-                    <span class="profile-field__lock" aria-hidden="true">${icons.lock}</span>
-                  </dt>
-                  <dd class="profile-field__value">${String(member[key] ?? "").trim()}</dd>
-                </div>
-              `,
-            )}
-          </div>
-        </div>
       </div>
       <form
         class="profile__form"
@@ -1117,11 +1103,7 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
             </div>
           `,
         )}
-        <p class="profile__managed">
-          ${t("profile.basics.managed", {
-            fields: GOVERNED_FIELDS.map((key) => labelFor(key)).join(", "),
-          })}
-        </p>
+        <p class="profile__managed">${t("profile.basics.managedEmail")}</p>
       </form>
     </section>
   `;
@@ -1240,14 +1222,23 @@ function renderBadges(state: AppViewState, member: LabMember) {
   `;
 }
 
+// The Slack photo rules, the last automated check, and the polish controls that act on them.
+//
+// Rendered as one card inside the suggestions stack rather than as its own section above the
+// record: it is advice plus an optional action, which is exactly what that stack is for, and as a
+// full-width section between the identity header and the member's own fields it pushed the thing
+// people come to this page to do below the fold.
 function renderPhotoCompliance(state: AppViewState, member: LabMember, props: ProfileProps) {
   const review = member.profile_photo_review;
   const assessment = review?.assessment;
   const variants = review?.variants ?? [];
   const selectedId = review?.selected_variant_id;
   return html`
-    <section class="profile__section" data-testid="profile-photo-guidelines">
-      <h2 class="profile__section-title">Slack profile photo guidelines</h2>
+    <article
+      class="profile-suggestion profile-suggestion--photo"
+      data-testid="profile-photo-guidelines"
+    >
+      <h4 class="profile-suggestion__title">Slack profile photo guidelines</h4>
       <p>
         We directly link member photos from Slack on team/collaborator pages and the lab public
         website, so a professional profile photo is strongly recommended.
@@ -1328,7 +1319,7 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
             </div>
           `
         : nothing}
-    </section>
+    </article>
   `;
 }
 
@@ -1337,8 +1328,10 @@ function renderPhotoCompliance(state: AppViewState, member: LabMember, props: Pr
 //
 // The onboarding steps come first because they are the lab actually waiting on someone, where a
 // guidebook pointer is only advice. Their labels, detail and links all come from the checklist the
-// service generated for this member, so this list and the checklist itself can never drift.
-function renderSuggestions(state: AppViewState, member: LabMember) {
+// service generated for this member, so this list and the checklist itself can never drift. The
+// section is named for them, not for the advice underneath: "Suggested for you" over a stack whose
+// top half is a list of things somebody is waiting on read as optional, which they are not.
+function renderSuggestions(state: AppViewState, member: LabMember, props: ProfileProps) {
   const blanks = new Set(blankFields(member).map((field) => field.key));
 
   type Suggestion = {
@@ -1412,10 +1405,6 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
     });
   }
 
-  if (!onboardingSuggestions.length && !otherSuggestions.length) {
-    return nothing;
-  }
-
   const renderCard = (suggestion: Suggestion) => html`
     <article class="profile-suggestion" data-testid=${`suggestion-${suggestion.id}`}>
       <h3 class="profile-suggestion__title">
@@ -1460,18 +1449,13 @@ function renderSuggestions(state: AppViewState, member: LabMember) {
             </div>
           `
         : nothing}
-      ${otherSuggestions.length
-        ? html`
-            <div class="profile__suggestions-group">
-              <h3 class="profile__suggestions-group-title">
-                ${t("profile.suggestions.other")}
-              </h3>
-              <div class="profile__suggestions">
-                ${otherSuggestions.map(renderCard)}
-              </div>
-            </div>
-          `
-        : nothing}
+      <div class="profile__suggestions-group">
+        <h3 class="profile__suggestions-group-title">${t("profile.suggestions.other")}</h3>
+        <div class="profile__suggestions">
+          ${otherSuggestions.map(renderCard)}
+          ${renderPhotoCompliance(state, member, props)}
+        </div>
+      </div>
     </section>
   `;
 }
@@ -1607,8 +1591,7 @@ export function renderProfile(state: AppViewState, props: ProfileProps) {
         </div>
         ${renderCompletionLedger(member)}
       </header>
-      ${renderPhotoCompliance(state, member, props)}
-      ${renderBasics(state, member, props)} ${renderSuggestions(state, member)}
+      ${renderBasics(state, member, props)} ${renderSuggestions(state, member, props)}
     </div>
   `;
 }
