@@ -25,7 +25,12 @@ export type MemberMapPlace = {
   /** Present in both shapes. In `full` it equals `members.length`. */
   count: number;
   /** `full` only: who is there. Absent for a non-admin, which is not an error. */
-  members?: Array<{ member_id: string; name: string }>;
+  members?: Array<{
+    member_id: string;
+    name: string;
+    avatar_url?: string;
+    last_login_at?: string;
+  }>;
 };
 
 export type MemberMap = {
@@ -70,10 +75,26 @@ function toPlace(raw: RawPlace): MemberMapPlace | null {
   }
   const members = Array.isArray(raw.members)
     ? raw.members.flatMap((entry) => {
-        const record = entry as { member_id?: unknown; name?: unknown };
-        return typeof record?.name === "string"
-          ? [{ member_id: String(record.member_id ?? ""), name: record.name }]
-          : [];
+        const record = entry as {
+          member_id?: unknown;
+          name?: unknown;
+          avatar_url?: unknown;
+          last_login_at?: unknown;
+        };
+        if (typeof record?.name !== "string") {
+          return [];
+        }
+        const avatarUrl = typeof record.avatar_url === "string" ? record.avatar_url.trim() : "";
+        const lastLoginAt =
+          typeof record.last_login_at === "string" ? record.last_login_at.trim() : "";
+        return [
+          {
+            member_id: String(record.member_id ?? ""),
+            name: record.name,
+            ...(avatarUrl ? { avatar_url: avatarUrl } : {}),
+            ...(lastLoginAt ? { last_login_at: lastLoginAt } : {}),
+          },
+        ];
       })
     : undefined;
   const count = asNumber(raw.count);

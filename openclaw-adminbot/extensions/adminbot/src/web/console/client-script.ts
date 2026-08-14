@@ -816,42 +816,10 @@ export function adminBotConsoleScript(): string {
     // --- Member map -----------------------------------------------------------
     // The map itself is an <iframe> onto /lab_stats/member_map (see markup.ts). The console used
     // to hand-roll an equirectangular SVG here; that is gone rather than duplicated, so the
-    // console and the standalone page can never drift into two different maps.
-
-    document.getElementById("map-refresh").addEventListener("click", async (event) => {
-      const button = event.currentTarget;
-      button.disabled = true;
-      setStatus("map-status", "Reading Slack profiles…", "");
-      try {
-        const result = await api("/member-map/refresh", { method: "POST" });
-        setStatus("map-status", "Checked " + result.checked + " Slack profile(s); " +
-          result.updated + " location(s) changed.", "ok");
-        await refresh();
-        // The map lives in an iframe now, so new data only shows once it reloads.
-        const frame = document.getElementById("map-frame");
-        if (frame) { frame.contentWindow.location.reload(); }
-      } catch (error) {
-        setStatus("map-status", error.message, "error");
-      } finally {
-        button.disabled = false;
-      }
-    });
-
-    document.getElementById("directory-refresh").addEventListener("click", async (event) => {
-      const button = event.currentTarget;
-      button.disabled = true;
-      setStatus("directory-status", "Reading Slack directory…", "");
-      try {
-        const result = await api("/members/directory/refresh-slack", { method: "POST" });
-        setStatus("directory-status", "Linked " + result.idsResolved + " Slack id(s); " +
-          result.timezonesUpdated + " of " + result.timezonesChecked + " timezone(s) changed.", "ok");
-        await refresh();
-      } catch (error) {
-        setStatus("directory-status", error.message, "error");
-      } finally {
-        button.disabled = false;
-      }
-    });
+    // console and the standalone page can never drift into two different maps. Both Slack
+    // actions ("Refresh from Slack" and "Sync Slack IDs & timezones") used to be duplicated here
+    // as a console-level toolbar stacked above the iframe's own identical header; they now live
+    // solely inside the iframe's page, so there is exactly one place to click either of them.
 
     function isPrivileged() {
       const level = sessionMember?.privilege_level;

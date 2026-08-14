@@ -156,6 +156,11 @@ describe("renderAdminBotWebUi", () => {
     // never drift into different maps.
     expect(html).toContain('src="/lab_stats/member_map"');
     expect(html).not.toContain('api("/member-map")');
+    // Both Slack actions ("Refresh from Slack" and "Sync Slack IDs & timezones") used to be
+    // duplicated in a console-level toolbar stacked above this same iframe, which also carries
+    // its own identical header -- the iframe's page is the only place either button lives now.
+    expect(html).not.toContain('id="map-refresh"');
+    expect(html).not.toContain('id="directory-refresh"');
   });
 
   it("emits an inline script that actually parses", () => {
