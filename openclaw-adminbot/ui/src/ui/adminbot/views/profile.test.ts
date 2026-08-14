@@ -40,7 +40,14 @@ function renderPage(
   onSave: (memberId: string, fields: MemberProfileUpdate) => void,
 ): HTMLElement {
   const container = document.createElement("div");
-  render(renderProfile(state, { onSave }), container);
+  render(
+    renderProfile(state, {
+      onSave,
+      onPolishPhoto: vi.fn(),
+      onApplyPolishedPhoto: vi.fn(),
+    }),
+    container,
+  );
   return container;
 }
 
@@ -239,7 +246,14 @@ describe("renderProfile autosave", () => {
     expect(toast?.textContent?.trim()).toBe("Update saved");
 
     vi.advanceTimersByTime(3000);
-    render(renderProfile(state, { onSave: vi.fn() }), container);
+    render(
+      renderProfile(state, {
+        onSave: vi.fn(),
+        onPolishPhoto: vi.fn(),
+        onApplyPolishedPhoto: vi.fn(),
+      }),
+      container,
+    );
 
     expect(state.adminBotNotice).toBeNull();
   });
@@ -272,7 +286,14 @@ describe("renderProfile autosave", () => {
       );
       expect(state.profileAccountChecks.github_url?.status).toBe("not-found");
 
-      render(renderProfile(state, { onSave }), container);
+      render(
+        renderProfile(state, {
+          onSave,
+          onPolishPhoto: vi.fn(),
+          onApplyPolishedPhoto: vi.fn(),
+        }),
+        container,
+      );
       const status = container.querySelector('[data-testid="profile-account-check-github_url"]');
       expect(status?.textContent).toContain("this-handle-should-not-exist-zzz");
     } finally {

@@ -13,11 +13,13 @@ import {
   type AccessRole,
 } from "./adminbot/access.ts";
 import {
+  applyAdminBotOwnProfilePhoto,
   approveAdminBotAction,
   deleteAdminBotPaper,
   executeAdminBotAction,
   generateAdminBotReimbursement,
   loadAdminBot,
+  polishAdminBotOwnProfilePhoto,
   removePendingAdminBotAction,
   resetAdminBotReimbursement,
   saveAdminBotMember,
@@ -2733,6 +2735,9 @@ export function renderApp(state: AppViewState) {
           ? html`
               ${renderProfile(state, {
                 onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
+                onPolishPhoto: () => void polishAdminBotOwnProfilePhoto(state),
+                onApplyPolishedPhoto: (variantId) =>
+                  void applyAdminBotOwnProfilePhoto(state, variantId),
               })}
               <!-- Bottom of the page on purpose: the checklist is required reading a member works
                    through once, not the thing they came to this page to do on the other days. -->

@@ -52,6 +52,29 @@ export type MemberOnboarding = {
   steps: MemberOnboardingStep[];
 };
 
+export type ProfilePhotoAssessment = {
+  compliant: boolean;
+  issues: string[];
+  summary: string;
+  checked_at: string;
+  photo_url?: string;
+  source: "ai" | "heuristic";
+};
+
+export type ProfilePhotoPolishVariant = {
+  id: string;
+  image_data_url: string;
+  created_at: string;
+  note?: string;
+};
+
+export type ProfilePhotoReviewState = {
+  assessment?: ProfilePhotoAssessment;
+  last_guideline_dm_at?: string;
+  variants?: ProfilePhotoPolishVariant[];
+  selected_variant_id?: string;
+};
+
 // Lab member record returned by the AdminBot service. Extra fields beyond these
 // are preserved but not consumed by the UI.
 export type LabMember = {
@@ -87,6 +110,7 @@ export type LabMember = {
   github_url?: string | null;
   scholar_url?: string | null;
   avatar_url?: string | null;
+  profile_photo_review?: ProfilePhotoReviewState | null;
   notes?: string | null;
   onboarding?: MemberOnboarding | null;
   [key: string]: unknown;
@@ -123,6 +147,12 @@ export type MemberProfileUpdate = {
   // Promoted out of the notes line convention; see migrateMemberNotesToFields in the service.
   joined_month?: string;
   whatsapp?: string;
+};
+
+export type ProfilePhotoPolishResult = {
+  variant: ProfilePhotoPolishVariant;
+  variants: ProfilePhotoPolishVariant[];
+  assessment?: ProfilePhotoAssessment;
 };
 
 // Full governance-capable payload for an admin editing ANY member (including
@@ -809,6 +839,43 @@ export async function acknowledgeOnboardingStep(
     return { ok: false, kind: "auth-failed" };
   }
   return { ok: true, value: onboarding };
+}
+
+export async function polishOwnProfilePhoto(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<ProfilePhotoPolishResult>> {
+  const result = await authedJson(baseUrl, "/profile-photo/polish", "POST", sessionToken, {});
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as ProfilePhotoPolishResult };
+}
+
+export async function applyOwnPolishedProfilePhoto(
+  variantId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ variant_id: string; action_id: string }>> {
+  const result = await authedJson(baseUrl, "/profile-photo/apply", "POST", sessionToken, {
+    variant_id: variantId,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as { variant_id: string; action_id: string } };
 }
 
 // Reads an AdminBot resource over the member's own session. The dashboard uses this rather than

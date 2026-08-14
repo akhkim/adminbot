@@ -1440,6 +1440,63 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(res.status).toBe(401);
   });
 
+  it("runs profile-photo review reminders for the service principal, using only server-computed targeting/message", async () => {
+    const executor = { execute: async () => ({ handled: true }) };
+    const { baseUrl } = await startService({
+      executor,
+      reviewSlackProfilePhoto: async ({ slackUserId }) => ({
+        compliant: slackUserId === "U-GOOD",
+        issues: slackUserId === "U-GOOD" ? [] : ["background_not_clean"],
+        summary: slackUserId === "U-GOOD" ? "Looks good." : "Background is noisy.",
+        source: "ai",
+      }),
+    });
+    seedMember(baseUrl, "bad", { name: "Bad", slack_user_id: "U-BAD", status: "active" });
+    seedMember(baseUrl, "good", { name: "Good", slack_user_id: "U-GOOD", status: "active" });
+    const res = await fetch(`${baseUrl}/profile-photo/review/run`, {
+      method: "POST",
+      headers: serviceHeaders(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { reviewed: number; non_compliant: number; nudges_created: number };
+    expect(body.reviewed).toBe(2);
+    expect(body.non_compliant).toBe(1);
+    expect(body.nudges_created).toBe(1);
+  });
+
+  it("lets a signed-in member polish and apply their own Slack profile photo variant", async () => {
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => ({ handled: proposal.type === "slack.profile_photo_update" }),
+      },
+      polishSlackProfilePhoto: async () => ({
+        image_data_url: "data:image/png;base64,aGVsbG8=",
+      }),
+    });
+    seedMember(baseUrl, "sam", {
+      name: "Sam",
+      email: "sam@cs.toronto.edu",
+      slack_user_id: "U-SAM",
+      status: "active",
+    });
+    await approveClaim(baseUrl, "sam", "sam@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "sam@cs.toronto.edu");
+
+    const polished = await fetch(`${baseUrl}/profile-photo/polish`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(polished.status).toBe(200);
+    const polishedBody = (await polished.json()) as { variant: { id: string } };
+    const apply = await fetch(`${baseUrl}/profile-photo/apply`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ variant_id: polishedBody.variant.id }),
+    });
+    expect(apply.status).toBe(200);
+  });
+
   async function proposeSlackMessage(baseUrl: string): Promise<{ id: string; hash: string }> {
     const res = await fetch(`${baseUrl}/proposals`, {
       method: "POST",

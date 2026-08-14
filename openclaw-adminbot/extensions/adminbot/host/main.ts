@@ -24,6 +24,7 @@ import { createAdminBotOpenReviewExecutor } from "../src/connectors/openreview.j
 import { createAdminBotOverleafExecutor } from "../src/connectors/overleaf.js";
 import { createAdminBotSlackAdminExecutor } from "../src/connectors/slack-admin.js";
 import { createAdminBotSocialExecutor } from "../src/connectors/social.js";
+import type { AdminBotActionExecutor } from "../src/kernel/service.js";
 import { createAdminBotReimbursementWorkflow } from "../src/workflows/reimbursements/workflow.js";
 
 const execFileAsync = promisify(execFile);
@@ -63,6 +64,14 @@ export type AdminBotHostDeps = {
   };
   /** Mints a Slack Connect invite. Slack lives in another plugin, so the launcher supplies it. */
   inviteToSlackConnect?: (params: { email: string; channelId: string }) => Promise<{ url: string }>;
+};
+
+type ProfilePhotoReviewResult = {
+  compliant: boolean;
+  issues: string[];
+  summary: string;
+  photoUrl?: string;
+  source?: "ai" | "heuristic";
 };
 
 /**
@@ -234,6 +243,272 @@ async function fetchSlackMemberInfo(repoRoot: string, userId: string): Promise<u
     );
     return undefined;
   }
+}
+
+function readSlackProfilePhotoUrl(user: unknown): string | undefined {
+  const profile = (user as { profile?: Record<string, unknown> } | undefined)?.profile;
+  if (!profile) {
+    return undefined;
+  }
+  for (const key of ["image_1024", "image_512", "image_192", "image_72"]) {
+    const value = profile[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
+}
+
+function extractOpenAiOutputText(payload: unknown): string | undefined {
+  const record = payload as { output_text?: unknown; output?: unknown } | undefined;
+  if (typeof record?.output_text === "string" && record.output_text.trim()) {
+    return record.output_text;
+  }
+  if (!Array.isArray(record?.output)) {
+    return undefined;
+  }
+  for (const item of record.output) {
+    const content = (item as { content?: unknown } | undefined)?.content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+    for (const part of content) {
+      const text = (part as { text?: unknown } | undefined)?.text;
+      if (typeof text === "string" && text.trim()) {
+        return text;
+      }
+    }
+  }
+  return undefined;
+}
+
+async function reviewPhotoWithOpenAi(imageUrl: string): Promise<Omit<ProfilePhotoReviewResult, "photoUrl">> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
+  const model = process.env.ADMINBOT_PROFILE_PHOTO_REVIEW_MODEL?.trim() || "gpt-4.1-mini";
+  const response = await fetch("https://api.openai.com/v1/responses", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model,
+      input: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_text",
+              text:
+                "Assess this Slack profile photo for these exact rules: big enough headshot; face visible and preferably front-facing; clean background (blurred/single-color or easy to clean via BG remover). Respond as strict JSON schema only.",
+            },
+            { type: "input_image", image_url: imageUrl },
+          ],
+        },
+      ],
+      text: {
+        format: {
+          type: "json_schema",
+          name: "profile_photo_review",
+          strict: true,
+          schema: {
+            type: "object",
+            additionalProperties: false,
+            properties: {
+              compliant: { type: "boolean" },
+              issues: { type: "array", items: { type: "string" } },
+              summary: { type: "string" },
+            },
+            required: ["compliant", "issues", "summary"],
+          },
+        },
+      },
+      max_output_tokens: 350,
+    }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) {
+    throw new Error(`OpenAI review failed with HTTP ${response.status}`);
+  }
+  const payload = (await response.json()) as unknown;
+  const text = extractOpenAiOutputText(payload);
+  if (!text) {
+    throw new Error("OpenAI review returned no text");
+  }
+  const parsed = JSON.parse(text) as {
+    compliant?: unknown;
+    issues?: unknown;
+    summary?: unknown;
+  };
+  return {
+    compliant: parsed.compliant === true,
+    issues: Array.isArray(parsed.issues)
+      ? parsed.issues.map((entry) => String(entry).trim()).filter(Boolean)
+      : [],
+    summary: typeof parsed.summary === "string" ? parsed.summary : "",
+    source: "ai",
+  };
+}
+
+function createSlackProfilePhotoReviewer(repoRoot: string) {
+  return async function reviewSlackProfilePhoto(params: {
+    slackUserId: string;
+  }): Promise<ProfilePhotoReviewResult> {
+    const user = await fetchSlackMemberInfo(repoRoot, params.slackUserId);
+    const photoUrl = readSlackProfilePhotoUrl(user);
+    if (!photoUrl) {
+      return {
+        compliant: false,
+        issues: ["missing_photo"],
+        summary: "No Slack profile photo found.",
+        source: "heuristic",
+      };
+    }
+    try {
+      const reviewed = await reviewPhotoWithOpenAi(photoUrl);
+      return { ...reviewed, photoUrl };
+    } catch (error) {
+      return {
+        compliant: false,
+        issues: ["review_failed"],
+        summary: `Automated review failed: ${error instanceof Error ? error.message : String(error)}`,
+        photoUrl,
+        source: "heuristic",
+      };
+    }
+  };
+}
+
+async function polishPhotoWithOpenAi(params: {
+  imageUrl: string;
+  instructions: string;
+}): Promise<{ image_data_url: string; note?: string }> {
+  const apiKey = process.env.OPENAI_API_KEY?.trim();
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
+  const model = process.env.ADMINBOT_PROFILE_PHOTO_POLISH_MODEL?.trim() || "gpt-image-1";
+  const response = await fetch("https://api.openai.com/v1/images/edits", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      image: params.imageUrl,
+      prompt:
+        `Polish this profile photo to satisfy these rules while preserving identity: ${params.instructions}. ` +
+        "Keep realistic skin tone and clothing. Frame as chest-up with visible shoulders where possible.",
+      size: "1024x1024",
+      quality: "high",
+    }),
+    signal: AbortSignal.timeout(60_000),
+  });
+  if (!response.ok) {
+    throw new Error(`OpenAI image edit failed with HTTP ${response.status}`);
+  }
+  const payload = (await response.json()) as {
+    data?: Array<{ b64_json?: string; revised_prompt?: string }>;
+  };
+  const imageBase64 = payload.data?.[0]?.b64_json;
+  if (!imageBase64) {
+    throw new Error("OpenAI image edit returned no image");
+  }
+  return {
+    image_data_url: `data:image/png;base64,${imageBase64}`,
+    note: payload.data?.[0]?.revised_prompt,
+  };
+}
+
+function createSlackProfilePhotoPolisher(repoRoot: string) {
+  return async function polishSlackProfilePhoto(params: {
+    slackUserId: string;
+    instructions: string;
+    iteration: number;
+  }): Promise<{ image_data_url: string; note?: string }> {
+    const user = await fetchSlackMemberInfo(repoRoot, params.slackUserId);
+    const photoUrl = readSlackProfilePhotoUrl(user);
+    if (!photoUrl) {
+      throw new Error("No Slack profile photo found to polish");
+    }
+    const polished = await polishPhotoWithOpenAi({
+      imageUrl: photoUrl,
+      instructions: params.instructions,
+    });
+    return {
+      ...polished,
+      note:
+        polished.note ??
+        `AI polished iteration ${params.iteration}: face visibility, headshot framing, and cleaner background.`,
+    };
+  };
+}
+
+function dataUrlToBuffer(dataUrl: string): { buffer: Buffer; contentType: string } {
+  const match = /^data:([^;,]+);base64,(.+)$/u.exec(dataUrl.trim());
+  if (!match?.[1] || !match[2]) {
+    throw new Error("image_data_url must be a base64 data URL");
+  }
+  return {
+    contentType: match[1].trim(),
+    buffer: Buffer.from(match[2], "base64"),
+  };
+}
+
+function createSlackProfilePhotoUpdateExecutor(): AdminBotActionExecutor {
+  return {
+    async execute(proposal) {
+      if (proposal.type !== "slack.profile_photo_update") {
+        return { handled: false };
+      }
+      const payload = proposal.proposed_payload as {
+        target?: unknown;
+        image_data_url?: unknown;
+      };
+      const target = typeof payload?.target === "string" ? payload.target.trim() : "";
+      const dataUrl =
+        typeof payload?.image_data_url === "string" ? payload.image_data_url.trim() : "";
+      if (!target) {
+        throw new Error("slack.profile_photo_update payload missing target");
+      }
+      if (!dataUrl) {
+        throw new Error("slack.profile_photo_update payload missing image_data_url");
+      }
+      const token = process.env.ADMINBOT_SLACK_USER_TOKEN?.trim();
+      if (!token) {
+        throw new Error("ADMINBOT_SLACK_USER_TOKEN is not configured");
+      }
+      const { buffer, contentType } = dataUrlToBuffer(dataUrl);
+      if (!contentType.startsWith("image/")) {
+        throw new Error(`unsupported image content type: ${contentType}`);
+      }
+      const form = new FormData();
+      form.append(
+        "image",
+        new Blob([new Uint8Array(buffer)], { type: contentType }),
+        "profile-photo.png",
+      );
+      form.append("user", target);
+      const response = await fetch("https://slack.com/api/users.setPhoto", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!response.ok) {
+        throw new Error(`Slack users.setPhoto failed with HTTP ${response.status}`);
+      }
+      const body = (await response.json()) as { ok?: boolean; error?: string };
+      if (body.ok !== true) {
+        throw new Error(`Slack users.setPhoto error: ${body.error ?? "unknown_error"}`);
+      }
+      return { handled: true };
+    },
+  };
 }
 
 /**
@@ -499,6 +774,7 @@ export function createIpLocationResolver() {
 /** Builds the AdminBot service with every executor wired. */
 export function createAdminBotHost(deps: AdminBotHostDeps) {
   const { repoRoot } = deps;
+  const profilePhotoUpdateExecutor = createSlackProfilePhotoUpdateExecutor();
   return createAdminBotMockService({
     databasePath: path.join(repoRoot, "state/adminbot.sqlite"),
     auditRetentionDays: AUDIT_RETENTION_DAYS,
@@ -510,6 +786,7 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
         command: process.execPath,
         commandArgsPrefix: [path.join(repoRoot, "openclaw.mjs")],
       }),
+      profilePhotoUpdateExecutor,
       createGogAdminBotExecutor(),
       // Reviewing-cycle reminders post through OpenReview's own message invitations.
       // ADMINBOT_OPENREVIEW_SEND is the deploy-time kill switch: without it every approved
@@ -531,6 +808,8 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     fetchSlackTimezones: createSlackTimezoneReader(repoRoot),
     fetchSlackMessageCounts: createSlackMessageCounter(repoRoot),
     resolveSlackUserIdsByEmail: createSlackDirectoryEmailResolver(repoRoot),
+    reviewSlackProfilePhoto: createSlackProfilePhotoReviewer(repoRoot),
+    polishSlackProfilePhoto: createSlackProfilePhotoPolisher(repoRoot),
     // No `geolocateIp` here on purpose. PR #17 replaced the city-level ipapi.co lookup below with
     // the country/continent IPinfo Lite one, which api/server.ts builds itself from IPINFO_TOKEN.
     // The old resolver wrote "City, Region, Country" straight into the member's `location` field —
