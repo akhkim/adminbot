@@ -2197,6 +2197,20 @@ export function renderApp(state: AppViewState) {
   ) {
     void loadAdminBot(state, adminBotMode).finally(() => requestHostUpdate?.());
   }
+  // The Calendar tab's events are a separate read from the roster, and nothing was triggering it:
+  // opening the tab drew an empty month and only the Refresh button or a month step would fetch
+  // anything. `calendarEvents === undefined` is the "never asked" sentinel — a load that genuinely
+  // finds nothing sets [], so this cannot loop on an empty calendar.
+  if (
+    state.tab === "adminbotCalendar" &&
+    adminBotMode === "admin" &&
+    hasMemberSession &&
+    !state.calendarEventsLoading &&
+    !state.calendarEventsError &&
+    state.calendarEvents === undefined
+  ) {
+    void state.loadCalendarEvents?.().finally(() => requestHostUpdate?.());
+  }
   const browseChatWorkspacePath = (path: string) => {
     if (chatWorkspaceFiles.browserSearchTimer) {
       globalThis.clearTimeout(chatWorkspaceFiles.browserSearchTimer);
