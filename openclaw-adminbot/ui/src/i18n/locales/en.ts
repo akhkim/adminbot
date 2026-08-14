@@ -1723,6 +1723,16 @@ export const en: TranslationMap = {
       prototypeNotice: "Prototype: blockers stay in this browser and are not sent anywhere yet.",
     },
   },
+  feedback: {
+    openLabel: "Feedback",
+    prompt: "How was this function?",
+    starTitle: "{rating} of 5 stars",
+    commentPlaceholder: "What could be better? (optional)",
+    send: "Send",
+    close: "Close",
+    countRemaining: "{remaining} characters remaining",
+    infoTitle: "Improve this function on GitHub and open a PR",
+  },
   landing: {
     eyebrow: "Lab operations",
     tagline: "The admin side of research, in one place.",

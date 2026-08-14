@@ -22,7 +22,6 @@ import { nextStepFor, nextTasksFor } from "../next-step.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { findOwnMember } from "./profile.ts";
-import "../../components/feedback-widget.ts";
 
 export type MyWorkProps = {
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
@@ -429,7 +428,6 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
         <p class="my-work__notice">${t("myWork.items.syncNotice")}</p>
         ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
       </section>
-      <adminbot-feedback-widget feature-id="my-work"></adminbot-feedback-widget>
     </div>
   `;
 }
