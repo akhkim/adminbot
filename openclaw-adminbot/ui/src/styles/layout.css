@@ -513,9 +513,8 @@
   font-size: var(--control-ui-text-xs);
   line-height: 1.1;
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
   color: var(--muted);
-  text-transform: uppercase;
 }
 
 .sidebar-brand__title {
@@ -535,6 +534,9 @@
   overflow-x: hidden;
   padding: 0;
   scrollbar-width: none;
+  /* The other scroller in the shell, and the other place the bounce showed. Same reasoning as
+     `.content`: the shell is fixed-height, so this pane owns its own overscroll. */
+  overscroll-behavior-y: none;
 }
 
 .sidebar-sessions {
@@ -634,8 +636,7 @@
 .sidebar-recent-sessions__label-text {
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .sidebar-recent-sessions__chevron {
@@ -885,8 +886,10 @@
 
 .nav-section {
   display: grid;
-  gap: 6px;
-  margin-bottom: 16px;
+  /* The heading is its own separator now that it is sentence case at --control-ui-text-lg, so the
+     gap above it only has to keep the previous group's last row from touching it. */
+  gap: 2px;
+  margin-bottom: 6px;
 }
 
 .nav-section:last-child {
@@ -895,7 +898,7 @@
 
 .nav-section__items {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .nav-section--collapsed .nav-section__items {
@@ -926,12 +929,14 @@
   background: var(--bg-hover);
 }
 
+/* Two steps above the --control-ui-text-sm nav items inside them, in sentence case: these read as
+   headings for their group rather than as uppercase eyebrows, so the wide `--tracking-label`
+   spacing (which exists to keep all-caps legible) goes with the uppercasing. */
 .nav-section__label-text {
-  font-size: var(--control-ui-text-xs);
+  font-size: var(--control-ui-text-lg);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
   color: var(--muted);
-  text-transform: uppercase;
 }
 
 .nav-section__chevron {
@@ -961,9 +966,11 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
-  min-height: 40px;
-  padding: 0 9px;
+  gap: 12px;
+  /* Pointer-sized rows are the mobile layout's job (layout.mobile.css keeps 40px there); on a
+     desktop sidebar the extra height only spreads a group out. */
+  min-height: 30px;
+  padding: 0 10px;
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   background: transparent;
@@ -1002,6 +1009,7 @@
 .nav-item__text {
   font-size: var(--control-ui-text-sm);
   font-weight: 500;
+  line-height: 3;
   letter-spacing: var(--tracking-tight);
   white-space: nowrap;
 }
@@ -1158,8 +1166,7 @@
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
   color: var(--muted);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .sidebar-version__text {
@@ -1266,6 +1273,11 @@
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
+  /* This pane is what actually scrolls -- the shell is a fixed-height grid and the document itself
+     never moves -- so the rubber-band past the end of a tab has to be stopped here. The html/body
+     rule could not reach it. `none` rather than `contain`: contain only stops the scroll chaining
+     to a parent, and still leaves the pane its own bounce, which is the thing being seen. */
+  overscroll-behavior-y: none;
 }
 
 .content > * + * {
@@ -1371,8 +1383,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   line-height: 1.2;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   font-weight: 600;
   cursor: pointer;
   display: inline-flex;
@@ -1611,7 +1622,7 @@
   box-sizing: border-box;
   padding: var(--space-5) clamp(var(--space-5), 4vw, var(--space-10));
   padding-top: max(var(--space-5), env(safe-area-inset-top));
-  background: var(--bg);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
 }
 
 /* Small and quiet on the landing page, where the hero wordmark is the mark that matters; on the
@@ -1630,6 +1641,10 @@
   color: var(--muted);
 }
 
+.landing .signed-out-topbar__action {
+  display: none;
+}
+
 .signed-out-topbar__action {
   flex-shrink: 0;
   gap: 8px;
@@ -1641,6 +1656,21 @@
   display: inline-flex;
   width: 16px;
   height: 16px;
+}
+
+.signed-out-topbar__action.btn.primary {
+  background: var(--text-strong);
+  border: 1px solid var(--text-strong);
+  color: #0a0a0a;
+  opacity: 0.9;
+  transition: opacity 150ms ease;
+}
+
+.signed-out-topbar__action.btn.primary:hover,
+.signed-out-topbar__action.btn.primary:focus-visible {
+  opacity: 1;
+  background: var(--text-strong) !important;
+  border-color: var(--text-strong) !important;
 }
 
 @media (max-width: 480px) {
@@ -1663,17 +1693,17 @@
   max-width: 62rem;
 }
 
+/* Heads the band that holds the work waiting on you, so it reads as a heading rather than as a
+   caption in the type of a code sample. */
 .dashboard__section-title {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin: 0 0 var(--space-5);
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-xs);
-  font-weight: 500;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
-  color: var(--muted);
+  margin: 0 0 var(--space-4);
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text);
 }
 
 /* The count is the whole reason the band has a heading; without something waiting it is absent. */
@@ -1715,15 +1745,50 @@
   padding: var(--space-6);
   border: 1px solid var(--danger-muted);
   border-radius: var(--radius-xl);
-  background: var(--danger-subtle);
+  background: var(--bg-elevated);
+  /* The checklist sits beside -- not inside -- the .profile container in app-render.ts, so it
+     would stretch to the full content width without the same 62rem measure the sections above it
+     use. */
+  max-width: 62rem;
 }
+
+.dashboard-onboarding__title::before {
+  content: "";
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: var(--space-3);
+  vertical-align: 0.1em;
+  border-radius: var(--radius-full);
+  background: var(--danger);
+}
+
+@keyframes onboarding-dot-pulse {
+  0%,
+  60%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  30% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard-onboarding__title::before {
+    animation: none;
+  }
+}
+
 
 .dashboard-onboarding__header {
   margin-bottom: var(--space-5);
 }
 
 .dashboard-onboarding__title {
-  font-size: var(--control-ui-text-lg);
+  font-size: var(--control-ui-text-xl);
   font-weight: 600;
   color: var(--text-strong);
 }
@@ -1731,14 +1796,222 @@
 .dashboard-onboarding__sub {
   margin-top: var(--space-1);
   color: var(--muted);
+  font-size: var(--control-ui-text-md);
+}
+
+.onboarding-step-card {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--bg);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+  overflow: hidden;
+  /* scrollIntoView(block:"start") lands the top flush against the viewport edge without this, so a
+     tall step slides underneath the sticky topbar and reads as a black cut across the screen. */
+  scroll-margin-top: calc(var(--shell-topbar-height) + var(--space-4));
+}
+
+.onboarding-step-card__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.onboarding-step-card__row--category {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.onboarding-step-card__category {
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  color: var(--text-strong);
+}
+
+.onboarding-step-card__count {
+  font-size: var(--control-ui-text-md);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.onboarding-step-card__row--task {
+  padding: var(--space-5);
+  align-items: flex-start;
+}
+
+.onboarding-step-card__task {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.onboarding-step-card__number {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  font-size: var(--control-ui-text-md);
+  font-weight: 700;
+  color: var(--muted-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.onboarding-step-card__label {
+  font-size: var(--control-ui-text-xl);
+  font-weight: 600;
+  color: var(--text-strong);
+  line-height: 1.3;
+}
+
+.onboarding-step-card__badges {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.onboarding-step-card__badge {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.onboarding-step-card__badge--required {
+  background: color-mix(in srgb, var(--danger) 16%, transparent);
+  color: var(--danger);
+}
+
+.onboarding-step-card__badge--optional {
+  background: color-mix(in srgb, var(--muted) 16%, transparent);
+  color: var(--muted-strong);
+}
+
+.onboarding-step-card__badge--status {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.onboarding-step-card__badge--status[data-status="complete"] {
+  background: color-mix(in srgb, var(--success, #34d3a6) 18%, transparent);
+  color: var(--success, #34d3a6);
+}
+
+.onboarding-step-card__body {
+  padding: 0 var(--space-5) var(--space-5);
+  font-size: var(--control-ui-text-md);
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.onboarding-step-card__detail {
+  margin: 0 0 var(--space-3);
+  color: var(--muted-strong);
+}
+
+.onboarding-step-card__bullets {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.onboarding-step-card__points {
+  margin: var(--space-1) 0 0;
+  padding-left: 18px;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.onboarding-step-card__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.onboarding-step-card__link {
+  height: var(--control-h-lg);
+  padding: 0 var(--space-4);
+  font-size: var(--control-ui-text-md);
+}
+
+.onboarding-step-card__blocked-note {
+  margin: 0 var(--space-5) var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
   font-size: var(--control-ui-text-sm);
 }
 
-.dashboard-onboarding__acknowledge {
-  width: 100%;
-  margin-top: var(--space-2);
+/* Same surface as the rest of the card -- just a hairline above, not a background swap --
+   so Next/Back/toggle read as this card's own controls, not a separate strip. */
+.onboarding-step-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border);
 }
 
+.onboarding-step-card__back,
+.onboarding-step-card__toggle,
+.onboarding-step-card__next {
+  height: var(--control-h-lg);
+  padding: 0 var(--space-6);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.onboarding-step-card__error {
+  margin-bottom: var(--space-4);
+  color: var(--danger);
+  font-size: var(--control-ui-text-md);
+}
+
+.onboarding-step-card__next.btn.primary {
+  height: 35px;
+  padding: 0 var(--space-4);
+  background: #e7e6e6;
+  border: 1px solid #808080;
+  color: #0a0a0a;
+  border-radius: var(--radius-lg);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.onboarding-step-card__next.btn.primary:hover,
+.onboarding-step-card__next.btn.primary:focus-visible {
+  background: #e7e6e6 !important;
+  border-color: #808080 !important;
+  opacity: 0.88;
+}
+
+.onboarding-step-card__next.btn.primary:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+
+/* Every card in this stack is something waiting on the viewer, so the accent edge that used to
+   run down all of them marked nothing -- it was decoration wearing the costume of a signal. The
+   card's own border carries it, and the accent is spent where it does distinguish: the action. */
 .dashboard-card {
   display: flex;
   align-items: flex-start;
@@ -1748,23 +2021,49 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-xl);
   background: var(--bg-elevated);
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 
-/* One accent edge marks the band as actionable without tinting every card a different colour. */
-.dashboard-card {
-  border-left: 2px solid var(--accent);
+.dashboard-card:hover {
+  border-color: var(--border-hover);
 }
 
 .dashboard-card__body {
   min-width: 0;
 }
 
+/* The loudest text on the page belongs to the thing that needs doing. This used to sit two steps
+   below the ambient conference countdown in the band underneath, which inverted the hierarchy: the
+   page shouted a date nobody can act on and murmured the work that was waiting. */
 .dashboard-card__title {
   margin: 0;
-  font-size: var(--control-ui-text-md);
+  font-size: var(--control-ui-text-lg);
   font-weight: 600;
   letter-spacing: var(--tracking-tight);
   color: var(--text-strong);
+}
+
+/* The specific fields still blank, named under the count. Chips rather than a sentence: they are
+   a set of short labels being scanned, not prose being read. */
+.dashboard-card__fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.dashboard-card__field {
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-size: var(--control-ui-text-xs);
+  color: var(--text);
+}
+
+.dashboard-card__field--more {
+  border-style: dashed;
+  color: var(--muted);
 }
 
 .dashboard-card__summary {
@@ -1795,6 +2094,28 @@
   color: var(--muted);
 }
 
+/* A chip that goes somewhere. Same pill as its static siblings, plus the affordances that say so:
+   a pointer, a hover lift, and the focus ring keyboard users navigate by. */
+.dashboard-card__step--action {
+  cursor: pointer;
+  font-family: inherit;
+  transition:
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-fast) var(--ease-out);
+}
+
+.dashboard-card__step--action:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-hover);
+  color: var(--text-strong);
+}
+
+.dashboard-card__step--action:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
 .dashboard-card__action {
   flex-shrink: 0;
 }
@@ -1806,15 +2127,325 @@
 }
 
 /* Summary of a page the member owns. One number worth opening the page for, then the door. */
+/* Same container as an attention card -- surface, border weight, radius and padding all match.
+   The two used to differ on three axes at once, which read as two unrelated components rather than
+   as "act on this" versus "here is where things stand". That distinction is carried by the band
+   they sit in and by their type, not by giving them different boxes.
+
+   `height: 100%` keeps the pair in the grid the same height whatever their contents, so their
+   actions land on one line instead of stepping. */
 .dashboard-summary {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: var(--space-2);
+  height: 100%;
   padding: var(--space-5) var(--space-6);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-xl);
-  background: var(--bg-accent);
+  background: var(--bg-elevated);
+}
+
+/* Plot and ranked list side by side: the plot shows spread, the list shows rank, and neither alone
+   answers "where is the lab". Stacks under its own width rather than a viewport breakpoint, since
+   the card sits in a grid whose column count already varies. */
+/* The card spans every column of the dashboard grid. That grid is
+   repeat(auto-fit, minmax(18rem, 1fr)), so a card taking one column gives the plot roughly 150px
+   once the list and the card padding are out — at which point a world map is a row of specks. A map
+   is wide by nature; this is the one card on the dashboard that has a natural aspect ratio. */
+.member-map {
+  grid-column: 1 / -1;
+}
+
+.member-map__head {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.member-map__body {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  align-items: flex-start;
+  width: 100%;
+  margin-top: var(--space-2);
+}
+
+/* 2:1, the projection's own ratio, so the plot fills its width and takes the height that implies
+   rather than being squashed into a box that distorts every position on it. */
+.member-map__plot {
+  flex: 1 1 420px;
+  min-width: 0;
+  aspect-ratio: 2 / 1;
+  height: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+}
+
+/* The plot doubles as the button that opens the full-screen view, so it carries no button chrome —
+   the map is the affordance. */
+.member-map__plot-button {
+  flex: 1 1 420px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: zoom-in;
+}
+
+.member-map__plot-button .member-map__plot {
+  width: 100%;
+}
+
+.member-map__plot-button:hover .member-map__land {
+  fill: color-mix(in srgb, var(--bg-accent) 88%, var(--text));
+}
+
+.member-map__plot-button:focus-visible {
+  outline: 2px solid var(--accent, var(--text));
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+/* Full screen, in the top layer. A native dialog gets Escape, focus trapping and stacking for
+   free; the alternative is a fixed overlay that reimplements all three. */
+.member-map__dialog {
+  width: 100vw;
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  padding: 0;
+  border: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.member-map__dialog::backdrop {
+  background: rgb(0 0 0 / 65%);
+}
+
+.member-map__dialog-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  height: 100%;
+  padding: var(--space-5) var(--space-6);
+}
+
+/* The plot takes every pixel the header and list leave it. min-height:0 is what lets a flex child
+   actually shrink to its container instead of overflowing at its intrinsic size. */
+.member-map__dialog-plot {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.member-map__dialog-plot .member-map__plot {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 100%;
+}
+
+.member-map__dialog .member-map__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0 var(--space-4);
+  flex: 0 0 auto;
+  width: 100%;
+}
+
+/* Labels and dots are sized for the card; at full screen the same viewBox units are three times
+   the pixels, so they are scaled back to keep the map from looking like a diagram. */
+.member-map__dialog .member-map__label {
+  font-size: 3px;
+  stroke-width: 1;
+}
+
+.member-map__list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0 var(--space-4);
+  width: 100%;
+}
+
+/* Land is a filled shape, not an outline: at 1:110m the coastline is the only cue telling you which
+   dot is which, and a hairline stroke of it disappears at card size. Ocean is barely separated from
+   the card so the map reads as part of the page rather than as a pasted-in graphic. */
+.member-map__ocean {
+  fill: var(--panel);
+}
+
+.member-map__land {
+  fill: var(--bg-accent);
+  stroke: var(--border-strong);
+  stroke-width: 0.3;
+  stroke-linejoin: round;
+}
+
+/* Under the dots and over the land, so it reads as a reference rather than as a border between
+   countries — which is what a stronger grid on top of a coastline starts to look like. */
+.member-map__grid {
+  stroke: var(--border-strong);
+  stroke-width: 0.3;
+  opacity: 0.35;
+}
+
+.member-map__grid--equator {
+  opacity: 0.6;
+}
+
+/* A ring of the ocean color behind each dot, so a city sitting on a coast is still a disc rather
+   than a shape bleeding into the landmass under it. */
+.member-map__halo {
+  fill: var(--panel);
+  fill-opacity: 0.85;
+}
+
+.member-map__dot {
+  fill: var(--accent, var(--text));
+  fill-opacity: 0.9;
+}
+
+.member-map__place:hover .member-map__dot {
+  fill-opacity: 1;
+}
+
+.member-map__label {
+  fill: var(--text);
+  font-size: 5px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--panel);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.member-map__list {
+  flex: 0 1 auto;
+  min-width: 120px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.member-map__row {
+  display: flex;
+  flex-direction: column;
+  padding: 1px 0;
+  font-size: var(--control-ui-text-xs);
+}
+
+.member-map__row-top {
+  display: flex;
+  gap: var(--space-3);
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.member-map__row-main {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.member-map__row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.member-map__row-count {
+  font-family: var(--mono);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.member-map__row--more {
+  color: var(--muted);
+}
+
+/* Recently-active faces per city. Overlapping like a classic avatar stack; names live in each
+   circle's title tooltip rather than as visible text, so the row stays glanceable. */
+.member-map__avatars {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.member-map__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  object-fit: cover;
+  outline: 1.5px solid var(--panel);
+  margin-left: -6px;
+  font-size: 9px;
+  font-weight: 600;
+  color: var(--text-strong);
+  background: linear-gradient(160deg, var(--accent-subtle), var(--bg-muted));
+}
+
+.member-map__avatar:first-child {
+  margin-left: 0;
+}
+
+.member-map__avatar-more {
+  margin-left: var(--space-1);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* Its own row below the count, not squeezed inline with the avatars -- a bigger target that
+   reads as "there's more here" rather than a stray mark next to the last face. */
+.member-map__expand-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  color: var(--accent, var(--text));
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  padding: 3px 0 0;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.member-map__expand-btn:hover {
+  color: var(--text-strong);
+}
+
+.member-map__expand-caret {
+  font-size: 0.9em;
+}
+
+/* The readable list an expanded row shows below its avatars -- actual names, not more circles
+   someone would have to hover one at a time to read off. */
+.member-map__name-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text);
+  font-size: var(--control-ui-text-xs);
+}
+
+.member-map__name-list li {
+  padding: 1px 0;
 }
 
 .dashboard-summary__title {
@@ -1822,11 +2453,9 @@
   align-items: center;
   gap: var(--space-2);
   margin: 0;
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-xs);
+  font-size: var(--control-ui-text-sm);
   font-weight: 500;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   color: var(--muted);
 }
 
@@ -1846,12 +2475,14 @@
   stroke-linejoin: round;
 }
 
+/* One step under an attention card's title: these two cards report where things stand, which is
+   worth reading but never worth acting on before the band above them. */
 .dashboard-summary__headline {
   margin: 0;
-  font-size: var(--control-ui-text-xl);
+  font-size: var(--control-ui-text-md);
   font-weight: 600;
   letter-spacing: var(--tracking-tight);
-  color: var(--text-strong);
+  color: var(--text);
 }
 
 .dashboard-summary__detail {
@@ -1872,31 +2503,6 @@
   margin-top: var(--space-2);
 }
 
-.dashboard-summary__badge {
-  padding: 3px var(--space-3);
-  border: 1px solid var(--accent-muted);
-  border-radius: var(--radius-full);
-  background: var(--accent-subtle);
-  font-size: var(--control-ui-text-xs);
-  color: var(--text-strong);
-}
-
-.dashboard-summary__badge--more {
-  border-color: var(--border);
-  background: transparent;
-  color: var(--muted);
-}
-
-.dashboard-summary__line {
-  margin: var(--space-3) 0 0;
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
-}
-
-.dashboard-summary__line--warn {
-  color: var(--text);
-}
-
 .dashboard-summary__list {
   display: flex;
   flex-direction: column;
@@ -1909,7 +2515,9 @@
 
 .dashboard-summary__row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 64px 34px;
+  /* The last column holds a step name, not a glyph -- it was 34px, so "Submission" and anything
+     longer overflowed the card. Bounded rather than fixed, and the cell truncates below. */
+  grid-template-columns: minmax(0, 1fr) 64px minmax(0, 7rem);
   align-items: center;
   gap: var(--space-3);
   font-size: var(--control-ui-text-sm);
@@ -1948,10 +2556,47 @@
 }
 
 .dashboard-summary__row-step {
+  overflow: hidden;
   font-family: var(--mono);
   font-size: var(--control-ui-text-xs);
   color: var(--muted);
+  text-align: right;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A venue name that links out. The icon used to be a standalone button with no styles at all, so
+   it rendered at the SVG's natural size and dominated the row; it now sits inline at text size. */
+.dashboard-summary__row-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.dashboard-summary__row-link:hover {
+  text-decoration: underline;
+}
+
+.dashboard-summary__row-link-icon {
+  display: inline-flex;
+  margin-left: 4px;
+  vertical-align: -1px;
+}
+
+.dashboard-summary__row-link-icon svg {
+  width: 11px;
+  height: 11px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+}
+
+/* Urgency reads through the countdown value, matching the deadline board's bands. */
+.dashboard-summary__row[data-urgency="critical"] .dashboard-summary__row-value {
+  color: var(--danger, #a83b38);
+}
+
+.dashboard-summary__row[data-urgency="soon"] .dashboard-summary__row-value {
+  color: var(--warn, #9f5b12);
 }
 
 .dashboard-summary__more {
@@ -1996,8 +2641,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 64px;
+  width: 80px;
+  height: 80px;
   border-radius: var(--radius-full);
   background: linear-gradient(160deg, var(--accent-subtle), var(--bg-muted));
   border: 1px solid var(--accent-muted);
@@ -2076,10 +2721,41 @@
 }
 
 .profile__name {
-  font-size: var(--control-ui-text-xl);
-  font-weight: 600;
+  font-size: var(--control-ui-text-2xl);
+  font-weight: 650;
+  line-height: 1.15;
   letter-spacing: var(--tracking-tight);
   color: var(--text-strong);
+}
+
+/* Reads as a state, not a label: the dot carries the status and the word confirms it, so the two
+   states differ by more than color alone. */
+.profile__activity {
+  display: inline-flex;
+  gap: var(--space-2);
+  align-items: center;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  cursor: help;
+}
+
+.profile__activity-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentcolor;
+}
+
+.profile__activity[data-activity="active"] {
+  color: var(--ok, var(--ok-muted, var(--text)));
+  border-color: currentcolor;
+}
+
+.profile__activity[data-activity="inactive"] {
+  color: var(--muted);
 }
 
 .profile__role-pill {
@@ -2166,61 +2842,92 @@
   stroke-width: 1.5px;
 }
 
-/* A small ring rather than a number alone, so "how much is left" reads at a glance the same way
-   the field groups below let it be filled in at a glance. */
+/* The completion ledger: the number, then one tick per required field, grouped the way the record
+   below is grouped. The ticks are what a ring could not do -- they say which run of fields is
+   thin, so the meter is a diagnosis rather than a score. */
 .profile__completeness {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
   flex-shrink: 0;
   margin-left: auto;
   padding-left: var(--space-5);
   border-left: 1px solid var(--border);
 }
 
-.profile__completeness-ring {
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  transform: rotate(-90deg);
-}
-
-.profile__completeness-track,
-.profile__completeness-fill {
-  fill: none;
-  stroke-width: 4;
-}
-
-.profile__completeness-track {
-  stroke: var(--border);
-}
-
-.profile__completeness-fill {
-  stroke: var(--accent);
-  stroke-linecap: round;
-  transition: stroke-dasharray var(--duration-normal) var(--ease-out);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .profile__completeness-fill {
-    transition: none;
-  }
-}
-
 .profile__completeness-copy {
   display: flex;
-  flex-direction: column;
+  align-items: baseline;
+  gap: var(--space-2);
 }
 
 .profile__completeness-percent {
-  font-size: var(--control-ui-text-md);
+  font-size: var(--control-ui-text-2xl);
   font-weight: 700;
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
   color: var(--text-strong);
 }
 
 .profile__completeness-label {
+  font-family: var(--mono);
   font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-tight);
   color: var(--muted);
+}
+
+/* Group gaps are wider than tick gaps, so the four runs read as four runs without a label each. */
+.profile__ledger {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.profile__ledger-group {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.profile__tick {
+  width: 10px;
+  height: 4px;
+  border-radius: 1px;
+  transition: background-color var(--duration-normal) var(--ease-out);
+}
+
+.profile__tick--filled {
+  background: var(--accent);
+}
+
+.profile__tick--blank {
+  background: var(--border-strong);
+}
+
+/* Nothing outstanding: the ledger stops using the "waiting on you" color and reads as a receipt. */
+.profile__completeness--done .profile__tick--filled {
+  background: var(--ok);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile__tick {
+    transition: none;
+  }
+}
+
+/* Once the hero wraps, the ledger is below the identity rather than beside it, so the rule that
+   separated the two columns has to become the one that separates the two rows. */
+@media (max-width: 640px) {
+  .profile__completeness {
+    align-items: flex-start;
+    width: 100%;
+    margin-left: 0;
+    padding-left: 0;
+    padding-top: var(--space-4);
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
 }
 
 /* ===========================================
@@ -2234,28 +2941,17 @@
   background: var(--bg-elevated);
 }
 
-/* The one section asking for something rather than just showing it -- a light accent wash marks
-   it as the actionable card without resorting to a second color of button. */
-.profile__section--highlight {
-  border-color: var(--accent-muted);
-  background: var(--accent-subtle);
-}
-
+/* Top of the card's type hierarchy: section title, then group title, then field label, then the
+   placeholder example inside the control. Each step down is a step dimmer, so the level a piece of
+   text sits at is legible from its color alone. This was the mono micro-label at --muted, which
+   put the card's own title at the same weight as the examples four levels below it. */
 .profile__section-title,
 .my-work__section-title {
   margin: 0 0 var(--space-4);
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-xs);
-  font-weight: 500;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.profile__section-sub {
-  margin: calc(-1 * var(--space-2)) 0 var(--space-4);
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
+  font-size: var(--control-ui-text-xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
 }
 
 .profile__empty,
@@ -2268,36 +2964,6 @@
   font-size: var(--control-ui-text-sm);
 }
 
-/* ---- Progress bar (fill in the blanks) ---- */
-
-.profile__progress {
-  margin-bottom: var(--space-5);
-}
-
-.profile__progress-track {
-  height: 6px;
-  border-radius: var(--radius-full);
-  background: var(--bg-muted);
-  overflow: hidden;
-}
-
-.profile__progress-fill {
-  height: 100%;
-  border-radius: var(--radius-full);
-  background: var(--accent);
-  transition: width var(--duration-normal) var(--ease-out);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .profile__progress-fill {
-    transition: none;
-  }
-}
-
-.profile__progress-label {
-  margin: var(--space-2) 0 0;
-}
-
 /* ===========================================
    Field groups -- shared by the read-only view and both forms
    =========================================== */
@@ -2306,24 +2972,38 @@
 .profile__form {
   display: flex;
   flex-direction: column;
-  gap: var(--space-6);
+  gap: var(--space-3);
 }
 
+/* Space separates the groups, not rules. A hairline between every group turned the card into a
+   ledger and, with the read view's own row rules, stacked two lines a few pixels apart.
+   One gap, not two: this pad and the flex `gap` above it both land between the same pair of
+   groups, so together they set the whole distance. */
 .profile__field-group + .profile__field-group {
-  padding-top: var(--space-5);
-  border-top: 1px solid var(--border);
+  padding-top: var(--space-3);
 }
 
+/* The read-only Account rows sit above the form's first group, so the gap between them has to come
+   from here -- the form's own `gap` never spans the two. */
+.profile__fields {
+  margin-bottom: var(--space-3);
+}
+
+/* Second level: below the section title, above the field labels it heads. */
 .profile__group-title {
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin: 0 0 var(--space-4);
-  font-size: var(--control-ui-text-xs);
+  margin: 0 0 var(--space-3);
+  font-size: var(--control-ui-text-lg);
   font-weight: 600;
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   color: var(--text-strong);
+}
+
+.profile__group-title .profile__group-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .profile__group-icon {
@@ -2343,41 +3023,74 @@
   stroke-linejoin: round;
 }
 
+/* min() rather than a bare 22rem: auto-fill honours the minimum even when it is wider than the
+   container, so a bare track floor overflows every viewport narrower than one column. */
 .profile__field-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
-  gap: var(--space-3) var(--space-6);
+  grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
+  column-gap: var(--space-8);
 }
 
 .profile__form .profile__field-grid {
-  grid-template-columns: repeat(auto-fill, minmax(18rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(18rem, 100%), 1fr));
   gap: var(--space-4);
-  align-items: end;
+  /* Top-aligned: bottom-aligning a row that contains a three-line textarea drops every short
+     field in that row to the textarea's floor and tears a hole under their labels. */
+  align-items: start;
 }
 
+/* The record reads as a ruled sheet rather than a grid of stacked label/value pairs: label left at
+   a fixed measure, answer right, a hairline under each row. Nineteen facts scan down the answer
+   column in one pass, and a blank is visible as a gap in that column instead of as a line of text
+   that has to be read to discover it says nothing. */
 .profile-field {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: var(--space-2) 0;
 }
 
+/* Same treatment as `.profile__form-label`: a label names an answer whether or not the member is
+   the one who gets to write it, so the governed rows read at the level of every other field label
+   rather than as a dimmer, wider-tracked species of their own. */
 .profile-field__label {
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text);
 }
 
 .profile-field__value {
   margin: 0;
+  min-width: 0;
   font-size: var(--control-ui-text-md);
   color: var(--text);
+  overflow-wrap: anywhere;
 }
 
-/* A blank is information too, so it is stated rather than left as an empty row. */
-.profile-field__value--empty {
-  color: var(--muted);
-  font-style: italic;
+/* The governed labels carry their rule in the label itself ("Email (@cs.toronto.edu)"), which is
+   wider than the 8.5rem column and broke across two lines. Let the column take what the longest
+   label needs instead of wrapping a single label onto two rows. */
+.profile-field--locked {
+  grid-template-columns: max-content 1fr;
+}
+
+.profile-field--locked .profile-field__label {
+  white-space: nowrap;
+}
+
+/* Under the label rather than beside it once there is no room for two columns. */
+@media (max-width: 640px) {
+  .profile-field,
+  .profile-field--locked {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .profile-field--locked .profile-field__label {
+    white-space: normal;
+  }
 }
 
 .profile__form-row {
@@ -2386,11 +3099,116 @@
   gap: 6px;
 }
 
+/* An unanswered field looks unanswered. Twenty-four identical boxes made "what is left" a question
+   only the ledger and the dashboard card could answer, which is why both had to exist; a recessed
+   fill says it at the field itself. Scoped to this page's own rows, and to the controls that can
+   report emptiness -- a <select> always has a value, so it never dims. */
+.profile__form-row .input:placeholder-shown {
+  background: var(--bg-muted);
+}
+
+/* Third level. A label names an answer the member has to give, so it reads at full text color --
+   the examples inside the empty controls below sit two steps dimmer, which is what keeps a
+   placeholder from being mistaken for an answer already given. */
 .profile__form-label {
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text);
+}
+
+/* The country box is the short half of the row: the number is what a member is actually typing, so
+   it gets the width. The dial code leads each suggestion (see renderFieldInput), which keeps the
+   part that identifies the choice visible when a long country name truncates. */
+.profile__phone {
+  display: grid;
+  grid-template-columns: minmax(0, 9rem) minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.profile__phone-code {
+  min-width: 0;
+  padding-right: var(--space-2);
+  text-overflow: ellipsis;
+}
+
+/* The country list, drawn here rather than by the browser: a `<datalist>` popup renders at the
+   platform's own size and colours and cannot be styled, which left a list that belonged to a
+   different application sitting under the field. */
+.country-select {
+  position: relative;
+}
+
+/* Room for the chevron, so a long country name stops before it rather than running underneath. */
+.country-select .profile__phone-code {
+  padding-right: 26px;
+}
+
+.country-select__chevron {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  transform: translateY(-50%);
   color: var(--muted);
+  pointer-events: none;
+}
+
+.country-select__chevron svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.country-select__list {
+  position: absolute;
+  z-index: var(--z-dropdown);
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 15rem;
+  margin: 0;
+  padding: var(--space-1);
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--popover);
+  box-shadow: var(--shadow-md);
+}
+
+.country-select__option {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding: 5px var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: var(--control-ui-text-sm);
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* One highlight, driven by the keyboard and by hover alike, so arrowing and pointing agree. */
+.country-select__option--active {
+  background: var(--bg-hover);
+}
+
+.country-select__dial {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.country-select__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .profile__optional {
@@ -2401,83 +3219,100 @@
   text-transform: none;
 }
 
+/* The required dot. Sits on the label's baseline row rather than after the text so a two-line
+   label does not push it onto a line of its own. */
+/* Marks a field as required, answered or not, so the set the lab asks for is readable at a glance
+   rather than only while it is incomplete. */
 .profile__mandatory {
-  margin-left: 3px;
-  color: var(--danger);
-  font-weight: 700;
-}
-
-.profile__upload {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-top: var(--space-5);
-  border-top: 1px solid var(--border);
-}
-
-.profile__upload-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
-.profile__upload-preview {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-full);
-  border: 1px solid var(--border-strong);
-  background: var(--bg-muted);
-  object-fit: cover;
-}
-
-.profile__upload-preview--empty {
   display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-left: 5px;
+  vertical-align: 0.35em;
+  border-radius: var(--radius-full);
+  background: var(--danger);
 }
 
-.profile__upload-button {
-  cursor: pointer;
-}
-
-.profile__upload-hint {
-  margin: 0;
-  font-size: var(--control-ui-text-xs);
-  color: var(--muted);
-}
 
 /* ===========================================
    Suggestions
    =========================================== */
 
-.profile__suggestions {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
-  gap: var(--space-3);
+.profile__section-title {
+  margin: 0 0 var(--space-6);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--control-ui-text-lg);
+  font-weight: 700;
+  color: var(--muted-strong);
 }
 
-.profile-suggestion {
-  padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: var(--panel);
-  transition: border-color var(--duration-fast) var(--ease-out);
+.profile__suggestions-group {
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border);
 }
 
-.profile-suggestion:hover {
-  border-color: var(--border-hover);
+.profile__suggestions-group:first-of-type {
+  padding-top: 0;
+  border-top: none;
 }
 
-.profile-suggestion__title {
-  margin: 0;
-  font-size: var(--control-ui-text-md);
+.profile__suggestions-group + .profile__suggestions-group {
+  margin-top: var(--space-6);
+}
+
+.profile__suggestions-group-title {
+  margin: 0 0 var(--space-4);
+  font-size: var(--control-ui-text-xl);
   font-weight: 600;
   color: var(--text-strong);
 }
 
+.profile__suggestions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(22rem, 100%), 1fr));
+  gap: var(--space-6) var(--space-8);
+}
+
+.profile-suggestion {
+  padding: 0;
+}
+
+.profile-suggestion__title {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin: 0;
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-strong);
+}
+
+.profile-suggestion__status {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+  line-height: 1;
+  white-space: nowrap;
+}
+
 .profile-suggestion__body {
-  margin: var(--space-1) 0 var(--space-3);
-  font-size: var(--control-ui-text-sm);
-  line-height: 1.5;
-  color: var(--muted);
+  margin: var(--space-2) 0 var(--space-3);
+  font-size: var(--control-ui-text-md);
+  line-height: 1.6;
+  color: var(--muted-strong);
 }
 
 .profile-suggestion__link {
@@ -2485,7 +3320,8 @@
   align-items: center;
   gap: 6px;
   color: var(--accent);
-  font-size: var(--control-ui-text-sm);
+  font-size: var(--control-ui-text-md);
+  font-weight: 500;
   text-decoration: none;
 }
 
@@ -2496,13 +3332,13 @@
 
 .profile-suggestion__icon {
   display: inline-flex;
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
 }
 
 .profile-suggestion__icon svg {
-  width: 12px;
-  height: 12px;
+  width: 13px;
+  height: 13px;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.5px;
@@ -2526,30 +3362,6 @@
   margin-bottom: 0;
 }
 
-.profile__edit-icon {
-  display: inline-flex;
-  width: 13px;
-  height: 13px;
-  margin-right: 6px;
-}
-
-.profile__edit-icon svg {
-  width: 13px;
-  height: 13px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.5px;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.profile__form-actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-3);
-}
-
 .profile__autosave-hint {
   font-size: var(--control-ui-text-xs);
   color: var(--muted);
@@ -2557,6 +3369,97 @@
 
 .profile__account-check {
   font-size: var(--control-ui-text-xs);
+}
+
+/* The "i" beside a field name, and the bubble it reveals. Hover or focus, never click: this row is
+   a <label>, so a click is forwarded to the input it wraps. */
+.profile__help {
+  position: relative;
+  display: inline-flex;
+  margin-left: var(--space-2);
+  vertical-align: 1px;
+}
+
+.profile__help-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1;
+  color: var(--muted);
+  cursor: help;
+}
+
+.profile__help-trigger:hover,
+.profile__help-trigger:focus-visible {
+  border-color: var(--accent, var(--border-strong));
+  color: var(--text);
+}
+
+.profile__help-bubble {
+  position: absolute;
+  bottom: calc(100% + var(--space-2));
+  left: 50%;
+  z-index: 20;
+  width: max-content;
+  max-width: min(320px, 70vw);
+  transform: translateX(-50%);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  box-shadow: var(--shadow-2, 0 4px 16px rgb(0 0 0 / 25%));
+  font-size: var(--control-ui-text-xs);
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: normal;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+}
+
+.profile__help:hover .profile__help-bubble,
+.profile__help:focus-within .profile__help-bubble {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* The hand-off link that feeds a field, sitting directly under its input. */
+.profile__field-action {
+  display: inline-flex;
+  gap: var(--space-1, 4px);
+  align-items: center;
+  font-size: var(--control-ui-text-xs);
+  color: var(--accent, var(--muted));
+}
+
+.profile__field-action-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* Says a value was inferred rather than typed. Muted like the other field-level notes: it is
+   context on the control above it, not a warning about it. */
+.profile__prefill {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* Sits at the same level as the placeholder example it explains -- quieter than the label above,
+   loud enough to read before typing rather than after a save comes back refused. */
+.profile__field-hint {
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.45;
+  color: var(--muted);
 }
 
 .profile__account-check--checking {
@@ -2615,22 +3518,42 @@
   color: var(--muted);
 }
 
-.profile-field--locked .profile-field__label {
-  display: flex;
+.profile__fields + .profile__form {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.profile-field--locked {
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--space-6);
   align-items: center;
-  gap: 5px;
+  padding: var(--space-3) 0;
+}
+
+.profile-field--locked .profile-field__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 .profile-field__lock {
   display: inline-flex;
-  width: 11px;
-  height: 11px;
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
   color: var(--muted);
 }
 
+
+.profile-field--locked .profile-field__value {
+  display: block;
+}
+
+
 .profile-field__lock svg {
-  width: 11px;
-  height: 11px;
+  width: 10px;
+  height: 10px;
   stroke: currentColor;
   fill: none;
   stroke-width: 1.5px;
@@ -2655,7 +3578,7 @@
 
 /* A blocked item is marked where the work is, not only in the band above it. */
 .my-work-item--blocked {
-  border-left-color: var(--warning, #d97706);
+  border-left-color: var(--warn);
 }
 
 .my-work-item__head {
@@ -2700,17 +3623,70 @@
   overflow: hidden;
 }
 
+/* Scaled, not resized: this bar animates when a member advances a step, and transitioning width
+   relayouts the row on every frame of it. transform stays on the compositor. */
 .my-work-item__fill {
   display: block;
+  width: 100%;
   height: 100%;
+  transform-origin: left center;
   border-radius: var(--radius-full);
   background: var(--accent);
-  transition: width var(--duration-fast) var(--ease-out);
+  transition: transform var(--duration-normal) var(--ease-out);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .my-work-item__fill {
+    transition: none;
+  }
 }
 
 .my-work-item__step {
   flex-shrink: 0;
   font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* The computed next step. Deliberately the loudest thing on the card after the title: it is the
+   one line that tells someone what to actually do. */
+.my-work-item__next {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--surface-raised, rgb(255 255 255 / 4%));
+  border-left: 2px solid var(--accent);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.45;
+}
+
+.my-work-item__next svg {
+  flex-shrink: 0;
+  width: 1em;
+  height: 1em;
+  margin-top: 0.15em;
+  color: var(--accent);
+}
+
+.my-work-item__next--done {
+  border-left-color: var(--ok, var(--muted));
+}
+
+.my-work-item__next--done svg {
+  color: var(--ok, var(--muted));
+}
+
+/* Why it matters, not just what it is — kept quieter than the step itself. */
+.my-work-item__next-why {
+  color: var(--muted);
+}
+
+.my-work-item__next-also {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-3);
   font-size: var(--control-ui-text-xs);
   color: var(--muted);
 }
@@ -2798,7 +3774,7 @@
   gap: var(--space-3);
   padding: var(--space-4) var(--space-5);
   border: 1px solid var(--border-strong);
-  border-left: 2px solid var(--warning, #d97706);
+  border-left: 2px solid var(--warn);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
 }
@@ -2809,7 +3785,7 @@
   width: 16px;
   height: 16px;
   margin-top: 2px;
-  color: var(--warning, #d97706);
+  color: var(--warn);
 }
 
 .my-work-blocker__icon svg {
@@ -2855,71 +3831,6 @@
   }
 }
 
-.dashboard-shortcut {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    border-color var(--duration-fast) var(--ease-out),
-    background var(--duration-fast) var(--ease-out);
-}
-
-.dashboard-shortcut:hover {
-  border-color: var(--border-hover);
-  background: var(--bg-hover);
-}
-
-.dashboard-shortcut:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-}
-
-.dashboard-shortcut__icon {
-  display: inline-flex;
-  flex-shrink: 0;
-  width: 16px;
-  height: 16px;
-  margin-top: 2px;
-  color: var(--muted);
-}
-
-/* The shared icon set ships unstyled paths, so each surface states its own stroke — same values as
-   `.nav-item__icon svg`, since these are the same glyphs at the same size. */
-.dashboard-shortcut__icon svg {
-  width: 16px;
-  height: 16px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.5px;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.dashboard-shortcut__copy {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.dashboard-shortcut__title {
-  font-size: var(--control-ui-text-md);
-  font-weight: 500;
-  color: var(--text-strong);
-}
-
-.dashboard-shortcut__sub {
-  font-size: var(--control-ui-text-xs);
-  line-height: 1.5;
-  color: var(--muted);
-}
-
 @media (max-width: 720px) {
   .dashboard-card {
     flex-direction: column;
@@ -2941,11 +3852,12 @@
   flex-direction: column;
   min-height: 100vh;
   overflow: hidden;
-  background: var(--bg);
+  background: var(--bg-landing) center / cover no-repeat;
 }
 
 /* Hairline ledger rules, faded out at the edges so they never compete with the wordmark. */
-.landing__rules {
+/* NOTE: THIS HAS BEEN REPLACE BY BG AT --bg-landing */
+/* .landing__rules {
   position: absolute;
   inset: 0;
   background-image: repeating-linear-gradient(
@@ -2958,7 +3870,7 @@
   mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 0%, transparent 100%);
   -webkit-mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, #000 0%, transparent 100%);
   pointer-events: none;
-}
+} */
 
 .landing__inner {
   position: relative;
@@ -2984,14 +3896,15 @@
   margin: 0 0 var(--space-6);
   font-family: var(--mono);
   font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   color: var(--muted);
 }
 
 .landing__wordmark {
   margin: 0;
   font-size: clamp(2.75rem, 9vw, 5.5rem);
+  font-family: var(--font-wordmark);
+  font-optical-sizing: auto;
   font-weight: 600;
   line-height: 1;
   letter-spacing: var(--tracking-tighter);
@@ -3013,36 +3926,68 @@
   color: var(--muted-strong);
 }
 
-/* Mathematical rhythm: the action row sits one full step below the tagline, and the two CTAs
-   share the same height/radius so weight comes only from fill vs. outline, never from size. */
-.landing__actions {
+.landing__cta {
   display: flex;
   align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: var(--space-4);
+  gap: var(--space-3);
   margin-top: var(--space-10);
 }
 
-.landing__cta {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  height: var(--control-h-lg);
-  padding: 0 var(--space-7);
-  border-radius: var(--radius-lg);
+.landing__cta .btn.primary {
+  height: calc(var(--control-h-lg));
+  padding: 0 var(--space-9, 1.5rem);
   font-size: var(--control-ui-text-md);
-  font-weight: 500;
-  text-decoration: none;
-  transition:
-    transform 200ms var(--ease-out),
-    box-shadow 200ms var(--ease-out),
-    border-color 200ms var(--ease-out),
-    background-color 200ms var(--ease-out);
+  background: var(--text-strong);
+  border: 1px solid var(--text-strong);
+  color: #0a0a0a;
+  opacity: 0.9;
 }
 
-.landing__cta:hover {
-  transform: translateY(-1px);
+.landing__cta .btn.primary:hover,
+.landing__cta .btn.primary:focus-visible {
+  background: var(--text-strong) !important;
+  border-color: var(--text-strong) !important;
+  opacity: 1;
+}
+
+/* Ghost — no box at all at rest, just text; border appears only on hover as affordance */
+.landing__cta .landing__surface {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--control-h-lg);
+  padding: 0 var(--space-6);
+  font-size: var(--control-ui-text-md);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md, 6px);
+  text-decoration: none;
+  color: var(--muted-strong);
+  transition:
+    border-color 150ms ease,
+    color 150ms ease;
+}
+
+.landing__cta .landing__surface:hover,
+.landing__cta .landing__surface:focus-visible {
+  border-color: var(--border-strong);
+  color: var(--text-strong);
+}
+
+.landing__guest-hint {
+  margin-top: var(--space-6);
+  font-size: var(--control-ui-text-md);
+  color: var(--muted);
+}
+
+.landing__open {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: min(100%, 22rem);
+  margin-top: var(--space-16);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--border);
 }
 
 .landing__cta.primary {
@@ -3127,18 +4072,115 @@
 }
 
 /* The public topbar carries nothing but the sign-in action, so push it to the right edge. */
+.topbar--public {
+  min-height: 72px;
+  padding: 0 clamp(var(--space-6), 4vw, var(--space-10));
+}
+
 .topbar--public .topnav-shell__actions {
-  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.public-shell-brand {
+  font-size: var(--control-ui-text-xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+  white-space: nowrap;
+}
+
+.public-shell-home {
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 150ms ease;
 }
 
 .public-signin {
-  gap: 8px;
+  height: 40px;
+  padding: 0 var(--space-6);
+  background: var(--text-strong);
+  border: 1px solid var(--text-strong);
+  border-radius: var(--radius-md, 6px);
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  color: #0a0a0a;
+  cursor: pointer;
+  transition: opacity 150ms ease;
+}
+
+.public-signin:hover,
+.public-signin:focus-visible {
+  opacity: 0.88;
+}
+
+.public-shell-home:hover,
+.public-shell-home:focus-visible {
+  color: var(--text-strong);
+}
+
+.public-shell-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md, 6px);
+  font-size: 18px;
+  line-height: 1;
+  color: var(--text-strong);
+  text-decoration: none;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
+}
+
+.public-shell-back:hover,
+.public-shell-back:focus-visible {
+  border-color: var(--text-strong);
+  background: color-mix(in srgb, var(--text-strong) 8%, transparent);
+}
+
+.public-shell-back__arrow {
+  font-size: 1.1em;
+  line-height: 1;
+}
+
+.public-shell-brand__tail {
+  margin-left: 0.2em;
+  font-weight: 300;
+  color: var(--muted);
+}
+
+.public-signin {
+  gap: 6px;
+  height: var(--control-h-lg);
+  padding: 0 var(--space-5);
+  font-size: var(--control-ui-text-sm);
 }
 
 .public-signin__icon {
   display: inline-flex;
-  width: 16px;
-  height: 16px;
+  width: 13px;
+  height: 13px;
+}
+
+.public-signin.btn.primary {
+  background: var(--text-strong);
+  border: 1px solid var(--text-strong);
+  color: #0a0a0a;
+  opacity: 0.9;
+}
+
+.public-signin.btn.primary:hover,
+.public-signin.btn.primary:focus-visible {
+  background: var(--text-strong) !important;
+  border-color: var(--text-strong) !important;
+  opacity: 1;
 }
 
 .sidebar--public {
@@ -3155,9 +4197,9 @@
 }
 
 .sidebar-public-hint {
-  margin: 10px 4px 0;
-  font-size: 12px;
-  line-height: 1.5;
+  margin: var(--space-1) var(--space-4) 0;
+  font-size: var(--control-ui-text-md);
+  line-height: 1.6;
   color: var(--muted);
 }
 
@@ -3176,4 +4218,1012 @@
     border-right: none;
     border-bottom: 1px solid var(--border);
   }
+}
+
+/* ===========================================
+   Deadline board
+   =========================================== */
+
+.deadlines {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 62rem;
+}
+
+/* Urgency is one variable resolved per row, so every part of a row -- countdown, dot, lead panel
+   edge -- speaks with one voice and the scale lives in the token set rather than in each rule. */
+[data-urgency="critical"] {
+  --deadline-urgency: var(--danger);
+  --deadline-urgency-subtle: var(--danger-subtle);
+}
+
+[data-urgency="soon"] {
+  --deadline-urgency: var(--warn);
+  --deadline-urgency-subtle: var(--warn-subtle);
+}
+
+[data-urgency="planned"] {
+  --deadline-urgency: var(--accent);
+  --deadline-urgency-subtle: var(--accent-subtle);
+}
+
+[data-urgency="distant"] {
+  --deadline-urgency: var(--muted);
+  --deadline-urgency-subtle: transparent;
+}
+
+/* ---- The one that is actually running ---- */
+
+.deadline-lead {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: var(--space-1) var(--space-5);
+  padding: var(--space-6);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+}
+
+.deadline-lead__eyebrow {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-tight);
+  color: var(--muted);
+}
+
+/* The number is the page. At this size the seconds column visibly ticks, which is the whole
+   argument for a live countdown over a printed date. */
+.deadline-lead__countdown {
+  grid-column: 1;
+  margin: var(--space-2) 0 0;
+  font-family: var(--mono);
+  font-size: clamp(2rem, 6vw, 3.25rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: var(--tracking-tight);
+  font-variant-numeric: tabular-nums;
+  color: var(--deadline-urgency);
+}
+
+.deadline-lead__name {
+  grid-column: 1 / -1;
+  margin: var(--space-4) 0 0;
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.deadline-lead__date {
+  grid-column: 1 / -1;
+  margin: var(--space-1) 0 0;
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.deadline-lead .deadline-row__link {
+  grid-column: 4;
+  position: absolute;
+  top: var(--space-5);
+  right: var(--space-5);
+}
+
+.deadlines__intro {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+/* ---- Conferences ---- */
+
+.conferences {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+}
+
+.conference {
+  border-bottom: 1px solid var(--border);
+}
+
+/* The whole row is the control. A conference with ninety-nine workshops behind it should not ask
+   anyone to hunt for a caret. */
+.conference__summary {
+  display: grid;
+  grid-template-columns: 12px 8.5rem 1fr auto;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  padding: var(--space-4) var(--space-2);
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.conference__summary:hover {
+  background: var(--bg-muted);
+}
+
+.conference__summary:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--radius-sm);
+}
+
+.conference__chevron {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  justify-self: center;
+  color: var(--muted);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.conference__chevron svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.conference[data-open] .conference__chevron {
+  transform: rotate(90deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conference__chevron {
+    transition: none;
+  }
+}
+
+/* The dot carries the urgency band for anyone who cannot separate the countdown's hues. */
+.conference__countdown {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--deadline-urgency);
+}
+
+.conference__countdown::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--deadline-urgency);
+}
+
+.conference__name {
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+}
+
+.conference__counts {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.conference__panel {
+  padding: 0 var(--space-2) var(--space-5) calc(12px + var(--space-4) + var(--space-2));
+}
+
+.conference__panel[hidden] {
+  display: none;
+}
+
+/* ---- Sections inside an opened conference ---- */
+
+.deadline-section + .deadline-section {
+  margin-top: var(--space-5);
+}
+
+.deadline-section__head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-1);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.deadline-section__title {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+}
+
+.deadline-section__count {
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+/* Whatever the whole section agrees on, said once instead of on every row. */
+.deadline-section__shared {
+  margin-left: auto;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.deadline-section__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Ruled rows rather than a stack of bordered cards: a hundred cards is a hundred boxes to look
+   past, and what is being scanned is the venue name. */
+.deadline-row {
+  display: grid;
+  grid-template-columns: 8.5rem auto 1fr auto;
+  align-items: baseline;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.deadline-row:last-child {
+  border-bottom: none;
+}
+
+.deadline-row:hover {
+  background: var(--bg-muted);
+}
+
+/* Every cell names its own column. The date is omitted whenever a whole section shares one, and
+   with implicit placement that missing child slid the name and the link one track to the left,
+   stranding the link in the middle of the row. */
+.deadline-row__countdown {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  grid-column: 1;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--deadline-urgency);
+}
+
+.deadline-row__countdown::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--deadline-urgency);
+}
+
+.deadline-row__date {
+  grid-column: 2;
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.deadline-row__body {
+  grid-column: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.deadline-row__name {
+  font-size: var(--control-ui-text-md);
+  color: var(--text);
+}
+
+/* Which deadline this is -- a commitment and a submission for one venue are different dates, and
+   the old list showed only the name, so the two were indistinguishable. */
+.deadline-row__label {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-tight);
+  color: var(--muted);
+  vertical-align: 1px;
+}
+
+/* The ARR route, styled as a sibling of the deadline label rather than another
+   muted chip: which of the two routes is open decides whether a paper can use this
+   date at all, so it carries color where the label carries none. */
+.deadline-row__route {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px var(--space-2);
+  border: 1px solid currentcolor;
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-tight);
+  vertical-align: 1px;
+}
+
+.deadline-row__route[data-route="direct"] {
+  color: var(--accent, var(--muted));
+}
+
+.deadline-row__route[data-route="commitment"] {
+  color: var(--ok-muted, var(--muted));
+}
+
+.deadlines__filter {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.deadlines__filter button[aria-pressed="true"] {
+  background: var(--bg-accent);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.deadlines__filter-count {
+  margin-left: var(--space-2);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.deadline-row__note {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.deadline-row__link {
+  color: var(--muted);
+  font-size: var(--control-ui-text-md);
+  text-decoration: none;
+  line-height: 1;
+}
+
+.deadline-row__link:hover,
+.deadline-row__link:focus-visible {
+  color: var(--accent);
+}
+
+.deadlines__empty {
+  margin: 0;
+  padding: var(--space-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+@media (max-width: 640px) {
+  /* The name leads on a phone; the countdown and counts fall under it rather than competing for
+     a row that cannot hold four columns. */
+  .conference__summary {
+    grid-template-columns: 12px 1fr;
+    row-gap: var(--space-1);
+  }
+
+  .conference__countdown {
+    grid-column: 2;
+    order: 2;
+  }
+
+  .conference__name {
+    grid-column: 2;
+    order: 1;
+  }
+
+  .conference__counts {
+    grid-column: 2;
+    order: 3;
+  }
+
+  .conference__panel {
+    padding-left: var(--space-2);
+  }
+
+  .deadline-row {
+    grid-template-columns: auto 1fr auto;
+    row-gap: var(--space-1);
+  }
+
+  .deadline-row__countdown {
+    grid-area: 1 / 1;
+  }
+
+  .deadline-row__date {
+    grid-area: 1 / 2;
+  }
+
+  .deadline-row__link {
+    grid-area: 1 / 3;
+  }
+
+  .deadline-row__body {
+    grid-area: 2 / 1 / auto / -1;
+  }
+
+  .deadline-section__shared {
+    margin-left: 0;
+  }
+}
+
+/* ===========================================
+   AdminBot primitives
+   ===========================================
+
+   One vocabulary for the lab's own surfaces. Before this, each AdminBot view invented its own
+   label, chip, row and empty state, so thirteen pages of one product read as thirteen products.
+   These are the patterns the profile record and the deadline board converged on, named once so
+   the rest of the surfaces inherit them instead of re-deriving them.
+
+   Everything here composes with the existing --space/--control-ui-text/--border token set; none
+   of it introduces a color that base.css does not already define. */
+
+/* The micro-label that titles a region. Mono + tracked caps reads as instrumentation rather than
+   as prose, which is what keeps a dense operator page from looking like a document. */
+.ab-eyebrow {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--tracking-tight);
+  color: var(--muted);
+}
+
+/* A section head: title, its count, and whatever the whole section agrees on pushed to the right.
+   The shared slot is what stops a list repeating one fact on every row. */
+.ab-band {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin: 0 0 var(--space-1);
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border-strong);
+}
+
+.ab-band__title {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-tight);
+  color: var(--text-strong);
+}
+
+.ab-band__count {
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.ab-band__shared {
+  margin-left: auto;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* The ruled sheet. Label at a fixed measure, value in the rest, a hairline per row -- so a column
+   of answers can be scanned in one pass and a blank reads as a gap rather than as text. */
+.ab-sheet {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(22rem, 100%), 1fr));
+  column-gap: var(--space-8);
+}
+
+.ab-row {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  align-items: baseline;
+  gap: var(--space-4);
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.ab-row__label {
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-wide);
+  color: var(--muted);
+}
+
+.ab-row__value {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--control-ui-text-md);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.ab-row__value--empty {
+  color: var(--muted);
+}
+
+/* The mono micro-chip. Status lives in the modifier, never in a bespoke color. */
+.ab-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-tight);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.ab-chip--accent {
+  border-color: var(--accent-muted);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.ab-chip--ok {
+  border-color: var(--ok-muted);
+  background: var(--ok-subtle);
+  color: var(--ok);
+}
+
+.ab-chip--warn {
+  border-color: var(--warn-muted);
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
+.ab-chip--danger {
+  border-color: var(--danger-muted);
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+/* A status dot for when a chip would be too loud -- the same four states at 6px. */
+.ab-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--muted);
+}
+
+.ab-dot--accent {
+  background: var(--accent);
+}
+
+.ab-dot--ok {
+  background: var(--ok);
+}
+
+.ab-dot--warn {
+  background: var(--warn);
+}
+
+.ab-dot--danger {
+  background: var(--danger);
+}
+
+/* Tabular figures for anything that is a quantity. Counts that jitter as they tick are the single
+   most common way a dense operator UI reads as sloppy. */
+.ab-num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* An empty state states the absence rather than leaving a hole. */
+.ab-empty {
+  margin: 0;
+  padding: var(--space-5);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-lg);
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+/* The card that is asking for something, as opposed to the cards that are only showing something.
+   Its whole edge carries the accent; it deliberately does not tint its own interior, because a
+   wash makes the inputs inside it read as less editable than the ones outside. */
+.ab-actionable {
+  border-color: var(--accent-muted);
+}
+
+@media (max-width: 640px) {
+  .ab-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+/* The URN is filled in by the lab, so the member gets a state rather than a value: "on file" is
+   the whole answer they need, and "not on file yet" is what makes the collector link next to it
+   worth following. */
+.profile__urn-status {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.profile__urn-status--set {
+  color: var(--ok, var(--muted-strong));
+}
+
+/* Next step per paper — the admin counterpart to the time-based nudge list. */
+.adminbot-next-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.adminbot-next {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--line, rgb(255 255 255 / 10%));
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+}
+
+/* An approval reads differently from work: nobody can do it but the approver. */
+.adminbot-next--approval {
+  border-left-color: var(--warn, var(--accent));
+}
+
+.adminbot-next--done {
+  border-left-color: var(--ok, var(--muted));
+  flex-direction: row;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.adminbot-next__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.adminbot-next__waiting {
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.adminbot-next__step {
+  font-weight: 600;
+}
+
+.adminbot-next__why,
+.adminbot-next__also {
+  font-weight: 400;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-next__actions {
+  margin-top: var(--space-1);
+}
+
+/* Pipeline stepper — the Amazon/GCP order-status pattern.
+   A percentage is not actionable; a stepper shows where the work is, what is behind it, and what
+   is left, in one glance. The dots are also the control, so the picture and the action are the
+   same object rather than a bar plus a separate select. */
+.stepper {
+  margin: var(--space-3) 0 var(--space-2);
+  overflow-x: auto;
+}
+
+.stepper__track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 30rem;
+}
+
+.stepper__step {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  text-align: center;
+}
+
+/* The connector is drawn by each step to its left neighbour, so the line always matches the
+   states either side of it rather than being one bar underneath. */
+.stepper__step:not(:first-child)::before {
+  content: "";
+  position: absolute;
+  top: 9px;
+  right: 50%;
+  left: -50%;
+  height: 2px;
+  background: var(--border);
+}
+
+.stepper__step--done::before,
+.stepper__step--current::before {
+  background: var(--ok, var(--accent));
+}
+
+.stepper__dot {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 2px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg);
+  color: transparent;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.stepper__dot:hover {
+  border-color: var(--accent);
+  transform: scale(1.12);
+}
+
+.stepper__dot:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.stepper__step--done .stepper__dot {
+  border-color: var(--ok, var(--accent));
+  background: var(--ok, var(--accent));
+  color: var(--bg);
+}
+
+/* The current step is the one thing that should read at a glance: filled ring, larger, and the
+   only label with weight. */
+.stepper__step--current .stepper__dot {
+  border-color: var(--accent);
+  background: var(--bg);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
+  transform: scale(1.15);
+}
+
+.stepper__label {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  line-height: 1.25;
+  max-width: 10ch;
+  /* Break between words only. `anywhere` split "Submission" into "Submissio n". */
+  overflow-wrap: normal;
+}
+
+.stepper__step--current .stepper__label {
+  color: var(--text-strong);
+  font-weight: 650;
+}
+
+.stepper__step--done .stepper__label {
+  color: color-mix(in srgb, var(--muted) 85%, transparent);
+}
+
+/* PaperFlow map overlay. The chart is a light-mode export, so it sits on its own white sheet
+   rather than being force-inverted — a map reads as a printed thing, and inverting it would
+   wreck the node fills the diagram uses to separate branches. */
+.flowmap {
+  width: min(94vw, 1200px);
+  height: min(88vh, 900px);
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised, var(--bg));
+  color: var(--text);
+  overflow: hidden;
+}
+
+.flowmap::backdrop {
+  background: rgb(0 0 0 / 55%);
+  backdrop-filter: blur(2px);
+}
+
+.flowmap__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.flowmap__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.flowmap__subtitle {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.flowmap__tools {
+  display: flex;
+  gap: var(--space-1);
+  flex-shrink: 0;
+}
+
+.flowmap__canvas {
+  position: relative;
+  height: calc(100% - 104px);
+  overflow: hidden;
+  background: #fff;
+  cursor: grab;
+  touch-action: none;
+}
+
+.flowmap__canvas.is-dragging {
+  cursor: grabbing;
+}
+
+.flowmap__stage {
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.flowmap__svg {
+  display: block;
+  max-width: none;
+}
+
+.flowmap__hint {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* Done steps recede so the pin reads as a position, not a lone dot. */
+.flowmap__node--done {
+  opacity: 0.4;
+}
+
+/* "You are here". The ring pulses because on a chart this size a static outline is easy to miss
+   after panning away and back. */
+.flowmap__node--here > rect,
+.flowmap__node--here > polygon,
+.flowmap__node--here > path {
+  stroke: #d92d20 !important;
+  stroke-width: 3px !important;
+}
+
+.flowmap__node--here::after {
+  content: "";
+}
+
+.flowmap__node--here {
+  animation: flowmap-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes flowmap-pulse {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 0 rgb(217 45 32 / 55%));
+  }
+  50% {
+    filter: drop-shadow(0 0 7px rgb(217 45 32 / 85%));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flowmap__node--here {
+    animation: none;
+    filter: drop-shadow(0 0 5px rgb(217 45 32 / 80%));
+  }
+}
+
+/* Parallel tasks. The frontier is usually several nodes at once, so they are laid out as peers
+   rather than one headline plus a footnote — the point being that three people can start now. */
+.tasks {
+  margin-top: var(--space-3);
+}
+
+.tasks__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.tasks__count {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  color: var(--accent);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.tasks__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.task {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  background: var(--bg-muted, transparent);
+}
+
+/* An approval is someone else's move, so it should not look like work you can pick up. */
+.task--approval {
+  border-left-color: var(--danger, var(--warn));
+}
+
+.task--optional {
+  border-left-color: var(--border);
+  opacity: 0.75;
+}
+
+.task__branch {
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.task__label {
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.3;
+}
+
+.task__who,
+.task__unblocks {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
 }

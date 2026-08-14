@@ -155,6 +155,62 @@ export function buildAgentMainSessionKey(params: {
   return `agent:${agentId}:${mainKey}`;
 }
 
+// Marks the session slot as belonging to one member. A prefix rather than a bare id so a member
+// session is recognisable on sight -- in the sessions list, in the store, in a log line -- and so
+// it can never collide with the shared `main` slot or an operator's own named session.
+const MEMBER_SESSION_PREFIX = "member-";
+
+/**
+ * The session key a signed-in member's chat lives in.
+ *
+ * Every member used to land on the same `agent:<agentId>:main`, which meant one conversation
+ * shared by the whole lab: not a leak so much as a single room everyone was standing in. Keying
+ * the slot by member id is what makes "your chat" a thing that exists, and it is the prerequisite
+ * for ownership scoping meaning anything -- there is no point marking who owns a session while
+ * everyone points at the same one.
+ *
+ * The id is run through the same normalizer as an agent id, so an id carrying characters the key
+ * grammar rejects cannot produce an unparseable key.
+ */
+export function buildMemberSessionKey(params: { agentId: string; memberId: string }): string {
+  const agentId = normalizeAgentId(params.agentId);
+  const memberId = normalizeAgentId(params.memberId);
+  return `agent:${agentId}:${MEMBER_SESSION_PREFIX}${memberId}`;
+}
+
+/** The member id a session key belongs to, or undefined when it is not a member session. */
+export function memberIdFromSessionKey(sessionKey: string | undefined | null): string | undefined {
+  const parsed = parseAgentSessionKey(sessionKey);
+  const rest = parsed?.rest ?? "";
+  return rest.startsWith(MEMBER_SESSION_PREFIX)
+    ? rest.slice(MEMBER_SESSION_PREFIX.length) || undefined
+    : undefined;
+}
+
+export function isMemberSessionKey(sessionKey: string | undefined | null): boolean {
+  return memberIdFromSessionKey(sessionKey) !== undefined;
+}
+
+/**
+ * True when `sessionKey` is a member session belonging to somebody other than `memberId`.
+ *
+ * The selected session is persisted in localStorage keyed by gateway URL, not by member, so on a
+ * shared browser the next person to sign in would otherwise open the previous member's chat. A
+ * non-member key (the shared `main`, an operator's named session) is not "somebody else's" and is
+ * left alone.
+ */
+export function isForeignMemberSessionKey(
+  sessionKey: string | undefined | null,
+  memberId: string | undefined | null,
+): boolean {
+  const owner = memberIdFromSessionKey(sessionKey);
+  if (!owner) {
+    return false;
+  }
+  const viewer = normalizeOptionalString(memberId);
+  return !viewer || owner !== normalizeAgentId(viewer);
+}
+
 function normalizeDefaultMainSessionAliasForUi(sessionKey: string | undefined | null): string {
   const normalized = normalizeLowercaseStringOrEmpty(sessionKey);
   return normalized === DEFAULT_MAIN_KEY

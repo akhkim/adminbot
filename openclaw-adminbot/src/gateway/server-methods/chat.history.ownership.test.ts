@@ -78,10 +78,8 @@ describe("chat.history ownership", () => {
       { context: createContext(), client: createClient("mem-1") },
     );
 
-    const [ok, payload] = (respond as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] as [
-      boolean,
-      Record<string, unknown>,
-    ];
+    const [ok, payload] = (respond as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0] as [boolean, Record<string, unknown>];
     expect(ok).toBe(true);
     const sessionInfo = payload.sessionInfo as Record<string, unknown> | undefined;
     // No label from the other member's entry should leak through once ownership is denied.
@@ -100,16 +98,17 @@ describe("chat.history ownership", () => {
       { context: createContext(), client: createClient("mem-1") },
     );
 
-    const [ok, payload] = (respond as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] as [
-      boolean,
-      Record<string, unknown>,
-    ];
+    const [ok, payload] = (respond as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0] as [boolean, Record<string, unknown>];
     expect(ok).toBe(true);
     const sessionInfo = payload.sessionInfo as Record<string, unknown> | undefined;
     expect(sessionInfo?.label).toBe("My chat");
   });
 
-  it("exposes session info to an admin regardless of ownership", async () => {
+  // The whole point of the change: chat history is private to its owner, and holding the admin
+  // scope does not open it. Even the label leaks what a conversation is about, so it is withheld
+  // too rather than the transcript alone.
+  it("withholds session info from an admin who is not the owner", async () => {
     mockEntry("agent:main:theirs", {
       sessionId: "s-theirs",
       ownerMemberId: "mem-2",
@@ -121,12 +120,12 @@ describe("chat.history ownership", () => {
       { context: createContext(), client: createClient("mem-admin", true) },
     );
 
-    const [ok, payload] = (respond as unknown as { mock: { calls: unknown[][] } }).mock.calls[0] as [
-      boolean,
-      Record<string, unknown>,
-    ];
+    const [ok, payload] = (respond as unknown as { mock: { calls: unknown[][] } }).mock
+      .calls[0] as [boolean, Record<string, unknown>];
     expect(ok).toBe(true);
+    // buildGatewaySessionInfo always returns a defaults object, so the assertion is about what is
+    // *in* it: none of the owner's data, in particular not the label.
     const sessionInfo = payload.sessionInfo as Record<string, unknown> | undefined;
-    expect(sessionInfo?.label).toBe("Their private chat");
+    expect(sessionInfo?.label).toBeUndefined();
   });
 });

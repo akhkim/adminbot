@@ -5,6 +5,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import type { AdminBotActionExecutor } from "../kernel/service.js";
+import { renderEmailBodyHtml } from "./email-html.js";
 
 const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 60_000;
@@ -153,6 +154,8 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
       return buildCalendarCreateArgs(proposal);
     case "calendar.reschedule":
       return buildCalendarUpdateArgs(proposal);
+    case "calendar.add_attendees":
+      return buildCalendarAddAttendeesArgs(proposal);
     case "calendar.cancel":
       return buildCalendarDeleteArgs(proposal);
     default:
@@ -173,7 +176,17 @@ function buildEmailArgs(proposal: AdminBotStoredProposal, draft: boolean): strin
   // then re-wraps -- the ~70-character breaks the operator sees mid-paragraph. `--body-html` adds
   // an alternative part that is not wrapped; `--body` stays, so a text-only client still gets the
   // canonical copy. Both the send and the draft path take it.
-  appendOptional(args, "--body-html", optionalString(payload, "body_html"));
+  //
+  // Rendered here rather than at each caller: a proposal reaches this connector from the agent's
+  // `email.send`/`email.draft` pipeline, which has no place to put an html alternative and no
+  // business generating markup. An explicit `body_html` still wins, so a caller that already
+  // renders one (guide-sender, account-approved-email) is unaffected.
+  // `body` is already required non-empty above, so the render is never the empty string.
+  appendOptional(
+    args,
+    "--body-html",
+    optionalString(payload, "body_html") ?? renderEmailBodyHtml(body),
+  );
   appendOptional(args, "--cc", recipients(payload.cc));
   appendOptional(args, "--bcc", recipients(payload.bcc));
   appendOptional(args, "--reply-to", optionalString(payload, "reply_to"));
@@ -227,6 +240,33 @@ function buildCalendarUpdateArgs(proposal: AdminBotStoredProposal): string[] {
   appendOptional(args, "--description", optionalString(payload, "description"));
   appendOptional(args, "--location", optionalString(payload, "location"));
   appendOptional(args, "--timezone", optionalString(payload, "timezone"));
+  return args;
+}
+
+/**
+ * Adds people to an event without touching anything else about it.
+ *
+ * `--add-attendee` rather than `--attendees`: the latter *replaces* the guest list, so inviting two
+ * people to a standing meeting would quietly uninvite everyone already on it. Nothing else is
+ * passed, so an invite cannot move an event or rewrite its title as a side effect.
+ */
+function buildCalendarAddAttendeesArgs(proposal: AdminBotStoredProposal): string[] {
+  const payload = requirePayload(proposal);
+  const attendees = recipients(payload.attendees);
+  if (!attendees) {
+    throw new Error("calendar.add_attendees proposed_payload.attendees is required");
+  }
+  const args = rootArgs("calendar.update", optionalString(payload, "account"));
+  args.push(
+    "calendar",
+    "update",
+    optionalString(payload, "calendar_id") ?? "primary",
+    requireString(payload, "event_id"),
+    "--add-attendee",
+    attendees,
+    "--send-updates",
+    "all",
+  );
   return args;
 }
 

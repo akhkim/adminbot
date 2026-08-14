@@ -389,29 +389,90 @@ least-privileged tier. Set `privilege_level` explicitly to grant more.
 
 ### Member map
 
-`GET /member-map` groups active members by city; the **Map** tab in the console
-renders it as a dot map with a ranked list beneath. Alumni are left off.
+`GET /member-map` groups active members by city. It's rendered two places: the
+**Map** tab in the console (`/adminbot`), and its own standalone page at
+`GET /lab_stats/member_map` (an interactive Leaflet world map, embedded into
+the console tab by iframe so the two never drift into different maps).
+Alumni are left off both. Both Slack actions -- "Refresh from Slack"
+(`POST /member-map/refresh`, below) and "Sync Slack IDs & timezones"
+(`POST /members/directory/refresh-slack`) -- live solely in the standalone
+page's own toolbar; the console tab carries no chrome of its own around the
+iframe, so there is exactly one place to trigger either.
 
-Location comes from two sources in a fixed order. **Slack wins**: `POST
-/member-map/refresh` reads each member's Slack profile (a workspace location
-field if one is configured, otherwise their timezone, whose IANA name carries a
-city) and stamps it on the member as `slack_location`. The roster `location` --
-what they typed when they joined -- is used **only** for members Slack has
-nothing for. A member Slack no longer knows about has their stamp cleared rather
-than left stale, so an old value cannot outrank their roster entry forever.
+The endpoint is public, but its response shape depends on who's asking:
 
-Both sources are free text, so the resolver copes with what people actually
-write: institutions (`ETH` becomes Zürich), accents and spelling variants
-(`Tuebingen`/`Tübingen`), several places at once (`Zurich/Tuebingen/Toronto`
-takes the first), parentheticals, and leading hedges (`Mainly Montreal`).
-Anything it cannot place is listed under **Not placed** with the text the member
-wrote -- that is the signal to add a city to the gazetteer in
-`extensions/adminbot/src/member-map.ts`, not a reason to guess.
+- Signed in as **admin**: `{ mode: "full", places: [...{ ...place, members:
+  [{ member_id, name, source, avatar_url?, last_login_at? }] } ], unplaced,
+  counts }` -- names included, plus each member's Slack avatar and last login
+  time where known, for the recently-active faces shown per city.
+- Anyone else (anonymous, or a signed-in non-admin member):
+  `{ mode: "summary", places: [...{ ...place, count }], counts }` -- a
+  headcount per city, no names, no `unplaced` list (the header counts already
+  say how many are unplaced). See the end of "Login location" below for why
+  the split lands on names specifically, rather than the map as a whole.
 
-The map is admin-gated. The brainstorming doc describes it as a public website
-function; publishing 144 people's locations is a decision worth making
-deliberately rather than inheriting from the view being built, so it is
-privileged for now and the JSON is there to feed a public page when you choose.
+`POST /member-map/refresh` (re-reading Slack -- see below) stays admin-only
+regardless: publishing a headcount is one thing, triggering a real Slack API
+call on someone else's behalf is another.
+
+Location comes from three sources, tried in a fixed order, each one falling
+through to the next whenever it fails to resolve -- not only when it is empty.
+
+1. **Slack**, city-level. `POST /member-map/refresh` reads each member's Slack
+   profile (a workspace location field if one is configured, otherwise their
+   timezone, whose IANA name carries a city) and stamps it on the member as
+   `slack_location`. A member Slack no longer knows about has their stamp
+   cleared rather than left stale, so an old value cannot outrank a fresher
+   source forever.
+2. **Last-login location**, country-level only. Stamped automatically on every
+   successful sign-in from the caller's IP (see "Login location" below) -- there
+   is nothing to manually refresh here, it is already as current as their most
+   recent login.
+3. **Roster `location`**, city-level -- what they typed once, at signup or when
+   an admin added them. Tried last on purpose: unlike the two sources above, it
+   never updates itself.
+
+All three are free text (or, for last-login, a plain country name), so the
+resolver copes with what people actually write: institutions (`ETH` becomes
+Zürich), accents and spelling variants (`Tuebingen`/`Tübingen`), several places
+at once (`Zurich/Tuebingen/Toronto` takes the first), parentheticals, and
+leading hedges (`Mainly Montreal`). Anything none of the three sources can
+place is listed under **Not placed** with whatever the highest-priority source
+that had text wrote -- that is the signal to add a city (or country, for
+last-login) to the tables in `extensions/adminbot/src/member-map.ts`, not a
+reason to guess. A member placed by last-login only (no city, just a country)
+shows on the map as a dashed, lighter dot, distinct from a real city-level
+placement.
+
+### Login location
+
+On every successful login, if `IPINFO_TOKEN` is configured, AdminBot
+geolocates the caller's IP (via IPinfo's free "Lite" tier -- country and
+continent only, not city-level) and stamps `last_login_at` /
+`last_login_country` / `last_login_continent` on the member record. This is
+best-effort and fire-and-forget: it never blocks or fails the login itself,
+and with no token configured it is simply skipped. It is visible to the
+member on their own profile ("Last login location", top of the Profile tab)
+and to admins in the Members table.
+
+Behind a reverse proxy (Render, Fly, etc.) the caller's real IP only reaches
+AdminBot via the `X-Forwarded-For` header, since the proxy terminates the
+actual connection -- set `ADMINBOT_TRUST_PROXY=1` in that environment so
+`remoteIp()` reads it, otherwise every login resolves to the proxy's own
+(private, unroutable) address and nothing ever gets recorded. Leave this unset
+for any deployment where the app might be reached directly: trusting the
+header there would let a caller spoof both this and IP-based rate limiting by
+hand-writing it.
+
+Names are gated on read, not the map itself: the brainstorming doc describes
+this as a public website function, and publishing 144 people's names and
+locations was a decision worth making deliberately rather than inheriting
+from the view being built -- so the map is public, but only ever in the
+counts-only `summary` shape above unless the request carries an admin
+session. Both `/lab_stats/member_map` and the console's Map tab reflect this
+directly: a signed-out visitor (or a signed-in non-admin member) sees dots
+sized by headcount with no names anywhere, and only an admin session sees who
+is actually where.
 
 ### Time availability
 

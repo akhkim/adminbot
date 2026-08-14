@@ -58,12 +58,17 @@ export function adminBotConsoleScript(): string {
       settings: ["Settings", "Set roster and paper reminder defaults."],
       audit: ["Audit", "Inspect local AdminBot service events."],
       deadlines: ["Deadlines", "Upcoming submission deadlines, AoE-correct and open to everyone."],
-      reimbursements: ["Reimbursement", "Prepare a reimbursement packet. No account needed."]
+      reimbursements: ["Reimbursement", "Prepare a reimbursement packet. No account needed."],
+      reviewing: ["Reviewing", "OpenReview reviewing cycles."],
+      map: ["Map", "Where the lab members are, worldwide."]
     };
     // Surfaces a visitor may use before signing in. Mirrors the Control UI access table
     // (ui/src/ui/access.ts): the deadline board is a public snapshot and the reimbursement
     // assistant only ever sees what the claimant in front of it typed.
-    const PUBLIC_TABS = ["deadlines", "reimbursements"];
+    // "map" is public too: GET /member-map returns a names-stripped, counts-only summary to
+    // anyone not signed in as admin (see api/server.ts), so the tab embedding it has nothing left
+    // to gate for a visitor.
+    const PUBLIC_TABS = ["deadlines", "reimbursements", "map"];
     // Session member is held only in memory for the lifetime of the page; the HttpOnly cookie is
     // the real credential, so no token or gateway secret is placed in JS-accessible web storage.
     let sessionMember = null;
@@ -77,7 +82,6 @@ export function adminBotConsoleScript(): string {
       proposals: [],
       audit: [],
       reviewing: { cycles: [], milestones: [] },
-      memberMap: { places: [], unplaced: [], counts: { placed: 0, unplaced: 0, unknown: 0 } },
       registrations: [],
       roster: [],
       memberQuery: "",
@@ -154,11 +158,6 @@ export function adminBotConsoleScript(): string {
         } catch {
           state.reviewing = { cycles: [], milestones: [] };
         }
-        try {
-          state.memberMap = await api("/member-map");
-        } catch {
-          state.memberMap = { places: [], unplaced: [], counts: { placed: 0, unplaced: 0, unknown: 0 } };
-        }
       } else {
         state.registrations = [];
         state.reviewing = { cycles: [], milestones: [] };
@@ -196,7 +195,6 @@ export function adminBotConsoleScript(): string {
       renderActions();
       renderApprovals();
       renderReviewing();
-      renderMemberMap();
       document.getElementById("settings-json").textContent = JSON.stringify(state.settings, null, 2);
       document.getElementById("audit-json").textContent = JSON.stringify(state.audit, null, 2);
     }
@@ -816,127 +814,12 @@ export function adminBotConsoleScript(): string {
 
 
     // --- Member map -----------------------------------------------------------
-    // Equirectangular: longitude and latitude map straight onto x and y, which keeps the
-    // projection honest and needs no coastline data. A graticule gives the eye something
-    // to place the dots against; the labels do the rest of the work.
-    function mapProject(lat, lon, width, height) {
-      return { x: ((lon + 180) / 360) * width, y: ((90 - lat) / 180) * height };
-    }
-
-    function renderMemberMap() {
-      const data = state.memberMap || { places: [], unplaced: [], counts: {} };
-      const places = data.places || [];
-      const counts = data.counts || {};
-      document.getElementById("map-count").textContent = places.length
-        ? places.length + " place(s) · " + (counts.placed || 0) + " placed"
-        : "";
-      const canvas = document.getElementById("map-canvas");
-      const list = document.getElementById("map-list");
-      if (!places.length) {
-        canvas.innerHTML = "";
-        list.innerHTML = '<p class="subtle">Nobody is placed yet. Members need a location on their profile, or a Slack profile to read one from.</p>';
-        return;
-      }
-
-      const width = 900, height = 450;
-      const biggest = places.reduce((max, place) => Math.max(max, place.members.length), 1);
-      let grid = "";
-      for (let lon = -180; lon <= 180; lon += 30) {
-        const x = mapProject(0, lon, width, height).x;
-        grid += '<line x1="' + x + '" y1="0" x2="' + x + '" y2="' + height + '" class="map-grid" />';
-      }
-      for (let lat = -60; lat <= 60; lat += 30) {
-        const y = mapProject(lat, 0, width, height).y;
-        grid += '<line x1="0" y1="' + y + '" x2="' + width + '" y2="' + y + '" class="map-grid" />';
-      }
-      const equator = mapProject(0, 0, width, height).y;
-      grid += '<line x1="0" y1="' + equator + '" x2="' + width + '" y2="' + equator + '" class="map-equator" />';
-
-      // Labels are placed biggest-first and skipped where they would collide with one
-      // already down. Europe puts six cities inside a few degrees, so labelling every dot
-      // produces an unreadable pile; the ranked list below carries what the map drops,
-      // and every dot keeps its hover text either way.
-      const placedLabels = [];
-      const marks = places.map((place) => {
-        const point = mapProject(place.lat, place.lon, width, height);
-        // Area scales with headcount, so a city of ten does not read as ten times the
-        // radius of a city of one.
-        const radius = 5 + 9 * Math.sqrt(place.members.length / biggest);
-        const names = place.members.map((member) => member.name).join(", ");
-        const anchor = point.x > width - 120 ? "end" : "start";
-        const text = place.label + " " + place.members.length;
-        const textWidth = text.length * 6.2;
-        const labelX = anchor === "end" ? point.x - radius - 5 : point.x + radius + 5;
-        const box = {
-          left: anchor === "end" ? labelX - textWidth : labelX,
-          right: anchor === "end" ? labelX : labelX + textWidth,
-          top: point.y - 8,
-          bottom: point.y + 8
-        };
-        const collides = placedLabels.some((other) =>
-          box.left < other.right && box.right > other.left &&
-          box.top < other.bottom && box.bottom > other.top);
-        if (!collides) placedLabels.push(box);
-        return '<g><circle cx="' + point.x + '" cy="' + point.y + '" r="' + radius +
-          '" class="map-dot"><title>' + escapeHtml(place.label + " — " + place.members.length + ": " + names) +
-          '</title></circle>' +
-          (collides ? "" : '<text x="' + labelX + '" y="' + (point.y + 4) + '" text-anchor="' + anchor +
-            '" class="map-label">' + escapeHtml(text) + '</text>') + '</g>';
-      }).join("");
-
-      canvas.innerHTML = '<svg viewBox="0 0 ' + width + ' ' + height +
-        '" role="img" aria-label="Where lab members are">' + grid + marks + '</svg>';
-
-      const rows = places.map((place) => {
-        const sources = place.members.filter((member) => member.source === "slack").length;
-        return '<div class="approval-request"><div class="req-head"><strong>' +
-          escapeHtml(place.label) + '</strong><span class="pill">' + place.members.length + '</span>' +
-          '<span class="cell-details">' + escapeHtml(place.country) +
-          (sources ? " · " + sources + " from Slack" : "") + '</span></div>' +
-          '<span class="cell-details">' +
-          place.members.map((member) => escapeHtml(member.name)).join(", ") + '</span></div>';
-      }).join("");
-      const unplaced = (data.unplaced || []).length
-        ? '<div class="approval-request"><div class="req-head"><strong>Not placed</strong>' +
-          '<span class="pill">' + data.unplaced.length + '</span></div>' +
-          '<span class="cell-details">' + data.unplaced.map((entry) =>
-            escapeHtml(entry.name + (entry.raw ? " (" + entry.raw + ")" : " — no location"))).join(", ") +
-          '</span></div>'
-        : "";
-      list.innerHTML = rows + unplaced;
-    }
-
-    document.getElementById("map-refresh").addEventListener("click", async (event) => {
-      const button = event.currentTarget;
-      button.disabled = true;
-      setStatus("map-status", "Reading Slack profiles…", "");
-      try {
-        const result = await api("/member-map/refresh", { method: "POST" });
-        setStatus("map-status", "Checked " + result.checked + " Slack profile(s); " +
-          result.updated + " location(s) changed.", "ok");
-        await refresh();
-      } catch (error) {
-        setStatus("map-status", error.message, "error");
-      } finally {
-        button.disabled = false;
-      }
-    });
-
-    document.getElementById("directory-refresh").addEventListener("click", async (event) => {
-      const button = event.currentTarget;
-      button.disabled = true;
-      setStatus("directory-status", "Reading Slack directory…", "");
-      try {
-        const result = await api("/members/directory/refresh-slack", { method: "POST" });
-        setStatus("directory-status", "Linked " + result.idsResolved + " Slack id(s); " +
-          result.timezonesUpdated + " of " + result.timezonesChecked + " timezone(s) changed.", "ok");
-        await refresh();
-      } catch (error) {
-        setStatus("directory-status", error.message, "error");
-      } finally {
-        button.disabled = false;
-      }
-    });
+    // The map itself is an <iframe> onto /lab_stats/member_map (see markup.ts). The console used
+    // to hand-roll an equirectangular SVG here; that is gone rather than duplicated, so the
+    // console and the standalone page can never drift into two different maps. Both Slack
+    // actions ("Refresh from Slack" and "Sync Slack IDs & timezones") used to be duplicated here
+    // as a console-level toolbar stacked above the iframe's own identical header; they now live
+    // solely inside the iframe's page, so there is exactly one place to click either of them.
 
     function isPrivileged() {
       const level = sessionMember?.privilege_level;
@@ -951,7 +834,7 @@ export function adminBotConsoleScript(): string {
         const tab = button.dataset.tab;
         // Visitors see only the public surfaces; members lose the governance ones.
         button.hidden = signedIn
-          ? !privileged && ["approvals", "settings", "audit", "reviewing", "map"].includes(tab)
+          ? !privileged && ["approvals", "settings", "audit", "reviewing"].includes(tab)
           : !PUBLIC_TABS.includes(tab);
       });
       document.getElementById("signin-button").hidden = signedIn;

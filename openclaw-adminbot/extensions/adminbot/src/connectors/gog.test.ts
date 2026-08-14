@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { AdminBotEmailPayload, AdminBotStoredProposal } from "../contracts/actions.js";
 import { emailPayloadSchema } from "../contracts/tool-schemas.js";
 import { AdminBotService } from "../kernel/service.js";
+import { renderEmailBodyHtml } from "./email-html.js";
 import { createGogAdminBotExecutor, readGogSheetRows } from "./gog.js";
 
 function proposal(
@@ -51,6 +52,8 @@ describe("createGogAdminBotExecutor", () => {
       "Lab update",
       "--body",
       "The draft was approved.",
+      "--body-html",
+      "<p>The draft was approved.</p>",
     ]);
   });
 
@@ -79,6 +82,45 @@ describe("createGogAdminBotExecutor", () => {
     expect(run.mock.calls[1]?.[0]).toEqual(
       expect.arrayContaining(["calendar.delete", "--force", "event-1", "--send-updates", "all"]),
     );
+  });
+
+  // Inviting people to a standing meeting must not uninvite everyone already on it, which is what
+  // --attendees (replace) would do. The add path also passes nothing else, so an invite can never
+  // move the event or rewrite its title as a side effect.
+  it("adds attendees to an existing event without replacing the guest list", async () => {
+    const run = vi.fn(async () => {});
+    const executor = createGogAdminBotExecutor({ run });
+
+    await executor.execute(
+      proposal("calendar.add_attendees", {
+        calendar_id: "jinesis.lab@gmail.com",
+        event_id: "event-9",
+        attendees: ["ada@cs.toronto.edu", "mei@cs.toronto.edu"],
+      }),
+    );
+
+    const args = run.mock.calls[0]?.[0] as string[];
+    expect(args).toEqual(
+      expect.arrayContaining([
+        "calendar.update",
+        "jinesis.lab@gmail.com",
+        "event-9",
+        "--add-attendee",
+        "ada@cs.toronto.edu,mei@cs.toronto.edu",
+        "--send-updates",
+        "all",
+      ]),
+    );
+    expect(args).not.toContain("--attendees");
+    expect(args).not.toContain("--summary");
+    expect(args).not.toContain("--from");
+  });
+
+  it("refuses an add-attendees action that names nobody", async () => {
+    const executor = createGogAdminBotExecutor({ run: vi.fn(async () => {}) });
+    await expect(
+      executor.execute(proposal("calendar.add_attendees", { event_id: "event-9", attendees: [] })),
+    ).rejects.toThrow(/attendees is required/u);
   });
 
   // The wrap the operator sees mid-paragraph comes from delivering text/plain, so an approved
@@ -114,11 +156,16 @@ describe("createGogAdminBotExecutor", () => {
       expect.arrayContaining(["gmail.drafts.create", "drafts", "create"]),
     );
 
-    // Same payload minus the new field: no --body-html anywhere.
+    // Same payload minus the field: the connector renders the alternative itself rather than
+    // falling back to text/plain, because the agent's proposal pipeline never supplies one and a
+    // text-only send is exactly what wraps mid-paragraph.
     const { body_html: _omitted, ...legacy } = payload;
     run.mockClear();
     await executor.execute(proposal("email.send", legacy));
-    expect(run.mock.calls[0]?.[0]).not.toContain("--body-html");
+    const rendered = run.mock.calls[0]?.[0] as string[];
+    expect(
+      rendered.slice(rendered.indexOf("--body-html"), rendered.indexOf("--body-html") + 2),
+    ).toEqual(["--body-html", renderEmailBodyHtml(legacy.body)]);
 
     // The schema round-trips both shapes, and still refuses a non-string html body.
     expect(Value.Check(emailPayloadSchema, payload)).toBe(true);

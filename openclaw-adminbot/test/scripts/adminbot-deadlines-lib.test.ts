@@ -112,9 +112,9 @@ describe("AoEClock", () => {
 
 describe("urgency_marker", () => {
   it("escalates as the deadline approaches and shares the Control UI bands", () => {
-    expect(runPython("print(json.dumps([urgency_marker(d) for d in [0, 3, 4, 7, 8, 30, 31]]))")).toEqual(
-      ["🔴", "🔴", "🟠", "🟠", "🟡", "🟡", "🟢"],
-    );
+    expect(
+      runPython("print(json.dumps([urgency_marker(d) for d in [0, 3, 4, 7, 8, 30, 31]]))"),
+    ).toEqual(["🔴", "🔴", "🟠", "🟠", "🟡", "🟡", "🟢"]);
   });
 });
 
@@ -169,8 +169,17 @@ describe("SlackNotifier", () => {
       ),
     ).toEqual({
       argv: [
-        "node", "cli.mjs", "message", "send", "--channel", "slack",
-        "--target", "user:U123", "--message", "ping", "--json",
+        "node",
+        "cli.mjs",
+        "message",
+        "send",
+        "--channel",
+        "slack",
+        "--target",
+        "user:U123",
+        "--message",
+        "ping",
+        "--json",
       ],
       delivered: 1,
       mode: "SEND",

@@ -39,30 +39,58 @@ const BASE_TAG = '    <base href="/" />';
 
 const ADMINBOT_TLS_PORT = 8443;
 
-/** The gateway node and the retired ones, or undefined when this build names no tailnet. */
-function resolveTailnet() {
+const stripTrailingSlashes = (value) => value.replace(/\/+$/, "");
+
+/**
+ * The default gateway/AdminBot URLs this build declares, or undefined when none is configured.
+ *
+ * Two sources, in precedence order:
+ *   - ADMINBOT_PUBLIC_URL / ADMINBOT_PUBLIC_GATEWAY_URL: explicit public origins (e.g. a Cloudflare
+ *     tunnel fronting AdminBot). Either may be set independently; a public AdminBot URL alone is
+ *     enough to fix member login, which only talks to the AdminBot service.
+ *   - ADMINBOT_TAILNET_DOMAIN + ADMINBOT_TAILNET_NODES: a Tailscale tailnet whose first node fronts
+ *     both services (gateway on wss, AdminBot on :8443).
+ * The explicit public URLs win over the tailnet-derived ones for the same field.
+ */
+function resolveDefaults() {
   const domain = process.env.ADMINBOT_TAILNET_DOMAIN?.trim();
   const nodes = (process.env.ADMINBOT_TAILNET_NODES ?? "")
     .split(",")
     .map((node) => node.trim())
     .filter(Boolean);
-  if (!domain || nodes.length === 0) {
+  const tailnet = domain && nodes.length > 0 ? { domain, primary: nodes[0], legacy: nodes.slice(1) } : undefined;
+
+  const publicAdminBot = process.env.ADMINBOT_PUBLIC_URL?.trim();
+  const publicGateway = process.env.ADMINBOT_PUBLIC_GATEWAY_URL?.trim();
+
+  const adminBotUrl = publicAdminBot
+    ? stripTrailingSlashes(publicAdminBot)
+    : tailnet
+      ? `https://${tailnet.primary}.${tailnet.domain}:${ADMINBOT_TLS_PORT}`
+      : undefined;
+  const gatewayUrl = publicGateway
+    ? stripTrailingSlashes(publicGateway)
+    : tailnet
+      ? `wss://${tailnet.primary}.${tailnet.domain}`
+      : undefined;
+  const legacyGatewayUrls = tailnet
+    ? tailnet.legacy.map((node) => `wss://${node}.${tailnet.domain}`)
+    : [];
+
+  if (!adminBotUrl && !gatewayUrl) {
     return undefined;
   }
-  const [primary, ...legacy] = nodes;
-  return {
-    gatewayUrl: `wss://${primary}.${domain}`,
-    adminBotUrl: `https://${primary}.${domain}:${ADMINBOT_TLS_PORT}`,
-    legacyGatewayUrls: legacy.map((node) => `wss://${node}.${domain}`),
-  };
+  return { gatewayUrl, adminBotUrl, legacyGatewayUrls };
 }
 
-const gatewayScript = (tailnet) => `    <script>
+const gatewayScript = (defaults) => `    <script>
       (function () {
-        var DEFAULT_GATEWAY_URL = ${JSON.stringify(tailnet.gatewayUrl)};
-        var DEFAULT_ADMINBOT_URL = ${JSON.stringify(tailnet.adminBotUrl)};
-        var LEGACY_GATEWAY_URLS = ${JSON.stringify(tailnet.legacyGatewayUrls)};
-        window.__OPENCLAW_CONTROL_UI_GATEWAY_URL__ = DEFAULT_GATEWAY_URL;
+        var DEFAULT_GATEWAY_URL = ${JSON.stringify(defaults.gatewayUrl ?? null)};
+        var DEFAULT_ADMINBOT_URL = ${JSON.stringify(defaults.adminBotUrl ?? null)};
+        var LEGACY_GATEWAY_URLS = ${JSON.stringify(defaults.legacyGatewayUrls)};
+        if (DEFAULT_GATEWAY_URL) {
+          window.__OPENCLAW_CONTROL_UI_GATEWAY_URL__ = DEFAULT_GATEWAY_URL;
+        }
         try {
           var url = new URL(window.location.href);
           var changed = false;
@@ -73,7 +101,7 @@ const gatewayScript = (tailnet) => `    <script>
             url.searchParams.delete("gatewayUrl");
             changed = true;
           }
-          if (!url.searchParams.get("adminBotUrl")) {
+          if (DEFAULT_ADMINBOT_URL && !url.searchParams.get("adminBotUrl")) {
             url.searchParams.set("adminBotUrl", DEFAULT_ADMINBOT_URL);
             changed = true;
           }
@@ -114,10 +142,10 @@ async function main() {
   }
 
   // 2. Gateway-URL forcing script — insert before </head> if absent.
-  const tailnet = resolveTailnet();
-  if (!tailnet) {
+  const defaults = resolveDefaults();
+  if (!defaults) {
     console.log(
-      "[vercel-postbuild] no ADMINBOT_TAILNET_DOMAIN/ADMINBOT_TAILNET_NODES — emitting the page without a declared gateway",
+      "[vercel-postbuild] no ADMINBOT_PUBLIC_URL or ADMINBOT_TAILNET_DOMAIN/NODES — emitting the page without a declared gateway",
     );
   } else if (!html.includes("DEFAULT_GATEWAY_URL")) {
     const headClose = /(\n?)([ \t]*<\/head>)/i;
@@ -125,7 +153,7 @@ async function main() {
       console.error("[vercel-postbuild] could not find </head> to inject the gateway script.");
       process.exit(1);
     }
-    html = html.replace(headClose, `\n${gatewayScript(tailnet)}$2`);
+    html = html.replace(headClose, `\n${gatewayScript(defaults)}$2`);
     changed = true;
     console.log("[vercel-postbuild] injected gateway-URL boot script");
   } else {

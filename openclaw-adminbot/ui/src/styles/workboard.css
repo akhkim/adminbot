@@ -366,9 +366,8 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
   line-height: 1.2;
-  text-transform: uppercase;
 }
 
 .workboard-field .input {
@@ -646,8 +645,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .workboard-column__header span {
@@ -1014,21 +1012,11 @@
   width: 100%;
   max-width: 112px;
   min-width: 0;
-  padding: 0 22px 0 25px;
+  padding: 0 4px 0 25px;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  appearance: none;
+  /* Native arrow, for the reason given at `select.input` in components.css. */
   background-color: var(--bg-elevated);
-  background-image:
-    linear-gradient(45deg, transparent 50%, currentColor 50%),
-    linear-gradient(135deg, currentColor 50%, transparent 50%);
-  background-position:
-    calc(100% - 13px) 50%,
-    calc(100% - 8px) 50%;
-  background-size:
-    5px 5px,
-    5px 5px;
-  background-repeat: no-repeat;
   color: var(--muted);
   cursor: pointer;
   font-size: 12px;
@@ -1360,8 +1348,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .workboard-detail__section p {
@@ -1391,8 +1378,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .workboard-detail__row strong {

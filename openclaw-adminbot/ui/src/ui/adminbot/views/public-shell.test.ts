@@ -62,6 +62,15 @@ describe("renderPublicShell", () => {
     expect(state.tab).toBe("adminbotReimbursements");
   });
 
+  // Leaving the open surface is the same move as opening the root: an anonymous visitor with a
+  // non-open tab resolves to the landing page, so the back control hands control back there.
+  it("returns to the landing page from an open surface", () => {
+    const state = createState();
+    const host = renderShell(state);
+    host.querySelector<HTMLAnchorElement>('[data-testid="public-shell-back"]')?.click();
+    expect(state.tab).toBe("chat");
+  });
+
   // The deadline board is a bundled snapshot, so it has to render with no gateway and no session.
   it("renders the deadline board without a session behind it", () => {
     expect(container.textContent).toContain("Deadlines");

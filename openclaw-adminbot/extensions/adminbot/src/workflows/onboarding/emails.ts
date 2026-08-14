@@ -49,7 +49,7 @@ During the interview, please be prepared to share your screen and discuss some o
 
 You should receive a Google Calendar invitation for the interview shortly. The event is editable, so please feel free to adjust the timing to a slot that works best for you. We may also make further adjustments to the schedule until we find a mutually convenient time, which will then be confirmed as the interview time. If you don't see the calendar invite be sure to check your spam folder.
 
-If you have any questions email {contact_emails}. We look forward to speaking with you.
+If you have any questions email akim@cs.toronto.edu. We look forward to speaking with you.
 
 Best regards,
 Jinesis AI Research Lab`,
@@ -336,27 +336,24 @@ If the call time doesn't work, just decline the call and the suggestion and an a
   {
     id: "member",
     kind: "privilege",
-    subject: `Welcome to the Jinesis AI Research Lab – Onboarding Steps`,
+    subject: `Welcome to the Jinesis Lab – Onboarding Steps`,
     // `first_name` is deliberately absent: it is an optional value token, so an unnamed recipient
     // gets "Hi," rather than a refusal. See OPTIONAL_VALUE_TOKENS in guide.ts.
     required: [],
     body: `Hi {first_name},
 
-Thank you for your interest in joining the Jinesis AI Research Lab with Prof. Zhijing Jin! We're excited to have you on board.
+Thank you for your interest in joining the Jinesis Lab with Prof. Zhijing Jin! We're excited to have you on board. Our lab has recently developed an online lab management portal. Please follow the steps below:
 
-To complete your onboarding, please complete the following:
+If you already have an @cs.toronto.edu email, please use it to create your member portal account at https://jinesis-admin.vercel.app/signup, and follow the onboarding guide in the portal.
 
-- You will soon receive an email asking you to create a @cs.toronto.edu email
-  - Highly Preferred format:
-    - Top 1 choice: yourFirstName@cs.toronto.edu, or yourLastName@cs.toronto.edu, e.g., david@cs.toronto.edu or smith@cs.toronto.edu
-    - Top 2 choice: {first_letter_of_first_name}{full_last_name}@cs.toronto.edu, e.g., {email_format_example}
-    - Otherwise you can pick one that you like. Our high preference is to make it very much reflect your first and last name, so we can use it for professional communications with senior external collaborators.
-- Once that is created, use that email to create your member portal account: Sign up at https://jinesis-admin.vercel.app/signup and follow the onboarding guide in the portal.
+If you do not have an @cs.toronto.edu email yet, you will receive an email asking about your preferred email username. If possible, feel free to prioritize a username like "firstname@cs.toronto.edu" or "lastname@cs.toronto.edu". If those are taken, you can try {first_letter_of_first_name}{full_last_name}@cs.toronto.edu, e.g., "{email_format_example}". If all of the above are taken, feel free to customize a username that reflects your first and last name reasonably well, so we can use it for professional communications with senior external collaborators.
 
-If any of the steps does not proceed within 7 business days after you have done it, report the technical error to {contact_emails}.
+After your @cs.toronto.edu email is created, use it to create your member portal account at https://jinesis-admin.vercel.app/signup, and follow the onboarding guide in the portal.
+
+If you are stuck on any of the above steps for over 2 business days, report the technical error to our lab admin Andrew Kim at akim@cs.toronto.edu.
 
 Best regards,
-Jinesis AI Research Lab`,
+Jinesis Lab`,
   },
 ] as const satisfies readonly AdminBotOnboardingTemplate[];
 

@@ -4,7 +4,7 @@ import { render } from "lit";
 import { beforeEach, describe, expect, it } from "vitest";
 import { i18n } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
-import type { MemberOnboarding } from "../auth/session.ts";
+import type { MemberOnboarding, MemberOnboardingStep } from "../auth/session.ts";
 import { hasUnacknowledgedOnboarding, renderOnboardingChecklist } from "./onboarding-checklist.ts";
 
 function createState(
@@ -22,6 +22,38 @@ function createState(
   } as unknown as AppViewState;
 }
 
+function checklist(steps: MemberOnboardingStep[]): MemberOnboarding {
+  return {
+    completed: steps.filter((step) => step.status === "complete"),
+    remaining: steps.filter((step) => step.status !== "complete"),
+    steps,
+  };
+}
+
+const CALENDAR: MemberOnboardingStep = {
+  id: "calendar_invite",
+  label: "Lab calendar access",
+  status: "complete",
+  category: "Getting started",
+  required: true,
+};
+
+const PROFILE_PHOTO: MemberOnboardingStep = {
+  id: "profile_photo",
+  label: "Upload a professional profile photo",
+  status: "current",
+  category: "Getting started",
+  required: true,
+};
+
+const LINKEDIN: MemberOnboardingStep = {
+  id: "linkedin",
+  label: "Connect on LinkedIn",
+  status: "current",
+  category: "Social media",
+  required: true,
+};
+
 describe("renderOnboardingChecklist", () => {
   beforeEach(async () => {
     await i18n.setLocale("en");
@@ -35,292 +67,204 @@ describe("renderOnboardingChecklist", () => {
 
   it("renders nothing once the member has already acknowledged it", () => {
     const container = document.createElement("div");
-    const onboarding: MemberOnboarding = {
-      completed: [],
-      remaining: [],
-      steps: [{ id: "x", label: "X", status: "current", category: "Questions", required: true }],
-    };
     render(
-      renderOnboardingChecklist(createState(onboarding, { adminBotOnboardingAcknowledged: true })),
+      renderOnboardingChecklist(
+        createState(checklist([LINKEDIN]), { adminBotOnboardingAcknowledged: true }),
+      ),
       container,
     );
     expect(container.textContent?.trim()).toBe("");
   });
 
-  it("renders every step with its label, detail, and status, grouped under its category", () => {
+  it("renders a single card at a time, opening on the first step that still needs the member", () => {
     const container = document.createElement("div");
-    const onboarding: MemberOnboarding = {
-      current_step: {
-        id: "profile_photo",
-        label: "Upload a professional profile photo",
-        status: "current",
-        category: "Getting started",
-        required: true,
-        detail: "Add a headshot.",
-      },
-      completed: [
-        {
-          id: "calendar_invite",
-          label: "Lab calendar access",
-          status: "complete",
-          category: "Getting started",
-          required: true,
-          detail: "Already granted.",
-        },
-      ],
-      remaining: [
-        {
-          id: "profile_photo",
-          label: "Upload a professional profile photo",
-          status: "current",
-          category: "Getting started",
-          required: true,
-          detail: "Add a headshot.",
-        },
-      ],
-      steps: [
-        {
-          id: "calendar_invite",
-          label: "Lab calendar access",
-          status: "complete",
-          category: "Getting started",
-          required: true,
-          detail: "Already granted.",
-        },
-        {
-          id: "profile_photo",
-          label: "Upload a professional profile photo",
-          status: "current",
-          category: "Getting started",
-          required: true,
-          detail: "Add a headshot.",
-        },
-      ],
-    };
+    const onboarding = checklist([CALENDAR, PROFILE_PHOTO, LINKEDIN]);
     render(renderOnboardingChecklist(createState(onboarding)), container);
 
-    expect(container.textContent).toContain("Lab calendar access");
-    expect(container.textContent).toContain("Already granted.");
-    expect(container.textContent).toContain("Upload a professional profile photo");
-    expect(container.textContent).toContain("Add a headshot.");
-    expect(container.querySelectorAll(".adminbot-welcome__step")).toHaveLength(2);
-    const categoryTitles = [...container.querySelectorAll(".adminbot-welcome__category-title")].map(
-      (el) => el.textContent,
+    // The auto-granted calendar step sits first in definition order but is already done, so the
+    // walk opens on the next card -- the one the member actually has to act on.
+    expect(container.querySelectorAll(".onboarding-step-card")).toHaveLength(1);
+    expect(container.querySelector(".onboarding-step-card__label")?.textContent).toBe(
+      "Upload a professional profile photo",
     );
-    expect(categoryTitles).toEqual(["Getting started"]);
+    expect(container.querySelector(".onboarding-step-card__category")?.textContent).toBe(
+      "Getting started",
+    );
+    expect(container.querySelector(".onboarding-step-card__count")?.textContent?.trim()).toBe(
+      "2 / 3",
+    );
+    expect(container.querySelector(".onboarding-step-card__badge--status")?.textContent).toBe(
+      "Start here",
+    );
+    // Not the very first step in definition order, so Back is already available (the member can
+    // walk back to the done calendar card); the explicit-index test below pins the no-Back case.
+    expect(container.querySelector(".onboarding-step-card__back")).not.toBeNull();
   });
 
-  it("groups steps into separate category sections in a fixed order", () => {
+  it("respects an explicit position, e.g. walking back to the auto-granted calendar step", () => {
     const container = document.createElement("div");
-    const onboarding: MemberOnboarding = {
-      completed: [],
-      remaining: [],
-      steps: [
-        {
-          id: "twitter",
-          label: "Follow X",
-          status: "remaining",
-          category: "Social media",
-          required: false,
-        },
-        {
-          id: "profile_photo",
-          label: "Photo",
-          status: "current",
-          category: "Getting started",
-          required: true,
-        },
-      ],
-    };
-    render(renderOnboardingChecklist(createState(onboarding)), container);
-
-    const categoryTitles = [...container.querySelectorAll(".adminbot-welcome__category-title")].map(
-      (el) => el.textContent,
+    const onboarding = checklist([CALENDAR, PROFILE_PHOTO]);
+    render(
+      renderOnboardingChecklist(createState(onboarding, { adminBotOnboardingStepIndex: 0 })),
+      container,
     );
-    // Fixed category order wins regardless of the input steps' order.
-    expect(categoryTitles).toEqual(["Getting started", "Social media"]);
+
+    expect(container.querySelector(".onboarding-step-card__label")?.textContent).toBe(
+      "Lab calendar access",
+    );
+    expect(container.querySelector(".onboarding-step-card__count")?.textContent?.trim()).toBe(
+      "1 / 2",
+    );
+    // Auto-granted steps carry no self-attestation toggle, so there is nothing to undo there.
+    expect(container.querySelector(".onboarding-step-card__toggle")).toBeNull();
+    // The very first card in definition order has no Back button.
+    expect(container.querySelector(".onboarding-step-card__back")).toBeNull();
   });
 
   it("renders bullets as a list and links as clickable buttons", () => {
     const container = document.createElement("div");
-    const onboarding: MemberOnboarding = {
-      completed: [],
-      remaining: [],
-      steps: [
-        {
-          id: "linkedin",
-          label: "Connect on LinkedIn",
-          status: "current",
-          category: "Social media",
-          required: true,
-          bullets: [
-            { text: "Update your headline" },
-            { text: "Join the company page", points: ["Search for Jinesis Lab", "Hit follow"] },
-          ],
-          links: [{ label: "Connect with Zhijing", url: "https://linkedin.com/in/example-pi/" }],
-        },
+    const linkedin = {
+      ...LINKEDIN,
+      bullets: [
+        { text: "Update your headline" },
+        { text: "Join the company page", points: ["Search for Jinesis Lab", "Hit follow"] },
       ],
+      links: [{ label: "Connect with Zhijing", url: "https://linkedin.com/in/example-pi/" }],
     };
-    render(renderOnboardingChecklist(createState(onboarding)), container);
+    render(renderOnboardingChecklist(createState(checklist([linkedin]))), container);
 
-    const bullets = [...container.querySelectorAll(".adminbot-welcome__step-bullets > li")].map(
-      (li) => li.querySelector(".adminbot-welcome__bullet-text")?.textContent,
+    const bullets = [...container.querySelectorAll(".onboarding-step-card__bullets > li")].map(
+      (li) => li.querySelector(".onboarding-step-card__bullet-text")?.textContent,
     );
     expect(bullets).toEqual(["Update your headline", "Join the company page"]);
 
-    const points = [...container.querySelectorAll(".adminbot-welcome__step-points li")].map(
+    const points = [...container.querySelectorAll(".onboarding-step-card__points li")].map(
       (li) => li.textContent,
     );
     expect(points).toEqual(["Search for Jinesis Lab", "Hit follow"]);
 
-    const link = container.querySelector<HTMLAnchorElement>(".adminbot-welcome__step-link");
+    const link = container.querySelector<HTMLAnchorElement>(".onboarding-step-card__link");
     expect(link?.textContent?.trim()).toBe("Connect with Zhijing");
     expect(link?.getAttribute("href")).toBe("https://linkedin.com/in/example-pi/");
     expect(link?.getAttribute("target")).toBe("_blank");
   });
 
-  it("the acknowledge button flips the flag and persists it, so the card would not render again", () => {
+  it("advances and retreats through the walk via Next and Back", () => {
     const container = document.createElement("div");
-    const state = createState({
-      completed: [],
-      remaining: [],
-      steps: [{ id: "x", label: "X", status: "current", category: "Questions", required: true }],
-    });
+    const state = createState(
+      checklist([
+        { id: "twitter", label: "X", status: "current", category: "Social media", required: false },
+        { id: "luma", label: "Luma", status: "remaining", category: "Social media", required: false },
+        { id: "youtube", label: "YouTube", status: "remaining", category: "Social media", required: false },
+      ]),
+    );
+    const rerender = () => {
+      render(renderOnboardingChecklist(state), container);
+    };
+    rerender();
+
+    expect(container.querySelector(".onboarding-step-card__label")?.textContent).toBe("X");
+
+    container.querySelector<HTMLButtonElement>(".onboarding-step-card__next")?.click();
+    rerender();
+    expect(state.adminBotOnboardingStepIndex).toBe(1);
+    expect(container.querySelector(".onboarding-step-card__label")?.textContent).toBe("Luma");
+    expect(container.querySelector(".onboarding-step-card__back")).not.toBeNull();
+
+    container.querySelector<HTMLButtonElement>(".onboarding-step-card__back")?.click();
+    rerender();
+    expect(state.adminBotOnboardingStepIndex).toBe(0);
+    expect(container.querySelector(".onboarding-step-card__label")?.textContent).toBe("X");
+  });
+
+  it("the last step's Finish flips the flag and persists it, so the card would not render again", () => {
+    const container = document.createElement("div");
+    const state = createState(
+      checklist([
+        { id: "twitter", label: "X", status: "current", category: "Social media", required: false },
+      ]),
+    );
     render(renderOnboardingChecklist(state), container);
 
     expect(hasUnacknowledgedOnboarding(state)).toBe(true);
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="dashboard-onboarding-acknowledge"]')
-      ?.click();
+    const finish = container.querySelector<HTMLButtonElement>(".onboarding-step-card__next");
+    expect(finish?.textContent?.trim()).toBe("Finish");
+    finish?.click();
     expect(state.adminBotOnboardingAcknowledged).toBe(true);
     expect(hasUnacknowledgedOnboarding(state)).toBe(false);
   });
 
-  // Completion is self-attested through "Mark done"; acknowledging the card is a separate act
-  // entirely, so leftover steps never block it.
-  it("acknowledging works with steps still outstanding", () => {
-    const container = document.createElement("div");
-    const state = createState({
-      completed: [],
-      remaining: [],
-      steps: [
-        { id: "linkedin", label: "Connect on LinkedIn", status: "current", category: "Social media", required: true },
-        { id: "twitter", label: "Follow X", status: "remaining", category: "Social media", required: false },
-      ],
-    });
-    render(renderOnboardingChecklist(state), container);
-
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="dashboard-onboarding-acknowledge"]')
-      ?.click();
-    expect(state.adminBotOnboardingAcknowledged).toBe(true);
-  });
-});
-
-// The header counts what is finished; nothing here is gated on the per-step "Mark done" toggle.
-describe("renderOnboardingChecklist progress", () => {
-  const step = (overrides: Partial<MemberOnboarding["steps"][number]>) => ({
-    id: "linkedin",
-    label: "Connect on LinkedIn",
-    status: "current" as const,
-    category: "Social media",
-    required: true,
-    ...overrides,
-  });
-
-  function renderSteps(steps: MemberOnboarding["steps"]): HTMLElement {
+  it("a required incomplete step blocks Next until it is marked done", () => {
     const container = document.createElement("div");
     render(
-      renderOnboardingChecklist(createState({ completed: [], remaining: [], steps })),
+      renderOnboardingChecklist(
+        createState(
+          checklist([
+            PROFILE_PHOTO,
+            { id: "twitter", label: "X", status: "remaining", category: "Social media", required: false },
+          ]),
+        ),
+      ),
       container,
     );
-    return container;
-  }
 
-  it("counts the steps that are done", () => {
-    const container = renderSteps([
-      step({ id: "calendar_invite", status: "complete" }),
-      step({ id: "linkedin", status: "complete" }),
-      step({ id: "twitter", status: "current" }),
-    ]);
-
-    expect(container.querySelector(".adminbot-welcome__progress")?.textContent?.trim()).toBe(
-      "2 of 3 done",
+    const next = container.querySelector<HTMLButtonElement>(".onboarding-step-card__next");
+    expect(next?.disabled).toBe(true);
+    expect(container.querySelector(".onboarding-step-card__blocked-note")?.textContent).toContain(
+      "required",
     );
-  });
-
-  it("celebrates once every step is done", () => {
-    const container = renderSteps([step({ status: "complete" })]);
-
-    const progress = container.querySelector(".adminbot-welcome__progress");
-    expect(progress?.getAttribute("data-complete")).toBe("true");
-    expect(progress?.textContent?.trim()).toBe("Every step is done — welcome aboard.");
   });
 });
 
 describe("onboarding step toggle", () => {
-  const onboarding: MemberOnboarding = {
-    current_step: undefined,
-    completed: [],
-    remaining: [],
-    steps: [
-      {
-        id: "calendar_invite",
-        label: "Lab calendar access",
-        status: "complete",
-        category: "Getting started",
-        required: true,
-      },
-      {
-        id: "linkedin",
-        label: "Connect on LinkedIn",
-        status: "current",
-        category: "Social media",
-        required: true,
-      },
-      {
-        id: "twitter",
-        label: "Follow the lab on X/Twitter",
-        status: "complete",
-        category: "Social media",
-        required: false,
-      },
-    ],
-  };
+  const onboarding = checklist([
+    CALENDAR,
+    {
+      id: "linkedin",
+      label: "Connect on LinkedIn",
+      status: "current",
+      category: "Social media",
+      required: true,
+    },
+    { id: "twitter", label: "X", status: "complete", category: "Social media", required: false },
+  ]);
+
+  function toggleAt(overrides: Partial<AppViewState> = {}): { button: HTMLButtonElement | null } {
+    const container = document.createElement("div");
+    render(renderOnboardingChecklist(createState(onboarding, overrides)), container);
+    return { button: container.querySelector<HTMLButtonElement>(".onboarding-step-card__toggle") };
+  }
 
   it("offers Mark done on open steps, Undo on completed ones, and nothing on auto-granted ones", () => {
-    const container = document.createElement("div");
-    render(renderOnboardingChecklist(createState(onboarding)), container);
-
-    const buttons = [...container.querySelectorAll(".adminbot-welcome__step-toggle")];
     // calendar_invite is granted by the server at approval time; a self-attestation
     // toggle there would only invite people to un-record something they never did.
-    expect(buttons).toHaveLength(2);
-    expect(buttons.map((button) => button.textContent?.trim())).toEqual(["Mark done", "Undo"]);
+    expect(toggleAt({ adminBotOnboardingStepIndex: 0 }).button).toBeNull();
+
+    const open = toggleAt({ adminBotOnboardingStepIndex: 1 }).button;
+    expect(open?.textContent?.trim()).toBe("Mark done");
+
+    const done = toggleAt({ adminBotOnboardingStepIndex: 2 }).button;
+    expect(done?.textContent?.trim()).toBe("Undo");
   });
 
-  it("disables the toggles and shows progress while a save is in flight", () => {
-    const container = document.createElement("div");
-    const state = createState(onboarding);
-    (state as { adminBotOnboardingBusyStepId: string | null }).adminBotOnboardingBusyStepId =
-      "linkedin";
-    render(renderOnboardingChecklist(state), container);
-
-    const buttons = [
-      ...container.querySelectorAll<HTMLButtonElement>(".adminbot-welcome__step-toggle"),
-    ];
-    expect(buttons.every((button) => button.disabled)).toBe(true);
-    expect(buttons[0]?.textContent?.trim()).toBe("Saving…");
+  it("disables the toggle and shows progress while a save is in flight", () => {
+    const { button } = toggleAt({
+      adminBotOnboardingStepIndex: 1,
+      adminBotOnboardingBusyStepId: "linkedin",
+    });
+    expect(button?.disabled).toBe(true);
+    expect(button?.textContent?.trim()).toBe("Saving…");
   });
 
-  it("surfaces a save failure next to the acknowledge button", () => {
+  it("surfaces a save failure on the card", () => {
     const container = document.createElement("div");
-    const state = createState(onboarding);
-    (state as { adminBotOnboardingError: string | null }).adminBotOnboardingError =
-      "Couldn't update this step — sign in again and retry.";
+    const state = createState(onboarding, {
+      adminBotOnboardingStepIndex: 1,
+      adminBotOnboardingError: "Couldn't update this step — sign in again and retry.",
+    });
     render(renderOnboardingChecklist(state), container);
 
-    expect(container.querySelector(".adminbot-welcome__error")?.textContent).toContain(
+    expect(container.querySelector(".onboarding-step-card__error")?.textContent).toContain(
       "Couldn't update this step",
     );
   });

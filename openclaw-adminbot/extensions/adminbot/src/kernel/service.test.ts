@@ -1,4 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import {
+  adminBotMandatoryProfileFields,
+  adminBotSlackActivityOf,
+  redactConfidentialMemberFields,
+} from "../contracts/actions.js";
 import { AdminBotService, payloadHash } from "./service.js";
 
 function unwrap<T>(
@@ -233,6 +238,66 @@ describe("AdminBotService", () => {
     expect(unwrap(service.listPending()).proposals).toEqual([]);
   });
 
+  describe("Slack channel naming enforcement", () => {
+    it("reminds owner on invalid names, then renames after 48 hours", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+
+      const created = await service.processSlackChannelNamingEvent({
+        event_type: "channel_created",
+        channel_id: "C1",
+        channel_name: "eu-post-training",
+        owner_user_id: "U1",
+      });
+      expect(created).toMatchObject({
+        ok: true,
+        payload: { status: "reminder_sent", suggested_name: "proj-eu-post-training" },
+      });
+
+      const now = Date.now();
+      const beforeDue = await service.runSlackChannelNamingSweep(
+        "cron",
+        new Date(now + 47 * 60 * 60 * 1000).toISOString(),
+      );
+      expect(beforeDue).toMatchObject({
+        ok: true,
+        payload: { reminders_pending: 1, renamed: 0 },
+      });
+
+      const due = await service.runSlackChannelNamingSweep(
+        "cron",
+        new Date(now + 49 * 60 * 60 * 1000).toISOString(),
+      );
+      expect(due).toMatchObject({
+        ok: true,
+        payload: { renamed: 1, skipped: 0 },
+      });
+      // reminder DM + rename + post-rename DM
+      expect(executor.execute).toHaveBeenCalledTimes(3);
+    });
+
+    it("clears pending enforcement when the channel is renamed to a compliant name", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+
+      await service.processSlackChannelNamingEvent({
+        event_type: "channel_created",
+        channel_id: "C2",
+        channel_name: "rule-coherence-project",
+        owner_user_id: "U2",
+      });
+      const renamed = await service.processSlackChannelNamingEvent({
+        event_type: "channel_rename",
+        channel_id: "C2",
+        channel_name: "proj-rule-coherence-project",
+      });
+      expect(renamed).toMatchObject({ ok: true, payload: { status: "compliant" } });
+
+      const sweep = await service.runSlackChannelNamingSweep("cron", "2099-01-01T00:00:00.000Z");
+      expect(sweep).toMatchObject({ ok: true, payload: { scanned: 0, renamed: 0 } });
+    });
+  });
+
   it("hashes equivalent object payloads consistently", () => {
     expect(payloadHash({ b: 2, a: { y: true, x: "x" } })).toBe(
       payloadHash({ a: { x: "x", y: true }, b: 2 }),
@@ -395,6 +460,85 @@ describe("AdminBotService", () => {
     }
   });
 
+  // The lab runs no object storage, so an uploaded picture lives on the record as a data URL. It
+  // used to fail the https check that guards the link fields, which made the upload control inert.
+  it("stores an uploaded profile photo inline, within the size and type limits", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        id: "photo",
+        name: "Photo Member",
+        email: "photo@cs.toronto.edu",
+        privilege_level: "member",
+      }),
+    );
+
+    const png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==";
+    expect(unwrap(service.updateOwnProfile("photo", { avatar_url: png })).avatar_url).toBe(png);
+
+    // An SVG is a document that can carry script, and this value is rendered as an <img src>.
+    expect(
+      service.updateOwnProfile("photo", {
+        avatar_url: "data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=",
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
+
+    // Over the 512 KB cap the upload control already enforces client-side.
+    const oversized = `data:image/png;base64,${"A".repeat(1024 * 1024)}`;
+    expect(service.updateOwnProfile("photo", { avatar_url: oversized })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+
+    // A link out is still a link: the other fields keep refusing data URLs.
+    expect(service.updateOwnProfile("photo", { cv_url: png })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+
+    // And a real https photo URL still works.
+    const hosted = "https://example.test/avatar.png";
+    expect(unwrap(service.updateOwnProfile("photo", { avatar_url: hosted })).avatar_url).toBe(
+      hosted,
+    );
+  });
+
+  // The URN is looked up by the lab, not typed by the member, so a self update carrying one is
+  // dropped like any other non-whitelisted key -- the disabled control on the profile page is the
+  // label for this rule, never the rule itself.
+  it("ignores a linkedin_urn sent through a self profile update, but lets an admin set it", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        id: "urn-member",
+        name: "URN Member",
+        email: "urn-member@cs.toronto.edu",
+        privilege_level: "member",
+      }),
+    );
+
+    const selfEdited = unwrap(
+      service.updateOwnProfile("urn-member", {
+        linkedin_urn: "ACoAAB7654321",
+        role: "Postdoc",
+      }),
+    );
+    expect(selfEdited.linkedin_urn ?? "").toBe("");
+    // The rest of the same update still lands: the key is dropped, the request is not refused.
+    expect(selfEdited.role).toBe("Postdoc");
+
+    const byAdmin = unwrap(
+      service.upsertLabMember({
+        id: "urn-member",
+        name: "URN Member",
+        email: "urn-member@cs.toronto.edu",
+        privilege_level: "member",
+        linkedin_urn: "ACoAAB1234567",
+      }),
+    );
+    expect(byAdmin.linkedin_urn).toBe("ACoAAB1234567");
+  });
+
   it("lets a member self-edit availability and time off, and validates both", () => {
     const service = new AdminBotService();
     unwrap(service.upsertLabMember({ id: "sched", name: "Sched", privilege_level: "member" }));
@@ -435,6 +579,84 @@ describe("AdminBotService", () => {
       },
     ]) {
       expect(service.updateOwnProfile("sched", bad)).toMatchObject({ ok: false, status: 400 });
+    }
+  });
+
+  it("lets a member self-edit milestones, links and the non-Jinesis time-off kinds", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "plan", name: "Plan", privilege_level: "member" }));
+
+    const saved = unwrap(
+      service.updateOwnProfile("plan", {
+        availability: [
+          {
+            start: "2026-09-01",
+            end: "2026-12-01",
+            project: "Atlas",
+            hours_per_week: 12,
+            link: "https://example.com/board",
+          },
+        ],
+        time_off: [
+          // The two kinds added for the time-availability tab, plus a member's own name for the
+          // category that does not fit the closed list.
+          { start: "2026-12-24", end: "2027-01-02", kind: "personal", availability: "none" },
+          {
+            start: "2026-09-08",
+            end: "2026-12-05",
+            kind: "other_project",
+            availability: "partial",
+          },
+          {
+            start: "2026-10-13",
+            end: "2026-10-17",
+            kind: "other",
+            availability: "none",
+            label: "Reading week",
+            link: "https://example.com/syllabus",
+          },
+        ],
+        milestones: [
+          { date: "2027-06-12", label: "Graduation" },
+          { date: "2026-11-03", label: "Thesis draft", link: "https://example.com/thesis" },
+        ],
+      }),
+    );
+    expect(saved.milestones).toHaveLength(2);
+    expect(saved.time_off?.[2]).toMatchObject({ label: "Reading week", kind: "other" });
+    expect(saved.availability?.[0]?.link).toBe("https://example.com/board");
+
+    for (const bad of [
+      { milestones: "not-a-list" },
+      { milestones: [{ date: "12-06-2027", label: "Graduation" }] },
+      // A milestone with no label is an unexplained mark on someone's timeline.
+      { milestones: [{ date: "2027-06-12", label: "   " }] },
+      { milestones: [{ date: "2027-06-12", label: "Graduation", link: "not-a-url" }] },
+      // Rendered as anchors, so anything but https is refused rather than left to the renderer.
+      { milestones: [{ date: "2027-06-12", label: "Graduation", link: "http://example.com" }] },
+      {
+        availability: [
+          {
+            start: "2026-09-01",
+            end: "2026-12-01",
+            hours_per_week: 4,
+            link: "javascript:alert(1)",
+          },
+        ],
+      },
+      {
+        time_off: [
+          {
+            start: "2026-10-13",
+            end: "2026-10-17",
+            kind: "other",
+            availability: "none",
+            label: "x".repeat(121),
+          },
+        ],
+      },
+    ]) {
+      expect(service.updateOwnProfile("plan", bad)).toMatchObject({ ok: false, status: 400 });
     }
   });
 
@@ -505,6 +727,7 @@ describe("AdminBotService", () => {
         linkedin_url: "https://www.linkedin.com/in/octocat",
         scholar_url: "https://scholar.google.com/citations?user=abc123",
         cv_url: "https://example.com/jane-doe-cv.pdf",
+        intake_form_url: "https://docs.google.com/forms/d/e/1FAIpQLSc/viewform?edit2=2_ABaOnud",
       }),
     );
     expect(saved.github_url).toBe("https://github.com/octocat");
@@ -512,6 +735,7 @@ describe("AdminBotService", () => {
     expect(saved.linkedin_url).toBe("https://www.linkedin.com/in/octocat");
     expect(saved.scholar_url).toBe("https://scholar.google.com/citations?user=abc123");
     expect(saved.cv_url).toBe("https://example.com/jane-doe-cv.pdf");
+    expect(saved.intake_form_url).toContain("docs.google.com/forms/");
 
     // Empty clears each link.
     expect(unwrap(service.updateOwnProfile("social", { github_url: "" })).github_url).toBe("");
@@ -524,6 +748,10 @@ describe("AdminBotService", () => {
       { scholar_url: "https://scholar.google.com/citations" }, // missing ?user=
       { scholar_url: "http://scholar.google.com/citations?user=abc123" }, // not https
       { cv_url: "not a url" },
+      // Only the member's own Forms response link belongs here; a stray link filed under it would
+      // read on the profile as "these are their intake answers" when it is nothing of the sort.
+      { intake_form_url: "https://example.com/my-answers" },
+      { intake_form_url: "https://docs.google.com/document/d/abc/edit" },
     ]) {
       expect(service.updateOwnProfile("social", bad)).toMatchObject({ ok: false, status: 400 });
     }
@@ -576,9 +804,7 @@ describe("AdminBotService", () => {
 
     // Sending the same email back alongside an unrelated change must not fail just because
     // upsertLabMember re-validates the whole merged record on every call.
-    const saved = unwrap(
-      service.updateOwnProfile("resave", { location: "Toronto" }),
-    );
+    const saved = unwrap(service.updateOwnProfile("resave", { location: "Toronto" }));
     expect(saved.location).toBe("Toronto");
     expect(saved.email).toBe("resave@cs.toronto.edu");
   });
@@ -599,9 +825,10 @@ describe("AdminBotService", () => {
     );
     expect(saved.calendar_email).toBe("cal.personal@gmail.com");
 
-    expect(
-      service.updateOwnProfile("cal", { calendar_email: "not an email" }),
-    ).toMatchObject({ ok: false, status: 400 });
+    expect(service.updateOwnProfile("cal", { calendar_email: "not an email" })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
   });
 
   it("moves availability_updated_at only when the schedule content actually changes", () => {
@@ -1067,16 +1294,17 @@ describe("AdminBotService", () => {
       expect(steps.find((step) => step.id === "linkedin")?.status).toBe("complete");
       expect(updated.onboarding?.completed.map((step) => step.id)).toContain("linkedin");
       expect(updated.onboarding?.remaining.map((step) => step.id)).not.toContain("linkedin");
-      // `current` is positional — the first required step still outstanding.
-      expect(updated.onboarding?.current_step?.id).toBe("profile_photo");
+      // `current` is positional — the first required step still outstanding, which is the shared
+      // Drive folder note.
+      expect(updated.onboarding?.current_step?.id).toBe("drive_folder");
     });
 
     it("can un-complete a step, pulling current back to it", () => {
       const service = new AdminBotService();
       seed(service, "sam");
-      unwrap(service.setOnboardingStep("sam", "profile_photo", true, "sam"));
-      const reverted = unwrap(service.setOnboardingStep("sam", "profile_photo", false, "admin"));
-      expect(reverted.onboarding?.current_step?.id).toBe("profile_photo");
+      unwrap(service.setOnboardingStep("sam", "drive_folder", true, "sam"));
+      const reverted = unwrap(service.setOnboardingStep("sam", "drive_folder", false, "admin"));
+      expect(reverted.onboarding?.current_step?.id).toBe("drive_folder");
     });
 
     it("rejects an unknown step and an unknown member", () => {
@@ -1193,6 +1421,267 @@ describe("AdminBotService", () => {
     });
   });
 
+  describe("migrateMemberNotesToFields", () => {
+    it("moves a notes line into the field that owns it, and keeps the rest of the prose", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "m1",
+          name: "Ada",
+          notes: "Joined month: 2026-03\nWhatsApp: +1 555 0100\nPrefers async check-ins.",
+        }),
+      );
+
+      const result = unwrap(service.migrateMemberNotesToFields("admin"));
+      expect(result.fieldsFilled).toBe(2);
+      expect(result.membersUpdated).toBe(1);
+
+      const member = unwrap(service.listLabMembers()).members[0]!;
+      expect(member.joined_month).toBe("2026-03");
+      expect(member.whatsapp).toBe("+1 555 0100");
+      // Unrecognised prose is not a schema field and must survive untouched.
+      expect(member.notes).toBe("Prefers async check-ins.");
+    });
+
+    it("never overwrites a field that already holds a value", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "m1",
+          name: "Ada",
+          location: "Toronto",
+          notes: "Location: Somewhere stale",
+        }),
+      );
+
+      const result = unwrap(service.migrateMemberNotesToFields("admin"));
+
+      // The stored field wins; the line was a duplicate of a fact already held properly.
+      expect(unwrap(service.listLabMembers()).members[0]?.location).toBe("Toronto");
+      expect(result.fieldsFilled).toBe(0);
+      // It is still removed, because leaving it keeps the two-sources-of-truth problem alive.
+      expect(unwrap(service.listLabMembers()).members[0]?.notes).toBeUndefined();
+    });
+
+    it("splits research interests into the list the roster stores", () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "m1",
+          name: "Ada",
+          notes: "Research interests: reasoning, alignment",
+        }),
+      );
+
+      unwrap(service.migrateMemberNotesToFields("admin"));
+
+      expect(unwrap(service.listLabMembers()).members[0]?.research_topics).toEqual([
+        "reasoning",
+        "alignment",
+      ]);
+    });
+
+    it("is a no-op on a second run", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "m1", name: "Ada", notes: "Joined month: 2026-03" }));
+
+      unwrap(service.migrateMemberNotesToFields("admin"));
+      const second = unwrap(service.migrateMemberNotesToFields("admin"));
+
+      // A partial run must be safe to repeat, so re-running changes nothing.
+      expect(second.membersUpdated).toBe(0);
+      expect(second.fieldsFilled).toBe(0);
+      expect(unwrap(service.listLabMembers()).members[0]?.joined_month).toBe("2026-03");
+    });
+
+    it("leaves a member with only free-text notes completely alone", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "m1", name: "Ada", notes: "Just a note." }));
+
+      const result = unwrap(service.migrateMemberNotesToFields("admin"));
+
+      expect(result.membersUpdated).toBe(0);
+      expect(unwrap(service.listLabMembers()).members[0]?.notes).toBe("Just a note.");
+    });
+  });
+
+  // upsertLabMember merges its input over the stored record, so callers legitimately send only the
+  // fields they are changing. Validating the raw patch instead of the merge meant a partial update
+  // read as "a member with no name" -- and because the HTTP layer casts the JSON body straight to
+  // the input type, the missing name reached validateLabMember as undefined and threw a TypeError
+  // out of the route as a 500. That is the whole "add a commitment button does nothing" bug: the
+  // Control UI's schedule editor sends availability/time_off/milestones and never a name, and an
+  // admin session routes those through this method rather than through updateOwnProfile.
+  // Whether a member counts as active in Slack. The sweep counts messages; the badge reads the
+  // count. Both go through adminBotSlackActivityOf so they cannot disagree.
+  // Deleting the key rather than blanking it: an empty string is indistinguishable from a member
+  // who wrote nothing, which would quietly tell every reader that this person has nothing to
+  // declare -- itself a disclosure.
+  describe("confidential member fields", () => {
+    const ada = { id: "ada", name: "Ada", personal_circumstances: "on dialysis Tuesdays" };
+
+    it("keeps the field for the member themselves and for an admin", () => {
+      expect(redactConfidentialMemberFields(ada, { memberId: "ada", isAdmin: false })).toEqual(ada);
+      expect(redactConfidentialMemberFields(ada, { memberId: "bob", isAdmin: true })).toEqual(ada);
+    });
+
+    it("removes the key entirely for anyone else", () => {
+      const seen = redactConfidentialMemberFields(ada, { memberId: "bob", isAdmin: false });
+      expect("personal_circumstances" in seen).toBe(false);
+      expect(seen.name).toBe("Ada");
+      // The original is untouched -- this is a boundary rule, not storage.
+      expect(ada.personal_circumstances).toBe("on dialysis Tuesdays");
+    });
+
+    it("removes it for a caller with no member identity at all", () => {
+      expect(
+        "personal_circumstances" in redactConfidentialMemberFields(ada, { isAdmin: false }),
+      ).toBe(false);
+    });
+  });
+
+  describe("slack activity", () => {
+    it("classifies from the stored count against the shared threshold", () => {
+      const base = { slack_user_id: "U1", slack_activity_checked_at: "2026-08-11T00:00:00.000Z" };
+      expect(adminBotSlackActivityOf({ ...base, slack_messages_7d: 2 })).toBe("active");
+      expect(adminBotSlackActivityOf({ ...base, slack_messages_7d: 9 })).toBe("active");
+      expect(adminBotSlackActivityOf({ ...base, slack_messages_7d: 1 })).toBe("inactive");
+      expect(adminBotSlackActivityOf({ ...base, slack_messages_7d: 0 })).toBe("inactive");
+    });
+
+    // Missing data is not silence. A member the sweep has never measured, or one with no Slack
+    // account linked, must not read as inactive -- that would be an accusation from a gap.
+    it("reads as unknown when nothing has been measured", () => {
+      expect(adminBotSlackActivityOf({})).toBe("unknown");
+      expect(adminBotSlackActivityOf({ slack_user_id: "U1" })).toBe("unknown");
+      expect(
+        adminBotSlackActivityOf({ slack_messages_7d: 5, slack_activity_checked_at: "2026-08-11" }),
+      ).toBe("unknown");
+      expect(
+        adminBotSlackActivityOf({ slack_user_id: "U1", slack_activity_checked_at: "2026-08-11" }),
+      ).toBe("unknown");
+    });
+
+    it("stamps counts onto the linked members it measured", async () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "chatty", name: "Chatty", slack_user_id: "U1" }));
+      unwrap(service.upsertLabMember({ id: "quiet", name: "Quiet", slack_user_id: "U2" }));
+      unwrap(service.upsertLabMember({ id: "unlinked", name: "Unlinked" }));
+
+      const result = unwrap(
+        await service.refreshMemberDirectoryFromSlack(
+          {
+            fetchSlackMessageCounts: async () =>
+              new Map([
+                ["U1", 6],
+                ["U2", 0],
+              ]),
+          },
+          "cron",
+        ),
+      );
+      expect(result.activityChecked).toBe(2);
+      const members = unwrap(service.listLabMembers()).members;
+      const byId = (id: string) => members.find((member) => member.id === id)!;
+      expect(byId("chatty").slack_messages_7d).toBe(6);
+      expect(adminBotSlackActivityOf(byId("chatty"))).toBe("active");
+      // A measured zero is a real reading, so this member is inactive rather than unknown.
+      expect(byId("quiet").slack_messages_7d).toBe(0);
+      expect(adminBotSlackActivityOf(byId("quiet"))).toBe("inactive");
+      // Never linked to Slack, so never measured.
+      expect(byId("unlinked").slack_activity_checked_at).toBeUndefined();
+    });
+
+    // A failed sweep returns no keys at all. Overwriting every member with zero would mark the
+    // whole lab inactive on one bad night.
+    it("leaves the previous reading alone for a member it could not measure", async () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "chatty", name: "Chatty", slack_user_id: "U1" }));
+      unwrap(
+        await service.refreshMemberDirectoryFromSlack(
+          { fetchSlackMessageCounts: async () => new Map([["U1", 5]]) },
+          "cron",
+        ),
+      );
+      const result = unwrap(
+        await service.refreshMemberDirectoryFromSlack(
+          { fetchSlackMessageCounts: async () => new Map() },
+          "cron",
+        ),
+      );
+      expect(result.activityChecked).toBe(0);
+      expect(
+        unwrap(service.listLabMembers()).members.find((member) => member.id === "chatty")
+          ?.slack_messages_7d,
+      ).toBe(5);
+    });
+  });
+
+  describe("partial updates", () => {
+    function seeded() {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "ada",
+          name: "Ada Lovelace",
+          privilege_level: "admin",
+          location: "Toronto",
+        }),
+      );
+      return service;
+    }
+
+    it("accepts a schedule patch that carries no name, keeping the stored one", () => {
+      const service = seeded();
+      const saved = unwrap(
+        service.upsertLabMember({
+          id: "ada",
+          availability: [
+            { start: "2026-04-01", end: "2026-04-30", hours_per_week: 10, project: "Writing" },
+          ],
+        } as never),
+      );
+      expect(saved.name).toBe("Ada Lovelace");
+      expect(saved.location).toBe("Toronto");
+      expect(saved.availability).toHaveLength(1);
+    });
+
+    it("accepts a time-off patch that carries no name", () => {
+      const service = seeded();
+      const saved = unwrap(
+        service.upsertLabMember({
+          id: "ada",
+          time_off: [
+            { start: "2026-12-24", end: "2027-01-02", kind: "vacation", availability: "none" },
+          ],
+        } as never),
+      );
+      expect(saved.name).toBe("Ada Lovelace");
+      expect(saved.time_off).toHaveLength(1);
+    });
+
+    // A genuinely nameless *new* member is still refused -- but as a 400 the caller can read,
+    // never as a thrown TypeError.
+    it("refuses a new member with no name, without throwing", () => {
+      const service = new AdminBotService();
+      const result = service.upsertLabMember({ id: "ghost", availability: [] } as never);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.status).toBe(400);
+        expect(result.error.message).toBe("member name is required");
+      }
+    });
+
+    it("still refuses a patch that blanks the name outright", () => {
+      const service = seeded();
+      const result = service.upsertLabMember({ id: "ada", name: "   " } as never);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toBe("member name is required");
+      }
+    });
+  });
+
   describe("mandatory profile fields", () => {
     it("lists current members missing a required field, and skips alumni/external", () => {
       const service = new AdminBotService();
@@ -1209,33 +1698,52 @@ describe("AdminBotService", () => {
           id: "full",
           name: "Full",
           privilege_level: "member",
-          role: "Undergraduate Student",
-          affiliation: "UofT",
+          calendar_email: "full@gmail.com",
           location: "Toronto",
-          timezone: "America/Toronto",
-          hours_per_week: 10,
-          slack_user_id: "U9",
           research_topics: ["nlp"],
-          projects: ["adminbot"],
+          correspondence_email: "full@cs.toronto.edu",
+          whatsapp: "(+1) 555 0100",
+          joined_month: "2026-03",
+          github_url: "https://github.com/full",
+          linkedin_url: "https://www.linkedin.com/in/full",
+          linkedin_urn: "ACoAAB1234567",
+          cv_url: "https://example.com/cv.pdf",
+          intake_form_url: "https://docs.google.com/forms/d/e/full/viewform",
+          openreview_id: "~Full_Member1",
         }),
       );
-      unwrap(
-        service.upsertLabMember({ id: "gone", name: "Gone", status: "alumni" }),
-      );
+      unwrap(service.upsertLabMember({ id: "gone", name: "Gone", status: "alumni" }));
 
       const result = unwrap(service.listMembersWithIncompleteMandatoryFields());
       expect(result.members.map((member) => member.id)).toEqual(["blank"]);
       expect(result.members[0]?.missing_fields).toEqual(
         expect.arrayContaining([
-          "role",
-          "affiliation",
+          "calendar_email",
           "location",
-          "timezone",
-          "hours_per_week",
-          "slack_user_id",
           "research_topics",
-          "projects",
+          "correspondence_email",
+          "whatsapp",
+          "joined_month",
+          "github_url",
+          "linkedin_url",
+          "linkedin_urn",
+          "cv_url",
+          "intake_form_url",
+          "openreview_id",
         ]),
+      );
+    });
+
+    // The reminder and the profile page's required marks are one list now. Chasing a field the
+    // page calls optional is the bug this pins shut; `name` is the sole documented exception,
+    // because validateLabMember refuses a nameless member outright.
+    it("chases exactly the fields the profile page marks required, less name", () => {
+      const service = new AdminBotService();
+      unwrap(service.upsertLabMember({ id: "blank", name: "Blank", privilege_level: "member" }));
+      const missing = unwrap(service.listMembersWithIncompleteMandatoryFields()).members[0]
+        ?.missing_fields;
+      expect(missing).toEqual(
+        adminBotMandatoryProfileFields.filter((field) => field !== "name"),
       );
     });
 
@@ -1260,14 +1768,19 @@ describe("AdminBotService", () => {
         service.upsertLabMember({
           id: "full",
           name: "Full",
-          role: "Undergraduate Student",
-          affiliation: "UofT",
+          calendar_email: "full@gmail.com",
           location: "Toronto",
-          timezone: "America/Toronto",
-          hours_per_week: 10,
           slack_user_id: "U3",
           research_topics: ["nlp"],
-          projects: ["adminbot"],
+          correspondence_email: "full@cs.toronto.edu",
+          whatsapp: "(+1) 555 0100",
+          joined_month: "2026-03",
+          github_url: "https://github.com/full",
+          linkedin_url: "https://www.linkedin.com/in/full",
+          linkedin_urn: "ACoAAB1234567",
+          cv_url: "https://example.com/cv.pdf",
+          intake_form_url: "https://docs.google.com/forms/d/e/full/viewform",
+          openreview_id: "~Full_Member1",
         }),
       );
 
@@ -1282,6 +1795,36 @@ describe("AdminBotService", () => {
       expect(recipients.sort()).toEqual(["blank1", "blank2"]);
     });
 
+    it("leaves a member alone for three days after reminding them", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(service.upsertLabMember({ id: "blank1", name: "Blank One", slack_user_id: "U1" }));
+
+      const first = unwrap(await service.sendMandatoryFieldsReminders("cron"));
+      expect(first.created).toHaveLength(1);
+
+      // The cron script may run daily; the cadence is the product's, not the schedule's, so a
+      // second pass inside the window sends nothing rather than nagging.
+      const second = unwrap(await service.sendMandatoryFieldsReminders("cron"));
+      expect(second.created).toHaveLength(0);
+    });
+
+    it("reminds again once the window has passed", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(service.upsertLabMember({ id: "blank1", name: "Blank One", slack_user_id: "U1" }));
+
+      unwrap(await service.sendMandatoryFieldsReminders("cron"));
+      // Four days on, the same still-incomplete profile is fair game again.
+      vi.setSystemTime(new Date(Date.now() + 4 * 24 * 60 * 60 * 1000));
+      try {
+        const later = unwrap(await service.sendMandatoryFieldsReminders("cron"));
+        expect(later.created).toHaveLength(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it("sends nothing when every member's required fields are filled in", async () => {
       const executor = { execute: vi.fn(async () => ({ handled: true })) };
       const service = new AdminBotService(undefined, { executor });
@@ -1289,14 +1832,19 @@ describe("AdminBotService", () => {
         service.upsertLabMember({
           id: "full",
           name: "Full",
-          role: "Undergraduate Student",
-          affiliation: "UofT",
+          calendar_email: "full@gmail.com",
           location: "Toronto",
-          timezone: "America/Toronto",
-          hours_per_week: 10,
           slack_user_id: "U1",
           research_topics: ["nlp"],
-          projects: ["adminbot"],
+          correspondence_email: "full@cs.toronto.edu",
+          whatsapp: "(+1) 555 0100",
+          joined_month: "2026-03",
+          github_url: "https://github.com/full",
+          linkedin_url: "https://www.linkedin.com/in/full",
+          linkedin_urn: "ACoAAB1234567",
+          cv_url: "https://example.com/cv.pdf",
+          intake_form_url: "https://docs.google.com/forms/d/e/full/viewform",
+          openreview_id: "~Full_Member1",
         }),
       );
 
@@ -1422,6 +1970,31 @@ describe("AdminBotService", () => {
       );
     });
 
+    it("leaves a stored timezone alone when the Slack lookup never answered", async () => {
+      const service = new AdminBotService();
+      unwrap(
+        service.upsertLabMember({
+          id: "m1",
+          name: "Ada",
+          slack_user_id: "U1",
+          timezone: "America/Toronto",
+        }),
+      );
+
+      // An empty map is what a failed transport produces. Read as an answer it wipes the roster;
+      // timezone is mandatory, so that quietly makes every profile incomplete.
+      const result = unwrap(
+        await service.refreshMemberDirectoryFromSlack(
+          { fetchSlackTimezones: async () => new Map<string, string | null>() },
+          "cron",
+        ),
+      );
+
+      expect(result.timezonesChecked).toBe(0);
+      expect(result.timezonesUpdated).toBe(0);
+      expect(unwrap(service.listLabMembers()).members[0]?.timezone).toBe("America/Toronto");
+    });
+
     it("syncs timezone from Slack and clears it when Slack has nothing", async () => {
       const service = new AdminBotService();
       unwrap(
@@ -1444,7 +2017,11 @@ describe("AdminBotService", () => {
       );
       const fetchSlackTimezones = vi.fn(async (ids: string[]) => {
         expect(ids.sort()).toEqual(["U1", "U2"]);
-        return new Map([["U1", "America/Toronto"]]);
+        // U1 has a zone; U2 was asked and Slack had none, which is null rather than absent.
+        return new Map<string, string | null>([
+          ["U1", "America/Toronto"],
+          ["U2", null],
+        ]);
       });
 
       const result = unwrap(

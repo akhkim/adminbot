@@ -12,6 +12,7 @@ import type {
   AdminBotOpenReviewCycleRecord,
   AdminBotOpenReviewMilestoneRecord,
   AdminBotPaperRecord,
+  AdminBotPasswordReset,
   AdminBotRegistrationKind,
   AdminBotRegistrationStatus,
   AdminBotSettings,
@@ -22,6 +23,7 @@ import {
   type AdminBotActionExecutor,
   type AdminBotServiceOptions,
   type AdminBotServiceStore,
+  type AdminBotSlackChannelNamingRecord,
 } from "../kernel/service.js";
 import { resolveMemberOnboarding } from "../workflows/onboarding/onboarding.js";
 
@@ -184,6 +186,26 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_sessions_member_expiry_idx
         ON adminbot_sessions(member_id, expires_at);
+
+      CREATE TABLE IF NOT EXISTS adminbot_password_resets (
+        token_hash TEXT PRIMARY KEY,
+        member_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_password_resets_member_idx
+        ON adminbot_password_resets(member_id, expires_at);
+
+      CREATE TABLE IF NOT EXISTS adminbot_slack_channel_naming (
+        channel_id TEXT PRIMARY KEY,
+        updated_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_slack_channel_naming_updated_idx
+        ON adminbot_slack_channel_naming(updated_at);
     `);
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
@@ -540,6 +562,52 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     return row ?? undefined;
   }
 
+  savePasswordReset(reset: AdminBotPasswordReset): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_password_resets (
+          token_hash,
+          member_id,
+          created_at,
+          expires_at,
+          used_at
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(token_hash) DO UPDATE SET
+          member_id = excluded.member_id,
+          created_at = excluded.created_at,
+          expires_at = excluded.expires_at,
+          used_at = excluded.used_at`,
+      )
+      .run(
+        reset.token_hash,
+        reset.member_id,
+        reset.created_at,
+        reset.expires_at,
+        reset.used_at ?? null,
+      );
+  }
+
+  getPasswordResetByTokenHash(tokenHash: string): AdminBotPasswordReset | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT token_hash, member_id, created_at, expires_at, used_at
+          FROM adminbot_password_resets WHERE token_hash = ?`,
+      )
+      .get(tokenHash) as AdminBotPasswordReset | undefined;
+    return row ?? undefined;
+  }
+
+  // Called when a reset succeeds: every other outstanding link for that member dies with it, so a
+  // second "forgot password" mail sitting in an inbox cannot be replayed after the password changed.
+  markPasswordResetsUsedForMember(memberId: string, usedAt: string): void {
+    this.db
+      .prepare(
+        `UPDATE adminbot_password_resets SET used_at = ?
+          WHERE member_id = ? AND used_at IS NULL`,
+      )
+      .run(usedAt, memberId);
+  }
+
   getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined {
     const row = this.db
       .prepare(
@@ -726,11 +794,58 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       .run(revokedAt, tokenHash);
   }
 
+  // Signs the member out everywhere at once. Used by the password reset, where leaving older
+  // sessions alive would defeat the point of recovering a possibly-compromised account.
+  revokeSessionsForMember(memberId: string, revokedAt: string): void {
+    this.db
+      .prepare(
+        "UPDATE adminbot_sessions SET revoked_at = ? WHERE member_id = ? AND revoked_at IS NULL",
+      )
+      .run(revokedAt, memberId);
+  }
+
   pruneSessionsBefore(cutoffIso: string): number {
     const result = this.db
       .prepare("DELETE FROM adminbot_sessions WHERE expires_at < ?")
       .run(cutoffIso);
     return Number(result.changes ?? 0);
+  }
+
+  saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_slack_channel_naming (
+          channel_id,
+          updated_at,
+          payload_json
+        ) VALUES (?, ?, ?)
+        ON CONFLICT(channel_id) DO UPDATE SET
+          updated_at = excluded.updated_at,
+          payload_json = excluded.payload_json`,
+      )
+      .run(record.channel_id, record.last_seen_at, JSON.stringify(record));
+  }
+
+  getSlackChannelNamingRecord(channelId: string): AdminBotSlackChannelNamingRecord | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_slack_channel_naming WHERE channel_id = ?")
+      .get(channelId) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotSlackChannelNamingRecord>(row.payload_json) : undefined;
+  }
+
+  listSlackChannelNamingRecords(): AdminBotSlackChannelNamingRecord[] {
+    const rows = this.db
+      .prepare("SELECT payload_json FROM adminbot_slack_channel_naming ORDER BY updated_at ASC")
+      .all() as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotSlackChannelNamingRecord>(row.payload_json));
+  }
+
+  deleteSlackChannelNamingRecord(channelId: string): boolean {
+    return (
+      this.db
+        .prepare("DELETE FROM adminbot_slack_channel_naming WHERE channel_id = ?")
+        .run(channelId).changes > 0
+    );
   }
 
   close(): void {

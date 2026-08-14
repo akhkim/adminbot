@@ -18,6 +18,8 @@ import type {
   AdminBotPaperSaveInput,
   AdminBotPaperStep,
 } from "../controllers/admin.ts";
+import { nextStepFor, nextTasksFor } from "../next-step.ts";
+import { openPaperFlowMap } from "../paperflow-map.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { findOwnMember } from "./profile.ts";
 
@@ -94,23 +96,14 @@ function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
   const next = index >= 0 && index < paperSteps.length - 1 ? paperSteps[index + 1] : null;
   return html`
     <div class="my-work-item__controls">
-      <label class="my-work-item__step-picker">
-        <span class="sr-only">${t("myWork.items.stepLabel")}</span>
-        <select
-          class="input"
-          data-testid=${`my-work-step-${paper.id}`}
-          @change=${(event: Event) =>
-            saveStep(props, paper, (event.target as HTMLSelectElement).value as AdminBotPaperStep)}
-        >
-          ${paperSteps.map(
-            (step) => html`
-              <option value=${step} ?selected=${step === paper.current_step}>
-                ${stepLabel(step)}
-              </option>
-            `,
-          )}
-        </select>
-      </label>
+      <button
+        type="button"
+        class="btn btn--sm"
+        data-testid=${`my-work-map-${paper.id}`}
+        @click=${() => openPaperFlowMap(paper)}
+      >
+        View PaperFlow
+      </button>
       ${next
         ? html`
             <button
@@ -211,34 +204,135 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
         </div>
         ${renderBlockerForm(state, paper)}
       </div>
-      <div class="my-work-item__progress">
-        <div
-          class="my-work-item__bar"
-          role="progressbar"
-          aria-valuenow=${percent}
-          aria-valuemin="0"
-          aria-valuemax="100"
-          aria-label=${paper.title}
-        >
-          <span class="my-work-item__fill" style=${`width:${percent}%`}></span>
-        </div>
-        <span class="my-work-item__step">
-          ${index >= 0
-            ? t("myWork.items.stepOf", {
-                step: stepLabel(paper.current_step),
-                index: String(index + 1),
-                total: String(paperSteps.length),
-              })
-            : stepLabel(paper.current_step)}
-        </span>
-      </div>
+      ${renderStepper(paper, props, index)}
+      ${renderNextStep(paper)}
       ${renderStepControls(paper, props)}
     </article>
   `;
 }
 
-// Adding writes a new paper row at the first step, with the member as its author -- the same
-// record the Active Papers page lists, so it appears there too.
+/**
+ * The pipeline as a stepper, and the stepper as the control.
+ *
+ * This replaces a percentage bar plus a select. The bar said "56%", which is not a thing anyone
+ * can act on, and the select listed all eight steps as equals, so jumping from Brainstorming docs
+ * to Social posts was one click and asserted five things had happened that had not.
+ *
+ * Clicking a dot moves the paper there. Backwards is free -- correcting a mis-click, or a genuine
+ * regression like a rejection, is normal. Skipping *forward* past unfinished steps asks first,
+ * because that is the move that silently marks work done and makes every later nudge wrong.
+ */
+const STEPPER_SHORT_LABELS: Record<string, string> = {
+  brainstorming_docs: "Brainstorm",
+  overleaf_writing: "Overleaf",
+  submission: "Submission",
+  google_drive_pdf: "Drive PDF",
+  arxiv_polish: "arXiv",
+  social_posts: "Social",
+  slide_making: "Slides",
+  poster_making: "Poster",
+};
+
+function renderStepper(paper: AdminBotPaperRecord, props: MyWorkProps, currentIndex: number) {
+  const move = (step: AdminBotPaperStep, targetIndex: number) => {
+    const skipped = targetIndex - currentIndex;
+    if (skipped > 1) {
+      const names = paperSteps
+        .slice(currentIndex, targetIndex)
+        .map((value) => stepLabel(value))
+        .join(", ");
+      if (!globalThis.confirm(`Jumping to ${stepLabel(step)} marks these as done: ${names}.\n\nContinue?`)) {
+        return;
+      }
+    }
+    saveStep(props, paper, step);
+  };
+
+  return html`
+    <div class="stepper" role="group" aria-label=${`${paper.title} progress`}>
+      <ol class="stepper__track">
+        ${paperSteps.map((step, index) => {
+          const state =
+            index < currentIndex ? "done" : index === currentIndex ? "current" : "todo";
+          return html`
+            <li class=${`stepper__step stepper__step--${state}`}>
+              <button
+                type="button"
+                class="stepper__dot"
+                data-testid=${`step-${paper.id}-${step}`}
+                aria-current=${state === "current" ? "step" : "false"}
+                title=${`Move to ${stepLabel(step)}`}
+                @click=${() => move(step, index)}
+              >
+                <span class="sr-only">${stepLabel(step)}</span>
+                ${state === "done" ? html`<span aria-hidden="true">✓</span>` : nothing}
+              </button>
+              <span class="stepper__label">${STEPPER_SHORT_LABELS[step] ?? stepLabel(step)}</span>
+            </li>
+          `;
+        })}
+      </ol>
+    </div>
+  `;
+}
+
+// What to do next on this paper, derived from the PaperFlow dependency graph rather than typed by
+// hand. Read-only: it computes from `current_step` and writes nothing.
+function renderNextStep(paper: AdminBotPaperRecord) {
+  const next = nextStepFor(paper);
+  if (!next) {
+    return nothing;
+  }
+  if (next.done) {
+    return html`<p class="my-work-item__next my-work-item__next--done">
+      ${icons.check} <span>Everything on this paper is finished.</span>
+    </p>`;
+  }
+
+  const tasks = nextTasksFor(paper);
+  if (tasks.length === 0) {
+    return nothing;
+  }
+
+  // The graph fans out, so the frontier is usually several tasks at once -- after the PDF
+  // compiles, slides, social and archival are all open. Listing them as cards says "these can
+  // happen in parallel", which a single "Next:" line actively hid.
+  return html`
+    <div class="tasks">
+      <p class="tasks__title">
+        What can be done now
+        ${tasks.length > 1
+          ? html`<span class="tasks__count">${tasks.length} in parallel</span>`
+          : nothing}
+      </p>
+      <ul class="tasks__grid">
+        ${tasks.map(
+          (task) => html`
+            <li
+              class=${`task ${task.isApproval ? "task--approval" : ""} ${
+                task.optional ? "task--optional" : ""
+              }`}
+            >
+              <span class="task__branch">${task.branch || "Task"}</span>
+              <strong class="task__label">${task.label}</strong>
+              <span class="task__who">
+                ${task.isApproval ? `Approval from ${task.waitingOn}` : `Owner: ${task.waitingOn}`}
+              </span>
+              <span class="task__unblocks">
+                ${task.optional
+                  ? "Blocks nothing"
+                  : task.unblocks.length
+                    ? `Unblocks ${task.unblocks.slice(0, 2).join(", ")}`
+                    : "Last step on this branch"}
+              </span>
+            </li>
+          `,
+        )}
+      </ul>
+    </div>
+  `;
+}
+
 function renderAdd(state: AppViewState, props: MyWorkProps) {
   const draft = state.myWorkProjectDraft;
   if (draft === null) {

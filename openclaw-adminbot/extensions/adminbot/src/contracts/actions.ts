@@ -10,9 +10,15 @@ export const adminBotActionTypes = [
   "slack.invite_member",
   "slack.send_message",
   "slack.profile_photo_update",
+  "slack.channel_naming_notify_owner",
+  "slack.rename_channel",
   "vector.invite",
   "calendar.create_tentative_hold",
   "calendar.send_invite",
+  // Adds people to an event that already exists. Distinct from `calendar.reschedule`, which is the
+  // only other way to touch an existing event: that one writes the whole attendee list, so using it
+  // to invite two people would uninvite everyone already on the event.
+  "calendar.add_attendees",
   "calendar.reschedule",
   "calendar.cancel",
   "email.draft",
@@ -98,6 +104,150 @@ export const adminBotMemberRoles = [
 
 export type AdminBotMemberRole = (typeof adminBotMemberRoles)[number];
 
+/**
+ * The profile fields a member is expected to fill in, in the order the profile page asks for them.
+ *
+ * One list, deliberately here rather than on either side that uses it. The Control UI renders the
+ * required marks and the completion ledger from this; the service's daily reminder chases exactly
+ * the same set. Those were two hand-maintained lists that disagreed from the day they were written
+ * — the service chased five fields the page called optional, and the page marked eight the service
+ * never mentioned — so a member could fill in everything the page asked and still be nudged, or be
+ * nudged for something the page told them was skippable. The contracts module is the one place both
+ * may import (`extensions/` must not reach into `ui/`, and the UI already takes
+ * `adminBotMemberRoles` from here), so it is the only place the list can live and stay true.
+ *
+ * Membership is "the member sheet's own columns, plus the CV": what the lab keeps a record of for
+ * everyone. Fields that not everyone has an answer for (a Twitter, a graduation month) stay out —
+ * a checklist that can never reach zero stops being a checklist and just nags. So do the fields the
+ * lab plans *with* rather than files (hours per week, timezone): they are still editable and still
+ * on the page, they simply are not what a member is chased about.
+ *
+ * `name` is here because the profile page marks it required, but the service leaves it out of the
+ * reminder: validateLabMember already refuses to store a member without one, so it can never be the
+ * reason a stored record is incomplete.
+ *
+ * `slack_user_id` is deliberately absent. It is still stored and still self-editable through the
+ * whitelist -- the Slack directory sync writes it -- but it is no longer a field anybody types, so
+ * chasing a member for it would be nagging them about something they cannot fix.
+ */
+export const adminBotMandatoryProfileFields = [
+  "name",
+  "calendar_email",
+  "location",
+  "research_topics",
+  "correspondence_email",
+  "whatsapp",
+  "joined_month",
+  "github_url",
+  "linkedin_url",
+  "linkedin_urn",
+  "cv_url",
+  "intake_form_url",
+  "openreview_id",
+] as const;
+
+export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFields)[number];
+
+/**
+ * Plain-English names for the fields above, used to compose the reminder.
+ *
+ * Deliberately not the UI's translated labels: this text goes out over Slack to a member who has no
+ * locale set on it, and the message has to be byte-identical for every recipient so it can be sent
+ * once rather than composed per person.
+ */
+export const adminBotMandatoryProfileFieldLabels: Record<AdminBotMandatoryProfileField, string> = {
+  name: "Name",
+  calendar_email: "Calendar email",
+  location: "Location",
+  research_topics: "Research topics",
+  correspondence_email: "Correspondence email",
+  whatsapp: "WhatsApp",
+  joined_month: "Joined month",
+  github_url: "GitHub",
+  linkedin_url: "LinkedIn",
+  linkedin_urn: "LinkedIn URN",
+  cv_url: "CV",
+  intake_form_url: "Application form answers",
+  openreview_id: "OpenReview",
+};
+
+/**
+ * When a member counts as active in Slack.
+ *
+ * One threshold, here rather than on either side that uses it, for the same reason the mandatory
+ * profile fields ended up in one list: the sweep that counts messages and the badge that reads the
+ * count must agree, or a member is told they are active by one surface and inactive by the other.
+ *
+ * Two messages rather than one: a single message is as likely to be an emoji reaction thread or an
+ * out-of-office note as it is participation. Seven days rather than a month because the question the
+ * badge answers is "is this person around right now".
+ */
+export const adminBotSlackActivityWindowDays = 7;
+export const adminBotSlackActivityThreshold = 2;
+
+/** Active, inactive, or not yet measured. */
+export type AdminBotSlackActivity = "active" | "inactive" | "unknown";
+
+/**
+ * Whether a member reads as active from what the last sweep stored.
+ *
+ * `unknown` is a real answer and the default: before the first sweep, and for anyone whose Slack
+ * account the roster has never linked, there is no measurement. Calling those members inactive
+ * would be an accusation drawn from missing data rather than from silence, so the badge shows
+ * nothing at all for them.
+ */
+export function adminBotSlackActivityOf(member: {
+  slack_user_id?: string;
+  /** Messages this member sent in the last adminBotSlackActivityWindowDays, from the Slack sweep. */
+  slack_messages_7d?: number;
+  /** When that count was last measured. Absent means never, which reads as "unknown", not zero. */
+  slack_activity_checked_at?: string;
+}): AdminBotSlackActivity {
+  if (!member.slack_user_id?.trim() || !member.slack_activity_checked_at?.trim()) {
+    return "unknown";
+  }
+  const count = member.slack_messages_7d;
+  if (typeof count !== "number" || !Number.isFinite(count)) {
+    return "unknown";
+  }
+  return count >= adminBotSlackActivityThreshold ? "active" : "inactive";
+}
+
+/**
+ * Member-record fields nobody but the member and an admin may read.
+ *
+ * `GET /lab/members` serves whole member records to every signed-in member -- the roster loads at
+ * sign-in and the Control UI reads from it -- so a field on the record is readable by the whole lab
+ * in devtools no matter what the UI chooses to draw. That is the right default for a roster of
+ * names, topics and links. It is the wrong one for what a member discloses about their health or
+ * their family, which is written for one reader.
+ *
+ * So these are stripped on the way out unless the caller is the member themselves or an admin.
+ * The service keeps the full record for its own work; this is a boundary rule, not storage.
+ */
+export const adminBotConfidentialMemberFields = ["personal_circumstances"] as const;
+
+/**
+ * A member record with the confidential fields removed unless the viewer is entitled to them.
+ *
+ * Deletes the keys rather than blanking them: an empty string is indistinguishable from a member
+ * who wrote nothing, which would quietly tell every reader that this person has "nothing to
+ * declare" -- itself a disclosure.
+ */
+export function redactConfidentialMemberFields<T extends { id?: string }>(
+  member: T,
+  viewer: { memberId?: string; isAdmin: boolean },
+): T {
+  if (viewer.isAdmin || (viewer.memberId && viewer.memberId === member.id)) {
+    return member;
+  }
+  const copy = { ...member } as Record<string, unknown>;
+  for (const field of adminBotConfidentialMemberFields) {
+    delete copy[field];
+  }
+  return copy as T;
+}
+
 export const adminBotMemberStatuses = [
   "active",
   "part_time",
@@ -169,16 +319,29 @@ export type AdminBotProfilePhotoReviewState = {
   variants?: AdminBotProfilePhotoPolishVariant[];
   selected_variant_id?: string;
 };
+// Why a member is not on lab work for a stretch. `personal` and `other_project` were added for the
+// Control UI's time-availability tab, which asks members to categorise their non-Jinesis time:
+// `personal` is time off that is nobody's business but their own (distinct from `vacation`, which
+// reads as a holiday), and `other_project` is real work that simply is not Jinesis work.
+//
+// Appending only: these values are stored on member records, so removing or renaming one silently
+// invalidates existing rows.
 export const adminBotTimeOffKinds = [
   "vacation",
   "internship",
   "course_load",
   "travel",
   "conference",
+  "personal",
+  "other_project",
   "other",
 ] as const;
 
 export type AdminBotTimeOffKind = (typeof adminBotTimeOffKinds)[number];
+
+// Longest a member-supplied free-text label may be. Long enough for "Reading week (CSC2515)",
+// short enough that it cannot be used as a storage channel.
+export const ADMINBOT_MAX_LABEL_LENGTH = 120;
 
 // Reserved project name for hours a member has explicitly declared as spare
 // capacity ("can take on something new / help others"). It is a sentinel, not a
@@ -213,6 +376,9 @@ export type AdminBotAvailabilityRow = {
   project?: string;
   hours_per_week: number;
   note?: string;
+  // Optional supporting page for the commitment — a course syllabus, a project board, a shared
+  // schedule. https only; see validateExternalLink in kernel/service.ts.
+  link?: string;
 };
 
 export type AdminBotTimeOffRow = {
@@ -223,6 +389,22 @@ export type AdminBotTimeOffRow = {
   // week. Callers must not infer this from `kind` — a conference can be either.
   availability: "none" | "partial";
   note?: string;
+  // What the member called this when `kind` is "other". The enum stays closed so the categories
+  // mean the same thing lab-wide; this is the escape hatch for the one that does not fit.
+  label?: string;
+  link?: string;
+};
+
+// A single dated milestone on a member's horizon — a thesis deadline, a defence, graduation. A
+// date rather than a range: these are moments to plan back from, not stretches of time, which is
+// what keeps them out of `availability` (hours over a range) and `time_off` (absence over a range).
+//
+// Conference submission deadlines deliberately do NOT live here: the Control UI merges these with
+// the bundled venue snapshot it already ships, so nobody retypes a date the lab already tracks.
+export type AdminBotMemberMilestone = {
+  date: string;
+  label: string;
+  link?: string;
 };
 
 export type AdminBotLabMemberInput = {
@@ -235,6 +417,15 @@ export type AdminBotLabMemberInput = {
   // Google Calendar, which is very often not their cs.toronto.edu address.
   calendar_email?: string;
   slack_user_id?: string;
+  /**
+   * Free text a member may share about health or family circumstances. Confidential: see
+   * adminBotConfidentialMemberFields, which strips it for every reader but the member and admins.
+   */
+  personal_circumstances?: string;
+  /** Messages sent in the last adminBotSlackActivityWindowDays, stamped by the Slack sweep. */
+  slack_messages_7d?: number;
+  /** When that count was last measured. Absent means never, which reads as unknown, not zero. */
+  slack_activity_checked_at?: string;
   privilege_level?: AdminBotPrivilegeLevel;
   // Which kind of external collaborator this person is, which decides the access items they get.
   // Only meaningful while `privilege_level` is "external_collaborator"; governance-owned like
@@ -248,7 +439,12 @@ export type AdminBotLabMemberInput = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
+  // Where the member lives. The member map and the timezone suggestion are keyed on this one.
   location?: string;
+  // Where the member is right now, when that is not `location` — a conference trip, a term
+  // abroad, an internship. Self-editable and stored, but it was never declared here, so every
+  // reader had to reach for it untyped. Audience filters on the Calendar tab read both.
+  current_city?: string;
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
@@ -256,12 +452,21 @@ export type AdminBotLabMemberInput = {
   // because the reviewing-cycle automation maps OpenReview profiles back to members
   // with it, and posts assignment edges against it.
   openreview_id?: string;
-  avatar_url?: string;
   // Account links, each validated server-side against its platform's real URL shape
   // (see SOCIAL_URL_FIELDS in kernel/service.ts) so a self-edit can't stash an arbitrary
   // redirect or lookalike link behind a "GitHub" label.
   cv_url?: string;
+  // The member's own copy of their intake answers. Google Forms mails each respondent an edit link
+  // scoped to their single submitted response, so this is per-person and only they can produce it
+  // -- the lab cannot derive it from the shared form URL, which is why it is a field they fill in
+  // rather than a link the profile can render for them.
+  intake_form_url?: string;
   linkedin_url?: string;
+  // The numeric LinkedIn URN behind a member's profile ("ACoAAB..." or the digits form), which the
+  // social automation needs to @-mention someone in a post: LinkedIn's API addresses people by URN,
+  // never by the vanity URL in `linkedin_url`, and offers no way to resolve one to the other.
+  // Members read theirs off https://linkedin-urn-collector.vercel.app and paste it here.
+  linkedin_urn?: string;
   twitter_url?: string;
   github_url?: string;
   scholar_url?: string;
@@ -272,11 +477,42 @@ export type AdminBotLabMemberInput = {
   // Last location read from this person's Slack profile, stamped by the member-map
   // refresh. Kept apart from `location` so the two sources never overwrite each other:
   // `location` is what they told us when they joined, this is what Slack knows now.
+  // Promoted out of the free-text `notes` column, where ui/src/ui/adminbot/data/member-notes.ts
+  // encoded them as "Label: value" lines with no server-side schema. Five of that convention's
+  // seven keys already had first-class fields (location, research_topics, calendar_email,
+  // github_url, personal_website), so the same fact was stored in two places and whichever the
+  // reader happened to consult decided the answer. These are the two that had nowhere else to go.
+  joined_month?: string;
+  // When they left, for alumni. Empty for everyone currently on the sheet, but it is the column the
+  // roster will eventually age members out by, so it is stored rather than inferred from `status`.
+  graduated_month?: string;
+  whatsapp?: string;
+  // The address the lab writes to for outreach, kept apart from `email` (the login identity) and
+  // `calendar_email` (the Google account invites go to). The roster spreadsheet has one for every
+  // member, and it is frequently neither of the other two.
+  correspondence_email?: string;
+  lesswrong_url?: string;
+  // Profile photo, normally the member's Slack avatar carried over by the directory sync. Stored
+  // as a URL rather than bytes: Slack already hosts and resizes it, and copying it would leave the
+  // roster serving a stale face after someone changes theirs.
+  avatar_url?: string;
+  // Every channel the member is in, by name, as the directory sync last observed. Only what the
+  // bot can see -- a private channel it is not in is invisible to it -- so absence is not proof.
+  slack_channels?: string[];
   slack_location?: string;
   slack_location_updated_at?: string;
   profile_photo_review?: AdminBotProfilePhotoReviewState;
+  // Coarse (country-level) location derived from the IP address of this person's most recent
+  // successful login, via IP geolocation (see ip-geolocation.ts). Distinct from `location` and
+  // `slack_location`, which are both self-reported: this one is inferred, so it is never taken
+  // as an input and never overwrites either — it is only ever set by the login path itself.
+  last_login_at?: string;
+  last_login_country?: string;
+  last_login_continent?: string;
   availability?: AdminBotAvailabilityRow[];
   time_off?: AdminBotTimeOffRow[];
+  // Dated milestones the member is planning back from. Self-editable like the two lists above.
+  milestones?: AdminBotMemberMilestone[];
   // Link to the member's own planning doc in Drive, which the availability importer reads to
   // prefill the rows above. Member-owned and self-editable: whatever the importer gets wrong, the
   // member fixes in the same panel.
@@ -594,6 +830,7 @@ export type AdminBotAuditEvent = {
     | "execution.failed"
     | "execution.idempotent_replay"
     | "lab_member.upserted"
+    | "lab_member.notes_migrated"
     | "paper.upserted"
     | "paper.deleted"
     | "onboarding.guide_sent"
@@ -603,6 +840,10 @@ export type AdminBotAuditEvent = {
     | "auth.rate_limited"
     | "auth.logged_out"
     | "auth.password_changed"
+    | "auth.password_reset_requested"
+    | "auth.password_reset_completed"
+    | "auth.password_reset_email_sent"
+    | "auth.password_reset_email_failed"
     | "auth.email_changed"
     | "auth.registration_submitted"
     | "auth.registration_approved"
@@ -616,6 +857,7 @@ export type AdminBotAuditEvent = {
     | "auth.location_updated"
     | "auth.location_update_failed"
     | "member_nudge.sent"
+    | "mandatory_fields.reminded"
     | "onboarding.step_updated"
     | "reimbursement.anonymous_use"
     | "openreview.cycle_run"
@@ -627,7 +869,12 @@ export type AdminBotAuditEvent = {
     | "profile_photo.reviewed"
     | "profile_photo.guideline_nudged"
     | "profile_photo.polished"
-    | "profile_photo.applied";
+    | "profile_photo.applied"
+    | "auth.login_location_updated"
+    // Slack channel-naming enforcement. The sweep renames other people's channels, which is an
+    // external effect with no undo, so who triggered a pass and what it did is recorded here.
+    | "slack.channel_naming_checked"
+    | "slack.channel_naming_swept";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;
@@ -641,6 +888,17 @@ export type AdminBotMemberCredential = {
   password_scrypt: string;
   claimed_at: string;
   updated_at: string;
+};
+
+// A single outstanding "forgot my password" request. Only the SHA-256 of the emailed token is
+// stored, so a database reader cannot mint a reset link; `used_at` is stamped instead of deleting
+// the row so a replayed link is distinguishable from an expired one in the audit trail.
+export type AdminBotPasswordReset = {
+  token_hash: string;
+  member_id: string;
+  created_at: string;
+  expires_at: string;
+  used_at?: string | null;
 };
 
 export const adminBotRegistrationKinds = ["claim", "signup"] as const;

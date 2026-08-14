@@ -87,12 +87,14 @@ describe("createIpLocationResolver", () => {
   it("joins city/region/country from a successful lookup", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({ city: "Toronto", region: "Ontario", country_name: "Canada" }),
-          { status: 200 },
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(
+            JSON.stringify({ city: "Toronto", region: "Ontario", country_name: "Canada" }),
+            { status: 200 },
+          ),
         ),
-      ),
     );
 
     expect(await geolocateIp("203.0.113.5")).toBe("Toronto, Ontario, Canada");
@@ -133,15 +135,15 @@ describe("createSlackTimezoneReader", () => {
           _args: string[],
           _opts: unknown,
           callback: (error: unknown, result: { stdout: string; stderr: string }) => void,
-        ) => callback(null, { stdout: JSON.stringify({ user: { tz: "America/Toronto" } }), stderr: "" }),
+        ) =>
+          callback(null, {
+            stdout: JSON.stringify({ user: { tz: "America/Toronto" } }),
+            stderr: "",
+          }),
       )
       .mockImplementationOnce(
-        (
-          _cmd: string,
-          _args: string[],
-          _opts: unknown,
-          callback: (error: unknown) => void,
-        ) => callback(new Error("lookup failed")),
+        (_cmd: string, _args: string[], _opts: unknown, callback: (error: unknown) => void) =>
+          callback(new Error("lookup failed")),
       );
 
     const fetchSlackTimezones = createSlackTimezoneReader("/repo");
@@ -160,7 +162,10 @@ describe("createSlackTimezoneReader", () => {
 
     const result = await createSlackTimezoneReader("/repo")(["U1"]);
 
-    expect(result.has("U1")).toBe(false);
+    // Slack answered and had no tz, so the key is present and null. That is the difference the
+    // caller relies on: null clears the stored zone, an absent key leaves it alone.
+    expect(result.has("U1")).toBe(true);
+    expect(result.get("U1")).toBeNull();
   });
 });
 

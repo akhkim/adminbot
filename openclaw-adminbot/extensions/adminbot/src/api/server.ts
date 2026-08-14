@@ -1,6 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { adminBotRegistrationStatuses } from "../contracts/actions.js";
+import { createIpinfoLiteGeolocator } from "../connectors/ip-geolocation.js";
+import {
+  adminBotRegistrationStatuses,
+  redactConfidentialMemberFields,
+} from "../contracts/actions.js";
 import type {
   AdminBotActionProposal,
   AdminBotApprovalRequest,
@@ -21,6 +25,7 @@ import {
   type AdminBotServiceOptions,
   type AdminBotServiceResponse,
   type AdminBotServiceStore,
+  type AdminBotSlackChannelNamingEvent,
 } from "../kernel/service.js";
 import { createAdminBotSqliteService } from "../persistence/sqlite.js";
 import { createAdminBotPrivacyBroker, type AdminBotPrivacyBroker } from "../privacy/broker.js";
@@ -29,6 +34,11 @@ import {
   type AdminBotSensitiveInfoDocument,
 } from "../privacy/sensitive-info-doc.js";
 import { renderAdminBotWebUi } from "../web/console/index.js";
+import { renderMemberMapWebUi } from "../web/member-map/index.js";
+import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
+import { createCalendarEventsReader } from "../workflows/calendar/events.js";
+import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
+import { toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
 import { renderDeadlinesWebUi } from "../workflows/deadlines/board.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
@@ -38,6 +48,8 @@ import {
   type AdminBotMemberPrincipal,
 } from "../workflows/identity/auth.js";
 import { allowedGatewayScopesForPrivilege } from "../workflows/identity/device-pairing-scopes.js";
+import { createPasswordResetEmailRunner } from "../workflows/identity/password-reset-email.js";
+import { toPublicMemberMapSummary } from "../workflows/members/member-map.js";
 import { createCalendarInviteRunner } from "../workflows/onboarding/calendar-invite.js";
 import { createDcsFormRunner } from "../workflows/onboarding/dcs-form.js";
 import { createDriveWorkspaceProvisioner } from "../workflows/onboarding/drive-workspace.js";
@@ -76,6 +88,14 @@ export type AdminBotMockServiceOptions = {
   serviceToken?: string;
   gatewayToken?: string;
   gatewayUrl?: string;
+  // Free-tier IPinfo Lite token, used to stamp a coarse (country-level) location on a member's
+  // record from the IP their most recent successful login came from. Falls back to
+  // process.env.IPINFO_TOKEN; absent either way, login location just never gets recorded.
+  ipinfoToken?: string;
+  // Trust X-Forwarded-For for the caller's IP (rate limiting, login-location) instead of the raw
+  // socket address. Only safe when this process is only reachable through a proxy that sets that
+  // header itself (Render, Fly, etc.) — falls back to process.env.ADMINBOT_TRUST_PROXY === "1".
+  trustProxyHeaders?: boolean;
   // Injected so the composition root owns the Slack dependency: the invite needs the Slack
   // extension's write client, and a bundled plugin importing another plugin is what the
   // extensions boundary forbids.
@@ -85,8 +105,20 @@ export type AdminBotMockServiceOptions = {
   // Overrides the default `gws` CLI-backed calendar invite runner — used by tests to avoid
   // shelling out to a real `gws` binary.
   calendarInviteRunner?: (email: string) => Promise<void>;
+  // Reads upcoming events for the Calendar tab. Injected so tests never shell out to `gog`, and
+  // so a deployment without the CLI simply has no picker rather than a broken route.
+  calendarEventsReader?: import("../workflows/calendar/events.js").CalendarEventsReader;
+  // Drafts an event from a sentence. Defaults to the privacy broker, so a prompt naming a member
+  // gets the same placeholder treatment every other reasoning task gets.
+  calendarEventDrafter?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
   // Same for the `gog` CLI-backed "your account is approved" email.
   accountApprovedEmailRunner?: (params: { email: string; name?: string }) => Promise<void>;
+  passwordResetEmailRunner?: (params: {
+    email: string;
+    name?: string;
+    token: string;
+    expiresInMinutes: number;
+  }) => Promise<void>;
   // Overrides the default DCS-form-submission runner outright (tests use this to assert on the
   // call without launching a real browser). If unset, dcsFormScriptPath decides whether one gets
   // built at all.
@@ -116,14 +148,24 @@ export type AdminBotMockServiceOptions = {
   fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
   // Reads each member's IANA timezone from Slack, for the profile `timezone` field --
   // distinct from fetchSlackLocations, which resolves a human-readable place, not a zone id.
-  fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
+  fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
+  // Counts each member's messages in the activity window, by reading the channels the lab tracks.
+  fetchSlackMessageCounts?: (
+    slackUserIds: string[],
+    channelIds: string[],
+  ) => Promise<ReadonlyMap<string, number>>;
   // Backfills `slack_user_id` for members the roster has never linked to Slack, by matching
   // roster email against the workspace directory.
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
-  // Geolocates a login's source IP to keep the profile `location` field current without the
-  // member typing it in. Injected because reaching a public geolocation API is a composition-
-  // layer concern, same as the Slack reads above; absent here means location never auto-updates.
-  geolocateIp?: (ip: string) => Promise<string | undefined>;
+  // Coarsely geolocates a login's source IP so the roster can show where an account last signed
+  // in from. Injected because reaching a public geolocation API is a composition-layer concern,
+  // same as the Slack reads above. Left unset, the login path simply skips the stamp — and when
+  // IPINFO_TOKEN is configured, createIpinfoLiteGeolocator supplies the default.
+  //
+  // Country/continent only, and deliberately never written to `location`, which is self-reported.
+  geolocateIp?: (ip: string) => Promise<{ country?: string; continent?: string } | undefined>;
+  // Periodic sweep cadence for Slack channel naming enforcement. Disabled when unset.
+  slackChannelNamingSweepIntervalMs?: number;
   reviewSlackProfilePhoto?: NonNullable<AdminBotServiceOptions["reviewSlackProfilePhoto"]>;
   polishSlackProfilePhoto?: NonNullable<AdminBotServiceOptions["polishSlackProfilePhoto"]>;
 };
@@ -164,15 +206,25 @@ type AdminBotPrincipal =
   | { kind: "anonymous"; ip?: string }
   | AdminBotMemberPrincipal;
 
+// Routes the anonymous principal may reach, keyed as "METHOD pathname" -- re-checked against this
+// list before any handler runs, so a new route cannot become anonymously reachable by being added
+// to handleAuthenticatedRoute.
+//
 // Reimbursement is deliberately usable without an account: the forms carry only the claimant's own
-// details, which they are typing in anyway. The anonymous principal therefore reaches these two
-// routes and nothing else -- it is rejected by isPrivileged, carries no member, and is re-checked
-// against this list before any handler runs, so a new route cannot become anonymously reachable by
-// being added to handleAuthenticatedRoute.
-const ANONYMOUS_ROUTES = new Set(["/reimbursements/converse", "/reimbursements/generate"]);
+// details, which they are typing in anyway.
+//
+// GET /member-map is deliberately public too, same spirit as GET /deadlines: the handler itself
+// still checks isPrivileged and gives an anonymous (or non-admin) caller a names-stripped, counts-
+// only summary -- publishing where people are by name was the thing worth gating, headcounts
+// per city were not.
+const ANONYMOUS_ROUTES = new Set([
+  "POST /reimbursements/converse",
+  "POST /reimbursements/generate",
+  "GET /member-map",
+]);
 
 function isAnonymousRoute(method: string | undefined, pathname: string): boolean {
-  return method === "POST" && ANONYMOUS_ROUTES.has(pathname);
+  return ANONYMOUS_ROUTES.has(`${method} ${pathname}`);
 }
 
 // Anonymous callers are unauthenticated by design, so the only abuse control left is volume. These
@@ -222,14 +274,27 @@ type AdminBotRouteContext = {
   reimbursementWorkflow?: AdminBotReimbursementWorkflow;
   openReviewWorkflow?: AdminBotOpenReviewWorkflow;
   fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
-  fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
+  fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
+  // Counts each member's messages in the activity window, by reading the channels the lab tracks.
+  fetchSlackMessageCounts?: (
+    slackUserIds: string[],
+    channelIds: string[],
+  ) => Promise<ReadonlyMap<string, number>>;
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
+  readCalendarEvents?: import("../workflows/calendar/events.js").CalendarEventsReader;
+  draftCalendarEvent?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
+  labCalendar: import("../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
   deviceTokenIssuer?: DeviceTokenIssuer;
   onboardingSender: AdminBotOnboardingSender;
   allowedOrigins: Set<string>;
+  refusedOrigins: Set<string>;
   anonymousRateLimiter: AnonymousRateLimiter;
+  // Only true when this process is known to sit behind a trusted reverse proxy (Render, Fly,
+  // etc.) that sets X-Forwarded-For itself. Otherwise a caller could hand-write that header to
+  // spoof the IP rate-limiting and login-location keys off of — see remoteIp().
+  trustProxyHeaders: boolean;
 };
 
 export function createAdminBotMockService(options: AdminBotMockServiceOptions = {}) {
@@ -254,6 +319,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   // the client keeps the URL it already connects with.
   const gatewayUrl = trimmedEnv(options.gatewayUrl ?? process.env.ADMINBOT_GATEWAY_WS_URL);
   const serviceToken = trimmedEnv(options.serviceToken ?? process.env.ADMINBOT_SERVICE_TOKEN);
+  const ipinfoToken = trimmedEnv(options.ipinfoToken ?? process.env.IPINFO_TOKEN);
   const allowedOrigins = new Set(
     options.allowedOrigins ??
       parseOrigins(process.env.ADMINBOT_ALLOWED_ORIGINS) ??
@@ -273,6 +339,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     inviteToLabCalendar: options.calendarInviteRunner ?? createCalendarInviteRunner(),
     sendAccountApprovedEmail:
       options.accountApprovedEmailRunner ?? createAccountApprovedEmailRunner(),
+    sendPasswordResetEmail: options.passwordResetEmailRunner ?? createPasswordResetEmailRunner(),
     ...(() => {
       const submitDcsForm =
         options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
@@ -280,7 +347,14 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     })(),
     ...(gatewayToken ? { gatewayToken } : {}),
     ...(gatewayUrl ? { gatewayUrl } : {}),
-    ...(options.geolocateIp ? { geolocateIp: options.geolocateIp } : {}),
+    // An explicitly injected geolocator wins (tests and the host inject their own);
+    // otherwise build the IPinfo Lite one when a token is configured. With neither, the
+    // option stays unset and the login path simply skips the stamp.
+    ...(options.geolocateIp
+      ? { geolocateIp: options.geolocateIp }
+      : ipinfoToken
+        ? { geolocateIp: createIpinfoLiteGeolocator(ipinfoToken) }
+        : {}),
   });
   const onboardingSender =
     options.onboardingSender ??
@@ -343,12 +417,33 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(openReviewWorkflow ? { openReviewWorkflow } : {}),
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
     ...(options.fetchSlackTimezones ? { fetchSlackTimezones: options.fetchSlackTimezones } : {}),
+    ...(options.fetchSlackMessageCounts
+      ? { fetchSlackMessageCounts: options.fetchSlackMessageCounts }
+      : {}),
     ...(options.resolveSlackUserIdsByEmail
       ? { resolveSlackUserIdsByEmail: options.resolveSlackUserIdsByEmail }
       : {}),
+    // The reader shells out to `gog`, so it is built unconditionally but only ever runs when the
+    // Calendar tab asks. The drafter defaults to the same broker `adminbot_reason` uses.
+    readCalendarEvents: options.calendarEventsReader ?? createCalendarEventsReader(),
+    labCalendar: resolveLabCalendar(),
+    draftCalendarEvent:
+      options.calendarEventDrafter ??
+      createEventDraftRunner((request) => privacyBroker.handle(request)),
     allowedOrigins,
+    refusedOrigins: new Set<string>(),
     anonymousRateLimiter: createAnonymousRateLimiter(),
+    trustProxyHeaders:
+      options.trustProxyHeaders ?? trimmedEnv(process.env.ADMINBOT_TRUST_PROXY) === "1",
   };
+  const slackChannelNamingSweepIntervalMs = options.slackChannelNamingSweepIntervalMs;
+  const slackChannelNamingSweepTimer =
+    typeof slackChannelNamingSweepIntervalMs === "number" && slackChannelNamingSweepIntervalMs > 0
+      ? setInterval(() => {
+          void service.runSlackChannelNamingSweep("system:sweep");
+        }, slackChannelNamingSweepIntervalMs)
+      : undefined;
+  slackChannelNamingSweepTimer?.unref();
   const server = createServer(async (req, res) => {
     try {
       await routeRequest(req, res, ctx);
@@ -367,6 +462,9 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
       return `http://${host}:${port}`;
     },
     close() {
+      if (slackChannelNamingSweepTimer) {
+        clearInterval(slackChannelNamingSweepTimer);
+      }
       closeDurable();
     },
   };
@@ -389,7 +487,7 @@ function serviceOptions(options: AdminBotMockServiceOptions): AdminBotServiceOpt
 
 async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: AdminBotRouteContext) {
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
-  applyCors(req, res, ctx.allowedOrigins);
+  applyCors(req, res, ctx.allowedOrigins, ctx.refusedOrigins);
   if (req.method === "OPTIONS") {
     // CORS preflight: headers already set by applyCors; body-less 204.
     res.statusCode = 204;
@@ -410,6 +508,10 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
     sendJson(res, 200, { items: DEADLINE_VENUES });
     return;
   }
+  if (req.method === "GET" && url.pathname === "/lab_stats/member_map") {
+    sendHtml(res, 200, renderMemberMapWebUi());
+    return;
+  }
   if (url.pathname.startsWith("/auth/")) {
     await handleAuthRoute(req, res, ctx, url);
     return;
@@ -421,7 +523,7 @@ async function routeRequest(req: IncomingMessage, res: ServerResponse, ctx: Admi
       sendJson(res, 401, { error: { message: "authentication required" } });
       return;
     }
-    const ip = remoteIp(req);
+    const ip = remoteIp(req, ctx.trustProxyHeaders);
     if (!ctx.anonymousRateLimiter.check(ip)) {
       ctx.service.recordAnonymousReimbursementUse({
         route: url.pathname,
@@ -459,32 +561,35 @@ async function handleAuthRoute(
   }
   if (req.method === "POST" && url.pathname === "/auth/claim") {
     const body = readRecord(await readJson(req));
+    const ip = remoteIp(req, ctx.trustProxyHeaders);
     const result = ctx.auth.claim({
       member_id: asString(body.member_id),
       email: asString(body.email),
       password: asString(body.password),
-      ...(remoteIp(req) ? { remoteIp: remoteIp(req) } : {}),
+      ...(ip ? { remoteIp: ip } : {}),
     });
     sendAuthResult(res, result);
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/signup") {
     const body = readRecord(await readJson(req));
+    const ip = remoteIp(req, ctx.trustProxyHeaders);
     const result = ctx.auth.signup({
       profile: readRecord(body.profile),
       email: asString(body.email),
       password: asString(body.password),
-      ...(remoteIp(req) ? { remoteIp: remoteIp(req) } : {}),
+      ...(ip ? { remoteIp: ip } : {}),
     });
     sendAuthResult(res, result);
     return;
   }
   if (req.method === "POST" && url.pathname === "/auth/login") {
     const body = readRecord(await readJson(req));
+    const ip = remoteIp(req, ctx.trustProxyHeaders);
     const result = ctx.auth.login({
       email: asString(body.email),
       password: asString(body.password),
-      ...(remoteIp(req) ? { remoteIp: remoteIp(req) } : {}),
+      ...(ip ? { remoteIp: ip } : {}),
     });
     if (!result.ok && result.code === "pending_approval") {
       // Distinct body so the client can route the applicant to a "waiting for approval" state.
@@ -529,6 +634,30 @@ async function handleAuthRoute(
     sendJson(res, 200, { logged_out: true });
     return;
   }
+  // Both reset routes are deliberately unauthenticated: the whole point is that the caller cannot
+  // sign in. The auth service rate-limits them and keeps the response identical for known and
+  // unknown addresses, so neither leaks roster membership.
+  if (req.method === "POST" && url.pathname === "/auth/password-reset") {
+    const body = readRecord(await readJson(req));
+    const result = ctx.auth.requestPasswordReset({
+      email: asString(body.email),
+      ...(() => {
+        const ip = remoteIp(req, ctx.trustProxyHeaders);
+        return ip ? { remoteIp: ip } : {};
+      })(),
+    });
+    sendAuthResult(res, result);
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/auth/password-reset/confirm") {
+    const body = readRecord(await readJson(req));
+    const result = ctx.auth.resetPassword({
+      token: asString(body.token),
+      newPassword: asString(body.new_password),
+    });
+    sendAuthResult(res, result);
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/auth/password") {
     const principal = resolvePrincipal(req, ctx);
     if (!principal || principal.kind !== "member") {
@@ -560,7 +689,7 @@ async function handleAuthRoute(
       principal.member.id,
       asString(body.new_email),
       asString(body.current_password),
-      remoteIp(req),
+      remoteIp(req, ctx.trustProxyHeaders),
     );
     sendAuthResult(res, result);
     return;
@@ -762,13 +891,23 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "GET" && url.pathname === "/member-map") {
-    // Where everyone is, by name. Privileged rather than public: the doc calls this a
-    // public website function, but publishing 144 people's locations is a decision to
-    // make deliberately, not a side effect of building the view.
-    if (!requirePrivileged(res, principal)) {
+    // Public in shape (see GET /member-map in ANONYMOUS_ROUTES), but only ever public in a
+    // counts-only shape: publishing 100+ people's names and locations is a decision to make
+    // deliberately, not a side effect of building the view, so only an admin gets the version
+    // with who is where. Everyone else -- anonymous or a signed-in non-admin member alike --
+    // gets a headcount per city.
+    const result = service.memberMap();
+    if (!result.ok) {
+      sendServiceResult(res, result);
       return;
     }
-    sendServiceResult(res, service.memberMap());
+    sendJson(
+      res,
+      200,
+      isPrivileged(principal)
+        ? { mode: "full", ...result.payload }
+        : { mode: "summary", ...toPublicMemberMapSummary(result.payload) },
+    );
     return;
   }
   if (req.method === "POST" && url.pathname === "/member-map/refresh") {
@@ -789,7 +928,11 @@ async function handleAuthenticatedRoute(
     if (!requirePrivileged(res, principal)) {
       return;
     }
-    if (!ctx.resolveSlackUserIdsByEmail && !ctx.fetchSlackTimezones) {
+    if (
+      !ctx.resolveSlackUserIdsByEmail &&
+      !ctx.fetchSlackTimezones &&
+      !ctx.fetchSlackMessageCounts
+    ) {
       sendJson(res, 503, { error: { message: "slack directory sync is not configured" } });
       return;
     }
@@ -801,8 +944,45 @@ async function handleAuthenticatedRoute(
             ? { resolveSlackUserIdsByEmail: ctx.resolveSlackUserIdsByEmail }
             : {}),
           ...(ctx.fetchSlackTimezones ? { fetchSlackTimezones: ctx.fetchSlackTimezones } : {}),
+          ...(ctx.fetchSlackMessageCounts
+            ? { fetchSlackMessageCounts: ctx.fetchSlackMessageCounts }
+            : {}),
         },
         principalActor(principal),
+      ),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/slack/channel-naming/events") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const event: AdminBotSlackChannelNamingEvent = {
+      event_type: asString(body.event_type) as AdminBotSlackChannelNamingEvent["event_type"],
+      channel_id: asString(body.channel_id),
+      channel_name: asString(body.channel_name),
+      ...(asString(body.owner_user_id) ? { owner_user_id: asString(body.owner_user_id) } : {}),
+      ...(asString(body.purpose) ? { purpose: asString(body.purpose) } : {}),
+      ...(asString(body.topic) ? { topic: asString(body.topic) } : {}),
+    };
+    sendServiceResult(
+      res,
+      await service.processSlackChannelNamingEvent(event, principalActor(principal)),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/slack/channel-naming/sweep/run") {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const now = asString(body.now);
+    sendServiceResult(
+      res,
+      await service.runSlackChannelNamingSweep(
+        principalActor(principal),
+        now || new Date().toISOString(),
       ),
     );
     return;
@@ -888,6 +1068,212 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.createProposal(body));
     return;
   }
+  // Both calendar routes are admin-member only. They read the lab's calendar and spend model time,
+  // which is not something a plain member session or the shared service principal should be able
+  // to do — and neither route writes anything: creating an event or inviting anyone still goes
+  // through POST /proposals as a typed calendar.* action, approval, and the gog connector.
+  if (req.method === "GET" && url.pathname === "/calendar/events") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.readCalendarEvents) {
+      sendJson(res, 503, { error: { message: "calendar reading is not configured" } });
+      return;
+    }
+    const max = Number(url.searchParams.get("max") ?? "");
+    try {
+      const calendarId = url.searchParams.get("calendar_id") ?? ctx.labCalendar.id;
+      const from = url.searchParams.get("from") ?? "";
+      const to = url.searchParams.get("to") ?? "";
+      const query = url.searchParams.get("query") ?? "";
+      const events = await ctx.readCalendarEvents({
+        ...(calendarId ? { calendarId } : {}),
+        ...(from ? { from } : {}),
+        ...(to ? { to } : {}),
+        ...(query ? { query } : {}),
+        ...(Number.isFinite(max) && max > 0 ? { max: Math.min(max, 250) } : {}),
+      });
+      // The calendar travels with its events so the tab embeds, lists and writes to the same one.
+      sendJson(res, 200, { events, calendar: ctx.labCalendar });
+    } catch (error) {
+      // The CLI is missing, unauthenticated, or its keyring is locked. Say so rather than
+      // returning an empty list, which reads as "your calendar is empty".
+      sendJson(res, 502, {
+        error: {
+          message: `could not read the calendar: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        },
+      });
+    }
+    return;
+  }
+  // The three writes. Each one creates the typed action, records the signed-in admin as its
+  // approver, and executes it in the same call.
+  //
+  // This is a deliberate exception to "propose, then approve on the Actions tab", made because the
+  // tab is admin-only and the person clicking is the person who would have approved it anyway. The
+  // exception is in the *number of clicks*, not in the governance: the proposal, the named
+  // approver and the execution all still land in the ledger, so "who put this on the calendar" is
+  // answerable afterwards exactly as it is for every other action. A non-admin never reaches here
+  // — requireMemberPrivileged refuses plain members and the service principal both.
+  if (req.method === "POST" && url.pathname === "/calendar/events") {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const summary = asString(body.summary);
+    const timezone = asString(body.timezone) || ctx.labCalendar.timezone;
+    // The draft carries a wall-clock time ("2026-09-01T13:00"), which is not RFC3339 and which
+    // Google rejects outright as `400 badRequest`. Resolve it against the calendar's zone first.
+    const from = toAbsoluteRfc3339(asString(body.start), timezone);
+    const to = toAbsoluteRfc3339(asString(body.end), timezone);
+    if (!summary || !from || !to) {
+      sendJson(res, 400, {
+        error: { message: "summary, and a readable start and end time, are required" },
+      });
+      return;
+    }
+    const attendees = readStringList(body.attendees);
+    await runCalendarAction(res, service, principal, {
+      // With attendees the create has to mail them, which is a different action type and a higher
+      // tier; without, it is a hold nobody hears about.
+      type: attendees.length ? "calendar.send_invite" : "calendar.create_tentative_hold",
+      summary: `Create "${summary}"`,
+      payload: {
+        calendar_id: asString(body.calendar_id) || ctx.labCalendar.id,
+        summary,
+        from,
+        to,
+        timezone,
+        ...(asString(body.location) ? { location: asString(body.location) } : {}),
+        ...(asString(body.description) ? { description: asString(body.description) } : {}),
+        ...(attendees.length ? { attendees } : {}),
+      },
+      rationale: "Created from the Calendar tab by an admin.",
+    });
+    return;
+  }
+  const calendarEvent = /^\/calendar\/events\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "POST" && calendarEvent?.[1]) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const eventId = decodeURIComponent(calendarEvent[1]);
+    const body = readRecord(await readJson(req));
+    const summary = asString(body.summary);
+    const timezone = asString(body.timezone) || ctx.labCalendar.timezone;
+    const from = toAbsoluteRfc3339(asString(body.start), timezone);
+    const to = toAbsoluteRfc3339(asString(body.end), timezone);
+    if (!summary || !from || !to) {
+      sendJson(res, 400, {
+        error: { message: "summary, and a readable start and end time, are required" },
+      });
+      return;
+    }
+    await runCalendarAction(res, service, principal, {
+      type: "calendar.reschedule",
+      summary: `Update "${summary}"`,
+      // No attendees here on purpose: the connector's update path *replaces* the guest list, so an
+      // edit that carried one would uninvite everyone the edit did not mention. Inviting is the
+      // route below.
+      payload: {
+        calendar_id: asString(body.calendar_id) || ctx.labCalendar.id,
+        event_id: eventId,
+        summary,
+        from,
+        to,
+        timezone,
+        ...(asString(body.location) ? { location: asString(body.location) } : {}),
+        ...(asString(body.description) ? { description: asString(body.description) } : {}),
+      },
+      rationale: asString(body.rationale) || "Edited from the Calendar tab by an admin.",
+    });
+    return;
+  }
+  const calendarInvite = /^\/calendar\/events\/([^/]+)\/invite$/u.exec(url.pathname);
+  if (req.method === "POST" && calendarInvite?.[1]) {
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const eventId = decodeURIComponent(calendarInvite[1]);
+    const body = readRecord(await readJson(req));
+    const attendees = readStringList(body.attendees);
+    if (!attendees.length) {
+      sendJson(res, 400, { error: { message: "attendees are required" } });
+      return;
+    }
+    await runCalendarAction(res, service, principal, {
+      type: "calendar.add_attendees",
+      summary: `Invite ${attendees.length} to ${asString(body.summary) || eventId}`,
+      payload: {
+        calendar_id: asString(body.calendar_id) || ctx.labCalendar.id,
+        event_id: eventId,
+        attendees,
+      },
+      rationale: asString(body.rationale) || "Invited from the Calendar tab by an admin.",
+    });
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/calendar/event-draft") {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.draftCalendarEvent) {
+      sendJson(res, 503, { error: { message: "event drafting is not configured" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const prompt = asString(body.prompt);
+    if (!prompt) {
+      sendJson(res, 400, { error: { message: "prompt is required" } });
+      return;
+    }
+    try {
+      const timezone = asString(body.timezone) || ctx.labCalendar.timezone;
+      const now = asString(body.now);
+      // An `editing` block turns the same route into "apply this instruction to that event". The
+      // caller sends what the event currently says; nothing is read back from Google here, so the
+      // model can never be handed an event the operator was not looking at.
+      const editingRaw = readRecord(body.editing);
+      const editingSummary = asString(editingRaw.summary);
+      const editingStart = asString(editingRaw.start);
+      const editing =
+        editingSummary && editingStart
+          ? {
+              summary: editingSummary,
+              start: editingStart,
+              ...(asString(editingRaw.end) ? { end: asString(editingRaw.end) } : {}),
+              ...(asString(editingRaw.location) ? { location: asString(editingRaw.location) } : {}),
+              ...(asString(editingRaw.description)
+                ? { description: asString(editingRaw.description) }
+                : {}),
+            }
+          : undefined;
+      const result = await ctx.draftCalendarEvent({
+        prompt,
+        ...(timezone ? { timezone } : {}),
+        ...(now ? { now } : {}),
+        ...(editing ? { editing } : {}),
+      });
+      if (!result.ok) {
+        // A model that could not produce a usable event is a 400 naming what was wrong with the
+        // draft, so the operator can rewrite the sentence rather than guess.
+        sendJson(res, 400, { error: { message: result.error } });
+        return;
+      }
+      sendJson(res, 200, { draft: result.draft });
+    } catch (error) {
+      sendJson(res, 502, {
+        error: {
+          message: `the drafting model failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        },
+      });
+    }
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/privacy/tasks") {
     const body = (await readJson(req)) as AdminBotPrivacyTaskRequest;
     sendJson(res, 200, await privacyBroker.handle(body));
@@ -905,7 +1291,28 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "GET" && url.pathname === "/lab/members") {
-    sendServiceResult(res, service.listLabMembers());
+    // The roster is lab-internal but not confidential, with one exception: what a member discloses
+    // about their health or family is written for one reader, and this response goes to all of
+    // them. Strip those fields for anyone who is not that member or an admin. The service principal
+    // drives agent tool calls on behalf of whoever is chatting, so it is not entitled either.
+    const viewer = {
+      ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
+      isAdmin: principal.kind === "member" && principal.member.privilege_level === "admin",
+    };
+    const result = service.listLabMembers();
+    sendServiceResult(
+      res,
+      result.ok
+        ? {
+            ...result,
+            payload: {
+              members: result.payload.members.map((member) =>
+                redactConfidentialMemberFields(member, viewer),
+              ),
+            },
+          }
+        : result,
+    );
     return;
   }
   if (req.method === "GET" && url.pathname === "/settings") {
@@ -1130,6 +1537,15 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, await service.sendMemberNudge(body, principalActor(principal)));
     return;
   }
+  if (req.method === "POST" && url.pathname === "/members/notes/migrate") {
+    // Rewrites stored member records, so it takes a genuine admin session rather than the shared
+    // service principal: unlike the cron-driven routes, the caller chooses when this happens.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.migrateMemberNotesToFields(principalActor(principal)));
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/members/mandatory-fields-incomplete") {
     // Read-only roster scan (same shape as /papers/nudges), so no privilege gate: it powers the
     // dashboard's own-profile warning too, which any signed-in member may load.
@@ -1146,10 +1562,7 @@ async function handleAuthenticatedRoute(
     if (!requirePrivileged(res, principal)) {
       return;
     }
-    sendServiceResult(
-      res,
-      await service.sendMandatoryFieldsReminders(principalActor(principal)),
-    );
+    sendServiceResult(res, await service.sendMandatoryFieldsReminders(principalActor(principal)));
     return;
   }
   if (req.method === "POST" && url.pathname === "/profile-photo/review/run") {
@@ -1260,6 +1673,67 @@ function requirePrivileged(res: ServerResponse, principal: AdminBotPrincipal): b
   return false;
 }
 
+function readStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry) =>
+    typeof entry === "string" && entry.trim() ? [entry.trim()] : [],
+  );
+}
+
+/**
+ * Files a calendar action, records the caller as its approver, and executes it.
+ *
+ * The approval is recorded against the member id and role of the person who clicked, not against a
+ * generic "system" actor — that is what keeps the ledger answerable. Execution is the same path
+ * every other action takes, so a missing `gog`, a locked keyring or a Google refusal comes back as
+ * the same execution failure it would anywhere else, and the proposal stays in the queue rather
+ * than being reported as done.
+ */
+async function runCalendarAction(
+  res: ServerResponse,
+  service: AdminBotService,
+  principal: Extract<AdminBotPrincipal, { kind: "member" }>,
+  action: {
+    type: string;
+    summary: string;
+    payload: Record<string, unknown>;
+    rationale: string;
+  },
+): Promise<void> {
+  const created = service.createProposal({
+    type: action.type as AdminBotActionProposal["type"],
+    summary: action.summary,
+    proposed_payload: action.payload,
+    rationale: action.rationale,
+  });
+  if (!created.ok) {
+    sendServiceResult(res, created);
+    return;
+  }
+  const approved = service.approve(created.payload.id, {
+    payload_hash: created.payload.payload_hash,
+    approver_role: "admin",
+    approver_id: principal.member.id,
+    note: "Admin acted directly from the Calendar tab.",
+  });
+  if (!approved.ok) {
+    sendServiceResult(res, approved);
+    return;
+  }
+  const executed = await service.execute(created.payload.id, { dry_run: false });
+  if (!executed.ok) {
+    sendServiceResult(res, executed);
+    return;
+  }
+  sendJson(res, 200, {
+    action_id: created.payload.id,
+    status: executed.payload.status,
+    executed_at: executed.payload.executed_at,
+  });
+}
+
 // Escalation-sensitive governance (global settings, sensitive-info read/write, registration
 // approve/reject) must be driven by a real member session. The shared service principal is used by
 // every agent tool call regardless of which member is chatting, so treating it as admin here would
@@ -1304,9 +1778,32 @@ function resolvePrincipal(
   return undefined;
 }
 
-function applyCors(req: IncomingMessage, res: ServerResponse, allowedOrigins: Set<string>): void {
+function applyCors(
+  req: IncomingMessage,
+  res: ServerResponse,
+  allowedOrigins: Set<string>,
+  // Origins already reported, so the warning fires once each rather than once per request. Held by
+  // the service rather than the module so two services in one process cannot silence each other.
+  refusedOrigins: Set<string>,
+): void {
   const origin = req.headers.origin;
-  if (typeof origin !== "string" || !allowedOrigins.has(origin)) {
+  if (typeof origin !== "string") {
+    return;
+  }
+  if (!allowedOrigins.has(origin)) {
+    // A refused origin is otherwise completely silent: the service answers normally, the browser
+    // discards the response for want of a header, and the page reports only that it could not
+    // reach anything. Naming the rejected origin next to the allowed ones turns "it does not work"
+    // into a diff — a scheme, a subdomain or a port is usually the whole story. Once per origin,
+    // so a misconfigured client cannot flood the log.
+    if (!refusedOrigins.has(origin)) {
+      refusedOrigins.add(origin);
+      console.warn(
+        `[adminbot] refused cross-origin request from ${origin}; ADMINBOT_ALLOWED_ORIGINS is ${
+          [...allowedOrigins].join(", ") || "(empty)"
+        }`,
+      );
+    }
     return;
   }
   res.setHeader("Access-Control-Allow-Origin", origin);
@@ -1369,7 +1866,18 @@ function cookieToken(req: IncomingMessage): string | undefined {
   return undefined;
 }
 
-function remoteIp(req: IncomingMessage): string | undefined {
+// Behind a reverse proxy (Render, Fly, etc.), req.socket.remoteAddress is the proxy's own
+// address, not the real caller's — the actual IP only shows up in X-Forwarded-For, which the
+// proxy sets and the app must not trust unless it knows every request actually passes through
+// that proxy (otherwise a direct caller could hand-write the header to spoof it).
+function remoteIp(req: IncomingMessage, trustProxyHeaders: boolean): string | undefined {
+  if (trustProxyHeaders) {
+    const header = req.headers["x-forwarded-for"];
+    const first = (Array.isArray(header) ? header[0] : header)?.split(",")[0]?.trim();
+    if (first) {
+      return first;
+    }
+  }
   return req.socket.remoteAddress ?? undefined;
 }
 
@@ -1418,6 +1926,10 @@ function readRecord(value: unknown): Record<string, unknown> {
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json; charset=utf-8");
+  // Every JSON response here reflects live, mutable state (roster, sessions, map places...);
+  // without this a browser can silently serve a stale GET from its disk cache instead of
+  // re-asking the server, which is indistinguishable from the data actually being wrong.
+  res.setHeader("Cache-Control", "no-store");
   res.end(JSON.stringify(body));
 }
 

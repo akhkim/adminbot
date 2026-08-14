@@ -35,7 +35,7 @@ describe("renderLanding", () => {
     const state = createState();
     const host = renderPage(state);
     const cta = host.querySelector<HTMLButtonElement>('[data-testid="landing-sign-in"]');
-    expect(cta?.textContent?.trim()).toBe("Sign in or register");
+    expect(cta?.textContent?.trim()).toBe("Log In or Sign Up");
     cta?.click();
     expect(state.authGateVisible).toBe(true);
   });

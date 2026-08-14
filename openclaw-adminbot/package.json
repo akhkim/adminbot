@@ -1446,6 +1446,7 @@
     "tsgo:prod": "pnpm tsgo:core && pnpm tsgo:extensions",
     "tsgo:test": "pnpm tsgo:core:test && pnpm tsgo:extensions:test",
     "ui:build": "node scripts/ui.js build",
+    "ui:world-outline:gen": "node scripts/generate-world-outline.mjs",
     "ui:dev": "node scripts/ui.js dev",
     "ui:i18n:check": "node --import tsx scripts/control-ui-i18n.ts check",
     "ui:i18n:sync": "node --import tsx scripts/control-ui-i18n.ts sync --write",

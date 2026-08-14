@@ -16,6 +16,7 @@ import {
   pairDevice,
   resolveAdminBotBaseUrl,
   saveStoredMemberSession,
+  sendOnboardingGuide,
   signupMember,
   nudgeOnboardingStep,
   setOnboardingStep,
@@ -429,6 +430,80 @@ describe("onboarding step completion", () => {
     await expect(
       setOnboardingStep("someone-else", "linkedin", true, "sess-tok", BASE_URL),
     ).resolves.toEqual({ ok: false, kind: "forbidden" });
+  });
+});
+
+describe("sending an onboarding guide", () => {
+  const request = {
+    templateId: "member",
+    name: "Ada Lovelace",
+    email: "ada@cs.toronto.edu",
+    values: {},
+    preview: false,
+  };
+
+  it("surfaces the service's own refusal instead of blaming the operator's input", async () => {
+    // The service says exactly which of its several refusals this was -- unconfigured mail, Drive
+    // or Slack provisioning that is not wired up, an unknown template, or a handler that threw.
+    // Only a 400 is about what the admin typed, so collapsing all of them into "check the details
+    // and try again" sent an operator round a loop nothing they could type would break.
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(503, {
+        error: { message: "onboarding email is not configured: set ADMINBOT_CONTACT_EMAILS" },
+      }),
+    );
+
+    await expect(sendOnboardingGuide(request, "sess-tok", BASE_URL)).resolves.toEqual({
+      ok: false,
+      kind: "rejected",
+      message: "onboarding email is not configured: set ADMINBOT_CONTACT_EMAILS",
+    });
+  });
+
+  it("carries through the message from a handler that threw", async () => {
+    // routeRequest's top-level catch answers 500 with the thrown error's message, which is how a
+    // missing `gog` CLI on the service host reaches the operator at all.
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(500, { error: { message: "spawn gog ENOENT" } }),
+    );
+
+    await expect(sendOnboardingGuide(request, "sess-tok", BASE_URL)).resolves.toEqual({
+      ok: false,
+      kind: "rejected",
+      message: "spawn gog ENOENT",
+    });
+  });
+
+  it("still reports the missing values a 422 names, so the form can mark those fields", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(422, { error: { missing: ["drive_folder_link"] } }),
+    );
+
+    await expect(sendOnboardingGuide(request, "sess-tok", BASE_URL)).resolves.toEqual({
+      ok: false,
+      kind: "missing",
+      missing: ["drive_folder_link"],
+    });
+  });
+
+  it("keeps forbidden distinct, since that one is about who is asking", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      jsonResponse(403, { error: { message: "insufficient privileges" } }),
+    );
+
+    await expect(sendOnboardingGuide(request, "sess-tok", BASE_URL)).resolves.toEqual({
+      ok: false,
+      kind: "forbidden",
+    });
+  });
+
+  it("falls back to the generic failure when the service says nothing at all", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(500, {}));
+
+    await expect(sendOnboardingGuide(request, "sess-tok", BASE_URL)).resolves.toEqual({
+      ok: false,
+      kind: "auth-failed",
+    });
   });
 });
 

@@ -91,7 +91,9 @@ describe("dcs form runner", () => {
     });
 
     it("rejects when the script produces no parseable JSON at all", async () => {
-      fixture = writeFixtureScript(`console.log("totally unexpected crash");\nprocess.exitCode = 1;\n`);
+      fixture = writeFixtureScript(
+        `console.log("totally unexpected crash");\nprocess.exitCode = 1;\n`,
+      );
       const submit = createDcsFormRunner({ scriptPath: fixture.path });
 
       await expect(

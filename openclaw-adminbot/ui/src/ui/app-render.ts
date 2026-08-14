@@ -24,6 +24,7 @@ import {
   resetAdminBotReimbursement,
   saveAdminBotMember,
   saveAdminBotOwnProfile,
+  saveAdminBotOwnSchedule,
   saveAdminBotPaper,
   saveAdminBotSensitiveInfo,
   saveAdminBotSettings,
@@ -46,11 +47,18 @@ import {
   renderChangePasswordTrigger,
 } from "./adminbot/views/change-password.ts";
 import { renderDashboard } from "./adminbot/views/dashboard.ts";
+import { renderLabSharing } from "./adminbot/views/lab-sharing.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate } from "./adminbot/views/login-gate.ts";
 import { renderMyWork } from "./adminbot/views/my-work.ts";
+import { renderOnboardingChecklist } from "./adminbot/views/onboarding-checklist.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
 import { renderPublicShell } from "./adminbot/views/public-shell.ts";
+import {
+  EMPTY_MILESTONE_DRAFT,
+  EMPTY_TIME_AVAILABILITY_DRAFT,
+  renderAdminBotTimeAvailability,
+} from "./adminbot/views/time-availability.ts";
 import {
   createChatSessionsLoadOverrides,
   hasAbortableSessionRun,
@@ -526,6 +534,10 @@ const lazyAdminBotOnboarding = createLazyView(
   () => import("./adminbot/views/onboarding.ts"),
   notifyLazyViewChanged,
 );
+const lazyAdminBotCalendar = createLazyView(
+  () => import("./adminbot/views/calendar.ts"),
+  notifyLazyViewChanged,
+);
 
 function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminBotPanel | null {
   if (mode === "general") {
@@ -634,7 +646,9 @@ export function formatDreamNextCycle(nextRunAtMs: number | undefined): string | 
 }
 
 function resolveDreamingNextCycle(
-  status: { phases?: Record<string, { enabled: boolean; nextRunAtMs?: number }> } | null,
+  status: {
+    phases?: Record<string, { enabled: boolean; nextRunAtMs?: number }>;
+  } | null,
 ): string | null {
   if (!status?.phases) {
     return null;
@@ -723,7 +737,10 @@ function isUpdateBannerDismissed(updateAvailable: unknown): boolean {
   if (!dismissed) {
     return false;
   }
-  const info = updateAvailable as { latestVersion?: unknown; channel?: unknown };
+  const info = updateAvailable as {
+    latestVersion?: unknown;
+    channel?: unknown;
+  };
   const latestVersion = info && typeof info.latestVersion === "string" ? info.latestVersion : null;
   const channel = info && typeof info.channel === "string" ? info.channel : null;
   return Boolean(
@@ -732,7 +749,10 @@ function isUpdateBannerDismissed(updateAvailable: unknown): boolean {
 }
 
 function dismissUpdateBanner(updateAvailable: unknown) {
-  const info = updateAvailable as { latestVersion?: unknown; channel?: unknown };
+  const info = updateAvailable as {
+    latestVersion?: unknown;
+    channel?: unknown;
+  };
   const latestVersion = info && typeof info.latestVersion === "string" ? info.latestVersion : null;
   if (!latestVersion) {
     return;
@@ -1158,7 +1178,10 @@ function renderCronQuickCreateForTab(
       const draft = state.cronQuickCreateDraft ?? createDefaultDraft();
       const formPatch = draftToCronFormPatch(draft);
       state.cronEditingJobId = null;
-      state.cronForm = { ...buildNewCronForm(state), ...formPatch } as typeof state.cronForm;
+      state.cronForm = {
+        ...buildNewCronForm(state),
+        ...formPatch,
+      } as typeof state.cronForm;
       requestHostUpdate?.();
       void (async () => {
         const saved = await addCronJob(state);
@@ -1764,14 +1787,14 @@ export function renderApp(state: AppViewState) {
               state.setTab("aiAgents");
             },
             onThinkingChange: (level) => {
-              void patchSession(state, state.sessionKey, { thinkingLevel: level }).then(() =>
-                requestHostUpdate?.(),
-              );
+              void patchSession(state, state.sessionKey, {
+                thinkingLevel: level,
+              }).then(() => requestHostUpdate?.());
             },
             onFastModeToggle: () => {
-              void patchSession(state, state.sessionKey, { fastMode: !fastMode }).then(() =>
-                requestHostUpdate?.(),
-              );
+              void patchSession(state, state.sessionKey, {
+                fastMode: !fastMode,
+              }).then(() => requestHostUpdate?.());
             },
             channels: extractQuickSettingsChannels(state),
             onChannelConfigure: () => {
@@ -2151,14 +2174,44 @@ export function renderApp(state: AppViewState) {
   const refreshChatWorkspaceFiles = () => {
     loadChatWorkspaceFiles({ force: true });
   };
+  // The roster and the paper list back the profile landing page -- the attention stack, the
+  // member's own record, the work summary -- and not just the Members and Papers tabs. So the load
+  // follows the *session*, not the tab: a signed-in member fetches once, on whatever page they land
+  // on. Previously this was gated on `adminBotPanel`, which is null for the landing page, so a
+  // member saw an empty profile until they happened to open Members or Papers.
+  //
+  // `state.connected` stays on the gateway-driven half only. A member reads over their own HTTP
+  // session (loadAdminBot prefers loadStoredMemberSession), which needs no gateway socket at all --
+  // requiring one was the second half of why the landing page came up blank for plain members.
+  const hasMemberSession = Boolean(state.memberId);
+  // Time Availability needs the roster to fill its member picker but renders its own view, so it
+  // deliberately maps to no panel. It has to be named here instead: `adminBotPanel` doubles as the
+  // render switch, and borrowing "members" to trigger the fetch drew the whole Lab Members panel
+  // underneath the schedule.
+  const wantsRosterOnly = state.tab === "adminbotTimeAvailability";
+  const wantsGatewayAdminBotLoad =
+    ((isChat && isAdminBotChat) || adminBotPanel || wantsRosterOnly) && state.connected;
   if (
-    ((isChat && isAdminBotChat) || adminBotPanel) &&
-    state.connected &&
+    (hasMemberSession || wantsGatewayAdminBotLoad) &&
     !state.adminBotLoading &&
     !state.adminBotError &&
     !state.adminBotData.loadedAt
   ) {
     void loadAdminBot(state, adminBotMode).finally(() => requestHostUpdate?.());
+  }
+  // The Calendar tab's events are a separate read from the roster, and nothing was triggering it:
+  // opening the tab drew an empty month and only the Refresh button or a month step would fetch
+  // anything. `calendarEvents === undefined` is the "never asked" sentinel — a load that genuinely
+  // finds nothing sets [], so this cannot loop on an empty calendar.
+  if (
+    state.tab === "adminbotCalendar" &&
+    adminBotMode === "admin" &&
+    hasMemberSession &&
+    !state.calendarEventsLoading &&
+    !state.calendarEventsError &&
+    state.calendarEvents === undefined
+  ) {
+    void state.loadCalendarEvents?.().finally(() => requestHostUpdate?.());
   }
   const browseChatWorkspacePath = (path: string) => {
     if (chatWorkspaceFiles.browserSearchTimer) {
@@ -2515,7 +2568,9 @@ export function renderApp(state: AppViewState) {
                             <button
                               class="nav-section__label"
                               @click=${() => {
-                                const next = { ...state.settings.navGroupsCollapsed };
+                                const next = {
+                                  ...state.settings.navGroupsCollapsed,
+                                };
                                 next[group.label] = !isGroupCollapsed;
                                 state.applySettings({
                                   ...state.settings,
@@ -2607,7 +2662,8 @@ export function renderApp(state: AppViewState) {
         state.updateAvailable.latestVersion !== state.updateAvailable.currentVersion &&
         !isUpdateBannerDismissed(state.updateAvailable)
           ? html`<div class="update-banner callout danger" role="alert">
-              <strong>${t("chat.updateAvailable")}</strong> v${state.updateAvailable.latestVersion}
+              <strong>${t("chat.updateAvailable")}</strong>
+              v${state.updateAvailable.latestVersion}
               (${t("chat.runningVersion", { version: state.updateAvailable.currentVersion })}).
               <button
                 class="btn btn--sm update-banner__btn"
@@ -2676,10 +2732,65 @@ export function renderApp(state: AppViewState) {
             </section>`}
         ${state.tab === "dashboard" ? renderDashboard(state, accessRole) : nothing}
         ${state.tab === "profile"
-          ? renderProfile(state, {
-              onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
-              onPolishPhoto: () => void polishAdminBotOwnProfilePhoto(state),
-              onApplyPolishedPhoto: (variantId) => void applyAdminBotOwnProfilePhoto(state, variantId),
+          ? html`
+              ${renderProfile(state, {
+                onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
+                onPolishPhoto: () => void polishAdminBotOwnProfilePhoto(state),
+                onApplyPolishedPhoto: (variantId) =>
+                  void applyAdminBotOwnProfilePhoto(state, variantId),
+              })}
+              <!-- Bottom of the page on purpose: the checklist is required reading a member works
+                   through once, not the thing they came to this page to do on the other days. -->
+              ${renderOnboardingChecklist(state)}
+            `
+          : nothing}
+        ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}
+        ${state.tab === "adminbotTimeAvailability"
+          ? renderAdminBotTimeAvailability({
+              members: state.adminBotData.members ?? [],
+              loading: state.adminBotLoading,
+              error: state.adminBotError,
+              // Default to your own schedule once the roster lands: it is the one you came for,
+              // and it is the only one you can edit.
+              selectedMemberId: state.adminBotTimeAvailabilityMemberId || (state.memberId ?? ""),
+              onMemberChange: (memberId) => {
+                state.adminBotTimeAvailabilityMemberId = memberId;
+              },
+              range: state.adminBotTimeAvailabilityRange,
+              onRangeChange: (range) => {
+                state.adminBotTimeAvailabilityRange = range;
+              },
+              viewerMemberId: state.memberId ?? null,
+              draft: state.adminBotTimeAvailabilityDraft,
+              onDraftChange: (draft) => {
+                state.adminBotTimeAvailabilityDraft = draft;
+              },
+              awayDraft: state.adminBotTimeAwayDraft,
+              onAwayDraftChange: (draft) => {
+                state.adminBotTimeAwayDraft = draft;
+              },
+              milestoneDraft: state.adminBotMilestoneDraft,
+              onMilestoneDraftChange: (draft) => {
+                state.adminBotMilestoneDraft = draft;
+              },
+              saving: state.adminBotTimeAvailabilitySaving,
+              onSaveSchedule: (memberId, patch) => {
+                state.adminBotTimeAvailabilitySaving = true;
+                void saveAdminBotOwnSchedule(state, memberId, patch).finally(() => {
+                  state.adminBotTimeAvailabilitySaving = false;
+                  // Only clear the draft on success, and only the one this save came from: a
+                  // rejected row stays in its form so the member can correct it rather than
+                  // retype it.
+                  if (state.adminBotNotice?.kind === "success") {
+                    if (patch.milestones) {
+                      state.adminBotMilestoneDraft = { ...EMPTY_MILESTONE_DRAFT };
+                    } else {
+                      state.adminBotTimeAvailabilityDraft = { ...EMPTY_TIME_AVAILABILITY_DRAFT };
+                    }
+                  }
+                  requestHostUpdate?.();
+                });
+              },
             })
           : nothing}
         ${state.tab === "myWork"
@@ -2804,9 +2915,9 @@ export function renderApp(state: AppViewState) {
               onSaveMember: (member) => void saveAdminBotMember(state, member),
               onSaveOwnProfile: (memberId, fields) =>
                 void saveAdminBotOwnProfile(state, memberId, fields),
-              // The checklist itself now lives on the dashboard instead of a popup, so "view
-              // onboarding checklist" from Lab Members just goes there.
-              onShowOnboardingWelcome: () => state.setTab("dashboard"),
+              // The checklist itself lives at the bottom of the profile page instead of in a
+              // popup, so "view onboarding checklist" from Lab Members just goes there.
+              onShowOnboardingWelcome: () => state.setTab("profile"),
               onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
               onDeletePaper: (paper) => void deleteAdminBotPaper(state, paper),
               onSaveSettings: (settings) => void saveAdminBotSettings(state, settings),
@@ -2829,6 +2940,9 @@ export function renderApp(state: AppViewState) {
           : nothing}
         ${state.tab === "adminbotOnboarding" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotOnboarding, (m) => m.renderAdminBotOnboarding(state))
+          : nothing}
+        ${state.tab === "adminbotCalendar" && adminBotMode === "admin"
+          ? renderLazyView(lazyAdminBotCalendar, (m) => m.renderAdminBotCalendar(state))
           : nothing}
         ${state.tab === "adminbotDeadlines"
           ? renderLazyView(lazyDeadlines, (m) => m.renderDeadlines())
@@ -2855,8 +2969,11 @@ export function renderApp(state: AppViewState) {
                 },
               );
               const operatorCanWrite = hasOperatorWriteAccess(
-                (state.hello as { auth?: { role?: string; scopes?: string[] } } | null)?.auth ??
-                  null,
+                (
+                  state.hello as {
+                    auth?: { role?: string; scopes?: string[] };
+                  } | null
+                )?.auth ?? null,
               );
               return m.renderSessions({
                 loading: state.sessionsLoading,
@@ -3018,8 +3135,11 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "workboard"
           ? renderLazyView(lazyWorkboard, (m) => {
               const auth =
-                (state.hello as { auth?: { role?: string; scopes?: string[] } } | null)?.auth ??
-                null;
+                (
+                  state.hello as {
+                    auth?: { role?: string; scopes?: string[] };
+                  } | null
+                )?.auth ?? null;
               return m.renderWorkboard({
                 host: state,
                 client: state.client,
@@ -3094,7 +3214,10 @@ export function renderApp(state: AppViewState) {
                 deliveryToSuggestions,
                 accountSuggestions,
                 onFormChange: (patch) => {
-                  state.cronForm = normalizeCronFormState({ ...state.cronForm, ...patch });
+                  state.cronForm = normalizeCronFormState({
+                    ...state.cronForm,
+                    ...patch,
+                  });
                   state.cronFieldErrors = validateCronForm(state.cronForm);
                 },
                 onRefresh: () => void state.loadCron(),
@@ -3141,7 +3264,10 @@ export function renderApp(state: AppViewState) {
                   await loadCronRuns(state, jobId);
                 }),
                 onLoadMoreJobs: () =>
-                  void loadCronJobsPage(state, { append: true, tableFilters: true }),
+                  void loadCronJobsPage(state, {
+                    append: true,
+                    tableFilters: true,
+                  }),
                 onJobsFiltersChange: runUiTask(async (patch) => {
                   updateCronJobsFilter(state, patch);
                   const shouldReload =
@@ -3152,7 +3278,10 @@ export function renderApp(state: AppViewState) {
                     Boolean(patch.cronJobsSortBy) ||
                     Boolean(patch.cronJobsSortDir);
                   if (shouldReload) {
-                    await loadCronJobsPage(state, { append: false, tableFilters: true });
+                    await loadCronJobsPage(state, {
+                      append: false,
+                      tableFilters: true,
+                    });
                   }
                 }),
                 onJobsFiltersReset: runUiTask(async () => {
@@ -3164,7 +3293,10 @@ export function renderApp(state: AppViewState) {
                     cronJobsSortBy: "nextRunAtMs",
                     cronJobsSortDir: "asc",
                   });
-                  await loadCronJobsPage(state, { append: false, tableFilters: true });
+                  await loadCronJobsPage(state, {
+                    append: false,
+                    tableFilters: true,
+                  });
                 }),
                 onLoadMoreRuns: () => void loadMoreCronRuns(state),
                 onRunsFiltersChange: runUiTask(async (patch) => {
@@ -3308,11 +3440,17 @@ export function renderApp(state: AppViewState) {
                   void loadAgentFileContent(state, resolvedAgentId, name);
                 },
                 onFileDraftChange: (name, content) => {
-                  state.agentFileDrafts = { ...state.agentFileDrafts, [name]: content };
+                  state.agentFileDrafts = {
+                    ...state.agentFileDrafts,
+                    [name]: content,
+                  };
                 },
                 onFileReset: (name) => {
                   const base = state.agentFileContents[name] ?? "";
-                  state.agentFileDrafts = { ...state.agentFileDrafts, [name]: base };
+                  state.agentFileDrafts = {
+                    ...state.agentFileDrafts,
+                    [name]: base,
+                  };
                 },
                 onFileSave: (name) => {
                   if (!resolvedAgentId) {
@@ -3380,8 +3518,11 @@ export function renderApp(state: AppViewState) {
                   if (index < 0) {
                     return;
                   }
-                  const list = (getCurrentConfigValue() as { agents?: { list?: unknown[] } } | null)
-                    ?.agents?.list;
+                  const list = (
+                    getCurrentConfigValue() as {
+                      agents?: { list?: unknown[] };
+                    } | null
+                  )?.agents?.list;
                   const entry = Array.isArray(list)
                     ? (list[index] as { skills?: unknown })
                     : undefined;
@@ -3487,7 +3628,10 @@ export function renderApp(state: AppViewState) {
                   if (!primary) {
                     return;
                   }
-                  updateConfigFormValue(state, basePathResult, { primary, fallbacks: normalized });
+                  updateConfigFormValue(state, basePathResult, {
+                    primary,
+                    fallbacks: normalized,
+                  });
                 },
                 onSetDefault: (agentId) => {
                   stageDefaultAgentConfigEntry(state, agentId);
@@ -3606,7 +3750,10 @@ export function renderApp(state: AppViewState) {
                 onLoadExecApprovals: () => {
                   const target =
                     state.execApprovalsTarget === "node" && state.execApprovalsTargetNodeId
-                      ? { kind: "node" as const, nodeId: state.execApprovalsTargetNodeId }
+                      ? {
+                          kind: "node" as const,
+                          nodeId: state.execApprovalsTargetNodeId,
+                        }
                       : { kind: "gateway" as const };
                   void loadExecApprovals(state, target);
                 },
@@ -3643,7 +3790,10 @@ export function renderApp(state: AppViewState) {
                 onSaveExecApprovals: () => {
                   const target =
                     state.execApprovalsTarget === "node" && state.execApprovalsTargetNodeId
-                      ? { kind: "node" as const, nodeId: state.execApprovalsTargetNodeId }
+                      ? {
+                          kind: "node" as const,
+                          nodeId: state.execApprovalsTargetNodeId,
+                        }
                       : { kind: "gateway" as const };
                   void saveExecApprovals(state, target);
                 },
@@ -3725,7 +3875,10 @@ export function renderApp(state: AppViewState) {
                   onRefresh: () => {
                     state.chatSideResult = null;
                     state.resetToolStream();
-                    void refreshChat(state, { awaitHistory: true, scheduleScroll: false });
+                    void refreshChat(state, {
+                      awaitHistory: true,
+                      scheduleScroll: false,
+                    });
                   },
                   onChatScroll: (event) => state.handleChatScroll(event),
                   getDraft: () => state.chatMessage,
@@ -3735,7 +3888,10 @@ export function renderApp(state: AppViewState) {
                   attachments: state.chatAttachments,
                   onAttachmentsChange: (next) => (state.chatAttachments = next),
                   onSend: () => void state.handleSendChat(),
-                  onCompact: () => void state.handleSendChat("/compact", { restoreDraft: true }),
+                  onCompact: () =>
+                    void state.handleSendChat("/compact", {
+                      restoreDraft: true,
+                    }),
                   onOpenSessionCheckpoints: () => {
                     state.sessionsExpandedCheckpointKey = state.sessionKey;
                     state.setTab("sessions" as import("./navigation.ts").Tab);
@@ -3866,7 +4022,10 @@ export function renderApp(state: AppViewState) {
                   truncated: state.logsTruncated,
                   onFilterTextChange: (next) => (state.logsFilterText = next),
                   onLevelToggle: (level, enabled) => {
-                    state.logsLevelFilters = { ...state.logsLevelFilters, [level]: enabled };
+                    state.logsLevelFilters = {
+                      ...state.logsLevelFilters,
+                      [level]: enabled,
+                    };
                   },
                   onToggleAutoFollow: (next) => (state.logsAutoFollow = next),
                   onRefresh: () => void loadLogs(state, { reset: true }),

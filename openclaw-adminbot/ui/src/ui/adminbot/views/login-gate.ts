@@ -335,6 +335,12 @@ function switchLoginMode(state: AppViewState, mode: AppViewState["loginMode"]) {
   state.loginMode = mode;
   state.memberFormError = null;
   state.memberAuthFailure = null;
+  // Leaving a reset step clears its notices: the "check your email" acknowledgement and the "your
+  // password was changed" confirmation are both about the step just left, not the one being opened.
+  state.passwordResetSent = false;
+  if (mode !== "signin") {
+    state.passwordResetDone = false;
+  }
   // Refresh the unclaimed roster whenever the picker becomes visible.
   if (mode === "claim") {
     void state.loadRoster();
@@ -568,13 +574,21 @@ function renderSignupFields(state: AppViewState) {
 
 function renderMemberForm(state: AppViewState) {
   const mode = state.loginMode;
-  const requiresConfirm = mode !== "signin";
+  // The reset modes each use one half of this form: "reset-request" needs only the address to mail
+  // to, "reset-confirm" only the new password (the token comes from the link, not the member).
+  const isResetRequest = mode === "reset-request";
+  const isResetConfirm = mode === "reset-confirm";
+  const requiresConfirm = mode !== "signin" && !isResetRequest;
   const submitLabel =
     mode === "claim"
       ? t("login.member.claimSubmit")
       : mode === "signup"
         ? t("login.member.signupSubmit")
-        : t("login.member.signIn");
+        : isResetRequest
+          ? t("login.member.reset.sendLink")
+          : isResetConfirm
+            ? t("login.member.reset.setPassword")
+            : t("login.member.signIn");
   const workingLabel = mode === "signin" ? t("login.member.working") : t("login.member.submitting");
   // Native <form> submission keeps Enter-to-submit, mobile "go" buttons, and
   // password-manager autofill working without per-input key handlers.
@@ -589,7 +603,23 @@ function renderMemberForm(state: AppViewState) {
     <form class="login-gate__form" data-login-mode=${mode} @submit=${onSubmit} novalidate>
       ${mode === "claim" ? renderRosterPicker(state) : ""}
       ${mode === "signup" ? renderSignupFields(state) : ""}
-      <label class="field">
+      ${isResetRequest
+        ? html`<p class="login-gate__reset-intro">${t("login.member.reset.intro")}</p>`
+        : ""}
+      ${isResetConfirm
+        ? html`<p class="login-gate__reset-intro">${t("login.member.reset.confirmIntro")}</p>`
+        : ""}
+      ${state.passwordResetSent
+        ? html`<div class="callout login-gate__reset-sent" role="status" aria-live="polite">
+            ${t("login.member.reset.sent")}
+          </div>`
+        : ""}
+      ${state.passwordResetDone && mode === "signin"
+        ? html`<div class="callout login-gate__reset-done" role="status" aria-live="polite">
+            ${t("login.member.reset.done")}
+          </div>`
+        : ""}
+      <label class="field" ?hidden=${isResetConfirm}>
         <span>${t("login.member.email")}</span>
         <input
           type="email"
@@ -603,7 +633,7 @@ function renderMemberForm(state: AppViewState) {
           placeholder=${t("login.member.emailPlaceholder")}
         />
       </label>
-      <label class="field">
+      <label class="field" ?hidden=${isResetRequest}>
         <span>${t("login.member.password")}</span>
         <div class="login-gate__secret-row">
           <input
@@ -676,6 +706,17 @@ function renderMemberForm(state: AppViewState) {
             </button>
           `
         : ""}
+      ${mode === "signin"
+        ? html`
+            <button
+              type="button"
+              class="session-link login-gate__forgot"
+              @click=${() => switchLoginMode(state, "reset-request")}
+            >
+              ${t("login.member.reset.forgot")}
+            </button>
+          `
+        : ""}
       <button
         type="button"
         class="login-gate__mode-toggle session-link"
@@ -711,9 +752,10 @@ function renderPendingNotice(state: AppViewState) {
 function renderGuestReimbursementLink(state: AppViewState) {
   return html`
     <div class="login-gate__guest">
+      <p class="login-gate__guest-hint">${t("login.guest.reimbursementsPrompt")}</p>
       <button
         type="button"
-        class="btn login-gate__guest-button"
+        class="login-gate__guest-cta"
         data-testid="login-guest-reimbursements"
         @click=${() => {
           goToSignedOutView(state, "guest-reimbursements");
@@ -721,20 +763,10 @@ function renderGuestReimbursementLink(state: AppViewState) {
       >
         ${t("login.guest.reimbursements")}
       </button>
-      <div class="login-gate__guest-hint">${t("login.guest.reimbursementsHint")}</div>
-      <button
-        type="button"
-        class="session-link login-gate__public-back"
-        data-testid="login-continue-without-sign-in"
-        @click=${() => {
-          goToSignedOutView(state, "landing");
-        }}
-      >
-        ${t("login.public.continueWithoutSignIn")}
-      </button>
     </div>
   `;
 }
+
 
 export function renderLoginGate(state: AppViewState) {
   const basePath = normalizeBasePath(state.basePath ?? "");

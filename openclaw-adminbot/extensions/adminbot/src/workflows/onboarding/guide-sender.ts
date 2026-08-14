@@ -17,6 +17,7 @@ import type { DriveWorkspaceProvisioner } from "./drive-workspace.js";
 import { findOnboardingTemplate } from "./emails.js";
 import {
   composeOnboardingGuide,
+  configuredEnvValue,
   driveWorkspaceFolderName,
   firstNameOf,
   type AdminBotComposedGuide,
@@ -258,7 +259,7 @@ export function createAdminBotOnboardingSender(
       const channelId =
         request.slack_channel_id?.trim() ||
         options.defaultSlackChannelId?.trim() ||
-        env[ADMINBOT_ONBOARDING_CHANNEL_ENV]?.trim();
+        configuredEnvValue(env[ADMINBOT_ONBOARDING_CHANNEL_ENV]);
       if (!channelId) {
         return {
           ok: false,

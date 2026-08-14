@@ -48,25 +48,36 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotReimbursements: "anonymous",
   adminbotDeadlines: "anonymous",
 
-  // Members. The roster and the paper list are lab-internal but not governance surfaces, and chat
-  // is how members talk to AdminBot at all.
+  // Members. The roster is lab-internal but not a governance surface, and chat is how members talk
+  // to AdminBot at all.
   adminbotMembers: "member",
-  adminbotPapers: "member",
+  // Whose time is committed where is lab-internal planning, not governance: any member may read
+  // any member's schedule. Writing is separately restricted to your own record by the service.
+  adminbotTimeAvailability: "member",
   chat: "member",
-  // Home for anyone signed in. It only ever shows what the viewer's own role already reaches, so
-  // it needs no privilege of its own beyond having an account.
+  // Home for anyone signed in. Every card on it is gated on the viewer's own role, so the page
+  // never needs privilege beyond having an account.
   dashboard: "member",
   // Your own record and your own work. Both are scoped to the viewer, so neither needs privilege
   // beyond having an account.
   profile: "member",
   myWork: "member",
+  // Lab Sharing is the collaboration surface for every member -- ask for help, answer invites,
+  // browse open projects. No data on it requires operator privilege.
+  labSharing: "member",
 
   // Everything else is an operator or governance surface.
+  // Active Papers is the lab-wide pipeline across every author, not the viewer's own work -- that
+  // is My Work, which stays member-visible and is scoped to them.
+  adminbotPapers: "admin",
   adminbot: "admin",
   adminbotRegistrations: "admin",
   adminbotOnboarding: "admin",
   adminbotSettings: "admin",
   adminbotAnnouncements: "admin",
+  // Reads the lab calendar and spends model time on drafting, and every button on it files a
+  // governance-gated action. Admin, and the service re-checks both routes independently.
+  adminbotCalendar: "admin",
   activity: "admin",
   agents: "admin",
   aiAgents: "admin",

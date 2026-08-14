@@ -369,6 +369,35 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(Object.keys(fields)).not.toContain("email");
   });
 
+  // The schedule is edited on the Time Availability tab and stored as validated rows. This form
+  // used to send an `availability` string read from a control it does not have, so every save
+  // carried "" and the service refused the whole record with "member availability must be a list".
+  it("never sends a schedule field from either Lab Members editor", () => {
+    const selfSaved: Array<Record<string, unknown>> = [];
+    const selfContainer = renderToDiv(
+      baseProps({
+        mode: "general",
+        signedInMemberId: "pat",
+        onSaveOwnProfile: (_memberId, fields) => selfSaved.push(fields),
+      }),
+    );
+    selfContainer
+      .querySelector<HTMLFormElement>("#adminbot-self-edit-member-0 form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(selfSaved).toHaveLength(1);
+    expect(Object.keys(selfSaved[0]!)).not.toContain("availability");
+
+    const adminSaved: AdminBotLabMemberSaveInput[] = [];
+    const adminContainer = renderToDiv(
+      baseProps({ mode: "admin", onSaveMember: (input) => adminSaved.push(input) }),
+    );
+    adminContainer
+      .querySelector<HTMLFormElement>("#adminbot-edit-member-0 form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(adminSaved).toHaveLength(1);
+    expect(Object.keys(adminSaved[0]!)).not.toContain("availability");
+  });
+
   it("keeps the full admin edit path on every row, including other members", () => {
     const roster = [member({ id: "pat", name: "Pat Doe" }), member({ id: "sam", name: "Sam Roe" })];
     const container = renderToDiv(

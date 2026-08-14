@@ -240,6 +240,32 @@ describe("AdminBotSqliteStore", () => {
     second.close();
   });
 
+  it("persists pending Slack channel naming enforcement across restarts", async () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({
+      databasePath,
+      executor: { execute: async () => ({ handled: true }) },
+    });
+    await first.service.processSlackChannelNamingEvent({
+      event_type: "channel_created",
+      channel_id: "C123",
+      channel_name: "eu-post-training",
+      owner_user_id: "U123",
+    });
+    first.close();
+
+    const second = createAdminBotSqliteService({
+      databasePath,
+      executor: { execute: async () => ({ handled: true }) },
+    });
+    const sweep = unwrap(
+      await second.service.runSlackChannelNamingSweep("cron", "2099-01-01T00:00:00.000Z"),
+    );
+    expect(sweep.scanned).toBe(1);
+    expect(sweep.renamed).toBe(1);
+    second.close();
+  });
+
   // Checklists seeded before bullets gained nested points stored them as bare strings, which the
   // Control UI renders as empty bullets. Opening the database rewrites them from the definitions.
   it("rebuilds onboarding checklists stored under an older step shape, keeping acknowledgements", () => {
