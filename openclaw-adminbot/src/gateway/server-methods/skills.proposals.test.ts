@@ -56,7 +56,7 @@ vi.mock("../../skills/security/clawhub-verdicts.js", () => ({
   fetchOpenClawSkillSecurityVerdicts: vi.fn(),
 }));
 
-vi.mock("./chat.js", () => ({
+vi.mock("./chat/chat.js", () => ({
   chatHandlers: {
     "chat.send": mocks.chatSend,
   },

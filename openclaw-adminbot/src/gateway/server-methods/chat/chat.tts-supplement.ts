@@ -4,10 +4,10 @@ import {
   getReplyPayloadTtsSupplement,
   isReplyPayloadTtsSupplement,
 } from "openclaw/plugin-sdk/reply-payload";
-import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
-import { normalizeAgentId } from "../../routing/session-key.js";
-import { projectChatDisplayMessage } from "../chat-display-projection.js";
-import { formatForLog } from "../ws-log.js";
+import type { ReplyPayload } from "../../../auto-reply/reply-payload.js";
+import { normalizeAgentId } from "../../../routing/session-key.js";
+import { projectChatDisplayMessage } from "../../chat-display-projection.js";
+import { formatForLog } from "../../ws-log.js";
 /**
  * chat subhandler: TTS supplement and webchat media.
  *

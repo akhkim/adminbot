@@ -2,7 +2,7 @@
 // compaction history remains connected and transcript listeners receive updates.
 import fs from "node:fs";
 import { describe, expect, it } from "vitest";
-import { onSessionTranscriptUpdate } from "../../sessions/transcript-events.js";
+import { onSessionTranscriptUpdate } from "../../../sessions/transcript-events.js";
 import { appendInjectedAssistantMessageToTranscript } from "./chat-transcript-inject.js";
 import { createTranscriptFixtureSync } from "./chat.test-helpers.js";
 

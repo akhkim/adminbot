@@ -7,33 +7,33 @@
  * exists for: a managed inbound PDF ref is passed through rather than restaged.
  */
 import path from "node:path";
-import { resolveAgentWorkspaceDir } from "../../agents/agent-scope.js";
-import { ensureSandboxWorkspaceForSession } from "../../agents/sandbox/context.js";
+import { resolveAgentWorkspaceDir } from "../../../agents/agent-scope.js";
+import { ensureSandboxWorkspaceForSession } from "../../../agents/sandbox/context.js";
 import {
   type StageSandboxMediaResult,
   stageSandboxMedia,
-} from "../../auto-reply/reply/stage-sandbox-media.js";
-import type { MsgContext, TemplateContext } from "../../auto-reply/templating.js";
-import type { OpenClawConfig } from "../../config/types/openclaw.js";
-import { formatErrorMessage } from "../../infra/errors.js";
-import { parseInboundMediaUri } from "../../media/media-reference.js";
-import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
+} from "../../../auto-reply/reply/stage-sandbox-media.js";
+import type { MsgContext, TemplateContext } from "../../../auto-reply/templating.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import { formatErrorMessage } from "../../../infra/errors.js";
+import { parseInboundMediaUri } from "../../../media/media-reference.js";
+import type { PromptImageOrderEntry } from "../../../media/prompt-image-order.js";
 import {
   MEDIA_MAX_BYTES,
   type SavedMedia,
   deleteMediaBuffer,
   saveMediaBuffer,
-} from "../../media/store.js";
-import type { UserTurnInput } from "../../sessions/user-turn-transcript.js";
+} from "../../../media/store.js";
+import type { UserTurnInput } from "../../../sessions/user-turn-transcript.js";
 import {
   type ChatImageContent,
   MediaOffloadError,
   type OffloadedRef,
   UnsupportedAttachmentError,
-} from "../chat-attachments.js";
-import { formatForLog } from "../ws-log.js";
+} from "../../chat-attachments.js";
+import { formatForLog } from "../../ws-log.js";
 import { isAcpBridgeClient } from "./chat.send-origin.js";
-import type { GatewayRequestContext, GatewayRequestHandlerOptions } from "./types.js";
+import type { GatewayRequestContext, GatewayRequestHandlerOptions } from "../types.js";
 
 export async function persistChatSendImages(params: {
   images: ChatImageContent[];

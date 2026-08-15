@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { formatUncaughtError } from "../../infra/errors.js";
+import { formatUncaughtError } from "../../../infra/errors.js";
 /**
  * chat.send subhandler: active-send dedupe.
  *
@@ -9,11 +9,11 @@ import { formatUncaughtError } from "../../infra/errors.js";
  * the stored run id still matching — a late clear from a superseded send must not
  * release the current one.
  */
-import type { ChannelRouteRef } from "../../plugin-sdk/channel-route.js";
-import { scopeLegacySessionKeyToAgent } from "../../routing/session-key.js";
-import { INTERNAL_MESSAGE_CHANNEL, normalizeMessageChannel } from "../../shared/message-channel.js";
-import { formatForLog } from "../ws-log.js";
-import type { GatewayRequestContext } from "./types.js";
+import type { ChannelRouteRef } from "../../../plugin-sdk/channel-route.js";
+import { scopeLegacySessionKeyToAgent } from "../../../routing/session-key.js";
+import { INTERNAL_MESSAGE_CHANNEL, normalizeMessageChannel } from "../../../shared/message-channel.js";
+import { formatForLog } from "../../ws-log.js";
+import type { GatewayRequestContext } from "../types.js";
 
 export type ChatSendDeliveryEntry = {
   route?: ChannelRouteRef;

@@ -82,7 +82,7 @@ const loadChannelsHandlers = lazyHandlerModule(
   (module) => module.channelsHandlers,
 );
 const loadChatHandlers = lazyHandlerModule(
-  () => import("../server-methods/chat.js"),
+  () => import("../server-methods/chat/chat.js"),
   (module) => module.chatHandlers,
 );
 const loadCommandsHandlers = lazyHandlerModule(

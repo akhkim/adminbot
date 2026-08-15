@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks";
-import { isOperatorUiClient } from "../../shared/message-channel.js";
+import { isOperatorUiClient } from "../../../shared/message-channel.js";
 /**
  * chat.send subhandler: operator server-timing telemetry.
  *
@@ -8,7 +8,7 @@ import { isOperatorUiClient } from "../../shared/message-channel.js";
  * stall the send itself — every emission is `dropIfSlow` and addressed to the one
  * originating connection. Non-operator clients get nothing.
  */
-import type { GatewayClient, GatewayRequestContext } from "./types.js";
+import type { GatewayClient, GatewayRequestContext } from "../types.js";
 
 export type ChatSendAckServerTiming = {
   receivedToAckMs: number;

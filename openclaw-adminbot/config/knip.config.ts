@@ -26,6 +26,11 @@ const bundledPluginEntries = [
   "subagent-hooks-api.ts!",
   "src/{api,runtime-api,light-runtime-api,update-offset-runtime-api,channel-plugin-api,provider-plugin-api,doctor-contract,setup-surface,mcp-serve}.ts!",
   "src/subagent-hooks-api.ts!",
+  // `adminbot` composes its cross-plugin wiring in a launcher outside `src/`, and
+  // systemd starts it through `start-adminbot.mjs`. Without this entry the whole
+  // host graph reads as unused — `src/connectors/slack-admin.ts` is only reachable
+  // from here.
+  "host/main.ts!",
 ] as const;
 
 // Runtime dependencies the surviving bundled plugins resolve dynamically, so
@@ -111,6 +116,10 @@ const config = {
       ignoreDependencies: [
         "@openclaw/*",
         "file-type",
+        // `scripts/**` is in `ignoreFiles`, so Knip cannot see the only root
+        // consumers: `scripts/adminbot-dcs-form-submit.ts` drives the DCS form
+        // through it, and `scripts/ui.js` resolves it to gate the browser lane.
+        "playwright",
         "playwright-core",
         "sqlite-vec",
         "tree-sitter-bash",
@@ -175,7 +184,7 @@ const config = {
       // Bundled plugins often load their public surface via string specifiers in
       // `index.ts` contracts, so Knip needs these convention-based entry files.
       entry: bundledPluginEntries,
-      project: ["index.ts!", "src/**/*.{js,mjs,ts}!"],
+      project: ["index.ts!", "host/**/*.ts!", "src/**/*.{js,mjs,ts}!"],
       ignoreDependencies: bundledPluginIgnoredRuntimeDependencies,
     },
   },

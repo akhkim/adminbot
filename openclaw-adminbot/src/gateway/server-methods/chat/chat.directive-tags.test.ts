@@ -10,18 +10,18 @@ import {
   GATEWAY_CLIENT_CAPS,
   GATEWAY_CLIENT_MODES,
   GATEWAY_CLIENT_NAMES,
-} from "../../../packages/gateway-protocol/src/client-info.js";
-import { ErrorCodes } from "../../../packages/gateway-protocol/src/index.js";
-import { CHAT_SEND_SESSION_KEY_MAX_LENGTH } from "../../../packages/gateway-protocol/src/schema.js";
-import type { ModelCatalogEntry } from "../../agents/models/model-catalog.types.js";
-import { setReplyPayloadMetadata } from "../../auto-reply/reply-payload.js";
-import type { MsgContext } from "../../auto-reply/templating.js";
-import { appendSessionTranscriptMessage } from "../../config/sessions/transcript-append.js";
-import { resolveMirroredTranscriptText } from "../../config/sessions/transcript-mirror.js";
-import { getAgentRunContext } from "../../infra/agent-events.js";
-import { withEnvAsync } from "../../test-utils/env.js";
-import { readSessionTranscriptIndex } from "../sessions/session-transcript-index.fs.js";
-import type { GatewayRequestContext } from "./types.js";
+} from "../../../../packages/gateway-protocol/src/client-info.js";
+import { ErrorCodes } from "../../../../packages/gateway-protocol/src/index.js";
+import { CHAT_SEND_SESSION_KEY_MAX_LENGTH } from "../../../../packages/gateway-protocol/src/schema.js";
+import type { ModelCatalogEntry } from "../../../agents/models/model-catalog.types.js";
+import { setReplyPayloadMetadata } from "../../../auto-reply/reply-payload.js";
+import type { MsgContext } from "../../../auto-reply/templating.js";
+import { appendSessionTranscriptMessage } from "../../../config/sessions/transcript-append.js";
+import { resolveMirroredTranscriptText } from "../../../config/sessions/transcript-mirror.js";
+import { getAgentRunContext } from "../../../infra/agent-events.js";
+import { withEnvAsync } from "../../../test-utils/env.js";
+import { readSessionTranscriptIndex } from "../../sessions/session-transcript-index.fs.js";
+import type { GatewayRequestContext } from "../types.js";
 
 const mockState = vi.hoisted(() => ({
   config: {} as Record<string, unknown>,
@@ -138,9 +138,9 @@ example
 const TINY_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=";
 
-vi.mock("../sessions/session-utils.js", async () => {
-  const original = await vi.importActual<typeof import("../sessions/session-utils.js")>(
-    "../sessions/session-utils.js",
+vi.mock("../../sessions/session-utils.js", async () => {
+  const original = await vi.importActual<typeof import("../../sessions/session-utils.js")>(
+    "../../sessions/session-utils.js",
   );
   return {
     ...original,
@@ -173,7 +173,7 @@ vi.mock("../sessions/session-utils.js", async () => {
   };
 });
 
-vi.mock("../../auto-reply/dispatch.js", () => ({
+vi.mock("../../../auto-reply/dispatch.js", () => ({
   dispatchInboundMessage: vi.fn(
     async (params: {
       ctx: MsgContext;
@@ -301,10 +301,10 @@ vi.mock("../../auto-reply/dispatch.js", () => ({
   ),
 }));
 
-vi.mock("../../infra/outbound/session-binding-service.js", async () => {
+vi.mock("../../../infra/outbound/session-binding-service.js", async () => {
   const actual = await vi.importActual<
-    typeof import("../../infra/outbound/session-binding-service.js")
-  >("../../infra/outbound/session-binding-service.js");
+    typeof import("../../../infra/outbound/session-binding-service.js")
+  >("../../../infra/outbound/session-binding-service.js");
   return {
     ...actual,
     getSessionBindingService: () => ({
@@ -314,7 +314,7 @@ vi.mock("../../infra/outbound/session-binding-service.js", async () => {
   };
 });
 
-vi.mock("../../plugins/hooks/hook-runner-global.js", () => ({
+vi.mock("../../../plugins/hooks/hook-runner-global.js", () => ({
   getGlobalHookRunner: () => ({
     hasHooks: (hookName: string) =>
       (hookName === "before_agent_run" && mockState.hasBeforeAgentRunHooks) ||
@@ -339,7 +339,7 @@ vi.mock("../../plugins/hooks/hook-runner-global.js", () => ({
   }),
 }));
 
-vi.mock("../../sessions/transcript-events.js", () => ({
+vi.mock("../../../sessions/transcript-events.js", () => ({
   emitSessionTranscriptUpdate: vi.fn(
     (update: {
       sessionFile: string;
@@ -352,9 +352,9 @@ vi.mock("../../sessions/transcript-events.js", () => ({
   ),
 }));
 
-vi.mock("../../agents/sandbox/context.js", async () => {
-  const original = await vi.importActual<typeof import("../../agents/sandbox/context.js")>(
-    "../../agents/sandbox/context.js",
+vi.mock("../../../agents/sandbox/context.js", async () => {
+  const original = await vi.importActual<typeof import("../../../agents/sandbox/context.js")>(
+    "../../../agents/sandbox/context.js",
   );
   return {
     ...original,
@@ -362,7 +362,7 @@ vi.mock("../../agents/sandbox/context.js", async () => {
   };
 });
 
-vi.mock("../../auto-reply/reply/stage-sandbox-media.js", () => ({
+vi.mock("../../../auto-reply/reply/stage-sandbox-media.js", () => ({
   stageSandboxMedia: vi.fn(
     async (params: { ctx: { MediaPaths?: string[]; MediaPath?: string } }) => {
       if (mockState.stageSandboxMediaError) {
@@ -392,9 +392,9 @@ vi.mock("../../auto-reply/reply/stage-sandbox-media.js", () => ({
   ),
 }));
 
-vi.mock("../../media/store.js", async () => {
+vi.mock("../../../media/store.js", async () => {
   const original =
-    await vi.importActual<typeof import("../../media/store.js")>("../../media/store.js");
+    await vi.importActual<typeof import("../../../media/store.js")>("../../../media/store.js");
   return {
     ...original,
     deleteMediaBuffer: vi.fn(async (id: string, subdir?: string) => {

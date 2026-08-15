@@ -3,8 +3,8 @@
  */
 import { vi } from "vitest";
 import type { Mock } from "vitest";
-import type { ChatAbortMarker } from "../server/server-chat-state.js";
-import type { GatewayRequestHandler, RespondFn } from "./types.js";
+import type { ChatAbortMarker } from "../../server/server-chat-state.js";
+import type { GatewayRequestHandler, RespondFn } from "../types.js";
 
 export function createActiveRun(
   sessionKey: string,

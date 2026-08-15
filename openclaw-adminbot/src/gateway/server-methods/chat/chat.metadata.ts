@@ -3,13 +3,13 @@ import {
   errorShape,
   formatValidationErrors,
   validateChatMetadataParams,
-} from "../../../packages/gateway-protocol/src/index.js";
-import { listAgentIds, resolveDefaultAgentId } from "../../agents/agent-scope.js";
-import { modelCatalogBrowseRequiresFullDiscovery } from "../../agents/models/model-catalog-browse.js";
-import type { ModelCatalogEntry } from "../../agents/models/model-catalog.types.js";
-import type { OpenClawConfig } from "../../config/types/openclaw.js";
-import { formatErrorMessage } from "../../infra/errors.js";
-import { normalizeAgentId } from "../../routing/session-key.js";
+} from "../../../../packages/gateway-protocol/src/index.js";
+import { listAgentIds, resolveDefaultAgentId } from "../../../agents/agent-scope.js";
+import { modelCatalogBrowseRequiresFullDiscovery } from "../../../agents/models/model-catalog-browse.js";
+import type { ModelCatalogEntry } from "../../../agents/models/model-catalog.types.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import { formatErrorMessage } from "../../../infra/errors.js";
+import { normalizeAgentId } from "../../../routing/session-key.js";
 /**
  * chat.metadata subhandler.
  *
@@ -18,7 +18,7 @@ import { normalizeAgentId } from "../../routing/session-key.js";
  * discovery is slow, so a missed deadline degrades to no catalog rather than
  * delaying the dashboard's first paint.
  */
-import type { GatewayRequestContext, GatewayRequestHandlerOptions } from "./types.js";
+import type { GatewayRequestContext, GatewayRequestHandlerOptions } from "../types.js";
 
 export type ChatHistoryMethod = "chat.history" | "chat.startup";
 
@@ -78,8 +78,8 @@ export async function buildChatMetadataResult(params: {
   preloadedModelCatalog?: ModelCatalogEntry[];
 }): Promise<ChatMetadataResult> {
   const [{ buildModelsListResult }, { buildCommandsListResult }] = await Promise.all([
-    import("./models-list-result.js"),
-    import("./commands-list-result.js"),
+    import("../models-list-result.js"),
+    import("../commands-list-result.js"),
   ]);
   const [models, commands] = await Promise.all([
     buildModelsListResult({
@@ -113,7 +113,7 @@ export async function buildChatStartupMetadataResult(params: {
     return undefined;
   }
   try {
-    const { buildModelsListResult } = await import("./models-list-result.js");
+    const { buildModelsListResult } = await import("../models-list-result.js");
     return await buildModelsListResult({
       context: params.context,
       agentId: params.agentId,

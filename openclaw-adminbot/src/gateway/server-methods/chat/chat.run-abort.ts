@@ -1,13 +1,13 @@
 import { uniqueStrings } from "@openclaw/normalization-core/string-normalization";
-import { normalizeAgentId } from "../../routing/session-key.js";
-import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
+import { normalizeAgentId } from "../../../routing/session-key.js";
+import { parseAgentSessionKey } from "../../../sessions/session-key-utils.js";
 import {
   type ChatAbortControllerEntry,
   type ChatAbortOps,
   abortChatRunById,
-} from "../chat-abort.js";
-import { ADMIN_SCOPE } from "../method-scopes.js";
-import { setGatewayDedupeEntry } from "./agent-wait-dedupe.js";
+} from "../../chat-abort.js";
+import { ADMIN_SCOPE } from "../../method-scopes.js";
+import { setGatewayDedupeEntry } from "../agent-wait-dedupe.js";
 import { normalizeOptionalText, normalizeUnknownText } from "./chat.text-normalize.js";
 import { collectSessionAbortPartials, persistAbortedPartials } from "./chat.transcript.js";
 /**
@@ -18,7 +18,7 @@ import { collectSessionAbortPartials, persistAbortedPartials } from "./chat.tran
  * params, and pre-registered agent runs (which have no controller yet) are
  * authorized and marked aborted through the dedupe store instead.
  */
-import type { GatewayRequestContext, GatewayRequestHandlerOptions } from "./types.js";
+import type { GatewayRequestContext, GatewayRequestHandlerOptions } from "../types.js";
 
 export type AbortOrigin = "rpc" | "stop-command";
 

@@ -1,12 +1,12 @@
-import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
-import { normalizeReplyPayloadsForDelivery } from "../../infra/outbound/payloads.js";
-import { stripInlineDirectiveTagsForDisplay } from "../../shared/directive-tags.js";
-import { stripEnvelopeFromMessage } from "../chat-sanitize.js";
+import type { ReplyPayload } from "../../../auto-reply/reply-payload.js";
+import { normalizeReplyPayloadsForDelivery } from "../../../infra/outbound/payloads.js";
+import { stripInlineDirectiveTagsForDisplay } from "../../../shared/directive-tags.js";
+import { stripEnvelopeFromMessage } from "../../chat-sanitize.js";
 import {
   cleanupManagedOutgoingImageRecords,
   createManagedOutgoingImageBlocks,
-} from "../managed-image-attachments.js";
-import { formatForLog } from "../ws-log.js";
+} from "../../managed-image-attachments.js";
+import { formatForLog } from "../../ws-log.js";
 import { buildWebchatAudioContentBlocksFromReplyPayloads } from "./chat-webchat-media.js";
 /**
  * chat subhandler: assistant display content.
@@ -18,7 +18,7 @@ import { buildWebchatAudioContentBlocksFromReplyPayloads } from "./chat-webchat-
  * debounced through a module-level in-flight map so concurrent chat.history
  * reads cannot delete the same record twice.
  */
-import type { GatewayRequestContext } from "./types.js";
+import type { GatewayRequestContext } from "../types.js";
 
 export const MANAGED_OUTGOING_IMAGE_PATH_PREFIX = "/api/chat/media/outgoing/";
 

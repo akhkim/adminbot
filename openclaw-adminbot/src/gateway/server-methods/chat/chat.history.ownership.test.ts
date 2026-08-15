@@ -3,13 +3,13 @@
  * member's chat transcript is never readable from another member's connection.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { GatewayClient, GatewayRequestContext, RespondFn } from "./types.js";
+import type { GatewayClient, GatewayRequestContext, RespondFn } from "../types.js";
 
 const loadSessionEntryMock = vi.fn();
 
-vi.mock("../sessions/session-utils.js", async () => {
-  const actual = await vi.importActual<typeof import("../sessions/session-utils.js")>(
-    "../sessions/session-utils.js",
+vi.mock("../../sessions/session-utils.js", async () => {
+  const actual = await vi.importActual<typeof import("../../sessions/session-utils.js")>(
+    "../../sessions/session-utils.js",
   );
   return {
     ...actual,

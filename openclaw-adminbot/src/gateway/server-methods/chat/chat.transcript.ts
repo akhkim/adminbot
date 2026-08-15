@@ -11,27 +11,27 @@ import fs from "node:fs";
 import path from "node:path";
 import { isAudioFileName } from "@openclaw/media-core/mime";
 import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-payload";
-import { type ReplyPayload, getReplyPayloadMetadata } from "../../auto-reply/reply-payload.js";
-import { resolveSessionFilePath, updateSessionStoreEntry } from "../../config/sessions.js";
-import { resolveMirroredTranscriptText } from "../../config/sessions/transcript-mirror.js";
-import { CURRENT_SESSION_VERSION } from "../../config/sessions/version.js";
-import type { OpenClawConfig } from "../../config/types/openclaw.js";
+import { type ReplyPayload, getReplyPayloadMetadata } from "../../../auto-reply/reply-payload.js";
+import { resolveSessionFilePath, updateSessionStoreEntry } from "../../../config/sessions.js";
+import { resolveMirroredTranscriptText } from "../../../config/sessions/transcript-mirror.js";
+import { CURRENT_SESSION_VERSION } from "../../../config/sessions/version.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import {
   parseInlineDirectives,
   sanitizeReplyDirectiveId,
   stripInlineDirectiveTagsForDelivery,
-} from "../../shared/directive-tags.js";
-import type { ChatAbortControllerEntry } from "../chat-abort.js";
-import { isSuppressedControlReplyText } from "../control/control-reply-text.js";
-import { readSessionTranscriptIndex } from "../sessions/session-transcript-index.fs.js";
-import { loadSessionEntry } from "../sessions/session-utils.js";
+} from "../../../shared/directive-tags.js";
+import type { ChatAbortControllerEntry } from "../../chat-abort.js";
+import { isSuppressedControlReplyText } from "../../control/control-reply-text.js";
+import { readSessionTranscriptIndex } from "../../sessions/session-transcript-index.fs.js";
+import { loadSessionEntry } from "../../sessions/session-utils.js";
 import {
   type GatewayInjectedTtsSupplementMarker,
   appendInjectedAssistantMessageToTranscript,
 } from "./chat-transcript-inject.js";
 import type { AbortOrigin } from "./chat.run-abort.js";
 import { isMediaBearingPayload } from "./chat.tts-supplement.js";
-import type { GatewayRequestContext } from "./types.js";
+import type { GatewayRequestContext } from "../types.js";
 
 export type TranscriptAppendResult = {
   ok: boolean;

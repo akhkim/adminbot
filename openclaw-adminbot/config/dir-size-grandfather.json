@@ -39,10 +39,6 @@
       "max": 95,
       "reason": "Accepted per docs/adr/0005-shared-is-the-helper-home.md: the src/utils fold grew it past the target, with topical sub-directories as the relief valve."
     },
-    "src/gateway/server-methods": {
-      "max": 95,
-      "reason": "Remaining sub-grouping work; one file per JSON-RPC method, so it grows with the protocol."
-    },
     "src/auto-reply/reply": {
       "max": 91,
       "reason": "Remaining sub-grouping work."

@@ -1,20 +1,20 @@
 import {
   GATEWAY_CLIENT_MODES,
   GATEWAY_CLIENT_NAMES,
-} from "../../../packages/gateway-protocol/src/client-info.js";
-import { CHAT_SEND_SESSION_KEY_MAX_LENGTH } from "../../../packages/gateway-protocol/src/schema.js";
-import { getSessionBindingService } from "../../infra/outbound/session-binding-service.js";
-import { isPluginOwnedSessionBindingRecord } from "../../plugins/conversation-binding.js";
-import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
-import { deliveryContextFromSession } from "../../shared/delivery-context.shared.js";
+} from "../../../../packages/gateway-protocol/src/client-info.js";
+import { CHAT_SEND_SESSION_KEY_MAX_LENGTH } from "../../../../packages/gateway-protocol/src/schema.js";
+import { getSessionBindingService } from "../../../infra/outbound/session-binding-service.js";
+import { isPluginOwnedSessionBindingRecord } from "../../../plugins/conversation-binding.js";
+import { parseAgentSessionKey } from "../../../sessions/session-key-utils.js";
+import { deliveryContextFromSession } from "../../../shared/delivery-context.shared.js";
 import {
   INTERNAL_MESSAGE_CHANNEL,
   isGatewayCliClient,
   isWebchatClient,
   normalizeMessageChannel,
-} from "../../shared/message-channel.js";
-import { sanitizeChatSendMessageInput } from "../chat-input-sanitize.js";
-import { ADMIN_SCOPE } from "../method-scopes.js";
+} from "../../../shared/message-channel.js";
+import { sanitizeChatSendMessageInput } from "../../chat-input-sanitize.js";
+import { ADMIN_SCOPE } from "../../method-scopes.js";
 import type { ChatSendDeliveryEntry } from "./chat.send-dedupe.js";
 import { normalizeOptionalText } from "./chat.text-normalize.js";
 /**
@@ -26,7 +26,7 @@ import { normalizeOptionalText } from "./chat.text-normalize.js";
  * stricter still, so the inheritance rules are expressed as explicit scope/shape
  * sets rather than as a channel lookup.
  */
-import type { GatewayRequestHandlerOptions } from "./types.js";
+import type { GatewayRequestHandlerOptions } from "../types.js";
 
 export const CHANNEL_AGNOSTIC_SESSION_SCOPES = new Set([
   "main",

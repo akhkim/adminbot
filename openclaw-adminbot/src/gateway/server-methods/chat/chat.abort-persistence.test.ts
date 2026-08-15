@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { CURRENT_SESSION_VERSION } from "openclaw/plugin-sdk/agent-sessions";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { onAgentEvent, resetAgentEventsForTest } from "../../infra/agent-events.js";
+import { onAgentEvent, resetAgentEventsForTest } from "../../../infra/agent-events.js";
 import {
   createActiveRun,
   createChatAbortContext,
@@ -26,9 +26,9 @@ const sessionEntryState = vi.hoisted(() => ({
   loadCalls: [] as Array<{ sessionKey: string; opts?: { agentId?: string } }>,
 }));
 
-vi.mock("../sessions/session-utils.js", async () => {
-  const original = await vi.importActual<typeof import("../sessions/session-utils.js")>(
-    "../sessions/session-utils.js",
+vi.mock("../../sessions/session-utils.js", async () => {
+  const original = await vi.importActual<typeof import("../../sessions/session-utils.js")>(
+    "../../sessions/session-utils.js",
   );
   return {
     ...original,

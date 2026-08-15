@@ -262,7 +262,7 @@ describe("gateway server chat", () => {
           debug: vi.fn(),
         },
       } as unknown as GatewayRequestContext;
-      const { chatHandlers } = await import("../server-methods/chat.js");
+      const { chatHandlers } = await import("../server-methods/chat/chat.js");
 
       await chatHandlers["chat.history"]({
         req: {
@@ -515,7 +515,7 @@ describe("gateway server chat", () => {
         chatRunBuffers: new Map(),
         getRuntimeConfig: () => ({}),
       } as unknown as GatewayRequestContext;
-      const { chatHandlers } = await import("../server-methods/chat.js");
+      const { chatHandlers } = await import("../server-methods/chat/chat.js");
 
       await chatHandlers["chat.startup"]({
         req: {
@@ -665,7 +665,7 @@ describe("gateway server chat", () => {
         chatRunBuffers: new Map(),
         getRuntimeConfig: () => config,
       } as unknown as GatewayRequestContext;
-      const { chatHandlers } = await import("../server-methods/chat.js");
+      const { chatHandlers } = await import("../server-methods/chat/chat.js");
 
       await chatHandlers["chat.startup"]({
         req: {
@@ -850,7 +850,7 @@ describe("gateway server chat", () => {
           },
         ],
       };
-      const { chatHandlers } = await import("../server-methods/chat.js");
+      const { chatHandlers } = await import("../server-methods/chat/chat.js");
       const callSend = (id: string) =>
         chatHandlers["chat.send"]({
           req: { type: "req", id, method: "chat.send", params },
@@ -992,7 +992,7 @@ describe("gateway server chat", () => {
           scopes: ["operator.write"],
         },
       } as never;
-      const { chatHandlers } = await import("../server-methods/chat.js");
+      const { chatHandlers } = await import("../server-methods/chat/chat.js");
       const first = Promise.resolve(
         chatHandlers["chat.send"]({
           req: { type: "req", id: "first", method: "chat.send", params },
@@ -1199,7 +1199,7 @@ describe("gateway server chat", () => {
           };
         });
 
-        const { chatHandlers } = await import("../server-methods/chat.js");
+        const { chatHandlers } = await import("../server-methods/chat/chat.js");
         const responses: Array<{ ok: boolean; payload?: unknown; error?: unknown }> = [];
         await chatHandlers["chat.send"]({
           req: {
@@ -1302,7 +1302,7 @@ describe("gateway server chat", () => {
       } as unknown as GatewayRequestContext;
       dispatchInboundMessageMock.mockImplementation(async () => dispatchRelease.promise);
 
-      const { chatHandlers } = await import("../server-methods/chat.js");
+      const { chatHandlers } = await import("../server-methods/chat/chat.js");
       const callSend = (id: string, idempotencyKey: string, systemProvenanceReceipt?: string) =>
         chatHandlers["chat.send"]({
           req: {
@@ -1487,7 +1487,7 @@ describe("gateway server chat", () => {
       } as unknown as GatewayRequestContext;
       dispatchInboundMessageMock.mockResolvedValue({});
 
-      const { chatHandlers } = await import("../server-methods/chat.js");
+      const { chatHandlers } = await import("../server-methods/chat/chat.js");
       await chatHandlers["chat.send"]({
         req: {
           type: "req",
@@ -1602,7 +1602,7 @@ describe("gateway server chat", () => {
       } as unknown as GatewayRequestContext;
       dispatchInboundMessageMock.mockResolvedValue(undefined);
 
-      const { chatHandlers } = await import("../server-methods/chat.js");
+      const { chatHandlers } = await import("../server-methods/chat/chat.js");
       const callSend = (id: string, message: string, idempotencyKey: string) =>
         chatHandlers["chat.send"]({
           req: {
@@ -1747,7 +1747,7 @@ describe("gateway server chat", () => {
         return {};
       });
 
-      const { chatHandlers } = await import("../server-methods/chat.js");
+      const { chatHandlers } = await import("../server-methods/chat/chat.js");
       await chatHandlers["chat.send"]({
         req: {
           type: "req",
@@ -1904,7 +1904,7 @@ describe("gateway server chat", () => {
         return {};
       });
 
-      const { chatHandlers } = await import("../server-methods/chat.js");
+      const { chatHandlers } = await import("../server-methods/chat/chat.js");
       await chatHandlers["chat.send"]({
         req: {
           type: "req",

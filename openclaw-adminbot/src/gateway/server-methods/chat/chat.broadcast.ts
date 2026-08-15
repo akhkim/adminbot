@@ -1,7 +1,7 @@
-import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
-import type { ReplyPayload } from "../../auto-reply/reply-payload.js";
-import type { OpenClawConfig } from "../../config/types/openclaw.js";
-import { projectChatDisplayMessage } from "../chat-display-projection.js";
+import { resolveDefaultAgentId } from "../../../agents/agent-scope.js";
+import type { ReplyPayload } from "../../../auto-reply/reply-payload.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import { projectChatDisplayMessage } from "../../chat-display-projection.js";
 import type { SideResultPayload } from "./chat.transcript.js";
 /**
  * chat subhandler: streaming broadcast.
@@ -11,7 +11,7 @@ import type { SideResultPayload } from "./chat.transcript.js";
  * by arrival, and global-aware payloads fan out to every delivery key the session
  * resolves to so a client watching the global view still sees the frame.
  */
-import type { GatewayRequestContext } from "./types.js";
+import type { GatewayRequestContext } from "../types.js";
 
 export function nextChatSeq(context: { agentRunSeq: Map<string, number> }, runId: string) {
   const next = (context.agentRunSeq.get(runId) ?? 0) + 1;

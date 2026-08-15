@@ -1,4 +1,4 @@
-import { listAgentIds } from "../../agents/agent-scope.js";
+import { listAgentIds } from "../../../agents/agent-scope.js";
 /**
  * chat subhandler: agent selection.
  *
@@ -8,10 +8,10 @@ import { listAgentIds } from "../../agents/agent-scope.js";
  * request rather than silently fall back to the default and write the turn into
  * the wrong agent's transcript.
  */
-import type { OpenClawConfig } from "../../config/types/openclaw.js";
-import { normalizeAgentId } from "../../routing/session-key.js";
-import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
-import { resolveSessionStoreKey } from "../sessions/session-utils.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import { normalizeAgentId } from "../../../routing/session-key.js";
+import { parseAgentSessionKey } from "../../../sessions/session-key-utils.js";
+import { resolveSessionStoreKey } from "../../sessions/session-utils.js";
 import { normalizeOptionalText } from "./chat.text-normalize.js";
 
 export function validateChatSelectedAgent(params: {

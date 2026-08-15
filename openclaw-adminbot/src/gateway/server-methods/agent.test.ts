@@ -27,7 +27,7 @@ import {
 import { withTempDir } from "../../test-helpers/temp-dir.js";
 import { setGatewayDedupeEntry } from "./agent-wait-dedupe.js";
 import { agentHandlers } from "./agent.js";
-import { chatHandlers } from "./chat.js";
+import { chatHandlers } from "./chat/chat.js";
 import { expectSubagentFollowupReactivation } from "./subagent-followup.test-helpers.js";
 import type { GatewayRequestContext } from "./types.js";
 

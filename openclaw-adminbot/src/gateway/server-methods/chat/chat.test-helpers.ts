@@ -4,7 +4,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { CURRENT_SESSION_VERSION } from "../../config/sessions/version.js";
+import { CURRENT_SESSION_VERSION } from "../../../config/sessions/version.js";
 
 /** Writes a minimal current-version transcript file and returns its temp location. */
 export function createTranscriptFixtureSync(params: {

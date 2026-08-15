@@ -1,9 +1,9 @@
 // Chat transcript injection appends gateway-authored assistant rows while
 // preserving agent-session parent links and transcript update notifications.
-import type { SessionManager } from "../../agents/sessions/session-manager.js";
-import { persistSessionTranscriptTurn } from "../../config/sessions/session-accessor.js";
-import type { OpenClawConfig } from "../../config/types/openclaw.js";
-import { formatErrorMessage } from "../../infra/errors.js";
+import type { SessionManager } from "../../../agents/sessions/session-manager.js";
+import { persistSessionTranscriptTurn } from "../../../config/sessions/session-accessor.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import { formatErrorMessage } from "../../../infra/errors.js";
 
 type AppendMessageArg = Parameters<SessionManager["appendMessage"]>[0];
 

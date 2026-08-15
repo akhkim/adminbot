@@ -4,31 +4,31 @@ import {
   errorShape,
   formatValidationErrors,
   validateChatHistoryParams,
-} from "../../../packages/gateway-protocol/src/index.js";
-import { resolveDefaultAgentId, resolveSessionAgentId } from "../../agents/agent-scope.js";
-import { type ReplyPayload, getReplyPayloadMetadata } from "../../auto-reply/reply-payload.js";
-import type { OpenClawConfig } from "../../config/types/openclaw.js";
-import { measureDiagnosticsTimelineSpan } from "../../infra/diagnostics/diagnostics-timeline.js";
-import { jsonUtf8Bytes } from "../../infra/json-utf8-bytes.js";
-import { logLargePayload } from "../../logging/diagnostic-payload.js";
+} from "../../../../packages/gateway-protocol/src/index.js";
+import { resolveDefaultAgentId, resolveSessionAgentId } from "../../../agents/agent-scope.js";
+import { type ReplyPayload, getReplyPayloadMetadata } from "../../../auto-reply/reply-payload.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
+import { measureDiagnosticsTimelineSpan } from "../../../infra/diagnostics/diagnostics-timeline.js";
+import { jsonUtf8Bytes } from "../../../infra/json-utf8-bytes.js";
+import { logLargePayload } from "../../../logging/diagnostic-payload.js";
 import {
   boundInFlightRunSnapshotForChatHistory,
   resolveInFlightRunSnapshot,
-} from "../chat-abort.js";
+} from "../../chat-abort.js";
 import {
   augmentChatHistoryWithCanvasBlocks,
   dropPreSessionStartAnnouncePairs,
   projectRecentChatDisplayMessages,
   resolveEffectiveChatHistoryMaxChars,
-} from "../chat-display-projection.js";
-import { augmentChatHistoryWithCliSessionImports } from "../client/cli-session-history.js";
-import { getMaxChatHistoryMessagesBytes } from "../server/server-constants.js";
-import { resolveSessionHistoryTailReadOptions } from "../sessions/session-history-state.js";
+} from "../../chat-display-projection.js";
+import { augmentChatHistoryWithCliSessionImports } from "../../client/cli-session-history.js";
+import { getMaxChatHistoryMessagesBytes } from "../../server/server-constants.js";
+import { resolveSessionHistoryTailReadOptions } from "../../sessions/session-history-state.js";
 import {
   capArrayByJsonBytes,
   readRecentSessionMessagesAsync,
   readSessionMessagesAsync,
-} from "../sessions/session-transcript-readers.js";
+} from "../../sessions/session-transcript-readers.js";
 import {
   buildGatewaySessionInfo,
   getSessionDefaults,
@@ -36,7 +36,7 @@ import {
   loadSessionEntry,
   resolveSessionModelRef,
   resolveSessionStoreKey,
-} from "../sessions/session-utils.js";
+} from "../../sessions/session-utils.js";
 import { resolveRequestedChatAgentId, validateChatSelectedAgent } from "./chat.agent-selection.js";
 import { scheduleChatHistoryManagedImageCleanup } from "./chat.assistant-display.js";
 import { type ChatHistoryMethod, buildChatStartupMetadataResult } from "./chat.metadata.js";
@@ -44,9 +44,9 @@ import { normalizeOptionalText } from "./chat.text-normalize.js";
 import {
   loadOptionalServerMethodModelCatalog,
   startOptionalServerMethodModelCatalogLoad,
-} from "./optional-model-catalog.js";
-import { hasTrackedActiveSessionRun } from "./session-active-runs.js";
-import { canRequesterAccessSession, resolveSessionAccessRequester } from "./session-ownership.js";
+} from "../optional-model-catalog.js";
+import { hasTrackedActiveSessionRun } from "../session-active-runs.js";
+import { canRequesterAccessSession, resolveSessionAccessRequester } from "../session-ownership.js";
 /**
  * chat.history subhandler.
  *
@@ -55,7 +55,7 @@ import { canRequesterAccessSession, resolveSessionAccessRequester } from "./sess
  * if the budget still cannot be met the response carries an explicit unavailable
  * sentinel — a blank transcript would read as "no history" and is never returned.
  */
-import type { GatewayRequestHandlerOptions } from "./types.js";
+import type { GatewayRequestHandlerOptions } from "../types.js";
 
 export const CHAT_HISTORY_MAX_SINGLE_MESSAGE_BYTES = 128 * 1024;
 export const CHAT_HISTORY_OVERSIZED_PLACEHOLDER = "[chat.history omitted: message too large]";

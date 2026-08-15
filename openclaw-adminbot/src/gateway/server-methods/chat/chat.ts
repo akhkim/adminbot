@@ -8,7 +8,7 @@ import { resolveSendableOutboundReplyParts } from "openclaw/plugin-sdk/reply-pay
 import {
   GATEWAY_CLIENT_CAPS,
   hasGatewayClientCap,
-} from "../../../packages/gateway-protocol/src/client-info.js";
+} from "../../../../packages/gateway-protocol/src/client-info.js";
 import {
   ErrorCodes,
   errorShape,
@@ -17,88 +17,88 @@ import {
   validateChatInjectParams,
   validateChatMessageGetParams,
   validateChatSendParams,
-} from "../../../packages/gateway-protocol/src/index.js";
-import { resolveDefaultAgentId, resolveSessionAgentId } from "../../agents/agent-scope.js";
-import { resolveProviderIdForAuth } from "../../agents/auth/provider-auth-aliases.js";
-import { rewriteTranscriptEntriesInRuntimeTranscript } from "../../agents/embedded-agent-runner/transcript-rewrite.js";
-import { runAgentHarnessBeforeMessageWriteHook } from "../../agents/harness/hook-helpers.js";
-import type { AgentMessage } from "../../agents/runtime/index.js";
-import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
-import { dispatchInboundMessage } from "../../auto-reply/dispatch.js";
+} from "../../../../packages/gateway-protocol/src/index.js";
+import { resolveDefaultAgentId, resolveSessionAgentId } from "../../../agents/agent-scope.js";
+import { resolveProviderIdForAuth } from "../../../agents/auth/provider-auth-aliases.js";
+import { rewriteTranscriptEntriesInRuntimeTranscript } from "../../../agents/embedded-agent-runner/transcript-rewrite.js";
+import { runAgentHarnessBeforeMessageWriteHook } from "../../../agents/harness/hook-helpers.js";
+import type { AgentMessage } from "../../../agents/runtime/index.js";
+import { resolveAgentTimeoutMs } from "../../../agents/timeout.js";
+import { dispatchInboundMessage } from "../../../auto-reply/dispatch.js";
 import {
   getReplyPayloadMetadata,
   isReplyPayloadStatusNotice,
   type ReplyPayload,
-} from "../../auto-reply/reply-payload.js";
-import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.js";
-import type { MsgContext } from "../../auto-reply/templating.js";
-import type { OpenClawConfig } from "../../config/types/openclaw.js";
+} from "../../../auto-reply/reply-payload.js";
+import { createReplyDispatcher } from "../../../auto-reply/reply/reply-dispatcher.js";
+import type { MsgContext } from "../../../auto-reply/templating.js";
+import type { OpenClawConfig } from "../../../config/types/openclaw.js";
 import {
   claimAgentRunContext,
   clearAgentRunContext,
   getAgentEventLifecycleGeneration,
-} from "../../infra/agent-events.js";
+} from "../../../infra/agent-events.js";
 import {
   emitDiagnosticsTimelineEvent,
   measureDiagnosticsTimelineSpan,
   measureDiagnosticsTimelineSpanSync,
-} from "../../infra/diagnostics/diagnostics-timeline.js";
+} from "../../../infra/diagnostics/diagnostics-timeline.js";
 import {
   appendLocalMediaParentRoots,
   getAgentScopedMediaLocalRoots,
-} from "../../media/local-roots.js";
-import type { PromptImageOrderEntry } from "../../media/prompt-image-order.js";
-import type { SavedMedia } from "../../media/store.js";
-import { createChannelMessageReplyPipeline } from "../../plugin-sdk/channel-outbound.js";
-import { normalizeAgentId } from "../../routing/session-key.js";
-import { normalizeInputProvenance, type InputProvenance } from "../../sessions/input-provenance.js";
-import { resolveSendPolicy } from "../../sessions/send-policy.js";
-import { parseAgentSessionKey } from "../../sessions/session-key-utils.js";
+} from "../../../media/local-roots.js";
+import type { PromptImageOrderEntry } from "../../../media/prompt-image-order.js";
+import type { SavedMedia } from "../../../media/store.js";
+import { createChannelMessageReplyPipeline } from "../../../plugin-sdk/channel-outbound.js";
+import { normalizeAgentId } from "../../../routing/session-key.js";
+import { normalizeInputProvenance, type InputProvenance } from "../../../sessions/input-provenance.js";
+import { resolveSendPolicy } from "../../../sessions/send-policy.js";
+import { parseAgentSessionKey } from "../../../sessions/session-key-utils.js";
 import {
   createUserTurnTranscriptRecorder,
   type UserTurnInput,
   type UserTurnTranscriptRecorder,
-} from "../../sessions/user-turn-transcript.js";
+} from "../../../sessions/user-turn-transcript.js";
 import {
   parseInlineDirectives,
   stripInlineDirectiveTagsForDisplay,
   sanitizeReplyDirectiveId,
-} from "../../shared/directive-tags.js";
-import { INTERNAL_MESSAGE_CHANNEL, isOperatorUiClient } from "../../shared/message-channel.js";
+} from "../../../shared/directive-tags.js";
+import { INTERNAL_MESSAGE_CHANNEL, isOperatorUiClient } from "../../../shared/message-channel.js";
 import {
   abortChatRunById,
   isChatStopCommandText,
   registerChatAbortController,
   updateChatRunProvider,
-} from "../chat-abort.js";
+} from "../../chat-abort.js";
 import {
   type ChatImageContent,
   MediaOffloadError,
   type OffloadedRef,
   parseMessageWithAttachments,
   resolveChatAttachmentMaxBytes,
-} from "../chat-attachments.js";
+} from "../../chat-attachments.js";
 import {
   augmentChatHistoryWithCanvasBlocks,
   projectChatDisplayMessage,
   resolveEffectiveChatHistoryMaxChars,
-} from "../chat-display-projection.js";
-import { sanitizeChatSendMessageInput } from "../chat-input-sanitize.js";
-import { attachManagedOutgoingImagesToMessage } from "../managed-image-attachments.js";
-import { chatAbortMarkerTimestampMs, type ChatRunTiming } from "../server/server-chat-state.js";
-import { MAX_PAYLOAD_BYTES } from "../server/server-constants.js";
-import { readSessionTranscriptIndex } from "../sessions/session-transcript-index.fs.js";
-import { readSessionMessageByIdAsync } from "../sessions/session-transcript-readers.js";
+} from "../../chat-display-projection.js";
+import { sanitizeChatSendMessageInput } from "../../chat-input-sanitize.js";
+import { attachManagedOutgoingImagesToMessage } from "../../managed-image-attachments.js";
+import { chatAbortMarkerTimestampMs, type ChatRunTiming } from "../../server/server-chat-state.js";
+import { MAX_PAYLOAD_BYTES } from "../../server/server-constants.js";
+import { readSessionTranscriptIndex } from "../../sessions/session-transcript-index.fs.js";
+import { readSessionMessageByIdAsync } from "../../sessions/session-transcript-readers.js";
 import {
   loadSessionEntry,
   resolveGatewayModelSupportsImages,
   resolveDeletedAgentIdFromSessionKey,
   resolveSessionModelRef,
   resolveSessionStoreKey,
-} from "../sessions/session-utils.js";
-import { formatForLog } from "../ws-log.js";
-import { setGatewayDedupeEntry } from "./agent-wait-dedupe.js";
-import { normalizeRpcAttachmentsToChatAttachments } from "./attachment-normalize.js";
+} from "../../sessions/session-utils.js";
+import { formatForLog } from "../../ws-log.js";
+import { setGatewayDedupeEntry } from "../agent-wait-dedupe.js";
+import { normalizeRpcAttachmentsToChatAttachments } from "../attachment-normalize.js";
 import { normalizeWebchatReplyMediaPathsForDisplay } from "./chat-reply-media.js";
 import type { GatewayInjectedTtsSupplementMarker } from "./chat-transcript-inject.js";
 import { resolveRequestedChatAgentId, validateChatSelectedAgent } from "./chat.agent-selection.js";
@@ -188,8 +188,8 @@ import {
   resolveWebchatPromptCacheKey,
   stripVisibleTextFromTtsSupplement,
 } from "./chat.tts-supplement.js";
-import { emitSessionsChanged } from "./session-change-event.js";
-import type { GatewayRequestHandlers } from "./types.js";
+import { emitSessionsChanged } from "../session-change-event.js";
+import type { GatewayRequestHandlers } from "../types.js";
 
 export {
   augmentChatHistoryWithCanvasBlocks,
@@ -197,8 +197,8 @@ export {
   dropPreSessionStartAnnouncePairs,
   resolveEffectiveChatHistoryMaxChars,
   sanitizeChatHistoryMessages,
-} from "../chat-display-projection.js";
-export { sanitizeChatSendMessageInput } from "../chat-input-sanitize.js";
+} from "../../chat-display-projection.js";
+export { sanitizeChatSendMessageInput } from "../../chat-input-sanitize.js";
 export {
   buildOversizedHistoryPlaceholder,
   CHAT_HISTORY_MAX_SINGLE_MESSAGE_BYTES,
