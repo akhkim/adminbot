@@ -67,10 +67,12 @@ lane, which specific tests fail, and why. This is the summary.
 - UI suite: 14 failures — 10 in `views/chat.test.ts`, 2 in `i18n/translate`, 2 in
   `navigation.browser`
 - `test/scripts`: 20 files / 113 tests, 6 failures — 1 in `adminbot-reimbursement-from-email`, 2 in
-  `aurora-qwen35-setup`, 3 in `aurora-runtime-bootstrap`. One spec still fails at import before
-  collecting: `adminbot-email-automation`, which reaches `extensions/slack` and dies on the
-  `openclaw/plugin-sdk/media-runtime` subpath — the export map declares it but no source or built
-  module exists.
+  `aurora-qwen35-setup`, 3 in `aurora-runtime-bootstrap`. `adminbot-email-automation` used to die
+  at import on the `openclaw/plugin-sdk/media-runtime` subpath; that subpath is real again, so the
+  spec collects and one assertion failure remains.
+- `src/plugins/contracts` + `src/plugins/install`: 16 files / 53 failures, nearly all of them
+  asserting against the ~130 plugins the deep clean removed (discord, matrix, telegram,
+  migrate-hermes) or against provider registries those plugins fed.
 - `lint`: 270 errors / 0 warnings (extensions 98, ui 101, scripts 52, src 18, packages 1). The
   `max-lines` rule inside that lane contributes 0 of them: the threshold is 2,200, tests are
   exempt, and the 39 source files over it carry a grandfather header naming
@@ -79,13 +81,14 @@ lane, which specific tests fail, and why. This is the summary.
 - `tsgo:core:test`: 272 errors in 54 files; `tsgo:extensions:test`: 21 errors in 8 files
 - `ui:i18n:check` is red
 - Green and expected to stay green: `check:import-cycles` (0 cycles), `check:layering` (0
-  failures, 14 warnings), `check:dir-size` (0 failures), `deadcode:unused-files`
+  failures, 14 warnings), `check:dir-size` (0 failures, 0 warnings), `deadcode:unused-files`,
+  `deadcode:dependencies`, `pnpm build`
 
 `pnpm check` and `pnpm check:changed` exit 0: lanes with a known-red baseline (format, lint,
 `tsgo:core`, the test-type lanes) warn and let the run continue, and only a clean lane can fail
 the gate. Neither runner diffs against the numbers above — compare by hand.
 
-The AdminBot suite itself (`pnpm test extensions/adminbot`) is fully green — 29 files, 392 tests.
+The AdminBot suite itself (`pnpm test extensions/adminbot`) is fully green — 38 files, 570 tests.
 Keep it that way.
 
 ## Verification

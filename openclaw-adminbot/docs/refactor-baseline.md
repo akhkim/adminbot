@@ -31,11 +31,22 @@ changes a number (say which step, and why).
 
 ## Known-broken tooling still to repair
 
-- The `openclaw/plugin-sdk/media-runtime` export subpath resolves to nothing:
-  the root export map declares it, but there is no `src/plugin-sdk/media-runtime.ts`
-  and no built `dist/plugin-sdk/media-runtime.js`. `extensions/slack/src/monitor/media.runtime.ts`
-  imports it, which is why `test/scripts/adminbot-email-automation.test.ts` still
-  dies before collecting.
+- ~~The `openclaw/plugin-sdk/media-runtime` export subpath resolves to nothing~~ —
+  done. The export map declared 20 plugin-sdk subpaths with no source behind them,
+  all of them for subsystems the deep clean removed (speech, media/image/video/music
+  generation, realtime voice, browser). Nineteen were dropped. `media-runtime` was
+  rebuilt instead, because two surviving plugins import it: it is now a narrow
+  re-export of `src/media/{fetch,store,qr-image}` rather than the old broad barrel,
+  and `src/media/qr-image.ts` came back with it since `extensions/device-pair`
+  calls `writeQrPngTempFile` and `renderQrPngDataUrl` at runtime.
+  `test/scripts/adminbot-email-automation.test.ts` now collects and runs; 5 of its
+  6 tests pass, and the survivor is an assertion failure, not an import crash.
+- `deprecated-internal-config-api.test.ts` reports 7 real violations of the config
+  boundary rules: five in `src/config/io/io.ts` (2749, 2758, 2773, 2916, 3008), one
+  in `scripts/adminbot-email-automation.ts:752`, one in
+  `src/plugins/install/bundled-capability-runtime.test.ts:9`. The guard that finds
+  them was restored, not the code it judges — decide per site whether `io.ts` owns
+  the seam it is being flagged for.
 - ~~`pnpm build` does not reach a compiler~~ — done. The build plan named four
   package scripts the deep clean had deleted along with their backing files, and
   each only surfaced once the one before it was cleared. All four were pruned
