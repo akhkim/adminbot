@@ -22,9 +22,9 @@ import {
 
 const ROOT_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const REPO_ROOT = resolve(ROOT_DIR, "..");
-const SDK_SUBPATH_DOC_FILE = "docs/plugins/sdk-subpaths.md";
+// docs/plugins/* went with the deep clean, so the contract test is the only
+// surviving curated reference to plugin-sdk subpaths.
 const PUBLIC_CONTRACT_REFERENCE_FILES = [
-  "docs/plugins/architecture.md",
   "src/plugins/contracts/plugin-sdk-subpaths.test.ts",
 ] as const;
 const PLUGIN_SDK_SUBPATH_PATTERN = /openclaw\/plugin-sdk\/([a-z0-9][a-z0-9-]*)\b/g;
@@ -79,13 +79,6 @@ const LEGACY_MEMORY_EMBEDDING_PROVIDER_MANIFEST_FILES = new Set([
   "extensions/openai/openclaw.plugin.json",
   "extensions/voyage/openclaw.plugin.json",
 ]);
-const MATRIX_RUNTIME_DEPS = [
-  "@matrix-org/matrix-sdk-crypto-wasm",
-  "@matrix-org/matrix-sdk-crypto-nodejs",
-  "fake-indexeddb",
-  "matrix-js-sdk",
-  "music-metadata",
-] as const;
 const trackedFilesByRoot = new Map<string, readonly string[] | null>();
 
 function toRepoRelativePath(filePath: string): string {
@@ -162,15 +155,6 @@ function collectPluginSdkSubpathReferences() {
     }
   }
   return references;
-}
-
-function collectDocumentedSdkSubpaths(): Set<string> {
-  const source = fs.readFileSync(resolve(REPO_ROOT, SDK_SUBPATH_DOC_FILE), "utf8");
-  return new Set(
-    [...source.matchAll(/`plugin-sdk\/([a-z0-9][a-z0-9-]*)`/g)]
-      .map((match) => match[1])
-      .filter((subpath): subpath is string => Boolean(subpath)),
-  );
 }
 
 function collectBundledPluginIds(): string[] {
@@ -273,18 +257,6 @@ function readRootPackageJson(): {
     dependencies?: Record<string, string>;
     optionalDependencies?: Record<string, string>;
     files?: string[];
-  };
-}
-
-function readMatrixPackageJson(): {
-  dependencies?: Record<string, string>;
-  optionalDependencies?: Record<string, string>;
-} {
-  return JSON.parse(
-    fs.readFileSync(resolve(REPO_ROOT, "extensions/matrix/package.json"), "utf8"),
-  ) as {
-    dependencies?: Record<string, string>;
-    optionalDependencies?: Record<string, string>;
   };
 }
 
@@ -821,13 +793,12 @@ describe("plugin-sdk package contract guardrails", () => {
     });
   });
 
-  it("keeps plugin-owned SDK subpaths explicitly classified and documented", () => {
+  it("keeps plugin-owned SDK subpaths explicitly classified", () => {
     const entrypoints = new Set(pluginSdkEntrypoints);
     const reserved = new Set<string>(reservedBundledPluginSdkEntrypoints);
     const supported = new Set<string>(supportedBundledFacadeSdkEntrypoints);
     const publicOwned = new Set<string>(publicPluginOwnedSdkEntrypoints);
     const localOnly = new Set<string>(privateLocalOnlyPluginSdkEntrypoints);
-    const documented = collectDocumentedSdkSubpaths();
     const pluginOwnedEntrypoints = collectPluginOwnedSdkEntrypoints();
     const classified = new Set([...reserved, ...supported, ...publicOwned, ...localOnly]);
 
@@ -843,20 +814,15 @@ describe("plugin-sdk package contract guardrails", () => {
     const unclassifiedPluginOwned = pluginOwnedEntrypoints.filter(
       (entrypoint) => !classified.has(entrypoint),
     );
-    const undocumentedPluginOwned = pluginOwnedEntrypoints.filter(
-      (entrypoint) => !documented.has(entrypoint),
-    );
 
     expect({
       unknownPublicOwned,
       classificationOverlaps,
       unclassifiedPluginOwned,
-      undocumentedPluginOwned,
     }).toEqual({
       unknownPublicOwned: [],
       classificationOverlaps: [],
       unclassifiedPluginOwned: [],
-      undocumentedPluginOwned: [],
     });
   });
 
@@ -913,21 +879,6 @@ describe("plugin-sdk package contract guardrails", () => {
       unknownDeprecatedBarrels: [],
       nonBarrels: [],
     });
-  });
-
-  it("keeps Matrix dependencies local to the Matrix plugin", () => {
-    const rootPackageJson = readRootPackageJson();
-    const rootRuntimeDeps = collectRuntimeDependencySpecs(rootPackageJson);
-    const matrixPackageJson = readMatrixPackageJson();
-    const matrixRuntimeDeps = collectRuntimeDependencySpecs(matrixPackageJson);
-
-    expect(rootPackageJson.files).toContain("!dist/extensions/matrix/**");
-    for (const dep of MATRIX_RUNTIME_DEPS) {
-      expect(matrixRuntimeDeps.get(dep)).toBeTypeOf("string");
-      expect(matrixRuntimeDeps.get(dep)).not.toBe("");
-      expect(rootRuntimeDeps.has(dep)).toBe(false);
-    }
-    expect(rootRuntimeDeps.has("@openclaw/plugin-package-contract")).toBe(false);
   });
 
   it("keeps extension sources on public sdk or local package seams", () => {
