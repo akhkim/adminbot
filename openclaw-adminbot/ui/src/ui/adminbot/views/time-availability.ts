@@ -1164,7 +1164,8 @@ function chartInterval(range: TimeAvailabilityRange): TimeAllocationInterval {
   return range === "week" ? "day" : range === "month" ? "week" : "month";
 }
 
-// The chart works in effort as a share of weekly capacity, which is what makes a stack of
+// The chart works in effort as a percentage of weekly capacity -- the scale its 100% reference
+// line is drawn against -- which is what makes a stack of
 // allocations comparable and what puts the 100% reference line somewhere meaningful. Schedules are
 // stored in hours, so the conversion happens here. A member with no capacity on file is measured
 // against a nominal full week rather than dropped from the chart -- see the callout the view
@@ -1180,7 +1181,7 @@ function chartTasks(tasks: readonly TimeAllocationTask[], weeklyCapacity: number
     name: task.name,
     start: task.start,
     end: task.end,
-    effort: task.hours / capacity,
+    effort: (task.hours / capacity) * 100,
     ...(task.note ? { note: task.note } : {}),
   }));
 }
