@@ -14,6 +14,7 @@
 // Never overwrites. A field the roster already holds is left alone and reported as a conflict when
 // the sheet disagrees, so an import can only ever fill blanks. Re-running is therefore safe.
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 
 type Row = Record<string, string>;
 
@@ -26,7 +27,7 @@ type Row = Record<string, string>;
 //     field for it to land in.
 //   Slack email -- no field on the record. The Slack directory sync already matches members to
 //     Slack by email and is the live source for that link, so a sheet copy would only go stale.
-const FIELD_BY_COLUMN: Array<[string, string]> = [
+export const FIELD_BY_COLUMN: Array<[string, string]> = [
   ["Joined month", "joined_month"],
   ["Location", "location"],
   ["Email for correspondence (the more professional the better)", "correspondence_email"],
@@ -46,7 +47,7 @@ const FIELD_BY_COLUMN: Array<[string, string]> = [
   ["Channels", "slack_channels"],
 ];
 
-const LIST_FIELDS = new Set(["research_topics", "slack_channels"]);
+export const LIST_FIELDS = new Set(["research_topics", "slack_channels"]);
 
 /**
  * The sheet is filled in by hand, so a column holds whatever shape each person typed: a bare
@@ -59,7 +60,7 @@ const LIST_FIELDS = new Set(["research_topics", "slack_channels"]);
  * rescued is dropped and reported rather than sent, so a single unusable cell never blocks the
  * rest of a member's import.
  */
-function normalizeSheetValue(field: string, raw: string): string | undefined {
+export function normalizeSheetValue(field: string, raw: string): string | undefined {
   const value = raw.trim();
   if (!value) {
     return undefined;
@@ -128,7 +129,7 @@ function asFreeUrl(value: string): string | undefined {
 }
 
 /** Minimal RFC4180 reader: the sheet quotes any cell containing a comma or newline. */
-function parseCsv(text: string): string[][] {
+export function parseCsv(text: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = "";
@@ -322,4 +323,9 @@ async function run(params: {
   console.log(`\napplied to ${written}/${plans.length} members`);
 }
 
-main();
+// Runs only when this file is the entrypoint. It also exports its column mapping and value
+// normalizers, which adminbot-create-members-from-export.ts imports -- without this guard, that
+// import would run a whole roster import as a side effect.
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main();
+}
