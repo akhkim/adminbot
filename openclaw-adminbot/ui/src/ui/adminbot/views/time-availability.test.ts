@@ -222,12 +222,12 @@ describe("renderAdminBotTimeAvailability", () => {
     expect(onSaveSchedule).not.toHaveBeenCalled();
   });
 
-  // Hours need no denominator, so an unset capacity costs the reference line and nothing else --
-  // the percentage view could not chart at all without one.
-  it("still charts when no weekly capacity is set", () => {
+  // The chart measures effort against a weekly capacity, so an unset one is charted against a
+  // nominal full week and said out loud rather than left as a silently wrong scale.
+  it("still charts when no weekly capacity is set, and says the scale is assumed", () => {
     const container = renderView({ members: [member({ hours_per_week: undefined })] });
-    expect(container.querySelector(".time-chart__svg")).not.toBeNull();
-    expect(container.textContent).toContain("No weekly capacity set");
+    expect(container.querySelector("adminbot-effort-stack-chart")).not.toBeNull();
+    expect(container.querySelector('[data-testid="time-availability-no-capacity"]')).not.toBeNull();
   });
 });
 
@@ -287,12 +287,18 @@ describe("the holiday override", () => {
 });
 
 describe("the chart", () => {
-  it("draws one bar slot per bin for the chosen range", () => {
-    const bins = (range: "week" | "month" | "year") =>
-      renderView({ range }).querySelectorAll(".time-chart__bin").length;
-    expect(bins("week")).toBe(7);
-    expect(bins("month")).toBe(4);
-    expect(bins("year")).toBe(12);
+  // The chart itself is recharts inside a custom element, so what this page owns is the element
+  // and the properties handed to it: the bin width the range asks for, and the tasks to stack.
+  it("bins by day, week or month to match the chosen range", () => {
+    const interval = (range: "week" | "month" | "year") =>
+      (
+        renderView({ range }).querySelector("adminbot-effort-stack-chart") as unknown as {
+          interval: string;
+        }
+      ).interval;
+    expect(interval("week")).toBe("day");
+    expect(interval("month")).toBe("week");
+    expect(interval("year")).toBe("month");
   });
 
   it("offers the three ranges and marks the active one", () => {
@@ -309,27 +315,16 @@ describe("the chart", () => {
     expect(onRangeChange).toHaveBeenCalledWith("week");
   });
 
-  // Capacity is the headroom reading: without it a chart scaled to its own tallest bar makes every
-  // member look equally busy.
-  it("draws the capacity line only when the member declared one", () => {
-    expect(renderView().querySelector(".time-chart__capacity")).not.toBeNull();
-    expect(renderView().querySelector(".time-chart__capacity-key")).not.toBeNull();
+  // Capacity is the headroom reading. Declared, it is stated on the card and becomes the chart's
+  // 100% line; undeclared, the tab says so instead of quietly scaling to the tallest bar.
+  it("states the capacity when the member declared one, and flags it when they did not", () => {
+    expect(renderView().querySelector(".pill")?.textContent).toContain("40");
+    expect(renderView().querySelector('[data-testid="time-availability-no-capacity"]')).toBeNull();
 
     const without = renderView({
       members: [member({ hours_per_week: undefined } as Partial<AdminBotLabMember>)],
     });
-    expect(without.querySelector(".time-chart__capacity")).toBeNull();
-    // And says why the comparison is missing rather than leaving a bare chart.
-    expect(without.querySelector(".time-chart__note")).not.toBeNull();
-  });
-
-  it("names the unit each bar is measured in", () => {
-    expect(renderView({ range: "week" }).querySelector(".time-chart__unit")?.textContent).toContain(
-      "day",
-    );
-    expect(renderView({ range: "year" }).querySelector(".time-chart__unit")?.textContent).toContain(
-      "month",
-    );
+    expect(without.querySelector('[data-testid="time-availability-no-capacity"]')).not.toBeNull();
   });
 });
 
@@ -654,7 +649,10 @@ describe("the split tables and the deadline panel", () => {
     expect(renderView().querySelector(".adminbot-time-allocation-table__note-row")).toBeNull();
   });
 
-  it("carries the note into the bar's hover text as well", () => {
+  // The note follows the allocation into the chart, where the tooltip shows it under that task's
+  // row. The tooltip itself is React inside the chart element, so what this asserts is that the
+  // note is handed over rather than dropped at the boundary.
+  it("carries the note through to the chart's tooltip as well", () => {
     const container = renderView({
       range: "month",
       members: [
@@ -671,10 +669,10 @@ describe("the split tables and the deadline panel", () => {
         }),
       ],
     });
-    const titles = [...container.querySelectorAll(".time-chart__bar title")].map(
-      (title) => title.textContent ?? "",
-    );
-    expect(titles.some((title) => title.includes("Shared with Mei"))).toBe(true);
+    const chart = container.querySelector("adminbot-effort-stack-chart") as unknown as {
+      tasks: ReadonlyArray<{ name: string; note?: string }>;
+    };
+    expect(chart.tasks.some((task) => task.note === "Shared with Mei")).toBe(true);
   });
 
   it("asks for a custom name only for the 'other' category", () => {

@@ -32,10 +32,15 @@
 // The chart reads in hours per week rather than percent of capacity. Percent needed a declared
 // `hours_per_week` as a denominator, so a member who had not set one got no chart at all; hours are
 // the number they typed in, and capacity becomes a reference line when it is known.
-import { html, nothing, svg } from "lit";
+import { html, nothing } from "lit";
 import { i18n, t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
+import {
+  renderTimeAllocationChart,
+  type TimeAllocationInterval,
+  type TimeAllocationTask as ChartTask,
+} from "./time-allocation-chart.ts";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
 import {
   availabilityRows,
@@ -203,14 +208,6 @@ export type AdminBotTimeAvailabilityProps = {
 };
 
 const DAY_MS = 86_400_000;
-const CHART_HEIGHT = 340;
-const CHART_LEFT = 58;
-const CHART_RIGHT = 20;
-const CHART_TOP = 28;
-const CHART_BOTTOM = 64;
-// A fixed viewBox scaled to the container: the bin count is fixed per range, so the chart never
-// needs to grow horizontally or scroll.
-const CHART_WIDTH = 1200;
 // Copied from EffortStackChart: stable color per task name, assigned in first-seen order.
 const CHART_COLORS = [
   "#3575DA",
@@ -281,9 +278,6 @@ function hoursOver(weeklyHours: number, days: number): number {
   return (weeklyHours * days) / 7;
 }
 
-function formatHours(hours: number): string {
-  return t("adminbotTimeAvailability.hoursValue", { hours: formatNumber(hours) });
-}
 
 /**
  * A bar's total, plus the share of the member's capacity it uses when they have declared one.
@@ -291,16 +285,6 @@ function formatHours(hours: number): string {
  * Capacity is the headroom reading: without it a chart scaled to its own tallest bar makes every
  * member look equally busy. With it, half a week reads as half a week.
  */
-function formatTotal(hours: number, capacityHours: number): string {
-  const label = formatHours(hours);
-  if (capacityHours <= 0) {
-    return label;
-  }
-  return t("adminbotTimeAvailability.totalWithCapacity", {
-    hours: label,
-    percent: formatNumber(Math.round((hours / capacityHours) * 100)),
-  });
-}
 
 /**
  * A bar piece's hover text, with the member's note on it when there is one.
@@ -310,26 +294,6 @@ function formatTotal(hours: number, capacityHours: number): string {
  * reader go find the row in the table underneath. `<title>` is plain text, so several notes are
  * joined rather than laid out.
  */
-function segmentTooltip(
-  allocation: TimeAllocationSegment["allocations"][number],
-  segment: TimeAllocationSegment,
-  capacityHours: number,
-): string {
-  const tooltip = t("adminbotTimeAvailability.segmentTooltip", {
-    task: allocation.name,
-    hours: formatHours(allocation.hours),
-    start: tableDate(segment.start),
-    end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
-    total: formatTotal(segment.total, capacityHours),
-  });
-  if (allocation.notes.length === 0) {
-    return tooltip;
-  }
-  const notes = t("adminbotTimeAvailability.segmentTooltipNote", {
-    note: allocation.notes.join(" · "),
-  });
-  return `${tooltip} ${notes}`;
-}
 
 function taskName(project: string | undefined): string {
   return project?.trim() || t("adminbotTimeAvailability.termBaseline");
@@ -554,27 +518,7 @@ export function allocationBins(
   });
 }
 
-// Round numbers on the axis, chosen from the magnitude so an h/day chart does not tick in 20s and
-// an h/month chart does not need forty gridlines.
-function axisStep(highest: number): number {
-  for (const step of [0.25, 0.5, 1, 2, 5, 10, 20, 50, 100]) {
-    if (highest / step <= 5) {
-      return step;
-    }
-  }
-  return 200;
-}
 
-function yAxisMaximum(segments: readonly TimeAllocationSegment[], capacityHours: number): number {
-  const tallest = Math.max(...segments.map((segment) => segment.total), 0);
-  // Always reaches capacity, so a bin using half of it looks half full.
-  const highest = Math.max(capacityHours, tallest, 1);
-  const step = axisStep(highest);
-  const rounded = Math.ceil(highest / step) * step;
-  // One more step when the tallest bar lands exactly on the top gridline, so it stops short of the
-  // frame and its label has somewhere to sit.
-  return rounded > tallest ? rounded : rounded + step;
-}
 
 /**
  * The chart.
@@ -585,226 +529,9 @@ function yAxisMaximum(segments: readonly TimeAllocationSegment[], capacityHours:
  * portion of a bar above that line is the only place the danger color appears, and a bin the member
  * is entirely away for is drawn as absence rather than as a zero.
  */
-function renderTimeChart(
-  tasks: readonly TimeAllocationTask[],
-  memberName: string,
-  timeOff: readonly TimeOffRow[],
-  weeklyCapacity: number,
-  range: TimeAvailabilityRange,
-  now: number,
-) {
-  const segments = allocationBins(tasks, timeOff, range, now);
-  const colors = taskColors(tasks);
-  const categories = taskCategories(tasks);
-  // Capacity is a weekly figure; a bin's share of it is the same proration the bars use.
-  const binDays = segments[0]?.days ?? 7;
-  const capacityHours = weeklyCapacity > 0 ? hoursOver(weeklyCapacity, binDays) : 0;
-  const yMaximum = yAxisMaximum(segments, capacityHours);
-  const tickStep = axisStep(yMaximum);
-  const hourTicks: number[] = [];
-  for (let value = 0; value <= yMaximum + 0.001; value += tickStep) {
-    hourTicks.push(Math.round(value * 100) / 100);
-  }
-
-  const plotWidth = CHART_WIDTH - CHART_LEFT - CHART_RIGHT;
-  const plotHeight = CHART_HEIGHT - CHART_TOP - CHART_BOTTOM;
-  const slot = plotWidth / Math.max(1, segments.length);
-  // Bars sit in their slot with air either side rather than touching, so each bin reads as its own
-  // unit of time instead of as a continuous area.
-  const barWidth = Math.min(slot * 0.55, 64);
-  // A short date needs about this much room; below it the labels touch, so only every Nth is drawn.
-  const labelEvery = Math.max(1, Math.ceil(70 / slot));
-  const y = (hours: number) => CHART_TOP + ((yMaximum - hours) / yMaximum) * plotHeight;
-  const hasCapacity = capacityHours > 0;
-
-  const summary = segments
-    .map((segment) =>
-      segment.suppressed
-        ? t("adminbotTimeAvailability.segmentSummaryOff", {
-            start: tableDate(segment.start),
-            end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
-          })
-        : t("adminbotTimeAvailability.segmentSummary", {
-            start: tableDate(segment.start),
-            end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
-            allocations:
-              segment.allocations
-                .map((allocation) => `${allocation.name} ${formatHours(allocation.hours)}`)
-                .join(", ") || t("adminbotTimeAvailability.binEmpty"),
-            total: formatTotal(segment.total, capacityHours),
-          }),
-    )
-    .join(" ");
-
-  return html`
-    <figure class="time-chart">
-      <figcaption class="time-chart__caption">
-        <span class="time-chart__unit">${t(`adminbotTimeAvailability.axisUnit.${range}`)}</span>
-        ${hasCapacity
-          ? html`<span class="time-chart__capacity-key">
-              ${t("adminbotTimeAvailability.capacityKey", { hours: formatHours(capacityHours) })}
-            </span>`
-          : nothing}
-      </figcaption>
-      ${svg`
-        <svg
-          class="time-chart__svg"
-          viewBox="0 0 ${CHART_WIDTH} ${CHART_HEIGHT}"
-          role="img"
-          aria-label=${t("adminbotTimeAvailability.chartAria", { member: memberName })}
-        >
-          <title>${t("adminbotTimeAvailability.chartAria", { member: memberName })}</title>
-          <desc>${summary}</desc>
-          <defs>
-            <pattern id="time-chart-away" width="6" height="6" patternTransform="rotate(45)"
-              patternUnits="userSpaceOnUse">
-              <line class="time-chart__away-line" x1="0" y1="0" x2="0" y2="6"></line>
-            </pattern>
-          </defs>
-
-          ${hourTicks.map(
-            (hours) => svg`
-              <line
-                class="time-chart__grid"
-                x1=${CHART_LEFT}
-                x2=${CHART_WIDTH - CHART_RIGHT}
-                y1=${y(hours)}
-                y2=${y(hours)}
-              ></line>
-              <text class="time-chart__tick" x=${CHART_LEFT - 10} y=${y(hours) + 4} text-anchor="end"
-                >${formatNumber(hours)}</text
-              >
-            `,
-          )}
-
-          ${segments.map((segment, index) => {
-            const slotX = CHART_LEFT + index * slot;
-            const barX = slotX + (slot - barWidth) / 2;
-            const baseline = y(0);
-            if (segment.suppressed) {
-              // Away for the whole bin. Hatched to the full height rather than drawn as a zero bar:
-              // nothing is bookable here, which is different from nothing being booked.
-              return svg`
-                <rect
-                  class="time-chart__away"
-                  x=${barX}
-                  y=${CHART_TOP}
-                  width=${barWidth}
-                  height=${plotHeight}
-                  rx="4"
-                >
-                  <title>${t("adminbotTimeAvailability.segmentTooltipOff", {
-                    start: tableDate(segment.start),
-                    end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
-                  })}</title>
-                </rect>
-              `;
-            }
-            let accumulated = 0;
-            const bars = segment.allocations.map((allocation, depth) => {
-              const bottom = y(accumulated);
-              accumulated += allocation.hours;
-              const top = y(accumulated);
-              // A hairline between stacked pieces so two adjacent colors stay countable.
-              const height = Math.max(1, bottom - top - (depth > 0 ? 1 : 0));
-              return svg`
-                <rect
-                  class="time-chart__bar"
-                  x=${barX}
-                  y=${top}
-                  width=${barWidth}
-                  height=${height}
-                  rx="3"
-                  fill=${colors.get(allocation.key) ?? CHART_NEUTRAL_COLOR}
-                >
-                  <title>${segmentTooltip(allocation, segment, capacityHours)}</title>
-                </rect>
-              `;
-            });
-            const over = hasCapacity && segment.total > capacityHours;
-            return svg`
-              ${bars}
-              ${
-                over
-                  ? // Only the part past capacity is tinted, so the eye lands on the overage itself
-                    // rather than on a whole bar that is mostly fine.
-                    svg`<rect
-                      class="time-chart__over"
-                      x=${barX}
-                      y=${y(segment.total)}
-                      width=${barWidth}
-                      height=${Math.max(1, y(capacityHours) - y(segment.total))}
-                      rx="3"
-                    ></rect>`
-                  : nothing
-              }
-              ${
-                segment.total > 0
-                  ? svg`<text
-                      class=${`time-chart__total ${over ? "time-chart__total--over" : ""}`}
-                      x=${barX + barWidth / 2}
-                      y=${y(segment.total) - 8}
-                      text-anchor="middle"
-                    >${formatNumber(Math.round(segment.total * 10) / 10)}</text>`
-                  : nothing
-              }
-              ${
-                index % labelEvery === 0
-                  ? svg`<text
-                      class="time-chart__bin"
-                      x=${slotX + slot / 2}
-                      y=${baseline + 20}
-                      text-anchor="middle"
-                    >${segment.label}</text>`
-                  : nothing
-              }
-            `;
-          })}
-
-          ${
-            hasCapacity
-              ? svg`<line
-                  class="time-chart__capacity"
-                  x1=${CHART_LEFT}
-                  x2=${CHART_WIDTH - CHART_RIGHT}
-                  y1=${y(capacityHours)}
-                  y2=${y(capacityHours)}
-                ></line>`
-              : nothing
-          }
-          <line
-            class="time-chart__axis"
-            x1=${CHART_LEFT}
-            x2=${CHART_WIDTH - CHART_RIGHT}
-            y1=${y(0)}
-            y2=${y(0)}
-          ></line>
-        </svg>
-      `}
-      <div class="time-chart__legend">
-        ${categories.map(
-          (category) => html`
-            <span class="time-chart__legend-item">
-              <i style=${`background:${colors.get(category.key) ?? CHART_NEUTRAL_COLOR}`}></i>
-              ${category.name}
-            </span>
-          `,
-        )}
-        ${segments.some((segment) => segment.suppressed)
-          ? html`<span class="time-chart__legend-item">
-              <i class="time-chart__legend-away"></i>
-              ${t("adminbotTimeAvailability.legendTimeOff")}
-            </span>`
-          : nothing}
-      </div>
-      ${hasCapacity
-        ? nothing
-        : html`<p class="time-chart__note">
-            ${t("adminbotTimeAvailability.capacityNoteUnset")}
-          </p>`}
-    </figure>
-  `;
-}
+// The hand-rolled SVG chart that stood here was replaced by the recharts one the time-allocation
+// MVP shipped (see time-allocation-chart.ts). allocationBins and the segment types stay: the
+// tables and the tests read them, and they are what the chart's task list is derived from.
 
 function renderRangeSwitch(props: AdminBotTimeAvailabilityProps) {
   return html`
@@ -1431,6 +1158,33 @@ function renderOtherTable(
   `;
 }
 
+// The chart bins by day, week or month; the tab's range control names the window a member is
+// looking at. Wider window, wider bin -- otherwise a year renders as 365 bars.
+function chartInterval(range: TimeAvailabilityRange): TimeAllocationInterval {
+  return range === "week" ? "day" : range === "month" ? "week" : "month";
+}
+
+// The chart works in effort as a share of weekly capacity, which is what makes a stack of
+// allocations comparable and what puts the 100% reference line somewhere meaningful. Schedules are
+// stored in hours, so the conversion happens here. A member with no capacity on file is measured
+// against a nominal full week rather than dropped from the chart -- see the callout the view
+// renders in that case, which asks them to fill it in.
+const NOMINAL_WEEKLY_CAPACITY = 40;
+
+function chartTasks(tasks: readonly TimeAllocationTask[], weeklyCapacity: number): ChartTask[] {
+  const capacity = weeklyCapacity > 0 ? weeklyCapacity : NOMINAL_WEEKLY_CAPACITY;
+  return tasks.map((task, index) => ({
+    id: `${task.key}:${index}`,
+    key: task.key,
+    sourceIndex: index,
+    name: task.name,
+    start: task.start,
+    end: task.end,
+    effort: task.hours / capacity,
+    ...(task.note ? { note: task.note } : {}),
+  }));
+}
+
 export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityProps) {
   const emptyOptionLabel = props.loading
     ? t("adminbotTimeAvailability.loadingUsers")
@@ -1487,15 +1241,18 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                       </span>`
                     : nothing}
                 </div>
+                ${!capacity && tasks.length
+                  ? html`<div class="callout warning" data-testid="time-availability-no-capacity">
+                      ${t("adminbotTimeAvailability.capacityNoteUnset")}
+                    </div>`
+                  : nothing}
                 ${tasks.length
                   ? html`<div class="adminbot-time-chart-wrap">
-                      ${renderTimeChart(
-                        tasks,
+                      ${renderTimeAllocationChart(
+                        chartTasks(tasks, capacity),
                         selectedMember.name,
-                        storedTimeOff,
-                        capacity,
-                        props.range,
-                        Date.now(),
+                        selectedMember.id,
+                        chartInterval(props.range),
                       )}
                     </div>`
                   : html`<div class="adminbot-time-availability__empty">
