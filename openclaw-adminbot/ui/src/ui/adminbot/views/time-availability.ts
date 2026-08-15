@@ -53,6 +53,8 @@ type TimeAllocationTask = {
   end: string;
   /** Hours per week this commitment asks for. */
   hours: number;
+  /** The member's own note on the row, carried so the chart can show it too, not just the table. */
+  note?: string;
 };
 
 /** One bar: a calendar bin and the hours booked inside it. */
@@ -60,7 +62,16 @@ type TimeAllocationSegment = {
   start: string;
   end: string;
   label: string;
-  allocations: Array<{ key: string; name: string; hours: number }>;
+  allocations: Array<{
+    key: string;
+    name: string;
+    hours: number;
+    /**
+     * Notes from the commitments that fed this piece of the stack. A list because one key is one
+     * project, and a project can be several rows with different dates and a note on each.
+     */
+    notes: string[];
+  }>;
   total: number;
   /** True when time off covers the whole bin, so nothing is bookable in it. */
   suppressed: boolean;
@@ -291,6 +302,35 @@ function formatTotal(hours: number, capacityHours: number): string {
   });
 }
 
+/**
+ * A bar piece's hover text, with the member's note on it when there is one.
+ *
+ * The note is the half of a commitment the numbers cannot carry — "only until the submission",
+ * "shared with Mei" — so the chart says it in the same breath as the hours rather than making the
+ * reader go find the row in the table underneath. `<title>` is plain text, so several notes are
+ * joined rather than laid out.
+ */
+function segmentTooltip(
+  allocation: TimeAllocationSegment["allocations"][number],
+  segment: TimeAllocationSegment,
+  capacityHours: number,
+): string {
+  const tooltip = t("adminbotTimeAvailability.segmentTooltip", {
+    task: allocation.name,
+    hours: formatHours(allocation.hours),
+    start: tableDate(segment.start),
+    end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
+    total: formatTotal(segment.total, capacityHours),
+  });
+  if (allocation.notes.length === 0) {
+    return tooltip;
+  }
+  const notes = t("adminbotTimeAvailability.segmentTooltipNote", {
+    note: allocation.notes.join(" · "),
+  });
+  return `${tooltip} ${notes}`;
+}
+
 function taskName(project: string | undefined): string {
   return project?.trim() || t("adminbotTimeAvailability.termBaseline");
 }
@@ -344,6 +384,7 @@ function jinesisTasks(member: AdminBotLabMember): TimeAllocationTask[] {
         start: row.start,
         end: row.end,
         hours: weeklyHours,
+        ...(row.note?.trim() ? { note: row.note.trim() } : {}),
       },
     ];
   });
@@ -475,6 +516,9 @@ export function allocationBins(
     const away = suppressedDays(suppressed, bin.startMs, bin.endMs);
     const workable = Math.max(0, binDays - away);
     const byKey = new Map<string, number>();
+    // Only from the rows that actually contribute here, so a bar's note is the note on the work in
+    // front of you rather than everything ever written against that project.
+    const notesByKey = new Map<string, Set<string>>();
     if (workable > 0) {
       for (const task of tasks) {
         const covered = overlapDays(task, bin.startMs, bin.endMs);
@@ -485,11 +529,18 @@ export function allocationBins(
         // two days of holiday books five-sevenths of its commitments.
         const effective = covered * (workable / binDays);
         byKey.set(task.key, (byKey.get(task.key) ?? 0) + hoursOver(task.hours, effective));
+        if (task.note) {
+          const notes = notesByKey.get(task.key) ?? new Set<string>();
+          notes.add(task.note);
+          notesByKey.set(task.key, notes);
+        }
       }
     }
     const allocations = categories.flatMap((category) => {
       const hours = byKey.get(category.key);
-      return hours ? [{ ...category, hours }] : [];
+      return hours
+        ? [{ ...category, hours, notes: [...(notesByKey.get(category.key) ?? [])] }]
+        : [];
     });
     return {
       start: isoDate(bin.startMs),
@@ -666,13 +717,7 @@ function renderTimeChart(
                   rx="3"
                   fill=${colors.get(allocation.key) ?? CHART_NEUTRAL_COLOR}
                 >
-                  <title>${t("adminbotTimeAvailability.segmentTooltip", {
-                    task: allocation.name,
-                    hours: formatHours(allocation.hours),
-                    start: tableDate(segment.start),
-                    end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
-                    total: formatTotal(segment.total, capacityHours),
-                  })}</title>
+                  <title>${segmentTooltip(allocation, segment, capacityHours)}</title>
                 </rect>
               `;
             });
@@ -797,6 +842,32 @@ function renderLink(url: string | undefined) {
     aria-label=${t("adminbotTimeAvailability.openLink")}
     >${icons.externalLink}</a
   >`;
+}
+
+/**
+ * A commitment's note, as a disclosure row under the commitment it belongs to.
+ *
+ * A note is free text and often a sentence or two, so a column of its own would have to choose
+ * between wrapping the table into prose and truncating away the thing the note was written to say.
+ * `<details>` rather than a toggle button on purpose: it keeps "which notes are open" in the DOM,
+ * so opening one survives a re-render without threading another field through the app state, and
+ * the row is keyboard-reachable and announced as a disclosure without any ARIA of ours.
+ */
+function renderNoteRow(note: string | undefined, columns: number) {
+  const text = note?.trim();
+  if (!text) {
+    return nothing;
+  }
+  return html`
+    <tr class="adminbot-time-allocation-table__note-row">
+      <td colspan=${columns}>
+        <details class="adminbot-time-allocation-table__note">
+          <summary>${t("adminbotTimeAvailability.tables.note")}</summary>
+          <p>${text}</p>
+        </details>
+      </td>
+    </tr>
+  `;
 }
 
 // Validates the same things the service does (see validateMember in the kernel), so the common
@@ -1282,6 +1353,7 @@ function renderJinesisTable(
                     : nothing}
                 </td>
               </tr>
+              ${renderNoteRow(task.note ?? row?.note, 5)}
             `;
           })}
         </tbody>
@@ -1350,6 +1422,7 @@ function renderOtherTable(
                     : nothing}
                 </td>
               </tr>
+              ${renderNoteRow(row.note, 5)}
             `,
           )}
         </tbody>

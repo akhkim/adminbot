@@ -28,6 +28,8 @@ import type {
   AdminBotPaperRecordInput,
   AdminBotPaperStep,
   AdminBotPaperTimeline,
+  AdminBotProfilePhotoAssessment,
+  AdminBotProfilePhotoPolishVariant,
   AdminBotRemovePendingRequest,
   AdminBotRiskTier,
   AdminBotSettings,
@@ -167,6 +169,20 @@ export type AdminBotActionExecutor = {
 export type AdminBotServiceOptions = {
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
+  reviewSlackProfilePhoto?: (params: {
+    slackUserId: string;
+  }) => Promise<{
+    compliant: boolean;
+    issues: string[];
+    summary: string;
+    photoUrl?: string;
+    source?: "ai" | "heuristic";
+  }>;
+  polishSlackProfilePhoto?: (params: {
+    slackUserId: string;
+    instructions: string;
+    iteration: number;
+  }) => Promise<{ image_data_url: string; note?: string }>;
 };
 
 const DEFAULT_ACTION_POLICIES = {
@@ -176,11 +192,13 @@ const DEFAULT_ACTION_POLICIES = {
   "slack.invite_guest": approvalPolicy("T3", ["admin"]),
   "slack.invite_member": approvalPolicy("T3", ["admin"]),
   "slack.send_message": approvalPolicy("T3", ["admin"]),
+  "slack.profile_photo_update": autoPolicy("T1"),
   "slack.channel_naming_notify_owner": autoPolicy("T1"),
   "slack.rename_channel": autoPolicy("T1"),
   "vector.invite": approvalPolicy("T3", ["admin"]),
   "calendar.create_tentative_hold": approvalPolicy("T2", ["admin"]),
   "calendar.send_invite": approvalPolicy("T3", ["admin"]),
+  "calendar.add_attendees": approvalPolicy("T3", ["admin"]),
   "calendar.reschedule": approvalPolicy("T3", ["admin"]),
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
@@ -1398,6 +1416,225 @@ export class AdminBotService {
     return latest;
   }
 
+  // Reviews Slack profile photos for active lab members and nudges non-compliant members with the
+  // fixed guideline copy. Assessment can come from an injected AI reviewer or a deterministic
+  // fallback when no reviewer is configured.
+  async runProfilePhotoReviewAndReminders(
+    actor: string,
+  ): Promise<
+    AdminBotServiceResponse<{
+      reviewed: number;
+      non_compliant: number;
+      nudges_created: number;
+      nudges_skipped: number;
+    }>
+  > {
+    const members = this.store
+      .listLabMembers()
+      .filter((member) => member.status === "active" || member.status === "part_time" || member.status === "on_leave");
+    const now = new Date().toISOString();
+    let reviewed = 0;
+    const nonCompliantMemberIds: string[] = [];
+    for (const member of members) {
+      const assessment = await this.assessMemberProfilePhoto(member, now);
+      const review = {
+        ...(member.profile_photo_review ?? {}),
+        assessment,
+      };
+      this.store.saveLabMember({
+        ...member,
+        profile_photo_review: review,
+        updated_at: now,
+      });
+      reviewed += 1;
+      if (!assessment.compliant) {
+        nonCompliantMemberIds.push(member.id);
+      }
+    }
+    const nudge = nonCompliantMemberIds.length
+      ? await this.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: nonCompliantMemberIds,
+            message: buildProfilePhotoGuidelineMessage(),
+          },
+          actor,
+        )
+      : ({ ok: true, status: 200, payload: { created: [], skipped: [] } } as const);
+    if (!nudge.ok) {
+      return nudge;
+    }
+    const nudgeSet = new Set(nonCompliantMemberIds);
+    for (const member of members) {
+      if (!nudgeSet.has(member.id)) {
+        continue;
+      }
+      const latest = this.store.getLabMember(member.id);
+      if (!latest) {
+        continue;
+      }
+      this.store.saveLabMember({
+        ...latest,
+        profile_photo_review: {
+          ...(latest.profile_photo_review ?? {}),
+          last_guideline_dm_at: now,
+        },
+        updated_at: now,
+      });
+    }
+    this.recordAudit({
+      type: "profile_photo.reviewed",
+      actor,
+      details: { reviewed, non_compliant: nonCompliantMemberIds.length },
+    });
+    if (nonCompliantMemberIds.length > 0) {
+      this.recordAudit({
+        type: "profile_photo.guideline_nudged",
+        actor,
+        details: {
+          targeted: nonCompliantMemberIds.length,
+          created: nudge.payload.created.length,
+          skipped: nudge.payload.skipped.length,
+        },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        reviewed,
+        non_compliant: nonCompliantMemberIds.length,
+        nudges_created: nudge.payload.created.length,
+        nudges_skipped: nudge.payload.skipped.length,
+      },
+    };
+  }
+
+  // Generates one AI-polished variant of the signed-in member's current Slack profile photo.
+  async polishOwnProfilePhoto(
+    memberId: string,
+  ): Promise<
+    AdminBotServiceResponse<{
+      variant: AdminBotProfilePhotoPolishVariant;
+      variants: AdminBotProfilePhotoPolishVariant[];
+      assessment?: AdminBotProfilePhotoAssessment;
+    }>
+  > {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    if (!member.slack_user_id) {
+      return serviceError(400, "member has no slack_user_id");
+    }
+    if (!this.options.polishSlackProfilePhoto) {
+      return serviceError(503, "profile photo polishing is not configured");
+    }
+    const existingVariants = member.profile_photo_review?.variants ?? [];
+    const polished = await this.options.polishSlackProfilePhoto({
+      slackUserId: member.slack_user_id,
+      instructions: PROFILE_PHOTO_RULES_TEXT,
+      iteration: existingVariants.length + 1,
+    });
+    const now = new Date().toISOString();
+    const variant: AdminBotProfilePhotoPolishVariant = {
+      id: `photo_${randomUUID()}`,
+      image_data_url: polished.image_data_url,
+      created_at: now,
+      ...(polished.note ? { note: polished.note } : {}),
+    };
+    const variants = [...existingVariants, variant];
+    const review = {
+      ...(member.profile_photo_review ?? {}),
+      variants,
+    };
+    this.store.saveLabMember({
+      ...member,
+      profile_photo_review: review,
+      updated_at: now,
+    });
+    this.recordAudit({
+      type: "profile_photo.polished",
+      actor: memberId,
+      details: { member_id: memberId, variant_id: variant.id, variants: variants.length },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { variant, variants, assessment: review.assessment },
+    };
+  }
+
+  // Applies one previously-generated polished photo to the signed-in member's Slack profile.
+  async applyOwnPolishedProfilePhoto(
+    memberId: string,
+    variantId: string,
+  ): Promise<
+    AdminBotServiceResponse<{
+      variant_id: string;
+      action_id: string;
+    }>
+  > {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    if (!member.slack_user_id) {
+      return serviceError(400, "member has no slack_user_id");
+    }
+    const variants = member.profile_photo_review?.variants ?? [];
+    const variant = variants.find((entry) => entry.id === variantId);
+    if (!variant) {
+      return serviceError(404, "profile photo variant not found");
+    }
+    const created = this.createProposal({
+      type: "slack.profile_photo_update",
+      summary: `Update Slack profile photo for ${member.name}`,
+      target: {
+        service: "slack",
+        channel: "slack",
+        target: member.slack_user_id,
+        recipientMemberId: member.id,
+      },
+      proposed_payload: {
+        channel: "slack",
+        tool: "profile",
+        action: "set_photo",
+        target: member.slack_user_id,
+        image_data_url: variant.image_data_url,
+      },
+      undo_plan: "Reapply the previous profile photo manually in Slack.",
+    });
+    if (!created.ok) {
+      return created;
+    }
+    const executed = await this.execute(created.payload.id, { dry_run: false });
+    if (!executed.ok) {
+      return executed;
+    }
+    const now = new Date().toISOString();
+    this.store.saveLabMember({
+      ...member,
+      profile_photo_review: {
+        ...(member.profile_photo_review ?? {}),
+        variants,
+        selected_variant_id: variant.id,
+      },
+      avatar_url: variant.image_data_url,
+      updated_at: now,
+    });
+    this.recordAudit({
+      type: "profile_photo.applied",
+      actor: memberId,
+      details: { member_id: memberId, variant_id: variant.id, action_id: created.payload.id },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { variant_id: variant.id, action_id: created.payload.id },
+    };
+  }
+
   /**
    * Nudge everyone who has not finished `stepId`.
    *
@@ -1527,6 +1764,51 @@ export class AdminBotService {
       },
     });
     return { ok: true, status: 200, payload: { created, skipped } };
+  }
+
+  private async assessMemberProfilePhoto(
+    member: AdminBotLabMember,
+    checkedAt: string,
+  ): Promise<AdminBotProfilePhotoAssessment> {
+    if (!member.slack_user_id) {
+      return {
+        compliant: false,
+        issues: ["missing_slack_user_id"],
+        summary: "No Slack account is linked yet, so the profile photo cannot be reviewed.",
+        checked_at: checkedAt,
+        source: "heuristic",
+      };
+    }
+    const reviewer = this.options.reviewSlackProfilePhoto;
+    if (!reviewer) {
+      return {
+        compliant: false,
+        issues: ["reviewer_unavailable"],
+        summary:
+          "Automated photo review is not configured yet. Please use a professional, front-facing headshot with a clean background.",
+        checked_at: checkedAt,
+        source: "heuristic",
+      };
+    }
+    try {
+      const result = await reviewer({ slackUserId: member.slack_user_id });
+      return {
+        compliant: result.compliant,
+        issues: result.issues.map((issue) => issue.trim()).filter(Boolean),
+        summary: result.summary.trim(),
+        checked_at: checkedAt,
+        ...(result.photoUrl ? { photo_url: result.photoUrl } : {}),
+        source: result.source ?? "ai",
+      };
+    } catch (error) {
+      return {
+        compliant: false,
+        issues: ["review_failed"],
+        summary: `Automated photo review failed: ${error instanceof Error ? error.message : String(error)}`,
+        checked_at: checkedAt,
+        source: "heuristic",
+      };
+    }
   }
 
   async processSlackChannelNamingEvent(
@@ -1966,6 +2248,30 @@ function buildMandatoryFieldsReminderMessage(): string {
       `(${fields}).`,
     "Open your profile page in the Control UI and fill in what's missing — it saves as you type.",
     "Already done? You'll stop getting this once every required field is filled in.",
+  ].join("\n");
+}
+
+const PROFILE_PHOTO_RULES_TEXT = [
+  "Profile photo guidelines:",
+  "- Big enough headshot.",
+  "- Face is clearly visible, preferably facing front.",
+  "- Background is clean (blurred, single color, or easy to make single-color using a background remover).",
+].join("\n");
+
+function buildProfilePhotoGuidelineMessage(): string {
+  return [
+    "Your current Slack profile photo does not yet match our profile photo guidelines.",
+    PROFILE_PHOTO_RULES_TEXT,
+    "",
+    "These rules are because we're developing webpages and strongly recommend a professional Slack profile photo so we can include you on the teams/collaborators pages. We directly link member photos from Slack on your profile and on our lab public website.",
+    "",
+    "How-To if you want to take a better photo yourself:",
+    "- Use portrait mode and the back camera (higher quality), and have somebody take the photo for you.",
+    '- Many phones/apps can blur the background or change it to a pure color. Some members took good photos in 10 seconds using portrait mode.',
+    "- Neutral backgrounds are usually better; you can use https://www.remove.bg/ to crop yourself and place yourself into a neutral background.",
+    "- Usually the shot is chest-up and includes shoulders.",
+    "",
+    "In your AdminBot profile page, you can choose AI-based polishing for your current photo, review generated options, and apply the version you like.",
   ].join("\n");
 }
 

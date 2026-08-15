@@ -153,6 +153,12 @@
   cursor: pointer;
 }
 
+/* The "forgot my password" action matches the claim toggle so the auth links read as one family,
+   but is a hair larger so it stands apart as its own escape hatch. */
+.login-gate .login-gate__forgot {
+  font-size: calc(var(--control-ui-text-sm) + 0.0625rem);
+}
+
 .login-gate .login-gate__mode-toggle:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -207,17 +213,44 @@
 }
 
 /* The reimbursement body is a full working surface (chat, receipts, draft table), so the guest
-   screen is far wider than the sign-in card it replaces. */
+   screen is far wider than the sign-in card it replaces. The base `.login-gate__card` sets a
+   form-sized max-width, so override both width and max-width here or the workspace gets clamped. */
 .guest-reimbursements__card {
-  width: min(920px, 100%);
+  width: min(1080px, 100%);
+  max-width: min(1080px, 100%);
 }
 
+/* The way back to sign-in mirrors the "Submit a reimbursement" CTA from the login gate — same
+   border, radius, type, and hover — but sized to its own label rather than spanning the full
+   workspace, so the two reads as the same kind of action at different widths. */
 .guest-reimbursements__back {
-  display: block;
-  margin: var(--space-4) auto 0;
-  background: none;
-  border: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--control-h-lg);
+  width: fit-content;
+  margin: var(--space-5) auto 0;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-md);
+  font-weight: 400;
+  text-decoration: none;
   cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease,
+    border-color 150ms ease;
+}
+
+.guest-reimbursements__back:hover,
+.guest-reimbursements__back:focus-visible {
+  background: color-mix(in srgb, var(--muted-strong) 12%, transparent);
+  border-color: var(--muted-strong);
+  color: var(--text-strong);
+  text-decoration: none;
 }
 
 .login-gate__picker {
@@ -1891,51 +1924,90 @@
   height: 24px;
 }
 
+/* State drives the treatment, not a per-step hue.
+   A different colour for every step made the bar a rainbow that encoded nothing: the eye had no
+   way to find "where is this paper now". Three states carry all the meaning -- done recedes,
+   current is the only thing that catches the eye, upcoming stays visible but quiet so the shape
+   of the remaining plan is still readable. */
 .adminbot-paper-timeline__bar {
   position: absolute;
   top: 4px;
   display: flex;
   align-items: center;
+  gap: var(--space-1);
   min-width: 40px;
   height: 22px;
-  border: 1px solid
-    color-mix(in srgb, var(--adminbot-paper-timeline-color, var(--accent)) 60%, var(--border));
+  padding-left: var(--space-1);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  background: color-mix(
-    in srgb,
-    var(--adminbot-paper-timeline-color, var(--accent)) 18%,
-    var(--bg-muted)
-  );
-  color: var(--text);
+  background: transparent;
+  color: var(--muted);
   font-size: var(--control-ui-text-xs);
   font-weight: 500;
   line-height: 1;
-  opacity: 0.7;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease;
 }
 
 .adminbot-paper-timeline__bar span {
   min-width: 0;
   overflow: hidden;
-  padding: 0 var(--space-2);
+  padding-right: var(--space-2);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* Done: context, not something to act on. A tick reads faster than a colour. */
 .adminbot-paper-timeline__bar--complete {
-  opacity: 0.9;
+  border-color: color-mix(in srgb, var(--ok) 30%, var(--border));
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
+  color: color-mix(in srgb, var(--ok) 70%, var(--muted));
 }
 
+.adminbot-paper-timeline__bar--complete::before {
+  content: "✓";
+  flex-shrink: 0;
+  font-size: 0.85em;
+  line-height: 1;
+}
+
+/* Now: the single thing the row exists to communicate. */
 .adminbot-paper-timeline__bar--current {
   border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent);
   color: var(--text-strong);
-  opacity: 1;
+  font-weight: 650;
+}
+
+.adminbot-paper-timeline__bar--current::before {
+  content: "";
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* Not yet: dashed so it reads as planned rather than started. */
+.adminbot-paper-timeline__bar--upcoming {
+  border-style: dashed;
+  border-color: color-mix(in srgb, var(--border) 70%, transparent);
+  color: color-mix(in srgb, var(--muted) 75%, transparent);
 }
 
 .adminbot-paper-timeline__bar--blocked {
   border-color: var(--danger-muted);
   background: var(--danger-subtle);
   color: var(--danger);
-  opacity: 1;
+  font-weight: 600;
+}
+
+.adminbot-paper-timeline__bar--blocked::before {
+  content: "!";
+  flex-shrink: 0;
+  font-weight: 700;
 }
 
 .adminbot-paper-timeline__legend {
@@ -8484,28 +8556,40 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-reimbursement-workspace {
   display: grid;
   grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);
-  gap: var(--space-4);
-  min-height: 620px;
+  gap: var(--space-5);
+  min-height: 640px;
 }
 
 .adminbot-reimbursement-chat,
-.adminbot-reimbursement-summary {
+.adminbot-reimbursement-summary,
+.adminbot-calendar__chat,
+.adminbot-calendar__draft-card {
   display: flex;
   min-width: 0;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-4);
+  padding: var(--space-5);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--bg-accent);
 }
 
 .adminbot-reimbursement-chat__heading,
-.adminbot-reimbursement-summary__header {
+.adminbot-reimbursement-summary__header,
+.adminbot-calendar__chat-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
+}
+
+/* The reset action shares the heading with the title; it needs to read as a real button next to
+   it, so give it more presence than the tiny `btn--sm` defaults. */
+.adminbot-reimbursement-chat__reset {
+  min-width: 6rem;
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-4);
+  font-size: var(--control-ui-text-sm);
 }
 
 .adminbot-ready {
@@ -8514,7 +8598,8 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--ok);
 }
 
-.adminbot-reimbursement-messages {
+.adminbot-reimbursement-messages,
+.adminbot-calendar__messages {
   display: flex;
   min-height: 280px;
   max-height: 440px;
@@ -8528,11 +8613,13 @@ details[open] > .ov-expandable-toggle::after {
   background: var(--bg);
 }
 
-.adminbot-reimbursement-message {
+.adminbot-reimbursement-message,
+.adminbot-calendar__message {
   max-width: 88%;
 }
 
-.adminbot-reimbursement-message > span {
+.adminbot-reimbursement-message > span,
+.adminbot-calendar__message > span {
   display: block;
   margin: 0 0 var(--space-1) var(--space-2);
   color: var(--muted);
@@ -8541,7 +8628,8 @@ details[open] > .ov-expandable-toggle::after {
   letter-spacing: var(--tracking-tight);
 }
 
-.adminbot-reimbursement-message p {
+.adminbot-reimbursement-message p,
+.adminbot-calendar__message p {
   margin: 0;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border);
@@ -8554,26 +8642,31 @@ details[open] > .ov-expandable-toggle::after {
   overflow-wrap: anywhere;
 }
 
-.adminbot-reimbursement-message--user {
+.adminbot-reimbursement-message--user,
+.adminbot-calendar__message--user {
   align-self: flex-end;
 }
 
-.adminbot-reimbursement-message--user > span {
+.adminbot-reimbursement-message--user > span,
+.adminbot-calendar__message--user > span {
   margin-right: var(--space-2);
   text-align: right;
 }
 
-.adminbot-reimbursement-message--user p {
+.adminbot-reimbursement-message--user p,
+.adminbot-calendar__message--user p {
   border-color: var(--accent-2-muted);
   background: var(--accent-subtle);
 }
 
-.adminbot-reimbursement-composer {
+.adminbot-reimbursement-composer,
+.adminbot-calendar__composer {
   display: grid;
   gap: var(--space-3);
 }
 
-.adminbot-reimbursement-composer :is(input:not([type="file"]), textarea) {
+.adminbot-reimbursement-composer :is(input:not([type="file"]), textarea),
+.adminbot-calendar__composer textarea {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--input);
@@ -8739,7 +8832,8 @@ details[open] > .ov-expandable-toggle::after {
     grid-template-columns: 1fr;
   }
 
-  .adminbot-reimbursement-message {
+  .adminbot-reimbursement-message,
+  .adminbot-calendar__message {
     max-width: 100%;
   }
 }
@@ -8977,6 +9071,414 @@ details[open] > .ov-expandable-toggle::after {
   outline-offset: 1px;
 }
 
+/* Calendar tab. Two stacked panels rather than side-by-side columns: drafting an event and
+   inviting people to one are separate jobs done at separate times, and putting them shoulder to
+   shoulder made each one half as wide for no gain. */
+.adminbot-calendar {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.adminbot-calendar__panel {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.adminbot-calendar__panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.adminbot-calendar__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+.adminbot-calendar__draft-fields,
+.adminbot-calendar__filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  align-items: end;
+}
+
+.adminbot-calendar__wide {
+  grid-column: 1 / -1;
+}
+
+/* Flex lets the heading's button shrink until its label wraps to two lines. It is a fixed-width
+   control next to elastic text, so it should not shrink at all. */
+.adminbot-calendar__chat-heading .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* The month, drawn from the events the service read rather than embedded from Google. An iframe
+   showed a sign-in wall to anyone whose browser had no session on the calendar, and the app cannot
+   see inside the frame to know. Seven columns, one row per week the month touches. */
+.adminbot-calendar__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.adminbot-calendar__weekday {
+  padding: var(--space-2) var(--space-2);
+  background: var(--bg-accent);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+
+.adminbot-calendar__day {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-height: 96px;
+  padding: var(--space-2);
+  background: var(--panel, var(--bg));
+}
+
+/* The neighbouring month's days are context, not content. */
+.adminbot-calendar__day--muted {
+  background: var(--bg);
+}
+
+.adminbot-calendar__day--muted .adminbot-calendar__day-number {
+  opacity: 0.45;
+}
+
+/* Today is marked by a ring on the number rather than a filled cell, so it stays readable behind
+   however many events sit on it. */
+.adminbot-calendar__day--today .adminbot-calendar__day-number {
+  border-radius: 999px;
+  background: var(--accent, var(--text));
+  color: var(--bg);
+  font-weight: 700;
+}
+
+.adminbot-calendar__day-number {
+  align-self: flex-start;
+  min-width: 1.4em;
+  padding: 1px 5px;
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+/* One event. A button, because clicking it selects the event for both of the things you can do to
+   an existing one. */
+.adminbot-calendar__chip {
+  display: flex;
+  gap: var(--space-1, 4px);
+  align-items: baseline;
+  width: 100%;
+  padding: 2px var(--space-1, 4px);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--bg-accent);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--control-ui-text-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.adminbot-calendar__chip:hover {
+  border-color: var(--border-strong);
+}
+
+.adminbot-calendar__chip--selected {
+  border-color: var(--accent, var(--text));
+  background: var(--accent-subtle, var(--bg-accent));
+}
+
+.adminbot-calendar__chip:focus-visible {
+  outline: 2px solid var(--accent, var(--text));
+  outline-offset: 1px;
+}
+
+.adminbot-calendar__chip-time {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.adminbot-calendar__chip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The event the invites would go to. A statement, not a control — the month above is the picker. */
+.adminbot-calendar__selected {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-accent);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* The outcome of the last write. Sits above everything, because it is the answer to the button
+   the operator just pressed. */
+.adminbot-calendar__notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+/* "N more". Sits where the fifth event would have been, so a busy day reads as busy rather than
+   as a cell that quietly stops listing. */
+.adminbot-calendar__more {
+  align-self: flex-start;
+  padding: 1px var(--space-1, 4px);
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.adminbot-calendar__more:hover {
+  color: var(--text);
+  background: var(--bg-accent);
+}
+
+/* The day list and the event details open over the grid rather than anchored to their square:
+   anchoring clips at the edges of the month and needs re-measuring on resize, and the thing being
+   shown — a whole day, or a whole guest list — is usually taller than the cell it came from. */
+.adminbot-calendar__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+
+.adminbot-calendar__card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: min(30rem, 100%);
+  max-height: min(32rem, 80vh);
+  overflow-y: auto;
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card, var(--panel));
+  box-shadow: 0 18px 48px rgb(0 0 0 / 45%);
+}
+
+.adminbot-calendar__card-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+.adminbot-calendar__card-head {
+  display: grid;
+  gap: var(--space-1, 4px);
+  padding-right: var(--space-5);
+}
+
+.adminbot-calendar__card-list {
+  display: grid;
+  gap: var(--space-1, 4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adminbot-calendar__card-line,
+.adminbot-calendar__card-description {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--text);
+}
+
+.adminbot-calendar__card-description {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.adminbot-calendar__card-description p {
+  margin: 0;
+}
+
+.adminbot-calendar__card-description :is(ul, ol) {
+  margin: 0;
+  padding-left: var(--space-4);
+}
+
+/* A description is mostly links — Zoom, Drive, Overleaf — so they have to be obviously clickable
+   and must not push the card wide when they are long. */
+.adminbot-calendar__card-description a {
+  color: var(--accent, var(--text));
+  overflow-wrap: anywhere;
+}
+
+.adminbot-calendar__card-guests {
+  display: grid;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.adminbot-calendar__guests {
+  display: grid;
+  gap: var(--space-1, 4px);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-calendar__guests li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  align-items: baseline;
+}
+
+/* The address stays visible next to a resolved name: two people can share a first name, and the
+   address is what the invite actually goes to. */
+.adminbot-calendar__guest-email {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-calendar__month-nav {
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+/* Conversation on the left, the draft it produced on the right — the reimbursement assistant's
+   layout, because it is the same act. Stacks below the same breakpoint that one uses. */
+.adminbot-calendar__workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .adminbot-calendar__workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .adminbot-calendar__day {
+    min-height: 72px;
+  }
+}
+
+/* States that the instruction box is aimed at one event rather than composing a new one. Loud
+   enough that nobody types a new event into it by accident. */
+.adminbot-calendar__editing {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--accent, var(--border-strong));
+  border-radius: var(--radius-md, 8px);
+  background: var(--bg-accent);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* The sentence that appears between the first click and the second, saying what the second one
+   does. Not a warning colour: this is the normal path, not a mistake. */
+.adminbot-calendar__confirm {
+  margin-right: auto;
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.adminbot-calendar__note {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* The event list and the match list are both scannable columns of one-line rows, so they share a
+   shape: a control, then the fact, then the quieter detail. */
+.adminbot-calendar__matches {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-calendar__matches li {
+  background: var(--panel, var(--bg));
+}
+
+.adminbot-calendar__matches label {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  cursor: pointer;
+}
+
+.adminbot-calendar__matches input {
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+.adminbot-calendar__event-when,
+.adminbot-calendar__match-email {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.adminbot-calendar__event-name,
+.adminbot-calendar__match-name {
+  font-weight: 600;
+}
+
+/* Why this person is on the list. Pushed to the end of the row and quietened: it is the answer to
+   a question the operator only asks about one or two of the names. */
+.adminbot-calendar__event-where,
+.adminbot-calendar__match-why {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  text-align: right;
+}
+
 .adminbot-time-allocation-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);
@@ -9008,14 +9510,86 @@ details[open] > .ov-expandable-toggle::after {
   border-bottom: 0;
 }
 
+/* The name cell holds a colour swatch and a label, but it stays a table cell: `display: flex` here
+   took the first cell out of table layout entirely, so its column no longer sized with its header
+   and the name column drifted out of line with the one above it. Inline layout inside the cell
+   gets the same swatch-then-label line without costing the column. */
 .adminbot-time-allocation-table td:first-child {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  white-space: nowrap;
 }
 
+/* Sized here rather than inherited from the legend: the legend rule was renamed with the chart
+   (.time-chart__legend-item i) and this selector was left behind with no box at all, so the swatch
+   rendered 0x0 and the tables lost the colour that ties a row to its bar. */
 .adminbot-time-allocation-table__task {
   display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: var(--space-2);
+  border-radius: 2px;
+  vertical-align: middle;
+}
+
+/* A commitment's note, as a row of its own under the commitment.
+   A note is free text and often a sentence or two, so a column of its own would either wrap the
+   whole table into prose or truncate away the one thing the note was written to say. Closed, the
+   table stays as scannable as it was; open, the note gets the full width of the table. */
+.adminbot-time-allocation-table__note-row td {
+  padding-top: 0;
+  white-space: normal;
+}
+
+/* The note belongs to the row above it, so the divider between the two comes off: one commitment
+   reads as one block whether or not it carries a note. */
+.adminbot-time-allocation-table tbody tr:has(+ .adminbot-time-allocation-table__note-row) td {
+  border-bottom: 0;
+}
+
+.adminbot-time-allocation-table__note {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.adminbot-time-allocation-table__note summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1, 4px);
+  cursor: pointer;
+  list-style: none;
+  color: var(--text-muted);
+}
+
+.adminbot-time-allocation-table__note summary::-webkit-details-marker {
+  display: none;
+}
+
+/* The caret is the only thing saying the row opens, so it is drawn rather than left to the
+   platform marker, which the rule above has to hide to keep the summary on one line. */
+.adminbot-time-allocation-table__note summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  border-left: 5px solid currentcolor;
+  transition: transform 120ms ease-out;
+}
+
+.adminbot-time-allocation-table__note[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.adminbot-time-allocation-table__note summary:focus-visible {
+  outline: 2px solid var(--accent, var(--text));
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.adminbot-time-allocation-table__note p {
+  margin: var(--space-2) 0 0;
+  max-width: 72ch;
+  white-space: pre-wrap;
+  color: var(--text);
 }
 
 /* Granularity switch and the self-service commitment editor: added with the day/week/month views
@@ -9099,6 +9673,22 @@ details[open] > .ov-expandable-toggle::after {
   align-items: center;
   margin-right: var(--space-2);
   color: var(--text-muted);
+}
+
+/* The icon carries no intrinsic size, so without this the anchor laid out at zero and a row's
+   supporting page was in the markup but invisible on screen. Same box and stroke as the other
+   icon buttons. */
+.adminbot-time-allocation-table__link svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+}
+
+.adminbot-time-allocation-table__link:hover {
+  color: var(--text);
 }
 
 .adminbot-time-availability__deadlines {

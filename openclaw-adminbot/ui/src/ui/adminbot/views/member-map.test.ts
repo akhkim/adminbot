@@ -77,6 +77,39 @@ describe("parseMemberMap", () => {
     expect(map.places.map((place) => place.key)).not.toContain("ghost");
   });
 
+  it("carries avatar_url and last_login_at through when present, and drops them when blank", () => {
+    const map = parseMemberMap({
+      mode: "full",
+      places: [
+        {
+          key: "toronto",
+          label: "Toronto",
+          country: "Canada",
+          lat: 43.65,
+          lon: -79.38,
+          members: [
+            {
+              member_id: "a",
+              name: "Ada",
+              avatar_url: "https://example.com/ada.png",
+              last_login_at: "2026-01-05T00:00:00.000Z",
+            },
+            { member_id: "b", name: "Bob", avatar_url: "", last_login_at: "" },
+          ],
+        },
+      ],
+      unplaced: [],
+      counts: { placed: 2, unplaced: 0, unknown: 0 },
+    })!;
+    expect(map.places[0].members?.[0]).toEqual({
+      member_id: "a",
+      name: "Ada",
+      avatar_url: "https://example.com/ada.png",
+      last_login_at: "2026-01-05T00:00:00.000Z",
+    });
+    expect(map.places[0].members?.[1]).toEqual({ member_id: "b", name: "Bob" });
+  });
+
   it("returns null for a body that is not a map", () => {
     expect(parseMemberMap(null)).toBeNull();
     expect(parseMemberMap({ error: "nope" })).toBeNull();
@@ -126,6 +159,127 @@ describe("renderMemberMap", () => {
     const anonymous = await draw(parseMemberMap(summary));
     expect(anonymous.querySelector(".member-map__dot title")?.textContent).not.toContain("Ada");
     expect(anonymous.querySelector(".member-map__dot title")?.textContent).toContain("9");
+  });
+
+  it("shows up to 3 avatars per city, most-recently-logged-in first, with a '…' for the rest", async () => {
+    const container = await draw(
+      parseMemberMap({
+        mode: "full",
+        places: [
+          {
+            key: "toronto",
+            label: "Toronto",
+            country: "Canada",
+            lat: 43.65,
+            lon: -79.38,
+            members: [
+              {
+                member_id: "a",
+                name: "Ada",
+                avatar_url: "https://example.com/ada.png",
+                last_login_at: "2026-01-01T00:00:00.000Z",
+              },
+              {
+                member_id: "b",
+                name: "Bob",
+                avatar_url: "https://example.com/bob.png",
+                last_login_at: "2026-01-03T00:00:00.000Z",
+              },
+              { member_id: "c", name: "Cy", last_login_at: "2026-01-02T00:00:00.000Z" },
+              { member_id: "d", name: "Di", avatar_url: "https://example.com/di.png" },
+            ],
+          },
+        ],
+        unplaced: [],
+        counts: { placed: 4, unplaced: 0, unknown: 0 },
+      }),
+    );
+    const avatars = container.querySelectorAll(".member-map__body .member-map__avatar");
+    expect(avatars).toHaveLength(3);
+    // Bob logged in most recently, then Cy, then Ada; Di (no login recorded) is left out.
+    expect([...avatars].map((node) => node.getAttribute("title"))).toEqual(["Bob", "Cy", "Ada"]);
+    // Cy has no avatar_url, so their circle is the initials fallback, not an <img>.
+    expect(avatars[1].tagName).toBe("SPAN");
+    expect(avatars[1].textContent).toBe("C");
+    expect(
+      container.querySelector(".member-map__body .member-map__avatar-more"),
+    ).not.toBeNull();
+  });
+
+  const FOUR_MEMBER_TORONTO = {
+    mode: "full",
+    places: [
+      {
+        key: "toronto",
+        label: "Toronto",
+        country: "Canada",
+        lat: 43.65,
+        lon: -79.38,
+        members: [
+          { member_id: "a", name: "Ada" },
+          { member_id: "b", name: "Bob" },
+          { member_id: "c", name: "Cy" },
+          { member_id: "d", name: "Di" },
+        ],
+      },
+    ],
+    unplaced: [],
+    counts: { placed: 4, unplaced: 0, unknown: 0 },
+  };
+
+  it("reveals a readable name list below a row's avatars when its expand button is clicked", async () => {
+    const container = await draw(parseMemberMap(FOUR_MEMBER_TORONTO));
+    const element = container.querySelector("adminbot-member-map") as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    const row = container.querySelector(".member-map__body .member-map__row")!;
+    const button = row.querySelector<HTMLButtonElement>(".member-map__expand-btn")!;
+    expect(button).not.toBeNull();
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    expect(row.querySelector(".member-map__name-list")).toBeNull();
+
+    button.click();
+    await element.updateComplete;
+
+    const expandedRow = container.querySelector(".member-map__body .member-map__row")!;
+    const expandedButton = expandedRow.querySelector<HTMLButtonElement>(".member-map__expand-btn")!;
+    expect(expandedButton.getAttribute("aria-expanded")).toBe("true");
+    expect(
+      [...expandedRow.querySelectorAll(".member-map__name-list li")].map(
+        (node) => node.textContent,
+      ),
+    ).toEqual(["Ada", "Bob", "Cy", "Di"]);
+
+    // Clicking again collapses it.
+    expandedButton.click();
+    await element.updateComplete;
+    expect(
+      container.querySelector(".member-map__body .member-map__name-list"),
+    ).toBeNull();
+  });
+
+  it("omits the expand button for a city with 3 or fewer members", async () => {
+    const container = await draw(
+      parseMemberMap({
+        mode: "full",
+        places: [
+          {
+            key: "toronto",
+            label: "Toronto",
+            country: "Canada",
+            lat: 43.65,
+            lon: -79.38,
+            members: [
+              { member_id: "a", name: "Ada" },
+              { member_id: "b", name: "Bob" },
+            ],
+          },
+        ],
+        unplaced: [],
+        counts: { placed: 2, unplaced: 0, unknown: 0 },
+      }),
+    );
+    expect(container.querySelector(".member-map__body .member-map__expand-btn")).toBeNull();
   });
 
   it("mentions members it could not place", async () => {

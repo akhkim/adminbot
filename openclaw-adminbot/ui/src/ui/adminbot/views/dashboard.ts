@@ -15,6 +15,7 @@
 // is presentation.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
+import { nextStepFor } from "../next-step.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
 import { iconForTab, type Tab } from "../../navigation.ts";
@@ -147,12 +148,55 @@ function registrationsItem(state: AppViewState, role: AccessRole): AttentionItem
   };
 }
 
+/**
+ * Papers whose next step is waiting on the person looking at the page.
+ *
+ * The point of surfacing this on the dashboard rather than only on the paper list: a next step
+ * nobody navigates to is not a nudge. This is the alarm — computed from the dependency graph, so
+ * it fires the moment a step becomes actionable rather than after a reminder window elapses.
+ */
+function nextStepItem(state: AppViewState, role: AccessRole): AttentionItem | null {
+  if (role === "anonymous") {
+    return null;
+  }
+  const papers = state.adminBotData?.papers ?? [];
+  if (papers.length === 0) {
+    return null;
+  }
+
+  // Admins care about the whole pipeline; a member only about papers they are on.
+  const scoped = role === "admin" ? papers : ownPapers(state);
+  const open = scoped
+    .map((paper) => ({ paper, next: nextStepFor(paper) }))
+    .filter((row) => row.next && !row.next.done);
+  if (open.length === 0) {
+    return null;
+  }
+
+  const waitingOnPi = open.filter((row) => row.next?.isApproval).length;
+  const first = open[0];
+  const summary =
+    open.length === 1 && first?.next
+      ? `${first.paper.title}: ${first.next.headline}`
+      : `${open.length} papers have an actionable next step` +
+        (waitingOnPi > 0 ? `, ${waitingOnPi} waiting on approval` : "");
+
+  return {
+    id: "next-step",
+    title: "Next steps are ready",
+    summary,
+    actionLabel: role === "admin" ? "Open Active Papers" : "Open my work",
+    onAction: () => state.setTab(role === "admin" ? "adminbotPapers" : "myWork"),
+  };
+}
+
 function attentionItems(state: AppViewState, role: AccessRole): AttentionItem[] {
   // Own-account work first: a person can always act on their own profile, whereas a queue may be
   // someone else's to clear. Onboarding itself is not in this stack -- it is the checklist at the
   // very bottom of the profile page, see renderOnboardingChecklist.
   return [
     mandatoryFieldsItem(state),
+    nextStepItem(state, role),
     proposalsItem(state, role),
     registrationsItem(state, role),
   ].filter((item): item is AttentionItem => item !== null);

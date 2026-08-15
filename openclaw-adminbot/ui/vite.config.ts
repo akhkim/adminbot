@@ -157,6 +157,9 @@ export function resolveSourcePackageAliasesForVite(): ControlUiViteAlias[] {
     sourcePackageAlias("normalization-core", "string-coerce"),
     sourcePackageAlias("normalization-core", "string-normalization"),
     sourcePackageAlias("normalization-core"),
+    // The nudge engine is pure, dependency-free TypeScript, so the UI reads it from source the
+    // same way as the packages above rather than through a workspace install.
+    sourcePackageAlias("nudge-engine"),
   ];
 }
 

@@ -65,8 +65,8 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // beyond having an account.
   profile: "member",
   myWork: "member",
-  // Not built yet — the tab renders a placeholder. Declared at member tier so the group appears
-  // for the audience it is being built for rather than silently defaulting to admin-only.
+  // Lab Sharing is the collaboration surface for every member -- ask for help, answer invites,
+  // browse open projects. No data on it requires operator privilege.
   labSharing: "member",
 
   // Everything else is an operator or governance surface.
@@ -78,6 +78,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotOnboarding: "admin",
   adminbotSettings: "admin",
   adminbotAnnouncements: "admin",
+  // Reads the lab calendar and spends model time on drafting, and every button on it files a
+  // governance-gated action. Admin, and the service re-checks both routes independently.
+  adminbotCalendar: "admin",
   activity: "admin",
   agents: "admin",
   aiAgents: "admin",

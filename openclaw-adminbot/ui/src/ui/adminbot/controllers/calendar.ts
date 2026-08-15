@@ -1,0 +1,303 @@
+// The Calendar tab's side of the wire.
+//
+// Four things happen here:
+//
+//   1. Reading the displayed month from the lab calendar, which also tells the tab which calendar
+//      it is looking at so the grid and every write name the same one.
+//   2. Asking the model to turn a sentence into a draft — either a new event, or the changes to an
+//      event that already exists. Drafts come back to the screen; the operator edits them there.
+//   3. Creating or editing an event.
+//   4. Inviting people to one.
+//
+// Writes go straight through: the service files the typed action, records the signed-in admin as
+// its approver and executes it in the same request. The tab is admin-only and the person clicking
+// is the person who would have approved it anyway, so the second click bought nothing — but the
+// ledger still gets the proposal, the approver and the execution, so "who put this on the calendar"
+// stays answerable. That means the buttons on this tab really do send; the view asks for a
+// confirmation before the two that other people can see.
+import {
+  createCalendarEvent,
+  draftCalendarEvent,
+  fetchCalendarEvents,
+  inviteToCalendarEvent,
+  loadStoredMemberSession,
+  resolveAdminBotBaseUrl,
+  updateCalendarEvent,
+  type CalendarEvent,
+  type CalendarEventDraft,
+} from "../auth/session.ts";
+import { dayKeyInZone, monthStartKey, monthWindow } from "../calendar-month.ts";
+import type { AdminBotHost } from "./admin.ts";
+
+const SIGN_IN_FIRST = "Sign in with an admin account to use the calendar.";
+
+/**
+ * What to tell the operator when a calendar call fails.
+ *
+ * `unreachable` deliberately does not reuse ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE. That sentence is
+ * about enabling a plugin for the agent in the Gateway, which has nothing to do with an HTTP
+ * request to the AdminBot service failing — it sent the operator to look at plugin configuration
+ * when the service was simply not answering. `unreachable` means the browser could not complete
+ * the request at all: the service is down, the origin is not in ADMINBOT_ALLOWED_ORIGINS so the
+ * response was refused, or the URL is wrong. Name the address, since that is the one fact that
+ * narrows it.
+ */
+function failureText(
+  result: { kind: string; message?: string },
+  fallback: string,
+  baseUrl?: string,
+): string {
+  if (result.kind === "unreachable") {
+    return baseUrl
+      ? `Could not reach the AdminBot service at ${baseUrl}. Check that it is running, and that this site's address is in ADMINBOT_ALLOWED_ORIGINS.`
+      : "Could not reach the AdminBot service. Check that it is running.";
+  }
+  if (result.kind === "forbidden") {
+    return "Your session no longer has admin access — sign in again and retry.";
+  }
+  if (result.kind === "rate-limited") {
+    return "Too many attempts. Wait a moment and try again.";
+  }
+  // The service names what it refused ("could not read the calendar: gog: no token"), which is the
+  // only sentence that tells the operator whether to fix a filter or fix the deployment.
+  return result.message ?? fallback;
+}
+
+export async function loadAdminBotCalendar(host: AdminBotHost): Promise<void> {
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.calendarEventsError = SIGN_IN_FIRST;
+    return;
+  }
+  host.calendarEventsLoading = true;
+  host.calendarEventsError = null;
+  try {
+    // Always the month the grid is showing, never a rolling window. Left unset on the first load
+    // the service answers "now to +60 days", which silently drops everything earlier this month —
+    // the grid would draw the 1st to today as empty days that in fact have events on them. Pinning
+    // the month here keeps what is fetched and what is drawn the same thing, and the view resolves
+    // "today" the same way.
+    const month =
+      host.calendarMonth ??
+      monthStartKey(
+        dayKeyInZone(
+          Date.now(),
+          host.calendarSource?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
+        ),
+      );
+    host.calendarMonth = month;
+    const baseUrl = resolveAdminBotBaseUrl(host.settings);
+    const result = await fetchCalendarEvents(
+      // 250 is the service's own ceiling; a month past it is a calendar no grid could show anyway.
+      { ...monthWindow(month), max: 250 },
+      stored.sessionToken,
+      baseUrl,
+    );
+    if (!result.ok) {
+      host.calendarEventsError = failureText(result, "Could not read the calendar.", baseUrl);
+      host.calendarEvents = [];
+      return;
+    }
+    host.calendarEvents = result.value.events;
+    if (result.value.calendar) {
+      host.calendarSource = result.value.calendar;
+    }
+  } finally {
+    host.calendarEventsLoading = false;
+  }
+}
+
+/** Appends one turn to the transcript the chat panel renders. */
+function say(host: AdminBotHost, role: "user" | "assistant", content: string): void {
+  host.calendarMessages = [...(host.calendarMessages ?? []), { role, content }];
+}
+
+/** What the assistant says back once it has a draft, in the words a person would use. */
+function describeDraft(draft: CalendarEventDraft, editing: boolean): string {
+  const when = draft.end ? `${draft.start} to ${draft.end}` : draft.start;
+  const where = draft.location ? `, at ${draft.location}` : "";
+  return editing
+    ? `That would leave it as "${draft.summary}", ${when}${where}. Check it on the right, then update the event.`
+    : `Drafted "${draft.summary}", ${when}${where}. Check it on the right, then add it to the calendar.`;
+}
+
+/**
+ * One turn of the conversation: the instruction goes up, a draft comes back.
+ *
+ * With an event selected the instruction is applied to that event and the model is told what it
+ * currently says; otherwise it composes a new one. Same draft shape either way, so the card beside
+ * the conversation does not fork.
+ */
+export async function requestAdminBotCalendarDraft(host: AdminBotHost): Promise<void> {
+  const prompt = (host.calendarPrompt ?? "").trim();
+  if (!prompt) {
+    host.calendarDraftError = "Describe the event first.";
+    return;
+  }
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.calendarDraftError = SIGN_IN_FIRST;
+    return;
+  }
+  const editing = host.calendarEditingEventId
+    ? (host.calendarEvents ?? []).find((event) => event.id === host.calendarEditingEventId)
+    : undefined;
+  // The instruction joins the transcript and leaves the box, the way a chat does — retyping it
+  // after every answer is what makes a form feel like a form.
+  say(host, "user", prompt);
+  host.calendarPrompt = "";
+  host.calendarDraftBusy = true;
+  host.calendarDraftError = null;
+  try {
+    const result = await draftCalendarEvent(
+      {
+        prompt,
+        // The browser's zone, so "1pm" is the operator's 1pm rather than the server's.
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        ...(editing
+          ? {
+              editing: {
+                summary: editing.summary,
+                start: editing.start,
+                ...(editing.end ? { end: editing.end } : {}),
+                ...(editing.location ? { location: editing.location } : {}),
+                ...(editing.description ? { description: editing.description } : {}),
+              },
+            }
+          : {}),
+      },
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      const text = failureText(
+        result,
+        "Could not draft that event.",
+        resolveAdminBotBaseUrl(host.settings),
+      );
+      host.calendarDraftError = text;
+      // Said in the transcript as well as in the callout: the conversation is where the reader is
+      // looking, and a refusal is part of it.
+      say(host, "assistant", text);
+      return;
+    }
+    host.calendarDraft = result.value;
+    say(host, "assistant", describeDraft(result.value, Boolean(editing)));
+  } finally {
+    host.calendarDraftBusy = false;
+  }
+}
+
+/** The draft as the operator currently has it on screen, with their edits applied. */
+export function currentCalendarDraft(host: AdminBotHost): CalendarEventDraft | null {
+  return host.calendarDraft ?? null;
+}
+
+/**
+ * Puts the draft on the calendar — as a new event, or as changes to the one being edited.
+ *
+ * An edit sends the whole event rather than a patch, because the underlying update writes what it
+ * is given: sending only the changed fields would clear the rest.
+ */
+export async function saveAdminBotCalendarEvent(host: AdminBotHost): Promise<void> {
+  const draft = currentCalendarDraft(host);
+  if (!draft) {
+    return;
+  }
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = { kind: "error", text: SIGN_IN_FIRST };
+    return;
+  }
+  const editingId = host.calendarEditingEventId ?? null;
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  const payload = {
+    summary: draft.summary,
+    start: draft.start,
+    end: draft.end,
+    ...(draft.timezone ? { timezone: draft.timezone } : {}),
+    ...(draft.location ? { location: draft.location } : {}),
+    ...(draft.description ? { description: draft.description } : {}),
+  };
+  host.calendarBusy = true;
+  try {
+    const result = editingId
+      ? await updateCalendarEvent(editingId, payload, stored.sessionToken, baseUrl)
+      : await createCalendarEvent(
+          { ...payload, ...(draft.attendees?.length ? { attendees: draft.attendees } : {}) },
+          stored.sessionToken,
+          baseUrl,
+        );
+    if (!result.ok) {
+      host.adminBotNotice = {
+        kind: "error",
+        text: failureText(result, "Could not save that event.", baseUrl),
+      };
+      return;
+    }
+    host.adminBotNotice = {
+      kind: "success",
+      text: editingId ? "Event updated." : "Event added to the calendar.",
+    };
+    say(host, "assistant", editingId ? "Updated." : "Added to the calendar.");
+    host.calendarDraft = null;
+    host.calendarPrompt = "";
+    host.calendarEditingEventId = null;
+    // Show the month the event actually landed in. Drafting "next Tuesday" while looking at August
+    // can easily produce a September event, and reloading the month on screen would then show
+    // nothing — indistinguishable from the save having failed.
+    const savedMonth = monthStartKey(draft.start.slice(0, 10));
+    if (/^\d{4}-\d{2}-\d{2}$/u.test(savedMonth)) {
+      host.calendarMonth = savedMonth;
+    }
+    await loadAdminBotCalendar(host);
+  } finally {
+    host.calendarBusy = false;
+  }
+}
+
+export async function inviteAdminBotCalendarAudience(
+  host: AdminBotHost,
+  params: { event: CalendarEvent; emails: string[]; reason: string },
+): Promise<void> {
+  if (!params.emails.length) {
+    return;
+  }
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = { kind: "error", text: SIGN_IN_FIRST };
+    return;
+  }
+  const baseUrl = resolveAdminBotBaseUrl(host.settings);
+  host.calendarBusy = true;
+  try {
+    const result = await inviteToCalendarEvent(
+      params.event.id,
+      {
+        attendees: params.emails,
+        summary: params.event.summary,
+        // The filter that produced this list, recorded on the action so the ledger says who was
+        // mailed and why without reconstructing it from the address list.
+        rationale: params.reason,
+      },
+      stored.sessionToken,
+      baseUrl,
+    );
+    if (!result.ok) {
+      host.adminBotNotice = {
+        kind: "error",
+        text: failureText(result, "Could not send those invites.", baseUrl),
+      };
+      return;
+    }
+    host.adminBotNotice = {
+      kind: "success",
+      text: `Invited ${params.emails.length} ${
+        params.emails.length === 1 ? "person" : "people"
+      } to "${params.event.summary}".`,
+    };
+    await loadAdminBotCalendar(host);
+  } finally {
+    host.calendarBusy = false;
+  }
+}

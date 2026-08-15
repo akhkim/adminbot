@@ -9,11 +9,16 @@ export const adminBotActionTypes = [
   "slack.invite_guest",
   "slack.invite_member",
   "slack.send_message",
+  "slack.profile_photo_update",
   "slack.channel_naming_notify_owner",
   "slack.rename_channel",
   "vector.invite",
   "calendar.create_tentative_hold",
   "calendar.send_invite",
+  // Adds people to an event that already exists. Distinct from `calendar.reschedule`, which is the
+  // only other way to touch an existing event: that one writes the whole attendee list, so using it
+  // to invite two people would uninvite everyone already on the event.
+  "calendar.add_attendees",
   "calendar.reschedule",
   "calendar.cancel",
   "email.draft",
@@ -291,6 +296,29 @@ export type AdminBotMemberOnboarding = {
   remaining: AdminBotMemberOnboardingStep[];
   steps: AdminBotMemberOnboardingStep[];
 };
+
+export type AdminBotProfilePhotoAssessment = {
+  compliant: boolean;
+  issues: string[];
+  summary: string;
+  checked_at: string;
+  photo_url?: string;
+  source: "ai" | "heuristic";
+};
+
+export type AdminBotProfilePhotoPolishVariant = {
+  id: string;
+  image_data_url: string;
+  created_at: string;
+  note?: string;
+};
+
+export type AdminBotProfilePhotoReviewState = {
+  assessment?: AdminBotProfilePhotoAssessment;
+  last_guideline_dm_at?: string;
+  variants?: AdminBotProfilePhotoPolishVariant[];
+  selected_variant_id?: string;
+};
 // Why a member is not on lab work for a stretch. `personal` and `other_project` were added for the
 // Control UI's time-availability tab, which asks members to categorise their non-Jinesis time:
 // `personal` is time off that is nobody's business but their own (distinct from `vacation`, which
@@ -411,7 +439,12 @@ export type AdminBotLabMemberInput = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
+  // Where the member lives. The member map and the timezone suggestion are keyed on this one.
   location?: string;
+  // Where the member is right now, when that is not `location` — a conference trip, a term
+  // abroad, an internship. Self-editable and stored, but it was never declared here, so every
+  // reader had to reach for it untyped. Audience filters on the Calendar tab read both.
+  current_city?: string;
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
@@ -468,6 +501,7 @@ export type AdminBotLabMemberInput = {
   slack_channels?: string[];
   slack_location?: string;
   slack_location_updated_at?: string;
+  profile_photo_review?: AdminBotProfilePhotoReviewState;
   // Coarse (country-level) location derived from the IP address of this person's most recent
   // successful login, via IP geolocation (see ip-geolocation.ts). Distinct from `location` and
   // `slack_location`, which are both self-reported: this one is inferred, so it is never taken
@@ -832,6 +866,10 @@ export type AdminBotAuditEvent = {
     | "openreview.assignment_changed"
     | "member_map.refreshed"
     | "member_directory.slack_synced"
+    | "profile_photo.reviewed"
+    | "profile_photo.guideline_nudged"
+    | "profile_photo.polished"
+    | "profile_photo.applied"
     | "auth.login_location_updated"
     // Slack channel-naming enforcement. The sweep renames other people's channels, which is an
     // external effect with no undo, so who triggered a pass and what it did is recorded here.

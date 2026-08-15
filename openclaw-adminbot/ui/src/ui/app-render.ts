@@ -13,11 +13,13 @@ import {
   type AccessRole,
 } from "./adminbot/access.ts";
 import {
+  applyAdminBotOwnProfilePhoto,
   approveAdminBotAction,
   deleteAdminBotPaper,
   executeAdminBotAction,
   generateAdminBotReimbursement,
   loadAdminBot,
+  polishAdminBotOwnProfilePhoto,
   removePendingAdminBotAction,
   resetAdminBotReimbursement,
   saveAdminBotMember,
@@ -45,6 +47,8 @@ import {
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
 import { renderAdminBot, type AdminBotPanel } from "./adminbot/views/admin.ts";
+import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
+import "./components/feedback-widget.ts";
 import {
   renderChangePasswordPopover,
   renderChangePasswordTrigger,
@@ -553,6 +557,10 @@ const lazyAdminBotOnboarding = createLazyView(
   () => import("./adminbot/views/onboarding.ts"),
   notifyLazyViewChanged,
 );
+const lazyAdminBotCalendar = createLazyView(
+  () => import("./adminbot/views/calendar.ts"),
+  notifyLazyViewChanged,
+);
 
 function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminBotPanel | null {
   if (mode === "general") {
@@ -586,6 +594,20 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
     default:
       return null;
   }
+}
+
+// A floating bottom-right feedback widget appears on AdminBot feature tabs only. A changed tab
+// re-renders the widget element with the new feature id, and the widget itself reloads its stored
+// vote when the feature id attribute changes.
+function renderFeedbackWidget(state: AppViewState) {
+  const config = feedbackConfigForTab(state.tab);
+  if (!config) {
+    return nothing;
+  }
+  return html`
+    <adminbot-feedback-widget feature-id=${config.featureId} github-file=${config.githubFile}>
+    </adminbot-feedback-widget>
+  `;
 }
 
 // Deep links and sign-out both leave `state.tab` pointing at a surface the current role may not
@@ -2214,6 +2236,20 @@ export function renderApp(state: AppViewState) {
   ) {
     void loadAdminBot(state, adminBotMode).finally(() => requestHostUpdate?.());
   }
+  // The Calendar tab's events are a separate read from the roster, and nothing was triggering it:
+  // opening the tab drew an empty month and only the Refresh button or a month step would fetch
+  // anything. `calendarEvents === undefined` is the "never asked" sentinel — a load that genuinely
+  // finds nothing sets [], so this cannot loop on an empty calendar.
+  if (
+    state.tab === "adminbotCalendar" &&
+    adminBotMode === "admin" &&
+    hasMemberSession &&
+    !state.calendarEventsLoading &&
+    !state.calendarEventsError &&
+    state.calendarEvents === undefined
+  ) {
+    void state.loadCalendarEvents?.().finally(() => requestHostUpdate?.());
+  }
   const browseChatWorkspacePath = (path: string) => {
     if (chatWorkspaceFiles.browserSearchTimer) {
       globalThis.clearTimeout(chatWorkspaceFiles.browserSearchTimer);
@@ -2736,13 +2772,16 @@ export function renderApp(state: AppViewState) {
           ? html`
               ${renderProfile(state, {
                 onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
+                onPolishPhoto: () => void polishAdminBotOwnProfilePhoto(state),
+                onApplyPolishedPhoto: (variantId) =>
+                  void applyAdminBotOwnProfilePhoto(state, variantId),
               })}
               <!-- Bottom of the page on purpose: the checklist is required reading a member works
                    through once, not the thing they came to this page to do on the other days. -->
               ${renderOnboardingChecklist(state)}
             `
           : nothing}
-        ${state.tab === "labSharing" ? renderLabSharing() : nothing}
+        ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}
         ${state.tab === "adminbotLogistics"
           ? renderAdminBotLogistics({
               role: accessRole,
@@ -3001,6 +3040,9 @@ export function renderApp(state: AppViewState) {
           : nothing}
         ${state.tab === "adminbotOnboarding" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotOnboarding, (m) => m.renderAdminBotOnboarding(state))
+          : nothing}
+        ${state.tab === "adminbotCalendar" && adminBotMode === "admin"
+          ? renderLazyView(lazyAdminBotCalendar, (m) => m.renderAdminBotCalendar(state))
           : nothing}
         ${state.tab === "adminbotDeadlines"
           ? renderLazyView(lazyDeadlines, (m) => m.renderDeadlines())
@@ -4181,6 +4223,7 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
       </main>
+      ${renderFeedbackWidget(state)}
       ${renderExecApprovalPrompt(state)} ${renderGatewayUrlConfirmation(state)}
       ${renderDreamingRestartConfirmation({
         open: state.dreamingRestartConfirmOpen,

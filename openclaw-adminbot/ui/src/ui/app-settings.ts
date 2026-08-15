@@ -489,6 +489,13 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "adminbotTimeAvailability":
         await loadAdminBot(app);
         break;
+      // The audience filters read the roster and the papers; the event list is a separate read.
+      case "adminbotCalendar": {
+        const loadEvents = (app as { loadCalendarEvents?: () => Promise<void> })
+          .loadCalendarEvents;
+        await Promise.all([loadAdminBot(app), loadEvents?.() ?? Promise.resolve()]);
+        break;
+      }
       case "adminbotRegistrations":
         await loadAdminBotRegistrations(app);
         break;

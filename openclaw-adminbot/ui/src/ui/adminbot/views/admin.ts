@@ -1,6 +1,7 @@
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
+import { nextStepFor, type NextStep } from "../next-step.ts";
 import { adminBotMemberRoles } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
@@ -212,7 +213,10 @@ function paperTimelineBarStyle(
   const duration = Math.max(1, item.duration_business_days);
   const left = Math.round((start / total) * 1000) / 10;
   const width = Math.max(5, Math.round((duration / total) * 1000) / 10);
-  return `left: ${left}%; width: ${width}%; --adminbot-paper-timeline-color: ${item.color};`;
+  // Position only. `item.color` is deliberately not emitted: a per-step hue made the row a
+  // rainbow that encoded nothing, and hid the one thing worth seeing -- which step is current.
+  // The status class carries the meaning instead.
+  return `left: ${left}%; width: ${width}%;`;
 }
 
 function filterPaperOverview(event: Event): void {
@@ -502,7 +506,6 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
     ...(getFormValue(data, "hoursPerWeek") && Number.isFinite(hoursPerWeek)
       ? { hoursPerWeek }
       : {}),
-    availability: getFormValue(data, "availability"),
     ...(getFormValue(data, "location") ? { location: getFormValue(data, "location") } : {}),
     ...(getFormValue(data, "affiliation")
       ? { affiliation: getFormValue(data, "affiliation") }
@@ -563,7 +566,6 @@ function collectSelfProfileFields(form: HTMLFormElement): MemberProfileUpdate {
     ...(getFormValue(data, "hoursPerWeek") && Number.isFinite(hoursPerWeek)
       ? { hours_per_week: hoursPerWeek }
       : {}),
-    availability: getFormValue(data, "availability"),
     location,
     affiliation: getFormValue(data, "affiliation"),
     timezone: getFormValue(data, "timezone"),
@@ -1738,11 +1740,110 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
   return html`
     ${renderPaperOverview(props, papers)}
     <article class="adminbot-editor-card">
+      <div class="card-title">Next step per paper</div>
+      <div class="card-sub">
+        Derived from the PaperFlow dependency graph — what each paper is waiting on right now,
+        before anything is overdue.
+      </div>
+      ${renderNextSteps(papers)}
+    </article>
+    <article class="adminbot-editor-card">
       <div class="card-title">Paper nudges</div>
       <div class="card-sub">Due reminders and head professor escalations.</div>
       ${renderNudges(props.data.nudges)}
     </article>
     ${renderAddPaperCard(props, { governance: true })}
+  `;
+}
+
+/**
+ * Puts the composed nudge on the clipboard so an admin can paste it into Slack or mail.
+ *
+ * Deliberately not a send. Delivering a nudge is an external effect, so it belongs in the
+ * propose -> approve -> execute -> audit pipeline (`paper_publish.nudge_author`), not in a
+ * button that fires from a browser. Copying keeps this surface read-only while still saving the
+ * admin from writing the message themselves.
+ */
+function copyNudge(event: Event, message: string) {
+  const button = event.currentTarget as HTMLButtonElement | null;
+  void navigator.clipboard
+    ?.writeText(message)
+    .then(() => {
+      if (!button) {
+        return;
+      }
+      const original = button.textContent ?? "";
+      button.textContent = "Copied";
+      window.setTimeout(() => {
+        button.textContent = original;
+      }, 1500);
+    })
+    .catch(() => {
+      // A clipboard the browser refuses is not worth an error dialog; the message is also on the
+      // button's title attribute, so it stays reachable by hover.
+    });
+}
+
+// The dependency-based counterpart to renderNudges. That one answers "who is late"; this one
+// answers "what is next and who owns it", which is knowable the moment a step completes rather
+// than three business days later. Read-only: computed in the browser, writes nothing.
+function renderNextSteps(papers: AdminBotPaperRecord[]) {
+  const rows = papers
+    .map((paper) => ({ paper, next: nextStepFor(paper) }))
+    .filter((row): row is { paper: AdminBotPaperRecord; next: NextStep } => Boolean(row.next));
+
+  if (rows.length === 0) {
+    return html`<div class="adminbot-empty adminbot-empty--compact">
+      Nothing actionable across the pipeline.
+    </div>`;
+  }
+
+  return html`
+    <div class="adminbot-next-list">
+      ${rows.map(({ paper, next }) =>
+        next.done
+          ? html`<article class="adminbot-next adminbot-next--done">
+              <strong>${paper.title}</strong>
+              <span class="adminbot-next__waiting">Finished</span>
+            </article>`
+          : html`
+              <article class="adminbot-next ${next.isApproval ? "adminbot-next--approval" : ""}">
+                <div class="adminbot-next__head">
+                  <strong>${paper.title}</strong>
+                  <span class="adminbot-next__waiting">
+                    ${next.isApproval ? "Approval from" : "Waiting on"} ${next.waitingOn}
+                  </span>
+                </div>
+                <div class="adminbot-next__step">
+                  ${next.headline}${next.unblocks
+                    ? html`<span class="adminbot-next__why"> — unblocks ${next.unblocks}</span>`
+                    : nothing}
+                </div>
+                ${next.alsoOpen.length > 0
+                  ? html`<div class="adminbot-next__also">
+                      Also open: ${next.alsoOpen.join(", ")}
+                    </div>`
+                  : nothing}
+                <div class="adminbot-next__also">
+                  ${next.evidenceCount > 0
+                    ? `Confirmed by ${next.evidenceCount} stored link${next.evidenceCount === 1 ? "" : "s"}`
+                    : "No artifact links yet — estimated from the current step only"}
+                </div>
+                <div class="adminbot-next__actions">
+                  <button
+                    type="button"
+                    class="btn btn--sm"
+                    data-testid=${`nudge-${paper.id}`}
+                    title=${next.message}
+                    @click=${(event: Event) => copyNudge(event, next.message)}
+                  >
+                    Nudge ${next.waitingOn}
+                  </button>
+                </div>
+              </article>
+            `,
+      )}
+    </div>
   `;
 }
 

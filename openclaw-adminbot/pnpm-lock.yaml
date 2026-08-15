@@ -473,6 +473,8 @@ importers:
 
   packages/normalization-core: {}
 
+  packages/nudge-engine: {}
+
   packages/plugin-sdk: {}
 
   packages/terminal-core:

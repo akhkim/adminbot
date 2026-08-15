@@ -99,6 +99,38 @@ export type AppViewState = {
   onboardingMissing?: string[];
   onboardingResult?: import("./adminbot/controllers/admin.ts").AdminBotOnboardingResult | null;
   sendOnboardingGuide?: (options: { preview: boolean }) => Promise<void>;
+  // Calendar tab. Two halves that share the roster the tab already has: a prompt that drafts an
+  // event, and a picker that turns member facets into an invite list. Both end in a proposal.
+  calendarEvents?: import("./adminbot/auth/session.ts").CalendarEvent[];
+  calendarEventsLoading?: boolean;
+  calendarEventsError?: string | null;
+  calendarPrompt?: string;
+  calendarDraft?: import("./adminbot/auth/session.ts").CalendarEventDraft | null;
+  calendarDraftBusy?: boolean;
+  calendarDraftError?: string | null;
+  calendarSelectedEventId?: string | null;
+  /** The day whose "N more" card is open, `YYYY-MM-DD`. */
+  calendarOpenDay?: string | null;
+  /** The event whose detail card is open. */
+  calendarOpenEventId?: string | null;
+  // Set while the prompt box is being used to change an event rather than compose a new one.
+  calendarEditingEventId?: string | null;
+  calendarSource?: import("./adminbot/auth/session.ts").LabCalendar | null;
+  /** First of the month the grid is showing, `YYYY-MM-01`. Defaults to the month containing today. */
+  calendarMonth?: string;
+  /** The assistant conversation, oldest first. */
+  calendarMessages?: Array<{ role: "user" | "assistant"; content: string }>;
+  // Two-step confirm on the sends other people can see, since these buttons really do send.
+  calendarConfirming?: "save" | "invite" | null;
+  calendarAudience?: import("./adminbot/calendar-audience.ts").AudienceFilter;
+  // Ids the operator unticked from the matched list, so a filter that is right for 39 of 40 people
+  // does not have to be abandoned for the one exception.
+  calendarExcludedMemberIds?: string[];
+  calendarBusy?: boolean;
+  loadCalendarEvents?: () => Promise<void>;
+  requestCalendarDraft?: () => Promise<void>;
+  saveCalendarEvent?: () => Promise<void>;
+  sendCalendarInvites?: () => Promise<void>;
   rosterMembers: import("./adminbot/auth/session.ts").RosterMember[];
   rosterLoading: boolean;
   rosterError: import("./adminbot/auth/flow.ts").RosterError;
@@ -360,6 +392,19 @@ export type AppViewState = {
   adminBotLoading: boolean;
   adminBotError: string | null;
   adminBotData: AdminBotDashboardData;
+  // Lab Sharing tab: the project the member is asking for help on, and the draft of their request. The
+  // search query for finding other members' requests, and the list of members invited to help on
+  // the member's own request. The list of requests the member has already responded to, and the
+  // index of the open request in the search results (null = none open).
+  labSharingAskProjectId?: string;
+  labSharingAskComment?: string;
+  labSharingAskMembers?: number;
+  labSharingAskHours?: number;
+  labSharingAskTags?: string[];
+  labSharingSearchQuery?: string;
+  labSharingInvitedMemberIds?: string[];
+  labSharingRespondedInviteIds?: string[];
+  labSharingOpenProjectIndex?: number;
   // Time Availability tab: whose schedule is on screen, which unit its hours are quoted in, and
   // the unsaved "add a commitment" draft. Draft lives here rather than in the view so a re-render
   // (the roster reloading underneath, a notice appearing) does not wipe half-typed input.
@@ -402,6 +447,8 @@ export type AppViewState = {
   adminBotTimeAvailabilitySaving: boolean;
   adminBotBusyActionId: string | null;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
+  adminBotPhotoPolishBusy: boolean;
+  adminBotPhotoApplyBusy: boolean;
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
   // Prototype-only: blockers a member raises from My Projects & Papers. Held in the browser

@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nudge engine — PaperFlow demo</title>
+    <style>
+      :root {
+        --bg: #f4f7f6;
+        --panel: #fff;
+        --ink: #12201f;
+        --muted: #5f716e;
+        --line: #d3dedb;
+        --accent: #176b87;
+        --ok: #0f6e56;
+        --warn: #9f5b12;
+        --danger: #a32d2d;
+        --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0c1413; --panel: #131d1c; --ink: #dfe8e6; --muted: #8b9d99;
+          --line: #263433; --accent: #5aa9c6; --ok: #6bbd8b; --warn: #d69a4e; --danger: #e0796f;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--ink);
+        font: 14px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      header {
+        padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--line);
+        display: flex; flex-wrap: wrap; gap: 1rem; align-items: baseline;
+      }
+      h1 { font-family: var(--mono); font-size: 1rem; margin: 0; letter-spacing: -0.01em; }
+      header p { margin: 0; color: var(--muted); font-size: 0.85rem; }
+      main { display: grid; grid-template-columns: minmax(320px, 1fr) minmax(340px, 1fr); gap: 1.5rem; padding: 1.5rem; align-items: start; }
+      @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+      section { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 1.1rem 1.25rem; }
+      h2 { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 0.9rem; }
+      .branch { margin-bottom: 1.1rem; }
+      .branch > h3 { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); margin: 0 0 0.4rem; }
+      label.node { display: flex; gap: 0.55rem; align-items: flex-start; padding: 0.18rem 0; cursor: pointer; }
+      label.node input { margin-top: 0.25rem; }
+      label.node.na { opacity: 0.42; text-decoration: line-through; }
+      label.node .id { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); min-width: 2.4rem; }
+      .frontier { box-shadow: inset 3px 0 0 var(--accent); padding-left: 0.5rem; margin-left: -0.5rem; border-radius: 2px; }
+      .row { display: flex; gap: 0.6rem; align-items: center; margin-bottom: 0.6rem; flex-wrap: wrap; }
+      select, button {
+        font: inherit; padding: 0.28rem 0.55rem; border-radius: 3px;
+        border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+      }
+      button { cursor: pointer; }
+      button:hover { border-color: var(--accent); }
+      .outcome { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.2rem 0.5rem; border-radius: 3px; border: 1px solid currentColor; }
+      .outcome.nudges { color: var(--accent); }
+      .outcome.done { color: var(--ok); }
+      .outcome.quiet { color: var(--muted); }
+      .outcome.stall, .outcome.config_error { color: var(--danger); }
+      .batch { border: 1px solid var(--line); border-radius: 3px; padding: 0.8rem 0.9rem; margin-bottom: 0.8rem; }
+      .batch h4 { margin: 0 0 0.5rem; font-family: var(--mono); font-size: 0.75rem; letter-spacing: 0.06em; }
+      .nudge { border-top: 1px solid var(--line); padding-top: 0.55rem; margin-top: 0.55rem; }
+      .nudge:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+      .kind { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.08em; text-transform: uppercase; padding: 0.08rem 0.35rem; border-radius: 2px; border: 1px solid currentColor; margin-right: 0.4rem; }
+      .kind.approval { color: var(--danger); }
+      .kind.observe { color: var(--warn); }
+      .kind.optional { color: var(--muted); }
+      .kind.action { color: var(--accent); }
+      .msg { margin: 0.35rem 0 0; }
+      .meta { font-family: var(--mono); font-size: 0.7rem; color: var(--muted); margin-top: 0.25rem; }
+      .empty { color: var(--muted); font-style: italic; }
+      .diag { font-family: var(--mono); font-size: 0.72rem; color: var(--danger); margin-top: 0.5rem; }
+      code { font-family: var(--mono); font-size: 0.85em; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>nudge-engine</h1>
+      <p>Tick the boxes as if you were the backend. The nudge feed is computed live — the engine holds no state.</p>
+    </header>
+
+    <main>
+      <section>
+        <h2>Backend state</h2>
+        <div class="row">
+          <button id="scenario-start">Fresh paper</button>
+          <button id="scenario-fanout">PDF ready</button>
+          <button id="scenario-join">Waiting on the PI</button>
+          <button id="scenario-reject">Rejected</button>
+          <button id="scenario-clear">Clear</button>
+        </div>
+        <div class="row">
+          <label>Rebuttal window
+            <select id="dec-RB">
+              <option value="">undecided</option>
+              <option value="RS">Yes</option>
+              <option value="DC">No</option>
+            </select>
+          </label>
+          <label>Accepted
+            <select id="dec-AC">
+              <option value="">undecided</option>
+              <option value="CM">Accept</option>
+              <option value="RJ">Reject</option>
+            </select>
+          </label>
+        </div>
+        <div id="nodes"></div>
+      </section>
+
+      <section>
+        <h2>Nudge feed</h2>
+        <div class="row">
+          <span id="outcome" class="outcome">—</span>
+          <span id="frontier-count" class="meta"></span>
+        </div>
+        <div id="feed"></div>
+
+        <h2 style="margin-top: 1.6rem">Why is it stuck?</h2>
+        <div class="row">
+          <select id="why"></select>
+        </div>
+        <div id="why-answer" class="meta"></div>
+      </section>
+    </main>
+
+    <script type="module">
+      import { paperflow, tick, whyBlocked, nudgeText, emptyState } from "../src/index.ts";
+      import { prune, effectiveStatus } from "../src/resolver/prune.ts";
+
+      const state = emptyState("demo-paper", "v1");
+
+      const branchNames = {
+        core: "Core writing",
+        talk: "Branch 1 — talk artifacts",
+        social: "Branch 2 — social",
+        archive: "Branch 3 — archival and arXiv",
+        venue: "Branch 4 — venue",
+      };
+
+      const roleNames = {
+        first_author: "First author",
+        coauthors: "Coauthors",
+        pi: "Zhijing (PI)",
+        admin: "Admin",
+      };
+
+      const nodesEl = document.getElementById("nodes");
+      const feedEl = document.getElementById("feed");
+      const outcomeEl = document.getElementById("outcome");
+      const frontierEl = document.getElementById("frontier-count");
+      const whyEl = document.getElementById("why");
+      const whyAnswerEl = document.getElementById("why-answer");
+
+      // ── build the node checklist, grouped by branch ────────────────────────────
+      for (const branch of Object.keys(branchNames)) {
+        const wrap = document.createElement("div");
+        wrap.className = "branch";
+        wrap.innerHTML = `<h3>${branchNames[branch]}</h3>`;
+
+        for (const node of paperflow.nodes.filter((n) => n.branch === branch)) {
+          const label = document.createElement("label");
+          label.className = "node";
+          label.dataset.id = node.id;
+          const disabled = node.cls === "decision" ? "disabled" : "";
+          label.innerHTML =
+            `<input type="checkbox" data-node="${node.id}" ${disabled} />` +
+            `<span class="id">${node.id}</span><span>${node.label}</span>`;
+          wrap.appendChild(label);
+        }
+        nodesEl.appendChild(wrap);
+      }
+
+      for (const node of paperflow.nodes) {
+        const option = document.createElement("option");
+        option.value = node.id;
+        option.textContent = `${node.id} — ${node.label}`;
+        whyEl.appendChild(option);
+      }
+      whyEl.value = "PS";
+
+      // ── wiring ────────────────────────────────────────────────────────────────
+      nodesEl.addEventListener("change", (event) => {
+        const id = event.target?.dataset?.node;
+        if (!id) return;
+        state.status[id] = event.target.checked ? "complete" : "incomplete";
+        render();
+      });
+
+      for (const decision of ["RB", "AC"]) {
+        document.getElementById(`dec-${decision}`).addEventListener("change", (event) => {
+          state.decisions[decision] = event.target.value || undefined;
+          render();
+        });
+      }
+
+      whyEl.addEventListener("change", render);
+
+      const scenarios = {
+        "scenario-clear": () => ({ complete: [], decisions: {} }),
+        "scenario-start": () => ({ complete: ["BR"], decisions: {} }),
+        "scenario-fanout": () => ({ complete: ["BR", "OV", "PM", "FX", "PDF"], decisions: {} }),
+        "scenario-join": () => ({
+          complete: ["BR", "OV", "PM", "FX", "PDF", "XD", "LI", "CP", "SF", "DR", "DA", "AK", "PK"],
+          decisions: {},
+        }),
+        "scenario-reject": () => ({
+          complete: ["BR", "OV", "PM", "FX", "PDF", "DR", "DA", "AK", "CK", "SB", "RV", "DC"],
+          decisions: { RB: "DC", AC: "RJ" },
+        }),
+      };
+
+      for (const [id, build] of Object.entries(scenarios)) {
+        document.getElementById(id).addEventListener("click", () => {
+          const { complete, decisions } = build();
+          for (const node of paperflow.nodes) state.status[node.id] = "incomplete";
+          for (const nodeId of complete) state.status[nodeId] = "complete";
+          state.decisions = { ...decisions };
+          document.getElementById("dec-RB").value = decisions.RB ?? "";
+          document.getElementById("dec-AC").value = decisions.AC ?? "";
+          render();
+        });
+      }
+
+      // ── render ────────────────────────────────────────────────────────────────
+      function render() {
+        const result = tick(paperflow, state, { now: new Date() });
+
+        const pruned = prune(paperflow, state);
+        const status = effectiveStatus(paperflow, state, pruned);
+        const frontierSet = new Set(result.frontier);
+
+        for (const label of nodesEl.querySelectorAll("label.node")) {
+          const id = label.dataset.id;
+          const isNa = status.get(id) === "not_applicable";
+          label.classList.toggle("na", isNa);
+          label.classList.toggle("frontier", frontierSet.has(id));
+          const box = label.querySelector("input");
+          box.checked = status.get(id) === "complete";
+          if (paperflow.nodes.find((n) => n.id === id)?.cls !== "decision") box.disabled = isNa;
+        }
+
+        outcomeEl.textContent = result.outcome;
+        outcomeEl.className = `outcome ${result.outcome}`;
+        frontierEl.textContent = `${result.frontier.length} frontier node(s)`;
+
+        feedEl.innerHTML = "";
+        if (result.batches.length === 0) {
+          const p = document.createElement("p");
+          p.className = "empty";
+          p.textContent =
+            result.outcome === "done" ? "Finished — nothing to nudge."
+            : result.outcome === "quiet" ? "Waiting on someone outside the lab. Deliberately silent."
+            : result.outcome === "stall" ? "Nothing actionable and nothing finished — this is an alert, not silence."
+            : "No nudges.";
+          feedEl.appendChild(p);
+        }
+
+        for (const batch of result.batches) {
+          const box = document.createElement("div");
+          box.className = "batch";
+          box.innerHTML = `<h4>${roleNames[batch.recipient] ?? batch.recipient} · ${batch.nudges.length} item(s)</h4>`;
+
+          for (const nudge of batch.nudges) {
+            const item = document.createElement("div");
+            item.className = "nudge";
+            const sibling = nudge.sibling
+              ? `<div class="meta">join partner: ${nudge.sibling.label} — ${nudge.sibling.complete ? "already waiting" : "also outstanding"}</div>`
+              : "";
+            item.innerHTML =
+              `<span class="kind ${nudge.kind}">${nudge.kind}</span><code>${nudge.node}</code>` +
+              `<p class="msg">${nudgeText(paperflow, nudge)}</p>` + sibling;
+            box.appendChild(item);
+          }
+          feedEl.appendChild(box);
+        }
+
+        for (const d of result.diagnostics.filter((x) => x.level === "error")) {
+          const p = document.createElement("p");
+          p.className = "diag";
+          p.textContent = `${d.code}: ${d.message}`;
+          feedEl.appendChild(p);
+        }
+
+        const answer = whyBlocked(paperflow, state, whyEl.value);
+        whyAnswerEl.textContent = !answer.blocked && answer.actionable.length === 0
+          ? `${answer.targetLabel} is not blocked.`
+          : answer.actionable.includes(whyEl.value)
+            ? `${answer.targetLabel} is itself the next thing to do.`
+            : `Blocked. Nudge instead: ${answer.actionableLabels.join(", ")}.`;
+      }
+
+      document.getElementById("scenario-fanout").click();
+    </script>
+  </body>
+</html>

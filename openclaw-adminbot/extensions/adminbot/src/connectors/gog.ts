@@ -154,6 +154,8 @@ function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {
       return buildCalendarCreateArgs(proposal);
     case "calendar.reschedule":
       return buildCalendarUpdateArgs(proposal);
+    case "calendar.add_attendees":
+      return buildCalendarAddAttendeesArgs(proposal);
     case "calendar.cancel":
       return buildCalendarDeleteArgs(proposal);
     default:
@@ -238,6 +240,33 @@ function buildCalendarUpdateArgs(proposal: AdminBotStoredProposal): string[] {
   appendOptional(args, "--description", optionalString(payload, "description"));
   appendOptional(args, "--location", optionalString(payload, "location"));
   appendOptional(args, "--timezone", optionalString(payload, "timezone"));
+  return args;
+}
+
+/**
+ * Adds people to an event without touching anything else about it.
+ *
+ * `--add-attendee` rather than `--attendees`: the latter *replaces* the guest list, so inviting two
+ * people to a standing meeting would quietly uninvite everyone already on it. Nothing else is
+ * passed, so an invite cannot move an event or rewrite its title as a side effect.
+ */
+function buildCalendarAddAttendeesArgs(proposal: AdminBotStoredProposal): string[] {
+  const payload = requirePayload(proposal);
+  const attendees = recipients(payload.attendees);
+  if (!attendees) {
+    throw new Error("calendar.add_attendees proposed_payload.attendees is required");
+  }
+  const args = rootArgs("calendar.update", optionalString(payload, "account"));
+  args.push(
+    "calendar",
+    "update",
+    optionalString(payload, "calendar_id") ?? "primary",
+    requireString(payload, "event_id"),
+    "--add-attendee",
+    attendees,
+    "--send-updates",
+    "all",
+  );
   return args;
 }
 

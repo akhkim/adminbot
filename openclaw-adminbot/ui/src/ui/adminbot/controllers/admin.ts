@@ -2,14 +2,19 @@ import type { GatewayBrowserClient } from "../../gateway.ts";
 import type { UiSettings } from "../../storage.ts";
 // Control UI controller for the AdminBot dashboard surface.
 import {
+  type CalendarEvent,
+  type CalendarEventDraft,
+  type LabCalendar,
   type MemberNudgeChannel,
   type MemberProfileUpdate,
   type MemberScheduleUpdate,
   approveActionAsMember,
+  applyOwnPolishedProfilePhoto,
   executeActionAsMember,
   removePendingAction,
   fetchMemberResource,
   loadStoredMemberSession,
+  polishOwnProfilePhoto,
   resolveAdminBotBaseUrl,
   sendOnboardingGuide as sendOnboardingGuideRequest,
   saveOwnPaper,
@@ -64,10 +69,14 @@ export type AdminBotLabMember = {
   time_off?: TimeOffRow[];
   milestones?: MilestoneRow[];
   location?: string;
+  // Where they are right now, when that is not `location`. The Calendar tab filters on both, and
+  // never lets one stand in for the other.
+  current_city?: string;
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
   calendar_email?: string;
+  correspondence_email?: string;
   github_url?: string;
   joined_month?: string;
   whatsapp?: string;
@@ -105,7 +114,11 @@ export type AdminBotLabMemberSaveInput = {
   researchTopics?: string[];
   projects?: string[];
   hoursPerWeek?: number;
-  availability?: string;
+  // No `availability` here on purpose. The stored schedule is a list of rows the service validates
+  // as one (validateAvailability in extensions/adminbot/src/kernel/service.ts), written from the
+  // Time Availability tab; this form has no schedule control at all. It used to carry a free-text
+  // `availability` string, which every save sent as "" and the service rejected with 400 "member
+  // availability must be a list" — the whole edit lost to a field nobody could see or fill in.
   location?: string;
   affiliation?: string;
   timezone?: string;
@@ -368,8 +381,28 @@ export type AdminBotHost = {
   adminBotData: AdminBotDashboardData;
   adminBotBusyActionId: string | null;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
+  adminBotPhotoPolishBusy: boolean;
+  adminBotPhotoApplyBusy: boolean;
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
+  // Calendar tab. Written by controllers/calendar.ts, which shares this host rather than owning a
+  // second one: the invite half reads the same roster and papers the rest of the tab loaded.
+  calendarEvents?: CalendarEvent[];
+  calendarEventsLoading?: boolean;
+  calendarEventsError?: string | null;
+  calendarPrompt?: string;
+  calendarDraft?: CalendarEventDraft | null;
+  calendarDraftBusy?: boolean;
+  calendarDraftError?: string | null;
+  calendarBusy?: boolean;
+  // The event the prompt box is editing, when it is editing one rather than composing a new event.
+  calendarEditingEventId?: string | null;
+  // Which calendar the service read, so the tab embeds and writes to the same one.
+  calendarSource?: LabCalendar | null;
+  calendarMonth?: string;
+  calendarOpenDay?: string | null;
+  calendarOpenEventId?: string | null;
+  calendarMessages?: Array<{ role: "user" | "assistant"; content: string }>;
   // Needed to resolve the AdminBot HTTP base URL for the direct admin-write path in
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
   settings: UiSettings;
@@ -407,7 +440,7 @@ type ToolsInvokeResult = {
   error?: { code: string; message: string };
 };
 
-const ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE =
+export const ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE =
   "AdminBot tools are not available in this Gateway. Enable the adminbot plugin for the adminbot agent, then restart or reload OpenClaw.";
 
 export function createEmptyAdminBotDashboardData(): AdminBotDashboardData {
@@ -816,7 +849,6 @@ function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
     ...(member.researchTopics ? { research_topics: member.researchTopics } : {}),
     ...(member.projects ? { projects: member.projects } : {}),
     ...(member.hoursPerWeek !== undefined ? { hours_per_week: member.hoursPerWeek } : {}),
-    ...(member.availability !== undefined ? { availability: member.availability } : {}),
     ...(member.location ? { location: member.location } : {}),
     ...(member.affiliation ? { affiliation: member.affiliation } : {}),
     ...(member.timezone ? { timezone: member.timezone } : {}),
@@ -859,7 +891,12 @@ export async function saveAdminBotMember(
             ? "Your session no longer has admin access — sign in again and retry."
             : result.kind === "rate-limited"
               ? "Too many attempts. Wait a moment and try again."
-              : "Couldn't save this member. Check the values and try again.";
+              : // A validation refusal names the value it rejected ("member role must be one of:
+                // ..."); the generic line below cannot, and the whole record is sent on every save,
+                // so without the service's own sentence one bad field reads as the editor being
+                // broken. Same reasoning as saveAdminBotOwnProfile.
+                (result.message ??
+                "Couldn't save this member. Check the values and try again.");
       host.adminBotNotice = { kind: "error", text: message };
       return;
     }
@@ -881,7 +918,6 @@ export async function saveAdminBotMember(
       ...(member.researchTopics ? { researchTopics: member.researchTopics } : {}),
       ...(member.projects ? { projects: member.projects } : {}),
       ...(member.hoursPerWeek !== undefined ? { hoursPerWeek: member.hoursPerWeek } : {}),
-      ...(member.availability !== undefined ? { availability: member.availability } : {}),
       ...(member.location ? { location: member.location } : {}),
       ...(member.affiliation ? { affiliation: member.affiliation } : {}),
       ...(member.timezone ? { timezone: member.timezone } : {}),
@@ -940,6 +976,82 @@ export async function saveAdminBotOwnProfile(
   }
   host.adminBotNotice = { kind: "success", text: "Saved your profile." };
   await loadAdminBot(host);
+}
+
+export async function polishAdminBotOwnProfilePhoto(host: AdminBotHost): Promise<void> {
+  host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your member account to polish your profile photo.",
+    };
+    return;
+  }
+  host.adminBotPhotoPolishBusy = true;
+  try {
+    const result = await polishOwnProfilePhoto(
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      const message =
+        result.kind === "unreachable"
+          ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+          : result.kind === "rate-limited"
+            ? "Too many attempts. Wait a moment and try again."
+            : "Couldn't generate a polished photo right now.";
+      host.adminBotNotice = { kind: "error", text: message };
+      return;
+    }
+    host.adminBotNotice = {
+      kind: "success",
+      text: "Generated a polished photo option. Review it below and apply if you like it.",
+    };
+    await loadAdminBot(host, "general");
+  } finally {
+    host.adminBotPhotoPolishBusy = false;
+  }
+}
+
+export async function applyAdminBotOwnProfilePhoto(
+  host: AdminBotHost,
+  variantId: string,
+): Promise<void> {
+  host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your member account to apply a profile photo.",
+    };
+    return;
+  }
+  host.adminBotPhotoApplyBusy = true;
+  try {
+    const result = await applyOwnPolishedProfilePhoto(
+      variantId,
+      stored.sessionToken,
+      resolveAdminBotBaseUrl(host.settings),
+    );
+    if (!result.ok) {
+      const message =
+        result.kind === "unreachable"
+          ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+          : result.kind === "rate-limited"
+            ? "Too many attempts. Wait a moment and try again."
+            : "Couldn't apply that photo to Slack. Try another variant or retry.";
+      host.adminBotNotice = { kind: "error", text: message };
+      return;
+    }
+    host.adminBotNotice = {
+      kind: "success",
+      text: "Updated your Slack profile photo to the selected version.",
+    };
+    await loadAdminBot(host, "general");
+  } finally {
+    host.adminBotPhotoApplyBusy = false;
+  }
 }
 
 /**
