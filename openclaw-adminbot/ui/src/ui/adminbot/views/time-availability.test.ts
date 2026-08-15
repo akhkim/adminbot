@@ -302,6 +302,37 @@ describe("the chart", () => {
     expect(interval("year")).toBe("month");
   });
 
+  // ~200 people on the roster: a <select> could only be searched by native type-ahead, which
+  // matches from the start of the option text, so anyone who typed the part of a name they
+  // remembered got nothing.
+  it("filters the member list by what you type", async () => {
+    const container = renderView({
+      members: [
+        member({ id: "one", name: "Yahang Qi" } as Partial<AdminBotLabMember>),
+        member({ id: "two", name: "Xuanqiang Angelo Huang" } as Partial<AdminBotLabMember>),
+      ],
+    });
+    document.body.append(container);
+    const picker = container.querySelector("adminbot-member-select") as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    await picker.updateComplete;
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-testid="time-availability-member-search"]',
+    )!;
+    input.dispatchEvent(new Event("focus"));
+    input.value = "angelo";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await picker.updateComplete;
+
+    const shown = [...container.querySelectorAll(".country-select__option")].map(
+      (option) => option.textContent?.trim() ?? "",
+    );
+    expect(shown.length).toBe(1);
+    expect(shown[0]).toContain("Xuanqiang Angelo Huang");
+    container.remove();
+  });
+
   it("offers the three ranges and marks the active one", () => {
     const onRangeChange = vi.fn();
     const container = renderView({ range: "year", onRangeChange });

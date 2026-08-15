@@ -3248,6 +3248,14 @@
   color: var(--muted);
 }
 
+/* The member picker reuses this control's look wholesale (views/member-select.ts): same input,
+   same panel, same rows. Its one addition is a second line under the name. */
+.member-select__hint {
+  display: block;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
 .country-select__name {
   overflow: hidden;
   text-overflow: ellipsis;

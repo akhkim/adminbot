@@ -37,6 +37,7 @@ import { i18n, t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
 import { aoeInstantMs, MS_DAY, upcomingMajorDeadlines, urgencyOf } from "../data/deadline-time.ts";
+import { renderMemberSelect } from "./member-select.ts";
 import {
   renderTimeAllocationChart,
   type TimeAllocationInterval,
@@ -1269,18 +1270,18 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
       <div class="adminbot-form adminbot-time-availability__controls">
         <label class="adminbot-form__field">
           <span class="card-title">${t("adminbotTimeAvailability.label")}</span>
-          <select
-            aria-label=${t("adminbotTimeAvailability.selectUser")}
-            .value=${selectedMember?.id ?? ""}
-            ?disabled=${props.loading || props.members.length === 0}
-            @change=${(event: Event) =>
-              props.onMemberChange((event.currentTarget as HTMLSelectElement).value)}
-          >
-            <option value="">${emptyOptionLabel}</option>
-            ${props.members.map(
-              (member) => html`<option value=${member.id}>${member.name}</option>`,
-            )}
-          </select>
+          ${renderMemberSelect({
+            options: props.members.map((member) => ({
+              id: member.id,
+              name: member.name ?? member.id,
+              ...(member.email ? { hint: String(member.email) } : {}),
+            })),
+            value: selectedMember?.id ?? "",
+            placeholder: emptyOptionLabel,
+            label: t("adminbotTimeAvailability.selectUser"),
+            disabled: props.loading || props.members.length === 0,
+            onPick: (memberId: string) => props.onMemberChange(memberId),
+          })}
         </label>
         ${renderRangeSwitch(props)}
       </div>
