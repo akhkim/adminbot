@@ -115,7 +115,9 @@ describe("composeOnboardingGuide", () => {
       return;
     }
     expect(result.reason).toBe("missing-values");
-    expect(result.missing).toContain("contact_name");
+    // The setup mail names the project and the channels; who supervises the work moved to the
+    // norms mail that follows it (coauthor_minor_norms), which is where contact_name lives now.
+    expect(result.missing).toContain("project_or_context");
   });
 
   it("treats whitespace as missing rather than substituting it", () => {
@@ -271,7 +273,7 @@ describe("onboarding sender", () => {
     }
     expect(result.error.status).toBe(422);
     expect(result.error.missing).toEqual(
-      expect.arrayContaining(["contact_name", "discussion_channel", "meeting_cadence"]),
+      expect.arrayContaining(["discussion_channel", "drive_guide_link", "project_channel"]),
     );
     // Nothing was created for a send that could never have gone out.
     expect(provisionDriveWorkspace).not.toHaveBeenCalled();
@@ -304,7 +306,6 @@ describe("onboarding sender", () => {
     expect(provisionDriveWorkspace).toHaveBeenCalledWith({ folderName: "Zhijing-AdaLovelace" });
     expect(result.payload.sent).toBe(true);
     expect(result.payload.body).toContain("https://drive.example/fld");
-    expect(result.payload.body).toContain("https://slack.example/invite");
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({ to: "ada@example.com", subject: expect.any(String) }),
     );

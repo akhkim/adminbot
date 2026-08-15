@@ -36,60 +36,68 @@ export type AdminBotOnboardingTemplate = {
 };
 
 export const ADMINBOT_ONBOARDING_TEMPLATES = [
+
   {
     id: "interview_invite",
     kind: "candidate",
-    subject: `Skill Set Alignment and Research Interest Exploration`,
+    subject: `Interview with the Jinesis Lab`,
     required: ["first_name"],
     body: `Hello {first_name},
 
-Thank you for your interest in working with Jinesis AI Research Lab.
+Thank you for your interest in working with the Jinesis Lab!
 
-During the interview, please be prepared to share your screen and discuss some of your previous coding projects. We would also like to learn more about your academic background, technical experience, and the research areas you are interested in exploring.
+During the interview, please be prepared to share your screen and walk us through some of your previous coding projects. We would also like to learn more about your academic background, technical experience, and the research areas you are interested in exploring.
 
-You should receive a Google Calendar invitation for the interview shortly. The event is editable, so please feel free to adjust the timing to a slot that works best for you. We may also make further adjustments to the schedule until we find a mutually convenient time, which will then be confirmed as the interview time. If you don't see the calendar invite be sure to check your spam folder.
+You will receive a Google Calendar invitation for the interview shortly. The event is editable, so feel free to move it to a slot that works better for you; we may adjust it further until we find a mutually convenient time, which then counts as confirmed. If you don't see the invitation, please check your spam folder.
 
-If you have any questions email akim@cs.toronto.edu. We look forward to speaking with you.
+If you have any questions, email {contact_emails}. We look forward to speaking with you!
 
-Best regards,
-Jinesis AI Research Lab`,
+Warmly,
+AdminBot, on behalf of the Jinesis Lab`,
   },
+
   {
     id: "rejection",
     kind: "candidate",
-    subject: `Interview Result – Jinesis AI Research Lab`,
+    subject: `Interview Result: Jinesis Lab`,
     required: ["first_name"],
     body: `Dear {first_name},
 
-Thank you for taking the time to interview with Jinesis AI Research Lab and for sharing your experiences, projects, and research interests with us.
+Thank you for taking the time to interview with the Jinesis Lab and for sharing your experience, projects, and research interests with us.
 
-After careful consideration, we have decided not to move forward with your application at this time. While we appreciate your interest in joining the lab and the effort you put into the interview process, we were unable to identify a suitable match between your current skills and experience and our current research needs.
+After careful consideration, we have decided not to move forward with your application at this time. We were unable to identify a strong match between your current experience and the lab's present research needs.
 
-We sincerely appreciate your interest in Jinesis AI Research Lab and wish you the best in your future academic and professional endeavors.
+If helpful, you may also find this public collection of resources on research skills, mentorship programs, applications, and academic career development useful: NLP PhD Global Equality.
 
-Kind regards,
-Zhijing`,
+We sincerely appreciate your interest in the lab and wish you the best in your academic and professional path.
+
+Warmly,
+AdminBot, on behalf of the Jinesis Lab`,
   },
+
   {
     id: "trial_phase",
     kind: "candidate",
-    subject: `Next Steps: Trial Phase with Jinesis AI Research Lab`,
-    required: ["drive_folder_link", "first_name", "slack_connect_link"],
+    subject: `Next Steps: Trial Phase with the Jinesis Lab`,
+    required: ["drive_folder_link", "first_name"],
     body: `Hi {first_name},
 
-Thank you for taking the time to interview with Jinesis AI Research Lab. We enjoyed learning more about your background, previous projects, and research interests.
+Thank you for taking the time to interview with the Jinesis Lab. We enjoyed learning more about your background, projects, and research interests.
 
-We are excited to invite you to the trial phase of the lab. During this period, you will work on a research or engineering task over the next three weeks. This will give both you and the team an opportunity to explore how your skills, working style, and research interests align with the lab.
+We are excited to invite you to the trial phase. Over the next three weeks, you will work on a research or engineering task; this gives both you and the team a chance to see how your skills, working style, and interests align with the lab. You will receive the task details and expectations from your interview lead.
 
-You will receive further details about the task and expectations from your interview lead. You will also be given access to Slack so you can communicate with the team and ask questions throughout the trial period: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
+Two things are set up for you already:
 
-This will be your google drive workspace, {drive_folder_link}. This will be where you will be placing your CV, transcript, and your progress update for the project you are working on.
+1. Google Drive workspace: {drive_folder_link}. Please place your CV, transcript, and progress updates for your task here.
 
-We look forward to seeing your work and learning more about your contributions.
+2. Slack: You will have access to a guest chat with Zhijing and your interview lead, so you can ask questions throughout the trial.
 
-Best regards,
-Jinesis AI Research Lab`,
+We look forward to seeing your work!
+
+Warmly,
+AdminBot, on behalf of the Jinesis Lab`,
   },
+
   {
     id: "collaboration_rhythm_reminder",
     kind: "supplement",
@@ -148,78 +156,74 @@ Best,
   {
     id: "coauthor_major",
     kind: "subgroup",
-    subject: `Welcome aboard – your setup for {project_or_context}`,
-    required: [
-      "contact_name",
-      "core_meetings",
-      "first_name",
-      "meeting_names",
-      "next_steps",
-      "project_or_context",
-      "slack_connect_link",
-    ],
+    subject: `Welcome to the Jinesis Lab: your onboarding steps`,
+    required: ["discussion_channel", "drive_folder_link", "drive_guide_link", "first_name", "meeting_channel", "project_channel", "project_or_context"],
     body: `Hi {first_name},
 
-We are delighted you will be working with us at this level of involvement on {project_or_context}. Given the time commitment, you will be onboarded close to a full member: Slack workspace, the {meeting_names} meetings, and the shared project folders. Your Slack invite comes through Slack Connect: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
+A very warm welcome to the Jinesis Lab! Given your level of involvement on {project_or_context}, your onboarding is close to that of a full member:
 
-What we ask in return matches the commitment: attendance at {core_meetings}, progress visible in the project channel week by week, and an early heads-up when your availability shifts. Your mentor/contact is {contact_name}, and the usual 3-month reflection point with Zhijing applies to you too.
+1. Member portal: Create your account at https://jinesis-admin.vercel.app/signup and fill out "My Profile" completely, including your preferred professional email; this is what we use for paper submissions and external communications.
 
-Next steps: {next_steps}.
+2. Slack: You will receive invitations to #jinesis-active, #random-active, your project channel {project_channel}, and the {discussion_channel} channel(s) for your area. Day-to-day coordination happens here, not by email.
 
-Best,
-AdminBot`,
+3. Meetings: you will be added to {meeting_channel} and receive calendar invites for the weekly meeting and the Wednesday-themed meeting. One important habit: rely on the Google Calendar app with alerts, and ignore calendar-related emails. Our meetings span time zones, and the app is the only reliable source of truth.
+
+4. Google Drive: your project folder is here: {drive_folder_link}. Please also read the short "Google file common practice" guide {drive_guide_link}; it keeps everyone's files findable.
+
+5. Newsletter and socials: You are also very welcome to subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com, and to follow the lab on LinkedIn and Twitter/X.
+
+If an invitation has not arrived within a week, or if anything is unclear, please reply here, and we will be happy to help.
+
+Best regards,
+AdminBot, on behalf of the Jinesis Lab`,
   },
+
   {
+    // Word for word the coauthor_major setup mail. The two roles differ in hours and in the
+    // norms mail that follows, not in the access someone is handed.
     id: "coauthor_minor",
     kind: "subgroup",
-    subject: `Getting started on {project_or_context}`,
-    required: [
-      "contact_name",
-      "discussion_channel",
-      "drive_folder_link",
-      "first_name",
-      "meeting_cadence",
-      "next_steps",
-      "project_or_context",
-      "slack_connect_link",
-    ],
+    subject: `Welcome to the Jinesis Lab: your onboarding steps`,
+    required: ["discussion_channel", "drive_folder_link", "drive_guide_link", "first_name", "meeting_channel", "project_channel", "project_or_context"],
     body: `Hi {first_name},
 
-Welcome aboard, we are excited to work with you on {project_or_context}!
+A very warm welcome to the Jinesis Lab! Given your level of involvement on {project_or_context}, your onboarding is close to that of a full member:
 
-How we work: the project meets {meeting_cadence}, and your main point of contact is {contact_name}. We coordinate on Slack rather than email wherever possible; you will receive an invitation to the relevant channel(s) shortly. Progress updates are shared in the project channel, so a short weekly note on what you did, what is next, and any blockers is the norm even in slow weeks.
+1. Member portal: Create your account at https://jinesis-admin.vercel.app/signup and fill out "My Profile" completely, including your preferred professional email; this is what we use for paper submissions and external communications.
 
-Two things we ask of everyone: flag blockers early (a blocked week is normal, a silent blocked month is not), and let us know in advance about exams, internships, or travel so we can plan around them.
+2. Slack: You will receive invitations to #jinesis-active, #random-active, your project channel {project_channel}, and the {discussion_channel} channel(s) for your area. Day-to-day coordination happens here, not by email.
 
-Where things live on Slack: #jinesis-with-friends-and-collaborators for our wider circle, #jinesis-active and #random-active for the lab's day-to-day, and {discussion_channel} for the broader topic your work sits in. Your invite: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
+3. Meetings: you will be added to {meeting_channel} and receive calendar invites for the weekly meeting and the Wednesday-themed meeting. One important habit: rely on the Google Calendar app with alerts, and ignore calendar-related emails. Our meetings span time zones, and the app is the only reliable source of truth.
 
-Your project Google Drive folder is {drive_folder_link}. A few conventions save a lot of friction later: one long doc per topic rather than several tabs, kept Pageless, filenames prefixed with the date (yyyymmdd), and a flat folder so sorting by last-modified stays useful. I will send our Google file practices and what to expect working with us as a separate short note.
+4. Google Drive: your project folder is here: {drive_folder_link}. Please also read the short "Google file common practice" guide {drive_guide_link}; it keeps everyone's files findable.
 
-If you would like to follow the lab more widely, there is our newsletter, https://www.linkedin.com/company/jinesis-lab/ and {lab_x_url}.
+5. Newsletter and socials: You are also very welcome to subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com, and to follow the lab on LinkedIn and Twitter/X.
 
-You are also welcome at our city dinners and team building events.
+If an invitation has not arrived within a week, or if anything is unclear, please reply here, and we will be happy to help.
 
-Next steps: {next_steps}.
-
-Best,
-AdminBot`,
+Best regards,
+AdminBot, on behalf of the Jinesis Lab`,
   },
+
   {
     id: "disappearing_coauthor",
     kind: "subgroup",
-    subject: `Staying in touch on {project_or_context}`,
-    required: ["first_name", "project_or_context", "sender_name", "slack_connect_link"],
+    subject: `Checking in about your Jinesis involvement`,
+    required: ["first_name", "project_or_context"],
     body: `Hi {first_name},
 
-Thanks for the work you have put into {project_or_context}. Since you are fitting this around a lot of other things, we want to keep it light and predictable:
+We hope things are going well on your side. We have not heard from you for a while regarding {project_or_context} and wanted to check what level of involvement currently works for you.
 
-- Slack Connect to #jinesis-with-friends-and-collaborators, so you are reachable without email round-trips: {slack_connect_link}. Not already on Slack? Join our free Jinesis space first, or the invite cannot go through: {slack_invite_url}
-- We will email you to confirm your time plan rather than assume it, so you always know what is expected and when. If a stretch is not going to work, just say so on the reply.
-- Papers have a habit of coming back months later for a resubmission. So we can still reach you then, it helps to have an address that does not expire with an institution — reply with one if your current address might.
+One option is to move you to alumni status. This has no ongoing obligations: you remain on the newsletter and in #friends-and-collaborators, receive invites to dinners in your city, and stay connected to anything you have co-authored.
 
-Best,
-{sender_name}`,
+If you later have the capacity and interest to return as a half-time or full-time contributor, you are very welcome to do so. Because you have already worked with us, returning would be straightforward.
+
+Would you be comfortable moving to alumni status for now? A short reply is enough, and you are also very welcome to tell us if another arrangement would work better.
+
+Warmly,
+AdminBot, on behalf of the Jinesis Lab`,
   },
+
   {
     id: "interviewee",
     kind: "subgroup",
@@ -357,6 +361,142 @@ If you are stuck on any of the above steps for over 2 business days, report the 
 
 Best regards,
 Jinesis Lab`,
+  },
+
+  {
+    id: "own_pace_advisee",
+    kind: "subgroup",
+    subject: `Welcome to Jinesis: a few onboarding steps`,
+    required: ["first_name", "meeting_arrangement"],
+    body: `Hi {first_name},
+
+A very warm welcome to the Jinesis Lab with Prof. Zhijing Jin! We are very happy to have you with us.
+
+To make getting settled as easy as possible, here are a few first steps:
+
+1. Member portal: Please create your account at https://jinesis-admin.vercel.app/signup and complete "My Profile." Please include a personal email address that you expect to retain if your institutional affiliation changes.
+
+2. Slack: You will receive invitations to the workspace and the channels relevant to you, including your research discussion and project channels. Most of our everyday communication happens there.
+
+3. Google Drive: A shared 1:1 folder with Zhijing will be created and shared with you. Please use it as the main home for materials related to your work together, including notes, drafts, and progress updates. It will also contain the internal guidebook and links to relevant shared resources.
+
+4. Meetings: {meeting_arrangement} Zhijing will send you a separate note explaining how meetings and communication usually work in the lab.
+
+5. Staying connected: You are also very welcome to subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com, and to follow the lab on LinkedIn and Twitter/X.
+
+If an invitation has not arrived within a week, or if anything is unclear, please reply here, and we will be happy to help.
+
+Warmly,
+AdminBot, on behalf of the Jinesis Lab`,
+  },
+
+  {
+    id: "own_pace_advisee_norms",
+    kind: "supplement",
+    subject: `How we work at Jinesis: communication and meetings`,
+    required: ["first_name"],
+    body: `Hi {first_name},
+
+We would like to share a few habits that help research collaborations run smoothly at Jinesis.
+
+Keep us updated regularly on Slack. Short, substantive updates are usually most useful: what you learned, what remains uncertain, and what you plan to do next. There is no need to wait until you have enough material for a long technical report.
+
+Please communicate changes in your availability early. If coursework, co-supervision, travel, or other commitments will affect your work, let us know the expected period and how you plan to adjust. This helps everyone coordinate and keeps the project moving.
+
+Meetings are an important part of the collaboration. If the Monday lab meeting applies to you, regular attendance is expected. The Wednesday meeting or meetings related to your research area are highly recommended. These are also where we share much of the practical knowledge around venues, authorship, submissions, and research decisions.
+
+For logistical questions, please first check the relevant sections of the guidebook available to you. If the answer is unclear or your situation is unusual, you are always welcome to ask in your project channel.
+
+We are very happy to have you working with us and look forward to seeing the project develop!
+
+Warmly,
+AdminBot, on behalf of the Jinesis Lab`,
+  },
+
+  {
+    id: "coauthor_major_norms",
+    kind: "supplement",
+    subject: `Your project team at the Jinesis Lab`,
+    required: ["contact_name", "first_name", "project_or_context", "team_lead_role"],
+    body: `Hi {first_name},
+
+We are delighted to have you on {project_or_context}. Here is how your project team will work with you.
+
+Your project team. {contact_name} ({team_lead_role}) is your main contact for planning, implementation, and feedback. Zhijing stays closely involved in research direction, framing, major decisions, and final paper quality. Please use the project channel when possible so everyone can contribute.
+
+Staying in sync. Please share a short update in the project channel roughly every 10 hours of work, covering findings, decisions, next steps, and blockers. Longer technical details can go in a shared document or meeting.
+
+Meetings. The Monday lab meeting is mandatory, and the Wednesday themed meeting for your topic is highly recommended. They also cover shared practices around venues, submissions, authorship, and rebuttals.
+
+Logistics. For venue choice, authorship, deadlines, and reimbursements, please check the relevant section of our guidebook first. If your situation is not covered, {contact_name} and the team will be happy to help.
+
+We are excited to work with you and see the project develop.
+
+Warmly,
+AdminBot, on behalf of the Jinesis Lab`,
+  },
+
+  {
+    id: "coauthor_minor_norms",
+    kind: "supplement",
+    subject: `Your project team at the Jinesis Lab`,
+    required: ["contact_name", "first_name", "project_or_context", "team_lead_role"],
+    body: `Hi {first_name},
+
+We are delighted to have you on {project_or_context}. Here is how your project team will work with you.
+
+Your project team. {contact_name} ({team_lead_role}) is your main contact for planning, implementation, and feedback. Zhijing stays closely involved in research direction, framing, major decisions, and final paper quality. Please use the project channel when possible so everyone can contribute.
+
+Staying in sync. Please share a short update in the project channel roughly every 10 hours of work, covering findings, decisions, next steps, and blockers. Longer technical details can go in a shared document or meeting.
+
+Meetings. The Monday lab meeting is mandatory, and the Wednesday themed meeting for your topic is highly recommended. They also cover shared practices around venues, submissions, authorship, and rebuttals.
+
+Logistics. For venue choice, authorship, deadlines, and reimbursements, please check the relevant section of our guidebook first. If your situation is not covered, {contact_name} and the team will be happy to help.
+
+We are excited to work with you and see the project develop.
+
+Warmly,
+AdminBot, on behalf of the Jinesis Lab`,
+  },
+
+  {
+    id: "disappearing_coauthor_paper",
+    kind: "supplement",
+    subject: `Next steps for {paper_short_title}`,
+    required: ["delegate_name", "first_name", "paper_short_title", "paper_title", "reply_by_date"],
+    body: `Hi {first_name},
+
+We hope things are going well on your side. We would like to agree on how to move "{paper_title}" forward. Please choose one of the following arrangements:
+
+1. Jinesis takes over the project. {delegate_name} becomes responsible for the day-to-day work and next submission steps. We will ask you to provide any files, context, or access needed for the handover.
+
+2. You remain involved at key decision points. Jinesis manages the day-to-day work, while you commit to reviewing materials and responding by the agreed deadlines when we contact you about the venue, major revisions, or final sign-off.
+
+We would appreciate it if you could reply by {reply_by_date} with your preferred option and any context we should know. If we do not hear from you by then, we will proceed with option 1.
+
+Thank you again for your work on the paper!
+
+Warmly,
+AdminBot, on behalf of the Jinesis Lab`,
+  },
+
+  {
+    // An automatic decline: the access table makes this the standing answer for someone at
+    // disappearing-coauthor status, so it is copy rather than a judgement call per request.
+    id: "disappearing_coauthor_rec_letter",
+    kind: "supplement",
+    subject: `Re: your recommendation letter request`,
+    required: ["first_name"],
+    body: `Hi {first_name},
+
+Thank you for reaching out, and for the work you have done with Jinesis.
+
+Recommendation letters are available only in specific collaboration circumstances. Based on your current collaboration status, we are unable to support this request.
+
+We appreciate your understanding and wish you all the best with your application.
+
+Warmly,
+AdminBot, on behalf of the Jinesis Lab`,
   },
 ] as const satisfies readonly AdminBotOnboardingTemplate[];
 
