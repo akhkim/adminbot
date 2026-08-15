@@ -9642,18 +9642,16 @@ details[open] > .ov-expandable-toggle::after {
   font-size: var(--control-ui-text-xs);
 }
 
-/* Split tables, the big-deadlines side panel, and the time-off column shading. */
+/* Split tables, the big-deadlines banner, and the time-off column shading.
+
+   Deadlines used to sit in a narrow right-hand column beside the chart, which cost the chart a
+   third of the card's width and left the dates wrapping in a 220px gutter. It is a banner above
+   the chart now: one row, full width, so both get the space they were competing for. */
 .adminbot-time-availability__body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--space-5);
   align-items: start;
-}
-
-@media (max-width: 900px) {
-  .adminbot-time-availability__body {
-    grid-template-columns: minmax(0, 1fr);
-  }
 }
 
 .adminbot-time-chart__off {
@@ -9698,6 +9696,24 @@ details[open] > .ov-expandable-toggle::after {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
+}
+
+/* Across the full width the list reads as a row of dates rather than a stack: each deadline is a
+   short date-and-label pair, and stacking them down a full-width panel wastes the width this
+   panel was moved here to get. */
+.adminbot-time-availability__deadlines .adminbot-time-availability__deadline-list {
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(200px, max-content);
+  justify-content: start;
+  gap: var(--space-4);
+  overflow-x: auto;
+}
+
+@media (max-width: 900px) {
+  .adminbot-time-availability__deadlines .adminbot-time-availability__deadline-list {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+  }
 }
 
 /* Sits under the panel title, above the list: it explains what belongs in the list, so it has to

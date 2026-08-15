@@ -1228,6 +1228,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
       ${selectedMember
         ? html`
             <div class="adminbot-time-availability__body">
+              ${renderBigDeadlines(storedMilestones, props, editable)}
               <section class="adminbot-time-availability__report">
                 <div class="adminbot-time-availability__report-header">
                   <div>
@@ -1269,7 +1270,6 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                     </div>`
                   : nothing}
               </section>
-              ${renderBigDeadlines(storedMilestones, props, editable)}
             </div>
           `
         : html`
