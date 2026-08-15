@@ -36,6 +36,7 @@ import { html, nothing } from "lit";
 import { i18n, t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
+import { upcomingMajorDeadlines } from "../data/deadline-time.ts";
 import {
   renderTimeAllocationChart,
   type TimeAllocationInterval,
@@ -223,6 +224,9 @@ const CHART_NEUTRAL_COLOR = "#9AA0AA";
 
 // How many rows the side table shows before it stops being a summary.
 const BIG_DEADLINE_LIMIT = 6;
+// Two, matching the profile page's deadline summary: enough to see what is next and what follows
+// it, few enough to stay one line on the banner.
+const CONFERENCE_DEADLINE_COUNT = 2;
 
 // Mirrors ADMINBOT_OPEN_PROJECT in extensions/adminbot/src/contracts/actions.ts: declared spare
 // capacity, not a commitment, so it never takes a color slot or a bar.
@@ -964,11 +968,26 @@ function renderBigDeadlines(
 ) {
   const now = Date.now();
   const today = new Date(now).toISOString().slice(0, 10);
-  const rows = milestones
+  // The two nearest major conference deadlines are always on the banner, whether or not this
+  // member has entered anything: they are the dates the whole lab plans around, and a member
+  // reading their own timeline is asking "how much room do I have before the next one".
+  // upcomingMajorDeadlines is the same helper the Deadlines board and the dashboard summary use,
+  // so the three surfaces can never disagree about which conference is next.
+  const conferences = upcomingMajorDeadlines(now, CONFERENCE_DEADLINE_COUNT).map((entry) => ({
+    date: entry.venue.deadline_aoe.slice(0, 10),
+    label: entry.venue.name,
+    link: entry.venue.link,
+    own: false,
+  }));
+  const mine = milestones
     .filter((row) => row.date >= today)
     .map((row) => ({ date: row.date, label: row.label, link: row.link, own: true }))
-    .toSorted((left, right) => left.date.localeCompare(right.date))
     .slice(0, BIG_DEADLINE_LIMIT);
+  // Conferences are added after the member's own rows are capped, so a full personal list can
+  // never push them off the banner.
+  const rows = [...mine, ...conferences].toSorted((left, right) =>
+    left.date.localeCompare(right.date),
+  );
 
   return html`
     <aside class="adminbot-time-availability__deadlines" data-testid="time-availability-deadlines">
@@ -976,8 +995,7 @@ function renderBigDeadlines(
       <p class="adminbot-time-availability__deadline-hint">
         ${t("adminbotTimeAvailability.milestones.hint")}
       </p>
-      ${rows.length
-        ? html`<ul class="adminbot-time-availability__deadline-list">
+      <ul class="adminbot-time-availability__deadline-list">
             ${rows.map(
               (row) => html`
                 <li data-own=${String(row.own)}>
@@ -1005,11 +1023,12 @@ function renderBigDeadlines(
                 </li>
               `,
             )}
-          </ul>`
+      </ul>
+      ${mine.length
+        ? nothing
         : html`<p class="adminbot-time-availability__empty-note">
             ${t("adminbotTimeAvailability.milestones.empty")}
           </p>`}
-      ${editable ? renderMilestoneEditor(props, [...milestones]) : nothing}
     </aside>
   `;
 }
@@ -1287,6 +1306,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
               availability: storedAvailability,
               timeOff: storedTimeOff,
             })}
+            ${renderMilestoneEditor(props, [...storedMilestones])}
           </div>`
         : nothing}
     </div>

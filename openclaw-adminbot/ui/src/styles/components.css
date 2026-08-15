@@ -9485,6 +9485,13 @@ details[open] > .ov-expandable-toggle::after {
   border-radius: var(--radius-lg);
 }
 
+/* The caption is a direct child of the bordered wrap, so the table's own cell padding never
+   reaches it and it sat flush against the frame. Matching the cells' 14px keeps it aligned with
+   the first column rather than merely off the edge. */
+.adminbot-time-allocation-table-wrap > .card-sub {
+  padding: var(--space-3) 14px;
+}
+
 .adminbot-time-allocation-table {
   width: 100%;
   border-collapse: collapse;

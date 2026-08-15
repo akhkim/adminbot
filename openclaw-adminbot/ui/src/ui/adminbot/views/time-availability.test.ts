@@ -1,6 +1,7 @@
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
+import { upcomingMajorDeadlines } from "../data/deadline-time.ts";
 import {
   allocationBins,
   rangeBins,
@@ -517,18 +518,33 @@ describe("the split tables and the deadline panel", () => {
     ).toContain("20 h");
   });
 
-  // Conference dates come from the bundled snapshot the Deadlines tab already ships, so the lab
-  // tracks them once instead of every member retyping them.
-  // Per user, not shared. The panel used to merge in the bundled conference snapshot, which put the
-  // same five dates on all 159 schedules and buried the two or three that are personal to whoever's
-  // page you are on. The Deadlines tab already lists conferences for everyone.
-  it("shows only this member's own milestones, not the lab's conference dates", () => {
+  // The member's own dates plus the two conference deadlines the whole lab plans around. The
+  // conferences come from the bundled snapshot the Deadlines tab already ships, through the same
+  // helper, so the two surfaces can never name a different "next" conference.
+  it("shows the member's own milestones alongside the next two conference deadlines", () => {
     const panel = renderView({ members: [scheduled()] }).querySelector(
       '[data-testid="time-availability-deadlines"]',
     );
     expect(panel?.textContent).toContain("Graduation");
-    expect(panel?.textContent).not.toContain("ICLR");
-    expect(panel?.textContent).not.toContain("NeurIPS");
+    const expected = upcomingMajorDeadlines(Date.now(), 2);
+    expect(expected.length).toBe(2);
+    for (const entry of expected) {
+      expect(panel?.textContent).toContain(entry.venue.name);
+    }
+  });
+
+  // A full personal list must not push the conference rows off the banner.
+  it("keeps the conference rows even when the member has their own deadlines", () => {
+    const own = Array.from({ length: 8 }, (_, index) => ({
+      date: `2027-0${(index % 9) + 1}-15`,
+      label: `Personal ${index}`,
+    }));
+    const panel = renderView({
+      members: [scheduled({ milestones: own } as Partial<AdminBotLabMember>)],
+    }).querySelector('[data-testid="time-availability-deadlines"]');
+    for (const entry of upcomingMajorDeadlines(Date.now(), 2)) {
+      expect(panel?.textContent).toContain(entry.venue.name);
+    }
   });
 
   it("reminds the member that thesis deadlines belong here too", () => {
@@ -537,8 +553,20 @@ describe("the split tables and the deadline panel", () => {
     );
     const hint = panel?.querySelector(".adminbot-time-availability__deadline-hint")?.textContent;
     expect(hint).toContain("thesis");
-    // And that the list is theirs alone, which is the other half of the change.
-    expect(hint?.toLowerCase()).toContain("yours only");
+    // And that their own rows stay private, which the conference rows do not change.
+    expect(hint?.toLowerCase()).toContain("private");
+  });
+
+  // The banner reads; the form that writes lives with the other editors.
+  it("keeps the add-a-deadline form out of the banner", () => {
+    const container = renderView({ members: [scheduled()] });
+    const panel = container.querySelector('[data-testid="time-availability-deadlines"]')!;
+    const form = container.querySelector('[data-testid="time-availability-milestone-form"]')!;
+    expect(form).not.toBeNull();
+    expect(panel.contains(form)).toBe(false);
+    expect(container.querySelector(".adminbot-time-availability__editors")?.contains(form)).toBe(
+      true,
+    );
   });
 
   it("offers the milestone form only on your own schedule", () => {

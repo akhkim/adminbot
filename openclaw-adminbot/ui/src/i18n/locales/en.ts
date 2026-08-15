@@ -1419,7 +1419,7 @@ export const en: TranslationMap = {
     },
     milestones: {
       title: "Big deadlines",
-      hint: "Yours only — nobody else sees these. Add your thesis deadlines here too, not just conference ones.",
+      hint: "The next two major conference deadlines, plus your own. Yours are private — nobody else sees them. Add your thesis deadlines here too, not just conference ones.",
       date: "Date",
       label: "What",
       submit: "Add milestone",
