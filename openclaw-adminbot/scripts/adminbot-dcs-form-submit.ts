@@ -7,6 +7,12 @@
 // API down with it -- the same reason the OpenReview and reimbursement connectors shell out to
 // their own scripts instead of linking a heavy runtime in-process.
 //
+// Browsers come from PLAYWRIGHT_BROWSERS_PATH, which the AdminBot service sets in its own
+// environment (on Aurora: /mfs1/u/akim/.cache/jinesis-adminbot/ms-playwright). A shell running
+// this by hand does not inherit it, and Playwright then looks in its default cache and reports the
+// browser as missing -- export the same value before testing, or you are testing a different
+// install than the service uses.
+//
 // Reads one JSON object from stdin: { firstName, lastName, email, formUrl? }. Writes exactly one
 // JSON line to stdout -- { ok: true } or { ok: false, error } -- and exits 0/1 to match.
 //
