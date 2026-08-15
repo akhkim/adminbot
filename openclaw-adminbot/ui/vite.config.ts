@@ -198,7 +198,10 @@ export function controlUiBrowserOnlySharedModuleAliases(): Plugin {
     enforce: "pre",
     resolveId(source, importer) {
       if (
-        source === "../logging/redact.js" &&
+        // Every importer above sits in src/agents/tools/, so the specifier they actually write is
+        // two levels up. Matching a single "../" here silently never fired, which let the Node-only
+        // redact module reach the browser and pull node:url in through the CLI descriptors.
+        source === "../../logging/redact.js" &&
         importer &&
         sharedRedactImporters.has(normalizeViteImporterPath(importer))
       ) {

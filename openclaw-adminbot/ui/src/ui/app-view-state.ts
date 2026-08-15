@@ -5,7 +5,10 @@ import type {
   AdminBotMemberNudgeState,
   AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
+import type { RecommendationSchool } from "./adminbot/data/logistics-draft.ts";
+import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
+import type { LogisticsMode, LogisticsTemplate } from "./adminbot/views/logistics.ts";
 import type {
   MilestoneDraft,
   TimeAvailabilityDraft,
@@ -410,6 +413,33 @@ export type AppViewState = {
   adminBotMemberMap: MemberMap | null;
   adminBotMemberMapLoading: boolean;
   adminBotTimeAvailabilityMemberId: string;
+  // Documents picked for a signature request, held here rather than in the view so a re-render
+  // does not drop a file the member already chose. Replaced wholesale on every change: lit only
+  // sees a @state() array as dirty when the reference changes.
+  adminBotLogisticsSignatureFiles: File[];
+  adminBotLogisticsDescription: string;
+  adminBotLogisticsAttachments: File[];
+  // Draft persistence is local-only (IndexedDB on the member's device), so these track the save
+  // itself, not a server round trip.
+  adminBotLogisticsSaving: boolean;
+  adminBotLogisticsSavedAt: number | null;
+  adminBotLogisticsSaveError: string | null;
+  // Which request template is on screen, and the Recommendation Letters form behind it. Its rows
+  // and save state are separate from the signature form's: only one is visible at a time, and a
+  // shared "Saved at" would follow the member across and describe the wrong draft.
+  adminBotLogisticsTemplate: LogisticsTemplate;
+  // Admin-only surface: make a request, or read the saved ones. Held for everyone because the view
+  // pins non-admins to "make" rather than the state being trusted to be absent.
+  adminBotLogisticsMode: LogisticsMode;
+  adminBotLogisticsRequests: LogisticsRequest[];
+  adminBotLogisticsRequestsLoading: boolean;
+  adminBotLogisticsOpenRequestId: string | null;
+  adminBotLettersSchools: RecommendationSchool[];
+  adminBotLettersCvOverleafUrl: string;
+  adminBotLettersDriveFolderUrl: string;
+  adminBotLettersSaving: boolean;
+  adminBotLettersSavedAt: number | null;
+  adminBotLettersSaveError: string | null;
   adminBotTimeAvailabilityRange: TimeAvailabilityRange;
   adminBotTimeAvailabilityDraft: TimeAvailabilityDraft;
   adminBotTimeAwayDraft: TimeAvailabilityDraft;

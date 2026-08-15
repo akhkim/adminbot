@@ -56,6 +56,7 @@ describe("TAB_GROUPS", () => {
       "adminbotDeadlines",
       "adminbotReimbursements",
       "adminbotMembers",
+      "adminbotLogistics",
     ]);
     expect(byLabel("labSharing")).toEqual(["labSharing"]);
     expect(byLabel("admin")).toEqual([
