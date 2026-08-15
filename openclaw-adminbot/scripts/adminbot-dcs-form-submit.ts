@@ -43,6 +43,18 @@ export type DcsFormSubmitParams = {
   formUrl?: string;
 };
 
+export type DcsFormSubmitOptions = {
+  /**
+   * Fill the form and stop short of the Submit click.
+   *
+   * The selectors are the fragile part -- Microsoft can relayout the form at any time -- and the
+   * only way to check them used to be filing a real request under a real sponsor's name. A dry run
+   * exercises every step that can drift and files nothing, so this is runnable against the live
+   * form whenever a submission starts failing.
+   */
+  dryRun?: boolean;
+};
+
 // Question containers share one shape (`data-automation-id="questionItem"`), each carrying its
 // ordinal-prefixed title in its own text ("1.First NameSingle line text."). Anchoring the match at
 // the start of that text (^\d+\.) is what keeps "Email" (question 3) from also matching "Please
@@ -73,20 +85,29 @@ async function selectChoiceQuestion(
 // The Sponsor question: a combobox button that opens a listbox of ~100 names, rendered outside
 // the question's own DOM subtree once open, so the option is looked up on the page rather than
 // scoped to the question container.
+//
+// Matched by what the control *is* -- a role="button" that opens a listbox -- rather than by its
+// accessible name. The visible "Select your answer" is the placeholder, wired as aria-describedby;
+// the control's aria-labelledby points at the question title, so its computed name is "5. Sponsor
+// …" and a name match on the placeholder never resolves. That is the shape this script failed on
+// every time it ran in production.
 async function selectDropdownQuestion(
   page: Page,
   labelPattern: RegExp,
   optionText: string,
 ): Promise<void> {
   await questionItem(page, labelPattern)
-    .getByRole("button", { name: /select your answer/i })
+    .locator('[role="button"][aria-haspopup="listbox"]')
     .click({ timeout: ACTION_TIMEOUT_MS });
   await page.getByRole("option", { name: optionText, exact: true }).click({
     timeout: ACTION_TIMEOUT_MS,
   });
 }
 
-export async function submitDcsForm(params: DcsFormSubmitParams): Promise<void> {
+export async function submitDcsForm(
+  params: DcsFormSubmitParams,
+  options: DcsFormSubmitOptions = {},
+): Promise<void> {
   const browser = await chromium.launch();
   try {
     const page = await browser.newPage();
@@ -103,6 +124,17 @@ export async function submitDcsForm(params: DcsFormSubmitParams): Promise<void> 
     await selectChoiceQuestion(page, /^\d+\.Which group do you primarily belong to\?/u, GROUP);
     // Questions 7-8 (existing CSLab account name, UTORid) are optional and left blank: a
     // brand-new external visitor has neither yet.
+
+    if (options.dryRun) {
+      // Everything that can drift has now been exercised. Confirm the button the real run clicks
+      // is present and enabled, then leave without filing anything.
+      const submit = page.getByRole("button", { name: "Submit" });
+      await submit.waitFor({ state: "visible", timeout: ACTION_TIMEOUT_MS });
+      if (!(await submit.isEnabled())) {
+        throw new Error("Submit is present but disabled: the form has an unanswered requirement");
+      }
+      return;
+    }
 
     await page.getByRole("button", { name: "Submit" }).click({ timeout: ACTION_TIMEOUT_MS });
     // Best-effort confirmation only: the exact post-submit markup was never observed against a
@@ -145,8 +177,9 @@ async function main(): Promise<void> {
     writeResult({ ok: false, error: "firstName, lastName, and email are required" });
     return;
   }
+  const dryRun = process.argv.includes("--dry-run");
   try {
-    await submitDcsForm(params);
+    await submitDcsForm(params, { dryRun });
     writeResult({ ok: true });
   } catch (error) {
     writeResult({ ok: false, error: error instanceof Error ? error.message : String(error) });
