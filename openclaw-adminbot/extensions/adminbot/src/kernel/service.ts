@@ -1198,6 +1198,31 @@ export class AdminBotService {
     });
   }
 
+  /**
+   * Records that the guide's send filed a DCS Slack-access request, or failed to.
+   *
+   * The request lands on a Microsoft Form with no receipt and no callback, so this row is the only
+   * evidence it was attempted. It used to be written by the approval path; the trigger moved to
+   * the send, and the record moved with it.
+   */
+  recordDcsFormAttempt(params: {
+    actor: string;
+    template_id: string;
+    email: string;
+    submitted: boolean;
+    error?: string;
+  }): void {
+    this.recordAudit({
+      type: params.submitted ? "auth.dcs_form_submitted" : "auth.dcs_form_failed",
+      actor: params.actor,
+      details: {
+        template_id: params.template_id,
+        recipient: params.email,
+        ...(params.error ? { error: params.error } : {}),
+      },
+    });
+  }
+
   listOnboardingStepPending(
     stepId: string,
   ): AdminBotServiceResponse<{ step_id: string; message: string; members: AdminBotLabMember[] }> {

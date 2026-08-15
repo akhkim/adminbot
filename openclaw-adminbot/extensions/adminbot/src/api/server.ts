@@ -1505,6 +1505,18 @@ async function handleAuthenticatedRoute(
       email: body.email,
       sent: result.payload.sent,
     });
+    // The DCS request moved here from registration approval, and its audit trail moves with it:
+    // the request is filed on someone else's system with no receipt, so the only record that it
+    // happened at all is this one.
+    if (result.payload.dcs_form) {
+      service.recordDcsFormAttempt({
+        actor: principalActor(principal),
+        template_id: result.payload.template_id,
+        email: body.email,
+        submitted: result.payload.dcs_form.submitted,
+        ...(result.payload.dcs_form.error ? { error: result.payload.dcs_form.error } : {}),
+      });
+    }
     sendJson(res, 200, result.payload);
     return;
   }

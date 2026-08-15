@@ -158,6 +158,7 @@ export type AdminBotOnboardingHost = {
   onboardingEmail?: string;
   onboardingValues?: Record<string, string>;
   onboardingBusy?: boolean;
+  onboardingSubmitDcsForm?: boolean;
   onboardingError?: string | null;
   onboardingMissing?: string[];
   onboardingResult?: AdminBotOnboardingResult | null;
@@ -196,6 +197,7 @@ export async function sendOnboardingGuide(
         email: host.onboardingEmail ?? "",
         values: host.onboardingValues ?? {},
         preview: options.preview,
+        submitDcsForm: host.onboardingSubmitDcsForm,
       },
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),

@@ -13,7 +13,7 @@ import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { renderEmailBodyHtml } from "../../connectors/email-html.js";
 import { resolveGogExecutable } from "../../connectors/gog.js";
-import type { DcsFormRunner } from "./dcs-form.js";
+import { splitDisplayName, type DcsFormRunner } from "./dcs-form.js";
 import type { DriveWorkspaceProvisioner } from "./drive-workspace.js";
 import { findOnboardingTemplate } from "./emails.js";
 import {
@@ -27,6 +27,8 @@ import {
 
 const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 45_000;
+// The full-member guide: the one mail whose copy promises a CS account request.
+const DCS_FORM_TEMPLATE_ID = "member";
 const GOG_MAX_OUTPUT_BYTES = 1024 * 1024;
 
 /**
@@ -53,10 +55,13 @@ export type AdminBotOnboardingSendRequest = {
   /**
    * Also file the DCS Slack-access request for this person.
    *
-   * Opt-in per send, never automatic: the mail goes to people at every stage, and a member who
-   * already has a CS account would otherwise have a duplicate request filed every time an operator
-   * re-sent their guide. It belongs on the send that goes to someone who has no @cs.toronto.edu
-   * address yet -- the same send whose copy tells them an account request is coming.
+   * Defaults to on for the full-member guide and off for every other template: that mail is what
+   * starts a new member's CS account, and its own copy tells the reader an account request is
+   * coming. This used to fire on registration approval instead, which was the wrong moment --
+   * by then the member has an address and the request has already been made.
+   *
+   * Still a flag rather than a rule, because a re-send is not a second request: an operator
+   * resending the guide to someone who already has an account unticks it.
    */
   submit_dcs_form?: boolean;
   /** Compose and provision nothing; used by the tab's preview. */
@@ -66,6 +71,8 @@ export type AdminBotOnboardingSendRequest = {
 export type AdminBotOnboardingSendResult = {
   template_id: string;
   subject: string;
+  /** Present when the send also filed a DCS Slack-access request; absent when it did not try. */
+  dcs_form?: { submitted: boolean; error?: string };
   body: string;
   /** HTML alternative rendered from `body`; absent only when the body renders to nothing. */
   body_html?: string;
@@ -303,12 +310,12 @@ export function createAdminBotOnboardingSender(
     // rather than fired and forgotten, because the operator asked for it in this request and the
     // approval path's fire-and-forget is exactly how twelve of these failed unnoticed.
     let dcsForm: { submitted: boolean; error?: string } | undefined;
-    if (request.submit_dcs_form) {
+    const wantsDcsForm = request.submit_dcs_form ?? template.id === DCS_FORM_TEMPLATE_ID;
+    if (wantsDcsForm) {
       if (!options.submitDcsForm) {
         dcsForm = { submitted: false, error: "the DCS form runner is not configured" };
       } else {
-        const [firstName = name, ...rest] = name.split(/\s+/u);
-        const lastName = rest.join(" ") || firstName;
+        const { firstName, lastName } = splitDisplayName(name);
         try {
           await options.submitDcsForm({ firstName, lastName, email });
           dcsForm = { submitted: true };

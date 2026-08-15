@@ -643,6 +643,8 @@ export type OnboardingGuideRequest = {
   email: string;
   values: Record<string, string>;
   preview: boolean;
+  /** Left out entirely when the tab has no opinion, so the service applies its own default. */
+  submitDcsForm?: boolean;
 };
 
 export type OnboardingGuideResult = {
@@ -676,6 +678,7 @@ export async function sendOnboardingGuide(
     email: request.email,
     values: request.values,
     preview: request.preview,
+    ...(request.submitDcsForm === undefined ? {} : { submit_dcs_form: request.submitDcsForm }),
   });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };

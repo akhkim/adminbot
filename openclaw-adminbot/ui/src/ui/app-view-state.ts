@@ -95,6 +95,8 @@ export type AppViewState = {
   onboardingEmail?: string;
   onboardingValues?: Record<string, string>;
   onboardingBusy?: boolean;
+  /** Unset means "the service decides", which is on for the full-member guide and off elsewhere. */
+  onboardingSubmitDcsForm?: boolean;
   onboardingError?: string | null;
   onboardingMissing?: string[];
   onboardingResult?: import("./adminbot/controllers/admin.ts").AdminBotOnboardingResult | null;

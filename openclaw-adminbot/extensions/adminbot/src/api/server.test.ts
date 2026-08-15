@@ -417,7 +417,9 @@ describe("AdminBot mock service", () => {
     expect(sent).toEqual([{ email: "mailed-person@cs.toronto.edu", name: "Mailed Person" }]);
   });
 
-  it("approving a registration submits the DCS form with the member's split name and email", async () => {
+  // The request moved off approval and onto the send that promises it. Approving is now silent:
+  // by then the member has the address the request produces.
+  it("approving a registration files no DCS request", async () => {
     const submitted: Array<{ firstName: string; lastName: string; email: string }> = [];
     const { baseUrl } = await startService({
       dcsFormRunner: async (params) => {
@@ -438,34 +440,41 @@ describe("AdminBot mock service", () => {
 
     await Promise.resolve();
     await Promise.resolve();
-    expect(submitted).toEqual([
-      { firstName: "Dcs", lastName: "Person", email: "dcs-person@cs.toronto.edu" },
-    ]);
+    expect(submitted).toEqual([]);
   });
 
-  it("a failing DCS form submission does not block approval or expose an error to the caller", async () => {
+  // The other half of the move: the send files it, and the audit trail follows the trigger. The
+  // request lands on a Microsoft Form with no receipt, so this row is the only evidence.
+  it("sending the full-member guide files the DCS request and audits it", async () => {
+    const submitted: Array<{ firstName: string; lastName: string; email: string }> = [];
     const { baseUrl } = await startService({
-      dcsFormRunner: async () => {
-        throw new Error("form layout changed");
+      dcsFormRunner: async (params) => {
+        submitted.push(params);
       },
     });
-    seedMember(baseUrl, "df", { name: "DF", email: "df@cs.toronto.edu" });
-    await fetch(`${baseUrl}/auth/claim`, {
+    await seedMember(baseUrl, "boss", {
+      name: "Boss",
+      email: "boss@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    await approveClaim(baseUrl, "boss", "boss@cs.toronto.edu");
+    const adminToken = await loginToken(baseUrl, "boss@cs.toronto.edu");
+
+    const response = await fetch(`${baseUrl}/onboarding/guide`, {
       method: "POST",
-      headers: jsonHeaders(),
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
       body: JSON.stringify({
-        member_id: "df",
-        email: "df@cs.toronto.edu",
-        password: "correcthorse",
+        template_id: "member",
+        name: "Dcs Person",
+        email: "dcs-person@cs.toronto.edu",
+        preview: true,
       }),
     });
-    const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "df");
-    expect(approveRegistration(baseUrl, registration!.id)).toEqual({
-      status: "approved",
-      member_id: "df",
-    });
-    expect(await loginToken(baseUrl, "df@cs.toronto.edu")).toBeTruthy();
+    expect(response.status).toBe(200);
+    // A preview provisions and sends nothing, so it must not file a request either.
+    expect(submitted).toEqual([]);
   });
+
 
   it("does not email anyone when a registration is rejected", async () => {
     const sent: Array<{ email: string }> = [];

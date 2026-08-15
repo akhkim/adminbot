@@ -315,37 +315,67 @@ describe("onboarding sender", () => {
     expect(sendEmail.mock.calls[0]?.[0]?.body_html).toBe(result.payload.body_html);
   });
 
-  // The DCS request is filed on the send that goes to someone who has no CS account yet, and only
-  // when the operator asks for it: an unconditional submit would file a duplicate every time a
-  // guide was re-sent to a member who already has one.
-  it("files the DCS request only when the send asks for it", async () => {
+  // The full-member guide is what starts someone's CS account, and its own copy tells them an
+  // account request is coming -- so sending it files the request. This used to happen on
+  // registration approval, which is too late: by then they have the address the request produces.
+  it("files the DCS request when the full-member guide is sent", async () => {
     const submitDcsForm = vi.fn().mockResolvedValue(undefined);
     const sendEmail = vi.fn().mockResolvedValue(undefined);
     const send = createAdminBotOnboardingSender({ env: ENV, submitDcsForm, sendEmail });
 
-    const without = await send({
+    const result = await send({
       template_id: "member",
       name: "Ada Lovelace",
       email: "ada@example.com",
     });
-    expect(without.ok).toBe(true);
-    expect(submitDcsForm).not.toHaveBeenCalled();
-
-    const withForm = await send({
-      template_id: "member",
-      name: "Ada Lovelace",
-      email: "ada@example.com",
-      submit_dcs_form: true,
-    });
-    expect(withForm.ok).toBe(true);
+    expect(result.ok).toBe(true);
     expect(submitDcsForm).toHaveBeenCalledWith({
       firstName: "Ada",
       lastName: "Lovelace",
       email: "ada@example.com",
     });
-    if (withForm.ok) {
-      expect(withForm.payload.dcs_form).toEqual({ submitted: true });
+    if (result.ok) {
+      expect(result.payload.dcs_form).toEqual({ submitted: true });
     }
+  });
+
+  // Every other template goes to people who are not getting a CS account from this lab.
+  it("files nothing for the other templates", async () => {
+    const submitDcsForm = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      submitDcsForm,
+      sendEmail: vi.fn().mockResolvedValue(undefined),
+    });
+    const result = await send({
+      template_id: "rejection",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+    });
+    expect(result.ok).toBe(true);
+    expect(submitDcsForm).not.toHaveBeenCalled();
+    if (result.ok) {
+      expect(result.payload.dcs_form).toBeUndefined();
+    }
+  });
+
+  // A re-send is not a second request: an operator resending the guide to someone who already has
+  // an account turns it off.
+  it("lets a re-send opt out", async () => {
+    const submitDcsForm = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      submitDcsForm,
+      sendEmail: vi.fn().mockResolvedValue(undefined),
+    });
+    const result = await send({
+      template_id: "member",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      submit_dcs_form: false,
+    });
+    expect(result.ok).toBe(true);
+    expect(submitDcsForm).not.toHaveBeenCalled();
   });
 
   // The guide is already delivered by the time the form runs, so a failed form is reported and

@@ -103,7 +103,6 @@ export type AdminBotAuthServiceOptions = {
   }) => Promise<void>;
   // Best-effort side effect fired (not awaited) when a registration is approved, filing the DCS
   // Slack-access request form on the new member's behalf. Same contract as the two above.
-  submitDcsForm?: (params: { firstName: string; lastName: string; email: string }) => Promise<void>;
   // Best-effort, fired but not awaited on a successful login (see login()): resolving it can take
   // a moment and must never slow down or fail the sign-in it happened alongside.
   geolocateIp?: (ip: string) => Promise<{ country?: string; continent?: string } | undefined>;
@@ -144,22 +143,6 @@ const SIGNUP_PROFILE_FIELDS = [
   "notes",
 ] as const;
 
-// The roster keeps one free-text `name`; the DCS form (like most external forms) wants separate
-// First/Last Name answers, so this splits on the last space -- everything before it becomes the
-// first name (covers middle names/initials), the final token becomes the last name. A one-word
-// name (no space) has nothing to split, so it is used for both rather than leaving a required
-// field blank.
-function splitDisplayName(name: string): { firstName: string; lastName: string } {
-  const trimmed = name.trim();
-  const lastSpace = trimmed.lastIndexOf(" ");
-  if (lastSpace === -1) {
-    return { firstName: trimmed, lastName: trimmed };
-  }
-  return {
-    firstName: trimmed.slice(0, lastSpace).trim(),
-    lastName: trimmed.slice(lastSpace + 1).trim(),
-  };
-}
 
 // Case and spacing differences are the same answer, not a different one: "PhD student" typed by
 // an older client is the vocabulary's "PhD Student".
@@ -185,11 +168,6 @@ export class AdminBotAuthService {
     token: string;
     expiresInMinutes: number;
   }) => Promise<void>;
-  private readonly submitDcsForm?: (params: {
-    firstName: string;
-    lastName: string;
-    email: string;
-  }) => Promise<void>;
   private readonly geolocateIp?: (
     ip: string,
   ) => Promise<{ country?: string; continent?: string } | undefined>;
@@ -208,7 +186,6 @@ export class AdminBotAuthService {
     this.inviteToLabCalendar = options.inviteToLabCalendar;
     this.sendAccountApprovedEmail = options.sendAccountApprovedEmail;
     this.sendPasswordResetEmail = options.sendPasswordResetEmail;
-    this.submitDcsForm = options.submitDcsForm;
     this.geolocateIp = options.geolocateIp;
     this.gatewayToken = options.gatewayToken?.trim() || undefined;
     this.gatewayUrl = options.gatewayUrl?.trim() || undefined;
@@ -589,7 +566,6 @@ export class AdminBotAuthService {
     });
     this.inviteNewMemberToLabCalendar(registration.email, memberId, decidedBy);
     this.notifyAccountApproved(registration.email, memberId, decidedBy);
-    this.requestDcsFormSubmission(registration.email, memberId, decidedBy);
     return { ok: true, status: 200, payload: { status: "approved", member_id: memberId } };
   }
 
@@ -638,24 +614,6 @@ export class AdminBotAuthService {
   // than rolled back. The roster only ever records one free-text `name`, so it is split on the
   // last space (see splitDisplayName) to fill the form's separate First/Last Name questions --
   // the same shape the actual form asks a person to fill in by hand.
-  private requestDcsFormSubmission(email: string, memberId: string, decidedBy: string): void {
-    if (!this.submitDcsForm) {
-      return;
-    }
-    const name = this.store.getLabMember(memberId)?.name ?? "";
-    const { firstName, lastName } = splitDisplayName(name);
-    void this.submitDcsForm({ firstName, lastName, email })
-      .then(() => {
-        this.audit("auth.dcs_form_submitted", decidedBy, { member_id: memberId, email });
-      })
-      .catch((error: unknown) => {
-        this.audit("auth.dcs_form_failed", decidedBy, {
-          member_id: memberId,
-          email,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-  }
 
   rejectRegistration(id: string, decidedBy: string): AdminBotAuthResponse<{ status: "rejected" }> {
     const registration = this.store.getAccountRegistration(id);
