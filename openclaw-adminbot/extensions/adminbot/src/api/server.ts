@@ -356,10 +356,16 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
         ? { geolocateIp: createIpinfoLiteGeolocator(ipinfoToken) }
         : {}),
   });
+  // The same runner the approval path gets, so an onboarding send and an approval file the DCS
+  // request identically. Undefined when no script path is configured, which the sender reports
+  // rather than silently skipping.
+  const dcsFormRunner =
+    options.dcsFormRunner ?? createDcsFormRunner({ scriptPath: options.dcsFormScriptPath });
   const onboardingSender =
     options.onboardingSender ??
     createAdminBotOnboardingSender({
       provisionDriveWorkspace: createDriveWorkspaceProvisioner(),
+      ...(dcsFormRunner ? { submitDcsForm: dcsFormRunner } : {}),
       // The number lives in settings, never in the repo (see AGENTS.md: no real phone numbers).
       headProfessorWhatsapp: () => {
         const settings = service.getSettings();

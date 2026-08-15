@@ -13,6 +13,7 @@ import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { renderEmailBodyHtml } from "../../connectors/email-html.js";
 import { resolveGogExecutable } from "../../connectors/gog.js";
+import type { DcsFormRunner } from "./dcs-form.js";
 import type { DriveWorkspaceProvisioner } from "./drive-workspace.js";
 import { findOnboardingTemplate } from "./emails.js";
 import {
@@ -49,6 +50,15 @@ export type AdminBotOnboardingSendRequest = {
   /** Everything the template needs that the tab collected by hand. */
   values?: Record<string, string | undefined>;
   slack_channel_id?: string;
+  /**
+   * Also file the DCS Slack-access request for this person.
+   *
+   * Opt-in per send, never automatic: the mail goes to people at every stage, and a member who
+   * already has a CS account would otherwise have a duplicate request filed every time an operator
+   * re-sent their guide. It belongs on the send that goes to someone who has no @cs.toronto.edu
+   * address yet -- the same send whose copy tells them an account request is coming.
+   */
+  submit_dcs_form?: boolean;
   /** Compose and provision nothing; used by the tab's preview. */
   preview?: boolean;
 };
@@ -81,6 +91,12 @@ export type AdminBotOnboardingSenderOptions = {
   env?: NodeJS.ProcessEnv;
   provisionDriveWorkspace?: DriveWorkspaceProvisioner;
   inviteToSlackConnect?: SlackConnectInviter;
+  /**
+   * Files the DCS Slack-access request. Same injection seam as the two provisioners above, and the
+   * same runner the approval path uses -- the composition layer owns the script path, so a send
+   * and an approval can never file the request two different ways.
+   */
+  submitDcsForm?: DcsFormRunner;
   /** Resolves `{zhijing_whatsapp}`; reads AdminBot settings so no phone number lives in the repo. */
   headProfessorWhatsapp?: () => string | undefined;
   defaultSlackChannelId?: string;
@@ -281,6 +297,30 @@ export function createAdminBotOnboardingSender(
     const guide: AdminBotComposedGuide = composed.guide;
     const html = htmlOf(guide.body);
     await sendEmail({ to: email, subject: guide.subject, body: guide.body, ...html });
+
+    // After the mail, and reported rather than thrown: the guide has already been delivered, so a
+    // failed form is a follow-up item, not a reason to tell the operator the send failed. Awaited
+    // rather than fired and forgotten, because the operator asked for it in this request and the
+    // approval path's fire-and-forget is exactly how twelve of these failed unnoticed.
+    let dcsForm: { submitted: boolean; error?: string } | undefined;
+    if (request.submit_dcs_form) {
+      if (!options.submitDcsForm) {
+        dcsForm = { submitted: false, error: "the DCS form runner is not configured" };
+      } else {
+        const [firstName = name, ...rest] = name.split(/\s+/u);
+        const lastName = rest.join(" ") || firstName;
+        try {
+          await options.submitDcsForm({ firstName, lastName, email });
+          dcsForm = { submitted: true };
+        } catch (error) {
+          dcsForm = {
+            submitted: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }
+    }
+
     return {
       ok: true,
       payload: {
@@ -289,6 +329,7 @@ export function createAdminBotOnboardingSender(
         sent: true,
         ...(driveLink ? { drive_folder_link: driveLink } : {}),
         ...(slackLink ? { slack_connect_link: slackLink } : {}),
+        ...(dcsForm ? { dcs_form: dcsForm } : {}),
       },
     };
   };

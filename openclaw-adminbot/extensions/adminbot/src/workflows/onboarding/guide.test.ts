@@ -315,6 +315,62 @@ describe("onboarding sender", () => {
     expect(sendEmail.mock.calls[0]?.[0]?.body_html).toBe(result.payload.body_html);
   });
 
+  // The DCS request is filed on the send that goes to someone who has no CS account yet, and only
+  // when the operator asks for it: an unconditional submit would file a duplicate every time a
+  // guide was re-sent to a member who already has one.
+  it("files the DCS request only when the send asks for it", async () => {
+    const submitDcsForm = vi.fn().mockResolvedValue(undefined);
+    const sendEmail = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({ env: ENV, submitDcsForm, sendEmail });
+
+    const without = await send({
+      template_id: "member",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+    });
+    expect(without.ok).toBe(true);
+    expect(submitDcsForm).not.toHaveBeenCalled();
+
+    const withForm = await send({
+      template_id: "member",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      submit_dcs_form: true,
+    });
+    expect(withForm.ok).toBe(true);
+    expect(submitDcsForm).toHaveBeenCalledWith({
+      firstName: "Ada",
+      lastName: "Lovelace",
+      email: "ada@example.com",
+    });
+    if (withForm.ok) {
+      expect(withForm.payload.dcs_form).toEqual({ submitted: true });
+    }
+  });
+
+  // The guide is already delivered by the time the form runs, so a failed form is reported and
+  // followed up, never a reason to tell the operator the send failed.
+  it("reports a failed DCS request without failing the send", async () => {
+    const sendEmail = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      sendEmail,
+      submitDcsForm: vi.fn().mockRejectedValue(new Error("form timed out")),
+    });
+    const result = await send({
+      template_id: "member",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      submit_dcs_form: true,
+    });
+    expect(result.ok).toBe(true);
+    expect(sendEmail).toHaveBeenCalled();
+    if (result.ok) {
+      expect(result.payload.sent).toBe(true);
+      expect(result.payload.dcs_form).toEqual({ submitted: false, error: "form timed out" });
+    }
+  });
+
   it("does not send when provisioning is unavailable", async () => {
     const sendEmail = vi.fn();
     const send = createAdminBotOnboardingSender({ env: ENV, sendEmail });

@@ -1,16 +1,21 @@
 // Sends the full-member onboarding mail to the people who have an account they have never used.
 //
-//   node --import tsx scripts/adminbot-send-full-member-onboarding.ts <db> <slack-export.csv> [--send]
+//   node --import tsx scripts/adminbot-send-full-member-onboarding.ts <db> <export.csv> [flags]
+//
+// Flags: --send, --no-account
 //
 // Dry run by default: every message is written to .artifacts/onboarding-mail/ and nothing leaves
 // the machine. `--send` is the only thing that mails, and it needs GOG_KEYRING_PASSWORD in the
 // environment because gog's token sits in a file keyring.
 //
-// Who gets it: column S ("Member Type") contains "full", and the member's credential still
-// verifies against the seeded password -- meaning the account was created for them and they have
-// never signed in. Someone who has set their own password is not told to use a temporary one, and
-// a member with no credential at all is skipped: the mail's claim that an account exists would be
-// false, and they take the claim-your-profile path instead.
+// Who gets it, by default: column S ("Member Type") contains "full", and the member's credential
+// still verifies against the seeded password -- meaning the account was created for them and they
+// have never signed in. Someone who has set their own password is not told to use a temporary one.
+//
+// `--no-account` selects the other group: full members with no credential at all, because they
+// have no @cs.toronto.edu address to sign in with. The same mail reads correctly for them -- its
+// second branch is the one that applies -- and this mode also files each person's DCS Slack-access
+// request, which is what produces the address they will later claim their account with.
 //
 // Delivery goes to column E ("Email for correspondence"), which is frequently not the address the
 // account signs in with -- that one is the @cs.toronto.edu address the mail describes.
@@ -26,6 +31,7 @@ import { normalizeSheetValue, parseCsv } from "./adminbot-import-member-sheet.ts
 
 const execFile = promisify(execFileCallback);
 const SEEDED_PASSWORD = "jinesis";
+const DCS_FORM_SCRIPT = "scripts/adminbot-dcs-form-submit.ts";
 const TEMPLATE_ID = "member";
 const OUT_DIR = ".artifacts/onboarding-mail";
 const MEMBER_TYPE_HEADER = "Member Type";
@@ -67,6 +73,7 @@ type Recipient = { memberId: string; name: string; to: string; login: string };
 function main(): void {
   const args = process.argv.slice(2);
   const send = args.includes("--send");
+  const noAccount = args.includes("--no-account");
   const [databasePath, csvPath] = args.filter((arg) => !arg.startsWith("--"));
   if (!databasePath || !csvPath) {
     throw new Error("usage: adminbot-send-full-member-onboarding.ts <db> <export.csv> [--send]");
@@ -120,11 +127,15 @@ function main(): void {
     }
     const memberId = bySlack.get((row[slackAt] ?? "").trim()) ?? byName.get(normalizeName(name));
     const credential = memberId ? credentials.get(memberId) : undefined;
-    if (!credential) {
-      skips.push(`${name}: no account — claims their own profile instead`);
+    if (noAccount) {
+      if (credential) {
+        skips.push(`${name}: already has an account`);
+        continue;
+      }
+    } else if (!credential) {
+      skips.push(`${name}: no account — run with --no-account for this group`);
       continue;
-    }
-    if (!verifyPassword(credential.password_scrypt, SEEDED_PASSWORD)) {
+    } else if (!verifyPassword(credential.password_scrypt, SEEDED_PASSWORD)) {
       skips.push(`${name}: already signed in and set their own password`);
       continue;
     }
@@ -133,7 +144,7 @@ function main(): void {
       skips.push(`${name}: no usable address in the correspondence column`);
       continue;
     }
-    recipients.push({ memberId: memberId!, name, to, login: credential.email });
+    recipients.push({ memberId: memberId!, name, to, login: credential?.email ?? "(no account yet)" });
   }
 
   fs.mkdirSync(OUT_DIR, { recursive: true });
@@ -189,6 +200,29 @@ function main(): void {
       ]);
       sent += 1;
       console.log(`sent ${sent}/${composed.length}: ${entry.recipient.to}`);
+
+      // Only for the no-account group: the mail told them an account request is coming, and this
+      // is that request. Reported and not thrown -- the mail has gone, so a failed form is a
+      // follow-up item rather than a reason to abandon the rest of the batch.
+      if (noAccount) {
+        const [firstName = entry.recipient.name, ...rest] = entry.recipient.name.split(/\s+/u);
+        const lastName = rest.join(" ") || firstName;
+        try {
+          await execFile("node", [
+            "--import",
+            "tsx",
+            DCS_FORM_SCRIPT,
+            JSON.stringify({ firstName, lastName, email: entry.recipient.to }),
+          ]);
+          console.log(`     DCS request filed for ${entry.recipient.name}`);
+        } catch (error) {
+          console.log(
+            `     DCS request FAILED for ${entry.recipient.name}: ${
+              error instanceof Error ? error.message.split("\n")[0] : String(error)
+            }`,
+          );
+        }
+      }
     }
     console.log(`\nSent ${sent}.`);
   })();
