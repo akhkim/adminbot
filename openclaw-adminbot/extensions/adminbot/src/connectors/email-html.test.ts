@@ -62,7 +62,7 @@ describe("renderEmailBodyHtml", () => {
     expect(html).toContain("<p>If you already have an @cs.toronto.edu email");
     expect(html).toContain("<p>If you do not have an @cs.toronto.edu email yet");
     expect(html).toContain(
-      '<a href="https://jinesis-admin.vercel.app/signup">https://jinesis-admin.vercel.app/signup</a>',
+      '<a href="https://jinesis-admin.vercel.app">https://jinesis-admin.vercel.app</a>',
     );
     // The literal example braces are copy, so they must survive escaping as text.
     expect(html).toContain("{first_letter_of_first_name}{full_last_name}");

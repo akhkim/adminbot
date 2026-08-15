@@ -169,7 +169,11 @@ describe("composeOnboardingGuide", () => {
     // Both routes to an account are described: already have a DCS address, or waiting on one.
     expect(result.guide.body).toContain("If you already have an @cs.toronto.edu email");
     expect(result.guide.body).toContain("If you do not have an @cs.toronto.edu email yet");
-    expect(result.guide.body).toContain("https://jinesis-admin.vercel.app/signup");
+    // Accounts are pre-created for the roster right now, so the mail hands over a sign-in and a
+    // temporary password rather than a signup link.
+    expect(result.guide.body).toContain("https://jinesis-admin.vercel.app");
+    expect(result.guide.body).toContain('temporary password "jinesis"');
+    expect(result.guide.body).not.toContain("/signup");
     // The member is never told to file the DCS request themselves; approval does it for them.
     expect(result.guide.body).not.toContain("forms.office.com");
     expect(result.guide.body).not.toContain("click this link");
