@@ -36,7 +36,7 @@ import { html, nothing } from "lit";
 import { i18n, t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
-import { upcomingMajorDeadlines } from "../data/deadline-time.ts";
+import { aoeInstantMs, MS_DAY, upcomingMajorDeadlines, urgencyOf } from "../data/deadline-time.ts";
 import {
   renderTimeAllocationChart,
   type TimeAllocationInterval,
@@ -227,6 +227,27 @@ const BIG_DEADLINE_LIMIT = 6;
 // Two, matching the profile page's deadline summary: enough to see what is next and what follows
 // it, few enough to stay one line on the banner.
 const CONFERENCE_DEADLINE_COUNT = 2;
+
+/**
+ * How far away a deadline is, counted in calendar days.
+ *
+ * Deliberately not derived from the AoE instant the urgency band uses: that instant is the end of
+ * the deadline day shifted into UTC-12, so subtracting it from "now" and rounding put a date two
+ * days out at "In 3 days" and every conference two days further away than a calendar says. The
+ * band still reads the true cutoff; the label answers the question a person asks of a calendar.
+ */
+function daysAwayLabel(dateIso: string, now: number): string {
+  const target = Date.parse(`${dateIso}T00:00:00Z`);
+  const today = Date.parse(`${new Date(now).toISOString().slice(0, 10)}T00:00:00Z`);
+  const days = Math.round((target - today) / MS_DAY);
+  if (days <= 0) {
+    return t("adminbotTimeAvailability.milestones.dueToday");
+  }
+  if (days === 1) {
+    return t("adminbotTimeAvailability.milestones.dueTomorrow");
+  }
+  return t("adminbotTimeAvailability.milestones.dueInDays", { days: String(days) });
+}
 
 // Mirrors ADMINBOT_OPEN_PROJECT in extensions/adminbot/src/contracts/actions.ts: declared spare
 // capacity, not a commitment, so it never takes a color slot or a bar.
@@ -902,8 +923,13 @@ function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: M
     });
 
   return html`
+    <section class="adminbot-time-availability__editor" data-testid="time-availability-milestone-editor">
+      <div class="card-title">${t("adminbotTimeAvailability.form.milestoneTitle")}</div>
+      <p class="adminbot-time-availability__form-hint">
+        ${t("adminbotTimeAvailability.milestones.formHint")}
+      </p>
     <form
-      class="adminbot-form adminbot-time-availability__milestone-form"
+      class="adminbot-form adminbot-time-availability__form adminbot-time-availability__milestone-form"
       data-testid="time-availability-milestone-form"
       @submit=${(event: Event) => {
         event.preventDefault();
@@ -936,18 +962,21 @@ function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: M
         <span>${t("adminbotTimeAvailability.form.link")}</span>
         <input type="url" .value=${draft.link} @input=${field("link")} />
       </label>
-      ${error && touched
-        ? html`<span class="adminbot-time-availability__form-error" role="alert">${error}</span>`
-        : nothing}
-      <button
-        type="submit"
-        class="btn btn--sm"
-        data-testid="time-availability-milestone-add"
-        ?disabled=${props.saving || error !== null}
-      >
-        ${t("adminbotTimeAvailability.milestones.submit")}
-      </button>
+      <div class="adminbot-time-availability__form-actions">
+        ${error && touched
+          ? html`<span class="adminbot-time-availability__form-error" role="alert">${error}</span>`
+          : nothing}
+        <button
+          type="submit"
+          class="btn primary"
+          data-testid="time-availability-milestone-add"
+          ?disabled=${props.saving || error !== null}
+        >
+          ${t("adminbotTimeAvailability.milestones.submit")}
+        </button>
+      </div>
     </form>
+    </section>
   `;
 }
 
@@ -975,13 +1004,22 @@ function renderBigDeadlines(
   // so the three surfaces can never disagree about which conference is next.
   const conferences = upcomingMajorDeadlines(now, CONFERENCE_DEADLINE_COUNT).map((entry) => ({
     date: entry.venue.deadline_aoe.slice(0, 10),
+    instant: entry.instant,
     label: entry.venue.name,
     link: entry.venue.link,
     own: false,
   }));
   const mine = milestones
     .filter((row) => row.date >= today)
-    .map((row) => ({ date: row.date, label: row.label, link: row.link, own: true }))
+    .map((row) => ({
+      date: row.date,
+      // A personal milestone is a date with no time on it. Read as end of that day, so "today"
+      // stays today rather than turning critical at midnight.
+      instant: aoeInstantMs(`${row.date} 23:59:59`),
+      label: row.label,
+      link: row.link,
+      own: true,
+    }))
     .slice(0, BIG_DEADLINE_LIMIT);
   // Conferences are added after the member's own rows are capped, so a full personal list can
   // never push them off the banner.
@@ -998,11 +1036,14 @@ function renderBigDeadlines(
       <ul class="adminbot-time-availability__deadline-list">
             ${rows.map(
               (row) => html`
-                <li data-own=${String(row.own)}>
+                <li data-own=${String(row.own)} data-urgency=${urgencyOf(row.instant, now)}>
+                  <span class="adminbot-time-availability__deadline-away">
+                    ${daysAwayLabel(row.date, now)}
+                  </span>
+                  <span class="adminbot-time-availability__deadline-label">${row.label}</span>
                   <span class="adminbot-time-availability__deadline-date">
                     ${tableDate(row.date)}
                   </span>
-                  <span class="adminbot-time-availability__deadline-label">${row.label}</span>
                   ${renderLink(row.link)}
                   ${editable && row.own
                     ? html`<button

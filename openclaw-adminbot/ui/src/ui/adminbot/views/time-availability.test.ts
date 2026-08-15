@@ -547,14 +547,38 @@ describe("the split tables and the deadline panel", () => {
     }
   });
 
-  it("reminds the member that thesis deadlines belong here too", () => {
+  // The banner says what the list holds; the reminder about what belongs in it sits on the form
+  // that adds one, which is the moment it is useful.
+  it("says on the banner that own deadlines stay private", () => {
     const panel = renderView({ members: [scheduled()] }).querySelector(
       '[data-testid="time-availability-deadlines"]',
     );
     const hint = panel?.querySelector(".adminbot-time-availability__deadline-hint")?.textContent;
-    expect(hint).toContain("thesis");
-    // And that their own rows stay private, which the conference rows do not change.
     expect(hint?.toLowerCase()).toContain("private");
+  });
+
+  it("reminds the member on the add form that thesis deadlines belong here too", () => {
+    const editor = renderView({ members: [scheduled()] }).querySelector(
+      '[data-testid="time-availability-milestone-editor"]',
+    );
+    expect(editor?.querySelector(".card-title")?.textContent).toContain("Add a big deadline");
+    expect(editor?.textContent).toContain("thesis");
+  });
+
+  // Each deadline carries the urgency band the Deadlines board and the dashboard summary use, so
+  // "how close is this" is answered the same way wherever a member reads it.
+  it("bands each deadline by how close it is", () => {
+    const soon = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+    const panel = renderView({
+      members: [
+        member({ milestones: [{ date: soon, label: "Thesis proposal" }] } as Partial<AdminBotLabMember>),
+      ],
+    }).querySelector('[data-testid="time-availability-deadlines"]')!;
+    const own = [...panel.querySelectorAll("li")].find((row) =>
+      row.textContent?.includes("Thesis proposal"),
+    );
+    expect(own?.getAttribute("data-urgency")).toBe("critical");
+    expect(own?.textContent).toContain("In 2 days");
   });
 
   // The banner reads; the form that writes lives with the other editors.

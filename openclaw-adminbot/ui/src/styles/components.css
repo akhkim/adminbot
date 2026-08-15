@@ -9699,28 +9699,21 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-time-availability__deadlines {
   display: grid;
   gap: var(--space-3);
+  align-content: start;
   padding: var(--space-4);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
 }
 
-/* Across the full width the list reads as a row of dates rather than a stack: each deadline is a
-   short date-and-label pair, and stacking them down a full-width panel wastes the width this
-   panel was moved here to get. */
+/* Across the full width the list reads as tiles rather than a stack: each deadline is a short
+   countdown-and-name pair, and stacking them down a full-width panel wastes the width this panel
+   was moved here to get. They wrap rather than scroll -- the count varies with how many deadlines
+   a member has entered, and a row that scrolls hides the later ones behind a clipped edge with
+   nothing to say they are there. */
 .adminbot-time-availability__deadlines .adminbot-time-availability__deadline-list {
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(200px, max-content);
-  justify-content: start;
-  gap: var(--space-4);
-  overflow-x: auto;
-}
-
-@media (max-width: 900px) {
-  .adminbot-time-availability__deadlines .adminbot-time-availability__deadline-list {
-    grid-auto-flow: row;
-    grid-auto-columns: auto;
-  }
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-3);
 }
 
 /* Sits under the panel title, above the list: it explains what belongs in the list, so it has to
@@ -9740,32 +9733,70 @@ details[open] > .ov-expandable-toggle::after {
   font-size: var(--control-ui-text-sm);
 }
 
+/* One tile per deadline: how long is left, what it is, when it falls. As a run of text on one
+   line the dates ran together and nothing said which was close -- the whole reason to put this
+   above a timeline is to answer "how much room do I have before the next one". */
 .adminbot-time-availability__deadline-list li {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto;
   align-items: baseline;
-  gap: var(--space-2);
+  gap: 2px var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
 }
 
-/* A member's own milestone is the one they can act on; the lab's conference dates are context. */
-.adminbot-time-availability__deadline-list li[data-own="false"] {
-  color: var(--text-muted);
-}
-
-.adminbot-time-availability__deadline-date {
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+/* The countdown carries the urgency color the Deadlines board and the dashboard summary already
+   use, so "critical" means the same red on all three. */
+.adminbot-time-availability__deadline-away {
+  grid-column: 1;
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--deadline-urgency, var(--muted));
 }
 
 .adminbot-time-availability__deadline-label {
-  flex: 1;
+  grid-column: 1 / -1;
   min-width: 0;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.adminbot-time-availability__deadline-date {
+  grid-column: 1;
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+/* The lab's conference dates are context; a member's own deadline is the one they entered and can
+   remove, so it keeps the full-strength name and a marked edge. */
+.adminbot-time-availability__deadline-list li[data-own="false"] .adminbot-time-availability__deadline-label {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.adminbot-time-availability__deadline-list li[data-own="true"] {
+  border-color: color-mix(in srgb, var(--deadline-urgency, var(--border)) 40%, var(--border));
+  background: color-mix(in srgb, var(--bg-accent) 40%, var(--bg));
+}
+
+.adminbot-time-availability__deadline-list li .btn,
+.adminbot-time-availability__deadline-list li a {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
 }
 
 .adminbot-time-availability__milestone-form {
-  display: grid;
-  gap: var(--space-2);
-  padding-top: var(--space-3);
-  border-top: 1px solid var(--border);
+  /* Wider minimum than the commitment forms: this one has three fields, and 160px columns spread
+     a date, a name and a link across a width that reads as an empty row. */
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
 }
 
 .adminbot-time-availability__form-hint,

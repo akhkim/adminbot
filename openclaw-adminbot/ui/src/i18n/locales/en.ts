@@ -1419,10 +1419,14 @@ export const en: TranslationMap = {
     },
     milestones: {
       title: "Big deadlines",
-      hint: "The next two major conference deadlines, plus your own. Yours are private — nobody else sees them. Add your thesis deadlines here too, not just conference ones.",
+      hint: "The next two conference deadlines, plus your own. Yours are private — nobody else sees them.",
+      formHint: "Add your thesis deadlines here too, not just conference ones.",
       date: "Date",
       label: "What",
       submit: "Add milestone",
+      dueToday: "Due today",
+      dueTomorrow: "Due tomorrow",
+      dueInDays: "In {days} days",
       empty: "No upcoming deadlines of your own yet.",
       errorDate: "Pick a date.",
       errorLabel: "Give the milestone a name.",
@@ -1452,6 +1456,7 @@ export const en: TranslationMap = {
       linkPlaceholder: "https://\u2026 class schedule, project board",
       note: "Note",
       jinesisTitle: "Add a Jinesis commitment",
+      milestoneTitle: "Add a big deadline",
       awayTitle: "Add time away",
       wholeDay: "Away the whole day",
       wholeDayHint:
