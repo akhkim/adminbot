@@ -530,25 +530,20 @@ describe("renderLoginGate", () => {
   });
 });
 
-describe("guest reimbursement entry", () => {
-  it("renders a button on the login screen and opens the guest view when clicked", () => {
+describe("login screen surfaces", () => {
+  // The guest reimbursement door was removed from the login screen: signing in is the only thing
+  // this card offers now. The guest view itself still exists behind ?signedOut=reimbursements.
+  it("does not offer the guest reimbursement entry", () => {
     const state = createState();
     const host = document.createElement("div");
 
     render(renderLoginGate(state), host);
-    const button = host.querySelector<HTMLButtonElement>(
-      '[data-testid="login-guest-reimbursements"]',
-    );
-    expect(button).not.toBeNull();
-    expect(button?.textContent?.trim()).toBe("Submit a reimbursement");
-    // Nothing should have happened before the click: the gate is still the only thing shown.
+    expect(host.querySelector('[data-testid="login-guest-reimbursements"]')).toBeNull();
+    expect(host.textContent).not.toContain("Submit a reimbursement");
     expect(state.guestReimbursements).toBe(false);
-
-    button?.click();
-    expect(state.guestReimbursements).toBe(true);
   });
 
-  it("keeps the button visible while a login failure is displayed", () => {
+  it("keeps the sign-in form as the only surface while a login failure is displayed", () => {
     const state = createState({
       lastError: "auth failed",
       memberAuthFailure: { kind: "member-auth-failed" },
@@ -556,17 +551,41 @@ describe("guest reimbursement entry", () => {
     const host = document.createElement("div");
 
     render(renderLoginGate(state), host);
-    expect(host.querySelector('[data-testid="login-guest-reimbursements"]')).not.toBeNull();
+    expect(host.querySelector(".login-gate__failure")).not.toBeNull();
+    expect(host.querySelector('[data-testid="login-guest-reimbursements"]')).toBeNull();
   });
 
-  // The pending-approval notice replaces the form entirely; a user stuck waiting for approval is
-  // exactly who still needs to file a reimbursement, so the door must not disappear there.
-  it("is reachable from the pending-approval notice", () => {
+  it("replaces the form with the pending-approval notice and its way back", () => {
     const state = createState({ loginPendingNotice: true });
     const host = document.createElement("div");
 
     render(renderLoginGate(state), host);
-    const back = host.querySelector<HTMLButtonElement>(".login-gate__connect");
-    expect(back).not.toBeNull();
+    expect(host.querySelector(".login-gate__form")).toBeNull();
+    expect(host.querySelector(".login-gate__connect")).not.toBeNull();
+  });
+});
+
+// A reset step must not show the field it does not use. These were `?hidden` attributes once,
+// which `.field { display: grid }` overrode, so the reset-request step still rendered a password
+// box the member could type into and submit.
+describe("password reset steps", () => {
+  it("asks only for an email in the request step", () => {
+    const state = createState({ loginMode: "reset-request" });
+    const host = document.createElement("div");
+
+    render(renderLoginGate(state), host);
+    expect(host.querySelector('input[name="email"]')).not.toBeNull();
+    expect(host.querySelector('input[name="password"]')).toBeNull();
+    expect(host.querySelector('input[name="confirm-password"]')).toBeNull();
+  });
+
+  it("asks only for the new password in the confirm step", () => {
+    const state = createState({ loginMode: "reset-confirm" });
+    const host = document.createElement("div");
+
+    render(renderLoginGate(state), host);
+    expect(host.querySelector('input[name="email"]')).toBeNull();
+    expect(host.querySelector('input[name="password"]')).not.toBeNull();
+    expect(host.querySelector('input[name="confirm-password"]')).not.toBeNull();
   });
 });

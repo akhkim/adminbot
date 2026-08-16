@@ -9,6 +9,7 @@ import {
   adminBotExternalCollaboratorSubgroups,
   adminBotMemberRoles,
 } from "../../contracts/actions.js";
+import { resolveAdminBotControlUiUrl } from "../../contracts/control-ui.js";
 import {
   ADMINBOT_SEPARATE_DELIVERY_DOC_URL,
   collaboratorSubgroupAccess,
@@ -25,7 +26,29 @@ const collaboratorSubgroupGrants = Object.fromEntries(
 );
 
 export function adminBotConsoleScript(): string {
-  return `    const privilegeLevels = ["external_collaborator", "trial", "member", "admin"];
+  return `    // A password-reset link can land here: this is the origin the service answers on, and it is the
+    // origin an operator most easily points the reset mail at. This console cannot redeem a reset
+    // token — it only changes a password for an already signed-in member — so hand the token to the
+    // Control UI, which has the confirm step, rather than showing a sign-in form the member has no
+    // password for. adminBotUrl pins the Control UI back to this service: the token is only valid
+    // against the AdminBot that minted it.
+    const CONTROL_UI_URL = ${JSON.stringify(resolveAdminBotControlUiUrl())};
+    (function handOffPasswordReset() {
+      try {
+        const token = new URL(window.location.href).searchParams.get("passwordReset");
+        if (!token) return;
+        const target = new URL(CONTROL_UI_URL);
+        // Same origin means the Control UI is this page; redirecting would only loop.
+        if (target.origin === window.location.origin) return;
+        target.searchParams.set("passwordReset", token);
+        target.searchParams.set("adminBotUrl", window.location.origin);
+        window.location.replace(target.toString());
+      } catch (error) {
+        /* A malformed Control UI URL must not take the console down with it. */
+      }
+    })();
+
+    const privilegeLevels = ["external_collaborator", "trial", "member", "admin"];
     const collaboratorSubgroups = ${JSON.stringify([...adminBotExternalCollaboratorSubgroups])};
     const collaboratorSubgroupGrants = ${JSON.stringify(collaboratorSubgroupGrants)};
     // Cells that are not a plain yes carry an instruction the person acting on the grant has to

@@ -2,14 +2,11 @@ import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { renderEmailBodyHtml } from "../../connectors/email-html.js";
 import { resolveGogExecutable } from "../../connectors/gog.js";
+import { buildPasswordResetUrl, resolveAdminBotControlUiUrl } from "../../contracts/control-ui.js";
 
 const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 45_000;
 const GOG_MAX_OUTPUT_BYTES = 1024 * 1024;
-
-// Same default as the account-approved mail: the lab has exactly one dashboard, and the reset link
-// has to land on it.
-const DEFAULT_DASHBOARD_URL = "https://jinesis-admin.vercel.app";
 
 export const PASSWORD_RESET_SUBJECT = "Reset your Jinesis Lab password";
 
@@ -33,23 +30,26 @@ export type PasswordResetEmailRunner = (params: {
 export function createPasswordResetEmailRunner(
   options: {
     env?: NodeJS.ProcessEnv;
-    dashboardUrl?: string;
+    // The Control UI origin the link lands on. Not the AdminBot service origin: only the Control
+    // UI can redeem the token — see contracts/control-ui.ts.
+    controlUiUrl?: string;
     // Same seam as the other gog runners: lets tests assert the argv without mailing a real person.
     run?: (args: string[]) => Promise<void>;
   } = {},
 ): PasswordResetEmailRunner {
+  const env = options.env ?? process.env;
   const gog = resolveGogExecutable(options.env);
-  const dashboardUrl =
-    options.dashboardUrl?.trim() ||
-    (options.env ?? process.env).ADMINBOT_DASHBOARD_URL?.trim() ||
-    DEFAULT_DASHBOARD_URL;
+  const controlUiUrl = options.controlUiUrl?.trim() || resolveAdminBotControlUiUrl(env);
+  // Pins the Control UI back to the AdminBot that minted the token when this deployment publishes
+  // a public service origin; unset, the Control UI keeps whatever its own build declared.
+  const adminBotUrl = env.ADMINBOT_PUBLIC_URL?.trim();
   return async ({ email, name, token, expiresInMinutes }) => {
     const to = email.trim();
     if (!to) {
       throw new Error("password reset email requires a non-empty email");
     }
-    const account = (options.env ?? process.env).GOG_ACCOUNT?.trim();
-    const resetUrl = buildPasswordResetUrl({ token, dashboardUrl });
+    const account = env.GOG_ACCOUNT?.trim();
+    const resetUrl = buildPasswordResetUrl({ token, controlUiUrl, adminBotUrl });
     const body = buildPasswordResetEmailBody({ name, resetUrl, expiresInMinutes });
     const args = [
       "--json",
@@ -106,12 +106,6 @@ export function buildPasswordResetEmailBody(params: {
     "",
     "— AdminBot, Jinesis Lab",
   ].join("\n");
-}
-
-/** Builds the dashboard URL a reset token is redeemed at. */
-export function buildPasswordResetUrl(params: { token: string; dashboardUrl?: string }): string {
-  const base = (params.dashboardUrl?.trim() || DEFAULT_DASHBOARD_URL).replace(/\/+$/, "");
-  return `${base}/?passwordReset=${encodeURIComponent(params.token)}`;
 }
 
 function formatGogEmailError(error: unknown): string {

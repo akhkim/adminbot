@@ -1964,8 +1964,6 @@ export const en: TranslationMap = {
     guest: {
       reimbursements: "Submit a reimbursement",
       reimbursementsHint: "Upload receipts and generate your forms without signing in.",
-      reimbursementsPrompt:
-        "Want to submit a reimbursement? Upload receipts and generate your forms without signing in.",
       backToSignIn: "Back to sign in",
     },
     pending: {

@@ -17,6 +17,21 @@ describe("renderAdminBotWebUi", () => {
     expect(html).toContain('class="shell" id="app-shell" hidden');
   });
 
+  // A reset link that names this origin (ADMINBOT_DASHBOARD_URL pointed at the service, say) would
+  // otherwise dead-end: this console changes a password only for an already signed-in member, and
+  // the person following a reset link is precisely the one who cannot sign in.
+  it("hands a password-reset token to the Control UI instead of dead-ending on it", () => {
+    vi.stubEnv("ADMINBOT_CONTROL_UI_URL", "https://ui.example.com");
+    const configured = renderAdminBotWebUi();
+    expect(configured).toContain('const CONTROL_UI_URL = "https://ui.example.com"');
+    expect(configured).toContain('searchParams.get("passwordReset")');
+    expect(configured).toContain('target.searchParams.set("adminBotUrl", window.location.origin)');
+    expect(configured).toContain("window.location.replace(target.toString())");
+    // Same origin would only redirect back here, so the handoff bails out instead of looping.
+    expect(configured).toContain("if (target.origin === window.location.origin) return;");
+    vi.unstubAllEnvs();
+  });
+
   it("probes the same-origin session and posts to the real auth routes", () => {
     expect(html).toContain('fetch("/auth/session"');
     expect(html).toContain('"/auth/login"');
