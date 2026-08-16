@@ -510,8 +510,32 @@ describe("control UI routing", () => {
     ).toBe("false");
   });
 
-  it("shows recent sessions in the sidebar and switches through them", async () => {
-    const app = mountApp("/overview");
+  it("keeps the session controls out of every tab except chat", async () => {
+    const app = mountApp("/chat");
+    app.sessionKey = "agent:main:main";
+    app.sessionsResult = createSessionsResult([
+      { key: "agent:main:main", label: "Main Session" },
+    ]) as typeof app.sessionsResult;
+    await app.updateComplete;
+
+    expect(app.querySelector(".chat-sessions")).toBeInstanceOf(HTMLElement);
+    // The shell sidebar used to carry these; creating and switching sessions says
+    // nothing about Deadlines, Members or Admin.
+    expect(app.querySelector(".sidebar-shell__body .chat-sessions")).toBeNull();
+
+    for (const tab of ["overview", "sessions", "channels"] as const) {
+      app.setTab(tab);
+      await app.updateComplete;
+      expect(app.querySelector(".chat-sessions")).toBeNull();
+    }
+
+    app.setTab("chat");
+    await app.updateComplete;
+    expect(app.querySelector(".chat-sessions")).toBeInstanceOf(HTMLElement);
+  });
+
+  it("shows recent sessions in the chat tab and switches through them", async () => {
+    const app = mountApp("/chat");
     app.sessionKey = "agent:main:second";
     app.sessionsResult = createSessionsResult([
       { key: "global", kind: "global", label: "Global", updatedAt: Date.now() },
@@ -546,16 +570,18 @@ describe("control UI routing", () => {
     ]) as typeof app.sessionsResult;
     await app.updateComplete;
 
-    const recent = Array.from(app.querySelectorAll<HTMLAnchorElement>(".sidebar-recent-session"));
+    const recent = Array.from(
+      app.querySelectorAll<HTMLAnchorElement>(".chat-sessions__recent-item"),
+    );
     expect(recent.map((entry) => entry.textContent?.replace(/\s+/g, " ").trim())).toEqual([
       "Second workspace just now",
       "First workspace 5m ago",
     ]);
 
-    const recentSection = expectElement(app, ".sidebar-recent-sessions", HTMLElement);
+    const recentSection = expectElement(app, ".chat-sessions__recent", HTMLElement);
     const recentToggle = expectElement(
       recentSection,
-      ".sidebar-recent-sessions__label",
+      ".chat-sessions__recent-label",
       HTMLButtonElement,
     );
     expect(recentToggle.getAttribute("aria-expanded")).toBe("true");
@@ -565,14 +591,14 @@ describe("control UI routing", () => {
 
     expect(app.settings.recentSessionsCollapsed).toBe(true);
     expect(recentToggle.getAttribute("aria-expanded")).toBe("false");
-    expect([...recentSection.classList]).toContain("sidebar-recent-sessions--collapsed");
+    expect([...recentSection.classList]).toContain("chat-sessions__recent--collapsed");
 
     recentToggle.click();
     await app.updateComplete;
 
     expect(app.settings.recentSessionsCollapsed).toBe(false);
     expect(recentToggle.getAttribute("aria-expanded")).toBe("true");
-    expect([...recentSection.classList]).not.toContain("sidebar-recent-sessions--collapsed");
+    expect([...recentSection.classList]).not.toContain("chat-sessions__recent--collapsed");
 
     recent[1]?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     await app.updateComplete;
@@ -583,8 +609,8 @@ describe("control UI routing", () => {
     expect(window.location.search).toBe("?session=agent%3Amain%3Afirst");
   });
 
-  it("creates a new chat session from the sidebar", async () => {
-    const app = mountApp("/overview");
+  it("creates a new chat session from the chat toolbar", async () => {
+    const app = mountApp("/chat");
     app.sessionKey = "agent:main:main";
     app.sessionsResult = createSessionsResult([
       { key: "agent:main:main", label: "Main Session" },
@@ -604,9 +630,16 @@ describe("control UI routing", () => {
         return null;
       }),
     } as unknown as typeof app.client;
+    // Mounting /chat starts a history load, and the toolbar disables New session
+    // while a run or load is in flight.
+    app.chatLoading = false;
     await app.updateComplete;
 
-    expectButtonWithText(app, "New session").click();
+    // The composer toolbar carries its own "New session" button, so target the
+    // chat session toolbar explicitly rather than the first match in the DOM.
+    const newSessionButton = expectElement(app, ".chat-sessions__new", HTMLButtonElement);
+    // eslint-disable-next-line no-console
+    newSessionButton.click();
 
     await vi.waitFor(() => {
       expect(app.sessionKey).toBe("agent:main:fresh");
@@ -691,7 +724,7 @@ describe("control UI routing", () => {
 
     const shell = expectElement(app, ".shell", HTMLElement);
     const topbar = expectElement(app, ".topbar", HTMLElement);
-    const sessionSelect = expectElement(app, ".sidebar-session-select", HTMLElement);
+    const sessionSelect = expectElement(app, ".chat-sessions__select", HTMLElement);
     expect([...shell.classList]).toEqual(["shell", "shell--chat"]);
     expect(topbar.hasAttribute("inert")).toBe(false);
     expect(topbar.hasAttribute("aria-hidden")).toBe(false);

@@ -8,8 +8,8 @@
   "limit": 80,
   "grandfathered": {
     "src/plugin-sdk": {
-      "max": 382,
-      "reason": "Permanent, per docs/adr/0003-plugin-sdk-stays-flat.md: the flat directory IS the published export namespace — one file, one openclaw/plugin-sdk/<name> subpath, mirrored by 299 package.json export entries and the tsconfig wildcard."
+      "max": 383,
+      "reason": "Permanent, per docs/adr/0003-plugin-sdk-stays-flat.md: the flat directory IS the published export namespace — one file, one openclaw/plugin-sdk/<name> subpath, mirrored by 300 package.json export entries and the tsconfig wildcard."
     },
     "src/agents": {
       "max": 103,

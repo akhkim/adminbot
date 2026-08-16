@@ -46,8 +46,8 @@ import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
-import { renderAdminBot, type AdminBotPanel } from "./adminbot/views/admin.ts";
 import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
+import { renderAdminBot, type AdminBotPanel } from "./adminbot/views/admin.ts";
 import "./components/feedback-widget.ts";
 import {
   renderChangePasswordPopover,
@@ -410,10 +410,12 @@ function resolveSidebarRecentSessions(state: AppViewState): GatewaySessionRow[] 
     .slice(0, 5);
 }
 
-function renderSidebarSessions(state: AppViewState) {
-  const collapsed = state.settings.navCollapsed;
+// Session controls belong to the chat tab, not the app shell: creating and
+// switching sessions says nothing about Deadlines, Members or Admin. They render
+// as a toolbar above the thread, so nav collapse no longer gates them.
+function renderChatSessionControls(state: AppViewState) {
   const busy = isSidebarSessionBusy(state);
-  const recent = collapsed ? [] : resolveSidebarRecentSessions(state);
+  const recent = resolveSidebarRecentSessions(state);
   const newSessionDisabled = !state.connected || state.sessionsLoading || busy || !state.client;
   const newSessionTitle = !state.connected
     ? "Connect to create a new session"
@@ -422,47 +424,46 @@ function renderSidebarSessions(state: AppViewState) {
       : "New session";
 
   return html`
-    <section class="sidebar-sessions ${collapsed ? "sidebar-sessions--collapsed" : ""}">
-      <button
-        type="button"
-        class="sidebar-new-session"
-        title=${newSessionTitle}
-        aria-label=${t("chat.runControls.newSession")}
-        ?disabled=${newSessionDisabled}
-        @click=${async () => {
-          if (newSessionDisabled) {
-            return;
-          }
-          if (await createChatSession(state)) {
-            state.setTab("chat" as import("./navigation.ts").Tab);
-          }
-        }}
-      >
-        <span class="sidebar-new-session__icon" aria-hidden="true">${icons.plus}</span>
-        ${collapsed
-          ? nothing
-          : html`<span class="sidebar-new-session__label"
-              >${t("chat.runControls.newSession")}</span
-            >`}
-      </button>
-      <div class="sidebar-session-select ${collapsed ? "sidebar-session-select--collapsed" : ""}">
-        ${renderChatSessionSelect(state, switchChatSession, {
-          compact: collapsed,
-          sessionSwitcherOnly: true,
-          surface: "sidebar",
-        })}
+    <section class="chat-sessions" aria-label=${t("chat.runControls.newSession")}>
+      <div class="chat-sessions__toolbar">
+        <button
+          type="button"
+          class="chat-sessions__new"
+          title=${newSessionTitle}
+          aria-label=${t("chat.runControls.newSession")}
+          ?disabled=${newSessionDisabled}
+          @click=${async () => {
+            if (newSessionDisabled) {
+              return;
+            }
+            // createChatSession refuses anything without an explicit user intent,
+            // so the button has to declare itself as one.
+            if (await createChatSession(state, { source: "user" })) {
+              state.setTab("chat" as import("./navigation.ts").Tab);
+            }
+          }}
+        >
+          <span class="chat-sessions__new-icon" aria-hidden="true">${icons.plus}</span>
+          <span class="chat-sessions__new-label">${t("chat.runControls.newSession")}</span>
+        </button>
+        <div class="chat-sessions__select">
+          ${renderChatSessionSelect(state, switchChatSession, {
+            sessionSwitcherOnly: true,
+            surface: "sidebar",
+          })}
+        </div>
       </div>
-      ${collapsed || recent.length === 0
+      ${recent.length === 0
         ? nothing
         : html`
             <div
-              class="sidebar-recent-sessions ${state.settings.recentSessionsCollapsed
-                ? "sidebar-recent-sessions--collapsed"
+              class="chat-sessions__recent ${state.settings.recentSessionsCollapsed
+                ? "chat-sessions__recent--collapsed"
                 : ""}"
               aria-label=${t("overview.cards.recentSessions")}
             >
               <button
-                class="sidebar-recent-sessions__label"
+                class="chat-sessions__recent-label"
                 type="button"
                 aria-expanded=${String(!state.settings.recentSessionsCollapsed)}
                 @click=${() => {
@@ -472,13 +473,13 @@ function renderSidebarSessions(state: AppViewState) {
                   });
                 }}
               >
-                <span class="sidebar-recent-sessions__label-text"
+                <span class="chat-sessions__recent-label-text"
                   >${t("usage.sessions.recentShort")}</span
                 >
-                <span class="sidebar-recent-sessions__chevron"> ${icons.chevronDown} </span>
+                <span class="chat-sessions__recent-chevron"> ${icons.chevronDown} </span>
               </button>
-              <div class="sidebar-recent-sessions__list">
-                ${recent.map((row) => renderSidebarRecentSession(state, row))}
+              <div class="chat-sessions__recent-list">
+                ${recent.map((row) => renderChatRecentSession(state, row))}
               </div>
             </div>
           `}
@@ -486,7 +487,7 @@ function renderSidebarSessions(state: AppViewState) {
   `;
 }
 
-function renderSidebarRecentSession(state: AppViewState, row: GatewaySessionRow) {
+function renderChatRecentSession(state: AppViewState, row: GatewaySessionRow) {
   const active = row.key === state.sessionKey;
   const label = resolveSessionDisplayName(row.key, row);
   const meta = row.updatedAt ? formatRelativeTimestamp(row.updatedAt) : "n/a";
@@ -494,7 +495,7 @@ function renderSidebarRecentSession(state: AppViewState, row: GatewaySessionRow)
   return html`
     <a
       href=${href}
-      class="sidebar-recent-session ${active ? "sidebar-recent-session--active" : ""}"
+      class="chat-sessions__recent-item ${active ? "chat-sessions__recent-item--active" : ""}"
       data-session-key=${row.key}
       title=${`${label} · ${row.key}`}
       @click=${(event: MouseEvent) => {
@@ -515,14 +516,14 @@ function renderSidebarRecentSession(state: AppViewState, row: GatewaySessionRow)
         state.setTab("chat" as import("./navigation.ts").Tab);
       }}
     >
-      <span class="sidebar-recent-session__dot" aria-hidden="true"></span>
-      <span class="sidebar-recent-session__body">
-        <span class="sidebar-recent-session__name">${label}</span>
-        <span class="sidebar-recent-session__meta">${meta}</span>
+      <span class="chat-sessions__recent-dot" aria-hidden="true"></span>
+      <span class="chat-sessions__recent-body">
+        <span class="chat-sessions__recent-name">${label}</span>
+        <span class="chat-sessions__recent-meta">${meta}</span>
       </span>
       ${row.hasActiveRun
         ? html`<span
-            class="sidebar-recent-session__live"
+            class="chat-sessions__recent-live"
             aria-label=${t("sessions.sessionDetails.activeRun")}
           ></span>`
         : nothing}
@@ -2586,7 +2587,6 @@ export function renderApp(state: AppViewState) {
               </button>
             </div>
             <div class="sidebar-shell__body">
-              ${renderSidebarSessions(state)}
               <nav class="sidebar-nav">
                 ${TAB_GROUPS.map((group) => {
                   const groupTabs = visibleTabsForRole(group.tabs as readonly Tab[], accessRole);
@@ -3900,6 +3900,7 @@ export function renderApp(state: AppViewState) {
               }),
             )
           : nothing}
+        ${state.tab === "chat" ? renderChatSessionControls(state) : nothing}
         ${state.tab === "chat"
           ? renderMeasured(
               state,
@@ -4008,7 +4009,7 @@ export function renderApp(state: AppViewState) {
                   onDismissSideResult: () => {
                     state.chatSideResult = null;
                   },
-                  onNewSession: () => void createChatSession(state),
+                  onNewSession: () => void createChatSession(state, { source: "user" }),
                   onClearHistory: runUiTask(async () => {
                     if (!state.client || !state.connected) {
                       return;
@@ -4223,8 +4224,8 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
       </main>
-      ${renderFeedbackWidget(state)}
-      ${renderExecApprovalPrompt(state)} ${renderGatewayUrlConfirmation(state)}
+      ${renderFeedbackWidget(state)} ${renderExecApprovalPrompt(state)}
+      ${renderGatewayUrlConfirmation(state)}
       ${renderDreamingRestartConfirmation({
         open: state.dreamingRestartConfirmOpen,
         loading: state.dreamingRestartConfirmLoading,

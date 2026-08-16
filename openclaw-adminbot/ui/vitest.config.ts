@@ -54,6 +54,17 @@ const workspaceSourceAliases = [
     find: "@openclaw/net-policy",
     replacement: path.resolve(repoRoot, "packages/net-policy/src/index.ts"),
   },
+  // ui/vite.config.ts reads the nudge engine from source (it is pure, dependency-free
+  // TypeScript and is not installed as a workspace package). Without the same alias here
+  // every UI suite fails to collect on `ui/src/ui/adminbot/next-step.ts`.
+  {
+    find: /^@openclaw\/nudge-engine\/(.+)$/u,
+    replacement: path.resolve(repoRoot, "packages/nudge-engine/src/$1"),
+  },
+  {
+    find: "@openclaw/nudge-engine",
+    replacement: path.resolve(repoRoot, "packages/nudge-engine/src/index.ts"),
+  },
 ];
 const sharedUiTestConfig = {
   isolate: false,
