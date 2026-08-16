@@ -72,6 +72,9 @@ ROOT="$(readlink -f "$ROOT")"
 [[ "$ADMINBOT_PORT" =~ ^[0-9]+$ ]] || die "AdminBot port must be numeric"
 
 NODE_BIN="$(command -v node || true)"
+OLLAMA_BIN="${OLLAMA_BIN:-$(command -v ollama || true)}"
+# GPU 0 carries vLLM on this host; default the embedding server to the next one.
+OLLAMA_GPU="${OLLAMA_GPU:-1}"
 [[ -n "$NODE_BIN" ]] || die "Node.js is missing"
 node -e '
   const [major, minor] = process.versions.node.split(".").map(Number);
@@ -142,11 +145,37 @@ else
   chmod 600 "$ENV_FILE"
 fi
 
+cat >"$UNIT_DIR/jinesis-ollama.service" <<EOF
+[Unit]
+Description=Jinesis Ollama (guidebook embeddings)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Loopback only. The guidebook corpus is embedded here, and binding beyond
+# 127.0.0.1 would put lab-sensitive text on the network.
+Environment=OLLAMA_HOST=127.0.0.1:11434
+# One GPU, not all eight. Ollama probes every visible device on startup, and on a
+# box where vLLM already holds GPU 0 that discovery pass times out and leaves it
+# refreshing free memory from stale values. An embedding model needs one device.
+Environment=CUDA_VISIBLE_DEVICES=$OLLAMA_GPU
+ExecStart=$OLLAMA_BIN serve
+Restart=always
+RestartSec=5
+TimeoutStopSec=30
+UMask=0077
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target
+EOF
+
 cat >"$UNIT_DIR/jinesis-adminbot.service" <<EOF
 [Unit]
 Description=Jinesis AdminBot service
-After=network-online.target
-Wants=network-online.target
+After=network-online.target jinesis-ollama.service
+Wants=network-online.target jinesis-ollama.service
 
 [Service]
 Type=simple
@@ -268,6 +297,11 @@ if [[ "$START_MODE" == "yes" ]]; then
     "${ADMINBOT_LOCAL_BASE_URL%/}/models" >/dev/null ||
     die "AdminBot local model endpoint is not ready on Aurora"
 
+  if [[ -n "$OLLAMA_BIN" ]]; then
+    systemctl --user enable --now jinesis-ollama.service
+  else
+    printf 'note: ollama is not installed; guidebook_ask cannot embed without it\n' >&2
+  fi
   systemctl --user enable --now \
     jinesis-adminbot.service \
     jinesis-openclaw-gateway.service
