@@ -69,15 +69,26 @@ describe("Control UI Vite config", () => {
       throw new Error("Expected browser-only shared module alias plugin to expose resolveId");
     }
 
+    // The importers all sit in src/agents/tools/, so the specifier they write is
+    // two levels up. This test used to assert a single "../" from a file one level
+    // up, neither of which exists, so it kept passing over a plugin that never fired.
     for (const importerSuffix of ["", "?browserv=123"]) {
       const resolved = await resolveIdHandler.call(
         {} as never,
-        "../logging/redact.js",
-        `${path.join(repoRoot, "src/agents/tool-display-common.ts")}${importerSuffix}`,
+        "../../logging/redact.js",
+        `${path.join(repoRoot, "src/agents/tools/tool-display-common.ts")}${importerSuffix}`,
         { custom: {}, isEntry: false, ssr: false },
       );
 
       expect(resolved).toBe(path.join(repoRoot, "ui/src/ui/browser-redact.ts"));
     }
+
+    const unmatched = await resolveIdHandler.call(
+      {} as never,
+      "../logging/redact.js",
+      path.join(repoRoot, "src/agents/tools/tool-display-common.ts"),
+      { custom: {}, isEntry: false, ssr: false },
+    );
+    expect(unmatched).toBeNull();
   });
 });

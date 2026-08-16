@@ -2317,7 +2317,16 @@ export function renderChat(props: ChatProps) {
       class="agent-chat__input"
       @click=${(event: MouseEvent) => focusComposerFromChrome(event, props.connected)}
     >
+      <div class="agent-chat__composer-status-stack">
+        ${renderContextNotice(activeSession, props.sessions?.defaults?.contextTokens ?? null, {
+          compactBusy,
+          compactDisabled: !props.connected || isBusy,
+          onCompact: props.onCompact,
+        })}
+        ${renderCompactionIndicator(props.compactionStatus)}
+        ${renderFallbackIndicator(props.fallbackStatus)} ${renderChatGoal(activeSession?.goal)}
       </div>
+      ${renderAttachmentPreview(props)}
 
       <input
         type="file"
@@ -2362,6 +2371,7 @@ export function renderChat(props: ChatProps) {
           aria-atomic="true"
           >${activeSlashMenuOptionLabel}</span
         >
+        ${renderSlashMenu(requestUpdate, props, visibleDraft)}
       </div>
 
       <div class="agent-chat__toolbar">

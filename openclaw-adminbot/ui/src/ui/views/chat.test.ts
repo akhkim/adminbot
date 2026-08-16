@@ -936,11 +936,15 @@ describe("chat composer workbench", () => {
     ).not.toBeNull();
     const workbench = container.querySelector(".chat-workbench");
     const main = container.querySelector(".chat-workbench__main");
+    const sideRails = container.querySelector(".chat-side-rails");
     const rail = container.querySelector(".chat-workspace-rail");
     expect(main?.parentElement).toBe(workbench);
-    expect(rail?.parentElement).toBe(workbench);
+    // The workspace rail shares .chat-side-rails with the AdminBot rail; that
+    // wrapper is the workbench's second grid column.
+    expect(sideRails?.parentElement).toBe(workbench);
+    expect(rail?.parentElement).toBe(sideRails);
     expect(Array.from(workbench?.children ?? []).map((child) => child.className)).toEqual([
-      "chat-workspace-rail",
+      "chat-side-rails",
       "chat-workbench__main",
     ]);
     expect(container.querySelector(".chat-workspace-rail__path")?.textContent?.trim()).toBe(

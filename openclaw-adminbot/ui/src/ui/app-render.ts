@@ -2573,11 +2573,19 @@ export function renderApp(state: AppViewState) {
               <button
                 type="button"
                 class="nav-collapse-toggle"
-                @click=${() =>
+                @click=${() => {
+                  // While the drawer is open, navCollapsed is forced false above, so
+                  // toggling the setting here changed nothing visible and left the
+                  // drawer open — against this button's own "collapse" label.
+                  if (navDrawerOpen) {
+                    state.navDrawerOpen = false;
+                    return;
+                  }
                   state.applySettings({
                     ...state.settings,
                     navCollapsed: !state.settings.navCollapsed,
-                  })}
+                  });
+                }}
                 title="${navCollapsed ? t("nav.expand") : t("nav.collapse")}"
                 aria-label="${navCollapsed ? t("nav.expand") : t("nav.collapse")}"
               >

@@ -15,15 +15,25 @@ describe("controlUiPublicAssetPath", () => {
 });
 
 describe("inferControlUiPublicAssetPath", () => {
-  it("uses the root for known nested routes without a configured base path", () => {
-    expect(
-      inferControlUiPublicAssetPath("manifest.webmanifest", { pathname: "/skills/workshop" }),
-    ).toBe("/manifest.webmanifest");
+  // Every Control UI route is a single segment, so /skills/workshop — which these
+  // cases used to assume — is not a reachable URL. inferBasePathFromPathname
+  // matches whole suffixes against the route table, and treats anything it cannot
+  // place as the mount point.
+  it("uses the root for known routes without a configured base path", () => {
+    expect(inferControlUiPublicAssetPath("manifest.webmanifest", { pathname: "/skills" })).toBe(
+      "/manifest.webmanifest",
+    );
   });
 
-  it("infers base-mounted assets from nested routes", () => {
-    expect(inferControlUiPublicAssetPath("sw.js", { pathname: "/openclaw/skills/workshop" })).toBe(
+  it("infers base-mounted assets from a prefixed route", () => {
+    expect(inferControlUiPublicAssetPath("sw.js", { pathname: "/openclaw/skills" })).toBe(
       "/openclaw/sw.js",
+    );
+  });
+
+  it("treats an unrecognized path as the mount point", () => {
+    expect(inferControlUiPublicAssetPath("favicon.ico", { pathname: "/deploys/preview-7" })).toBe(
+      "/deploys/preview-7/favicon.ico",
     );
   });
 
@@ -31,7 +41,7 @@ describe("inferControlUiPublicAssetPath", () => {
     expect(
       inferControlUiPublicAssetPath("apple-touch-icon.png", {
         basePath: "/control/",
-        pathname: "/skills/workshop",
+        pathname: "/skills",
       }),
     ).toBe("/control/apple-touch-icon.png");
   });
