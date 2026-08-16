@@ -190,6 +190,7 @@ describe("guidebook export", () => {
     await expect(
       exportGuidebookMarkdown({
         documentId: "doc-1",
+        account: "lab@example.com",
         execFileImpl: async (_file, args) => {
           scratchDir = path.dirname(args[args.indexOf("--out") + 1] ?? "");
           throw new Error("unknown flag");
@@ -197,5 +198,21 @@ describe("guidebook export", () => {
       }),
     ).rejects.toThrow(/unknown flag/u);
     expect(existsSync(scratchDir)).toBe(false);
+  });
+});
+
+describe("guidebook account", () => {
+  it("names the env file when GOG_ACCOUNT is missing", async () => {
+    const previous = process.env.GOG_ACCOUNT;
+    delete process.env.GOG_ACCOUNT;
+    try {
+      await expect(exportGuidebookMarkdown({ documentId: "doc-1" })).rejects.toThrow(
+        /GOG_ACCOUNT is not set/u,
+      );
+    } finally {
+      if (previous !== undefined) {
+        process.env.GOG_ACCOUNT = previous;
+      }
+    }
   });
 });

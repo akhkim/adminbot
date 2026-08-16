@@ -49,7 +49,14 @@ export async function exportGuidebookMarkdown(params: {
   account?: string;
   execFileImpl?: GuidebookExecFile;
 }): Promise<string> {
-  const account = params.account ?? process.env.GOG_ACCOUNT ?? "auto";
+  // "auto" only resolves when the account has exactly one stored token, and when
+  // it does not, gog's error reads as a flag problem rather than a missing env.
+  const account = params.account ?? process.env.GOG_ACCOUNT?.trim();
+  if (!account) {
+    throw new Error(
+      "GOG_ACCOUNT is not set. Source the AdminBot env file first: set -a; . ~/.config/jinesis-adminbot/adminbot.env; set +a",
+    );
+  }
   const run = params.execFileImpl ?? (execFileAsync as unknown as GuidebookExecFile);
   const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "adminbot-guidebook-"));
   await fsp.chmod(scratch, 0o700);
