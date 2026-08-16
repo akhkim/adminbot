@@ -1324,6 +1324,7 @@
     "postinstall": "node scripts/postinstall-bundled-plugins.mjs",
     "prepare": "node scripts/prepare-git-hooks.mjs",
     "adminbot": "node start-adminbot.mjs",
+    "adminbot:guidebook:sync": "node --import tsx scripts/adminbot-guidebook-sync.ts",
     "adminbot:deadlines:board": "python3 scripts/adminbot-deadline-web-ui-gen.py",
     "adminbot:deadlines:collect": "python3 scripts/adminbot-deadline-collect.py",
     "adminbot:dev": "node --import tsx start-adminbot.ts",
