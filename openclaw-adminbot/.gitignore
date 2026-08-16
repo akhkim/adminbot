@@ -112,6 +112,12 @@ USER.md
 # though the bare names match the local-untracked rule above.
 !extensions/oc-path/src/oc-path/tests/fixtures/real/IDENTITY.md
 !extensions/oc-path/src/oc-path/tests/fixtures/real/USER.md
+# Exception: the workspace bootstrap templates are shipped source, not somebody's
+# workspace. Without these, `git archive` deploys a release whose seeding dies on
+# "Missing workspace template". The USER.md template carries blank fields by
+# design — the rule above still covers a real one.
+!src/agents/templates/IDENTITY.md
+!src/agents/templates/USER.md
 *.tgz
 *.tar.gz
 *.zip
