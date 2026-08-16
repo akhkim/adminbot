@@ -299,3 +299,26 @@ describe("guidebook read", () => {
     expect(markdown).toContain("# Reimbursements");
   });
 });
+
+describe("guidebook diagnostics", () => {
+  it("names the endpoint when the local model is not listening", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "guidebook-"));
+    const indexPath = path.join(dir, "index.json");
+    await writeGuidebookIndex(indexPath, indexFixture());
+
+    await expect(
+      askGuidebook(
+        { question: "anything" },
+        {
+          config: { ...defaultGuidebookAskConfig, indexPath },
+          fetchImpl: async () => {
+            throw Object.assign(new Error("fetch failed"), {
+              cause: new Error("connect ECONNREFUSED 127.0.0.1:11434"),
+            });
+          },
+          env: {},
+        },
+      ),
+    ).rejects.toThrow(/could not reach http:\/\/127\.0\.0\.1:11434\/v1\/embeddings.*ECONNREFUSED/u);
+  });
+});

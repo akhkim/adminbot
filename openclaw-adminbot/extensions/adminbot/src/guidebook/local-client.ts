@@ -37,15 +37,27 @@ async function postJson(
   signal?: AbortSignal,
 ): Promise<unknown> {
   const base = assertLoopbackUrl(baseUrl, purpose);
-  const response = await fetchImpl(`${base}${route}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-    },
-    body: JSON.stringify(payload),
-    ...(signal ? { signal } : {}),
-  });
+  const endpoint = `${base}${route}`;
+  let response: Awaited<ReturnType<GuidebookFetch>>;
+  try {
+    response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
+      },
+      body: JSON.stringify(payload),
+      ...(signal ? { signal } : {}),
+    });
+  } catch (error) {
+    // Node reports a refused connection as a bare "fetch failed", which says
+    // nothing about which of the two local services is down.
+    const cause = error instanceof Error ? (error.cause ?? error) : error;
+    const detail = cause instanceof Error ? cause.message : String(cause);
+    throw new Error(
+      `guidebook ${purpose} could not reach ${endpoint} (${detail}). Is the local model serving there?`,
+    );
+  }
   const raw = await response.text();
   if (!response.ok) {
     throw new Error(`guidebook ${purpose} failed: ${response.status} ${response.statusText}`);
