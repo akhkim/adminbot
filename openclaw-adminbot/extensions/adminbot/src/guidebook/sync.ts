@@ -8,11 +8,11 @@
  */
 import { execFile } from "node:child_process";
 import fs from "node:fs";
-import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { chunkGuidebookMarkdown } from "./chunk.js";
+import { parseDocsJson, renderDocsDocumentAsMarkdown } from "./docs-json.js";
 import { embedLocally, type GuidebookFetch } from "./local-client.js";
 import { writeGuidebookIndex } from "./store.js";
 import type { GuidebookChunk, GuidebookIndex } from "./types.js";
@@ -37,12 +37,13 @@ export type GuidebookExecFile = (
 ) => Promise<{ stdout: string }>;
 
 /**
- * Exports the doc as markdown.
+ * Reads the doc as markdown.
  *
- * `gog docs export` only writes to a file — there is no stdout mode, and
- * `gog docs cat` would hand back plain text with the heading structure stripped,
- * which is exactly what the chunker needs. So the export lands in an owner-only
- * temp directory that is removed before this returns, whether or not it threw.
+ * Not `gog docs export`: that goes through Drive's `files.export`, which returns
+ * 403 exportSizeLimitExceeded once the converted file passes 10 MB, and a
+ * 100-page guidebook does. `gog docs cat --raw` calls `documents.get` instead,
+ * which has no such cap and hands back the heading levels explicitly, so the
+ * markdown is reconstructed here rather than parsed out of an exported file.
  */
 export async function exportGuidebookMarkdown(params: {
   documentId: string;
@@ -58,44 +59,31 @@ export async function exportGuidebookMarkdown(params: {
     );
   }
   const run = params.execFileImpl ?? (execFileAsync as unknown as GuidebookExecFile);
-  const scratch = await fsp.mkdtemp(path.join(os.tmpdir(), "adminbot-guidebook-"));
-  await fsp.chmod(scratch, 0o700);
-  const target = path.join(scratch, "guidebook.md");
-  try {
-    await run(
-      resolveGogBinary(),
-      [
-        "docs",
-        "export",
-        params.documentId,
-        "--format",
-        "md",
-        "--out",
-        target,
-        "--overwrite",
-        "--account",
-        account,
-        "--no-input",
-      ],
-      { encoding: "utf8", timeout: 120_000, maxBuffer: 8 * 1024 * 1024, env: process.env },
-    );
-    // --out is documented as a file path, but the sibling `drive download` treats
-    // it as a directory. Accept either rather than depending on which one this
-    // gog build means.
-    const written = fs.existsSync(target)
-      ? target
-      : (await fsp.readdir(scratch)).map((name) => path.join(scratch, name)).at(0);
-    if (!written) {
-      throw new Error(`gog wrote no export for ${params.documentId}`);
-    }
-    const markdown = await fsp.readFile(written, "utf8");
-    if (!markdown.trim()) {
-      throw new Error(`gog exported an empty guidebook for ${params.documentId}`);
-    }
-    return markdown;
-  } finally {
-    await fsp.rm(scratch, { recursive: true, force: true });
+  const { stdout } = await run(
+    resolveGogBinary(),
+    [
+      "docs",
+      "cat",
+      params.documentId,
+      "--raw",
+      "--all-tabs",
+      // 0 lifts gog's 2 MB read cap; the guidebook is the whole point here.
+      "--max-bytes",
+      "0",
+      "--account",
+      account,
+      "--no-input",
+    ],
+    { encoding: "utf8", timeout: 180_000, maxBuffer: 256 * 1024 * 1024, env: process.env },
+  );
+  if (!stdout.trim()) {
+    throw new Error(`gog returned an empty guidebook for ${params.documentId}`);
   }
+  const markdown = renderDocsDocumentAsMarkdown(parseDocsJson(stdout));
+  if (!markdown.trim()) {
+    throw new Error(`guidebook ${params.documentId} rendered to no text; check the document`);
+  }
+  return markdown;
 }
 
 export async function buildGuidebookIndex(params: {

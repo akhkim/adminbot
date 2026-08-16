@@ -1,10 +1,10 @@
-import { existsSync } from "node:fs";
-import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { askGuidebook, defaultGuidebookAskConfig } from "./ask.js";
 import { chunkGuidebookMarkdown } from "./chunk.js";
+import { renderDocsDocumentAsMarkdown, parseDocsJson } from "./docs-json.js";
 import { assertLoopbackUrl } from "./local-client.js";
 import { rankGuidebookChunks } from "./retrieve.js";
 import { writeGuidebookIndex } from "./store.js";
@@ -167,40 +167,6 @@ describe("guidebook isolation", () => {
   });
 });
 
-describe("guidebook export", () => {
-  it("reads the file gog writes and clears the scratch directory", async () => {
-    let scratchDir = "";
-    const markdown = await exportGuidebookMarkdown({
-      documentId: "doc-1",
-      account: "lab@example.com",
-      execFileImpl: async (_file, args) => {
-        const target = args[args.indexOf("--out") + 1] ?? "";
-        scratchDir = path.dirname(target);
-        // gog writes the export itself; stand in for it.
-        await writeFile(target, MARKDOWN, "utf8");
-        return { stdout: "" };
-      },
-    });
-    expect(markdown).toContain("per diem is $75");
-    expect(existsSync(scratchDir)).toBe(false);
-  });
-
-  it("still clears the scratch directory when gog fails", async () => {
-    let scratchDir = "";
-    await expect(
-      exportGuidebookMarkdown({
-        documentId: "doc-1",
-        account: "lab@example.com",
-        execFileImpl: async (_file, args) => {
-          scratchDir = path.dirname(args[args.indexOf("--out") + 1] ?? "");
-          throw new Error("unknown flag");
-        },
-      }),
-    ).rejects.toThrow(/unknown flag/u);
-    expect(existsSync(scratchDir)).toBe(false);
-  });
-});
-
 describe("guidebook account", () => {
   it("names the env file when GOG_ACCOUNT is missing", async () => {
     const previous = process.env.GOG_ACCOUNT;
@@ -214,5 +180,122 @@ describe("guidebook account", () => {
         process.env.GOG_ACCOUNT = previous;
       }
     }
+  });
+});
+
+function headingParagraph(style: string, text: string) {
+  return {
+    paragraph: {
+      paragraphStyle: { namedStyleType: style },
+      elements: [{ textRun: { content: `${text}\n` } }],
+    },
+  };
+}
+
+function bodyParagraph(text: string, bullet?: boolean) {
+  return {
+    paragraph: {
+      paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+      elements: [{ textRun: { content: `${text}\n` } }],
+      ...(bullet ? { bullet: { listId: "l1" } } : {}),
+    },
+  };
+}
+
+describe("docs json rendering", () => {
+  it("turns named heading styles into markdown levels", () => {
+    const markdown = renderDocsDocumentAsMarkdown({
+      body: {
+        content: [
+          headingParagraph("HEADING_1", "Reimbursements"),
+          headingParagraph("HEADING_2", "Conference travel"),
+          bodyParagraph("Submit receipts within 30 days."),
+          bodyParagraph("Keep the boarding pass.", true),
+        ],
+      },
+    });
+    expect(markdown).toContain("# Reimbursements");
+    expect(markdown).toContain("## Conference travel");
+    expect(markdown).toContain("- Keep the boarding pass.");
+    // The chunker consumes this, so the pipeline has to survive the round trip.
+    const chunks = chunkGuidebookMarkdown(markdown);
+    expect(chunks.at(-1)?.label).toContain("Conference travel");
+  });
+
+  it("keeps table rows, which carry deadlines and amounts", () => {
+    const markdown = renderDocsDocumentAsMarkdown({
+      body: {
+        content: [
+          {
+            table: {
+              tableRows: [
+                {
+                  tableCells: [
+                    { content: [bodyParagraph("Domestic")] },
+                    { content: [bodyParagraph("$75/day")] },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    expect(markdown).toContain("Domestic | $75/day");
+  });
+
+  it("promotes tab titles so sections from different tabs do not collide", () => {
+    const markdown = renderDocsDocumentAsMarkdown({
+      tabs: [
+        {
+          tabProperties: { title: "Onboarding" },
+          documentTab: { body: { content: [headingParagraph("HEADING_1", "Week one")] } },
+          childTabs: [
+            {
+              tabProperties: { title: "Accounts" },
+              documentTab: { body: { content: [bodyParagraph("Request a CS account.")] } },
+            },
+          ],
+        },
+      ],
+    });
+    expect(markdown).toContain("# Onboarding");
+    expect(markdown).toContain("# Accounts");
+    expect(markdown).toContain("Request a CS account.");
+  });
+
+  it("unwraps whichever envelope gog used", () => {
+    const document = { body: { content: [headingParagraph("HEADING_1", "Policy")] } };
+    for (const raw of [
+      JSON.stringify(document),
+      JSON.stringify({ result: document }),
+      JSON.stringify({ document }),
+    ]) {
+      expect(renderDocsDocumentAsMarkdown(parseDocsJson(raw))).toContain("# Policy");
+    }
+    expect(() => parseDocsJson(JSON.stringify({ nope: true }))).toThrow(/without a Docs body/u);
+  });
+});
+
+describe("guidebook read", () => {
+  it("asks documents.get rather than the size-capped export endpoint", async () => {
+    let captured: string[] = [];
+    const markdown = await exportGuidebookMarkdown({
+      documentId: "doc-1",
+      account: "lab@example.com",
+      execFileImpl: async (_file, args) => {
+        captured = args;
+        return {
+          stdout: JSON.stringify({
+            body: { content: [headingParagraph("HEADING_1", "Reimbursements")] },
+          }),
+        };
+      },
+    });
+    expect(captured).toContain("cat");
+    expect(captured).toContain("--raw");
+    expect(captured).not.toContain("export");
+    expect(captured.slice(captured.indexOf("--max-bytes"))).toContain("0");
+    expect(markdown).toContain("# Reimbursements");
   });
 });
