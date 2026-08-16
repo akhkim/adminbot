@@ -1,10 +1,15 @@
 // Control UI module implements local storage behavior.
+// The whole Storage contract, not just the two accessors most callers reach for.
+// A half-implemented stand-in used to pass this check and reach callers as a
+// real Storage, so `storage.clear()` threw instead of the call being skipped.
+const STORAGE_METHODS = ["getItem", "setItem", "removeItem", "clear", "key"] as const;
+
 function isStorage(value: unknown): value is Storage {
-  return (
-    Boolean(value) &&
-    typeof (value as Storage).getItem === "function" &&
-    typeof (value as Storage).setItem === "function"
-  );
+  if (!value) {
+    return false;
+  }
+  const candidate = value as Storage;
+  return STORAGE_METHODS.every((method) => typeof candidate[method] === "function");
 }
 
 function getSafeStorage(name: "localStorage" | "sessionStorage"): Storage | null {

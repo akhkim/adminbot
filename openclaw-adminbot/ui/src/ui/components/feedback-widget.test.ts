@@ -1,22 +1,26 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import { html } from "lit";
+import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { createStorageMock } from "../../test-helpers/storage.ts";
 import "./feedback-widget.ts";
 import { AdminbotFeedbackWidget } from "./feedback-widget.ts";
 
 describe("adminbot-feedback-widget", () => {
   let host: HTMLElement;
-  let storage: Map<string, string>;
+  let storage: Storage;
+  let originalLocalStorage: PropertyDescriptor | undefined;
 
   beforeEach(() => {
-    storage = new Map();
+    // Not vi.stubGlobal: the lane sets unstubGlobals, which wipes stubs before
+    // each test and would leave the widget writing to jsdom's storage instead of
+    // this mock. defineProperty survives that — but it also survives the file, so
+    // the descriptor is restored in afterEach, and the mock is a complete Storage
+    // rather than a getItem/setItem pair that later files then call clear() on.
+    originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+    storage = createStorageMock();
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,
-      value: {
-        getItem: (key: string) => storage.get(key) ?? null,
-        setItem: (key: string, value: string) => {
-          storage.set(key, value);
-        },
-      },
+      writable: true,
+      value: storage,
     });
     host = document.createElement("div");
     document.body.appendChild(host);
@@ -24,6 +28,11 @@ describe("adminbot-feedback-widget", () => {
 
   afterEach(() => {
     host.remove();
+    if (originalLocalStorage) {
+      Object.defineProperty(globalThis, "localStorage", originalLocalStorage);
+    } else {
+      Reflect.deleteProperty(globalThis, "localStorage");
+    }
   });
 
   async function renderWidget(): Promise<AdminbotFeedbackWidget> {
@@ -42,7 +51,10 @@ describe("adminbot-feedback-widget", () => {
   }
 
   function stars(el: AdminbotFeedbackWidget): NodeListOf<HTMLButtonElement> {
-    return el.shadowRoot?.querySelectorAll<HTMLButtonElement>(".fb__star") ?? document.querySelectorAll("");
+    return (
+      el.shadowRoot?.querySelectorAll<HTMLButtonElement>(".fb__star") ??
+      document.querySelectorAll("")
+    );
   }
 
   it("starts collapsed as a single clickable pill", async () => {
@@ -88,9 +100,9 @@ describe("adminbot-feedback-widget", () => {
     expect(buttons[1]?.className).toContain("fb__star--on");
     expect(buttons[2]?.className).toContain("fb__star--on");
     expect(buttons[3]?.className).not.toContain("fb__star--on");
-    el.shadowRoot?.querySelector(".fb__stars")?.dispatchEvent(
-      new MouseEvent("mouseleave", { bubbles: false }),
-    );
+    el.shadowRoot
+      ?.querySelector(".fb__stars")
+      ?.dispatchEvent(new MouseEvent("mouseleave", { bubbles: false }));
     await el.updateComplete;
     expect(buttons[0]?.className).not.toContain("fb__star--on");
   });
@@ -118,7 +130,7 @@ describe("adminbot-feedback-widget", () => {
     const el = await renderWidget();
     await openPanel(el);
     stars(el)[4]?.click();
-    const raw = storage.get("openclaw:feedback:v2:my-work");
+    const raw = storage.getItem("openclaw:feedback:v2:my-work");
     expect(raw).toBeDefined();
     expect(JSON.parse(raw ?? "{}")).toEqual({
       rating: 5,
@@ -129,7 +141,7 @@ describe("adminbot-feedback-widget", () => {
   });
 
   it("restores an existing vote and keeps the send button when it was never submitted", async () => {
-    storage.set("openclaw:feedback:v2:my-work", JSON.stringify({ rating: 4, comment: "nice" }));
+    storage.setItem("openclaw:feedback:v2:my-work", JSON.stringify({ rating: 4, comment: "nice" }));
     const el = await renderWidget();
     await openPanel(el);
     expect(stars(el)[3]?.className).toContain("fb__star--on");
@@ -138,7 +150,7 @@ describe("adminbot-feedback-widget", () => {
   });
 
   it("renders nothing once the widget was dismissed on a previous submit", async () => {
-    storage.set(
+    storage.setItem(
       "openclaw:feedback:v2:my-work",
       JSON.stringify({ rating: 4, comment: "nice", submitted: true, dismissed: true }),
     );
@@ -162,7 +174,7 @@ describe("adminbot-feedback-widget", () => {
     // Send dismisses the entire widget and persists the vote plus dismissal.
     expect(el.shadowRoot?.querySelector(".fb__open")).toBeNull();
     expect(stars(el).length).toBe(0);
-    expect(JSON.parse(storage.get("openclaw:feedback:v2:my-work") ?? "{}")).toEqual({
+    expect(JSON.parse(storage.getItem("openclaw:feedback:v2:my-work") ?? "{}")).toEqual({
       rating: 1,
       comment: "great",
       submitted: true,

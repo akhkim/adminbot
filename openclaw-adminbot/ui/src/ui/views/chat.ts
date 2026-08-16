@@ -2302,15 +2302,13 @@ export function renderChat(props: ChatProps) {
       onQueueRemove: props.onQueueRemove,
     })}
     ${renderSideResult(props.sideResult, props.onDismissSideResult)}
-    ${
-      props.showNewMessages
-        ? html`
-            <button class="chat-new-messages" type="button" @click=${props.onScrollToBottom}>
-              ${icons.arrowDown} New messages
-            </button>
-          `
-        : nothing
-    }
+    ${props.showNewMessages
+      ? html`
+          <button class="chat-new-messages" type="button" @click=${props.onScrollToBottom}>
+            ${icons.arrowDown} New messages
+          </button>
+        `
+      : nothing}
 
     <!-- Input bar -->
     <div
@@ -2335,7 +2333,6 @@ export function renderChat(props: ChatProps) {
         class="agent-chat__file-input"
         @change=${(e: Event) => handleFileSelect(e, props)}
       />
-
 
       <div class="agent-chat__composer-combobox">
         <textarea
@@ -2392,11 +2389,9 @@ export function renderChat(props: ChatProps) {
           ${renderChatRunStatusIndicator(composerRunStatus)}
         </div>
 
-        ${
-          composerControls && composerControls !== nothing
-            ? html`<div class="agent-chat__composer-controls">${composerControls}</div>`
-            : nothing
-        }
+        ${composerControls && composerControls !== nothing
+          ? html`<div class="agent-chat__composer-controls">${composerControls}</div>`
+          : nothing}
         ${renderChatRunControls({
           canAbort: showAbortableUi,
           connected: props.connected,
