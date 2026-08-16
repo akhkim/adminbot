@@ -65,6 +65,19 @@ export default defineToolPlugin({
       execute: (params, config) => createAdminBotToolHandlers(resolveConfig(config)).reason(params),
     }),
     tool({
+      name: "guidebook_ask",
+      label: "AdminBot guidebook",
+      description:
+        "Answer a question from the lab guidebook. Retrieval and drafting run entirely on the local model and only the resulting prose comes back — guidebook text itself never enters this conversation. Use this for questions about lab policy, procedures, onboarding, reimbursement rules, or anything the guidebook would cover, and quote the answer rather than guessing from memory.",
+      optional: true,
+      parameters: Type.Object({
+        question: Type.String({ minLength: 1 }),
+        maxResults: Type.Optional(Type.Number({ minimum: 1, maximum: 12 })),
+      }),
+      execute: (params, config) =>
+        createAdminBotToolHandlers(resolveConfig(config)).askGuidebook(params),
+    }),
+    tool({
       name: "adminbot_propose_action",
       label: "AdminBot propose action",
       description:

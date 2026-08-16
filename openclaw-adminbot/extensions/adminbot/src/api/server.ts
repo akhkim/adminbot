@@ -18,6 +18,7 @@ import type {
   AdminBotRemovePendingRequest,
   AdminBotSettingsInput,
 } from "../contracts/actions.js";
+import { askGuidebook } from "../guidebook/ask.js";
 import {
   AdminBotMemoryStore,
   AdminBotService,
@@ -1280,6 +1281,34 @@ async function handleAuthenticatedRoute(
     }
     return;
   }
+  if (req.method === "POST" && url.pathname === "/guidebook/ask") {
+    const body = (await readJson(req)) as { question?: unknown; maxResults?: unknown };
+    const question = typeof body.question === "string" ? body.question : "";
+    if (!question.trim()) {
+      sendJson(res, 400, { error: { message: "question is required" } });
+      return;
+    }
+    // Retrieval and synthesis both run on loopback endpoints inside askGuidebook,
+    // and only the prose it writes leaves this handler. Guidebook excerpts are
+    // deliberately absent from the response so they cannot reach a hosted model
+    // through the agent's context.
+    try {
+      const result = await askGuidebook({
+        question,
+        ...(typeof body.maxResults === "number" ? { maxResults: body.maxResults } : {}),
+      });
+      sendJson(res, 200, result);
+    } catch (error) {
+      sendJson(res, 502, {
+        error: {
+          message: `the guidebook gate failed: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        },
+      });
+    }
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/privacy/tasks") {
     const body = (await readJson(req)) as AdminBotPrivacyTaskRequest;
     sendJson(res, 200, await privacyBroker.handle(body));
@@ -1614,7 +1643,10 @@ async function handleAuthenticatedRoute(
       sendJson(res, 400, { error: { message: "variant_id is required" } });
       return;
     }
-    sendServiceResult(res, await service.applyOwnPolishedProfilePhoto(principal.member.id, variantId));
+    sendServiceResult(
+      res,
+      await service.applyOwnPolishedProfilePhoto(principal.member.id, variantId),
+    );
     return;
   }
   const remove = /^\/proposals\/([^/]+)\/remove$/u.exec(url.pathname);

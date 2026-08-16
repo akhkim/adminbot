@@ -39,10 +39,13 @@
       "adminbot_execute_approved_action",
       "adminbot_openreview_status",
       "adminbot_openreview_run_cycle",
-      "adminbot_openreview_suggest_reviewers"
+      "adminbot_openreview_suggest_reviewers",
+      "guidebook_ask"
     ]
   },
-  "skills": ["./skills"],
+  "skills": [
+    "./skills"
+  ],
   "toolMetadata": {
     "adminbot_run_email_automation": {
       "optional": true

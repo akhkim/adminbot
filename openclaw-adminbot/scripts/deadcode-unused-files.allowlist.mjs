@@ -32,6 +32,11 @@ export const KNIP_OPTIONAL_UNUSED_FILE_ALLOWLIST = [
   "src/plugins/contracts/rootdir-boundary-canary.ts",
   "src/plugins/runtime/runtime-sidecar-paths-baseline.ts",
   "src/tasks/task-registry-control.runtime.ts",
+  // The guidebook corpus is built by scripts/adminbot-guidebook-sync.ts, and
+  // scripts/** sits in knip's ignoreFiles, so the only importer is invisible to
+  // the static pass. The service imports guidebook/ask.ts, not these two.
+  "extensions/adminbot/src/guidebook/chunk.ts",
+  "extensions/adminbot/src/guidebook/sync.ts",
   "start-adminbot.mjs",
   "ui/src/ui/browser-redact.ts",
 ];
