@@ -1,4 +1,5 @@
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdtemp, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,6 +8,7 @@ import { chunkGuidebookMarkdown } from "./chunk.js";
 import { assertLoopbackUrl } from "./local-client.js";
 import { rankGuidebookChunks } from "./retrieve.js";
 import { writeGuidebookIndex } from "./store.js";
+import { exportGuidebookMarkdown } from "./sync.js";
 import type { GuidebookIndex } from "./types.js";
 
 const MARKDOWN = [
@@ -162,5 +164,38 @@ describe("guidebook isolation", () => {
     const stats = await stat(indexPath);
     expect(stats.mode & 0o777).toBe(0o600);
     expect(await readFile(indexPath, "utf8")).toContain("per diem");
+  });
+});
+
+describe("guidebook export", () => {
+  it("reads the file gog writes and clears the scratch directory", async () => {
+    let scratchDir = "";
+    const markdown = await exportGuidebookMarkdown({
+      documentId: "doc-1",
+      account: "lab@example.com",
+      execFileImpl: async (_file, args) => {
+        const target = args[args.indexOf("--out") + 1] ?? "";
+        scratchDir = path.dirname(target);
+        // gog writes the export itself; stand in for it.
+        await writeFile(target, MARKDOWN, "utf8");
+        return { stdout: "" };
+      },
+    });
+    expect(markdown).toContain("per diem is $75");
+    expect(existsSync(scratchDir)).toBe(false);
+  });
+
+  it("still clears the scratch directory when gog fails", async () => {
+    let scratchDir = "";
+    await expect(
+      exportGuidebookMarkdown({
+        documentId: "doc-1",
+        execFileImpl: async (_file, args) => {
+          scratchDir = path.dirname(args[args.indexOf("--out") + 1] ?? "");
+          throw new Error("unknown flag");
+        },
+      }),
+    ).rejects.toThrow(/unknown flag/u);
+    expect(existsSync(scratchDir)).toBe(false);
   });
 });
