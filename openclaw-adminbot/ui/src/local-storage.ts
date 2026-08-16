@@ -13,12 +13,10 @@ function isStorage(value: unknown): value is Storage {
 }
 
 function getSafeStorage(name: "localStorage" | "sessionStorage"): Storage | null {
-  const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
-
-  if (typeof process !== "undefined" && process.env?.VITEST) {
-    return descriptor && !descriptor.get && isStorage(descriptor.value) ? descriptor.value : null;
-  }
-
+  // A real DOM wins, tests included. Under Vitest this used to be checked last,
+  // so jsdom's own storage — an accessor property, not a data property — was
+  // rejected and every UI test had to overwrite the global to get storage at all.
+  // Those overwrites are what leaked between files in the shared worker.
   if (typeof window !== "undefined" && typeof document !== "undefined") {
     try {
       const storage = window[name];
@@ -28,6 +26,10 @@ function getSafeStorage(name: "localStorage" | "sessionStorage"): Storage | null
     }
   }
 
+  // No DOM: read the global directly, and skip accessor properties. Node's
+  // sessionStorage getter warns when there is no storage file behind it, and
+  // touching it is exactly what that warning is about.
+  const descriptor = Object.getOwnPropertyDescriptor(globalThis, name);
   return descriptor && !descriptor.get && isStorage(descriptor.value) ? descriptor.value : null;
 }
 

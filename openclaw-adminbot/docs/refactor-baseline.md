@@ -88,6 +88,27 @@ changes a number (say which step, and why).
   `control-ui-i18n.test.ts` moved to `test/scripts/`. Lane counts unchanged
   (still 6 failures), so no baseline number moved.
 
+## UI lane determinism
+
+The lane runs `isolate: false` across two workers, so module and global state carries from one
+file into the next and worker assignment shifts run to run. Three leaks were fixed:
+
+- the i18n singleton never dropped a lazily loaded locale bundle, so a file that switched to
+  zh-CN left it loaded for everything after it;
+- `feedback-widget.test.ts` installed a `getItem`/`setItem`-only `localStorage` via
+  `defineProperty` and never removed it, leaving later files a Storage that threw on `clear()`;
+- `getSafeStorage` accepted any object with `getItem` and `setItem` as a `Storage`, and checked
+  the real DOM last, so under Vitest jsdom's own storage was rejected and every UI test had to
+  overwrite the global to get storage at all.
+
+What remains: `ui/src/ui/components/feedback-widget.test.ts` fails in roughly 1 run in 6, always
+the same five assertions, always passing in isolation and in every pairwise run tried. Waiting for
+the shadow root to render before clicking cut it from 6-in-12 to 2-in-12, which says the residue is
+timing rather than ordering — the custom-element registry is global and survives `vi.resetModules`,
+so when an earlier file has already registered `adminbot-feedback-widget` the element under test
+comes from a stale class. Adding a `console.log` to the assertion path made it disappear for six
+runs, so instrument it carefully. The clean fix is to run this one file isolated.
+
 ## Environment constraints
 
 - Full `pnpm build` and whole-repo vitest sweeps OOM this box — targeted

@@ -6,21 +6,22 @@ import { AdminbotFeedbackWidget } from "./feedback-widget.ts";
 
 describe("adminbot-feedback-widget", () => {
   let host: HTMLElement;
-  let storage: Storage;
+  let mock: Storage;
   let originalLocalStorage: PropertyDescriptor | undefined;
 
+  // A private, complete Storage per test. Not jsdom's own — the lane shares a
+  // worker and other files write to that. Not vi.stubGlobal either: the lane sets
+  // unstubGlobals, which wipes stubs before each test runs. defineProperty is the
+  // only install that survives, so the descriptor is put back in afterEach; this
+  // file used to leave a getItem/setItem-only stand-in behind, which then threw
+  // on clear() in whichever file ran next.
   beforeEach(() => {
-    // Not vi.stubGlobal: the lane sets unstubGlobals, which wipes stubs before
-    // each test and would leave the widget writing to jsdom's storage instead of
-    // this mock. defineProperty survives that — but it also survives the file, so
-    // the descriptor is restored in afterEach, and the mock is a complete Storage
-    // rather than a getItem/setItem pair that later files then call clear() on.
     originalLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
-    storage = createStorageMock();
+    mock = createStorageMock();
     Object.defineProperty(globalThis, "localStorage", {
       configurable: true,
       writable: true,
-      value: storage,
+      value: mock,
     });
     host = document.createElement("div");
     document.body.appendChild(host);
@@ -35,6 +36,22 @@ describe("adminbot-feedback-widget", () => {
     }
   });
 
+  // One updateComplete is not always enough under a loaded worker: the shadow
+  // root can still be empty, and every interaction below used optional chaining,
+  // so a missed click looked like "the widget did not persist anything" instead
+  // of "the button was not there yet". Wait for the node, then click it.
+  async function settle(el: AdminbotFeedbackWidget, selector: string): Promise<HTMLButtonElement> {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await el.updateComplete;
+      const node = el.shadowRoot?.querySelector<HTMLButtonElement>(selector);
+      if (node) {
+        return node;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    throw new Error(`Timed out waiting for ${selector} in adminbot-feedback-widget`);
+  }
+
   async function renderWidget(): Promise<AdminbotFeedbackWidget> {
     host.innerHTML = "";
     const el = document.createElement("adminbot-feedback-widget");
@@ -46,7 +63,7 @@ describe("adminbot-feedback-widget", () => {
   }
 
   async function openPanel(el: AdminbotFeedbackWidget): Promise<void> {
-    el.shadowRoot?.querySelector<HTMLButtonElement>(".fb__open")?.click();
+    (await settle(el, ".fb__open")).click();
     await el.updateComplete;
   }
 
@@ -55,6 +72,17 @@ describe("adminbot-feedback-widget", () => {
       el.shadowRoot?.querySelectorAll<HTMLButtonElement>(".fb__star") ??
       document.querySelectorAll("")
     );
+  }
+
+  /** Clicks the nth star, waiting for the panel to actually have rendered them. */
+  async function clickStar(el: AdminbotFeedbackWidget, index: number): Promise<void> {
+    await settle(el, ".fb__star");
+    const star = stars(el)[index];
+    if (!star) {
+      throw new Error(`Star ${index} missing from adminbot-feedback-widget`);
+    }
+    star.click();
+    await el.updateComplete;
   }
 
   it("starts collapsed as a single clickable pill", async () => {
@@ -114,7 +142,7 @@ describe("adminbot-feedback-widget", () => {
     el.addEventListener("feedback", (event) => {
       detail = (event as CustomEvent).detail;
     });
-    stars(el)[2]?.click();
+    await clickStar(el, 2);
     await el.updateComplete;
     expect(detail).toEqual({
       featureId: "my-work",
@@ -129,8 +157,8 @@ describe("adminbot-feedback-widget", () => {
   it("persists the rating to localStorage", async () => {
     const el = await renderWidget();
     await openPanel(el);
-    stars(el)[4]?.click();
-    const raw = storage.getItem("openclaw:feedback:v2:my-work");
+    await clickStar(el, 4);
+    const raw = mock.getItem("openclaw:feedback:v2:my-work");
     expect(raw).toBeDefined();
     expect(JSON.parse(raw ?? "{}")).toEqual({
       rating: 5,
@@ -141,7 +169,7 @@ describe("adminbot-feedback-widget", () => {
   });
 
   it("restores an existing vote and keeps the send button when it was never submitted", async () => {
-    storage.setItem("openclaw:feedback:v2:my-work", JSON.stringify({ rating: 4, comment: "nice" }));
+    mock.setItem("openclaw:feedback:v2:my-work", JSON.stringify({ rating: 4, comment: "nice" }));
     const el = await renderWidget();
     await openPanel(el);
     expect(stars(el)[3]?.className).toContain("fb__star--on");
@@ -150,7 +178,7 @@ describe("adminbot-feedback-widget", () => {
   });
 
   it("renders nothing once the widget was dismissed on a previous submit", async () => {
-    storage.setItem(
+    mock.setItem(
       "openclaw:feedback:v2:my-work",
       JSON.stringify({ rating: 4, comment: "nice", submitted: true, dismissed: true }),
     );
@@ -163,18 +191,18 @@ describe("adminbot-feedback-widget", () => {
   it("dismisses the whole widget after sending", async () => {
     const el = await renderWidget();
     await openPanel(el);
-    stars(el)[0]?.click();
+    await clickStar(el, 0);
     await el.updateComplete;
     const input = el.shadowRoot?.querySelector<HTMLTextAreaElement>(".fb__input");
     expect(input).not.toBeNull();
     input!.value = "great";
     input!.dispatchEvent(new Event("input"));
-    el.shadowRoot?.querySelector<HTMLButtonElement>(".fb__send")!.click();
+    (await settle(el, ".fb__send")).click();
     await el.updateComplete;
     // Send dismisses the entire widget and persists the vote plus dismissal.
     expect(el.shadowRoot?.querySelector(".fb__open")).toBeNull();
     expect(stars(el).length).toBe(0);
-    expect(JSON.parse(storage.getItem("openclaw:feedback:v2:my-work") ?? "{}")).toEqual({
+    expect(JSON.parse(mock.getItem("openclaw:feedback:v2:my-work") ?? "{}")).toEqual({
       rating: 1,
       comment: "great",
       submitted: true,
