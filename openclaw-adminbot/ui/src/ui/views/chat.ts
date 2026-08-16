@@ -160,7 +160,6 @@ export type ChatProps = {
   onQueueRetry?: (id: string) => void;
   onQueueSteer?: (id: string) => void;
   onDismissSideResult?: () => void;
-  onNewSession: () => void;
   onClearHistory?: () => void;
   agentsList: {
     agents: Array<{ id: string; name?: string; identity?: { name?: string; avatarUrl?: string } }>;
@@ -2397,7 +2396,6 @@ export function renderChat(props: ChatProps) {
           sending: props.sending,
           onAbort: props.onAbort,
           onExport: () => exportMarkdown(props),
-          onNewSession: props.onNewSession,
           onSend: handleSend,
           onStoreDraft: () => {},
           showSecondary: false,

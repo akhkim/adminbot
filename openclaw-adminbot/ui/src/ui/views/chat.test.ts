@@ -557,7 +557,6 @@ function createChatProps(
     onQueueRemove: () => undefined,
     onQueueSteer: () => undefined,
     onDismissSideResult: () => undefined,
-    onNewSession: () => undefined,
     onClearHistory: () => undefined,
     onOpenSessionCheckpoints: () => undefined,
     agentsList: null,

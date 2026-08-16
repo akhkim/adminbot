@@ -35,7 +35,6 @@ function createProps(overrides: Partial<ChatRunControlsProps> = {}): ChatRunCont
     sending: false,
     onAbort: () => undefined,
     onExport: () => undefined,
-    onNewSession: () => undefined,
     onSend: () => undefined,
     onStoreDraft: () => undefined,
     ...overrides,
@@ -81,9 +80,7 @@ describe("chat run controls", () => {
     expect(stopButton.title).toBe("Stop");
     stopButton.click();
     expect(onAbort).toHaveBeenCalledTimes(1);
-    expect(container.querySelector('button[title="New session"]')).toBeNull();
 
-    const onNewSession = vi.fn();
     const onSend = vi.fn();
     const onStoreDraft = vi.fn();
     render(
@@ -91,7 +88,6 @@ describe("chat run controls", () => {
         createProps({
           draft: " run this ",
           hasMessages: true,
-          onNewSession,
           onSend,
           onStoreDraft,
         }),
@@ -99,11 +95,8 @@ describe("chat run controls", () => {
       container,
     );
 
-    const newSessionButton = getButton(container, 'button[title="New session"]');
-    expect(newSessionButton.title).toBe("New session");
-    expect(newSessionButton.textContent).toContain("New session");
-    newSessionButton.click();
-    expect(onNewSession).toHaveBeenCalledTimes(1);
+    // Starting a session belongs to the chat session toolbar, not the composer.
+    expect(container.querySelector('button[title="New session"]')).toBeNull();
 
     const sendButton = getButton(container, 'button[title="Send"]');
     expect(sendButton.title).toBe("Send");
@@ -162,9 +155,6 @@ describe("chat run controls", () => {
     const container = document.createElement("div");
     render(renderChatRunControls(createProps({ hasMessages: true })), container);
 
-    expect(
-      getButton(container, `button[title="${t("chat.runControls.newSession")}"]`).textContent,
-    ).toContain(t("chat.runControls.newSession"));
     expect(
       getButton(container, `button[title="${t("chat.runControls.export")}"]`).textContent,
     ).toContain(t("chat.runControls.export"));
