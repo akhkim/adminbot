@@ -126,7 +126,14 @@ describe("guidebook isolation", () => {
     expect(result.sources).toEqual(["Reimbursements > Conference travel"]);
     // The payload handed back to the agent carries no guidebook prose.
     expect(JSON.stringify(result)).not.toContain("per diem");
-    expect(seen.every((url) => url.startsWith("http://127.0.0.1:11434/"))).toBe(true);
+    // Embeddings on Ollama, synthesis on vLLM — both loopback, neither hosted.
+    expect(
+      seen.every(
+        (url) =>
+          url.startsWith("http://127.0.0.1:11434/") || url.startsWith("http://127.0.0.1:8000/"),
+      ),
+    ).toBe(true);
+    expect(seen.some((url) => url.startsWith("http://127.0.0.1:8000/"))).toBe(true);
   });
 
   it("fails closed when the index was built by a different embedding model", async () => {

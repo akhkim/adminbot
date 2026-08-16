@@ -27,9 +27,12 @@ export const defaultGuidebookAskConfig: GuidebookAskConfig = {
   embeddingBaseUrl: "http://127.0.0.1:11434/v1",
   embeddingModel: "embeddinggemma",
   embeddingApiKeyEnv: "OLLAMA_API_KEY",
-  answerBaseUrl: "http://127.0.0.1:11434/v1",
-  answerModel: "gemma4:e4b-it-qat",
-  answerApiKeyEnv: "OLLAMA_API_KEY",
+  // Synthesis runs on the vLLM Qwen the privacy broker also uses. Embeddings stay
+  // on Ollama because vLLM does not serve embeddinggemma; both are loopback, so
+  // the isolation guarantee is unchanged by the split.
+  answerBaseUrl: "http://127.0.0.1:8000/v1",
+  answerModel: "nvidia/Qwen3.5-122B-A10B-NVFP4",
+  answerApiKeyEnv: "VLLM_API_KEY",
 };
 
 export type GuidebookAskResult = {
