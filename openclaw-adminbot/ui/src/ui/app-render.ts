@@ -350,7 +350,7 @@ function renderSettingsWorkspace(state: AppViewState, body: unknown) {
   `;
 }
 
-function isSidebarSessionBusy(state: AppViewState) {
+function isChatSessionBusy(state: AppViewState) {
   return (
     state.chatLoading ||
     state.chatSending ||
@@ -360,7 +360,7 @@ function isSidebarSessionBusy(state: AppViewState) {
   );
 }
 
-function resolveSidebarDefaultAgentId(state: AppViewState): string {
+function resolveChatDefaultAgentId(state: AppViewState): string {
   const snapshot = state.hello?.snapshot as
     | { sessionDefaults?: { defaultAgentId?: string } }
     | undefined;
@@ -369,7 +369,7 @@ function resolveSidebarDefaultAgentId(state: AppViewState): string {
   );
 }
 
-function resolveSidebarSelectedAgentId(state: AppViewState): string {
+function resolveChatSelectedAgentId(state: AppViewState): string {
   const parsed = parseAgentSessionKey(state.sessionKey);
   if (parsed) {
     return normalizeAgentId(parsed.agentId);
@@ -377,21 +377,21 @@ function resolveSidebarSelectedAgentId(state: AppViewState): string {
   const sessionKey = normalizeOptionalString(state.sessionKey)?.toLowerCase();
   const fallbackAgentId =
     sessionKey === "global" || sessionKey === "unknown"
-      ? (state.assistantAgentId ?? resolveSidebarDefaultAgentId(state))
-      : resolveSidebarDefaultAgentId(state);
+      ? (state.assistantAgentId ?? resolveChatDefaultAgentId(state))
+      : resolveChatDefaultAgentId(state);
   return normalizeAgentId(fallbackAgentId);
 }
 
-function isSidebarSessionForSelectedAgent(
+function isChatSessionForSelectedAgent(
   state: AppViewState,
   row: GatewaySessionRow,
   selectedAgentId: string,
 ): boolean {
-  return isSessionKeyTiedToAgent(row.key, selectedAgentId, resolveSidebarDefaultAgentId(state));
+  return isSessionKeyTiedToAgent(row.key, selectedAgentId, resolveChatDefaultAgentId(state));
 }
 
-function resolveSidebarRecentSessions(state: AppViewState): GatewaySessionRow[] {
-  const selectedAgentId = resolveSidebarSelectedAgentId(state);
+function resolveChatRecentSessions(state: AppViewState): GatewaySessionRow[] {
+  const selectedAgentId = resolveChatSelectedAgentId(state);
   const shouldFilterByAgent =
     normalizeOptionalString(state.sessionKey)?.toLowerCase() !== "unknown";
   return (state.sessionsResult?.sessions ?? [])
@@ -404,7 +404,7 @@ function resolveSidebarRecentSessions(state: AppViewState): GatewaySessionRow[] 
         !isCronSessionKey(row.key) &&
         !isSubagentSessionKey(row.key) &&
         !row.spawnedBy &&
-        (!shouldFilterByAgent || isSidebarSessionForSelectedAgent(state, row, selectedAgentId)),
+        (!shouldFilterByAgent || isChatSessionForSelectedAgent(state, row, selectedAgentId)),
     )
     .toSorted((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     .slice(0, 5);
@@ -414,8 +414,8 @@ function resolveSidebarRecentSessions(state: AppViewState): GatewaySessionRow[] 
 // switching sessions says nothing about Deadlines, Members or Admin. They render
 // as a toolbar above the thread, so nav collapse no longer gates them.
 function renderChatSessionControls(state: AppViewState) {
-  const busy = isSidebarSessionBusy(state);
-  const recent = resolveSidebarRecentSessions(state);
+  const busy = isChatSessionBusy(state);
+  const recent = resolveChatRecentSessions(state);
   const newSessionDisabled = !state.connected || state.sessionsLoading || busy || !state.client;
   const newSessionTitle = !state.connected
     ? "Connect to create a new session"
@@ -1391,7 +1391,7 @@ export function renderApp(state: AppViewState) {
   const dashboardHeaderContext = resolveDashboardHeaderContext(state);
   const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
   const showToolCalls = state.onboarding ? true : state.settings.chatShowToolCalls;
-  const activeAssistantAgentId = resolveSidebarSelectedAgentId(state);
+  const activeAssistantAgentId = resolveChatSelectedAgentId(state);
   const localAssistantAvatarOverride =
     normalizeOptionalString(
       loadLocalAssistantIdentity({ agentId: activeAssistantAgentId }).avatar,
