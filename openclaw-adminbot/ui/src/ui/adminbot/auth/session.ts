@@ -261,7 +261,12 @@ export type AuthErrorKind =
   | "email-unavailable"
   // Session authenticated but lacks admin privilege (403). Distinct from
   // auth-failed so governance surfaces can say "not allowed" instead of "sign in again".
-  | "forbidden";
+  | "forbidden"
+  // The service does not have this route (404). Almost always a version skew rather than anything
+  // to do with credentials: a long-lived dev service outliving the console that calls it. It used
+  // to fall through to auth-failed, which sent people to check their login for a problem that was
+  // really a process needing a restart.
+  | "not-found";
 
 export type AuthResult<T> =
   | { ok: true; value: T }
@@ -329,6 +334,11 @@ function mapErrorResponse(
     (body as { code?: unknown } | null)?.code === "pending_approval"
   ) {
     return { kind: "pending-approval" };
+  }
+  // Before this, 404 fell through to auth-failed and reported a missing route as a credentials
+  // problem. Kept above the catch-all so the distinction cannot be lost again.
+  if (response.status === 404) {
+    return { kind: "not-found" };
   }
   return { kind: "auth-failed" };
 }

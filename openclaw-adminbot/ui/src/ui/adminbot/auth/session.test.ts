@@ -82,6 +82,15 @@ describe("loginMember / claimMember error mapping", () => {
     expect(result).toEqual({ ok: false, kind: "auth-failed" });
   });
 
+  it("maps 404 to not-found rather than auth-failed", async () => {
+    // A missing route is version skew, not a credentials problem. This used to fall through to
+    // auth-failed, which sent people to check a login that was working fine while the real cause
+    // was a service running older code than the console.
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse(404, { error: "not found" }));
+    const result = await loginMember("a@b.co", "pw", BASE_URL);
+    expect(result).toEqual({ ok: false, kind: "not-found" });
+  });
+
   it("maps 429 to rate-limited with retry seconds from the body", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse(429, { error: "slow down", retry_after_seconds: 30 }),

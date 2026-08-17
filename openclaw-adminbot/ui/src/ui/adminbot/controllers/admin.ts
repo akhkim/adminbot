@@ -852,6 +852,24 @@ function requirePrivilegedSession(
 // Re-reads every linked CV and replaces the panel's scan result. Deliberately not merged into the
 // previous result: a member whose link broke since the last run must stop showing that run's
 // changes as though they were still current.
+// One place to turn a failed CV call into something an admin can act on.
+//
+// These three routes are the newest in the service, so they are the ones a long-running dev
+// service will not have yet. "not-found" therefore means version skew, and saying so is the
+// difference between restarting a process and hunting a login problem that does not exist.
+function cvErrorText(kind: string, action: string): string {
+  if (kind === "unreachable") {
+    return ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE;
+  }
+  if (kind === "not-found") {
+    return `This AdminBot service does not have the ${action} endpoint — it is running older code than the console. Restart it with \`pnpm adminbot:dev\`.`;
+  }
+  if (kind === "forbidden") {
+    return `${action} requires an admin or core member session.`;
+  }
+  return `Could not ${action}: ${kind}`;
+}
+
 export function setAdminBotCvDigestSince(host: AdminBotHost, since: string): void {
   host.adminBotCvDigestSince = since;
 }
@@ -876,10 +894,7 @@ export async function loadAdminBotCvDigest(host: AdminBotHost): Promise<void> {
     if (!result.ok) {
       host.adminBotNotice = {
         kind: "error",
-        text:
-          result.kind === "unreachable"
-            ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
-            : `Could not load the digest: ${result.kind}`,
+        text: cvErrorText(result.kind, "load the digest"),
       };
       return;
     }
@@ -902,10 +917,9 @@ export async function draftAdminBotCvBlurb(host: AdminBotHost, memberId: string)
     if (!result.ok) {
       host.adminBotNotice = {
         kind: "error",
-        text:
-          result.kind === "unreachable"
-            ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
-            : `Could not draft a blurb: ${result.kind}`,
+        // A 409 carries the service's own sentence ("no scanned CV yet"), which is more useful
+        // than any fixed copy, so it wins when present.
+        text: result.message?.trim() || cvErrorText(result.kind, "draft a blurb"),
       };
       return;
     }
@@ -929,11 +943,7 @@ export async function scanAdminBotCvs(host: AdminBotHost): Promise<void> {
       host.adminBotNotice = {
         kind: "error",
         text:
-          result.kind === "unreachable"
-            ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
-            : result.kind === "forbidden"
-              ? "Scanning CVs requires an admin or core member session."
-              : `CV scan failed: ${result.kind}`,
+          cvErrorText(result.kind, "scan CVs"),
       };
       return;
     }
