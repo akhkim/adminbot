@@ -1754,6 +1754,7 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
   }
   return html`
     ${renderPaperOverview(props, papers)}
+    ${renderPaperStats(papers)}
     <article class="adminbot-editor-card">
       <div class="card-title">Next step per paper</div>
       <div class="card-sub">
@@ -1797,6 +1798,51 @@ function copyNudge(event: Event, message: string) {
       // A clipboard the browser refuses is not worth an error dialog; the message is also on the
       // button's title attribute, so it stays reachable by hover.
     });
+}
+
+/**
+ * Registration at a glance: how many papers, how many are aimed somewhere, how confident.
+ *
+ * Four numbers rather than a chart. The question an admin has walking past this page is "how much
+ * is in flight and how much of it is real", and a chart takes longer to read than that deserves.
+ */
+function renderPaperStats(papers: AdminBotPaperRecord[]) {
+  const registered = papers.length;
+  const withVenue = papers.filter((paper) => paper.artifacts?.conference?.trim()).length;
+  const confident = papers.filter((paper) => {
+    const value = Number.parseInt(paper.artifacts?.confidence ?? "", 10);
+    return Number.isFinite(value) && value >= 80;
+  }).length;
+  const submitted = papers.filter((paper) =>
+    [
+      "submission",
+      "google_drive_pdf",
+      "arxiv_polish",
+      "social_posts",
+      "slide_making",
+      "poster_making",
+    ].includes(paper.current_step),
+  ).length;
+
+  const tile = (value: number, label: string, sub: string) => html`
+    <div class="pstat">
+      <span class="pstat__value">${value}</span>
+      <span class="pstat__label">${label}</span>
+      <span class="pstat__sub">${sub}</span>
+    </div>
+  `;
+
+  return html`
+    <article class="adminbot-editor-card">
+      <div class="card-title">Registered papers</div>
+      <div class="pstats">
+        ${tile(registered, "Registered", "in the pipeline")}
+        ${tile(withVenue, "With a venue", registered ? `of ${registered}` : "none yet")}
+        ${tile(confident, "80%+ likely", "authors' own call")}
+        ${tile(submitted, "Past submission", "submitted or later")}
+      </div>
+    </article>
+  `;
 }
 
 // The dependency-based counterpart to renderNudges. That one answers "who is late"; this one

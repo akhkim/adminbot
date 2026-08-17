@@ -19,6 +19,7 @@ import type {
   AdminBotPaperStep,
 } from "../controllers/admin.ts";
 import { nextStepFor, nextTasksFor } from "../next-step.ts";
+import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { findOwnMember } from "./profile.ts";
@@ -201,6 +202,16 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
         <div class="my-work-item__copy">
           <h3 class="my-work-item__title">${paper.title}</h3>
           <p class="my-work-item__meta">${(paper.authors ?? []).join(", ")}</p>
+          ${paper.artifacts?.conference || paper.artifacts?.confidence
+            ? html`<p class="my-work-item__target">
+                ${paper.artifacts?.conference
+                  ? html`<span class="target__venue">${paper.artifacts.conference}</span>`
+                  : nothing}
+                ${paper.artifacts?.confidence
+                  ? html`<span class="target__odds">${paper.artifacts.confidence}% likely</span>`
+                  : nothing}
+              </p>`
+            : nothing}
         </div>
         ${renderBlockerForm(state, paper)}
       </div>
@@ -298,18 +309,39 @@ function renderNextStep(paper: AdminBotPaperRecord) {
   // compiles, slides, social and archival are all open. Listing them as cards says "these can
   // happen in parallel", which a single "Next:" line actively hid.
   return html`
-    <p class="my-work-item__next">
-      ${icons.chevronRight}
-      <span>
-        <strong>Next: ${next.headline}</strong>
-        ${next.unblocks ? html`<span class="my-work-item__next-why"> — unblocks ${next.unblocks}</span>` : nothing}
-      </span>
-    </p>
-    ${next.alsoOpen.length > 0
-      ? html`<p class="my-work-item__next-also">
-          Also open now: ${next.alsoOpen.join(", ")}
-        </p>`
-      : nothing}
+    <div class="tasks">
+      <p class="tasks__title">
+        What can be done now
+        ${tasks.length > 1
+          ? html`<span class="tasks__count">${tasks.length} in parallel</span>`
+          : nothing}
+      </p>
+      <ul class="tasks__grid">
+        ${tasks.map(
+          (task) => html`
+            <li
+              class=${`task ${task.isApproval ? "task--approval" : ""} ${
+                task.optional ? "task--optional" : ""
+              }`}
+            >
+              <span class="task__branch">${task.branch || "Task"}</span>
+              <strong class="task__label">${task.label}</strong>
+              ${task.hint ? html`<span class="task__hint">${task.hint}</span>` : nothing}
+              <span class="task__who">
+                ${task.isApproval ? `Approval from ${task.waitingOn}` : `Owner: ${task.waitingOn}`}
+              </span>
+              <span class="task__unblocks">
+                ${task.optional
+                  ? "Blocks nothing"
+                  : task.unblocks.length
+                    ? `Unblocks ${task.unblocks.slice(0, 2).join(", ")}`
+                    : "Last step on this branch"}
+              </span>
+            </li>
+          `,
+        )}
+      </ul>
+    </div>
   `;
 }
 
@@ -331,14 +363,39 @@ function renderAddButton(state: AppViewState) {
   `;
 }
 
+/**
+ * Venues worth offering when registering a paper: the next few real deadlines, soonest first.
+ *
+ * Read from the bundled deadline board rather than a hand-kept list, so the default is whatever
+ * is actually next rather than whatever someone typed last year. Archival conference deadlines
+ * only -- camera-ready and commitment rows are not things you target from scratch.
+ */
+function upcomingVenues(now = new Date()) {
+  const future = DEADLINE_VENUES.filter((venue) => {
+    const due = Date.parse(venue.deadline_aoe.replace(" ", "T") + "Z");
+    return Number.isFinite(due) && due > now.getTime();
+  }).sort((left, right) => left.deadline_aoe.localeCompare(right.deadline_aoe));
+
+  // Archival conferences first. Sorting purely by date buries ICLR and ARR under fifty workshop
+  // commitment deadlines, so the default target ends up being a venue nobody was aiming for.
+  const major = future.filter((venue) => venue.venue_type === "conference" && venue.archival);
+  const rest = future.filter((venue) => !major.includes(venue));
+  return [...major.slice(0, 8), ...rest.slice(0, 6)];
+}
+
+/** How sure the authors are about hitting this venue. Coarse on purpose: finer is false precision. */
+const CONFIDENCE_OPTIONS = ["30", "50", "80", "99"];
+
 function renderAddForm(state: AppViewState, props: MyWorkProps) {
   const draft = state.myWorkProjectDraft ?? "";
   const member = findOwnMember(state);
   return html`
     <form
-      class="my-work-add-form"
+      class="my-work-add-form register"
       @submit=${(event: SubmitEvent) => {
         event.preventDefault();
+        const form = event.currentTarget as HTMLFormElement;
+        const data = new FormData(form);
         const title = draft.trim();
         if (!title) {
           return;
@@ -354,18 +411,53 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
           title,
           authors: member?.name?.trim() ? [member.name.trim()] : [],
           currentStep: paperSteps[0],
+          conference: String(data.get("venue") ?? ""),
+          confidence: String(data.get("confidence") ?? ""),
         });
         state.myWorkProjectDraft = null;
       }}
     >
-      <input
-        class="input"
-        placeholder=${t("myWork.items.namePlaceholder")}
-        .value=${draft}
-        @input=${(event: Event) => {
-          state.myWorkProjectDraft = (event.target as HTMLInputElement).value;
-        }}
-      />
+      <label class="register__field">
+        <span class="register__label">Title</span>
+        <input
+          class="input"
+          placeholder=${t("myWork.items.namePlaceholder")}
+          .value=${draft}
+          @input=${(event: Event) => {
+            state.myWorkProjectDraft = (event.target as HTMLInputElement).value;
+          }}
+        />
+      </label>
+
+      <label class="register__field">
+        <span class="register__label">Target venue</span>
+        <select class="input" name="venue" data-testid="register-venue">
+          ${upcomingVenues().map(
+            (venue, index) => html`
+              <option value=${venue.name} ?selected=${index === 0}>
+                ${venue.name} · ${venue.deadline_aoe.slice(0, 10)}
+              </option>
+            `,
+          )}
+          <option value="">Not decided yet</option>
+        </select>
+        <span class="register__hint">Defaults to the next deadline. Change it any time.</span>
+      </label>
+
+      <fieldset class="register__field">
+        <legend class="register__label">How likely is this venue?</legend>
+        <div class="register__chips">
+          ${CONFIDENCE_OPTIONS.map(
+            (value, index) => html`
+              <label class="chip">
+                <input type="radio" name="confidence" value=${value} ?checked=${index === 1} />
+                <span>${value}%</span>
+              </label>
+            `,
+          )}
+        </div>
+        <span class="register__hint">A rough call, so everyone reads the plan the same way.</span>
+      </fieldset>
       <button type="submit" class="btn">${t("myWork.items.addSubmit")}</button>
       <button
         type="button"

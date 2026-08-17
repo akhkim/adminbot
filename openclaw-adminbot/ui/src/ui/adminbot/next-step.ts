@@ -19,6 +19,7 @@ import {
   nudgeText,
   paperflow,
   predecessors,
+  successors,
   tick,
   type NodeId,
   type PaperState,
@@ -260,10 +261,60 @@ export function nextStepFor(paper: AdminBotPaperRecord): NextStep | undefined {
 }
 
 
+/**
+ * Human phrasing for every node, because the graph's own labels are written for the graph.
+ *
+ * "Both inputs present" is a join condition, not something a person does, and "arXiv package
+ * prepared" names a state rather than an action. Each entry is an instruction plus one line
+ * saying what it means, so someone reading the card alone knows what to go and do.
+ */
+const TASK_COPY: Record<string, { title: string; hint: string }> = {
+  BR: { title: "Write the brainstorm doc", hint: "A short write-up of the idea, so it can be registered with AdminBot." },
+  OV: { title: "Start the Overleaf draft", hint: "Create the project and get the skeleton in." },
+  PM: { title: "Get PaperMentor feedback", hint: "Run the draft past PaperMentor and collect its comments." },
+  FX: { title: "Merge the easy fixes", hint: "Apply the low-cost suggestions from the review." },
+  PDF: { title: "Compile a clean PDF", hint: "The draft has to build without errors before anything else starts." },
+  SL: { title: "Make the slides", hint: "Talk slides for the venue." },
+  PO: { title: "Make the poster", hint: "Poster version, if the venue asks for one." },
+  TV: { title: "Record the talk video", hint: "Short recorded version of the talk." },
+  LG: { title: "Log the links in the shared folder", hint: "Put slides, poster and video where the lab can find them." },
+  XD: { title: "Draft the X post", hint: "A short thread announcing the paper." },
+  LI: { title: "Adapt it for LinkedIn", hint: "Longer version of the X post." },
+  CP: { title: "Collect coauthor feedback", hint: "Send the draft posts round and wait for replies." },
+  SF: { title: "Finalise the social copy", hint: "Fold the coauthor comments into a final version." },
+  DR: { title: "Upload the PDF to Drive", hint: "The lab's own copy of the paper." },
+  DS: { title: "Save the submitted version", hint: "Keep the exact PDF that went to the venue." },
+  DA: { title: "Save the arXiv version", hint: "The version you intend to post publicly." },
+  AK: { title: "Finalise authors and acknowledgements", hint: "Check the author list and thank-yous before packaging." },
+  PK: { title: "Prepare the arXiv package", hint: "Build the upload bundle. Preparing it is not permission to post." },
+  GT: { title: "Get Zhijing's OK to post", hint: "An explicit yes is needed before anything goes public." },
+  BE: { title: "Update the tracking spreadsheet", hint: "Optional bookkeeping. Nothing waits on it." },
+  CK: { title: "Run the submission checks", hint: "Formatting, page limit, anonymity, references." },
+  SB: { title: "Submit to the venue", hint: "Upload, and keep the submission id." },
+  RV: { title: "Wait for reviews", hint: "The venue's clock. Nothing to do until they arrive." },
+  RS: { title: "Write the rebuttal", hint: "Respond inside the rebuttal window. Hard deadline." },
+  DC: { title: "Record the decision", hint: "Log accept or reject so the rest of the flow continues." },
+  CM: { title: "Prepare the camera-ready", hint: "Final version for publication." },
+  CA: { title: "Register and book travel", hint: "Read the reimbursement policy first, then register, flights and hotel." },
+  RM: { title: "File your reimbursement", hint: "After the conference, once you have the receipts." },
+  RJ: { title: "Record the rejection", hint: "Log it so the paper can be revised for another venue." },
+  PS: { title: "Publish on X and LinkedIn", hint: "Both the social copy and the public link are ready." },
+};
+
+/**
+ * Nodes that exist for the graph rather than for people. A join is a condition being met, so once
+ * it is satisfied the real work is whatever it unlocks -- show that instead.
+ */
+const LOGIC_ONLY = new Set<NodeId>(["JN"]);
+
+/** How many parallel tasks to surface. Beyond this it reads as a backlog, not a next step. */
+const MAX_TASKS = 3;
+
 /** One actionable task on the frontier, ready to render as a card. */
 export type NextTask = {
   node: NodeId;
   label: string;
+  hint: string;
   waitingOn: string;
   unblocks: string[];
   isApproval: boolean;
@@ -285,18 +336,61 @@ export function nextTasksFor(paper: AdminBotPaperRecord): NextTask[] {
   }
   const byId = new Map(paperflow.nodes.map((node) => [node.id, node]));
 
-  return result.batches
-    .flatMap((batch) => batch.nudges)
-    .map((nudge) => {
-      const node = byId.get(nudge.node);
-      return {
-        node: nudge.node,
-        label: nudge.nodeLabel,
-        waitingOn: ROLE_LABELS[nudge.recipient] ?? nudge.recipient,
-        unblocks: nudge.unblocks.map((id) => NODE_LABELS.get(id) ?? id),
-        isApproval: nudge.kind === "approval",
-        optional: nudge.kind === "optional",
-        branch: BRANCH_LABELS[node?.branch ?? ""] ?? "",
-      };
+  const seen = new Set<NodeId>();
+  const out: NextTask[] = [];
+
+  const add = (id: NodeId, recipient: string, kind: string, unblocks: NodeId[]) => {
+    // A satisfied join is a condition, not a task: nobody "does" Both inputs present. Show what
+    // it unlocks instead, or the card tells the reader to do something that is not a thing.
+    if (LOGIC_ONLY.has(id)) {
+      for (const next of successors(paperflow, id)) {
+        add(next, recipient, kind, successors(paperflow, next));
+      }
+      return;
+    }
+    if (seen.has(id)) {
+      return;
+    }
+    seen.add(id);
+    const node = byId.get(id);
+    const copy = TASK_COPY[id];
+    out.push({
+      node: id,
+      label: copy?.title ?? node?.label ?? id,
+      hint: copy?.hint ?? "",
+      waitingOn: ROLE_LABELS[recipient] ?? recipient,
+      unblocks: unblocks.map((each) => NODE_LABELS.get(each) ?? each),
+      isApproval: kind === "approval",
+      optional: kind === "optional",
+      branch: BRANCH_LABELS[node?.branch ?? ""] ?? "",
     });
+  };
+
+  for (const nudge of result.batches.flatMap((batch) => batch.nudges)) {
+    add(nudge.node, nudge.recipient, nudge.kind, nudge.unblocks);
+  }
+
+  // Show at most a handful. The engine is right that five things are unblocked, but a person
+  // reading their own paper wants the next move, not a backlog -- and a task that unblocks
+  // something is more urgent than a leaf that ends its branch.
+  // Rank by how near the work is to where the paper actually is. The frontier is technically
+  // correct that a poster is unblocked, but telling someone still writing the draft to make a
+  // poster is noise -- near work first, then things that unblock something, optional last.
+  const currentIndex = Math.max(
+    0,
+    adminBotPaperSteps.indexOf(paper.current_step as (typeof adminBotPaperSteps)[number]),
+  );
+  const stepIndexOf = (id: NodeId) =>
+    adminBotPaperSteps.findIndex((step) => (STEP_NODES[step] ?? []).includes(id));
+
+  return out
+    .sort((left, right) => {
+      const weight = (task: NextTask) => {
+        const index = stepIndexOf(task.node);
+        const distance = index < 0 ? 9 : Math.abs(index - currentIndex);
+        return distance * 10 + (task.optional ? 50 : 0) + (task.unblocks.length ? 0 : 3);
+      };
+      return weight(left) - weight(right);
+    })
+    .slice(0, MAX_TASKS);
 }

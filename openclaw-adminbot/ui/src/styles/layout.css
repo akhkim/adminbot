@@ -6041,3 +6041,30 @@
 }
 
 
+
+/* Four numbers, not a chart: the question is "how much is in flight", and a chart takes longer
+   to read than the answer is worth. */
+.pstats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--space-3);
+}
+
+.pstat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.pstat__value {
+  font-size: 1.75rem;
+  font-weight: 650;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.pstat__label { font-size: var(--control-ui-text-sm); }
+.pstat__sub { font-size: var(--control-ui-text-xs); color: var(--muted); }

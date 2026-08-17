@@ -143,6 +143,8 @@ export type AdminBotPaperSaveInput = {
   overleafEditUrl?: string;
   googleDrivePdfUrl?: string;
   conference?: string;
+  /** How likely the authors think this venue is, as a percentage string. */
+  confidence?: string;
   topic?: string;
   reminderStatus?: "idle" | "waiting_on_authors" | "blocked" | "complete";
 };
@@ -1218,6 +1220,7 @@ export async function saveAdminBotPaper(
     ...(paper.overleafEditUrl ? { overleaf_edit_url: paper.overleafEditUrl } : {}),
     ...(paper.googleDrivePdfUrl ? { google_drive_pdf_url: paper.googleDrivePdfUrl } : {}),
     ...(paper.conference ? { conference: paper.conference } : {}),
+    ...(paper.confidence ? { confidence: paper.confidence } : {}),
     ...(paper.topic ? { topic: paper.topic } : {}),
   };
   // Prefer the member's own session: the service scopes the write to what that member may change
