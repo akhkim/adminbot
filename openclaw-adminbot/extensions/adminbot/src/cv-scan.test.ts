@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import { AdminBotMemoryStore } from "./persistence/memory.js";
 import type {
+  AdminBotCvChangeEvent,
   AdminBotCvEntry,
   AdminBotCvSnapshot,
   AdminBotLabMember,
 } from "./contracts/actions.js";
 import {
   assertPublicHost,
+  classifyRecency,
   isPublicIpAddress,
   runAdminBotCvScan,
   type AdminBotCvScanDeps,
@@ -43,11 +46,22 @@ function deps(overrides: Partial<AdminBotCvScanDeps> = {}): AdminBotCvScanDeps {
   };
 }
 
+// Starts one month before SCANNED_AT, so it is inside the recency window.
 const POSITION: AdminBotCvEntry = {
   kind: "position",
   title: "Research Scientist",
   organization: "DeepMind",
-  start: "Sept 2026",
+  start: "Jul 2026",
+  start_iso: "2026-07",
+};
+
+// The same shape of entry, but from years ago — someone backfilling their CV rather than moving.
+const OLD_POSITION: AdminBotCvEntry = {
+  kind: "position",
+  title: "Summer Intern",
+  organization: "Initech",
+  start: "Jun 2019",
+  start_iso: "2019-06",
 };
 
 describe("runAdminBotCvScan", () => {
@@ -96,10 +110,50 @@ describe("runAdminBotCvScan", () => {
       ],
       deps({ extractEntries: async () => [POSITION] }),
     );
-    expect(result.results[0]).toMatchObject({ status: "changed", added: [POSITION] });
+    expect(result.results[0]).toMatchObject({
+      status: "changed",
+      added: [{ entry: POSITION, recency: "recent" }],
+    });
     expect(result.newsletter_draft).toContain(
-      "Jane Doe — joined DeepMind as Research Scientist (Sept 2026)",
+      "Jane Doe — joined DeepMind as Research Scientist (Jul 2026)",
     );
+  });
+
+  it("reports a backfilled entry as changed but keeps it out of the newsletter", async () => {
+    // The whole point of the recency check: adding a 2019 internship changed the document, not
+    // the person's career, and announcing it would read as nonsense.
+    const { result } = await runAdminBotCvScan(
+      [
+        member({
+          id: "backfill",
+          name: "Jane Doe",
+          cv_url: "https://drive.google.com/file/d/abc",
+          cv_snapshot: snapshotOf("older cv", []),
+        }),
+      ],
+      deps({ extractEntries: async () => [OLD_POSITION] }),
+    );
+    expect(result.results[0]).toMatchObject({
+      status: "changed",
+      added: [{ entry: OLD_POSITION, recency: "backfilled" }],
+    });
+    expect(result.newsletter_draft).toBe("");
+  });
+
+  it("reports an undated entry rather than guessing it is news", async () => {
+    const undated: AdminBotCvEntry = { kind: "position", title: "Advisor", organization: "Acme" };
+    const { result } = await runAdminBotCvScan(
+      [
+        member({
+          id: "undated",
+          cv_url: "https://drive.google.com/file/d/abc",
+          cv_snapshot: snapshotOf("older cv", []),
+        }),
+      ],
+      deps({ extractEntries: async () => [undated] }),
+    );
+    expect(result.results[0]?.added[0]?.recency).toBe("undated");
+    expect(result.newsletter_draft).toBe("");
   });
 
   it("reports removals but keeps them out of the draft", async () => {
@@ -236,5 +290,86 @@ describe("assertPublicHost", () => {
     await expect(assertPublicHost("void.example", lookup as never)).rejects.toThrow(
       /resolved to no addresses/u,
     );
+  });
+});
+
+describe("classifyRecency", () => {
+  const now = new Date("2026-08-05T00:00:00.000Z");
+  const at = (start_iso?: string): AdminBotCvEntry => ({
+    kind: "position",
+    title: "T",
+    organization: "O",
+    ...(start_iso ? { start_iso } : {}),
+  });
+
+  it.each([
+    ["2026-08", "recent", "this month"],
+    ["2026-07", "recent", "last month"],
+    ["2026-02", "recent", "exactly the window edge"],
+    ["2026-10", "recent", "future — announced before it starts"],
+  ])("%s is %s (%s)", (iso, expected) => {
+    expect(classifyRecency(at(iso), now)).toBe(expected);
+  });
+
+  it.each([
+    ["2026-01", "one month past the window"],
+    ["2019-06", "years ago"],
+  ])("%s is backfilled (%s)", (iso) => {
+    expect(classifyRecency(at(iso), now)).toBe("backfilled");
+  });
+
+  it.each([
+    [undefined, "no date at all"],
+    ["", "empty"],
+    ["2026", "year only — not placeable to a month"],
+    ["Sept 2026", "the verbatim form leaked into start_iso"],
+    ["2026-13", "impossible month"],
+  ])("%s is undated (%s)", (iso) => {
+    expect(classifyRecency(at(iso as string | undefined), now)).toBe("undated");
+  });
+
+  it("compares whole months so the day of the scan does not matter", () => {
+    const first = new Date("2026-08-01T00:00:00.000Z");
+    const last = new Date("2026-08-28T00:00:00.000Z");
+    expect(classifyRecency(at("2026-02"), first)).toBe(classifyRecency(at("2026-02"), last));
+  });
+});
+
+describe("CV change ledger", () => {
+  const event = (overrides: Partial<AdminBotCvChangeEvent> = {}): AdminBotCvChangeEvent => ({
+    member_id: "m1",
+    member_name: "Jane Doe",
+    detected_at: "2026-08-05T00:00:00.000Z",
+    recency: "recent",
+    entry: POSITION,
+    ...overrides,
+  });
+
+  it("records a change once and ignores it on re-scan", () => {
+    const store = new AdminBotMemoryStore();
+    expect(store.recordCvChanges([event()])).toHaveLength(1);
+    // A later scan re-reporting the same entry must not re-date it, or an old move would keep
+    // resurfacing in every digest.
+    expect(
+      store.recordCvChanges([event({ detected_at: "2026-09-01T00:00:00.000Z" })]),
+    ).toHaveLength(0);
+    expect(store.listCvChangesSince("2026-01-01T00:00:00.000Z")).toHaveLength(1);
+  });
+
+  it("keeps the same entry apart for different members", () => {
+    const store = new AdminBotMemoryStore();
+    store.recordCvChanges([event(), event({ member_id: "m2", member_name: "Ada" })]);
+    expect(store.listCvChangesSince("2026-01-01T00:00:00.000Z")).toHaveLength(2);
+  });
+
+  it("returns only what falls inside the window, oldest first", () => {
+    const store = new AdminBotMemoryStore();
+    store.recordCvChanges([
+      event({ detected_at: "2026-06-01T00:00:00.000Z" }),
+      event({ member_id: "m2", detected_at: "2026-08-01T00:00:00.000Z" }),
+      event({ member_id: "m3", detected_at: "2026-07-01T00:00:00.000Z" }),
+    ]);
+    const since = store.listCvChangesSince("2026-07-01T00:00:00.000Z");
+    expect(since.map((row) => row.member_id)).toEqual(["m3", "m2"]);
   });
 });

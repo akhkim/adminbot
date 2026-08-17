@@ -7,6 +7,7 @@ import type {
   AdminBotApprovalRequest,
   AdminBotAuditEvent,
   AdminBotAuthSession,
+  AdminBotCvChangeEvent,
   AdminBotRegistrationStatus,
   AdminBotExecutionRequest,
   AdminBotExecutionResult,
@@ -89,6 +90,10 @@ export type AdminBotServiceStore = {
   saveLabMember(member: AdminBotLabMember): void;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(): AdminBotLabMember[];
+  // Returns the events actually inserted. A change already on record is ignored rather than
+  // re-dated, so re-scanning cannot make an old move look like it just happened.
+  recordCvChanges(events: AdminBotCvChangeEvent[]): AdminBotCvChangeEvent[];
+  listCvChangesSince(sinceIso: string): AdminBotCvChangeEvent[];
   savePaper(paper: AdminBotPaperRecord): void;
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
   listPapers(): AdminBotPaperRecord[];

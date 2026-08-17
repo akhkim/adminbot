@@ -416,11 +416,24 @@ export type AdminBotCvEntry = {
   kind: AdminBotCvEntryKind;
   title: string;
   organization: string;
-  // Free text exactly as printed on the CV ("Sept 2025", "2024-present"). Not normalized to a
-  // date: CVs write ranges a hundred ways, and a wrong parse would invent career events.
+  // Free text exactly as printed on the CV ("Sept 2025", "2024-present"). Kept verbatim because
+  // it is what the newsletter quotes back, and because CVs write ranges a hundred ways.
   start?: string;
   end?: string;
+  // `start` normalized to YYYY-MM, for deciding whether an entry describes something that just
+  // happened. Absent whenever the model could not place the date with confidence — a missing value
+  // means "unknown", never "old", so an undated entry is reported for a human rather than
+  // silently dropped or silently announced.
+  start_iso?: string;
 };
+
+// Why an added entry is, or is not, news.
+//
+// A CV edit is not a career event. Someone backfilling a 2019 internship has changed their
+// document, not their career, and announcing it would be wrong in a way that is obvious to every
+// reader but invisible to a plain diff. The three cases are kept apart rather than collapsed into
+// a boolean so the console can show what was skipped and why.
+export type AdminBotCvRecency = "recent" | "backfilled" | "undated";
 
 export type AdminBotCvSnapshot = {
   fetched_at: string;
@@ -433,14 +446,48 @@ export type AdminBotCvSnapshot = {
 // What one member's CV produced on a scan. `status` is a closed set rather than an ok/error pair
 // so the console can tell "nothing changed" apart from "we could not read it" -- they look the
 // same in a count but mean opposite things to whoever is chasing the roster.
+// One entry that appeared on a CV, with the judgement of whether it is news.
+export type AdminBotCvChange = {
+  entry: AdminBotCvEntry;
+  recency: AdminBotCvRecency;
+};
+
 export type AdminBotCvScanMemberResult = {
   member_id: string;
   member_name: string;
   status: "unchanged" | "changed" | "first_scan" | "skipped" | "failed";
   // Present when status is "failed" or "skipped": why this member produced nothing.
   reason?: string;
-  added: AdminBotCvEntry[];
+  added: AdminBotCvChange[];
+  // Removals carry no recency: taking a line off a CV says nothing about when the thing happened,
+  // and it is never drafted either way.
   removed: AdminBotCvEntry[];
+};
+
+/**
+ * Identity of a CV entry, for diffing and for the stored-change primary key.
+ *
+ * Dates are deliberately excluded. CVs get retyped and reformatted constantly ("Sept 2025" becomes
+ * "09/2025"), and keying on the date would report every such edit as a new job. Recency is judged
+ * separately, from `start_iso`.
+ *
+ * One definition, here rather than beside either caller, because the differ and the store must
+ * agree exactly: if they drifted, a change would be re-reported on every scan.
+ */
+export function cvEntryKey(entry: AdminBotCvEntry): string {
+  const normalize = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/gu, " ");
+  return [entry.kind, normalize(entry.title), normalize(entry.organization)].join(" ");
+}
+
+// A change, as stored. `detected_at` is when the scan noticed it, which is deliberately not the
+// same as when it happened — a member who updates their CV in September for a July move is
+// detected in September, and the digest window is about what the lab learned, not what occurred.
+export type AdminBotCvChangeEvent = {
+  member_id: string;
+  member_name: string;
+  detected_at: string;
+  recency: AdminBotCvRecency;
+  entry: AdminBotCvEntry;
 };
 
 export type AdminBotCvScanResult = {

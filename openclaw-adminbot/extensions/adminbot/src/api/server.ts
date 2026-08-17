@@ -18,7 +18,12 @@ import type {
   AdminBotRemovePendingRequest,
   AdminBotSettingsInput,
 } from "../contracts/actions.js";
-import { runAdminBotCvScan, type AdminBotCvScanDeps } from "../cv-scan.js";
+import {
+  buildNewsletterDraft,
+  draftMemberBlurb,
+  runAdminBotCvScan,
+  type AdminBotCvScanDeps,
+} from "../cv-scan.js";
 import { askGuidebook } from "../guidebook/ask.js";
 import {
   AdminBotMemoryStore,
@@ -272,6 +277,9 @@ function createAnonymousRateLimiter(): AnonymousRateLimiter {
 
 type AdminBotRouteContext = {
   service: AdminBotService;
+  // The raw store, for the CV change ledger. Everything else goes through the service; this is
+  // append-only bookkeeping with no policy of its own, so it does not earn a service method.
+  store: AdminBotServiceStore;
   auth: AdminBotAuthService;
   privacyBroker: AdminBotPrivacyBroker;
   sensitiveInfo: AdminBotSensitiveInfoDocument;
@@ -413,6 +421,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     : undefined;
   const ctx: AdminBotRouteContext = {
     service,
+    store,
     auth,
     privacyBroker,
     sensitiveInfo,
@@ -469,6 +478,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   return {
     server,
     service,
+    store,
     auth,
     async listen(port = 8765, host = "127.0.0.1") {
       await listen(server, port, host);
@@ -970,7 +980,82 @@ async function handleAuthenticatedRoute(
         }
       }
     }
+    // Recorded after the snapshots are saved, so a member whose snapshot failed to store does not
+    // leave a change on the ledger the next scan would then never re-detect.
+    ctx.store.recordCvChanges(
+      result.results
+        .filter((entry) => entry.status === "changed")
+        .flatMap((entry) =>
+          entry.added.map((change) => ({
+            member_id: entry.member_id,
+            member_name: entry.member_name,
+            detected_at: result.scanned_at,
+            recency: change.recency,
+            entry: change.entry,
+          })),
+        ),
+    );
     sendJson(res, 200, result);
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/cv/digest") {
+    // Answers "what changed since X" from the ledger rather than from the last scan, which has
+    // already consumed its own diff by updating the snapshots.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const since = url.searchParams.get("since")?.trim();
+    if (!since || Number.isNaN(Date.parse(since))) {
+      sendJson(res, 400, { error: { message: "since must be an ISO timestamp" } });
+      return;
+    }
+    const changes = ctx.store.listCvChangesSince(since);
+    sendJson(res, 200, {
+      since,
+      changes,
+      newsletter_draft: buildNewsletterDraft(
+        changes.map((change) => ({
+          memberName: change.member_name,
+          change: { entry: change.entry, recency: change.recency },
+        })),
+      ),
+    });
+    return;
+  }
+  const blurb = /^\/cv\/blurb\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "POST" && blurb?.[1]) {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const member = ctx.store.getLabMember(decodeURIComponent(blurb[1]));
+    if (!member) {
+      sendJson(res, 404, { error: { message: "member not found" } });
+      return;
+    }
+    const entries = member.cv_snapshot?.entries ?? [];
+    if (!entries.length) {
+      // Distinct from a model failure: there is nothing wrong, this member's CV has simply never
+      // been scanned, and the fix is to scan rather than to retry.
+      sendJson(res, 409, {
+        error: { message: `${member.name} has no scanned CV yet — run a CV scan first` },
+      });
+      return;
+    }
+    try {
+      const text = await draftMemberBlurb(
+        {
+          name: member.name,
+          ...(member.role ? { role: member.role } : {}),
+          ...(member.research_topics?.length ? { research_topics: member.research_topics } : {}),
+        },
+        entries,
+      );
+      sendJson(res, 200, { member_id: member.id, blurb: text });
+    } catch (error) {
+      sendJson(res, 502, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+      });
+    }
     return;
   }
   if (req.method === "POST" && url.pathname === "/members/directory/refresh-slack") {
