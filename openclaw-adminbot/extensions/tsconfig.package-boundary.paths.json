@@ -41,9 +41,6 @@
       "openclaw/plugin-sdk/plugin-test-runtime": [
         "../packages/plugin-sdk/dist/src/plugin-sdk/plugin-test-runtime.d.ts"
       ],
-      "openclaw/plugin-sdk/provider-http-test-mocks": [
-        "../packages/plugin-sdk/dist/src/plugin-sdk/provider-http-test-mocks.d.ts"
-      ],
       "openclaw/plugin-sdk/provider-test-contracts": [
         "../packages/plugin-sdk/dist/src/plugin-sdk/provider-test-contracts.d.ts"
       ],

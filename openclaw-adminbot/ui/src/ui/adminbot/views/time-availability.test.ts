@@ -1,245 +1,769 @@
 import { render } from "lit";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import { i18n } from "../../../i18n/index.ts";
+import { describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
+import { upcomingMajorDeadlines } from "../data/deadline-time.ts";
 import {
+  allocationBins,
+  rangeBins,
+  draftError,
+  draftToPatch,
+  EMPTY_MILESTONE_DRAFT,
+  EMPTY_TIME_AVAILABILITY_DRAFT,
+  milestoneDraftError,
   renderAdminBotTimeAvailability,
   type AdminBotTimeAvailabilityProps,
 } from "./time-availability.ts";
 
-function member(
-  id: string,
-  name: string,
-  workload: Pick<AdminBotLabMember, "hours_per_week" | "availability"> = {},
-): AdminBotLabMember {
+// 40h capacity is the reference line the chart draws; commitments are shown in raw hours/week.
+function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
   return {
-    id,
-    name,
-    ...workload,
-    privilege_level: "admin",
-    access: [],
-    created_at: "2026-08-05T00:00:00.000Z",
-    updated_at: "2026-08-05T00:00:00.000Z",
-  };
+    id: "m1",
+    name: "Ada",
+    hours_per_week: 40,
+    availability: [
+      { start: "2026-03-02", end: "2026-03-15", project: "Alignment", hours_per_week: 20 },
+    ],
+    ...overrides,
+  } as AdminBotLabMember;
 }
 
-const members = [
-  member("mem_ded86fcd", "Local Dev Admin", {
-    hours_per_week: 40,
-    availability: [
-      { project: "task1", start: "2026-05-08", end: "2026-05-11", hours_per_week: 20 },
-      { project: "task2", start: "2026-05-09", end: "2026-05-12", hours_per_week: 12 },
-    ],
-  }),
-  member("mem_19f9c11f", "Local Dev Admin 2", {
-    hours_per_week: 40,
-    availability: [
-      { project: "task1", start: "2026-05-13", end: "2026-05-17", hours_per_week: 24 },
-      { project: "task2", start: "2026-05-14", end: "2026-05-19", hours_per_week: 16 },
-    ],
-  }),
-];
+function tasks(
+  entries: Array<{ key: string; name: string; start: string; end: string; hours: number }>,
+) {
+  return entries;
+}
+
+function props(overrides: Partial<AdminBotTimeAvailabilityProps> = {}) {
+  return {
+    members: [member()],
+    loading: false,
+    error: null,
+    selectedMemberId: "m1",
+    onMemberChange: () => {},
+    range: "month" as const,
+    onRangeChange: () => {},
+    viewerMemberId: "m1",
+    draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT },
+    onDraftChange: () => {},
+    awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "vacation" as const },
+    onAwayDraftChange: () => {},
+    milestoneDraft: { ...EMPTY_MILESTONE_DRAFT },
+    onMilestoneDraftChange: () => {},
+    onSaveSchedule: () => {},
+    saving: false,
+    ...overrides,
+  } satisfies AdminBotTimeAvailabilityProps;
+}
 
 function renderView(overrides: Partial<AdminBotTimeAvailabilityProps> = {}): HTMLElement {
   const container = document.createElement("div");
-  render(
-    renderAdminBotTimeAvailability({
-      members,
-      loading: false,
-      error: null,
-      selectedMemberId: "",
-      onMemberChange: () => undefined,
-      ...overrides,
-    }),
-    container,
-  );
+  render(renderAdminBotTimeAvailability(props(overrides)), container);
   return container;
 }
 
-describe("renderAdminBotTimeAvailability", () => {
-  beforeEach(async () => {
-    await i18n.setLocale("en");
+const NOW = Date.UTC(2026, 2, 2); // Monday 2 March 2026
+
+describe("rangeBins", () => {
+  it("gives a week seven day-long bins from today", () => {
+    const bins = rangeBins("week", NOW);
+    expect(bins).toHaveLength(7);
+    expect(bins[0].startMs).toBe(NOW);
+    expect((bins[0].endMs - bins[0].startMs) / 86_400_000).toBe(1);
+    expect(bins.at(-1)?.endMs).toBe(NOW + 7 * 86_400_000);
   });
 
-  it("renders the saved users in the selector", () => {
-    const container = renderView();
-
-    expect(container.querySelector(".card-title")?.textContent).toBe("Time Avaliability:");
-    expect(
-      [
-        ...container.querySelectorAll<HTMLOptionElement>('select[aria-label="Select user"] option'),
-      ].map((option) => ({
-        label: option.textContent,
-        value: option.value,
-      })),
-    ).toEqual([
-      { label: "Select user", value: "" },
-      { label: "Local Dev Admin", value: "mem_ded86fcd" },
-      { label: "Local Dev Admin 2", value: "mem_19f9c11f" },
-    ]);
+  it("gives a month four week-long bins from today", () => {
+    const bins = rangeBins("month", NOW);
+    expect(bins).toHaveLength(4);
+    for (const bin of bins) {
+      expect((bin.endMs - bin.startMs) / 86_400_000).toBe(7);
+    }
   });
 
-  it("renders the selected user's saved allocations as a stacked chart and task table", () => {
-    const container = renderView({ selectedMemberId: "mem_ded86fcd" });
-
-    expect(container.querySelector("svg")?.getAttribute("aria-label")).toBe(
-      "Time allocation chart for Local Dev Admin",
+  // Months are not equal lengths, so these step by the calendar rather than by a day count.
+  it("gives a year twelve calendar-month bins", () => {
+    const bins = rangeBins("year", NOW);
+    expect(bins).toHaveLength(12);
+    expect(new Date(bins[0].startMs).getUTCDate()).toBe(1);
+    expect(new Set(bins.map((bin) => (bin.endMs - bin.startMs) / 86_400_000)).size).toBeGreaterThan(
+      1,
     );
+    expect(bins.map((bin) => bin.label)).toContain("Dec");
+  });
+});
+
+describe("allocationBins", () => {
+  const march = tasks([
+    { key: "a", name: "Alignment", start: "2026-03-01", end: "2026-03-31", hours: 21 },
+  ]);
+
+  // Everything is stored as hours per week, so a bar is that rate prorated over the days its bin
+  // covers. That is what makes the three ranges comparable.
+  it("prorates a weekly rate over the days a bin covers", () => {
+    expect(allocationBins(march, [], "week", NOW)[0].total).toBeCloseTo(3, 5);
+    expect(allocationBins(march, [], "month", NOW)[0].total).toBeCloseTo(21, 5);
+  });
+
+  it("counts only the days a commitment actually covers in the bin", () => {
+    const late = tasks([{ key: "a", name: "A", start: "2026-03-05", end: "2026-03-31", hours: 21 }]);
+    expect(allocationBins(late, [], "month", NOW)[0].total).toBeCloseTo((21 * 4) / 7, 5);
+  });
+
+  it("stacks overlapping commitments in the same bin", () => {
+    const both = allocationBins(
+      tasks([
+        { key: "a", name: "A", start: "2026-03-01", end: "2026-03-31", hours: 14 },
+        { key: "b", name: "B", start: "2026-03-01", end: "2026-03-31", hours: 7 },
+      ]),
+      [],
+      "month",
+      NOW,
+    )[0];
+    expect(both.allocations.map((allocation) => allocation.key)).toEqual(["a", "b"]);
+    expect(both.total).toBeCloseTo(21, 5);
+  });
+
+  it("keeps empty bins so a gap in the schedule reads as a gap", () => {
+    const bins = allocationBins(
+      tasks([{ key: "a", name: "A", start: "2026-03-01", end: "2026-03-07", hours: 21 }]),
+      [],
+      "month",
+      NOW,
+    );
+    expect(bins).toHaveLength(4);
+    expect(bins[0].total).toBeGreaterThan(0);
+    expect(bins.at(-1)?.total).toBe(0);
+  });
+
+  it("returns the range's bins even with no commitments at all", () => {
+    expect(allocationBins([], [], "week", NOW)).toHaveLength(7);
+  });
+});
+
+describe("draftError", () => {
+  const valid = {
+    ...EMPTY_TIME_AVAILABILITY_DRAFT,
+    category: "jinesis" as const,
+    project: "Alignment",
+    start: "2026-03-02",
+    end: "2026-03-15",
+    hoursPerWeek: "20",
+  };
+
+  it("accepts a complete row", () => {
+    expect(draftError(valid)).toBeNull();
+  });
+
+  it("requires both dates", () => {
+    expect(draftError({ ...valid, start: "" })).not.toBeNull();
+    expect(draftError({ ...valid, end: "" })).not.toBeNull();
+  });
+
+  it("rejects an end before the start", () => {
+    expect(draftError({ ...valid, start: "2026-03-15", end: "2026-03-02" })).not.toBeNull();
+  });
+
+  // Mirrors the service's own bound (validateMember in the kernel), so the common mistakes never
+  // cost a round trip.
+  it("rejects hours outside 0-168", () => {
+    expect(draftError({ ...valid, hoursPerWeek: "0" })).not.toBeNull();
+    expect(draftError({ ...valid, hoursPerWeek: "200" })).not.toBeNull();
+    expect(draftError({ ...valid, hoursPerWeek: "abc" })).not.toBeNull();
+  });
+});
+
+describe("renderAdminBotTimeAvailability", () => {
+  // Editing is self-only: the service routes a member session to its own record, so showing the
+  // form on someone else's schedule would only ever produce a 403.
+  it("shows the editor on your own schedule and hides it on someone else's", () => {
+    expect(renderView().querySelector('[data-testid="time-availability-editor"]')).not.toBeNull();
     expect(
-      [...container.querySelectorAll(".adminbot-time-chart__legend span")].map((item) =>
-        item.textContent?.trim(),
+      renderView({ viewerMemberId: "someone-else" }).querySelector(
+        '[data-testid="time-availability-editor"]',
       ),
-    ).toEqual(["task1", "task2"]);
-    expect(container.querySelectorAll(".adminbot-time-chart__segment")).toHaveLength(4);
+    ).toBeNull();
+  });
+
+  it("appends the drafted commitment to the existing rows on submit", () => {
+    const onSaveSchedule = vi.fn();
+    const container = renderView({
+      onSaveSchedule,
+      draft: {
+        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+        project: "Writing",
+        start: "2026-04-01",
+        end: "2026-04-30",
+        hoursPerWeek: "10",
+        note: "thesis",
+      },
+    });
+    container.querySelector<HTMLFormElement>(".adminbot-time-availability__form")?.requestSubmit();
+
+    expect(onSaveSchedule).toHaveBeenCalledTimes(1);
+    const [memberId, patch] = onSaveSchedule.mock.calls[0];
+    expect(memberId).toBe("m1");
+    // The stored row survives alongside the new one -- the whole list is what gets written.
+    expect(patch.availability).toHaveLength(2);
+    expect(patch.availability[1]).toEqual({
+      start: "2026-04-01",
+      end: "2026-04-30",
+      hours_per_week: 10,
+      project: "Writing",
+      note: "thesis",
+    });
+  });
+
+  it("does not submit an invalid draft", () => {
+    const onSaveSchedule = vi.fn();
+    const container = renderView({
+      onSaveSchedule,
+      draft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, start: "2026-04-30", end: "2026-04-01" },
+    });
+    container.querySelector<HTMLFormElement>(".adminbot-time-availability__form")?.requestSubmit();
+    expect(onSaveSchedule).not.toHaveBeenCalled();
+  });
+
+  // The chart measures effort against a weekly capacity, so an unset one is charted against a
+  // nominal full week and said out loud rather than left as a silently wrong scale.
+  it("still charts when no weekly capacity is set, and says the scale is assumed", () => {
+    const container = renderView({ members: [member({ hours_per_week: undefined })] });
+    expect(container.querySelector("adminbot-effort-stack-chart")).not.toBeNull();
+    expect(container.querySelector('[data-testid="time-availability-no-capacity"]')).not.toBeNull();
+  });
+});
+
+describe("the holiday override", () => {
+  const work = [{ key: "a", name: "Atlas", start: "2026-03-01", end: "2026-03-31", hours: 21 }];
+
+  // Whole-day time off removes days from the bin before anything is booked against it, so a week
+  // with two days off books five-sevenths of its commitments.
+  it("scales a bin down by the days the member is away", () => {
+    const bins = allocationBins(
+      work,
+      [{ start: "2026-03-02", end: "2026-03-03", kind: "vacation", availability: "none" }],
+      "month",
+      NOW,
+    );
+    expect(bins[0].total).toBeCloseTo((21 * 5) / 7, 5);
+  });
+
+  // Away for the entire bin: nothing is bookable, which the chart draws as absence, not a zero.
+  it("marks a bin the member is away for the whole of", () => {
+    const bins = allocationBins(
+      work,
+      [{ start: "2026-03-02", end: "2026-03-08", kind: "vacation", availability: "none" }],
+      "month",
+      NOW,
+    );
+    expect(bins[0].suppressed).toBe(true);
+    expect(bins[0].total).toBe(0);
+    expect(bins[1].suppressed).toBe(false);
+    expect(bins[1].total).toBeGreaterThan(0);
+  });
+
+  it("leaves a partial row alone", () => {
+    const bins = allocationBins(
+      work,
+      [{ start: "2026-03-02", end: "2026-03-08", kind: "course_load", availability: "partial" }],
+      "month",
+      NOW,
+    );
+    expect(bins[0].suppressed).toBe(false);
+    expect(bins[0].total).toBeCloseTo(21, 5);
+  });
+
+  // Two holidays over the same days must not cancel more work than the member is away for.
+  it("counts an overlapping pair of holidays once", () => {
+    const bins = allocationBins(
+      work,
+      [
+        { start: "2026-03-02", end: "2026-03-04", kind: "vacation", availability: "none" },
+        { start: "2026-03-03", end: "2026-03-05", kind: "personal", availability: "none" },
+      ],
+      "month",
+      NOW,
+    );
+    expect(bins[0].total).toBeCloseTo((21 * 3) / 7, 5);
+  });
+});
+
+describe("the chart", () => {
+  // The chart itself is recharts inside a custom element, so what this page owns is the element
+  // and the properties handed to it: the bin width the range asks for, and the tasks to stack.
+  it("bins by day, week or month to match the chosen range", () => {
+    const interval = (range: "week" | "month" | "year") =>
+      (
+        renderView({ range }).querySelector("adminbot-effort-stack-chart") as unknown as {
+          interval: string;
+        }
+      ).interval;
+    expect(interval("week")).toBe("day");
+    expect(interval("month")).toBe("week");
+    expect(interval("year")).toBe("month");
+  });
+
+  // ~200 people on the roster: a <select> could only be searched by native type-ahead, which
+  // matches from the start of the option text, so anyone who typed the part of a name they
+  // remembered got nothing.
+  it("filters the member list by what you type", async () => {
+    const container = renderView({
+      members: [
+        member({ id: "one", name: "Yahang Qi" } as Partial<AdminBotLabMember>),
+        member({ id: "two", name: "Xuanqiang Angelo Huang" } as Partial<AdminBotLabMember>),
+      ],
+    });
+    document.body.append(container);
+    const picker = container.querySelector("adminbot-member-select") as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    await picker.updateComplete;
+    const input = container.querySelector<HTMLInputElement>(
+      '[data-testid="time-availability-member-search"]',
+    )!;
+    input.dispatchEvent(new Event("focus"));
+    input.value = "angelo";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await picker.updateComplete;
+
+    const shown = [...container.querySelectorAll(".country-select__option")].map(
+      (option) => option.textContent?.trim() ?? "",
+    );
+    expect(shown.length).toBe(1);
+    expect(shown[0]).toContain("Xuanqiang Angelo Huang");
+    container.remove();
+  });
+
+  it("offers the three ranges and marks the active one", () => {
+    const onRangeChange = vi.fn();
+    const container = renderView({ range: "year", onRangeChange });
     expect(
-      [...container.querySelectorAll(".adminbot-time-chart__total")].map((item) =>
-        item.textContent?.trim(),
-      ),
-    ).toEqual(["50%", "80%", "30%"]);
-    expect(
-      [...container.querySelectorAll(".adminbot-time-chart__axis-label--timeline")].map((item) =>
-        item.textContent?.trim(),
-      ),
-    ).toEqual(["May 8 → May 9", "May 9 → May 12", "May 12 → May 13"]);
-    expect(container.querySelector("desc")?.textContent).toContain("total 80%");
-    expect(
-      [...container.querySelectorAll(".adminbot-time-allocation-table tbody tr")].map((row) =>
-        [...row.querySelectorAll("td")].map((cell) => cell.textContent?.trim()),
-      ),
-    ).toEqual([
-      ["task1", "05/08/2026", "05/11/2026", "50%"],
-      ["task2", "05/09/2026", "05/12/2026", "30%"],
+      container
+        .querySelector('[data-testid="time-availability-range-year"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-range-week"]')
+      ?.click();
+    expect(onRangeChange).toHaveBeenCalledWith("week");
+  });
+
+  // Capacity is the headroom reading. Declared, it is stated on the card and becomes the chart's
+  // 100% line; undeclared, the tab says so instead of quietly scaling to the tallest bar.
+  it("states the capacity when the member declared one, and flags it when they did not", () => {
+    expect(renderView().querySelector(".pill")?.textContent).toContain("40");
+    expect(renderView().querySelector('[data-testid="time-availability-no-capacity"]')).toBeNull();
+
+    const without = renderView({
+      members: [member({ hours_per_week: undefined } as Partial<AdminBotLabMember>)],
+    });
+    expect(without.querySelector('[data-testid="time-availability-no-capacity"]')).not.toBeNull();
+  });
+});
+
+describe("the whole-day toggle", () => {
+  it("offers it for a time-away category, ticked by default", () => {
+    const container = renderView({
+      awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "vacation" },
+    });
+    const box = container.querySelector<HTMLInputElement>(
+      '[data-testid="time-availability-whole-day"]',
+    );
+    expect(box).not.toBeNull();
+    expect(box?.checked).toBe(true);
+  });
+
+  // Jinesis work is measured in hours, so "away the whole day" is not a question it answers.
+  // The toggle lives in the time-away form only. The Jinesis form asks for hours instead, and
+  // now that they are two forms neither ever shows the other's field.
+  it("keeps the toggle out of the Jinesis form, which asks for hours instead", () => {
+    const container = renderView();
+    const jinesis = container.querySelector('[data-testid="time-availability-editor"]')!;
+    const away = container.querySelector('[data-testid="time-away-editor"]')!;
+    expect(jinesis.querySelector('[data-testid="time-availability-whole-day"]')).toBeNull();
+    expect(jinesis.querySelector('[data-testid="time-availability-hours"]')).not.toBeNull();
+    expect(away.querySelector('[data-testid="time-availability-whole-day"]')).not.toBeNull();
+    expect(away.querySelector('[data-testid="time-availability-hours"]')).toBeNull();
+  });
+});
+
+describe("draftToPatch", () => {
+  const empty = { availability: [], timeOff: [] };
+
+  it("writes a Jinesis commitment to the availability list with its hours", () => {
+    const patch = draftToPatch(
+      {
+        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+        category: "jinesis",
+        project: "Atlas",
+        start: "2026-03-02",
+        end: "2026-03-15",
+        hoursPerWeek: "20",
+        link: "https://example.com/board",
+      },
+      empty,
+    );
+    expect(patch.time_off).toBeUndefined();
+    expect(patch.availability).toEqual([
+      {
+        start: "2026-03-02",
+        end: "2026-03-15",
+        hours_per_week: 20,
+        project: "Atlas",
+        link: "https://example.com/board",
+      },
     ]);
   });
 
-  it("reads distinct saved allocations for the second user", () => {
-    const container = renderView({ selectedMemberId: "mem_19f9c11f" });
-    const efforts = [
-      ...container.querySelectorAll(".adminbot-time-allocation-table tbody td:last-child"),
-    ].map((cell) => cell.textContent?.trim());
-
-    expect(efforts).toEqual(["60%", "40%"]);
+  // Everything that is not Jinesis work is time away, and defaults to a whole day off.
+  it("writes any other category to time off as a whole day off", () => {
+    const patch = draftToPatch(
+      {
+        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+        category: "vacation",
+        start: "2026-12-24",
+        end: "2027-01-02",
+      },
+      empty,
+    );
+    expect(patch.availability).toBeUndefined();
+    expect(patch.time_off).toEqual([
+      { start: "2026-12-24", end: "2027-01-02", kind: "vacation", availability: "none" },
+    ]);
   });
 
-  it("does not invent allocations for a user without saved availability", () => {
-    const emptyMember = member("mem_empty", "No Schedule", { hours_per_week: 40 });
-    const container = renderView({
-      members: [emptyMember],
-      selectedMemberId: emptyMember.id,
+  // "Whole day" is the default, not the only option: the table already renders imported "Partial"
+  // rows, so a member needs some way to record and correct one.
+  it("records reduced availability when the whole-day box is unticked", () => {
+    const patch = draftToPatch(
+      {
+        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+        category: "course_load",
+        wholeDay: false,
+        start: "2026-09-01",
+        end: "2026-12-15",
+      },
+      empty,
+    );
+    expect(patch.time_off?.[0]).toMatchObject({ availability: "partial" });
+  });
+
+  it("carries the member's own name through for the 'other' category", () => {
+    const patch = draftToPatch(
+      {
+        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+        category: "other",
+        customLabel: "Reading week",
+        start: "2026-10-13",
+        end: "2026-10-17",
+      },
+      empty,
+    );
+    expect(patch.time_off?.[0]).toMatchObject({ kind: "other", label: "Reading week" });
+  });
+
+  it("appends rather than replacing", () => {
+    const patch = draftToPatch(
+      {
+        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+        category: "personal",
+        start: "2026-05-01",
+        end: "2026-05-02",
+      },
+      {
+        availability: [],
+        timeOff: [
+          { start: "2026-01-01", end: "2026-01-02", kind: "vacation", availability: "none" },
+        ],
+      },
+    );
+    expect(patch.time_off).toHaveLength(2);
+  });
+});
+
+describe("draft validation for the new fields", () => {
+  const base = {
+    ...EMPTY_TIME_AVAILABILITY_DRAFT,
+    start: "2026-03-02",
+    end: "2026-03-15",
+  };
+
+  // Only Jinesis work costs weekly hours, so the rest must not demand a number.
+  it("does not require hours for a non-Jinesis category", () => {
+    expect(draftError({ ...base, category: "vacation" })).toBeNull();
+    expect(draftError({ ...base, category: "jinesis" })).not.toBeNull();
+  });
+
+  it("requires a name when the category is 'other'", () => {
+    expect(draftError({ ...base, category: "other" })).not.toBeNull();
+    expect(draftError({ ...base, category: "other", customLabel: "Reading week" })).toBeNull();
+  });
+
+  // Matches validateExternalLink server-side: these render as anchors.
+  it("rejects a link that is not https", () => {
+    expect(
+      draftError({ ...base, category: "vacation", link: "http://example.com" }),
+    ).not.toBeNull();
+    expect(draftError({ ...base, category: "vacation", link: "example.com" })).not.toBeNull();
+    expect(draftError({ ...base, category: "vacation", link: "https://example.com" })).toBeNull();
+  });
+});
+
+describe("milestoneDraftError", () => {
+  it("requires a date and a name", () => {
+    expect(milestoneDraftError({ ...EMPTY_MILESTONE_DRAFT })).not.toBeNull();
+    expect(milestoneDraftError({ date: "2027-06-12", label: "", link: "" })).not.toBeNull();
+    expect(milestoneDraftError({ date: "2027-06-12", label: "Graduation", link: "" })).toBeNull();
+  });
+
+  it("rejects a non-https link", () => {
+    expect(
+      milestoneDraftError({ date: "2027-06-12", label: "Graduation", link: "http://x.com" }),
+    ).not.toBeNull();
+  });
+});
+
+describe("the split tables and the deadline panel", () => {
+  const scheduled = () =>
+    member({
+      time_off: [
+        { start: "2026-12-24", end: "2027-01-02", kind: "vacation", availability: "none" },
+      ],
+      milestones: [{ date: "2027-06-12", label: "Graduation" }],
     });
 
-    expect(container.querySelector("svg")).toBeNull();
-    expect(container.textContent).toContain("This user has no saved time allocations.");
+  it("separates Jinesis commitments from everything else", () => {
+    const container = renderView({ members: [scheduled()] });
+    const jinesis = container.querySelector('[data-testid="time-availability-jinesis-table"]');
+    const other = container.querySelector('[data-testid="time-availability-other-table"]');
+    expect(jinesis?.textContent).toContain("Alignment");
+    expect(other?.textContent).toContain("Holiday");
+    expect(other?.textContent).toContain("Whole day off");
+    // The holiday is not a Jinesis commitment, so it must not appear in that table.
+    expect(jinesis?.textContent).not.toContain("Holiday");
   });
 
-  it("treats zero-hour rows as no allocations when weekly capacity is saved", () => {
-    const zeroMember = member("mem_zero", "Zero Hours", {
-      hours_per_week: 40,
-      availability: [
-        { project: "paused task", start: "2026-05-08", end: "2026-05-12", hours_per_week: 0 },
+  it("shows hours per week rather than a percentage", () => {
+    const container = renderView();
+    expect(
+      container.querySelector('[data-testid="time-availability-jinesis-table"]')?.textContent,
+    ).toContain("20 h");
+  });
+
+  // The member's own dates plus the two conference deadlines the whole lab plans around. The
+  // conferences come from the bundled snapshot the Deadlines tab already ships, through the same
+  // helper, so the two surfaces can never name a different "next" conference.
+  it("shows the member's own milestones alongside the next two conference deadlines", () => {
+    const panel = renderView({ members: [scheduled()] }).querySelector(
+      '[data-testid="time-availability-deadlines"]',
+    );
+    expect(panel?.textContent).toContain("Graduation");
+    const expected = upcomingMajorDeadlines(Date.now(), 2);
+    expect(expected.length).toBe(2);
+    for (const entry of expected) {
+      expect(panel?.textContent).toContain(entry.venue.name);
+    }
+  });
+
+  // A full personal list must not push the conference rows off the banner.
+  it("keeps the conference rows even when the member has their own deadlines", () => {
+    const own = Array.from({ length: 8 }, (_, index) => ({
+      date: `2027-0${(index % 9) + 1}-15`,
+      label: `Personal ${index}`,
+    }));
+    const panel = renderView({
+      members: [scheduled({ milestones: own } as Partial<AdminBotLabMember>)],
+    }).querySelector('[data-testid="time-availability-deadlines"]');
+    for (const entry of upcomingMajorDeadlines(Date.now(), 2)) {
+      expect(panel?.textContent).toContain(entry.venue.name);
+    }
+  });
+
+  // The banner says what the list holds; the reminder about what belongs in it sits on the form
+  // that adds one, which is the moment it is useful.
+  it("says on the banner that own deadlines stay private", () => {
+    const panel = renderView({ members: [scheduled()] }).querySelector(
+      '[data-testid="time-availability-deadlines"]',
+    );
+    const hint = panel?.querySelector(".adminbot-time-availability__deadline-hint")?.textContent;
+    expect(hint?.toLowerCase()).toContain("private");
+  });
+
+  it("reminds the member on the add form that thesis deadlines belong here too", () => {
+    const editor = renderView({ members: [scheduled()] }).querySelector(
+      '[data-testid="time-availability-milestone-editor"]',
+    );
+    expect(editor?.querySelector(".card-title")?.textContent).toContain("Add a big deadline");
+    expect(editor?.textContent).toContain("thesis");
+  });
+
+  // Each deadline carries the urgency band the Deadlines board and the dashboard summary use, so
+  // "how close is this" is answered the same way wherever a member reads it.
+  it("bands each deadline by how close it is", () => {
+    const soon = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+    const panel = renderView({
+      members: [
+        member({ milestones: [{ date: soon, label: "Thesis proposal" }] } as Partial<AdminBotLabMember>),
+      ],
+    }).querySelector('[data-testid="time-availability-deadlines"]')!;
+    const own = [...panel.querySelectorAll("li")].find((row) =>
+      row.textContent?.includes("Thesis proposal"),
+    );
+    expect(own?.getAttribute("data-urgency")).toBe("critical");
+    expect(own?.textContent).toContain("In 2 days");
+  });
+
+  // The banner reads; the form that writes lives with the other editors.
+  it("keeps the add-a-deadline form out of the banner", () => {
+    const container = renderView({ members: [scheduled()] });
+    const panel = container.querySelector('[data-testid="time-availability-deadlines"]')!;
+    const form = container.querySelector('[data-testid="time-availability-milestone-form"]')!;
+    expect(form).not.toBeNull();
+    expect(panel.contains(form)).toBe(false);
+    expect(container.querySelector(".adminbot-time-availability__editors")?.contains(form)).toBe(
+      true,
+    );
+  });
+
+  it("offers the milestone form only on your own schedule", () => {
+    expect(
+      renderView({ members: [scheduled()] }).querySelector(
+        '[data-testid="time-availability-milestone-form"]',
+      ),
+    ).not.toBeNull();
+    expect(
+      renderView({ members: [scheduled()], viewerMemberId: "someone-else" }).querySelector(
+        '[data-testid="time-availability-milestone-form"]',
+      ),
+    ).toBeNull();
+  });
+
+  it("adds a milestone through the schedule patch", () => {
+    const onSaveSchedule = vi.fn();
+    const container = renderView({
+      members: [scheduled()],
+      onSaveSchedule,
+      milestoneDraft: { date: "2026-11-03", label: "Thesis draft", link: "" },
+    });
+    container
+      .querySelector<HTMLFormElement>('[data-testid="time-availability-milestone-form"]')
+      ?.requestSubmit();
+    expect(onSaveSchedule).toHaveBeenCalledTimes(1);
+    const [, patch] = onSaveSchedule.mock.calls[0];
+    expect(patch.milestones).toHaveLength(2);
+    expect(patch.milestones[1]).toEqual({ date: "2026-11-03", label: "Thesis draft" });
+  });
+
+  // The hours field is meaningless for time away and must not be asked for.
+  // Two chunks of adding, not one form with a mode switch: a Jinesis commitment costs weekly
+  // hours and lands on `availability`, time away carries none and lands on `time_off`.
+  it("offers both add forms, each with only the fields it stores", () => {
+    const container = renderView();
+    const jinesis = container.querySelector('[data-testid="time-availability-editor"]')!;
+    const away = container.querySelector('[data-testid="time-away-editor"]')!;
+    expect(jinesis).not.toBeNull();
+    expect(away).not.toBeNull();
+    // The Jinesis form has no category picker at all -- its category is pinned.
+    expect(jinesis.querySelector('[data-testid="time-away-category"]')).toBeNull();
+    expect(away.querySelector('[data-testid="time-away-category"]')).not.toBeNull();
+    // Each keeps its own submit, so neither can clear the other's half-typed input.
+    expect(jinesis.querySelector('[data-testid="time-availability-editor-submit"]')).not.toBeNull();
+    expect(away.querySelector('[data-testid="time-away-editor-submit"]')).not.toBeNull();
+  });
+
+  it("never offers Jinesis as a time-away category", () => {
+    const options = [
+      ...renderView()
+        .querySelector('[data-testid="time-away-category"]')!
+        .querySelectorAll("option"),
+    ].map((option) => option.getAttribute("value"));
+    expect(options).not.toContain("jinesis");
+    expect(options).toContain("vacation");
+  });
+
+  // A note is the half of a commitment that the dates and hours cannot carry, and until now it was
+  // write-only: the form stored it and nothing ever showed it back.
+  it("shows the note on a commitment as a closed disclosure under its row", () => {
+    const container = renderView({
+      members: [
+        member({
+          availability: [
+            {
+              start: "2026-03-02",
+              end: "2026-03-15",
+              project: "Alignment",
+              hours_per_week: 20,
+              note: "Only until the submission",
+            },
+          ],
+        }),
       ],
     });
-    const container = renderView({
-      members: [zeroMember],
-      selectedMemberId: zeroMember.id,
-    });
-
-    expect(container.textContent).toContain("This user has no saved time allocations.");
-    expect(container.textContent).not.toContain("Set this user's weekly capacity");
+    const details = container.querySelector<HTMLDetailsElement>(
+      '[data-testid="time-availability-jinesis-table"] .adminbot-time-allocation-table__note',
+    );
+    expect(details).not.toBeNull();
+    expect(details?.open).toBe(false);
+    expect(details?.textContent).toContain("Only until the submission");
   });
 
-  it("does not stack declared open capacity as task effort", () => {
-    const openMember = member("mem_open", "Open Capacity", {
-      hours_per_week: 40,
-      availability: [
-        { project: "task1", start: "2026-05-08", end: "2026-05-12", hours_per_week: 20 },
-        { project: "__open__", start: "2026-05-08", end: "2026-05-12", hours_per_week: 20 },
+  it("shows the note on time away too", () => {
+    const container = renderView({
+      members: [
+        member({
+          time_off: [
+            {
+              start: "2026-12-24",
+              end: "2027-01-02",
+              kind: "vacation",
+              availability: "none",
+              note: "Family, phone off",
+            },
+          ],
+        }),
       ],
     });
-    const container = renderView({
-      members: [openMember],
-      selectedMemberId: openMember.id,
-    });
-
-    expect(container.querySelectorAll(".adminbot-time-allocation-table tbody tr")).toHaveLength(1);
-    expect(container.querySelector(".adminbot-time-chart__total")?.textContent?.trim()).toBe("50%");
+    expect(
+      container.querySelector('[data-testid="time-availability-other-table"]')?.textContent,
+    ).toContain("Family, phone off");
   });
 
-  it("keeps a project named Term baseline distinct from the unlabeled baseline", () => {
-    const baselineMember = member("mem_baseline", "Baseline Names", {
-      hours_per_week: 40,
-      availability: [
-        { start: "2026-05-08", end: "2026-05-12", hours_per_week: 10 },
-        {
-          project: "Term baseline",
-          start: "2026-05-08",
-          end: "2026-05-12",
-          hours_per_week: 10,
-        },
+  // No note, no row: an empty disclosure on every commitment would be pure furniture.
+  it("adds no note row to a commitment without one", () => {
+    expect(renderView().querySelector(".adminbot-time-allocation-table__note-row")).toBeNull();
+  });
+
+  // The note follows the allocation into the chart, where the tooltip shows it under that task's
+  // row. The tooltip itself is React inside the chart element, so what this asserts is that the
+  // note is handed over rather than dropped at the boundary.
+  it("carries the note through to the chart's tooltip as well", () => {
+    const container = renderView({
+      range: "month",
+      members: [
+        member({
+          availability: [
+            {
+              start: "2026-03-02",
+              end: "2027-03-15",
+              project: "Alignment",
+              hours_per_week: 20,
+              note: "Shared with Mei",
+            },
+          ],
+        }),
       ],
     });
-    const container = renderView({
-      members: [baselineMember],
-      selectedMemberId: baselineMember.id,
-    });
-
-    expect(container.querySelectorAll(".adminbot-time-chart__segment")).toHaveLength(2);
-    expect(container.querySelector(".adminbot-time-chart__total")?.textContent?.trim()).toBe("50%");
+    const chart = container.querySelector("adminbot-effort-stack-chart") as unknown as {
+      tasks: ReadonlyArray<{ name: string; note?: string }>;
+    };
+    expect(chart.tasks.some((task) => task.note === "Shared with Mei")).toBe(true);
   });
 
-  it("does not request capacity for an open-capacity-only schedule", () => {
-    const openOnlyMember = member("mem_open_only", "Open Only", {
-      availability: [
-        { project: "__open__", start: "2026-05-08", end: "2026-05-12", hours_per_week: 20 },
-      ],
-    });
-    const container = renderView({
-      members: [openOnlyMember],
-      selectedMemberId: openOnlyMember.id,
-    });
-
-    expect(container.textContent).toContain("This user has no saved time allocations.");
-    expect(container.textContent).not.toContain("Set this user's weekly capacity");
-  });
-
-  it("rounds only displayed percentages and does not falsely report over-capacity", () => {
-    const preciseMember = member("mem_precise", "Precise Capacity", {
-      hours_per_week: 6,
-      availability: Array.from({ length: 6 }, (_, index) => ({
-        project: `task${index + 1}`,
-        start: "2026-05-08",
-        end: "2026-05-12",
-        hours_per_week: 1,
-      })),
-    });
-    const container = renderView({
-      members: [preciseMember],
-      selectedMemberId: preciseMember.id,
-    });
-    const total = container.querySelector(".adminbot-time-chart__total");
-
-    expect(total?.textContent?.trim()).toBe("100%");
-    expect(total?.classList.contains("adminbot-time-chart__total--over")).toBe(false);
-  });
-
-  it("builds bars from the selected user's start and end breakpoints", () => {
-    const container = renderView({ selectedMemberId: "mem_ded86fcd" });
-
-    expect(container.querySelectorAll(".adminbot-time-chart__total")).toHaveLength(3);
-    expect(container.textContent).not.toContain("Temporary preview data");
-  });
-
-  it("reports user selection changes", () => {
-    const onMemberChange = vi.fn();
-    const container = renderView({
-      selectedMemberId: "mem_ded86fcd",
-      onMemberChange,
-    });
-    const select = container.querySelector<HTMLSelectElement>("select")!;
-
-    select.value = "mem_19f9c11f";
-    select.dispatchEvent(new Event("change"));
-
-    expect(onMemberChange).toHaveBeenCalledWith("mem_19f9c11f");
+  it("asks for a custom name only for the 'other' category", () => {
+    expect(renderView().querySelector('[data-testid="time-availability-custom-label"]')).toBeNull();
+    expect(
+      renderView({
+        awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "other" },
+      }).querySelector('[data-testid="time-availability-custom-label"]'),
+    ).not.toBeNull();
   });
 });

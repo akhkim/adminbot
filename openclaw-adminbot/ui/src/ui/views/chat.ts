@@ -160,7 +160,6 @@ export type ChatProps = {
   onQueueRetry?: (id: string) => void;
   onQueueSteer?: (id: string) => void;
   onDismissSideResult?: () => void;
-  onNewSession: () => void;
   onClearHistory?: () => void;
   agentsList: {
     agents: Array<{ id: string; name?: string; identity?: { name?: string; avatarUrl?: string } }>;
@@ -2303,22 +2302,29 @@ export function renderChat(props: ChatProps) {
       onQueueRemove: props.onQueueRemove,
     })}
     ${renderSideResult(props.sideResult, props.onDismissSideResult)}
-    ${
-      props.showNewMessages
-        ? html`
-            <button class="chat-new-messages" type="button" @click=${props.onScrollToBottom}>
-              ${icons.arrowDown} New messages
-            </button>
-          `
-        : nothing
-    }
+    ${props.showNewMessages
+      ? html`
+          <button class="chat-new-messages" type="button" @click=${props.onScrollToBottom}>
+            ${icons.arrowDown} New messages
+          </button>
+        `
+      : nothing}
 
     <!-- Input bar -->
     <div
       class="agent-chat__input"
       @click=${(event: MouseEvent) => focusComposerFromChrome(event, props.connected)}
     >
+      <div class="agent-chat__composer-status-stack">
+        ${renderContextNotice(activeSession, props.sessions?.defaults?.contextTokens ?? null, {
+          compactBusy,
+          compactDisabled: !props.connected || isBusy,
+          onCompact: props.onCompact,
+        })}
+        ${renderCompactionIndicator(props.compactionStatus)}
+        ${renderFallbackIndicator(props.fallbackStatus)} ${renderChatGoal(activeSession?.goal)}
       </div>
+      ${renderAttachmentPreview(props)}
 
       <input
         type="file"
@@ -2327,7 +2333,6 @@ export function renderChat(props: ChatProps) {
         class="agent-chat__file-input"
         @change=${(e: Event) => handleFileSelect(e, props)}
       />
-
 
       <div class="agent-chat__composer-combobox">
         <textarea
@@ -2363,6 +2368,7 @@ export function renderChat(props: ChatProps) {
           aria-atomic="true"
           >${activeSlashMenuOptionLabel}</span
         >
+        ${renderSlashMenu(requestUpdate, props, visibleDraft)}
       </div>
 
       <div class="agent-chat__toolbar">
@@ -2383,11 +2389,9 @@ export function renderChat(props: ChatProps) {
           ${renderChatRunStatusIndicator(composerRunStatus)}
         </div>
 
-        ${
-          composerControls && composerControls !== nothing
-            ? html`<div class="agent-chat__composer-controls">${composerControls}</div>`
-            : nothing
-        }
+        ${composerControls && composerControls !== nothing
+          ? html`<div class="agent-chat__composer-controls">${composerControls}</div>`
+          : nothing}
         ${renderChatRunControls({
           canAbort: showAbortableUi,
           connected: props.connected,
@@ -2397,7 +2401,6 @@ export function renderChat(props: ChatProps) {
           sending: props.sending,
           onAbort: props.onAbort,
           onExport: () => exportMarkdown(props),
-          onNewSession: props.onNewSession,
           onSend: handleSend,
           onStoreDraft: () => {},
           showSecondary: false,

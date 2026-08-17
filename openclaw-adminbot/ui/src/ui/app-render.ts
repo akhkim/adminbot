@@ -13,15 +13,18 @@ import {
   type AccessRole,
 } from "./adminbot/access.ts";
 import {
+  applyAdminBotOwnProfilePhoto,
   approveAdminBotAction,
   deleteAdminBotPaper,
   executeAdminBotAction,
   generateAdminBotReimbursement,
   loadAdminBot,
+  polishAdminBotOwnProfilePhoto,
   removePendingAdminBotAction,
   resetAdminBotReimbursement,
   saveAdminBotMember,
   saveAdminBotOwnProfile,
+  saveAdminBotOwnSchedule,
   saveAdminBotPaper,
   saveAdminBotSensitiveInfo,
   saveAdminBotSettings,
@@ -36,20 +39,35 @@ import {
 } from "./adminbot/controllers/admin.ts";
 import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
 import {
+  saveAdminBotLettersDraft,
+  saveAdminBotLogisticsDraft,
+} from "./adminbot/data/logistics-draft.ts";
+import { loadAdminBotLogisticsRequests } from "./adminbot/data/logistics-requests.ts";
+import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
+import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
 import { renderAdminBot, type AdminBotPanel } from "./adminbot/views/admin.ts";
+import "./components/feedback-widget.ts";
 import {
   renderChangePasswordPopover,
   renderChangePasswordTrigger,
 } from "./adminbot/views/change-password.ts";
 import { renderDashboard } from "./adminbot/views/dashboard.ts";
+import { renderLabSharing } from "./adminbot/views/lab-sharing.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate } from "./adminbot/views/login-gate.ts";
+import { renderAdminBotLogistics } from "./adminbot/views/logistics.ts";
 import { renderMyWork } from "./adminbot/views/my-work.ts";
+import { renderOnboardingChecklist } from "./adminbot/views/onboarding-checklist.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
 import { renderPublicShell } from "./adminbot/views/public-shell.ts";
+import {
+  EMPTY_MILESTONE_DRAFT,
+  EMPTY_TIME_AVAILABILITY_DRAFT,
+  renderAdminBotTimeAvailability,
+} from "./adminbot/views/time-availability.ts";
 import {
   createChatSessionsLoadOverrides,
   hasAbortableSessionRun,
@@ -269,6 +287,21 @@ function runUiTask<Args extends unknown[]>(
   };
 }
 
+/**
+ * Who a request saved in this browser belongs to.
+ *
+ * The drafts carry no owner -- they never leave the device that typed them, so there was nobody
+ * else they could belong to. The roster name is what an admin recognises; the member id is the
+ * fallback while the roster is still loading, and the last resort names the device's user at all.
+ */
+function adminBotViewerName(state: AppViewState): string {
+  const memberId = state.memberId;
+  const member = memberId
+    ? state.adminBotData.members?.find((candidate) => candidate.id === memberId)
+    : undefined;
+  return member?.name?.trim() || memberId || t("logistics.requests.you");
+}
+
 function renderSettingsSectionNav(state: AppViewState) {
   if (!isSettingsTab(state.tab)) {
     return nothing;
@@ -318,7 +351,7 @@ function renderSettingsWorkspace(state: AppViewState, body: unknown) {
   `;
 }
 
-function isSidebarSessionBusy(state: AppViewState) {
+function isChatSessionBusy(state: AppViewState) {
   return (
     state.chatLoading ||
     state.chatSending ||
@@ -328,7 +361,7 @@ function isSidebarSessionBusy(state: AppViewState) {
   );
 }
 
-function resolveSidebarDefaultAgentId(state: AppViewState): string {
+function resolveChatDefaultAgentId(state: AppViewState): string {
   const snapshot = state.hello?.snapshot as
     | { sessionDefaults?: { defaultAgentId?: string } }
     | undefined;
@@ -337,7 +370,7 @@ function resolveSidebarDefaultAgentId(state: AppViewState): string {
   );
 }
 
-function resolveSidebarSelectedAgentId(state: AppViewState): string {
+function resolveChatSelectedAgentId(state: AppViewState): string {
   const parsed = parseAgentSessionKey(state.sessionKey);
   if (parsed) {
     return normalizeAgentId(parsed.agentId);
@@ -345,21 +378,21 @@ function resolveSidebarSelectedAgentId(state: AppViewState): string {
   const sessionKey = normalizeOptionalString(state.sessionKey)?.toLowerCase();
   const fallbackAgentId =
     sessionKey === "global" || sessionKey === "unknown"
-      ? (state.assistantAgentId ?? resolveSidebarDefaultAgentId(state))
-      : resolveSidebarDefaultAgentId(state);
+      ? (state.assistantAgentId ?? resolveChatDefaultAgentId(state))
+      : resolveChatDefaultAgentId(state);
   return normalizeAgentId(fallbackAgentId);
 }
 
-function isSidebarSessionForSelectedAgent(
+function isChatSessionForSelectedAgent(
   state: AppViewState,
   row: GatewaySessionRow,
   selectedAgentId: string,
 ): boolean {
-  return isSessionKeyTiedToAgent(row.key, selectedAgentId, resolveSidebarDefaultAgentId(state));
+  return isSessionKeyTiedToAgent(row.key, selectedAgentId, resolveChatDefaultAgentId(state));
 }
 
-function resolveSidebarRecentSessions(state: AppViewState): GatewaySessionRow[] {
-  const selectedAgentId = resolveSidebarSelectedAgentId(state);
+function resolveChatRecentSessions(state: AppViewState): GatewaySessionRow[] {
+  const selectedAgentId = resolveChatSelectedAgentId(state);
   const shouldFilterByAgent =
     normalizeOptionalString(state.sessionKey)?.toLowerCase() !== "unknown";
   return (state.sessionsResult?.sessions ?? [])
@@ -372,16 +405,18 @@ function resolveSidebarRecentSessions(state: AppViewState): GatewaySessionRow[] 
         !isCronSessionKey(row.key) &&
         !isSubagentSessionKey(row.key) &&
         !row.spawnedBy &&
-        (!shouldFilterByAgent || isSidebarSessionForSelectedAgent(state, row, selectedAgentId)),
+        (!shouldFilterByAgent || isChatSessionForSelectedAgent(state, row, selectedAgentId)),
     )
     .toSorted((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
     .slice(0, 5);
 }
 
-function renderSidebarSessions(state: AppViewState) {
-  const collapsed = state.settings.navCollapsed;
-  const busy = isSidebarSessionBusy(state);
-  const recent = collapsed ? [] : resolveSidebarRecentSessions(state);
+// Session controls belong to the chat tab, not the app shell: creating and
+// switching sessions says nothing about Deadlines, Members or Admin. They render
+// as a toolbar above the thread, so nav collapse no longer gates them.
+function renderChatSessionControls(state: AppViewState) {
+  const busy = isChatSessionBusy(state);
+  const recent = resolveChatRecentSessions(state);
   const newSessionDisabled = !state.connected || state.sessionsLoading || busy || !state.client;
   const newSessionTitle = !state.connected
     ? "Connect to create a new session"
@@ -390,47 +425,46 @@ function renderSidebarSessions(state: AppViewState) {
       : "New session";
 
   return html`
-    <section class="sidebar-sessions ${collapsed ? "sidebar-sessions--collapsed" : ""}">
-      <button
-        type="button"
-        class="sidebar-new-session"
-        title=${newSessionTitle}
-        aria-label=${t("chat.runControls.newSession")}
-        ?disabled=${newSessionDisabled}
-        @click=${async () => {
-          if (newSessionDisabled) {
-            return;
-          }
-          if (await createChatSession(state)) {
-            state.setTab("chat" as import("./navigation.ts").Tab);
-          }
-        }}
-      >
-        <span class="sidebar-new-session__icon" aria-hidden="true">${icons.plus}</span>
-        ${collapsed
-          ? nothing
-          : html`<span class="sidebar-new-session__label"
-              >${t("chat.runControls.newSession")}</span
-            >`}
-      </button>
-      <div class="sidebar-session-select ${collapsed ? "sidebar-session-select--collapsed" : ""}">
-        ${renderChatSessionSelect(state, switchChatSession, {
-          compact: collapsed,
-          sessionSwitcherOnly: true,
-          surface: "sidebar",
-        })}
+    <section class="chat-sessions" aria-label=${t("chat.runControls.newSession")}>
+      <div class="chat-sessions__toolbar">
+        <button
+          type="button"
+          class="chat-sessions__new"
+          title=${newSessionTitle}
+          aria-label=${t("chat.runControls.newSession")}
+          ?disabled=${newSessionDisabled}
+          @click=${async () => {
+            if (newSessionDisabled) {
+              return;
+            }
+            // createChatSession refuses anything without an explicit user intent,
+            // so the button has to declare itself as one.
+            if (await createChatSession(state, { source: "user" })) {
+              state.setTab("chat" as import("./navigation.ts").Tab);
+            }
+          }}
+        >
+          <span class="chat-sessions__new-icon" aria-hidden="true">${icons.plus}</span>
+          <span class="chat-sessions__new-label">${t("chat.runControls.newSession")}</span>
+        </button>
+        <div class="chat-sessions__select">
+          ${renderChatSessionSelect(state, switchChatSession, {
+            sessionSwitcherOnly: true,
+            surface: "sidebar",
+          })}
+        </div>
       </div>
-      ${collapsed || recent.length === 0
+      ${recent.length === 0
         ? nothing
         : html`
             <div
-              class="sidebar-recent-sessions ${state.settings.recentSessionsCollapsed
-                ? "sidebar-recent-sessions--collapsed"
+              class="chat-sessions__recent ${state.settings.recentSessionsCollapsed
+                ? "chat-sessions__recent--collapsed"
                 : ""}"
               aria-label=${t("overview.cards.recentSessions")}
             >
               <button
-                class="sidebar-recent-sessions__label"
+                class="chat-sessions__recent-label"
                 type="button"
                 aria-expanded=${String(!state.settings.recentSessionsCollapsed)}
                 @click=${() => {
@@ -440,13 +474,13 @@ function renderSidebarSessions(state: AppViewState) {
                   });
                 }}
               >
-                <span class="sidebar-recent-sessions__label-text"
+                <span class="chat-sessions__recent-label-text"
                   >${t("usage.sessions.recentShort")}</span
                 >
-                <span class="sidebar-recent-sessions__chevron"> ${icons.chevronDown} </span>
+                <span class="chat-sessions__recent-chevron"> ${icons.chevronDown} </span>
               </button>
-              <div class="sidebar-recent-sessions__list">
-                ${recent.map((row) => renderSidebarRecentSession(state, row))}
+              <div class="chat-sessions__recent-list">
+                ${recent.map((row) => renderChatRecentSession(state, row))}
               </div>
             </div>
           `}
@@ -454,7 +488,7 @@ function renderSidebarSessions(state: AppViewState) {
   `;
 }
 
-function renderSidebarRecentSession(state: AppViewState, row: GatewaySessionRow) {
+function renderChatRecentSession(state: AppViewState, row: GatewaySessionRow) {
   const active = row.key === state.sessionKey;
   const label = resolveSessionDisplayName(row.key, row);
   const meta = row.updatedAt ? formatRelativeTimestamp(row.updatedAt) : "n/a";
@@ -462,7 +496,7 @@ function renderSidebarRecentSession(state: AppViewState, row: GatewaySessionRow)
   return html`
     <a
       href=${href}
-      class="sidebar-recent-session ${active ? "sidebar-recent-session--active" : ""}"
+      class="chat-sessions__recent-item ${active ? "chat-sessions__recent-item--active" : ""}"
       data-session-key=${row.key}
       title=${`${label} · ${row.key}`}
       @click=${(event: MouseEvent) => {
@@ -483,14 +517,14 @@ function renderSidebarRecentSession(state: AppViewState, row: GatewaySessionRow)
         state.setTab("chat" as import("./navigation.ts").Tab);
       }}
     >
-      <span class="sidebar-recent-session__dot" aria-hidden="true"></span>
-      <span class="sidebar-recent-session__body">
-        <span class="sidebar-recent-session__name">${label}</span>
-        <span class="sidebar-recent-session__meta">${meta}</span>
+      <span class="chat-sessions__recent-dot" aria-hidden="true"></span>
+      <span class="chat-sessions__recent-body">
+        <span class="chat-sessions__recent-name">${label}</span>
+        <span class="chat-sessions__recent-meta">${meta}</span>
       </span>
       ${row.hasActiveRun
         ? html`<span
-            class="sidebar-recent-session__live"
+            class="chat-sessions__recent-live"
             aria-label=${t("sessions.sessionDetails.activeRun")}
           ></span>`
         : nothing}
@@ -506,10 +540,6 @@ const lazyChannels = createLazyView(() => import("./views/channels.ts"), notifyL
 const lazyCron = createLazyView(() => import("./views/cron.ts"), notifyLazyViewChanged);
 const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
-  notifyLazyViewChanged,
-);
-const lazyAdminBotTimeAvailability = createLazyView(
-  () => import("./adminbot/views/time-availability.ts"),
   notifyLazyViewChanged,
 );
 const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewChanged);
@@ -529,11 +559,12 @@ const lazyAdminBotOnboarding = createLazyView(
   () => import("./adminbot/views/onboarding.ts"),
   notifyLazyViewChanged,
 );
+const lazyAdminBotCalendar = createLazyView(
+  () => import("./adminbot/views/calendar.ts"),
+  notifyLazyViewChanged,
+);
 
-function adminBotPanelForTab(
-  tab: Tab,
-  mode: AdminBotDashboardMode = "admin",
-): AdminBotPanel | null {
+function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminBotPanel | null {
   if (mode === "general") {
     switch (tab) {
       case "adminbotMembers":
@@ -569,17 +600,18 @@ function adminBotPanelForTab(
   }
 }
 
-function hasAdminBotDataForMode(data: AdminBotDashboardData, mode: AdminBotLoadMode): boolean {
-  if (!data.loadedMode) {
-    return false;
+// A floating bottom-right feedback widget appears on AdminBot feature tabs only. A changed tab
+// re-renders the widget element with the new feature id, and the widget itself reloads its stored
+// vote when the feature id attribute changes.
+function renderFeedbackWidget(state: AppViewState) {
+  const config = feedbackConfigForTab(state.tab);
+  if (!config) {
+    return nothing;
   }
-  if (mode === "members") {
-    return true;
-  }
-  if (mode === "general") {
-    return data.loadedMode !== "members";
-  }
-  return data.loadedMode === "admin";
+  return html`
+    <adminbot-feedback-widget feature-id=${config.featureId} github-file=${config.githubFile}>
+    </adminbot-feedback-widget>
+  `;
 }
 
 // Deep links and sign-out both leave `state.tab` pointing at a surface the current role may not
@@ -655,7 +687,9 @@ export function formatDreamNextCycle(nextRunAtMs: number | undefined): string | 
 }
 
 function resolveDreamingNextCycle(
-  status: { phases?: Record<string, { enabled: boolean; nextRunAtMs?: number }> } | null,
+  status: {
+    phases?: Record<string, { enabled: boolean; nextRunAtMs?: number }>;
+  } | null,
 ): string | null {
   if (!status?.phases) {
     return null;
@@ -744,7 +778,10 @@ function isUpdateBannerDismissed(updateAvailable: unknown): boolean {
   if (!dismissed) {
     return false;
   }
-  const info = updateAvailable as { latestVersion?: unknown; channel?: unknown };
+  const info = updateAvailable as {
+    latestVersion?: unknown;
+    channel?: unknown;
+  };
   const latestVersion = info && typeof info.latestVersion === "string" ? info.latestVersion : null;
   const channel = info && typeof info.channel === "string" ? info.channel : null;
   return Boolean(
@@ -753,7 +790,10 @@ function isUpdateBannerDismissed(updateAvailable: unknown): boolean {
 }
 
 function dismissUpdateBanner(updateAvailable: unknown) {
-  const info = updateAvailable as { latestVersion?: unknown; channel?: unknown };
+  const info = updateAvailable as {
+    latestVersion?: unknown;
+    channel?: unknown;
+  };
   const latestVersion = info && typeof info.latestVersion === "string" ? info.latestVersion : null;
   if (!latestVersion) {
     return;
@@ -1179,7 +1219,10 @@ function renderCronQuickCreateForTab(
       const draft = state.cronQuickCreateDraft ?? createDefaultDraft();
       const formPatch = draftToCronFormPatch(draft);
       state.cronEditingJobId = null;
-      state.cronForm = { ...buildNewCronForm(state), ...formPatch } as typeof state.cronForm;
+      state.cronForm = {
+        ...buildNewCronForm(state),
+        ...formPatch,
+      } as typeof state.cronForm;
       requestHostUpdate?.();
       void (async () => {
         const saved = await addCronJob(state);
@@ -1289,14 +1332,6 @@ function buildArtifactSidebarContent(params: {
   return { kind: "markdown", content, rawText: content };
 }
 
-function allowDisconnectedViteMemberPreview(state: AppViewState): boolean {
-  return (
-    Boolean(state.memberId) &&
-    typeof document !== "undefined" &&
-    Boolean(document.querySelector('script[src*="/@vite/client"]'))
-  );
-}
-
 export function renderApp(state: AppViewState) {
   const updatableState = state as AppViewState & { requestUpdate?: () => void };
   const requestHostUpdate =
@@ -1337,10 +1372,7 @@ export function renderApp(state: AppViewState) {
       ${renderGatewayUrlConfirmation(state)}
     `;
   }
-  // Source checkouts may intentionally run the AdminBot HTTP service without a Gateway. Once the
-  // local member login succeeds, keep AdminBot's independently authenticated surfaces available
-  // in Vite development; production builds still require the Gateway before rendering this shell.
-  if (!state.connected && !allowDisconnectedViteMemberPreview(state)) {
+  if (!state.connected) {
     return html` ${renderLoginGate(state)} ${renderGatewayUrlConfirmation(state)} `;
   }
   // A deep link into a surface this role may not see lands on their own default instead, so a
@@ -1352,11 +1384,8 @@ export function renderApp(state: AppViewState) {
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
   const chatDisabledReason = state.connected ? null : t("chat.disconnected");
   const isChat = state.tab === "chat";
-  const adminBotMode: AdminBotDashboardMode = resolveAdminBotMode(state.memberPrivilegeLevel);
+  const adminBotMode: AdminBotLoadMode = resolveAdminBotMode(state.memberPrivilegeLevel);
   const adminBotPanel = adminBotPanelForTab(state.tab, adminBotMode);
-  const needsAdminBotData = Boolean(adminBotPanel) || state.tab === "adminbotTimeAvailability";
-  const adminBotLoadMode: AdminBotLoadMode =
-    state.tab === "adminbotTimeAvailability" ? "members" : adminBotMode;
   const headerError = !isChat && state.lastError !== state.chatError ? state.lastError : null;
   const chatViewError = state.lastError;
   const chatHeaderHidden = isChat && (state.onboarding || state.chatHeaderControlsHidden);
@@ -1365,7 +1394,7 @@ export function renderApp(state: AppViewState) {
   const dashboardHeaderContext = resolveDashboardHeaderContext(state);
   const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
   const showToolCalls = state.onboarding ? true : state.settings.chatShowToolCalls;
-  const activeAssistantAgentId = resolveSidebarSelectedAgentId(state);
+  const activeAssistantAgentId = resolveChatSelectedAgentId(state);
   const localAssistantAvatarOverride =
     normalizeOptionalString(
       loadLocalAssistantIdentity({ agentId: activeAssistantAgentId }).avatar,
@@ -1799,14 +1828,14 @@ export function renderApp(state: AppViewState) {
               state.setTab("aiAgents");
             },
             onThinkingChange: (level) => {
-              void patchSession(state, state.sessionKey, { thinkingLevel: level }).then(() =>
-                requestHostUpdate?.(),
-              );
+              void patchSession(state, state.sessionKey, {
+                thinkingLevel: level,
+              }).then(() => requestHostUpdate?.());
             },
             onFastModeToggle: () => {
-              void patchSession(state, state.sessionKey, { fastMode: !fastMode }).then(() =>
-                requestHostUpdate?.(),
-              );
+              void patchSession(state, state.sessionKey, {
+                fastMode: !fastMode,
+              }).then(() => requestHostUpdate?.());
             },
             channels: extractQuickSettingsChannels(state),
             onChannelConfigure: () => {
@@ -2186,16 +2215,44 @@ export function renderApp(state: AppViewState) {
   const refreshChatWorkspaceFiles = () => {
     loadChatWorkspaceFiles({ force: true });
   };
-  const canLoadAvailabilityOverMemberSession =
-    state.tab === "adminbotTimeAvailability" && allowDisconnectedViteMemberPreview(state);
+  // The roster and the paper list back the profile landing page -- the attention stack, the
+  // member's own record, the work summary -- and not just the Members and Papers tabs. So the load
+  // follows the *session*, not the tab: a signed-in member fetches once, on whatever page they land
+  // on. Previously this was gated on `adminBotPanel`, which is null for the landing page, so a
+  // member saw an empty profile until they happened to open Members or Papers.
+  //
+  // `state.connected` stays on the gateway-driven half only. A member reads over their own HTTP
+  // session (loadAdminBot prefers loadStoredMemberSession), which needs no gateway socket at all --
+  // requiring one was the second half of why the landing page came up blank for plain members.
+  const hasMemberSession = Boolean(state.memberId);
+  // Time Availability needs the roster to fill its member picker but renders its own view, so it
+  // deliberately maps to no panel. It has to be named here instead: `adminBotPanel` doubles as the
+  // render switch, and borrowing "members" to trigger the fetch drew the whole Lab Members panel
+  // underneath the schedule.
+  const wantsRosterOnly = state.tab === "adminbotTimeAvailability";
+  const wantsGatewayAdminBotLoad =
+    ((isChat && isAdminBotChat) || adminBotPanel || wantsRosterOnly) && state.connected;
   if (
-    ((isChat && isAdminBotChat) || needsAdminBotData) &&
-    (state.connected || canLoadAvailabilityOverMemberSession) &&
+    (hasMemberSession || wantsGatewayAdminBotLoad) &&
     !state.adminBotLoading &&
     !state.adminBotError &&
-    !hasAdminBotDataForMode(state.adminBotData, adminBotLoadMode)
+    !state.adminBotData.loadedAt
   ) {
-    void loadAdminBot(state, adminBotLoadMode).finally(() => requestHostUpdate?.());
+    void loadAdminBot(state, adminBotMode).finally(() => requestHostUpdate?.());
+  }
+  // The Calendar tab's events are a separate read from the roster, and nothing was triggering it:
+  // opening the tab drew an empty month and only the Refresh button or a month step would fetch
+  // anything. `calendarEvents === undefined` is the "never asked" sentinel — a load that genuinely
+  // finds nothing sets [], so this cannot loop on an empty calendar.
+  if (
+    state.tab === "adminbotCalendar" &&
+    adminBotMode === "admin" &&
+    hasMemberSession &&
+    !state.calendarEventsLoading &&
+    !state.calendarEventsError &&
+    state.calendarEvents === undefined
+  ) {
+    void state.loadCalendarEvents?.().finally(() => requestHostUpdate?.());
   }
   const browseChatWorkspacePath = (path: string) => {
     if (chatWorkspaceFiles.browserSearchTimer) {
@@ -2519,11 +2576,19 @@ export function renderApp(state: AppViewState) {
               <button
                 type="button"
                 class="nav-collapse-toggle"
-                @click=${() =>
+                @click=${() => {
+                  // While the drawer is open, navCollapsed is forced false above, so
+                  // toggling the setting here changed nothing visible and left the
+                  // drawer open — against this button's own "collapse" label.
+                  if (navDrawerOpen) {
+                    state.navDrawerOpen = false;
+                    return;
+                  }
                   state.applySettings({
                     ...state.settings,
                     navCollapsed: !state.settings.navCollapsed,
-                  })}
+                  });
+                }}
                 title="${navCollapsed ? t("nav.expand") : t("nav.collapse")}"
                 aria-label="${navCollapsed ? t("nav.expand") : t("nav.collapse")}"
               >
@@ -2533,7 +2598,6 @@ export function renderApp(state: AppViewState) {
               </button>
             </div>
             <div class="sidebar-shell__body">
-              ${renderSidebarSessions(state)}
               <nav class="sidebar-nav">
                 ${TAB_GROUPS.map((group) => {
                   const groupTabs = visibleTabsForRole(group.tabs as readonly Tab[], accessRole);
@@ -2552,7 +2616,9 @@ export function renderApp(state: AppViewState) {
                             <button
                               class="nav-section__label"
                               @click=${() => {
-                                const next = { ...state.settings.navGroupsCollapsed };
+                                const next = {
+                                  ...state.settings.navGroupsCollapsed,
+                                };
                                 next[group.label] = !isGroupCollapsed;
                                 state.applySettings({
                                   ...state.settings,
@@ -2644,7 +2710,8 @@ export function renderApp(state: AppViewState) {
         state.updateAvailable.latestVersion !== state.updateAvailable.currentVersion &&
         !isUpdateBannerDismissed(state.updateAvailable)
           ? html`<div class="update-banner callout danger" role="alert">
-              <strong>${t("chat.updateAvailable")}</strong> v${state.updateAvailable.latestVersion}
+              <strong>${t("chat.updateAvailable")}</strong>
+              v${state.updateAvailable.latestVersion}
               (${t("chat.runningVersion", { version: state.updateAvailable.currentVersion })}).
               <button
                 class="btn btn--sm update-banner__btn"
@@ -2713,8 +2780,128 @@ export function renderApp(state: AppViewState) {
             </section>`}
         ${state.tab === "dashboard" ? renderDashboard(state, accessRole) : nothing}
         ${state.tab === "profile"
-          ? renderProfile(state, {
-              onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
+          ? html`
+              ${renderProfile(state, {
+                onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
+                onPolishPhoto: () => void polishAdminBotOwnProfilePhoto(state),
+                onApplyPolishedPhoto: (variantId) =>
+                  void applyAdminBotOwnProfilePhoto(state, variantId),
+              })}
+              <!-- Bottom of the page on purpose: the checklist is required reading a member works
+                   through once, not the thing they came to this page to do on the other days. -->
+              ${renderOnboardingChecklist(state)}
+            `
+          : nothing}
+        ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}
+        ${state.tab === "adminbotLogistics"
+          ? renderAdminBotLogistics({
+              role: accessRole,
+              mode: state.adminBotLogisticsMode,
+              onModeChange: (mode) => {
+                state.adminBotLogisticsMode = mode;
+                state.adminBotLogisticsOpenRequestId = null;
+                if (mode === "view") {
+                  // Re-read on every entry rather than once: the admin may have saved a request
+                  // themselves since the last look, and the list is cheap.
+                  void loadAdminBotLogisticsRequests(state, adminBotViewerName(state));
+                }
+              },
+              requests: {
+                requests: state.adminBotLogisticsRequests,
+                loading: state.adminBotLogisticsRequestsLoading,
+                openRequestId: state.adminBotLogisticsOpenRequestId,
+                onOpenRequest: (requestId) => {
+                  state.adminBotLogisticsOpenRequestId = requestId;
+                },
+              },
+              template: state.adminBotLogisticsTemplate,
+              onTemplateChange: (template) => {
+                state.adminBotLogisticsTemplate = template;
+              },
+              signature: {
+                files: state.adminBotLogisticsSignatureFiles,
+                onFilesChange: (files) => {
+                  state.adminBotLogisticsSignatureFiles = files;
+                },
+                description: state.adminBotLogisticsDescription,
+                onDescriptionChange: (description) => {
+                  state.adminBotLogisticsDescription = description;
+                },
+                attachments: state.adminBotLogisticsAttachments,
+                onAttachmentsChange: (files) => {
+                  state.adminBotLogisticsAttachments = files;
+                },
+                saving: state.adminBotLogisticsSaving,
+                savedAt: state.adminBotLogisticsSavedAt,
+                saveError: state.adminBotLogisticsSaveError,
+                onSave: () => void saveAdminBotLogisticsDraft(state),
+              },
+              letters: {
+                schools: state.adminBotLettersSchools,
+                onSchoolsChange: (schools) => {
+                  state.adminBotLettersSchools = schools;
+                },
+                cvOverleafUrl: state.adminBotLettersCvOverleafUrl,
+                onCvOverleafUrlChange: (url) => {
+                  state.adminBotLettersCvOverleafUrl = url;
+                },
+                driveFolderUrl: state.adminBotLettersDriveFolderUrl,
+                onDriveFolderUrlChange: (url) => {
+                  state.adminBotLettersDriveFolderUrl = url;
+                },
+                saving: state.adminBotLettersSaving,
+                savedAt: state.adminBotLettersSavedAt,
+                saveError: state.adminBotLettersSaveError,
+                onSave: () => void saveAdminBotLettersDraft(state),
+              },
+            })
+          : nothing}
+        ${state.tab === "adminbotTimeAvailability"
+          ? renderAdminBotTimeAvailability({
+              members: state.adminBotData.members ?? [],
+              loading: state.adminBotLoading,
+              error: state.adminBotError,
+              // Default to your own schedule once the roster lands: it is the one you came for,
+              // and it is the only one you can edit.
+              selectedMemberId: state.adminBotTimeAvailabilityMemberId || (state.memberId ?? ""),
+              onMemberChange: (memberId) => {
+                state.adminBotTimeAvailabilityMemberId = memberId;
+              },
+              range: state.adminBotTimeAvailabilityRange,
+              onRangeChange: (range) => {
+                state.adminBotTimeAvailabilityRange = range;
+              },
+              viewerMemberId: state.memberId ?? null,
+              draft: state.adminBotTimeAvailabilityDraft,
+              onDraftChange: (draft) => {
+                state.adminBotTimeAvailabilityDraft = draft;
+              },
+              awayDraft: state.adminBotTimeAwayDraft,
+              onAwayDraftChange: (draft) => {
+                state.adminBotTimeAwayDraft = draft;
+              },
+              milestoneDraft: state.adminBotMilestoneDraft,
+              onMilestoneDraftChange: (draft) => {
+                state.adminBotMilestoneDraft = draft;
+              },
+              saving: state.adminBotTimeAvailabilitySaving,
+              onSaveSchedule: (memberId, patch) => {
+                state.adminBotTimeAvailabilitySaving = true;
+                void saveAdminBotOwnSchedule(state, memberId, patch).finally(() => {
+                  state.adminBotTimeAvailabilitySaving = false;
+                  // Only clear the draft on success, and only the one this save came from: a
+                  // rejected row stays in its form so the member can correct it rather than
+                  // retype it.
+                  if (state.adminBotNotice?.kind === "success") {
+                    if (patch.milestones) {
+                      state.adminBotMilestoneDraft = { ...EMPTY_MILESTONE_DRAFT };
+                    } else {
+                      state.adminBotTimeAvailabilityDraft = { ...EMPTY_TIME_AVAILABILITY_DRAFT };
+                    }
+                  }
+                  requestHostUpdate?.();
+                });
+              },
             })
           : nothing}
         ${state.tab === "myWork"
@@ -2842,9 +3029,9 @@ export function renderApp(state: AppViewState) {
               onSaveMember: (member) => void saveAdminBotMember(state, member),
               onSaveOwnProfile: (memberId, fields) =>
                 void saveAdminBotOwnProfile(state, memberId, fields),
-              // The checklist itself now lives on the dashboard instead of a popup, so "view
-              // onboarding checklist" from Lab Members just goes there.
-              onShowOnboardingWelcome: () => state.setTab("dashboard"),
+              // The checklist itself lives at the bottom of the profile page instead of in a
+              // popup, so "view onboarding checklist" from Lab Members just goes there.
+              onShowOnboardingWelcome: () => state.setTab("profile"),
               onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
               onDeletePaper: (paper) => void deleteAdminBotPaper(state, paper),
               onSaveSettings: (settings) => void saveAdminBotSettings(state, settings),
@@ -2868,18 +3055,8 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "adminbotOnboarding" && adminBotMode === "admin"
           ? renderLazyView(lazyAdminBotOnboarding, (m) => m.renderAdminBotOnboarding(state))
           : nothing}
-        ${state.tab === "adminbotTimeAvailability"
-          ? renderLazyView(lazyAdminBotTimeAvailability, (m) =>
-              m.renderAdminBotTimeAvailability({
-                members: state.adminBotData.members,
-                loading: state.adminBotLoading,
-                error: state.adminBotError,
-                selectedMemberId: state.adminBotTimeAvailabilityMemberId,
-                onMemberChange: (memberId) => {
-                  state.adminBotTimeAvailabilityMemberId = memberId;
-                },
-              }),
-            )
+        ${state.tab === "adminbotCalendar" && adminBotMode === "admin"
+          ? renderLazyView(lazyAdminBotCalendar, (m) => m.renderAdminBotCalendar(state))
           : nothing}
         ${state.tab === "adminbotDeadlines"
           ? renderLazyView(lazyDeadlines, (m) => m.renderDeadlines())
@@ -2906,8 +3083,11 @@ export function renderApp(state: AppViewState) {
                 },
               );
               const operatorCanWrite = hasOperatorWriteAccess(
-                (state.hello as { auth?: { role?: string; scopes?: string[] } } | null)?.auth ??
-                  null,
+                (
+                  state.hello as {
+                    auth?: { role?: string; scopes?: string[] };
+                  } | null
+                )?.auth ?? null,
               );
               return m.renderSessions({
                 loading: state.sessionsLoading,
@@ -3069,8 +3249,11 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "workboard"
           ? renderLazyView(lazyWorkboard, (m) => {
               const auth =
-                (state.hello as { auth?: { role?: string; scopes?: string[] } } | null)?.auth ??
-                null;
+                (
+                  state.hello as {
+                    auth?: { role?: string; scopes?: string[] };
+                  } | null
+                )?.auth ?? null;
               return m.renderWorkboard({
                 host: state,
                 client: state.client,
@@ -3145,7 +3328,10 @@ export function renderApp(state: AppViewState) {
                 deliveryToSuggestions,
                 accountSuggestions,
                 onFormChange: (patch) => {
-                  state.cronForm = normalizeCronFormState({ ...state.cronForm, ...patch });
+                  state.cronForm = normalizeCronFormState({
+                    ...state.cronForm,
+                    ...patch,
+                  });
                   state.cronFieldErrors = validateCronForm(state.cronForm);
                 },
                 onRefresh: () => void state.loadCron(),
@@ -3192,7 +3378,10 @@ export function renderApp(state: AppViewState) {
                   await loadCronRuns(state, jobId);
                 }),
                 onLoadMoreJobs: () =>
-                  void loadCronJobsPage(state, { append: true, tableFilters: true }),
+                  void loadCronJobsPage(state, {
+                    append: true,
+                    tableFilters: true,
+                  }),
                 onJobsFiltersChange: runUiTask(async (patch) => {
                   updateCronJobsFilter(state, patch);
                   const shouldReload =
@@ -3203,7 +3392,10 @@ export function renderApp(state: AppViewState) {
                     Boolean(patch.cronJobsSortBy) ||
                     Boolean(patch.cronJobsSortDir);
                   if (shouldReload) {
-                    await loadCronJobsPage(state, { append: false, tableFilters: true });
+                    await loadCronJobsPage(state, {
+                      append: false,
+                      tableFilters: true,
+                    });
                   }
                 }),
                 onJobsFiltersReset: runUiTask(async () => {
@@ -3215,7 +3407,10 @@ export function renderApp(state: AppViewState) {
                     cronJobsSortBy: "nextRunAtMs",
                     cronJobsSortDir: "asc",
                   });
-                  await loadCronJobsPage(state, { append: false, tableFilters: true });
+                  await loadCronJobsPage(state, {
+                    append: false,
+                    tableFilters: true,
+                  });
                 }),
                 onLoadMoreRuns: () => void loadMoreCronRuns(state),
                 onRunsFiltersChange: runUiTask(async (patch) => {
@@ -3359,11 +3554,17 @@ export function renderApp(state: AppViewState) {
                   void loadAgentFileContent(state, resolvedAgentId, name);
                 },
                 onFileDraftChange: (name, content) => {
-                  state.agentFileDrafts = { ...state.agentFileDrafts, [name]: content };
+                  state.agentFileDrafts = {
+                    ...state.agentFileDrafts,
+                    [name]: content,
+                  };
                 },
                 onFileReset: (name) => {
                   const base = state.agentFileContents[name] ?? "";
-                  state.agentFileDrafts = { ...state.agentFileDrafts, [name]: base };
+                  state.agentFileDrafts = {
+                    ...state.agentFileDrafts,
+                    [name]: base,
+                  };
                 },
                 onFileSave: (name) => {
                   if (!resolvedAgentId) {
@@ -3431,8 +3632,11 @@ export function renderApp(state: AppViewState) {
                   if (index < 0) {
                     return;
                   }
-                  const list = (getCurrentConfigValue() as { agents?: { list?: unknown[] } } | null)
-                    ?.agents?.list;
+                  const list = (
+                    getCurrentConfigValue() as {
+                      agents?: { list?: unknown[] };
+                    } | null
+                  )?.agents?.list;
                   const entry = Array.isArray(list)
                     ? (list[index] as { skills?: unknown })
                     : undefined;
@@ -3538,7 +3742,10 @@ export function renderApp(state: AppViewState) {
                   if (!primary) {
                     return;
                   }
-                  updateConfigFormValue(state, basePathResult, { primary, fallbacks: normalized });
+                  updateConfigFormValue(state, basePathResult, {
+                    primary,
+                    fallbacks: normalized,
+                  });
                 },
                 onSetDefault: (agentId) => {
                   stageDefaultAgentConfigEntry(state, agentId);
@@ -3657,7 +3864,10 @@ export function renderApp(state: AppViewState) {
                 onLoadExecApprovals: () => {
                   const target =
                     state.execApprovalsTarget === "node" && state.execApprovalsTargetNodeId
-                      ? { kind: "node" as const, nodeId: state.execApprovalsTargetNodeId }
+                      ? {
+                          kind: "node" as const,
+                          nodeId: state.execApprovalsTargetNodeId,
+                        }
                       : { kind: "gateway" as const };
                   void loadExecApprovals(state, target);
                 },
@@ -3694,13 +3904,17 @@ export function renderApp(state: AppViewState) {
                 onSaveExecApprovals: () => {
                   const target =
                     state.execApprovalsTarget === "node" && state.execApprovalsTargetNodeId
-                      ? { kind: "node" as const, nodeId: state.execApprovalsTargetNodeId }
+                      ? {
+                          kind: "node" as const,
+                          nodeId: state.execApprovalsTargetNodeId,
+                        }
                       : { kind: "gateway" as const };
                   void saveExecApprovals(state, target);
                 },
               }),
             )
           : nothing}
+        ${state.tab === "chat" ? renderChatSessionControls(state) : nothing}
         ${state.tab === "chat"
           ? renderMeasured(
               state,
@@ -3776,7 +3990,10 @@ export function renderApp(state: AppViewState) {
                   onRefresh: () => {
                     state.chatSideResult = null;
                     state.resetToolStream();
-                    void refreshChat(state, { awaitHistory: true, scheduleScroll: false });
+                    void refreshChat(state, {
+                      awaitHistory: true,
+                      scheduleScroll: false,
+                    });
                   },
                   onChatScroll: (event) => state.handleChatScroll(event),
                   getDraft: () => state.chatMessage,
@@ -3786,7 +4003,10 @@ export function renderApp(state: AppViewState) {
                   attachments: state.chatAttachments,
                   onAttachmentsChange: (next) => (state.chatAttachments = next),
                   onSend: () => void state.handleSendChat(),
-                  onCompact: () => void state.handleSendChat("/compact", { restoreDraft: true }),
+                  onCompact: () =>
+                    void state.handleSendChat("/compact", {
+                      restoreDraft: true,
+                    }),
                   onOpenSessionCheckpoints: () => {
                     state.sessionsExpandedCheckpointKey = state.sessionKey;
                     state.setTab("sessions" as import("./navigation.ts").Tab);
@@ -3803,7 +4023,6 @@ export function renderApp(state: AppViewState) {
                   onDismissSideResult: () => {
                     state.chatSideResult = null;
                   },
-                  onNewSession: () => void createChatSession(state),
                   onClearHistory: runUiTask(async () => {
                     if (!state.client || !state.connected) {
                       return;
@@ -3917,7 +4136,10 @@ export function renderApp(state: AppViewState) {
                   truncated: state.logsTruncated,
                   onFilterTextChange: (next) => (state.logsFilterText = next),
                   onLevelToggle: (level, enabled) => {
-                    state.logsLevelFilters = { ...state.logsLevelFilters, [level]: enabled };
+                    state.logsLevelFilters = {
+                      ...state.logsLevelFilters,
+                      [level]: enabled,
+                    };
                   },
                   onToggleAutoFollow: (next) => (state.logsAutoFollow = next),
                   onRefresh: () => void loadLogs(state, { reset: true }),
@@ -4015,7 +4237,8 @@ export function renderApp(state: AppViewState) {
             })
           : nothing}
       </main>
-      ${renderExecApprovalPrompt(state)} ${renderGatewayUrlConfirmation(state)}
+      ${renderFeedbackWidget(state)} ${renderExecApprovalPrompt(state)}
+      ${renderGatewayUrlConfirmation(state)}
       ${renderDreamingRestartConfirmation({
         open: state.dreamingRestartConfirmOpen,
         loading: state.dreamingRestartConfirmLoading,

@@ -13,6 +13,7 @@ import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { renderEmailBodyHtml } from "../../connectors/email-html.js";
 import { resolveGogExecutable } from "../../connectors/gog.js";
+import { splitDisplayName, type DcsFormRunner } from "./dcs-form.js";
 import type { DriveWorkspaceProvisioner } from "./drive-workspace.js";
 import { findOnboardingTemplate } from "./emails.js";
 import {
@@ -26,6 +27,8 @@ import {
 
 const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 45_000;
+// The full-member guide: the one mail whose copy promises a CS account request.
+const DCS_FORM_TEMPLATE_ID = "member";
 const GOG_MAX_OUTPUT_BYTES = 1024 * 1024;
 
 /**
@@ -49,6 +52,18 @@ export type AdminBotOnboardingSendRequest = {
   /** Everything the template needs that the tab collected by hand. */
   values?: Record<string, string | undefined>;
   slack_channel_id?: string;
+  /**
+   * Also file the DCS Slack-access request for this person.
+   *
+   * Defaults to on for the full-member guide and off for every other template: that mail is what
+   * starts a new member's CS account, and its own copy tells the reader an account request is
+   * coming. This used to fire on registration approval instead, which was the wrong moment --
+   * by then the member has an address and the request has already been made.
+   *
+   * Still a flag rather than a rule, because a re-send is not a second request: an operator
+   * resending the guide to someone who already has an account unticks it.
+   */
+  submit_dcs_form?: boolean;
   /** Compose and provision nothing; used by the tab's preview. */
   preview?: boolean;
 };
@@ -56,6 +71,8 @@ export type AdminBotOnboardingSendRequest = {
 export type AdminBotOnboardingSendResult = {
   template_id: string;
   subject: string;
+  /** Present when the send also filed a DCS Slack-access request; absent when it did not try. */
+  dcs_form?: { submitted: boolean; error?: string };
   body: string;
   /** HTML alternative rendered from `body`; absent only when the body renders to nothing. */
   body_html?: string;
@@ -81,6 +98,12 @@ export type AdminBotOnboardingSenderOptions = {
   env?: NodeJS.ProcessEnv;
   provisionDriveWorkspace?: DriveWorkspaceProvisioner;
   inviteToSlackConnect?: SlackConnectInviter;
+  /**
+   * Files the DCS Slack-access request. Same injection seam as the two provisioners above, and the
+   * same runner the approval path uses -- the composition layer owns the script path, so a send
+   * and an approval can never file the request two different ways.
+   */
+  submitDcsForm?: DcsFormRunner;
   /** Resolves `{zhijing_whatsapp}`; reads AdminBot settings so no phone number lives in the repo. */
   headProfessorWhatsapp?: () => string | undefined;
   defaultSlackChannelId?: string;
@@ -281,6 +304,30 @@ export function createAdminBotOnboardingSender(
     const guide: AdminBotComposedGuide = composed.guide;
     const html = htmlOf(guide.body);
     await sendEmail({ to: email, subject: guide.subject, body: guide.body, ...html });
+
+    // After the mail, and reported rather than thrown: the guide has already been delivered, so a
+    // failed form is a follow-up item, not a reason to tell the operator the send failed. Awaited
+    // rather than fired and forgotten, because the operator asked for it in this request and the
+    // approval path's fire-and-forget is exactly how twelve of these failed unnoticed.
+    let dcsForm: { submitted: boolean; error?: string } | undefined;
+    const wantsDcsForm = request.submit_dcs_form ?? template.id === DCS_FORM_TEMPLATE_ID;
+    if (wantsDcsForm) {
+      if (!options.submitDcsForm) {
+        dcsForm = { submitted: false, error: "the DCS form runner is not configured" };
+      } else {
+        const { firstName, lastName } = splitDisplayName(name);
+        try {
+          await options.submitDcsForm({ firstName, lastName, email });
+          dcsForm = { submitted: true };
+        } catch (error) {
+          dcsForm = {
+            submitted: false,
+            error: error instanceof Error ? error.message : String(error),
+          };
+        }
+      }
+    }
+
     return {
       ok: true,
       payload: {
@@ -289,6 +336,7 @@ export function createAdminBotOnboardingSender(
         sent: true,
         ...(driveLink ? { drive_folder_link: driveLink } : {}),
         ...(slackLink ? { slack_connect_link: slackLink } : {}),
+        ...(dcsForm ? { dcs_form: dcsForm } : {}),
       },
     };
   };

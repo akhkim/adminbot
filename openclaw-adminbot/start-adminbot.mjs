@@ -46,27 +46,59 @@ async function runEmailAutomation() {
 }
 
 /**
- * Mints a Slack Connect invite. Slack lives in another bundled plugin, so the invite is wired here
- * rather than imported by the AdminBot extension. Same call the hourly email automation already
- * makes for trial invites, so the scopes and token are known to work; Slack emails the invitee as
- * well, and the guide carries the same url so either message gets them in.
+ * Mints a Slack Connect invite, out-of-process through tsx.
+ *
+ * This used to `await import("./extensions/slack/api.js")` directly, which threw MODULE_NOT_FOUND
+ * on every real send: this launcher runs under plain node and resolves everything else from dist/,
+ * but extensions/slack is deliberately kept out of the bundle, so that path exists only as
+ * TypeScript. It appeared to work solely under `pnpm adminbot:dev`, which runs through tsx.
+ *
+ * The script also resolves the bot token's SecretRef, which the old in-process version skipped --
+ * so even with the import fixed it would have thrown UnresolvedSecretInputError. Same seam as
+ * runEmailAutomation above, and the same stdin-JSON contract as the DCS form script.
  */
 async function inviteToSlackConnect({ email, channelId }) {
-  const { getSlackWriteClient, resolveSlackAccount } = await import("./extensions/slack/api.js");
-  const cfg = await loadConfig();
-  const account = await resolveSlackAccount({ cfg });
-  if (!account.botToken) {
-    throw new Error("Slack bot token is not configured; cannot mint a Slack Connect invite");
+  const executable = path.join(repoRoot, "node_modules", ".bin", "tsx");
+  const script = path.join(repoRoot, "scripts", "adminbot-slack-connect-invite.ts");
+  // Generous, because this is a cold tsx start on a network filesystem: it compiles the script,
+  // loads the email-automation module for its Slack resolver, reads the config and then waits on
+  // Slack. A minute was enough by hand and not always enough under the service, and a timeout kill
+  // leaves no stdout -- indistinguishable, before the reporting below, from the script failing.
+  const child = execFile(executable, [script], { cwd: repoRoot, timeout: 5 * 60_000 });
+  child.stdin.end(JSON.stringify({ email, channelId }));
+  const { stdout, stderr, code, spawnError } = await new Promise((resolve) => {
+    let out = "";
+    let err = "";
+    child.stdout.on("data", (chunk) => {
+      out += chunk;
+    });
+    child.stderr.on("data", (chunk) => {
+      err += chunk;
+    });
+    // Resolve on either path rather than rejecting: a spawn failure (no tsx on this release) and a
+    // module that threw while loading both produce no stdout, and the reason for each is only in
+    // stderr or in the error itself. Rejecting here threw all of it away and left the operator
+    // with "returned no result", which says nothing they can act on.
+    child.on("error", (error) => resolve({ stdout: out, stderr: err, spawnError: error }));
+    child.on("close", (exitCode, signal) =>
+      resolve({ stdout: out, stderr: err, code: exitCode, signal }),
+    );
+  });
+  const line = stdout.trim().split(/\r?\n/u).filter(Boolean).at(-1);
+  if (!line) {
+    const detail =
+      spawnError?.message ??
+      // A timeout kill reports only the signal, so name it rather than printing "exit null".
+      (signal ? `killed by ${signal} (timed out?)` : undefined) ??
+      stderr.trim().split(/\r?\n/u).filter(Boolean).at(-1) ??
+      `exit ${code}`;
+    throw new Error(`slack connect invite produced no result: ${detail}`);
   }
-  const response = await getSlackWriteClient(account.botToken).apiCall(
-    "conversations.inviteShared",
-    { channel: channelId, emails: [email], external_limited: true },
-  );
-  const url = response?.url ?? response?.invite?.url;
-  if (typeof url !== "string" || !url) {
-    throw new Error("Slack did not return an invite url");
+  const payload = JSON.parse(line);
+  if (!payload?.ok || typeof payload.url !== "string" || !payload.url) {
+    throw new Error(payload?.error ?? "slack connect invite failed");
   }
-  return { url };
+  return { url: payload.url };
 }
 
 await startAdminBotHost({

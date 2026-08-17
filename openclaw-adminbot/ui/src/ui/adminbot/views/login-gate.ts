@@ -8,7 +8,6 @@ import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.
 import { isGatewayClientStoppedError } from "../../gateway.ts";
 import { icons } from "../../icons.ts";
 import { normalizeBasePath } from "../../navigation.ts";
-import { goToSignedOutView } from "../../signed-out-view.ts";
 import { normalizeLowercaseStringOrEmpty } from "../../string-coerce.ts";
 import { agentLogoUrl } from "../../views/agents-utils.ts";
 import {
@@ -335,6 +334,12 @@ function switchLoginMode(state: AppViewState, mode: AppViewState["loginMode"]) {
   state.loginMode = mode;
   state.memberFormError = null;
   state.memberAuthFailure = null;
+  // Leaving a reset step clears its notices: the "check your email" acknowledgement and the "your
+  // password was changed" confirmation are both about the step just left, not the one being opened.
+  state.passwordResetSent = false;
+  if (mode !== "signin") {
+    state.passwordResetDone = false;
+  }
   // Refresh the unclaimed roster whenever the picker becomes visible.
   if (mode === "claim") {
     void state.loadRoster();
@@ -568,13 +573,21 @@ function renderSignupFields(state: AppViewState) {
 
 function renderMemberForm(state: AppViewState) {
   const mode = state.loginMode;
-  const requiresConfirm = mode !== "signin";
+  // The reset modes each use one half of this form: "reset-request" needs only the address to mail
+  // to, "reset-confirm" only the new password (the token comes from the link, not the member).
+  const isResetRequest = mode === "reset-request";
+  const isResetConfirm = mode === "reset-confirm";
+  const requiresConfirm = mode !== "signin" && !isResetRequest;
   const submitLabel =
     mode === "claim"
       ? t("login.member.claimSubmit")
       : mode === "signup"
         ? t("login.member.signupSubmit")
-        : t("login.member.signIn");
+        : isResetRequest
+          ? t("login.member.reset.sendLink")
+          : isResetConfirm
+            ? t("login.member.reset.setPassword")
+            : t("login.member.signIn");
   const workingLabel = mode === "signin" ? t("login.member.working") : t("login.member.submitting");
   // Native <form> submission keeps Enter-to-submit, mobile "go" buttons, and
   // password-manager autofill working without per-input key handlers.
@@ -589,50 +602,74 @@ function renderMemberForm(state: AppViewState) {
     <form class="login-gate__form" data-login-mode=${mode} @submit=${onSubmit} novalidate>
       ${mode === "claim" ? renderRosterPicker(state) : ""}
       ${mode === "signup" ? renderSignupFields(state) : ""}
-      <label class="field">
-        <span>${t("login.member.email")}</span>
-        <input
-          type="email"
-          name="email"
-          autocomplete="email"
-          spellcheck="false"
-          .value=${state.memberEmail}
-          @input=${(e: Event) => {
-            state.memberEmail = (e.target as HTMLInputElement).value;
-          }}
-          placeholder=${t("login.member.emailPlaceholder")}
-        />
-      </label>
-      <label class="field">
-        <span>${t("login.member.password")}</span>
-        <div class="login-gate__secret-row">
-          <input
-            type=${state.loginShowMemberPassword ? "text" : "password"}
-            name="password"
-            autocomplete=${requiresConfirm ? "new-password" : "current-password"}
-            spellcheck="false"
-            .value=${state.memberPassword}
-            @input=${(e: Event) => {
-              state.memberPassword = (e.target as HTMLInputElement).value;
-            }}
-            placeholder=${t("login.member.passwordPlaceholder")}
-          />
-          <button
-            type="button"
-            class="btn btn--icon ${state.loginShowMemberPassword ? "active" : ""}"
-            title=${state.loginShowMemberPassword
-              ? t("login.hidePassword")
-              : t("login.showPassword")}
-            aria-label=${t("login.togglePasswordVisibility")}
-            aria-pressed=${state.loginShowMemberPassword}
-            @click=${() => {
-              state.loginShowMemberPassword = !state.loginShowMemberPassword;
-            }}
-          >
-            ${state.loginShowMemberPassword ? icons.eye : icons.eyeOff}
-          </button>
-        </div>
-      </label>
+      ${isResetRequest
+        ? html`<p class="login-gate__reset-intro">${t("login.member.reset.intro")}</p>`
+        : ""}
+      ${isResetConfirm
+        ? html`<p class="login-gate__reset-intro">${t("login.member.reset.confirmIntro")}</p>`
+        : ""}
+      ${state.passwordResetSent
+        ? html`<div class="callout login-gate__reset-sent" role="status" aria-live="polite">
+            ${t("login.member.reset.sent")}
+          </div>`
+        : ""}
+      ${state.passwordResetDone && mode === "signin"
+        ? html`<div class="callout login-gate__reset-done" role="status" aria-live="polite">
+            ${t("login.member.reset.done")}
+          </div>`
+        : ""}
+      ${isResetConfirm
+        ? ""
+        : html`
+            <label class="field">
+              <span>${t("login.member.email")}</span>
+              <input
+                type="email"
+                name="email"
+                autocomplete="email"
+                spellcheck="false"
+                .value=${state.memberEmail}
+                @input=${(e: Event) => {
+                  state.memberEmail = (e.target as HTMLInputElement).value;
+                }}
+                placeholder=${t("login.member.emailPlaceholder")}
+              />
+            </label>
+          `}
+      ${isResetRequest
+        ? ""
+        : html`
+            <label class="field">
+              <span>${t("login.member.password")}</span>
+              <div class="login-gate__secret-row">
+                <input
+                  type=${state.loginShowMemberPassword ? "text" : "password"}
+                  name="password"
+                  autocomplete=${requiresConfirm ? "new-password" : "current-password"}
+                  spellcheck="false"
+                  .value=${state.memberPassword}
+                  @input=${(e: Event) => {
+                    state.memberPassword = (e.target as HTMLInputElement).value;
+                  }}
+                  placeholder=${t("login.member.passwordPlaceholder")}
+                />
+                <button
+                  type="button"
+                  class="btn btn--icon ${state.loginShowMemberPassword ? "active" : ""}"
+                  title=${state.loginShowMemberPassword
+                    ? t("login.hidePassword")
+                    : t("login.showPassword")}
+                  aria-label=${t("login.togglePasswordVisibility")}
+                  aria-pressed=${state.loginShowMemberPassword}
+                  @click=${() => {
+                    state.loginShowMemberPassword = !state.loginShowMemberPassword;
+                  }}
+                >
+                  ${state.loginShowMemberPassword ? icons.eye : icons.eyeOff}
+                </button>
+              </div>
+            </label>
+          `}
       ${requiresConfirm
         ? html`
             <label class="field">
@@ -676,6 +713,17 @@ function renderMemberForm(state: AppViewState) {
             </button>
           `
         : ""}
+      ${mode === "signin"
+        ? html`
+            <button
+              type="button"
+              class="login-gate__mode-toggle session-link login-gate__forgot"
+              @click=${() => switchLoginMode(state, "reset-request")}
+            >
+              ${t("login.member.reset.forgot")}
+            </button>
+          `
+        : ""}
       <button
         type="button"
         class="login-gate__mode-toggle session-link"
@@ -706,35 +754,8 @@ function renderPendingNotice(state: AppViewState) {
   `;
 }
 
-// Reimbursement is the one tool a claimant may need without ever having an account, so it gets an
-// explicit door out of the login screen rather than being reachable only after signing in.
-function renderGuestReimbursementLink(state: AppViewState) {
-  return html`
-    <div class="login-gate__guest">
-      <button
-        type="button"
-        class="btn login-gate__guest-button"
-        data-testid="login-guest-reimbursements"
-        @click=${() => {
-          goToSignedOutView(state, "guest-reimbursements");
-        }}
-      >
-        ${t("login.guest.reimbursements")}
-      </button>
-      <div class="login-gate__guest-hint">${t("login.guest.reimbursementsHint")}</div>
-      <button
-        type="button"
-        class="session-link login-gate__public-back"
-        data-testid="login-continue-without-sign-in"
-        @click=${() => {
-          goToSignedOutView(state, "landing");
-        }}
-      >
-        ${t("login.public.continueWithoutSignIn")}
-      </button>
-    </div>
-  `;
-}
+// The guest reimbursement door used to live here. The login screen is now sign-in only; the guest
+// view itself is unchanged and still reachable at ?signedOut=reimbursements.
 
 export function renderLoginGate(state: AppViewState) {
   const basePath = normalizeBasePath(state.basePath ?? "");
@@ -759,8 +780,7 @@ export function renderLoginGate(state: AppViewState) {
         </div>
         ${state.loginPendingNotice
           ? renderPendingNotice(state)
-          : html`${renderMemberForm(state)} ${failure ? renderLoginFailure(failure) : ""}
-            ${renderGuestReimbursementLink(state)}`}
+          : html`${renderMemberForm(state)} ${failure ? renderLoginFailure(failure) : ""}`}
       </div>
     </div>
   `;

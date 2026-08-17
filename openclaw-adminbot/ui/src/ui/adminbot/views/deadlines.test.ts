@@ -115,13 +115,107 @@ describe("renderDeadlines", () => {
       .click();
     await settle(container);
 
-    const workshops = [...container.querySelectorAll(".deadline-section")].find((section) =>
-      section.querySelector(".deadline-section__title")?.textContent?.includes("Workshops"),
+    // Scoped to the conference this test opened. Every conference renders its panel (hidden when
+    // collapsed), so a container-wide search finds whichever conference sorts first -- EMNLP, whose
+    // workshops each carry their own CFP date and so have nothing to hoist.
+    const workshops = [
+      ...conferenceNamed(container, "NeurIPS").querySelectorAll(".deadline-section"),
+    ].find((section) =>
+      section.querySelector(".deadline-section__title")?.textContent?.includes("Non-archival"),
     )!;
     expect(workshops).toBeDefined();
     expect(workshops.querySelector(".deadline-section__shared")?.textContent).toMatch(/all due/u);
     // The shared date is stated once in the head, so the rows carry no date column of their own.
     expect(workshops.querySelectorAll(".deadline-row__date").length).toBe(0);
+  });
+
+// The split the board exists to make: an archival venue publishes the paper, so it cannot then go
+// to a second one, while a workshop leaves it free. The classification is stamped on the data by
+// scripts/adminbot_deadlines.py -- these assert the board reads it rather than re-deriving it.
+  it("separates archival dates from non-archival ones inside a conference", async () => {
+    const container = await renderView();
+
+    conferenceNamed(container, "NeurIPS")
+      .querySelector<HTMLButtonElement>('[data-testid="conference-toggle"]')!
+      .click();
+    await settle(container);
+
+    const titles = [...container.querySelectorAll(".deadline-section__title")].map(
+      (node) => node.textContent ?? "",
+    );
+    // NeurIPS workshops are non-archival; the conference's own dates are not workshops.
+    expect(titles.some((title) => title.includes("Non-archival"))).toBe(true);
+  });
+
+  it("filters the board to one column and keeps the counts off the whole board", async () => {
+    const container = await renderView();
+
+    const countOf = (id: string) =>
+      Number(
+        container
+          .querySelector(`[data-testid="deadline-filter-${id}"] .deadlines__filter-count`)
+          ?.textContent?.trim(),
+      );
+    const all = countOf("all");
+    const archival = countOf("archival");
+    const nonArchival = countOf("nonArchival");
+    expect(all).toBeGreaterThan(0);
+    // Rebuttals are neither, so the two columns need not sum to the whole board -- but neither
+    // may exceed it, and both must be real subsets.
+    expect(archival).toBeLessThanOrEqual(all);
+    expect(nonArchival).toBeLessThanOrEqual(all);
+    expect(archival + nonArchival).toBeLessThanOrEqual(all);
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="deadline-filter-archival"]')!
+      .click();
+    await settle(container);
+
+    // The counts still describe the whole board, not the filtered view.
+    expect(countOf("all")).toBe(all);
+    expect(countOf("nonArchival")).toBe(nonArchival);
+    // And the selected column is the one that is pressed.
+    expect(
+      container
+        .querySelector('[data-testid="deadline-filter-archival"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+// A venue is not one date. Sub-deadlines are separate rows sharing a venue_group, so opening a
+// conference shows each one counting down separately, in the order a paper meets them.
+  it("lists a conference's sub-deadlines under it, named by stage", async () => {
+    const container = await renderView();
+
+    conferenceNamed(container, "ICLR")
+      .querySelector<HTMLButtonElement>('[data-testid="conference-toggle"]')!
+      .click();
+    await settle(container);
+
+    const names = [
+      ...conferenceNamed(container, "ICLR").querySelectorAll(".deadline-row__name"),
+    ].map((node) => node.textContent?.trim() ?? "");
+    // Two rows: the abstract and the full paper, five days apart. They are named by the stage
+    // rather than repeating "ICLR 2027" twice, which is the only part that differs.
+    expect(names).toContain("Abstract");
+    expect(names).toContain("Full paper");
+    // Stage order, which is also date order here.
+    expect(names.indexOf("Abstract")).toBeLessThan(names.indexOf("Full paper"));
+  });
+
+  it("keeps the full venue name on a conference with a single date", async () => {
+    const container = await renderView();
+
+    conferenceNamed(container, "NAACL")
+      .querySelector<HTMLButtonElement>('[data-testid="conference-toggle"]')!
+      .click();
+    await settle(container);
+
+    const names = [
+      ...conferenceNamed(container, "NAACL").querySelectorAll(".deadline-row__name"),
+    ].map((node) => node.textContent?.trim() ?? "");
+    // One row, so the name is the information rather than the stage.
+    expect(names.some((name) => name.includes("NAACL 2027"))).toBe(true);
   });
 
   it("leads with the single most urgent deadline anywhere", async () => {

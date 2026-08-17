@@ -31,11 +31,22 @@ changes a number (say which step, and why).
 
 ## Known-broken tooling still to repair
 
-- The `openclaw/plugin-sdk/media-runtime` export subpath resolves to nothing:
-  the root export map declares it, but there is no `src/plugin-sdk/media-runtime.ts`
-  and no built `dist/plugin-sdk/media-runtime.js`. `extensions/slack/src/monitor/media.runtime.ts`
-  imports it, which is why `test/scripts/adminbot-email-automation.test.ts` still
-  dies before collecting.
+- ~~The `openclaw/plugin-sdk/media-runtime` export subpath resolves to nothing~~ —
+  done. The export map declared 20 plugin-sdk subpaths with no source behind them,
+  all of them for subsystems the deep clean removed (speech, media/image/video/music
+  generation, realtime voice, browser). Nineteen were dropped. `media-runtime` was
+  rebuilt instead, because two surviving plugins import it: it is now a narrow
+  re-export of `src/media/{fetch,store,qr-image}` rather than the old broad barrel,
+  and `src/media/qr-image.ts` came back with it since `extensions/device-pair`
+  calls `writeQrPngTempFile` and `renderQrPngDataUrl` at runtime.
+  `test/scripts/adminbot-email-automation.test.ts` now collects and runs; 5 of its
+  6 tests pass, and the survivor is an assertion failure, not an import crash.
+- `deprecated-internal-config-api.test.ts` reports 7 real violations of the config
+  boundary rules: five in `src/config/io/io.ts` (2749, 2758, 2773, 2916, 3008), one
+  in `scripts/adminbot-email-automation.ts:752`, one in
+  `src/plugins/install/bundled-capability-runtime.test.ts:9`. The guard that finds
+  them was restored, not the code it judges — decide per site whether `io.ts` owns
+  the seam it is being flagged for.
 - ~~`pnpm build` does not reach a compiler~~ — done. The build plan named four
   package scripts the deep clean had deleted along with their backing files, and
   each only surfaced once the one before it was cleared. All four were pruned
@@ -76,6 +87,27 @@ changes a number (say which step, and why).
   deleted vitest-matrix routing~~ — done: the directory was triaged and removed;
   `control-ui-i18n.test.ts` moved to `test/scripts/`. Lane counts unchanged
   (still 6 failures), so no baseline number moved.
+
+## UI lane determinism
+
+The lane runs `isolate: false` across two workers, so module and global state carries from one
+file into the next and worker assignment shifts run to run. Three leaks were fixed:
+
+- the i18n singleton never dropped a lazily loaded locale bundle, so a file that switched to
+  zh-CN left it loaded for everything after it;
+- `feedback-widget.test.ts` installed a `getItem`/`setItem`-only `localStorage` via
+  `defineProperty` and never removed it, leaving later files a Storage that threw on `clear()`;
+- `getSafeStorage` accepted any object with `getItem` and `setItem` as a `Storage`, and checked
+  the real DOM last, so under Vitest jsdom's own storage was rejected and every UI test had to
+  overwrite the global to get storage at all.
+
+What remains: `ui/src/ui/components/feedback-widget.test.ts` fails in roughly 1 run in 6, always
+the same five assertions, always passing in isolation and in every pairwise run tried. Waiting for
+the shadow root to render before clicking cut it from 6-in-12 to 2-in-12, which says the residue is
+timing rather than ordering — the custom-element registry is global and survives `vi.resetModules`,
+so when an earlier file has already registered `adminbot-feedback-widget` the element under test
+comes from a stale class. Adding a `console.log` to the assertion path made it disappear for six
+runs, so instrument it carefully. The clean fix is to run this one file isolated.
 
 ## Environment constraints
 

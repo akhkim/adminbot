@@ -1,6 +1,7 @@
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
+import { nextStepFor, type NextStep } from "../next-step.ts";
 import { adminBotMemberRoles } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
@@ -26,7 +27,7 @@ import type {
   AdminBotSettingsSaveInput,
 } from "../controllers/admin.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
-import { buildMemberNotes, noteField, parseMemberNotes } from "../data/member-notes.ts";
+import { noteField, parseMemberNotes } from "../data/member-notes.ts";
 import { renderAdminBotReimbursements } from "./reimbursements.ts";
 
 export type AdminBotProps = {
@@ -221,7 +222,10 @@ function paperTimelineBarStyle(
   const duration = Math.max(1, item.duration_business_days);
   const left = Math.round((start / total) * 1000) / 10;
   const width = Math.max(5, Math.round((duration / total) * 1000) / 10);
-  return `left: ${left}%; width: ${width}%; --adminbot-paper-timeline-color: ${item.color};`;
+  // Position only. `item.color` is deliberately not emitted: a per-step hue made the row a
+  // rainbow that encoded nothing, and hid the one thing worth seeing -- which step is current.
+  // The status class carries the meaning instead.
+  return `left: ${left}%; width: ${width}%;`;
 }
 
 function filterPaperOverview(event: Event): void {
@@ -477,16 +481,10 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
       .map((value) => value.trim())
       .filter(Boolean);
   const hoursPerWeek = Number(getFormValue(data, "hoursPerWeek"));
-  const notes = buildMemberNotes({
-    location: getFormValue(data, "location"),
-    joinedMonth: getFormValue(data, "joinedMonth"),
-    researchInterests: getFormValue(data, "researchInterests"),
-    calendarEmail: getFormValue(data, "calendarEmail"),
-    whatsapp: getFormValue(data, "whatsapp"),
-    github: getFormValue(data, "github"),
-    website: getFormValue(data, "website"),
-    notes: getFormValue(data, "notes"),
-  });
+  // Each of these now has a field of its own, so the editor writes them there rather than
+  // re-encoding them as "Label: value" lines. notes is free prose again -- doing otherwise would
+  // recreate the two-sources-of-truth problem migrateMemberNotesToFields exists to end.
+  const notes = getFormValue(data, "notes").trim();
   props.onSaveMember({
     id,
     name,
@@ -517,13 +515,20 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
     ...(getFormValue(data, "hoursPerWeek") && Number.isFinite(hoursPerWeek)
       ? { hoursPerWeek }
       : {}),
-    availability: getFormValue(data, "availability"),
     ...(getFormValue(data, "location") ? { location: getFormValue(data, "location") } : {}),
     ...(getFormValue(data, "affiliation")
       ? { affiliation: getFormValue(data, "affiliation") }
       : {}),
     ...(getFormValue(data, "timezone") ? { timezone: getFormValue(data, "timezone") } : {}),
     ...(getFormValue(data, "website") ? { personalWebsite: getFormValue(data, "website") } : {}),
+    ...(getFormValue(data, "joinedMonth")
+      ? { joinedMonth: getFormValue(data, "joinedMonth") }
+      : {}),
+    ...(getFormValue(data, "whatsapp") ? { whatsapp: getFormValue(data, "whatsapp") } : {}),
+    ...(getFormValue(data, "calendarEmail")
+      ? { calendarEmail: getFormValue(data, "calendarEmail") }
+      : {}),
+    ...(getFormValue(data, "github") ? { githubUrl: getFormValue(data, "github") } : {}),
     ...(notes ? { notes } : {}),
   });
   form.closest<HTMLElement>("[popover]")?.hidePopover();
@@ -559,16 +564,8 @@ function collectSelfProfileFields(form: HTMLFormElement): MemberProfileUpdate {
   const hoursPerWeek = Number(getFormValue(data, "hoursPerWeek"));
   const location = getFormValue(data, "location");
   const personalWebsite = getFormValue(data, "website");
-  const notes = buildMemberNotes({
-    location,
-    joinedMonth: getFormValue(data, "joinedMonth"),
-    researchInterests: getFormValue(data, "researchInterests"),
-    calendarEmail: getFormValue(data, "calendarEmail"),
-    whatsapp: getFormValue(data, "whatsapp"),
-    github: getFormValue(data, "github"),
-    website: personalWebsite,
-    notes: getFormValue(data, "notes"),
-  });
+  // Same reasoning as the admin editor above: these are fields now, not notes lines.
+  const notes = getFormValue(data, "notes").trim();
   return {
     name: getFormValue(data, "name"),
     slack_user_id: getFormValue(data, "slackUserId"),
@@ -578,12 +575,17 @@ function collectSelfProfileFields(form: HTMLFormElement): MemberProfileUpdate {
     ...(getFormValue(data, "hoursPerWeek") && Number.isFinite(hoursPerWeek)
       ? { hours_per_week: hoursPerWeek }
       : {}),
-    availability: getFormValue(data, "availability"),
     location,
     affiliation: getFormValue(data, "affiliation"),
     timezone: getFormValue(data, "timezone"),
     personal_website: personalWebsite,
-    notes: notes ?? "",
+    // Carried explicitly now that they are fields rather than notes lines; omitting them here
+    // would make a member's own save silently drop whatever they typed.
+    joined_month: getFormValue(data, "joinedMonth"),
+    whatsapp: getFormValue(data, "whatsapp"),
+    calendar_email: getFormValue(data, "calendarEmail"),
+    github_url: getFormValue(data, "github"),
+    notes,
   };
 }
 
@@ -1083,16 +1085,19 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
         ><input name="researchInterests" .value=${noteDraft.researchInterests}
       /></label>
       <label class="adminbot-form__field"
-        ><span>Calendar email</span><input name="calendarEmail" .value=${noteDraft.calendarEmail}
+        ><span>Calendar email</span
+        ><input name="calendarEmail" .value=${member?.calendar_email ?? noteDraft.calendarEmail}
       /></label>
       <label class="adminbot-form__field"
-        ><span>WhatsApp</span><input name="whatsapp" .value=${noteDraft.whatsapp}
+        ><span>WhatsApp</span
+        ><input name="whatsapp" .value=${member?.whatsapp ?? noteDraft.whatsapp}
       /></label>
       <label class="adminbot-form__field"
-        ><span>GitHub</span><input name="github" .value=${noteDraft.github}
+        ><span>GitHub</span><input name="github" .value=${member?.github_url ?? noteDraft.github}
       /></label>
       <label class="adminbot-form__field"
-        ><span>Website</span><input name="website" .value=${noteDraft.website}
+        ><span>Website</span
+        ><input name="website" .value=${member?.personal_website ?? noteDraft.website}
       /></label>
     </div>
     <label class="adminbot-form__field"
@@ -1744,11 +1749,110 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
   return html`
     ${renderPaperOverview(props, papers)}
     <article class="adminbot-editor-card">
+      <div class="card-title">Next step per paper</div>
+      <div class="card-sub">
+        Derived from the PaperFlow dependency graph — what each paper is waiting on right now,
+        before anything is overdue.
+      </div>
+      ${renderNextSteps(papers)}
+    </article>
+    <article class="adminbot-editor-card">
       <div class="card-title">Paper nudges</div>
       <div class="card-sub">Due reminders and head professor escalations.</div>
       ${renderNudges(props.data.nudges)}
     </article>
     ${renderAddPaperCard(props, { governance: true })}
+  `;
+}
+
+/**
+ * Puts the composed nudge on the clipboard so an admin can paste it into Slack or mail.
+ *
+ * Deliberately not a send. Delivering a nudge is an external effect, so it belongs in the
+ * propose -> approve -> execute -> audit pipeline (`paper_publish.nudge_author`), not in a
+ * button that fires from a browser. Copying keeps this surface read-only while still saving the
+ * admin from writing the message themselves.
+ */
+function copyNudge(event: Event, message: string) {
+  const button = event.currentTarget as HTMLButtonElement | null;
+  void navigator.clipboard
+    ?.writeText(message)
+    .then(() => {
+      if (!button) {
+        return;
+      }
+      const original = button.textContent ?? "";
+      button.textContent = "Copied";
+      window.setTimeout(() => {
+        button.textContent = original;
+      }, 1500);
+    })
+    .catch(() => {
+      // A clipboard the browser refuses is not worth an error dialog; the message is also on the
+      // button's title attribute, so it stays reachable by hover.
+    });
+}
+
+// The dependency-based counterpart to renderNudges. That one answers "who is late"; this one
+// answers "what is next and who owns it", which is knowable the moment a step completes rather
+// than three business days later. Read-only: computed in the browser, writes nothing.
+function renderNextSteps(papers: AdminBotPaperRecord[]) {
+  const rows = papers
+    .map((paper) => ({ paper, next: nextStepFor(paper) }))
+    .filter((row): row is { paper: AdminBotPaperRecord; next: NextStep } => Boolean(row.next));
+
+  if (rows.length === 0) {
+    return html`<div class="adminbot-empty adminbot-empty--compact">
+      Nothing actionable across the pipeline.
+    </div>`;
+  }
+
+  return html`
+    <div class="adminbot-next-list">
+      ${rows.map(({ paper, next }) =>
+        next.done
+          ? html`<article class="adminbot-next adminbot-next--done">
+              <strong>${paper.title}</strong>
+              <span class="adminbot-next__waiting">Finished</span>
+            </article>`
+          : html`
+              <article class="adminbot-next ${next.isApproval ? "adminbot-next--approval" : ""}">
+                <div class="adminbot-next__head">
+                  <strong>${paper.title}</strong>
+                  <span class="adminbot-next__waiting">
+                    ${next.isApproval ? "Approval from" : "Waiting on"} ${next.waitingOn}
+                  </span>
+                </div>
+                <div class="adminbot-next__step">
+                  ${next.headline}${next.unblocks
+                    ? html`<span class="adminbot-next__why"> — unblocks ${next.unblocks}</span>`
+                    : nothing}
+                </div>
+                ${next.alsoOpen.length > 0
+                  ? html`<div class="adminbot-next__also">
+                      Also open: ${next.alsoOpen.join(", ")}
+                    </div>`
+                  : nothing}
+                <div class="adminbot-next__also">
+                  ${next.evidenceCount > 0
+                    ? `Confirmed by ${next.evidenceCount} stored link${next.evidenceCount === 1 ? "" : "s"}`
+                    : "No artifact links yet — estimated from the current step only"}
+                </div>
+                <div class="adminbot-next__actions">
+                  <button
+                    type="button"
+                    class="btn btn--sm"
+                    data-testid=${`nudge-${paper.id}`}
+                    title=${next.message}
+                    @click=${(event: Event) => copyNudge(event, next.message)}
+                  >
+                    Nudge ${next.waitingOn}
+                  </button>
+                </div>
+              </article>
+            `,
+      )}
+    </div>
   `;
 }
 

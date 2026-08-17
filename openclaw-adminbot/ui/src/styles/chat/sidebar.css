@@ -172,9 +172,8 @@
   gap: 7px;
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
   line-height: 1.2;
-  text-transform: uppercase;
 }
 
 .chat-adminbot-rail__section-title svg {
@@ -277,8 +276,7 @@
   color: var(--muted);
   font-size: var(--control-ui-text-xs);
   line-height: 1;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .chat-workspace-rail__title strong {
@@ -391,7 +389,6 @@
   font-size: var(--control-ui-text-xs);
   line-height: 1.1;
   padding: 0 12px 6px;
-  text-transform: uppercase;
 }
 
 .chat-workspace-rail__summary {
@@ -723,8 +720,7 @@
   color: var(--muted);
   font-size: 12px; /* was 11px */
   font-weight: 700;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
 }
 
 .sidebar-markdown-shell__eyebrow svg {
@@ -941,8 +937,7 @@
   color: var(--muted);
   background: var(--bg-muted);
   border-bottom: 1px solid var(--border-strong);
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
 }
 
 .sidebar-markdown :where(tbody tr:hover) {

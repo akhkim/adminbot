@@ -88,6 +88,14 @@ export class AdminBotClient {
     return this.request("POST", "/privacy/tasks", request, signal);
   }
 
+  /** Asks the guidebook. The service answers locally; excerpts never come back. */
+  async askGuidebook(
+    request: { question: string; maxResults?: number },
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.request("POST", "/guidebook/ask", request, signal);
+  }
+
   async listPending(limit?: number, signal?: AbortSignal): Promise<unknown> {
     const params = typeof limit === "number" ? `?limit=${encodeURIComponent(String(limit))}` : "";
     return this.request("GET", `/proposals/pending${params}`, undefined, signal);

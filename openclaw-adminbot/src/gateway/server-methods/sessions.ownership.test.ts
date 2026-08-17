@@ -100,6 +100,8 @@ describe("sessions.list ownership filtering", () => {
     loadCombinedSessionStoreForGatewayMock.mockReset();
   });
 
+  // The unowned entry in this store is deliberately not listed: an unowned session is
+  // unreachable, not world-readable.
   it("only lists sessions owned by the requesting member", async () => {
     loadCombinedSessionStoreForGatewayMock.mockReturnValue({
       storePath: "/tmp/openclaw-sessions.json",
@@ -122,20 +124,18 @@ describe("sessions.list ownership filtering", () => {
     expect(respond).toHaveBeenCalledWith(
       true,
       expect.objectContaining({
-        sessions: [
-          { key: "agent:main:mine", hasActiveRun: false },
-          { key: "agent:main:unowned", hasActiveRun: false },
-        ],
+        sessions: [{ key: "agent:main:mine", hasActiveRun: false }],
       }),
       undefined,
     );
   });
 
-  it("lists every session for an admin requester", async () => {
+  // An admin gets no bypass: their list is their own sessions, same as any member.
+  it("lists only the admin's own sessions, not everyone's", async () => {
     loadCombinedSessionStoreForGatewayMock.mockReturnValue({
       storePath: "/tmp/openclaw-sessions.json",
       store: {
-        "agent:main:mine": { sessionId: "s-mine", ownerMemberId: "mem-1" },
+        "agent:main:mine": { sessionId: "s-mine", ownerMemberId: "mem-admin" },
         "agent:main:theirs": { sessionId: "s-theirs", ownerMemberId: "mem-2" },
       },
     });
@@ -152,10 +152,7 @@ describe("sessions.list ownership filtering", () => {
     expect(respond).toHaveBeenCalledWith(
       true,
       expect.objectContaining({
-        sessions: [
-          { key: "agent:main:mine", hasActiveRun: false },
-          { key: "agent:main:theirs", hasActiveRun: false },
-        ],
+        sessions: [{ key: "agent:main:mine", hasActiveRun: false }],
       }),
       undefined,
     );
@@ -201,20 +198,17 @@ describe("sessions.create ownership stamping", () => {
     );
   });
 
-  it("leaves ownerMemberId unset for an unauthenticated/shared-secret client", async () => {
+  // No longer refused. Machine callers (an agent's sessions-send-tool, cron, the CLI) have no
+  // member to name and are not member chats; ownership now comes from the session key, so such a
+  // session is simply owned by nobody rather than un-creatable.
+  it("still creates a session for a client with no member identity", async () => {
     const respond = await callSessions(
       "sessions.create",
       {},
       { context: createCreateContext(), client: null },
     );
 
-    expect(respond).toHaveBeenCalledWith(
-      true,
-      expect.objectContaining({
-        entry: expect.not.objectContaining({ ownerMemberId: expect.anything() }),
-      }),
-      undefined,
-    );
+    expect(respond).toHaveBeenCalledWith(true, expect.anything(), undefined);
   });
 
   it("does not overwrite an owner already set by the patch projection", async () => {
@@ -273,7 +267,9 @@ describe("sessions.delete ownership rejection", () => {
     );
   });
 
-  it("allows an admin to delete a session owned by a different member", async () => {
+  // Deleting is a read of someone else's session by another name -- you have to be able to name it
+  // to destroy it -- so the admin scope buys nothing here either.
+  it("refuses an admin deleting a session owned by a different member", async () => {
     mockEntry("agent:main:theirs", { sessionId: "s-theirs", ownerMemberId: "mem-2" });
 
     const respond = await callSessions(
@@ -282,7 +278,7 @@ describe("sessions.delete ownership rejection", () => {
       { context: createContext(), client: createClient("mem-admin", true) },
     );
 
-    expect(respond).not.toHaveBeenCalledWith(
+    expect(respond).toHaveBeenCalledWith(
       false,
       undefined,
       expect.objectContaining({

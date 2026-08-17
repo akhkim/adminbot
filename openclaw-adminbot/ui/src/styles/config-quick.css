@@ -408,8 +408,7 @@
   margin-bottom: 2px;
   font-size: 0.65rem;
   font-weight: 700;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   color: var(--muted);
 }
 
@@ -437,7 +436,6 @@
   color: var(--muted);
   font-size: 0.64rem;
   letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
 }
 
 .qs-identity-card__source code {
@@ -483,7 +481,6 @@
   font-size: 0.68rem;
   font-weight: 600;
   letter-spacing: var(--tracking-wide);
-  text-transform: uppercase;
   color: var(--muted);
 }
 
@@ -918,8 +915,7 @@
 .qs-profiles__eyebrow {
   font-size: 0.6875rem;
   font-weight: 700;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   color: var(--accent);
 }
 
@@ -1090,8 +1086,7 @@
 .qs-profile-panel__eyebrow {
   font-size: 0.6875rem;
   font-weight: 700;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   color: var(--accent);
 }
 
@@ -1146,8 +1141,7 @@
 .qs-profile-stat__label {
   font-size: 0.6875rem;
   font-weight: 700;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   color: var(--muted);
 }
 

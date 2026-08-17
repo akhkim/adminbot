@@ -1077,3 +1077,109 @@
     max-width: 140px;
   }
 }
+
+/* ===========================================
+   Dashboard and profile – phone layout
+   ===========================================
+   Both pages are built out of two- and three-column geometry that assumes a desk: a hero with the
+   ledger beside the identity, side-by-side summary cards, a row that reads title / bar / step in
+   one line. None of it survives a 360px column, so the phone gets the same content in one column
+   with the desk rules left untouched above these breakpoints. */
+
+@media (max-width: 768px), (max-width: 932px) and (max-height: 500px) and (orientation: landscape) {
+  /* The two bands are already separated by a heading each; 48px of air between them on a phone
+     costs a whole screen of scrolling to say something the type hierarchy already says. */
+  .dashboard {
+    gap: var(--space-8);
+  }
+
+  .dashboard__stack {
+    gap: var(--space-2);
+  }
+
+  /* auto-fit still fits two 18rem summaries into a tablet-width column, which leaves neither card
+     enough room for the rows inside it. One card at a time from here down. */
+  .dashboard__grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The paper title is the only part of the row that identifies which paper it is, and sharing a
+     line with a 64px bar and a 7rem step name left it a few characters wide. It takes the whole
+     first line, and the two glanceable parts share the second. The paper-deadline variant is
+     exempt: a venue and a countdown are both short, and they still fit side by side. */
+  .dashboard-summary__row:not(.dashboard-summary__row--paper) {
+    grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
+    gap: var(--space-1) var(--space-3);
+  }
+
+  .dashboard-summary__row:not(.dashboard-summary__row--paper) .dashboard-summary__row-label {
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-summary__row:not(.dashboard-summary__row--paper) .dashboard-summary__bar {
+    grid-column: 1;
+  }
+
+  .dashboard-summary__row:not(.dashboard-summary__row--paper) .dashboard-summary__row-step {
+    grid-column: 2;
+  }
+
+  /* The hero wraps long before the 640px where layout.css picks the ledger up: the ticks need
+     their full width, so the ledger drops under the identity around here. The rule that separated
+     the two columns has to follow it and become the one that separates the two rows. */
+  .profile__completeness {
+    align-items: flex-start;
+    width: 100%;
+    margin-left: 0;
+    padding-left: 0;
+    padding-top: var(--space-4);
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Four runs of ticks on one line is wider than a phone. Wrapping keeps a run intact rather than
+     stranding a lone group on a line of its own, which would read as a fifth group. */
+  .profile__ledger {
+    flex-wrap: wrap;
+    row-gap: var(--space-2);
+  }
+
+  /* One answer per line. Two 18rem columns fit a tablet on paper, but the labels, the optional
+     notes and the country picker all assume a field owns its width. */
+  .profile__field-grid,
+  .profile__form .profile__field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Half the picker's width is a country name nobody reads back; the number is what gets checked
+     against a phone, so the dial code gives up what it can spare before the two have to stack. */
+  .profile__phone {
+    grid-template-columns: minmax(0, 6rem) minmax(0, 1fr);
+  }
+
+  /* Pinned above the home indicator rather than under it, and spanning the column: a corner pill
+     on a phone either sits over the thumb or gets cropped by the gesture bar. */
+  .profile__toast {
+    right: max(var(--space-3), var(--safe-area-right));
+    left: max(var(--space-3), var(--safe-area-left));
+    bottom: calc(var(--space-3) + var(--safe-area-bottom));
+  }
+}
+
+/* Small mobile */
+@media (max-width: 400px) {
+  /* An 80px avatar plus a 22px name leaves the name three or four characters per line beside it.
+     The picture leads its own line instead, which is also where the edit affordance wants to be. */
+  .profile__hero {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
+    padding: var(--space-5);
+  }
+
+  /* Below this the dial code and the number are each too narrow to read as what they are, so they
+     stop competing for the same line. */
+  .profile__phone {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -17,6 +17,14 @@ export function registerSlackMonitorEvents(params: {
   handleSlackMessage: SlackMessageHandler;
   /** Called on each inbound event to update liveness tracking. */
   trackEvent?: () => void;
+  onChannelNamingEvent?: (event: {
+    eventType: "channel_created" | "channel_rename";
+    channelId?: string;
+    channelName?: string;
+    ownerUserId?: string;
+    purpose?: string;
+    topic?: string;
+  }) => Promise<void>;
 }) {
   registerSlackMessageEvents({
     ctx: params.ctx,
@@ -24,7 +32,11 @@ export function registerSlackMonitorEvents(params: {
   });
   registerSlackReactionEvents({ ctx: params.ctx, trackEvent: params.trackEvent });
   registerSlackMemberEvents({ ctx: params.ctx, trackEvent: params.trackEvent });
-  registerSlackChannelEvents({ ctx: params.ctx, trackEvent: params.trackEvent });
+  registerSlackChannelEvents({
+    ctx: params.ctx,
+    trackEvent: params.trackEvent,
+    onChannelNamingEvent: params.onChannelNamingEvent,
+  });
   registerSlackPinEvents({ ctx: params.ctx, trackEvent: params.trackEvent });
   registerSlackHomeEvents({ ctx: params.ctx, trackEvent: params.trackEvent });
   registerSlackInteractionEvents({ ctx: params.ctx, trackEvent: params.trackEvent });

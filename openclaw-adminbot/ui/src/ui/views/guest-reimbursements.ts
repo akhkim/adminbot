@@ -55,7 +55,7 @@ export function renderGuestReimbursements(state: AppViewState) {
         })}
         <button
           type="button"
-          class="session-link guest-reimbursements__back"
+          class="guest-reimbursements__back"
           data-testid="guest-reimbursements-back"
           @click=${() => {
             goToSignedOutView(state, "login");

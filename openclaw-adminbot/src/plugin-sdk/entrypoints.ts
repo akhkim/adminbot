@@ -46,7 +46,10 @@ export const deprecatedBarrelPluginSdkEntrypoints = pluginSdkSubpaths.filter((en
  *
  * Cross-owner extension imports are blocked by package contract guardrails.
  */
-export const reservedBundledPluginSdkEntrypoints = ["codex-mcp-projection"] as const;
+// Empty since the deep clean: `codex-mcp-projection` was reserved for the codex
+// plugin, which no longer ships here. The subpath survives as an ordinary public
+// entrypoint; it is simply no longer owned by a bundled plugin.
+export const reservedBundledPluginSdkEntrypoints = [] as readonly string[];
 
 /**
  * Supported SDK facades backed by bundled plugins until generic contracts replace them.
@@ -61,14 +64,11 @@ export const supportedBundledFacadeSdkEntrypoints = [
   "provider-zai-endpoint",
   "qa-runner-runtime",
   "telegram-account",
-  "tts-runtime",
   "zalouser",
 ] as const;
 
 /** Plugin-owned surfaces intentionally public and documented for third-party plugins. */
 export const publicPluginOwnedSdkEntrypoints = [
-  "browser-config",
-  "image-generation-core",
   "memory-core",
   "memory-core-host-embedding-registry",
   "memory-core-host-engine-embeddings",
@@ -89,9 +89,7 @@ export const publicPluginOwnedSdkEntrypoints = [
   "memory-host-markdown",
   "memory-host-search",
   "memory-host-status",
-  "speech-core",
   "telegram-command-config",
-  "video-generation-core",
 ] as const;
 
 /** Map every SDK entrypoint name to its source file path inside the repo. */

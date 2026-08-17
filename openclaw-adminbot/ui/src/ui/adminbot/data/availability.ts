@@ -14,6 +14,9 @@ export type AvailabilityRow = {
   project?: string;
   hours_per_week: number;
   note?: string;
+  // Optional supporting page — a syllabus, a project board. https only; the service enforces that
+  // (validateExternalLink in extensions/adminbot/src/kernel/service.ts).
+  link?: string;
 };
 
 export type TimeOffRow = {
@@ -22,6 +25,16 @@ export type TimeOffRow = {
   kind?: string;
   availability: "none" | "partial";
   note?: string;
+  // The member's own name for this, used when `kind` is "other" so the closed enum stays closed.
+  label?: string;
+  link?: string;
+};
+
+// A dated milestone on the member's horizon — thesis, defence, graduation. A date, not a range.
+export type MilestoneRow = {
+  date: string;
+  label: string;
+  link?: string;
 };
 
 // Mirrors ADMINBOT_OPEN_PROJECT in extensions/adminbot/src/contracts/actions.ts: a sentinel project
@@ -54,6 +67,25 @@ export function availabilityRows(value: unknown): AvailabilityRow[] {
             hours_per_week: Number(row.hours_per_week) || 0,
             ...(typeof row.project === "string" ? { project: row.project } : {}),
             ...(typeof row.note === "string" ? { note: row.note } : {}),
+            ...(typeof row.link === "string" ? { link: row.link } : {}),
+          },
+        ]
+      : [];
+  });
+}
+
+export function milestoneRows(value: unknown): MilestoneRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry) => {
+    const row = entry as Partial<MilestoneRow> | null;
+    return row && typeof row.date === "string" && typeof row.label === "string" && row.label.trim()
+      ? [
+          {
+            date: row.date,
+            label: row.label,
+            ...(typeof row.link === "string" ? { link: row.link } : {}),
           },
         ]
       : [];
@@ -74,6 +106,8 @@ export function timeOffRows(value: unknown): TimeOffRow[] {
             availability: row.availability === "partial" ? ("partial" as const) : ("none" as const),
             ...(typeof row.kind === "string" ? { kind: row.kind } : {}),
             ...(typeof row.note === "string" ? { note: row.note } : {}),
+            ...(typeof row.label === "string" ? { label: row.label } : {}),
+            ...(typeof row.link === "string" ? { link: row.link } : {}),
           },
         ]
       : [];

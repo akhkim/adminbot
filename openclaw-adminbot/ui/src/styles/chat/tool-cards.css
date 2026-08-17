@@ -182,8 +182,7 @@
   color: var(--destructive);
   font-size: 12px; /* was 10px */
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   line-height: 1.4;
 }
 
@@ -227,8 +226,7 @@
   color: var(--destructive);
   font-size: 12px; /* was 10px */
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   line-height: 1;
   flex-shrink: 0;
 }
@@ -285,8 +283,7 @@
 .chat-tool-card__preview-label {
   font-size: 12px; /* was 11px */
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   color: var(--muted);
 }
 
@@ -415,8 +412,7 @@
 .chat-tool-card__block-label {
   font-size: 12px; /* was 11px */
   font-weight: 600;
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-tight);
   color: inherit;
 }
 
@@ -597,8 +593,7 @@
   color: var(--accent);
   font-size: 12px; /* was 10px */
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
   line-height: 1.4;
   flex-shrink: 0;
 }
@@ -968,9 +963,8 @@
   color: var(--destructive);
   font-size: 12px; /* was 10px */
   font-weight: 650;
-  letter-spacing: var(--tracking-label);
+  letter-spacing: var(--tracking-tight);
   line-height: 1;
-  text-transform: uppercase;
 }
 
 .chat-activity-group__body {

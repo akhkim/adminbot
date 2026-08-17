@@ -221,6 +221,14 @@ export function createAdminBotToolHandlers(
         },
         signal,
       ),
+    askGuidebook: (params: { question: string; maxResults?: number }) =>
+      client.askGuidebook(
+        {
+          question: params.question,
+          ...(params.maxResults === undefined ? {} : { maxResults: params.maxResults }),
+        },
+        signal,
+      ),
     proposeAction: (params: GenericProposalParams) =>
       client.createProposal(
         {

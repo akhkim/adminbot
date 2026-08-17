@@ -301,10 +301,6 @@ function renderCronFilterIcon(hiddenCount: number) {
   `;
 }
 
-export function renderChatSessionSelect(state: AppViewState) {
-  return renderChatSessionSelectBase(state, switchChatSession, { surface: "desktop" });
-}
-
 function chatAutoScrollLabel(mode: ChatAutoScrollMode) {
   switch (mode) {
     case "always":

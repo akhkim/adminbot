@@ -203,7 +203,7 @@ imports.
 5. **Gateway.** The run reports back through `src/gateway/`: `attempt.llm-boundary.ts`
    imports `gateway/server-methods/agent-timestamp.js`, and agent tools reach the gateway via
    `src/gateway/call.ts`. The Control UI's own entry is the mirror image —
-   `src/gateway/server-methods/chat.ts` imports `dispatchInboundMessage` from
+   `src/gateway/server-methods/chat/chat.ts` imports `dispatchInboundMessage` from
    `src/auto-reply/dispatch.ts`, so a browser message joins the pipeline at step 2.
 
 ## I want to…

@@ -29,6 +29,154 @@ URGENCY_BANDS = ((3, "🔴"), (7, "🟠"), (30, "🟡"))
 URGENCY_DEFAULT = "🟢"
 
 
+# --- archival classification -------------------------------------------------
+#
+# Whether submitting somewhere burns the paper. An archival venue publishes it in
+# proceedings, so the work cannot then be submitted to a second archival venue; a
+# non-archival one (a workshop, IASEAI) does not, so the same paper can go on to a
+# real conference afterwards. That distinction decides whether a deadline is a
+# commitment or an opportunity, which is why the board separates them rather than
+# listing 100+ dates in one column.
+#
+# This is the single place the policy is written. The collector stamps `archival`
+# onto every venue from here, so the Control UI, the served board, the calendar
+# publisher and the reminder cadence all read a field rather than each re-deriving
+# a rule -- the same reason the mandatory profile fields ended up in one list.
+#
+# Source: Zhijing's guidebook (see content/deadlines/README.md).
+
+# The *ACL family. Main and demo tracks are archival; their workshops are not.
+# All four run submissions through ACL Rolling Review.
+ARR_FAMILIES = ("ACL", "EMNLP", "NAACL", "EACL")
+
+# ML conferences whose main track is archival. CLeaR is deliberately here and
+# deliberately absent from the workshop sweep below: the lab tracks its main
+# track only.
+ML_ARCHIVAL_FAMILIES = ("NeurIPS", "ICML", "ICLR", "COLM", "CLeaR")
+
+# Families whose workshops the lab tracks. CLeaR is not among them.
+WORKSHOP_FAMILIES = ARR_FAMILIES + ("NeurIPS", "ICML", "ICLR", "COLM")
+
+# Non-archival by nature: submitting does not consume the paper.
+NON_ARCHIVAL_FAMILIES = ("IASEAI",)
+
+# Tracks that count as the archival part of an archival venue. Anything else
+# under the same family -- a workshop, a findings-style companion, a rebuttal --
+# is not a submission that burns the paper.
+ARCHIVAL_TRACKS = ("main", "demo")
+
+ALL_FAMILIES = tuple(
+    dict.fromkeys(ARR_FAMILIES + ML_ARCHIVAL_FAMILIES + WORKSHOP_FAMILIES + NON_ARCHIVAL_FAMILIES)
+)
+
+
+def is_archival(family: str, track: str) -> bool:
+    """True when publishing here consumes the paper.
+
+    Deliberately closed: a family nobody has classified is treated as
+    non-archival rather than guessed at, because the expensive mistake is telling
+    someone a venue is safe to submit to twice when it is not... and the reverse
+    error (calling an archival venue non-archival) is the one that would do that.
+    So an unknown family is *not* archival, and it also does not reach the board's
+    archival column, where a wrong entry would be read as advice.
+    """
+    if family in NON_ARCHIVAL_FAMILIES:
+        return False
+    if family in ARR_FAMILIES or family in ML_ARCHIVAL_FAMILIES:
+        return track in ARCHIVAL_TRACKS
+    return False
+
+
+def family_of(venue_group: str, name: str = "") -> str:
+    """The venue family a group belongs to, or "" when it is not one the lab tracks.
+
+    Matched on the group first ("EMNLP 2026 Workshops" -> EMNLP) and the display
+    name second, so an OpenReview title that names its conference still classifies
+    when the group is generic. Longest match wins so NAACL is never read as ACL.
+    """
+    haystack = f"{venue_group} {name}".upper()
+    for candidate in sorted(ALL_FAMILIES, key=len, reverse=True):
+        if candidate.upper() in haystack:
+            return candidate
+    return ""
+
+
+# --- sub-deadlines ------------------------------------------------------------
+#
+# A venue is not one date. A conference typically runs an abstract deadline, then
+# the full paper, then rebuttal, then camera-ready; an ARR venue runs a direct
+# submission and a commitment. Each is stored as its own dated row sharing a
+# `venue_group`, which is what lets the board group them under one conference and
+# count down to each separately. `milestone` is the machine-readable name for
+# which one a row is, so ordering and labelling do not depend on parsing prose out
+# of `deadline_label`.
+#
+# Ordered as a paper meets them, which is the order the board lists them in.
+MILESTONES = (
+    "abstract",
+    "direct_submission",
+    "full_paper",
+    "commitment",
+    "rebuttal",
+    "notification",
+    "camera_ready",
+)
+
+MILESTONE_LABELS = {
+    "abstract": "Abstract",
+    "direct_submission": "Direct submission",
+    "full_paper": "Full paper",
+    "commitment": "ARR commitment",
+    "rebuttal": "Rebuttal ends",
+    "notification": "Notification",
+    "camera_ready": "Camera-ready",
+}
+
+# Free-text `deadline_label` values already in the dataset, mapped onto the closed
+# set above. Anything unrecognised keeps its own label and sorts last, so an
+# unclassified date is still shown rather than dropped.
+_MILESTONE_FROM_LABEL = {
+    "abstract deadline": "abstract",
+    "abstract": "abstract",
+    "submission": "direct_submission",
+    "arr submission": "direct_submission",
+    "paper submission (arr)": "direct_submission",
+    "direct submission": "direct_submission",
+    "full paper": "full_paper",
+    "paper deadline": "full_paper",
+    "commitment": "commitment",
+    "arr commitment": "commitment",
+    "rebuttal ends": "rebuttal",
+    "camera-ready": "camera_ready",
+    "camera ready": "camera_ready",
+}
+
+
+def milestone_of(deadline_label: str, submission_type: str = "") -> str:
+    """Which sub-deadline a row is, or "" when its label is not one we know."""
+    key = (deadline_label or "").strip().lower()
+    if key in _MILESTONE_FROM_LABEL:
+        return _MILESTONE_FROM_LABEL[key]
+    # ARR rows carry the answer on their route when the label is uninformative.
+    if submission_type == SUBMISSION_COMMITMENT:
+        return "commitment"
+    if submission_type == SUBMISSION_DIRECT:
+        return "direct_submission"
+    return ""
+
+
+def milestone_order(milestone: str) -> int:
+    """Sort key: the order a paper meets these, unknowns last."""
+    return MILESTONES.index(milestone) if milestone in MILESTONES else len(MILESTONES)
+
+
+# ACL Rolling Review offers two routes to the same venue, and a paper's history
+# decides which one is open to it. Kept as an explicit field rather than inferred
+# from the label so the board can say which is which without parsing prose.
+SUBMISSION_DIRECT = "direct"          # submit fresh to the ARR cycle
+SUBMISSION_COMMITMENT = "commitment"  # commit an already-reviewed ARR paper
+
+
 def urgency_marker(days_remaining: int) -> str:
     for limit, marker in URGENCY_BANDS:
         if days_remaining <= limit:

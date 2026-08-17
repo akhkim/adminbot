@@ -36,7 +36,6 @@ export {
   createConfigWithFallbacks,
   createLegacyProviderConfig,
 } from "./test-helpers/onboard-config.js";
-export {} from "./test-helpers/provider-media-capability-assertions.js";
 export {
   expectUnifiedModelCatalogEntries,
   expectUnifiedModelCatalogProviderRegistration,

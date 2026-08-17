@@ -39,7 +39,7 @@ vi.mock("../sessions/session-subagent-reactivation.runtime.js", () => ({
   replaceSubagentRunAfterSteer: (...args: unknown[]) => replaceSubagentRunAfterSteerMock(...args),
 }));
 
-vi.mock("./chat.js", () => ({
+vi.mock("./chat/chat.js", () => ({
   chatHandlers: {
     "chat.send": (...args: unknown[]) => chatSendMock(...args),
   },

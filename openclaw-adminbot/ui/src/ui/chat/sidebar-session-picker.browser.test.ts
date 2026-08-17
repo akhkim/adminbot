@@ -94,7 +94,7 @@ function sidebarSessionPickerHtml(opts: { sidebarOpen?: boolean; workspaceRail?:
       `
     : "";
   return `
-    <div class="shell shell--chat shell--nav-collapsed" data-chat-sidebar-picker-fixture>
+    <div class="shell shell--chat" data-chat-sidebar-picker-fixture>
       <header class="topbar">
         <div class="topnav-shell">
           <div class="topnav-shell__actions">
@@ -106,7 +106,7 @@ function sidebarSessionPickerHtml(opts: { sidebarOpen?: boolean; workspaceRail?:
         </div>
       </header>
       <div class="shell-nav">
-        <aside class="sidebar sidebar--collapsed">
+        <aside class="sidebar">
           <div class="sidebar-shell">
             <div class="sidebar-shell__header">
               <button class="nav-collapse-toggle" type="button" aria-label="Expand navigation">
@@ -114,12 +114,20 @@ function sidebarSessionPickerHtml(opts: { sidebarOpen?: boolean; workspaceRail?:
               </button>
             </div>
             <div class="sidebar-shell__body">
-              <section class="sidebar-sessions">
-                <button class="sidebar-new-session" type="button" aria-label="New session">
-                  <span class="sidebar-new-session__icon" aria-hidden="true">${iconSvg()}</span>
-                </button>
-                <div class="sidebar-session-select sidebar-session-select--collapsed">
-                  <div class="chat-controls__session-row chat-controls__session-row--session-switcher chat-controls__session-row--single-agent chat-controls__session-row--compact">
+              <nav class="sidebar-nav"></nav>
+            </div>
+          </div>
+        </aside>
+      </div>
+      <main class="content content--chat">
+        <section class="chat-sessions" aria-label="New session">
+          <div class="chat-sessions__toolbar">
+            <button class="chat-sessions__new" type="button" aria-label="New session">
+              <span class="chat-sessions__new-icon" aria-hidden="true">${iconSvg()}</span>
+              <span class="chat-sessions__new-label">New session</span>
+            </button>
+            <div class="chat-sessions__select">
+              <div class="chat-controls__session-row chat-controls__session-row--session-switcher chat-controls__session-row--single-agent chat-controls__session-row--compact">
                     <div class="chat-controls__session chat-controls__session-picker">
                       <button
                         class="chat-controls__session-trigger"
@@ -159,12 +167,9 @@ function sidebarSessionPickerHtml(opts: { sidebarOpen?: boolean; workspaceRail?:
                     </div>
                   </div>
                 </div>
-              </section>
             </div>
           </div>
-        </aside>
-      </div>
-      <main class="content content--chat">
+        </section>
         <section class="card chat">
           <div class="chat-workbench">
             ${workspaceRail}
@@ -295,7 +300,7 @@ async function expectNoHorizontalOverflow(page: Page) {
 }
 
 describeBrowserLayout("sidebar session picker browser layout", () => {
-  it("keeps the collapsed sidebar session picker interactive above the desktop workbench when the workspace rail is visible", async () => {
+  it("keeps the chat toolbar session picker interactive above the desktop workbench when the workspace rail is visible", async () => {
     const page = await openSidebarSessionPickerFixture(1366, 900, { workspaceRail: true });
     try {
       await expectNoHorizontalOverflow(page);

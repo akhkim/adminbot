@@ -5,6 +5,23 @@ const execFile = promisify(execFileCallback);
 const DCS_FORM_TIMEOUT_MS = 90_000;
 const DCS_FORM_MAX_OUTPUT_BYTES = 1024 * 1024;
 
+// The roster keeps one free-text `name`; the DCS form (like most external forms) wants separate
+// First/Last Name answers, so this splits on the last space -- everything before it becomes the
+// first name (covers middle names/initials), the final token becomes the last name. A one-word
+// name (no space) has nothing to split, so it is used for both rather than leaving a required
+// field blank.
+export function splitDisplayName(name: string): { firstName: string; lastName: string } {
+  const trimmed = name.trim();
+  const lastSpace = trimmed.lastIndexOf(" ");
+  if (lastSpace === -1) {
+    return { firstName: trimmed, lastName: trimmed };
+  }
+  return {
+    firstName: trimmed.slice(0, lastSpace).trim(),
+    lastName: trimmed.slice(lastSpace + 1).trim(),
+  };
+}
+
 export type DcsFormRunner = (params: {
   firstName: string;
   lastName: string;

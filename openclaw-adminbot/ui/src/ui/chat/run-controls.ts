@@ -12,7 +12,6 @@ export type ChatRunControlsProps = {
   sending: boolean;
   onAbort?: () => void;
   onExport: () => void;
-  onNewSession: () => void;
   onSend: () => void;
   onStoreDraft: (draft: string) => void;
   showSecondary?: boolean;
@@ -22,19 +21,6 @@ export function renderChatRunControls(props: ChatRunControlsProps) {
   const showSecondary = props.showSecondary ?? true;
   return html`
     <div class="agent-chat__toolbar-right">
-      ${showSecondary && !props.canAbort
-        ? html`
-            <button
-              class="btn btn--ghost"
-              @click=${props.onNewSession}
-              title=${t("chat.runControls.newSession")}
-              aria-label=${t("chat.runControls.newSession")}
-            >
-              ${icons.plus}
-              <span class="agent-chat__control-label">${t("chat.runControls.newSession")}</span>
-            </button>
-          `
-        : nothing}
       ${showSecondary
         ? html`
             <button

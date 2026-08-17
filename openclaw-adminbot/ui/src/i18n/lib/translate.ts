@@ -100,6 +100,19 @@ class I18nManager {
     this.translations[locale] = map;
   }
 
+  /**
+   * Drops every lazily loaded locale bundle and returns to English.
+   *
+   * Test-only. The UI suites share a worker without isolation, so a bundle one
+   * file loads stays loaded for every file after it — which silently changes
+   * what `setLocale` has to await and what a language picker renders. Subscribers
+   * are deliberately left alone: they belong to live elements, not to the cache.
+   */
+  public resetForTests() {
+    this.translations = { [DEFAULT_LOCALE]: en };
+    this.locale = DEFAULT_LOCALE;
+  }
+
   public subscribe(sub: Subscriber) {
     this.subscribers.add(sub);
     return () => this.subscribers.delete(sub);

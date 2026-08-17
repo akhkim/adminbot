@@ -415,6 +415,10 @@ export const sharedVitestConfig = {
       sourcePackageAlias("media-core", "read-byte-stream-with-limit"),
       sourcePackageAlias("media-core", "read-response-with-limit"),
       sourcePackageAlias("media-core"),
+      // The nudge engine is read from source rather than installed as a workspace
+      // package — ui/vite.config.ts does the same. Without this the whole UI lane
+      // fails to collect on `ui/src/ui/adminbot/next-step.ts`.
+      sourcePackageAlias("nudge-engine"),
       ...sourcePackageAliasesFromExports("acp-core", acpCorePackageJson.exports),
       ...sourcePluginSdkSubpaths.map((subpath) => ({
         find: `openclaw/plugin-sdk/${subpath}`,

@@ -303,22 +303,13 @@ export function adminBotConsoleMarkup(): string {
       </section>
 
       <section class="section" id="map">
-        <div class="panel">
-          <h2>Member map</h2>
-          <div class="list-toolbar">
-            <span class="subtle">Where everyone is. Slack profile first; the roster location is used only where Slack has nothing.</span>
-            <span class="count" id="map-count"></span>
-          </div>
-          <div class="toolbar">
-            <button type="button" id="map-refresh">Refresh from Slack</button>
-            <span class="status" id="map-status"></span>
-          </div>
-          <div class="toolbar">
-            <button type="button" id="directory-refresh">Sync Slack IDs &amp; timezones</button>
-            <span class="status" id="directory-status"></span>
-          </div>
-          <div id="map-canvas"></div>
-          <div id="map-list"></div>
+        <!-- The interactive map (pan/zoom, hover tooltips, real tiles) lives at its own URL so it
+             can be linked to directly; embedded here rather than reimplemented so the console and
+             the standalone page never drift into two different maps. It carries its own heading
+             and toolbar (including both Slack actions), so this tab adds no chrome of its own
+             around it. -->
+        <div class="panel panel-flush">
+          <iframe id="map-frame" src="/lab_stats/member_map" title="Lab member map"></iframe>
         </div>
       </section>
 

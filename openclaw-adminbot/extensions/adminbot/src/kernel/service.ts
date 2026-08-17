@@ -24,9 +24,12 @@ import type {
   AdminBotPaperArtifactLinks,
   AdminBotPaperNudge,
   AdminBotPaperRecord,
+  AdminBotPasswordReset,
   AdminBotPaperRecordInput,
   AdminBotPaperStep,
   AdminBotPaperTimeline,
+  AdminBotProfilePhotoAssessment,
+  AdminBotProfilePhotoPolishVariant,
   AdminBotRemovePendingRequest,
   AdminBotRiskTier,
   AdminBotSettings,
@@ -36,8 +39,11 @@ import type {
 } from "../contracts/actions.js";
 import {
   adminBotExternalCollaboratorSubgroups,
+  adminBotMandatoryProfileFieldLabels,
+  adminBotMandatoryProfileFields,
   adminBotMemberRoles,
   adminBotMemberStatuses,
+  ADMINBOT_MAX_LABEL_LENGTH,
   adminBotTimeOffKinds,
 } from "../contracts/actions.js";
 import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
@@ -102,6 +108,9 @@ export type AdminBotServiceStore = {
   getCredentialByMemberId(memberId: string): AdminBotMemberCredential | undefined;
   saveCredential(credential: AdminBotMemberCredential): void;
   updateCredentialEmail(memberId: string, newEmail: string, updatedAt: string): void;
+  savePasswordReset(reset: AdminBotPasswordReset): void;
+  getPasswordResetByTokenHash(tokenHash: string): AdminBotPasswordReset | undefined;
+  markPasswordResetsUsedForMember(memberId: string, usedAt: string): void;
   saveAccountRegistration(registration: AdminBotAccountRegistration): void;
   getAccountRegistration(id: string): AdminBotAccountRegistration | undefined;
   listAccountRegistrations(status?: AdminBotRegistrationStatus): AdminBotAccountRegistration[];
@@ -117,7 +126,33 @@ export type AdminBotServiceStore = {
   getSession(tokenHash: string): AdminBotAuthSession | undefined;
   touchSession(tokenHash: string, lastSeenAt: string): void;
   revokeSession(tokenHash: string, revokedAt: string): void;
+  revokeSessionsForMember(memberId: string, revokedAt: string): void;
   pruneSessionsBefore(cutoffIso: string): number;
+  saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void;
+  getSlackChannelNamingRecord(channelId: string): AdminBotSlackChannelNamingRecord | undefined;
+  listSlackChannelNamingRecords(): AdminBotSlackChannelNamingRecord[];
+  deleteSlackChannelNamingRecord(channelId: string): boolean;
+};
+
+export type AdminBotSlackChannelNamingEvent = {
+  event_type: "channel_created" | "channel_rename";
+  channel_id: string;
+  channel_name: string;
+  owner_user_id?: string;
+  purpose?: string;
+  topic?: string;
+};
+
+export type AdminBotSlackChannelNamingRecord = {
+  channel_id: string;
+  latest_channel_name: string;
+  owner_user_id?: string;
+  expected_prefix: SlackChannelNamingPrefix;
+  suggested_name: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  reminder_sent_at?: string;
+  reminder_action_id?: string;
 };
 
 // The in-memory store implementation lives in store/memory.ts alongside store/sqlite.ts;
@@ -134,6 +169,20 @@ export type AdminBotActionExecutor = {
 export type AdminBotServiceOptions = {
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
+  reviewSlackProfilePhoto?: (params: {
+    slackUserId: string;
+  }) => Promise<{
+    compliant: boolean;
+    issues: string[];
+    summary: string;
+    photoUrl?: string;
+    source?: "ai" | "heuristic";
+  }>;
+  polishSlackProfilePhoto?: (params: {
+    slackUserId: string;
+    instructions: string;
+    iteration: number;
+  }) => Promise<{ image_data_url: string; note?: string }>;
 };
 
 const DEFAULT_ACTION_POLICIES = {
@@ -143,9 +192,13 @@ const DEFAULT_ACTION_POLICIES = {
   "slack.invite_guest": approvalPolicy("T3", ["admin"]),
   "slack.invite_member": approvalPolicy("T3", ["admin"]),
   "slack.send_message": approvalPolicy("T3", ["admin"]),
+  "slack.profile_photo_update": autoPolicy("T1"),
+  "slack.channel_naming_notify_owner": autoPolicy("T1"),
+  "slack.rename_channel": autoPolicy("T1"),
   "vector.invite": approvalPolicy("T3", ["admin"]),
   "calendar.create_tentative_hold": approvalPolicy("T2", ["admin"]),
   "calendar.send_invite": approvalPolicy("T3", ["admin"]),
+  "calendar.add_attendees": approvalPolicy("T3", ["admin"]),
   "calendar.reschedule": approvalPolicy("T3", ["admin"]),
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
@@ -214,6 +267,19 @@ const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = 
 const DEFAULT_SETTINGS = {
   paper_escalation_business_days: 3,
 } as const satisfies Omit<AdminBotSettings, "updated_at">;
+
+const SLACK_CHANNEL_NAME_ALLOWED_PREFIXES = [
+  "proj",
+  "meeting",
+  "group",
+  "lab",
+  "students",
+  "etc",
+] as const;
+type SlackChannelNamingPrefix = (typeof SLACK_CHANNEL_NAME_ALLOWED_PREFIXES)[number];
+
+const SLACK_CHANNEL_NAME_RE = /^(proj|meeting|group|lab|students|etc)-[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+const SLACK_CHANNEL_NAMING_RENAME_AFTER_MS = 48 * 60 * 60 * 1000;
 
 // Least-privilege baseline for a member created without an explicit tier.
 const DEFAULT_MEMBER_PRIVILEGE_LEVEL: AdminBotPrivilegeLevel = "external_collaborator";
@@ -563,7 +629,17 @@ export class AdminBotService {
     const existing = this.store.getLabMember(member.id);
     const privilegeLevel =
       member.privilege_level ?? existing?.privilege_level ?? DEFAULT_MEMBER_PRIVILEGE_LEVEL;
-    const validation = validateLabMember(member, privilegeLevel, existing?.email);
+    // This is a patch, not a replace: `stored` below is {...existing, ...member}, and callers send
+    // only the fields they are changing. So a *required* field has to be checked against what will
+    // actually be stored rather than against the patch -- an admin saving their schedule sends
+    // `availability` and nothing else, and validating the patch alone read that as a member with no
+    // name at all. Every other check in validateLabMember is already guarded on `!== undefined`, so
+    // it still only inspects what this request actually sent.
+    const validation = validateLabMember(
+      { ...member, name: member.name ?? existing?.name ?? "" },
+      privilegeLevel,
+      existing?.email,
+    );
     if (validation) {
       return serviceError(400, validation);
     }
@@ -906,7 +982,21 @@ export class AdminBotService {
   async refreshMemberDirectoryFromSlack(
     deps: {
       resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
-      fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
+      // A present key means Slack answered for that user: a string is their zone, `null` is
+      // "Slack has none". An *absent* key means the lookup never succeeded, which must never be
+      // read as an answer -- see the clearing rule below.
+      fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
+      // Messages each member sent inside the activity window. Same present/absent contract as the
+      // timezone reader: an absent key means the sweep could not measure that member, which must
+      // never be stored as zero -- zero is "we looked and they said nothing", and the badge reads
+      // the two differently.
+      // Takes the channels to read as well as the members to count: Slack has no "messages by
+      // user" endpoint a bot token can call, so the only route is reading channels and tallying by
+      // author, and the store is what knows which channels the lab tracks.
+      fetchSlackMessageCounts?: (
+        slackUserIds: string[],
+        channelIds: string[],
+      ) => Promise<ReadonlyMap<string, number>>;
     },
     actor: string,
   ): Promise<
@@ -914,6 +1004,7 @@ export class AdminBotService {
       idsResolved: number;
       timezonesChecked: number;
       timezonesUpdated: number;
+      activityChecked: number;
     }>
   > {
     const now = new Date().toISOString();
@@ -943,9 +1034,18 @@ export class AdminBotService {
       const members = this.store.listLabMembers().filter((member) => member.slack_user_id);
       const ids = members.flatMap((member) => (member.slack_user_id ? [member.slack_user_id] : []));
       const timezones = await deps.fetchSlackTimezones(ids);
-      timezonesChecked = ids.length;
       for (const member of members) {
-        const next = timezones.get(member.slack_user_id ?? "")?.trim() || undefined;
+        const slackUserId = member.slack_user_id ?? "";
+        // Not asked, or the ask failed. Clearing here is how a transport problem used to wipe a
+        // roster: an empty result is indistinguishable from "Slack knows nothing about anyone",
+        // and timezone is a mandatory field, so a failed refresh quietly made every profile
+        // incomplete. Absent means unknown, and unknown leaves the stored value alone.
+        if (!timezones.has(slackUserId)) {
+          continue;
+        }
+        timezonesChecked += 1;
+        const answer = timezones.get(slackUserId);
+        const next = answer?.trim() || undefined;
         if ((member.timezone ?? undefined) === next) {
           continue;
         }
@@ -964,7 +1064,50 @@ export class AdminBotService {
       actor,
       details: { idsResolved, timezonesChecked, timezonesUpdated },
     });
-    return { ok: true, status: 200, payload: { idsResolved, timezonesChecked, timezonesUpdated } };
+    // Message counts, stamped last so a member linked earlier in this same pass is included.
+    let activityChecked = 0;
+    if (deps.fetchSlackMessageCounts) {
+      const linked = this.store
+        .listLabMembers()
+        .filter((member): member is AdminBotLabMember & { slack_user_id: string } =>
+          Boolean(member.slack_user_id?.trim()),
+        );
+      if (linked.length) {
+        const channelIds = this.store
+          .listSlackChannelNamingRecords()
+          .map((record) => record.channel_id)
+          .filter(Boolean);
+        const counts = await deps.fetchSlackMessageCounts(
+          linked.map((member) => member.slack_user_id),
+          channelIds,
+        );
+        for (const member of linked) {
+          const count = counts.get(member.slack_user_id);
+          // Absent means the sweep could not measure this member. Leave the previous reading in
+          // place rather than overwriting it with a zero nobody observed.
+          if (count === undefined) {
+            continue;
+          }
+          activityChecked += 1;
+          this.store.saveLabMember({
+            ...member,
+            slack_messages_7d: count,
+            slack_activity_checked_at: now,
+            updated_at: now,
+          });
+        }
+        this.recordAudit({
+          type: "lab_member.upserted",
+          actor,
+          details: { slack_activity_checked: activityChecked },
+        });
+      }
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { idsResolved, timezonesChecked, timezonesUpdated, activityChecked },
+    };
   }
 
   // Reviewing cycles and their firing history, for the admin panel. Reads persisted
@@ -1055,6 +1198,31 @@ export class AdminBotService {
     });
   }
 
+  /**
+   * Records that the guide's send filed a DCS Slack-access request, or failed to.
+   *
+   * The request lands on a Microsoft Form with no receipt and no callback, so this row is the only
+   * evidence it was attempted. It used to be written by the approval path; the trigger moved to
+   * the send, and the record moved with it.
+   */
+  recordDcsFormAttempt(params: {
+    actor: string;
+    template_id: string;
+    email: string;
+    submitted: boolean;
+    error?: string;
+  }): void {
+    this.recordAudit({
+      type: params.submitted ? "auth.dcs_form_submitted" : "auth.dcs_form_failed",
+      actor: params.actor,
+      details: {
+        template_id: params.template_id,
+        recipient: params.email,
+        ...(params.error ? { error: params.error } : {}),
+      },
+    });
+  }
+
   listOnboardingStepPending(
     stepId: string,
   ): AdminBotServiceResponse<{ step_id: string; message: string; members: AdminBotLabMember[] }> {
@@ -1077,6 +1245,106 @@ export class AdminBotService {
   // Read-only, so it carries no privilege gate of its own at the route level (same shape as
   // listPaperNudges) -- it is what the daily reminder run and the Control UI dashboard both check
   // before deciding whether there is anything to warn about.
+  /**
+   * One-time backfill of the `notes` line convention into the fields that now own those facts.
+   *
+   * ui/src/ui/adminbot/data/member-notes.ts encoded seven profile fields as "Label: value" lines
+   * inside the free-text notes column, with no server-side schema. Five of them duplicated real
+   * contract fields, so the same fact lived in two places and whichever one a reader consulted
+   * decided the answer -- which is why making any of them mandatory was unsafe.
+   *
+   * Deliberately conservative, because this rewrites stored member records:
+   *   - a contract field that already holds something is never overwritten; the line is dropped
+   *     as the duplicate it is,
+   *   - a line whose label is not one of the seven is left in notes untouched,
+   *   - notes keeps whatever prose remains, and is cleared only when nothing is left.
+   * Re-running it is a no-op once the lines are gone, so a partial run is safe to repeat.
+   */
+  migrateMemberNotesToFields(actor: string): AdminBotServiceResponse<{
+    membersScanned: number;
+    membersUpdated: number;
+    fieldsFilled: number;
+  }> {
+    // Label as written by buildMemberNotes -> the field that now owns it. `research interests`
+    // lands on research_topics, which is a list, so it is split the way the roster stores it.
+    const LINE_FIELDS: Array<[string, keyof AdminBotLabMember]> = [
+      ["location", "location"],
+      ["joined month", "joined_month"],
+      ["research interests", "research_topics"],
+      ["gmail for calendar", "calendar_email"],
+      ["whatsapp", "whatsapp"],
+      ["github", "github_url"],
+      ["personal website", "personal_website"],
+    ];
+    const now = new Date().toISOString();
+    let membersUpdated = 0;
+    let fieldsFilled = 0;
+    const members = this.store.listLabMembers();
+    for (const member of members) {
+      const notes = typeof member.notes === "string" ? member.notes : "";
+      if (!notes.trim()) {
+        continue;
+      }
+      const kept: string[] = [];
+      const patch: Record<string, unknown> = {};
+      let touched = false;
+      for (const rawLine of notes.split("\n")) {
+        const line = rawLine.trim();
+        if (!line) {
+          continue;
+        }
+        const [rawKey, ...rest] = line.split(":");
+        const key = rawKey?.trim().toLowerCase() ?? "";
+        const value = rest.join(":").trim();
+        const match = LINE_FIELDS.find(([label]) => label === key);
+        if (!match || !value) {
+          kept.push(line);
+          continue;
+        }
+        touched = true;
+        const [, field] = match;
+        const existing = member[field];
+        const alreadySet = Array.isArray(existing)
+          ? existing.filter(Boolean).length > 0
+          : String(existing ?? "").trim() !== "";
+        if (alreadySet) {
+          // The field wins. The line was a duplicate of a fact already stored properly.
+          continue;
+        }
+        patch[field] =
+          field === "research_topics"
+            ? value
+                .split(",")
+                .map((entry) => entry.trim())
+                .filter(Boolean)
+            : value;
+        fieldsFilled += 1;
+      }
+      if (!touched) {
+        continue;
+      }
+      const remaining = kept.join("\n").trim();
+      const stored: AdminBotLabMember = { ...member, ...patch, updated_at: now };
+      if (remaining) {
+        stored.notes = remaining;
+      } else {
+        delete stored.notes;
+      }
+      this.store.saveLabMember(stored);
+      membersUpdated += 1;
+    }
+    this.recordAudit({
+      type: "lab_member.notes_migrated",
+      actor,
+      details: { members_scanned: members.length, members_updated: membersUpdated, fieldsFilled },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { membersScanned: members.length, membersUpdated, fieldsFilled },
+    };
+  }
+
   listMembersWithIncompleteMandatoryFields(): AdminBotServiceResponse<{
     members: Array<{ id: string; name: string; missing_fields: string[] }>;
   }> {
@@ -1171,6 +1439,225 @@ export class AdminBotService {
       }
     }
     return latest;
+  }
+
+  // Reviews Slack profile photos for active lab members and nudges non-compliant members with the
+  // fixed guideline copy. Assessment can come from an injected AI reviewer or a deterministic
+  // fallback when no reviewer is configured.
+  async runProfilePhotoReviewAndReminders(
+    actor: string,
+  ): Promise<
+    AdminBotServiceResponse<{
+      reviewed: number;
+      non_compliant: number;
+      nudges_created: number;
+      nudges_skipped: number;
+    }>
+  > {
+    const members = this.store
+      .listLabMembers()
+      .filter((member) => member.status === "active" || member.status === "part_time" || member.status === "on_leave");
+    const now = new Date().toISOString();
+    let reviewed = 0;
+    const nonCompliantMemberIds: string[] = [];
+    for (const member of members) {
+      const assessment = await this.assessMemberProfilePhoto(member, now);
+      const review = {
+        ...(member.profile_photo_review ?? {}),
+        assessment,
+      };
+      this.store.saveLabMember({
+        ...member,
+        profile_photo_review: review,
+        updated_at: now,
+      });
+      reviewed += 1;
+      if (!assessment.compliant) {
+        nonCompliantMemberIds.push(member.id);
+      }
+    }
+    const nudge = nonCompliantMemberIds.length
+      ? await this.sendMemberNudge(
+          {
+            channel: "slack",
+            recipient_member_ids: nonCompliantMemberIds,
+            message: buildProfilePhotoGuidelineMessage(),
+          },
+          actor,
+        )
+      : ({ ok: true, status: 200, payload: { created: [], skipped: [] } } as const);
+    if (!nudge.ok) {
+      return nudge;
+    }
+    const nudgeSet = new Set(nonCompliantMemberIds);
+    for (const member of members) {
+      if (!nudgeSet.has(member.id)) {
+        continue;
+      }
+      const latest = this.store.getLabMember(member.id);
+      if (!latest) {
+        continue;
+      }
+      this.store.saveLabMember({
+        ...latest,
+        profile_photo_review: {
+          ...(latest.profile_photo_review ?? {}),
+          last_guideline_dm_at: now,
+        },
+        updated_at: now,
+      });
+    }
+    this.recordAudit({
+      type: "profile_photo.reviewed",
+      actor,
+      details: { reviewed, non_compliant: nonCompliantMemberIds.length },
+    });
+    if (nonCompliantMemberIds.length > 0) {
+      this.recordAudit({
+        type: "profile_photo.guideline_nudged",
+        actor,
+        details: {
+          targeted: nonCompliantMemberIds.length,
+          created: nudge.payload.created.length,
+          skipped: nudge.payload.skipped.length,
+        },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        reviewed,
+        non_compliant: nonCompliantMemberIds.length,
+        nudges_created: nudge.payload.created.length,
+        nudges_skipped: nudge.payload.skipped.length,
+      },
+    };
+  }
+
+  // Generates one AI-polished variant of the signed-in member's current Slack profile photo.
+  async polishOwnProfilePhoto(
+    memberId: string,
+  ): Promise<
+    AdminBotServiceResponse<{
+      variant: AdminBotProfilePhotoPolishVariant;
+      variants: AdminBotProfilePhotoPolishVariant[];
+      assessment?: AdminBotProfilePhotoAssessment;
+    }>
+  > {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    if (!member.slack_user_id) {
+      return serviceError(400, "member has no slack_user_id");
+    }
+    if (!this.options.polishSlackProfilePhoto) {
+      return serviceError(503, "profile photo polishing is not configured");
+    }
+    const existingVariants = member.profile_photo_review?.variants ?? [];
+    const polished = await this.options.polishSlackProfilePhoto({
+      slackUserId: member.slack_user_id,
+      instructions: PROFILE_PHOTO_RULES_TEXT,
+      iteration: existingVariants.length + 1,
+    });
+    const now = new Date().toISOString();
+    const variant: AdminBotProfilePhotoPolishVariant = {
+      id: `photo_${randomUUID()}`,
+      image_data_url: polished.image_data_url,
+      created_at: now,
+      ...(polished.note ? { note: polished.note } : {}),
+    };
+    const variants = [...existingVariants, variant];
+    const review = {
+      ...(member.profile_photo_review ?? {}),
+      variants,
+    };
+    this.store.saveLabMember({
+      ...member,
+      profile_photo_review: review,
+      updated_at: now,
+    });
+    this.recordAudit({
+      type: "profile_photo.polished",
+      actor: memberId,
+      details: { member_id: memberId, variant_id: variant.id, variants: variants.length },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { variant, variants, assessment: review.assessment },
+    };
+  }
+
+  // Applies one previously-generated polished photo to the signed-in member's Slack profile.
+  async applyOwnPolishedProfilePhoto(
+    memberId: string,
+    variantId: string,
+  ): Promise<
+    AdminBotServiceResponse<{
+      variant_id: string;
+      action_id: string;
+    }>
+  > {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    if (!member.slack_user_id) {
+      return serviceError(400, "member has no slack_user_id");
+    }
+    const variants = member.profile_photo_review?.variants ?? [];
+    const variant = variants.find((entry) => entry.id === variantId);
+    if (!variant) {
+      return serviceError(404, "profile photo variant not found");
+    }
+    const created = this.createProposal({
+      type: "slack.profile_photo_update",
+      summary: `Update Slack profile photo for ${member.name}`,
+      target: {
+        service: "slack",
+        channel: "slack",
+        target: member.slack_user_id,
+        recipientMemberId: member.id,
+      },
+      proposed_payload: {
+        channel: "slack",
+        tool: "profile",
+        action: "set_photo",
+        target: member.slack_user_id,
+        image_data_url: variant.image_data_url,
+      },
+      undo_plan: "Reapply the previous profile photo manually in Slack.",
+    });
+    if (!created.ok) {
+      return created;
+    }
+    const executed = await this.execute(created.payload.id, { dry_run: false });
+    if (!executed.ok) {
+      return executed;
+    }
+    const now = new Date().toISOString();
+    this.store.saveLabMember({
+      ...member,
+      profile_photo_review: {
+        ...(member.profile_photo_review ?? {}),
+        variants,
+        selected_variant_id: variant.id,
+      },
+      avatar_url: variant.image_data_url,
+      updated_at: now,
+    });
+    this.recordAudit({
+      type: "profile_photo.applied",
+      actor: memberId,
+      details: { member_id: memberId, variant_id: variant.id, action_id: created.payload.id },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: { variant_id: variant.id, action_id: created.payload.id },
+    };
   }
 
   /**
@@ -1304,6 +1791,281 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: { created, skipped } };
   }
 
+  private async assessMemberProfilePhoto(
+    member: AdminBotLabMember,
+    checkedAt: string,
+  ): Promise<AdminBotProfilePhotoAssessment> {
+    if (!member.slack_user_id) {
+      return {
+        compliant: false,
+        issues: ["missing_slack_user_id"],
+        summary: "No Slack account is linked yet, so the profile photo cannot be reviewed.",
+        checked_at: checkedAt,
+        source: "heuristic",
+      };
+    }
+    const reviewer = this.options.reviewSlackProfilePhoto;
+    if (!reviewer) {
+      return {
+        compliant: false,
+        issues: ["reviewer_unavailable"],
+        summary:
+          "Automated photo review is not configured yet. Please use a professional, front-facing headshot with a clean background.",
+        checked_at: checkedAt,
+        source: "heuristic",
+      };
+    }
+    try {
+      const result = await reviewer({ slackUserId: member.slack_user_id });
+      return {
+        compliant: result.compliant,
+        issues: result.issues.map((issue) => issue.trim()).filter(Boolean),
+        summary: result.summary.trim(),
+        checked_at: checkedAt,
+        ...(result.photoUrl ? { photo_url: result.photoUrl } : {}),
+        source: result.source ?? "ai",
+      };
+    } catch (error) {
+      return {
+        compliant: false,
+        issues: ["review_failed"],
+        summary: `Automated photo review failed: ${error instanceof Error ? error.message : String(error)}`,
+        checked_at: checkedAt,
+        source: "heuristic",
+      };
+    }
+  }
+
+  async processSlackChannelNamingEvent(
+    event: AdminBotSlackChannelNamingEvent,
+    actor = "slack-monitor",
+  ): Promise<
+    AdminBotServiceResponse<{
+      status: "compliant" | "pending" | "reminder_sent";
+      channel_id: string;
+      channel_name: string;
+      suggested_name?: string;
+    }>
+  > {
+    const channelId = event.channel_id.trim();
+    const channelName = normalizeSlackChannelName(event.channel_name);
+    if (!channelId) {
+      return serviceError(400, "channel_id is required");
+    }
+    if (!channelName) {
+      return serviceError(400, "channel_name is required");
+    }
+    const naming = evaluateSlackChannelName({
+      channelName,
+      purpose: normalizeOptionalString(event.purpose),
+      topic: normalizeOptionalString(event.topic),
+    });
+    if (naming.valid) {
+      this.store.deleteSlackChannelNamingRecord(channelId);
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          status: "compliant",
+          channel_id: channelId,
+          channel_name: channelName,
+        },
+      };
+    }
+    const now = new Date().toISOString();
+    const existing = this.store.getSlackChannelNamingRecord(channelId);
+    const ownerUserId = normalizeOptionalString(event.owner_user_id) ?? existing?.owner_user_id;
+    let reminderSentAt = existing?.reminder_sent_at;
+    let reminderActionId = existing?.reminder_action_id;
+    if (!reminderSentAt && ownerUserId) {
+      const reminder = await this.sendSlackChannelNamingNotice({
+        ownerUserId,
+        channelId,
+        channelName,
+        suggestedName: naming.suggestedName,
+        mode: "reminder",
+      });
+      if (reminder.ok) {
+        reminderSentAt = now;
+        reminderActionId = reminder.payload.id;
+      }
+    }
+    this.store.saveSlackChannelNamingRecord({
+      channel_id: channelId,
+      latest_channel_name: channelName,
+      ...(ownerUserId ? { owner_user_id: ownerUserId } : {}),
+      expected_prefix: naming.expectedPrefix,
+      suggested_name: naming.suggestedName,
+      first_seen_at: existing?.first_seen_at ?? now,
+      last_seen_at: now,
+      ...(reminderSentAt ? { reminder_sent_at: reminderSentAt } : {}),
+      ...(reminderActionId ? { reminder_action_id: reminderActionId } : {}),
+    });
+    this.recordAudit({
+      type: "slack.channel_naming_checked",
+      actor,
+      details: {
+        channel_id: channelId,
+        channel_name: channelName,
+        suggested_name: naming.suggestedName,
+        reminded: Boolean(reminderSentAt),
+      },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        status: reminderSentAt ? "reminder_sent" : "pending",
+        channel_id: channelId,
+        channel_name: channelName,
+        suggested_name: naming.suggestedName,
+      },
+    };
+  }
+
+  async runSlackChannelNamingSweep(
+    actor = "slack-monitor",
+    nowIso = new Date().toISOString(),
+  ): Promise<
+    AdminBotServiceResponse<{
+      scanned: number;
+      reminders_pending: number;
+      renamed: number;
+      skipped: number;
+    }>
+  > {
+    const records = this.store.listSlackChannelNamingRecords();
+    const dueBefore = new Date(
+      Date.parse(nowIso) - SLACK_CHANNEL_NAMING_RENAME_AFTER_MS,
+    ).toISOString();
+    let remindersPending = 0;
+    let renamed = 0;
+    let skipped = 0;
+    for (const record of records) {
+      const naming = evaluateSlackChannelName({ channelName: record.latest_channel_name });
+      if (naming.valid) {
+        this.store.deleteSlackChannelNamingRecord(record.channel_id);
+        continue;
+      }
+      if (!record.reminder_sent_at || record.reminder_sent_at > dueBefore) {
+        remindersPending += 1;
+        continue;
+      }
+      const rename = this.createProposal({
+        type: "slack.rename_channel",
+        summary: `Rename Slack channel #${record.latest_channel_name} to #${record.suggested_name}`,
+        target: {
+          service: "slack",
+          channel_id: record.channel_id,
+        },
+        proposed_payload: {
+          channel_id: record.channel_id,
+          new_name: record.suggested_name,
+        },
+        rationale:
+          "Channel naming policy auto-enforcement after a 48-hour reminder window elapsed.",
+        undo_plan:
+          "Rename the channel again if a lab admin decides another compliant name is better.",
+      });
+      if (!rename.ok) {
+        skipped += 1;
+        continue;
+      }
+      const renameExecuted = await this.execute(rename.payload.id, { dry_run: false });
+      if (!renameExecuted.ok) {
+        skipped += 1;
+        continue;
+      }
+      renamed += 1;
+      if (record.owner_user_id) {
+        await this.sendSlackChannelNamingNotice({
+          ownerUserId: record.owner_user_id,
+          channelId: record.channel_id,
+          channelName: record.latest_channel_name,
+          suggestedName: record.suggested_name,
+          mode: "renamed",
+        });
+      }
+      this.store.deleteSlackChannelNamingRecord(record.channel_id);
+    }
+    this.recordAudit({
+      type: "slack.channel_naming_swept",
+      actor,
+      details: { scanned: records.length, renamed, reminders_pending: remindersPending },
+    });
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        scanned: records.length,
+        reminders_pending: remindersPending,
+        renamed,
+        skipped,
+      },
+    };
+  }
+
+  private async sendSlackChannelNamingNotice(
+    params: {
+      ownerUserId: string;
+      channelId: string;
+      channelName: string;
+      suggestedName: string;
+      mode: "reminder" | "renamed";
+    },
+    // No `actor` parameter: both call sites used to pass one and nothing here consumed it. The
+    // intent was presumably audit attribution, but this flow records no audit event of its own —
+    // createProposal/execute do their own. Reinstate it alongside a real audit type if the
+    // enforcement flow should name who triggered a notice.
+  ): Promise<AdminBotServiceResponse<AdminBotStoredProposal>> {
+    const message =
+      params.mode === "reminder"
+        ? [
+            `Hi <@${params.ownerUserId}>,`,
+            `the channel #${params.channelName} does not follow the lab naming policy.`,
+            `Please rename it to something like #${params.suggestedName} within 48 hours.`,
+            "Allowed prefixes: proj-, meeting-, group-, lab-, students-, etc-.",
+          ].join(" ")
+        : [
+            `Hi <@${params.ownerUserId}>,`,
+            `we renamed #${params.channelName} to #${params.suggestedName} because it stayed non-compliant for over 48 hours after the reminder.`,
+            "Allowed prefixes: proj-, meeting-, group-, lab-, students-, etc-.",
+          ].join(" ");
+    const proposal = this.createProposal({
+      type: "slack.channel_naming_notify_owner",
+      summary:
+        params.mode === "reminder"
+          ? `Remind Slack channel owner about naming policy for #${params.channelName}`
+          : `Notify Slack channel owner after automatic rename to #${params.suggestedName}`,
+      target: {
+        service: "slack",
+        owner_user_id: params.ownerUserId,
+        channel_id: params.channelId,
+      },
+      proposed_payload: {
+        owner_user_id: params.ownerUserId,
+        message,
+      },
+      rationale:
+        params.mode === "reminder"
+          ? "Owner notification before policy enforcement."
+          : "Owner notification after automatic policy enforcement.",
+      undo_plan: "Send a follow-up clarification if the channel context needs correction.",
+    });
+    if (!proposal.ok) {
+      return proposal;
+    }
+    const executed = await this.execute(proposal.payload.id, { dry_run: false });
+    if (!executed.ok) {
+      return executed;
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: this.store.getProposal(proposal.payload.id) ?? proposal.payload,
+    };
+  }
+
   pruneAuditEventsBefore(cutoffIso: string): number {
     return this.store.pruneAuditEventsBefore(cutoffIso);
   }
@@ -1341,7 +2103,14 @@ export function payloadHash(value: unknown): string {
 
 const SELF_PROFILE_EDITABLE_FIELDS = [
   "name",
+  "preferred_name",
   "slack_user_id",
+  // Slack-derived, not something a member types: the roster sync writes it through the service
+  // principal, which lands on this same whitelist. Governance fields stay in the privileged list.
+  "slack_channels",
+  // Written by the Slack activity sweep through the service principal, never typed by a member.
+  "slack_messages_7d",
+  "slack_activity_checked_at",
   "role",
   "research_branch",
   "research_topics",
@@ -1349,20 +2118,35 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "hours_per_week",
   "availability",
   "location",
+  "current_city",
   "affiliation",
   "timezone",
   "personal_website",
   "openreview_id",
+  "avatar_url",
   "cv_url",
+  "intake_form_url",
   "linkedin_url",
-  "linkedin_urn",
+  // linkedin_urn is deliberately absent: LinkedIn publishes no vanity-URL-to-URN mapping, so the
+  // lab looks the value up and an admin writes it. A self update that carries one is dropped here,
+  // which is what makes the disabled control on the profile page an actual rule rather than a hint.
   "twitter_url",
   "github_url",
   "scholar_url",
   "calendar_email",
+  "joined_month",
+  "graduated_month",
+  "whatsapp",
+  "correspondence_email",
+  // Confidential on read (see adminBotConfidentialMemberFields); self-editable like any other
+  // field a member writes about themselves.
+  "personal_circumstances",
+  "lesswrong_url",
+  "other_socials",
   "notes",
   "availability",
   "time_off",
+  "milestones",
   "availability_doc_url",
   // The link only. cv_snapshot is deliberately absent: it is what the scan compares against, so a
   // member who could write it could hide or invent their own career changes.
@@ -1457,43 +2241,18 @@ function serviceError<T>(status: number, message: string): AdminBotServiceRespon
   return { ok: false, status, error: { message } };
 }
 
-// Mirrors the non-optional entries of PROFILE_FIELDS in
-// ui/src/ui/adminbot/views/profile.ts. The two lists have to stay in sync by hand: the server has
-// no access to the UI's field schema (extensions must not import ui/, see extensions/CLAUDE.md),
-// and the UI is where "optional: true" is actually declared. Keep this list, and the labels below
-// it, in the same order and membership as the UI's mandatory set whenever that changes.
 // How long a member is left alone after a mandatory-fields reminder. The cron script may run as
 // often as it likes -- daily is fine, and gives a member who fills their profile in on day one a
 // prompt exit from the list -- but nobody is nudged about the same gap more than once per window.
 const MANDATORY_FIELDS_REMINDER_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
 
-const MANDATORY_PROFILE_FIELDS = [
-  "role",
-  "affiliation",
-  "location",
-  "timezone",
-  "hours_per_week",
-  "slack_user_id",
-  "research_topics",
-  "projects",
-  "linkedin_urn",
-] as const;
-
-const MANDATORY_PROFILE_FIELD_LABELS: Record<(typeof MANDATORY_PROFILE_FIELDS)[number], string> = {
-  role: "Role",
-  affiliation: "Affiliation",
-  location: "Location",
-  timezone: "Timezone",
-  hours_per_week: "Hours per week",
-  slack_user_id: "Slack",
-  research_topics: "Research topics",
-  projects: "Projects",
-  linkedin_urn: "LinkedIn URN",
-};
-
-// name is deliberately excluded even though the UI also treats it as mandatory: validateLabMember
-// already refuses to store a member with no name, so it can never actually be the reason a stored
-// record is incomplete.
+// The one list, shared with the Control UI through the contracts module so the reminder can never
+// chase a field the profile page calls optional. See adminBotMandatoryProfileFields.
+//
+// name is dropped here even though the page marks it required: validateLabMember already refuses to
+// store a member with no name, so it can never actually be the reason a stored record is
+// incomplete.
+const MANDATORY_PROFILE_FIELDS = adminBotMandatoryProfileFields.filter((key) => key !== "name");
 function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
   return MANDATORY_PROFILE_FIELDS.filter((key) => {
     const value = member[key];
@@ -1510,7 +2269,7 @@ function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
 // missing subset) keeps the message identical for every recipient, which is what lets it go out
 // through a single sendMemberNudge call instead of one per person.
 function buildMandatoryFieldsReminderMessage(): string {
-  const fields = MANDATORY_PROFILE_FIELDS.map((key) => MANDATORY_PROFILE_FIELD_LABELS[key]).join(
+  const fields = MANDATORY_PROFILE_FIELDS.map((key) => adminBotMandatoryProfileFieldLabels[key]).join(
     ", ",
   );
   return [
@@ -1518,6 +2277,30 @@ function buildMandatoryFieldsReminderMessage(): string {
       `(${fields}).`,
     "Open your profile page in the Control UI and fill in what's missing — it saves as you type.",
     "Already done? You'll stop getting this once every required field is filled in.",
+  ].join("\n");
+}
+
+const PROFILE_PHOTO_RULES_TEXT = [
+  "Profile photo guidelines:",
+  "- Big enough headshot.",
+  "- Face is clearly visible, preferably facing front.",
+  "- Background is clean (blurred, single color, or easy to make single-color using a background remover).",
+].join("\n");
+
+function buildProfilePhotoGuidelineMessage(): string {
+  return [
+    "Your current Slack profile photo does not yet match our profile photo guidelines.",
+    PROFILE_PHOTO_RULES_TEXT,
+    "",
+    "These rules are because we're developing webpages and strongly recommend a professional Slack profile photo so we can include you on the teams/collaborators pages. We directly link member photos from Slack on your profile and on our lab public website.",
+    "",
+    "How-To if you want to take a better photo yourself:",
+    "- Use portrait mode and the back camera (higher quality), and have somebody take the photo for you.",
+    '- Many phones/apps can blur the background or change it to a pure color. Some members took good photos in 10 seconds using portrait mode.',
+    "- Neutral backgrounds are usually better; you can use https://www.remove.bg/ to crop yourself and place yourself into a neutral background.",
+    "- Usually the shot is chest-up and includes shoulders.",
+    "",
+    "In your AdminBot profile page, you can choose AI-based polishing for your current photo, review generated options, and apply the version you like.",
   ].join("\n");
 }
 
@@ -1561,7 +2344,10 @@ function validateLabMember(
   if (!member.id.trim()) {
     return "member id is required";
   }
-  if (!member.name.trim()) {
+  // Optional-chained even though the type says `name` is required: the HTTP layer casts a parsed
+  // JSON body straight to this type, so an absent name reaches here as undefined and used to throw
+  // a TypeError out of the route as a 500 rather than answering 400.
+  if (!member.name?.trim()) {
     return "member name is required";
   }
   if (member.status && !adminBotMemberStatuses.includes(member.status)) {
@@ -1616,6 +2402,18 @@ function validateLabMember(
       return openReviewError;
     }
   }
+  // Slack channel names, not ids or links: the sync writes what `users.conversations` reports, and
+  // a stray "#" or a full archive URL would break the lookups that join a member to a channel.
+  if (member.slack_channels !== undefined) {
+    if (!Array.isArray(member.slack_channels)) {
+      return "member slack channels must be a list";
+    }
+    for (const channel of member.slack_channels) {
+      if (typeof channel !== "string" || !SLACK_CHANNEL_NAME.test(channel)) {
+        return `member slack channel is invalid: ${String(channel)}`;
+      }
+    }
+  }
   for (const spec of SOCIAL_URL_FIELDS) {
     const value = member[spec.field];
     if (value === undefined) {
@@ -1640,7 +2438,9 @@ function validateLabMember(
 type SocialUrlFieldSpec = {
   field:
     | "personal_website"
+    | "avatar_url"
     | "cv_url"
+    | "intake_form_url"
     | "linkedin_url"
     | "twitter_url"
     | "github_url"
@@ -1650,11 +2450,50 @@ type SocialUrlFieldSpec = {
   hosts?: Set<string>;
   path?: RegExp;
   requireQueryParam?: string;
+  // The field may also hold an inline `data:` image instead of a link out. Only the profile photo
+  // does: the lab runs no object storage, so an uploaded picture is stored on the record itself
+  // (see the Control UI's own upload control, which reads the file and sends a data URL). Without
+  // this, every upload failed the https check below and the whole feature was inert.
+  allowInlineImage?: true;
 };
+
+// Raster types only, and never image/svg+xml: an SVG is a document that can carry script, and this
+// value is handed straight to an <img src> in the Control UI.
+const INLINE_IMAGE_PATTERN = /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
+
+// Matches MAX_AVATAR_BYTES in the Control UI's upload control. The client already refuses a larger
+// file; this is the same limit enforced where it counts, against the decoded bytes rather than the
+// ~33%-larger base64 text.
+const MAX_INLINE_IMAGE_BYTES = 512 * 1024;
+
+/** Validates an inline image payload, returning an error message when it is not storable. */
+function validateInlineImage(value: string, spec: SocialUrlFieldSpec): string | undefined {
+  const match = INLINE_IMAGE_PATTERN.exec(value);
+  if (!match) {
+    return `${spec.label} must be a PNG, JPEG, GIF, or WebP image`;
+  }
+  const base64 = match[1] ?? "";
+  const padding = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  const decodedBytes = Math.floor((base64.length * 3) / 4) - padding;
+  if (decodedBytes > MAX_INLINE_IMAGE_BYTES) {
+    return `${spec.label} must be ${Math.floor(MAX_INLINE_IMAGE_BYTES / 1024)} KB or smaller`;
+  }
+  return undefined;
+}
 
 const SOCIAL_URL_FIELDS: SocialUrlFieldSpec[] = [
   { field: "personal_website", label: "personal website" },
+  { field: "avatar_url", label: "profile photo", allowInlineImage: true },
   { field: "cv_url", label: "CV" },
+  {
+    // A member's own intake answers. Google Forms hands each respondent a link to their single
+    // submitted response, so the host is fixed and the path is always a /forms/ route -- checking
+    // that much stops a stray link being filed here, without pretending to know the response id.
+    field: "intake_form_url",
+    label: "intake form answers",
+    hosts: new Set(["docs.google.com"]),
+    path: /^\/forms\/.+/u,
+  },
   {
     field: "github_url",
     label: "GitHub",
@@ -1691,6 +2530,11 @@ function validateSocialUrl(value: unknown, spec: SocialUrlFieldSpec): string | u
   if (!trimmed) {
     return undefined;
   }
+  if (trimmed.startsWith("data:")) {
+    return spec.allowInlineImage
+      ? validateInlineImage(trimmed, spec)
+      : `${spec.label} link must use https`;
+  }
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
@@ -1716,7 +2560,12 @@ function validateSocialUrl(value: unknown, spec: SocialUrlFieldSpec): string | u
 // ending in the disambiguating digit OpenReview appends. Rejecting the shape here is cheap and
 // catches "pasted the profile URL instead of the id" before it reaches the reviewing-cycle
 // automation that matches submissions against this field.
-const OPENREVIEW_ID = /^~[A-Za-z][A-Za-z0-9_.]*[0-9]$/u;
+// Hyphens and non-ASCII letters are both ordinary in real ids -- "~Tung-Yu_Wu1",
+// "~Emilia_Wiśnios1" -- and the old ASCII-only, hyphen-free pattern rejected them, which silently
+// cost those members the field. Still anchored on the tilde and the trailing disambiguation digit,
+// which are the parts OpenReview actually guarantees.
+const SLACK_CHANNEL_NAME = /^[a-z0-9][a-z0-9._-]{0,79}$/u;
+const OPENREVIEW_ID = /^~\p{L}[\p{L}\p{N}_.-]*[0-9]$/u;
 
 function validateOpenReviewId(value: unknown): string | undefined {
   if (typeof value !== "string") {
@@ -1830,6 +2679,72 @@ function validateDateRange(row: { start: string; end: string }, label: string): 
   return undefined;
 }
 
+// Supporting links on a schedule row or milestone. Deliberately stricter than "is a URL": these
+// are rendered as anchors in the Control UI, so anything but https is refused outright rather than
+// left for the renderer to decide about. Unlike availability_doc_url this is not restricted to
+// Google — a syllabus or a project board can live anywhere.
+function validateExternalLink(value: unknown, label: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    return `${label} link must be a string`;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    return `${label} link must be a valid URL`;
+  }
+  if (parsed.protocol !== "https:") {
+    return `${label} link must use https`;
+  }
+  return undefined;
+}
+
+function validateLabel(value: unknown, label: string): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    return `${label} must be a string`;
+  }
+  if (value.length > ADMINBOT_MAX_LABEL_LENGTH) {
+    return `${label} cannot exceed ${ADMINBOT_MAX_LABEL_LENGTH} characters`;
+  }
+  return undefined;
+}
+
+function validateMilestones(member: AdminBotLabMemberInput): string | undefined {
+  if (member.milestones === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(member.milestones)) {
+    return "member milestones must be a list";
+  }
+  if (member.milestones.length > MAX_AVAILABILITY_ROWS) {
+    return `member milestones cannot exceed ${MAX_AVAILABILITY_ROWS} rows`;
+  }
+  for (const row of member.milestones) {
+    if (!Number.isFinite(parseIsoDate(row?.date))) {
+      return "milestone date must be YYYY-MM-DD";
+    }
+    // A milestone with no label is an unexplained mark on someone's timeline.
+    if (typeof row.label !== "string" || !row.label.trim()) {
+      return "milestone label is required";
+    }
+    const labelError = validateLabel(row.label, "milestone label");
+    if (labelError) {
+      return labelError;
+    }
+    const linkError = validateExternalLink(row.link, "milestone");
+    if (linkError) {
+      return linkError;
+    }
+  }
+  return undefined;
+}
+
 function validateAvailability(member: AdminBotLabMemberInput): string | undefined {
   if (member.availability !== undefined) {
     if (!Array.isArray(member.availability)) {
@@ -1849,6 +2764,10 @@ function validateAvailability(member: AdminBotLabMemberInput): string | undefine
         row.hours_per_week > 168
       ) {
         return "availability hours per week must be between 0 and 168";
+      }
+      const linkError = validateExternalLink(row.link, "availability");
+      if (linkError) {
+        return linkError;
       }
     }
   }
@@ -1870,9 +2789,17 @@ function validateAvailability(member: AdminBotLabMemberInput): string | undefine
       if (row.availability !== "none" && row.availability !== "partial") {
         return "time off availability must be none or partial";
       }
+      const labelError = validateLabel(row.label, "time off label");
+      if (labelError) {
+        return labelError;
+      }
+      const linkError = validateExternalLink(row.link, "time off");
+      if (linkError) {
+        return linkError;
+      }
     }
   }
-  return undefined;
+  return validateMilestones(member);
 }
 
 // availability_updated_at is server-owned: it moves only when the schedule content
@@ -2147,6 +3074,72 @@ function replyAfterLastDm(reminder: { last_author_dm_at?: string; last_author_re
     reminder.last_author_reply_at &&
     reminder.last_author_reply_at > reminder.last_author_dm_at,
   );
+}
+
+function normalizeSlackChannelName(value: string): string {
+  return value
+    .trim()
+    .replace(/^#/u, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/gu, "-")
+    .replace(/-+/gu, "-")
+    .replace(/(^-|-$)/gu, "");
+}
+
+function evaluateSlackChannelName(params: {
+  channelName: string;
+  purpose?: string;
+  topic?: string;
+}): { valid: boolean; expectedPrefix: SlackChannelNamingPrefix; suggestedName: string } {
+  const normalized = normalizeSlackChannelName(params.channelName);
+  const valid = SLACK_CHANNEL_NAME_RE.test(normalized);
+  const expectedPrefix = inferSlackChannelPrefix({
+    channelName: normalized,
+    purpose: params.purpose,
+    topic: params.topic,
+  });
+  const remainder = SLACK_CHANNEL_NAME_ALLOWED_PREFIXES.some((prefix) =>
+    normalized.startsWith(`${prefix}-`),
+  )
+    ? normalized.replace(/^[a-z]+-/u, "")
+    : normalized;
+  const base = remainder || "untitled";
+  const suggestedName = `${expectedPrefix}-${base}`
+    .replace(/[^a-z0-9-]+/gu, "-")
+    .replace(/-+/gu, "-");
+  return {
+    valid,
+    expectedPrefix,
+    suggestedName: SLACK_CHANNEL_NAME_RE.test(suggestedName)
+      ? suggestedName
+      : `${expectedPrefix}-channel`,
+  };
+}
+
+function inferSlackChannelPrefix(params: {
+  channelName: string;
+  purpose?: string;
+  topic?: string;
+}): SlackChannelNamingPrefix {
+  const basis = [params.channelName, params.purpose, params.topic]
+    .map((part) => part?.toLowerCase() ?? "")
+    .join(" ");
+  if (/\b(student|students|phd|master|msc|undergrad)\b/u.test(basis)) {
+    return "students";
+  }
+  if (/\b(meeting|sync|standup|seminar|reading)\b/u.test(basis)) {
+    return "meeting";
+  }
+  if (/\b(group|toronto|location|cohort|team)\b/u.test(basis)) {
+    return "group";
+  }
+  if (/\b(lab|logistics|question|opportunit|lunch)\b/u.test(basis)) {
+    return "lab";
+  }
+  if (/\b(food|music|sport|social|fun|casual)\b/u.test(basis)) {
+    return "etc";
+  }
+  return "proj";
 }
 
 function normalizeOptionalString(value: string | undefined): string | undefined {

@@ -157,6 +157,9 @@ export function resolveSourcePackageAliasesForVite(): ControlUiViteAlias[] {
     sourcePackageAlias("normalization-core", "string-coerce"),
     sourcePackageAlias("normalization-core", "string-normalization"),
     sourcePackageAlias("normalization-core"),
+    // The nudge engine is pure, dependency-free TypeScript, so the UI reads it from source the
+    // same way as the packages above rather than through a workspace install.
+    sourcePackageAlias("nudge-engine"),
   ];
 }
 
@@ -195,10 +198,9 @@ export function controlUiBrowserOnlySharedModuleAliases(): Plugin {
     enforce: "pre",
     resolveId(source, importer) {
       if (
-        // Must track the specifier the importers actually write. These live in src/agents/tools/,
-        // two levels below src/, so the path is "../../". An exact-match miss here fails silently:
-        // resolveId returns null, Vite resolves the real Node module, and the Control UI dies at
-        // runtime on node:url rather than failing the build.
+        // Every importer above sits in src/agents/tools/, so the specifier they actually write is
+        // two levels up. Matching a single "../" here silently never fired, which let the Node-only
+        // redact module reach the browser and pull node:url in through the CLI descriptors.
         source === "../../logging/redact.js" &&
         importer &&
         sharedRedactImporters.has(normalizeViteImporterPath(importer))

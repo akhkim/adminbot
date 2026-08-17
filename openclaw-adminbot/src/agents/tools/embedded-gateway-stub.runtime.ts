@@ -17,7 +17,7 @@ export {
   CHAT_HISTORY_MAX_SINGLE_MESSAGE_BYTES,
   enforceChatHistoryFinalBudget,
   replaceOversizedChatHistoryMessages,
-} from "../../gateway/server-methods/chat.js";
+} from "../../gateway/server-methods/chat/chat.js";
 export {
   capArrayByJsonBytes,
   readSessionMessagesAsync,

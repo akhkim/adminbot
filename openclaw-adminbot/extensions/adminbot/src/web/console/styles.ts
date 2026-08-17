@@ -482,11 +482,8 @@ export const adminBotConsoleStyles = `    :root {
     .reimb-line { margin: 0; font-size: 13px; line-height: 1.6; }
     .reimb-line--user strong { color: var(--accent); }
     .reimb-form { display: grid; gap: 10px; }
-    #map-canvas svg { display: block; width: 100%; height: auto; margin: 12px 0 4px; }
-    .map-grid { stroke: var(--line); stroke-width: 1; }
-    .map-equator { stroke: var(--line); stroke-width: 1.5; }
-    .map-dot { fill: #2a78d6; fill-opacity: 0.75; }
-    .map-label { font-size: 11px; fill: var(--text); font-weight: 600; }
+    .panel-flush { padding: 0; display: flex; flex-direction: column; height: 78vh; overflow: hidden; }
+    #map-frame { flex: 1 1 auto; width: 100%; border: 0; }
     .checkbox-field {
       display: grid;
       grid-template-columns: auto 1fr;

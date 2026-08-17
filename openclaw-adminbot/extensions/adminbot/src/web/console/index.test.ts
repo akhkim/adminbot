@@ -17,6 +17,21 @@ describe("renderAdminBotWebUi", () => {
     expect(html).toContain('class="shell" id="app-shell" hidden');
   });
 
+  // A reset link that names this origin (ADMINBOT_DASHBOARD_URL pointed at the service, say) would
+  // otherwise dead-end: this console changes a password only for an already signed-in member, and
+  // the person following a reset link is precisely the one who cannot sign in.
+  it("hands a password-reset token to the Control UI instead of dead-ending on it", () => {
+    vi.stubEnv("ADMINBOT_CONTROL_UI_URL", "https://ui.example.com");
+    const configured = renderAdminBotWebUi();
+    expect(configured).toContain('const CONTROL_UI_URL = "https://ui.example.com"');
+    expect(configured).toContain('searchParams.get("passwordReset")');
+    expect(configured).toContain('target.searchParams.set("adminBotUrl", window.location.origin)');
+    expect(configured).toContain("window.location.replace(target.toString())");
+    // Same origin would only redirect back here, so the handoff bails out instead of looping.
+    expect(configured).toContain("if (target.origin === window.location.origin) return;");
+    vi.unstubAllEnvs();
+  });
+
   it("probes the same-origin session and posts to the real auth routes", () => {
     expect(html).toContain('fetch("/auth/session"');
     expect(html).toContain('"/auth/login"');
@@ -129,14 +144,38 @@ describe("renderAdminBotWebUi", () => {
     expect(html).not.toContain('id="member-availability-preview"');
   });
 
-  it("adds an admin-gated member map that labels selectively", () => {
+  it("gives every tab button a sectionCopy entry, so its heading is never left stale", () => {
+    // A tab missing here doesn't throw visibly -- the click handler used to abort partway
+    // through and silently leave the *previous* tab's heading showing (caught for "map" after
+    // it shipped without one; this guards every tab, not just the ones bugs have hit so far).
+    const tabs = [...html.matchAll(/data-tab="([a-z]+)"/g)].map((match) => match[1]);
+    expect(tabs.length).toBeGreaterThan(5);
+    const sectionCopyBlock = html.slice(
+      html.indexOf("const sectionCopy = {"),
+      html.indexOf("const PUBLIC_TABS"),
+    );
+    for (const tab of new Set(tabs)) {
+      expect(sectionCopyBlock).toMatch(new RegExp("\\b" + tab + ":\\s*\\["));
+    }
+  });
+
+  it("adds a public member map tab that embeds the standalone map page", () => {
     expect(html).toContain('data-tab="map"');
-    expect(html).toContain('["approvals", "settings", "audit", "reviewing", "map"]');
-    expect(html).toContain('api("/member-map")');
-    expect(html).toContain('api("/member-map/refresh"');
-    // Europe puts several cities within a few degrees, so labels are skipped on collision
-    // rather than drawn over each other.
-    expect(html).toContain("placedLabels");
+    // GET /member-map is itself public (a names-stripped, counts-only summary for anyone not
+    // signed in as admin), so the tab is visible to a visitor who never signs in at all, and is
+    // no longer among the ones a signed-in non-admin member loses.
+    expect(html).toContain('const PUBLIC_TABS = ["deadlines", "reimbursements", "map"]');
+    expect(html).toContain('["approvals", "settings", "audit", "reviewing"].includes(tab)');
+    // The interactive map lives at its own URL (GET /lab_stats/member_map) so it can be linked
+    // to directly; the console embeds it by iframe rather than reimplementing it, so the two
+    // never drift into different maps.
+    expect(html).toContain('src="/lab_stats/member_map"');
+    expect(html).not.toContain('api("/member-map")');
+    // Both Slack actions ("Refresh from Slack" and "Sync Slack IDs & timezones") used to be
+    // duplicated in a console-level toolbar stacked above this same iframe, which also carries
+    // its own identical header -- the iframe's page is the only place either button lives now.
+    expect(html).not.toContain('id="map-refresh"');
+    expect(html).not.toContain('id="directory-refresh"');
   });
 
   it("emits an inline script that actually parses", () => {
@@ -294,9 +333,10 @@ describe("renderAdminBotWebUi", () => {
   });
 
   it("opens to a visitor on the public surfaces instead of a sign-in wall", () => {
-    // Mirrors the Control UI access table: a visitor gets the deadline board and the
-    // reimbursement assistant, and asks for the sign-in form from the toolbar.
-    expect(html).toContain('const PUBLIC_TABS = ["deadlines", "reimbursements"]');
+    // Mirrors the Control UI access table: a visitor gets the deadline board, the reimbursement
+    // assistant, and the member map (a counts-only summary, not names), and asks for the sign-in
+    // form from the toolbar.
+    expect(html).toContain('const PUBLIC_TABS = ["deadlines", "reimbursements", "map"]');
     expect(html).toContain("function showPublicConsole(");
     expect(html).toContain("showPublicConsole();");
     expect(html).toContain('id="signin-button"');
@@ -307,8 +347,10 @@ describe("renderAdminBotWebUi", () => {
   it("hides every non-public tab until someone signs in", () => {
     expect(html).toContain("const signedIn = Boolean(sessionMember)");
     expect(html).toContain("!PUBLIC_TABS.includes(tab)");
-    // Governance surfaces stay gated on privilege for signed-in members, as before.
-    expect(html).toContain('["approvals", "settings", "audit", "reviewing", "map"].includes(tab)');
+    // Governance surfaces stay gated on privilege for signed-in members, as before. "map" is not
+    // one of those any more -- its data is gated per-request server-side instead (names for an
+    // admin session, counts only otherwise), so the tab itself has nothing left to hide.
+    expect(html).toContain('["approvals", "settings", "audit", "reviewing"].includes(tab)');
     // Refresh and sign-out are session actions; a visitor has neither.
     expect(html).toContain('document.getElementById("signout-button").hidden = !signedIn');
     expect(html).toContain('document.getElementById("refresh-button").hidden = !signedIn');
@@ -401,7 +443,7 @@ describe("renderAdminBotWebUi", () => {
     // Approvals and Reviewing are gated by the same privileged mechanism as Settings/Audit.
     expect(html).toContain('data-tab="approvals"');
     expect(html).toContain('data-tab="reviewing"');
-    expect(html).toContain('["approvals", "settings", "audit", "reviewing", "map"]');
+    expect(html).toContain('["approvals", "settings", "audit", "reviewing"]');
     // Registrations are only fetched for privileged sessions to avoid a guaranteed 403.
     expect(html).toContain("if (isPrivileged()) {");
     expect(html).toContain('api("/auth/registrations?status=pending")');

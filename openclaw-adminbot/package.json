@@ -168,10 +168,6 @@
       "types": "./dist/plugin-sdk/runtime-logger.d.ts",
       "default": "./dist/plugin-sdk/runtime-logger.js"
     },
-    "./plugin-sdk/proxy-capture": {
-      "types": "./dist/plugin-sdk/proxy-capture.d.ts",
-      "default": "./dist/plugin-sdk/proxy-capture.js"
-    },
     "./plugin-sdk/runtime-secret-resolution": {
       "types": "./dist/plugin-sdk/runtime-secret-resolution.d.ts",
       "default": "./dist/plugin-sdk/runtime-secret-resolution.js"
@@ -444,10 +440,6 @@
       "types": "./dist/plugin-sdk/embedding-providers.d.ts",
       "default": "./dist/plugin-sdk/embedding-providers.js"
     },
-    "./plugin-sdk/media-generation-runtime": {
-      "types": "./dist/plugin-sdk/media-generation-runtime.d.ts",
-      "default": "./dist/plugin-sdk/media-generation-runtime.js"
-    },
     "./plugin-sdk/conversation-binding-runtime": {
       "types": "./dist/plugin-sdk/conversation-binding-runtime.d.ts",
       "default": "./dist/plugin-sdk/conversation-binding-runtime.js"
@@ -479,14 +471,6 @@
     "./plugin-sdk/simple-completion-runtime": {
       "types": "./dist/plugin-sdk/simple-completion-runtime.d.ts",
       "default": "./dist/plugin-sdk/simple-completion-runtime.js"
-    },
-    "./plugin-sdk/speech-core": {
-      "types": "./dist/plugin-sdk/speech-core.d.ts",
-      "default": "./dist/plugin-sdk/speech-core.js"
-    },
-    "./plugin-sdk/tts-runtime": {
-      "types": "./dist/plugin-sdk/tts-runtime.d.ts",
-      "default": "./dist/plugin-sdk/tts-runtime.js"
     },
     "./plugin-sdk/plugin-runtime": {
       "types": "./dist/plugin-sdk/plugin-runtime.d.ts",
@@ -539,10 +523,6 @@
     "./plugin-sdk/cli-backend": {
       "types": "./dist/plugin-sdk/cli-backend.d.ts",
       "default": "./dist/plugin-sdk/cli-backend.js"
-    },
-    "./plugin-sdk/codex-mcp-projection": {
-      "types": "./dist/plugin-sdk/codex-mcp-projection.d.ts",
-      "default": "./dist/plugin-sdk/codex-mcp-projection.js"
     },
     "./plugin-sdk/agent-harness-task-runtime": {
       "types": "./dist/plugin-sdk/agent-harness-task-runtime.d.ts",
@@ -663,10 +643,6 @@
     "./plugin-sdk/allowlist-config-edit": {
       "types": "./dist/plugin-sdk/allowlist-config-edit.d.ts",
       "default": "./dist/plugin-sdk/allowlist-config-edit.js"
-    },
-    "./plugin-sdk/browser-config": {
-      "types": "./dist/plugin-sdk/browser-config.d.ts",
-      "default": "./dist/plugin-sdk/browser-config.js"
     },
     "./plugin-sdk/boolean-param": {
       "types": "./dist/plugin-sdk/boolean-param.d.ts",
@@ -960,69 +936,17 @@
       "types": "./dist/plugin-sdk/directory-runtime.d.ts",
       "default": "./dist/plugin-sdk/directory-runtime.js"
     },
-    "./plugin-sdk/media-generation-runtime-shared": {
-      "types": "./dist/plugin-sdk/media-generation-runtime-shared.d.ts",
-      "default": "./dist/plugin-sdk/media-generation-runtime-shared.js"
-    },
-    "./plugin-sdk/image-generation": {
-      "types": "./dist/plugin-sdk/image-generation.d.ts",
-      "default": "./dist/plugin-sdk/image-generation.js"
-    },
-    "./plugin-sdk/image-generation-runtime": {
-      "types": "./dist/plugin-sdk/image-generation-runtime.d.ts",
-      "default": "./dist/plugin-sdk/image-generation-runtime.js"
-    },
-    "./plugin-sdk/image-generation-core": {
-      "types": "./dist/plugin-sdk/image-generation-core.d.ts",
-      "default": "./dist/plugin-sdk/image-generation-core.js"
-    },
-    "./plugin-sdk/music-generation": {
-      "types": "./dist/plugin-sdk/music-generation.d.ts",
-      "default": "./dist/plugin-sdk/music-generation.js"
-    },
-    "./plugin-sdk/music-generation-core": {
-      "types": "./dist/plugin-sdk/music-generation-core.d.ts",
-      "default": "./dist/plugin-sdk/music-generation-core.js"
-    },
-    "./plugin-sdk/video-generation": {
-      "types": "./dist/plugin-sdk/video-generation.d.ts",
-      "default": "./dist/plugin-sdk/video-generation.js"
-    },
-    "./plugin-sdk/video-generation-runtime": {
-      "types": "./dist/plugin-sdk/video-generation-runtime.d.ts",
-      "default": "./dist/plugin-sdk/video-generation-runtime.js"
-    },
-    "./plugin-sdk/video-generation-core": {
-      "types": "./dist/plugin-sdk/video-generation-core.d.ts",
-      "default": "./dist/plugin-sdk/video-generation-core.js"
-    },
     "./plugin-sdk/reply-history": {
       "types": "./dist/plugin-sdk/reply-history.d.ts",
       "default": "./dist/plugin-sdk/reply-history.js"
-    },
-    "./plugin-sdk/realtime-transcription": {
-      "types": "./dist/plugin-sdk/realtime-transcription.d.ts",
-      "default": "./dist/plugin-sdk/realtime-transcription.js"
     },
     "./plugin-sdk/realtime-bootstrap-context": {
       "types": "./dist/plugin-sdk/realtime-bootstrap-context.d.ts",
       "default": "./dist/plugin-sdk/realtime-bootstrap-context.js"
     },
-    "./plugin-sdk/realtime-voice": {
-      "types": "./dist/plugin-sdk/realtime-voice.d.ts",
-      "default": "./dist/plugin-sdk/realtime-voice.js"
-    },
     "./plugin-sdk/transcripts": {
       "types": "./dist/plugin-sdk/transcripts.d.ts",
       "default": "./dist/plugin-sdk/transcripts.js"
-    },
-    "./plugin-sdk/media-understanding": {
-      "types": "./dist/plugin-sdk/media-understanding.d.ts",
-      "default": "./dist/plugin-sdk/media-understanding.js"
-    },
-    "./plugin-sdk/media-understanding-runtime": {
-      "types": "./dist/plugin-sdk/media-understanding-runtime.d.ts",
-      "default": "./dist/plugin-sdk/media-understanding-runtime.js"
     },
     "./plugin-sdk/messaging-targets": {
       "types": "./dist/plugin-sdk/messaging-targets.d.ts",
@@ -1312,10 +1236,6 @@
       "types": "./dist/plugin-sdk/status-helpers.d.ts",
       "default": "./dist/plugin-sdk/status-helpers.js"
     },
-    "./plugin-sdk/speech": {
-      "types": "./dist/plugin-sdk/speech.d.ts",
-      "default": "./dist/plugin-sdk/speech.js"
-    },
     "./plugin-sdk/string-normalization-runtime": {
       "types": "./dist/plugin-sdk/string-normalization-runtime.d.ts",
       "default": "./dist/plugin-sdk/string-normalization-runtime.js"
@@ -1404,6 +1324,7 @@
     "postinstall": "node scripts/postinstall-bundled-plugins.mjs",
     "prepare": "node scripts/prepare-git-hooks.mjs",
     "adminbot": "node start-adminbot.mjs",
+    "adminbot:guidebook:sync": "node --import tsx scripts/adminbot-guidebook-sync.ts",
     "adminbot:deadlines:board": "python3 scripts/adminbot-deadline-web-ui-gen.py",
     "adminbot:deadlines:collect": "python3 scripts/adminbot-deadline-collect.py",
     "adminbot:dev": "node --import tsx start-adminbot.ts",
@@ -1446,6 +1367,7 @@
     "tsgo:prod": "pnpm tsgo:core && pnpm tsgo:extensions",
     "tsgo:test": "pnpm tsgo:core:test && pnpm tsgo:extensions:test",
     "ui:build": "node scripts/ui.js build",
+    "ui:world-outline:gen": "node scripts/generate-world-outline.mjs",
     "ui:dev": "node scripts/ui.js dev",
     "ui:i18n:check": "node --import tsx scripts/control-ui-i18n.ts check",
     "ui:i18n:sync": "node --import tsx scripts/control-ui-i18n.ts sync --write",

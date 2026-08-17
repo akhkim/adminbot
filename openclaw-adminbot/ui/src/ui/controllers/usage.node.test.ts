@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createStorageMock } from "../../test-helpers/storage.ts";
 import {
   testApi,
   loadSessionLogs,
@@ -176,7 +177,7 @@ describe("usage controller date interpretation params", () => {
 
   it("falls back and remembers compatibility when sessions.usage rejects mode/utcOffset", async () => {
     const storage = createStorageMock();
-    vi.stubGlobal("localStorage", storage as unknown as Storage);
+    vi.stubGlobal("localStorage", storage);
     vi.spyOn(Date.prototype, "getTimezoneOffset").mockReturnValue(-330);
 
     const request = vi.fn(async (method: string, params?: unknown) => {
@@ -242,7 +243,7 @@ describe("usage controller date interpretation params", () => {
 
   it("falls back and remembers compatibility when sessions.usage rejects lineage params", async () => {
     const storage = createStorageMock();
-    vi.stubGlobal("localStorage", storage as unknown as Storage);
+    vi.stubGlobal("localStorage", storage);
     vi.spyOn(Date.prototype, "getTimezoneOffset").mockReturnValue(-330);
 
     const request = vi.fn(async (method: string, params?: unknown) => {
@@ -308,7 +309,7 @@ describe("usage controller date interpretation params", () => {
 
   it("falls back and remembers compatibility when sessions.usage rejects agentId", async () => {
     const storage = createStorageMock();
-    vi.stubGlobal("localStorage", storage as unknown as Storage);
+    vi.stubGlobal("localStorage", storage);
 
     const request = vi.fn(async (method: string, params?: unknown) => {
       if (method === "sessions.usage") {
@@ -385,7 +386,7 @@ describe("usage controller date interpretation params", () => {
 
   it("falls back and remembers compatibility when sessions.usage rejects agentScope", async () => {
     const storage = createStorageMock();
-    vi.stubGlobal("localStorage", storage as unknown as Storage);
+    vi.stubGlobal("localStorage", storage);
 
     const request = vi.fn(async (method: string, params?: unknown) => {
       if (method === "sessions.usage") {
@@ -478,21 +479,3 @@ describe("usage controller date interpretation params", () => {
     expect(state.usageSessionLogsLoading).toBe(false);
   });
 });
-
-function createStorageMock() {
-  const store = new Map<string, string>();
-  return {
-    getItem(key: string) {
-      return store.get(key) ?? null;
-    },
-    setItem(key: string, value: string) {
-      store.set(key, value);
-    },
-    removeItem(key: string) {
-      store.delete(key);
-    },
-    clear() {
-      store.clear();
-    },
-  };
-}

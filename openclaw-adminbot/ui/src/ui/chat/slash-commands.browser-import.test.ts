@@ -75,7 +75,7 @@ describe("slash command browser import", () => {
     ]);
     expect(importDeclarations(serverRegistry)).toEqual([
       'import { listLoadedChannelPlugins } from "../channels/plugins/registry-loaded.js";',
-      'import { getActivePluginChannelRegistryVersionFromState } from "../plugins/runtime-channel-state.js";',
+      'import { getActivePluginChannelRegistryVersionFromState } from "../plugins/runtime/runtime-channel-state.js";',
       'import { assertCommandRegistry, buildBuiltinChatCommands, defineChatCommand } from "./commands-registry.shared.js";',
       'import type { ChatCommandDefinition } from "./commands-registry.types.js";',
       'import { listThinkingLevels } from "./thinking.js";',

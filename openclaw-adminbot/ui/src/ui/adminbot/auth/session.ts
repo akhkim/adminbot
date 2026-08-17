@@ -52,6 +52,29 @@ export type MemberOnboarding = {
   steps: MemberOnboardingStep[];
 };
 
+export type ProfilePhotoAssessment = {
+  compliant: boolean;
+  issues: string[];
+  summary: string;
+  checked_at: string;
+  photo_url?: string;
+  source: "ai" | "heuristic";
+};
+
+export type ProfilePhotoPolishVariant = {
+  id: string;
+  image_data_url: string;
+  created_at: string;
+  note?: string;
+};
+
+export type ProfilePhotoReviewState = {
+  assessment?: ProfilePhotoAssessment;
+  last_guideline_dm_at?: string;
+  variants?: ProfilePhotoPolishVariant[];
+  selected_variant_id?: string;
+};
+
 // Lab member record returned by the AdminBot service. Extra fields beyond these
 // are preserved but not consumed by the UI.
 export type LabMember = {
@@ -74,16 +97,20 @@ export type LabMember = {
   availability?: AvailabilityRow[] | null;
   time_off?: TimeOffRow[] | null;
   location?: string | null;
+  // Where the member currently is, distinct from resident `location`. Informational only.
+  current_city?: string | null;
   affiliation?: string | null;
   timezone?: string | null;
   personal_website?: string | null;
   openreview_id?: string | null;
   cv_url?: string | null;
+  intake_form_url?: string | null;
   linkedin_url?: string | null;
   twitter_url?: string | null;
   github_url?: string | null;
   scholar_url?: string | null;
   avatar_url?: string | null;
+  profile_photo_review?: ProfilePhotoReviewState | null;
   notes?: string | null;
   onboarding?: MemberOnboarding | null;
   [key: string]: unknown;
@@ -99,8 +126,12 @@ export type MemberProfileUpdate = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
-  availability?: string;
+  // The schedule is not a profile field: it is the row lists MemberScheduleUpdate carries, and the
+  // service validates it as such. A free-text `availability` string used to live here, and the Lab
+  // Members form sent it empty on every save, so the service answered 400 "member availability must
+  // be a list" and the whole edit was lost.
   location?: string;
+  current_city?: string;
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
@@ -108,12 +139,22 @@ export type MemberProfileUpdate = {
   // The link only. cv_snapshot is not writable here: the service owns it, and a member who could
   // set it could hide or invent their own career changes.
   cv_url?: string;
+  intake_form_url?: string;
   linkedin_url?: string;
   twitter_url?: string;
   github_url?: string;
   scholar_url?: string;
   avatar_url?: string;
   notes?: string;
+  // Promoted out of the notes line convention; see migrateMemberNotesToFields in the service.
+  joined_month?: string;
+  whatsapp?: string;
+};
+
+export type ProfilePhotoPolishResult = {
+  variant: ProfilePhotoPolishVariant;
+  variants: ProfilePhotoPolishVariant[];
+  assessment?: ProfilePhotoAssessment;
 };
 
 // Full governance-capable payload for an admin editing ANY member (including
@@ -133,7 +174,6 @@ export type AdminLabMemberUpdate = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
-  availability?: string;
   location?: string;
   affiliation?: string;
   timezone?: string;
@@ -189,7 +229,6 @@ export type SignupProfile = {
   research_topics?: string[];
   projects?: string[];
   hours_per_week?: number;
-  availability?: string;
   location?: string;
   timezone?: string;
   personal_website?: string;
@@ -226,7 +265,11 @@ export type AuthErrorKind =
 
 export type AuthResult<T> =
   | { ok: true; value: T }
-  | { ok: false; kind: AuthErrorKind; retryAfterSeconds?: number };
+  // `message` carries the service's own explanation, and is only ever populated for a 400 --
+  // a validation refusal names the field it rejected ("LinkedIn link must be a profile URL"),
+  // which no generic client-side string can. Auth and rate-limit failures deliberately keep
+  // their fixed copy, so nothing from an unauthenticated path reaches the screen verbatim.
+  | { ok: false; kind: AuthErrorKind; retryAfterSeconds?: number; message?: string };
 
 export function resolveAdminBotBaseUrl(settings?: Pick<UiSettings, "adminBotUrl"> | null): string {
   const override = normalizeOptionalString(settings?.adminBotUrl);
@@ -265,12 +308,20 @@ function mapErrorResponse(
   response: Response,
   body: unknown,
   opts: { weakOn400: boolean; pendingOn403?: boolean },
-): { kind: AuthErrorKind; retryAfterSeconds?: number } {
+): { kind: AuthErrorKind; retryAfterSeconds?: number; message?: string } {
   if (response.status === 429) {
     return { kind: "rate-limited", retryAfterSeconds: parseRetryAfterSeconds(body, response) };
   }
   if (opts.weakOn400 && response.status === 400) {
     return { kind: "weak-password" };
+  }
+  // A 400 is the service refusing a value it can name. Carry that sentence up; every other status
+  // keeps its fixed client-side copy (see AuthResult).
+  if (response.status === 400) {
+    const message = (body as { error?: { message?: unknown } } | null)?.error?.message;
+    return typeof message === "string" && message.trim()
+      ? { kind: "auth-failed", message: message.trim() }
+      : { kind: "auth-failed" };
   }
   if (
     opts.pendingOn403 &&
@@ -346,6 +397,87 @@ export async function updateOwnProfile(
     "PUT",
     sessionToken,
     fields,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as LabMember };
+}
+
+// A single commitment row on a member's schedule. Mirrors AdminBotAvailabilityRow in
+// extensions/adminbot/src/contracts/actions.ts, and AvailabilityRow in ../data/availability.ts —
+// copied rather than imported for the same reason the privilege levels are: the auth layer does
+// not reach across into either the extensions boundary or the view layer.
+export type MemberAvailabilityRow = {
+  start: string;
+  end: string;
+  project?: string;
+  hours_per_week: number;
+  note?: string;
+  link?: string;
+};
+
+export type MemberTimeOffRow = {
+  start: string;
+  end: string;
+  // Optional here only because the lists sent back are composed from stored rows, whose parsed
+  // shape treats `kind` as absent-able. The service rejects any row whose kind is not one of
+  // adminBotTimeOffKinds, so a row without one never lands.
+  kind?: string;
+  availability: "none" | "partial";
+  note?: string;
+  label?: string;
+  link?: string;
+};
+
+export type MemberMilestoneRow = {
+  date: string;
+  label: string;
+  link?: string;
+};
+
+/**
+ * The three schedule lists, any subset of which may be sent.
+ *
+ * An omitted list is left alone; a list sent as `[]` clears that part of the schedule outright
+ * (the service deletes an empty array rather than storing one, so it reads as "nothing recorded"
+ * rather than as an empty chart).
+ */
+export type MemberScheduleUpdate = {
+  availability?: MemberAvailabilityRow[];
+  time_off?: MemberTimeOffRow[];
+  milestones?: MemberMilestoneRow[];
+};
+
+/**
+ * Self-service schedule edit (PUT /lab/members/:id) with the member session.
+ *
+ * Deliberately separate from `updateOwnProfile`: a schedule is whole lists of validated rows
+ * (SELF_PROFILE_EDITABLE_FIELDS and validateAvailability in
+ * extensions/adminbot/src/kernel/service.ts), while a profile update is scalar fields. They were
+ * once the same field — `MemberProfileUpdate.availability` as free text — and the profile forms
+ * kept sending that string over the list the service expects, failing every save with 400 "member
+ * availability must be a list".
+ *
+ * All three lists are self-editable, so this needs no approval gate — but the service still
+ * re-validates everything (date ranges, 0–168 hours, https-only links, 200-row caps) and stamps
+ * `availability_updated_at`. The UI never writes another member's schedule; the server enforces it.
+ */
+export async function updateOwnSchedule(
+  memberId: string,
+  patch: MemberScheduleUpdate,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LabMember>> {
+  const result = await authedJson(
+    baseUrl,
+    `/lab/members/${encodeURIComponent(memberId)}`,
+    "PUT",
+    sessionToken,
+    patch,
   );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -513,6 +645,8 @@ export type OnboardingGuideRequest = {
   email: string;
   values: Record<string, string>;
   preview: boolean;
+  /** Left out entirely when the tab has no opinion, so the service applies its own default. */
+  submitDcsForm?: boolean;
 };
 
 export type OnboardingGuideResult = {
@@ -546,6 +680,7 @@ export async function sendOnboardingGuide(
     email: request.email,
     values: request.values,
     preview: request.preview,
+    ...(request.submitDcsForm === undefined ? {} : { submit_dcs_form: request.submitDcsForm }),
   });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -711,9 +846,239 @@ export async function acknowledgeOnboardingStep(
   return { ok: true, value: onboarding };
 }
 
+export async function polishOwnProfilePhoto(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<ProfilePhotoPolishResult>> {
+  const result = await authedJson(baseUrl, "/profile-photo/polish", "POST", sessionToken, {});
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as ProfilePhotoPolishResult };
+}
+
+export async function applyOwnPolishedProfilePhoto(
+  variantId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ variant_id: string; action_id: string }>> {
+  const result = await authedJson(baseUrl, "/profile-photo/apply", "POST", sessionToken, {
+    variant_id: variantId,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body as { variant_id: string; action_id: string } };
+}
+
 // Reads an AdminBot resource over the member's own session. The dashboard uses this rather than
 // the gateway tool path because `tools.invoke` requires operator.write, which a plain member's
 // paired device deliberately does not hold -- so for them the tool path returns nothing at all.
+// The Calendar tab's two reads. Both are admin-member only server-side; neither writes. Creating an
+// event or inviting anyone is a `calendar.*` proposal through createCalendarProposal below, which
+// still has to be approved and executed like every other external effect.
+export type CalendarEvent = {
+  id: string;
+  summary: string;
+  start: string;
+  end?: string;
+  location?: string;
+  description?: string;
+  calendar_id?: string;
+  html_link?: string;
+  attendees?: string[];
+  all_day?: boolean;
+};
+
+export type CalendarEventDraft = {
+  summary: string;
+  start: string;
+  end: string;
+  timezone?: string;
+  location?: string;
+  description?: string;
+  attendees?: string[];
+};
+
+export type LabCalendar = { id: string; timezone: string; embed_url: string };
+
+export async function fetchCalendarEvents(
+  params: { calendarId?: string; from?: string; to?: string; query?: string; max?: number },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ events: CalendarEvent[]; calendar: LabCalendar | null }>> {
+  const search = new URLSearchParams();
+  if (params.calendarId) search.set("calendar_id", params.calendarId);
+  if (params.from) search.set("from", params.from);
+  if (params.to) search.set("to", params.to);
+  if (params.query) search.set("query", params.query);
+  if (params.max) search.set("max", String(params.max));
+  const query = search.toString();
+  const result = await authedJson(
+    baseUrl,
+    query ? `/calendar/events?${query}` : "/calendar/events",
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    // 502 means the CLI is missing, unauthenticated, or its keyring is locked — the service says
+    // which, and that sentence is far more use than "could not load".
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { events?: CalendarEvent[]; calendar?: LabCalendar } | null;
+  return { ok: true, value: { events: body?.events ?? [], calendar: body?.calendar ?? null } };
+}
+
+export async function draftCalendarEvent(
+  request: {
+    prompt: string;
+    timezone?: string;
+    /** Present when the instruction is an edit to this event rather than a new one. */
+    editing?: {
+      summary: string;
+      start: string;
+      end?: string;
+      location?: string;
+      description?: string;
+    };
+  },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<CalendarEventDraft>> {
+  const result = await authedJson(baseUrl, "/calendar/event-draft", "POST", sessionToken, {
+    prompt: request.prompt,
+    ...(request.timezone ? { timezone: request.timezone } : {}),
+    ...(request.editing ? { editing: request.editing } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    // A 400 here names what was wrong with the draft ("the draft ends before it starts"), which is
+    // the sentence that tells the operator how to rewrite their instruction.
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { draft?: CalendarEventDraft } | null;
+  if (!body?.draft) {
+    return { ok: false, kind: "auth-failed" };
+  }
+  return { ok: true, value: body.draft };
+}
+
+/**
+ * The Calendar tab's three writes. Each one goes straight through: the service files the typed
+ * action, records the signed-in admin as its approver, and executes it in the same request.
+ *
+ * The tab is admin-only, so the person clicking is the person who would have approved it anyway.
+ * The ledger still gets the proposal, the named approver and the execution — one click, same audit.
+ */
+export type CalendarActionResult = { action_id: string; status: string; executed_at?: string };
+
+export async function createCalendarEvent(
+  event: {
+    summary: string;
+    start: string;
+    end: string;
+    timezone?: string;
+    location?: string;
+    description?: string;
+    attendees?: string[];
+  },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<CalendarActionResult>> {
+  return await calendarWrite("/calendar/events", event, sessionToken, baseUrl);
+}
+
+export async function updateCalendarEvent(
+  eventId: string,
+  event: {
+    summary: string;
+    start: string;
+    end: string;
+    timezone?: string;
+    location?: string;
+    description?: string;
+  },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<CalendarActionResult>> {
+  return await calendarWrite(
+    `/calendar/events/${encodeURIComponent(eventId)}`,
+    event,
+    sessionToken,
+    baseUrl,
+  );
+}
+
+export async function inviteToCalendarEvent(
+  eventId: string,
+  request: { attendees: string[]; summary?: string; rationale?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<CalendarActionResult>> {
+  return await calendarWrite(
+    `/calendar/events/${encodeURIComponent(eventId)}/invite`,
+    request,
+    sessionToken,
+    baseUrl,
+  );
+}
+
+/**
+ * The calendar routes' failures, with the service's own sentence kept.
+ *
+ * `mapErrorResponse` only carries a message for a 400, because every other status has fixed
+ * client-side copy elsewhere. That is exactly wrong here: the interesting calendar failures are
+ * execution failures — 501 "no live connector handles…", 502 "gog: token expired" — and the
+ * message is the entire diagnosis. Without it the operator gets "Could not save that event" and
+ * has nothing to act on.
+ */
+function calendarFailure(
+  response: Response,
+  body: unknown,
+): { kind: AuthErrorKind; retryAfterSeconds?: number; message?: string } {
+  const mapped = mapErrorResponse(response, body, { weakOn400: false });
+  if (mapped.message) {
+    return mapped;
+  }
+  const message = (body as { error?: { message?: unknown } } | null)?.error?.message;
+  return typeof message === "string" && message.trim()
+    ? { ...mapped, message: message.trim() }
+    : mapped;
+}
+
+async function calendarWrite(
+  path: string,
+  body: Record<string, unknown>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<CalendarActionResult>> {
+  const result = await authedJson(baseUrl, path, "POST", sessionToken, body);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: (result.body ?? {}) as CalendarActionResult };
+}
+
 export async function fetchMemberResource(
   path: string,
   sessionToken: string,
@@ -814,6 +1179,48 @@ export async function issueDeviceToken(
       scopes: Array.isArray(body.scopes) ? (body.scopes as string[]) : [],
     },
   };
+}
+
+/**
+ * Starts a password reset (POST /auth/password-reset). The service answers identically whether or
+ * not the address has an account, so this resolves ok for any well-formed email — the UI must not
+ * present the outcome as confirmation that an account exists.
+ */
+export async function requestPasswordReset(
+  email: string,
+  baseUrl: string,
+): Promise<AuthResult<{ requested: true }>> {
+  const result = await postJson(baseUrl, "/auth/password-reset", { email });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: { requested: true } };
+}
+
+/**
+ * Redeems a reset token and sets the new password (POST /auth/password-reset/confirm). A 400 here
+ * is overloaded — an expired/used link or a too-short password — so it maps to weak-password only
+ * when the caller knows the length was fine; the service message carries the distinction.
+ */
+export async function confirmPasswordReset(
+  token: string,
+  newPassword: string,
+  baseUrl: string,
+): Promise<AuthResult<{ reset: true }>> {
+  const result = await postJson(baseUrl, "/auth/password-reset/confirm", {
+    token,
+    new_password: newPassword,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: { reset: true } };
 }
 
 // Change the member's login email (POST /auth/email). 401 wrong password folds to

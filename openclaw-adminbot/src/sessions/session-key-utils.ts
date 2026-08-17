@@ -251,6 +251,30 @@ export function parseAgentSessionKey(
   return { agentId, rest };
 }
 
+// Mirrors MEMBER_SESSION_PREFIX in ui/src/ui/session-key.ts. The Control UI mints these keys and
+// the gateway reads them back, so the two must agree; they are two lines of code in repos that do
+// not import each other, which is why this is stated rather than shared.
+const MEMBER_SESSION_PREFIX = "member-";
+
+/**
+ * The AdminBot member a session belongs to, read out of its own key.
+ *
+ * Ownership is *derived* rather than threaded. A member's chat lives at
+ * `agent:<agentId>:member-<id>`, so the key already says whose it is — which means every path that
+ * creates one (the gateway, auto-reply, cron, an agent tool) produces a correctly-owned session
+ * without any of them having to know about ownership or carry an identity down to the store write.
+ *
+ * A key with no member slot -- the shared `main`, a cron run, an operator's named session -- has no
+ * member owner, and callers treat that as "not any member's to read".
+ */
+export function memberIdFromSessionKey(sessionKey: string | undefined | null): string | undefined {
+  const rest = parseAgentSessionKey(sessionKey)?.rest ?? "";
+  if (!rest.startsWith(MEMBER_SESSION_PREFIX)) {
+    return undefined;
+  }
+  return normalizeOptionalString(rest.slice(MEMBER_SESSION_PREFIX.length));
+}
+
 export function isCronRunSessionKey(sessionKey: string | undefined | null): boolean {
   const parsed = parseAgentSessionKey(sessionKey);
   if (!parsed) {

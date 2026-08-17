@@ -115,7 +115,9 @@ describe("composeOnboardingGuide", () => {
       return;
     }
     expect(result.reason).toBe("missing-values");
-    expect(result.missing).toContain("contact_name");
+    // The setup mail names the project and the channels; who supervises the work moved to the
+    // norms mail that follows it (coauthor_minor_norms), which is where contact_name lives now.
+    expect(result.missing).toContain("project_or_context");
   });
 
   it("treats whitespace as missing rather than substituting it", () => {
@@ -169,7 +171,11 @@ describe("composeOnboardingGuide", () => {
     // Both routes to an account are described: already have a DCS address, or waiting on one.
     expect(result.guide.body).toContain("If you already have an @cs.toronto.edu email");
     expect(result.guide.body).toContain("If you do not have an @cs.toronto.edu email yet");
-    expect(result.guide.body).toContain("https://jinesis-admin.vercel.app/signup");
+    // Accounts are pre-created for the roster right now, so the mail hands over a sign-in and a
+    // temporary password rather than a signup link.
+    expect(result.guide.body).toContain("https://jinesis-admin.vercel.app");
+    expect(result.guide.body).toContain('temporary password "jinesis"');
+    expect(result.guide.body).not.toContain("/signup");
     // The member is never told to file the DCS request themselves; approval does it for them.
     expect(result.guide.body).not.toContain("forms.office.com");
     expect(result.guide.body).not.toContain("click this link");
@@ -267,7 +273,7 @@ describe("onboarding sender", () => {
     }
     expect(result.error.status).toBe(422);
     expect(result.error.missing).toEqual(
-      expect.arrayContaining(["contact_name", "discussion_channel", "meeting_cadence"]),
+      expect.arrayContaining(["discussion_channel", "drive_guide_link", "project_channel"]),
     );
     // Nothing was created for a send that could never have gone out.
     expect(provisionDriveWorkspace).not.toHaveBeenCalled();
@@ -300,7 +306,6 @@ describe("onboarding sender", () => {
     expect(provisionDriveWorkspace).toHaveBeenCalledWith({ folderName: "Zhijing-AdaLovelace" });
     expect(result.payload.sent).toBe(true);
     expect(result.payload.body).toContain("https://drive.example/fld");
-    expect(result.payload.body).toContain("https://slack.example/invite");
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({ to: "ada@example.com", subject: expect.any(String) }),
     );
@@ -308,6 +313,92 @@ describe("onboarding sender", () => {
     // not hard-wrapped mid-paragraph; the plain text stays the canonical copy.
     expect(result.payload.body_html).toBe(renderEmailBodyHtml(result.payload.body));
     expect(sendEmail.mock.calls[0]?.[0]?.body_html).toBe(result.payload.body_html);
+  });
+
+  // The full-member guide is what starts someone's CS account, and its own copy tells them an
+  // account request is coming -- so sending it files the request. This used to happen on
+  // registration approval, which is too late: by then they have the address the request produces.
+  it("files the DCS request when the full-member guide is sent", async () => {
+    const submitDcsForm = vi.fn().mockResolvedValue(undefined);
+    const sendEmail = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({ env: ENV, submitDcsForm, sendEmail });
+
+    const result = await send({
+      template_id: "member",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+    });
+    expect(result.ok).toBe(true);
+    expect(submitDcsForm).toHaveBeenCalledWith({
+      firstName: "Ada",
+      lastName: "Lovelace",
+      email: "ada@example.com",
+    });
+    if (result.ok) {
+      expect(result.payload.dcs_form).toEqual({ submitted: true });
+    }
+  });
+
+  // Every other template goes to people who are not getting a CS account from this lab.
+  it("files nothing for the other templates", async () => {
+    const submitDcsForm = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      submitDcsForm,
+      sendEmail: vi.fn().mockResolvedValue(undefined),
+    });
+    const result = await send({
+      template_id: "rejection",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+    });
+    expect(result.ok).toBe(true);
+    expect(submitDcsForm).not.toHaveBeenCalled();
+    if (result.ok) {
+      expect(result.payload.dcs_form).toBeUndefined();
+    }
+  });
+
+  // A re-send is not a second request: an operator resending the guide to someone who already has
+  // an account turns it off.
+  it("lets a re-send opt out", async () => {
+    const submitDcsForm = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      submitDcsForm,
+      sendEmail: vi.fn().mockResolvedValue(undefined),
+    });
+    const result = await send({
+      template_id: "member",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      submit_dcs_form: false,
+    });
+    expect(result.ok).toBe(true);
+    expect(submitDcsForm).not.toHaveBeenCalled();
+  });
+
+  // The guide is already delivered by the time the form runs, so a failed form is reported and
+  // followed up, never a reason to tell the operator the send failed.
+  it("reports a failed DCS request without failing the send", async () => {
+    const sendEmail = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      sendEmail,
+      submitDcsForm: vi.fn().mockRejectedValue(new Error("form timed out")),
+    });
+    const result = await send({
+      template_id: "member",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      submit_dcs_form: true,
+    });
+    expect(result.ok).toBe(true);
+    expect(sendEmail).toHaveBeenCalled();
+    if (result.ok) {
+      expect(result.payload.sent).toBe(true);
+      expect(result.payload.dcs_form).toEqual({ submitted: false, error: "form timed out" });
+    }
   });
 
   it("does not send when provisioning is unavailable", async () => {

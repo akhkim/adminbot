@@ -1,0 +1,118 @@
+[
+  {
+    "from": "src/gateway/server-methods/chat-history-budget.test.ts",
+    "to": "src/gateway/server-methods/chat/chat-history-budget.test.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat-reply-media.test.ts",
+    "to": "src/gateway/server-methods/chat/chat-reply-media.test.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat-reply-media.ts",
+    "to": "src/gateway/server-methods/chat/chat-reply-media.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat-transcript-inject.ts",
+    "to": "src/gateway/server-methods/chat/chat-transcript-inject.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat-webchat-media.test.ts",
+    "to": "src/gateway/server-methods/chat/chat-webchat-media.test.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat-webchat-media.ts",
+    "to": "src/gateway/server-methods/chat/chat-webchat-media.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.abort-authorization.test.ts",
+    "to": "src/gateway/server-methods/chat/chat.abort-authorization.test.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.abort-persistence.test.ts",
+    "to": "src/gateway/server-methods/chat/chat.abort-persistence.test.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.abort.test-helpers.ts",
+    "to": "src/gateway/server-methods/chat/chat.abort.test-helpers.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.agent-selection.ts",
+    "to": "src/gateway/server-methods/chat/chat.agent-selection.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.assistant-display.ts",
+    "to": "src/gateway/server-methods/chat/chat.assistant-display.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.broadcast.ts",
+    "to": "src/gateway/server-methods/chat/chat.broadcast.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.directive-tags.test.ts",
+    "to": "src/gateway/server-methods/chat/chat.directive-tags.test.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.error-broadcast.test.ts",
+    "to": "src/gateway/server-methods/chat/chat.error-broadcast.test.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.history.ownership.test.ts",
+    "to": "src/gateway/server-methods/chat/chat.history.ownership.test.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.history.ts",
+    "to": "src/gateway/server-methods/chat/chat.history.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.inject.parentid.test.ts",
+    "to": "src/gateway/server-methods/chat/chat.inject.parentid.test.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.metadata.ts",
+    "to": "src/gateway/server-methods/chat/chat.metadata.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.run-abort.ts",
+    "to": "src/gateway/server-methods/chat/chat.run-abort.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.send-dedupe.ts",
+    "to": "src/gateway/server-methods/chat/chat.send-dedupe.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.send-deleted-agent.test.ts",
+    "to": "src/gateway/server-methods/chat/chat.send-deleted-agent.test.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.send-media.ts",
+    "to": "src/gateway/server-methods/chat/chat.send-media.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.send-origin.ts",
+    "to": "src/gateway/server-methods/chat/chat.send-origin.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.send-timing.ts",
+    "to": "src/gateway/server-methods/chat/chat.send-timing.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.test-helpers.ts",
+    "to": "src/gateway/server-methods/chat/chat.test-helpers.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.text-normalize.ts",
+    "to": "src/gateway/server-methods/chat/chat.text-normalize.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.transcript.ts",
+    "to": "src/gateway/server-methods/chat/chat.transcript.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.ts",
+    "to": "src/gateway/server-methods/chat/chat.ts"
+  },
+  {
+    "from": "src/gateway/server-methods/chat.tts-supplement.ts",
+    "to": "src/gateway/server-methods/chat/chat.tts-supplement.ts"
+  }
+]

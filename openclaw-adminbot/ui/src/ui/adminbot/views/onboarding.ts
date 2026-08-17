@@ -238,6 +238,8 @@ function renderMissing(state: AppViewState) {
 
 export function renderAdminBotOnboarding(state: AppViewState) {
   const templateId = state.onboardingTemplateId ?? ONBOARDING_TEMPLATE_OPTIONS[0].id;
+  // The full-member guide, whose copy tells the reader an account request is coming.
+  const DCS_FORM_TEMPLATE_ID = "member";
   const groups = [...new Set(ONBOARDING_TEMPLATE_OPTIONS.map((entry) => entry.group))];
   const fields = onboardingFieldsFor(templateId);
   const busy = Boolean(state.onboardingBusy);
@@ -301,6 +303,24 @@ export function renderAdminBotOnboarding(state: AppViewState) {
         </label>
 
         ${fields.map((token) => renderField(state, token))}
+
+        <!-- Only on the guide that promises a CS account. Ticked by default because sending it is
+             what files the request; an operator re-sending to someone who already has an account
+             unticks it, which is the case that would otherwise file a duplicate. -->
+        ${templateId === DCS_FORM_TEMPLATE_ID
+          ? html`<label class="adminbot-form__field adminbot-form__field--inline">
+              <input
+                type="checkbox"
+                name="submitDcsForm"
+                data-testid="onboarding-submit-dcs-form"
+                .checked=${state.onboardingSubmitDcsForm ?? true}
+                @change=${(event: Event) => {
+                  state.onboardingSubmitDcsForm = (event.target as HTMLInputElement).checked;
+                }}
+              />
+              <span>Also request their CS account (DCS Slack-access form)</span>
+            </label>`
+          : nothing}
 
         <div class="adminbot-form__actions">
           <button class="btn" type="submit" ?disabled=${busy}>Preview</button>

@@ -3,79 +3,20 @@ import { describePackageManifestContract } from "openclaw/plugin-sdk/plugin-test
 
 type PackageManifestContractParams = Parameters<typeof describePackageManifestContract>[0];
 
+// Only bundled plugins that ship a `package.json` belong here, and only those
+// with something for the contract to assert: a runtime dependency that must stay
+// out of the root manifest, or a declared `openclaw.install.minHostVersion`. A
+// plugin with neither registers an empty suite, which Vitest reports as a
+// failure. The deep clean removed the ~130 upstream plugins this list used to
+// cover; `typebox`, `zod`, `chokidar` and `json5` are shared root dependencies
+// by design, so they are not plugin-local.
 const packageManifestContractTests: PackageManifestContractParams[] = [
+  { pluginId: "brave", minHostVersionBaseline: "2026.4.10" },
   {
-    pluginId: "discord",
-    pluginLocalRuntimeDeps: ["@discordjs/voice", "discord-api-types", "libopus-wasm"],
-    minHostVersionBaseline: "2026.3.22",
+    pluginId: "slack",
+    pluginLocalRuntimeDeps: ["@slack/bolt", "@slack/types", "@slack/web-api"],
+    minHostVersionBaseline: "2026.5.28",
   },
-  {
-    pluginId: "feishu",
-    pluginLocalRuntimeDeps: ["@larksuiteoapi/node-sdk"],
-    minHostVersionBaseline: "2026.3.22",
-  },
-  { pluginId: "google" },
-  { pluginId: "google-meet" },
-  {
-    pluginId: "googlechat",
-    pluginLocalRuntimeDeps: ["gaxios", "google-auth-library"],
-    minHostVersionBaseline: "2026.3.22",
-  },
-  { pluginId: "irc", minHostVersionBaseline: "2026.3.22" },
-  { pluginId: "line", minHostVersionBaseline: "2026.3.22" },
-  { pluginId: "amazon-bedrock" },
-  { pluginId: "amazon-bedrock-mantle" },
-  {
-    pluginId: "diffs",
-    pluginLocalRuntimeDeps: ["@pierre/diffs", "@pierre/theme"],
-  },
-  { pluginId: "file-transfer" },
-  {
-    pluginId: "matrix",
-    pluginLocalRuntimeDeps: [
-      "@matrix-org/matrix-sdk-crypto-nodejs",
-      "@matrix-org/matrix-sdk-crypto-wasm",
-      "fake-indexeddb",
-      "matrix-js-sdk",
-      "music-metadata",
-    ],
-    minHostVersionBaseline: "2026.3.22",
-  },
-  { pluginId: "mattermost", minHostVersionBaseline: "2026.3.22" },
-  {
-    pluginId: "memory-lancedb",
-    pluginLocalRuntimeDeps: ["@lancedb/lancedb", "apache-arrow"],
-    minHostVersionBaseline: "2026.3.22",
-  },
-  {
-    pluginId: "msteams",
-    pluginLocalRuntimeDeps: ["@azure/identity", "@microsoft/teams.apps"],
-    minHostVersionBaseline: "2026.3.22",
-  },
-  { pluginId: "nextcloud-talk", minHostVersionBaseline: "2026.3.22" },
-  {
-    pluginId: "nostr",
-    pluginLocalRuntimeDeps: ["nostr-tools"],
-    minHostVersionBaseline: "2026.3.22",
-  },
-  { pluginId: "openshell" },
-  {
-    pluginId: "qqbot",
-    pluginLocalRuntimeDeps: ["@tencent-connect/qqbot-connector", "mpg123-decoder", "silk-wasm"],
-  },
-  { pluginId: "slack" },
-  { pluginId: "synology-chat", minHostVersionBaseline: "2026.3.22" },
-  { pluginId: "telegram" },
-  { pluginId: "tlon", minHostVersionBaseline: "2026.3.22" },
-  { pluginId: "twitch", minHostVersionBaseline: "2026.3.22" },
-  { pluginId: "voice-call", minHostVersionBaseline: "2026.3.22" },
-  {
-    pluginId: "whatsapp",
-    pluginLocalRuntimeDeps: ["audio-decode", "baileys"],
-    minHostVersionBaseline: "2026.3.22",
-  },
-  { pluginId: "zalo", minHostVersionBaseline: "2026.3.22" },
-  { pluginId: "zalouser", minHostVersionBaseline: "2026.3.22" },
 ];
 
 for (const params of packageManifestContractTests) {

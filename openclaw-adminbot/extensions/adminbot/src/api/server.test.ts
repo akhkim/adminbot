@@ -191,12 +191,75 @@ describe("AdminBot mock service", () => {
     expect(body.items.length).toBeGreaterThan(0);
   });
 
+  it("serves the member map page as a public, unauthenticated shell", async () => {
+    const { baseUrl } = await startService();
+
+    const page = await fetch(`${baseUrl}/lab_stats/member_map`);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("Lab Member Map");
+
+    // The shell loads without a session, and so does the data it fetches -- anonymously, that
+    // data is a names-stripped, counts-only summary rather than a 401.
+    const data = await fetch(`${baseUrl}/member-map`);
+    expect(data.status).toBe(200);
+    await expect(data.json()).resolves.toMatchObject({ mode: "summary" });
+  });
+
   it("rejects unauthenticated requests to gated routes", async () => {
     const { baseUrl } = await startService();
     const members = await fetch(`${baseUrl}/lab/members`);
     expect(members.status).toBe(401);
     await expect(members.json()).resolves.toEqual({
       error: { message: "authentication required" },
+    });
+  });
+
+  it("accepts Slack channel naming events for the service principal", async () => {
+    const { baseUrl } = await startService({
+      executor: { execute: async () => ({ handled: true }) },
+    });
+    const res = await fetch(`${baseUrl}/slack/channel-naming/events`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        event_type: "channel_created",
+        channel_id: "C123",
+        channel_name: "eu-post-training",
+        owner_user_id: "U123",
+      }),
+    });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      status: "reminder_sent",
+      channel_id: "C123",
+      suggested_name: "proj-eu-post-training",
+    });
+  });
+
+  it("runs Slack channel naming sweep over due reminders", async () => {
+    const { baseUrl } = await startService({
+      executor: { execute: async () => ({ handled: true }) },
+    });
+    await fetch(`${baseUrl}/slack/channel-naming/events`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({
+        event_type: "channel_created",
+        channel_id: "C777",
+        channel_name: "rule-coherence-project",
+        owner_user_id: "U777",
+      }),
+    });
+    const sweep = await fetch(`${baseUrl}/slack/channel-naming/sweep/run`, {
+      method: "POST",
+      headers: serviceHeaders({ "Content-Type": "application/json" }),
+      body: JSON.stringify({ now: "2099-01-01T00:00:00.000Z" }),
+    });
+    expect(sweep.status).toBe(200);
+    await expect(sweep.json()).resolves.toMatchObject({
+      scanned: 1,
+      renamed: 1,
+      skipped: 0,
     });
   });
 
@@ -354,7 +417,9 @@ describe("AdminBot mock service", () => {
     expect(sent).toEqual([{ email: "mailed-person@cs.toronto.edu", name: "Mailed Person" }]);
   });
 
-  it("approving a registration submits the DCS form with the member's split name and email", async () => {
+  // The request moved off approval and onto the send that promises it. Approving is now silent:
+  // by then the member has the address the request produces.
+  it("approving a registration files no DCS request", async () => {
     const submitted: Array<{ firstName: string; lastName: string; email: string }> = [];
     const { baseUrl } = await startService({
       dcsFormRunner: async (params) => {
@@ -375,34 +440,41 @@ describe("AdminBot mock service", () => {
 
     await Promise.resolve();
     await Promise.resolve();
-    expect(submitted).toEqual([
-      { firstName: "Dcs", lastName: "Person", email: "dcs-person@cs.toronto.edu" },
-    ]);
+    expect(submitted).toEqual([]);
   });
 
-  it("a failing DCS form submission does not block approval or expose an error to the caller", async () => {
+  // The other half of the move: the send files it, and the audit trail follows the trigger. The
+  // request lands on a Microsoft Form with no receipt, so this row is the only evidence.
+  it("sending the full-member guide files the DCS request and audits it", async () => {
+    const submitted: Array<{ firstName: string; lastName: string; email: string }> = [];
     const { baseUrl } = await startService({
-      dcsFormRunner: async () => {
-        throw new Error("form layout changed");
+      dcsFormRunner: async (params) => {
+        submitted.push(params);
       },
     });
-    seedMember(baseUrl, "df", { name: "DF", email: "df@cs.toronto.edu" });
-    await fetch(`${baseUrl}/auth/claim`, {
+    await seedMember(baseUrl, "boss", {
+      name: "Boss",
+      email: "boss@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    await approveClaim(baseUrl, "boss", "boss@cs.toronto.edu");
+    const adminToken = await loginToken(baseUrl, "boss@cs.toronto.edu");
+
+    const response = await fetch(`${baseUrl}/onboarding/guide`, {
       method: "POST",
-      headers: jsonHeaders(),
+      headers: jsonHeaders({ Authorization: `Bearer ${adminToken}` }),
       body: JSON.stringify({
-        member_id: "df",
-        email: "df@cs.toronto.edu",
-        password: "correcthorse",
+        template_id: "member",
+        name: "Dcs Person",
+        email: "dcs-person@cs.toronto.edu",
+        preview: true,
       }),
     });
-    const registration = (await listPending(baseUrl)).find((entry) => entry.member_id === "df");
-    expect(approveRegistration(baseUrl, registration!.id)).toEqual({
-      status: "approved",
-      member_id: "df",
-    });
-    expect(await loginToken(baseUrl, "df@cs.toronto.edu")).toBeTruthy();
+    expect(response.status).toBe(200);
+    // A preview provisions and sends nothing, so it must not file a request either.
+    expect(submitted).toEqual([]);
   });
+
 
   it("does not email anyone when a registration is rejected", async () => {
     const sent: Array<{ email: string }> = [];
@@ -606,6 +678,31 @@ describe("AdminBot mock service", () => {
     };
     expect(body.error.message).toBe("too many attempts, retry later");
     expect(body.retry_after_seconds).toBeGreaterThan(0);
+  });
+
+  it("only honors X-Forwarded-For for the caller's IP when trustProxyHeaders is on", async () => {
+    const spoofed = "203.0.113.9";
+
+    async function rateLimitAndGetAuditedIp(trustProxyHeaders: boolean): Promise<unknown> {
+      const { baseUrl } = await startService({ trustProxyHeaders });
+      await seedMember(baseUrl, "rl2", { name: "RL2", email: "rl2@example.com" });
+      for (let attempt = 0; attempt < 11; attempt += 1) {
+        await fetch(`${baseUrl}/auth/login`, {
+          method: "POST",
+          headers: jsonHeaders({ "X-Forwarded-For": spoofed }),
+          body: JSON.stringify({ email: "rl2@example.com", password: "wrongpassword" }),
+        });
+      }
+      const events = mockFor(baseUrl).service.listAuditEvents();
+      const limited = events.find((event) => event.type === "auth.rate_limited");
+      return limited?.details?.remote_ip;
+    }
+
+    // Untrusted (the default): a caller-supplied header must never override the real socket
+    // address, or anyone could spoof their way around IP-based rate limiting.
+    await expect(rateLimitAndGetAuditedIp(false)).resolves.not.toBe(spoofed);
+    // Trusted: this process is configured to sit behind a proxy that sets the header itself.
+    await expect(rateLimitAndGetAuditedIp(true)).resolves.toBe(spoofed);
   });
 
   it("guards member self-profile edits", async () => {
@@ -900,24 +997,70 @@ describe("AdminBot mock service", () => {
     expect((await attempt()).status).toBe(429);
   });
 
-  it("serves the member map to a privileged principal and refuses anonymous callers", async () => {
+  it("gives a privileged principal full names, and everyone else a counts-only summary", async () => {
     const { baseUrl } = await startService();
     await seedMember(baseUrl, "ada", {
       name: "Ada",
       privilege_level: "member",
       location: "Toronto",
     });
+    // Unplaced (no location anywhere), so a summary that ever put unplaced names back in would
+    // leak "Zedunia" specifically, and the check below would catch it even though Zed never
+    // appears in a `places` entry at all.
+    await seedMember(baseUrl, "zed", { name: "Zedunia", privilege_level: "member" });
+    await approveClaim(baseUrl, "ada", "ada@example.com");
+    const memberToken = await loginToken(baseUrl, "ada@example.com");
 
     const anonymous = await fetch(`${baseUrl}/member-map`);
-    expect(anonymous.status).toBe(401);
+    expect(anonymous.status).toBe(200);
+    const anonymousText = await anonymous.text();
+    expect(anonymousText).not.toContain("Ada");
+    expect(anonymousText).not.toContain("Zedunia");
+    expect(anonymousText).not.toContain("members");
+    const anonymousBody = JSON.parse(anonymousText) as {
+      mode: string;
+      places: Array<{ label: string; count: number; members?: unknown }>;
+      unplaced?: unknown;
+    };
+    expect(anonymousBody.mode).toBe("summary");
+    expect(anonymousBody.places[0]).toMatchObject({ label: "Toronto", count: 1 });
+    expect(anonymousBody.places[0]?.members).toBeUndefined();
+    expect(anonymousBody.unplaced).toBeUndefined();
+
+    // A signed-in member who is not an admin gets the same counts-only shape as anonymous --
+    // checked by reading the raw response text for the name, not just the structured fields,
+    // so a bug that stashed "members" under some other key would still be caught.
+    const asMember = await fetch(`${baseUrl}/member-map`, {
+      headers: { Authorization: `Bearer ${memberToken}` },
+    });
+    expect(asMember.status).toBe(200);
+    const asMemberText = await asMember.text();
+    expect(asMemberText).not.toContain("Ada");
+    expect(asMemberText).not.toContain("Zedunia");
+    expect(asMemberText).not.toContain("members");
+    const asMemberBody = JSON.parse(asMemberText) as {
+      mode: string;
+      places: Array<{ members?: unknown }>;
+      unplaced?: unknown;
+    };
+    expect(asMemberBody.mode).toBe("summary");
+    expect(asMemberBody.places[0]?.members).toBeUndefined();
+    expect(asMemberBody.unplaced).toBeUndefined();
 
     const response = await fetch(`${baseUrl}/member-map`, { headers: serviceHeaders() });
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
+      mode: string;
       places: Array<{ label: string; members: Array<{ name: string; source: string }> }>;
+      unplaced: Array<{ name: string }>;
     };
+    expect(body.mode).toBe("full");
     expect(body.places[0]?.label).toBe("Toronto");
     expect(body.places[0]?.members[0]).toMatchObject({ name: "Ada", source: "roster" });
+    // The full path still surfaces the unplaced name -- proving the two summary checks above
+    // are actually testing something the admin view does show, not a name that was never in
+    // the data to begin with.
+    expect(body.unplaced.map((entry) => entry.name)).toContain("Zedunia");
   });
 
   it("reports a 503 for a map refresh when no slack lookup is configured", async () => {
@@ -977,7 +1120,12 @@ describe("AdminBot mock service", () => {
       timezonesChecked: number;
       timezonesUpdated: number;
     };
-    expect(body).toEqual({ idsResolved: 1, timezonesChecked: 1, timezonesUpdated: 1 });
+    expect(body).toEqual({
+      idsResolved: 1,
+      timezonesChecked: 1,
+      timezonesUpdated: 1,
+      activityChecked: 0,
+    });
 
     const roster = await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() });
     const members = (await roster.json()) as {
@@ -1251,6 +1399,22 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(body.skipped).toEqual([]);
   });
 
+  // What a member writes about their health or family is written for one reader, but /lab/members
+  // serves whole records to every signed-in member. These pin the boundary rule.
+  it("hides a member's personal circumstances from other members", async () => {
+    const { baseUrl } = await startService();
+    seedMember(baseUrl, "ada", {
+      name: "Ada",
+      personal_circumstances: "caring for a parent on Fridays",
+    });
+    const res = await fetch(`${baseUrl}/lab/members`, { headers: serviceHeaders() });
+    const body = (await res.json()) as { members: Array<Record<string, unknown>> };
+    const ada = body.members.find((member) => member.id === "ada")!;
+    // The service principal drives agent tool calls for whoever is chatting, so it is not entitled.
+    expect(ada.name).toBe("Ada");
+    expect("personal_circumstances" in ada).toBe(false);
+  });
+
   it("reports members with incomplete mandatory profile fields to any caller", async () => {
     const { baseUrl } = await startService();
     seedMember(baseUrl, "blank", { name: "Blank" });
@@ -1260,7 +1424,7 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { members: Array<{ id: string; missing_fields: string[] }> };
     expect(body.members.map((member) => member.id)).toEqual(["blank"]);
-    expect(body.members[0]?.missing_fields).toContain("role");
+    expect(body.members[0]?.missing_fields).toContain("cv_url");
   });
 
   it("lets the service principal (unlike /nudges/send) run the daily mandatory-fields reminder, since it takes no caller-supplied content", async () => {
@@ -1283,6 +1447,63 @@ describe("AdminBot service-principal privilege scoping", () => {
       method: "POST",
     });
     expect(res.status).toBe(401);
+  });
+
+  it("runs profile-photo review reminders for the service principal, using only server-computed targeting/message", async () => {
+    const executor = { execute: async () => ({ handled: true }) };
+    const { baseUrl } = await startService({
+      executor,
+      reviewSlackProfilePhoto: async ({ slackUserId }) => ({
+        compliant: slackUserId === "U-GOOD",
+        issues: slackUserId === "U-GOOD" ? [] : ["background_not_clean"],
+        summary: slackUserId === "U-GOOD" ? "Looks good." : "Background is noisy.",
+        source: "ai",
+      }),
+    });
+    seedMember(baseUrl, "bad", { name: "Bad", slack_user_id: "U-BAD", status: "active" });
+    seedMember(baseUrl, "good", { name: "Good", slack_user_id: "U-GOOD", status: "active" });
+    const res = await fetch(`${baseUrl}/profile-photo/review/run`, {
+      method: "POST",
+      headers: serviceHeaders(),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { reviewed: number; non_compliant: number; nudges_created: number };
+    expect(body.reviewed).toBe(2);
+    expect(body.non_compliant).toBe(1);
+    expect(body.nudges_created).toBe(1);
+  });
+
+  it("lets a signed-in member polish and apply their own Slack profile photo variant", async () => {
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => ({ handled: proposal.type === "slack.profile_photo_update" }),
+      },
+      polishSlackProfilePhoto: async () => ({
+        image_data_url: "data:image/png;base64,aGVsbG8=",
+      }),
+    });
+    seedMember(baseUrl, "sam", {
+      name: "Sam",
+      email: "sam@cs.toronto.edu",
+      slack_user_id: "U-SAM",
+      status: "active",
+    });
+    await approveClaim(baseUrl, "sam", "sam@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "sam@cs.toronto.edu");
+
+    const polished = await fetch(`${baseUrl}/profile-photo/polish`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: "{}",
+    });
+    expect(polished.status).toBe(200);
+    const polishedBody = (await polished.json()) as { variant: { id: string } };
+    const apply = await fetch(`${baseUrl}/profile-photo/apply`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ variant_id: polishedBody.variant.id }),
+    });
+    expect(apply.status).toBe(200);
   });
 
   async function proposeSlackMessage(baseUrl: string): Promise<{ id: string; hash: string }> {
@@ -2080,5 +2301,318 @@ describe("anonymous reimbursement access", () => {
     expect(anonymous.every((event) => event.actor === "anonymous")).toBe(true);
     expect(anonymous.every((event) => typeof event.details?.ip === "string")).toBe(true);
     expect(anonymous.filter((event) => event.details?.outcome === "rate_limited")).toHaveLength(2);
+  });
+});
+
+// The Calendar tab is admin-only and its buttons send for real, so the routes below are the whole
+// safety boundary: who may reach them, and what lands in the ledger when they do.
+// A refused origin is otherwise invisible: the service answers normally and the browser discards
+// the response, so the page can only report that it reached nothing.
+describe("cross-origin refusals", () => {
+  it("answers an allowed origin with the header, and a refused one without", async () => {
+    const { baseUrl } = await startService({
+      allowedOrigins: ["https://admin.safe.eu"],
+    });
+
+    const allowed = await fetch(`${baseUrl}/adminbot`, {
+      headers: { Origin: "https://admin.safe.eu" },
+    });
+    expect(allowed.headers.get("access-control-allow-origin")).toBe("https://admin.safe.eu");
+
+    // A different scheme, host or port is a different origin — the usual cause of this failure.
+    for (const origin of [
+      "http://admin.safe.eu",
+      "https://www.admin.safe.eu",
+      "https://admin.safe.eu:8443",
+    ]) {
+      const refused = await fetch(`${baseUrl}/adminbot`, { headers: { Origin: origin } });
+      expect(refused.headers.get("access-control-allow-origin"), origin).toBeNull();
+    }
+  });
+
+  it("names the refused origin and the configured list in the log", async () => {
+    const warnings: string[] = [];
+    const warn = console.warn;
+    console.warn = (...args: unknown[]) => warnings.push(args.join(" "));
+    try {
+      const { baseUrl } = await startService({ allowedOrigins: ["https://admin.safe.eu"] });
+      await fetch(`${baseUrl}/adminbot`, { headers: { Origin: "http://admin.safe.eu" } });
+      await fetch(`${baseUrl}/adminbot`, { headers: { Origin: "http://admin.safe.eu" } });
+    } finally {
+      console.warn = warn;
+    }
+    const refusals = warnings.filter((line) => line.includes("refused cross-origin request"));
+    // Once per origin, not once per request.
+    expect(refusals).toHaveLength(1);
+    expect(refusals[0]).toContain("http://admin.safe.eu");
+    expect(refusals[0]).toContain("https://admin.safe.eu");
+  });
+});
+
+describe("the calendar routes", () => {
+  async function adminSession(baseUrl: string): Promise<Record<string, string>> {
+    await seedMember(baseUrl, "boss", {
+      name: "Boss",
+      email: "boss@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+    await approveClaim(baseUrl, "boss", "boss@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "boss@cs.toronto.edu");
+    return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  }
+
+  async function memberSession(baseUrl: string): Promise<Record<string, string>> {
+    await seedMember(baseUrl, "plain", {
+      name: "Plain",
+      email: "plain@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "plain", "plain@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "plain@cs.toronto.edu");
+    return { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+  }
+
+  it("names the calendar it read alongside the events", async () => {
+    const { baseUrl } = await startService({
+      calendarEventsReader: async () => [
+        { id: "evt-1", summary: "Lab retreat", start: "2026-09-01T13:00:00-04:00" },
+      ],
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events`, { headers });
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      events: [{ id: "evt-1", summary: "Lab retreat" }],
+      calendar: { id: "jinesis.lab@gmail.com", timezone: "America/Toronto" },
+    });
+  });
+
+  // Every calendar route, listed once and reused by the three refusal tests below, so a route added
+  // later is either added here or visibly missing from all three.
+  function calendarRoutes(headers: Record<string, string>): Array<[string, RequestInit]> {
+    return [
+      ["/calendar/events", { headers }],
+      ["/calendar/event-draft", { method: "POST", headers, body: JSON.stringify({ prompt: "x" }) }],
+      [
+        "/calendar/events",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            summary: "x",
+            start: "2026-09-01T13:00",
+            end: "2026-09-01T14:00",
+          }),
+        },
+      ],
+      [
+        "/calendar/events/evt-1",
+        {
+          method: "POST",
+          headers,
+          body: JSON.stringify({
+            summary: "x",
+            start: "2026-09-01T13:00",
+            end: "2026-09-01T14:00",
+          }),
+        },
+      ],
+      [
+        "/calendar/events/evt-1/invite",
+        { method: "POST", headers, body: JSON.stringify({ attendees: ["a@b.com"] }) },
+      ],
+    ];
+  }
+
+  // A visitor never gets as far as the privilege check: the anonymous boundary refuses anything
+  // outside ANONYMOUS_ROUTES, and no calendar route is on that list.
+  it("keeps a signed-out visitor out of every calendar route", async () => {
+    const { baseUrl } = await startService({ calendarEventsReader: async () => [] });
+
+    for (const [route, init] of calendarRoutes({ "Content-Type": "application/json" })) {
+      const response = await fetch(`${baseUrl}${route}`, init);
+      expect(response.status, route).toBe(401);
+    }
+  });
+
+  // The shared service principal drives every agent tool call regardless of who is chatting, so
+  // treating it as admin here would let any member send calendar mail by asking the bot to.
+  it("keeps the service principal out of every calendar route", async () => {
+    const { baseUrl } = await startService({ calendarEventsReader: async () => [] });
+
+    for (const [route, init] of calendarRoutes(
+      serviceHeaders({ "Content-Type": "application/json" }),
+    )) {
+      const response = await fetch(`${baseUrl}${route}`, init);
+      expect(response.status, route).toBe(403);
+    }
+  });
+
+  it("keeps a plain member out of every calendar route", async () => {
+    const { baseUrl } = await startService({ calendarEventsReader: async () => [] });
+    const headers = await memberSession(baseUrl);
+
+    for (const [route, init] of calendarRoutes(headers)) {
+      const response = await fetch(`${baseUrl}${route}`, init);
+      expect(response.status, route).toBe(403);
+    }
+  });
+
+  // One click, but the full ledger: the action is filed, the admin who clicked is recorded as its
+  // approver, and the execution is the same path every other action takes.
+  it("files, approves and executes a created event in one call", async () => {
+    const executed: Array<{ type: string; payload: unknown }> = [];
+    const { baseUrl, mock } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push({ type: proposal.type, payload: proposal.proposed_payload });
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        summary: "Reading group lunch",
+        start: "2026-08-18T13:00",
+        end: "2026-08-18T14:00",
+        location: "DCS lounge",
+      }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { action_id: string; status: string };
+    expect(body.status).toBe("executed");
+
+    // No attendees, so it is a hold rather than something that mails anyone.
+    expect(executed).toHaveLength(1);
+    expect(executed[0]?.type).toBe("calendar.create_tentative_hold");
+    expect(executed[0]?.payload).toMatchObject({
+      calendar_id: "jinesis.lab@gmail.com",
+      summary: "Reading group lunch",
+      // Resolved to an instant: the wall-clock time the draft carries is not RFC3339, and Google
+      // answers `400 badRequest` for it. 13:00 Toronto in August is 17:00Z.
+      from: "2026-08-18T17:00:00.000Z",
+      to: "2026-08-18T18:00:00.000Z",
+      timezone: "America/Toronto",
+    });
+
+    const stored = mock.service.getProposal(body.action_id);
+    expect(stored?.status).toBe("executed");
+    expect(stored?.approvals?.[0]).toMatchObject({ approver_role: "admin", approver_id: "boss" });
+  });
+
+  it("invites without touching anything else about the event", async () => {
+    const executed: Array<{ type: string; payload: Record<string, unknown> }> = [];
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push({
+            type: proposal.type,
+            payload: proposal.proposed_payload as Record<string, unknown>,
+          });
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        attendees: ["ada@cs.toronto.edu"],
+        summary: "Lab retreat",
+        rationale: "writing for NeurIPS 2026",
+      }),
+    });
+    expect(response.status).toBe(200);
+    expect(executed[0]?.type).toBe("calendar.add_attendees");
+    expect(executed[0]?.payload).toMatchObject({
+      event_id: "evt-9",
+      attendees: ["ada@cs.toronto.edu"],
+    });
+    // An invite that carried a title or a time could rewrite the event as a side effect.
+    expect(executed[0]?.payload.summary).toBeUndefined();
+    expect(executed[0]?.payload.from).toBeUndefined();
+  });
+
+  // Every calendar write failed with `Google API error (400 badRequest)` because the wall-clock
+  // time went to Google unresolved. An already-absolute time must still pass through untouched.
+  it("passes an already-absolute time through unchanged", async () => {
+    const executed: Array<Record<string, unknown>> = [];
+    const { baseUrl } = await startService({
+      executor: {
+        execute: async (proposal) => {
+          executed.push(proposal.proposed_payload as Record<string, unknown>);
+          return { handled: true };
+        },
+      },
+    });
+    const headers = await adminSession(baseUrl);
+
+    await fetch(`${baseUrl}/calendar/events`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        summary: "Already absolute",
+        start: "2026-08-18T13:00:00-04:00",
+        end: "2026-08-18T14:00:00-04:00",
+      }),
+    });
+    expect(executed[0]?.from).toBe("2026-08-18T13:00:00-04:00");
+  });
+
+  it("refuses a start it cannot read rather than sending it to Google", async () => {
+    const { baseUrl } = await startService();
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ summary: "Vague", start: "next Tuesday", end: "2026-08-18T14:00" }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("refuses an invite that names nobody, and an event with no times", async () => {
+    const { baseUrl } = await startService();
+    const headers = await adminSession(baseUrl);
+
+    const noAttendees = await fetch(`${baseUrl}/calendar/events/evt-9/invite`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ attendees: [] }),
+    });
+    expect(noAttendees.status).toBe(400);
+
+    const noTimes = await fetch(`${baseUrl}/calendar/events`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ summary: "Untimed" }),
+    });
+    expect(noTimes.status).toBe(400);
+  });
+
+  // A connector that cannot reach Google must not be reported as a send that happened.
+  it("reports an execution failure rather than claiming success", async () => {
+    const { baseUrl } = await startService({
+      executor: { execute: async () => ({ handled: false }) },
+    });
+    const headers = await adminSession(baseUrl);
+
+    const response = await fetch(`${baseUrl}/calendar/events`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        summary: "Reading group lunch",
+        start: "2026-08-18T13:00",
+        end: "2026-08-18T14:00",
+      }),
+    });
+    expect(response.status).toBe(501);
   });
 });

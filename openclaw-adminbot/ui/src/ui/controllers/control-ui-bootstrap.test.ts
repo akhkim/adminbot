@@ -2,7 +2,9 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CONTROL_UI_BOOTSTRAP_CONFIG_PATH } from "../../../../src/gateway/control/control-ui-contract.js";
+import { createStorageMock } from "../../test-helpers/storage.ts";
 import { resolveUiHourCycleOptions, setUiTimeFormatPreference } from "../format.ts";
+import { LOCAL_ASSISTANT_IDENTITY_KEY } from "../storage.ts";
 import { loadControlUiBootstrapConfig } from "./control-ui-bootstrap.ts";
 
 function requireFetchCall(fetchMock: ReturnType<typeof vi.fn>, index = 0) {
@@ -210,11 +212,17 @@ describe("loadControlUiBootstrapConfig", () => {
       }),
     });
     vi.stubGlobal("fetch", fetchMock as unknown as typeof fetch);
-    vi.stubGlobal("localStorage", {
-      getItem: vi.fn(() => JSON.stringify({ avatar: "data:image/png;base64,local" })),
-      setItem: vi.fn(),
-      removeItem: vi.fn(),
-    } as unknown as Storage);
+    // A complete Storage, not a getItem/setItem pair: a partial stand-in used to
+    // satisfy getSafeLocalStorage and then throw on clear() in whichever file ran
+    // next in this worker.
+    const bootstrapStorage = createStorageMock();
+    // The legacy single-avatar shape, which loadLocalAssistantIdentity migrates
+    // onto the first concrete agent that reads it.
+    bootstrapStorage.setItem(
+      LOCAL_ASSISTANT_IDENTITY_KEY,
+      JSON.stringify({ avatar: "data:image/png;base64,local" }),
+    );
+    vi.stubGlobal("localStorage", bootstrapStorage);
 
     const state = {
       basePath: "",

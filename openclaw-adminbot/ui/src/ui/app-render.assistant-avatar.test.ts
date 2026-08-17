@@ -530,7 +530,7 @@ describe("renderApp assistant avatar routing", () => {
     expect(container.querySelector(".shell")).toBeInstanceOf(HTMLElement);
   });
 
-  it("filters sidebar recent sessions to the active chat agent", () => {
+  it("filters chat recent sessions to the active chat agent", () => {
     const container = document.createElement("div");
 
     render(
@@ -577,7 +577,7 @@ describe("renderApp assistant avatar routing", () => {
       container,
     );
 
-    const labels = Array.from(container.querySelectorAll(".sidebar-recent-session__name")).map(
+    const labels = Array.from(container.querySelectorAll(".chat-sessions__recent-name")).map(
       (node) => node.textContent?.trim(),
     );
     expect(labels).toEqual(["Work new", "Work older"]);
@@ -630,7 +630,7 @@ describe("renderApp assistant avatar routing", () => {
       container,
     );
 
-    const labels = Array.from(container.querySelectorAll(".sidebar-recent-session__name")).map(
+    const labels = Array.from(container.querySelectorAll(".chat-sessions__recent-name")).map(
       (node) => node.textContent?.trim(),
     );
     expect(labels).toEqual(["Main legacy", "Main old"]);
@@ -678,13 +678,13 @@ describe("renderApp assistant avatar routing", () => {
       container,
     );
 
-    const labels = Array.from(container.querySelectorAll(".sidebar-recent-session__name")).map(
+    const labels = Array.from(container.querySelectorAll(".chat-sessions__recent-name")).map(
       (node) => node.textContent?.trim(),
     );
     expect(labels).toEqual(["Ops new"]);
   });
 
-  it("keeps unknown sidebar sessions unscoped", () => {
+  it("keeps unknown chat sessions unscoped", () => {
     const container = document.createElement("div");
 
     render(
@@ -731,7 +731,7 @@ describe("renderApp assistant avatar routing", () => {
       container,
     );
 
-    const labels = Array.from(container.querySelectorAll(".sidebar-recent-session__name")).map(
+    const labels = Array.from(container.querySelectorAll(".chat-sessions__recent-name")).map(
       (node) => node.textContent?.trim(),
     );
     expect(labels).toEqual(["Main old", "Work new"]);

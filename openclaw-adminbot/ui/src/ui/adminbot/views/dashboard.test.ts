@@ -1,19 +1,8 @@
 import { render } from "lit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
-import type { Tab } from "../../navigation.ts";
 import type { AccessRole } from "../access.ts";
 import { renderDashboard } from "./dashboard.ts";
-
-function step(id: string, label: string, status: "complete" | "current" | "remaining") {
-  return { id, label, status, category: "Getting started", required: true };
-}
-
-const ONBOARDING_STEPS = [
-  step("slack", "Join the lab Slack", "complete"),
-  step("compute", "Request compute access", "current"),
-  step("doc", "Read the onboarding doc", "remaining"),
-];
 
 function createState(overrides: Partial<AppViewState> = {}): AppViewState {
   return {
@@ -46,56 +35,30 @@ describe("renderDashboard", () => {
     expect(container.querySelector(".dashboard__empty")).not.toBeNull();
   });
 
-  // The checklist itself is not one of the click-to-open attention cards -- it is the standing
-  // warning rendered inline, above the attention stack, until explicitly acknowledged.
-  it("shows the onboarding checklist inline at the top of the dashboard when unacknowledged", () => {
+  // The onboarding checklist is no longer part of this band at all: it moved to the bottom of the
+  // profile page, composed in app-render.ts, and is covered by onboarding-checklist.test.ts.
+  it("leaves the onboarding checklist to the bottom of the page", () => {
     const container = renderPage(
       createState({
         adminBotOnboarding: {
-          steps: ONBOARDING_STEPS,
-          completed: [ONBOARDING_STEPS[0]],
-          remaining: ONBOARDING_STEPS.slice(1),
+          steps: [
+            {
+              id: "slack",
+              label: "Join the lab Slack",
+              status: "current",
+              category: "Getting started",
+              required: true,
+            },
+          ],
+          completed: [],
+          remaining: [],
         },
         adminBotOnboardingAcknowledged: false,
-      } as unknown as Partial<AppViewState>),
-    );
-    expect(container.querySelector('[data-testid="dashboard-onboarding-warning"]')).not.toBeNull();
-    expect(container.textContent).toContain("1 of 3 done");
-    expect(container.textContent).toContain("Request compute access");
-    expect(attentionIds(container)).not.toContain("onboarding");
-  });
-
-  it("hides the onboarding warning once acknowledged, regardless of steps left", () => {
-    const container = renderPage(
-      createState({
-        adminBotOnboarding: {
-          steps: ONBOARDING_STEPS,
-          completed: [ONBOARDING_STEPS[0]],
-          remaining: ONBOARDING_STEPS.slice(1),
-        },
-        adminBotOnboardingAcknowledged: true,
       } as unknown as Partial<AppViewState>),
     );
     expect(container.querySelector('[data-testid="dashboard-onboarding-warning"]')).toBeNull();
   });
 
-  it("acknowledging the checklist from the dashboard flips the flag", () => {
-    const state = createState({
-      adminBotOnboarding: {
-        steps: ONBOARDING_STEPS,
-        completed: [ONBOARDING_STEPS[0]],
-        remaining: ONBOARDING_STEPS.slice(1),
-      },
-      adminBotOnboardingAcknowledged: false,
-    } as unknown as Partial<AppViewState>);
-    const container = renderPage(state);
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="dashboard-onboarding-acknowledge"]')
-      ?.click();
-    expect(state.adminBotOnboardingAcknowledged).toBe(true);
-  });
-
-  // Only pending rows are work; approved and executed ones are history.
   it("counts only pending queue rows", () => {
     const container = renderPage(
       createState({
@@ -104,6 +67,8 @@ describe("renderDashboard", () => {
             { id: "a", status: "pending" },
             { id: "b", status: "executed" },
           ],
+          members: [],
+          papers: [],
         },
         registrations: [
           { id: "r1", status: "pending" },
@@ -112,11 +77,9 @@ describe("renderDashboard", () => {
       } as unknown as Partial<AppViewState>),
     );
     expect(attentionIds(container)).toEqual(["proposals", "registrations"]);
-    expect(container.textContent).toContain("1 proposed by AdminBot.");
-    expect(container.textContent).toContain("1 pending request.");
+    expect(container.textContent).toContain("1");
   });
 
-  // The page must never show a person work their role cannot do.
   it("keeps the admin queues out of a member's view", () => {
     const container = renderPage(
       createState({
@@ -128,33 +91,9 @@ describe("renderDashboard", () => {
     expect(attentionIds(container)).toEqual([]);
   });
 
-  // The summaries are the dashboard's whole second band; they must reflect the pages they stand
-  // for rather than restating the navigation.
-  it("summarises the profile and the work page", () => {
-    const container = renderPage(
-      createState({
-        memberId: "m1",
-        adminBotData: {
-          proposals: [],
-          members: [{ id: "m1", name: "Ada", role: "PhD Student", projects: ["Alignment"] }],
-          papers: [{ id: "p1", title: "A paper", authors: ["Ada"], current_step: "submission" }],
-        },
-        myWorkBlockers: [
-          { id: "b1", paperId: "p1", paperTitle: "A paper", text: "Stuck", createdAt: 0 },
-        ],
-      } as unknown as Partial<AppViewState>),
-      "member",
-    );
-    const profile = container.querySelector('[data-testid="dashboard-summary-profile"]');
-    const work = container.querySelector('[data-testid="dashboard-summary-myWork"]');
-    expect(profile?.textContent).toContain("fields still blank");
-    expect(work?.textContent).toContain("1 project or paper");
-    // The summary shows the same step name the work page and Active Papers use.
-    expect(work?.textContent).toContain("Submission");
-    expect(work?.textContent).toContain("1 blocker awaiting review.");
-  });
-
-  it("says so when a profile has no blanks and no work is blocked", () => {
+  // The profile summary card that used to sit beside this one is gone: it summarised the page it
+  // was printed on. The work summary stands for a page the viewer would actually navigate to.
+  it("summarises the work page and no longer summarises the profile it sits on", () => {
     const container = renderPage(
       createState({
         memberId: "m1",
@@ -165,65 +104,139 @@ describe("renderDashboard", () => {
               id: "m1",
               name: "Ada",
               role: "PhD Student",
-              affiliation: "Jinesis Lab",
-              location: "Toronto",
-              timezone: "America/Toronto",
-              slack_user_id: "U1",
-              personal_website: "https://example.com",
-              hours_per_week: 40,
-              research_topics: ["alignment"],
               projects: ["Alignment"],
-              linkedin_urn: "ACoAAB1234567",
-              avatar_url: "https://example.com/ada.jpg",
-              cv_url: "https://example.com/ada.pdf",
-              linkedin_url: "https://linkedin.com/in/ada",
-              twitter_url: "https://x.com/ada",
-              github_url: "https://github.com/ada",
-              scholar_url: "https://scholar.google.com/ada",
             },
           ],
+          papers: [
+            {
+              id: "p1",
+              title: "A paper",
+              authors: ["Ada"],
+              current_step: "submission",
+            },
+          ],
+        },
+        myWorkBlockers: [
+          {
+            id: "b1",
+            paperId: "p1",
+            paperTitle: "A paper",
+            text: "Stuck",
+            createdAt: 0,
+          },
+        ],
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
+    expect(container.querySelector('[data-testid="dashboard-summary-profile"]')).toBeNull();
+
+    const work = container.querySelector('[data-testid="dashboard-summary-myWork"]');
+    expect(work?.textContent).toContain("1 project or paper");
+    // The summary shows the same step name the work page and Active Papers use.
+    expect(work?.textContent).toContain("Submission");
+    expect(work?.textContent).toContain("1 blocker awaiting review.");
+  });
+
+  it("says so when no work is blocked", () => {
+    const container = renderPage(
+      createState({
+        memberId: "m1",
+        adminBotData: {
+          proposals: [],
+          members: [{ id: "m1", name: "Ada" }],
           papers: [],
         },
       } as unknown as Partial<AppViewState>),
       "member",
     );
-    const profile = container.querySelector('[data-testid="dashboard-summary-profile"]');
-    expect(profile?.textContent).toContain("Your profile is complete.");
     expect(
       container.querySelector('[data-testid="dashboard-summary-myWork"]')?.textContent,
     ).toContain("Nothing is blocked.");
   });
 
-  it("drops the profile summary when there is no member record to summarise", () => {
+  it("puts the deadline summary beside the work summary", () => {
     const container = renderPage(createState(), "member");
-    expect(container.querySelector('[data-testid="dashboard-summary-profile"]')).toBeNull();
-    expect(container.querySelector('[data-testid="dashboard-summary-myWork"]')).not.toBeNull();
+    expect(container.querySelector("adminbot-deadline-summary")).not.toBeNull();
   });
 
   // A blank mandatory field never blocks saving or leaving the profile editor (see profile.ts),
-  // so this card -- not a save-time block -- is how the dashboard surfaces the gap.
-  it("warns about blank required fields and links to the profile page", () => {
-    const state = createState({
-      memberId: "m1",
-      adminBotData: {
-        proposals: [],
-        members: [{ id: "m1", name: "Ada" }], // every required field but name is blank
-      },
-    } as unknown as Partial<AppViewState>);
-    state.setTab = (tab: Tab) => {
-      state.tab = tab;
-    };
-    const container = renderPage(state, "member");
+  // so this card is how the gap gets surfaced. It navigates to the editor, which is its own tab
+  // again.
+  it("warns about blank required fields", () => {
+    const container = renderPage(
+      createState({
+        memberId: "m1",
+        adminBotData: {
+          proposals: [],
+          members: [{ id: "m1", name: "Ada" }], // every required field but name is blank
+        },
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
 
     expect(attentionIds(container)).toContain("mandatoryFields");
     expect(container.textContent).toContain("required fields are still blank");
+  });
 
-    container
-      .querySelector<HTMLButtonElement>(
-        '[data-testid="dashboard-attention-mandatoryFields"] button',
-      )
-      ?.click();
-    expect(state.tab).toBe("profile");
+  // Naming a blank field is only half the help: the name is the shortest route to the box that
+  // answers it.
+  it("lists each blank field as a button that opens the profile", () => {
+    const state = createState({
+      memberId: "m1",
+      setTab: vi.fn(),
+      adminBotData: {
+        proposals: [],
+        members: [{ id: "m1", name: "Ada" }],
+      },
+    } as unknown as Partial<AppViewState>);
+    const container = renderPage(state, "member");
+
+    const chips = [
+      ...container.querySelectorAll<HTMLButtonElement>('[data-testid^="dashboard-blank-"]'),
+    ];
+    expect(chips.length).toBeGreaterThan(0);
+    expect(chips.every((chip) => chip.tagName === "BUTTON")).toBe(true);
+    chips[0]?.click();
+    expect(state.setTab).toHaveBeenCalledWith("profile");
+  });
+
+  // A new member has a dozen blanks. Naming them all wrapped the card to four rows and pushed
+  // everything under it off the screen, so the card names the first few and counts the rest.
+  it("caps the named blanks and counts the remainder", () => {
+    const container = renderPage(
+      createState({
+        memberId: "m1",
+        adminBotData: {
+          proposals: [],
+          members: [{ id: "m1", name: "Ada" }], // every required field but name is blank
+        },
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
+
+    const card = container.querySelector('[data-testid="dashboard-attention-mandatoryFields"]')!;
+    const chips = card.querySelectorAll('[data-testid^="dashboard-blank-"]');
+    expect(chips.length).toBe(5);
+    expect(card.querySelector(".dashboard-card__step--more")?.textContent?.trim()).toMatch(
+      /^\+\d+ more$/u,
+    );
+  });
+
+  // The URN is filled in by an admin, so chasing the member for it names a field whose control on
+  // the profile page is disabled.
+  it("never lists an admin-filled field among the blanks", () => {
+    const container = renderPage(
+      createState({
+        memberId: "m1",
+        adminBotData: {
+          proposals: [],
+          members: [{ id: "m1", name: "Ada" }],
+        },
+      } as unknown as Partial<AppViewState>),
+      "member",
+    );
+
+    expect(container.querySelector('[data-testid="dashboard-blank-linkedin_urn"]')).toBeNull();
   });
 
   it("drops the mandatory-fields item once every required field is filled in", () => {
@@ -234,16 +247,20 @@ describe("renderDashboard", () => {
           proposals: [],
           members: [
             {
+              // The mandatory set is the member sheet's own columns, plus the CV.
               id: "m1",
               name: "Ada",
-              role: "PhD Student",
-              affiliation: "Jinesis Lab",
               location: "Toronto",
-              timezone: "America/Toronto",
-              slack_user_id: "U1",
-              hours_per_week: 40,
               research_topics: ["alignment"],
-              projects: ["Alignment"],
+              joined_month: "2026-03",
+              correspondence_email: "ada@cs.toronto.edu",
+              calendar_email: "ada@gmail.com",
+              whatsapp: "(+1) 555 0100",
+              openreview_id: "~Ada_Lovelace1",
+              github_url: "https://github.com/ada",
+              linkedin_url: "https://www.linkedin.com/in/ada",
+              cv_url: "https://ada.dev/cv.pdf",
+              intake_form_url: "https://docs.google.com/forms/d/e/ada/viewform",
               linkedin_urn: "ACoAAB1234567",
             },
           ],

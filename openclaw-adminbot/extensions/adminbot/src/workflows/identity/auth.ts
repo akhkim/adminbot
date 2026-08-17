@@ -24,6 +24,11 @@ const MIN_PASSWORD_LENGTH = 10;
 const DEFAULT_SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SESSION_TOKEN_BYTES = 32;
 
+// Reset links are mailed, so they live long enough to survive a slow inbox but not long enough to
+// sit in one as a standing credential.
+const PASSWORD_RESET_TTL_MINUTES = 60;
+const PASSWORD_RESET_TOKEN_BYTES = 32;
+
 // Sliding-window brute-force guard: at most this many failures per key inside the window.
 const RATE_LIMIT_MAX_FAILURES = 10;
 const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
@@ -87,13 +92,20 @@ export type AdminBotAuthServiceOptions = {
   // member their account is live. Same contract as inviteToLabCalendar: audited either way, never
   // fails or delays the approval response.
   sendAccountApprovedEmail?: (params: { email: string; name?: string }) => Promise<void>;
+  // Best-effort side effect fired (not awaited) when a member asks to reset their password. Same
+  // contract as sendAccountApprovedEmail: audited either way, and a failure must never change the
+  // response (which is identical for known and unknown addresses by design).
+  sendPasswordResetEmail?: (params: {
+    email: string;
+    name?: string;
+    token: string;
+    expiresInMinutes: number;
+  }) => Promise<void>;
   // Best-effort side effect fired (not awaited) when a registration is approved, filing the DCS
   // Slack-access request form on the new member's behalf. Same contract as the two above.
-  submitDcsForm?: (params: { firstName: string; lastName: string; email: string }) => Promise<void>;
-  // Best-effort side effect fired (not awaited) on every successful login: geolocates the
-  // request's source IP and stamps it onto the member's roster `location` field. A login is
-  // never delayed or failed by a slow/unreachable geolocation provider -- see updateLoginLocation.
-  geolocateIp?: (ip: string) => Promise<string | undefined>;
+  // Best-effort, fired but not awaited on a successful login (see login()): resolving it can take
+  // a moment and must never slow down or fail the sign-in it happened alongside.
+  geolocateIp?: (ip: string) => Promise<{ country?: string; continent?: string } | undefined>;
   gatewayToken?: string;
   gatewayUrl?: string;
   sessionTtlMs?: number;
@@ -131,22 +143,6 @@ const SIGNUP_PROFILE_FIELDS = [
   "notes",
 ] as const;
 
-// The roster keeps one free-text `name`; the DCS form (like most external forms) wants separate
-// First/Last Name answers, so this splits on the last space -- everything before it becomes the
-// first name (covers middle names/initials), the final token becomes the last name. A one-word
-// name (no space) has nothing to split, so it is used for both rather than leaving a required
-// field blank.
-function splitDisplayName(name: string): { firstName: string; lastName: string } {
-  const trimmed = name.trim();
-  const lastSpace = trimmed.lastIndexOf(" ");
-  if (lastSpace === -1) {
-    return { firstName: trimmed, lastName: trimmed };
-  }
-  return {
-    firstName: trimmed.slice(0, lastSpace).trim(),
-    lastName: trimmed.slice(lastSpace + 1).trim(),
-  };
-}
 
 // Case and spacing differences are the same answer, not a different one: "PhD student" typed by
 // an older client is the vocabulary's "PhD Student".
@@ -166,12 +162,15 @@ export class AdminBotAuthService {
     email: string;
     name?: string;
   }) => Promise<void>;
-  private readonly submitDcsForm?: (params: {
-    firstName: string;
-    lastName: string;
+  private readonly sendPasswordResetEmail?: (params: {
     email: string;
+    name?: string;
+    token: string;
+    expiresInMinutes: number;
   }) => Promise<void>;
-  private readonly geolocateIp?: (ip: string) => Promise<string | undefined>;
+  private readonly geolocateIp?: (
+    ip: string,
+  ) => Promise<{ country?: string; continent?: string } | undefined>;
   private readonly gatewayToken?: string;
   private readonly gatewayUrl?: string;
   private readonly sessionTtlMs: number;
@@ -186,7 +185,7 @@ export class AdminBotAuthService {
     this.createMember = options.createMember;
     this.inviteToLabCalendar = options.inviteToLabCalendar;
     this.sendAccountApprovedEmail = options.sendAccountApprovedEmail;
-    this.submitDcsForm = options.submitDcsForm;
+    this.sendPasswordResetEmail = options.sendPasswordResetEmail;
     this.geolocateIp = options.geolocateIp;
     this.gatewayToken = options.gatewayToken?.trim() || undefined;
     this.gatewayUrl = options.gatewayUrl?.trim() || undefined;
@@ -297,42 +296,43 @@ export class AdminBotAuthService {
     }
     const { payload } = this.startSession(member);
     this.audit("auth.login_succeeded", member.id, { email });
-    if (request.remoteIp) {
-      this.updateLoginLocation(member.id, request.remoteIp);
+    if (this.geolocateIp && request.remoteIp) {
+      // Not awaited: geolocation is a courtesy stamp on the member record, not part of the
+      // sign-in itself, and must never make login wait on a third-party API.
+      void this.recordLoginLocation(member.id, request.remoteIp);
     }
     return { ok: true, status: 200, payload, sessionToken: payload.session_token };
   }
 
-  // Fire-and-forget, same contract as the calendar invite/approval email: the login already
-  // succeeded, so a slow or failed geolocation lookup never delays or fails it. Only a resolved
-  // location is written -- a private/loopback IP or a provider failure returns undefined from
-  // geolocateIp, and an undefined result leaves whatever the member already has untouched rather
-  // than blanking out a value a previous successful lookup (or the member themselves) set.
-  private updateLoginLocation(memberId: string, remoteIp: string): void {
-    if (!this.geolocateIp) {
-      return;
-    }
-    void this.geolocateIp(remoteIp)
-      .then((location) => {
-        if (!location) {
-          return;
-        }
-        const member = this.store.getLabMember(memberId);
-        if (!member || member.location === location) {
-          return;
-        }
-        this.store.saveLabMember({
-          ...member,
-          location,
-          updated_at: this.now().toISOString(),
-        });
-        this.audit("auth.location_updated", memberId, { location });
-      })
-      .catch((error: unknown) => {
-        this.audit("auth.location_update_failed", memberId, {
-          error: error instanceof Error ? error.message : String(error),
-        });
+  // Fire-and-forget, same contract as the calendar invite and the approval email: the login has
+  // already succeeded, so a slow or unreachable geolocation provider must never delay or fail it.
+  //
+  // Only the three inferred last_login_* fields are written. `location` and `slack_location` are
+  // self-reported and are deliberately never touched here -- an inferred country must not silently
+  // overwrite what a member told us about themselves.
+  private async recordLoginLocation(memberId: string, remoteIp: string): Promise<void> {
+    try {
+      const location = await this.geolocateIp?.(remoteIp);
+      if (!location || (!location.country && !location.continent)) {
+        return;
+      }
+      // Re-read rather than reuse the `member` from login(): logins can race, and this must
+      // only ever touch the three last_login_* fields, never clobber a concurrent profile edit.
+      const current = this.store.getLabMember(memberId);
+      if (!current) {
+        return;
+      }
+      this.store.saveLabMember({
+        ...current,
+        last_login_at: this.now().toISOString(),
+        ...(location.country ? { last_login_country: location.country } : {}),
+        ...(location.continent ? { last_login_continent: location.continent } : {}),
+        updated_at: this.now().toISOString(),
       });
+      this.audit("auth.login_location_updated", memberId, { ...location });
+    } catch {
+      // Best-effort, per the option's own contract — nothing left to do with a failure here.
+    }
   }
 
   resolveSession(rawToken: string): AdminBotMemberPrincipal | undefined {
@@ -384,6 +384,108 @@ export class AdminBotAuthService {
     });
     this.audit("auth.password_changed", memberId, {});
     return { ok: true, status: 200, payload: { changed: true } };
+  }
+
+  /**
+   * Starts a "forgot my password" flow. The response is deliberately identical whether or not the
+   * address has an account: this route is unauthenticated, so a distinguishable answer would turn
+   * it into a membership oracle for the whole roster. Rate-limited on the same keys as login so it
+   * cannot be used to spray mail at an address either.
+   */
+  requestPasswordReset(request: {
+    email: string;
+    remoteIp?: string;
+  }): AdminBotAuthResponse<{ requested: true }> {
+    const email = request.email.trim().toLowerCase();
+    const keys = rateLimitKeys(email, request.remoteIp);
+    const limited = this.checkRateLimit(keys, email, request.remoteIp);
+    if (limited) {
+      return limited;
+    }
+    this.recordFailure(keys);
+    const credential = this.store.getCredentialByEmail(email);
+    if (credential) {
+      const nowMs = this.now().getTime();
+      const token = randomBytes(PASSWORD_RESET_TOKEN_BYTES).toString("base64url");
+      this.store.savePasswordReset({
+        token_hash: hashToken(token),
+        member_id: credential.member_id,
+        created_at: new Date(nowMs).toISOString(),
+        expires_at: new Date(nowMs + PASSWORD_RESET_TTL_MINUTES * 60_000).toISOString(),
+        used_at: null,
+      });
+      this.audit("auth.password_reset_requested", credential.member_id, { email });
+      this.notifyPasswordReset(credential.email, credential.member_id, token);
+    } else {
+      // Audited so a burst against unknown addresses is still visible, keyed by the attempted
+      // address because there is no member to attribute it to.
+      this.audit("auth.password_reset_requested", email, { email, unknown: true });
+    }
+    return { ok: true, status: 200, payload: { requested: true } };
+  }
+
+  /**
+   * Redeems a reset token and sets the new password. Every outstanding token for the member is
+   * burned on success, and so is every live session: a password reset is exactly the moment where
+   * "somebody else may be signed in as me" has to stop being true.
+   */
+  resetPassword(request: {
+    token: string;
+    newPassword: string;
+  }): AdminBotAuthResponse<{ reset: true }> {
+    const token = request.token.trim();
+    if (!token) {
+      return authError(400, "reset link is invalid or has expired");
+    }
+    const reset = this.store.getPasswordResetByTokenHash(hashToken(token));
+    const nowIso = this.now().toISOString();
+    // One message for missing/used/expired alike: which of the three it is tells an attacker
+    // whether a guessed token ever existed.
+    if (!reset || reset.used_at || reset.expires_at <= nowIso) {
+      return authError(400, "reset link is invalid or has expired");
+    }
+    if (request.newPassword.length < MIN_PASSWORD_LENGTH) {
+      return authError(400, `password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+    }
+    const credential = this.store.getCredentialByMemberId(reset.member_id);
+    if (!credential) {
+      return authError(400, "reset link is invalid or has expired");
+    }
+    this.store.saveCredential({
+      ...credential,
+      password_scrypt: hashPassword(request.newPassword),
+      updated_at: nowIso,
+    });
+    this.store.markPasswordResetsUsedForMember(reset.member_id, nowIso);
+    this.store.revokeSessionsForMember(reset.member_id, nowIso);
+    this.audit("auth.password_reset_completed", reset.member_id, {});
+    return { ok: true, status: 200, payload: { reset: true } };
+  }
+
+  // Best-effort, same contract as the account-approved mail: the token row is already written, so a
+  // failed send is audited for follow-up rather than rolled back into an error the caller sees
+  // (which would also leak whether the address exists).
+  private notifyPasswordReset(email: string, memberId: string, token: string): void {
+    if (!this.sendPasswordResetEmail) {
+      return;
+    }
+    const member = this.store.getLabMember(memberId);
+    const name = typeof member?.name === "string" ? member.name : undefined;
+    void this.sendPasswordResetEmail({
+      email,
+      ...(name ? { name } : {}),
+      token,
+      expiresInMinutes: PASSWORD_RESET_TTL_MINUTES,
+    })
+      .then(() => {
+        this.audit("auth.password_reset_email_sent", memberId, { email });
+      })
+      .catch((error: unknown) => {
+        this.audit("auth.password_reset_email_failed", memberId, {
+          email,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
   }
 
   // Self-service change of the member's login email. Reverifies the current password (rate-limited
@@ -464,7 +566,6 @@ export class AdminBotAuthService {
     });
     this.inviteNewMemberToLabCalendar(registration.email, memberId, decidedBy);
     this.notifyAccountApproved(registration.email, memberId, decidedBy);
-    this.requestDcsFormSubmission(registration.email, memberId, decidedBy);
     return { ok: true, status: 200, payload: { status: "approved", member_id: memberId } };
   }
 
@@ -513,24 +614,6 @@ export class AdminBotAuthService {
   // than rolled back. The roster only ever records one free-text `name`, so it is split on the
   // last space (see splitDisplayName) to fill the form's separate First/Last Name questions --
   // the same shape the actual form asks a person to fill in by hand.
-  private requestDcsFormSubmission(email: string, memberId: string, decidedBy: string): void {
-    if (!this.submitDcsForm) {
-      return;
-    }
-    const name = this.store.getLabMember(memberId)?.name ?? "";
-    const { firstName, lastName } = splitDisplayName(name);
-    void this.submitDcsForm({ firstName, lastName, email })
-      .then(() => {
-        this.audit("auth.dcs_form_submitted", decidedBy, { member_id: memberId, email });
-      })
-      .catch((error: unknown) => {
-        this.audit("auth.dcs_form_failed", decidedBy, {
-          member_id: memberId,
-          email,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      });
-  }
 
   rejectRegistration(id: string, decidedBy: string): AdminBotAuthResponse<{ status: "rejected" }> {
     const registration = this.store.getAccountRegistration(id);

@@ -43,6 +43,28 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       links: optionalLink("Open the lab calendar", LAB_EMAIL_ENV, labCalendarEmbedUrl),
     },
     {
+      // Information, not a task. The old "Set up your Google Drive project folder" step was
+      // removed because drive-workspace.ts already provisions the folder when the guide is sent --
+      // it asked members to do by hand what onboarding had done for them. What was worth keeping
+      // is what the folder *is* and what is already in it, which is this.
+      id: "drive_folder",
+      label: "Your shared Google Drive folder",
+      category: "Getting started",
+      required: true,
+      detail:
+        "A 1:1 Google Drive folder with Zhijing is shared with you when your account is " +
+        "approved — no action needed to create it.",
+      bullets: [
+        {
+          text: "The internal mentee handbook should already be in it.",
+          points: [
+            "Check it first when a question comes up — it answers most of them.",
+            "Still stuck after that? See Questions? at the end of this checklist.",
+          ],
+        },
+      ],
+    },
+    {
       id: "profile_photo",
       label: "Upload a professional profile photo",
       category: "Getting started",
@@ -181,42 +203,6 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       ],
     },
     {
-      id: "google_drive",
-      label: "Set up your Google Drive project folder",
-      category: "Working with us",
-      required: true,
-      bullets: [
-        {
-          text: "Copy the Zhijing-StudentName prototype folder and rename it with your name.",
-          points: [
-            'Set access to "Editable to everyone".',
-            "Add your CV as a PDF as the first file.",
-          ],
-        },
-        {
-          text: "Write one long doc per topic, not several tabs.",
-          points: [
-            'Keep docs "Pageless": File > Page setup > Pageless.',
-            "Use headings to structure it rather than splitting into tabs.",
-          ],
-        },
-        {
-          text: "Name and arrange files so they stay findable.",
-          points: [
-            "Prefix document names with the creation date (yyyymmdd).",
-            "Keep the folder flat — deep nesting breaks sorting by last-modified date.",
-          ],
-        },
-        { text: "Installing Google Drive for desktop keeps the folder synced locally." },
-        {
-          // Moved here out of the "member" acceptance email: the handbook lives behind the portal
-          // now, so the checklist is the one place that has to mention it.
-          text: "Read the internal mentee handbook, already shared in your Google Drive folder.",
-          points: ["Check it first when a question comes up — it answers most of them."],
-        },
-      ],
-    },
-    {
       id: "communication_norms",
       label: "Review our meeting and communication norms",
       category: "Working with us",
@@ -246,7 +232,11 @@ function buildOnboardingStepDefinitions(): Array<Omit<AdminBotMemberOnboardingSt
       label: "Questions?",
       category: "Questions",
       required: false,
-      detail: "Ask our lab admin Andrew Kim anytime.",
+      // Ordered, not a menu: the guidebook answers most of what gets asked, and a question that
+      // reaches a person before it reaches the handbook costs two people's time instead of none.
+      detail:
+        "Check the guidebook first — it answers most questions. If it does not, ask our chatbot, " +
+        "then Andrew directly.",
     },
   ];
 }
