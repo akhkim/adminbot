@@ -61,6 +61,8 @@ export const en: TranslationMap = {
     settingsSections: "Settings sections",
     version: "Version",
     docs: "Docs",
+    // Badge on a sidebar tab whose tool is not built yet.
+    comingSoon: "Coming soon",
     theme: "Theme",
     colorMode: "Color mode",
     colorModeOption: "Color mode: {mode}",
@@ -416,11 +418,12 @@ export const en: TranslationMap = {
     adminbot: "Pending Actions",
     adminbotRegistrations: "Member Requests",
     adminbotOnboarding: "Onboarding",
-    adminbotReimbursements: "Reimbursements",
+    adminbotReimbursements: "Reimbursement Form Prep",
     adminbotSettings: "Settings",
     adminbotMembers: "Lab Members",
     adminbotTimeAvailability: "Time Availability",
     adminbotLogistics: "Logistics Requests",
+    adminbotSocialBot: "Social Media Bot",
     adminbotPapers: "Active Papers",
     adminbotAnnouncements: "Announcements",
     adminbotCalendar: "Calendar",
@@ -462,6 +465,7 @@ export const en: TranslationMap = {
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotTimeAvailability: "Who is committed to what, and when.",
     adminbotLogistics: "Start a routine request and let AdminBot carry it.",
+    adminbotSocialBot: "Not built yet.",
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
     adminbotCalendar: "Draft an event, and invite the people the roster can describe.",
@@ -1315,7 +1319,7 @@ export const en: TranslationMap = {
     undo: "Undo",
     markDone: "Mark done",
     blockedNote: "This step is required, mark it done to continue.",
-},
+  },
   dashboard: {
     more: "+{count} more",
     attention: {
@@ -1596,12 +1600,14 @@ export const en: TranslationMap = {
     },
     seekHelp: {
       title: "Need help on one of your projects?",
-      subtitle: "Find lab members by name, project, or interests. Or, create a general call for assistance on a project.",
+      subtitle:
+        "Find lab members by name, project, or interests. Or, create a general call for assistance on a project.",
       searchPlaceholder: "Search by name, project, or interest…",
       generalCall: "Post a general call for help",
       projectLabel: "Project",
       commentLabel: "What do you need?",
-      commentPlaceholder: "Describe the task, what help looks like, target venues, and any deadlines…",
+      commentPlaceholder:
+        "Describe the task, what help looks like, target venues, and any deadlines…",
       membersLabel: "Members needed",
       hoursLabel: "Hours / week",
       tags: "Tags",
@@ -1809,7 +1815,7 @@ export const en: TranslationMap = {
       currentCity:
         "Where you are based right now, if that is not your resident location above — a conference trip, a term abroad, an internship. The lab uses it to organize events and in-person meetups: it decides who gets invited to something happening in a given city, and which time of day a session is scheduled for.",
       cvUrl:
-        "A link to your CV. A Google Drive link is completely fine — if you use one, set the sharing to \"anyone with the link can view\", otherwise it will open for you but not for anyone else.",
+        'A link to your CV. A Google Drive link is completely fine — if you use one, set the sharing to "anyone with the link can view", otherwise it will open for you but not for anyone else.',
     },
     // The shapes the service accepts, stated where the answer is typed. Each one mirrors a rule in
     // SOCIAL_URL_FIELDS or validateOpenReviewId; keep them in step if those change.
@@ -2499,5 +2505,4 @@ export const en: TranslationMap = {
       nameRequiredShort: "Name required.",
     },
   },
-  
 };

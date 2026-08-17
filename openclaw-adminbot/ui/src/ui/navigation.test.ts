@@ -15,9 +15,17 @@ import {
   type Tab,
 } from "./navigation.ts";
 
+// Chat is routed but in no sidebar group: it renders in the pinned sidebar footer, in the slot
+// the external docs link used to occupy.
+const UNGROUPED_TABS: Tab[] = ["chat"];
+
 /** All valid tab identifiers derived from visible groups plus routed settings slices. */
 const ALL_TABS: Tab[] = Array.from(
-  new Set<Tab>([...(TAB_GROUPS.flatMap((group) => group.tabs) as Tab[]), ...SETTINGS_TABS]),
+  new Set<Tab>([
+    ...(TAB_GROUPS.flatMap((group) => group.tabs) as Tab[]),
+    ...UNGROUPED_TABS,
+    ...SETTINGS_TABS,
+  ]),
 );
 
 const leadingSlashNormalizerCases = [
@@ -52,6 +60,7 @@ describe("iconForTab", () => {
       adminbotMembers: "folder",
       adminbotTimeAvailability: "clock",
       adminbotLogistics: "paperclip",
+      adminbotSocialBot: "send",
       adminbotPapers: "fileText",
       adminbotAnnouncements: "activity",
       adminbotCalendar: "clock",
@@ -102,7 +111,8 @@ describe("titleForTab", () => {
       adminbotMembers: "Lab Members",
       adminbotTimeAvailability: "Time Availability",
       adminbotLogistics: "Logistics Requests",
-      adminbotReimbursements: "Reimbursements",
+      adminbotSocialBot: "Social Media Bot",
+      adminbotReimbursements: "Reimbursement Form Prep",
       adminbotPapers: "Active Papers",
       adminbotAnnouncements: "Announcements",
       adminbotCalendar: "Calendar",
@@ -147,6 +157,7 @@ describe("subtitleForTab", () => {
       adminbotMembers: "Privilege levels and access profiles.",
       adminbotTimeAvailability: "Who is committed to what, and when.",
       adminbotLogistics: "Start a routine request and let AdminBot carry it.",
+      adminbotSocialBot: "Not built yet.",
       adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
       adminbotPapers: "PaperPublish records and current steps.",
       adminbotAnnouncements: "Nudge members or send a general announcement.",

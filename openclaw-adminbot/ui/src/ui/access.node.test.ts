@@ -77,26 +77,27 @@ describe("visibleTabsForRole", () => {
     // Unchanged by the sidebar rework: the two open tools moved into the "General Tools" group,
     // but a visitor's reachable set is still exactly these two.
     expect(visibleTabsForRole(ALL_TABS, "anonymous")).toEqual([
-      "adminbotDeadlines",
       "adminbotReimbursements",
+      "adminbotDeadlines",
     ]);
   });
 
-  it("adds the roster, the paper list and chat for a member", () => {
+  it("adds the roster and the shared tools for a member", () => {
     // Sidebar order: the dashboard, then the profile, then own work, then the shared tools, then
-    // the unbuilt Lab Sharing.
+    // Lab Sharing with the roster under it. `chat` is absent because no group lists it -- it
+    // renders in the pinned sidebar footer instead.
     expect(visibleTabsForRole(ALL_TABS, "member")).toEqual([
       "dashboard",
       "profile",
       // Your own schedule, next to your own record.
       "adminbotTimeAvailability",
       "myWork",
-      "chat",
-      "adminbotDeadlines",
-      "adminbotReimbursements",
-      "adminbotMembers",
       "adminbotLogistics",
+      "adminbotReimbursements",
+      "adminbotDeadlines",
+      "adminbotSocialBot",
       "labSharing",
+      "adminbotMembers",
     ]);
   });
 
@@ -144,7 +145,7 @@ describe("the access table", () => {
   // would silently publish a surface. Pin the open set so widening it has to be deliberate.
   it("opens exactly two surfaces to visitors", () => {
     const open = ALL_TABS.filter((tab) => minimumRoleForTab(tab) === "anonymous");
-    expect(open).toEqual(["adminbotDeadlines", "adminbotReimbursements"]);
+    expect(open).toEqual(["adminbotReimbursements", "adminbotDeadlines"]);
   });
 
   it("is monotonic: anything a lesser role sees, a greater role sees too", () => {

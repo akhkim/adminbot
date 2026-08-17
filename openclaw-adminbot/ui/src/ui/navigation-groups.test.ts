@@ -51,14 +51,18 @@ describe("TAB_GROUPS", () => {
     expect(byLabel("myProfile")).toEqual(["profile", "adminbotTimeAvailability"]);
     // Active Papers is the lab-wide pipeline, so it lives under Admin now, not "my" work.
     expect(byLabel("myProjects")).toEqual(["myWork"]);
+    // Ordered by how often a member reaches for them, not alphabetically.
     expect(byLabel("generalTools")).toEqual([
-      "chat",
-      "adminbotDeadlines",
-      "adminbotReimbursements",
-      "adminbotMembers",
       "adminbotLogistics",
+      "adminbotReimbursements",
+      "adminbotDeadlines",
+      "adminbotSocialBot",
     ]);
-    expect(byLabel("labSharing")).toEqual(["labSharing"]);
+    // Chat is no longer a group of its own: asking AdminBot something is the second half of the
+    // guidebook surface, which the sidebar footer renders.
+    expect(TAB_GROUPS.flatMap((group) => group.tabs as readonly string[])).not.toContain("chat");
+    // The roster is part of the lab's shared surface, not a tool you operate.
+    expect(byLabel("labSharing")).toEqual(["labSharing", "adminbotMembers"]);
     expect(byLabel("admin")).toEqual([
       "adminbot",
       "adminbotPapers",

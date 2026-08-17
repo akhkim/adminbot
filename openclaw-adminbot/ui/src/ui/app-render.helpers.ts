@@ -31,7 +31,14 @@ import {
   syncSelectedSessionMessageSubscription,
 } from "./controllers/sessions.ts";
 import { icons } from "./icons.ts";
-import { iconForTab, isSettingsTab, pathForTab, titleForTab, type Tab } from "./navigation.ts";
+import {
+  iconForTab,
+  isSettingsTab,
+  isTabImplemented,
+  pathForTab,
+  titleForTab,
+  type Tab,
+} from "./navigation.ts";
 import { isCronSessionKey, parseSessionKey, resolveSessionDisplayName } from "./session-display.ts";
 import {
   isSessionKeyTiedToAgent,
@@ -228,6 +235,25 @@ export function renderTab(state: AppViewState, tab: Tab, opts?: { collapsed?: bo
   const href = pathForTab(tab, state.basePath);
   const isActive = tab === "config" ? isSettingsTab(state.tab) : state.tab === tab;
   const collapsed = opts?.collapsed ?? state.settings.navCollapsed;
+  // A tab whose tool nobody has built yet holds its place without pretending to work: no href, no
+  // click handler, so neither a click nor a middle-click routes at a view that does not exist.
+  if (!isTabImplemented(tab)) {
+    return html`
+      <span
+        class="nav-item nav-item--unimplemented"
+        aria-disabled="true"
+        title=${`${titleForTab(tab)} — ${t("common.comingSoon")}`}
+      >
+        <span class="nav-item__icon" aria-hidden="true">${icons[iconForTab(tab)]}</span>
+        ${!collapsed
+          ? html`
+              <span class="nav-item__text">${titleForTab(tab)}</span>
+              <span class="nav-item__badge">${t("common.comingSoon")}</span>
+            `
+          : nothing}
+      </span>
+    `;
+  }
   return html`
     <a
       href=${href}

@@ -480,12 +480,27 @@ describe("control UI routing", () => {
     expectElement(header, ".nav-collapse-toggle", HTMLElement);
   });
 
-  it("hides child nav items when the active group is collapsed", async () => {
-    const app = mountApp("/chat");
+  it("keeps chat pinned in the sidebar footer", async () => {
+    const app = mountApp("/dashboard");
     await app.updateComplete;
 
-    // Chat sits in the "General Tools" group alongside the deadline board and the reimbursement
-    // assistant; collapsing that group is what hides it.
+    // The footer sits outside .sidebar-shell__body, which is the part that scrolls, so chat stays
+    // put at the bottom however long the groups above it get.
+    const footer = expectElement(app, ".sidebar-shell__footer", HTMLElement);
+    const chat = expectElement(footer, 'a.nav-item[href="/chat"]', HTMLAnchorElement);
+
+    // Not in a collapsible group, so no group toggle can hide it.
+    expect(chat.closest(".nav-section")).toBeNull();
+    // And the upstream docs link whose slot it took is gone for good.
+    expect(app.querySelector('a[href="https://docs.openclaw.ai"]')).toBeNull();
+  });
+
+  it("hides child nav items when the active group is collapsed", async () => {
+    const app = mountApp("/adminbot/logistics");
+    await app.updateComplete;
+
+    // Logistics sits in the "General Tools" group alongside the deadline board and the
+    // reimbursement assistant; collapsing that group is what hides it.
     app.applySettings({
       ...app.settings,
       navGroupsCollapsed: {
@@ -495,11 +510,15 @@ describe("control UI routing", () => {
     });
     await app.updateComplete;
 
-    const chatLink = expectElement(app, 'a.nav-item[href="/chat"]', HTMLAnchorElement);
-    const section = chatLink.closest(".nav-section");
+    const groupLink = expectElement(
+      app,
+      'a.nav-item[href="/adminbot/logistics"]',
+      HTMLAnchorElement,
+    );
+    const section = groupLink.closest(".nav-section");
     expect(section).toBeInstanceOf(HTMLElement);
     if (!(section instanceof HTMLElement)) {
-      throw new Error("Expected chat link to be inside a nav section");
+      throw new Error("Expected the logistics link to be inside a nav section");
     }
 
     expect([...section.classList]).toContain("nav-section--collapsed");
@@ -713,6 +732,7 @@ describe("control UI routing", () => {
     const app = mountApp("/sessions?session=agent:main:subagent:task-123");
     await app.updateComplete;
 
+    // Chat sits in the pinned sidebar footer now, not in a nav group, but it is still a nav item.
     const link = expectElement(app, 'a.nav-item[href="/chat"]', HTMLAnchorElement);
     link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }));
 

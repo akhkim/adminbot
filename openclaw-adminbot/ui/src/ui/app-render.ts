@@ -48,8 +48,8 @@ import {
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
 import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
-import { renderAdminBot, type AdminBotPanel } from "./adminbot/views/admin.ts";
 import "./components/feedback-widget.ts";
+import { renderAdminBot, type AdminBotPanel } from "./adminbot/views/admin.ts";
 import {
   renderChangePasswordPopover,
   renderChangePasswordTrigger,
@@ -213,7 +213,6 @@ import {
 import "./components/dashboard-header.ts";
 import { captureSessionToWorkboard, getWorkboardState } from "./controllers/workboard.ts";
 import { getCronJobPayload } from "./cron-payload.ts";
-import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "./external-link.ts";
 import { formatTimeMs } from "./format.ts";
 import { formatRelativeTimestamp } from "./format.ts";
 import { icons } from "./icons.ts";
@@ -2745,21 +2744,13 @@ export function renderApp(state: AppViewState) {
             </div>
             <div class="sidebar-shell__footer">
               <div class="sidebar-utility-group">
-                <a
-                  class="nav-item nav-item--external sidebar-utility-link"
-                  href="https://docs.openclaw.ai"
-                  target=${EXTERNAL_LINK_TARGET}
-                  rel=${buildExternalLinkRel()}
-                  title=${t("chat.docsOpensInNewTab", { label: t("common.docs") })}
-                >
-                  <span class="nav-item__icon" aria-hidden="true">${icons.book}</span>
-                  ${!navCollapsed
-                    ? html`
-                        <span class="nav-item__text">${t("common.docs")}</span>
-                        <span class="nav-item__external-icon">${icons.externalLink}</span>
-                      `
-                    : nothing}
-                </a>
+                <!-- Was an external link to docs.openclaw.ai, which documented the upstream operator
+                     tool rather than this lab. Chat holds the slot now, and lives in the footer
+                     rather than in a nav group so it stays put at the bottom of the sidebar while
+                     the groups above it scroll. -->
+                ${visibleTabsForRole(["chat"], accessRole).map((tab) =>
+                  renderTab(state, tab, { collapsed: navCollapsed }),
+                )}
                 <div class="sidebar-mode-switch">${renderTopbarThemeModeToggle(state)}</div>
                 ${state.memberId ? renderChangePasswordTrigger(state, navCollapsed) : nothing}
                 <button
@@ -3010,9 +3001,13 @@ export function renderApp(state: AppViewState) {
                       // Back to following the stored value, which the reload has just refreshed.
                       state.adminBotAvailabilityNotesDraft = null;
                     } else if (patch.milestones) {
-                      state.adminBotMilestoneDraft = { ...EMPTY_MILESTONE_DRAFT };
+                      state.adminBotMilestoneDraft = {
+                        ...EMPTY_MILESTONE_DRAFT,
+                      };
                     } else {
-                      state.adminBotTimeAvailabilityDraft = { ...EMPTY_TIME_AVAILABILITY_DRAFT };
+                      state.adminBotTimeAvailabilityDraft = {
+                        ...EMPTY_TIME_AVAILABILITY_DRAFT,
+                      };
                     }
                   }
                   requestHostUpdate?.();

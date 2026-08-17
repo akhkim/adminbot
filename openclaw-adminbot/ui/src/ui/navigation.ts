@@ -16,17 +16,16 @@ export const TAB_GROUPS = [
   // "where do I say when I am free" looks under their own profile.
   { label: "myProfile", tabs: ["profile", "adminbotTimeAvailability"] },
   { label: "myProjects", tabs: ["myWork"] },
+  // Ordered by how often a member reaches for them. Chat is not here any more: asking AdminBot
+  // something is now the second half of the guidebook surface (`adminbotGuidebook`), which the
+  // sidebar footer offers in place of the old external docs link.
   {
     label: "generalTools",
-    tabs: [
-      "chat",
-      "adminbotDeadlines",
-      "adminbotReimbursements",
-      "adminbotMembers",
-      "adminbotLogistics",
-    ],
+    tabs: ["adminbotLogistics", "adminbotReimbursements", "adminbotDeadlines", "adminbotSocialBot"],
   },
-  { label: "labSharing", tabs: ["labSharing"] },
+  // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
+  // which is what someone browsing the lab's shared surface came to look at.
+  { label: "labSharing", tabs: ["labSharing", "adminbotMembers"] },
   {
     label: "admin",
     tabs: [
@@ -61,6 +60,15 @@ export const TAB_GROUPS = [
   },
 ] as const;
 
+// Tabs that hold a place in the sidebar for a tool nobody has built yet. They render greyed out
+// and refuse clicks, so the slot is visible without routing anyone at a view that does not exist.
+// Delete the entry — not the tab — when the real surface lands.
+export const UNIMPLEMENTED_TABS: readonly Tab[] = ["adminbotSocialBot"];
+
+export function isTabImplemented(tab: Tab): boolean {
+  return !UNIMPLEMENTED_TABS.includes(tab);
+}
+
 export type Tab =
   | "agents"
   | "dashboard"
@@ -76,6 +84,7 @@ export type Tab =
   | "adminbotMembers"
   | "adminbotTimeAvailability"
   | "adminbotLogistics"
+  | "adminbotSocialBot"
   | "adminbotPapers"
   | "adminbotAnnouncements"
   | "adminbotCalendar"
@@ -129,6 +138,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotMembers: "/adminbot/members",
   adminbotTimeAvailability: "/adminbot/time-availability",
   adminbotLogistics: "/adminbot/logistics",
+  adminbotSocialBot: "/adminbot/social-bot",
   adminbotPapers: "/adminbot/papers",
   adminbotAnnouncements: "/adminbot/announcements",
   adminbotCalendar: "/adminbot/calendar",
@@ -293,6 +303,8 @@ export function iconForTab(tab: Tab): IconName {
       return "clock";
     case "adminbotLogistics":
       return "paperclip";
+    case "adminbotSocialBot":
+      return "send";
     case "adminbotPapers":
       return "fileText";
     case "adminbotAnnouncements":

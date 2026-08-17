@@ -45,11 +45,16 @@ export type GuidebookAskResult = {
   reason?: string;
 };
 
+// The guidebook is the authority, not this model: a paraphrase invents wording the lab never
+// approved and gives the reader nothing to check it against. So the answer either reproduces the
+// guidebook's own text verbatim or names the section to go read — never a summary of either.
 const SYSTEM_PROMPT = [
   "You answer questions about a research lab's internal guidebook.",
   "Use only the excerpts provided. If they do not cover the question, say so plainly instead of guessing.",
-  "Quote specific figures, deadlines and form names exactly as written.",
-  "Write the answer as prose for a colleague. Do not mention that you were given excerpts.",
+  "Do not summarize, paraphrase or rewrite the guidebook.",
+  "Either copy the relevant passage across word for word, or tell the reader which section to check — and prefer copying it when the passage is short enough to paste.",
+  "When you copy a passage, reproduce it exactly, including figures, deadlines and form names.",
+  "Name the section heading you are drawing on so the reader can find it in the guidebook itself.",
 ].join(" ");
 
 function readApiKey(env: NodeJS.ProcessEnv, name: string): string | undefined {
@@ -71,7 +76,12 @@ export async function askGuidebook(
   const fetchImpl = options.fetchImpl ?? (globalThis.fetch as unknown as GuidebookFetch);
   const question = params.question.trim();
   if (!question) {
-    return { answered: false, answer: "", sources: [], reason: "no question was provided" };
+    return {
+      answered: false,
+      answer: "",
+      sources: [],
+      reason: "no question was provided",
+    };
   }
 
   const indexPath = resolveGuidebookIndexPath(config.indexPath);
@@ -110,7 +120,12 @@ export async function askGuidebook(
     ...(options.signal ? { signal: options.signal } : {}),
   });
   if (!queryVector) {
-    return { answered: false, answer: "", sources: [], reason: "local embedding returned nothing" };
+    return {
+      answered: false,
+      answer: "",
+      sources: [],
+      reason: "local embedding returned nothing",
+    };
   }
 
   const hits = rankGuidebookChunks({
@@ -137,10 +152,17 @@ export async function askGuidebook(
     apiKey: readApiKey(env, config.answerApiKeyEnv),
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: `Question: ${question}\n\nGuidebook excerpts:\n\n${excerpts}` },
+      {
+        role: "user",
+        content: `Question: ${question}\n\nGuidebook excerpts:\n\n${excerpts}`,
+      },
     ],
     ...(options.signal ? { signal: options.signal } : {}),
   });
 
-  return { answered: true, answer, sources: hits.map((hit) => hit.chunk.label) };
+  return {
+    answered: true,
+    answer,
+    sources: hits.map((hit) => hit.chunk.label),
+  };
 }
