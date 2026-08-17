@@ -6068,3 +6068,145 @@
 
 .pstat__label { font-size: var(--control-ui-text-sm); }
 .pstat__sub { font-size: var(--control-ui-text-xs); color: var(--muted); }
+
+
+/* Registration form. The base .my-work-add-form is a one-line flex row built for a single title
+   input; with a venue picker and confidence chips it needs to stack, so this raises specificity
+   rather than fighting the shared rule. */
+.my-work-add-form.register {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: var(--space-3);
+  max-width: 30rem;
+}
+
+.my-work-add-form.register .input {
+  flex: none;
+  width: 100%;
+}
+
+.my-work-add-form.register fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-inline-size: 0;
+}
+
+.my-work-add-form.register legend {
+  padding: 0;
+}
+
+.my-work-add-form.register .register__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+/* Target venue and confidence, editable where they are displayed. Styled down to read as text
+   until you touch them -- the card is for scanning, not a form. */
+.my-work-item__target {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+  margin: 0.25rem 0 0;
+}
+
+.target__select {
+  padding: 0.15rem 0.4rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.target__select:hover,
+.target__select:focus-visible {
+  border-color: var(--border);
+  color: var(--text);
+}
+
+/* Each stat expands to the papers behind it: the question after "how many" is always "which".
+   The expansion spans the full card rather than the tile's own column -- a list of paper titles
+   squeezed into a 9rem grid cell is unreadable, and the grid would jump as one tile grew. */
+.pstats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+.pstat {
+  cursor: pointer;
+  transition: border-color 120ms ease;
+}
+
+.pstat:hover { border-color: var(--accent); }
+
+/* An open tile takes the whole row and its list becomes a proper table. */
+.pstat[open] {
+  grid-column: 1 / -1;
+  border-color: var(--accent);
+}
+
+.pstat__summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  list-style: none;
+}
+
+.pstat__summary::-webkit-details-marker { display: none; }
+
+.pstat__summary::after {
+  content: "▸ show papers";
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  margin-top: 0.35rem;
+}
+
+.pstat[open] .pstat__summary::after { content: "▾ hide"; }
+
+.pstat__list {
+  margin: var(--space-3) 0 0;
+  padding: var(--space-3) 0 0;
+  border-top: 1px solid var(--border);
+  list-style: none;
+  display: grid;
+  gap: 0;
+}
+
+.pstat__list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(8rem, auto);
+  gap: var(--space-3);
+  align-items: baseline;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+}
+
+.pstat__list li:last-child { border-bottom: 0; }
+
+.pstat__paper {
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.pstat__meta,
+.pstat__empty {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  text-align: right;
+}
+
+.pstat__empty { margin: var(--space-3) 0 0; text-align: left; }
+
+@media (max-width: 640px) {
+  .pstat__list li { grid-template-columns: 1fr; gap: 0.15rem; }
+  .pstat__meta { text-align: left; }
+}

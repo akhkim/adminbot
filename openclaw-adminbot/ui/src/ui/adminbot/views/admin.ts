@@ -1807,12 +1807,11 @@ function copyNudge(event: Event, message: string) {
  * is in flight and how much of it is real", and a chart takes longer to read than that deserves.
  */
 function renderPaperStats(papers: AdminBotPaperRecord[]) {
-  const registered = papers.length;
-  const withVenue = papers.filter((paper) => paper.artifacts?.conference?.trim()).length;
+  const withVenue = papers.filter((paper) => paper.artifacts?.conference?.trim());
   const confident = papers.filter((paper) => {
     const value = Number.parseInt(paper.artifacts?.confidence ?? "", 10);
     return Number.isFinite(value) && value >= 80;
-  }).length;
+  });
   const submitted = papers.filter((paper) =>
     [
       "submission",
@@ -1822,24 +1821,74 @@ function renderPaperStats(papers: AdminBotPaperRecord[]) {
       "slide_making",
       "poster_making",
     ].includes(paper.current_step),
-  ).length;
+  );
 
-  const tile = (value: number, label: string, sub: string) => html`
-    <div class="pstat">
-      <span class="pstat__value">${value}</span>
-      <span class="pstat__label">${label}</span>
-      <span class="pstat__sub">${sub}</span>
-    </div>
+  // A count answers "how much", but the follow-up is always "which ones" -- and for the papers
+  // *missing* a venue that follow-up is the whole point, since those are the ones nobody can
+  // plan around. Each tile expands rather than linking away, so the answer stays on the page.
+  const tile = (
+    value: number,
+    label: string,
+    sub: string,
+    listed: AdminBotPaperRecord[],
+    describe: (paper: AdminBotPaperRecord) => string,
+  ) => html`
+    <details class="pstat" ?open=${false}>
+      <summary class="pstat__summary">
+        <span class="pstat__value">${value}</span>
+        <span class="pstat__label">${label}</span>
+        <span class="pstat__sub">${sub}</span>
+      </summary>
+      ${listed.length === 0
+        ? html`<p class="pstat__empty">None.</p>`
+        : html`<ul class="pstat__list">
+            ${listed.map(
+              (paper) => html`<li>
+                <span class="pstat__paper">${paper.title}</span>
+                <span class="pstat__meta">${describe(paper)}</span>
+              </li>`,
+            )}
+          </ul>`}
+    </details>
   `;
+
+  const missingVenue = papers.filter((paper) => !paper.artifacts?.conference?.trim());
 
   return html`
     <article class="adminbot-editor-card">
       <div class="card-title">Registered papers</div>
       <div class="pstats">
-        ${tile(registered, "Registered", "in the pipeline")}
-        ${tile(withVenue, "With a venue", registered ? `of ${registered}` : "none yet")}
-        ${tile(confident, "80%+ likely", "authors' own call")}
-        ${tile(submitted, "Past submission", "submitted or later")}
+        ${tile(
+          papers.length,
+          "Registered",
+          "in the pipeline",
+          papers,
+          (paper) => paper.artifacts?.conference?.trim() || "no venue yet",
+        )}
+        ${tile(
+          withVenue.length,
+          "With a venue",
+          missingVenue.length ? `${missingVenue.length} without` : "all set",
+          withVenue,
+          (paper) =>
+            `${paper.artifacts?.conference ?? ""}${
+              paper.artifacts?.confidence ? ` · ${paper.artifacts.confidence}%` : ""
+            }`,
+        )}
+        ${tile(
+          confident.length,
+          "80%+ likely",
+          "authors' own call",
+          confident,
+          (paper) => `${paper.artifacts?.confidence ?? ""}% · ${paper.artifacts?.conference ?? ""}`,
+        )}
+        ${tile(
+          submitted.length,
+          "Past submission",
+          "submitted or later",
+          submitted,
+          (paper) => stepLabels[paper.current_step] ?? paper.current_step,
+        )}
       </div>
     </article>
   `;

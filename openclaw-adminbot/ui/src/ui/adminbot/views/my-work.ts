@@ -202,16 +202,7 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
         <div class="my-work-item__copy">
           <h3 class="my-work-item__title">${paper.title}</h3>
           <p class="my-work-item__meta">${(paper.authors ?? []).join(", ")}</p>
-          ${paper.artifacts?.conference || paper.artifacts?.confidence
-            ? html`<p class="my-work-item__target">
-                ${paper.artifacts?.conference
-                  ? html`<span class="target__venue">${paper.artifacts.conference}</span>`
-                  : nothing}
-                ${paper.artifacts?.confidence
-                  ? html`<span class="target__odds">${paper.artifacts.confidence}% likely</span>`
-                  : nothing}
-              </p>`
-            : nothing}
+          ${renderTarget(paper, props)}
         </div>
         ${renderBlockerForm(state, paper)}
       </div>
@@ -243,6 +234,66 @@ const STEPPER_SHORT_LABELS: Record<string, string> = {
   slide_making: "Slides",
   poster_making: "Poster",
 };
+
+/**
+ * Target venue and confidence, editable in place.
+ *
+ * Asked once at registration, but a paper's target moves -- a missed deadline, a change of plan,
+ * a rejection. Making it a pair of selects on the card means changing it is one click where the
+ * information already is, instead of a form somewhere else.
+ */
+function renderTarget(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const current = paper.artifacts?.conference ?? "";
+  const confidence = paper.artifacts?.confidence ?? "";
+  const venues = upcomingVenues();
+  // Keep whatever the paper already names, even once its deadline has passed, or editing the
+  // confidence would silently retarget the paper.
+  const known = venues.some((venue) => venue.name === current);
+
+  const save = (conference: string, odds: string) =>
+    props.onSavePaper({
+      id: paper.id,
+      title: paper.title,
+      authors: paper.authors ?? [],
+      currentStep: paper.current_step as AdminBotPaperStep,
+      conference,
+      confidence: odds,
+    });
+
+  return html`
+    <p class="my-work-item__target">
+      <select
+        class="target__select"
+        data-testid=${`target-venue-${paper.id}`}
+        @change=${(event: Event) => save((event.target as HTMLSelectElement).value, confidence)}
+      >
+        ${!known && current
+          ? html`<option value=${current} selected>${current}</option>`
+          : nothing}
+        ${venues.map(
+          (venue) => html`
+            <option value=${venue.name} ?selected=${venue.name === current}>
+              ${venue.name} · ${venue.deadline_aoe.slice(0, 10)}
+            </option>
+          `,
+        )}
+        <option value="" ?selected=${!current}>Other / not decided yet</option>
+      </select>
+      <select
+        class="target__select"
+        data-testid=${`target-confidence-${paper.id}`}
+        @change=${(event: Event) => save(current, (event.target as HTMLSelectElement).value)}
+      >
+        <option value="" ?selected=${!confidence}>No estimate</option>
+        ${CONFIDENCE_OPTIONS.map(
+          (value) => html`
+            <option value=${value} ?selected=${value === confidence}>${value}% likely</option>
+          `,
+        )}
+      </select>
+    </p>
+  `;
+}
 
 function renderStepper(paper: AdminBotPaperRecord, props: MyWorkProps, currentIndex: number) {
   const move = (step: AdminBotPaperStep, targetIndex: number) => {
@@ -374,13 +425,25 @@ function upcomingVenues(now = new Date()) {
   const future = DEADLINE_VENUES.filter((venue) => {
     const due = Date.parse(venue.deadline_aoe.replace(" ", "T") + "Z");
     return Number.isFinite(due) && due > now.getTime();
-  }).sort((left, right) => left.deadline_aoe.localeCompare(right.deadline_aoe));
+  })
+    // Archival conferences only. Sorting purely by date buries ICLR and ARR under fifty workshop
+    // commitment deadlines, so the default ends up a venue nobody was aiming for.
+    .filter((venue) => venue.venue_type === "conference" && venue.archival)
+    .sort((left, right) => left.deadline_aoe.localeCompare(right.deadline_aoe));
 
-  // Archival conferences first. Sorting purely by date buries ICLR and ARR under fifty workshop
-  // commitment deadlines, so the default target ends up being a venue nobody was aiming for.
-  const major = future.filter((venue) => venue.venue_type === "conference" && venue.archival);
-  const rest = future.filter((venue) => !major.includes(venue));
-  return [...major.slice(0, 8), ...rest.slice(0, 6)];
+  // One row per venue, not one per milestone: ICLR appears twice (abstract, then full paper) and
+  // offering both as separate targets asks a question nobody means to answer. Keep the paper
+  // deadline, since that is the one people are working towards.
+  const byGroup = new Map<string, (typeof future)[number]>();
+  for (const venue of future) {
+    const key = venue.venue_group || venue.name;
+    const kept = byGroup.get(key);
+    const isPaperDeadline = venue.milestone !== "abstract";
+    if (!kept || (isPaperDeadline && kept.milestone === "abstract")) {
+      byGroup.set(key, venue);
+    }
+  }
+  return [...byGroup.values()].slice(0, 2);
 }
 
 /** How sure the authors are about hitting this venue. Coarse on purpose: finer is false precision. */
@@ -439,7 +502,7 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
               </option>
             `,
           )}
-          <option value="">Not decided yet</option>
+          <option value="">Other / not decided yet</option>
         </select>
         <span class="register__hint">Defaults to the next deadline. Change it any time.</span>
       </label>

@@ -219,8 +219,11 @@ function controlUiServiceWorkerBuildIdPlugin(buildId: string): Plugin {
     closeBundle() {
       const swPath = path.join(outDir, "sw.js");
       const publicSwPath = path.join(here, "public/sw.js");
-      const source = fs.readFileSync(fs.existsSync(swPath) ? swPath : publicSwPath, "utf8");
       const placeholder = '"__OPENCLAW_CONTROL_UI_BUILD_ID__"';
+      const built = fs.existsSync(swPath) ? fs.readFileSync(swPath, "utf8") : "";
+      // dist/ lives outside the vite root, so emptyOutDir skips it and a previous build leaves an
+      // already-substituted sw.js behind. Fall back to the pristine public copy in that case.
+      const source = built.includes(placeholder) ? built : fs.readFileSync(publicSwPath, "utf8");
       const updated = source.replace(placeholder, JSON.stringify(buildId));
       if (updated === source) {
         throw new Error(`Control UI service worker build id placeholder missing in ${swPath}`);
