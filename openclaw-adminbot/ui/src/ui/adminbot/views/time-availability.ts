@@ -185,6 +185,16 @@ export type SchedulePatch = {
   availability?: AvailabilityRow[];
   time_off?: TimeOffRow[];
   milestones?: MilestoneRow[];
+  /**
+   * The overall note, sent alone so saving prose can never rewrite a list.
+   *
+   * The three lists above are the schedule as data -- dates, hours, categories -- and there are
+   * situations no combination of rows can state: a custody week that moves, a visa appointment that
+   * may or may not happen, a treatment that makes some weeks unpredictable. Those need a sentence
+   * to an admin, and without somewhere to put it people either encode it in a row's own note (where
+   * it is attached to a commitment that will later be deleted) or say nothing at all.
+   */
+  availability_notes?: string;
 };
 
 export type AdminBotTimeAvailabilityProps = {
@@ -197,6 +207,16 @@ export type AdminBotTimeAvailabilityProps = {
   onRangeChange: (range: TimeAvailabilityRange) => void;
   /** The signed-in member. The editor renders only when this matches the selected member. */
   viewerMemberId: string | null;
+  /**
+   * Whether the viewer is an admin, which is what decides whose schedule they may read at all.
+   *
+   * A schedule is holidays, courses, other jobs and -- in the overall note -- whatever the member
+   * wrote up about their circumstances. That is planning data for the people who plan, so a plain
+   * member sees their own and nothing else: the picker is not offered to them, and the service
+   * strips the schedule fields from every other member's record on the way out
+   * (adminBotScheduleMemberFields), so this is the affordance for a rule already enforced there.
+   */
+  viewerIsAdmin: boolean;
   /** The Jinesis-commitment form's draft. Its category is always "jinesis". */
   draft: TimeAvailabilityDraft;
   onDraftChange: (draft: TimeAvailabilityDraft) => void;
@@ -205,6 +225,9 @@ export type AdminBotTimeAvailabilityProps = {
   onAwayDraftChange: (draft: TimeAvailabilityDraft) => void;
   milestoneDraft: MilestoneDraft;
   onMilestoneDraftChange: (draft: MilestoneDraft) => void;
+  /** The overall note while it is being edited; null means "showing what is stored". */
+  notesDraft: string | null;
+  onNotesDraftChange: (draft: string | null) => void;
   onSaveSchedule: (memberId: string, patch: SchedulePatch) => void;
   saving: boolean;
 };
@@ -913,6 +936,91 @@ function renderTimeAwayEditor(
   });
 }
 
+// The service's own ceiling (MAX_AVAILABILITY_NOTES_LENGTH in kernel/service.ts). Enforced on the
+// control so a long note is stopped while it is being typed rather than rejected after a save.
+const MAX_NOTES_LENGTH = 2000;
+
+/**
+ * The overall note: one free-text field about the whole schedule, addressed to the admins.
+ *
+ * Not a fourth kind of row. Rows answer "when and how much"; this answers "what should someone
+ * reading my rows know that they cannot see in them". It is deliberately outside the three add
+ * forms and above the tables, because it is context for everything below it rather than an entry in
+ * any one list -- and it saves on its own button rather than autosaving, since a half-written
+ * sentence about someone's circumstances should not reach an admin's screen.
+ *
+ * Read access is the same rule as the rest of the schedule: the member, and admins. A non-admin
+ * looking at someone else's page never gets here, and never receives the field either.
+ */
+function renderOverallNotes(
+  props: AdminBotTimeAvailabilityProps,
+  stored: string,
+  editable: boolean,
+) {
+  const draft = props.notesDraft;
+  const value = draft ?? stored;
+  if (!editable) {
+    // Read-only for an admin looking at someone else's schedule. Absent rather than an empty box:
+    // "nothing written" is a fact about the member, not a control to offer someone who cannot type
+    // in it.
+    if (!stored.trim()) {
+      return nothing;
+    }
+    return html`
+      <section class="adminbot-time-availability__notes" data-testid="time-availability-notes">
+        <div class="card-sub">${t("adminbotTimeAvailability.notes.title")}</div>
+        <p
+          class="adminbot-time-availability__notes-text"
+          data-testid="time-availability-notes-text"
+        >
+          ${stored}
+        </p>
+      </section>
+    `;
+  }
+  const dirty = draft !== null && draft !== stored;
+  return html`
+    <section class="adminbot-time-availability__notes" data-testid="time-availability-notes">
+      <div class="card-sub">${t("adminbotTimeAvailability.notes.title")}</div>
+      <p class="adminbot-time-availability__form-hint">
+        ${t("adminbotTimeAvailability.notes.hint")}
+      </p>
+      <form
+        class="adminbot-form adminbot-time-availability__notes-form"
+        @submit=${(event: Event) => {
+          event.preventDefault();
+          props.onSaveSchedule(props.selectedMemberId, { availability_notes: value.trim() });
+        }}
+      >
+        <label class="adminbot-form__field">
+          <span class="sr-only">${t("adminbotTimeAvailability.notes.title")}</span>
+          <textarea
+            rows="4"
+            maxlength=${MAX_NOTES_LENGTH}
+            data-testid="time-availability-notes-input"
+            placeholder=${t("adminbotTimeAvailability.notes.placeholder")}
+            .value=${value}
+            @input=${(event: Event) =>
+              props.onNotesDraftChange((event.currentTarget as HTMLTextAreaElement).value)}
+          ></textarea>
+        </label>
+        <div class="adminbot-time-availability__form-actions">
+          <button
+            type="submit"
+            class="btn primary"
+            data-testid="time-availability-notes-save"
+            ?disabled=${props.saving || !dirty}
+          >
+            ${props.saving
+              ? t("adminbotTimeAvailability.form.saving")
+              : t("adminbotTimeAvailability.notes.submit")}
+          </button>
+        </div>
+      </form>
+    </section>
+  `;
+}
+
 function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: MilestoneRow[]) {
   const draft = props.milestoneDraft;
   const error = milestoneDraftError(draft);
@@ -1251,10 +1359,16 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const emptyOptionLabel = props.loading
     ? t("adminbotTimeAvailability.loadingUsers")
     : t("adminbotTimeAvailability.selectUser");
-  const selectedMember = props.members.find((member) => member.id === props.selectedMemberId);
+  // Whose schedules this viewer may read. An admin plans for the lab, so they get everyone; anyone
+  // else gets exactly their own record, which is also all the service will send them.
+  const readableMembers = props.viewerIsAdmin
+    ? props.members
+    : props.members.filter((member) => member.id === props.viewerMemberId);
+  const selectedMember = readableMembers.find((member) => member.id === props.selectedMemberId);
   const storedAvailability = selectedMember ? availabilityRows(selectedMember.availability) : [];
   const storedTimeOff = selectedMember ? timeOffRows(selectedMember.time_off) : [];
   const storedMilestones = selectedMember ? milestoneRows(selectedMember.milestones) : [];
+  const storedNotes = String(selectedMember?.availability_notes ?? "");
   const tasks = selectedMember ? jinesisTasks(selectedMember) : [];
   const weeklyCapacity = Number(selectedMember?.hours_per_week);
   const capacity = Number.isFinite(weeklyCapacity) && weeklyCapacity > 0 ? weeklyCapacity : 0;
@@ -1268,21 +1382,28 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   return html`
     <div class="card adminbot-card adminbot-card--wide adminbot-time-availability">
       <div class="adminbot-form adminbot-time-availability__controls">
-        <label class="adminbot-form__field">
-          <span class="card-title">${t("adminbotTimeAvailability.label")}</span>
-          ${renderMemberSelect({
-            options: props.members.map((member) => ({
-              id: member.id,
-              name: member.name ?? member.id,
-              ...(member.email ? { hint: String(member.email) } : {}),
-            })),
-            value: selectedMember?.id ?? "",
-            placeholder: emptyOptionLabel,
-            label: t("adminbotTimeAvailability.selectUser"),
-            disabled: props.loading || props.members.length === 0,
-            onPick: (memberId: string) => props.onMemberChange(memberId),
-          })}
-        </label>
+        ${props.viewerIsAdmin
+          ? html`<label class="adminbot-form__field">
+              <span class="card-title">${t("adminbotTimeAvailability.label")}</span>
+              ${renderMemberSelect({
+                options: readableMembers.map((member) => ({
+                  id: member.id,
+                  name: member.name ?? member.id,
+                  ...(member.email ? { hint: String(member.email) } : {}),
+                })),
+                value: selectedMember?.id ?? "",
+                placeholder: emptyOptionLabel,
+                label: t("adminbotTimeAvailability.selectUser"),
+                disabled: props.loading || readableMembers.length === 0,
+                onPick: (memberId: string) => props.onMemberChange(memberId),
+              })}
+            </label>`
+          : html`<p
+              class="adminbot-time-availability__own-only"
+              data-testid="time-availability-own-only"
+            >
+              ${t("adminbotTimeAvailability.ownScheduleOnly")}
+            </p>`}
         ${renderRangeSwitch(props)}
       </div>
       ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
@@ -1321,6 +1442,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                   : html`<div class="adminbot-time-availability__empty">
                       ${t("adminbotTimeAvailability.noAllocations")}
                     </div>`}
+                ${renderOverallNotes(props, storedNotes, editable)}
                 ${tasks.length
                   ? renderJinesisTable(tasks, storedAvailability, props, editable)
                   : nothing}

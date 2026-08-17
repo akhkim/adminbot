@@ -49,6 +49,11 @@ function props(overrides: Partial<AdminBotTimeAvailabilityProps> = {}) {
     onAwayDraftChange: () => {},
     milestoneDraft: { ...EMPTY_MILESTONE_DRAFT },
     onMilestoneDraftChange: () => {},
+    // The default fixture is a plain member reading their own schedule, which is the only page a
+    // non-admin can reach at all.
+    viewerIsAdmin: false,
+    notesDraft: null,
+    onNotesDraftChange: () => {},
     onSaveSchedule: () => {},
     saving: false,
     ...overrides,
@@ -307,6 +312,7 @@ describe("the chart", () => {
   // remembered got nothing.
   it("filters the member list by what you type", async () => {
     const container = renderView({
+      viewerIsAdmin: true,
       members: [
         member({ id: "one", name: "Yahang Qi" } as Partial<AdminBotLabMember>),
         member({ id: "two", name: "Xuanqiang Angelo Huang" } as Partial<AdminBotLabMember>),
@@ -331,6 +337,110 @@ describe("the chart", () => {
     expect(shown.length).toBe(1);
     expect(shown[0]).toContain("Xuanqiang Angelo Huang");
     container.remove();
+  });
+
+  // A schedule is holidays, courses, other jobs and whatever the member wrote up about their
+  // circumstances. Planning data for the people who plan, so a plain member gets their own page and
+  // no way to ask for anyone else's -- the service strips the fields for them anyway.
+  it("offers the member picker to an admin and not to a plain member", () => {
+    const asAdmin = renderView({ viewerIsAdmin: true });
+    expect(asAdmin.querySelector("adminbot-member-select")).not.toBeNull();
+    expect(
+      asAdmin.querySelector('[data-testid="time-availability-own-only"]'),
+    ).toBeNull();
+
+    const asMember = renderView();
+    expect(asMember.querySelector("adminbot-member-select")).toBeNull();
+    expect(
+      asMember.querySelector('[data-testid="time-availability-own-only"]'),
+    ).not.toBeNull();
+  });
+
+  it("shows a plain member only their own schedule, whoever else is on the roster", () => {
+    const container = renderView({
+      members: [
+        member(),
+        member({ id: "other", name: "Bo" } as Partial<AdminBotLabMember>),
+      ],
+    });
+    // Their own record renders; the other one is not reachable from this page.
+    expect(container.textContent).toContain("Ada");
+    expect(container.textContent).not.toContain("Bo");
+  });
+
+  it("selects nothing when a non-admin's selection is not their own record", () => {
+    const container = renderView({
+      selectedMemberId: "other",
+      members: [
+        member(),
+        member({ id: "other", name: "Bo" } as Partial<AdminBotLabMember>),
+      ],
+    });
+    expect(
+      container.querySelector(
+        '[data-testid="time-availability-jinesis-table"]',
+      ),
+    ).toBeNull();
+  });
+
+  // The rows say when and how much; this is the sentence that explains the ones that need one.
+  it("saves the overall note on its own, without touching any list", () => {
+    const onSaveSchedule = vi.fn();
+    const container = renderView({
+      onSaveSchedule,
+      notesDraft: "Carer on alternating weeks, so these hours are an average.",
+    });
+    container
+      .querySelector<HTMLFormElement>(".adminbot-time-availability__notes-form")
+      ?.requestSubmit();
+    expect(onSaveSchedule).toHaveBeenCalledWith("m1", {
+      availability_notes:
+        "Carer on alternating weeks, so these hours are an average.",
+    });
+  });
+
+  it("leaves the note save disabled until the text actually changes", () => {
+    const stored = "Away most Fridays.";
+    const unchanged = renderView({
+      members: [
+        member({ availability_notes: stored } as Partial<AdminBotLabMember>),
+      ],
+      notesDraft: stored,
+    });
+    expect(
+      unchanged.querySelector<HTMLButtonElement>(
+        '[data-testid="time-availability-notes-save"]',
+      )?.disabled,
+    ).toBe(true);
+  });
+
+  // An admin reading someone else's page gets the note as prose: it is context for the rows, and
+  // they have no business editing what the member wrote.
+  it("shows an admin the note read-only, and nothing at all when there is none", () => {
+    const withNote = renderView({
+      viewerIsAdmin: true,
+      viewerMemberId: "admin",
+      members: [
+        member({
+          availability_notes: "Visa interview may move.",
+        } as Partial<AdminBotLabMember>),
+      ],
+    });
+    expect(
+      withNote.querySelector('[data-testid="time-availability-notes-text"]')
+        ?.textContent,
+    ).toContain("Visa interview may move.");
+    expect(
+      withNote.querySelector('[data-testid="time-availability-notes-input"]'),
+    ).toBeNull();
+
+    const withoutNote = renderView({
+      viewerIsAdmin: true,
+      viewerMemberId: "admin",
+    });
+    expect(
+      withoutNote.querySelector('[data-testid="time-availability-notes"]'),
+    ).toBeNull();
   });
 
   it("offers the three ranges and marks the active one", () => {

@@ -68,6 +68,10 @@ export type AdminBotLabMember = {
   availability?: AvailabilityRow[];
   time_off?: TimeOffRow[];
   milestones?: MilestoneRow[];
+  // The member's own prose about their schedule, for the admins who plan around it. Absent on
+  // every roster copy but the member's own and an admin's -- the service strips it for everyone
+  // else (adminBotScheduleMemberFields), same as the three lists above.
+  availability_notes?: string;
   location?: string;
   // Where they are right now, when that is not `location`. The Calendar tab filters on both, and
   // never lets one stand in for the other.

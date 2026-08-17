@@ -1,7 +1,6 @@
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
-import { nextStepFor, type NextStep } from "../next-step.ts";
 import { adminBotMemberRoles } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
@@ -25,6 +24,7 @@ import type {
 } from "../controllers/admin.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
+import { nextStepFor, type NextStep } from "../next-step.ts";
 import { renderAdminBotReimbursements } from "./reimbursements.ts";
 
 export type AdminBotProps = {
@@ -476,10 +476,16 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
   // re-encoding them as "Label: value" lines. notes is free prose again -- doing otherwise would
   // recreate the two-sources-of-truth problem migrateMemberNotesToFields exists to end.
   const notes = getFormValue(data, "notes").trim();
+  // An existing record's email is left out of the payload entirely, not just made readonly on the
+  // control: it is the member's login identity, and a form that can rewrite it can lock someone out
+  // of the account they sign in with. Creation still sets it -- that is the only moment it is a
+  // question rather than an established fact.
+  const emailInput = form.elements.namedItem("email");
+  const emailEditable = emailInput instanceof HTMLInputElement && !emailInput.readOnly;
   props.onSaveMember({
     id,
     name,
-    ...(getFormValue(data, "email") ? { email: getFormValue(data, "email") } : {}),
+    ...(emailEditable && getFormValue(data, "email") ? { email: getFormValue(data, "email") } : {}),
     ...(getFormValue(data, "slackUserId")
       ? { slackUserId: getFormValue(data, "slackUserId") }
       : {}),
@@ -971,7 +977,16 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
           type="email"
           placeholder="pat@example.test"
           .value=${member?.email ?? ""}
+          ?readonly=${editing}
+          data-testid="member-form-email"
       /></label>
+      ${editing
+        ? html`<p class="adminbot-form__hint" data-testid="member-form-email-locked">
+            Email is the login identity, so it is set once when the record is created and not edited
+            here. Changing it would sign the member out of an account they can no longer reach; a
+            correction goes through account recovery instead.
+          </p>`
+        : nothing}
       <label class="adminbot-form__field"
         ><span>Slack user id</span
         ><input name="slackUserId" placeholder="U0123456789" .value=${member?.slack_user_id ?? ""}

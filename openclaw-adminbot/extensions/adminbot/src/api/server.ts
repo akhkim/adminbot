@@ -1326,13 +1326,16 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "GET" && url.pathname === "/lab/members") {
-    // The roster is lab-internal but not confidential, with one exception: what a member discloses
+    // The roster is lab-internal but not confidential, with two exceptions. What a member discloses
     // about their health or family is written for one reader, and this response goes to all of
-    // them. Strip those fields for anyone who is not that member or an admin. The service principal
-    // drives agent tool calls on behalf of whoever is chatting, so it is not entitled either.
+    // them; the service principal drives agent tool calls on behalf of whoever is chatting, so it
+    // is not entitled to that either. The schedule fields are the second exception, and a narrower
+    // one: they are stripped for member sessions that are neither the member nor an admin, while
+    // the service principal keeps them so the importer and the scheduling tools still work.
     const viewer = {
       ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
       isAdmin: principal.kind === "member" && principal.member.privilege_level === "admin",
+      isMemberSession: principal.kind === "member",
     };
     const result = service.listLabMembers();
     sendServiceResult(

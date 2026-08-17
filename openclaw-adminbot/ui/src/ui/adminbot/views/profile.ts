@@ -96,6 +96,10 @@ type ProfileField = {
   // as a rejected save. Kept off the fields whose format is obvious -- a hint on every row is a
   // page nobody reads.
   hintKey?: string;
+  // Numeric-only bounds, mirroring what the service accepts, so an out-of-range answer is refused by
+  // the control instead of coming back as a rejected save the member has to interpret.
+  min?: number;
+  max?: number;
   group: ProfileFieldGroup;
 };
 
@@ -224,6 +228,22 @@ const PROFILE_FIELDS: ProfileField[] = [
     type: "dropdown",
     options: timezoneOptions(),
     group: "identity",
+  },
+  {
+    // Weekly work capacity: the denominator everything about this member's time is read against.
+    // The Time Availability chart draws it as the 100% reference line, and without it that chart
+    // falls back to a nominal 40h and says so in a callout -- which is the state most of the roster
+    // was left in when this field went missing from the form. Optional, because an honest blank is
+    // better than a guessed number that then gets planned against.
+    key: "hours_per_week",
+    labelKey: "profile.fields.hoursPerWeek",
+    example: "40",
+    type: "numeric",
+    hintKey: "profile.hints.hoursPerWeek",
+    // The service's own range (validateMember in extensions/adminbot/src/kernel/service.ts).
+    min: 0,
+    max: 168,
+    group: "work",
   },
   {
     key: "joined_month",
@@ -962,6 +982,8 @@ function renderFieldInput(field: EditableField, currentValue: string) {
           class="input"
           name=${field.key}
           type="number"
+          min=${ifDefined(field.min)}
+          max=${ifDefined(field.max)}
           placeholder=${ifDefined(exampleFor(field))}
           .value=${currentValue}
         />

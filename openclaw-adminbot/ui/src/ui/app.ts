@@ -597,6 +597,10 @@ export class OpenClawApp extends LitElement {
     ...EMPTY_TIME_AVAILABILITY_DRAFT,
   };
   @state() adminBotMilestoneDraft: MilestoneDraft = { ...EMPTY_MILESTONE_DRAFT };
+  // The overall availability note while it is being edited. `null` means "not touched since the
+  // last load", which is what makes the textarea show the stored note again after a save or after
+  // switching members, rather than holding onto a copy of someone else's text.
+  @state() adminBotAvailabilityNotesDraft: string | null = null;
   @state() adminBotTimeAvailabilitySaving = false;
   @state() adminBotBusyActionId: string | null = null;
   @state() adminBotNotice: { kind: "success" | "error"; text: string } | null = null;

@@ -228,6 +228,28 @@ export function adminBotSlackActivityOf(member: {
 export const adminBotConfidentialMemberFields = ["personal_circumstances"] as const;
 
 /**
+ * The schedule half of the record: readable by the member it belongs to and by admins, nobody else.
+ *
+ * A schedule says when someone is on holiday, which course is eating their term, that they are
+ * interning somewhere else, and -- in `availability_notes` -- whatever complication they wrote up
+ * for the admins. That is planning data for the people who do the planning, not roster data for the
+ * whole lab, so it travels under the same rule as `adminBotConfidentialMemberFields` rather than
+ * being served to every signed-in member the way names and links are.
+ *
+ * Stripped only for *member* callers who are neither the member nor an admin. The service principal
+ * stays entitled: it drives the availability importer and the scheduling tools, which cannot plan
+ * against records they cannot read.
+ */
+export const adminBotScheduleMemberFields = [
+  "availability",
+  "time_off",
+  "milestones",
+  "availability_notes",
+  "availability_doc_url",
+  "availability_updated_at",
+] as const;
+
+/**
  * A member record with the confidential fields removed unless the viewer is entitled to them.
  *
  * Deletes the keys rather than blanking them: an empty string is indistinguishable from a member
@@ -236,14 +258,22 @@ export const adminBotConfidentialMemberFields = ["personal_circumstances"] as co
  */
 export function redactConfidentialMemberFields<T extends { id?: string }>(
   member: T,
-  viewer: { memberId?: string; isAdmin: boolean },
+  viewer: { memberId?: string; isAdmin: boolean; isMemberSession?: boolean },
 ): T {
-  if (viewer.isAdmin || (viewer.memberId && viewer.memberId === member.id)) {
+  const entitled = viewer.isAdmin || Boolean(viewer.memberId && viewer.memberId === member.id);
+  // A non-member principal (the service token) is entitled to the schedule but not to the
+  // confidential disclosures, so the two sets cannot share one early return.
+  if (entitled) {
     return member;
   }
   const copy = { ...member } as Record<string, unknown>;
   for (const field of adminBotConfidentialMemberFields) {
     delete copy[field];
+  }
+  if (viewer.isMemberSession) {
+    for (const field of adminBotScheduleMemberFields) {
+      delete copy[field];
+    }
   }
   return copy as T;
 }
@@ -519,6 +549,11 @@ export type AdminBotLabMemberInput = {
   time_off?: AdminBotTimeOffRow[];
   // Dated milestones the member is planning back from. Self-editable like the two lists above.
   milestones?: AdminBotMemberMilestone[];
+  // The complication the three lists above cannot express: a custody arrangement, a visa date that
+  // may move, a medical treatment that makes some weeks unpredictable. Written for the admins who
+  // plan around it -- see adminBotScheduleMemberFields, which keeps it off every other member's
+  // copy of the roster -- and self-editable, because the member is the one it happens to.
+  availability_notes?: string;
   // Link to the member's own planning doc in Drive, which the availability importer reads to
   // prefill the rows above. Member-owned and self-editable: whatever the importer gets wrong, the
   // member fixes in the same panel.

@@ -1415,6 +1415,126 @@ describe("AdminBot service-principal privilege scoping", () => {
     expect("personal_circumstances" in ada).toBe(false);
   });
 
+  // A schedule says when someone is away, which course is eating their term, that they are interning
+  // elsewhere, and -- in the overall note -- whatever they wrote up for the admins. Planning data for
+  // the people who plan, not roster data for the whole lab.
+  it("hides another member's schedule from a plain member, and shows it to an admin", async () => {
+    const { baseUrl } = await startService();
+    const schedule = {
+      availability: [
+        { start: "2026-03-02", end: "2026-03-15", hours_per_week: 20 },
+      ],
+      time_off: [
+        {
+          start: "2026-04-01",
+          end: "2026-04-07",
+          kind: "vacation",
+          availability: "none",
+        },
+      ],
+      milestones: [{ date: "2026-05-01", label: "Defence" }],
+      availability_notes: "Carer on alternating weeks.",
+    };
+    seedMember(baseUrl, "ada", {
+      name: "Ada",
+      email: "ada@cs.toronto.edu",
+      privilege_level: "member",
+      ...schedule,
+    });
+    seedMember(baseUrl, "peer", {
+      name: "Peer",
+      email: "peer@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    seedMember(baseUrl, "boss", {
+      name: "Boss",
+      email: "boss@cs.toronto.edu",
+      privilege_level: "admin",
+    });
+
+    const rosterFor = async (email: string, memberId: string) => {
+      await approveClaim(baseUrl, memberId, email);
+      const token = await loginToken(baseUrl, email);
+      const res = await fetch(`${baseUrl}/lab/members`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const body = (await res.json()) as {
+        members: Array<Record<string, unknown>>;
+      };
+      return body.members;
+    };
+
+    const asPeer = await rosterFor("peer@cs.toronto.edu", "peer");
+    const adaToPeer = asPeer.find((member) => member.id === "ada")!;
+    // Still on the roster -- this is a field rule, not a row rule.
+    expect(adaToPeer.name).toBe("Ada");
+    for (const field of [
+      "availability",
+      "time_off",
+      "milestones",
+      "availability_notes",
+    ]) {
+      expect(field in adaToPeer).toBe(false);
+    }
+    // Their own schedule is still theirs to read.
+    const peerSelf = asPeer.find((member) => member.id === "peer")!;
+    expect(peerSelf.id).toBe("peer");
+
+    const asAdmin = await rosterFor("boss@cs.toronto.edu", "boss");
+    const adaToAdmin = asAdmin.find((member) => member.id === "ada")!;
+    expect(adaToAdmin.availability_notes).toBe("Carer on alternating weeks.");
+    expect(adaToAdmin.availability).toHaveLength(1);
+    expect(adaToAdmin.milestones).toHaveLength(1);
+
+    // The service principal drives the availability importer and the scheduling tools, so unlike
+    // personal_circumstances it keeps the schedule.
+    const asService = await fetch(`${baseUrl}/lab/members`, {
+      headers: serviceHeaders(),
+    });
+    const adaToService = (
+      (await asService.json()) as { members: Array<Record<string, unknown>> }
+    ).members.find((member) => member.id === "ada")!;
+    expect(adaToService.availability).toHaveLength(1);
+  });
+
+  it("lets a member write, and clear, the overall note on their own schedule", async () => {
+    const { baseUrl } = await startService();
+    seedMember(baseUrl, "ada", {
+      name: "Ada",
+      email: "ada@cs.toronto.edu",
+      privilege_level: "member",
+    });
+    await approveClaim(baseUrl, "ada", "ada@cs.toronto.edu");
+    const token = await loginToken(baseUrl, "ada@cs.toronto.edu");
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+
+    const save = await fetch(`${baseUrl}/lab/members/ada`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ availability_notes: "Visa interview may move." }),
+    });
+    expect(save.status).toBe(200);
+    await expect(save.json()).resolves.toMatchObject({
+      availability_notes: "Visa interview may move.",
+    });
+
+    // An emptied box means "nothing to explain", so the field goes rather than storing a blank an
+    // admin would read as something written.
+    const cleared = await fetch(`${baseUrl}/lab/members/ada`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ availability_notes: "   " }),
+    });
+    expect(cleared.status).toBe(200);
+    expect(
+      "availability_notes" in
+        ((await cleared.json()) as Record<string, unknown>),
+    ).toBe(false);
+  });
+
   it("reports members with incomplete mandatory profile fields to any caller", async () => {
     const { baseUrl } = await startService();
     seedMember(baseUrl, "blank", { name: "Blank" });

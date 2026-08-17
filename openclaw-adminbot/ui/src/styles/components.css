@@ -9753,10 +9753,57 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-time-availability__form-hint,
+.adminbot-time-availability__own-only,
 .adminbot-time-availability__empty-note {
   margin: 0;
   color: var(--text-muted);
   font-size: var(--control-ui-text-xs);
+}
+
+/* The overall note sits between the chart and the tables: it is context for both, so it reads as a
+   block of prose on the page rather than as another card competing with them. The rule on the
+   leading edge is the only decoration — enough to mark it as one member's words, not a caption. */
+.adminbot-time-availability__notes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0 10px 12px;
+  border-left: 2px solid var(--border-strong);
+}
+
+.adminbot-time-availability__notes-text {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.5;
+  /* Written as typed, including the line breaks someone used to separate two situations. */
+  white-space: pre-wrap;
+}
+
+/* `.adminbot-form` pins every control to the shared single-line control height, which turns a
+   four-row textarea into a one-line slot. A paragraph field has to opt out of that. */
+.adminbot-time-availability__notes-form textarea {
+  width: 100%;
+  height: auto;
+  min-height: calc(var(--control-h-md) * 2.5);
+  padding: 8px 10px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* A sentence under a control explaining a rule the control itself enforces (a locked field, a
+   format). Used by the member form and the onboarding panel, neither of which had a rule for it. */
+.adminbot-form__hint {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.45;
+}
+
+/* Inside a field grid it explains one field but reads as prose, so it takes the whole row rather
+   than a column of its own next to the next input. */
+.adminbot-form__grid > .adminbot-form__hint {
+  grid-column: 1 / -1;
 }
 
 /* ===========================================

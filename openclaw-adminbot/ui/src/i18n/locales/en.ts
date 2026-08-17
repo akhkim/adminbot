@@ -1432,6 +1432,14 @@ export const en: TranslationMap = {
       errorLabel: "Give the milestone a name.",
     },
     label: "Time Availability:",
+    ownScheduleOnly: "Your schedule. Only you and the lab's admins can see it.",
+    notes: {
+      title: "Overall notes for admins",
+      hint: "Anything the rows above cannot say \u2014 a situation that is complicated, dates that may move, weeks that are hard to predict. Only you and the lab's admins can read this.",
+      placeholder:
+        "e.g. I am my grandmother's carer on alternating weeks, so the hours above are an average rather than a fixed schedule.",
+      submit: "Save notes",
+    },
     legendTimeOff: "Time off",
     loadingUsers: "Loading users...",
     noAllocations: "No commitments recorded yet.",
@@ -1814,6 +1822,8 @@ export const en: TranslationMap = {
       scholar: "Your citations page, including the ?user= part of the address.",
       intakeFormUrl: "The “edit your response” link Google Forms emailed you after you applied.",
       openreviewId: "The id in your OpenReview profile address, like ~Zhijing_Jin1",
+      hoursPerWeek:
+        "How many hours a week you can give Jinesis in total, across every project. The Time Availability chart measures your commitments against this.",
       month: "Year and month, like 2026-03.",
       offboardingMonth:
         "The year and month you plan on leaving Jinesis for a new job or stage, like 2027-06. An estimate is fine — it is not a commitment.",

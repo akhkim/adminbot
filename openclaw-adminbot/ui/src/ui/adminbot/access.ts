@@ -51,8 +51,11 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Members. The roster is lab-internal but not a governance surface, and chat is how members talk
   // to AdminBot at all.
   adminbotMembers: "member",
-  // Whose time is committed where is lab-internal planning, not governance: any member may read
-  // any member's schedule. Writing is separately restricted to your own record by the service.
+  // Every member has a schedule page, but it is only ever their own: holidays, courses, other jobs
+  // and the note they wrote for the admins are planning data for the people who plan, so reading
+  // someone else's is an admin act. The tab is member-level because your own schedule is yours; the
+  // service strips the schedule fields from every other member's record on the way out
+  // (adminBotScheduleMemberFields), and writing was already restricted to your own record.
   adminbotTimeAvailability: "member",
   // Each template starts a request made in the viewer's own name, so it needs an account behind
   // it -- a visitor has no identity for AdminBot to route the signature or the letter back to.

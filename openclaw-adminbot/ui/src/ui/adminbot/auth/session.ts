@@ -96,6 +96,7 @@ export type LabMember = {
   // Owned by the member and edited in the AdminBot console; the Control UI only renders it.
   availability?: AvailabilityRow[] | null;
   time_off?: TimeOffRow[] | null;
+  availability_notes?: string | null;
   location?: string | null;
   // Where the member currently is, distinct from resident `location`. Informational only.
   current_city?: string | null;
@@ -448,6 +449,10 @@ export type MemberScheduleUpdate = {
   availability?: MemberAvailabilityRow[];
   time_off?: MemberTimeOffRow[];
   milestones?: MemberMilestoneRow[];
+  // The overall note that explains the rows: a sentence or two for the admins, sent on its own
+  // (every other key omitted) so saving it can never rewrite a list. "" clears it -- the service
+  // deletes an emptied note rather than storing a blank one.
+  availability_notes?: string;
 };
 
 /**

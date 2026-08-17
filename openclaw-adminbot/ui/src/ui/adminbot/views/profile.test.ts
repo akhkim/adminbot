@@ -807,15 +807,22 @@ describe("renderProfile field types", () => {
     expect(container.querySelector('textarea[name="notes"]')).toBeNull();
   });
 
-  it("renders github_url as a url input and no longer asks for hours per week", () => {
+  it("renders github_url as a url input, and asks for weekly work capacity as a bounded number", () => {
     const member = createMember();
     const state = createState(member);
     const container = renderPage(state, vi.fn());
 
     expect(container.querySelector<HTMLInputElement>('input[name="github_url"]')?.type).toBe("url");
-    // Hours per week was a number nobody could answer honestly for a research week; the record
-    // still carries the column for the rows that have one, but the page stopped asking.
-    expect(container.querySelector('input[name="hours_per_week"]')).toBeNull();
+    // Weekly capacity is the denominator the Time Availability chart reads every commitment
+    // against, so the page has to ask for it. Bounded to the range the service accepts, so an
+    // impossible week is refused by the control rather than by a rejected save.
+    const hours = container.querySelector<HTMLInputElement>(
+      'input[name="hours_per_week"]',
+    );
+    expect(hours?.type).toBe("number");
+    expect(hours?.min).toBe("0");
+    expect(hours?.max).toBe("168");
+    expect(hours?.placeholder).toContain("40");
   });
 
   it("offers a calendar email field distinct from the governed directory email", () => {

@@ -2859,16 +2859,26 @@ export function renderApp(state: AppViewState) {
               loading: state.adminBotLoading,
               error: state.adminBotError,
               // Default to your own schedule once the roster lands: it is the one you came for,
-              // and it is the only one you can edit.
-              selectedMemberId: state.adminBotTimeAvailabilityMemberId || (state.memberId ?? ""),
+              // and it is the only one you can edit. A plain member is pinned to it -- whose time
+              // is committed where is planning data for the people who plan, so reading another
+              // member's schedule is an admin act (the service strips the fields for everyone
+              // else, so a stale selection here would render an empty page anyway).
+              selectedMemberId:
+                accessRole === "admin"
+                  ? state.adminBotTimeAvailabilityMemberId || (state.memberId ?? "")
+                  : (state.memberId ?? ""),
               onMemberChange: (memberId) => {
                 state.adminBotTimeAvailabilityMemberId = memberId;
+                // A different member's schedule carries a different note; keeping the draft would
+                // show one person's text over another's record.
+                state.adminBotAvailabilityNotesDraft = null;
               },
               range: state.adminBotTimeAvailabilityRange,
               onRangeChange: (range) => {
                 state.adminBotTimeAvailabilityRange = range;
               },
               viewerMemberId: state.memberId ?? null,
+              viewerIsAdmin: accessRole === "admin",
               draft: state.adminBotTimeAvailabilityDraft,
               onDraftChange: (draft) => {
                 state.adminBotTimeAvailabilityDraft = draft;
@@ -2881,6 +2891,10 @@ export function renderApp(state: AppViewState) {
               onMilestoneDraftChange: (draft) => {
                 state.adminBotMilestoneDraft = draft;
               },
+              notesDraft: state.adminBotAvailabilityNotesDraft,
+              onNotesDraftChange: (draft) => {
+                state.adminBotAvailabilityNotesDraft = draft;
+              },
               saving: state.adminBotTimeAvailabilitySaving,
               onSaveSchedule: (memberId, patch) => {
                 state.adminBotTimeAvailabilitySaving = true;
@@ -2890,7 +2904,10 @@ export function renderApp(state: AppViewState) {
                   // rejected row stays in its form so the member can correct it rather than
                   // retype it.
                   if (state.adminBotNotice?.kind === "success") {
-                    if (patch.milestones) {
+                    if (patch.availability_notes !== undefined) {
+                      // Back to following the stored value, which the reload has just refreshed.
+                      state.adminBotAvailabilityNotesDraft = null;
+                    } else if (patch.milestones) {
                       state.adminBotMilestoneDraft = { ...EMPTY_MILESTONE_DRAFT };
                     } else {
                       state.adminBotTimeAvailabilityDraft = { ...EMPTY_TIME_AVAILABILITY_DRAFT };

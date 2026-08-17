@@ -679,6 +679,11 @@ export class AdminBotService {
     if (stored.time_off && stored.time_off.length === 0) {
       delete stored.time_off;
     }
+    // Same reason for the note that goes with them: an emptied box means "nothing to explain", and
+    // storing "" would leave admins reading a blank note as though something had been written.
+    if (stored.availability_notes !== undefined && !stored.availability_notes.trim()) {
+      delete stored.availability_notes;
+    }
     this.store.saveLabMember(stored);
     this.recordAudit({
       type: "lab_member.upserted",
@@ -2147,6 +2152,9 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "availability",
   "time_off",
   "milestones",
+  // The prose that goes with the three lists above. Admin-visible on read (see
+  // adminBotScheduleMemberFields) and self-editable, like the rows it explains.
+  "availability_notes",
   "availability_doc_url",
 ] as const;
 
@@ -2742,7 +2750,20 @@ function validateMilestones(member: AdminBotLabMemberInput): string | undefined 
   return undefined;
 }
 
+// The overall note is prose, so the only rules are that it is prose and that it stays a note. The
+// ceiling matches the profile page's paragraph controls; without one, a free-text field on a record
+// served to every admin is an unbounded write.
+const MAX_AVAILABILITY_NOTES_LENGTH = 2000;
+
 function validateAvailability(member: AdminBotLabMemberInput): string | undefined {
+  if (member.availability_notes !== undefined) {
+    if (typeof member.availability_notes !== "string") {
+      return "member availability notes must be a string";
+    }
+    if (member.availability_notes.length > MAX_AVAILABILITY_NOTES_LENGTH) {
+      return `member availability notes cannot exceed ${MAX_AVAILABILITY_NOTES_LENGTH} characters`;
+    }
+  }
   if (member.availability !== undefined) {
     if (!Array.isArray(member.availability)) {
       return "member availability must be a list";

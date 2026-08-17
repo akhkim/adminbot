@@ -398,6 +398,39 @@ describe("renderAdminBot members panel — edit affordance", () => {
     expect(Object.keys(adminSaved[0]!)).not.toContain("availability");
   });
 
+  // Email is the login identity. A form that can rewrite it can lock someone out of the account
+  // they sign in with, and no admin editing a roster row means to do that.
+  it("locks the email of an existing member and leaves it out of the save", () => {
+    const saved: AdminBotLabMemberSaveInput[] = [];
+    const container = renderToDiv(
+      baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
+    );
+    const email = container.querySelector<HTMLInputElement>(
+      '#adminbot-edit-member-0 input[name="email"]',
+    );
+    expect(email?.readOnly).toBe(true);
+    expect(email?.value).toBe("pat@lab.co");
+    expect(
+      container.querySelector('#adminbot-edit-member-0 [data-testid="member-form-email-locked"]'),
+    ).not.toBeNull();
+
+    container
+      .querySelector<HTMLFormElement>("#adminbot-edit-member-0 form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+    expect(saved).toHaveLength(1);
+    expect(Object.keys(saved[0]!)).not.toContain("email");
+  });
+
+  // Creation is the one moment the address is a question rather than an established fact.
+  it("still asks for an email when adding a member", () => {
+    const container = renderToDiv(baseProps({ mode: "admin" }));
+    const email = container.querySelector<HTMLInputElement>(
+      '#adminbot-add-member input[name="email"]',
+    );
+    expect(email).not.toBeNull();
+    expect(email?.readOnly).toBe(false);
+  });
+
   it("keeps the full admin edit path on every row, including other members", () => {
     const roster = [member({ id: "pat", name: "Pat Doe" }), member({ id: "sam", name: "Sam Roe" })];
     const container = renderToDiv(

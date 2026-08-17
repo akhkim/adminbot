@@ -446,6 +446,7 @@ export type AppViewState = {
   adminBotTimeAvailabilityDraft: TimeAvailabilityDraft;
   adminBotTimeAwayDraft: TimeAvailabilityDraft;
   adminBotMilestoneDraft: MilestoneDraft;
+  adminBotAvailabilityNotesDraft: string | null;
   adminBotTimeAvailabilitySaving: boolean;
   adminBotBusyActionId: string | null;
   adminBotNotice: { kind: "success" | "error"; text: string } | null;
