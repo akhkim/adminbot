@@ -19,6 +19,8 @@ import {
   sendOnboardingGuide as sendOnboardingGuideRequest,
   saveOwnPaper,
   scanMemberCvs,
+  fetchCvDigest,
+  draftMemberCvBlurb,
   sendMemberNudge,
   updateOwnProfile,
   updateOwnSchedule,
@@ -97,6 +99,15 @@ export type AdminBotCvEntry = {
   organization: string;
   start?: string;
   end?: string;
+  start_iso?: string;
+};
+
+// Whether an added entry is news or just a document edit. See the service's cv-scan.ts.
+export type AdminBotCvRecency = "recent" | "backfilled" | "undated";
+
+export type AdminBotCvChange = {
+  entry: AdminBotCvEntry;
+  recency: AdminBotCvRecency;
 };
 
 export type AdminBotCvScanMemberResult = {
@@ -104,13 +115,27 @@ export type AdminBotCvScanMemberResult = {
   member_name: string;
   status: "unchanged" | "changed" | "first_scan" | "skipped" | "failed";
   reason?: string;
-  added: AdminBotCvEntry[];
+  added: AdminBotCvChange[];
   removed: AdminBotCvEntry[];
 };
 
 export type AdminBotCvScanResult = {
   scanned_at: string;
   results: AdminBotCvScanMemberResult[];
+  newsletter_draft: string;
+};
+
+export type AdminBotCvChangeEvent = {
+  member_id: string;
+  member_name: string;
+  detected_at: string;
+  recency: AdminBotCvRecency;
+  entry: AdminBotCvEntry;
+};
+
+export type AdminBotCvDigest = {
+  since: string;
+  changes: AdminBotCvChangeEvent[];
   newsletter_draft: string;
 };
 
@@ -418,6 +443,15 @@ export type AdminBotHost = {
   // scan is a point-in-time read, and a stale one shown as current would be misleading.
   adminBotCvScan: AdminBotCvScanResult | null;
   adminBotCvScanning: boolean;
+  // Digest of recorded changes over a window, and the date it was asked for. Kept apart from the
+  // scan result because they answer different questions: one is "what did this run find", the
+  // other "what has the lab learned since a date".
+  adminBotCvDigest: AdminBotCvDigest | null;
+  adminBotCvDigestSince: string;
+  adminBotCvDigestLoading: boolean;
+  // Blurbs are per member and drafted on request, so they are held by id rather than as one slot.
+  adminBotCvBlurbs: Record<string, string>;
+  adminBotCvBlurbMemberId: string | null;
   // Calendar tab. Written by controllers/calendar.ts, which shares this host rather than owning a
   // second one: the invite half reads the same roster and papers the rest of the tab loaded.
   calendarEvents?: CalendarEvent[];
@@ -818,6 +852,70 @@ function requirePrivilegedSession(
 // Re-reads every linked CV and replaces the panel's scan result. Deliberately not merged into the
 // previous result: a member whose link broke since the last run must stop showing that run's
 // changes as though they were still current.
+export function setAdminBotCvDigestSince(host: AdminBotHost, since: string): void {
+  host.adminBotCvDigestSince = since;
+}
+
+/** Loads recorded changes since the chosen date. Reads the ledger; never triggers a scan. */
+export async function loadAdminBotCvDigest(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  const since = host.adminBotCvDigestSince?.trim();
+  if (!since) {
+    host.adminBotNotice = { kind: "error", text: "Pick a date to summarise from." };
+    return;
+  }
+  host.adminBotCvDigestLoading = true;
+  host.adminBotNotice = null;
+  try {
+    // A date input gives YYYY-MM-DD; the service compares ISO timestamps, so anchor it to the
+    // start of that day rather than letting a bare date sort unpredictably against them.
+    const result = await fetchCvDigest(`${since}T00:00:00.000Z`, session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotNotice = {
+        kind: "error",
+        text:
+          result.kind === "unreachable"
+            ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+            : `Could not load the digest: ${result.kind}`,
+      };
+      return;
+    }
+    host.adminBotCvDigest = result.value as AdminBotCvDigest;
+  } finally {
+    host.adminBotCvDigestLoading = false;
+  }
+}
+
+/** Drafts one member's introduction from their stored CV entries. */
+export async function draftAdminBotCvBlurb(host: AdminBotHost, memberId: string): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  host.adminBotCvBlurbMemberId = memberId;
+  host.adminBotNotice = null;
+  try {
+    const result = await draftMemberCvBlurb(memberId, session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotNotice = {
+        kind: "error",
+        text:
+          result.kind === "unreachable"
+            ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+            : `Could not draft a blurb: ${result.kind}`,
+      };
+      return;
+    }
+    const blurb = (result.value as { blurb?: string }).blurb ?? "";
+    host.adminBotCvBlurbs = { ...host.adminBotCvBlurbs, [memberId]: blurb };
+  } finally {
+    host.adminBotCvBlurbMemberId = null;
+  }
+}
+
 export async function scanAdminBotCvs(host: AdminBotHost): Promise<void> {
   const session = requirePrivilegedSession(host);
   if (!session) {

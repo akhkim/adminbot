@@ -1117,6 +1117,57 @@ export async function scanMemberCvs(
   return { ok: true, value: result.body };
 }
 
+/** Reads recorded CV changes since a date (GET /cv/digest). */
+export async function fetchCvDigest(
+  since: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/cv/digest?since=${encodeURIComponent(since)}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/** Drafts one member's newsletter introduction (POST /cv/blurb/:id). */
+export async function draftMemberCvBlurb(
+  memberId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/cv/blurb/${encodeURIComponent(memberId)}`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    // 409 means the member has simply never been scanned; the message says so and is worth
+    // surfacing verbatim rather than flattening into a generic failure.
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: true }) };
+  }
+  return { ok: true, value: result.body };
+}
+
 // Creates or edits a paper over the member's own session (PUT /papers/:id). Papers are written on
 // the member Bearer rather than the gateway tool path because the service decides there what a
 // plain member may touch -- their own submissions, without the governance fields -- and because a

@@ -8,7 +8,10 @@ import { icons } from "../../icons.ts";
 import type { MemberNudgeChannel, MemberProfileUpdate } from "../auth/session.ts";
 import type {
   AdminBotActionProposal,
+  AdminBotCvChange,
+  AdminBotCvDigest,
   AdminBotCvEntry,
+  AdminBotCvRecency,
   AdminBotCvScanMemberResult,
   AdminBotCvScanResult,
   AdminBotDashboardData,
@@ -48,6 +51,14 @@ export type AdminBotProps = {
   cvScan: AdminBotCvScanResult | null;
   cvScanning: boolean;
   onScanCvs: () => void;
+  cvDigest: AdminBotCvDigest | null;
+  cvDigestSince: string;
+  cvDigestLoading: boolean;
+  onCvDigestSinceChange: (since: string) => void;
+  onLoadCvDigest: () => void;
+  cvBlurbs: Record<string, string>;
+  cvBlurbMemberId: string | null;
+  onDraftCvBlurb: (memberId: string) => void;
   onRefresh: () => void;
   onApprove: (proposal: AdminBotActionProposal) => void;
   onRemove: (proposal: AdminBotActionProposal) => void;
@@ -2302,12 +2313,15 @@ const cvStatusLabels: Record<AdminBotCvScanMemberResult["status"], string> = {
   failed: "Could not read",
 };
 
-function renderCvEntry(entry: AdminBotCvEntry) {
+// The entry itself, without a wrapping element, so it can sit in a list item or a table cell.
+function renderCvEntryBody(entry: AdminBotCvEntry) {
   const dates = [entry.start, entry.end].filter(Boolean).join(" – ");
-  return html`<li>
-    ${entry.title}${entry.organization ? html` — ${entry.organization}` : nothing}
-    ${dates ? html`<span class="muted">(${dates})</span>` : nothing}
-  </li>`;
+  return html`${entry.title}${entry.organization ? html` — ${entry.organization}` : nothing}
+  ${dates ? html`<span class="muted">(${dates})</span>` : nothing}`;
+}
+
+function renderCvEntry(entry: AdminBotCvEntry) {
+  return html`<li>${renderCvEntryBody(entry)}</li>`;
 }
 
 function renderCvUpdates(props: AdminBotProps) {
@@ -2357,6 +2371,7 @@ function renderCvUpdates(props: AdminBotProps) {
                   <th>Status</th>
                   <th>Added</th>
                   <th>Removed</th>
+                  <th>Blurb</th>
                 </tr>
               </thead>
               <tbody>
@@ -2371,7 +2386,7 @@ function renderCvUpdates(props: AdminBotProps) {
                       <td>
                         ${entry.added.length
                           ? html`<ul>
-                              ${entry.added.map(renderCvEntry)}
+                              ${entry.added.map(renderCvChange)}
                             </ul>`
                           : html`<span class="muted">—</span>`}
                       </td>
@@ -2382,6 +2397,7 @@ function renderCvUpdates(props: AdminBotProps) {
                             </ul>`
                           : html`<span class="muted">—</span>`}
                       </td>
+                      <td>${renderCvBlurbCell(props, entry.member_id)}</td>
                     </tr>
                   `,
                 )}
@@ -2391,7 +2407,98 @@ function renderCvUpdates(props: AdminBotProps) {
         : html`<p class="muted">
             Run a scan to see what changed since each member's CV was last read.
           </p>`}
+
+      <div class="adminbot-cv__digest">
+        <div class="card-title">Digest</div>
+        <div class="card-sub">
+          Everything recorded since a date, not just what the last scan found. A scan updates each
+          member's baseline, so without this the copy above is only ever about that one run.
+        </div>
+        <div class="adminbot-cv__actions">
+          <label class="adminbot-form__field"
+            ><span>Since</span>
+            <input
+              type="date"
+              .value=${props.cvDigestSince}
+              @change=${(event: Event) =>
+                props.onCvDigestSinceChange((event.target as HTMLInputElement).value)}
+            />
+          </label>
+          <button
+            class="btn btn--sm"
+            type="button"
+            ?disabled=${props.cvDigestLoading || !props.cvDigestSince}
+            @click=${props.onLoadCvDigest}
+          >
+            ${props.cvDigestLoading ? "Loading..." : "Build digest"}
+          </button>
+        </div>
+        ${props.cvDigest ? renderCvDigest(props.cvDigest) : nothing}
+      </div>
     </div>
+  `;
+}
+
+const cvRecencyLabels: Record<AdminBotCvRecency, string> = {
+  recent: "recent",
+  backfilled: "backfilled",
+  undated: "no date",
+};
+
+// The recency is shown on every added line, because "changed but not announced" is otherwise
+// indistinguishable from "we missed it" to whoever is reading the table.
+function renderCvChange(change: AdminBotCvChange) {
+  return html`<li>
+    ${renderCvEntryBody(change.entry)}
+    <span class="muted">[${cvRecencyLabels[change.recency]}]</span>
+  </li>`;
+}
+
+function renderCvBlurbCell(props: AdminBotProps, memberId: string) {
+  const blurb = props.cvBlurbs[memberId];
+  const busy = props.cvBlurbMemberId === memberId;
+  return html`
+    <button class="btn btn--sm" type="button" ?disabled=${busy} @click=${() =>
+      props.onDraftCvBlurb(memberId)}>
+      ${busy ? "Drafting..." : blurb ? "Redraft" : "Draft blurb"}
+    </button>
+    ${blurb ? html`<textarea rows="4" .value=${blurb} readonly></textarea>` : nothing}
+  `;
+}
+
+function renderCvDigest(digest: AdminBotCvDigest) {
+  if (!digest.changes.length) {
+    return html`<p class="muted">Nothing recorded since ${digest.since.slice(0, 10)}.</p>`;
+  }
+  return html`
+    ${digest.newsletter_draft
+      ? html`<textarea rows="8" .value=${digest.newsletter_draft} readonly></textarea>`
+      : html`<p class="muted">
+          ${digest.changes.length} change${digest.changes.length === 1 ? "" : "s"} recorded, none of
+          them recent enough to announce.
+        </p>`}
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Detected</th>
+          <th>Member</th>
+          <th>Entry</th>
+          <th>Recency</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${digest.changes.map(
+          (change) => html`
+            <tr>
+              <td>${change.detected_at.slice(0, 10)}</td>
+              <td>${change.member_name}</td>
+              <td>${renderCvEntryBody(change.entry)}</td>
+              <td>${cvRecencyLabels[change.recency]}</td>
+            </tr>
+          `,
+        )}
+      </tbody>
+    </table>
   `;
 }
 
