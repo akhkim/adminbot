@@ -2329,6 +2329,9 @@ function renderCvUpdates(props: AdminBotProps) {
   // Only members with a CV link ever appear in a result, so this counts the linked roster rather
   // than the whole one -- "0 of 40" would read as a failure when most people simply have no link.
   const linked = props.data.members.filter((member) => member.cv_url?.trim()).length;
+  // Resolved against the roster, not the last scan: a blurb is drafted per member and should
+  // survive re-scanning, and a member who has one is not necessarily in the newest result.
+  const blurbed = props.data.members.filter((member) => props.cvBlurbs[member.id]);
   return html`
     <div class="adminbot-cv">
       <div class="adminbot-cv__actions">
@@ -2352,64 +2355,91 @@ function renderCvUpdates(props: AdminBotProps) {
             No member has linked a CV yet. Members add theirs under My profile.
           </p>`
         : nothing}
+      ${scan?.newsletter_draft
+        ? html`<div class="adminbot-cv__draft">
+            <div class="adminbot-cv__section-title">Newsletter draft</div>
+            <div class="card-sub">
+              Built from new positions, degrees, and awards that started recently. Edit before
+              sending — nothing is published from here.
+            </div>
+            <textarea rows="8" .value=${scan.newsletter_draft} readonly></textarea>
+          </div>`
+        : nothing}
       ${scan
         ? html`
-            ${scan.newsletter_draft
-              ? html`<div class="adminbot-cv__draft">
-                  <div class="card-title">Newsletter draft</div>
-                  <div class="card-sub">
-                    Built from new positions, degrees, and awards. Edit before sending — nothing is
-                    published from here.
+            <div class="adminbot-cv__grid">
+              <div class="adminbot-cv__row adminbot-cv__row--head">
+                <span>Member</span><span>Status</span><span>Added</span><span>Removed</span>
+                <span></span>
+              </div>
+              ${scan.results.map(
+                (entry) => html`
+                  <div class="adminbot-cv__row">
+                    <strong>${entry.member_name}</strong>
+                    <span
+                      >${cvStatusLabels[entry.status]}
+                      ${entry.reason ? html`<small class="muted">${entry.reason}</small>` : nothing}
+                    </span>
+                    <span>
+                      ${entry.added.length
+                        ? html`<ul class="adminbot-cv__entries">
+                            ${entry.added.map(renderCvChange)}
+                          </ul>`
+                        : html`<span class="muted">—</span>`}
+                    </span>
+                    <span>
+                      ${entry.removed.length
+                        ? html`<ul class="adminbot-cv__entries">
+                            ${entry.removed.map(renderCvEntry)}
+                          </ul>`
+                        : html`<span class="muted">—</span>`}
+                    </span>
+                    <button
+                      class="btn btn--sm"
+                      type="button"
+                      ?disabled=${props.cvBlurbMemberId === entry.member_id}
+                      @click=${() => props.onDraftCvBlurb(entry.member_id)}
+                    >
+                      ${props.cvBlurbMemberId === entry.member_id
+                        ? "Drafting..."
+                        : props.cvBlurbs[entry.member_id]
+                          ? "Redraft"
+                          : "Draft blurb"}
+                    </button>
                   </div>
-                  <textarea rows="8" .value=${scan.newsletter_draft} readonly></textarea>
-                </div>`
-              : nothing}
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Member</th>
-                  <th>Status</th>
-                  <th>Added</th>
-                  <th>Removed</th>
-                  <th>Blurb</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${scan.results.map(
-                  (entry) => html`
-                    <tr>
-                      <td>${entry.member_name}</td>
-                      <td>
-                        ${cvStatusLabels[entry.status]}
-                        ${entry.reason ? html`<div class="muted">${entry.reason}</div>` : nothing}
-                      </td>
-                      <td>
-                        ${entry.added.length
-                          ? html`<ul>
-                              ${entry.added.map(renderCvChange)}
-                            </ul>`
-                          : html`<span class="muted">—</span>`}
-                      </td>
-                      <td>
-                        ${entry.removed.length
-                          ? html`<ul>
-                              ${entry.removed.map(renderCvEntry)}
-                            </ul>`
-                          : html`<span class="muted">—</span>`}
-                      </td>
-                      <td>${renderCvBlurbCell(props, entry.member_id)}</td>
-                    </tr>
-                  `,
-                )}
-              </tbody>
-            </table>
+                `,
+              )}
+            </div>
           `
         : html`<p class="muted">
             Run a scan to see what changed since each member's CV was last read.
           </p>`}
+      ${blurbed.length
+        ? html`<div class="adminbot-cv__blurbs">
+            <div class="adminbot-cv__section-title">Member introductions</div>
+            ${blurbed.map(
+              (member) => html`
+                <div class="adminbot-cv__blurb">
+                  <div class="adminbot-cv__blurb-head">
+                    <strong>${member.name}</strong>
+                    <button
+                      class="btn btn--sm"
+                      type="button"
+                      ?disabled=${props.cvBlurbMemberId === member.id}
+                      @click=${() => props.onDraftCvBlurb(member.id)}
+                    >
+                      Redraft
+                    </button>
+                  </div>
+                  <textarea rows="4" .value=${props.cvBlurbs[member.id] ?? ""}></textarea>
+                </div>
+              `,
+            )}
+          </div>`
+        : nothing}
 
-      <div class="adminbot-cv__digest">
-        <div class="card-title">Digest</div>
+      <div class="adminbot-cv__draft">
+        <div class="adminbot-cv__section-title">Digest</div>
         <div class="card-sub">
           Everything recorded since a date, not just what the last scan found. A scan updates each
           member's baseline, so without this the copy above is only ever about that one run.
@@ -2450,20 +2480,11 @@ const cvRecencyLabels: Record<AdminBotCvRecency, string> = {
 function renderCvChange(change: AdminBotCvChange) {
   return html`<li>
     ${renderCvEntryBody(change.entry)}
-    <span class="muted">[${cvRecencyLabels[change.recency]}]</span>
+    <span
+      class="adminbot-cv__tag ${change.recency === "recent" ? "adminbot-cv__tag--recent" : ""}"
+      >${cvRecencyLabels[change.recency]}</span
+    >
   </li>`;
-}
-
-function renderCvBlurbCell(props: AdminBotProps, memberId: string) {
-  const blurb = props.cvBlurbs[memberId];
-  const busy = props.cvBlurbMemberId === memberId;
-  return html`
-    <button class="btn btn--sm" type="button" ?disabled=${busy} @click=${() =>
-      props.onDraftCvBlurb(memberId)}>
-      ${busy ? "Drafting..." : blurb ? "Redraft" : "Draft blurb"}
-    </button>
-    ${blurb ? html`<textarea rows="4" .value=${blurb} readonly></textarea>` : nothing}
-  `;
 }
 
 function renderCvDigest(digest: AdminBotCvDigest) {
@@ -2477,28 +2498,21 @@ function renderCvDigest(digest: AdminBotCvDigest) {
           ${digest.changes.length} change${digest.changes.length === 1 ? "" : "s"} recorded, none of
           them recent enough to announce.
         </p>`}
-    <table class="table">
-      <thead>
-        <tr>
-          <th>Detected</th>
-          <th>Member</th>
-          <th>Entry</th>
-          <th>Recency</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${digest.changes.map(
-          (change) => html`
-            <tr>
-              <td>${change.detected_at.slice(0, 10)}</td>
-              <td>${change.member_name}</td>
-              <td>${renderCvEntryBody(change.entry)}</td>
-              <td>${cvRecencyLabels[change.recency]}</td>
-            </tr>
-          `,
-        )}
-      </tbody>
-    </table>
+    <div class="adminbot-cv__grid">
+      <div class="adminbot-cv__row adminbot-cv__row--digest adminbot-cv__row--head">
+        <span>Detected</span><span>Member</span><span>Entry</span><span>Recency</span>
+      </div>
+      ${digest.changes.map(
+        (change) => html`
+          <div class="adminbot-cv__row adminbot-cv__row--digest">
+            <span>${change.detected_at.slice(0, 10)}</span>
+            <strong>${change.member_name}</strong>
+            <span>${renderCvEntryBody(change.entry)}</span>
+            <span>${cvRecencyLabels[change.recency]}</span>
+          </div>
+        `,
+      )}
+    </div>
   `;
 }
 

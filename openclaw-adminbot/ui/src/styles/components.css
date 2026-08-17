@@ -9899,3 +9899,136 @@ select.input:focus {
   fill: none;
   stroke-width: 1.5px;
 }
+
+/* CV updates panel.
+   Its own grid rather than .adminbot-table: that one hardcodes five columns for the members
+   table, and these rows carry stacked entry lists whose height varies per row. */
+.adminbot-cv {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.adminbot-cv__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* The date field sits inline with its button, so it must not stretch like a form field. */
+.adminbot-cv__actions .adminbot-form__field {
+  flex: 0 0 auto;
+  max-width: 190px;
+}
+
+.adminbot-cv__grid {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.adminbot-cv__row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(110px, 0.6fr) minmax(200px, 1.4fr) minmax(180px, 1fr) auto;
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-cv__row:last-child {
+  border-bottom: 0;
+}
+
+.adminbot-cv__row--head {
+  color: var(--muted);
+  background: var(--bg-muted);
+  border-bottom: 1px solid var(--border-strong);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  align-items: center;
+}
+
+.adminbot-cv__row--digest {
+  grid-template-columns: minmax(100px, 0.5fr) minmax(120px, 0.7fr) minmax(240px, 2fr) minmax(90px, 0.4fr);
+}
+
+.adminbot-cv__entries {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adminbot-cv__entries li {
+  line-height: 1.4;
+}
+
+/* Recency is the difference between "announced" and "recorded but not news", so it reads as a
+   status chip rather than trailing prose. */
+.adminbot-cv__tag {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--control-ui-text-xs);
+  white-space: nowrap;
+  background: var(--bg-muted);
+  color: var(--muted);
+}
+
+.adminbot-cv__tag--recent {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.adminbot-cv__draft {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.adminbot-cv__draft textarea,
+.adminbot-cv__blurb textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-strong);
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* Blurbs live below the table, full width. In a table cell they were a four-line box showing the
+   middle of a sentence, which is unreadable and unusable for copying. */
+.adminbot-cv__blurbs {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.adminbot-cv__blurb {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.adminbot-cv__blurb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.adminbot-cv__section-title {
+  font-weight: 600;
+  color: var(--text-strong);
+}
