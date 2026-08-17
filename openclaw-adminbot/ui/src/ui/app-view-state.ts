@@ -8,6 +8,7 @@ import type {
 import type { RecommendationSchool } from "./adminbot/data/logistics-draft.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
+import type { BlockerSort } from "./adminbot/views/admin.ts";
 import type { LogisticsMode, LogisticsTemplate } from "./adminbot/views/logistics.ts";
 import type {
   MilestoneDraft,
@@ -454,6 +455,8 @@ export type AppViewState = {
   adminBotPhotoApplyBusy: boolean;
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
+  adminBotBlockerSort: BlockerSort;
+  nudgeBellOpen: boolean;
   // Prototype-only: blockers a member raises from My Projects & Papers. Held in the browser
   // because the AdminBot service has no blocker route yet -- see views/my-work.ts.
   myWorkBlockerDraft: import("./adminbot/views/my-work.ts").BlockerDraft | null;

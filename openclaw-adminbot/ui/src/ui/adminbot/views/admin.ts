@@ -25,11 +25,18 @@ import type {
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
 import { nextStepFor, type NextStep } from "../next-step.ts";
+import { nudgeSaveInput } from "../nudge-alerts.ts";
+import { blockerAgeDays, blockerOf } from "./my-work.ts";
+
+export type BlockerSort = "stage" | "age" | "paper";
 import { renderAdminBotReimbursements } from "./reimbursements.ts";
 
 export type AdminBotProps = {
   panel: AdminBotPanel;
   mode?: "admin" | "general";
+  /** Which column the reported-blocker list is sorted by. */
+  blockerSort?: BlockerSort;
+  onBlockerSort?: (key: BlockerSort) => void;
   // Roster id of the signed-in member, so their own row sorts first and gets a
   // self-edit affordance. Null in break-glass gateway-token-only access, where no
   // member is signed in and therefore no row is "mine".
@@ -1755,13 +1762,14 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
   return html`
     ${renderPaperOverview(props, papers)}
     ${renderPaperStats(papers)}
+    ${renderBlockers(props, papers)}
     <article class="adminbot-editor-card">
       <div class="card-title">Next step per paper</div>
       <div class="card-sub">
         Derived from the PaperFlow dependency graph — what each paper is waiting on right now,
         before anything is overdue.
       </div>
-      ${renderNextSteps(papers)}
+      ${renderNextSteps(props, papers)}
     </article>
     <article class="adminbot-editor-card">
       <div class="card-title">Paper nudges</div>
@@ -1770,6 +1778,22 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     </article>
     ${renderAddPaperCard(props, { governance: true })}
   `;
+}
+
+/**
+ * Records the in-app alert and copies the message in one gesture.
+ *
+ * The write is internal -- a flag on the paper the member already owns, which the same app reads
+ * back -- so it needs no approval gate. The copy stays because the bell is a reminder, not a
+ * conversation: the admin usually wants to say the same thing wherever the lab actually talks.
+ */
+function sendNudge(event: Event, props: AdminBotProps, paper: AdminBotPaperRecord, next: NextStep) {
+  // From the roster, not from the login form's name field: that one holds what someone typed
+  // while signing up, which is empty for every already-registered admin.
+  const self = props.data.members.find((member) => member.id === props.signedInMemberId);
+  const by = self?.name?.trim() || "An admin";
+  props.onSavePaper(nudgeSaveInput(paper, next.headline, by));
+  copyNudge(event, next.message);
 }
 
 /**
@@ -1894,10 +1918,92 @@ function renderPaperStats(papers: AdminBotPaperRecord[]) {
   `;
 }
 
+/**
+ * Reported blockers, sortable.
+ *
+ * Sorting is the whole point: a chat thread of "what is holding this up" cannot be triaged, but
+ * a list grouped by stage can -- five papers stuck at Submission is a systemic problem, five
+ * stuck at different stages is five conversations.
+ *
+ * Age is offered alongside stage because the oldest blocker is usually the real one; a stage
+ * with a two-day-old report needs less attention than one sitting for three weeks.
+ */
+function renderBlockers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
+  const rows = papers
+    .map((paper) => ({ paper, blocker: blockerOf(paper) }))
+    .filter((row): row is { paper: AdminBotPaperRecord; blocker: NonNullable<ReturnType<typeof blockerOf>> } =>
+      Boolean(row.blocker),
+    );
+
+  if (rows.length === 0) {
+    return html`
+      <article class="adminbot-editor-card">
+        <div class="card-title">Reported blockers</div>
+        <div class="adminbot-empty adminbot-empty--compact">Nothing reported.</div>
+      </article>
+    `;
+  }
+
+  const sort: BlockerSort = props.blockerSort ?? "stage";
+  const sorted = [...rows].sort((left, right) => {
+    if (sort === "age") {
+      return (left.blocker.at || "").localeCompare(right.blocker.at || "");
+    }
+    if (sort === "paper") {
+      return left.paper.title.localeCompare(right.paper.title);
+    }
+    return (
+      paperSteps.indexOf(left.blocker.stage as AdminBotPaperStep) -
+        paperSteps.indexOf(right.blocker.stage as AdminBotPaperStep) ||
+      left.paper.title.localeCompare(right.paper.title)
+    );
+  });
+
+  return html`
+    <article class="adminbot-editor-card">
+      <div class="card-title">Reported blockers</div>
+      <div class="card-sub">${rows.length} open. Click one to read the full report.</div>
+      <div class="blockers__sort">
+        <span>Sort by</span>
+        ${(["stage", "age", "paper"] as const satisfies readonly BlockerSort[]).map(
+          (key) => html`
+            <button
+              type="button"
+              class=${`btn btn--sm ${sort === key ? "primary" : ""}`}
+              data-testid=${`blocker-sort-${key}`}
+              @click=${() => props.onBlockerSort?.(key)}
+            >
+              ${key === "stage" ? "Stage" : key === "age" ? "Oldest first" : "Paper"}
+            </button>
+          `,
+        )}
+      </div>
+      <div class="blockers">
+        ${sorted.map(({ paper, blocker }) => {
+          const days = blockerAgeDays(blocker.at);
+          return html`
+            <details class="blocker">
+              <summary class="blocker__row">
+                <span class="blocker__stage">${stepLabels[blocker.stage] ?? blocker.stage}</span>
+                <span class="blocker__title">${blocker.title}</span>
+                <span class="blocker__paper">${paper.title}</span>
+                <span class="blocker__age">
+                  ${days === undefined ? "" : days === 0 ? "today" : `${days}d`}
+                </span>
+              </summary>
+              <p class="blocker__note">${blocker.note || "No further detail given."}</p>
+            </details>
+          `;
+        })}
+      </div>
+    </article>
+  `;
+}
+
 // The dependency-based counterpart to renderNudges. That one answers "who is late"; this one
 // answers "what is next and who owns it", which is knowable the moment a step completes rather
 // than three business days later. Read-only: computed in the browser, writes nothing.
-function renderNextSteps(papers: AdminBotPaperRecord[]) {
+function renderNextSteps(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
   const rows = papers
     .map((paper) => ({ paper, next: nextStepFor(paper) }))
     .filter((row): row is { paper: AdminBotPaperRecord; next: NextStep } => Boolean(row.next));
@@ -1945,7 +2051,7 @@ function renderNextSteps(papers: AdminBotPaperRecord[]) {
                     class="btn btn--sm"
                     data-testid=${`nudge-${paper.id}`}
                     title=${next.message}
-                    @click=${(event: Event) => copyNudge(event, next.message)}
+                    @click=${(event: Event) => sendNudge(event, props, paper, next)}
                   >
                     Nudge ${next.waitingOn}
                   </button>

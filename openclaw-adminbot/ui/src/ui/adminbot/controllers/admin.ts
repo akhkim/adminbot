@@ -1,3 +1,4 @@
+import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
 import type { GatewayBrowserClient } from "../../gateway.ts";
 import type { UiSettings } from "../../storage.ts";
 // Control UI controller for the AdminBot dashboard surface.
@@ -145,6 +146,14 @@ export type AdminBotPaperSaveInput = {
   conference?: string;
   /** How likely the authors think this venue is, as a percentage string. */
   confidence?: string;
+  /** One live blocker per paper, stored on the record so admins can see and sort it. */
+  blockerStage?: string;
+  blockerTitle?: string;
+  blockerNote?: string;
+  blockerAt?: string;
+  /** In-app nudge alert, written by an admin and cleared by the member who reads it. */
+  nudgeLog?: string;
+  nudgeSeenAt?: string;
   topic?: string;
   reminderStatus?: "idle" | "waiting_on_authors" | "blocked" | "complete";
 };
@@ -1211,6 +1220,18 @@ export async function sendAdminBotMemberNudge(host: AdminBotHost): Promise<void>
   }
 }
 
+/**
+ * Marks the alerts the member just opened as read.
+ *
+ * Sequential rather than parallel: each save reloads the dashboard, and overlapping writes to the
+ * same paper list would race the refresh against itself.
+ */
+export async function markAdminBotNudgesSeen(host: AdminBotHost): Promise<void> {
+  for (const paper of papersWithUnread(host.adminBotData?.papers ?? [])) {
+    await saveAdminBotPaper(host, seenSaveInput(paper));
+  }
+}
+
 export async function saveAdminBotPaper(
   host: AdminBotHost,
   paper: AdminBotPaperSaveInput,
@@ -1221,6 +1242,12 @@ export async function saveAdminBotPaper(
     ...(paper.googleDrivePdfUrl ? { google_drive_pdf_url: paper.googleDrivePdfUrl } : {}),
     ...(paper.conference ? { conference: paper.conference } : {}),
     ...(paper.confidence ? { confidence: paper.confidence } : {}),
+    ...(paper.blockerStage === undefined ? {} : { blocker_stage: paper.blockerStage }),
+    ...(paper.blockerTitle === undefined ? {} : { blocker_title: paper.blockerTitle }),
+    ...(paper.blockerNote === undefined ? {} : { blocker_note: paper.blockerNote }),
+    ...(paper.blockerAt === undefined ? {} : { blocker_at: paper.blockerAt }),
+    ...(paper.nudgeLog === undefined ? {} : { nudge_log: paper.nudgeLog }),
+    ...(paper.nudgeSeenAt === undefined ? {} : { nudge_seen_at: paper.nudgeSeenAt }),
     ...(paper.topic ? { topic: paper.topic } : {}),
   };
   // Prefer the member's own session: the service scopes the write to what that member may change

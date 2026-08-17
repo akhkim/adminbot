@@ -27,6 +27,7 @@ import {
   saveAdminBotOwnSchedule,
   saveAdminBotPaper,
   saveAdminBotSensitiveInfo,
+  markAdminBotNudgesSeen,
   saveAdminBotSettings,
   sendAdminBotMemberNudge,
   sendAdminBotReimbursementMessage,
@@ -58,7 +59,8 @@ import { renderLabSharing } from "./adminbot/views/lab-sharing.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate } from "./adminbot/views/login-gate.ts";
 import { renderAdminBotLogistics } from "./adminbot/views/logistics.ts";
-import { renderMyWork } from "./adminbot/views/my-work.ts";
+import { agoLabel, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
+import { ownPapers, renderMyWork } from "./adminbot/views/my-work.ts";
 import { renderOnboardingChecklist } from "./adminbot/views/onboarding-checklist.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
 import { renderPublicShell } from "./adminbot/views/public-shell.ts";
@@ -1329,6 +1331,105 @@ function buildArtifactSidebarContent(params: {
   return { kind: "markdown", content, rawText: content };
 }
 
+/**
+ * The bell: how a member finds out an admin asked them for something.
+ *
+ * It sits in the top bar rather than on the paper card because the point of a notification is to
+ * reach someone who is not already looking at the thing.
+ *
+ * Reading does not delete. The badge counts unread, but the panel keeps every notification the
+ * member has ever had, greyed once read -- because the question after you read a reminder is
+ * usually "what exactly was I asked, and when", and an inbox that empties itself cannot answer it.
+ */
+function renderNudgeBell(state: AppViewState) {
+  const papers = ownPapers(state);
+  const alerts = nudgeAlerts(papers);
+  const unread = alerts.filter((alert) => !alert.read).length;
+  const open = state.nudgeBellOpen;
+  if (alerts.length === 0) {
+    return nothing;
+  }
+  return html`
+    <div class="bell">
+      ${open
+        ? html`<button
+            type="button"
+            class="bell__scrim"
+            aria-label="Close notifications"
+            @click=${() => {
+              state.nudgeBellOpen = false;
+            }}
+          ></button>`
+        : nothing}
+      <button
+        type="button"
+        class="bell__button"
+        data-testid="nudge-bell"
+        aria-label=${`Notifications, ${unread} unread`}
+        aria-expanded=${open}
+        @click=${() => {
+          // Read the flag at click time rather than closing over the value from render: the
+          // dashboard refreshes on a timer, so a render can land between paint and click and
+          // leave the captured value describing a state that is already gone.
+          state.nudgeBellOpen = !state.nudgeBellOpen;
+        }}
+      >
+        <span class="bell__icon" aria-hidden="true">${icons.bell}</span>
+        ${unread > 0
+          ? html`<span class="bell__badge" data-testid="nudge-bell-count">${unread}</span>`
+          : nothing}
+      </button>
+      ${open
+        ? html`
+            <div class="bell__panel" data-testid="nudge-bell-panel">
+              <div class="bell__panel-head">
+                <span>Notifications</span>
+                ${unread > 0
+                  ? html`<button
+                      type="button"
+                      class="bell__mark"
+                      data-testid="nudge-mark-all"
+                      @click=${() => {
+                        void markAdminBotNudgesSeen(state);
+                      }}
+                    >
+                      Mark all as read
+                    </button>`
+                  : nothing}
+              </div>
+              <div class="bell__list">
+                ${alerts.map(
+                  (alert) => html`
+                    <button
+                      type="button"
+                      class=${`bell__item ${alert.read ? "bell__item--read" : ""}`}
+                      @click=${() => {
+                        state.nudgeBellOpen = false;
+                        void markAdminBotNudgesSeen(state);
+                        state.setTab("myWork");
+                      }}
+                    >
+                      <span class="bell__item-top">
+                        <span class="bell__dot" aria-hidden="true"></span>
+                        <span class="bell__item-text">
+                          <strong>${alert.by}</strong> asked you to update
+                          <strong>${alert.node}</strong>
+                        </span>
+                      </span>
+                      <span class="bell__item-meta">
+                        ${alert.paperTitle} · ${agoLabel(alert.at)}
+                      </span>
+                    </button>
+                  `,
+                )}
+              </div>
+            </div>
+          `
+        : nothing}
+    </div>
+  `;
+}
+
 export function renderApp(state: AppViewState) {
   const updatableState = state as AppViewState & { requestUpdate?: () => void };
   const requestHostUpdate =
@@ -2547,6 +2648,7 @@ export function renderApp(state: AppViewState) {
               <span class="topbar-search__label">${t("common.search")}</span>
               <kbd class="topbar-search__kbd">⌘K</kbd>
             </button>
+            ${renderNudgeBell(state)}
             <div class="topbar-status">${renderTopbarThemeModeToggle(state)}</div>
           </div>
         </div>
@@ -3027,6 +3129,10 @@ export function renderApp(state: AppViewState) {
               onGenerateReimbursement: () => void generateAdminBotReimbursement(state),
               onResetReimbursement: () => resetAdminBotReimbursement(state),
               memberNudge: state.adminBotMemberNudge,
+              blockerSort: state.adminBotBlockerSort,
+              onBlockerSort: (key) => {
+                state.adminBotBlockerSort = key;
+              },
               onNudgeChannelChange: (channel) => setAdminBotNudgeChannel(state, channel),
               onNudgeMessageChange: (message) => setAdminBotNudgeMessage(state, message),
               onNudgeSubjectChange: (subject) => setAdminBotNudgeSubject(state, subject),

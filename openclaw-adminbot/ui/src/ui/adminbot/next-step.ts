@@ -216,6 +216,9 @@ export function evidenceCountFor(paper: AdminBotPaperRecord): number {
  * all rather than an empty box.
  */
 export function nextStepFor(paper: AdminBotPaperRecord): NextStep | undefined {
+  if (isDormant(paper)) {
+    return undefined;
+  }
   const result = tick(paperflow, paperToState(paper));
   const evidenceCount = evidenceCountFor(paper);
 
@@ -307,6 +310,34 @@ const TASK_COPY: Record<string, { title: string; hint: string }> = {
  */
 const LOGIC_ONLY = new Set<NodeId>(["JN"]);
 
+/**
+ * A paper this old is not "late", it is dormant, and nudging it every week trains people to
+ * ignore nudges for the papers that are moving. Two years is deliberately generous: it is long
+ * enough that nothing on a normal submission cycle trips it.
+ */
+const DORMANT_MONTHS = 24;
+
+/** Admin-only escape hatch. `checks` is rejected from member writes, so only a PI can set it. */
+const NUDGE_OVERRIDE = "nudge_override";
+
+/**
+ * Should this paper be left alone?
+ *
+ * Silent by design: the rule is internal, so nobody games the clock. The card still says the
+ * paper is dormant, because a card with no next step and no explanation reads as a bug.
+ */
+export function isDormant(paper: AdminBotPaperRecord, now = Date.now()): boolean {
+  if (paper.checks?.[NUDGE_OVERRIDE]) {
+    return false;
+  }
+  const started = Date.parse(paper.created_at ?? "");
+  if (!Number.isFinite(started)) {
+    return false;
+  }
+  const months = (now - started) / (1000 * 60 * 60 * 24 * 30.44);
+  return months > DORMANT_MONTHS;
+}
+
 /** How many parallel tasks to surface. Beyond this it reads as a backlog, not a next step. */
 const MAX_TASKS = 3;
 
@@ -330,6 +361,9 @@ export type NextTask = {
  * at once. Returning the whole frontier lets the UI show parallel work as parallel.
  */
 export function nextTasksFor(paper: AdminBotPaperRecord): NextTask[] {
+  if (isDormant(paper)) {
+    return [];
+  }
   const result = tick(paperflow, paperToState(paper));
   if (result.outcome !== "nudges") {
     return [];

@@ -6210,3 +6210,299 @@
   .pstat__list li { grid-template-columns: 1fr; gap: 0.15rem; }
   .pstat__meta { text-align: left; }
 }
+
+/* Dormant papers rest quietly rather than disappearing: the card explains itself. */
+.my-work-item__next--dormant {
+  border-left-color: var(--border);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* Reported blockers -- structured form (member) and sortable list (admin). */
+.blocker-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(420px, 100%);
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.blocker-form__reviewer {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.blockers__sort {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.blockers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.blocker {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.blocker__row {
+  display: grid;
+  /* Stage and age are fixed so the eye can scan straight down each column. */
+  grid-template-columns: 150px minmax(0, 2fr) minmax(0, 1.4fr) 56px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+}
+
+.blocker__row::-webkit-details-marker {
+  display: none;
+}
+
+.blocker[open] .blocker__row {
+  border-bottom: 1px solid var(--border);
+}
+
+.blocker__stage {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.blocker__title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blocker__paper {
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.blocker__age {
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.blocker__note {
+  margin: 0;
+  padding: 12px;
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 720px) {
+  .blocker__row {
+    grid-template-columns: minmax(0, 1fr) 48px;
+  }
+
+  .blocker__stage,
+  .blocker__paper {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Nudge bell: an admin's ask, surfaced where a member will see it without going looking. */
+.bell {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.bell__button {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.bell__button:hover {
+  border-color: var(--border);
+  background: var(--panel-alt, var(--panel));
+}
+
+.bell__icon svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Overlaps the bell's upper-right the way a platform badge does, so it reads as a count on the
+   icon rather than a chip beside it. */
+.bell__badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 17px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Invisible full-page catcher so a click anywhere else dismisses the panel. */
+.bell__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.bell__panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  width: min(380px, calc(100vw - 32px));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 14px 40px rgb(0 0 0 / 28%);
+  overflow: hidden;
+}
+
+.bell__panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.bell__mark {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent, #4a8fe7);
+  font: inherit;
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: 0;
+  cursor: pointer;
+}
+
+.bell__mark:hover {
+  text-decoration: underline;
+}
+
+/* Long histories scroll inside the panel rather than pushing it off the screen. */
+.bell__list {
+  display: flex;
+  flex-direction: column;
+  max-height: min(60vh, 420px);
+  overflow-y: auto;
+}
+
+.bell__item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.bell__item:last-child {
+  border-bottom: 0;
+}
+
+.bell__item:hover {
+  background: var(--panel-alt, rgb(127 127 127 / 12%));
+}
+
+.bell__item-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+/* The unread marker. Read rows keep the dot's width so every row's text starts on the same
+   column -- the list reads as one column with some rows dimmed, not two ragged groups. */
+.bell__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: #4a8fe7;
+}
+
+.bell__item--read .bell__dot {
+  background: transparent;
+}
+
+.bell__item--read .bell__item-text,
+.bell__item--read .bell__item-meta {
+  color: var(--muted);
+}
+
+.bell__item--read .bell__item-text strong {
+  font-weight: 500;
+}
+
+.bell__item-text {
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.bell__item-meta {
+  padding-left: 15px;
+  font-size: 12px;
+  color: var(--muted);
+}
