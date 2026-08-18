@@ -45,54 +45,36 @@
   font-size: 0.85em;
 }
 
-/* Trips: the log on Time Availability, and the one-line marker in the calendar grid. */
-.trips__list {
+/* Trips: the list inside the tab's fourth editor. The section, its title, hint, form grid and
+   submit all come from .adminbot-time-availability__editor and friends in components.css, the same
+   as the three editors above it — only the row list is specific to trips. */
+.adminbot-trips__list {
   list-style: none;
-  margin: var(--space-3) 0 0;
+  margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
 }
 
-.trips__row {
+.adminbot-trips__row {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: var(--space-2);
+  gap: var(--space-3);
 }
 
-.trips__city {
+.adminbot-trips__city {
   font-weight: 600;
 }
 
 /* The trip that is running right now, which is the one a reader is looking for. */
-.trips__row--active .trips__city {
+.adminbot-trips__row--active .adminbot-trips__city {
   text-decoration: underline;
 }
 
-.trips__now {
-  font-size: 0.75em;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.trips__form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-}
-
-.trips__field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.trips__field--wide {
-  flex: 1 1 12rem;
+.adminbot-trips__current {
+  margin: 0;
 }
 
 /* Deliberately quiet: the grid's job is the calendar, and this is context beside it. */

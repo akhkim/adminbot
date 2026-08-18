@@ -15,6 +15,7 @@ import {
   type AdminBotTimeAvailabilityProps,
   type MilestoneDraft,
 } from "./time-availability.ts";
+import { EMPTY_TRIP_DRAFT } from "./time-availability.trips.ts";
 
 // 40h capacity is the reference line the chart draws; commitments are shown in raw hours/week.
 function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
@@ -51,6 +52,8 @@ function props(overrides: Partial<AdminBotTimeAvailabilityProps> = {}) {
     onAwayDraftChange: () => {},
     milestoneDraft: { ...EMPTY_MILESTONE_DRAFT },
     onMilestoneDraftChange: () => {},
+    tripDraft: { ...EMPTY_TRIP_DRAFT },
+    onTripDraftChange: () => {},
     // The default fixture is a plain member reading their own schedule, which is the only page a
     // non-admin can reach at all.
     viewerIsAdmin: false,
@@ -1036,5 +1039,41 @@ describe("the split tables and the deadline panel", () => {
         awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "other" },
       }).querySelector('[data-testid="time-availability-custom-label"]'),
     ).not.toBeNull();
+  });
+});
+
+describe("the trips editor's place on the tab", () => {
+  // Asked for by position, not just presence: "add a trip" is a sibling of "add a commitment" and
+  // reads as one only if it sits in the same stack, after the deadline editor.
+  it("is the last editor in the stack, below the big-deadline one", () => {
+    const view = renderView();
+    const editors = [
+      ...view.querySelectorAll<HTMLElement>(".adminbot-time-availability__editor"),
+    ].map((section) => section.dataset.testid);
+    expect(editors).toEqual([
+      "time-availability-editor",
+      "time-away-editor",
+      "time-availability-milestone-editor",
+      "time-availability-trip-editor",
+    ]);
+  });
+
+  // Where somebody will be is the part of their schedule an admin opens this page for, so the
+  // section stays; the form does not.
+  it("shows an admin someone else's trips without a form to change them", () => {
+    const view = renderView({
+      viewerIsAdmin: true,
+      viewerMemberId: "admin",
+      members: [member({ id: "m1", trips: [{ start: "2026-09-01", end: "2026-09-30", city: "Berlin" }] })],
+    });
+    expect(view.querySelector('[data-testid="time-availability-trip-editor"]')).not.toBeNull();
+    expect(view.querySelector('[data-testid="time-availability-trip-form"]')).toBeNull();
+    expect(view.querySelector('[data-testid="time-availability-editor"]')).toBeNull();
+    expect(view.textContent).toContain("Berlin");
+  });
+
+  it("draws no editor stack at all for a reader with nothing to see", () => {
+    const view = renderView({ viewerIsAdmin: true, viewerMemberId: "admin" });
+    expect(view.querySelector(".adminbot-time-availability__editors")).toBeNull();
   });
 });

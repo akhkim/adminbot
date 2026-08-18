@@ -1452,6 +1452,23 @@ export const en: TranslationMap = {
       partialHours: "Partly available · {hours} h/wk",
       note: "Note",
     },
+    trips: {
+      formHint:
+        "A conference, an internship, a term abroad. Meeting times and calendar invites follow this while it runs, then go back to home time.",
+      city: "City",
+      from: "From",
+      to: "To",
+      timezone: "Time zone",
+      note: "Note (optional)",
+      submit: "Add trip",
+      remove: "Remove",
+      current: "Currently in {city}.",
+      home: "Home is {location}.",
+      empty: "No trips logged.",
+      errorCity: "Where are you going?",
+      errorDates: "Add both a start and an end date.",
+      errorOrder: "The end date is before the start date.",
+    },
     milestones: {
       title: "Big deadlines",
       hint: "The four nearest archival conference deadlines, plus your own. Yours are private — nobody else sees them.",
@@ -1505,6 +1522,7 @@ export const en: TranslationMap = {
       note: "Note",
       jinesisTitle: "Add a Jinesis commitment",
       milestoneTitle: "Add a big deadline",
+      tripTitle: "Add a trip away from home",
       awayTitle: "Add something outside your Jinesis commitments",
       wholeDay: "Away the whole day",
       wholeDayHint:

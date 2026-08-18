@@ -48,19 +48,27 @@ function draft(overrides: Partial<TripDraft> = {}): TripDraft {
 }
 
 describe("renderTrips", () => {
+  it("renders as one of the tab's editor sections, like the three above it", () => {
+    const view = renderView();
+    expect(view.querySelector(".adminbot-time-availability__editor")).not.toBeNull();
+    expect(view.querySelector(".adminbot-time-availability__form")).not.toBeNull();
+    expect(view.querySelector("button.primary")?.textContent).toContain("Add trip");
+    expect(view.querySelector(".card-title")?.textContent).toContain("Add a trip away from home");
+  });
+
   it("lists a trip with its dates and zone, and says which one is running", () => {
     const text = renderView().textContent ?? "";
     expect(text).toContain("Berlin");
     expect(text).toContain("Europe/Berlin");
     expect(text).toContain("Internship");
-    expect(text).toContain("Currently in");
-    expect(renderView().querySelector(".trips__row--active")).not.toBeNull();
+    expect(text).toContain("Currently in Berlin");
+    expect(renderView().querySelector(".adminbot-trips__row--active")).not.toBeNull();
   });
 
   it("marks nothing as current outside every trip", () => {
     const view = renderView({ today: "2026-10-15" });
     expect(view.textContent).not.toContain("Currently in");
-    expect(view.querySelector(".trips__row--active")).toBeNull();
+    expect(view.querySelector(".adminbot-trips__row--active")).toBeNull();
   });
 
   it("names home, so a reader knows what away is away from", () => {
@@ -88,7 +96,7 @@ describe("renderTrips", () => {
   it("guesses the timezone from the city as it is typed", () => {
     const onDraftChange = vi.fn();
     const view = renderView({ onDraftChange });
-    const city = view.querySelector<HTMLInputElement>("[name=city]")!;
+    const city = view.querySelector<HTMLInputElement>('[data-testid="time-availability-trip-city"]')!;
     city.value = "Berlin";
     city.dispatchEvent(new Event("input", { bubbles: true }));
     expect(onDraftChange).toHaveBeenCalledWith(
@@ -99,7 +107,7 @@ describe("renderTrips", () => {
   it("never overwrites a timezone the member typed", () => {
     const onDraftChange = vi.fn();
     const view = renderView({ onDraftChange, draft: draft({ timezone: "Asia/Tokyo", city: "" }) });
-    const city = view.querySelector<HTMLInputElement>("[name=city]")!;
+    const city = view.querySelector<HTMLInputElement>('[data-testid="time-availability-trip-city"]')!;
     city.value = "Berlin";
     city.dispatchEvent(new Event("input", { bubbles: true }));
     expect(onDraftChange).toHaveBeenCalledWith(
@@ -111,7 +119,7 @@ describe("renderTrips", () => {
     const onSave = vi.fn();
     const second: TripRow = { start: "2026-11-01", end: "2026-11-05", city: "Vancouver" };
     const view = renderView({ trips: [BERLIN, second], onSave });
-    view.querySelectorAll<HTMLButtonElement>("button[title='Remove this trip']")[1]?.click();
+    view.querySelector<HTMLButtonElement>('[data-testid="time-availability-trip-remove-1"]')?.click();
     expect(onSave).toHaveBeenCalledWith([BERLIN]);
   });
 
@@ -120,7 +128,7 @@ describe("renderTrips", () => {
   it("is read-only for anyone but the member themselves", () => {
     const view = renderView({ editable: false });
     expect(view.querySelector("form")).toBeNull();
-    expect(view.querySelector("button[title='Remove this trip']")).toBeNull();
+    expect(view.querySelector('[data-testid="time-availability-trip-remove-0"]')).toBeNull();
     expect(view.textContent).toContain("Berlin");
   });
 

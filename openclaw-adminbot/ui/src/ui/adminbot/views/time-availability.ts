@@ -1713,6 +1713,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const storedAvailability = selectedMember ? availabilityRows(selectedMember.availability) : [];
   const storedTimeOff = selectedMember ? timeOffRows(selectedMember.time_off) : [];
   const storedMilestones = selectedMember ? milestoneRows(selectedMember.milestones) : [];
+  const storedTrips = tripRows(selectedMember?.trips);
   const storedNotes = String(selectedMember?.availability_notes ?? "");
   const tasks = selectedMember ? jinesisTasks(selectedMember) : [];
   // The chart shows both; the Jinesis table below it shows only `tasks`, because the two lists are
@@ -1728,20 +1729,6 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const hasAnything = tasks.length > 0 || storedTimeOff.length > 0;
 
   return html`
-    ${props.tripDraft
-      ? renderTrips({
-          trips: tripRows(selectedMember?.trips),
-          homeLocation: selectedMember?.location ?? null,
-          draft: props.tripDraft,
-          onDraftChange: (draft) => props.onTripDraftChange?.(draft),
-          editable,
-          saving: props.saving,
-          // Straight through the schedule write the other lists use, so a trip is stored beside
-          // the commitments it sits next to rather than in a channel of its own.
-          onSave: (trips) =>
-            selectedMember && props.onSaveSchedule(selectedMember.id, { trips }),
-        })
-      : nothing}
     <div class="card adminbot-card adminbot-card--wide adminbot-time-availability">
       <div class="adminbot-form adminbot-time-availability__controls">
         ${props.viewerIsAdmin
@@ -1822,17 +1809,37 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
               ${t("adminbotTimeAvailability.empty")}
             </div>
           `}
-      ${editable
+      <!-- The editor stack. Trips render for a reader who cannot edit too, because where somebody
+           will be is the part of their schedule an admin is looking this page up for; the section
+           itself drops its form in that case. The other three are writes and nothing else, so
+           they stay behind the editable check. -->
+      ${editable || storedTrips.length
         ? html`<div class="adminbot-time-availability__editors">
-            ${renderJinesisEditor(props, {
-              availability: storedAvailability,
-              timeOff: storedTimeOff,
-            })}
-            ${renderTimeAwayEditor(props, {
-              availability: storedAvailability,
-              timeOff: storedTimeOff,
-            })}
-            ${renderMilestoneEditor(props, [...storedMilestones])}
+            ${editable
+              ? html`${renderJinesisEditor(props, {
+                  availability: storedAvailability,
+                  timeOff: storedTimeOff,
+                })}
+                ${renderTimeAwayEditor(props, {
+                  availability: storedAvailability,
+                  timeOff: storedTimeOff,
+                })}
+                ${renderMilestoneEditor(props, [...storedMilestones])}`
+              : nothing}
+            ${props.tripDraft
+              ? renderTrips({
+                  trips: storedTrips,
+                  homeLocation: selectedMember?.location ?? null,
+                  draft: props.tripDraft,
+                  onDraftChange: (draft) => props.onTripDraftChange?.(draft),
+                  editable,
+                  saving: props.saving,
+                  // Straight through the schedule write the other lists use, so a trip is stored
+                  // beside the commitments it sits next to rather than in a channel of its own.
+                  onSave: (trips) =>
+                    selectedMember && props.onSaveSchedule(selectedMember.id, { trips }),
+                })
+              : nothing}
           </div>`
         : nothing}
     </div>
