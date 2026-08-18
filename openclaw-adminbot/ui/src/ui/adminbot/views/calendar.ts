@@ -19,6 +19,11 @@ import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import type { CalendarEvent } from "../auth/session.ts";
 import {
+  attendeeHourVerdict,
+  localTimeAt,
+  resolveAttendeeZone,
+} from "../data/attendee-time.ts";
+import {
   knownCities,
   knownConferences,
   memberNamesByEmail,
@@ -707,6 +712,56 @@ function renderFilterSelect(params: {
   `;
 }
 
+
+/**
+ * What the event's start reads as on one attendee's clock, and whether that is a civil hour.
+ *
+ * Rendered next to every name in the invite list because the alternative is what the lab did
+ * before: pick a time that suits the room, send it, and find out from the person who took it at
+ * 5am. A member the roster cannot place shows nothing rather than a guessed clock face -- an
+ * invented local time is indistinguishable from a real one once it is on screen.
+ *
+ * The drift flag is the second half. A member whose recent sign-ins disagree with their profile
+ * has a local time computed from a location nobody has confirmed, so the row says so instead of
+ * quietly presenting it as fact.
+ */
+function renderAttendeeTime(
+  state: AppViewState,
+  memberId: string,
+  startsAt: string | undefined,
+) {
+  const member = (state.adminBotData.members ?? []).find((entry) => entry.id === memberId);
+  const zone = member ? resolveAttendeeZone(member) : undefined;
+  const drift = (state.adminBotLocationDrifts ?? []).find((entry) => entry.member_id === memberId);
+  const local = zone && startsAt ? localTimeAt(zone.zone, startsAt) : undefined;
+  const verdict = zone && startsAt ? attendeeHourVerdict(zone.zone, startsAt) : undefined;
+  if (!local && !drift) {
+    return zone
+      ? nothing
+      : html`<span class="adminbot-calendar__match-local muted" title="No location or timezone on their profile"
+          >local time unknown</span
+        >`;
+  }
+  return html`
+    ${local
+      ? html`<span
+          class="adminbot-calendar__match-local ${verdict === "fine"
+            ? ""
+            : "adminbot-calendar__match-local--odd"}"
+          title=${`${zone?.zone ?? ""} — from their ${zone?.source === "timezone" ? "timezone" : zone?.source === "current_city" ? "current city" : "home location"} (${zone?.from ?? ""})`}
+          >${local}${verdict && verdict !== "fine" ? ` (${verdict})` : ""}</span
+        >`
+      : nothing}
+    ${drift
+      ? html`<span
+          class="adminbot-calendar__match-drift"
+          title=${`${drift.observation_count} recent sign-ins from ${drift.observed_country}, unconfirmed`}
+          >⚑ may be in ${drift.observed_country}</span
+        >`
+      : nothing}
+  `;
+}
+
 function renderInvitePanel(state: AppViewState) {
   const members = state.adminBotData?.members ?? [];
   const papers = state.adminBotData?.papers ?? [];
@@ -821,6 +876,7 @@ function renderInvitePanel(state: AppViewState) {
                       <span class="adminbot-calendar__match-name">${match.name}</span>
                       <span class="adminbot-calendar__match-email">${match.email}</span>
                       <span class="adminbot-calendar__match-why">${match.reasons.join(" · ")}</span>
+                      ${renderAttendeeTime(state, match.member_id, selected?.start)}
                     </label>
                   </li>
                 `,

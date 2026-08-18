@@ -6,7 +6,12 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
-import { renderEmailBodyHtml } from "../extensions/adminbot/api.js";
+import {
+  createAdminBotSqliteService,
+  looksLikeZoomRecordingNotice,
+  noticeToMeeting,
+  renderEmailBodyHtml,
+} from "../extensions/adminbot/api.js";
 import { getSlackWriteClient, resolveSlackAccount } from "../extensions/slack/api.js";
 import { loadConfig } from "../src/config/config.js";
 import type { OpenClawConfig } from "../src/config/types/openclaw.js";
@@ -363,7 +368,9 @@ class StateStore {
       .run(threadId, candidateEmail, decision, sourceId, new Date().toISOString());
   }
 
-  begin(message: EmailMessage, classification: Classification): boolean {
+  // Takes a bare {category, reason} rather than a Classification: the recording-notice branch below
+  // never consults the model, so it has no model classification to hand over.
+  begin(message: EmailMessage, classification: { category: string; reason: string }): boolean {
     const existing = this.db
       .prepare("SELECT status FROM adminbot_email_messages WHERE message_id = ?")
       .get(message.id) as { status?: string } | undefined;
@@ -965,6 +972,46 @@ async function processMessage(
     throw error;
   }
 }
+/**
+ * File a forwarded Zoom recording notice, without consulting the model.
+ *
+ * This runs before classification for two reasons. The classifier has no category for a recording
+ * notice, so every one of them would land in the needs-review pile a human is supposed to read.
+ * And the notice is already structured -- topic, time, link, passcode on labelled lines -- so
+ * spending a 122B model on it would be slower, more expensive and less reliable than a regex.
+ *
+ * Returns false when the mail turns out not to be a notice after all, so the caller falls through
+ * to the normal path rather than swallowing the message.
+ */
+function fileRecordingNotice(message: EmailMessage, state: StateStore, databasePath: string): boolean {
+  const meeting = noticeToMeeting({
+    id: message.id,
+    subject: message.subject,
+    body: message.body,
+    receivedAt: message.internalDate
+      ? new Date(Number(message.internalDate)).toISOString()
+      : new Date().toISOString(),
+  });
+  if (!meeting) {
+    return false;
+  }
+  if (!state.begin(message, { category: "meeting_recording", reason: "Zoom cloud recording notice" })) {
+    return true;
+  }
+  const { service, close } = createAdminBotSqliteService({ databasePath });
+  try {
+    const result = service.upsertMeeting(meeting);
+    state.finish(
+      message.id,
+      result.ok ? "completed" : "needs_review",
+      result.ok ? undefined : result.error.message,
+    );
+  } finally {
+    close();
+  }
+  return true;
+}
+
 export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   loadDotEnv(path.join(os.homedir(), ".openclaw", ".env"));
   process.env.GOG_ACCOUNT = botEmail();
@@ -986,6 +1033,22 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
     const messages = await google.search();
     summary.found = messages.length;
     for (const message of messages) {
+      // Deterministic branch first: a recording notice is machine-readable and must never reach
+      // the classifier, which would file it as unknown and park it for a human.
+      if (looksLikeZoomRecordingNotice(message.subject, message.body)) {
+        try {
+          if (fileRecordingNotice(message, state, databasePath)) {
+            summary.completed += 1;
+            continue;
+          }
+        } catch (error) {
+          summary.failed += 1;
+          summary.errors.push(
+            `${message.id}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+          continue;
+        }
+      }
       const onboarding =
         state.getOnboarding(message.threadId) ??
         state.getOnboarding(normalizeAddress(message.from));

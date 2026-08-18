@@ -5,7 +5,16 @@ import type {
   AdminBotMemberNudgeState,
   AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
-import type { RecommendationSchool } from "./adminbot/data/logistics-draft.ts";
+import type {
+  LetterFact,
+  MeetingRequestRow,
+  RecommendationSchool,
+} from "./adminbot/data/logistics-draft.ts";
+import type {
+  LocationDrift,
+  MeetingAttendee,
+  MeetingRecord,
+} from "./adminbot/auth/session.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { BlockerSort } from "./adminbot/views/admin.ts";
@@ -131,6 +140,14 @@ export type AppViewState = {
   calendarExcludedMemberIds?: string[];
   calendarBusy?: boolean;
   loadCalendarEvents?: () => Promise<void>;
+  loadMeetings?: () => Promise<void>;
+  toggleMeetingAttendance?: (meetingId: string, attendee: MeetingAttendee) => Promise<void>;
+  fileMeeting?: (draft: {
+    topic: string;
+    started_at: string;
+    share_url: string;
+    passcode?: string;
+  }) => Promise<void>;
   requestCalendarDraft?: () => Promise<void>;
   saveCalendarEvent?: () => Promise<void>;
   sendCalendarInvites?: () => Promise<void>;
@@ -416,6 +433,22 @@ export type AppViewState = {
   adminBotMemberMap: MemberMap | null;
   adminBotMemberMapLoading: boolean;
   adminBotTimeAvailabilityMemberId: string;
+  // Meeting Recordings tab. The list as the service returned it -- already redacted for a member,
+  // full for an admin -- plus the two flags the view needs to distinguish "still loading" from
+  // "the lab has not recorded a meeting yet".
+  // Undefined is the "never asked" sentinel the render pass keys its one-shot fetch on; a load
+  // that genuinely finds nothing sets [], so an empty lab cannot loop.
+  adminBotMeetings?: MeetingRecord[];
+  adminBotLocationDrift?: LocationDrift | null;
+  adminBotLocationDrifts?: LocationDrift[];
+  adminBotLocationSaving?: boolean;
+  adminBotLocationError?: string | null;
+  loadLocationPrompt?: () => Promise<void>;
+  loadLocationDrifts?: () => Promise<void>;
+  answerLocationPrompt?: (answer: { current_city?: string; timezone?: string }) => Promise<void>;
+  adminBotMeetingsLoading: boolean;
+  adminBotMeetingsSaving: boolean;
+  adminBotMeetingsError: string | null;
   // Documents picked for a signature request, held here rather than in the view so a re-render
   // does not drop a file the member already chose. Replaced wholesale on every change: lit only
   // sees a @state() array as dirty when the reference changes.
@@ -438,6 +471,13 @@ export type AppViewState = {
   adminBotLogisticsRequestsLoading: boolean;
   adminBotLogisticsOpenRequestId: string | null;
   adminBotLettersSchools: RecommendationSchool[];
+  adminBotLettersFacts: LetterFact[];
+  // Book Meeting's own table and save state, kept apart from the other two for the same reason
+  // they are kept apart from each other.
+  adminBotMeetingRows: MeetingRequestRow[];
+  adminBotMeetingSaving: boolean;
+  adminBotMeetingSavedAt: number | null;
+  adminBotMeetingSaveError: string | null;
   adminBotLettersCvOverleafUrl: string;
   adminBotLettersDriveFolderUrl: string;
   adminBotLettersSaving: boolean;

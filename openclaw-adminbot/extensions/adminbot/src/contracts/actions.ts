@@ -418,6 +418,17 @@ export type AdminBotTimeOffRow = {
   // "partial" still counts toward capacity at a reduced rate; "none" zeroes the
   // week. Callers must not infer this from `kind` — a conference can be either.
   availability: "none" | "partial";
+  // How many hours a week this commitment actually takes, for a "partial" row.
+  //
+  // A whole-day row needs no figure: it zeroes the week by definition. A partial one was a claim
+  // with no number attached — "around, but less" — which no chart could draw and no admin could
+  // plan against, so a member with a twelve-hour-a-week course and a member with a standing
+  // Tuesday call recorded the identical row. This is that missing number, in the same unit and
+  // range as `AdminBotAvailabilityRow.hours_per_week` so the two stack.
+  //
+  // Omitted on a "none" row, and optional on a "partial" one: rows written before this field
+  // existed have no answer, and inventing one would put hours on a chart nobody typed.
+  hours_per_week?: number;
   note?: string;
   // What the member called this when `kind` is "other". The enum stays closed so the categories
   // mean the same thing lab-wide; this is the escape hatch for the one that does not fit.
@@ -435,7 +446,42 @@ export type AdminBotMemberMilestone = {
   date: string;
   label: string;
   link?: string;
+  // The wall-clock cutoff on `date`, as "HH:MM" on a 24-hour clock, and the zone that clock is
+  // read in (an IANA name — "America/Toronto", not "EST"). Both optional and both meaningless
+  // alone: a time with no zone is a number a reader in another country has to guess at, and a zone
+  // with no time says nothing. A milestone with neither is a whole-day deadline, which is what
+  // every stored row was before these fields existed.
+  //
+  // Kept off `date` rather than folded into an ISO instant because the date is what the timeline,
+  // the countdown and the "in N days" label all sort and bucket by; an instant would make every
+  // one of them re-derive a calendar day in a zone none of them knows.
+  time?: string;
+  timezone?: string;
 };
+
+// "HH:MM" on a 24-hour clock, which is what <input type="time"> hands back. Seconds are not
+// accepted: no deadline in this system is stated to the second, and allowing them would mean two
+// spellings of the same minute.
+export const ADMINBOT_DEADLINE_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/u;
+
+/**
+ * Whether a string names a time zone this runtime can actually resolve.
+ *
+ * Asked of Intl rather than checked against a bundled list: the list a validator ships goes stale,
+ * and the only zones worth storing are the ones the formatter on the other end can print.
+ */
+export function isAdminBotTimezone(value: string): boolean {
+  try {
+    // Constructing is the check -- Intl throws a RangeError on a zone it cannot resolve. The
+    // formatter is read back rather than discarded so this is an expression with a use, not a
+    // `new` for side effects.
+    return Boolean(
+      new Intl.DateTimeFormat("en-US", { timeZone: value }).resolvedOptions().timeZone,
+    );
+  } catch {
+    return false;
+  }
+}
 
 export type AdminBotLabMemberInput = {
   id: string;
@@ -545,6 +591,16 @@ export type AdminBotLabMemberInput = {
   last_login_at?: string;
   last_login_country?: string;
   last_login_continent?: string;
+  /**
+   * When the member last answered the "you seem to have moved" question, either way.
+   *
+   * Stamped on a confirmation *and* on a dismissal, because both are answers: someone who signs in
+   * from a conference for a week should be able to say "no, still Toronto" and not be asked again
+   * for that trip. A later move to a different country starts a new divergence and asks again.
+   */
+  location_prompt_answered_at?: string;
+  /** The country the member was asked about when they last answered, so a new country re-asks. */
+  location_prompt_answered_country?: string;
   availability?: AdminBotAvailabilityRow[];
   time_off?: AdminBotTimeOffRow[];
   // Dated milestones the member is planning back from. Self-editable like the two lists above.
@@ -580,6 +636,12 @@ export type AdminBotSettingsInput = {
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
   applicant_last_reviewed_at?: string;
+  /**
+   * Recorded meetings shorter than this are filed but not listed. A test call, a two-minute room
+   * check and a meeting somebody rejoined by accident all produce a cloud recording, and a tab
+   * three-quarters full of them is a tab nobody reads. Zero shows everything.
+   */
+  meeting_minimum_minutes?: number;
 };
 
 export type AdminBotSettings = {
@@ -588,6 +650,8 @@ export type AdminBotSettings = {
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
   applicant_last_reviewed_at?: string;
+  /** See the note on AdminBotSettingsInput. Optional so a settings row written before meetings existed still parses. */
+  meeting_minimum_minutes?: number;
   updated_at: string;
 };
 
@@ -912,6 +976,16 @@ export type AdminBotAuditEvent = {
     | "profile_photo.polished"
     | "profile_photo.applied"
     | "auth.login_location_updated"
+    // Where members are. An observation is a fact about a person's whereabouts, and the answer to
+    // the prompt is the only thing that turns one into a profile change, so both are recorded.
+    | "member.location_observed"
+    | "member.location_prompt_answered"
+    // Recorded meetings. Filing one is not an external effect, but attendance is personal data
+    // and a summary is machine-written, so who filed or corrected what stays answerable.
+    | "meeting.recorded"
+    | "meeting.updated"
+    | "meeting.attendance_updated"
+    | "meeting.deleted"
     // Slack channel-naming enforcement. The sweep renames other people's channels, which is an
     // external effect with no undo, so who triggered a pass and what it did is recorded here.
     | "slack.channel_naming_checked"
@@ -975,4 +1049,155 @@ export type AdminBotAuthSession = {
   expires_at: string;
   last_seen_at: string;
   revoked_at?: string;
+};
+
+// ---------------------------------------------------------------------------
+// Where members are, over time
+//
+// The roster already carries three location fields, and each answers a different question:
+// `location` is where a member lives, `current_city` is where they are right now, and
+// `last_login_country` is where they last signed in from. All three are point-in-time: each write
+// overwrites the last, so nothing in the system could ever answer "when did they move".
+//
+// That question is what a scheduling lab actually needs. A member on a three-month internship in
+// Berlin who never edits their profile keeps getting invited to a 10am Toronto meeting that is 4pm
+// where they are, and nothing surfaces the mismatch — the login geolocation *knows*, and
+// deliberately does not write it anywhere a scheduler would look, because an inferred country must
+// never silently overwrite what a person told us about themselves.
+//
+// So observations are appended here instead of overwriting anything, and divergence between what
+// is inferred and what is on the profile becomes a question put to the member rather than a write
+// behind their back. The member's answer is the only thing that changes the profile.
+// ---------------------------------------------------------------------------
+
+export const adminBotLocationSources = [
+  "self_reported",
+  "login_ip",
+  "slack_profile",
+  "admin",
+] as const;
+
+export type AdminBotLocationSource = (typeof adminBotLocationSources)[number];
+
+export type AdminBotMemberLocationEntry = {
+  id: string;
+  member_id: string;
+  observed_at: string;
+  source: AdminBotLocationSource;
+  /** The text the source gave, kept verbatim so an unresolved place is still diagnosable. */
+  raw: string;
+  /** Gazetteer key, when the text resolved to a place the map knows. */
+  place_key?: string;
+  place_label?: string;
+  country?: string;
+  /**
+   * Only ever set on a self-report. Inference states a country and never a timezone: the two are
+   * not the same claim, and countries with several zones would make it a guess presented as fact.
+   */
+  timezone?: string;
+};
+
+/** What the member is being asked to confirm, and the evidence for asking. */
+export type AdminBotLocationDrift = {
+  member_id: string;
+  /** Where the recent sign-ins say they are. */
+  observed_country: string;
+  observed_label?: string;
+  /** What the profile says, for the question to quote back. */
+  profile_location?: string;
+  profile_country?: string;
+  /** When the divergence started, and how many sign-ins have agreed with it since. */
+  since: string;
+  observation_count: number;
+};
+
+// ---------------------------------------------------------------------------
+// Meetings
+//
+// A recorded group meeting: the link members open, who was there, and a summary of what was said.
+//
+// The account this comes from is an educational Zoom with developer mode off, so there is no API
+// behind any of it. A record is assembled from the notice Zoom mails the host (link, topic, time),
+// a participant CSV a host exports by hand (attendance), and the cloud recording's own transcript
+// (summary). Each arrives separately and none is guaranteed, so every field past the link is
+// optional and a record is worth keeping with only some of them.
+//
+// What is deliberately absent is the transcript itself. It is read, summarized and dropped: lab
+// meetings discuss unpublished work and people's circumstances, and a verbatim record of that in
+// a database that backs a web UI is a liability nobody asked for. `transcript` keeps the fact that
+// one was processed, not what it said.
+// ---------------------------------------------------------------------------
+
+/** Where an attendance line came from. Ranked in `mergeAttendance`: manual beats every import. */
+export type AdminBotMeetingAttendanceSource = "participant_report" | "transcript" | "manual";
+
+export type AdminBotMeetingAttendee = {
+  /** Set when the row resolved to someone on the roster. Absent means a guest, or an unmatched name. */
+  member_id?: string;
+  /** The name as Zoom reported it, kept even when matched so an admin can see what was matched. */
+  display_name: string;
+  email?: string;
+  joined_at?: string;
+  minutes?: number;
+  source: AdminBotMeetingAttendanceSource;
+  /** False records a considered absence — an admin unticking someone an import added. */
+  present: boolean;
+};
+
+export type AdminBotMeetingActionItem = {
+  text: string;
+  owner_member_id?: string;
+  /** The name the summarizer read off the transcript, when it did not resolve to a member. */
+  owner_name?: string;
+};
+
+export type AdminBotMeetingSummary = {
+  overview: string;
+  decisions: string[];
+  action_items: AdminBotMeetingActionItem[];
+  generated_at: string;
+  /** Which local model wrote it. Recorded because a summary is machine-written and readers should be able to tell which machine. */
+  model: string;
+};
+
+export type AdminBotMeetingRecordingLinks = {
+  /** The Zoom share URL from the notice. The one field a meeting record cannot be created without. */
+  share_url?: string;
+  passcode?: string;
+  /** Copy on the lab's Drive, which is what survives Zoom's cloud retention window deleting the original. */
+  drive_url?: string;
+};
+
+export type AdminBotMeetingTranscriptState = {
+  processed_at: string;
+  /** Speakers the transcript named, which is what pre-ticks the attendance roster. */
+  speaker_names: string[];
+  duration_seconds?: number;
+};
+
+export type AdminBotMeetingRecordInput = {
+  id: string;
+  topic: string;
+  /** RFC3339. Falls back to when the notice was received if Zoom's date line did not parse. */
+  started_at: string;
+  duration_minutes?: number;
+  host_email?: string;
+  recording: AdminBotMeetingRecordingLinks;
+  transcript?: AdminBotMeetingTranscriptState;
+  summary?: AdminBotMeetingSummary;
+  attendees?: AdminBotMeetingAttendee[];
+  /** How the record got here: parsed from a forwarded notice, or filed by hand in the Control UI. */
+  source: "zoom_email" | "manual";
+  notes?: string;
+};
+
+export type AdminBotMeetingRecord = AdminBotMeetingRecordInput & {
+  created_at: string;
+  updated_at: string;
+  /**
+   * How many people were present. Derived on read, never stored: a member is not shown the roster,
+   * and a headcount is the part of it that is useful to whoever missed the meeting without naming
+   * anybody. Absent on the admin view, which has the roster itself.
+   */
+  attendee_count?: number;
 };

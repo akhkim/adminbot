@@ -766,3 +766,47 @@ checks and audit logging.
 - [Skills config](/tools/skills-config)
 - [Lobster](/tools/lobster)
 - [Plugin manifest](/plugins/manifest)
+
+## Where members are, over time
+
+Three roster fields answer "where is this person" and each overwrites itself, so nothing could
+answer **"when did they move"** — which is the question that matters when a member spends three
+months in Berlin and keeps being invited to a 10am Toronto meeting.
+
+`adminbot_member_locations` is an append-only timeline fed by three sources:
+
+| Source           | Written by                                        |
+| ---------------- | ------------------------------------------------- |
+| `self_reported`  | any profile edit that changes `location` / `current_city` |
+| `login_ip`       | the country of a successful sign-in (IPinfo Lite, country-level only) |
+| `slack_profile`  | the member-map Slack sweep                        |
+
+An observation is appended only when it **differs** from the last one from the same source, so a
+member who signs in twice a day adds no rows and the timeline stays a change log.
+
+**Inference never writes a profile.** When recent sign-ins disagree with the profile for long
+enough — 2 sign-ins spanning 3 days, counted over the unbroken run of the current country — the
+member gets a banner on their own profile quoting the evidence. Confirming writes `current_city`
+and a timezone guessed from it through the ordinary self-edit; dismissing writes nothing and
+settles the question for that country only. A later move somewhere else asks again.
+
+Routes: `GET`/`POST /profile/location-prompt` (self only), `GET /lab/members/:id/locations` (self
+or admin), `GET /lab/location-drifts` (admin — everyone worth re-checking before scheduling).
+
+### Where it is used
+
+**Reporting.** Two paths, and they write the same two fields. The banner on the profile is the
+reactive one, raised when sign-ins disagree. **Time Availability → "Where you are"** is the manual
+one, offered without waiting to be asked: a member who knows they are moving on Monday says so on
+Monday, instead of after three days of sign-ins from somewhere else. It sits on that tab rather
+than the profile form because it is about the next few weeks, like everything else there — the
+profile's `location` stays the home address.
+
+**Scheduling.** The Calendar tab's invite list shows each attendee's own clock for the selected
+event, in bold with `(early)` / `(late)` when it lands before 08:00 or from 21:00. A member the
+roster cannot place reads "local time unknown" rather than a guessed clock face. An attendee whose
+recent sign-ins disagree with their profile carries a `⚑ may be in <country>` flag, because their
+local time was computed from a location nobody has confirmed.
+
+The zone comes from `resolveAttendeeZone`, most specific first: an explicit `timezone`, then a zone
+guessed from `current_city`, then from `location`.

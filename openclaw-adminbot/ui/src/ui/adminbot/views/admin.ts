@@ -661,9 +661,16 @@ function submitSettingsForm(event: Event, props: AdminBotProps): void {
   }
   const data = new FormData(form);
   const escalation = Number(getFormValue(data, "paperEscalationBusinessDays") || "0");
+  // Zero is a meaningful value here -- it lists every recording -- so an empty field falls back to
+  // the stored setting rather than being read as "show everything".
+  const meetingFloorText = getFormValue(data, "meetingMinimumMinutes");
+  const meetingFloor = Number(meetingFloorText);
   props.onSaveSettings({
     ...(Number.isInteger(escalation) && escalation > 0
       ? { paper_escalation_business_days: escalation }
+      : {}),
+    ...(meetingFloorText && Number.isInteger(meetingFloor) && meetingFloor >= 0
+      ? { meeting_minimum_minutes: meetingFloor }
       : {}),
     head_professor_member_id: getFormValue(data, "headProfessorMemberId"),
     head_professor_whatsapp: getFormValue(data, "headProfessorWhatsapp"),
@@ -709,6 +716,16 @@ function renderSettings(
                 min="1"
                 step="1"
                 .value=${String(settings.paper_escalation_business_days)}
+              />
+            </label>
+            <label class="adminbot-form__field">
+              <span>Minimum meeting minutes</span>
+              <input
+                name="meetingMinimumMinutes"
+                type="number"
+                min="0"
+                step="1"
+                .value=${String(settings.meeting_minimum_minutes ?? 10)}
               />
             </label>
             <label class="adminbot-form__field">

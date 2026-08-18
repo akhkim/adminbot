@@ -3105,6 +3105,16 @@
   color: var(--muted);
 }
 
+/* The hint and the explicit Save sit together at the foot of the form: the sentence explains why
+   the button is optional, and reading it beside the button is the only place that pairing lands. */
+.profile__form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
 .profile__account-check {
   font-size: var(--control-ui-text-xs);
 }

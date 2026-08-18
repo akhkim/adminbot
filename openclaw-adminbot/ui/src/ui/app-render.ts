@@ -41,6 +41,7 @@ import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
 import {
   saveAdminBotLettersDraft,
   saveAdminBotLogisticsDraft,
+  saveAdminBotMeetingDraft,
 } from "./adminbot/data/logistics-draft.ts";
 import { loadAdminBotLogisticsRequests } from "./adminbot/data/logistics-requests.ts";
 import {
@@ -59,6 +60,8 @@ import { renderLabSharing } from "./adminbot/views/lab-sharing.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate } from "./adminbot/views/login-gate.ts";
 import { renderAdminBotLogistics } from "./adminbot/views/logistics.ts";
+import { renderLocationPrompt } from "./adminbot/views/location-prompt.ts";
+import { renderAdminBotMeetings } from "./adminbot/views/meetings.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import { ownPapers, renderMyWork } from "./adminbot/views/my-work.ts";
 import { renderOnboardingChecklist } from "./adminbot/views/onboarding-checklist.ts";
@@ -2329,7 +2332,10 @@ export function renderApp(state: AppViewState) {
   // deliberately maps to no panel. It has to be named here instead: `adminBotPanel` doubles as the
   // render switch, and borrowing "members" to trigger the fetch drew the whole Lab Members panel
   // underneath the schedule.
-  const wantsRosterOnly = state.tab === "adminbotTimeAvailability";
+  // Meeting Recordings joins this for the same reason: its admin attendance editor lists every
+  // member, including the ones no import found, so it needs the roster while rendering its own view.
+  const wantsRosterOnly =
+    state.tab === "adminbotTimeAvailability" || state.tab === "adminbotMeetings";
   const wantsGatewayAdminBotLoad =
     ((isChat && isAdminBotChat) || adminBotPanel || wantsRosterOnly) && state.connected;
   if (
@@ -2353,6 +2359,33 @@ export function renderApp(state: AppViewState) {
     state.calendarEvents === undefined
   ) {
     void state.loadCalendarEvents?.().finally(() => requestHostUpdate?.());
+  }
+  // The calendar flags attendees whose whereabouts are in question, so the drift list is fetched
+  // alongside the month. Admin-only on the service; a member never opens this tab.
+  if (
+    state.tab === "adminbotCalendar" &&
+    adminBotMode === "admin" &&
+    hasMemberSession &&
+    state.adminBotLocationDrifts === undefined
+  ) {
+    void state.loadLocationDrifts?.().finally(() => requestHostUpdate?.());
+  }
+  // Asked once, when the member opens their own profile -- which is where the banner renders and
+  // the only place its answer makes sense. Undefined is "not asked yet"; null is a real "nothing
+  // to ask" and must not re-trigger.
+  if (state.tab === "profile" && hasMemberSession && state.adminBotLocationDrift === undefined) {
+    void state.loadLocationPrompt?.().finally(() => requestHostUpdate?.());
+  }
+  // Same "never asked" sentinel as the calendar above: the meetings list is fetched once when the
+  // tab is opened, and a lab that has recorded nothing sets [] rather than looping.
+  if (
+    state.tab === "adminbotMeetings" &&
+    hasMemberSession &&
+    !state.adminBotMeetingsLoading &&
+    !state.adminBotMeetingsError &&
+    state.adminBotMeetings === undefined
+  ) {
+    void state.loadMeetings?.().finally(() => requestHostUpdate?.());
   }
   const browseChatWorkspacePath = (path: string) => {
     if (chatWorkspaceFiles.browserSearchTimer) {
@@ -2873,6 +2906,19 @@ export function renderApp(state: AppViewState) {
             </section>`}
         ${state.tab === "dashboard" ? renderDashboard(state, accessRole) : nothing}
         ${state.tab === "profile"
+          ? renderLocationPrompt({
+              drift: state.adminBotLocationDrift ?? null,
+              saving: state.adminBotLocationSaving ?? false,
+              error: state.adminBotLocationError ?? null,
+              onConfirm: (answer) => {
+                void state.answerLocationPrompt?.(answer);
+              },
+              onDismiss: () => {
+                void state.answerLocationPrompt?.({});
+              },
+            })
+          : nothing}
+        ${state.tab === "profile"
           ? html`
               ${renderProfile(state, {
                 onSave: (memberId, fields) => void saveAdminBotOwnProfile(state, memberId, fields),
@@ -2929,11 +2975,26 @@ export function renderApp(state: AppViewState) {
                 saveError: state.adminBotLogisticsSaveError,
                 onSave: () => void saveAdminBotLogisticsDraft(state),
               },
+              meeting: {
+                rows: state.adminBotMeetingRows,
+                onRowsChange: (rows) => {
+                  state.adminBotMeetingRows = rows;
+                },
+                saving: state.adminBotMeetingSaving,
+                savedAt: state.adminBotMeetingSavedAt,
+                saveError: state.adminBotMeetingSaveError,
+                onSave: () => void saveAdminBotMeetingDraft(state),
+              },
               letters: {
                 schools: state.adminBotLettersSchools,
                 onSchoolsChange: (schools) => {
                   state.adminBotLettersSchools = schools;
                 },
+                facts: state.adminBotLettersFacts,
+                onFactsChange: (facts) => {
+                  state.adminBotLettersFacts = facts;
+                },
+                onOpenMyProjects: () => state.setTab("myWork"),
                 cvOverleafUrl: state.adminBotLettersCvOverleafUrl,
                 onCvOverleafUrlChange: (url) => {
                   state.adminBotLettersCvOverleafUrl = url;
@@ -2949,8 +3010,42 @@ export function renderApp(state: AppViewState) {
               },
             })
           : nothing}
+        ${state.tab === "adminbotMeetings"
+          ? renderAdminBotMeetings({
+              meetings: state.adminBotMeetings ?? [],
+              loading: state.adminBotMeetingsLoading,
+              saving: state.adminBotMeetingsSaving,
+              error: state.adminBotMeetingsError,
+              viewerIsAdmin: accessRole === "admin",
+              viewerMemberId: state.memberId ?? null,
+              // Only an admin is offered the roster editor, so only an admin needs the names. A
+              // member's own view is built from what the service already redacted for them.
+              members:
+                accessRole === "admin"
+                  ? (state.adminBotData.members ?? []).map((member) => ({
+                      id: member.id,
+                      name: member.name,
+                    }))
+                  : [],
+              onToggleAttendance: (meetingId, attendee) => {
+                void state.toggleMeetingAttendance?.(meetingId, attendee);
+              },
+              onFileMeeting: (draft) => {
+                void state.fileMeeting?.(draft);
+              },
+            })
+          : nothing}
         ${state.tab === "adminbotTimeAvailability"
           ? renderAdminBotTimeAvailability({
+              // The manual counterpart to the sign-in inference: saved through the ordinary
+              // self-edit, which is also what records it on the location timeline.
+              onSaveLocation: (answer) => {
+                if (state.memberId) {
+                  void saveAdminBotOwnProfile(state, state.memberId, answer);
+                }
+              },
+              locationSaving: state.adminBotLocationSaving ?? false,
+              locationError: state.adminBotLocationError ?? null,
               members: state.adminBotData.members ?? [],
               loading: state.adminBotLoading,
               error: state.adminBotError,

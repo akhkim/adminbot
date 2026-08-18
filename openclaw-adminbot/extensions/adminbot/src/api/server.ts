@@ -10,6 +10,8 @@ import type {
   AdminBotApprovalRequest,
   AdminBotExecutionRequest,
   AdminBotLabMemberInput,
+  AdminBotMeetingAttendee,
+  AdminBotMeetingRecordInput,
   AdminBotMemberNudgeChannel,
   AdminBotMemberNudgeRequest,
   AdminBotPaperRecordInput,
@@ -464,6 +466,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     server,
     service,
     auth,
+    // Exposed for the same reason `service` and `auth` are: tests drive this object graph
+    // directly to set up state that has no HTTP route, such as an observation dated three days
+    // ago. Nothing in production reaches for it.
+    store,
     async listen(port = 8765, host = "127.0.0.1") {
       await listen(server, port, host);
       return `http://${host}:${port}`;
@@ -1400,6 +1406,116 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, service.acknowledgeOwnOnboardingStep(principal.member.id, stepId));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/profile/location-prompt") {
+    // Self only, and deliberately so: "AdminBot thinks you have moved" is a statement about one
+    // person's whereabouts inferred from their IP, and it belongs to them before anyone else.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    sendServiceResult(res, service.memberLocationDrift(principal.member.id));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/profile/location-prompt") {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.answerLocationPrompt(principal.member.id, {
+        ...(asString(body.current_city) ? { current_city: asString(body.current_city) } : {}),
+        ...(asString(body.timezone) ? { timezone: asString(body.timezone) } : {}),
+      }),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/lab/location-drifts") {
+    // Who to re-check before scheduling anything. A governance view over other people's
+    // whereabouts, so it is admin-only.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listLocationDrifts());
+    return;
+  }
+  const memberLocations = /^\/lab\/members\/([^/]+)\/locations$/u.exec(url.pathname);
+  if (req.method === "GET" && memberLocations?.[1]) {
+    const memberId = decodeURIComponent(memberLocations[1]);
+    // Your own timeline, or an admin's. Where a colleague has been for the last six months is not
+    // roster data — it is a movement history, and it stays with them and the people who schedule.
+    const isSelf = principal.kind === "member" && principal.member.id === memberId;
+    if (!isSelf && !requirePrivileged(res, principal)) {
+      return;
+    }
+    const rawLimit = url.searchParams.get("limit");
+    const limit = rawLimit ? Number(rawLimit) : undefined;
+    sendServiceResult(
+      res,
+      service.listMemberLocations(memberId, Number.isFinite(limit) ? limit : undefined),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/meetings") {
+    // Two audiences, one route. A member gets their own attendance and a headcount; the roster is
+    // personal data about everyone else and stays with the admins. The service principal reads as
+    // a member would -- it drives agent tool calls on behalf of whoever is chatting, so it is not
+    // entitled to a roster its caller could not see.
+    if (principal.kind === "member" && principal.member.privilege_level === "admin") {
+      sendServiceResult(res, service.listMeetings());
+      return;
+    }
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    sendServiceResult(res, service.listMeetingsForMember(principal.member.id));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/meetings") {
+    // Filing a meeting by hand: the recovery path for a recording whose notice never arrived, and
+    // the way a transcript or an attendance CSV gets attached from the browser.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = (await readJson(req)) as AdminBotMeetingRecordInput;
+    sendServiceResult(res, service.upsertMeeting({ ...body, source: body.source ?? "manual" }));
+    return;
+  }
+  const meetingAttendance = /^\/meetings\/([^/]+)\/attendance$/u.exec(url.pathname);
+  if (req.method === "PUT" && meetingAttendance?.[1]) {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const attendees = Array.isArray(body.attendees)
+      ? (body.attendees as AdminBotMeetingAttendee[])
+      : [];
+    sendServiceResult(
+      res,
+      service.setMeetingAttendance(
+        decodeURIComponent(meetingAttendance[1]),
+        attendees,
+        principal.kind === "member" ? principal.member.id : "service",
+      ),
+    );
+    return;
+  }
+  const meetingRecord = /^\/meetings\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "DELETE" && meetingRecord?.[1]) {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.deleteMeeting(
+        decodeURIComponent(meetingRecord[1]),
+        principal.kind === "member" ? principal.member.id : "service",
+      ),
+    );
     return;
   }
   if (req.method === "GET" && url.pathname === "/papers/relevant") {

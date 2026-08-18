@@ -1,7 +1,14 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import type { AccessRole } from "../access.ts";
-import { createSchoolRow, type RecommendationSchool } from "../data/logistics-draft.ts";
+import {
+  createFactRow,
+  createMeetingRow,
+  createSchoolRow,
+  type LetterFact,
+  type MeetingRequestRow,
+  type RecommendationSchool,
+} from "../data/logistics-draft.ts";
 import type { LogisticsRequest } from "../data/logistics-requests.ts";
 import {
   formatFileSize,
@@ -24,6 +31,11 @@ type DrawOptions = {
   savedAt?: number | null;
   saveError?: string | null;
   schools?: RecommendationSchool[];
+  facts?: LetterFact[];
+  meetings?: MeetingRequestRow[];
+  meetingSaving?: boolean;
+  meetingSavedAt?: number | null;
+  meetingSaveError?: string | null;
   cvOverleafUrl?: string;
   driveFolderUrl?: string;
   lettersSaving?: boolean;
@@ -40,10 +52,14 @@ type Drawn = {
   descriptionChanges: string[];
   templateChanges: LogisticsTemplate[];
   schoolChanges: RecommendationSchool[][];
+  factChanges: LetterFact[][];
+  meetingChanges: MeetingRequestRow[][];
+  myProjectsOpened: number;
   cvOverleafChanges: string[];
   driveFolderChanges: string[];
   saves: number;
   lettersSaves: number;
+  meetingSaves: number;
 };
 
 function draw(options: DrawOptions = {}): Drawn {
@@ -52,12 +68,16 @@ function draw(options: DrawOptions = {}): Drawn {
   const descriptionChanges: string[] = [];
   const templateChanges: LogisticsTemplate[] = [];
   const schoolChanges: RecommendationSchool[][] = [];
+  const factChanges: LetterFact[][] = [];
+  const meetingChanges: MeetingRequestRow[][] = [];
   const cvOverleafChanges: string[] = [];
   const driveFolderChanges: string[] = [];
   const modeChanges: LogisticsMode[] = [];
   const opened: (string | null)[] = [];
   let saves = 0;
   let lettersSaves = 0;
+  let meetingSaves = 0;
+  let myProjectsOpened = 0;
   const container = document.createElement("div");
   document.body.append(container);
   render(
@@ -87,9 +107,24 @@ function draw(options: DrawOptions = {}): Drawn {
           saves += 1;
         },
       },
+      meeting: {
+        rows: options.meetings ?? [],
+        onRowsChange: (next) => meetingChanges.push(next),
+        saving: options.meetingSaving ?? false,
+        savedAt: options.meetingSavedAt ?? null,
+        saveError: options.meetingSaveError ?? null,
+        onSave: () => {
+          meetingSaves += 1;
+        },
+      },
       letters: {
         schools: options.schools ?? [],
         onSchoolsChange: (next) => schoolChanges.push(next),
+        facts: options.facts ?? [],
+        onFactsChange: (next) => factChanges.push(next),
+        onOpenMyProjects: () => {
+          myProjectsOpened += 1;
+        },
         cvOverleafUrl: options.cvOverleafUrl ?? "",
         onCvOverleafUrlChange: (next) => cvOverleafChanges.push(next),
         driveFolderUrl: options.driveFolderUrl ?? "",
@@ -113,13 +148,21 @@ function draw(options: DrawOptions = {}): Drawn {
     descriptionChanges,
     templateChanges,
     schoolChanges,
+    factChanges,
+    meetingChanges,
     cvOverleafChanges,
     driveFolderChanges,
+    get myProjectsOpened() {
+      return myProjectsOpened;
+    },
     get saves() {
       return saves;
     },
     get lettersSaves() {
       return lettersSaves;
+    },
+    get meetingSaves() {
+      return meetingSaves;
     },
   };
 }
@@ -377,8 +420,8 @@ describe("template picker", () => {
   it("marks the template whose container is on screen", () => {
     const { container } = draw({ template: "recommendationLetters" });
     expect(templateButtons(container).map((button) => button.getAttribute("aria-pressed"))).toEqual(
-      // Book Meeting is not a toggle -- it selects nothing, so it claims no pressed state.
-      ["false", "true", null],
+      // All three select a container now, so all three carry a pressed state.
+      ["false", "true", "false"],
     );
   });
 
@@ -388,31 +431,50 @@ describe("template picker", () => {
     expect(drawn.templateChanges).toEqual(["recommendationLetters"]);
   });
 
-  it("leaves Book Meeting inert until it has a form of its own", () => {
+  it("asks for the meeting container when Book Meeting is pressed", () => {
     const drawn = draw();
     templateButtons(drawn.container)[2].click();
-    expect(drawn.templateChanges).toEqual([]);
+    expect(drawn.templateChanges).toEqual(["bookMeeting"]);
   });
 
   it("shows one request container at a time", () => {
     const signature = draw();
     expect(signature.container.querySelector("[data-testid='logistics-request']")).not.toBeNull();
     expect(signature.container.querySelector("[data-testid='logistics-letters']")).toBeNull();
+    expect(
+      signature.container.querySelector("[data-testid='logistics-meeting-request']"),
+    ).toBeNull();
 
     const letters = drawLetters();
     expect(letters.container.querySelector("[data-testid='logistics-request']")).toBeNull();
     expect(letters.container.querySelector("[data-testid='logistics-letters']")).not.toBeNull();
+
+    const meeting = draw({ template: "bookMeeting" });
+    expect(meeting.container.querySelector("[data-testid='logistics-letters']")).toBeNull();
+    expect(
+      meeting.container.querySelector("[data-testid='logistics-meeting-request']"),
+    ).not.toBeNull();
   });
 });
 
 describe("list of schools", () => {
+  // The facts table below reuses the same table styles, so every query here is scoped to the
+  // schools section rather than to the card -- otherwise a column count is really two tables'.
+  function schoolsTable(container: HTMLElement): HTMLElement {
+    return container.querySelector<HTMLElement>("[data-testid='logistics-schools']")!;
+  }
+
   function cellInput(container: HTMLElement, key: string): HTMLInputElement | null {
-    return container.querySelector<HTMLInputElement>(`.logistics-schools__cell--${key} input`);
+    return schoolsTable(container).querySelector<HTMLInputElement>(
+      `.logistics-schools__cell--${key} input`,
+    );
   }
 
   function removeButtons(container: HTMLElement): HTMLButtonElement[] {
     return [
-      ...container.querySelectorAll<HTMLButtonElement>(".logistics-schools__cell--remove button"),
+      ...schoolsTable(container).querySelectorAll<HTMLButtonElement>(
+        ".logistics-schools__cell--remove button",
+      ),
     ];
   }
 
@@ -425,13 +487,18 @@ describe("list of schools", () => {
     expect(card?.lastElementChild?.classList.contains("logistics-request__actions")).toBe(true);
   });
 
-  it("tracks a request by the eight things a letter writer has to know", () => {
+  it("tracks a request by the eleven things a letter writer has to know", () => {
     const { container } = drawLetters();
-    const names = [...container.querySelectorAll(".logistics-schools__head-name")];
+    const names = [...schoolsTable(container).querySelectorAll(".logistics-schools__head-name")];
     expect(names.map((name) => name.textContent?.trim())).toEqual([
       "School",
       "Application deadline",
+      // Each deadline carries its own clock, and one zone covers both: a school states its
+      // cutoffs on one clock, so two zone columns would be two chances to disagree.
+      "Time",
       "Letter deadline",
+      "Time",
+      "Time zone",
       "Application status",
       "Letter status",
       "Program",
@@ -440,21 +507,24 @@ describe("list of schools", () => {
     ]);
   });
 
-  it("qualifies the two column names that need it", () => {
+  it("qualifies the column names that need it", () => {
     const { container } = drawLetters();
-    const hints = [...container.querySelectorAll(".logistics-schools__head-hint")];
+    const hints = [...schoolsTable(container).querySelectorAll(".logistics-schools__head-hint")];
     expect(hints.map((hint) => hint.textContent?.trim())).toEqual([
       "if different",
+      "for both times on this row",
       "If it is not a regular program, what it looks for.",
     ]);
   });
 
   it("gives every column of a row its own control", () => {
     const { container } = drawLetters({ schools: [createSchoolRow()] });
-    const row = container.querySelector<HTMLElement>(".logistics-schools__row");
-    expect(row?.querySelectorAll("input, textarea")).toHaveLength(8);
+    const row = schoolsTable(container).querySelector<HTMLElement>(".logistics-schools__row");
+    expect(row?.querySelectorAll("input, textarea")).toHaveLength(11);
     expect(cellInput(container, "applicationDeadline")?.type).toBe("date");
+    expect(cellInput(container, "applicationDeadlineTime")?.type).toBe("time");
     expect(cellInput(container, "letterDeadline")?.type).toBe("date");
+    expect(cellInput(container, "letterDeadlineTime")?.type).toBe("time");
     expect(cellInput(container, "programLink")?.type).toBe("url");
     // A note is a sentence about the program, not a word.
     expect(row?.querySelector(".logistics-schools__cell--notes textarea")).not.toBeNull();
@@ -586,12 +656,15 @@ describe("letter request links", () => {
     return input;
   }
 
-  it("puts both link fields between the table and the actions", () => {
+  it("puts both link fields between the facts table and the actions", () => {
     const { container } = drawLetters();
     const card = section(container, "logistics-letters");
     const sections = [...card.querySelectorAll(":scope > .logistics-request__section")];
     expect(sections.map((entry) => entry.getAttribute("data-testid"))).toEqual([
       "logistics-schools",
+      // What the member did comes before where the letter is written and stored: it is the part
+      // only they can supply, and the two links are plumbing for it.
+      "logistics-facts",
       "logistics-cv-overleaf",
       "logistics-drive-folder",
     ]);
@@ -760,7 +833,7 @@ describe("admin request modes", () => {
     expect(container.querySelector("[data-testid='logistics-requests']")).toBeNull();
     expect(detail?.querySelector(".card-title")?.textContent?.trim()).toBe("Ada Lovelace");
     // Every column of the member's table, as text -- no inputs an admin could type into.
-    expect(detail?.querySelectorAll(".logistics-schools__head")).toHaveLength(8);
+    expect(detail?.querySelectorAll(".logistics-schools__head")).toHaveLength(11);
     expect(detail?.querySelectorAll("input, textarea")).toHaveLength(0);
     expect(detail?.textContent).toContain("Stanford");
     expect(detail?.textContent).toContain("https://www.overleaf.com/project/abc");
@@ -799,6 +872,108 @@ describe("admin request modes", () => {
     });
     expect(container.querySelector("[data-testid='logistics-requests']")).not.toBeNull();
     expect(container.querySelector("[data-testid='logistics-request-detail']")).toBeNull();
+  });
+});
+
+// The letter itself stays a Drive template. What a template cannot hold is which project and what
+// the member did on it, which is why this table exists and why the weekly updates it draws on are
+// pointed at rather than asked for again.
+describe("list of facts", () => {
+  function factsTable(container: HTMLElement): HTMLElement {
+    return container.querySelector<HTMLElement>("[data-testid='logistics-facts']")!;
+  }
+
+  it("asks for one row per project, and routes to where the weekly updates already are", () => {
+    const drawn = drawLetters({ facts: [createFactRow({ project: "Causal NLP" })] });
+    const table = factsTable(drawn.container);
+    const names = [...table.querySelectorAll(".logistics-schools__head-name")];
+    expect(names.map((name) => name.textContent?.trim())).toEqual(["Project", "What you did"]);
+    expect(table.querySelector<HTMLInputElement>("input")?.value).toBe("Causal NLP");
+
+    table.querySelector<HTMLButtonElement>(".logistics-facts__link")?.click();
+    expect(drawn.myProjectsOpened).toBe(1);
+  });
+
+  it("adds and removes a row without touching the others", () => {
+    const rows = [createFactRow({ project: "Causal NLP" }), createFactRow({ project: "Nudges" })];
+    const added = drawLetters({ facts: rows });
+    factsTable(added.container)
+      .querySelector<HTMLButtonElement>("[data-testid='logistics-facts-add']")
+      ?.click();
+    expect(added.factChanges[0]).toHaveLength(3);
+    expect(added.factChanges[0].slice(0, 2)).toEqual(rows);
+
+    const removed = drawLetters({ facts: rows });
+    factsTable(removed.container)
+      .querySelectorAll<HTMLButtonElement>(".logistics-schools__cell--remove button")[0]
+      ?.click();
+    expect(removed.factChanges[0]).toEqual([rows[1]]);
+  });
+
+  it("says the table is empty rather than showing a bare header", () => {
+    const { container } = drawLetters({ facts: [] });
+    expect(factsTable(container).querySelector(".logistics-schools__empty")).not.toBeNull();
+  });
+});
+
+// A meeting request is four short facts, and whoever schedules them reads many at once.
+describe("book meeting", () => {
+  function drawMeeting(options: Omit<DrawOptions, "template"> = {}): Drawn {
+    return draw({ ...options, template: "bookMeeting" });
+  }
+
+  it("lays a request out as a row: when they asked, what for, when, on whose clock, how long", () => {
+    const { container } = drawMeeting({ meetings: [createMeetingRow()] });
+    const names = [...container.querySelectorAll(".logistics-schools__head-name")];
+    expect(names.map((name) => name.textContent?.trim())).toEqual([
+      "Submitted",
+      "What the call is for",
+      "Preferred time",
+      "Time zone",
+      "Call length (min)",
+    ]);
+  });
+
+  // Order of service is decided by when the request arrived, so it is the one field a requester
+  // must not be able to write.
+  it("stamps the submitted time rather than offering it as a control", () => {
+    const { container } = drawMeeting({ meetings: [createMeetingRow()] });
+    const row = container.querySelector<HTMLElement>(".logistics-schools__row")!;
+    expect(row.querySelector(".logistics-meeting__submitted input")).toBeNull();
+    expect(row.querySelector(".logistics-meeting__submitted")?.textContent?.trim()).not.toBe("");
+    // The four columns a member fills in, and no fifth.
+    expect(row.querySelectorAll("input")).toHaveLength(4);
+  });
+
+  it("prefills the zone from the browser so a proposed time means a real instant", () => {
+    const { container } = drawMeeting({ meetings: [createMeetingRow()] });
+    const zone = [...container.querySelectorAll<HTMLInputElement>("input")].find(
+      (input) => input.getAttribute("list") !== null,
+    );
+    expect(zone?.value).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  });
+
+  it("reports an edit against the row it was made in", () => {
+    const rows = [createMeetingRow(), createMeetingRow()];
+    const drawn = drawMeeting({ meetings: rows });
+    const lengths = [...drawn.container.querySelectorAll<HTMLInputElement>('input[type="number"]')];
+    lengths[1].value = "45";
+    lengths[1].dispatchEvent(new Event("input"));
+    expect(drawn.meetingChanges[0][0].lengthMinutes).toBe("");
+    expect(drawn.meetingChanges[0][1].lengthMinutes).toBe("45");
+  });
+
+  it("saves the meeting draft on its own Save, and reports its own outcome", () => {
+    const drawn = drawMeeting({ meetings: [createMeetingRow()], meetingSavedAt: 0 });
+    drawn.container.querySelector<HTMLButtonElement>(".logistics-request__actions .btn")?.click();
+    expect(drawn.meetingSaves).toBe(1);
+    expect(drawn.saves).toBe(0);
+    expect(drawn.lettersSaves).toBe(0);
+  });
+
+  it("opens empty rather than stamping a request nobody made", () => {
+    const { container } = drawMeeting();
+    expect(container.querySelector(".logistics-schools__empty")).not.toBeNull();
   });
 });
 

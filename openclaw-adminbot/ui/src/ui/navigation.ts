@@ -25,7 +25,7 @@ export const TAB_GROUPS = [
   },
   // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
   // which is what someone browsing the lab's shared surface came to look at.
-  { label: "labSharing", tabs: ["labSharing", "adminbotMembers"] },
+  { label: "labSharing", tabs: ["labSharing", "adminbotMeetings", "adminbotMembers"] },
   {
     label: "admin",
     tabs: [
@@ -83,6 +83,7 @@ export type Tab =
   | "adminbotSettings"
   | "adminbotMembers"
   | "adminbotTimeAvailability"
+  | "adminbotMeetings"
   | "adminbotLogistics"
   | "adminbotSocialBot"
   | "adminbotPapers"
@@ -137,6 +138,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotSettings: "/adminbot/settings",
   adminbotMembers: "/adminbot/members",
   adminbotTimeAvailability: "/adminbot/time-availability",
+  adminbotMeetings: "/adminbot/meetings",
   adminbotLogistics: "/adminbot/logistics",
   adminbotSocialBot: "/adminbot/social-bot",
   adminbotPapers: "/adminbot/papers",
@@ -301,6 +303,8 @@ export function iconForTab(tab: Tab): IconName {
       return "folder";
     case "adminbotTimeAvailability":
       return "clock";
+    case "adminbotMeetings":
+      return "play";
     case "adminbotLogistics":
       return "paperclip";
     case "adminbotSocialBot":

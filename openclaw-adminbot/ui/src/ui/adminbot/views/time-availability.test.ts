@@ -1,7 +1,7 @@
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
-import { upcomingMajorDeadlines } from "../data/deadline-time.ts";
+import { allUpcomingVenues, upcomingMajorDeadlines } from "../data/deadline-time.ts";
 import {
   allocationBins,
   rangeBins,
@@ -10,8 +10,10 @@ import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
   milestoneDraftError,
+  milestoneToRow,
   renderAdminBotTimeAvailability,
   type AdminBotTimeAvailabilityProps,
+  type MilestoneDraft,
 } from "./time-availability.ts";
 
 // 40h capacity is the reference line the chart draws; commitments are shown in raw hours/week.
@@ -360,12 +362,14 @@ describe("the chart", () => {
     const container = renderView({
       members: [
         member(),
-        member({ id: "other", name: "Bo" } as Partial<AdminBotLabMember>),
+        // Distinctive on purpose: this asserts on the page's whole text, and the deadline picker
+        // lists every venue in the snapshot -- a two-letter name would collide with a venue title.
+        member({ id: "other", name: "Zephyrine Quall" } as Partial<AdminBotLabMember>),
       ],
     });
     // Their own record renders; the other one is not reachable from this page.
     expect(container.textContent).toContain("Ada");
-    expect(container.textContent).not.toContain("Bo");
+    expect(container.textContent).not.toContain("Zephyrine");
   });
 
   it("selects nothing when a non-admin's selection is not their own record", () => {
@@ -480,6 +484,46 @@ describe("the whole-day toggle", () => {
     );
     expect(box).not.toBeNull();
     expect(box?.checked).toBe(true);
+  });
+
+  // A partial row used to be the claim "around, but less", with no number attached: no chart
+  // could draw it and no admin could plan against it. The hours field appears exactly when the
+  // whole-day answer stops being enough.
+  it("asks for hours as soon as the away row stops being a whole day", () => {
+    const whole = renderView({
+      awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "vacation" },
+    });
+    expect(whole.querySelector('[data-testid="time-away-hours"]')).toBeNull();
+
+    const partial = renderView({
+      awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "course_load", wholeDay: false },
+    });
+    expect(partial.querySelector('[data-testid="time-away-hours"]')).not.toBeNull();
+  });
+
+  it("refuses a partial row with no hours, and stores them when it has them", () => {
+    const base = {
+      ...EMPTY_TIME_AVAILABILITY_DRAFT,
+      category: "course_load" as const,
+      start: "2026-03-02",
+      end: "2026-03-15",
+      wholeDay: false,
+    };
+    expect(draftError(base)).not.toBeNull();
+    expect(draftError({ ...base, hoursPerWeek: "0" })).not.toBeNull();
+    expect(draftError({ ...base, hoursPerWeek: "200" })).not.toBeNull();
+    expect(draftError({ ...base, hoursPerWeek: "12" })).toBeNull();
+
+    const patch = draftToPatch({ ...base, hoursPerWeek: "12" }, { availability: [], timeOff: [] });
+    expect(patch.time_off?.[0]).toMatchObject({ availability: "partial", hours_per_week: 12 });
+
+    // A whole-day row zeroes the week by definition, so hours on it would be a second answer to
+    // a question already settled.
+    const wholeDay = draftToPatch(
+      { ...base, wholeDay: true, hoursPerWeek: "12" },
+      { availability: [], timeOff: [] },
+    );
+    expect(wholeDay.time_off?.[0]).not.toHaveProperty("hours_per_week");
   });
 
   // Jinesis work is measured in hours, so "away the whole day" is not a question it answers.
@@ -619,16 +663,60 @@ describe("draft validation for the new fields", () => {
 });
 
 describe("milestoneDraftError", () => {
+  const milestone = (fields: Partial<MilestoneDraft>): MilestoneDraft => ({
+    ...EMPTY_MILESTONE_DRAFT,
+    ...fields,
+  });
+
   it("requires a date and a name", () => {
     expect(milestoneDraftError({ ...EMPTY_MILESTONE_DRAFT })).not.toBeNull();
-    expect(milestoneDraftError({ date: "2027-06-12", label: "", link: "" })).not.toBeNull();
-    expect(milestoneDraftError({ date: "2027-06-12", label: "Graduation", link: "" })).toBeNull();
+    expect(milestoneDraftError(milestone({ date: "2027-06-12" }))).not.toBeNull();
+    expect(milestoneDraftError(milestone({ date: "2027-06-12", label: "Graduation" }))).toBeNull();
   });
 
   it("rejects a non-https link", () => {
     expect(
-      milestoneDraftError({ date: "2027-06-12", label: "Graduation", link: "http://x.com" }),
+      milestoneDraftError(
+        milestone({ date: "2027-06-12", label: "Graduation", link: "http://x.com" }),
+      ),
     ).not.toBeNull();
+  });
+
+  // A time with no zone is the ambiguity the pair exists to remove: the same digits mean
+  // seventeen different things depending on which clock they were read on.
+  it("refuses a time with no zone, and keeps the clock off the row unless both halves are there", () => {
+    expect(
+      milestoneDraftError(
+        milestone({ date: "2027-06-12", label: "Submission", time: "23:59", timezone: "" }),
+      ),
+    ).not.toBeNull();
+    expect(
+      milestoneDraftError(
+        milestone({
+          date: "2027-06-12",
+          label: "Submission",
+          time: "23:59",
+          timezone: "Etc/GMT+12",
+        }),
+      ),
+    ).toBeNull();
+
+    expect(
+      milestoneToRow(
+        milestone({
+          date: "2027-06-12",
+          label: "Submission",
+          time: "23:59",
+          timezone: "Etc/GMT+12",
+        }),
+      ),
+    ).toEqual({ date: "2027-06-12", label: "Submission", time: "23:59", timezone: "Etc/GMT+12" });
+    // A zone with no time is dropped rather than stored: the zone is prefilled, so keeping it
+    // would put a value on every whole-day milestone that nothing ever reads.
+    expect(milestoneToRow(milestone({ date: "2027-06-12", label: "Defence" }))).toEqual({
+      date: "2027-06-12",
+      label: "Defence",
+    });
   });
 });
 
@@ -659,18 +747,23 @@ describe("the split tables and the deadline panel", () => {
     ).toContain("20 h");
   });
 
-  // The member's own dates plus the two conference deadlines the whole lab plans around. The
-  // conferences come from the bundled snapshot the Deadlines tab already ships, through the same
-  // helper, so the two surfaces can never name a different "next" conference.
-  it("shows the member's own milestones alongside the next two conference deadlines", () => {
+  // The member's own dates plus the four nearest archival conference deadlines. Archival because
+  // that is the split a term is planned around -- those consume the paper -- and they come from
+  // the bundled snapshot the Deadlines tab already ships, through the same helper, so the two
+  // surfaces can never name a different "next" conference.
+  it("shows the member's own milestones alongside the four nearest archival conferences", () => {
     const panel = renderView({ members: [scheduled()] }).querySelector(
       '[data-testid="time-availability-deadlines"]',
     );
     expect(panel?.textContent).toContain("Graduation");
-    const expected = upcomingMajorDeadlines(Date.now(), 2);
-    expect(expected.length).toBe(2);
+    // Four is the cap, not a promise: the bundled snapshot holds as many archival conferences as
+    // it holds, and asserting a fixed count here would break every time it is regenerated.
+    const expected = upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true });
+    expect(expected.length).toBeGreaterThan(0);
+    expect(expected.length).toBeLessThanOrEqual(4);
     for (const entry of expected) {
       expect(panel?.textContent).toContain(entry.venue.name);
+      expect(entry.venue.archival).toBe(true);
     }
   });
 
@@ -683,9 +776,77 @@ describe("the split tables and the deadline panel", () => {
     const panel = renderView({
       members: [scheduled({ milestones: own } as Partial<AdminBotLabMember>)],
     }).querySelector('[data-testid="time-availability-deadlines"]');
-    for (const entry of upcomingMajorDeadlines(Date.now(), 2)) {
+    for (const entry of upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true })) {
       expect(panel?.textContent).toContain(entry.venue.name);
     }
+  });
+
+  // Four archival conferences is the right default and a bad restriction: the venue somebody needs
+  // on their timeline is as often a workshop, or the fifth conference down. The picker reaches all
+  // of them, and copies the snapshot's own cutoff across so nobody retypes an AoE deadline wrong.
+  it("adds a venue the panel does not already show, with its exact cutoff", () => {
+    const onSaveSchedule = vi.fn();
+    const container = renderView({ members: [scheduled()], onSaveSchedule });
+    const picker = container.querySelector<HTMLSelectElement>(
+      '[data-testid="time-availability-conference-pick"]',
+    )!;
+    const shown = upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true }).map(
+      (entry) => entry.venue.id,
+    );
+    const offered = [...picker.options].map((option) => option.value);
+    expect(offered.length).toBeGreaterThan(0);
+    for (const id of shown) {
+      expect(offered).not.toContain(id);
+    }
+
+    picker.value = offered[0];
+    container
+      .querySelector<HTMLFormElement>('[data-testid="time-availability-add-conference"]')
+      ?.requestSubmit();
+    expect(onSaveSchedule).toHaveBeenCalledTimes(1);
+    const [, patch] = onSaveSchedule.mock.calls[0];
+    const added = patch.milestones.at(-1);
+    const venue = allUpcomingVenues(Date.now()).find(
+      (entry) => entry.venue.id === offered[0],
+    )!.venue;
+    expect(added.label).toBe(venue.name);
+    expect(added.date).toBe(venue.deadline_aoe.slice(0, 10));
+    expect(added.time).toBe(venue.deadline_aoe.slice(11, 16));
+    // AoE is UTC-12; stored as the IANA name so the number means the same to Intl as to a reader.
+    expect(added.timezone).toBe("Etc/GMT+12");
+  });
+
+  // Reading someone else's schedule is an admin act; adding to it is not.
+  it("keeps the conference picker off a schedule the viewer cannot edit", () => {
+    expect(
+      renderView({ members: [scheduled()], viewerMemberId: "someone-else" }).querySelector(
+        '[data-testid="time-availability-add-conference"]',
+      ),
+    ).toBeNull();
+  });
+
+  // A deadline stated to the minute has to say on whose clock, or the digits mean seventeen
+  // different things.
+  it("prints the exact cutoff and its zone on a milestone that carries one", () => {
+    const panel = renderView({
+      members: [
+        member({
+          milestones: [
+            {
+              date: "2027-06-12",
+              label: "Camera ready",
+              time: "17:00",
+              timezone: "America/Toronto",
+            },
+          ],
+        } as Partial<AdminBotLabMember>),
+      ],
+    }).querySelector('[data-testid="time-availability-deadlines"]')!;
+    const row = [...panel.querySelectorAll("li")].find((entry) =>
+      entry.textContent?.includes("Camera ready"),
+    );
+    expect(row?.textContent).toContain("17:00");
+    expect(row?.textContent).toContain("America/Toronto");
   });
 
   // The banner says what the list holds; the reminder about what belongs in it sits on the form
@@ -752,7 +913,7 @@ describe("the split tables and the deadline panel", () => {
     const container = renderView({
       members: [scheduled()],
       onSaveSchedule,
-      milestoneDraft: { date: "2026-11-03", label: "Thesis draft", link: "" },
+      milestoneDraft: { ...EMPTY_MILESTONE_DRAFT, date: "2026-11-03", label: "Thesis draft" },
     });
     container
       .querySelector<HTMLFormElement>('[data-testid="time-availability-milestone-form"]')

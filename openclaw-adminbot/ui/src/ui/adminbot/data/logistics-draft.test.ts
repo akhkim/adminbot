@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  createFactRow,
+  createMeetingRow,
   createSchoolRow,
   isEmptySchoolRow,
   parseLogisticsDraft,
+  parseMeetingRequestDraft,
   parseRecommendationLettersDraft,
 } from "./logistics-draft.ts";
 
@@ -171,5 +174,100 @@ describe("parseRecommendationLettersDraft", () => {
     // A field stored as something other than text falls back to blank rather than losing the row.
     expect(draft?.schools[0].program).toBe("");
     expect(draft?.savedAt).toBe(0);
+  });
+});
+
+describe("parseRecommendationLettersDraft with facts", () => {
+  it("reads the facts table back and reassigns row ids", () => {
+    const draft = parseRecommendationLettersDraft({
+      schools: [],
+      facts: [{ project: "Causal NLP", contribution: "Built the annotation pipeline." }],
+      cvOverleafUrl: "",
+      driveFolderUrl: "",
+      savedAt: 1_700_000_000_000,
+    });
+    expect(draft?.facts).toHaveLength(1);
+    expect(draft?.facts[0]).toMatchObject({ project: "Causal NLP" });
+    // Ids are view-side identity, never trusted from the record.
+    expect(draft?.facts[0].id).toMatch(/^fact-\d+$/u);
+  });
+
+  it("still reads a record written before the facts table existed", () => {
+    const draft = parseRecommendationLettersDraft({
+      schools: [{ school: "Stanford" }],
+      cvOverleafUrl: "",
+      driveFolderUrl: "",
+      savedAt: 0,
+    });
+    expect(draft?.facts).toEqual([]);
+  });
+
+  it("treats a draft with nothing but blank rows as no draft", () => {
+    expect(
+      parseRecommendationLettersDraft({
+        schools: [],
+        facts: [{ project: "  ", contribution: "" }],
+        cvOverleafUrl: "",
+        driveFolderUrl: "",
+        savedAt: 1,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("createMeetingRow", () => {
+  it("stamps when the request was made and prefills the viewer's zone", () => {
+    const before = Date.now();
+    const row = createMeetingRow();
+    expect(row.submittedAt).toBeGreaterThanOrEqual(before);
+    expect(row.timezone).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+    expect(row.id).not.toBe(createMeetingRow().id);
+  });
+});
+
+describe("parseMeetingRequestDraft", () => {
+  it("keeps the stored stamp rather than restamping on restore", () => {
+    const draft = parseMeetingRequestDraft({
+      meetings: [
+        {
+          submittedAt: 1_700_000_000_000,
+          purpose: "Committee check-in",
+          preferredTime: "2027-01-08T14:00",
+          timezone: "America/Toronto",
+          lengthMinutes: "45",
+        },
+      ],
+      savedAt: 1_700_000_000_001,
+    });
+    expect(draft?.meetings[0]).toMatchObject({
+      submittedAt: 1_700_000_000_000,
+      purpose: "Committee check-in",
+      lengthMinutes: "45",
+    });
+    expect(draft?.savedAt).toBe(1_700_000_000_001);
+  });
+
+  it("treats a missing or empty record as no draft", () => {
+    expect(parseMeetingRequestDraft(null)).toBeNull();
+    expect(parseMeetingRequestDraft({ meetings: [], savedAt: 1 })).toBeNull();
+    expect(
+      parseMeetingRequestDraft({
+        meetings: [{ purpose: "", preferredTime: "", lengthMinutes: "" }],
+        savedAt: 1,
+      }),
+    ).toBeNull();
+  });
+
+  it("gives a row written before the stamp existed a usable one rather than dropping it", () => {
+    const draft = parseMeetingRequestDraft({ meetings: [{ purpose: "Advising" }], savedAt: 0 });
+    expect(draft?.meetings[0].purpose).toBe("Advising");
+    expect(draft?.meetings[0].submittedAt).toBeGreaterThan(0);
+  });
+});
+
+describe("createFactRow", () => {
+  it("starts blank and never copies an id", () => {
+    const first = createFactRow({ project: "Nudges" });
+    expect(createFactRow({ ...first }).id).not.toBe(first.id);
   });
 });

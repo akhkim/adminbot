@@ -582,6 +582,89 @@ describe("AdminBotService", () => {
     }
   });
 
+  // A deadline stated to the minute has to say on whose clock. The same digits read in Toronto and
+  // Anywhere-on-Earth are seventeen hours apart, and a time stored without its zone cannot be
+  // corrected later because nobody knows which one was meant -- so the pair is all-or-nothing.
+  it("takes an exact cutoff on a milestone only as a time and a zone together", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "clock", name: "Clock", privilege_level: "member" }));
+
+    const saved = unwrap(
+      service.updateOwnProfile("clock", {
+        milestones: [
+          { date: "2027-06-12", label: "Camera ready", time: "17:00", timezone: "America/Toronto" },
+        ],
+      }),
+    );
+    expect(saved.milestones?.[0]).toMatchObject({ time: "17:00", timezone: "America/Toronto" });
+
+    for (const bad of [
+      { milestones: [{ date: "2027-06-12", label: "Deadline", time: "17:00" }] },
+      { milestones: [{ date: "2027-06-12", label: "Deadline", timezone: "America/Toronto" }] },
+      { milestones: [{ date: "2027-06-12", label: "Deadline", time: "5pm", timezone: "UTC" }] },
+      // Seconds are not accepted: nothing here is stated to the second, and allowing them would
+      // mean two spellings of the same minute.
+      {
+        milestones: [{ date: "2027-06-12", label: "Deadline", time: "17:00:00", timezone: "UTC" }],
+      },
+      { milestones: [{ date: "2027-06-12", label: "Deadline", time: "25:00", timezone: "UTC" }] },
+      // Asked of Intl rather than checked against a bundled list, which would go stale.
+      { milestones: [{ date: "2027-06-12", label: "Deadline", time: "17:00", timezone: "EST5" }] },
+    ]) {
+      expect(service.updateOwnProfile("clock", bad)).toMatchObject({ ok: false, status: 400 });
+    }
+  });
+
+  // A partial row used to be "around, but less" with no number attached, which no chart could draw
+  // and no admin could plan against.
+  it("takes hours on a partial time-off row and refuses them on a whole-day one", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "hours", name: "Hours", privilege_level: "member" }));
+
+    const saved = unwrap(
+      service.updateOwnProfile("hours", {
+        time_off: [
+          {
+            start: "2026-09-08",
+            end: "2026-12-05",
+            kind: "course_load",
+            availability: "partial",
+            hours_per_week: 12,
+          },
+        ],
+      }),
+    );
+    expect(saved.time_off?.[0]?.hours_per_week).toBe(12);
+
+    for (const bad of [
+      {
+        time_off: [
+          {
+            start: "2026-09-08",
+            end: "2026-12-05",
+            kind: "course_load" as const,
+            availability: "partial" as const,
+            hours_per_week: 200,
+          },
+        ],
+      },
+      // A whole-day row zeroes the week by definition; hours on it would be stored and never read.
+      {
+        time_off: [
+          {
+            start: "2026-12-24",
+            end: "2027-01-02",
+            kind: "vacation" as const,
+            availability: "none" as const,
+            hours_per_week: 4,
+          },
+        ],
+      },
+    ]) {
+      expect(service.updateOwnProfile("hours", bad)).toMatchObject({ ok: false, status: 400 });
+    }
+  });
+
   it("lets a member self-edit milestones, links and the non-Jinesis time-off kinds", () => {
     const service = new AdminBotService();
     unwrap(service.upsertLabMember({ id: "plan", name: "Plan", privilege_level: "member" }));

@@ -6,6 +6,8 @@ import {
   type CalendarEvent,
   type CalendarEventDraft,
   type LabCalendar,
+  type LocationDrift,
+  type MeetingRecord,
   type MemberNudgeChannel,
   type MemberProfileUpdate,
   type MemberScheduleUpdate,
@@ -98,6 +100,8 @@ export type AdminBotSettings = {
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
   applicant_last_reviewed_at?: string;
+  /** Recordings shorter than this are filed but not listed on the Meeting Recordings tab. */
+  meeting_minimum_minutes?: number;
   updated_at: string;
 };
 
@@ -241,6 +245,7 @@ export async function sendOnboardingGuide(
 
 export type AdminBotSettingsSaveInput = {
   paper_escalation_business_days?: number;
+  meeting_minimum_minutes?: number;
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
@@ -417,6 +422,18 @@ export type AdminBotHost = {
   calendarOpenDay?: string | null;
   calendarOpenEventId?: string | null;
   calendarMessages?: Array<{ role: "user" | "assistant"; content: string }>;
+  // Meeting Recordings tab. Written by controllers/meetings.ts, which shares this host so the
+  // attendance editor can read the roster the dashboard already loaded.
+  adminBotMeetings?: MeetingRecord[];
+  // The "have you moved?" banner. Undefined is "not asked yet", null is "nothing to ask".
+  adminBotLocationDrift?: LocationDrift | null;
+  // The admin-side list, keyed by member on the calendar's invite panel.
+  adminBotLocationDrifts?: LocationDrift[];
+  adminBotLocationSaving?: boolean;
+  adminBotLocationError?: string | null;
+  adminBotMeetingsLoading: boolean;
+  adminBotMeetingsSaving: boolean;
+  adminBotMeetingsError: string | null;
   // Needed to resolve the AdminBot HTTP base URL for the direct admin-write path in
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
   settings: UiSettings;

@@ -8,14 +8,16 @@
 // This is the member's own device and nothing else: the draft never leaves the browser. Saving is
 // a convenience so a half-filled request survives a reload, not a submission -- that path does not
 // exist yet and will go through propose -> approve -> execute when it does.
+import { localTimezone } from "./timezones.ts";
+
 const DB_NAME = "adminbot-logistics";
 const DB_VERSION = 1;
 const STORE_NAME = "drafts";
-// One draft per request type, never a shared record: the two forms hold different things and a
-// member half-way through one must not lose it by opening the other. Book Meeting gets its own
-// key when it grows a form.
+// One draft per request type, never a shared record: the three forms hold different things and a
+// member half-way through one must not lose it by opening another.
 const SIGNATURE_DRAFT_KEY = "document-signature";
 const LETTERS_DRAFT_KEY = "recommendation-letters";
+const MEETING_DRAFT_KEY = "book-meeting";
 
 export type LogisticsDraft = {
   description: string;
@@ -46,7 +48,19 @@ export type RecommendationSchool = {
   id: string;
   school: string;
   applicationDeadline: string;
+  applicationDeadlineTime: string;
   letterDeadline: string;
+  letterDeadlineTime: string;
+  /**
+   * The zone both times on this row are read in, as an IANA name.
+   *
+   * One zone per row rather than one per deadline: a school states both its cutoffs on its own
+   * clock, and two zone pickers on one row would be two chances to disagree about the same
+   * campus. Blank means the dates are whole-day, which is how every row read before the times
+   * existed -- and a time typed with no zone is exactly the ambiguity that makes a member submit
+   * a day late from another country, so the form asks for it as soon as a time appears.
+   */
+  deadlineTimezone: string;
   applicationStatus: string;
   letterStatus: string;
   program: string;
@@ -54,8 +68,27 @@ export type RecommendationSchool = {
   notes: string;
 };
 
+/**
+ * One line of "what this person actually did", for the letter writer.
+ *
+ * The letter itself is a Drive template and stays one: prose, formatting and the writer's own
+ * voice do not belong in a form. What a template cannot supply is the part only the member knows --
+ * which project, and what they contributed to it. Writers were reconstructing that from memory and
+ * from Slack, which is how a year of work becomes one sentence.
+ *
+ * Deliberately two columns and not a free-text box: a paragraph gets skimmed, and a row per project
+ * is what makes an omission visible.
+ */
+export type LetterFact = {
+  // View-side identity only, like RecommendationSchool.id -- reassigned on restore.
+  id: string;
+  project: string;
+  contribution: string;
+};
+
 export type RecommendationLettersDraft = {
   schools: RecommendationSchool[];
+  facts: LetterFact[];
   // The two links the request travels with: the CV the letter is written against, and the member's
   // own copy of the filled-in templates.
   cvOverleafUrl: string;
@@ -65,6 +98,7 @@ export type RecommendationLettersDraft = {
 
 export type RecommendationLettersDraftHost = {
   adminBotLettersSchools: RecommendationSchool[];
+  adminBotLettersFacts: LetterFact[];
   adminBotLettersCvOverleafUrl: string;
   adminBotLettersDriveFolderUrl: string;
   adminBotLettersSaving: boolean;
@@ -72,10 +106,46 @@ export type RecommendationLettersDraftHost = {
   adminBotLettersSaveError: string | null;
 };
 
+/**
+ * One row of the Book Meeting request table.
+ *
+ * A meeting request is four facts and a timestamp, which is a spreadsheet and not a form: the
+ * people who schedule these are reading many at once, and a form per request made them open each
+ * one to find out whether it was a fifteen-minute check-in or an hour-long committee call.
+ *
+ * `submittedAt` is stamped when the row is created rather than typed, because "when they asked" is
+ * the column that decides who gets scheduled first and it is the one nobody would fill in honestly.
+ */
+export type MeetingRequestRow = {
+  id: string;
+  submittedAt: number;
+  purpose: string;
+  preferredTime: string;
+  // IANA zone the preferred time is read in. Prefilled from the browser, since a member proposing
+  // a time means their own clock -- and a proposed time with no zone is a meeting booked in the
+  // wrong half of the day.
+  timezone: string;
+  // Minutes, as a string: it is typed, and the same "everything is a string" rule the schools
+  // table follows keeps the parser one-path.
+  lengthMinutes: string;
+};
+
+export type MeetingRequestDraft = { meetings: MeetingRequestRow[]; savedAt: number };
+
+export type MeetingRequestDraftHost = {
+  adminBotMeetingRows: MeetingRequestRow[];
+  adminBotMeetingSaving: boolean;
+  adminBotMeetingSavedAt: number | null;
+  adminBotMeetingSaveError: string | null;
+};
+
 const EMPTY_SCHOOL: Omit<RecommendationSchool, "id"> = {
   school: "",
   applicationDeadline: "",
+  applicationDeadlineTime: "",
   letterDeadline: "",
+  letterDeadlineTime: "",
+  deadlineTimezone: "",
   applicationStatus: "",
   letterStatus: "",
   program: "",
@@ -129,15 +199,110 @@ export function parseRecommendationLettersDraft(value: unknown): RecommendationL
   const schools = Array.isArray(record.schools)
     ? record.schools.map(parseSchoolRow).filter((row): row is RecommendationSchool => row !== null)
     : [];
+  const facts = Array.isArray(record.facts)
+    ? record.facts.map(parseFactRow).filter((row): row is LetterFact => row !== null)
+    : [];
   const cvOverleafUrl = typeof record.cvOverleafUrl === "string" ? record.cvOverleafUrl : "";
   const driveFolderUrl = typeof record.driveFolderUrl === "string" ? record.driveFolderUrl : "";
   const savedAt = typeof record.savedAt === "number" && record.savedAt > 0 ? record.savedAt : 0;
   // A blank table and two blank links is the same as no draft, and restoring it would put a
   // "Saved" time on a form nobody filled in. `every` on an empty list covers the no-rows case too.
-  if (schools.every(isEmptySchoolRow) && !cvOverleafUrl.trim() && !driveFolderUrl.trim()) {
+  if (
+    schools.every(isEmptySchoolRow) &&
+    facts.every(isEmptyFactRow) &&
+    !cvOverleafUrl.trim() &&
+    !driveFolderUrl.trim()
+  ) {
     return null;
   }
-  return { schools, cvOverleafUrl, driveFolderUrl, savedAt };
+  return { schools, facts, cvOverleafUrl, driveFolderUrl, savedAt };
+}
+
+const EMPTY_FACT: Omit<LetterFact, "id"> = { project: "", contribution: "" };
+
+let factRowCount = 0;
+
+export function createFactRow(fields: Partial<LetterFact> = {}): LetterFact {
+  factRowCount += 1;
+  return { ...EMPTY_FACT, ...fields, id: `fact-${factRowCount}` };
+}
+
+export function isEmptyFactRow(row: LetterFact): boolean {
+  return !row.project.trim() && !row.contribution.trim();
+}
+
+function parseFactRow(value: unknown): LetterFact | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  return createFactRow({
+    ...(typeof record.project === "string" ? { project: record.project } : {}),
+    ...(typeof record.contribution === "string" ? { contribution: record.contribution } : {}),
+  });
+}
+
+let meetingRowCount = 0;
+
+export function createMeetingRow(fields: Partial<MeetingRequestRow> = {}): MeetingRequestRow {
+  meetingRowCount += 1;
+  return {
+    purpose: "",
+    preferredTime: "",
+    timezone: localTimezone(),
+    lengthMinutes: "",
+    // Stamped here, not on save: the column answers "when did they ask", and a save-time stamp
+    // would move every row forward each time the member touched any other one.
+    submittedAt: Date.now(),
+    ...fields,
+    id: `meeting-${meetingRowCount}`,
+  };
+}
+
+export function isEmptyMeetingRow(row: MeetingRequestRow): boolean {
+  return !row.purpose.trim() && !row.preferredTime.trim() && !row.lengthMinutes.trim();
+}
+
+function parseMeetingRow(value: unknown): MeetingRequestRow | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const text = (key: string): string | undefined => {
+    const stored = record[key];
+    return typeof stored === "string" ? stored : undefined;
+  };
+  const purpose = text("purpose");
+  const preferredTime = text("preferredTime");
+  const timezone = text("timezone");
+  const lengthMinutes = text("lengthMinutes");
+  return createMeetingRow({
+    ...(purpose === undefined ? {} : { purpose }),
+    ...(preferredTime === undefined ? {} : { preferredTime }),
+    ...(timezone ? { timezone } : {}),
+    ...(lengthMinutes === undefined ? {} : { lengthMinutes }),
+    // A stored stamp is kept as it is; only a row that never had one gets today's clock, which is
+    // the least wrong answer available for a record written before the column existed.
+    ...(typeof record.submittedAt === "number" && record.submittedAt > 0
+      ? { submittedAt: record.submittedAt }
+      : {}),
+  });
+}
+
+/** Same "an empty draft is no draft" contract as the other two parsers. */
+export function parseMeetingRequestDraft(value: unknown): MeetingRequestDraft | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const meetings = Array.isArray(record.meetings)
+    ? record.meetings.map(parseMeetingRow).filter((row): row is MeetingRequestRow => row !== null)
+    : [];
+  const savedAt = typeof record.savedAt === "number" && record.savedAt > 0 ? record.savedAt : 0;
+  if (meetings.every(isEmptyMeetingRow)) {
+    return null;
+  }
+  return { meetings, savedAt };
 }
 
 function isFile(value: unknown): value is File {
@@ -246,6 +411,19 @@ export async function clearRecommendationLettersDraft(): Promise<void> {
   await withStore("readwrite", (store) => store.delete(LETTERS_DRAFT_KEY));
 }
 
+export async function saveMeetingRequestDraft(draft: MeetingRequestDraft): Promise<void> {
+  await withStore("readwrite", (store) => store.put(draft, MEETING_DRAFT_KEY));
+}
+
+export async function loadMeetingRequestDraft(): Promise<MeetingRequestDraft | null> {
+  const stored = await withStore("readonly", (store) => store.get(MEETING_DRAFT_KEY));
+  return parseMeetingRequestDraft(stored);
+}
+
+export async function clearMeetingRequestDraft(): Promise<void> {
+  await withStore("readwrite", (store) => store.delete(MEETING_DRAFT_KEY));
+}
+
 function describeError(error: unknown): string {
   return error instanceof Error && error.message ? error.message : "Could not save on this device.";
 }
@@ -300,6 +478,7 @@ export async function saveAdminBotLettersDraft(
   try {
     await saveRecommendationLettersDraft({
       schools: host.adminBotLettersSchools,
+      facts: host.adminBotLettersFacts,
       cvOverleafUrl: host.adminBotLettersCvOverleafUrl,
       driveFolderUrl: host.adminBotLettersDriveFolderUrl,
       savedAt,
@@ -321,7 +500,37 @@ export async function restoreAdminBotLettersDraft(
     return;
   }
   host.adminBotLettersSchools = draft.schools;
+  // An older record has no facts list. Leaving the host's default single blank row in place beats
+  // replacing it with an empty array, which would render a table with no row to type in.
+  if (draft.facts.length) {
+    host.adminBotLettersFacts = draft.facts;
+  }
   host.adminBotLettersCvOverleafUrl = draft.cvOverleafUrl;
   host.adminBotLettersDriveFolderUrl = draft.driveFolderUrl;
   host.adminBotLettersSavedAt = draft.savedAt || null;
+}
+
+/** The meeting table's own save and restore, on the same contract as the other two. */
+export async function saveAdminBotMeetingDraft(host: MeetingRequestDraftHost): Promise<void> {
+  host.adminBotMeetingSaving = true;
+  host.adminBotMeetingSaveError = null;
+  const savedAt = Date.now();
+  try {
+    await saveMeetingRequestDraft({ meetings: host.adminBotMeetingRows, savedAt });
+    host.adminBotMeetingSavedAt = savedAt;
+  } catch (error) {
+    host.adminBotMeetingSaveError = describeError(error);
+  } finally {
+    host.adminBotMeetingSaving = false;
+  }
+}
+
+/** Silent on failure, for the same reason the other restores are. */
+export async function restoreAdminBotMeetingDraft(host: MeetingRequestDraftHost): Promise<void> {
+  const draft = await loadMeetingRequestDraft().catch(() => null);
+  if (!draft) {
+    return;
+  }
+  host.adminBotMeetingRows = draft.meetings;
+  host.adminBotMeetingSavedAt = draft.savedAt || null;
 }

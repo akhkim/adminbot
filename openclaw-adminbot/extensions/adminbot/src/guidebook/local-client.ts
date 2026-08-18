@@ -19,10 +19,17 @@ export type GuidebookFetch = (
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
+/**
+ * The base URL, proven to be on this machine.
+ *
+ * `purpose` is the whole phrase the message opens with ("guidebook answer", "meeting summary"),
+ * because this guard is shared: the meetings workflow summarizes transcripts through the same
+ * loopback rule, and an error naming the wrong subsystem sends the operator to the wrong config.
+ */
 export function assertLoopbackUrl(value: string, purpose: string): string {
   const url = new URL(value.endsWith("/") ? value : `${value}/`);
   if (!LOOPBACK_HOSTS.has(url.hostname)) {
-    throw new Error(`guidebook ${purpose} must use a loopback URL, got ${url.hostname}`);
+    throw new Error(`${purpose} must use a loopback URL, got ${url.hostname}`);
   }
   return url.toString();
 }
@@ -55,17 +62,17 @@ async function postJson(
     const cause = error instanceof Error ? (error.cause ?? error) : error;
     const detail = cause instanceof Error ? cause.message : String(cause);
     throw new Error(
-      `guidebook ${purpose} could not reach ${endpoint} (${detail}). Is the local model serving there?`,
+      `${purpose} could not reach ${endpoint} (${detail}). Is the local model serving there?`,
     );
   }
   const raw = await response.text();
   if (!response.ok) {
-    throw new Error(`guidebook ${purpose} failed: ${response.status} ${response.statusText}`);
+    throw new Error(`${purpose} failed: ${response.status} ${response.statusText}`);
   }
   try {
     return JSON.parse(raw) as unknown;
   } catch {
-    throw new Error(`guidebook ${purpose} returned malformed JSON`);
+    throw new Error(`${purpose} returned malformed JSON`);
   }
 }
 
@@ -98,7 +105,7 @@ export async function embedLocally(params: {
     "embeddings",
     params.apiKey,
     { model: params.model, input: params.inputs },
-    "embedding",
+    "guidebook embedding",
     params.signal,
   )) as { data?: Array<{ embedding?: unknown }> };
   const rows = parsed.data ?? [];
@@ -123,19 +130,23 @@ export async function completeLocally(params: {
   apiKey?: string;
   messages: Array<{ role: "system" | "user"; content: string }>;
   signal?: AbortSignal;
+  /** Opens every error this call can raise. Defaults to the guidebook, which was the first caller. */
+  purposeLabel?: string;
+  /** Sampling temperature. Left at the guidebook's 0.2 unless a caller needs otherwise. */
+  temperature?: number;
 }): Promise<string> {
   const parsed = (await postJson(
     params.fetchImpl,
     params.baseUrl,
     "chat/completions",
     params.apiKey,
-    { model: params.model, messages: params.messages, temperature: 0.2 },
-    "answer",
+    { model: params.model, messages: params.messages, temperature: params.temperature ?? 0.2 },
+    params.purposeLabel ?? "guidebook answer",
     params.signal,
   )) as { choices?: Array<{ message?: { content?: unknown } }> };
   const content = parsed.choices?.[0]?.message?.content;
   if (typeof content !== "string" || !content.trim()) {
-    throw new Error("guidebook answer model returned no content");
+    throw new Error(`${params.purposeLabel ?? "guidebook answer"} model returned no content`);
   }
   return content.trim();
 }

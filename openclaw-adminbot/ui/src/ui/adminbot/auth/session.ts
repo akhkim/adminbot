@@ -1521,3 +1521,176 @@ export function markOnboardingChecklistAcknowledged(memberId: string): void {
     // best-effort — quota/security failures just mean the warning card may reappear.
   }
 }
+
+// ---------------------------------------------------------------------------
+// Meeting recordings
+//
+// One GET for the list and two admin writes. The service decides what a member is allowed to see
+// (their own attendance and a headcount, never the roster), so there is nothing to redact here --
+// this is only the wire.
+// ---------------------------------------------------------------------------
+
+export type MeetingAttendee = {
+  member_id?: string;
+  display_name: string;
+  email?: string;
+  joined_at?: string;
+  minutes?: number;
+  source: "participant_report" | "transcript" | "manual";
+  present: boolean;
+};
+
+export type MeetingActionItem = {
+  text: string;
+  owner_member_id?: string;
+  owner_name?: string;
+};
+
+export type MeetingRecord = {
+  id: string;
+  topic: string;
+  started_at: string;
+  duration_minutes?: number;
+  recording: { share_url?: string; passcode?: string; drive_url?: string };
+  transcript?: { processed_at: string; speaker_names: string[]; duration_seconds?: number };
+  summary?: {
+    overview: string;
+    decisions: string[];
+    action_items: MeetingActionItem[];
+    generated_at: string;
+    model: string;
+  };
+  attendees?: MeetingAttendee[];
+  /** Present only on the member view; the admin view carries the roster itself. */
+  attendee_count?: number;
+  source: "zoom_email" | "manual";
+  notes?: string;
+};
+
+export async function fetchMeetings(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MeetingRecord[]>> {
+  const result = await authedJson(baseUrl, "/meetings", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { meetings?: MeetingRecord[] } | null;
+  return { ok: true, value: body?.meetings ?? [] };
+}
+
+export async function saveMeetingAttendance(
+  meetingId: string,
+  attendees: MeetingAttendee[],
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MeetingRecord>> {
+  const result = await authedJson(
+    baseUrl,
+    `/meetings/${encodeURIComponent(meetingId)}/attendance`,
+    "PUT",
+    sessionToken,
+    { attendees },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as MeetingRecord };
+}
+
+export async function createMeeting(
+  meeting: {
+    id: string;
+    topic: string;
+    started_at: string;
+    recording: { share_url?: string; passcode?: string; drive_url?: string };
+  },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MeetingRecord>> {
+  const result = await authedJson(baseUrl, "/meetings", "POST", sessionToken, meeting);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as MeetingRecord };
+}
+
+// ---------------------------------------------------------------------------
+// "You seem to have moved"
+//
+// The inferred half of a member's location never writes to their profile — see the service. These
+// two calls are the whole path by which an inference can become a fact: the member is shown what
+// was observed, and their answer goes through the ordinary self-edit.
+// ---------------------------------------------------------------------------
+
+export type LocationDrift = {
+  member_id: string;
+  observed_country: string;
+  observed_label?: string;
+  profile_location?: string;
+  profile_country?: string;
+  since: string;
+  observation_count: number;
+};
+
+export async function fetchLocationPrompt(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LocationDrift | null>> {
+  const result = await authedJson(baseUrl, "/profile/location-prompt", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { drift?: LocationDrift | null } | null;
+  return { ok: true, value: body?.drift ?? null };
+}
+
+/** An empty answer is a dismissal: it settles the question without touching the profile. */
+export async function answerLocationPrompt(
+  answer: { current_city?: string; timezone?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<true>> {
+  const result = await authedJson(
+    baseUrl,
+    "/profile/location-prompt",
+    "POST",
+    sessionToken,
+    answer,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: true };
+}
+
+/** Everyone whose recent sign-ins disagree with their profile. Admin-only; the service enforces it. */
+export async function fetchLocationDrifts(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LocationDrift[]>> {
+  const result = await authedJson(baseUrl, "/lab/location-drifts", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { drifts?: LocationDrift[] } | null;
+  return { ok: true, value: body?.drifts ?? [] };
+}

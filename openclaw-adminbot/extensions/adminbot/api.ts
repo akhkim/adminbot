@@ -9,6 +9,10 @@ export type {
   AdminBotExecutionResult,
   AdminBotLabMember,
   AdminBotLabMemberInput,
+  AdminBotMeetingAttendee,
+  AdminBotMeetingRecord,
+  AdminBotMeetingRecordInput,
+  AdminBotMeetingSummary,
   AdminBotPaperNudge,
   AdminBotPaperRecord,
   AdminBotPaperRecordInput,
@@ -66,3 +70,25 @@ export type {
   AdminBotOverleafEditMode,
   AdminBotOverleafEditPayload,
 } from "./src/workflows/papers/overleaf-editing.js";
+
+// Meetings: the recorded-meeting pipeline the email and artifact crons drive. Everything exported
+// here is pure -- Gmail and Drive are reached by the scripts, never from inside the extension.
+export {
+  artifactKind,
+  matchArtifactToMeeting,
+  noticeToMeeting,
+  participantsUpdate,
+  transcriptUpdate,
+  type ArtifactKind,
+  type DroppedFile,
+  type IngestibleMessage,
+} from "./src/workflows/meetings/ingest.js";
+export {
+  looksLikeZoomRecordingNotice,
+  meetingRecordId,
+  parseZoomRecordingNotice,
+  type ZoomRecordingNotice,
+} from "./src/workflows/meetings/zoom-email.js";
+export { summarizeMeeting } from "./src/workflows/meetings/summarize.js";
+export { parseVtt } from "./src/workflows/meetings/vtt.js";
+export { parseParticipantCsv } from "./src/workflows/meetings/attendance.js";

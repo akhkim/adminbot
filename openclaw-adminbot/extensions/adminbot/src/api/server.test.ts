@@ -2736,3 +2736,374 @@ describe("the calendar routes", () => {
     expect(response.status).toBe(501);
   });
 });
+
+describe("the meetings routes", () => {
+  async function memberToken(
+    baseUrl: string,
+    id: string,
+    name: string,
+    privilege: "member" | "admin" = "member",
+  ): Promise<string> {
+    seedMember(baseUrl, id, { name, email: `${id}@cs.toronto.edu`, privilege_level: privilege });
+    await approveClaim(baseUrl, id, `${id}@cs.toronto.edu`);
+    return await loginToken(baseUrl, `${id}@cs.toronto.edu`);
+  }
+
+  function fileMeeting(baseUrl: string, extra: Record<string, unknown> = {}) {
+    const result = mockFor(baseUrl).service.upsertMeeting({
+      id: "zoom-812-2026-08-12",
+      topic: "Weekly Lab Meeting",
+      started_at: "2026-08-12T14:00:00.000Z",
+      recording: { share_url: "https://us02web.zoom.us/rec/share/tok", passcode: "k7$Rm2pQ" },
+      source: "zoom_email",
+      ...extra,
+    });
+    if (!result.ok) {
+      throw new Error(`failed to file meeting: ${result.error.message}`);
+    }
+    return result.payload;
+  }
+
+  it("gives an admin the full roster", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "root", "Root Admin", "admin");
+    await memberToken(baseUrl, "ada", "Ada Attendee");
+    fileMeeting(baseUrl, {
+      attendees: [
+        { member_id: "ada", display_name: "Ada Attendee", source: "participant_report", present: true },
+        { display_name: "Guest iPhone", source: "participant_report", present: true },
+      ],
+    });
+
+    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { meetings: Array<Record<string, unknown>> };
+    expect(body.meetings[0]?.attendees).toHaveLength(2);
+    expect(body.meetings[0]?.attendee_count).toBeUndefined();
+  });
+
+  // Who sat in a lab meeting is personal data about everyone else in it. A member gets the
+  // recording, their own line and a headcount -- never the list of names.
+  it("gives a member their own attendance and a headcount, not the roster", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee");
+    seedMember(baseUrl, "bo", { name: "Bo Other", email: "bo@cs.toronto.edu" });
+    fileMeeting(baseUrl, {
+      attendees: [
+        { member_id: "ada", display_name: "Ada Attendee", source: "participant_report", present: true },
+        { member_id: "bo", display_name: "Bo Other", source: "participant_report", present: true },
+      ],
+    });
+
+    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      meetings: Array<{ attendees: Array<{ member_id?: string }>; attendee_count: number }>;
+    };
+    expect(body.meetings[0]?.attendees).toEqual([
+      {
+        member_id: "ada",
+        display_name: "Ada Attendee",
+        source: "participant_report",
+        present: true,
+      },
+    ]);
+    expect(body.meetings[0]?.attendee_count).toBe(2);
+  });
+
+  it("refuses an anonymous read", async () => {
+    const { baseUrl } = await startService();
+    fileMeeting(baseUrl);
+    expect((await fetch(`${baseUrl}/meetings`)).status).toBe(401);
+  });
+
+  it("refuses a plain member correcting the roster", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee");
+    fileMeeting(baseUrl);
+
+    const res = await fetch(`${baseUrl}/meetings/zoom-812-2026-08-12/attendance`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        attendees: [{ member_id: "ada", display_name: "Ada", source: "manual", present: true }],
+      }),
+    });
+    expect(res.status).toBe(403);
+  });
+
+  // The correction has to outrank the import, or the next transcript pass silently undoes it.
+  it("lets an admin correct the roster and stamps the correction as manual", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "root", "Root Admin", "admin");
+    seedMember(baseUrl, "ada", { name: "Ada Attendee", email: "ada@cs.toronto.edu" });
+    fileMeeting(baseUrl, {
+      attendees: [
+        { member_id: "ada", display_name: "Ada Attendee", source: "transcript", present: false },
+      ],
+    });
+
+    const res = await fetch(`${baseUrl}/meetings/zoom-812-2026-08-12/attendance`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      // Sent as "participant_report" to prove the service overrides it: a human clicking a tick box
+      // is a manual correction whatever the payload claims.
+      body: JSON.stringify({
+        attendees: [
+          {
+            member_id: "ada",
+            display_name: "Ada Attendee",
+            source: "participant_report",
+            present: true,
+          },
+        ],
+      }),
+    });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      attendees: [{ member_id: "ada", source: "manual", present: true }],
+    });
+  });
+
+  // A test call and a two-minute room check both produce a cloud recording. The tab is a catch-up
+  // surface; three-quarters of it being noise is what makes people stop opening it.
+  it("hides a meeting shorter than the configured floor", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "root", "Root Admin", "admin");
+    fileMeeting(baseUrl, { id: "short", topic: "Room check", duration_minutes: 4 });
+    fileMeeting(baseUrl, { id: "real", topic: "Weekly Lab Meeting", duration_minutes: 58 });
+
+    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    const body = (await res.json()) as { meetings: Array<{ id: string }> };
+    expect(body.meetings.map((meeting) => meeting.id)).toEqual(["real"]);
+  });
+
+  // Hiding these would hide every meeting between the notice arriving and a transcript landing --
+  // which is exactly the window in which someone goes looking for the recording.
+  it("shows a meeting whose length nothing has reported yet", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee");
+    fileMeeting(baseUrl, { id: "unknown-length" });
+
+    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    const body = (await res.json()) as { meetings: Array<{ id: string }> };
+    expect(body.meetings.map((meeting) => meeting.id)).toEqual(["unknown-length"]);
+  });
+
+  it("lets an admin lower the floor without a deploy", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "root", "Root Admin", "admin");
+    fileMeeting(baseUrl, { id: "short", topic: "Room check", duration_minutes: 4 });
+
+    const settings = await fetch(`${baseUrl}/settings`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ meeting_minimum_minutes: 0 }),
+    });
+    expect(settings.status).toBe(200);
+
+    const res = await fetch(`${baseUrl}/meetings`, { headers: { Authorization: `Bearer ${token}` } });
+    const body = (await res.json()) as { meetings: Array<{ id: string }> };
+    expect(body.meetings.map((meeting) => meeting.id)).toEqual(["short"]);
+  });
+
+  it("refuses a negative floor", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "root", "Root Admin", "admin");
+    const res = await fetch(`${baseUrl}/settings`, {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ meeting_minimum_minutes: -5 }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it("lets an admin file a meeting by hand when no notice ever arrived", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "root", "Root Admin", "admin");
+
+    const res = await fetch(`${baseUrl}/meetings`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: "manual-1",
+        topic: "Reading Group",
+        started_at: "2026-08-14T15:00:00.000Z",
+        recording: { share_url: "https://us02web.zoom.us/rec/share/other" },
+      }),
+    });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ id: "manual-1", source: "manual" });
+  });
+
+  it("refuses a record with no recording to open", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "root", "Root Admin", "admin");
+
+    const res = await fetch(`${baseUrl}/meetings`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "empty", topic: "Nothing", started_at: "2026-08-14T15:00:00.000Z" }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("the member location timeline", () => {
+  async function memberToken(
+    baseUrl: string,
+    id: string,
+    name: string,
+    privilege: "member" | "admin" = "member",
+    profile: Record<string, unknown> = {},
+  ): Promise<string> {
+    seedMember(baseUrl, id, {
+      name,
+      email: `${id}@cs.toronto.edu`,
+      privilege_level: privilege,
+      ...profile,
+    });
+    await approveClaim(baseUrl, id, `${id}@cs.toronto.edu`);
+    return await loginToken(baseUrl, `${id}@cs.toronto.edu`);
+  }
+
+  // Writes straight to the store rather than through the service: the drift rule is about days
+  // elapsed, and a test that waited three days for it would not be a test.
+  function observeLogin(baseUrl: string, memberId: string, country: string, observedAt: string) {
+    mockFor(baseUrl).store.appendMemberLocation({
+      id: `loc-${memberId}-${observedAt}`,
+      member_id: memberId,
+      observed_at: observedAt,
+      source: "login_ip",
+      raw: country,
+      country,
+    });
+  }
+
+  it("records a profile edit as a self-reported observation", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member", {
+      location: "Toronto",
+    });
+
+    const res = await fetch(`${baseUrl}/lab/members/ada/locations`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { locations: Array<{ source: string; country?: string }> };
+    expect(body.locations[0]).toMatchObject({ source: "self_reported", country: "Canada" });
+  });
+
+  // A movement history is not roster data. It stays with the person and the people who schedule.
+  it("refuses one member reading another's timeline, and allows an admin", async () => {
+    const { baseUrl } = await startService();
+    await memberToken(baseUrl, "ada", "Ada Attendee", "member", { location: "Toronto" });
+    const other = await memberToken(baseUrl, "bo", "Bo Other");
+    const admin = await memberToken(baseUrl, "root", "Root Admin", "admin");
+
+    expect(
+      (
+        await fetch(`${baseUrl}/lab/members/ada/locations`, {
+          headers: { Authorization: `Bearer ${other}` },
+        })
+      ).status,
+    ).toBe(403);
+    expect(
+      (
+        await fetch(`${baseUrl}/lab/members/ada/locations`, {
+          headers: { Authorization: `Bearer ${admin}` },
+        })
+      ).status,
+    ).toBe(200);
+  });
+
+  it("asks the member about a sustained move, and nobody else", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member", {
+      location: "Toronto",
+    });
+    observeLogin(baseUrl, "ada", "Germany", "2026-08-10T09:00:00.000Z");
+    observeLogin(baseUrl, "ada", "Germany", new Date().toISOString());
+
+    const res = await fetch(`${baseUrl}/profile/location-prompt`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      drift: { observed_country: "Germany", profile_country: "Canada" },
+    });
+
+    expect((await fetch(`${baseUrl}/profile/location-prompt`)).status).toBe(401);
+  });
+
+  it("writes the member's answer as a self-report and stops asking", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member", {
+      location: "Toronto",
+    });
+    observeLogin(baseUrl, "ada", "Germany", "2026-08-10T09:00:00.000Z");
+    observeLogin(baseUrl, "ada", "Germany", new Date().toISOString());
+
+    const answered = await fetch(`${baseUrl}/profile/location-prompt`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ current_city: "Berlin", timezone: "Europe/Berlin" }),
+    });
+    expect(answered.status).toBe(200);
+    await expect(answered.json()).resolves.toMatchObject({
+      current_city: "Berlin",
+      timezone: "Europe/Berlin",
+    });
+
+    const after = await fetch(`${baseUrl}/profile/location-prompt`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    await expect(after.json()).resolves.toEqual({ drift: null });
+  });
+
+  // "No, still Toronto" has to settle it without editing the profile, or the prompt becomes
+  // something people learn to click past.
+  it("lets a member dismiss without changing where they say they are", async () => {
+    const { baseUrl } = await startService();
+    const token = await memberToken(baseUrl, "ada", "Ada Attendee", "member", {
+      location: "Toronto",
+    });
+    observeLogin(baseUrl, "ada", "Germany", "2026-08-10T09:00:00.000Z");
+    observeLogin(baseUrl, "ada", "Germany", new Date().toISOString());
+
+    const dismissed = await fetch(`${baseUrl}/profile/location-prompt`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    expect(dismissed.status).toBe(200);
+    const record = (await dismissed.json()) as { location?: string; current_city?: string };
+    expect(record.location).toBe("Toronto");
+    expect(record.current_city).toBeUndefined();
+
+    const after = await fetch(`${baseUrl}/profile/location-prompt`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    await expect(after.json()).resolves.toEqual({ drift: null });
+  });
+
+  it("lists everyone worth re-checking for an admin, and refuses a member", async () => {
+    const { baseUrl } = await startService();
+    await memberToken(baseUrl, "ada", "Ada Attendee", "member", { location: "Toronto" });
+    const member = await memberToken(baseUrl, "bo", "Bo Other");
+    const admin = await memberToken(baseUrl, "root", "Root Admin", "admin");
+    observeLogin(baseUrl, "ada", "Germany", "2026-08-10T09:00:00.000Z");
+    observeLogin(baseUrl, "ada", "Germany", new Date().toISOString());
+
+    expect(
+      (await fetch(`${baseUrl}/lab/location-drifts`, { headers: { Authorization: `Bearer ${member}` } }))
+        .status,
+    ).toBe(403);
+    const res = await fetch(`${baseUrl}/lab/location-drifts`, {
+      headers: { Authorization: `Bearer ${admin}` },
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { drifts: Array<{ member_id: string }> };
+    expect(body.drifts.map((drift) => drift.member_id)).toEqual(["ada"]);
+  });
+});

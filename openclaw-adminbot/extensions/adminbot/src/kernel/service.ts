@@ -19,6 +19,12 @@ import type {
   AdminBotMemberNudgeResult,
   AdminBotMemberNudgeSkip,
   AdminBotMemberOnboarding,
+  AdminBotLocationDrift,
+  AdminBotLocationSource,
+  AdminBotMemberLocationEntry,
+  AdminBotMeetingAttendee,
+  AdminBotMeetingRecord,
+  AdminBotMeetingRecordInput,
   AdminBotOpenReviewCycleRecord,
   AdminBotOpenReviewMilestoneRecord,
   AdminBotPaperArtifactLinks,
@@ -43,10 +49,27 @@ import {
   adminBotMandatoryProfileFields,
   adminBotMemberRoles,
   adminBotMemberStatuses,
+  ADMINBOT_DEADLINE_TIME_PATTERN,
   ADMINBOT_MAX_LABEL_LENGTH,
   adminBotTimeOffKinds,
+  isAdminBotTimezone,
 } from "../contracts/actions.js";
+import {
+  detectLocationDrift,
+  isNewObservation,
+  latestBySource,
+  observationFor,
+  selfReportedChange,
+} from "../workflows/members/location-history.js";
 import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
+import { mergeAttendance } from "../workflows/meetings/attendance.js";
+import {
+  byMostRecent,
+  meetsDurationFloor,
+  mergeMeeting,
+  redactMeetingForMember,
+  validateMeeting,
+} from "../workflows/meetings/records.js";
 import {
   acknowledgeOnboardingStep,
   buildInitialOnboarding,
@@ -93,6 +116,15 @@ export type AdminBotServiceStore = {
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
   listPapers(): AdminBotPaperRecord[];
   deletePaper(paperId: string): boolean;
+  appendMemberLocation(entry: AdminBotMemberLocationEntry): void;
+  /** Newest first. `limit` is a cap, not a page: nothing here needs to walk a member's whole history. */
+  listMemberLocations(memberId: string, limit?: number): AdminBotMemberLocationEntry[];
+  /** Every member's entries since a timestamp, so the admin view is one query rather than one per member. */
+  listMemberLocationsSince(since: string): AdminBotMemberLocationEntry[];
+  saveMeeting(meeting: AdminBotMeetingRecord): void;
+  getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
+  listMeetings(): AdminBotMeetingRecord[];
+  deleteMeeting(meetingId: string): boolean;
   saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void;
   listOpenReviewCycles(): AdminBotOpenReviewCycleRecord[];
   // Returns false when the milestone had already fired, which is how the caller
@@ -264,8 +296,15 @@ const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = 
   ],
 };
 
+// How far back listLocationDrifts looks. Long enough that a member who moved a month ago and has
+// not been asked yet still shows up; short enough that the query stays one index scan.
+const LOCATION_DRIFT_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+
 const DEFAULT_SETTINGS = {
   paper_escalation_business_days: 3,
+  // Ten minutes: long enough to drop test calls and accidental rejoins, short enough to keep a
+  // genuinely quick stand-up. Admin-editable through /settings, so changing it needs no deploy.
+  meeting_minimum_minutes: 10,
 } as const satisfies Omit<AdminBotSettings, "updated_at">;
 
 const SLACK_CHANNEL_NAME_ALLOWED_PREFIXES = [
@@ -595,6 +634,9 @@ export class AdminBotService {
       ...(typeof settings.paper_escalation_business_days === "number"
         ? { paper_escalation_business_days: settings.paper_escalation_business_days }
         : {}),
+      ...(typeof settings.meeting_minimum_minutes === "number"
+        ? { meeting_minimum_minutes: settings.meeting_minimum_minutes }
+        : {}),
       ...(headProfessorMemberId ? { head_professor_member_id: headProfessorMemberId } : {}),
       ...(headProfessorWhatsapp ? { head_professor_whatsapp: headProfessorWhatsapp } : {}),
       ...(applicantSheetId ? { applicant_sheet_id: applicantSheetId } : {}),
@@ -685,6 +727,18 @@ export class AdminBotService {
       delete stored.availability_notes;
     }
     this.store.saveLabMember(stored);
+    // One hook covers every path that edits a profile — the member's own form, an admin, the
+    // roster importer — because they all land here. Recording it at the three call sites instead
+    // is how one of them ends up forgotten.
+    const moved = selfReportedChange(existing, stored);
+    if (moved) {
+      this.recordMemberLocation({
+        memberId: stored.id,
+        source: "self_reported",
+        raw: moved.raw,
+        ...(moved.timezone ? { timezone: moved.timezone } : {}),
+      });
+    }
     this.recordAudit({
       type: "lab_member.upserted",
       actor: member.id,
@@ -890,6 +944,281 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
+  /**
+   * Append an observation of where a member is, when it says something new.
+   *
+   * Every source funnels through here — the login geolocation, a profile edit, an admin — so the
+   * "only record a change" rule is enforced in one place rather than at three call sites that
+   * would drift apart.
+   */
+  recordMemberLocation(params: {
+    memberId: string;
+    source: AdminBotLocationSource;
+    raw: string;
+    timezone?: string;
+  }): AdminBotServiceResponse<{ recorded: boolean; entry?: AdminBotMemberLocationEntry }> {
+    const entry = observationFor({
+      memberId: params.memberId,
+      source: params.source,
+      raw: params.raw,
+      observedAt: new Date().toISOString(),
+      ...(params.timezone ? { timezone: params.timezone } : {}),
+    });
+    if (!entry) {
+      return { ok: true, status: 200, payload: { recorded: false } };
+    }
+    const latest = latestBySource(this.store.listMemberLocations(params.memberId, 50)).get(
+      params.source,
+    );
+    if (!isNewObservation(latest, entry)) {
+      return { ok: true, status: 200, payload: { recorded: false } };
+    }
+    this.store.appendMemberLocation(entry);
+    this.recordAudit({
+      type: "member.location_observed",
+      actor: params.memberId,
+      details: { source: entry.source, country: entry.country, place: entry.place_label },
+    });
+    return { ok: true, status: 200, payload: { recorded: true, entry } };
+  }
+
+  listMemberLocations(
+    memberId: string,
+    limit?: number,
+  ): AdminBotServiceResponse<{ locations: AdminBotMemberLocationEntry[] }> {
+    if (!this.store.getLabMember(memberId)) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { locations: this.store.listMemberLocations(memberId, limit) },
+    };
+  }
+
+  /** The question to put to one member, if there is one. Drives the banner on their own profile. */
+  memberLocationDrift(
+    memberId: string,
+  ): AdminBotServiceResponse<{ drift: AdminBotLocationDrift | null }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    const drift = detectLocationDrift(
+      member,
+      this.store.listMemberLocations(memberId, 50),
+      new Date(),
+    );
+    return { ok: true, status: 200, payload: { drift: drift ?? null } };
+  }
+
+  /**
+   * Everyone the lab should re-check before scheduling something. Admin surface.
+   *
+   * One query over the recent window rather than one per member: the roster is ~160 people and
+   * this is rendered on a tab, not a cron.
+   */
+  listLocationDrifts(): AdminBotServiceResponse<{ drifts: AdminBotLocationDrift[] }> {
+    const since = new Date(Date.now() - LOCATION_DRIFT_WINDOW_MS).toISOString();
+    const byMember = new Map<string, AdminBotMemberLocationEntry[]>();
+    for (const entry of this.store.listMemberLocationsSince(since)) {
+      const held = byMember.get(entry.member_id);
+      if (held) {
+        held.push(entry);
+      } else {
+        byMember.set(entry.member_id, [entry]);
+      }
+    }
+    const now = new Date();
+    const drifts: AdminBotLocationDrift[] = [];
+    for (const [memberId, entries] of byMember) {
+      const member = this.store.getLabMember(memberId);
+      const drift = member ? detectLocationDrift(member, entries, now) : undefined;
+      if (drift) {
+        drifts.push(drift);
+      }
+    }
+    return { ok: true, status: 200, payload: { drifts } };
+  }
+
+  /**
+   * The member's answer to "you seem to have moved".
+   *
+   * Both answers are answers. A confirmation writes the location the member typed through the same
+   * self-edit whitelist as any profile field — so it stays self-reported, and the observation it
+   * produces is recorded as such. A dismissal writes no location at all and only stamps that the
+   * question was asked and settled for that country.
+   */
+  answerLocationPrompt(
+    memberId: string,
+    answer: { current_city?: string; timezone?: string },
+  ): AdminBotServiceResponse<AdminBotLabMember> {
+    const existing = this.store.getLabMember(memberId);
+    if (!existing) {
+      return serviceError(404, "member not found");
+    }
+    const drift = detectLocationDrift(
+      existing,
+      this.store.listMemberLocations(memberId, 50),
+      new Date(),
+    );
+    const city = answer.current_city?.trim();
+    if (city) {
+      const updated = this.updateOwnProfile(memberId, {
+        current_city: city,
+        ...(answer.timezone?.trim() ? { timezone: answer.timezone.trim() } : {}),
+      });
+      if (!updated.ok) {
+        return updated;
+      }
+    }
+    // Re-read: updateOwnProfile above wrote a new record, and stamping the answer onto the stale
+    // copy would undo it.
+    const current = this.store.getLabMember(memberId);
+    if (!current) {
+      return serviceError(404, "member not found");
+    }
+    const now = new Date().toISOString();
+    const stamped: AdminBotLabMember = {
+      ...current,
+      location_prompt_answered_at: now,
+      ...(drift?.observed_country
+        ? { location_prompt_answered_country: drift.observed_country }
+        : {}),
+      updated_at: now,
+    };
+    this.store.saveLabMember(stamped);
+    this.recordAudit({
+      type: "member.location_prompt_answered",
+      actor: memberId,
+      details: { moved: Boolean(city), asked_about: drift?.observed_country },
+    });
+    return { ok: true, status: 200, payload: stamped };
+  }
+
+  /**
+   * File a meeting, or fold an update into one already filed.
+   *
+   * Sparse by design: the hourly pass sends the notice first and the transcript and attendance
+   * whenever they turn up, so this is called several times per meeting with a different subset
+   * each time. mergeMeeting is what keeps the earlier fields.
+   */
+  upsertMeeting(input: AdminBotMeetingRecordInput): AdminBotServiceResponse<AdminBotMeetingRecord> {
+    const validation = validateMeeting(input);
+    if (validation) {
+      return serviceError(400, validation);
+    }
+    const existing = this.store.getMeeting(input.id);
+    const stored = mergeMeeting(existing, input, new Date().toISOString());
+    this.store.saveMeeting(stored);
+    this.recordAudit({
+      type: existing ? "meeting.updated" : "meeting.recorded",
+      actor: input.source,
+      details: {
+        meeting_id: stored.id,
+        started_at: stored.started_at,
+        has_summary: Boolean(stored.summary),
+        attendee_count: stored.attendees?.length ?? 0,
+      },
+    });
+    return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * Every meeting with its full roster. Callers must have checked for admin first.
+   *
+   * `includeShort` exists for the artifact cron, not for the UI: a transcript dropped for a short
+   * meeting still has to find its record, and a matcher that cannot see the record would leave the
+   * file unattached forever — including the very file that would have proved the meeting was long
+   * enough to list after all.
+   */
+  listMeetings(
+    options?: { includeShort?: boolean },
+  ): AdminBotServiceResponse<{ meetings: AdminBotMeetingRecord[] }> {
+    return {
+      ok: true,
+      status: 200,
+      payload: { meetings: this.listedMeetings(options?.includeShort ?? false) },
+    };
+  }
+
+  /**
+   * Every meeting as one member may see it: their own attendance line and a headcount, never the
+   * roster. The redaction happens here rather than in the route so no future caller can reach the
+   * unredacted list by picking a different entry point.
+   */
+  listMeetingsForMember(
+    memberId: string,
+  ): AdminBotServiceResponse<{ meetings: AdminBotMeetingRecord[] }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        meetings: this.listedMeetings(false).map((meeting) =>
+          redactMeetingForMember(meeting, memberId),
+        ),
+      },
+    };
+  }
+
+  /**
+   * Correct the roster by hand.
+   *
+   * Every line written here is stamped `manual`, which is what makes it survive the next import:
+   * the person who was there but never unmuted has to stay ticked when the transcript pass runs
+   * again. Callers must have checked for admin first.
+   */
+  setMeetingAttendance(
+    meetingId: string,
+    attendees: readonly AdminBotMeetingAttendee[],
+    actor: string,
+  ): AdminBotServiceResponse<AdminBotMeetingRecord> {
+    const existing = this.store.getMeeting(meetingId);
+    if (!existing) {
+      return serviceError(404, `unknown meeting ${meetingId}`);
+    }
+    const corrected = attendees.map((attendee) => ({ ...attendee, source: "manual" as const }));
+    const stored: AdminBotMeetingRecord = {
+      ...existing,
+      attendees: mergeAttendance(existing.attendees ?? [], corrected),
+      updated_at: new Date().toISOString(),
+    };
+    this.store.saveMeeting(stored);
+    this.recordAudit({
+      type: "meeting.attendance_updated",
+      actor,
+      details: { meeting_id: meetingId, changed: corrected.length },
+    });
+    return { ok: true, status: 200, payload: stored };
+  }
+
+  private listedMeetings(includeShort: boolean): AdminBotMeetingRecord[] {
+    const floor = this.resolveSettings().meeting_minimum_minutes ?? 0;
+    return this.store
+      .listMeetings()
+      .filter((meeting) => includeShort || meetsDurationFloor(meeting, floor))
+      .toSorted(byMostRecent);
+  }
+
+  deleteMeeting(
+    meetingId: string,
+    actor: string,
+  ): AdminBotServiceResponse<{ deleted: true; meeting_id: string }> {
+    if (!this.store.deleteMeeting(meetingId)) {
+      return serviceError(404, `unknown meeting ${meetingId}`);
+    }
+    this.recordAudit({
+      type: "meeting.deleted",
+      actor,
+      details: { meeting_id: meetingId },
+    });
+    return { ok: true, status: 200, payload: { deleted: true, meeting_id: meetingId } };
+  }
+
   listPapers(): AdminBotServiceResponse<{ papers: AdminBotPaperRecord[] }> {
     return {
       ok: true,
@@ -967,6 +1296,15 @@ export class AdminBotService {
         delete stored.slack_location_updated_at;
       }
       this.store.saveLabMember(stored);
+      if (stored.slack_location) {
+        // Slack is a third opinion, not the profile: recorded as its own source so the timeline
+        // shows where each claim came from, and never compared against the profile for drift.
+        this.recordMemberLocation({
+          memberId: stored.id,
+          source: "slack_profile",
+          raw: stored.slack_location,
+        });
+      }
       updated += 1;
     }
     this.recordAudit({
@@ -2301,7 +2639,7 @@ function buildProfilePhotoGuidelineMessage(): string {
     "",
     "How-To if you want to take a better photo yourself:",
     "- Use portrait mode and the back camera (higher quality), and have somebody take the photo for you.",
-    '- Many phones/apps can blur the background or change it to a pure color. Some members took good photos in 10 seconds using portrait mode.',
+    "- Many phones/apps can blur the background or change it to a pure color. Some members took good photos in 10 seconds using portrait mode.",
     "- Neutral backgrounds are usually better; you can use https://www.remove.bg/ to crop yourself and place yourself into a neutral background.",
     "- Usually the shot is chest-up and includes shoulders.",
     "",
@@ -2720,6 +3058,41 @@ function validateLabel(value: unknown, label: string): string | undefined {
   return undefined;
 }
 
+/**
+ * The optional wall-clock half of a dated deadline: "HH:MM" plus the zone it is read in.
+ *
+ * The pair is validated together because neither half is usable alone. A time with no zone is the
+ * failure this field exists to prevent -- a member in Toronto typing "23:59" for a deadline set in
+ * Anywhere-on-Earth is off by seventeen hours, and storing the number without the zone makes that
+ * mistake unrecoverable rather than merely made. Storing a zone with no time is harmless but
+ * meaningless, so it is refused too rather than kept as a value nothing ever reads.
+ */
+function validateDeadlineClock(
+  time: unknown,
+  timezone: unknown,
+  label: string,
+): string | undefined {
+  if (time === undefined && timezone === undefined) {
+    return undefined;
+  }
+  if (time !== undefined && typeof time !== "string") {
+    return `${label} time must be a string`;
+  }
+  if (timezone !== undefined && typeof timezone !== "string") {
+    return `${label} time zone must be a string`;
+  }
+  if (typeof time !== "string" || !ADMINBOT_DEADLINE_TIME_PATTERN.test(time)) {
+    return `${label} time must be HH:MM`;
+  }
+  if (typeof timezone !== "string" || !timezone.trim()) {
+    return `${label} time zone is required when a time is given`;
+  }
+  if (!isAdminBotTimezone(timezone)) {
+    return `${label} time zone is not a known IANA zone`;
+  }
+  return undefined;
+}
+
 function validateMilestones(member: AdminBotLabMemberInput): string | undefined {
   if (member.milestones === undefined) {
     return undefined;
@@ -2745,6 +3118,10 @@ function validateMilestones(member: AdminBotLabMemberInput): string | undefined 
     const linkError = validateExternalLink(row.link, "milestone");
     if (linkError) {
       return linkError;
+    }
+    const clockError = validateDeadlineClock(row.time, row.timezone, "milestone");
+    if (clockError) {
+      return clockError;
     }
   }
   return undefined;
@@ -2807,6 +3184,20 @@ function validateAvailability(member: AdminBotLabMemberInput): string | undefine
       if (row.availability !== "none" && row.availability !== "partial") {
         return "time off availability must be none or partial";
       }
+      if (row.hours_per_week !== undefined) {
+        if (
+          !Number.isFinite(row.hours_per_week) ||
+          row.hours_per_week < 0 ||
+          row.hours_per_week > 168
+        ) {
+          return "time off hours per week must be between 0 and 168";
+        }
+        // Hours on a whole-day row would be two answers to the same question, and the chart
+        // reads the whole-day flag first -- so the number would be stored and never shown.
+        if (row.availability === "none") {
+          return "time off hours per week applies only to partial availability";
+        }
+      }
       const labelError = validateLabel(row.label, "time off label");
       if (labelError) {
         return labelError;
@@ -2847,6 +3238,13 @@ function validateSettings(settings: AdminBotSettingsInput): string | undefined {
       settings.paper_escalation_business_days < 1)
   ) {
     return "paper escalation business days must be a positive integer";
+  }
+  if (
+    settings.meeting_minimum_minutes !== undefined &&
+    (!Number.isInteger(settings.meeting_minimum_minutes) || settings.meeting_minimum_minutes < 0)
+  ) {
+    // Zero is meaningful — it means list everything — so this floor is 0, not 1.
+    return "meeting minimum minutes must be a non-negative integer";
   }
   const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
   if (applicantLastReviewedAt && Number.isNaN(Date.parse(applicantLastReviewedAt))) {

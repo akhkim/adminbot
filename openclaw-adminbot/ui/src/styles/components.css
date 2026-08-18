@@ -9727,6 +9727,29 @@ details[open] > .ov-expandable-toggle::after {
   color: var(--muted);
 }
 
+/* The exact cutoff, next to the date it falls on. Muted like the date because the two are one
+   fact split across two spans, and tabular so a column of them lines up. */
+.adminbot-time-availability__deadline-clock {
+  grid-column: 2;
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+/* The conference picker sits under the list, not in it: it adds a row rather than being one. */
+.adminbot-time-availability__deadline-add {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  margin-top: var(--space-3);
+}
+
+.adminbot-time-availability__deadline-add select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 /* The lab's conference dates are context; a member's own deadline is the one they entered and can
    remove, so it keeps the full-strength name and a marked edge. */
 .adminbot-time-availability__deadline-list li[data-own="false"] .adminbot-time-availability__deadline-label {

@@ -158,6 +158,7 @@ The Control UI deploys to Vercel from the lab repo. The service deploys to Auror
 - [docs/tools/adminbot-deadlines.md](docs/tools/adminbot-deadlines.md) — the venue/CFP tracker
 - [docs/tools/adminbot-openreview.md](docs/tools/adminbot-openreview.md) — reviewing-cycle reminders
 - [docs/tools/adminbot-reference-check.md](docs/tools/adminbot-reference-check.md) — citation verification
+- [docs/tools/adminbot-meetings.md](docs/tools/adminbot-meetings.md) — recorded meetings: links, attendance, summaries
 - [extensions/adminbot/README.md](extensions/adminbot/README.md) — the propose/approve/execute contract in detail
 
 ## Licence

@@ -57,6 +57,11 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // service strips the schedule fields from every other member's record on the way out
   // (adminBotScheduleMemberFields), and writing was already restricted to your own record.
   adminbotTimeAvailability: "member",
+  // Recordings of the lab's own meetings, for the lab's own members. The tab is member-level
+  // because the recording and the summary are what someone who missed the meeting came for; the
+  // attendance roster inside it is not, and the service hands a member only their own line and a
+  // headcount (listMeetingsForMember). Reading who else was there is an admin act.
+  adminbotMeetings: "member",
   // Each template starts a request made in the viewer's own name, so it needs an account behind
   // it -- a visitor has no identity for AdminBot to route the signature or the letter back to.
   adminbotLogistics: "member",

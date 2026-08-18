@@ -24,6 +24,9 @@ export type TimeOffRow = {
   end: string;
   kind?: string;
   availability: "none" | "partial";
+  // Hours a week a "partial" row takes. Absent on whole-day rows, which zero the week outright,
+  // and absent on partial rows recorded before the form asked for a number.
+  hours_per_week?: number;
   note?: string;
   // The member's own name for this, used when `kind` is "other" so the closed enum stays closed.
   label?: string;
@@ -35,6 +38,10 @@ export type MilestoneRow = {
   date: string;
   label: string;
   link?: string;
+  // The wall-clock cutoff on `date` ("HH:MM") and the IANA zone it is read in. Both or neither;
+  // see AdminBotMemberMilestone in extensions/adminbot/src/contracts/actions.ts.
+  time?: string;
+  timezone?: string;
 };
 
 // Mirrors ADMINBOT_OPEN_PROJECT in extensions/adminbot/src/contracts/actions.ts: a sentinel project
@@ -86,6 +93,12 @@ export function milestoneRows(value: unknown): MilestoneRow[] {
             date: row.date,
             label: row.label,
             ...(typeof row.link === "string" ? { link: row.link } : {}),
+            // Dropped unless both halves are there: a time with no zone is the ambiguity the
+            // pair exists to remove, so half a pair is treated as no answer rather than as a
+            // number a reader would have to guess the zone for.
+            ...(typeof row.time === "string" && typeof row.timezone === "string" && row.timezone
+              ? { time: row.time, timezone: row.timezone }
+              : {}),
           },
         ]
       : [];
@@ -104,6 +117,11 @@ export function timeOffRows(value: unknown): TimeOffRow[] {
             start: row.start,
             end: row.end,
             availability: row.availability === "partial" ? ("partial" as const) : ("none" as const),
+            // Only kept when it is a usable figure: a stored 0 or a NaN says the same thing as no
+            // answer at all, and letting either through would draw a zero-height bar.
+            ...(Number.isFinite(Number(row.hours_per_week)) && Number(row.hours_per_week) > 0
+              ? { hours_per_week: Number(row.hours_per_week) }
+              : {}),
             ...(typeof row.kind === "string" ? { kind: row.kind } : {}),
             ...(typeof row.note === "string" ? { note: row.note } : {}),
             ...(typeof row.label === "string" ? { label: row.label } : {}),

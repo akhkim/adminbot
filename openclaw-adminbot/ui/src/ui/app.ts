@@ -19,6 +19,8 @@ import type {
   MemberRegistration,
   RosterMember,
   CalendarEvent,
+  LocationDrift,
+  MeetingRecord,
   CalendarEventDraft,
   LabCalendar,
 } from "./adminbot/auth/session.ts";
@@ -39,9 +41,23 @@ import {
   saveAdminBotCalendarEvent,
 } from "./adminbot/controllers/calendar.ts";
 import {
+  answerAdminBotLocationPrompt,
+  loadAdminBotLocationDrifts,
+  loadAdminBotLocationPrompt,
+} from "./adminbot/controllers/location-prompt.ts";
+import {
+  fileAdminBotMeeting,
+  loadAdminBotMeetings,
+  setAdminBotMeetingAttendance,
+} from "./adminbot/controllers/meetings.ts";
+import {
+  createFactRow,
   createSchoolRow,
   restoreAdminBotLettersDraft,
   restoreAdminBotLogisticsDraft,
+  restoreAdminBotMeetingDraft,
+  type LetterFact,
+  type MeetingRequestRow,
   type RecommendationSchool,
 } from "./adminbot/data/logistics-draft.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
@@ -281,6 +297,16 @@ export class OpenClawApp extends LitElement {
   // reactive property, so writing one from a controller changes nothing on screen. That is what
   // made the whole tab inert — events loaded and never appeared, and typing in the assistant did
   // not re-render. The view tests could not catch it because they render with a plain object.
+  // Declared here for the same reason as the calendar block above: a controller writing a plain
+  // class field would change nothing on screen.
+  @state() adminBotLocationDrift?: LocationDrift | null;
+  @state() adminBotLocationDrifts?: LocationDrift[];
+  @state() adminBotLocationSaving = false;
+  @state() adminBotLocationError: string | null = null;
+  @state() adminBotMeetings?: MeetingRecord[];
+  @state() adminBotMeetingsLoading = false;
+  @state() adminBotMeetingsSaving = false;
+  @state() adminBotMeetingsError: string | null = null;
   @state() calendarEvents?: CalendarEvent[];
   @state() calendarEventsLoading = false;
   @state() calendarEventsError: string | null = null;
@@ -580,6 +606,14 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLogisticsOpenRequestId: string | null = null;
   // One blank row so the table opens ready to type in rather than empty.
   @state() adminBotLettersSchools: RecommendationSchool[] = [createSchoolRow()];
+  // One blank row here too, for the same reason: a table with no row is a table nobody can start.
+  @state() adminBotLettersFacts: LetterFact[] = [createFactRow()];
+  // Book Meeting opens empty rather than with a blank row: creating a row stamps "submitted", and
+  // a stamp nobody asked for would sit at the top of the queue on a request that does not exist.
+  @state() adminBotMeetingRows: MeetingRequestRow[] = [];
+  @state() adminBotMeetingSaving = false;
+  @state() adminBotMeetingSavedAt: number | null = null;
+  @state() adminBotMeetingSaveError: string | null = null;
   @state() adminBotLettersCvOverleafUrl = "";
   @state() adminBotLettersDriveFolderUrl = "";
   @state() adminBotLettersSaving = false;
@@ -987,6 +1021,7 @@ export class OpenClawApp extends LitElement {
     // never block the first paint or surface an error of its own.
     void restoreAdminBotLogisticsDraft(this);
     void restoreAdminBotLettersDraft(this);
+    void restoreAdminBotMeetingDraft(this);
   }
 
   protected override firstUpdated() {
@@ -1513,6 +1548,44 @@ export class OpenClawApp extends LitElement {
 
   loadCalendarEvents(): Promise<void> {
     return loadAdminBotCalendar(this as unknown as Parameters<typeof loadAdminBotCalendar>[0]);
+  }
+
+  loadLocationPrompt(): Promise<void> {
+    return loadAdminBotLocationPrompt(
+      this as unknown as Parameters<typeof loadAdminBotLocationPrompt>[0],
+    );
+  }
+
+  loadLocationDrifts(): Promise<void> {
+    return loadAdminBotLocationDrifts(
+      this as unknown as Parameters<typeof loadAdminBotLocationDrifts>[0],
+    );
+  }
+
+  answerLocationPrompt(answer: { current_city?: string; timezone?: string }): Promise<void> {
+    return answerAdminBotLocationPrompt(
+      this as unknown as Parameters<typeof answerAdminBotLocationPrompt>[0],
+      answer,
+    );
+  }
+
+  loadMeetings(): Promise<void> {
+    return loadAdminBotMeetings(this as unknown as Parameters<typeof loadAdminBotMeetings>[0]);
+  }
+
+  toggleMeetingAttendance(
+    meetingId: string,
+    attendee: Parameters<typeof setAdminBotMeetingAttendance>[2],
+  ): Promise<void> {
+    return setAdminBotMeetingAttendance(
+      this as unknown as Parameters<typeof setAdminBotMeetingAttendance>[0],
+      meetingId,
+      attendee,
+    );
+  }
+
+  async fileMeeting(draft: Parameters<typeof fileAdminBotMeeting>[1]): Promise<void> {
+    await fileAdminBotMeeting(this as unknown as Parameters<typeof fileAdminBotMeeting>[0], draft);
   }
 
   requestCalendarDraft(): Promise<void> {

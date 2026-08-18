@@ -551,3 +551,28 @@
     justify-content: flex-start;
   }
 }
+
+/* The "My Projects" pointer in the facts section. A button, not an anchor: it switches tabs inside
+   the app rather than navigating, so it must not offer a URL it cannot honour. Styled as the link
+   it reads as. */
+.logistics-facts__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.logistics-facts__link:hover {
+  color: var(--accent-hover, var(--accent));
+}
+
+/* Stamped, not typed. Rendered as text so it reads as a fact about the row rather than as an empty
+   control someone is meant to fill in. */
+.logistics-meeting__submitted {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  white-space: nowrap;
+}

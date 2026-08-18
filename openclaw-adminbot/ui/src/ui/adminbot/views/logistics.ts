@@ -5,15 +5,21 @@
 // into a form that proposes a typed action from contracts/actions.ts, so none of them may reach a
 // connector directly -- propose -> approve -> execute is the only path out of here.
 //
-// Document Signature and Recommendation Letters have their forms. Only the inputs exist so far:
-// what the member types and picks is held in app state, saved to their own device, and goes
-// nowhere until the action lands.
+// All three have their forms now. Only the inputs exist so far: what the member types and picks is
+// held in app state, saved to their own device, and goes nowhere until the action lands.
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
 import type { AccessRole } from "../access.ts";
-import { createSchoolRow, type RecommendationSchool } from "../data/logistics-draft.ts";
+import {
+  createFactRow,
+  createMeetingRow,
+  createSchoolRow,
+  type LetterFact,
+  type MeetingRequestRow,
+  type RecommendationSchool,
+} from "../data/logistics-draft.ts";
 import {
   APPLICATION_STATUS_LIST_ID,
   APPLICATION_STATUS_SUGGESTIONS,
@@ -21,6 +27,8 @@ import {
   LETTER_STATUS_SUGGESTIONS,
   SCHOOL_FIELDS,
   TEMPLATE_FOLDER_URL,
+  TIMEZONE_LIST_ID,
+  timezoneSuggestions,
   type SchoolField,
 } from "./logistics-fields.ts";
 import {
@@ -61,9 +69,20 @@ export type AdminBotLogisticsProps = {
     attachments: File[];
     onAttachmentsChange: (files: File[]) => void;
   };
+  meeting: RequestSaveProps & {
+    rows: MeetingRequestRow[];
+    onRowsChange: (rows: MeetingRequestRow[]) => void;
+  };
   letters: RequestSaveProps & {
     schools: RecommendationSchool[];
     onSchoolsChange: (schools: RecommendationSchool[]) => void;
+    // The per-project record of what the member actually did, which the Drive template cannot
+    // supply and the writer would otherwise reconstruct from memory.
+    facts: LetterFact[];
+    onFactsChange: (facts: LetterFact[]) => void;
+    // Routes to My Projects, where the weekly updates the letter draws on already live. Passed in
+    // rather than reached for, because this view knows nothing about how navigation works.
+    onOpenMyProjects: () => void;
     cvOverleafUrl: string;
     onCvOverleafUrlChange: (url: string) => void;
     driveFolderUrl: string;
@@ -73,6 +92,7 @@ export type AdminBotLogisticsProps = {
 
 type SignatureProps = AdminBotLogisticsProps["signature"];
 type LettersProps = AdminBotLogisticsProps["letters"];
+type MeetingProps = AdminBotLogisticsProps["meeting"];
 
 // The documents to be signed are the point of the request, so this list is narrow on purpose.
 // Supporting attachments deliberately carry no accept list -- context arrives as anything.
@@ -394,7 +414,13 @@ function renderSchoolCell(
         : html`
             <input
               class="logistics-schools__input"
-              type=${field.control === "date" ? "date" : field.control === "url" ? "url" : "text"}
+              type=${field.control === "date"
+                ? "date"
+                : field.control === "time"
+                  ? "time"
+                  : field.control === "url"
+                    ? "url"
+                    : "text"}
               list=${field.listId ?? nothing}
               aria-label=${label}
               placeholder=${placeholder}
@@ -436,6 +462,7 @@ function renderSchoolsSection(props: LettersProps) {
 
       ${renderStatusOptions(APPLICATION_STATUS_LIST_ID, APPLICATION_STATUS_SUGGESTIONS)}
       ${renderStatusOptions(LETTER_STATUS_LIST_ID, LETTER_STATUS_SUGGESTIONS)}
+      ${renderStatusOptions(TIMEZONE_LIST_ID, timezoneSuggestions())}
 
       <!-- Eight columns do not fit a laptop, and squeezing them would leave every field too narrow
            to read what was typed in it. The table keeps its width and this wrapper scrolls. -->
@@ -475,6 +502,305 @@ function renderSchoolsSection(props: LettersProps) {
         >
           <span aria-hidden="true">${icons.plus}</span>
           ${t("logistics.schools.add")}
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+/**
+ * The list of facts a letter is written from.
+ *
+ * The letter stays a Drive template -- structure, salutation, the writer's own voice -- because
+ * that is what a template is good at. What it cannot hold is the one thing only the member knows:
+ * which project, and what they did on it. Without this the writer works from memory and from
+ * whatever they can find in Slack, which is how a year of work becomes a sentence.
+ *
+ * The weekly updates that back these claims are already written, on My Projects. The line under
+ * the heading routes there rather than asking for them again: a member who has been filing weekly
+ * updates all term should be copying from them, not retyping the term.
+ */
+function renderFactsSection(props: LettersProps) {
+  const update = (row: LetterFact, key: "project" | "contribution") => (event: Event) => {
+    const control = event.currentTarget;
+    if (!(control instanceof HTMLInputElement) && !(control instanceof HTMLTextAreaElement)) {
+      return;
+    }
+    props.onFactsChange(
+      // Found by id, not by index: a removal above this row renumbers everything under it between
+      // the handler being made and being called.
+      props.facts.map((candidate) =>
+        candidate.id === row.id ? { ...candidate, [key]: control.value } : candidate,
+      ),
+    );
+  };
+  return html`
+    <section class="logistics-request__section logistics-schools" data-testid="logistics-facts">
+      <h3 class="card-title">${t("logistics.facts.title")}</h3>
+      <p class="card-sub">
+        ${t("logistics.facts.sub")}
+        <button
+          class="logistics-facts__link"
+          type="button"
+          @click=${() => props.onOpenMyProjects()}
+        >
+          ${t("logistics.facts.openMyProjects")}
+        </button>
+      </p>
+
+      <div class="logistics-schools__scroll">
+        <table class="logistics-schools__table">
+          <thead>
+            <tr>
+              <th scope="col" class="logistics-schools__head">
+                <span class="logistics-schools__head-name">${t("logistics.facts.project")}</span>
+              </th>
+              <th scope="col" class="logistics-schools__head">
+                <span class="logistics-schools__head-name"
+                  >${t("logistics.facts.contribution")}</span
+                >
+                <small class="logistics-schools__head-hint"
+                  >${t("logistics.facts.contributionHint")}</small
+                >
+              </th>
+              <th scope="col" class="logistics-schools__head logistics-schools__head--remove">
+                <span class="sr-only">${t("logistics.schools.removeColumn")}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            ${props.facts.length
+              ? repeat(
+                  props.facts,
+                  (row) => row.id,
+                  (row, index) => html`
+                    <tr class="logistics-schools__row">
+                      <td class="logistics-schools__cell">
+                        <input
+                          class="logistics-schools__input"
+                          type="text"
+                          aria-label=${t("logistics.schools.cell", {
+                            column: t("logistics.facts.project"),
+                            row: String(index + 1),
+                          })}
+                          placeholder=${t("logistics.facts.projectPlaceholder")}
+                          .value=${row.project}
+                          @input=${update(row, "project")}
+                        />
+                      </td>
+                      <td class="logistics-schools__cell">
+                        <textarea
+                          class="logistics-schools__input logistics-schools__notes"
+                          rows="2"
+                          aria-label=${t("logistics.schools.cell", {
+                            column: t("logistics.facts.contribution"),
+                            row: String(index + 1),
+                          })}
+                          placeholder=${t("logistics.facts.contributionPlaceholder")}
+                          .value=${row.contribution}
+                          @input=${update(row, "contribution")}
+                        ></textarea>
+                      </td>
+                      <td class="logistics-schools__cell logistics-schools__cell--remove">
+                        <button
+                          class="btn btn--icon btn--xs"
+                          type="button"
+                          aria-label=${t("logistics.facts.removeRow", { row: String(index + 1) })}
+                          @click=${() =>
+                            props.onFactsChange(
+                              props.facts.filter((candidate) => candidate.id !== row.id),
+                            )}
+                        >
+                          ${icons.x}
+                        </button>
+                      </td>
+                    </tr>
+                  `,
+                )
+              : html`
+                  <tr>
+                    <td class="logistics-schools__empty" colspan="3">
+                      ${t("logistics.facts.empty")}
+                    </td>
+                  </tr>
+                `}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="logistics-schools__actions">
+        <button
+          class="btn btn--sm"
+          type="button"
+          data-testid="logistics-facts-add"
+          @click=${() => props.onFactsChange([...props.facts, createFactRow()])}
+        >
+          <span aria-hidden="true">${icons.plus}</span>
+          ${t("logistics.facts.add")}
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+// Local formatting: "when they submitted" is read against the reader's own clock, and it is the
+// one column on this table that is not a claim the member is making.
+function submittedLabel(submittedAt: number): string {
+  if (!Number.isFinite(submittedAt) || submittedAt <= 0) {
+    return t("logistics.meeting.notSubmitted");
+  }
+  return new Date(submittedAt).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Book Meeting, as a spreadsheet rather than a form.
+ *
+ * A meeting request is four short facts, and the people who schedule them read many at once: which
+ * call, when it suits, on whose clock, and how long. A form per request meant opening each one to
+ * find out whether it was a fifteen-minute check-in or an hour-long committee call, which is the
+ * question that decides where it goes in a week. One row per request puts all four side by side.
+ *
+ * "Submitted" is stamped when the row is created and shown read-only. It is the column that decides
+ * order of service, so it is the one field a requester must not be able to write.
+ */
+function renderMeetingSection(props: MeetingProps) {
+  const update =
+    (row: MeetingRequestRow, key: "purpose" | "preferredTime" | "timezone" | "lengthMinutes") =>
+    (event: Event) => {
+      const control = event.currentTarget;
+      if (!(control instanceof HTMLInputElement)) {
+        return;
+      }
+      props.onRowsChange(
+        props.rows.map((candidate) =>
+          candidate.id === row.id ? { ...candidate, [key]: control.value } : candidate,
+        ),
+      );
+    };
+  const cellLabel = (column: string, index: number) =>
+    t("logistics.schools.cell", { column, row: String(index + 1) });
+  return html`
+    <section class="logistics-request__section logistics-schools" data-testid="logistics-meeting">
+      <h3 class="card-title">${t("logistics.meeting.title")}</h3>
+      <p class="card-sub">${t("logistics.meeting.sub")}</p>
+
+      ${renderStatusOptions(TIMEZONE_LIST_ID, timezoneSuggestions())}
+
+      <div class="logistics-schools__scroll">
+        <table class="logistics-schools__table">
+          <thead>
+            <tr>
+              ${[
+                t("logistics.meeting.submitted"),
+                t("logistics.meeting.purpose"),
+                t("logistics.meeting.preferredTime"),
+                t("logistics.meeting.timezone"),
+                t("logistics.meeting.length"),
+              ].map(
+                (heading) => html`
+                  <th scope="col" class="logistics-schools__head">
+                    <span class="logistics-schools__head-name">${heading}</span>
+                  </th>
+                `,
+              )}
+              <th scope="col" class="logistics-schools__head logistics-schools__head--remove">
+                <span class="sr-only">${t("logistics.schools.removeColumn")}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            ${props.rows.length
+              ? repeat(
+                  props.rows,
+                  (row) => row.id,
+                  (row, index) => html`
+                    <tr class="logistics-schools__row">
+                      <td class="logistics-schools__cell logistics-meeting__submitted">
+                        ${submittedLabel(row.submittedAt)}
+                      </td>
+                      <td class="logistics-schools__cell">
+                        <input
+                          class="logistics-schools__input"
+                          type="text"
+                          aria-label=${cellLabel(t("logistics.meeting.purpose"), index)}
+                          placeholder=${t("logistics.meeting.purposePlaceholder")}
+                          .value=${row.purpose}
+                          @input=${update(row, "purpose")}
+                        />
+                      </td>
+                      <td class="logistics-schools__cell">
+                        <input
+                          class="logistics-schools__input"
+                          type="datetime-local"
+                          aria-label=${cellLabel(t("logistics.meeting.preferredTime"), index)}
+                          .value=${row.preferredTime}
+                          @input=${update(row, "preferredTime")}
+                        />
+                      </td>
+                      <td class="logistics-schools__cell">
+                        <input
+                          class="logistics-schools__input"
+                          type="text"
+                          list=${TIMEZONE_LIST_ID}
+                          aria-label=${cellLabel(t("logistics.meeting.timezone"), index)}
+                          .value=${row.timezone}
+                          @input=${update(row, "timezone")}
+                        />
+                      </td>
+                      <td class="logistics-schools__cell">
+                        <input
+                          class="logistics-schools__input"
+                          type="number"
+                          min="5"
+                          max="480"
+                          step="5"
+                          aria-label=${cellLabel(t("logistics.meeting.length"), index)}
+                          placeholder=${t("logistics.meeting.lengthPlaceholder")}
+                          .value=${row.lengthMinutes}
+                          @input=${update(row, "lengthMinutes")}
+                        />
+                      </td>
+                      <td class="logistics-schools__cell logistics-schools__cell--remove">
+                        <button
+                          class="btn btn--icon btn--xs"
+                          type="button"
+                          aria-label=${t("logistics.meeting.removeRow", { row: String(index + 1) })}
+                          @click=${() =>
+                            props.onRowsChange(
+                              props.rows.filter((candidate) => candidate.id !== row.id),
+                            )}
+                        >
+                          ${icons.x}
+                        </button>
+                      </td>
+                    </tr>
+                  `,
+                )
+              : html`
+                  <tr>
+                    <td class="logistics-schools__empty" colspan="6">
+                      ${t("logistics.meeting.empty")}
+                    </td>
+                  </tr>
+                `}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="logistics-schools__actions">
+        <button
+          class="btn btn--sm"
+          type="button"
+          data-testid="logistics-meeting-add"
+          @click=${() => props.onRowsChange([...props.rows, createMeetingRow()])}
+        >
+          <span aria-hidden="true">${icons.plus}</span>
+          ${t("logistics.meeting.add")}
         </button>
       </div>
     </section>
@@ -576,14 +902,24 @@ function renderLettersRequest(props: LettersProps) {
       class="card adminbot-card adminbot-card--wide logistics-request"
       data-testid="logistics-letters"
     >
-      ${renderSchoolsSection(props)} ${renderCvOverleafSection(props)}
+      ${renderSchoolsSection(props)} ${renderFactsSection(props)} ${renderCvOverleafSection(props)}
       ${renderDriveFolderSection(props)} ${renderRequestActions(props)}
     </div>
   `;
 }
 
-// Book Meeting carries no template of its own yet, so it selects nothing -- picking it would empty
-// the page. It stays in the row, and enabled, so the surface still names all three request types.
+// The same container shape again for Book Meeting: one table, then Save and Submit.
+function renderMeetingRequest(props: MeetingProps) {
+  return html`
+    <div
+      class="card adminbot-card adminbot-card--wide logistics-request"
+      data-testid="logistics-meeting-request"
+    >
+      ${renderMeetingSection(props)} ${renderRequestActions(props)}
+    </div>
+  `;
+}
+
 const TEMPLATE_BUTTONS: {
   template: LogisticsTemplate | null;
   labelKey: string;
@@ -599,11 +935,7 @@ const TEMPLATE_BUTTONS: {
     labelKey: "logistics.templates.recommendationLetters",
     icon: icons.fileText,
   },
-  {
-    template: null,
-    labelKey: "logistics.templates.bookMeeting",
-    icon: icons.clock,
-  },
+  { template: "bookMeeting", labelKey: "logistics.templates.bookMeeting", icon: icons.clock },
 ];
 
 function renderTemplates(props: AdminBotLogisticsProps) {
@@ -672,7 +1004,9 @@ function renderMakeRequest(props: AdminBotLogisticsProps) {
       ? renderLettersRequest(props.letters)
       : props.template === "documentSignature"
         ? renderSignatureRequest(props.signature)
-        : nothing}
+        : props.template === "bookMeeting"
+          ? renderMeetingRequest(props.meeting)
+          : nothing}
   `;
 }
 

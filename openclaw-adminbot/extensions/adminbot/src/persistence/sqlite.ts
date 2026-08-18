@@ -8,6 +8,8 @@ import type {
   AdminBotAuthSession,
   AdminBotExecutionResult,
   AdminBotLabMember,
+  AdminBotMeetingRecord,
+  AdminBotMemberLocationEntry,
   AdminBotMemberCredential,
   AdminBotOpenReviewCycleRecord,
   AdminBotOpenReviewMilestoneRecord,
@@ -141,6 +143,33 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_papers_step_idx
         ON adminbot_papers(current_step, updated_at);
+
+      CREATE TABLE IF NOT EXISTS adminbot_member_locations (
+        id TEXT PRIMARY KEY,
+        member_id TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        source TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      -- Both reads are "recent first": one member's history for their own banner, and every
+      -- member's recent entries for the admin list.
+      CREATE INDEX IF NOT EXISTS adminbot_member_locations_member_idx
+        ON adminbot_member_locations(member_id, observed_at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_member_locations_observed_idx
+        ON adminbot_member_locations(observed_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_meetings (
+        id TEXT PRIMARY KEY,
+        started_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      -- The tab reads newest-first and nothing else queries this table, so one index on the sort
+      -- column is the whole access pattern.
+      CREATE INDEX IF NOT EXISTS adminbot_meetings_started_idx
+        ON adminbot_meetings(started_at DESC);
 
       CREATE TABLE IF NOT EXISTS adminbot_settings (
         id TEXT PRIMARY KEY,
@@ -492,6 +521,72 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
   deletePaper(paperId: string): boolean {
     return this.db.prepare("DELETE FROM adminbot_papers WHERE id = ?").run(paperId).changes > 0;
+  }
+
+  appendMemberLocation(entry: AdminBotMemberLocationEntry): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_member_locations (id, member_id, observed_at, source, payload_json)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(entry.id, entry.member_id, entry.observed_at, entry.source, JSON.stringify(entry));
+  }
+
+  listMemberLocations(memberId: string, limit?: number): AdminBotMemberLocationEntry[] {
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json FROM adminbot_member_locations
+         WHERE member_id = ? ORDER BY observed_at DESC LIMIT ?`,
+      )
+      // -1 is SQLite's "no limit", which keeps this one statement rather than two.
+      .all(memberId, typeof limit === "number" ? limit : -1) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotMemberLocationEntry>(row.payload_json));
+  }
+
+  listMemberLocationsSince(since: string): AdminBotMemberLocationEntry[] {
+    const rows = this.db
+      .prepare(
+        "SELECT payload_json FROM adminbot_member_locations WHERE observed_at >= ? ORDER BY observed_at DESC",
+      )
+      .all(since) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotMemberLocationEntry>(row.payload_json));
+  }
+
+  saveMeeting(meeting: AdminBotMeetingRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_meetings (
+          id,
+          started_at,
+          updated_at,
+          payload_json
+        ) VALUES (?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          started_at = excluded.started_at,
+          updated_at = excluded.updated_at,
+          payload_json = excluded.payload_json`,
+      )
+      .run(meeting.id, meeting.started_at, meeting.updated_at, JSON.stringify(meeting));
+  }
+
+  getMeeting(meetingId: string): AdminBotMeetingRecord | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_meetings WHERE id = ?")
+      .get(meetingId) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotMeetingRecord>(row.payload_json) : undefined;
+  }
+
+  listMeetings(): AdminBotMeetingRecord[] {
+    const rows = this.db
+      .prepare("SELECT payload_json FROM adminbot_meetings ORDER BY started_at DESC")
+      .all() as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotMeetingRecord>(row.payload_json));
+  }
+
+  deleteMeeting(meetingId: string): boolean {
+    return (
+      this.db.prepare("DELETE FROM adminbot_meetings WHERE id = ?").run(meetingId).changes > 0
+    );
   }
 
   getSettings(): AdminBotSettings | undefined {
