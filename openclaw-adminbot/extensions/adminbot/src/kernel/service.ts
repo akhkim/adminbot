@@ -271,6 +271,7 @@ const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = 
 
 const DEFAULT_SETTINGS = {
   paper_escalation_business_days: 3,
+  cv_recency_window_months: 3,
 } as const satisfies Omit<AdminBotSettings, "updated_at">;
 
 const SLACK_CHANNEL_NAME_ALLOWED_PREFIXES = [
@@ -597,6 +598,9 @@ export class AdminBotService {
     const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
     const next: AdminBotSettings = {
       ...current,
+      ...(typeof settings.cv_recency_window_months === "number"
+        ? { cv_recency_window_months: settings.cv_recency_window_months }
+        : {}),
       ...(typeof settings.paper_escalation_business_days === "number"
         ? { paper_escalation_business_days: settings.paper_escalation_business_days }
         : {}),
@@ -620,6 +624,7 @@ export class AdminBotService {
       type: "settings.updated",
       details: {
         paper_escalation_business_days: next.paper_escalation_business_days,
+        cv_recency_window_months: next.cv_recency_window_months,
         has_head_professor_member_id: Boolean(next.head_professor_member_id),
         has_applicant_sheet_id: Boolean(next.applicant_sheet_id),
         ...(next.applicant_last_reviewed_at
@@ -2834,6 +2839,16 @@ function validateSettings(settings: AdminBotSettingsInput): string | undefined {
       settings.paper_escalation_business_days < 1)
   ) {
     return "paper escalation business days must be a positive integer";
+  }
+  if (
+    settings.cv_recency_window_months !== undefined &&
+    (!Number.isInteger(settings.cv_recency_window_months) ||
+      settings.cv_recency_window_months < 1 ||
+      // A window past five years stops separating news from history at all, which is the only
+      // job this setting has.
+      settings.cv_recency_window_months > 60)
+  ) {
+    return "cv recency window months must be a whole number between 1 and 60";
   }
   const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
   if (applicantLastReviewedAt && Number.isNaN(Date.parse(applicantLastReviewedAt))) {

@@ -962,7 +962,14 @@ async function handleAuthenticatedRoute(
       sendServiceResult(res, members);
       return;
     }
-    const { result, snapshots } = await runAdminBotCvScan(members.payload.members, ctx.cvScanDeps);
+    // Read at scan time rather than captured at boot, so changing the window takes effect on the
+    // next scan instead of the next restart.
+    const cvSettings = service.getSettings();
+    const { result, snapshots } = await runAdminBotCvScan(
+      members.payload.members,
+      ctx.cvScanDeps,
+      cvSettings.ok ? cvSettings.payload.cv_recency_window_months : undefined,
+    );
     // Snapshots are written through upsertLabMember rather than straight to the store so the
     // scan cannot bypass member validation, and so a bad extraction fails one member's save
     // instead of corrupting the roster.

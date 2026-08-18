@@ -633,6 +633,10 @@ export type AdminBotLabMember = Omit<AdminBotLabMemberInput, "privilege_level"> 
 
 export type AdminBotSettingsInput = {
   paper_escalation_business_days?: number;
+  // How many months back a CV entry's start date may sit and still count as news. Configurable
+  // because the right answer depends on how often a lab's members actually refresh their CVs:
+  // too tight and a real move lands as backfilled, too wide and "recently" stops meaning it.
+  cv_recency_window_months?: number;
   head_professor_member_id?: string;
   // Contact number the onboarding "what to expect" note hands to direct mentees. Governance
   // config rather than a repo constant: it is a real phone number, so it never belongs in the
@@ -644,6 +648,7 @@ export type AdminBotSettingsInput = {
 
 export type AdminBotSettings = {
   paper_escalation_business_days: number;
+  cv_recency_window_months: number;
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;

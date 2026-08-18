@@ -52,6 +52,9 @@ export type AdminBotCvScanOutcome = {
 export async function runAdminBotCvScan(
   members: AdminBotLabMember[],
   deps: AdminBotCvScanDeps,
+  // Falls back to the built-in window so a caller with no settings loaded still classifies rather
+  // than treating everything as news.
+  windowMonths: number = CV_RECENCY_WINDOW_MONTHS,
 ): Promise<AdminBotCvScanOutcome> {
   const scannedAt = deps.now().toISOString();
   const results: AdminBotCvScanMemberResult[] = [];
@@ -104,14 +107,14 @@ export async function runAdminBotCvScan(
         // the case this feature exists for, and suppressing the whole first scan lost it. The
         // recency window is what tells the two apart, so it decides here as well as in the diff.
         const recent = entries
-          .map((entry) => ({ entry, recency: classifyRecency(entry, deps.now()) }))
+          .map((entry) => ({ entry, recency: classifyRecency(entry, deps.now(), windowMonths) }))
           .filter((change) => change.recency === "recent");
         results.push({ ...base, status: "first_scan", added: recent });
         continue;
       }
       const added = entriesMissingFrom(entries, previous.entries).map((entry) => ({
         entry,
-        recency: classifyRecency(entry, deps.now()),
+        recency: classifyRecency(entry, deps.now(), windowMonths),
       }));
       const removed = entriesMissingFrom(previous.entries, entries);
       results.push({

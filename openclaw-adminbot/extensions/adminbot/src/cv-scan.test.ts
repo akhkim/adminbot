@@ -483,3 +483,40 @@ describe("resolveStartIso", () => {
     expect(classifyRecency(entry, new Date("2026-08-18T00:00:00.000Z"))).toBe("recent");
   });
 });
+
+describe("configurable recency window", () => {
+  const entry = (start: string): AdminBotCvEntry => ({
+    kind: "position",
+    title: "Research Scientist",
+    organization: "DeepMind",
+    start,
+  });
+  const now = new Date("2026-08-05T00:00:00.000Z");
+
+  it("honours a wider window than the default", () => {
+    // Feb 2026 is six months back: outside the three-month default, inside a twelve-month window.
+    expect(classifyRecency(entry("Feb 2026"), now)).toBe("backfilled");
+    expect(classifyRecency(entry("Feb 2026"), now, 12)).toBe("recent");
+  });
+
+  it("honours a tighter window than the default", () => {
+    expect(classifyRecency(entry("Jun 2026"), now)).toBe("recent");
+    expect(classifyRecency(entry("Jun 2026"), now, 1)).toBe("backfilled");
+  });
+
+  it("applies the window through a whole scan", async () => {
+    const members = [
+      member({
+        id: "m",
+        name: "Ada",
+        cv_url: "https://drive.google.com/file/d/abc",
+        cv_snapshot: snapshotOf("older cv", []),
+      }),
+    ];
+    const scanDeps = deps({ extractEntries: async () => [entry("Feb 2026")] });
+    const tight = await runAdminBotCvScan(members, scanDeps);
+    expect(tight.result.newsletter_draft).toBe("");
+    const wide = await runAdminBotCvScan(members, scanDeps, 12);
+    expect(wide.result.newsletter_draft).toContain("Ada — joined DeepMind");
+  });
+});
