@@ -347,12 +347,50 @@ const MAX_CV_REDIRECTS = 3;
  * can still slip through. Closing that needs the connection pinned to the validated address, which
  * means an undici dispatcher and a dependency decision this change does not make on its own.
  */
+/**
+ * Rewrites a Google share link into something that actually returns the file.
+ *
+ * Members paste the URL out of their browser, which is a viewer page: it answers 200 with ~80KB of
+ * HTML and no PDF anywhere in it, so the extractor fails with "Data format error" and the report
+ * blames the document rather than the link. Every share form is handled here instead of asking
+ * people to hand-craft a download URL they have no reason to know about.
+ *
+ * A Google Doc is exported rather than downloaded -- a native Doc has no PDF bytes to fetch.
+ */
+export function normalizeCvDownloadUrl(raw: URL): URL {
+  const host = raw.hostname;
+  if (host !== "drive.google.com" && host !== "docs.google.com") {
+    return raw;
+  }
+  // /file/d/<id>/view, /document/d/<id>/edit, /presentation/d/<id>/... all carry the id here.
+  const pathId = /\/d\/([A-Za-z0-9_-]{10,})/u.exec(raw.pathname)?.[1];
+  const queryId = raw.searchParams.get("id");
+  const id = pathId ?? (queryId && /^[A-Za-z0-9_-]{10,}$/u.test(queryId) ? queryId : undefined);
+  if (!id) {
+    return raw;
+  }
+  // Native Docs/Slides/Sheets cannot be downloaded as-is; ask Google to render a PDF.
+  const editorType = /^\/(document|presentation|spreadsheets)\//u.exec(raw.pathname)?.[1];
+  if (host === "docs.google.com" && editorType) {
+    const kind = editorType === "spreadsheets" ? "spreadsheets" : editorType;
+    return new URL(`https://docs.google.com/${kind}/d/${id}/export?format=pdf`);
+  }
+  return new URL(`https://drive.google.com/uc?export=download&id=${id}`);
+}
+
+// "%PDF" — the header every PDF starts with.
+const PDF_MAGIC = [0x25, 0x50, 0x44, 0x46];
+
+function startsWithPdfMagic(buffer: Uint8Array): boolean {
+  return PDF_MAGIC.every((byte, index) => buffer[index] === byte);
+}
+
 async function fetchCvPdf(
   fetchImpl: typeof globalThis.fetch,
   url: string,
   signal?: AbortSignal,
 ): Promise<Uint8Array> {
-  let target = new URL(url);
+  let target = normalizeCvDownloadUrl(new URL(url));
   for (let hop = 0; hop <= MAX_CV_REDIRECTS; hop += 1) {
     if (target.protocol !== "https:") {
       throw new Error(`cv url must use https (got ${target.protocol.replace(":", "")})`);
@@ -382,6 +420,14 @@ async function fetchCvPdf(
     const buffer = new Uint8Array(await response.arrayBuffer());
     if (buffer.byteLength > MAX_PDF_BYTES) {
       throw new Error(`cv is larger than ${MAX_PDF_BYTES} bytes`);
+    }
+    // Checked by magic bytes rather than content-type, because Drive serves the real file as
+    // application/octet-stream while a sharing-permission interstitial comes back as a 200 page of
+    // HTML. Without this the report says "unreadable_pdf" and blames a document that is fine.
+    if (!startsWithPdfMagic(buffer)) {
+      throw new Error(
+        "the cv url did not return a PDF — if it is a Google file, check the link is shared with anyone who has it",
+      );
     }
     return buffer;
   }

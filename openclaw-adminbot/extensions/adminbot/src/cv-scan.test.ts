@@ -11,6 +11,7 @@ import {
   assertPublicHost,
   classifyRecency,
   isPublicIpAddress,
+  normalizeCvDownloadUrl,
   runAdminBotCvScan,
   type AdminBotCvScanDeps,
 } from "./cv-scan.js";
@@ -371,5 +372,46 @@ describe("CV change ledger", () => {
     ]);
     const since = store.listCvChangesSince("2026-07-01T00:00:00.000Z");
     expect(since.map((row) => row.member_id)).toEqual(["m3", "m2"]);
+  });
+});
+
+describe("normalizeCvDownloadUrl", () => {
+  const at = (raw: string) => normalizeCvDownloadUrl(new URL(raw)).toString();
+
+  it("rewrites the Drive viewer link members actually paste", () => {
+    // This exact shape returns ~80KB of HTML, which reaches PDFium as a "Data format error".
+    expect(at("https://drive.google.com/file/d/1EkV76vhT3J6Z0VDB9cYBpeotbxWIJhOf/view?usp=sharing"))
+      .toBe("https://drive.google.com/uc?export=download&id=1EkV76vhT3J6Z0VDB9cYBpeotbxWIJhOf");
+  });
+
+  it("handles the older open?id= form", () => {
+    expect(at("https://drive.google.com/open?id=1EkV76vhT3J6Z0VDB9cYBpeotbxWIJhOf")).toContain(
+      "uc?export=download&id=1EkV76vhT3J6Z0VDB9cYBpeotbxWIJhOf",
+    );
+  });
+
+  it("exports a native Google Doc rather than downloading it", () => {
+    // A Doc has no PDF bytes to fetch; Google has to render one.
+    expect(at("https://docs.google.com/document/d/1AbCdEfGhIjKlMnOp/edit#heading=x")).toBe(
+      "https://docs.google.com/document/d/1AbCdEfGhIjKlMnOp/export?format=pdf",
+    );
+  });
+
+  it("exports Slides too", () => {
+    expect(at("https://docs.google.com/presentation/d/1AbCdEfGhIjKlMnOp/edit")).toBe(
+      "https://docs.google.com/presentation/d/1AbCdEfGhIjKlMnOp/export?format=pdf",
+    );
+  });
+
+  it("leaves a direct PDF on another host alone", () => {
+    expect(at("https://han.sparkenv.com/assets/pdf/portfolio.pdf")).toBe(
+      "https://han.sparkenv.com/assets/pdf/portfolio.pdf",
+    );
+  });
+
+  it("leaves a Google URL with no recognisable id alone", () => {
+    expect(at("https://drive.google.com/drive/my-drive")).toBe(
+      "https://drive.google.com/drive/my-drive",
+    );
   });
 });
