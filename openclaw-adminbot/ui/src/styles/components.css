@@ -10073,3 +10073,27 @@ select.input:focus {
   color: var(--muted);
   opacity: 0.85;
 }
+
+/* The recency window sits with the scan button because it is what decides that scan's outcome.
+   Reads as a sentence rather than a labelled form field: it is one number in the middle of an
+   explanation, not a form someone fills in. */
+.adminbot-cv__window {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  white-space: nowrap;
+}
+
+.adminbot-cv__window input {
+  width: 64px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-strong);
+  font: inherit;
+  text-align: center;
+}

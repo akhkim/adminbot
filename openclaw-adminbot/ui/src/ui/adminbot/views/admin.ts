@@ -661,15 +661,9 @@ function submitSettingsForm(event: Event, props: AdminBotProps): void {
   }
   const data = new FormData(form);
   const escalation = Number(getFormValue(data, "paperEscalationBusinessDays") || "0");
-  const cvWindow = Number(getFormValue(data, "cvRecencyWindowMonths") || "0");
   props.onSaveSettings({
     ...(Number.isInteger(escalation) && escalation > 0
       ? { paper_escalation_business_days: escalation }
-      : {}),
-    // Omitted rather than sent as 0 when blank or nonsense: the service would reject it and the
-    // whole save would fail over a field the admin may not have touched.
-    ...(Number.isInteger(cvWindow) && cvWindow >= 1 && cvWindow <= 60
-      ? { cv_recency_window_months: cvWindow }
       : {}),
     head_professor_member_id: getFormValue(data, "headProfessorMemberId"),
     head_professor_whatsapp: getFormValue(data, "headProfessorWhatsapp"),
@@ -716,21 +710,6 @@ function renderSettings(
                 step="1"
                 .value=${String(settings.paper_escalation_business_days)}
               />
-            </label>
-            <label class="adminbot-form__field">
-              <span>CV recency window (months)</span>
-              <input
-                name="cvRecencyWindowMonths"
-                type="number"
-                min="1"
-                max="60"
-                step="1"
-                .value=${String(settings.cv_recency_window_months ?? 3)}
-              />
-              <small class="muted"
-                >How far back a CV entry's start date may sit and still be drafted as news. Older
-                additions are still reported, just not written up.</small
-              >
             </label>
             <label class="adminbot-form__field">
               <span>Head professor member id</span>
@@ -2369,6 +2348,25 @@ function renderCvUpdates(props: AdminBotProps) {
             ? html` · last scan ${formatRelativeTimestamp(Date.parse(scan.scanned_at))}`
             : nothing}</span
         >
+        <label class="adminbot-cv__window">
+          <span>Announce jobs started within</span>
+          <input
+            type="number"
+            min="1"
+            max="60"
+            step="1"
+            .value=${String(props.data.settings?.cv_recency_window_months ?? 3)}
+            @change=${(event: Event) => {
+              const months = Number((event.target as HTMLInputElement).value);
+              // Out-of-range values are dropped rather than sent: the service would reject them,
+              // and this control saves on its own so there is no form to report the error on.
+              if (Number.isInteger(months) && months >= 1 && months <= 60) {
+                props.onSaveSettings({ cv_recency_window_months: months });
+              }
+            }}
+          />
+          <span>months</span>
+        </label>
       </div>
 
       ${linked === 0
