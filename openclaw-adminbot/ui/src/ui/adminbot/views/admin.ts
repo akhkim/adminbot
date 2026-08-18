@@ -25,8 +25,15 @@ import type {
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
 import { nextStepFor, type NextStep } from "../next-step.ts";
+import {
+  type BlockerRow,
+  blockerAgeDays,
+  openBlockers,
+  recoverBlockerInput,
+  resolveBlockerInput,
+  resolvedBlockers,
+} from "../blockers.ts";
 import { nudgeSaveInput } from "../nudge-alerts.ts";
-import { blockerAgeDays, blockerOf } from "./my-work.ts";
 
 export type BlockerSort = "stage" | "age" | "paper";
 import { renderAdminBotReimbursements } from "./reimbursements.ts";
@@ -1919,23 +1926,84 @@ function renderPaperStats(papers: AdminBotPaperRecord[]) {
 }
 
 /**
- * Reported blockers, sortable.
+ * Reported blockers: what is open, and what has already been dealt with.
  *
- * Sorting is the whole point: a chat thread of "what is holding this up" cannot be triaged, but
- * a list grouped by stage can -- five papers stuck at Submission is a systemic problem, five
- * stuck at different stages is five conversations.
+ * Sorting is the point of the open list. A chat thread of "what is holding this up" cannot be
+ * triaged, but a list grouped by stage can -- five papers stuck at Submission is a systemic
+ * problem, five stuck at different stages is five conversations. Age sits alongside it because the
+ * oldest report is usually the real one.
  *
- * Age is offered alongside stage because the oldest blocker is usually the real one; a stage
- * with a two-day-old report needs less attention than one sitting for three weeks.
+ * Resolving moves a row into history rather than deleting it, and history offers Recover, so a
+ * misclick costs one click instead of asking the reporter to type it all again.
  */
-function renderBlockers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
-  const rows = papers
-    .map((paper) => ({ paper, blocker: blockerOf(paper) }))
-    .filter((row): row is { paper: AdminBotPaperRecord; blocker: NonNullable<ReturnType<typeof blockerOf>> } =>
-      Boolean(row.blocker),
-    );
+function renderBlockerRow(
+  props: AdminBotProps,
+  papers: readonly AdminBotPaperRecord[],
+  row: BlockerRow,
+  self: string,
+) {
+  const paper = papers.find((candidate) => candidate.id === row.paperId);
+  const days = blockerAgeDays(row.at);
+  const resolved = Boolean(row.resolved_at);
+  return html`
+    <details class=${`blocker ${resolved ? "blocker--resolved" : ""}`}>
+      <summary class="blocker__row">
+        <span class="blocker__stage">${stepLabels[row.stage] ?? row.stage}</span>
+        <span class="blocker__title">${row.title}</span>
+        <span class="blocker__paper">${row.paperTitle}</span>
+        <span class="blocker__by">${row.by || "unknown"}</span>
+        <span class="blocker__age">
+          ${days === undefined ? "" : days === 0 ? "today" : `${days}d`}
+        </span>
+      </summary>
+      <div class="blocker__body">
+        <p class="blocker__note">${row.note || "No further detail given."}</p>
+        <div class="blocker__actions">
+          ${resolved
+            ? html`
+                <span class="blocker__resolved-by">
+                  Solved${row.resolved_by ? ` by ${row.resolved_by}` : ""}
+                </span>
+                <button
+                  type="button"
+                  class="btn btn--sm"
+                  data-testid=${`blocker-recover-${row.paperId}`}
+                  @click=${() => {
+                    if (paper) {
+                      props.onSavePaper(recoverBlockerInput(paper, row.at));
+                    }
+                  }}
+                >
+                  Recover
+                </button>
+              `
+            : html`
+                <button
+                  type="button"
+                  class="btn btn--sm primary"
+                  data-testid=${`blocker-solve-${row.paperId}`}
+                  @click=${() => {
+                    if (paper) {
+                      props.onSavePaper(resolveBlockerInput(paper, row.at, self));
+                    }
+                  }}
+                >
+                  Mark as solved
+                </button>
+              `}
+        </div>
+      </div>
+    </details>
+  `;
+}
 
-  if (rows.length === 0) {
+function renderBlockers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
+  const open = openBlockers(papers);
+  const solved = resolvedBlockers(papers);
+  const self =
+    props.data.members.find((member) => member.id === props.signedInMemberId)?.name?.trim() ?? "";
+
+  if (open.length === 0 && solved.length === 0) {
     return html`
       <article class="adminbot-editor-card">
         <div class="card-title">Reported blockers</div>
@@ -1944,57 +2012,58 @@ function renderBlockers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     `;
   }
 
-  const sort: BlockerSort = props.blockerSort ?? "stage";
-  const sorted = [...rows].sort((left, right) => {
+  const sort = props.blockerSort ?? "stage";
+  const sorted = [...open].sort((left, right) => {
     if (sort === "age") {
-      return (left.blocker.at || "").localeCompare(right.blocker.at || "");
+      return (left.at || "").localeCompare(right.at || "");
     }
     if (sort === "paper") {
-      return left.paper.title.localeCompare(right.paper.title);
+      return left.paperTitle.localeCompare(right.paperTitle);
     }
     return (
-      paperSteps.indexOf(left.blocker.stage as AdminBotPaperStep) -
-        paperSteps.indexOf(right.blocker.stage as AdminBotPaperStep) ||
-      left.paper.title.localeCompare(right.paper.title)
+      paperSteps.indexOf(left.stage as AdminBotPaperStep) -
+        paperSteps.indexOf(right.stage as AdminBotPaperStep) ||
+      left.paperTitle.localeCompare(right.paperTitle)
     );
   });
 
   return html`
     <article class="adminbot-editor-card">
       <div class="card-title">Reported blockers</div>
-      <div class="card-sub">${rows.length} open. Click one to read the full report.</div>
-      <div class="blockers__sort">
-        <span>Sort by</span>
-        ${(["stage", "age", "paper"] as const satisfies readonly BlockerSort[]).map(
-          (key) => html`
-            <button
-              type="button"
-              class=${`btn btn--sm ${sort === key ? "primary" : ""}`}
-              data-testid=${`blocker-sort-${key}`}
-              @click=${() => props.onBlockerSort?.(key)}
-            >
-              ${key === "stage" ? "Stage" : key === "age" ? "Oldest first" : "Paper"}
-            </button>
-          `,
-        )}
+      <div class="card-sub">
+        ${open.length} open. Click one to read the full report and mark it solved.
       </div>
-      <div class="blockers">
-        ${sorted.map(({ paper, blocker }) => {
-          const days = blockerAgeDays(blocker.at);
-          return html`
-            <details class="blocker">
-              <summary class="blocker__row">
-                <span class="blocker__stage">${stepLabels[blocker.stage] ?? blocker.stage}</span>
-                <span class="blocker__title">${blocker.title}</span>
-                <span class="blocker__paper">${paper.title}</span>
-                <span class="blocker__age">
-                  ${days === undefined ? "" : days === 0 ? "today" : `${days}d`}
-                </span>
-              </summary>
-              <p class="blocker__note">${blocker.note || "No further detail given."}</p>
-            </details>
-          `;
-        })}
+      <div class="blockers__bar">
+        <details class="blockers__history">
+          <summary class="blockers__history-summary">
+            History${solved.length > 0 ? ` (${solved.length})` : ""}
+          </summary>
+          <div class="blockers" data-testid="blockers-history">
+            ${solved.length === 0
+              ? html`<p class="blockers__empty">Nothing solved yet.</p>`
+              : solved.map((row) => renderBlockerRow(props, papers, row, self))}
+          </div>
+        </details>
+        <div class="blockers__sort">
+          <span>Sort by</span>
+          ${(["stage", "age", "paper"] as const satisfies readonly BlockerSort[]).map(
+            (key) => html`
+              <button
+                type="button"
+                class=${`btn btn--sm ${sort === key ? "primary" : ""}`}
+                data-testid=${`blocker-sort-${key}`}
+                @click=${() => props.onBlockerSort?.(key)}
+              >
+                ${key === "stage" ? "Stage" : key === "age" ? "Oldest first" : "Paper"}
+              </button>
+            `,
+          )}
+        </div>
+      </div>
+      <div class="blockers" data-testid="blockers-open">
+        ${sorted.length === 0
+          ? html`<p class="blockers__empty">Nothing open — everything reported has been solved.</p>`
+          : sorted.map((row) => renderBlockerRow(props, papers, row, self))}
       </div>
     </article>
   `;

@@ -4,51 +4,49 @@ import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import {
   type AdminBotPaperRecord,
-  type AdminBotPaperSaveInput,
   createEmptyAdminBotDashboardData,
 } from "../controllers/admin.ts";
+import {
+  blockerLog,
+  fileBlockerInput,
+  openBlocker,
+  recoverBlockerInput,
+  resolveBlockerInput,
+  resolvedBlockers,
+} from "../blockers.ts";
 import { renderAdminBot, type AdminBotProps, type BlockerSort } from "./admin.ts";
-import { blockerOf } from "./my-work.ts";
 
-function paper(overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecord {
+function entry(over: Partial<Record<string, string>> = {}) {
+  return { stage: "submission", title: "t", note: "n", by: "Pat", at: "2026-08-01T00:00:00Z", ...over };
+}
+
+function paper(log: unknown[], id = "p1", title = "Paper"): AdminBotPaperRecord {
   return {
-    id: "p1",
-    title: "Causal Abstraction",
+    id,
+    title,
     authors: ["Pat Doe"],
-    current_step: "brainstorm",
-    created_at: "2026-06-01T00:00:00Z",
-    updated_at: "2026-06-01T00:00:00Z",
-    ...overrides,
+    current_step: "submission",
+    artifacts: { blocker_log: JSON.stringify(log) },
   } as AdminBotPaperRecord;
 }
 
 const papers: AdminBotPaperRecord[] = [
-  paper({
-    id: "late",
-    title: "Zebra Effects",
-    current_step: "submission",
-    artifacts: {
-      blocker_stage: "submission",
-      blocker_title: "OpenReview rejects the PDF font subset",
-      blocker_note: "Type 3 fonts are not allowed. Re-exported from Overleaf twice.",
-      blocker_at: "2026-08-01T00:00:00Z",
-    },
-  }),
-  paper({
-    id: "early",
-    title: "Alpha Priors",
-    current_step: "brainstorm",
-    artifacts: {
-      blocker_stage: "brainstorm",
-      blocker_title: "Waiting on compute quota",
-      blocker_note: "Aurora queue is full until next week.",
-      blocker_at: "2026-08-14T00:00:00Z",
-    },
-  }),
-  paper({ id: "clear", title: "No Problems Here" }),
+  paper(
+    [entry({ stage: "submission", title: "OpenReview rejects the PDF", by: "Pat Doe", at: "2026-08-01T00:00:00Z" })],
+    "late",
+    "Zebra Effects",
+  ),
+  paper(
+    [
+      entry({ stage: "brainstorm", title: "Waiting on compute quota", by: "Sam Lee", at: "2026-08-14T00:00:00Z" }),
+      entry({ title: "Old thing", at: "2026-07-01T00:00:00Z", resolved_at: "2026-07-05T00:00:00Z", resolved_by: "Zhijing" }),
+    ],
+    "early",
+    "Alpha Priors",
+  ),
 ];
 
-function props(overrides: Partial<AdminBotProps> = {}): AdminBotProps {
+function props(over: Partial<AdminBotProps> = {}): AdminBotProps {
   return {
     panel: "papers",
     mode: "admin",
@@ -68,66 +66,111 @@ function props(overrides: Partial<AdminBotProps> = {}): AdminBotProps {
     onDeletePaper: () => undefined,
     onSaveSettings: () => undefined,
     onSaveSensitiveInfo: () => undefined,
-    ...overrides,
+    ...over,
   } as AdminBotProps;
 }
 
-function draw(overrides: Partial<AdminBotProps> = {}): HTMLElement {
+function draw(over: Partial<AdminBotProps> = {}): HTMLElement {
   const host = document.createElement("div");
-  render(renderAdminBot(props(overrides)), host);
+  render(renderAdminBot(props(over)), host);
   return host;
 }
 
-function titles(host: HTMLElement): string[] {
-  return [...host.querySelectorAll(".blocker__title")].map((node) => node.textContent?.trim() ?? "");
+function titles(host: HTMLElement, scope = "[data-testid=blockers-open]"): string[] {
+  return [...host.querySelectorAll(`${scope} .blocker__title`)].map((n) => n.textContent?.trim() ?? "");
 }
 
-describe("reported blockers", () => {
-  it("lists only papers that have one", () => {
-    expect(titles(draw())).toHaveLength(2);
+describe("blocker log", () => {
+  it("keeps a resolved blocker instead of deleting it", () => {
+    const filed = paper([entry({ at: "2026-08-01T00:00:00Z" })]);
+    const input = resolveBlockerInput(filed, "2026-08-01T00:00:00Z", "Zhijing");
+    const log = JSON.parse(input.blockerLog ?? "[]") as { resolved_by?: string }[];
+    expect(log).toHaveLength(1);
+    expect(log[0]?.resolved_by).toBe("Zhijing");
   });
 
-  it("sorts by pipeline stage, not by insertion order", () => {
-    // Brainstorm precedes submission in paperSteps, so Alpha Priors leads regardless of input order.
-    expect(titles(draw({ blockerSort: "stage" }))[0]).toBe("Waiting on compute quota");
+  it("stops counting a resolved blocker as open", () => {
+    const resolved = paper([entry({ resolved_at: "2026-08-05T00:00:00Z" })]);
+    expect(openBlocker(resolved)).toBeUndefined();
+    expect(resolvedBlockers([resolved])).toHaveLength(1);
   });
 
-  it("sorts oldest first by age", () => {
-    expect(titles(draw({ blockerSort: "age" }))[0]).toBe("OpenReview rejects the PDF font subset");
+  it("recovers a misclick back to open, leaving no trace", () => {
+    const resolved = paper([entry({ at: "2026-08-01T00:00:00Z", resolved_at: "x", resolved_by: "Zhijing" })]);
+    const input = recoverBlockerInput(resolved, "2026-08-01T00:00:00Z");
+    const log = JSON.parse(input.blockerLog ?? "[]") as Record<string, unknown>[];
+    expect(log[0]).not.toHaveProperty("resolved_at");
+    expect(log[0]).not.toHaveProperty("resolved_by");
+    expect(log).toHaveLength(1);
   });
 
-  it("sorts by paper title", () => {
-    expect(titles(draw({ blockerSort: "paper" }))[0]).toBe("Waiting on compute quota");
+  it("records who reported it", () => {
+    const input = fileBlockerInput(paper([]), { stage: "submission", title: "x", note: "", by: "Sam Lee" });
+    const log = JSON.parse(input.blockerLog ?? "[]") as { by: string }[];
+    expect(log[0]?.by).toBe("Sam Lee");
   });
 
-  it("keeps the full report behind the summary", () => {
+  it("replaces the open blocker but keeps resolved history", () => {
+    const existing = paper([
+      entry({ title: "current", at: "2026-08-02T00:00:00Z" }),
+      entry({ title: "done", at: "2026-07-01T00:00:00Z", resolved_at: "2026-07-02T00:00:00Z" }),
+    ]);
+    const input = fileBlockerInput(existing, { stage: "submission", title: "new", note: "", by: "Pat" });
+    const log = JSON.parse(input.blockerLog ?? "[]") as { title: string }[];
+    expect(log.map((e) => e.title)).toEqual(["new", "done"]);
+  });
+
+  it("still reads blockers filed before the log existed", () => {
+    const legacy = {
+      id: "p",
+      title: "P",
+      authors: [],
+      current_step: "submission",
+      artifacts: { blocker_title: "old style", blocker_stage: "submission" },
+    } as unknown as AdminBotPaperRecord;
+    expect(blockerLog(legacy)).toHaveLength(1);
+    expect(openBlocker(legacy)?.title).toBe("old style");
+  });
+
+  it("survives a corrupt log rather than blanking the page", () => {
+    const bad = { id: "p", title: "P", authors: [], current_step: "submission", artifacts: { blocker_log: "{no" } } as unknown as AdminBotPaperRecord;
+    expect(blockerLog(bad)).toEqual([]);
+  });
+});
+
+describe("reported blockers view", () => {
+  it("lists only open blockers in the main list", () => {
+    expect(titles(draw())).toEqual(["Waiting on compute quota", "OpenReview rejects the PDF"]);
+  });
+
+  it("puts resolved ones in history with a count", () => {
     const host = draw();
-    const details = host.querySelector<HTMLDetailsElement>(".blocker");
-    expect(details?.open).toBe(false);
-    expect(host.querySelector(".blocker__note")?.textContent).toContain("Aurora queue is full");
+    expect(host.querySelector(".blockers__history-summary")?.textContent?.trim()).toBe("History (1)");
+  });
+
+  it("offers Mark as solved on open rows and Recover on history rows", () => {
+    const host = draw();
+    expect(host.querySelectorAll("[data-testid^=blocker-solve-]").length).toBe(2);
+    expect(host.querySelectorAll("[data-testid^=blocker-recover-]").length).toBe(1);
+  });
+
+  it("names the reporter", () => {
+    const host = draw();
+    const names = [...host.querySelectorAll(".blocker__by")].map((n) => n.textContent?.trim());
+    expect(names).toContain("Sam Lee");
+    expect(names).toContain("Pat Doe");
+  });
+
+  it("sorts by stage, age and paper", () => {
+    expect(titles(draw({ blockerSort: "stage" }))[0]).toBe("Waiting on compute quota");
+    expect(titles(draw({ blockerSort: "age" }))[0]).toBe("OpenReview rejects the PDF");
+    expect(titles(draw({ blockerSort: "paper" }))[0]).toBe("Waiting on compute quota");
   });
 
   it("reports every sort key the buttons offer", () => {
     const seen: BlockerSort[] = [];
     const host = draw({ onBlockerSort: (key) => seen.push(key) });
-    for (const button of host.querySelectorAll<HTMLButtonElement>("[data-testid^=blocker-sort-]")) {
-      button.click();
-    }
+    for (const b of host.querySelectorAll<HTMLButtonElement>("[data-testid^=blocker-sort-]")) b.click();
     expect(seen).toEqual(["stage", "age", "paper"]);
-  });
-
-  it("treats a cleared title as resolved, which is what the Resolved button writes", () => {
-    const cleared: AdminBotPaperSaveInput = {
-      id: "late",
-      title: "Zebra Effects",
-      authors: [],
-      currentStep: "submission",
-      blockerStage: "",
-      blockerTitle: "",
-      blockerNote: "",
-      blockerAt: "",
-    };
-    expect(cleared.blockerTitle).toBe("");
-    expect(blockerOf(paper({ artifacts: { blocker_title: "  " } }))).toBeUndefined();
   });
 });

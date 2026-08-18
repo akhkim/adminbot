@@ -147,10 +147,7 @@ export type AdminBotPaperSaveInput = {
   /** How likely the authors think this venue is, as a percentage string. */
   confidence?: string;
   /** One live blocker per paper, stored on the record so admins can see and sort it. */
-  blockerStage?: string;
-  blockerTitle?: string;
-  blockerNote?: string;
-  blockerAt?: string;
+  blockerLog?: string;
   /** In-app nudge alert, written by an admin and cleared by the member who reads it. */
   nudgeLog?: string;
   nudgeSeenAt?: string;
@@ -1242,10 +1239,7 @@ export async function saveAdminBotPaper(
     ...(paper.googleDrivePdfUrl ? { google_drive_pdf_url: paper.googleDrivePdfUrl } : {}),
     ...(paper.conference ? { conference: paper.conference } : {}),
     ...(paper.confidence ? { confidence: paper.confidence } : {}),
-    ...(paper.blockerStage === undefined ? {} : { blocker_stage: paper.blockerStage }),
-    ...(paper.blockerTitle === undefined ? {} : { blocker_title: paper.blockerTitle }),
-    ...(paper.blockerNote === undefined ? {} : { blocker_note: paper.blockerNote }),
-    ...(paper.blockerAt === undefined ? {} : { blocker_at: paper.blockerAt }),
+    ...(paper.blockerLog === undefined ? {} : { blocker_log: paper.blockerLog }),
     ...(paper.nudgeLog === undefined ? {} : { nudge_log: paper.nudgeLog }),
     ...(paper.nudgeSeenAt === undefined ? {} : { nudge_seen_at: paper.nudgeSeenAt }),
     ...(paper.topic ? { topic: paper.topic } : {}),

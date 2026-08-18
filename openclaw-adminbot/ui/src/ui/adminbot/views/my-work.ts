@@ -7,8 +7,8 @@
 // two pages can never disagree about where something is -- they share both the step vocabulary
 // (`stepLabels` / `paperSteps`) and the write path.
 //
-// Prototype scope: the AdminBot service has no blocker route yet, so a submitted blocker lives in
-// browser state and the UI says so rather than implying it was filed.
+// Blockers are real records now, not browser state: they are written onto the paper the same way
+// the step is, so an admin sees a report the moment it is filed. See blockers.ts.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
@@ -18,6 +18,12 @@ import type {
   AdminBotPaperSaveInput,
   AdminBotPaperStep,
 } from "../controllers/admin.ts";
+import {
+  BLOCKER_TITLE_MAX,
+  fileBlockerInput,
+  openBlocker,
+  resolveBlockerInput,
+} from "../blockers.ts";
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
@@ -132,53 +138,13 @@ function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
  * sort by it. It reuses `paperSteps`, so the options a member picks from and the buckets an admin
  * sorts into cannot drift apart.
  *
- * One live blocker per paper: it lives on the paper, so filing a second replaces the first. That
- * fits "what is stuck right now"; a history of resolved blockers would need its own table.
+ * One live blocker per paper: filing a second replaces the first, which is what "what is stuck
+ * right now" means. Resolved ones are kept -- see blockers.ts for why.
  */
-const BLOCKER_TITLE_MAX = 70;
-
-export function blockerOf(paper: AdminBotPaperRecord) {
-  const title = paper.artifacts?.blocker_title?.trim();
-  if (!title) {
-    return undefined;
-  }
-  return {
-    stage: paper.artifacts?.blocker_stage ?? "",
-    title,
-    note: paper.artifacts?.blocker_note ?? "",
-    at: paper.artifacts?.blocker_at ?? "",
-  };
-}
-
-/** Days since a blocker was filed. The oldest one is usually the real problem. */
-export function blockerAgeDays(at: string): number | undefined {
-  const filed = Date.parse(at);
-  if (!Number.isFinite(filed)) {
-    return undefined;
-  }
-  return Math.floor((Date.now() - filed) / (1000 * 60 * 60 * 24));
-}
-
-function saveBlocker(
-  props: MyWorkProps,
-  paper: AdminBotPaperRecord,
-  fields: { stage: string; title: string; note: string; at: string },
-) {
-  props.onSavePaper({
-    id: paper.id,
-    title: paper.title,
-    authors: paper.authors ?? [],
-    currentStep: paper.current_step as AdminBotPaperStep,
-    blockerStage: fields.stage,
-    blockerTitle: fields.title,
-    blockerNote: fields.note,
-    blockerAt: fields.at,
-  });
-}
 
 function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: AdminBotPaperRecord) {
   const draft = state.myWorkBlockerDraft;
-  const existing = blockerOf(paper);
+  const existing = openBlocker(paper);
 
   if (draft?.paperId !== paper.id) {
     return html`
@@ -205,12 +171,15 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
         if (!title) {
           return;
         }
-        saveBlocker(props, paper, {
-          stage: String(data.get("stage") ?? ""),
-          title: title.slice(0, BLOCKER_TITLE_MAX),
-          note: String(data.get("note") ?? "").trim(),
-          at: new Date().toISOString(),
-        });
+        props.onSavePaper(
+          fileBlockerInput(paper, {
+            stage: String(data.get("stage") ?? ""),
+            title,
+            note: String(data.get("note") ?? "").trim(),
+            // Named at filing time so the admin list can say who to go ask.
+            by: findOwnMember(state)?.name ?? "",
+          }),
+        );
         state.myWorkBlockerDraft = null;
       }}
     >
@@ -261,7 +230,9 @@ ${existing?.note ?? ""}</textarea
               class="btn"
               data-testid=${`blocker-resolve-${paper.id}`}
               @click=${() => {
-                saveBlocker(props, paper, { stage: "", title: "", note: "", at: "" });
+                props.onSavePaper(
+                  resolveBlockerInput(paper, existing.at, findOwnMember(state)?.name ?? ""),
+                );
                 state.myWorkBlockerDraft = null;
               }}
             >
@@ -284,7 +255,7 @@ ${existing?.note ?? ""}</textarea
 
 function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWorkProps) {
   const { index, percent } = paperProgress(paper);
-  const blocked = Boolean(blockerOf(paper));
+  const blocked = Boolean(openBlocker(paper));
   return html`
     <article
       class=${`my-work-item ${blocked ? "my-work-item--blocked" : ""}`}
@@ -639,7 +610,7 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
 // Zhijing's sorted view, and clearing it there clears it here.
 function renderBlockers(state: AppViewState) {
   const blockers = ownPapers(state).flatMap((paper) => {
-    const blocker = blockerOf(paper);
+    const blocker = openBlocker(paper);
     return blocker ? [{ paper, blocker }] : [];
   });
   if (!blockers.length) {
