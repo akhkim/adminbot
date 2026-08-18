@@ -9,6 +9,7 @@ import type {
 } from "./contracts/actions.js";
 import {
   assertPublicHost,
+  buildNewsletterDraft,
   classifyRecency,
   isPublicIpAddress,
   normalizeCvDownloadUrl,
@@ -518,5 +519,50 @@ describe("configurable recency window", () => {
     expect(tight.result.newsletter_draft).toBe("");
     const wide = await runAdminBotCvScan(members, scanDeps, 12);
     expect(wide.result.newsletter_draft).toContain("Ada — joined DeepMind");
+  });
+});
+
+describe("publications", () => {
+  const paper = (overrides: Partial<AdminBotCvEntry> = {}): AdminBotCvEntry => ({
+    kind: "publication",
+    title: "Attention Is Still All You Need",
+    organization: "NeurIPS 2026",
+    start: "2026",
+    ...overrides,
+  });
+  const now = new Date("2026-08-05T00:00:00.000Z");
+
+  it("treats a bare year on a publication as that whole year", () => {
+    // CVs date papers by year. Anchoring to January would age a December paper by eleven months
+    // it has not lived, so the year resolves generously.
+    expect(classifyRecency(paper(), now)).toBe("recent");
+    expect(classifyRecency(paper({ start: "2024" }), now)).toBe("backfilled");
+  });
+
+  it("does not extend that leniency to jobs", () => {
+    // A bare year on a position means the model failed to read a month, and guessing would
+    // announce a job nobody started.
+    expect(classifyRecency({ kind: "position", title: "T", organization: "O", start: "2026" }, now))
+      .toBe("undated");
+  });
+
+  it("credits one paper to every co-author it was seen on", () => {
+    const change = { entry: paper(), recency: "recent" as const };
+    const draft = buildNewsletterDraft([
+      { memberName: "Ada", change },
+      { memberName: "Alan", change },
+      { memberName: "Grace", change },
+    ]);
+    expect(draft).toContain('Ada, Alan and Grace — published "Attention Is Still All You Need"');
+    // One line, not three.
+    expect(draft.split("\n").filter((line) => line.startsWith("- "))).toHaveLength(1);
+  });
+
+  it("still lists positions per member", () => {
+    const draft = buildNewsletterDraft([
+      { memberName: "Ada", change: { entry: POSITION, recency: "recent" } },
+      { memberName: "Alan", change: { entry: POSITION, recency: "recent" } },
+    ]);
+    expect(draft.split("\n").filter((line) => line.startsWith("- "))).toHaveLength(2);
   });
 });

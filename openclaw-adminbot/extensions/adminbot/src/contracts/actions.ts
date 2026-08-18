@@ -410,7 +410,15 @@ export type AdminBotMemberMilestone = {
 // One dated line off a CV. `kind` is what makes a change newsworthy or not: a new `position` or
 // `education` entry is a career move worth announcing, an `award` is worth congratulating, and
 // anything the model cannot place lands in `other` and is reported but never drafted.
-export type AdminBotCvEntryKind = "position" | "education" | "award" | "other";
+export type AdminBotCvEntryKind =
+  | "position"
+  | "education"
+  | "award"
+  // A paper. `organization` carries the venue ("NeurIPS 2026", "Nature"), rather than adding a
+  // field: it is the thing that identifies the work alongside its title, which is exactly what
+  // `organization` does for every other kind, and cvEntryKey already keys on it.
+  | "publication"
+  | "other";
 
 export type AdminBotCvEntry = {
   kind: AdminBotCvEntryKind;

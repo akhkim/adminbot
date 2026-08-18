@@ -95,7 +95,8 @@ export type AdminBotLabMember = {
 };
 
 export type AdminBotCvEntry = {
-  kind: "position" | "education" | "award" | "other";
+  // Mirrors AdminBotCvEntryKind in the service contracts; ui/ cannot import from extensions/.
+  kind: "position" | "education" | "award" | "publication" | "other";
   title: string;
   organization: string;
   start?: string;

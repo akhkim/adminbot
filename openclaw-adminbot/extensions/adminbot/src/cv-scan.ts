@@ -219,6 +219,27 @@ export function resolveStartIso(entry: AdminBotCvEntry): string | undefined {
   return undefined;
 }
 
+const BARE_YEAR = /^(\d{4})$/u;
+
+/**
+ * Places a publication dated only by year, which is how CVs almost always date them.
+ *
+ * Resolved to December of that year, deliberately generous: a bare "2026" could be any month, and
+ * anchoring to January would age a paper published in December by eleven months it has not lived.
+ * The effect is that the current year's papers read as news and previous years' do not, which is
+ * the distinction a reader of the newsletter would draw anyway.
+ *
+ * Restricted to publications. Positions and degrees are dated by month on a CV, so a bare year
+ * there means the model failed to read one, and guessing would announce a job nobody started.
+ */
+function resolvePublicationYear(entry: AdminBotCvEntry): string | undefined {
+  if (entry.kind !== "publication") {
+    return undefined;
+  }
+  const year = BARE_YEAR.exec(entry.start?.trim() ?? "")?.[1];
+  return year ? formatIsoMonth(Number(year), 12) : undefined;
+}
+
 function formatIsoMonth(year: number, month: number): string | undefined {
   if (!Number.isInteger(year) || year < 1900 || year > 2999) {
     return undefined;
@@ -240,7 +261,7 @@ export function classifyRecency(
   now: Date,
   windowMonths = CV_RECENCY_WINDOW_MONTHS,
 ): AdminBotCvRecency {
-  const iso = resolveStartIso(entry);
+  const iso = resolveStartIso(entry) ?? resolvePublicationYear(entry);
   if (!iso) {
     return "undated";
   }
@@ -255,7 +276,7 @@ export function classifyRecency(
 // Only additions become copy, and only the kinds that describe a career event. A removal is
 // almost always someone trimming an old CV rather than a job ending, so removals are reported in
 // the table for a human to read but never drafted into a newsletter sentence.
-const NEWSWORTHY_KINDS = new Set(["position", "education", "award"]);
+const NEWSWORTHY_KINDS = new Set(["position", "education", "award", "publication"]);
 
 /** True when an added entry is both the right kind and recent enough to announce. */
 export function isNewsworthy(change: AdminBotCvChange): boolean {
@@ -265,13 +286,41 @@ export function isNewsworthy(change: AdminBotCvChange): boolean {
 export function buildNewsletterDraft(
   entries: Array<{ memberName: string; change: AdminBotCvChange }>,
 ): string {
-  const lines = entries
-    .filter((row) => isNewsworthy(row.change))
-    .map((row) => `- ${row.memberName} — ${sentenceFor(row.change.entry)}`);
+  const newsworthy = entries.filter((row) => isNewsworthy(row.change));
+  // A paper appears on every co-author's CV, so scanning five members would otherwise produce five
+  // identical announcements of one paper. Grouped by the entry itself and credited to everyone the
+  // scan saw it on, which is also how a newsletter would actually write it.
+  const lines: string[] = [];
+  const publicationLines = new Map<string, { names: string[]; entry: AdminBotCvEntry }>();
+  for (const row of newsworthy) {
+    if (row.change.entry.kind !== "publication") {
+      lines.push(`- ${row.memberName} — ${sentenceFor(row.change.entry)}`);
+      continue;
+    }
+    const key = cvEntryKey(row.change.entry);
+    const existing = publicationLines.get(key);
+    if (existing) {
+      if (!existing.names.includes(row.memberName)) {
+        existing.names.push(row.memberName);
+      }
+      continue;
+    }
+    publicationLines.set(key, { names: [row.memberName], entry: row.change.entry });
+  }
+  for (const { names, entry } of publicationLines.values()) {
+    lines.push(`- ${formatNameList(names)} — ${sentenceFor(entry)}`);
+  }
   if (!lines.length) {
     return "";
   }
   return ["## Lab updates", "", ...lines].join("\n");
+}
+
+function formatNameList(names: string[]): string {
+  if (names.length <= 1) {
+    return names[0] ?? "";
+  }
+  return `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
 }
 
 function draftFromResults(results: AdminBotCvScanMemberResult[]): string {
@@ -293,6 +342,8 @@ function sentenceFor(entry: AdminBotCvEntry): string {
       return `started ${entry.title} at ${entry.organization}${when}`;
     case "award":
       return `received ${entry.title}${entry.organization ? ` from ${entry.organization}` : ""}${when}`;
+    case "publication":
+      return `published "${entry.title}"${entry.organization ? ` at ${entry.organization}` : ""}${when}`;
     default:
       return `joined ${entry.organization} as ${entry.title}${when}`;
   }
@@ -543,14 +594,21 @@ async function extractCvEntries(
     body: JSON.stringify({
       model: env.ADMINBOT_LOCAL_MODEL ?? DEFAULT_LOCAL_MODEL,
       temperature: 0,
-      max_tokens: 2400,
+      // A CV runs to twenty-odd entries and a reasoning model spends most of its budget thinking
+      // before writing any of them -- chat_template_kwargs is honoured by vLLM but ignored by
+      // Ollama's OpenAI-compatible endpoint, so the thinking cannot be turned off from here.
+      // Truncation is silent: the schema keeps the fragment well-formed enough to look like an
+      // answer, so the budget has to be generous rather than tight.
+      max_tokens: 6000,
       chat_template_kwargs: { enable_thinking: false },
       response_format: { type: "json_schema", json_schema: cvEntriesSchema() },
       messages: [
         {
           role: "system",
           content:
-            "You read a CV and list the positions, degrees, and awards it states. " +
+            "You read a CV and list the positions, degrees, awards, and publications it states. " +
+            "For a publication, put the paper's title in `title` and the venue or journal it " +
+            "appeared in -- 'NeurIPS 2026', 'Nature' -- in `organization`. " +
             "Copy titles, organizations, and dates exactly as printed into `title`, " +
             "`organization`, `start` and `end`; do not expand abbreviations. " +
             "Additionally set `start_iso` to the start date as YYYY-MM. Omit `start_iso` " +
@@ -570,14 +628,26 @@ async function extractCvEntries(
     throw new Error(`the local CV model returned ${response.status} ${response.statusText}`);
   }
   const payload = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{ message?: { content?: string }; finish_reason?: string }>;
   };
-  const content = payload.choices?.[0]?.message?.content;
+  const choice = payload.choices?.[0];
+  const content = choice?.message?.content;
+  // Naming the cause matters: a model that ran out of budget mid-answer is indistinguishable from
+  // a broken endpoint at the call site, and the fix is a larger budget, not a retry.
+  if (choice?.finish_reason === "length") {
+    throw new Error(
+      "the local CV model hit its token budget before finishing the entry list — it is likely a reasoning model whose thinking is not disabled",
+    );
+  }
   if (!content) {
     throw new Error("the local CV model returned no content");
   }
-  const parsed = JSON.parse(content) as { entries?: AdminBotCvEntry[] };
-  return Array.isArray(parsed.entries) ? parsed.entries : [];
+  try {
+    const parsed = JSON.parse(content) as { entries?: AdminBotCvEntry[] };
+    return Array.isArray(parsed.entries) ? parsed.entries : [];
+  } catch {
+    throw new Error("the local CV model returned malformed JSON for the entry list");
+  }
 }
 
 export const DEFAULT_LOCAL_MODEL = "nvidia/Qwen3.5-122B-A10B-NVFP4";
@@ -717,7 +787,10 @@ function cvEntriesSchema(): Record<string, unknown> {
             additionalProperties: false,
             required: ["kind", "title", "organization"],
             properties: {
-              kind: { type: "string", enum: ["position", "education", "award", "other"] },
+              kind: {
+                type: "string",
+                enum: ["position", "education", "award", "publication", "other"],
+              },
               title: { type: "string" },
               organization: { type: "string" },
               start: { type: "string" },
