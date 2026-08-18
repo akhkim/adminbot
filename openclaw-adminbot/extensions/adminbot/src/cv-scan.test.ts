@@ -71,15 +71,30 @@ describe("runAdminBotCvScan", () => {
     expect(result.results).toEqual([]);
   });
 
-  it("reports a first scan without drafting the person's whole history", async () => {
+  it("keeps a first scan's old history out of the newsletter", async () => {
     const { result, snapshots } = await runAdminBotCvScan(
       [member({ id: "new", cv_url: "https://drive.google.com/file/d/abc" })],
-      deps({ extractEntries: async () => [POSITION] }),
+      deps({ extractEntries: async () => [OLD_POSITION] }),
     );
     expect(result.results[0]).toMatchObject({ member_id: "new", status: "first_scan", added: [] });
     // The snapshot is still stored, so the *next* scan has a baseline to diff against.
-    expect(snapshots.get("new")?.entries).toEqual([POSITION]);
+    expect(snapshots.get("new")?.entries).toEqual([OLD_POSITION]);
     expect(result.newsletter_draft).toBe("");
+  });
+
+  it("still announces a recent move found on a first scan", async () => {
+    // Someone joining who has just started somewhere is exactly what this feature is for.
+    // Suppressing the whole first scan lost that, which only a recency check can tell apart from
+    // the rest of their history.
+    const { result } = await runAdminBotCvScan(
+      [member({ id: "joiner", name: "Ada", cv_url: "https://drive.google.com/file/d/abc" })],
+      deps({ extractEntries: async () => [OLD_POSITION, POSITION] }),
+    );
+    expect(result.results[0]).toMatchObject({
+      status: "first_scan",
+      added: [{ entry: POSITION, recency: "recent" }],
+    });
+    expect(result.newsletter_draft).toContain("Ada — joined DeepMind as Research Scientist");
   });
 
   it("skips the model call when the document hash is unchanged", async () => {

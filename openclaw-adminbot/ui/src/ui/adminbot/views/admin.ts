@@ -2438,30 +2438,34 @@ function renderCvUpdates(props: AdminBotProps) {
           </div>`
         : nothing}
 
-      <div class="adminbot-cv__draft">
-        <div class="adminbot-cv__section-title">Digest</div>
-        <div class="card-sub">
-          Everything recorded since a date, not just what the last scan found. A scan updates each
-          member's baseline, so without this the copy above is only ever about that one run.
-        </div>
-        <div class="adminbot-cv__actions">
-          <label class="adminbot-form__field"
-            ><span>Since</span>
-            <input
-              type="date"
-              .value=${props.cvDigestSince}
-              @change=${(event: Event) =>
-                props.onCvDigestSinceChange((event.target as HTMLInputElement).value)}
-            />
-          </label>
-          <button
-            class="btn btn--sm"
-            type="button"
-            ?disabled=${props.cvDigestLoading || !props.cvDigestSince}
-            @click=${props.onLoadCvDigest}
-          >
-            ${props.cvDigestLoading ? "Loading..." : "Build digest"}
-          </button>
+      <div class="adminbot-cv__panel">
+        <div class="adminbot-cv__panel-head">
+          <div>
+            <div class="adminbot-cv__section-title">Digest</div>
+            <div class="card-sub">
+              Every change recorded since a date. A scan only reports its own run, so this is what
+              a monthly roundup reads from.
+            </div>
+          </div>
+          <div class="adminbot-cv__actions">
+            <label class="adminbot-form__field"
+              ><span>Since</span>
+              <input
+                type="date"
+                .value=${props.cvDigestSince}
+                @change=${(event: Event) =>
+                  props.onCvDigestSinceChange((event.target as HTMLInputElement).value)}
+              />
+            </label>
+            <button
+              class="btn btn--sm"
+              type="button"
+              ?disabled=${props.cvDigestLoading || !props.cvDigestSince}
+              @click=${props.onLoadCvDigest}
+            >
+              ${props.cvDigestLoading ? "Loading..." : "Build digest"}
+            </button>
+          </div>
         </div>
         ${props.cvDigest ? renderCvDigest(props.cvDigest) : nothing}
       </div>
@@ -2489,7 +2493,13 @@ function renderCvChange(change: AdminBotCvChange) {
 
 function renderCvDigest(digest: AdminBotCvDigest) {
   if (!digest.changes.length) {
-    return html`<p class="muted">Nothing recorded since ${digest.since.slice(0, 10)}.</p>`;
+    return html`<div class="adminbot-cv__empty">
+      Nothing recorded since ${digest.since.slice(0, 10)}.
+      <small
+        >Changes are recorded when a scan finds a CV has been edited. A CV that has not changed
+        since its last scan produces nothing here.</small
+      >
+    </div>`;
   }
   return html`
     ${digest.newsletter_draft

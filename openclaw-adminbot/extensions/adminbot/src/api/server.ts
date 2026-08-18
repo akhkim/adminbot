@@ -984,7 +984,7 @@ async function handleAuthenticatedRoute(
     // leave a change on the ledger the next scan would then never re-detect.
     ctx.store.recordCvChanges(
       result.results
-        .filter((entry) => entry.status === "changed")
+        .filter((entry) => entry.status === "changed" || entry.status === "first_scan")
         .flatMap((entry) =>
           entry.added.map((change) => ({
             member_id: entry.member_id,

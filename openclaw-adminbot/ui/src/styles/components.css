@@ -10032,3 +10032,44 @@ select.input:focus {
   font-weight: 600;
   color: var(--text-strong);
 }
+
+/* Digest reads as its own tool, not another draft box: a header line with the controls beside it,
+   then results. Sharing .adminbot-cv__draft made the two sections look interchangeable when one
+   produces copy and the other queries history. */
+.adminbot-cv__panel {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.adminbot-cv__panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.adminbot-cv__panel-head .card-sub {
+  margin-top: 2px;
+}
+
+/* Empty states carry the reason, so they need to read as a considered answer rather than a
+   sentence left lying on the background. */
+.adminbot-cv__empty {
+  padding: var(--space-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  text-align: center;
+}
+
+.adminbot-cv__empty small {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--muted);
+  opacity: 0.85;
+}

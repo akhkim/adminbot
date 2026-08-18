@@ -97,10 +97,16 @@ export async function runAdminBotCvScan(
       snapshots.set(member.id, { fetched_at: scannedAt, content_hash: contentHash, entries });
 
       if (!previous) {
-        // Everything on a first scan is "new" only in the sense that we had not looked before.
-        // Reporting it as first_scan keeps a newly linked CV from announcing someone's entire
-        // career history as though it all just happened.
-        results.push({ ...base, status: "first_scan" });
+        // A first scan reports only what is *recent*, not everything it found.
+        //
+        // Most of a newly linked CV is history we simply had not looked at, and announcing it
+        // would read as nonsense. But a person who joins having just started somewhere is exactly
+        // the case this feature exists for, and suppressing the whole first scan lost it. The
+        // recency window is what tells the two apart, so it decides here as well as in the diff.
+        const recent = entries
+          .map((entry) => ({ entry, recency: classifyRecency(entry, deps.now()) }))
+          .filter((change) => change.recency === "recent");
+        results.push({ ...base, status: "first_scan", added: recent });
         continue;
       }
       const added = entriesMissingFrom(entries, previous.entries).map((entry) => ({
@@ -194,7 +200,9 @@ export function buildNewsletterDraft(
 function draftFromResults(results: AdminBotCvScanMemberResult[]): string {
   return buildNewsletterDraft(
     results
-      .filter((result) => result.status === "changed")
+      // first_scan carries only recent entries (see above), so it contributes to the draft on
+      // the same terms as a diff rather than being silently dropped.
+      .filter((result) => result.status === "changed" || result.status === "first_scan")
       .flatMap((result) =>
         result.added.map((change) => ({ memberName: result.member_name, change })),
       ),
