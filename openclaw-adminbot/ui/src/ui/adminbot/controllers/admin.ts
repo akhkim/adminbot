@@ -141,6 +141,7 @@ export type AdminBotCvDigest = {
 
 export type AdminBotSettings = {
   paper_escalation_business_days: number;
+  cv_recency_window_months: number;
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
@@ -281,6 +282,7 @@ export async function sendOnboardingGuide(
 
 export type AdminBotSettingsSaveInput = {
   paper_escalation_business_days?: number;
+  cv_recency_window_months?: number;
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
