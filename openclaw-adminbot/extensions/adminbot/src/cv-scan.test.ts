@@ -322,14 +322,15 @@ describe("classifyRecency", () => {
   it.each([
     ["2026-08", "recent", "this month"],
     ["2026-07", "recent", "last month"],
-    ["2026-02", "recent", "exactly the window edge"],
+    ["2026-05", "recent", "exactly the window edge"],
     ["2026-10", "recent", "future — announced before it starts"],
   ])("%s is %s (%s)", (iso, expected) => {
     expect(classifyRecency(at(iso), now)).toBe(expected);
   });
 
   it.each([
-    ["2026-01", "one month past the window"],
+    ["2026-04", "one month past the window"],
+    ["2026-02", "was inside the old six-month window, outside the three-month one"],
     ["2019-06", "years ago"],
   ])("%s is backfilled (%s)", (iso) => {
     expect(classifyRecency(at(iso), now)).toBe("backfilled");
@@ -348,7 +349,7 @@ describe("classifyRecency", () => {
   it("compares whole months so the day of the scan does not matter", () => {
     const first = new Date("2026-08-01T00:00:00.000Z");
     const last = new Date("2026-08-28T00:00:00.000Z");
-    expect(classifyRecency(at("2026-02"), first)).toBe(classifyRecency(at("2026-02"), last));
+    expect(classifyRecency(at("2026-05"), first)).toBe(classifyRecency(at("2026-05"), last));
   });
 });
 

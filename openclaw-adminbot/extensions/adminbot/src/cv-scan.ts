@@ -141,10 +141,12 @@ function entriesMissingFrom(
 
 // How far back an entry's start date can sit and still count as something that just happened.
 //
-// Six months rather than one: CVs are updated in bursts, often months after the fact, so a tighter
-// window would miss the very job change this exists to catch. Wider than a year and it stops
-// meaning "recently" to a reader of the newsletter.
-export const CV_RECENCY_WINDOW_MONTHS = 6;
+// Three months: long enough to absorb the lag between a job starting and the CV being updated to
+// say so, short enough that "recently" still means recently to whoever reads the newsletter. The
+// trade-off is real in both directions -- a member who updates their CV twice a year will have a
+// genuine move land outside the window and be reported as backfilled, which the console shows
+// rather than hides, so an admin can still write it up by hand.
+export const CV_RECENCY_WINDOW_MONTHS = 3;
 
 const ISO_MONTH = /^(\d{4})-(\d{2})/u;
 
