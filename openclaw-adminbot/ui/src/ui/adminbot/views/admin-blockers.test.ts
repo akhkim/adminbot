@@ -9,7 +9,10 @@ import {
 import {
   blockerLog,
   fileBlockerInput,
+  editBlockerInput,
   openBlocker,
+  openBlockers,
+  openEntries,
   recoverBlockerInput,
   resolveBlockerInput,
   resolvedBlockers,
@@ -104,20 +107,86 @@ describe("blocker log", () => {
     expect(log).toHaveLength(1);
   });
 
+  it("makes a recovered blocker open again, so the member sees it as before", () => {
+    const solved = paper([entry({ at: "2026-08-01T00:00:00Z", resolved_at: "2026-08-05T00:00:00Z" })]);
+    expect(openBlocker(solved)).toBeUndefined();
+    const back = paper(
+      JSON.parse(recoverBlockerInput(solved, "2026-08-01T00:00:00Z").blockerLog ?? "[]"),
+    );
+    expect(openBlocker(back)?.title).toBe("t");
+    expect(resolvedBlockers([back])).toEqual([]);
+  });
+
+  it("keeps several blockers open on one paper", () => {
+    const one = paper([entry({ title: "first", at: "2026-08-01T00:00:00Z" })]);
+    const input = fileBlockerInput(one, { stage: "submission", title: "second", note: "", by: "Pat" });
+    const log = JSON.parse(input.blockerLog ?? "[]") as { title: string }[];
+    expect(log.map((e) => e.title)).toEqual(["second", "first"]);
+    expect(openEntries(paper(log))).toHaveLength(2);
+  });
+
+  it("edits one blocker without touching its siblings", () => {
+    const two = paper([
+      entry({ title: "keep", at: "2026-08-02T00:00:00Z" }),
+      entry({ title: "change", at: "2026-08-01T00:00:00Z" }),
+    ]);
+    const input = editBlockerInput(two, "2026-08-01T00:00:00Z", {
+      stage: "drive_pdf",
+      title: "changed",
+      note: "new detail",
+    });
+    const log = JSON.parse(input.blockerLog ?? "[]") as { title: string; stage: string }[];
+    expect(log.map((e) => e.title)).toEqual(["keep", "changed"]);
+    expect(log[1]?.stage).toBe("drive_pdf");
+  });
+
+  it("resolves one of several, leaving the rest open", () => {
+    const two = paper([
+      entry({ title: "a", at: "2026-08-02T00:00:00Z" }),
+      entry({ title: "b", at: "2026-08-01T00:00:00Z" }),
+    ]);
+    const input = resolveBlockerInput(two, "2026-08-01T00:00:00Z", "Zhijing");
+    const log = JSON.parse(input.blockerLog ?? "[]") as unknown[];
+    expect(openEntries(paper(log)).map((e) => e.title)).toEqual(["a"]);
+  });
+
+  it("never trims an open blocker, however long the history", () => {
+    // 60 resolved entries is past the cap; the open one must still survive the write.
+    const history = Array.from({ length: 60 }, (_, i) =>
+      entry({ title: `old ${i}`, at: `2026-01-${String((i % 28) + 1).padStart(2, "0")}T00:00:00Z`, resolved_at: "2026-02-01T00:00:00Z" }),
+    );
+    const loaded = paper([entry({ title: "still stuck", at: "2026-08-01T00:00:00Z" }), ...history]);
+    const input = editBlockerInput(loaded, "2026-08-01T00:00:00Z", {
+      stage: "submission",
+      title: "still stuck",
+      note: "",
+    });
+    const log = JSON.parse(input.blockerLog ?? "[]") as { title: string; resolved_at?: string }[];
+    expect(log.filter((e) => !e.resolved_at).map((e) => e.title)).toEqual(["still stuck"]);
+    expect(log.filter((e) => e.resolved_at).length).toBe(30);
+  });
+
+  it("carries 300 open blockers across the pipeline, because the cap is per paper", () => {
+    const many = Array.from({ length: 300 }, (_, i) =>
+      paper([entry({ title: `blocker ${i}`, at: `2026-08-01T00:00:00Z` })], `p${i}`, `Paper ${i}`),
+    );
+    expect(openBlockers(many)).toHaveLength(300);
+  });
+
   it("records who reported it", () => {
     const input = fileBlockerInput(paper([]), { stage: "submission", title: "x", note: "", by: "Sam Lee" });
     const log = JSON.parse(input.blockerLog ?? "[]") as { by: string }[];
     expect(log[0]?.by).toBe("Sam Lee");
   });
 
-  it("replaces the open blocker but keeps resolved history", () => {
+  it("adds alongside what is already there, open or resolved", () => {
     const existing = paper([
       entry({ title: "current", at: "2026-08-02T00:00:00Z" }),
       entry({ title: "done", at: "2026-07-01T00:00:00Z", resolved_at: "2026-07-02T00:00:00Z" }),
     ]);
     const input = fileBlockerInput(existing, { stage: "submission", title: "new", note: "", by: "Pat" });
     const log = JSON.parse(input.blockerLog ?? "[]") as { title: string }[];
-    expect(log.map((e) => e.title)).toEqual(["new", "done"]);
+    expect(log.map((e) => e.title)).toEqual(["new", "current", "done"]);
   });
 
   it("still reads blockers filed before the log existed", () => {
@@ -146,6 +215,12 @@ describe("reported blockers view", () => {
   it("puts resolved ones in history with a count", () => {
     const host = draw();
     expect(host.querySelector(".blockers__history-summary")?.textContent?.trim()).toBe("History (1)");
+  });
+
+  it("offers a reply box on open rows only", () => {
+    const host = draw();
+    expect(host.querySelectorAll("[data-testid^=blocker-reply-]").length).toBe(2);
+    expect(host.querySelectorAll("[data-testid^=blocker-send-]").length).toBe(2);
   });
 
   it("offers Mark as solved on open rows and Recover on history rows", () => {

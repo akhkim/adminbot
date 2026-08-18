@@ -17,8 +17,17 @@ import type {
   AdminBotPaperStep,
 } from "./controllers/admin.ts";
 
-/** Bounded so a paper with a long history cannot grow its record without limit. */
-const MAX_LOG = 30;
+/**
+ * How much resolved history one paper keeps. Open blockers are never counted against it.
+ *
+ * The bound exists so a record cannot grow without limit, but a blunt cap on the whole log would
+ * let a long history push a live blocker out of the list -- losing the one entry that still needs
+ * someone to act. So the trim only ever drops the oldest *resolved* rows.
+ *
+ * This is per paper, not per lab: an admin looking at 300 open blockers across the pipeline sees
+ * all 300, because each paper carries its own log.
+ */
+const MAX_RESOLVED = 30;
 
 export const BLOCKER_TITLE_MAX = 70;
 
@@ -85,9 +94,14 @@ export function blockerLog(paper: AdminBotPaperRecord): BlockerEntry[] {
     : [];
 }
 
-/** The one still-open blocker on a paper, if any. Newest wins if somehow there are several. */
+/** Every still-open blocker on a paper, newest first. A paper can be stuck on several things. */
+export function openEntries(paper: AdminBotPaperRecord): BlockerEntry[] {
+  return blockerLog(paper).filter((entry) => !entry.resolved_at);
+}
+
+/** The newest open blocker, for the places that only have room to show one. */
 export function openBlocker(paper: AdminBotPaperRecord): BlockerEntry | undefined {
-  return blockerLog(paper).find((entry) => !entry.resolved_at);
+  return openEntries(paper)[0];
 }
 
 function withPaper(paper: AdminBotPaperRecord, entries: BlockerEntry[]): BlockerRow[] {
@@ -128,17 +142,31 @@ export function blockerAgeDays(at: string): number | undefined {
  * Every save below rewrites the whole log, because the service's write path is a full upsert
  * rather than a patch -- title, authors and step have to ride along or the record is blanked.
  */
+function trim(log: BlockerEntry[]): BlockerEntry[] {
+  const open = log.filter((entry) => !entry.resolved_at);
+  const resolved = log.filter((entry) => entry.resolved_at).slice(0, MAX_RESOLVED);
+  // Rebuilt in the original order so the caller's sort is not silently rearranged.
+  const keep = new Set([...open, ...resolved]);
+  return log.filter((entry) => keep.has(entry));
+}
+
 function saveLog(paper: AdminBotPaperRecord, log: BlockerEntry[]): AdminBotPaperSaveInput {
   return {
     id: paper.id,
     title: paper.title,
     authors: paper.authors ?? [],
     currentStep: paper.current_step as AdminBotPaperStep,
-    blockerLog: JSON.stringify(log.slice(0, MAX_LOG)),
+    blockerLog: JSON.stringify(trim(log)),
   };
 }
 
-/** Filing replaces any open blocker on the paper: one live problem at a time. */
+/**
+ * Filing adds a blocker; it does not replace the ones already there.
+ *
+ * A paper genuinely can be stuck on several things at once -- waiting on a rerun and blocked on a
+ * missing licence are two problems, and collapsing them into one row loses whichever the reporter
+ * mentioned second.
+ */
 export function fileBlockerInput(
   paper: AdminBotPaperRecord,
   fields: { stage: string; title: string; note: string; by: string },
@@ -151,8 +179,31 @@ export function fileBlockerInput(
     by: fields.by,
     at: now.toISOString(),
   };
-  const rest = blockerLog(paper).filter((existing) => existing.resolved_at);
-  return saveLog(paper, [entry, ...rest]);
+  return saveLog(paper, [entry, ...blockerLog(paper)]);
+}
+
+/**
+ * Edit one blocker in place, keyed by its filing time.
+ *
+ * `at` is the identity here rather than an index, because the log is re-sorted and re-filtered all
+ * over the UI and a position would silently start pointing at a different row.
+ */
+export function editBlockerInput(
+  paper: AdminBotPaperRecord,
+  at: string,
+  fields: { stage: string; title: string; note: string },
+): AdminBotPaperSaveInput {
+  const log = blockerLog(paper).map((entry) =>
+    entry.at === at
+      ? {
+          ...entry,
+          stage: fields.stage,
+          title: fields.title.slice(0, BLOCKER_TITLE_MAX),
+          note: fields.note,
+        }
+      : entry,
+  );
+  return saveLog(paper, log);
 }
 
 export function resolveBlockerInput(

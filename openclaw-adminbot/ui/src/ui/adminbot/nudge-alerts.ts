@@ -24,12 +24,30 @@ import type {
   AdminBotPaperStep,
 } from "./controllers/admin.ts";
 
-/** Bounded so a heavily nudged paper cannot grow its record without limit. */
-const MAX_LOG = 20;
+/**
+ * How many already-read notifications one paper keeps. Unread ones are never trimmed.
+ *
+ * A blunt cap on the whole log would let a busy paper drop a notification the member has not seen
+ * yet, which is the one case where losing it actually costs something.
+ */
+const MAX_READ = 20;
+
+/**
+ * What happened. Absent on entries written before there was more than one kind, which is why the
+ * reader defaults to "nudge" rather than treating a missing kind as unknown.
+ */
+export type NudgeKind = "nudge" | "blocker_solved" | "blocker_reopened" | "blocker_reply";
 
 export type NudgeEntry = {
-  /** The PaperFlow task the admin was asking about, in the same words the member's card uses. */
+  kind?: NudgeKind;
+  /**
+   * What the notification is about: the PaperFlow task for a nudge, the blocker title for the
+   * blocker kinds. One field rather than one per kind, because the panel only ever shows it in
+   * the same position -- the sentence around it is what changes.
+   */
   node: string;
+  /** Free text the admin wrote. Only the reply kind has one; the rest are generated sentences. */
+  body?: string;
   by: string;
   at: string;
 };
@@ -101,6 +119,23 @@ export function unreadCount(papers: readonly AdminBotPaperRecord[]): number {
   return nudgeAlerts(papers).filter((alert) => !alert.read).length;
 }
 
+/**
+ * The sentence for one notification, split so the panel can bold the names without the copy
+ * living in the view. Past tense throughout: by the time a member reads this, it has happened.
+ */
+export function alertText(alert: NudgeEntry): { action: string; subject: string } {
+  switch (alert.kind) {
+    case "blocker_solved":
+      return { action: "reviewed and closed your blocker", subject: alert.node };
+    case "blocker_reopened":
+      return { action: "reopened your blocker", subject: alert.node };
+    case "blocker_reply":
+      return { action: "replied about your blocker", subject: alert.node };
+    default:
+      return { action: "asked you to update", subject: alert.node };
+  }
+}
+
 /** "2h ago" beats a timestamp here -- the question is how stale the ask is, not when it was. */
 export function agoLabel(at: string, now = Date.now()): string {
   const minutes = Math.floor((now - Date.parse(at)) / 60000);
@@ -128,9 +163,15 @@ export function nudgeSaveInput(
   node: string,
   by: string,
   now = new Date(),
+  kind: NudgeKind = "nudge",
+  body?: string,
 ): AdminBotPaperSaveInput {
-  const entry: NudgeEntry = { at: now.toISOString(), node, by };
-  const log = [entry, ...nudgeLog(paper)].slice(0, MAX_LOG);
+  const entry: NudgeEntry = { at: now.toISOString(), node, by, kind, ...(body ? { body } : {}) };
+  const watermark = seenAt(paper);
+  const full = [entry, ...nudgeLog(paper)];
+  const read = full.filter((item) => Date.parse(item.at) <= watermark).slice(0, MAX_READ);
+  const keep = new Set([...full.filter((item) => Date.parse(item.at) > watermark), ...read]);
+  const log = full.filter((item) => keep.has(item));
   return {
     id: paper.id,
     title: paper.title,
@@ -168,4 +209,22 @@ export function papersWithUnread(
     const watermark = seenAt(paper);
     return nudgeLog(paper).some((entry) => Date.parse(entry.at) > watermark);
   });
+}
+
+/**
+ * Just the log field, for callers that are already writing something else to the same paper.
+ *
+ * Solving a blocker is one user action, so it has to be one write: two sequential saves would each
+ * trigger a reload, and the second would be computed against a record the first had already moved.
+ * Spreading this into the blocker input keeps both changes in a single upsert.
+ */
+export function notifyFields(
+  paper: AdminBotPaperRecord,
+  kind: NudgeKind,
+  subject: string,
+  by: string,
+  now = new Date(),
+  body?: string,
+): Pick<AdminBotPaperSaveInput, "nudgeLog"> {
+  return { nudgeLog: nudgeSaveInput(paper, subject, by, now, kind, body).nudgeLog };
 }

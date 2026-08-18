@@ -6425,6 +6425,9 @@
 
 .bell__button {
   position: relative;
+  /* Above the scrim, so clicking the bell a second time closes the panel instead of being
+     swallowed by the catcher. */
+  z-index: 56;
   display: grid;
   place-items: center;
   width: 34px;
@@ -6591,6 +6594,17 @@
   line-height: 1.4;
 }
 
+/* The admin's own words, set apart from the generated sentence above them. */
+.bell__item-body {
+  margin-left: 15px;
+  padding-left: 9px;
+  border-left: 2px solid var(--border);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+  white-space: pre-wrap;
+}
+
 .bell__item-meta {
   padding-left: 15px;
   font-size: 12px;
@@ -6615,4 +6629,98 @@
   border: 1px solid var(--border);
   color: var(--muted);
   white-space: nowrap;
+}
+
+/* Admin reply, beside the solve button: the answer and the close are one conversation. */
+.blocker__reply {
+  display: flex;
+  flex: 1 1 320px;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.blocker__reply-text {
+  flex: 1;
+  min-height: 38px;
+  resize: vertical;
+  font-size: 13px;
+}
+
+.blocker__actions {
+  flex-wrap: wrap;
+}
+
+/* A paper's own blockers, listed on its card so several can coexist. */
+.my-work-item__blockers {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.my-work-item__blocker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid #d9a441;
+  border-radius: 8px;
+}
+
+.my-work-item__blocker-icon svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: #d9a441;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.my-work-item__blocker-copy {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.my-work-item__blocker-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.my-work-item__blocker-meta {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* Says what this is for before someone types the wrong thing into it. */
+.blocker-form__notice {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  padding: 9px 10px;
+  border: 1px solid rgb(217 164 65 / 35%);
+  border-radius: 8px;
+  background: rgb(217 164 65 / 8%);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.blocker-form__notice-icon svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+  fill: none;
+  stroke: #d9a441;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }

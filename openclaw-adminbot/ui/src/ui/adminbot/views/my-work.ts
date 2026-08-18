@@ -20,8 +20,9 @@ import type {
 } from "../controllers/admin.ts";
 import {
   BLOCKER_TITLE_MAX,
+  editBlockerInput,
   fileBlockerInput,
-  openBlocker,
+  openEntries,
   resolveBlockerInput,
 } from "../blockers.ts";
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
@@ -36,6 +37,8 @@ export type MyWorkProps = {
 
 export type BlockerDraft = {
   paperId: string;
+  /** The blocker being edited, keyed by filing time. Absent when filing a new one. */
+  at?: string;
   text: string;
 };
 
@@ -144,22 +147,10 @@ function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
 
 function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: AdminBotPaperRecord) {
   const draft = state.myWorkBlockerDraft;
-  const existing = openBlocker(paper);
-
   if (draft?.paperId !== paper.id) {
-    return html`
-      <button
-        type="button"
-        class=${`btn btn--sm my-work-item__report ${existing ? "is-blocked" : ""}`}
-        data-testid=${`my-work-report-${paper.id}`}
-        @click=${() => {
-          state.myWorkBlockerDraft = { paperId: paper.id, text: "" };
-        }}
-      >
-        ${existing ? "Blocked — edit" : t("myWork.blockers.report")}
-      </button>
-    `;
+    return nothing;
   }
+  const editing = draft.at ? openEntries(paper).find((entry) => entry.at === draft.at) : undefined;
 
   return html`
     <form
@@ -171,27 +162,34 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
         if (!title) {
           return;
         }
+        const fields = {
+          stage: String(data.get("stage") ?? ""),
+          title,
+          note: String(data.get("note") ?? "").trim(),
+        };
         props.onSavePaper(
-          fileBlockerInput(paper, {
-            stage: String(data.get("stage") ?? ""),
-            title,
-            note: String(data.get("note") ?? "").trim(),
-            // Named at filing time so the admin list can say who to go ask.
-            by: findOwnMember(state)?.name ?? "",
-          }),
+          editing
+            ? editBlockerInput(paper, editing.at, fields)
+            : // Named at filing time so the admin list can say who to go ask.
+              fileBlockerInput(paper, { ...fields, by: findOwnMember(state)?.name ?? "" }),
         );
         state.myWorkBlockerDraft = null;
       }}
     >
+      <p class="blocker-form__notice">
+        <span class="blocker-form__notice-icon" aria-hidden="true">${icons.alertTriangle}</span>
+        <span>
+          This is a quick blocker report for PaperFlow — not a messaging system. Anything
+          confidential, or anything that needs a back-and-forth, belongs in Slack.
+        </span>
+      </p>
+
       <label class="register__field">
         <span class="register__label">Which stage is blocked?</span>
         <select class="input" name="stage" data-testid=${`blocker-stage-${paper.id}`}>
           ${paperSteps.map(
             (step) => html`
-              <option
-                value=${step}
-                ?selected=${step === (existing?.stage || paper.current_step)}
-              >
+              <option value=${step} ?selected=${step === (editing?.stage || paper.current_step)}>
                 ${stepLabel(step)}
               </option>
             `,
@@ -206,7 +204,7 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
           name="title"
           maxlength=${BLOCKER_TITLE_MAX}
           placeholder="e.g. OpenReview rejects the PDF"
-          .value=${existing?.title ?? ""}
+          .value=${editing?.title ?? ""}
           data-testid=${`blocker-title-${paper.id}`}
         />
         <span class="register__hint">Up to ${BLOCKER_TITLE_MAX} characters.</span>
@@ -215,7 +213,7 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
       <label class="register__field">
         <span class="register__label">Details</span>
         <textarea class="input" name="note" rows="4" placeholder=${t("myWork.blockers.placeholder")}>
-${existing?.note ?? ""}</textarea
+${editing?.note ?? ""}</textarea
         >
       </label>
 
@@ -223,22 +221,9 @@ ${existing?.note ?? ""}</textarea
         ${t("myWork.blockers.reviewer", { name: reviewerName(state) })}
       </p>
       <div class="register__actions">
-        <button type="submit" class="btn primary">${t("myWork.blockers.submit")}</button>
-        ${existing
-          ? html`<button
-              type="button"
-              class="btn"
-              data-testid=${`blocker-resolve-${paper.id}`}
-              @click=${() => {
-                props.onSavePaper(
-                  resolveBlockerInput(paper, existing.at, findOwnMember(state)?.name ?? ""),
-                );
-                state.myWorkBlockerDraft = null;
-              }}
-            >
-              Resolved
-            </button>`
-          : nothing}
+        <button type="submit" class="btn primary">
+          ${editing ? "Save changes" : t("myWork.blockers.submit")}
+        </button>
         <button
           type="button"
           class="btn"
@@ -253,9 +238,59 @@ ${existing?.note ?? ""}</textarea
   `;
 }
 
+/**
+ * The blockers already filed on one paper, each with its own controls.
+ *
+ * Per-row rather than one form for the paper, because a paper can be stuck on several things and
+ * "edit the blocker" is meaningless once there are three of them.
+ */
+function renderPaperBlockers(state: AppViewState, props: MyWorkProps, paper: AdminBotPaperRecord) {
+  const open = openEntries(paper);
+  if (open.length === 0) {
+    return nothing;
+  }
+  return html`
+    <ul class="my-work-item__blockers">
+      ${open.map(
+        (entry) => html`
+          <li class="my-work-item__blocker">
+            <span class="my-work-item__blocker-icon" aria-hidden="true">${icons.alertTriangle}</span>
+            <span class="my-work-item__blocker-copy">
+              <span class="my-work-item__blocker-title">${entry.title}</span>
+              <span class="my-work-item__blocker-meta">${stepLabel(entry.stage)}</span>
+            </span>
+            <button
+              type="button"
+              class="btn btn--sm"
+              data-testid=${`blocker-edit-${paper.id}-${entry.at}`}
+              @click=${() => {
+                state.myWorkBlockerDraft = { paperId: paper.id, at: entry.at, text: "" };
+              }}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              class="btn btn--sm"
+              data-testid=${`blocker-resolve-${paper.id}-${entry.at}`}
+              @click=${() => {
+                props.onSavePaper(
+                  resolveBlockerInput(paper, entry.at, findOwnMember(state)?.name ?? ""),
+                );
+              }}
+            >
+              Resolved
+            </button>
+          </li>
+        `,
+      )}
+    </ul>
+  `;
+}
+
 function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWorkProps) {
   const { index, percent } = paperProgress(paper);
-  const blocked = Boolean(openBlocker(paper));
+  const blocked = openEntries(paper).length > 0;
   return html`
     <article
       class=${`my-work-item ${blocked ? "my-work-item--blocked" : ""}`}
@@ -267,8 +302,18 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
           <p class="my-work-item__meta">${(paper.authors ?? []).join(", ")}</p>
           ${renderTarget(paper, props)}
         </div>
-        ${renderBlockerForm(state, props, paper)}
+        <button
+          type="button"
+          class="btn btn--sm my-work-item__report"
+          data-testid=${`my-work-report-${paper.id}`}
+          @click=${() => {
+            state.myWorkBlockerDraft = { paperId: paper.id, text: "" };
+          }}
+        >
+          ${t("myWork.blockers.report")}
+        </button>
       </div>
+      ${renderPaperBlockers(state, props, paper)} ${renderBlockerForm(state, props, paper)}
       ${renderStepper(paper, props, index)}
       ${renderNextStep(paper)}
       ${renderStepControls(paper, props)}
@@ -609,10 +654,9 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
 // are always looking at the same records -- a blocker filed here is the one that shows up in
 // Zhijing's sorted view, and clearing it there clears it here.
 function renderBlockers(state: AppViewState) {
-  const blockers = ownPapers(state).flatMap((paper) => {
-    const blocker = openBlocker(paper);
-    return blocker ? [{ paper, blocker }] : [];
-  });
+  const blockers = ownPapers(state).flatMap((paper) =>
+    openEntries(paper).map((blocker) => ({ paper, blocker })),
+  );
   if (!blockers.length) {
     return nothing;
   }

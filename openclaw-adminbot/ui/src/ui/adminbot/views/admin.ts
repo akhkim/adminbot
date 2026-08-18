@@ -33,7 +33,7 @@ import {
   resolveBlockerInput,
   resolvedBlockers,
 } from "../blockers.ts";
-import { nudgeSaveInput } from "../nudge-alerts.ts";
+import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
 
 export type BlockerSort = "stage" | "age" | "paper";
 import { renderAdminBotReimbursements } from "./reimbursements.ts";
@@ -1960,6 +1960,40 @@ function renderBlockerRow(
         <p class="blocker__note">${row.note || "No further detail given."}</p>
         <div class="blocker__actions">
           ${resolved
+            ? nothing
+            : html`
+              <form
+                class="blocker__reply"
+                @submit=${(event: SubmitEvent) => {
+                  event.preventDefault();
+                  const form = event.currentTarget as HTMLFormElement;
+                  const message = String(new FormData(form).get("reply") ?? "").trim();
+                  if (!message || !paper) {
+                    return;
+                  }
+                  props.onSavePaper({
+                    id: paper.id,
+                    title: paper.title,
+                    authors: paper.authors ?? [],
+                    currentStep: paper.current_step as AdminBotPaperStep,
+                    ...notifyFields(paper, "blocker_reply", row.title, self, new Date(), message),
+                  });
+                  form.reset();
+                }}
+              >
+                <textarea
+                  class="input blocker__reply-text"
+                  name="reply"
+                  rows="2"
+                  placeholder=${`Reply to ${row.by || "the reporter"} — they get this as a notification`}
+                  data-testid=${`blocker-reply-${row.paperId}`}
+                ></textarea>
+                <button type="submit" class="btn btn--sm" data-testid=${`blocker-send-${row.paperId}`}>
+                  Send
+                </button>
+              </form>
+            `}
+          ${resolved
             ? html`
                 <span class="blocker__resolved-by">
                   Solved${row.resolved_by ? ` by ${row.resolved_by}` : ""}
@@ -1970,7 +2004,10 @@ function renderBlockerRow(
                   data-testid=${`blocker-recover-${row.paperId}`}
                   @click=${() => {
                     if (paper) {
-                      props.onSavePaper(recoverBlockerInput(paper, row.at));
+                      props.onSavePaper({
+                        ...recoverBlockerInput(paper, row.at),
+                        ...notifyFields(paper, "blocker_reopened", row.title, self),
+                      });
                     }
                   }}
                 >
@@ -1984,7 +2021,12 @@ function renderBlockerRow(
                   data-testid=${`blocker-solve-${row.paperId}`}
                   @click=${() => {
                     if (paper) {
-                      props.onSavePaper(resolveBlockerInput(paper, row.at, self));
+                      // One write, not two: the reporter learns it was closed at the same moment
+                      // it closes, and a single upsert cannot half-apply.
+                      props.onSavePaper({
+                        ...resolveBlockerInput(paper, row.at, self),
+                        ...notifyFields(paper, "blocker_solved", row.title, self),
+                      });
                     }
                   }}
                 >

@@ -59,7 +59,7 @@ import { renderLabSharing } from "./adminbot/views/lab-sharing.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
 import { renderLoginGate } from "./adminbot/views/login-gate.ts";
 import { renderAdminBotLogistics } from "./adminbot/views/logistics.ts";
-import { agoLabel, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
+import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import { ownPapers, renderMyWork } from "./adminbot/views/my-work.ts";
 import { renderOnboardingChecklist } from "./adminbot/views/onboarding-checklist.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
@@ -1411,10 +1411,13 @@ function renderNudgeBell(state: AppViewState) {
                       <span class="bell__item-top">
                         <span class="bell__dot" aria-hidden="true"></span>
                         <span class="bell__item-text">
-                          <strong>${alert.by}</strong> asked you to update
-                          <strong>${alert.node}</strong>
+                          <strong>${alert.by}</strong> ${alertText(alert).action}
+                          <strong>${alertText(alert).subject}</strong>
                         </span>
                       </span>
+                      ${alert.body
+                        ? html`<span class="bell__item-body">${alert.body}</span>`
+                        : nothing}
                       <span class="bell__item-meta">
                         ${alert.paperTitle} · ${agoLabel(alert.at)}
                       </span>

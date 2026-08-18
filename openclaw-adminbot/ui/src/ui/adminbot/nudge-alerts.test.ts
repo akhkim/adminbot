@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import {
   agoLabel,
+  alertText,
+  notifyFields,
   nudgeAlerts,
   nudgeLog,
   nudgeSaveInput,
@@ -65,13 +67,21 @@ describe("nudge notifications", () => {
     expect(written.map((entry) => entry.node)).toEqual(["Slides", "Drive PDF"]);
   });
 
-  it("caps the log so a record cannot grow without limit", () => {
+  it("caps read notifications but never drops an unread one", () => {
+    // Everything stays unread here (no watermark), so nothing may be trimmed.
     let current = paper({});
-    for (let i = 0; i < 25; i += 1) {
+    for (let i = 0; i < 40; i += 1) {
       const input = nudgeSaveInput(current, `n${i}`, "Zhijing", new Date(2026, 0, i + 1));
       current = paper({ nudge_log: input.nudgeLog ?? "" });
     }
-    expect(nudgeLog(current)).toHaveLength(20);
+    expect(nudgeLog(current)).toHaveLength(40);
+    expect(unreadCount([current])).toBe(40);
+
+    // Once read, the log trims back to the cap on the next write.
+    const read = paper({ nudge_log: current.artifacts?.nudge_log ?? "", nudge_seen_at: "2027-01-01T00:00:00Z" });
+    const after = nudgeSaveInput(read, "newest", "Zhijing", new Date(2027, 5, 1));
+    const log = JSON.parse(after.nudgeLog ?? "[]") as unknown[];
+    expect(log).toHaveLength(21);
   });
 
   it("still shows notifications written before the log existed", () => {
@@ -104,6 +114,31 @@ describe("nudge notifications", () => {
       paper({ nudge_log: log({ at: "2026-08-17T00:00:00Z", node: "new" }) }, "b"),
     ]);
     expect(alerts.map((alert) => alert.node)).toEqual(["new", "old"]);
+  });
+
+  it("says what happened, per kind", () => {
+    expect(alertText({ kind: "nudge", node: "Slides", by: "Z", at: "" })).toEqual({
+      action: "asked you to update",
+      subject: "Slides",
+    });
+    expect(alertText({ kind: "blocker_solved", node: "Quota", by: "Z", at: "" }).action).toBe(
+      "reviewed and closed your blocker",
+    );
+    expect(alertText({ kind: "blocker_reopened", node: "Quota", by: "Z", at: "" }).action).toBe(
+      "reopened your blocker",
+    );
+  });
+
+  it("treats an entry written before kinds existed as a nudge", () => {
+    expect(alertText({ node: "Slides", by: "Z", at: "" }).action).toBe("asked you to update");
+  });
+
+  it("notifies in the same write as the blocker change", () => {
+    const fields = notifyFields(paper({}), "blocker_solved", "Quota exhausted", "Zhijing");
+    const log = JSON.parse(fields.nudgeLog ?? "[]") as { kind: string; node: string }[];
+    expect(log[0]).toMatchObject({ kind: "blocker_solved", node: "Quota exhausted" });
+    // Only the log -- the caller supplies id/title/step from its own input.
+    expect(Object.keys(fields)).toEqual(["nudgeLog"]);
   });
 
   it("reads age in the units a person would say it in", () => {
