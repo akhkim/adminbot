@@ -498,6 +498,34 @@ export async function updateOwnSchedule(
   return { ok: true, value: result.body as LabMember };
 }
 
+/**
+ * Writes lab-wide settings over the signed-in admin's own member session (PUT /settings).
+ *
+ * Not through the adminbot_update_settings gateway tool: every gateway-tool call authenticates as
+ * the shared service principal, and the service's requireMemberPrivileged denies that principal
+ * for settings outright -- governance has to be driven by a real member session, or any signed-in
+ * member could change lab policy by asking the agent to. Same reasoning as
+ * upsertLabMemberAsAdmin below.
+ */
+export async function updateSettingsAsAdmin(
+  settings: Record<string, unknown>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/settings", "PUT", sessionToken, settings);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    // A 400 carries the service's own explanation of what it refused.
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
 // Admin write for ANY member (self or otherwise), including governance fields.
 // Uses the signed-in admin's own member Bearer session — the server routes a
 // real admin member session to the full write path, unlike the shared service

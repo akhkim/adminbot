@@ -23,6 +23,7 @@ import {
   draftMemberCvBlurb,
   sendMemberNudge,
   updateOwnProfile,
+  updateSettingsAsAdmin,
   updateOwnSchedule,
   upsertLabMemberAsAdmin,
 } from "../auth/session.ts";
@@ -1479,17 +1480,27 @@ export async function saveAdminBotSettings(
   host: AdminBotHost,
   settings: AdminBotSettingsSaveInput,
 ): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
   host.adminBotNotice = null;
-  try {
-    await invokeAdminBotTool(host, "adminbot_update_settings", settings);
-    host.adminBotNotice = { kind: "success", text: "Saved AdminBot settings." };
-    await loadAdminBot(host);
-  } catch (err) {
+  const result = await updateSettingsAsAdmin(
+    settings as Record<string, unknown>,
+    session.sessionToken,
+    session.baseUrl,
+  );
+  if (!result.ok) {
     host.adminBotNotice = {
       kind: "error",
-      text: formatAdminBotToolError(err),
+      // The service names what it refused on a 400 (an out-of-range window, say), which beats any
+      // fixed copy this side could write.
+      text: result.message?.trim() || cvErrorText(result.kind, "save settings"),
     };
+    return;
   }
+  host.adminBotNotice = { kind: "success", text: "Saved AdminBot settings." };
+  await loadAdminBot(host);
 }
 
 export async function saveAdminBotSensitiveInfo(
