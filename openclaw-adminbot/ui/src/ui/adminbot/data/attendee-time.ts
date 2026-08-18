@@ -9,9 +9,10 @@
 // source is returned alongside it. That matters on screen: "Europe/Berlin (from their profile)" is
 // a fact the member stated, while "(guessed from Toronto)" is an inference the reader should be
 // able to discount.
+import { tripOnDay, type TripRow } from "./availability.ts";
 import { timezoneForLocation } from "./timezone-for-location.ts";
 
-export type AttendeeZoneSource = "timezone" | "current_city" | "location";
+export type AttendeeZoneSource = "trip" | "timezone" | "current_city" | "location";
 
 export type AttendeeZone = {
   zone: string;
@@ -24,6 +25,7 @@ type ZonedMember = {
   timezone?: string | null;
   current_city?: string | null;
   location?: string | null;
+  trips?: TripRow[] | null;
 };
 
 /**
@@ -106,4 +108,31 @@ export function attendeeHourVerdict(zone: string, instant: string): AttendeeHour
     return "early";
   }
   return hour >= 21 ? "late" : "fine";
+}
+
+/**
+ * The zone a member is in on the day of a given instant.
+ *
+ * A logged trip covering that day wins over everything on the profile, and that is the point of
+ * logging one: a member who wrote down "Berlin, 1-30 September" gets September invites read in
+ * Berlin time and October invites back in home time, without touching their profile twice. The
+ * trip's own zone is used when it has one, and guessed from its city when it does not.
+ *
+ * The day is taken in UTC. A trip is a range of dates rather than instants, so the boundary is
+ * approximate by construction -- the flight home does not land at midnight either -- and being a
+ * few hours out on the first or last day of a trip is not worth carrying a second zone to resolve.
+ */
+export function resolveAttendeeZoneAt(
+  member: ZonedMember,
+  instant: string,
+): AttendeeZone | undefined {
+  const parsed = new Date(instant);
+  if (!Number.isNaN(parsed.getTime())) {
+    const trip = tripOnDay(member.trips ?? [], parsed.toISOString().slice(0, 10));
+    const zone = trip?.timezone?.trim() || (trip ? timezoneForLocation(trip.city) : null);
+    if (trip && zone) {
+      return { zone, source: "trip", from: trip.city };
+    }
+  }
+  return resolveAttendeeZone(member);
 }

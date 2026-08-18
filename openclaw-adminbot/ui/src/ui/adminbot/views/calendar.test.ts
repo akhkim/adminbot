@@ -800,3 +800,67 @@ describe("attendee local times on the invite list", () => {
     expect(container.querySelector(".adminbot-calendar__match-drift")).toBeNull();
   });
 });
+
+describe("trips on the calendar", () => {
+  const berlin = { start: "2026-09-01", end: "2026-09-30", city: "Berlin", timezone: "Europe/Berlin" };
+
+  it("marks the days a member is away, naming them when it is only one", () => {
+    const container = renderToDiv(
+      state({
+        calendarMonth: "2026-09-01",
+        adminBotData: { ...state().adminBotData, members: [member({ trips: [berlin] })] },
+      } as Partial<AppViewState>),
+    );
+    const marker = container.querySelector('[data-testid="calendar-trips-2026-09-15"]');
+    expect(marker?.textContent).toContain("Ada Lovelace in Berlin");
+    // The names live in the tooltip so a busy month does not turn the grid into a roster.
+    expect(marker?.getAttribute("title")).toContain("Ada Lovelace — Berlin");
+  });
+
+  it("counts instead of naming once more than one person is away", () => {
+    const container = renderToDiv(
+      state({
+        calendarMonth: "2026-09-01",
+        adminBotData: {
+          ...state().adminBotData,
+          members: [
+            member({ trips: [berlin] }),
+            member({ id: "m2", name: "Mei Chen", trips: [{ ...berlin, city: "Tokyo" }] }),
+          ],
+        },
+      } as Partial<AppViewState>),
+    );
+    expect(
+      container.querySelector('[data-testid="calendar-trips-2026-09-15"]')?.textContent,
+    ).toContain("2 away");
+  });
+
+  it("marks nothing on a day nobody is travelling", () => {
+    const container = renderToDiv(
+      state({
+        calendarMonth: "2026-10-01",
+        adminBotData: { ...state().adminBotData, members: [member({ trips: [berlin] })] },
+      } as Partial<AppViewState>),
+    );
+    expect(container.querySelector('[data-testid="calendar-trips-2026-10-15"]')).toBeNull();
+  });
+
+  it("reads an attendee's local time from the trip they are on that week", () => {
+    const container = renderToDiv(
+      state({
+        calendarAudience: { conference: "NeurIPS 2026" },
+        calendarSelectedEventId: "evt-1",
+        calendarEvents: [
+          { id: "evt-1", summary: "Lab meeting", start: "2026-09-15T14:00:00Z", attendees: [] },
+        ],
+        adminBotData: {
+          ...state().adminBotData,
+          members: [member({ location: "Toronto", trips: [berlin] })],
+        },
+      } as Partial<AppViewState>),
+    );
+    const matches = container.querySelector('[data-testid="calendar-matches"]');
+    expect(matches?.textContent).toContain("in Berlin");
+    expect(matches?.textContent).toMatch(/(?:16|4):00/u);
+  });
+});

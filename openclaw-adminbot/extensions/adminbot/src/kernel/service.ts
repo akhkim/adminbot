@@ -2490,6 +2490,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "availability",
   "time_off",
   "milestones",
+  "trips",
   // The prose that goes with the three lists above. Admin-visible on read (see
   // adminBotScheduleMemberFields) and self-editable, like the rows it explains.
   "availability_notes",
@@ -3093,6 +3094,48 @@ function validateDeadlineClock(
   return undefined;
 }
 
+/**
+ * Trips, validated like the other dated lists plus the two rules that are theirs alone.
+ *
+ * A city is required because a trip with no place is indistinguishable from time off, and the
+ * timezone -- when given -- has to be a real IANA zone, since everything downstream feeds it
+ * straight to Intl and a typo would otherwise surface as a silently missing local time.
+ */
+function validateTrips(member: AdminBotLabMemberInput): string | undefined {
+  if (member.trips === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(member.trips)) {
+    return "member trips must be a list";
+  }
+  if (member.trips.length > MAX_AVAILABILITY_ROWS) {
+    return `member trips cannot exceed ${MAX_AVAILABILITY_ROWS} rows`;
+  }
+  for (const row of member.trips) {
+    if (!Number.isFinite(parseIsoDate(row?.start)) || !Number.isFinite(parseIsoDate(row?.end))) {
+      return "trip start and end must be YYYY-MM-DD";
+    }
+    if (row.end < row.start) {
+      return "trip end cannot be before its start";
+    }
+    if (typeof row.city !== "string" || !row.city.trim()) {
+      return "trip city is required";
+    }
+    const cityError = validateLabel(row.city, "trip city");
+    if (cityError) {
+      return cityError;
+    }
+    if (row.timezone !== undefined && row.timezone !== "" && !isAdminBotTimezone(row.timezone)) {
+      return "trip time zone is not a known IANA zone";
+    }
+    const linkError = validateExternalLink(row.link, "trip");
+    if (linkError) {
+      return linkError;
+    }
+  }
+  return undefined;
+}
+
 function validateMilestones(member: AdminBotLabMemberInput): string | undefined {
   if (member.milestones === undefined) {
     return undefined;
@@ -3208,7 +3251,7 @@ function validateAvailability(member: AdminBotLabMemberInput): string | undefine
       }
     }
   }
-  return validateMilestones(member);
+  return validateMilestones(member) ?? validateTrips(member);
 }
 
 // availability_updated_at is server-owned: it moves only when the schedule content

@@ -40,6 +40,7 @@ import {
   requestAdminBotCalendarDraft,
   saveAdminBotCalendarEvent,
 } from "./adminbot/controllers/calendar.ts";
+import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import {
   answerAdminBotLocationPrompt,
   loadAdminBotLocationDrifts,
@@ -299,6 +300,7 @@ export class OpenClawApp extends LitElement {
   // not re-render. The view tests could not catch it because they render with a plain object.
   // Declared here for the same reason as the calendar block above: a controller writing a plain
   // class field would change nothing on screen.
+  @state() adminBotTripDraft: TripDraft = EMPTY_TRIP_DRAFT;
   @state() adminBotLocationDrift?: LocationDrift | null;
   @state() adminBotLocationDrifts?: LocationDrift[];
   @state() adminBotLocationSaving = false;

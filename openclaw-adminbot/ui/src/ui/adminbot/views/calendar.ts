@@ -18,10 +18,11 @@ import { i18n } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import type { CalendarEvent } from "../auth/session.ts";
+import { tripOnDay, tripRows } from "../data/availability.ts";
 import {
   attendeeHourVerdict,
   localTimeAt,
-  resolveAttendeeZone,
+  resolveAttendeeZoneAt,
 } from "../data/attendee-time.ts";
 import {
   knownCities,
@@ -178,6 +179,34 @@ function renderCards(state: AppViewState, timezone: string) {
       </section>
     </div>
   `;
+}
+
+/**
+ * Who is away from home on a given day, from the trips members logged.
+ *
+ * Small on purpose: one line at the foot of the day cell, not a chip per person. The grid's job is
+ * still the calendar, and this is the piece of context that changes what time you would pick --
+ * "two people are in Europe that week" is what makes somebody move a 9am. The names are in the
+ * tooltip rather than the cell so a busy month does not become a roster.
+ */
+function renderDayTrips(state: AppViewState, dayKey: string) {
+  const travelling = (state.adminBotData.members ?? []).flatMap((member) => {
+    const trip = tripOnDay(tripRows(member.trips), dayKey);
+    return trip ? [{ name: member.name, city: trip.city }] : [];
+  });
+  if (travelling.length === 0) {
+    return nothing;
+  }
+  const label =
+    travelling.length === 1 && travelling[0]
+      ? `${travelling[0].name} in ${travelling[0].city}`
+      : `${travelling.length} away`;
+  return html`<span
+    class="adminbot-calendar__day-trips"
+    data-testid=${`calendar-trips-${dayKey}`}
+    title=${travelling.map((entry) => `${entry.name} — ${entry.city}`).join("\n")}
+    >✈ ${label}</span
+  >`;
 }
 
 function renderDayCard(
@@ -375,6 +404,7 @@ function renderMonth(state: AppViewState) {
               data-testid=${`calendar-day-${day.key}`}
             >
               <span class="adminbot-calendar__day-number">${day.day}</span>
+              ${renderDayTrips(state, day.key)}
               ${events.slice(0, CHIPS_PER_DAY).map((event) => renderChip(state, event, timezone))}
               ${events.length > CHIPS_PER_DAY
                 ? html`<button
@@ -731,7 +761,9 @@ function renderAttendeeTime(
   startsAt: string | undefined,
 ) {
   const member = (state.adminBotData.members ?? []).find((entry) => entry.id === memberId);
-  const zone = member ? resolveAttendeeZone(member) : undefined;
+  // Resolved against the event's own date, so a member on a logged trip is read in the zone they
+  // will actually be in that week rather than the one their profile names.
+  const zone = member && startsAt ? resolveAttendeeZoneAt(member, startsAt) : undefined;
   const drift = (state.adminBotLocationDrifts ?? []).find((entry) => entry.member_id === memberId);
   const local = zone && startsAt ? localTimeAt(zone.zone, startsAt) : undefined;
   const verdict = zone && startsAt ? attendeeHourVerdict(zone.zone, startsAt) : undefined;
@@ -748,8 +780,10 @@ function renderAttendeeTime(
           class="adminbot-calendar__match-local ${verdict === "fine"
             ? ""
             : "adminbot-calendar__match-local--odd"}"
-          title=${`${zone?.zone ?? ""} — from their ${zone?.source === "timezone" ? "timezone" : zone?.source === "current_city" ? "current city" : "home location"} (${zone?.from ?? ""})`}
-          >${local}${verdict && verdict !== "fine" ? ` (${verdict})` : ""}</span
+          title=${`${zone?.zone ?? ""} — from their ${zone?.source === "trip" ? "logged trip" : zone?.source === "timezone" ? "timezone" : zone?.source === "current_city" ? "current city" : "home location"} (${zone?.from ?? ""})`}
+          >${local}${verdict && verdict !== "fine" ? ` (${verdict})` : ""}${zone?.source === "trip"
+            ? ` · in ${zone.from}`
+            : ""}</span
         >`
       : nothing}
     ${drift

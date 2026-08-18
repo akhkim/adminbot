@@ -62,6 +62,7 @@ import { renderLoginGate } from "./adminbot/views/login-gate.ts";
 import { renderAdminBotLogistics } from "./adminbot/views/logistics.ts";
 import { renderLocationPrompt } from "./adminbot/views/location-prompt.ts";
 import { renderAdminBotMeetings } from "./adminbot/views/meetings.ts";
+import { EMPTY_TRIP_DRAFT } from "./adminbot/views/time-availability.trips.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import { ownPapers, renderMyWork } from "./adminbot/views/my-work.ts";
 import { renderOnboardingChecklist } from "./adminbot/views/onboarding-checklist.ts";
@@ -3037,15 +3038,12 @@ export function renderApp(state: AppViewState) {
           : nothing}
         ${state.tab === "adminbotTimeAvailability"
           ? renderAdminBotTimeAvailability({
-              // The manual counterpart to the sign-in inference: saved through the ordinary
-              // self-edit, which is also what records it on the location timeline.
-              onSaveLocation: (answer) => {
-                if (state.memberId) {
-                  void saveAdminBotOwnProfile(state, state.memberId, answer);
-                }
+              // The trips log's draft lives on the view state so a re-render underneath the
+              // typist -- the roster reloading, a save landing -- cannot wipe half-entered input.
+              tripDraft: state.adminBotTripDraft ?? EMPTY_TRIP_DRAFT,
+              onTripDraftChange: (draft) => {
+                state.adminBotTripDraft = draft;
               },
-              locationSaving: state.adminBotLocationSaving ?? false,
-              locationError: state.adminBotLocationError ?? null,
               members: state.adminBotData.members ?? [],
               loading: state.adminBotLoading,
               error: state.adminBotError,

@@ -244,6 +244,9 @@ export const adminBotScheduleMemberFields = [
   "availability",
   "time_off",
   "milestones",
+  // Where a member will be for the next three weeks is planning data, like the rest of this list:
+  // their own to read and edit, and visible to the admins who schedule around it.
+  "trips",
   "availability_notes",
   "availability_doc_url",
   "availability_updated_at",
@@ -436,6 +439,29 @@ export type AdminBotTimeOffRow = {
   link?: string;
 };
 
+/**
+ * A stretch away from home: a conference, an internship, a term abroad, a month at a parent's.
+ *
+ * A range with a place on it, which is the one thing none of the other schedule rows carry. A
+ * `time_off` row says a member is unavailable and a `trips` row says nothing about availability at
+ * all -- somebody working normal hours from Berlin is fully available and six hours off the lab's
+ * clock, which is exactly the case that kept producing 10am invites that land at 4pm. Logged the
+ * same way a commitment is, because it is the same act: a member saying in advance what their next
+ * few weeks look like.
+ *
+ * `timezone` is optional and derived from the city by the form. It is stored rather than re-derived
+ * on read so a member who corrects the guess keeps their correction.
+ */
+export type AdminBotMemberTrip = {
+  start: string;
+  end: string;
+  /** Free text, the way a member writes a place: "Berlin", "Berlin, Germany", "NeurIPS (Vancouver)". */
+  city: string;
+  timezone?: string;
+  note?: string;
+  link?: string;
+};
+
 // A single dated milestone on a member's horizon — a thesis deadline, a defence, graduation. A
 // date rather than a range: these are moments to plan back from, not stretches of time, which is
 // what keeps them out of `availability` (hours over a range) and `time_off` (absence over a range).
@@ -605,6 +631,9 @@ export type AdminBotLabMemberInput = {
   time_off?: AdminBotTimeOffRow[];
   // Dated milestones the member is planning back from. Self-editable like the two lists above.
   milestones?: AdminBotMemberMilestone[];
+  // Where the member is when that is not home, over a range. Self-editable like the lists above,
+  // and read by anything that needs a member's local time on a given date.
+  trips?: AdminBotMemberTrip[];
   // The complication the three lists above cannot express: a custody arrangement, a visa date that
   // may move, a medical treatment that makes some weeks unpredictable. Written for the admins who
   // plan around it -- see adminBotScheduleMemberFields, which keeps it off every other member's

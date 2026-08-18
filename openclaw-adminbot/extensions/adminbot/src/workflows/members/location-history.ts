@@ -20,6 +20,7 @@ import type {
   AdminBotLocationSource,
   AdminBotMemberLocationEntry,
 } from "../../contracts/actions.js";
+import { tripOn } from "./availability.js";
 import { resolveCountry, resolvePlace } from "./member-map.js";
 
 /**
@@ -105,9 +106,17 @@ export function latestBySource(
   return latest;
 }
 
-/** The country the profile claims, from where they are now if stated, else where they live. */
-export function profileCountry(member: AdminBotLabMember): string | undefined {
-  const stated = member.current_city?.trim() || member.location?.trim();
+/**
+ * The country the member's own record claims for a given day.
+ *
+ * A logged trip wins, and that is the whole reason this takes a date. A member who wrote down
+ * "Berlin, 1-30 September" has already answered the question the drift prompt would ask, and
+ * asking it anyway is how a system teaches people that filling things in changes nothing.
+ * Otherwise it falls back to where they say they are now, then to where they live.
+ */
+export function profileCountry(member: AdminBotLabMember, dayIso?: string): string | undefined {
+  const trip = dayIso ? tripOn(member, dayIso) : undefined;
+  const stated = trip?.city.trim() || member.current_city?.trim() || member.location?.trim();
   return stated ? resolvePlace(stated)?.country : undefined;
 }
 
@@ -134,7 +143,8 @@ export function detectLocationDrift(
   if (!newest?.country) {
     return undefined;
   }
-  const claimed = profileCountry(member);
+  // Judged against the day the newest sign-in was seen, so a trip that covers it counts.
+  const claimed = profileCountry(member, newest.observed_at.slice(0, 10));
   if (!claimed || claimed === newest.country) {
     return undefined;
   }
@@ -169,8 +179,8 @@ export function detectLocationDrift(
     member_id: member.id,
     observed_country: newest.country,
     ...(newest.place_label ? { observed_label: newest.place_label } : {}),
-    ...(member.current_city?.trim() || member.location?.trim()
-      ? { profile_location: member.current_city?.trim() || member.location?.trim() }
+    ...(claimedLocation(member, newest.observed_at.slice(0, 10))
+      ? { profile_location: claimedLocation(member, newest.observed_at.slice(0, 10)) }
       : {}),
     ...(claimed ? { profile_country: claimed } : {}),
     since: first.observed_at,
@@ -197,4 +207,9 @@ export function selfReportedChange(
     return undefined;
   }
   return { raw: stated, ...(next.timezone?.trim() ? { timezone: next.timezone.trim() } : {}) };
+}
+
+/** What the record says the member's location is on a day, as text, for quoting back to them. */
+function claimedLocation(member: AdminBotLabMember, dayIso: string): string | undefined {
+  return tripOn(member, dayIso)?.city.trim() || member.current_city?.trim() || member.location?.trim();
 }

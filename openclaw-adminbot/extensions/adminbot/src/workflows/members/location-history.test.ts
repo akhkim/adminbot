@@ -264,6 +264,58 @@ describe("profileCountry", () => {
     expect(profileCountry(member({ location: "Toronto" }))).toBe("Canada");
     expect(profileCountry(member())).toBeUndefined();
   });
+
+  it("lets a logged trip override both, for days it covers", () => {
+    const traveller = member({
+      location: "Toronto",
+      trips: [{ start: "2026-09-01", end: "2026-09-30", city: "Berlin" }],
+    });
+    expect(profileCountry(traveller, "2026-09-15")).toBe("Germany");
+    expect(profileCountry(traveller, "2026-10-15")).toBe("Canada");
+  });
+});
+
+describe("trips and the drift prompt", () => {
+  // A member who wrote down "Berlin, 1-30 September" has already answered the question. Asking it
+  // anyway is how a system teaches people that filling things in changes nothing.
+  it("does not ask about a country the member already logged a trip to", () => {
+    expect(
+      detectLocationDrift(
+        member({
+          location: "Toronto",
+          trips: [{ start: "2026-08-01", end: "2026-08-31", city: "Berlin" }],
+        }),
+        [login("10", "Germany"), login("14", "Germany")],
+        new Date("2026-08-14T12:00:00.000Z"),
+      ),
+    ).toBeUndefined();
+  });
+
+  it("still asks once the trip is over", () => {
+    expect(
+      detectLocationDrift(
+        member({
+          location: "Toronto",
+          trips: [{ start: "2026-07-01", end: "2026-07-31", city: "Berlin" }],
+        }),
+        [login("10", "Germany"), login("14", "Germany")],
+        new Date("2026-08-14T12:00:00.000Z"),
+      ),
+    ).toMatchObject({ observed_country: "Germany" });
+  });
+
+  it("asks when the sign-ins disagree with the trip too", () => {
+    expect(
+      detectLocationDrift(
+        member({
+          location: "Toronto",
+          trips: [{ start: "2026-08-01", end: "2026-08-31", city: "Berlin" }],
+        }),
+        [login("10", "Japan"), login("14", "Japan")],
+        new Date("2026-08-14T12:00:00.000Z"),
+      ),
+    ).toMatchObject({ observed_country: "Japan", profile_location: "Berlin" });
+  });
 });
 
 describe("selfReportedChange", () => {

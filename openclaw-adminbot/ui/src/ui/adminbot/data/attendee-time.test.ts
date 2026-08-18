@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { attendeeHourVerdict, localTimeAt, resolveAttendeeZone } from "./attendee-time.ts";
+import {
+  attendeeHourVerdict,
+  localTimeAt,
+  resolveAttendeeZone,
+  resolveAttendeeZoneAt,
+} from "./attendee-time.ts";
 
 describe("resolveAttendeeZone", () => {
   it("prefers what the member stated over what can be inferred", () => {
@@ -72,5 +77,57 @@ describe("attendeeHourVerdict", () => {
 
   it("is undefined rather than wrong for a zone it cannot read", () => {
     expect(attendeeHourVerdict("Mars/Olympus", "2026-08-12T14:00:00.000Z")).toBeUndefined();
+  });
+});
+
+describe("resolveAttendeeZoneAt", () => {
+  const traveller = {
+    location: "Toronto",
+    trips: [
+      { start: "2026-09-01", end: "2026-09-30", city: "Berlin", timezone: "Europe/Berlin" },
+    ],
+  };
+
+  // The point of logging a trip: September invites read in Berlin time and October invites back in
+  // home time, without the member touching their profile twice.
+  it("uses a logged trip for days it covers, and home time outside it", () => {
+    expect(resolveAttendeeZoneAt(traveller, "2026-09-15T14:00:00.000Z")).toEqual({
+      zone: "Europe/Berlin",
+      source: "trip",
+      from: "Berlin",
+    });
+    expect(resolveAttendeeZoneAt(traveller, "2026-10-15T14:00:00.000Z")?.zone).toBe(
+      "America/Toronto",
+    );
+  });
+
+  it("guesses the zone from the trip's city when the row carries none", () => {
+    expect(
+      resolveAttendeeZoneAt(
+        { location: "Toronto", trips: [{ start: "2026-09-01", end: "2026-09-30", city: "Berlin" }] },
+        "2026-09-15T14:00:00.000Z",
+      ),
+    ).toMatchObject({ zone: "Europe/Berlin", source: "trip" });
+  });
+
+  // A trip beats an explicit profile timezone: it is the more specific and more recent statement.
+  it("outranks the profile timezone", () => {
+    expect(
+      resolveAttendeeZoneAt({ ...traveller, timezone: "America/Toronto" }, "2026-09-15T14:00:00.000Z")
+        ?.source,
+    ).toBe("trip");
+  });
+
+  it("ignores a trip whose city resolves to nothing rather than losing the zone entirely", () => {
+    expect(
+      resolveAttendeeZoneAt(
+        { location: "Toronto", trips: [{ start: "2026-09-01", end: "2026-09-30", city: "a boat" }] },
+        "2026-09-15T14:00:00.000Z",
+      ),
+    ).toMatchObject({ zone: "America/Toronto", source: "location" });
+  });
+
+  it("falls back to the profile for an unreadable instant", () => {
+    expect(resolveAttendeeZoneAt(traveller, "not a date")?.source).toBe("location");
   });
 });

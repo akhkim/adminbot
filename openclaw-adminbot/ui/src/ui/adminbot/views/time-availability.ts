@@ -41,9 +41,11 @@ import {
   availabilityRows,
   milestoneRows,
   timeOffRows,
+  tripRows,
   type AvailabilityRow,
   type MilestoneRow,
   type TimeOffRow,
+  type TripRow,
 } from "../data/availability.ts";
 import {
   allUpcomingVenues,
@@ -59,7 +61,7 @@ import {
   timezoneSuggestions,
 } from "../data/timezones.ts";
 import { renderMemberSelect } from "./member-select.ts";
-import { renderWhereYouAre } from "./time-availability.where-you-are.ts";
+import { renderTrips, type TripDraft } from "./time-availability.trips.ts";
 import {
   renderTimeAllocationChart,
   type TimeAllocationInterval,
@@ -219,6 +221,7 @@ export type SchedulePatch = {
   availability?: AvailabilityRow[];
   time_off?: TimeOffRow[];
   milestones?: MilestoneRow[];
+  trips?: TripRow[];
   /**
    * The overall note, sent alone so saving prose can never rewrite a list.
    *
@@ -251,13 +254,9 @@ export type AdminBotTimeAvailabilityProps = {
    * (adminBotScheduleMemberFields), so this is the affordance for a rule already enforced there.
    */
   viewerIsAdmin: boolean;
-  /**
-   * Saves the "where you are" card. Optional so the view still renders in tests and on any host
-   * that has not wired the profile write.
-   */
-  onSaveLocation?: (answer: { current_city: string; timezone?: string }) => void;
-  locationSaving?: boolean;
-  locationError?: string | null;
+  /** The trips log's draft, kept out here so a re-render cannot wipe half-typed input. */
+  tripDraft?: TripDraft;
+  onTripDraftChange?: (draft: TripDraft) => void;
   /** The Jinesis-commitment form's draft. Its category is always "jinesis". */
   draft: TimeAvailabilityDraft;
   onDraftChange: (draft: TimeAvailabilityDraft) => void;
@@ -1729,14 +1728,20 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const hasAnything = tasks.length > 0 || storedTimeOff.length > 0;
 
   return html`
-    ${renderWhereYouAre({
-      member: selectedMember,
-      editable: editable && Boolean(props.onSaveLocation),
-      saving: props.locationSaving ?? false,
-      error: props.locationError ?? null,
-      onSave: (answer: { current_city: string; timezone?: string }) =>
-        props.onSaveLocation?.(answer),
-    })}
+    ${props.tripDraft
+      ? renderTrips({
+          trips: tripRows(selectedMember?.trips),
+          homeLocation: selectedMember?.location ?? null,
+          draft: props.tripDraft,
+          onDraftChange: (draft) => props.onTripDraftChange?.(draft),
+          editable,
+          saving: props.saving,
+          // Straight through the schedule write the other lists use, so a trip is stored beside
+          // the commitments it sits next to rather than in a channel of its own.
+          onSave: (trips) =>
+            selectedMember && props.onSaveSchedule(selectedMember.id, { trips }),
+        })
+      : nothing}
     <div class="card adminbot-card adminbot-card--wide adminbot-time-availability">
       <div class="adminbot-form adminbot-time-availability__controls">
         ${props.viewerIsAdmin

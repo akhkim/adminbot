@@ -795,18 +795,26 @@ or admin), `GET /lab/location-drifts` (admin — everyone worth re-checking befo
 
 ### Where it is used
 
-**Reporting.** Two paths, and they write the same two fields. The banner on the profile is the
-reactive one, raised when sign-ins disagree. **Time Availability → "Where you are"** is the manual
-one, offered without waiting to be asked: a member who knows they are moving on Monday says so on
-Monday, instead of after three days of sign-ins from somewhere else. It sits on that tab rather
-than the profile form because it is about the next few weeks, like everything else there — the
-profile's `location` stays the home address.
+**Reporting.** Two paths. The banner on the profile is the reactive one, raised when sign-ins
+disagree. **Time Availability → "Trips away from home"** is the planned one: a member logs a city
+with a date range, the same way they log a commitment, and it is stored on `trips` alongside
+`availability` and `time_off`. The profile's `location` stays the home address.
 
-**Scheduling.** The Calendar tab's invite list shows each attendee's own clock for the selected
-event, in bold with `(early)` / `(late)` when it lands before 08:00 or from 21:00. A member the
+A trip is not time off. A time-off row says a member is unavailable and says nothing about where
+they are; somebody working normal hours from Berlin is fully available and six hours off the lab's
+clock, which is the case that produced 10am invites landing at 4pm.
+
+A logged trip also answers the drift prompt in advance: sign-ins from a country a member already
+logged a trip to raise no question, because they have already said where they are.
+
+**Scheduling.** The calendar grid carries a one-line `✈` marker on days somebody is away — the
+person's name when it is one, a count when it is more, with the full list in the tooltip. The
+invite list shows each attendee's own clock for the selected event, in bold with `(early)` / `(late)` when it lands before 08:00 or from 21:00. A member the
 roster cannot place reads "local time unknown" rather than a guessed clock face. An attendee whose
 recent sign-ins disagree with their profile carries a `⚑ may be in <country>` flag, because their
 local time was computed from a location nobody has confirmed.
 
-The zone comes from `resolveAttendeeZone`, most specific first: an explicit `timezone`, then a zone
-guessed from `current_city`, then from `location`.
+The zone comes from `resolveAttendeeZoneAt`, resolved against the event's own date, most specific
+first: a logged trip covering that day, then an explicit `timezone`, then a zone guessed from
+`current_city`, then from `location`. So September invites read in Berlin time and October invites
+read in home time without the member touching anything twice.

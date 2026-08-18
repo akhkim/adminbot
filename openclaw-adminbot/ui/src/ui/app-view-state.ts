@@ -19,6 +19,7 @@ import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { BlockerSort } from "./adminbot/views/admin.ts";
 import type { LogisticsMode, LogisticsTemplate } from "./adminbot/views/logistics.ts";
+import type { TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import type {
   MilestoneDraft,
   TimeAvailabilityDraft,
@@ -439,6 +440,7 @@ export type AppViewState = {
   // Undefined is the "never asked" sentinel the render pass keys its one-shot fetch on; a load
   // that genuinely finds nothing sets [], so an empty lab cannot loop.
   adminBotMeetings?: MeetingRecord[];
+  adminBotTripDraft?: TripDraft;
   adminBotLocationDrift?: LocationDrift | null;
   adminBotLocationDrifts?: LocationDrift[];
   adminBotLocationSaving?: boolean;

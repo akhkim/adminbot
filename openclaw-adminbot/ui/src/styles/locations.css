@@ -1,0 +1,106 @@
+/* Where members are — the confirmation banner, the trips log, and the calendar's away
+   marker. Split out of meetings.css once that file held three unrelated features; card,
+   button and muted-text chrome all come from components.css, so this is only layout. */
+
+/* The confirmation banner: one card, with both answers peers on one row so neither reads as
+   the default. */
+.location-prompt__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.location-prompt__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.location-prompt__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.location-prompt__note {
+  margin-top: var(--space-3);
+  font-size: 0.85em;
+}
+
+/* An attendee's local time in the calendar's invite list. The odd-hour variant is a weight change
+   rather than a color, so it still reads as a flag with color vision differences or in print. */
+.adminbot-calendar__match-local {
+  margin-left: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.adminbot-calendar__match-local--odd {
+  font-weight: 600;
+}
+
+.adminbot-calendar__match-drift {
+  margin-left: var(--space-2);
+  font-size: 0.85em;
+}
+
+/* Trips: the log on Time Availability, and the one-line marker in the calendar grid. */
+.trips__list {
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.trips__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.trips__city {
+  font-weight: 600;
+}
+
+/* The trip that is running right now, which is the one a reader is looking for. */
+.trips__row--active .trips__city {
+  text-decoration: underline;
+}
+
+.trips__now {
+  font-size: 0.75em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.trips__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.trips__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.trips__field--wide {
+  flex: 1 1 12rem;
+}
+
+/* Deliberately quiet: the grid's job is the calendar, and this is context beside it. */
+.adminbot-calendar__day-trips {
+  display: block;
+  font-size: 0.72em;
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

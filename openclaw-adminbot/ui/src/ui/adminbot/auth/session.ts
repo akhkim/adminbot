@@ -445,10 +445,20 @@ export type MemberMilestoneRow = {
  * (the service deletes an empty array rather than storing one, so it reads as "nothing recorded"
  * rather than as an empty chart).
  */
+export type MemberTripRow = {
+  start: string;
+  end: string;
+  city: string;
+  timezone?: string;
+  note?: string;
+  link?: string;
+};
+
 export type MemberScheduleUpdate = {
   availability?: MemberAvailabilityRow[];
   time_off?: MemberTimeOffRow[];
   milestones?: MemberMilestoneRow[];
+  trips?: MemberTripRow[];
   // The overall note that explains the rows: a sentence or two for the admins, sent on its own
   // (every other key omitted) so saving it can never rewrite a list. "" clears it -- the service
   // deletes an emptied note rather than storing a blank one.

@@ -132,6 +132,54 @@ export function timeOffRows(value: unknown): TimeOffRow[] {
   });
 }
 
+/**
+ * A stretch away from home, with a place on it.
+ *
+ * Distinct from a TimeOffRow, which says a member is unavailable and nothing about where they are.
+ * Somebody working normal hours from Berlin is fully available and six hours off the lab's clock.
+ */
+export type TripRow = {
+  start: string;
+  end: string;
+  city: string;
+  timezone?: string;
+  note?: string;
+  link?: string;
+};
+
+export function tripRows(value: unknown): TripRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry) => {
+    const row = entry as Partial<TripRow> | null;
+    // A row with no city is not a trip -- it is time off, and the service refuses it on write. One
+    // that reached the record before this field existed is dropped rather than drawn as a blank
+    // chip on somebody's calendar.
+    return row &&
+      typeof row.start === "string" &&
+      typeof row.end === "string" &&
+      typeof row.city === "string" &&
+      row.city.trim()
+      ? [
+          {
+            start: row.start,
+            end: row.end,
+            city: row.city,
+            ...(typeof row.timezone === "string" && row.timezone ? { timezone: row.timezone } : {}),
+            ...(typeof row.note === "string" ? { note: row.note } : {}),
+            ...(typeof row.link === "string" ? { link: row.link } : {}),
+          },
+        ]
+      : [];
+  });
+}
+
+/** The trip covering a day, if any. Last match wins, matching the service's own rule. */
+export function tripOnDay(trips: readonly TripRow[], dayIso: string): TripRow | undefined {
+  return trips.findLast((row) => row.start <= dayIso && row.end >= dayIso);
+}
+
 export function todayIso(now = new Date()): string {
   return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))
     .toISOString()
