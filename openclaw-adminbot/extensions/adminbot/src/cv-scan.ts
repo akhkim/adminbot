@@ -148,26 +148,98 @@ export const CV_RECENCY_WINDOW_MONTHS = 6;
 
 const ISO_MONTH = /^(\d{4})-(\d{2})/u;
 
+// Month names as CVs write them, including the "Sept" that neither three-letter nor full-name
+// parsing catches on its own.
+const MONTH_NAMES: Record<string, number> = {
+  jan: 1, january: 1,
+  feb: 2, february: 2,
+  mar: 3, march: 3,
+  apr: 4, april: 4,
+  may: 5,
+  jun: 6, june: 6,
+  jul: 7, july: 7,
+  aug: 8, august: 8,
+  sep: 9, sept: 9, september: 9,
+  oct: 10, october: 10,
+  nov: 11, november: 11,
+  dec: 12, december: 12,
+};
+
+/**
+ * Resolves an entry's start to YYYY-MM.
+ *
+ * Prefers the model's `start_iso` but does not depend on it: extraction emits that field only
+ * sometimes -- observed emitting it for one entry and omitting it for another in the same pass --
+ * and an entry with a perfectly readable "Aug 2026" was then classified undated and left out of
+ * the newsletter. Parsing the printed date is deterministic, so recency no longer varies run to
+ * run for the same document.
+ *
+ * Returns undefined for anything not placeable to a specific month, including a bare year: a
+ * guessed month would move an entry in or out of the recency window on no evidence.
+ */
+export function resolveStartIso(entry: AdminBotCvEntry): string | undefined {
+  const declared = ISO_MONTH.exec(entry.start_iso?.trim() ?? "");
+  if (declared) {
+    // Validated rather than trusted: the model produces this field, so "2026-13" is a shape it can
+    // emit, and an unchecked month would land the entry in an arbitrary point in time.
+    const normalized = formatIsoMonth(Number(declared[1]), Number(declared[2]));
+    if (normalized) {
+      return normalized;
+    }
+  }
+  const raw = entry.start?.trim().toLocaleLowerCase() ?? "";
+  if (!raw) {
+    return undefined;
+  }
+  // "2026-08", "2026/08"
+  const numeric = /^(\d{4})[-/](\d{1,2})\b/u.exec(raw);
+  if (numeric) {
+    return formatIsoMonth(Number(numeric[1]), Number(numeric[2]));
+  }
+  // "08/2026", "8-2026"
+  const monthFirst = /^(\d{1,2})[-/](\d{4})\b/u.exec(raw);
+  if (monthFirst) {
+    return formatIsoMonth(Number(monthFirst[2]), Number(monthFirst[1]));
+  }
+  // "Aug 2026", "September 2025", "Sept. 2025"
+  const named = /^([a-z]+)\.?\s+(\d{4})\b/u.exec(raw);
+  if (named?.[1] && MONTH_NAMES[named[1]]) {
+    return formatIsoMonth(Number(named[2]), MONTH_NAMES[named[1]]);
+  }
+  // "2026 Aug"
+  const yearFirst = /^(\d{4})\s+([a-z]+)\b/u.exec(raw);
+  if (yearFirst?.[2] && MONTH_NAMES[yearFirst[2]]) {
+    return formatIsoMonth(Number(yearFirst[1]), MONTH_NAMES[yearFirst[2]]);
+  }
+  return undefined;
+}
+
+function formatIsoMonth(year: number, month: number): string | undefined {
+  if (!Number.isInteger(year) || year < 1900 || year > 2999) {
+    return undefined;
+  }
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    return undefined;
+  }
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
 /**
  * Decides whether an added entry describes a recent career event.
  *
- * The date is deliberately not part of the diff key — a reformatted date must not read as a new
- * job — but it is exactly what answers "is this news", so it is consulted here and only here.
+ * The date is deliberately not part of the diff key -- a reformatted date must not read as a new
+ * job -- but it is exactly what answers "is this news", so it is consulted here and only here.
  */
 export function classifyRecency(
   entry: AdminBotCvEntry,
   now: Date,
   windowMonths = CV_RECENCY_WINDOW_MONTHS,
 ): AdminBotCvRecency {
-  const match = ISO_MONTH.exec(entry.start_iso?.trim() ?? "");
-  if (!match) {
+  const iso = resolveStartIso(entry);
+  if (!iso) {
     return "undated";
   }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  if (!Number.isInteger(year) || month < 1 || month > 12) {
-    return "undated";
-  }
+  const [year, month] = iso.split("-").map(Number) as [number, number];
   // Compared in whole months so a scan run on the 1st and the 28th judge the same entry alike.
   const entryMonths = year * 12 + (month - 1);
   const nowMonths = now.getUTCFullYear() * 12 + now.getUTCMonth();

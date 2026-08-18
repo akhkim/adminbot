@@ -12,6 +12,7 @@ import {
   classifyRecency,
   isPublicIpAddress,
   normalizeCvDownloadUrl,
+  resolveStartIso,
   runAdminBotCvScan,
   type AdminBotCvScanDeps,
 } from "./cv-scan.js";
@@ -428,5 +429,56 @@ describe("normalizeCvDownloadUrl", () => {
     expect(at("https://drive.google.com/drive/my-drive")).toBe(
       "https://drive.google.com/drive/my-drive",
     );
+  });
+});
+
+describe("resolveStartIso", () => {
+  const at = (start?: string, start_iso?: string) =>
+    resolveStartIso({
+      kind: "position",
+      title: "T",
+      organization: "O",
+      ...(start ? { start } : {}),
+      ...(start_iso ? { start_iso } : {}),
+    });
+
+  it("prefers the model's own normalized value", () => {
+    expect(at("whatever", "2026-03")).toBe("2026-03");
+  });
+
+  it.each([
+    ["Aug 2026", "2026-08", "the form that was being dropped"],
+    ["Sept 2025", "2025-09", "Sept — neither 3-letter nor full name"],
+    ["September 2025", "2025-09", "full name"],
+    ["Feb 2026", "2026-02", "3-letter"],
+    ["Sept. 2023", "2023-09", "trailing period"],
+    ["2026-08", "2026-08", "already ISO"],
+    ["08/2026", "2026-08", "month first"],
+    ["2026/08", "2026-08", "year first with slash"],
+    ["2026 Aug", "2026-08", "year then name"],
+  ])("parses %s to %s (%s)", (start, expected) => {
+    expect(at(start)).toBe(expected);
+  });
+
+  it.each([
+    [undefined, "absent"],
+    ["", "empty"],
+    ["2026", "a bare year cannot be placed in a month"],
+    ["present", "not a date"],
+    ["13/2026", "impossible month"],
+  ])("returns undefined for %s (%s)", (start) => {
+    expect(at(start as string | undefined)).toBeUndefined();
+  });
+
+  it("classifies a printed date the model failed to normalize", () => {
+    // The exact regression: extraction emitted start but no start_iso, so a recent job was
+    // classified undated and left out of the newsletter.
+    const entry: AdminBotCvEntry = {
+      kind: "position",
+      title: "Software Developer",
+      organization: "Apple",
+      start: "Aug 2026",
+    };
+    expect(classifyRecency(entry, new Date("2026-08-18T00:00:00.000Z"))).toBe("recent");
   });
 });
