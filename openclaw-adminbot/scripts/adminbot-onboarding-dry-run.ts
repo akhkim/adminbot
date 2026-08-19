@@ -1,4 +1,4 @@
-// Rehearses an onboarding batch without sending anything.
+// Rehearses an onboarding batch, and -- with --send --yes -- performs it.
 //
 // The point is that it is the real send path: the same composer, the same required-value checks,
 // the same environment resolution, the same order of operations. Only the four things that reach
@@ -13,10 +13,14 @@
 //   set -a; . ~/.config/jinesis-adminbot/adminbot.env; set +a
 //   node --import tsx scripts/adminbot-onboarding-dry-run.ts --plan ~/onboarding-plan.json
 //
+// Add --preflight to check the live dependencies, --only "Yuen,Isabel" to work on a subset, and
+// --send --yes to perform the batch for real. A real send writes no audit row -- only the route
+// behind the tab does -- so pass --receipts <file> and keep it: it is the record that it happened.
+//
 // The plan file is a JSON array of sends and stays out of this repo: it carries names and
 // addresses, and this repo is public.
 import { execFile as execFileCallback } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -39,12 +43,86 @@ type PlannedSend = AdminBotOnboardingSendRequest & {
   note?: string;
 };
 
-function parseArgs(argv: readonly string[]): { plan: string; preflight: boolean } {
-  const planFlag = argv.indexOf("--plan");
-  if (planFlag === -1 || !argv[planFlag + 1]) {
-    throw new Error("usage: adminbot-onboarding-dry-run.ts --plan <plan.json> [--preflight]");
+type Args = {
+  plan: string;
+  preflight: boolean;
+  send: boolean;
+  only: readonly string[];
+  receipts?: string;
+};
+
+function parseArgs(argv: readonly string[]): Args {
+  const valueOf = (flag: string): string | undefined => {
+    const at = argv.indexOf(flag);
+    return at === -1 ? undefined : argv[at + 1];
+  };
+  const plan = valueOf("--plan");
+  if (!plan) {
+    throw new Error(
+      "usage: adminbot-onboarding-dry-run.ts --plan <plan.json> [--preflight] [--only <names>] [--send --yes] [--receipts <file>]",
+    );
   }
-  return { plan: argv[planFlag + 1] as string, preflight: argv.includes("--preflight") };
+  const send = argv.includes("--send");
+  if (send && !argv.includes("--yes")) {
+    // --send delivers real mail and mints real invites. Making the second flag mandatory means no
+    // one arrives here by editing a dry-run command and pressing up-enter.
+    throw new Error("--send also requires --yes: this delivers real email and real Slack invites");
+  }
+  return {
+    plan,
+    preflight: argv.includes("--preflight"),
+    send,
+    only: (valueOf("--only") ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean),
+    ...(valueOf("--receipts") ? { receipts: valueOf("--receipts") as string } : {}),
+  };
+}
+
+/**
+ * Mints a real Slack Connect invite, the way the service does: out-of-process through tsx.
+ *
+ * Copied in shape from start-adminbot.mjs rather than imported, because that launcher is a .mjs
+ * entry point rather than a module anything can pull a function out of. The contract is the
+ * script's, not this file's: one JSON object in on stdin, one JSON line out.
+ */
+async function realSlackInviter(params: {
+  email: string;
+  channelId: string;
+}): Promise<{ url: string }> {
+  const tsxBin = path.join(REPO_ROOT, "node_modules", ".bin", "tsx");
+  const script = path.join(REPO_ROOT, "scripts", "adminbot-slack-connect-invite.ts");
+  // The request goes in on stdin, so this drives the callback form rather than the promisified
+  // one: there is no writable stdin to hand a JSON body to after the promise has been made.
+  const child = execFileCallback(tsxBin, [script], { cwd: REPO_ROOT, timeout: 5 * 60_000 });
+  child.stdin?.end(JSON.stringify(params));
+  const { stdout, stderr } = await new Promise<{ stdout: string; stderr: string }>((resolve) => {
+    let out = "";
+    let err = "";
+    child.stdout?.on("data", (chunk) => {
+      out += String(chunk);
+    });
+    child.stderr?.on("data", (chunk) => {
+      err += String(chunk);
+    });
+    child.on("error", (error) => resolve({ stdout: out, stderr: `${err}\n${error.message}` }));
+    child.on("close", () => resolve({ stdout: out, stderr: err }));
+  });
+  const line = stdout
+    .trim()
+    .split(/\r?\n/u)
+    .findLast((entry) => entry.trim().length > 0);
+  const payload = line
+    ? (JSON.parse(line) as { ok?: boolean; url?: string; error?: string })
+    : undefined;
+  if (!payload?.ok || !payload.url) {
+    throw new Error(
+      payload?.error ??
+        `the invite script returned no result: ${stderr.trim().split("\n").at(-1) ?? ""}`,
+    );
+  }
+  return { url: payload.url };
 }
 
 const execFile = promisify(execFileCallback);
@@ -231,35 +309,70 @@ function reportEnvironment(): void {
 }
 
 async function main(): Promise<void> {
-  const { plan: planPath, preflight: wantPreflight } = parseArgs(process.argv.slice(2));
-  const plan = JSON.parse(readFileSync(planPath, "utf8")) as PlannedSend[];
+  const args = parseArgs(process.argv.slice(2));
+  const planPath = args.plan;
+  const all = JSON.parse(readFileSync(planPath, "utf8")) as PlannedSend[];
+  const plan =
+    args.only.length === 0
+      ? all
+      : all.filter((entry) =>
+          args.only.some((needle) => entry.name.toLowerCase().includes(needle.toLowerCase())),
+        );
+  if (plan.length === 0) {
+    throw new Error(`--only matched nothing in ${planPath}`);
+  }
+  if (args.send) {
+    console.log(`SENDING FOR REAL: ${plan.length} email(s), plus every invite they imply.`);
+    console.log("");
+  }
 
   reportEnvironment();
-  if (wantPreflight && !(await preflight(plan))) {
+  if (args.preflight && !(await preflight(plan))) {
     // Keep going: the composed mail is still worth reading, and the failures above say what to fix.
     process.exitCode = 1;
   }
 
   let failures = 0;
+  // A record of what happened, since a CLI send writes no audit row -- only the route behind the
+  // tab does. Keep the file: it is the only evidence this batch went out.
+  const receipts: Record<string, unknown>[] = [];
   for (const [index, planned] of plan.entries()) {
     const { subgroup, note, ...request } = planned;
     const performed: string[] = [];
+    // Under --send the recorders are replaced one for one by the real thing: the default
+    // `sendEmail` (gog), and the same out-of-process invite script the service spawns. Everything
+    // else about the run -- the composer, the checks, the order -- is identical either way.
     const send = createAdminBotOnboardingSender({
       provisionDriveWorkspace: async ({ folderName }) => {
         performed.push(`Drive: copy the workspace prototype to "${folderName}" and share it`);
+        if (args.send) {
+          throw new Error("Drive provisioning is not wired into this script; use the tab instead");
+        }
         return { folderId: "dry-run", link: "https://drive.google.com/drive/folders/DRY-RUN" };
       },
       inviteToSlackConnect: async ({ email, channelId }) => {
+        if (args.send) {
+          const invite = await realSlackInviter({ email, channelId });
+          performed.push(`Slack: invited ${email} to ${channelId}`);
+          return invite;
+        }
         performed.push(`Slack: Connect invite to ${email} for channel ${channelId}`);
         return { url: "https://join.slack.com/share/DRY-RUN" };
       },
       submitDcsForm: async ({ firstName, lastName, email }) => {
         performed.push(`DCS: file the Slack-access form for ${firstName} ${lastName} <${email}>`);
+        if (args.send) {
+          throw new Error("the DCS form is not wired into this script; use the tab instead");
+        }
       },
-      // The one call that would actually reach a person. It records instead.
-      sendEmail: async ({ to, subject }) => {
-        performed.push(`Gmail: send "${subject}" to ${to}`);
-      },
+      ...(args.send
+        ? {}
+        : {
+            // The one call that would actually reach a person. It records instead.
+            sendEmail: async ({ to, subject }: { to: string; subject: string }) => {
+              performed.push(`Gmail: send "${subject}" to ${to}`);
+            },
+          }),
       headProfessorWhatsapp: () => process.env.ADMINBOT_HEAD_PROFESSOR_WHATSAPP?.trim(),
     });
 
@@ -273,6 +386,15 @@ async function main(): Promise<void> {
     console.log("");
 
     const result = await send(request);
+    receipts.push({
+      name: request.name,
+      email: request.email,
+      template_id: request.template_id,
+      ...(result.ok
+        ? { sent: result.payload.sent, subject: result.payload.subject }
+        : { sent: false, error: `${result.error.status}: ${result.error.message}` }),
+      at: new Date().toISOString(),
+    });
     if (!result.ok) {
       failures += 1;
       console.log(`REFUSED (${result.error.status}): ${result.error.message}`);
@@ -321,9 +443,15 @@ async function main(): Promise<void> {
     console.log("");
   }
 
+  if (args.receipts) {
+    writeFileSync(args.receipts, `${JSON.stringify(receipts, null, 2)}\n`);
+    console.log(`Receipts written to ${args.receipts}`);
+  }
   console.log("=".repeat(78));
   console.log(
-    `Dry run complete: ${plan.length - failures}/${plan.length} would send, ${failures} refused. Nothing was sent.`,
+    args.send
+      ? `Sent ${plan.length - failures}/${plan.length}; ${failures} refused. This was NOT a dry run.`
+      : `Dry run complete: ${plan.length - failures}/${plan.length} would send, ${failures} refused. Nothing was sent.`,
   );
   if (failures > 0) {
     process.exitCode = 1;
