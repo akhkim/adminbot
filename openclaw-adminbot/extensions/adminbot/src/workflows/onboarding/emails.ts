@@ -36,7 +36,6 @@ export type AdminBotOnboardingTemplate = {
 };
 
 export const ADMINBOT_ONBOARDING_TEMPLATES = [
-
   {
     id: "interview_invite",
     kind: "candidate",
@@ -82,7 +81,7 @@ AdminBot, on behalf of the Jinesis Lab`,
     required: ["drive_folder_link", "first_name"],
     body: `Hi {first_name},
 
-Thank you for taking the time to interview with the Jinesis Lab. We enjoyed learning more about your background, projects, and research interests.
+Thank you for taking the time to try out research projects with the Jinesis Lab. As per our lab tradition, before fully committing to a project collaboration, we try matching researchers with various projects to find the perfect way to make use of your talents and maximize our synergy.
 
 We are excited to invite you to the trial phase. Over the next three weeks, you will work on a research or engineering task; this gives both you and the team a chance to see how your skills, working style, and interests align with the lab. You will receive the task details and expectations from your interview lead.
 
@@ -157,14 +156,21 @@ Best,
     id: "coauthor_major",
     kind: "subgroup",
     subject: `Welcome to the Jinesis Lab: your onboarding steps`,
-    required: ["discussion_channel", "drive_folder_link", "drive_guide_link", "first_name", "meeting_channel", "project_channel", "project_or_context"],
+    required: [
+      "discussion_channel",
+      "drive_folder_link",
+      "drive_guide_link",
+      "first_name",
+      "meeting_channel",
+      "project_channel",
+    ],
     body: `Hi {first_name},
 
-A very warm welcome to the Jinesis Lab! Given your level of involvement on {project_or_context}, your onboarding is close to that of a full member:
+A very warm welcome to the Jinesis Lab! Below are the introductions to our lab management system:
 
 1. Member portal: Create your account at https://jinesis-admin.vercel.app/signup and fill out "My Profile" completely, including your preferred professional email; this is what we use for paper submissions and external communications.
 
-2. Slack: You will receive invitations to #jinesis-active, #random-active, your project channel {project_channel}, and the {discussion_channel} channel(s) for your area. Day-to-day coordination happens here, not by email.
+2. Slack: You will be invited to #jinesis-active, #random-active, your project channel {project_channel}, and the {discussion_channel} channel(s) for your area. Day-to-day coordination happens here, not by email.
 
 3. Meetings: you will be added to {meeting_channel} and receive calendar invites for the weekly meeting and the Wednesday-themed meeting. One important habit: rely on the Google Calendar app with alerts, and ignore calendar-related emails. Our meetings span time zones, and the app is the only reliable source of truth.
 
@@ -179,25 +185,34 @@ AdminBot, on behalf of the Jinesis Lab`,
   },
 
   {
-    // Word for word the coauthor_major setup mail. The two roles differ in hours and in the
-    // norms mail that follows, not in the access someone is handed.
+    // Not a clone of the coauthor_major setup mail: a 5-10 h/week collaborator is onboarded to the
+    // project rather than to the lab, so there is no portal account and no #jinesis-active, and the
+    // mail names who to ask when Zhijing is busy.
     id: "coauthor_minor",
     kind: "subgroup",
     subject: `Welcome to the Jinesis Lab: your onboarding steps`,
-    required: ["discussion_channel", "drive_folder_link", "drive_guide_link", "first_name", "meeting_channel", "project_channel", "project_or_context"],
+    required: [
+      "discussion_channel",
+      "drive_folder_link",
+      "drive_guide_link",
+      "first_name",
+      "meeting_channel",
+      "primary_contact",
+      "project_channel",
+    ],
     body: `Hi {first_name},
 
-A very warm welcome to the Jinesis Lab! Given your level of involvement on {project_or_context}, your onboarding is close to that of a full member:
+A very warm welcome to the Jinesis Lab! To facilitate our project collaboration, we recommend the following onboarding setup at the lab:
 
-1. Member portal: Create your account at https://jinesis-admin.vercel.app/signup and fill out "My Profile" completely, including your preferred professional email; this is what we use for paper submissions and external communications.
+1. Slack: You will be invited to #random-active, your project channel {project_channel}, and the {discussion_channel} channel(s) for your area. Day-to-day coordination happens here, not by email.
 
-2. Slack: You will receive invitations to #jinesis-active, #random-active, your project channel {project_channel}, and the {discussion_channel} channel(s) for your area. Day-to-day coordination happens here, not by email.
+2. Meetings: you will be added to {meeting_channel} and receive calendar invites for the weekly meeting and the Wednesday project-themed meeting. One important habit: rely on the Google Calendar app with alerts, and ignore calendar-related emails. Our meetings span time zones, and the app is the only reliable source of truth.
 
-3. Meetings: you will be added to {meeting_channel} and receive calendar invites for the weekly meeting and the Wednesday-themed meeting. One important habit: rely on the Google Calendar app with alerts, and ignore calendar-related emails. Our meetings span time zones, and the app is the only reliable source of truth.
+3. Google Drive: your project folder is here: {drive_folder_link}. Please also read the short "Google file common practice" guide {drive_guide_link}; it keeps everyone's files findable.
 
-4. Google Drive: your project folder is here: {drive_folder_link}. Please also read the short "Google file common practice" guide {drive_guide_link}; it keeps everyone's files findable.
+4. Newsletter and socials: You are also very welcome to subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com, and to follow the lab on LinkedIn and Twitter/X.
 
-5. Newsletter and socials: You are also very welcome to subscribe to our newsletter by emailing "subscribe" to jinesis+subscribe@googlegroups.com, and to follow the lab on LinkedIn and Twitter/X.
+5. Day-to-Day Contact: Whenever Zhijing is busy, your primary source of contact will be {primary_contact}.
 
 If an invitation has not arrived within a week, or if anything is unclear, please reply here, and we will be happy to help.
 
@@ -216,7 +231,7 @@ We hope things are going well on your side. We have not heard from you for a whi
 
 One option is to move you to alumni status. This has no ongoing obligations: you remain on the newsletter and in #friends-and-collaborators, receive invites to dinners in your city, and stay connected to anything you have co-authored.
 
-If you later have the capacity and interest to return as a half-time or full-time contributor, you are very welcome to do so. Because you have already worked with us, returning would be straightforward.
+If you later have the capacity and interest to return as a half-time or full-time collaborator, you are very welcome to do so. Because you have already worked with us, starting new projects together would be straightforward.
 
 Would you be comfortable moving to alumni status for now? A short reply is enough, and you are also very welcome to tell us if another arrangement would work better.
 
@@ -496,6 +511,70 @@ Recommendation letters are available only in specific collaboration circumstance
 We appreciate your understanding and wish you all the best with your application.
 
 Warmly,
+AdminBot, on behalf of the Jinesis Lab`,
+  },
+
+  // The three external-professor logistics mails. They are onboarding touchpoints rather than
+  // guides -- each one announces something that has just been provisioned -- so they are sent on
+  // their own and carry AdminBot's voice rather than a project lead's. The rest of the
+  // external-professor set (submission sign-off, decisions, social media, dinners) belongs to the
+  // paper lifecycle, not to onboarding, and lives with PaperFlow.
+  {
+    id: "external_prof_slack_connect",
+    kind: "supplement",
+    subject: `Slack invitation from the Jinesis Lab`,
+    required: ["collaborator_names", "first_name", "project_channel", "project_or_context"],
+    body: `Dear {first_name},
+
+To make day-to-day coordination on {project_or_context} easier, we would like to connect on Slack. You should shortly receive a Slack Connect invitation to the Jinesis workspace, which will add you to two channels:
+
+- {project_channel}: the working channel for our project, where {collaborator_names} and Zhijing coordinate
+- #friends-and-collaborators: our lab's channel for the wider circle of collaborators (low traffic; occasional announcements and papers)
+
+Once connected, you and Jinesis members can also communicate by direct message. Slack Connect works from your existing workspace, so there is no new account to manage. We recommend using your primary university or organization workspace. If the invitation does not appear, check with your workspace admin or reply here and we will re-send it to a different email.
+
+Best regards,
+AdminBot, on behalf of the Jinesis Lab`,
+  },
+
+  {
+    id: "external_prof_drive_folder",
+    kind: "supplement",
+    subject: `Shared folder for {project_or_context}`,
+    // `project_folder_link`, not `drive_folder_link`: that token makes the send path provision a
+    // new 1:1 workspace folder, and this mail shares a project folder that already exists.
+    required: ["first_name", "folder_contents", "project_folder_link", "project_or_context"],
+    body: `Dear {first_name},
+
+We have shared the project folder for {project_or_context} with this email address: {project_folder_link}
+
+It contains {folder_contents}. Feel free to add or comment on anything. The folder is the single home for project files, so materials shared there stay findable for everyone.
+
+If you would prefer access under a different Google account, reply with the address and we will update the sharing.
+
+Best regards,
+AdminBot, on behalf of the Jinesis Lab`,
+  },
+
+  {
+    // Deliberately light: an external professor fills in nothing, they only confirm what we hold.
+    // Sent at onboarding and re-verified about every six months.
+    id: "external_prof_records_check",
+    kind: "supplement",
+    subject: `One-minute check: our contact record for you`,
+    required: ["first_name", "record_email", "record_name", "record_projects", "record_role"],
+    body: `Dear {first_name},
+
+As part of our collaboration records, we currently have you as:
+
+- Name: {record_name}
+- Role: {record_role}
+- Preferred email: {record_email}
+- Collaborating with us on: {record_projects}
+
+If this is accurate, no reply is needed. Otherwise, reply with any corrections, especially to your preferred email.
+
+Best regards,
 AdminBot, on behalf of the Jinesis Lab`,
   },
 ] as const satisfies readonly AdminBotOnboardingTemplate[];

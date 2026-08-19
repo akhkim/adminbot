@@ -185,6 +185,9 @@ export type AdminBotOnboardingHost = {
   onboardingError?: string | null;
   onboardingMissing?: string[];
   onboardingResult?: AdminBotOnboardingResult | null;
+  /** The preview as the operator edited it; empty means they left it as composed. */
+  onboardingDraftSubject?: string;
+  onboardingDraftBody?: string;
   settings: UiSettings;
 };
 
@@ -213,6 +216,16 @@ export async function sendOnboardingGuide(
     host.onboardingResult = null;
   }
   try {
+    // Only a send carries the edited copy. Re-previewing is how an operator gets back to the
+    // template after an edit they regret, so a preview deliberately recomposes from the form.
+    const edited = options.preview
+      ? {}
+      : {
+          ...(host.onboardingDraftSubject?.trim()
+            ? { subjectOverride: host.onboardingDraftSubject }
+            : {}),
+          ...(host.onboardingDraftBody?.trim() ? { bodyOverride: host.onboardingDraftBody } : {}),
+        };
     const result = await sendOnboardingGuideRequest(
       {
         templateId: host.onboardingTemplateId ?? "",
@@ -221,12 +234,16 @@ export async function sendOnboardingGuide(
         values: host.onboardingValues ?? {},
         preview: options.preview,
         submitDcsForm: host.onboardingSubmitDcsForm,
+        ...edited,
       },
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
     if (result.ok) {
       host.onboardingResult = result.value;
+      // A fresh preview seeds the editable draft; a send replaces it with what actually went out.
+      host.onboardingDraftSubject = result.value.subject;
+      host.onboardingDraftBody = result.value.body;
       return;
     }
     if (result.kind === "missing") {

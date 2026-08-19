@@ -294,6 +294,8 @@ export class OpenClawApp extends LitElement {
   @state() onboardingResult:
     | import("./adminbot/controllers/admin.ts").AdminBotOnboardingResult
     | null = null;
+  @state() onboardingDraftSubject = "";
+  @state() onboardingDraftBody = "";
   // Calendar tab. Declared here, not merely typed on AppViewState: an undeclared field is not a
   // reactive property, so writing one from a controller changes nothing on screen. That is what
   // made the whole tab inert — events loaded and never appeared, and typing in the assistant did

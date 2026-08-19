@@ -21,8 +21,10 @@ import {
   configuredEnvValue,
   driveWorkspaceFolderName,
   firstNameOf,
+  unfilledPlaceholders,
   type AdminBotComposedGuide,
   type AdminBotGuideComposeResult,
+  type AdminBotGuideOverrides,
 } from "./guide.js";
 
 const execFile = promisify(execFileCallback);
@@ -66,6 +68,16 @@ export type AdminBotOnboardingSendRequest = {
   submit_dcs_form?: boolean;
   /** Compose and provision nothing; used by the tab's preview. */
   preview?: boolean;
+  /**
+   * The copy as the operator edited it in the preview, replacing the stored template for this one
+   * send. Blank or absent means send the template unchanged.
+   *
+   * Edited copy is still substituted before it goes out -- the preview shows the two provisioned
+   * links as placeholders because they do not exist yet -- and a placeholder that survives
+   * substitution refuses the send, exactly as it does for the stored copy.
+   */
+  subject_override?: string;
+  body_override?: string;
 };
 
 export type AdminBotOnboardingSendResult = {
@@ -184,16 +196,16 @@ function htmlOf(body: string): { body_html?: string } {
   return rendered ? { body_html: rendered } : {};
 }
 
-function needs(templateId: string, token: string): boolean {
-  return findOnboardingTemplate(templateId)?.required.includes(token) ?? false;
-}
-
 export function createAdminBotOnboardingSender(
   options: AdminBotOnboardingSenderOptions = {},
 ): AdminBotOnboardingSender {
   const env = options.env ?? process.env;
   const sendEmail = options.sendEmail ?? gogEmailSender(env);
   return async (request) => {
+    const overrides: AdminBotGuideOverrides = {
+      ...(request.subject_override?.trim() ? { subject: request.subject_override } : {}),
+      ...(request.body_override?.trim() ? { body: request.body_override } : {}),
+    };
     const name = request.name?.trim() ?? "";
     const email = request.email?.trim() ?? "";
     if (!name) {
@@ -220,8 +232,10 @@ export function createAdminBotOnboardingSender(
     // operator for one field at a time after a Drive folder already exists is how half-provisioned
     // people happen. Generated values are excluded here because they do not exist yet.
     const generated = new Set(["drive_folder_link", "slack_connect_link"]);
+    // Edited copy is judged by what it still says, not by what the stored template said.
+    const copy = `${overrides.subject ?? template.subject ?? ""}\n${overrides.body ?? template.body}`;
     const missingByHand = template.required.filter(
-      (token) => !generated.has(token) && !base[token]?.trim(),
+      (token) => copy.includes(`{${token}}`) && !generated.has(token) && !base[token]?.trim(),
     );
     if (missingByHand.length > 0) {
       return {
@@ -235,14 +249,19 @@ export function createAdminBotOnboardingSender(
     }
 
     if (request.preview) {
+      // The two provisioned links are left as `{drive_folder_link}` / `{slack_connect_link}` rather
+      // than described in prose: the preview is editable and comes back as the body to send, so a
+      // stand-in sentence here would ship instead of the real link. Each one stands in for itself,
+      // which satisfies the "every required value is present" check without resolving to anything.
       const preview = composeOnboardingGuide(
         template.id,
         {
           ...base,
-          drive_folder_link: base.drive_folder_link ?? "(generated when sent)",
-          slack_connect_link: base.slack_connect_link ?? "(generated when sent)",
+          drive_folder_link: base.drive_folder_link ?? "{drive_folder_link}",
+          slack_connect_link: base.slack_connect_link ?? "{slack_connect_link}",
         },
         env,
+        overrides,
       );
       if (!preview.ok) {
         return { ok: false, error: composeFailure(preview) };
@@ -254,11 +273,42 @@ export function createAdminBotOnboardingSender(
       };
     }
 
+    // A placeholder in edited copy refuses the send before anything is created: finding out after
+    // a Drive folder and a Slack invite exist would leave both behind for a mail that never went.
+    if (overrides.subject || overrides.body) {
+      const probe = composeOnboardingGuide(
+        template.id,
+        {
+          ...base,
+          drive_folder_link: "https://drive.example",
+          slack_connect_link: "https://slack.example",
+        },
+        env,
+        overrides,
+      );
+      if (!probe.ok) {
+        return { ok: false, error: composeFailure(probe) };
+      }
+      const unknown = unfilledPlaceholders(`${probe.guide.subject}\n${probe.guide.body}`);
+      if (unknown.length > 0) {
+        return {
+          ok: false,
+          error: {
+            status: 422,
+            message: `the edited email still has unfilled placeholders: ${unknown.map((token) => `{${token}}`).join(", ")}`,
+            missing: unknown,
+          },
+        };
+      }
+    }
+
     const values = { ...base };
     let driveLink: string | undefined;
     let slackLink: string | undefined;
 
-    if (needs(template.id, "drive_folder_link") && !values.drive_folder_link?.trim()) {
+    // Provisioned because the copy being sent asks for it, not because the stored template does:
+    // an operator who deleted the Drive sentence should not still get a folder created for them.
+    if (copy.includes("{drive_folder_link}") && !values.drive_folder_link?.trim()) {
       if (!options.provisionDriveWorkspace) {
         return {
           ok: false,
@@ -272,7 +322,7 @@ export function createAdminBotOnboardingSender(
       values.drive_folder_link = workspace.link;
     }
 
-    if (needs(template.id, "slack_connect_link") && !values.slack_connect_link?.trim()) {
+    if (copy.includes("{slack_connect_link}") && !values.slack_connect_link?.trim()) {
       if (!options.inviteToSlackConnect) {
         return {
           ok: false,
@@ -297,11 +347,26 @@ export function createAdminBotOnboardingSender(
       values.slack_connect_link = invite.url;
     }
 
-    const composed = composeOnboardingGuide(template.id, values, env);
+    const composed = composeOnboardingGuide(template.id, values, env, overrides);
     if (!composed.ok) {
       return { ok: false, error: composeFailure(composed) };
     }
     const guide: AdminBotComposedGuide = composed.guide;
+    // The same guard as the pre-flight above, on the text that is actually about to be mailed.
+    // It should never fire -- the pre-flight catches edited copy, and stored copy declares every
+    // token it uses -- but rule 1 is the one thing worth checking twice, and this is the last
+    // moment anything can.
+    const leftover = unfilledPlaceholders(`${guide.subject}\n${guide.body}`);
+    if (leftover.length > 0) {
+      return {
+        ok: false,
+        error: {
+          status: 422,
+          message: `the edited email still has unfilled placeholders: ${leftover.map((token) => `{${token}}`).join(", ")}`,
+          missing: leftover,
+        },
+      };
+    }
     const html = htmlOf(guide.body);
     await sendEmail({ to: email, subject: guide.subject, body: guide.body, ...html });
 
