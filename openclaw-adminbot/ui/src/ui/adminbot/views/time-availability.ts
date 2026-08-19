@@ -49,7 +49,7 @@ import {
   type TripRow,
 } from "../data/availability.ts";
 import {
-  allUpcomingVenues,
+  allUpcomingConferences,
   aoeInstantMs,
   MS_DAY,
   upcomingMajorDeadlines,
@@ -227,6 +227,8 @@ export type SchedulePatch = {
   time_off?: TimeOffRow[];
   milestones?: MilestoneRow[];
   trips?: TripRow[];
+  /** Snapshot conferences this member has hidden from their own panel. */
+  dismissed_deadlines?: string[];
   /**
    * The overall note, sent alone so saving prose can never rewrite a list.
    *
@@ -1340,16 +1342,24 @@ function clockLabel(time: string | undefined, timezone: string | undefined) {
  * with its own date, or the fifth conference down. Narrowing the picker to the same rule that fills
  * the panel would leave it offering nothing exactly when the panel was already enough.
  */
-function addableVenues(now: number, milestones: readonly MilestoneRow[]) {
+function addableVenues(
+  now: number,
+  milestones: readonly MilestoneRow[],
+  dismissed: readonly string[],
+) {
+  const hidden = new Set(dismissed.map((name) => name.trim()));
   const shown = new Set(
-    upcomingMajorDeadlines(now, CONFERENCE_DEADLINE_COUNT, { archivalOnly: true }).map(
-      (entry) => entry.venue.id,
-    ),
+    upcomingMajorDeadlines(now, CONFERENCE_DEADLINE_COUNT, { archivalOnly: true })
+      .filter((entry) => !hidden.has(entry.venue.name.trim()))
+      .map((entry) => entry.venue.id),
   );
   // Matched on the label because that is what an added venue is stored as -- the milestone list
   // holds no venue id, and inventing one would mean a second identity for the same row.
   const added = new Set(milestones.map((row) => row.label.trim()));
-  return allUpcomingVenues(now).filter(
+  // Conferences only. The snapshot is 107 entries and 101 of them are workshops sharing a handful
+  // of instants, so an all-venues picker was a hundred NeurIPS workshops with the conference
+  // somebody actually wanted buried among them.
+  return allUpcomingConferences(now).filter(
     (entry) => !shown.has(entry.venue.id) && !added.has(entry.venue.name.trim()),
   );
 }
@@ -1371,14 +1381,26 @@ function renderAddConference(
   props: AdminBotTimeAvailabilityProps,
   milestones: readonly MilestoneRow[],
   now: number,
+  dismissed: readonly string[],
 ) {
-  const options = addableVenues(now, milestones);
+  const options = addableVenues(now, milestones, dismissed);
   if (!options.length) {
     return nothing;
   }
   return html`
-    <form
+    <!-- Styled as one of the tab's editors and deliberately not classed as one: it lives in the
+         deadlines panel, above them, and .adminbot-time-availability__form is how the commitment
+         form is found. Sharing that class would have made "the form" ambiguous. -->
+    <section
       class="adminbot-time-availability__deadline-add"
+      data-testid="time-availability-add-conference-section"
+    >
+      <div class="card-title">${t("adminbotTimeAvailability.milestones.addConference")}</div>
+      <p class="adminbot-time-availability__form-hint">
+        ${t("adminbotTimeAvailability.milestones.addConferenceHint")}
+      </p>
+    <form
+      class="adminbot-form adminbot-time-availability__deadline-form"
       data-testid="time-availability-add-conference"
       @submit=${(event: Event) => {
         event.preventDefault();
@@ -1405,31 +1427,34 @@ function renderAddConference(
         });
       }}
     >
-      <label class="sr-only" for="time-availability-conference-pick">
-        ${t("adminbotTimeAvailability.milestones.addConference")}
+      <label class="adminbot-form__field" for="time-availability-conference-pick">
+        <span>${t("adminbotTimeAvailability.milestones.conference")}</span>
+        <select
+          id="time-availability-conference-pick"
+          data-testid="time-availability-conference-pick"
+        >
+          ${options.map(
+            (entry) => html`
+              <option value=${entry.venue.id}>
+                ${entry.venue.name} · ${tableDate(entry.venue.deadline_aoe.slice(0, 10))}
+              </option>
+            `,
+          )}
+        </select>
       </label>
-      <select
-        id="time-availability-conference-pick"
-        data-testid="time-availability-conference-pick"
-      >
-        ${options.map(
-          (entry) => html`
-            <option value=${entry.venue.id}>
-              ${entry.venue.name} · ${tableDate(entry.venue.deadline_aoe.slice(0, 10))}
-            </option>
-          `,
-        )}
-      </select>
-      <button
-        type="submit"
-        class="btn btn--sm"
-        data-testid="time-availability-conference-add"
-        ?disabled=${props.saving}
-      >
-        <span aria-hidden="true">${icons.plus}</span>
-        ${t("adminbotTimeAvailability.milestones.addConference")}
-      </button>
+      <div class="adminbot-time-availability__form-actions">
+        <button
+          type="submit"
+          class="btn primary"
+          data-testid="time-availability-conference-add"
+          ?disabled=${props.saving}
+        >
+          <span aria-hidden="true">${icons.plus}</span>
+          ${t("adminbotTimeAvailability.milestones.submitConference")}
+        </button>
+      </div>
     </form>
+    </section>
   `;
 }
 
@@ -1448,22 +1473,26 @@ function renderBigDeadlines(
   milestones: readonly MilestoneRow[],
   props: AdminBotTimeAvailabilityProps,
   editable: boolean,
+  dismissed: readonly string[],
 ) {
   const now = Date.now();
   const today = new Date(now).toISOString().slice(0, 10);
   // upcomingMajorDeadlines is the same helper the Deadlines board and the dashboard summary use,
   // so the three surfaces can never disagree about which conference is next.
+  const hidden = new Set(dismissed.map((name) => name.trim()));
   const conferences = upcomingMajorDeadlines(now, CONFERENCE_DEADLINE_COUNT, {
     archivalOnly: true,
-  }).map((entry) => ({
+  })
+    .filter((entry) => !hidden.has(entry.venue.name.trim()))
+    .map((entry) => ({
     date: entry.venue.deadline_aoe.slice(0, 10),
     instant: entry.instant,
     label: entry.venue.name,
     link: entry.venue.link,
     time: entry.venue.deadline_aoe.slice(11, 16),
-    timezone: AOE_TIMEZONE,
-    own: false,
-  }));
+      timezone: AOE_TIMEZONE,
+      own: false,
+    }));
   const mine = milestones
     .filter((row) => row.date >= today)
     .map((row) => ({
@@ -1499,20 +1528,33 @@ function renderBigDeadlines(
                 ${tableDate(row.date)}
               </span>
               ${clockLabel(row.time, row.timezone)} ${renderLink(row.link)}
-              ${editable && row.own
+              <!-- Both kinds of row can go. A member's own row is deleted; one of the lab's four
+                   is *hidden for this member*, since the snapshot is shared and nobody's panel
+                   should be able to edit everyone else's. Re-adding it from the picker below
+                   brings it back as their own row. -->
+              ${editable
                 ? html`<button
                     type="button"
                     class="btn btn--sm"
+                    data-testid=${`time-availability-deadline-remove-${row.own ? "own" : "preset"}`}
                     ?disabled=${props.saving}
+                    title=${row.own ? "" : t("adminbotTimeAvailability.milestones.removePresetHint")}
                     @click=${() =>
-                      props.onSaveSchedule(props.selectedMemberId, {
-                        milestones: milestones.filter(
-                          (candidate) =>
-                            !(candidate.date === row.date && candidate.label === row.label),
-                        ),
-                      })}
+                      props.onSaveSchedule(
+                        props.selectedMemberId,
+                        row.own
+                          ? {
+                              milestones: milestones.filter(
+                                (candidate) =>
+                                  !(candidate.date === row.date && candidate.label === row.label),
+                              ),
+                            }
+                          : { dismissed_deadlines: [...dismissed, row.label] },
+                      )}
                   >
-                    ${t("adminbotTimeAvailability.form.remove")}
+                    ${row.own
+                      ? t("adminbotTimeAvailability.form.remove")
+                      : t("adminbotTimeAvailability.milestones.removePreset")}
                   </button>`
                 : nothing}
             </li>
@@ -1524,7 +1566,7 @@ function renderBigDeadlines(
         : html`<p class="adminbot-time-availability__empty-note">
             ${t("adminbotTimeAvailability.milestones.empty")}
           </p>`}
-      ${editable ? renderAddConference(props, milestones, now) : nothing}
+      ${editable ? renderAddConference(props, milestones, now, dismissed) : nothing}
     </aside>
   `;
 }
@@ -1719,6 +1761,9 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const storedTimeOff = selectedMember ? timeOffRows(selectedMember.time_off) : [];
   const storedMilestones = selectedMember ? milestoneRows(selectedMember.milestones) : [];
   const storedTrips = tripRows(selectedMember?.trips);
+  const dismissedDeadlines = (selectedMember?.dismissed_deadlines ?? []).filter(
+    (name): name is string => typeof name === "string",
+  );
   // Built from the same bins the bars use, so "where you are" and "what you are committed to" are
   // divided into the same periods and cannot drift apart when the range switch changes.
   const whereStrip = whereBins(
@@ -1771,7 +1816,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
       ${selectedMember
         ? html`
             <div class="adminbot-time-availability__body">
-              ${renderBigDeadlines(storedMilestones, props, editable)}
+              ${renderBigDeadlines(storedMilestones, props, editable, dismissedDeadlines)}
               <section class="adminbot-time-availability__report">
                 <div class="adminbot-time-availability__report-header">
                   <div>

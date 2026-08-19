@@ -2491,6 +2491,7 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "time_off",
   "milestones",
   "trips",
+  "dismissed_deadlines",
   // The prose that goes with the three lists above. Admin-visible on read (see
   // adminBotScheduleMemberFields) and self-editable, like the rows it explains.
   "availability_notes",
@@ -3136,6 +3137,35 @@ function validateTrips(member: AdminBotLabMemberInput): string | undefined {
   return undefined;
 }
 
+/**
+ * The list of snapshot deadlines a member has dismissed.
+ *
+ * Bounded like every other member-supplied list, and each entry length-checked like a label: these
+ * are venue names copied off the bundled snapshot, and without a ceiling the field is an unbounded
+ * write on a record every admin reads.
+ */
+function validateDismissedDeadlines(member: AdminBotLabMemberInput): string | undefined {
+  if (member.dismissed_deadlines === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(member.dismissed_deadlines)) {
+    return "member dismissed deadlines must be a list";
+  }
+  if (member.dismissed_deadlines.length > MAX_AVAILABILITY_ROWS) {
+    return `member dismissed deadlines cannot exceed ${MAX_AVAILABILITY_ROWS} rows`;
+  }
+  for (const entry of member.dismissed_deadlines) {
+    if (typeof entry !== "string" || !entry.trim()) {
+      return "dismissed deadline names must be non-empty strings";
+    }
+    const labelError = validateLabel(entry, "dismissed deadline");
+    if (labelError) {
+      return labelError;
+    }
+  }
+  return undefined;
+}
+
 function validateMilestones(member: AdminBotLabMemberInput): string | undefined {
   if (member.milestones === undefined) {
     return undefined;
@@ -3251,7 +3281,9 @@ function validateAvailability(member: AdminBotLabMemberInput): string | undefine
       }
     }
   }
-  return validateMilestones(member) ?? validateTrips(member);
+  return (
+    validateMilestones(member) ?? validateTrips(member) ?? validateDismissedDeadlines(member)
+  );
 }
 
 // availability_updated_at is server-owned: it moves only when the schedule content

@@ -9571,14 +9571,18 @@ details[open] > .ov-expandable-toggle::after {
   grid-template-columns: 1fr;
 }
 
-.adminbot-time-availability__editor {
+/* The conference picker sits in the deadlines panel rather than the editor stack, but it is the
+   same kind of thing and reads as one. Shared here rather than copied so the two cannot drift. */
+.adminbot-time-availability__editor,
+.adminbot-time-availability__deadline-add {
   display: grid;
   gap: var(--space-3);
   padding-top: var(--space-4);
   border-top: 1px solid var(--border);
 }
 
-.adminbot-time-availability__form {
+.adminbot-time-availability__form,
+.adminbot-time-availability__deadline-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: var(--space-3);
@@ -9738,15 +9742,10 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 /* The conference picker sits under the list, not in it: it adds a row rather than being one. */
-.adminbot-time-availability__deadline-add {
-  display: flex;
-  gap: var(--space-2);
-  align-items: center;
-  margin-top: var(--space-3);
-}
-
-.adminbot-time-availability__deadline-add select {
-  flex: 1 1 auto;
+/* The conference picker is one of the tab's "Add ..." editors and takes its section, title, hint,
+   form grid and submit from those rules; only the select's own width is specific to it. */
+.adminbot-time-availability__deadline-form select {
+  width: 100%;
   min-width: 0;
 }
 

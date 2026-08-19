@@ -459,6 +459,7 @@ export type MemberScheduleUpdate = {
   time_off?: MemberTimeOffRow[];
   milestones?: MemberMilestoneRow[];
   trips?: MemberTripRow[];
+  dismissed_deadlines?: string[];
   // The overall note that explains the rows: a sentence or two for the admins, sent on its own
   // (every other key omitted) so saving it can never rewrite a list. "" clears it -- the service
   // deletes an emptied note rather than storing a blank one.

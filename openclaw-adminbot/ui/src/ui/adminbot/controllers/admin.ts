@@ -77,6 +77,7 @@ export type AdminBotLabMember = {
   time_off?: TimeOffRow[];
   milestones?: MilestoneRow[];
   trips?: TripRow[];
+  dismissed_deadlines?: string[];
   // The member's own prose about their schedule, for the admins who plan around it. Absent on
   // every roster copy but the member's own and an admin's -- the service strips it for everyone
   // else (adminBotScheduleMemberFields), same as the three lists above.

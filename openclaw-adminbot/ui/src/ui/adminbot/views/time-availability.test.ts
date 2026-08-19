@@ -1,7 +1,7 @@
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
-import { allUpcomingVenues, upcomingMajorDeadlines } from "../data/deadline-time.ts";
+import { allUpcomingConferences, upcomingMajorDeadlines } from "../data/deadline-time.ts";
 import {
   allocationBins,
   rangeBins,
@@ -785,8 +785,8 @@ describe("the split tables and the deadline panel", () => {
   });
 
   // Four archival conferences is the right default and a bad restriction: the venue somebody needs
-  // on their timeline is as often a workshop, or the fifth conference down. The picker reaches all
-  // of them, and copies the snapshot's own cutoff across so nobody retypes an AoE deadline wrong.
+  // on their timeline is often the fifth conference down. The picker reaches those, and copies the
+  // snapshot's own cutoff across so nobody retypes an AoE deadline wrong.
   it("adds a venue the panel does not already show, with its exact cutoff", () => {
     const onSaveSchedule = vi.fn();
     const container = renderView({ members: [scheduled()], onSaveSchedule });
@@ -809,7 +809,7 @@ describe("the split tables and the deadline panel", () => {
     expect(onSaveSchedule).toHaveBeenCalledTimes(1);
     const [, patch] = onSaveSchedule.mock.calls[0];
     const added = patch.milestones.at(-1);
-    const venue = allUpcomingVenues(Date.now()).find(
+    const venue = allUpcomingConferences(Date.now()).find(
       (entry) => entry.venue.id === offered[0],
     )!.venue;
     expect(added.label).toBe(venue.name);
@@ -1152,6 +1152,81 @@ describe("the where-strip under the chart", () => {
     expect(
       renderOn("2026-09-15", { trips: [] }).querySelector(
         '[data-testid="time-availability-where-strip"]',
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("the big-deadlines panel", () => {
+  // Its own fixture: the one in "the split tables and the deadline panel" is scoped to that block.
+  const scheduled = (overrides: Partial<AdminBotLabMember> = {}) =>
+    member({ milestones: [{ date: "2027-06-12", label: "Graduation" }], ...overrides });
+
+  // The snapshot is 107 entries and 101 of them are workshops sharing a handful of instants, so an
+  // all-venues picker buried the conference somebody wanted under a hundred NeurIPS workshops.
+  it("offers conferences and no workshops", () => {
+    const picker = renderView({ members: [scheduled()] }).querySelector<HTMLSelectElement>(
+      '[data-testid="time-availability-conference-pick"]',
+    )!;
+    const conferences = new Set(
+      allUpcomingConferences(Date.now()).map((entry) => entry.venue.id),
+    );
+    const offered = [...picker.options].map((option) => option.value);
+    expect(offered.length).toBeGreaterThan(0);
+    for (const id of offered) {
+      expect(conferences.has(id)).toBe(true);
+    }
+  });
+
+  it("presents the picker as one of the tab's editors", () => {
+    const view = renderView({ members: [scheduled()] });
+    const section = view.querySelector('[data-testid="time-availability-add-conference-section"]');
+    expect(section?.querySelector(".card-title")?.textContent).toContain("Add a conference");
+    expect(section?.querySelector("button.primary")).not.toBeNull();
+    // Deliberately not classed as an editor: it lives in the deadlines panel, and the commitment
+    // form is found by .adminbot-time-availability__form.
+    expect(section?.classList.contains("adminbot-time-availability__editor")).toBe(false);
+    expect(section?.querySelector(".adminbot-time-availability__form")).toBeNull();
+  });
+
+  // The lab's four are context, not an instruction. Somebody not submitting to NeurIPS should be
+  // able to clear it off their own page without touching anyone else's.
+  it("lets a member hide one of the lab's preset conferences", () => {
+    const onSaveSchedule = vi.fn();
+    const view = renderView({ members: [scheduled()], onSaveSchedule });
+    view
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-deadline-remove-preset"]')
+      ?.click();
+    expect(onSaveSchedule).toHaveBeenCalledTimes(1);
+    const [, patch] = onSaveSchedule.mock.calls[0];
+    expect(patch.dismissed_deadlines).toHaveLength(1);
+    // Written as the venue name, which is also how an added venue is stored, so one identity
+    // covers both directions.
+    const nearest = upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true })[0];
+    expect(patch.dismissed_deadlines[0]).toBe(nearest?.venue.name);
+  });
+
+  it("drops a hidden conference from the panel and offers it back in the picker", () => {
+    const nearest = upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true })[0];
+    const view = renderView({
+      members: [scheduled({ dismissed_deadlines: [nearest?.venue.name ?? ""] })],
+    });
+    // The list, not the whole panel: the picker below it is inside the same aside, and offering
+    // the venue back there is the other half of what this test is checking.
+    const listed = view.querySelector(".adminbot-time-availability__deadline-list")?.textContent;
+    expect(listed).not.toContain(nearest?.venue.name);
+    const offered = [
+      ...view.querySelectorAll<HTMLOptionElement>(
+        '[data-testid="time-availability-conference-pick"] option',
+      ),
+    ].map((option) => option.value);
+    expect(offered).toContain(nearest?.venue.id);
+  });
+
+  it("keeps the hide button off a schedule the viewer cannot edit", () => {
+    expect(
+      renderView({ members: [scheduled()], viewerMemberId: "someone-else" }).querySelector(
+        '[data-testid="time-availability-deadline-remove-preset"]',
       ),
     ).toBeNull();
   });

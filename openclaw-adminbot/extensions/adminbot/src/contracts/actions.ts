@@ -247,6 +247,7 @@ export const adminBotScheduleMemberFields = [
   // Where a member will be for the next three weeks is planning data, like the rest of this list:
   // their own to read and edit, and visible to the admins who schedule around it.
   "trips",
+  "dismissed_deadlines",
   "availability_notes",
   "availability_doc_url",
   "availability_updated_at",
@@ -634,6 +635,17 @@ export type AdminBotLabMemberInput = {
   // Where the member is when that is not home, over a range. Self-editable like the lists above,
   // and read by anything that needs a member's local time on a given date.
   trips?: AdminBotMemberTrip[];
+  /**
+   * Conference deadlines from the bundled snapshot that this member has taken off their own panel.
+   *
+   * By venue name rather than id: the snapshot is regenerated from OpenReview, and an id that
+   * shifted between regenerations would quietly resurrect a row somebody dismissed. The name is
+   * also what an added venue is stored as on `milestones`, so one identity covers both directions.
+   *
+   * A dismissal is per member and hides nothing for anyone else -- the lab's deadline board is
+   * unaffected. Re-adding the venue from the picker brings it back as the member's own row.
+   */
+  dismissed_deadlines?: string[];
   // The complication the three lists above cannot express: a custody arrangement, a visa date that
   // may move, a medical treatment that makes some weeks unpredictable. Written for the admins who
   // plan around it -- see adminBotScheduleMemberFields, which keeps it off every other member's
