@@ -1933,7 +1933,7 @@ export const en: TranslationMap = {
   },
   myWork: {
     items: {
-      title: "Projects & papers",
+      title: "Projects & Papers",
       empty: "Nothing on your record yet. Add your first project.",
       add: "Add a project",
       addSubmit: "Add",

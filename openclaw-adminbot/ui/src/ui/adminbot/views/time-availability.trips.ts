@@ -18,7 +18,7 @@ import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import { todayIso, type TripRow, type WhereBin } from "../data/availability.ts";
 import { timezoneForLocation } from "../data/timezone-for-location.ts";
-import { TIMEZONE_LIST_ID, timezoneSuggestions } from "../data/timezones.ts";
+import { localTimezone, timezoneOptions } from "../data/timezones.ts";
 
 export type TripDraft = {
   city: string;
@@ -191,19 +191,26 @@ export function renderTrips(props: TripsProps) {
               </label>
               <label class="adminbot-form__field">
                 <span>${t("adminbotTimeAvailability.trips.timezone")}</span>
-                <!-- Free text against the same shared datalist the milestone editor uses: six
-                   hundred zones is six hundred DOM nodes per control, and typing "berl" is how
-                   anyone finds theirs. -->
-                <input
-                  type="text"
-                  list=${TIMEZONE_LIST_ID}
+                <!-- A select rather than a datalist, for the same reason as the milestone editor:
+                   a select's arrow sits where a dropdown's arrow is supposed to, and only the
+                   common zones are offered instead of six hundred names. The viewer's own zone
+                   shows until a typed city guesses one or a zone is picked. -->
+                <select
                   data-testid="time-availability-trip-timezone"
-                  .value=${props.draft.timezone}
-                  @input=${field("timezone")}
-                />
-                <datalist id=${TIMEZONE_LIST_ID}>
-                  ${timezoneSuggestions().map((zone) => html`<option value=${zone}></option>`)}
-                </datalist>
+                  .value=${props.draft.timezone || localTimezone()}
+                  @change=${(event: Event) => {
+                    const zone = (event.currentTarget as HTMLSelectElement).value;
+                    props.onDraftChange({ ...props.draft, timezone: zone });
+                  }}
+                >
+                  ${timezoneOptions(props.draft.timezone || localTimezone()).map(
+                    (group) => html`<optgroup label=${group.label}>
+                      ${group.options.map(
+                        (option) => html`<option value=${option.zone}>${option.label}</option>`,
+                      )}
+                    </optgroup>`,
+                  )}
+                </select>
               </label>
               <label class="adminbot-form__field">
                 <span>${t("adminbotTimeAvailability.trips.note")}</span>
