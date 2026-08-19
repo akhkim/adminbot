@@ -8,6 +8,7 @@
 // It must run where the configuration lives, which is the service host: half of what it checks is
 // whether ADMINBOT_* is actually set there. On Aurora:
 //
+//   export PATH="$HOME/.local/bin:$PATH"   # node lives here; `ssh host 'cmd'` will not find it
 //   cd ~/services/openclaw-adminbot/current
 //   set -a; . ~/.config/jinesis-adminbot/adminbot.env; set +a
 //   node --import tsx scripts/adminbot-onboarding-dry-run.ts --plan ~/onboarding-plan.json
