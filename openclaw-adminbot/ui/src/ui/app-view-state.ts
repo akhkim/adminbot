@@ -111,6 +111,9 @@ export type AppViewState = {
   onboardingError?: string | null;
   onboardingMissing?: string[];
   onboardingResult?: import("./adminbot/controllers/admin.ts").AdminBotOnboardingResult | null;
+  /** The previewed email as the operator edited it; this is what a send delivers. */
+  onboardingDraftSubject?: string;
+  onboardingDraftBody?: string;
   sendOnboardingGuide?: (options: { preview: boolean }) => Promise<void>;
   // Calendar tab. Two halves that share the roster the tab already has: a prompt that drafts an
   // event, and a picker that turns member facets into an invite list. Both end in a proposal.

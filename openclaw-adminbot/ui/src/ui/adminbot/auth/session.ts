@@ -661,6 +661,12 @@ export type OnboardingGuideRequest = {
   preview: boolean;
   /** Left out entirely when the tab has no opinion, so the service applies its own default. */
   submitDcsForm?: boolean;
+  /**
+   * The copy as the operator edited it in the preview. Sent only when it differs from what the
+   * preview returned, so an untouched preview still sends the stored template.
+   */
+  subjectOverride?: string;
+  bodyOverride?: string;
 };
 
 export type OnboardingGuideResult = {
@@ -695,6 +701,8 @@ export async function sendOnboardingGuide(
     values: request.values,
     preview: request.preview,
     ...(request.submitDcsForm === undefined ? {} : { submit_dcs_form: request.submitDcsForm }),
+    ...(request.subjectOverride ? { subject_override: request.subjectOverride } : {}),
+    ...(request.bodyOverride ? { body_override: request.bodyOverride } : {}),
   });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };

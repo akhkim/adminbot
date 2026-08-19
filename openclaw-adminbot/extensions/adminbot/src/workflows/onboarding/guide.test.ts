@@ -115,9 +115,10 @@ describe("composeOnboardingGuide", () => {
       return;
     }
     expect(result.reason).toBe("missing-values");
-    // The setup mail names the project and the channels; who supervises the work moved to the
-    // norms mail that follows it (coauthor_minor_norms), which is where contact_name lives now.
-    expect(result.missing).toContain("project_or_context");
+    // The setup mail names the channels and who to ask when Zhijing is busy; the project itself
+    // and who supervises the work moved to the norms mail that follows it (coauthor_minor_norms).
+    expect(result.missing).toContain("project_channel");
+    expect(result.missing).toContain("primary_contact");
   });
 
   it("treats whitespace as missing rather than substituting it", () => {
@@ -465,6 +466,90 @@ describe("onboarding sender", () => {
     });
     expect(result.ok).toBe(false);
     expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  // The preview is what the tab hands back as the body to send, so the two links that do not exist
+  // yet stay as their own placeholders rather than as a sentence describing them.
+  it("previews the provisioned links as placeholders", async () => {
+    const send = createAdminBotOnboardingSender({ env: ENV, sendEmail: vi.fn() });
+    const result = await send({
+      template_id: "trial_phase",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      preview: true,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.payload.body).toContain("{drive_folder_link}");
+  });
+
+  it("sends the operator's edited copy, with the provisioned links filled in", async () => {
+    const provisionDriveWorkspace = vi
+      .fn()
+      .mockResolvedValue({ folderId: "fld", link: "https://drive.example/fld" });
+    const sendEmail = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({ env: ENV, provisionDriveWorkspace, sendEmail });
+
+    const result = await send({
+      template_id: "trial_phase",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      subject_override: "Your trial with us",
+      body_override: "Hi Ada,\n\nYour workspace: {drive_folder_link}\n\nWarmly,\nAdminBot",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.payload.subject).toBe("Your trial with us");
+    expect(result.payload.body).toContain("Your workspace: https://drive.example/fld");
+    // The stored copy is a starting draft; nothing of it survives an edit that removed it.
+    expect(result.payload.body).not.toContain("three weeks");
+    expect(sendEmail.mock.calls[0]?.[0]?.subject).toBe("Your trial with us");
+  });
+
+  // Rule 1 holds for edited copy too, and the refusal comes before provisioning: finding out
+  // afterwards would leave a Drive folder and a Slack invite behind for a mail that never went.
+  it("refuses edited copy that still holds a placeholder, before provisioning anything", async () => {
+    const provisionDriveWorkspace = vi.fn();
+    const sendEmail = vi.fn();
+    const send = createAdminBotOnboardingSender({ env: ENV, provisionDriveWorkspace, sendEmail });
+
+    const result = await send({
+      template_id: "trial_phase",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      body_override:
+        "Hi Ada, your lead is {interview_lead} and your folder is {drive_folder_link}.",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.status).toBe(422);
+    expect(result.error.missing).toEqual(["interview_lead"]);
+    expect(provisionDriveWorkspace).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  // An operator who deleted the sentence a value belonged to should not still be asked for it.
+  it("asks only for the values the edited copy still mentions", async () => {
+    const sendEmail = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({ env: ENV, sendEmail });
+
+    const result = await send({
+      template_id: "coauthor_minor",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      body_override: "Hi Ada,\n\nWelcome aboard.\n\nBest regards,\nAdminBot",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(sendEmail).toHaveBeenCalled();
   });
 
   it("derives the first name from the full name", () => {
