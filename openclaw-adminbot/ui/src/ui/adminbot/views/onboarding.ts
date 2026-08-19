@@ -109,7 +109,7 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
     id: "alumni",
     label: "Alumni",
     group: "External collaborator",
-    required: ["first_name", "sender_name", "dashboard_url", "slack_connect_link"],
+    required: ["first_name", "sender_name", "slack_connect_link"],
   },
   {
     id: "coauthor_minor",
@@ -210,8 +210,9 @@ export const ONBOARDING_TEMPLATE_OPTIONS: readonly OnboardingTemplateOption[] = 
 
 // Generated during the send, so the form never asks for them.
 const GENERATED = new Set(["drive_folder_link", "slack_connect_link"]);
-// Derived from the name field and the lab's settings respectively.
-const DERIVED = new Set(["first_name", "zhijing_whatsapp", "dashboard_url"]);
+// Derived from the name field and the lab's settings respectively. `dashboard_url` used to be
+// listed here, which hid a field that nothing filled -- it is deployment configuration now.
+const DERIVED = new Set(["first_name", "zhijing_whatsapp"]);
 
 const FIELD_LABELS: Record<string, string> = {
   project_or_context: "Project or context",
