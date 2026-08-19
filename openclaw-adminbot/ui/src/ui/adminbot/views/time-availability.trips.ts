@@ -6,13 +6,17 @@
 // `adminbot-form` grid of fields and a primary submit -- so "add a trip" reads as a sibling of
 // "add a commitment" rather than as a different kind of thing bolted on.
 //
+// Which trip is running right now is deliberately not stated here. It belongs on the chart above,
+// beside the capacity pill, where a reader is already looking to answer "what does this person's
+// next month look like" -- repeating it down here would be the same fact twice on one screen.
+//
 // A trip is a range with a place on it, which is the one thing none of the other schedule rows
 // carry. A time-off row says a member is unavailable and says nothing about where they are, and
 // somebody working normal hours from Berlin is fully available and six hours off the lab's clock.
 // That case is what kept producing 10am invites that land at 4pm.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
-import { tripOnDay, todayIso, type TripRow } from "../data/availability.ts";
+import { todayIso, type TripRow } from "../data/availability.ts";
 import { timezoneForLocation } from "../data/timezone-for-location.ts";
 import { TIMEZONE_LIST_ID, timezoneSuggestions } from "../data/timezones.ts";
 
@@ -113,7 +117,6 @@ function renderRow(props: TripsProps, row: TripRow, index: number, today: string
 
 export function renderTrips(props: TripsProps) {
   const today = props.today ?? todayIso();
-  const current = tripOnDay(props.trips, today);
   const error = tripDraftError(props.draft);
   const touched = Boolean(props.draft.city || props.draft.start || props.draft.end);
   const patch = (change: Partial<TripDraft>) => props.onDraftChange({ ...props.draft, ...change });
@@ -130,11 +133,6 @@ export function renderTrips(props: TripsProps) {
           ? html`${t("adminbotTimeAvailability.trips.home", { location: props.homeLocation })} `
           : nothing}${t("adminbotTimeAvailability.trips.formHint")}
       </p>
-      ${current
-        ? html`<p class="adminbot-trips__current" data-testid="time-availability-trip-current">
-            ${t("adminbotTimeAvailability.trips.current", { city: current.city })}
-          </p>`
-        : nothing}
       ${props.trips.length
         ? html`<ul class="adminbot-trips__list" data-testid="time-availability-trip-list">
             ${props.trips.map((row, index) => renderRow(props, row, index, today))}

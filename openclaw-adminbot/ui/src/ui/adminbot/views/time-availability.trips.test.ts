@@ -56,19 +56,22 @@ describe("renderTrips", () => {
     expect(view.querySelector(".card-title")?.textContent).toContain("Add a trip away from home");
   });
 
-  it("lists a trip with its dates and zone, and says which one is running", () => {
+  it("lists a trip with its dates and zone, and marks the one running", () => {
     const text = renderView().textContent ?? "";
     expect(text).toContain("Berlin");
     expect(text).toContain("Europe/Berlin");
     expect(text).toContain("Internship");
-    expect(text).toContain("Currently in Berlin");
     expect(renderView().querySelector(".adminbot-trips__row--active")).not.toBeNull();
   });
 
-  it("marks nothing as current outside every trip", () => {
-    const view = renderView({ today: "2026-10-15" });
-    expect(view.textContent).not.toContain("Currently in");
-    expect(view.querySelector(".adminbot-trips__row--active")).toBeNull();
+  it("marks nothing as running outside every trip", () => {
+    expect(renderView({ today: "2026-10-15" }).querySelector(".adminbot-trips__row--active")).toBeNull();
+  });
+
+  // The running trip is stated on the chart above, beside the capacity pill. Repeating it here
+  // would be the same fact twice on one screen.
+  it("does not restate where the member currently is", () => {
+    expect(renderView().textContent).not.toContain("Currently in");
   });
 
   it("names home, so a reader knows what away is away from", () => {

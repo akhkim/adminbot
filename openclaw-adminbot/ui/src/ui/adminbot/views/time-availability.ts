@@ -41,6 +41,8 @@ import {
   availabilityRows,
   milestoneRows,
   timeOffRows,
+  todayIso,
+  tripOnDay,
   tripRows,
   type AvailabilityRow,
   type MilestoneRow,
@@ -1714,6 +1716,9 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const storedTimeOff = selectedMember ? timeOffRows(selectedMember.time_off) : [];
   const storedMilestones = selectedMember ? milestoneRows(selectedMember.milestones) : [];
   const storedTrips = tripRows(selectedMember?.trips);
+  // Shown on the chart rather than in the trips editor below it: this is the one fact about a
+  // member's trips that changes how you read the chart, and it belongs where the reader already is.
+  const currentTrip = tripOnDay(storedTrips, todayIso());
   const storedNotes = String(selectedMember?.availability_notes ?? "");
   const tasks = selectedMember ? jinesisTasks(selectedMember) : [];
   // The chart shows both; the Jinesis table below it shows only `tasks`, because the two lists are
@@ -1766,13 +1771,28 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                     <div class="card-title">${selectedMember.name}</div>
                     <div class="card-sub">${t("adminbotTimeAvailability.chartSubtitle")}</div>
                   </div>
-                  ${capacity
-                    ? html`<span class="pill">
-                        ${t("adminbotTimeAvailability.capacity", {
-                          hours: formatNumber(capacity),
-                        })}
-                      </span>`
-                    : nothing}
+                  <div class="adminbot-time-availability__report-pills">
+                    ${currentTrip
+                      ? html`<span
+                          class="pill"
+                          data-testid="time-availability-current-trip"
+                          title=${t("adminbotTimeAvailability.trips.currentPillTitle", {
+                            city: currentTrip.city,
+                            range: `${currentTrip.start} – ${currentTrip.end}`,
+                          })}
+                          >${t("adminbotTimeAvailability.trips.currentPill", {
+                            city: currentTrip.city,
+                          })}</span
+                        >`
+                      : nothing}
+                    ${capacity
+                      ? html`<span class="pill">
+                          ${t("adminbotTimeAvailability.capacity", {
+                            hours: formatNumber(capacity),
+                          })}
+                        </span>`
+                      : nothing}
+                  </div>
                 </div>
                 ${!capacity && chartSeries.length
                   ? html`<div class="callout warning" data-testid="time-availability-no-capacity">

@@ -73,8 +73,13 @@
   text-decoration: underline;
 }
 
-.adminbot-trips__current {
-  margin: 0;
+/* The pills beside the chart title. Wrapping rather than shrinking, because a long city name and
+   a capacity figure on one line is what pushes the chart title into two. */
+.adminbot-time-availability__report-pills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
 }
 
 /* Deliberately quiet: the grid's job is the calendar, and this is context beside it. */

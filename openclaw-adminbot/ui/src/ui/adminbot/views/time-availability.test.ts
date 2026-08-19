@@ -1,5 +1,5 @@
 import { render } from "lit";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
 import { allUpcomingVenues, upcomingMajorDeadlines } from "../data/deadline-time.ts";
 import {
@@ -1075,5 +1075,43 @@ describe("the trips editor's place on the tab", () => {
   it("draws no editor stack at all for a reader with nothing to see", () => {
     const view = renderView({ viewerIsAdmin: true, viewerMemberId: "admin" });
     expect(view.querySelector(".adminbot-time-availability__editors")).toBeNull();
+  });
+});
+
+describe("the current-trip pill on the chart", () => {
+  const berlin = { start: "2026-09-01", end: "2026-09-30", city: "Berlin" };
+
+  // The tab reads today's date itself, so the clock has to be driven rather than the date passed
+  // in: "which trip is running" is a question about now, and a test that only passes in September
+  // is not a test.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function renderOn(day: string, trips = [berlin]): HTMLElement {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${day}T12:00:00Z`));
+    return renderView({ members: [member({ id: "m1", trips })] });
+  }
+
+  it("names where the member is now, beside the chart title", () => {
+    const view = renderOn("2026-09-15");
+    const pill = view.querySelector('[data-testid="time-availability-current-trip"]');
+    expect(pill?.textContent).toContain("In Berlin");
+    // The dates are in the tooltip: the pill answers "where", and the list below answers "when".
+    expect(pill?.getAttribute("title")).toContain("2026-09-01 – 2026-09-30");
+    expect(view.querySelector(".adminbot-time-availability__report-pills")).not.toBeNull();
+  });
+
+  it("shows no pill when the member is home", () => {
+    expect(
+      renderOn("2026-10-15").querySelector('[data-testid="time-availability-current-trip"]'),
+    ).toBeNull();
+  });
+
+  it("shows no pill for a member with no trips at all", () => {
+    expect(
+      renderView().querySelector('[data-testid="time-availability-current-trip"]'),
+    ).toBeNull();
   });
 });
