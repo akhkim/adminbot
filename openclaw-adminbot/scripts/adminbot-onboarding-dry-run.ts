@@ -30,6 +30,7 @@ import { collaboratorSubgroupAccess } from "../extensions/adminbot/src/workflows
 import { findOnboardingTemplate } from "../extensions/adminbot/src/workflows/onboarding/emails.js";
 import {
   createAdminBotOnboardingSender,
+  gogEmailSender,
   type AdminBotOnboardingSendRequest,
 } from "../extensions/adminbot/src/workflows/onboarding/guide-sender.js";
 import { driveWorkspaceFolderName } from "../extensions/adminbot/src/workflows/onboarding/guide.js";
@@ -333,6 +334,8 @@ function reportEnvironment(): void {
   console.log("");
 }
 
+const gogSendEmail = gogEmailSender();
+
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   const planPath = args.plan;
@@ -391,7 +394,19 @@ async function main(): Promise<void> {
         }
       },
       ...(args.send
-        ? {}
+        ? {
+            // Wraps the real sender only to record it: without this the transcript of a live run
+            // listed audits and invites and never said an email had gone out.
+            sendEmail: async (params: {
+              to: string;
+              subject: string;
+              body: string;
+              body_html?: string;
+            }) => {
+              await gogSendEmail(params);
+              performed.push(`Gmail: SENT "${params.subject}" to ${params.to}`);
+            },
+          }
         : {
             // The one call that would actually reach a person. It records instead.
             sendEmail: async ({ to, subject }: { to: string; subject: string }) => {
@@ -446,7 +461,7 @@ async function main(): Promise<void> {
     console.log("-".repeat(78));
     console.log(`html alternative: ${result.payload.body_html ? "rendered" : "none"}`);
     console.log("");
-    console.log("Would perform, in this order:");
+    console.log(args.send ? "Performed, in this order:" : "Would perform, in this order:");
     for (const step of performed) {
       console.log(`  - ${step}`);
     }

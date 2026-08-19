@@ -93,12 +93,21 @@ async function main(): Promise<void> {
     channel: resolved,
     emails: [email],
     external_limited: true,
-  })) as { url?: unknown; invite?: { url?: unknown } } | undefined;
+  })) as
+    | { url?: unknown; invite_id?: unknown; invite?: { url?: unknown; id?: unknown } }
+    | undefined;
+  // Slack does not always hand back a shareable url: when the address belongs to someone who
+  // already has a Slack account, the invite is delivered to them directly and the response carries
+  // only an invite_id. That is a sent invite, not a failure -- treating it as one withheld the
+  // email while Slack had already invited the person.
   const url = response?.url ?? response?.invite?.url;
-  if (typeof url !== "string" || !url) {
-    throw new Error("Slack did not return an invite url");
+  const inviteId = response?.invite_id ?? response?.invite?.id;
+  if ((typeof url !== "string" || !url) && !inviteId) {
+    throw new Error("Slack neither returned an invite url nor an invite id");
   }
-  process.stdout.write(`${JSON.stringify({ ok: true, url })}\n`);
+  process.stdout.write(
+    `${JSON.stringify({ ok: true, url: typeof url === "string" ? url : "", ...(inviteId ? { invite_id: inviteId } : {}) })}\n`,
+  );
 }
 
 try {

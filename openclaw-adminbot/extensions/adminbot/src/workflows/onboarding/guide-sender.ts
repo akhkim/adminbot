@@ -146,7 +146,8 @@ export type AdminBotOnboardingSenderOptions = {
  */
 export const ADMINBOT_ONBOARDING_CHANNEL_ENV = "ADMINBOT_ONBOARDING_CHANNEL_ID";
 
-function gogEmailSender(env: NodeJS.ProcessEnv) {
+/** The production email sender, exported so a caller can wrap it and still report what it did. */
+export function gogEmailSender(env: NodeJS.ProcessEnv = process.env) {
   const gog = resolveGogExecutable(env);
   return async ({
     to,
@@ -371,7 +372,10 @@ export function createAdminBotOnboardingSender(
         };
       }
       slackLink = invite.url;
-      values.slack_connect_link = invite.url;
+      // Slack invited them either way; only the shareable link is optional. The copy reads
+      // "...stay in touch: {slack_connect_link}", so a missing link becomes the sentence that is
+      // actually true -- the invitation is in their inbox -- rather than a refusal to send.
+      values.slack_connect_link = invite.url || "check your inbox for the Slack invitation";
     }
 
     // Project-channel invites, before the mail rather than after it. Nothing has been sent yet, so

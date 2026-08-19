@@ -606,6 +606,33 @@ describe("onboarding sender", () => {
     ]);
   });
 
+  // Slack answers a successful inviteShared without a url when the address already belongs to a
+  // Slack account. Treating that as failure withheld the email from five people Slack had already
+  // invited, which is the exact inverse of what the invite-then-send ordering is for.
+  it("sends when Slack invites without handing back a shareable link", async () => {
+    const sendEmail = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      inviteToSlackConnect: vi.fn().mockResolvedValue({ url: "" }),
+      sendEmail,
+    });
+
+    const result = await send({
+      template_id: "alumni",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      values: { sender_name: "Zhijing" },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(sendEmail).toHaveBeenCalled();
+    expect(result.payload.body).toContain("check your inbox for the Slack invitation");
+    expect(result.payload.body).not.toMatch(/\{[a-z_]+\}/u);
+  });
+
   // not_in_channel is the everyday case: a bot can only invite into a channel it is in. It used to
   // escape as an exception and end the batch on whichever recipient hit it first.
   it("refuses one send, rather than throwing, when the onboarding-channel invite fails", async () => {
