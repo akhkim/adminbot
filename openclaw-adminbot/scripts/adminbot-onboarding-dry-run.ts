@@ -173,11 +173,36 @@ async function preflight(plan: readonly PlannedSend[]): Promise<boolean> {
     }
   }
   const account = process.env.GOG_ACCOUNT?.trim();
-  console.log(
-    account
-      ? `  ok    GOG_ACCOUNT=${account}`
-      : "  note  GOG_ACCOUNT unset — gog sends from its own default account",
-  );
+  if (account) {
+    pass(`GOG_ACCOUNT=${account}`);
+    // The binary running proves nothing about its OAuth, which is the failure that actually
+    // happens: tokens expire and get revoked, and the first thing to notice used to be a batch
+    // dying on its first send. Same read-only call the service's own start gate makes.
+    try {
+      await execFile(
+        gog,
+        ["gmail", "labels", "list", "--account", account, "--json", "--no-input"],
+        {
+          timeout: 60_000,
+        },
+      );
+      pass("gmail labels list — the token is live");
+    } catch (error) {
+      // gog reports the OAuth failure on stderr; the Error message alone is just "command failed",
+      // which is the difference between a diagnosis and a shrug.
+      const stderr = (error as { stderr?: string })?.stderr ?? "";
+      const detail = `${error instanceof Error ? error.message : String(error)}\n${stderr}`;
+      fail(
+        detail.includes("invalid_grant") || detail.includes("expired or revoked")
+          ? "the gog token is expired or revoked — run: scripts/aurora-adminbot-host.sh --user akim auth-gog"
+          : `gog could not reach Gmail: ${(stderr.trim() || detail).split("\n").at(-1)}`,
+      );
+    }
+  } else {
+    console.log(
+      "  note  GOG_ACCOUNT unset — gog sends from its own default account, unverifiable here",
+    );
+  }
   console.log("");
 
   console.log("Slack Connect");
