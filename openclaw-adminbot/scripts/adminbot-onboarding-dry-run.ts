@@ -99,10 +99,16 @@ async function preflight(plan: readonly PlannedSend[]): Promise<boolean> {
   console.log("Slack Connect");
   const tsxBin = path.join(REPO_ROOT, "node_modules", ".bin", "tsx");
   const inviteScript = path.join(REPO_ROOT, "scripts", "adminbot-slack-connect-invite.ts");
-  existsSync(tsxBin)
-    ? pass(`${tsxBin}`)
-    : fail(`${tsxBin} is missing — the invite is spawned through it`);
-  existsSync(inviteScript) ? pass(`${inviteScript}`) : fail(`${inviteScript} is missing`);
+  if (existsSync(tsxBin)) {
+    pass(tsxBin);
+  } else {
+    fail(`${tsxBin} is missing — the invite is spawned through it`);
+  }
+  if (existsSync(inviteScript)) {
+    pass(inviteScript);
+  } else {
+    fail(`${inviteScript} is missing`);
+  }
   const channelId = process.env.ADMINBOT_ONBOARDING_CHANNEL_ID?.trim();
   if (!channelId) {
     fail("ADMINBOT_ONBOARDING_CHANNEL_ID is unset — invites have no channel to go to");
@@ -121,20 +127,24 @@ async function preflight(plan: readonly PlannedSend[]): Promise<boolean> {
         user?: string;
         error?: string;
       };
-      auth?.ok
-        ? pass(`auth.test — bot ${auth.user} in ${auth.team}`)
-        : fail(`auth.test refused: ${auth?.error ?? "unknown error"}`);
+      if (auth?.ok) {
+        pass(`auth.test — bot ${auth.user} in ${auth.team}`);
+      } else {
+        fail(`auth.test refused: ${auth?.error ?? "unknown error"}`);
+      }
       if (channelId && auth?.ok) {
         const info = (await client.apiCall("conversations.info", { channel: channelId })) as {
           ok?: boolean;
           channel?: { name?: string; is_member?: boolean };
           error?: string;
         };
-        info?.ok
-          ? pass(
-              `conversations.info — #${info.channel?.name} (bot is ${info.channel?.is_member ? "a member" : "NOT a member"})`,
-            )
-          : fail(`conversations.info on ${channelId} refused: ${info?.error ?? "unknown error"}`);
+        if (info?.ok) {
+          pass(
+            `conversations.info — #${info.channel?.name} (bot is ${info.channel?.is_member ? "a member" : "NOT a member"})`,
+          );
+        } else {
+          fail(`conversations.info on ${channelId} refused: ${info?.error ?? "unknown error"}`);
+        }
       }
     }
   } catch (error) {
