@@ -41,9 +41,8 @@ import {
   availabilityRows,
   milestoneRows,
   timeOffRows,
-  todayIso,
-  tripOnDay,
   tripRows,
+  whereBins,
   type AvailabilityRow,
   type MilestoneRow,
   type TimeOffRow,
@@ -63,7 +62,11 @@ import {
   timezoneSuggestions,
 } from "../data/timezones.ts";
 import { renderMemberSelect } from "./member-select.ts";
-import { renderTrips, type TripDraft } from "./time-availability.trips.ts";
+import {
+  renderTrips,
+  renderWhereStrip,
+  type TripDraft,
+} from "./time-availability.trips.ts";
 import {
   renderTimeAllocationChart,
   type TimeAllocationInterval,
@@ -1716,9 +1719,13 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const storedTimeOff = selectedMember ? timeOffRows(selectedMember.time_off) : [];
   const storedMilestones = selectedMember ? milestoneRows(selectedMember.milestones) : [];
   const storedTrips = tripRows(selectedMember?.trips);
-  // Shown on the chart rather than in the trips editor below it: this is the one fact about a
-  // member's trips that changes how you read the chart, and it belongs where the reader already is.
-  const currentTrip = tripOnDay(storedTrips, todayIso());
+  // Built from the same bins the bars use, so "where you are" and "what you are committed to" are
+  // divided into the same periods and cannot drift apart when the range switch changes.
+  const whereStrip = whereBins(
+    rangeBins(props.range, Date.now()),
+    storedTrips,
+    selectedMember?.current_city?.trim() || selectedMember?.location?.trim() || null,
+  );
   const storedNotes = String(selectedMember?.availability_notes ?? "");
   const tasks = selectedMember ? jinesisTasks(selectedMember) : [];
   // The chart shows both; the Jinesis table below it shows only `tasks`, because the two lists are
@@ -1771,28 +1778,13 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                     <div class="card-title">${selectedMember.name}</div>
                     <div class="card-sub">${t("adminbotTimeAvailability.chartSubtitle")}</div>
                   </div>
-                  <div class="adminbot-time-availability__report-pills">
-                    ${currentTrip
-                      ? html`<span
-                          class="pill"
-                          data-testid="time-availability-current-trip"
-                          title=${t("adminbotTimeAvailability.trips.currentPillTitle", {
-                            city: currentTrip.city,
-                            range: `${currentTrip.start} – ${currentTrip.end}`,
-                          })}
-                          >${t("adminbotTimeAvailability.trips.currentPill", {
-                            city: currentTrip.city,
-                          })}</span
-                        >`
-                      : nothing}
-                    ${capacity
-                      ? html`<span class="pill">
-                          ${t("adminbotTimeAvailability.capacity", {
-                            hours: formatNumber(capacity),
-                          })}
-                        </span>`
-                      : nothing}
-                  </div>
+                  ${capacity
+                    ? html`<span class="pill">
+                        ${t("adminbotTimeAvailability.capacity", {
+                          hours: formatNumber(capacity),
+                        })}
+                      </span>`
+                    : nothing}
                 </div>
                 ${!capacity && chartSeries.length
                   ? html`<div class="callout warning" data-testid="time-availability-no-capacity">
@@ -1807,6 +1799,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                         selectedMember.id,
                         chartInterval(props.range),
                       )}
+                      ${renderWhereStrip(whereStrip)}
                     </div>`
                   : html`<div class="adminbot-time-availability__empty">
                       ${t("adminbotTimeAvailability.noAllocations")}

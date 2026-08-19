@@ -1078,40 +1078,58 @@ describe("the trips editor's place on the tab", () => {
   });
 });
 
-describe("the current-trip pill on the chart", () => {
+describe("the where-strip under the chart", () => {
   const berlin = { start: "2026-09-01", end: "2026-09-30", city: "Berlin" };
 
-  // The tab reads today's date itself, so the clock has to be driven rather than the date passed
-  // in: "which trip is running" is a question about now, and a test that only passes in September
-  // is not a test.
+  // The strip reads today's date through rangeBins, so the clock has to be driven: "which period
+  // am I where" is a question about now, and a test that only passes in September is not a test.
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  function renderOn(day: string, trips = [berlin]): HTMLElement {
+  function renderOn(
+    day: string,
+    overrides: Partial<AdminBotLabMember> = { trips: [berlin] },
+  ): HTMLElement {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(`${day}T12:00:00Z`));
-    return renderView({ members: [member({ id: "m1", trips })] });
+    return renderView({
+      range: "year",
+      members: [member({ id: "m1", location: "Toronto", ...overrides })],
+    });
   }
 
-  it("names where the member is now, beside the chart title", () => {
+  it("names a city per period, at the granularity the range switch chose", () => {
+    const cells = [
+      ...renderOn("2026-09-15").querySelectorAll(".adminbot-where-strip__cell"),
+    ].map((cell) => cell.textContent?.replace(/\s+/gu, " ").trim());
+    // "year" is twelve monthly bins, anchored to the start of this month.
+    expect(cells).toHaveLength(12);
+    expect(cells[0]).toContain("Berlin");
+    // Once the trip is over, the strip falls back to where they live.
+    expect(cells[1]).toContain("Toronto");
+  });
+
+  it("marks a period the trip only partly covers", () => {
+    const view = renderOn("2026-09-15", {
+      trips: [{ start: "2026-09-20", end: "2026-09-24", city: "Vancouver" }],
+    });
+    const first = view.querySelector(".adminbot-where-strip__cell");
+    expect(first?.textContent).toContain("Vancouver*");
+    expect(first?.getAttribute("title")).toContain("part of the period");
+  });
+
+  // Away is what the strip is for; a wall of the member's own city would bury it.
+  it("distinguishes away periods from home ones", () => {
     const view = renderOn("2026-09-15");
-    const pill = view.querySelector('[data-testid="time-availability-current-trip"]');
-    expect(pill?.textContent).toContain("In Berlin");
-    // The dates are in the tooltip: the pill answers "where", and the list below answers "when".
-    expect(pill?.getAttribute("title")).toContain("2026-09-01 – 2026-09-30");
-    expect(view.querySelector(".adminbot-time-availability__report-pills")).not.toBeNull();
+    expect(view.querySelectorAll(".adminbot-where-strip__cell--away")).toHaveLength(1);
   });
 
-  it("shows no pill when the member is home", () => {
+  it("draws no strip at all for a member who is home the whole horizon", () => {
     expect(
-      renderOn("2026-10-15").querySelector('[data-testid="time-availability-current-trip"]'),
-    ).toBeNull();
-  });
-
-  it("shows no pill for a member with no trips at all", () => {
-    expect(
-      renderView().querySelector('[data-testid="time-availability-current-trip"]'),
+      renderOn("2026-09-15", { trips: [] }).querySelector(
+        '[data-testid="time-availability-where-strip"]',
+      ),
     ).toBeNull();
   });
 });

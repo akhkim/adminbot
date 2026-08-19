@@ -1,0 +1,101 @@
+import { describe, expect, it } from "vitest";
+import { tripOnDay, tripRows, whereBins, type TripRow } from "./availability.ts";
+
+const DAY_MS = 86_400_000;
+
+function monthBins(): Array<{ startMs: number; endMs: number; label: string }> {
+  return [
+    { startMs: Date.UTC(2026, 8, 1), endMs: Date.UTC(2026, 9, 1), label: "Sep" },
+    { startMs: Date.UTC(2026, 9, 1), endMs: Date.UTC(2026, 10, 1), label: "Oct" },
+  ];
+}
+
+const BERLIN: TripRow = { start: "2026-09-01", end: "2026-09-30", city: "Berlin" };
+
+describe("whereBins", () => {
+  it("names the trip for periods it covers and home for the rest", () => {
+    expect(whereBins(monthBins(), [BERLIN], "Toronto")).toEqual([
+      { label: "Sep", city: "Berlin", away: true, partial: false },
+      { label: "Oct", city: "Toronto", away: false, partial: false },
+    ]);
+  });
+
+  // Attributing a whole month to a three-day conference is the kind of lie that is hard to notice.
+  it("flags a period the trip only partly covers", () => {
+    const short: TripRow = { start: "2026-09-10", end: "2026-09-12", city: "Vancouver" };
+    expect(whereBins(monthBins(), [short], "Toronto")[0]).toEqual({
+      label: "Sep",
+      city: "Vancouver",
+      away: true,
+      partial: true,
+    });
+  });
+
+  it("gives a period to whichever trip covers most of it", () => {
+    const trips: TripRow[] = [
+      { start: "2026-09-01", end: "2026-09-05", city: "Vancouver" },
+      { start: "2026-09-06", end: "2026-09-30", city: "Berlin" },
+    ];
+    expect(whereBins(monthBins(), trips, "Toronto")[0]?.city).toBe("Berlin");
+  });
+
+  // A trip ending on the 30th includes the 30th; an exclusive end would drop the last day and, for
+  // a one-day trip, the whole thing.
+  it("counts the end date as part of the trip", () => {
+    const lastDay: TripRow = { start: "2026-09-30", end: "2026-09-30", city: "Vancouver" };
+    expect(whereBins(monthBins(), [lastDay], "Toronto")[0]?.away).toBe(true);
+  });
+
+  it("carries an empty city rather than inventing one when home is unknown", () => {
+    expect(whereBins(monthBins(), [], null)).toEqual([
+      { label: "Sep", city: "", away: false, partial: false },
+      { label: "Oct", city: "", away: false, partial: false },
+    ]);
+  });
+
+  it("ignores a row with unparseable dates instead of throwing", () => {
+    const broken = { start: "soon", end: "later", city: "Nowhere" } as TripRow;
+    expect(whereBins(monthBins(), [broken], "Toronto")[0]?.city).toBe("Toronto");
+  });
+
+  it("handles a daily binning, which is what the week range asks for", () => {
+    const start = Date.UTC(2026, 8, 14);
+    const daily = Array.from({ length: 3 }, (_, index) => ({
+      startMs: start + index * DAY_MS,
+      endMs: start + (index + 1) * DAY_MS,
+      label: `d${index}`,
+    }));
+    const trip: TripRow = { start: "2026-09-15", end: "2026-09-15", city: "Berlin" };
+    expect(whereBins(daily, [trip], "Toronto").map((bin) => bin.city)).toEqual([
+      "Toronto",
+      "Berlin",
+      "Toronto",
+    ]);
+  });
+});
+
+describe("tripRows", () => {
+  it("drops a row with no city, which is time off rather than a trip", () => {
+    expect(tripRows([{ start: "2026-09-01", end: "2026-09-30" }])).toEqual([]);
+    expect(tripRows([{ start: "2026-09-01", end: "2026-09-30", city: " " }])).toEqual([]);
+  });
+
+  it("keeps the optional fields it is given and nothing else", () => {
+    expect(
+      tripRows([{ start: "2026-09-01", end: "2026-09-30", city: "Berlin", nonsense: 1 }]),
+    ).toEqual([{ start: "2026-09-01", end: "2026-09-30", city: "Berlin" }]);
+  });
+
+  it("is empty for anything that is not a list", () => {
+    expect(tripRows(undefined)).toEqual([]);
+    expect(tripRows("Berlin")).toEqual([]);
+  });
+});
+
+describe("tripOnDay", () => {
+  it("finds the trip covering a day, inclusive of both ends", () => {
+    expect(tripOnDay([BERLIN], "2026-09-01")?.city).toBe("Berlin");
+    expect(tripOnDay([BERLIN], "2026-09-30")?.city).toBe("Berlin");
+    expect(tripOnDay([BERLIN], "2026-10-01")).toBeUndefined();
+  });
+});

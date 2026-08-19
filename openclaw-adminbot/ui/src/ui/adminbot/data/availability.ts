@@ -175,6 +175,60 @@ export function tripRows(value: unknown): TripRow[] {
   });
 }
 
+/** One period of the chart's x axis, and where the member is for it. */
+export type WhereBin = {
+  label: string;
+  /** The place, which is a trip's city when one covers the period and home otherwise. */
+  city: string;
+  /** False means "home", which the strip draws quietly so trips are what stands out. */
+  away: boolean;
+  /** True when the trip covers only part of the period — a week away inside a monthly bar. */
+  partial: boolean;
+};
+
+/**
+ * Where a member is over each period of the chart, at whatever granularity the range switch chose.
+ *
+ * Takes the bins rather than computing them so this stays a pure function of the same division of
+ * time the bars already use: the strip has to say "where you are" for exactly the periods the chart
+ * says "what you are committed to" for, and two independent binnings would eventually disagree.
+ *
+ * A period is attributed to the trip covering the most of it, and flagged `partial` when that trip
+ * does not cover the whole period. Attributing a month to a three-day conference would be a lie of
+ * the kind that is hard to notice; saying "mostly Berlin" and marking it partial is not.
+ */
+export function whereBins(
+  bins: readonly { startMs: number; endMs: number; label: string }[],
+  trips: readonly TripRow[],
+  home: string | null,
+): WhereBin[] {
+  const dayMs = 86_400_000;
+  return bins.map((bin) => {
+    let best: { trip: TripRow; days: number } | undefined;
+    for (const trip of trips) {
+      const start = Date.parse(`${trip.start}T00:00:00Z`);
+      // Inclusive of the end date: a trip ending on the 30th includes the 30th.
+      const end = Date.parse(`${trip.end}T00:00:00Z`) + dayMs;
+      if (!Number.isFinite(start) || !Number.isFinite(end)) {
+        continue;
+      }
+      const overlap = Math.min(end, bin.endMs) - Math.max(start, bin.startMs);
+      if (overlap > 0 && (!best || overlap > best.days)) {
+        best = { trip, days: overlap };
+      }
+    }
+    if (!best) {
+      return { label: bin.label, city: home ?? "", away: false, partial: false };
+    }
+    return {
+      label: bin.label,
+      city: best.trip.city,
+      away: true,
+      partial: best.days < bin.endMs - bin.startMs,
+    };
+  });
+}
+
 /** The trip covering a day, if any. Last match wins, matching the service's own rule. */
 export function tripOnDay(trips: readonly TripRow[], dayIso: string): TripRow | undefined {
   return trips.findLast((row) => row.start <= dayIso && row.end >= dayIso);

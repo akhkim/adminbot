@@ -73,13 +73,45 @@
   text-decoration: underline;
 }
 
-/* The pills beside the chart title. Wrapping rather than shrinking, because a long city name and
-   a capacity figure on one line is what pushes the chart title into two. */
-.adminbot-time-availability__report-pills {
+/* The where-strip under the chart: one cell per bar, so it divides the horizon the same way the
+   chart does. Equal-width columns rather than time-proportional ones, matching the chart's own
+   axis, which reads as "next, and next after that" rather than as elapsed time. */
+.adminbot-where-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  margin-top: var(--space-2);
+}
+
+.adminbot-where-strip__cell {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: var(--space-2);
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: var(--space-1) 2px;
+  border-top: 2px solid transparent;
+  font-size: 0.72em;
+  text-align: center;
+}
+
+/* Away is what the strip is for; home periods stay quiet so the trips are what the eye finds. */
+.adminbot-where-strip__cell--away {
+  border-top-color: currentColor;
+}
+
+.adminbot-where-strip__cell:not(.adminbot-where-strip__cell--away) .adminbot-where-strip__city {
+  opacity: 0.45;
+}
+
+.adminbot-where-strip__label {
+  opacity: 0.6;
+}
+
+.adminbot-where-strip__city {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Deliberately quiet: the grid's job is the calendar, and this is context beside it. */

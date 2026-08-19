@@ -16,7 +16,7 @@
 // That case is what kept producing 10am invites that land at 4pm.
 import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
-import { todayIso, type TripRow } from "../data/availability.ts";
+import { todayIso, type TripRow, type WhereBin } from "../data/availability.ts";
 import { timezoneForLocation } from "../data/timezone-for-location.ts";
 import { TIMEZONE_LIST_ID, timezoneSuggestions } from "../data/timezones.ts";
 
@@ -224,5 +224,44 @@ export function renderTrips(props: TripsProps) {
           `
         : nothing}
     </section>
+  `;
+}
+
+/**
+ * The where-strip that runs under the chart: one cell per period, saying where the member is.
+ *
+ * Under the chart rather than in the trips box because it is the same question the bars answer,
+ * asked about place instead of effort — and because it has to follow the range switch. At "week"
+ * that is a city per day, at "month" per week, at "year" per month, which is the granularity the
+ * reader just chose for everything else on the screen.
+ *
+ * Home periods are drawn quietly. The strip would otherwise be a wall of the member's own city
+ * with the interesting weeks hidden inside it, and where somebody lives is already on their
+ * profile — what this is for is the weeks when they are somewhere else.
+ */
+export function renderWhereStrip(bins: readonly WhereBin[]) {
+  if (bins.every((bin) => !bin.away)) {
+    return nothing;
+  }
+  return html`
+    <div class="adminbot-where-strip" data-testid="time-availability-where-strip">
+      ${bins.map(
+        (bin) => html`
+          <div
+            class="adminbot-where-strip__cell ${bin.away
+              ? "adminbot-where-strip__cell--away"
+              : ""}"
+            title=${bin.city
+              ? `${bin.label}: ${bin.city}${bin.partial ? " (part of the period)" : ""}`
+              : bin.label}
+          >
+            <span class="adminbot-where-strip__label">${bin.label}</span>
+            <span class="adminbot-where-strip__city"
+              >${bin.city}${bin.partial ? "*" : ""}</span
+            >
+          </div>
+        `,
+      )}
+    </div>
   `;
 }

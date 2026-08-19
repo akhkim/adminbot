@@ -1462,8 +1462,6 @@ export const en: TranslationMap = {
       note: "Note (optional)",
       submit: "Add trip",
       remove: "Remove",
-      currentPill: "In {city}",
-      currentPillTitle: "Logged trip: {city}, {range}",
       home: "Home is {location}.",
       empty: "No trips logged.",
       errorCity: "Where are you going?",
