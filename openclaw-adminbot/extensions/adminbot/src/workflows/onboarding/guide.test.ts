@@ -606,6 +606,32 @@ describe("onboarding sender", () => {
     ]);
   });
 
+  // not_in_channel is the everyday case: a bot can only invite into a channel it is in. It used to
+  // escape as an exception and end the batch on whichever recipient hit it first.
+  it("refuses one send, rather than throwing, when the onboarding-channel invite fails", async () => {
+    const sendEmail = vi.fn();
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      inviteToSlackConnect: vi.fn().mockRejectedValue(new Error("An API error occurred: not_in_channel")),
+      sendEmail,
+    });
+
+    const result = await send({
+      template_id: "alumni",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      values: { sender_name: "Zhijing" },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.status).toBe(502);
+    expect(result.error.message).toContain("not_in_channel");
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
   it("does not send when a project-channel invite fails", async () => {
     const sendEmail = vi.fn();
     const send = createAdminBotOnboardingSender({
