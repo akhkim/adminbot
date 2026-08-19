@@ -9668,8 +9668,10 @@ details[open] > .ov-expandable-toggle::after {
    was moved here to get. They wrap rather than scroll -- the count varies with how many deadlines
    a member has entered, and a row that scrolls hides the later ones behind a clipped edge with
    nothing to say they are there. */
+/* 21rem, not 15: the widest thing a tile has to hold is a venue name beside a full AoE cutoff
+   ("23:59 Anywhere on Earth (UTC-12)"), and at 15rem that was clipped at the tile's own border. */
 .adminbot-time-availability__deadlines .adminbot-time-availability__deadline-list {
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr));
   gap: var(--space-3);
 }
 
@@ -9693,21 +9695,44 @@ details[open] > .ov-expandable-toggle::after {
 /* One tile per deadline: how long is left, what it is, when it falls. As a run of text on one
    line the dates ran together and nothing said which was close -- the whole reason to put this
    above a timeline is to answer "how much room do I have before the next one". */
+/* Three stacked rows -- countdown and actions, the name, the date -- rather than placing each span
+   into a two-column grid by hand. The old placement pinned the link and the remove button to the
+   same cell, so they drew on top of each other. */
 .adminbot-time-availability__deadline-list li {
   display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: baseline;
-  gap: 2px var(--space-2);
+  gap: var(--space-2);
   padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg);
 }
 
+.adminbot-time-availability__deadline-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.adminbot-time-availability__deadline-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+/* The date and its cutoff are one fact; they sit together and wrap together rather than each
+   holding its own line at any width. */
+.adminbot-time-availability__deadline-when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+}
+
 /* The countdown carries the urgency color the Deadlines board and the dashboard summary already
    use, so "critical" means the same red on all three. */
 .adminbot-time-availability__deadline-away {
-  grid-column: 1;
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -9716,7 +9741,6 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-time-availability__deadline-label {
-  grid-column: 1 / -1;
   min-width: 0;
   font-weight: 600;
   line-height: 1.3;
@@ -9724,7 +9748,6 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-time-availability__deadline-date {
-  grid-column: 1;
   font-size: var(--control-ui-text-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
@@ -9734,16 +9757,23 @@ details[open] > .ov-expandable-toggle::after {
 /* The exact cutoff, next to the date it falls on. Muted like the date because the two are one
    fact split across two spans, and tabular so a column of them lines up. */
 .adminbot-time-availability__deadline-clock {
-  grid-column: 2;
   font-size: var(--control-ui-text-xs);
   font-variant-numeric: tabular-nums;
-  white-space: nowrap;
+  /* Was nowrap, which is what cut "Anywhere on Earth (UTC-12)" off at the tile border. It may wrap;
+     the tile grows a line instead of hiding the zone the cutoff is stated in. */
   color: var(--muted);
 }
 
 /* The conference picker sits under the list, not in it: it adds a row rather than being one. */
 /* The conference picker is one of the tab's "Add ..." editors and takes its section, title, hint,
    form grid and submit from those rules; only the select's own width is specific to it. */
+/* The picker's one field takes the whole row. In a shared auto-fit grid it landed in a 160px
+   column, which cut "ICLR 2027 · 09/19/2026" down to "ICLR 2027 · 09/" -- the date being the half
+   that tells two deadlines of the same venue apart. */
+.adminbot-time-availability__deadline-form .adminbot-form__field {
+  grid-column: 1 / -1;
+}
+
 .adminbot-time-availability__deadline-form select {
   width: 100%;
   min-width: 0;
@@ -9761,11 +9791,8 @@ details[open] > .ov-expandable-toggle::after {
   background: color-mix(in srgb, var(--bg-accent) 40%, var(--bg));
 }
 
-.adminbot-time-availability__deadline-list li .btn,
-.adminbot-time-availability__deadline-list li a {
-  grid-column: 2;
-  grid-row: 1;
-  align-self: center;
+.adminbot-time-availability__deadline-list li .btn {
+  flex: 0 0 auto;
 }
 
 .adminbot-time-availability__milestone-form {

@@ -77,6 +77,7 @@
    chart does. Equal-width columns rather than time-proportional ones, matching the chart's own
    axis, which reads as "next, and next after that" rather than as elapsed time. */
 .adminbot-where-strip {
+  position: relative;
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
@@ -85,6 +86,7 @@
 }
 
 .adminbot-where-strip__cell {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -121,10 +123,56 @@
   font-size: 0.9em;
 }
 
-/* The cursor is the only affordance a native tooltip gives, and without it nobody discovers that
-   the cells carry the dated breakdown. */
-.adminbot-where-strip__cell {
-  cursor: help;
+/* The breakdown, revealed on hover and on keyboard focus. A native title gave a help cursor and
+   then often nothing -- slow, suppressed while the pointer moves, and unreachable by keyboard --
+   so the "+2" pointed at content that could not reliably be read. */
+.adminbot-where-strip__detail {
+  position: absolute;
+  bottom: calc(100% + var(--space-1));
+  left: 50%;
+  z-index: 5;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  min-width: max-content;
+  max-width: 18rem;
+  padding: var(--space-2) var(--space-3);
+  transform: translateX(-50%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated, var(--bg));
+  box-shadow: var(--shadow-md, 0 4px 16px rgb(0 0 0 / 35%));
+  font-size: var(--control-ui-text-xs);
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+}
+
+.adminbot-where-strip__cell:hover .adminbot-where-strip__detail,
+.adminbot-where-strip__cell:focus-visible .adminbot-where-strip__detail,
+.adminbot-where-strip__cell:focus .adminbot-where-strip__detail {
+  display: flex;
+}
+
+.adminbot-where-strip__detail-title {
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.adminbot-where-strip__detail-row {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
+.adminbot-where-strip__detail-range {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+/* Focusable so the breakdown is reachable without a pointer; the outline is the browser's. */
+.adminbot-where-strip__cell:focus-visible {
+  border-radius: var(--radius-sm);
 }
 
 /* Deliberately quiet: the grid's job is the calendar, and this is context beside it. */

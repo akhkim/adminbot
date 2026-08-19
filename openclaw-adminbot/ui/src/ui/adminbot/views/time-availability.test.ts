@@ -1110,26 +1110,40 @@ describe("the where-strip under the chart", () => {
     expect(cells[1]).toContain("Toronto");
   });
 
-  // The whole point of the hover: a period that is not all one place says which stretch was where,
-  // rather than an asterisk the reader has to interpret.
-  it("spells out from when to when, in which city, on hover", () => {
+  // The whole point: a period that is not all one place says which stretch was where, in a real
+  // element rather than a native title that a pointer often never triggers.
+  it("spells out from when to when, in which city", () => {
     const view = renderOn("2026-09-15", {
       trips: [{ start: "2026-09-20", end: "2026-09-24", city: "Vancouver" }],
     });
     const first = view.querySelector(".adminbot-where-strip__cell");
-    const title = first?.getAttribute("title") ?? "";
-    expect(title).toContain("Sep 1 – Sep 19: Toronto");
-    expect(title).toContain("Sep 20 – Sep 24: Vancouver");
-    expect(title).toContain("Sep 25 – Sep 30: Toronto");
+    const rows = [...(first?.querySelectorAll(".adminbot-where-strip__detail-row") ?? [])].map(
+      (row) => row.textContent?.replace(/\s+/gu, " ").trim(),
+    );
+    expect(rows).toEqual([
+      "Sep 1 – Sep 19 Toronto",
+      "Sep 20 – Sep 24 Vancouver",
+      "Sep 25 – Sep 30 Toronto",
+    ]);
     // The cell itself names the place most of the period is spent, plus how much it is not saying.
     expect(first?.textContent).toContain("Toronto");
     expect(first?.textContent).toContain("+2");
   });
 
-  it("gives a single-place period a plain hover and no count", () => {
-    const view = renderOn("2026-09-15");
-    const first = view.querySelector(".adminbot-where-strip__cell");
-    expect(first?.getAttribute("title")).toBe("Sep: Berlin");
+  // The breakdown is what the "+2" points at, so it has to be reachable without a pointer.
+  it("puts the breakdown in the tab order and marks it as a tooltip", () => {
+    const first = renderOn("2026-09-15").querySelector(".adminbot-where-strip__cell");
+    expect(first?.getAttribute("tabindex")).toBe("0");
+    expect(first?.querySelector('[role="tooltip"]')).not.toBeNull();
+    // No native title: it is what gave a help cursor and then nothing.
+    expect(first?.hasAttribute("title")).toBe(false);
+  });
+
+  it("still names the place for a period spent in one city, without a count", () => {
+    const first = renderOn("2026-09-15").querySelector(".adminbot-where-strip__cell");
+    expect(
+      first?.querySelector(".adminbot-where-strip__detail")?.textContent?.replace(/\s+/gu, " "),
+    ).toContain("Berlin");
     expect(first?.querySelector(".adminbot-where-strip__more")).toBeNull();
   });
 
@@ -1221,6 +1235,24 @@ describe("the big-deadlines panel", () => {
       ),
     ].map((option) => option.value);
     expect(offered).toContain(nearest?.venue.id);
+  });
+
+  // The bug this pins: the link and the remove button were both placed in the same grid cell, so
+  // they drew on top of each other, and the AoE cutoff was held on one line inside a narrow tile
+  // and clipped at its border.
+  it("gives each part of a deadline tile its own place", () => {
+    const tile = renderView({ members: [scheduled()] }).querySelector(
+      ".adminbot-time-availability__deadline-list li",
+    );
+    const actions = tile?.querySelector(".adminbot-time-availability__deadline-actions");
+    // The link and the button are siblings in the actions row, not two things in one cell.
+    expect(actions?.querySelector("a")).not.toBeNull();
+    expect(actions?.querySelector("button")).not.toBeNull();
+    // The date and its cutoff sit together, below the name.
+    const when = tile?.querySelector(".adminbot-time-availability__deadline-when");
+    expect(when?.querySelector(".adminbot-time-availability__deadline-date")).not.toBeNull();
+    expect(when?.querySelector(".adminbot-time-availability__deadline-clock")).not.toBeNull();
+    expect(tile?.querySelector(".adminbot-time-availability__deadline-label")).not.toBeNull();
   });
 
   it("keeps the hide button off a schedule the viewer cannot edit", () => {

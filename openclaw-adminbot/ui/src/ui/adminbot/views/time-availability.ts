@@ -1520,19 +1520,22 @@ function renderBigDeadlines(
         ${rows.map(
           (row) => html`
             <li data-own=${String(row.own)} data-urgency=${urgencyOf(row.instant, now)}>
-              <span class="adminbot-time-availability__deadline-away">
-                ${daysAwayLabel(row.date, now)}
-              </span>
-              <span class="adminbot-time-availability__deadline-label">${row.label}</span>
-              <span class="adminbot-time-availability__deadline-date">
-                ${tableDate(row.date)}
-              </span>
-              ${clockLabel(row.time, row.timezone)} ${renderLink(row.link)}
-              <!-- Both kinds of row can go. A member's own row is deleted; one of the lab's four
-                   is *hidden for this member*, since the snapshot is shared and nobody's panel
-                   should be able to edit everyone else's. Re-adding it from the picker below
-                   brings it back as their own row. -->
-              ${editable
+              <!-- Three explicit rows rather than grid placement per span. The link and the remove
+                   button were both pinned to the same cell, so they drew on top of each other, and
+                   the AoE clock was held on one line inside a 15rem tile, so it was cut off at the
+                   border. Countdown and actions share the top row; the name and the date each get
+                   their own and may wrap. -->
+              <div class="adminbot-time-availability__deadline-top">
+                <span class="adminbot-time-availability__deadline-away">
+                  ${daysAwayLabel(row.date, now)}
+                </span>
+                <span class="adminbot-time-availability__deadline-actions">
+                  ${renderLink(row.link)}
+                  <!-- Both kinds of row can go. A member's own row is deleted; one of the lab's
+                       four is hidden for this member only, since the snapshot is shared and
+                       nobody's panel should edit everyone else's. Re-adding it from the picker
+                       below brings it back as their own row. -->
+                  ${editable
                 ? html`<button
                     type="button"
                     class="btn btn--sm"
@@ -1557,6 +1560,15 @@ function renderBigDeadlines(
                       : t("adminbotTimeAvailability.milestones.removePreset")}
                   </button>`
                 : nothing}
+                </span>
+              </div>
+              <span class="adminbot-time-availability__deadline-label">${row.label}</span>
+              <div class="adminbot-time-availability__deadline-when">
+                <span class="adminbot-time-availability__deadline-date">
+                  ${tableDate(row.date)}
+                </span>
+                ${clockLabel(row.time, row.timezone)}
+              </div>
             </li>
           `,
         )}
