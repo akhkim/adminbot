@@ -121,6 +121,28 @@ describe("composeOnboardingGuide", () => {
     expect(result.missing).toContain("primary_contact");
   });
 
+  // The alumni mail asked for a portal address the tab hid from the operator and nothing filled,
+  // so every alumni send failed on a value no one could supply. It is deployment config now.
+  it("fills the dashboard address from configuration rather than from the sender", () => {
+    const result = composeOnboardingGuide(
+      "alumni",
+      { first_name: "Ada", sender_name: "Zhijing", slack_connect_link: "https://slack.example" },
+      ENV,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.guide.body).toContain("https://jinesis-admin.vercel.app/");
+
+    const configured = composeOnboardingGuide(
+      "alumni",
+      { first_name: "Ada", sender_name: "Zhijing", slack_connect_link: "https://slack.example" },
+      { ...ENV, ADMINBOT_DASHBOARD_URL: "https://portal.example" },
+    );
+    expect(configured.ok && configured.guide.body).toContain("https://portal.example");
+  });
+
   it("treats whitespace as missing rather than substituting it", () => {
     const template = ADMINBOT_ONBOARDING_TEMPLATES.find((entry) => entry.id === "acquaintance");
     expect(

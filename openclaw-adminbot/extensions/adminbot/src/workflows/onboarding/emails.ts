@@ -136,7 +136,8 @@ Best,
     id: "alumni",
     kind: "subgroup",
     subject: `Keeping in touch`,
-    required: ["dashboard_url", "first_name", "sender_name", "slack_connect_link"],
+    // `dashboard_url` is deployment configuration, not a value the sender types; see guide.ts.
+    required: ["first_name", "sender_name", "slack_connect_link"],
     body: `Hi {first_name},
 
 You may have moved on from the day-to-day, but you are still part of this lab, and we would like to keep it that way.

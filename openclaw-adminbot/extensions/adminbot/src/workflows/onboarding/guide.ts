@@ -39,6 +39,14 @@ const DEFAULTED_DEPLOYMENT_TOKENS = {
     varName: "ADMINBOT_EMAIL_FORMAT_EXAMPLE",
     fallback: "zjin@cs.toronto.edu",
   },
+  // The portal's own address. It was previously declared `required` on the alumni mail and marked
+  // "derived" on the tab, which meant the field was hidden from the operator and filled by nobody:
+  // every alumni send failed the required-values check with a value no one could supply. It is one
+  // address for the whole deployment, so it belongs here with the other configured tokens.
+  dashboard_url: {
+    varName: "ADMINBOT_DASHBOARD_URL",
+    fallback: "https://jinesis-admin.vercel.app/",
+  },
 } as const;
 
 /**
