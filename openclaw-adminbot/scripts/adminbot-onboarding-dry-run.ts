@@ -15,9 +15,15 @@
 //
 // The plan file is a JSON array of sends and stays out of this repo: it carries names and
 // addresses, and this repo is public.
-import { readFileSync } from "node:fs";
+import { execFile as execFileCallback } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { resolveGogExecutable } from "../extensions/adminbot/src/connectors/gog.js";
 import type { AdminBotExternalCollaboratorSubgroup } from "../extensions/adminbot/src/contracts/actions.js";
 import { collaboratorSubgroupAccess } from "../extensions/adminbot/src/workflows/members/collaborator-subgroups.js";
+import { findOnboardingTemplate } from "../extensions/adminbot/src/workflows/onboarding/emails.js";
 import {
   createAdminBotOnboardingSender,
   type AdminBotOnboardingSendRequest,
@@ -31,12 +37,121 @@ type PlannedSend = AdminBotOnboardingSendRequest & {
   note?: string;
 };
 
-function parseArgs(argv: readonly string[]): { plan: string } {
+function parseArgs(argv: readonly string[]): { plan: string; preflight: boolean } {
   const planFlag = argv.indexOf("--plan");
   if (planFlag === -1 || !argv[planFlag + 1]) {
-    throw new Error("usage: adminbot-onboarding-dry-run.ts --plan <plan.json>");
+    throw new Error("usage: adminbot-onboarding-dry-run.ts --plan <plan.json> [--preflight]");
   }
-  return { plan: argv[planFlag + 1] as string };
+  return { plan: argv[planFlag + 1] as string, preflight: argv.includes("--preflight") };
+}
+
+const execFile = promisify(execFileCallback);
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+
+/**
+ * Checks the machinery the batch actually depends on, using read-only calls only.
+ *
+ * Composing proves the copy is sendable; it proves nothing about whether Gmail is still authorized
+ * or the Slack token still works, because the dry run replaces both with recorders. This asks them
+ * directly: `gog --version` for the binary, Slack's own `auth.test`, and `conversations.info` for
+ * the channel invites are minted against. Nothing here writes, sends or invites.
+ */
+async function preflight(plan: readonly PlannedSend[]): Promise<boolean> {
+  let ok = true;
+  const fail = (line: string) => {
+    ok = false;
+    console.log(`  FAIL  ${line}`);
+  };
+  const pass = (line: string) => console.log(`  ok    ${line}`);
+
+  // What each send will actually do is decided by the copy it carries -- the edit if there is one,
+  // the stored template otherwise -- which is the same rule the sender itself applies.
+  const copyOf = (entry: PlannedSend): string =>
+    entry.body_override ?? findOnboardingTemplate(entry.template_id)?.body ?? "";
+  const needsSlack = plan.filter((entry) => copyOf(entry).includes("{slack_connect_link}")).length;
+  const needsDrive = plan.filter((entry) => copyOf(entry).includes("{drive_folder_link}")).length;
+  console.log("Preflight — live dependencies for this batch");
+  console.log(
+    `  ${plan.length} sends: all need Gmail, ${needsSlack} mint a Slack Connect invite, ${needsDrive} create a Drive folder`,
+  );
+  console.log("");
+
+  console.log("Gmail (gog)");
+  const gog = resolveGogExecutable();
+  if (gog !== "gog" && !existsSync(gog)) {
+    fail(`resolved to ${gog}, which does not exist`);
+  } else {
+    try {
+      const { stdout } = await execFile(gog, ["--version"], { timeout: 30_000 });
+      pass(`${gog} — ${stdout.trim().split("\n")[0]}`);
+    } catch (error) {
+      fail(`${gog} would not run: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const account = process.env.GOG_ACCOUNT?.trim();
+  console.log(
+    account
+      ? `  ok    GOG_ACCOUNT=${account}`
+      : "  note  GOG_ACCOUNT unset — gog sends from its own default account",
+  );
+  console.log("");
+
+  console.log("Slack Connect");
+  const tsxBin = path.join(REPO_ROOT, "node_modules", ".bin", "tsx");
+  const inviteScript = path.join(REPO_ROOT, "scripts", "adminbot-slack-connect-invite.ts");
+  existsSync(tsxBin)
+    ? pass(`${tsxBin}`)
+    : fail(`${tsxBin} is missing — the invite is spawned through it`);
+  existsSync(inviteScript) ? pass(`${inviteScript}`) : fail(`${inviteScript} is missing`);
+  const channelId = process.env.ADMINBOT_ONBOARDING_CHANNEL_ID?.trim();
+  if (!channelId) {
+    fail("ADMINBOT_ONBOARDING_CHANNEL_ID is unset — invites have no channel to go to");
+  }
+  try {
+    const { getSlackWriteClient } = await import("../extensions/slack/api.js");
+    const { resolveEmailAutomationSlackAccount } = await import("./adminbot-email-automation.ts");
+    const slack = await resolveEmailAutomationSlackAccount();
+    if (!slack.botToken) {
+      fail("no Slack bot token resolved from the config");
+    } else {
+      const client = getSlackWriteClient(slack.botToken);
+      const auth = (await client.apiCall("auth.test", {})) as {
+        ok?: boolean;
+        team?: string;
+        user?: string;
+        error?: string;
+      };
+      auth?.ok
+        ? pass(`auth.test — bot ${auth.user} in ${auth.team}`)
+        : fail(`auth.test refused: ${auth?.error ?? "unknown error"}`);
+      if (channelId && auth?.ok) {
+        const info = (await client.apiCall("conversations.info", { channel: channelId })) as {
+          ok?: boolean;
+          channel?: { name?: string; is_member?: boolean };
+          error?: string;
+        };
+        info?.ok
+          ? pass(
+              `conversations.info — #${info.channel?.name} (bot is ${info.channel?.is_member ? "a member" : "NOT a member"})`,
+            )
+          : fail(`conversations.info on ${channelId} refused: ${info?.error ?? "unknown error"}`);
+      }
+    }
+  } catch (error) {
+    fail(`Slack check could not run: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  console.log("");
+
+  console.log("Not exercised by this batch");
+  if (needsDrive === 0) {
+    console.log("  - Drive workspace provisioning: no send names a folder");
+  }
+  console.log("  - DCS Slack-access form: only the full-member guide files it");
+  console.log("  - Lab calendar invites: wired to account approval, not to the guide send");
+  console.log("  - Project-channel (#proj-…) membership: no automation; an admin adds people");
+  console.log("  - Roster/spreadsheet rows: the send writes an audit row, not a member record");
+  console.log("");
+  return ok;
 }
 
 // Every ADMINBOT_* token the copy can resolve, so an unset one is reported here rather than
@@ -67,10 +182,14 @@ function reportEnvironment(): void {
 }
 
 async function main(): Promise<void> {
-  const { plan: planPath } = parseArgs(process.argv.slice(2));
+  const { plan: planPath, preflight: wantPreflight } = parseArgs(process.argv.slice(2));
   const plan = JSON.parse(readFileSync(planPath, "utf8")) as PlannedSend[];
 
   reportEnvironment();
+  if (wantPreflight && !(await preflight(plan))) {
+    // Keep going: the composed mail is still worth reading, and the failures above say what to fix.
+    process.exitCode = 1;
+  }
 
   let failures = 0;
   for (const [index, planned] of plan.entries()) {
