@@ -78,6 +78,16 @@ export type AdminBotOnboardingSendRequest = {
    */
   subject_override?: string;
   body_override?: string;
+  /**
+   * Channels to invite the recipient to as well, by name ("#proj-alg-circuit") or by id.
+   *
+   * The onboarding mails tell a collaborator they will be invited to their project channel, and
+   * until this existed nothing made that true: the Connect invite goes to the one configured
+   * onboarding channel, so every project channel was added by hand, or forgotten. Invites are
+   * minted before the mail goes out, and a failure stops the send -- a mail promising an invite
+   * that never arrives is the case this ordering exists to prevent.
+   */
+  slack_project_channels?: readonly string[];
 };
 
 export type AdminBotOnboardingSendResult = {
@@ -91,6 +101,8 @@ export type AdminBotOnboardingSendResult = {
   sent: boolean;
   drive_folder_link?: string;
   slack_connect_link?: string;
+  /** One entry per channel from `slack_project_channels`, in the order they were requested. */
+  project_channel_invites?: { channel: string; url: string }[];
 };
 
 export type AdminBotOnboardingSendFailure = {
@@ -347,6 +359,38 @@ export function createAdminBotOnboardingSender(
       values.slack_connect_link = invite.url;
     }
 
+    // Project-channel invites, before the mail rather than after it. Nothing has been sent yet, so
+    // a channel that does not resolve or a Slack refusal can still stop the whole send; afterwards
+    // it could only be reported, and the recipient would already be holding the promise.
+    const projectChannels = [
+      ...new Set(
+        (request.slack_project_channels ?? []).map((entry) => entry.trim()).filter(Boolean),
+      ),
+    ];
+    const projectInvites: { channel: string; url: string }[] = [];
+    if (projectChannels.length > 0) {
+      if (!options.inviteToSlackConnect) {
+        return {
+          ok: false,
+          error: { status: 501, message: "Slack Connect invites are not configured" },
+        };
+      }
+      for (const channel of projectChannels) {
+        try {
+          const invite = await options.inviteToSlackConnect({ email, channelId: channel });
+          projectInvites.push({ channel, url: invite.url });
+        } catch (error) {
+          return {
+            ok: false,
+            error: {
+              status: 502,
+              message: `could not invite ${email} to ${channel}: ${error instanceof Error ? error.message : String(error)}`,
+            },
+          };
+        }
+      }
+    }
+
     const composed = composeOnboardingGuide(template.id, values, env, overrides);
     if (!composed.ok) {
       return { ok: false, error: composeFailure(composed) };
@@ -401,6 +445,7 @@ export function createAdminBotOnboardingSender(
         sent: true,
         ...(driveLink ? { drive_folder_link: driveLink } : {}),
         ...(slackLink ? { slack_connect_link: slackLink } : {}),
+        ...(projectInvites.length > 0 ? { project_channel_invites: projectInvites } : {}),
         ...(dcsForm ? { dcs_form: dcsForm } : {}),
       },
     };

@@ -81,6 +81,28 @@ describe("renderAdminBotOnboarding", () => {
     expect(container.querySelector('[data-testid="onboarding-send"]')).toBeNull();
   });
 
+  // The copy promises a project-channel invite; this field is what makes the promise true.
+  it("collects the project channels a send should invite them to", () => {
+    const { container, state } = renderView();
+    const field = container.querySelector<HTMLInputElement>(
+      '[data-testid="onboarding-project-channels"]',
+    );
+    field!.value = "#proj-alg-circuit, #proj-causal-tutor";
+    field!.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(state.onboardingProjectChannels).toBe("#proj-alg-circuit, #proj-causal-tutor");
+  });
+
+  it("reports the channels a send invited them to", () => {
+    const { container } = renderView({
+      onboardingResult: {
+        ...PREVIEW,
+        sent: true,
+        project_channel_invites: [{ channel: "#proj-alg-circuit", url: "https://slack.example/x" }],
+      },
+    });
+    expect(container.textContent).toContain("#proj-alg-circuit");
+  });
+
   // A delivered email cannot be recalled, so it stops being a draft the moment it is sent.
   it("renders a sent email as a record rather than a draft", () => {
     const { container } = renderView({

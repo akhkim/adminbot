@@ -574,6 +574,63 @@ describe("onboarding sender", () => {
     expect(sendEmail).toHaveBeenCalled();
   });
 
+  // The coauthor mails promise a project-channel invite; until this existed nothing made that
+  // true, because the Connect invite only ever went to the one configured onboarding channel.
+  it("invites the recipient to each project channel before the mail goes out", async () => {
+    const order: string[] = [];
+    const inviteToSlackConnect = vi.fn(async ({ channelId }: { channelId: string }) => {
+      order.push(`invite:${channelId}`);
+      return { url: `https://slack.example/${channelId}` };
+    });
+    const sendEmail = vi.fn(async () => {
+      order.push("send");
+    });
+    const send = createAdminBotOnboardingSender({ env: ENV, inviteToSlackConnect, sendEmail });
+
+    const result = await send({
+      template_id: "disappearing_coauthor",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      values: { project_or_context: "alg-circuit" },
+      slack_project_channels: ["#proj-alg-circuit", "#proj-alg-circuit", " "],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    // Deduplicated, blanks dropped, and every invite lands before the mail.
+    expect(order).toEqual(["invite:#proj-alg-circuit", "send"]);
+    expect(result.payload.project_channel_invites).toEqual([
+      { channel: "#proj-alg-circuit", url: "https://slack.example/#proj-alg-circuit" },
+    ]);
+  });
+
+  it("does not send when a project-channel invite fails", async () => {
+    const sendEmail = vi.fn();
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      inviteToSlackConnect: vi.fn().mockRejectedValue(new Error("no Slack channel named #proj-typo")),
+      sendEmail,
+    });
+
+    const result = await send({
+      template_id: "disappearing_coauthor",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      values: { project_or_context: "alg-circuit" },
+      slack_project_channels: ["#proj-typo"],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.status).toBe(502);
+    expect(result.error.message).toContain("#proj-typo");
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
   it("derives the first name from the full name", () => {
     expect(firstNameOf("Maria Garcia Lopez")).toBe("Maria");
   });

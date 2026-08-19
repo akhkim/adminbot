@@ -31,6 +31,8 @@ import {
 import { driveWorkspaceFolderName } from "../extensions/adminbot/src/workflows/onboarding/guide.js";
 
 type PlannedSend = AdminBotOnboardingSendRequest & {
+  /** Channels the send invites them to; carried on the request itself. */
+  slack_project_channels?: readonly string[];
   /** The matrix row whose follow-up access this send implies, when the person is external. */
   subgroup?: AdminBotExternalCollaboratorSubgroup;
   /** Free-text reminder of why this send is shaped the way it is; printed, never sent. */
@@ -70,9 +72,13 @@ async function preflight(plan: readonly PlannedSend[]): Promise<boolean> {
     entry.body_override ?? findOnboardingTemplate(entry.template_id)?.body ?? "";
   const needsSlack = plan.filter((entry) => copyOf(entry).includes("{slack_connect_link}")).length;
   const needsDrive = plan.filter((entry) => copyOf(entry).includes("{drive_folder_link}")).length;
+  const projectChannels = [...new Set(plan.flatMap((entry) => entry.slack_project_channels ?? []))];
   console.log("Preflight — live dependencies for this batch");
   console.log(
     `  ${plan.length} sends: all need Gmail, ${needsSlack} mint a Slack Connect invite, ${needsDrive} create a Drive folder`,
+  );
+  console.log(
+    `  project-channel invites: ${projectChannels.length} distinct channel(s) across the batch`,
   );
   console.log("");
 
@@ -132,6 +138,37 @@ async function preflight(plan: readonly PlannedSend[]): Promise<boolean> {
       } else {
         fail(`auth.test refused: ${auth?.error ?? "unknown error"}`);
       }
+      // Every project channel the plan names, resolved the way the invite script resolves it. A
+      // typo here is worth catching now: at send time it stops the mail, one person at a time.
+      if (auth?.ok && projectChannels.length > 0) {
+        const byName = new Map<string, { id?: string; is_member?: boolean }>();
+        let cursor: string | undefined;
+        do {
+          const page = (await client.apiCall("conversations.list", {
+            limit: 1000,
+            exclude_archived: true,
+            types: "public_channel,private_channel",
+            ...(cursor ? { cursor } : {}),
+          })) as {
+            channels?: { id?: string; name?: string; is_member?: boolean }[];
+            response_metadata?: { next_cursor?: string };
+          };
+          for (const entry of page.channels ?? []) {
+            if (entry.name) {
+              byName.set(entry.name, { id: entry.id, is_member: entry.is_member });
+            }
+          }
+          cursor = page.response_metadata?.next_cursor || undefined;
+        } while (cursor);
+        for (const channel of projectChannels) {
+          const found = byName.get(channel.replace(/^#/u, "").trim());
+          if (found?.id) {
+            pass(`${channel} — ${found.id}${found.is_member ? "" : " (bot is NOT a member)"}`);
+          } else {
+            fail(`${channel} — no channel this bot can see; the send would stop here`);
+          }
+        }
+      }
       if (channelId && auth?.ok) {
         const info = (await client.apiCall("conversations.info", { channel: channelId })) as {
           ok?: boolean;
@@ -158,7 +195,9 @@ async function preflight(plan: readonly PlannedSend[]): Promise<boolean> {
   }
   console.log("  - DCS Slack-access form: only the full-member guide files it");
   console.log("  - Lab calendar invites: wired to account approval, not to the guide send");
-  console.log("  - Project-channel (#proj-…) membership: no automation; an admin adds people");
+  if (projectChannels.length === 0) {
+    console.log("  - Project-channel (#proj-…) invites: none named in this plan");
+  }
   console.log("  - Roster/spreadsheet rows: the send writes an audit row, not a member record");
   console.log("");
   return ok;
