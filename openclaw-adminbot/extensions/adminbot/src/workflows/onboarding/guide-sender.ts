@@ -354,7 +354,22 @@ export function createAdminBotOnboardingSender(
           },
         };
       }
-      const invite = await options.inviteToSlackConnect({ email, channelId });
+      // Reported, not thrown. Slack refuses for ordinary reasons -- not_in_channel is the usual
+      // one, because the bot has to be in a channel before it can invite anyone into it -- and an
+      // exception out of here killed the whole batch on its first recipient rather than failing
+      // that one send and moving on.
+      let invite: { url: string };
+      try {
+        invite = await options.inviteToSlackConnect({ email, channelId });
+      } catch (error) {
+        return {
+          ok: false,
+          error: {
+            status: 502,
+            message: `could not invite ${email} to the onboarding channel (${channelId}): ${error instanceof Error ? error.message : String(error)}`,
+          },
+        };
+      }
       slackLink = invite.url;
       values.slack_connect_link = invite.url;
     }

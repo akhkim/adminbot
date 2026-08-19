@@ -410,7 +410,17 @@ async function main(): Promise<void> {
     }
     console.log("");
 
-    const result = await send(request);
+    // Nothing a single recipient can do should end the batch: an unexpected throw becomes that
+    // entry's failure, and the remaining sends still get their turn.
+    let result: Awaited<ReturnType<typeof send>>;
+    try {
+      result = await send(request);
+    } catch (error) {
+      result = {
+        ok: false,
+        error: { status: 500, message: error instanceof Error ? error.message : String(error) },
+      };
+    }
     receipts.push({
       name: request.name,
       email: request.email,
