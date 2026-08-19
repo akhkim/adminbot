@@ -114,6 +114,19 @@
   white-space: nowrap;
 }
 
+/* "+2": there is more in this period than the one city the cell had room for. Quiet, because it is
+   a pointer at the hover rather than a figure worth reading on its own. */
+.adminbot-where-strip__more {
+  opacity: 0.55;
+  font-size: 0.9em;
+}
+
+/* The cursor is the only affordance a native tooltip gives, and without it nobody discovers that
+   the cells carry the dated breakdown. */
+.adminbot-where-strip__cell {
+  cursor: help;
+}
+
 /* Deliberately quiet: the grid's job is the calendar, and this is context beside it. */
 .adminbot-calendar__day-trips {
   display: block;

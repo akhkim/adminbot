@@ -175,16 +175,33 @@ export function tripRows(value: unknown): TripRow[] {
   });
 }
 
+/** One unbroken stretch inside a period during which the member is in one place. */
+export type WhereSegment = {
+  /** ISO dates, inclusive of both ends, so they can be read straight out to a person. */
+  start: string;
+  end: string;
+  city: string;
+  away: boolean;
+};
+
 /** One period of the chart's x axis, and where the member is for it. */
 export type WhereBin = {
   label: string;
-  /** The place, which is a trip's city when one covers the period and home otherwise. */
+  /** The place the member spends most of the period in, which is what the narrow cell shows. */
   city: string;
   /** False means "home", which the strip draws quietly so trips are what stands out. */
   away: boolean;
-  /** True when the trip covers only part of the period — a week away inside a monthly bar. */
-  partial: boolean;
+  /**
+   * Every stretch inside the period, in order, when the period is not all one place.
+   *
+   * A month with a five-day conference in it is three segments, and this is what the cell's hover
+   * spells out. A bare asterisk said only "not the whole period" and left the reader to guess
+   * which part of it.
+   */
+  segments: WhereSegment[];
 };
+
+const WHERE_DAY_MS = 86_400_000;
 
 /**
  * Where a member is over each period of the chart, at whatever granularity the range switch chose.
@@ -193,40 +210,47 @@ export type WhereBin = {
  * time the bars already use: the strip has to say "where you are" for exactly the periods the chart
  * says "what you are committed to" for, and two independent binnings would eventually disagree.
  *
- * A period is attributed to the trip covering the most of it, and flagged `partial` when that trip
- * does not cover the whole period. Attributing a month to a three-day conference would be a lie of
- * the kind that is hard to notice; saying "mostly Berlin" and marking it partial is not.
+ * Resolved a day at a time and then collapsed into runs. Walking days rather than intersecting
+ * ranges is what makes overlapping trips, one-day trips, and trips that straddle a period boundary
+ * all fall out of one rule -- the alternative is interval arithmetic whose corner cases are exactly
+ * the ones nobody thinks to test. A period is at most 31 days, so the cost is nothing.
  */
 export function whereBins(
   bins: readonly { startMs: number; endMs: number; label: string }[],
   trips: readonly TripRow[],
   home: string | null,
 ): WhereBin[] {
-  const dayMs = 86_400_000;
+  const homeCity = home ?? "";
   return bins.map((bin) => {
-    let best: { trip: TripRow; days: number } | undefined;
-    for (const trip of trips) {
-      const start = Date.parse(`${trip.start}T00:00:00Z`);
-      // Inclusive of the end date: a trip ending on the 30th includes the 30th.
-      const end = Date.parse(`${trip.end}T00:00:00Z`) + dayMs;
-      if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    const segments: WhereSegment[] = [];
+    for (let day = bin.startMs; day < bin.endMs; day += WHERE_DAY_MS) {
+      const iso = new Date(day).toISOString().slice(0, 10);
+      const trip = tripOnDay(trips, iso);
+      const city = trip?.city ?? homeCity;
+      const away = Boolean(trip);
+      const last = segments.at(-1);
+      if (last && last.city === city && last.away === away) {
+        last.end = iso;
         continue;
       }
-      const overlap = Math.min(end, bin.endMs) - Math.max(start, bin.startMs);
-      if (overlap > 0 && (!best || overlap > best.days)) {
-        best = { trip, days: overlap };
-      }
+      segments.push({ start: iso, end: iso, city, away });
     }
-    if (!best) {
-      return { label: bin.label, city: home ?? "", away: false, partial: false };
-    }
+    // What the narrow cell can say is where most of the period is spent; the rest is in the hover.
+    const primary = segments.toSorted((left, right) => spanMs(right) - spanMs(left))[0];
     return {
       label: bin.label,
-      city: best.trip.city,
-      away: true,
-      partial: best.days < bin.endMs - bin.startMs,
+      city: primary?.city ?? homeCity,
+      away: primary?.away ?? false,
+      segments: segments.length > 1 ? segments : [],
     };
   });
+}
+
+function spanMs(segment: WhereSegment): number {
+  return (
+    Date.parse(`${segment.end}T00:00:00Z`) - Date.parse(`${segment.start}T00:00:00Z`) +
+    WHERE_DAY_MS
+  );
 }
 
 /** The trip covering a day, if any. Last match wins, matching the service's own rule. */

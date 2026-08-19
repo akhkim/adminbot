@@ -1110,19 +1110,42 @@ describe("the where-strip under the chart", () => {
     expect(cells[1]).toContain("Toronto");
   });
 
-  it("marks a period the trip only partly covers", () => {
+  // The whole point of the hover: a period that is not all one place says which stretch was where,
+  // rather than an asterisk the reader has to interpret.
+  it("spells out from when to when, in which city, on hover", () => {
     const view = renderOn("2026-09-15", {
       trips: [{ start: "2026-09-20", end: "2026-09-24", city: "Vancouver" }],
     });
     const first = view.querySelector(".adminbot-where-strip__cell");
-    expect(first?.textContent).toContain("Vancouver*");
-    expect(first?.getAttribute("title")).toContain("part of the period");
+    const title = first?.getAttribute("title") ?? "";
+    expect(title).toContain("Sep 1 – Sep 19: Toronto");
+    expect(title).toContain("Sep 20 – Sep 24: Vancouver");
+    expect(title).toContain("Sep 25 – Sep 30: Toronto");
+    // The cell itself names the place most of the period is spent, plus how much it is not saying.
+    expect(first?.textContent).toContain("Toronto");
+    expect(first?.textContent).toContain("+2");
+  });
+
+  it("gives a single-place period a plain hover and no count", () => {
+    const view = renderOn("2026-09-15");
+    const first = view.querySelector(".adminbot-where-strip__cell");
+    expect(first?.getAttribute("title")).toBe("Sep: Berlin");
+    expect(first?.querySelector(".adminbot-where-strip__more")).toBeNull();
   });
 
   // Away is what the strip is for; a wall of the member's own city would bury it.
   it("distinguishes away periods from home ones", () => {
     const view = renderOn("2026-09-15");
     expect(view.querySelectorAll(".adminbot-where-strip__cell--away")).toHaveLength(1);
+  });
+
+  // The bug this caught: a five-day conference makes no month majority-away, so a guard that asked
+  // only about the cell's own city hid the strip for exactly the case the hover explains.
+  it("still draws the strip for travel too short to dominate any period", () => {
+    const view = renderOn("2026-09-15", {
+      trips: [{ start: "2026-09-20", end: "2026-09-24", city: "Vancouver" }],
+    });
+    expect(view.querySelector('[data-testid="time-availability-where-strip"]')).not.toBeNull();
   });
 
   it("draws no strip at all for a member who is home the whole horizon", () => {

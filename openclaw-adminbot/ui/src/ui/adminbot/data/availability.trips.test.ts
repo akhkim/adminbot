@@ -15,41 +15,72 @@ const BERLIN: TripRow = { start: "2026-09-01", end: "2026-09-30", city: "Berlin"
 describe("whereBins", () => {
   it("names the trip for periods it covers and home for the rest", () => {
     expect(whereBins(monthBins(), [BERLIN], "Toronto")).toEqual([
-      { label: "Sep", city: "Berlin", away: true, partial: false },
-      { label: "Oct", city: "Toronto", away: false, partial: false },
+      { label: "Sep", city: "Berlin", away: true, segments: [] },
+      { label: "Oct", city: "Toronto", away: false, segments: [] },
     ]);
   });
 
-  // Attributing a whole month to a three-day conference is the kind of lie that is hard to notice.
-  it("flags a period the trip only partly covers", () => {
+  // "Vancouver*" said only "not the whole period" and left the reader to guess which part. The
+  // segments are what answer from when to when, in which city.
+  it("breaks a mixed period into dated stretches", () => {
     const short: TripRow = { start: "2026-09-10", end: "2026-09-12", city: "Vancouver" };
     expect(whereBins(monthBins(), [short], "Toronto")[0]).toEqual({
       label: "Sep",
-      city: "Vancouver",
-      away: true,
-      partial: true,
+      // Most of September is still spent at home, so that is what the cell says.
+      city: "Toronto",
+      away: false,
+      segments: [
+        { start: "2026-09-01", end: "2026-09-09", city: "Toronto", away: false },
+        { start: "2026-09-10", end: "2026-09-12", city: "Vancouver", away: true },
+        { start: "2026-09-13", end: "2026-09-30", city: "Toronto", away: false },
+      ],
     });
   });
 
-  it("gives a period to whichever trip covers most of it", () => {
+  // A period that is all one place needs no breakdown, and carrying one would put a single
+  // redundant line in every hover on the strip.
+  it("carries no segments for a period spent in one place", () => {
+    expect(whereBins(monthBins(), [BERLIN], "Toronto")[0]?.segments).toEqual([]);
+  });
+
+  it("collapses two adjacent trips to the same city into one stretch", () => {
+    const trips: TripRow[] = [
+      { start: "2026-09-02", end: "2026-09-04", city: "Berlin" },
+      { start: "2026-09-05", end: "2026-09-07", city: "Berlin" },
+    ];
+    const segments = whereBins(monthBins(), trips, "Toronto")[0]?.segments ?? [];
+    expect(segments.filter((segment) => segment.away)).toEqual([
+      { start: "2026-09-02", end: "2026-09-07", city: "Berlin", away: true },
+    ]);
+  });
+
+  it("labels a period with whichever place covers most of it", () => {
     const trips: TripRow[] = [
       { start: "2026-09-01", end: "2026-09-05", city: "Vancouver" },
       { start: "2026-09-06", end: "2026-09-30", city: "Berlin" },
     ];
-    expect(whereBins(monthBins(), trips, "Toronto")[0]?.city).toBe("Berlin");
+    const bin = whereBins(monthBins(), trips, "Toronto")[0];
+    expect(bin?.city).toBe("Berlin");
+    expect(bin?.segments.map((segment) => segment.city)).toEqual(["Vancouver", "Berlin"]);
   });
 
   // A trip ending on the 30th includes the 30th; an exclusive end would drop the last day and, for
   // a one-day trip, the whole thing.
   it("counts the end date as part of the trip", () => {
     const lastDay: TripRow = { start: "2026-09-30", end: "2026-09-30", city: "Vancouver" };
-    expect(whereBins(monthBins(), [lastDay], "Toronto")[0]?.away).toBe(true);
+    const segments = whereBins(monthBins(), [lastDay], "Toronto")[0]?.segments ?? [];
+    expect(segments.at(-1)).toEqual({
+      start: "2026-09-30",
+      end: "2026-09-30",
+      city: "Vancouver",
+      away: true,
+    });
   });
 
   it("carries an empty city rather than inventing one when home is unknown", () => {
     expect(whereBins(monthBins(), [], null)).toEqual([
-      { label: "Sep", city: "", away: false, partial: false },
-      { label: "Oct", city: "", away: false, partial: false },
+      { label: "Sep", city: "", away: false, segments: [] },
+      { label: "Oct", city: "", away: false, segments: [] },
     ]);
   });
 
