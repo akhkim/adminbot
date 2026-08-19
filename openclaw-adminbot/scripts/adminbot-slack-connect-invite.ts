@@ -16,6 +16,46 @@
 // openReviewScriptPath -- so this follows that seam rather than inventing another.
 type Request = { email?: unknown; channelId?: unknown };
 
+type SlackClient = {
+  apiCall: (method: string, params: Record<string, unknown>) => Promise<unknown>;
+};
+
+/**
+ * A channel id for what the caller named.
+ *
+ * `conversations.inviteShared` takes an id, but the onboarding plan and the tab both work in names
+ * -- "#proj-alg-circuit" is what the email says and what an operator types. Ids pass through
+ * untouched; anything else is looked up, paging because a workspace this size does not fit in one
+ * response and the project channels sort late.
+ */
+async function resolveChannelId(client: SlackClient, channel: string): Promise<string> {
+  if (/^[CGD][A-Z0-9]{2,}$/u.test(channel)) {
+    return channel;
+  }
+  const name = channel.replace(/^#/u, "").trim();
+  if (!name) {
+    throw new Error("a channel name or id is required");
+  }
+  let cursor: string | undefined;
+  do {
+    const page = (await client.apiCall("conversations.list", {
+      limit: 1000,
+      exclude_archived: true,
+      types: "public_channel,private_channel",
+      ...(cursor ? { cursor } : {}),
+    })) as {
+      channels?: { id?: string; name?: string }[];
+      response_metadata?: { next_cursor?: string };
+    };
+    const match = page.channels?.find((entry) => entry.name === name);
+    if (match?.id) {
+      return match.id;
+    }
+    cursor = page.response_metadata?.next_cursor || undefined;
+  } while (cursor);
+  throw new Error(`no Slack channel named #${name} that this bot can see`);
+}
+
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) {
@@ -47,10 +87,13 @@ async function main(): Promise<void> {
   if (!account.botToken) {
     throw new Error("Slack bot token is not configured; cannot mint a Slack Connect invite");
   }
-  const response = (await getSlackWriteClient(account.botToken).apiCall(
-    "conversations.inviteShared",
-    { channel: channelId, emails: [email], external_limited: true },
-  )) as { url?: unknown; invite?: { url?: unknown } } | undefined;
+  const client = getSlackWriteClient(account.botToken) as SlackClient;
+  const resolved = await resolveChannelId(client, channelId);
+  const response = (await client.apiCall("conversations.inviteShared", {
+    channel: resolved,
+    emails: [email],
+    external_limited: true,
+  })) as { url?: unknown; invite?: { url?: unknown } } | undefined;
   const url = response?.url ?? response?.invite?.url;
   if (typeof url !== "string" || !url) {
     throw new Error("Slack did not return an invite url");

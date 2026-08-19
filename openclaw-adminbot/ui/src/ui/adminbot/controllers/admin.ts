@@ -1,4 +1,3 @@
-import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
 import type { GatewayBrowserClient } from "../../gateway.ts";
 import type { UiSettings } from "../../storage.ts";
 // Control UI controller for the AdminBot dashboard surface.
@@ -26,13 +25,9 @@ import {
   updateOwnSchedule,
   upsertLabMemberAsAdmin,
 } from "../auth/session.ts";
-import type {
-  AvailabilityRow,
-  MilestoneRow,
-  TimeOffRow,
-  TripRow,
-} from "../data/availability.js";
+import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
 import { loadMemberMap, type MemberMap } from "../data/member-map.ts";
+import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
 
@@ -173,6 +168,7 @@ export type AdminBotOnboardingResult = {
   sent: boolean;
   drive_folder_link?: string;
   slack_connect_link?: string;
+  project_channel_invites?: { channel: string; url: string }[];
 };
 
 export type AdminBotOnboardingHost = {
@@ -188,8 +184,18 @@ export type AdminBotOnboardingHost = {
   /** The preview as the operator edited it; empty means they left it as composed. */
   onboardingDraftSubject?: string;
   onboardingDraftBody?: string;
+  /** Comma-separated project channels the send should invite them to. */
+  onboardingProjectChannels?: string;
   settings: UiSettings;
 };
+
+/** "#proj-a, proj-b" -> ["#proj-a", "proj-b"]; the service resolves names and ids alike. */
+export function parseProjectChannels(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
 
 /**
  * Previews or sends an onboarding guide.
@@ -234,6 +240,10 @@ export async function sendOnboardingGuide(
         values: host.onboardingValues ?? {},
         preview: options.preview,
         submitDcsForm: host.onboardingSubmitDcsForm,
+        // Only on a real send: a preview mints nothing, so passing them would only invite noise.
+        ...(options.preview
+          ? {}
+          : { projectChannels: parseProjectChannels(host.onboardingProjectChannels) }),
         ...edited,
       },
       stored.sessionToken,
@@ -950,8 +960,7 @@ export async function saveAdminBotMember(
                 // ..."); the generic line below cannot, and the whole record is sent on every save,
                 // so without the service's own sentence one bad field reads as the editor being
                 // broken. Same reasoning as saveAdminBotOwnProfile.
-                (result.message ??
-                "Couldn't save this member. Check the values and try again.");
+                (result.message ?? "Couldn't save this member. Check the values and try again.");
       host.adminBotNotice = { kind: "error", text: message };
       return;
     }

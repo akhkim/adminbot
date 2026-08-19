@@ -667,6 +667,8 @@ export type OnboardingGuideRequest = {
    */
   subjectOverride?: string;
   bodyOverride?: string;
+  /** Channels the send should invite them to, by name or id; empty means none. */
+  projectChannels?: readonly string[];
 };
 
 export type OnboardingGuideResult = {
@@ -676,6 +678,7 @@ export type OnboardingGuideResult = {
   sent: boolean;
   drive_folder_link?: string;
   slack_connect_link?: string;
+  project_channel_invites?: { channel: string; url: string }[];
 };
 
 /**
@@ -703,6 +706,7 @@ export async function sendOnboardingGuide(
     ...(request.submitDcsForm === undefined ? {} : { submit_dcs_form: request.submitDcsForm }),
     ...(request.subjectOverride ? { subject_override: request.subjectOverride } : {}),
     ...(request.bodyOverride ? { body_override: request.bodyOverride } : {}),
+    ...(request.projectChannels?.length ? { slack_project_channels: request.projectChannels } : {}),
   });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };

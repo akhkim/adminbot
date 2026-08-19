@@ -352,6 +352,11 @@ function renderResult(state: AppViewState) {
       ${result.slack_connect_link
         ? html`<div>Slack invite minted (expires in 14 days)</div>`
         : nothing}
+      ${result.project_channel_invites?.length
+        ? html`<div>
+            Invited to ${result.project_channel_invites.map((invite) => invite.channel).join(", ")}
+          </div>`
+        : nothing}
     </div>
   `;
 }
@@ -442,6 +447,21 @@ export function renderAdminBotOnboarding(state: AppViewState) {
 
         ${fields.map((token) => renderField(state, token))}
 
+        <!-- Not a template placeholder: the copy says "your project channel", and this is what
+             makes that true. Blank invites them nowhere, which is what every send did before. -->
+        <label class="adminbot-form__field">
+          <span>Project channels to invite them to</span>
+          <input
+            name="projectChannels"
+            data-testid="onboarding-project-channels"
+            placeholder="#proj-alg-circuit, #proj-causal-tutor"
+            .value=${state.onboardingProjectChannels ?? ""}
+            @input=${(event: Event) => {
+              state.onboardingProjectChannels = (event.target as HTMLInputElement).value;
+            }}
+          />
+        </label>
+
         <!-- Only on the guide that promises a CS account. Ticked by default because sending it is
              what files the request; an operator re-sending to someone who already has an account
              unticks it, which is the case that would otherwise file a duplicate. -->
@@ -478,7 +498,7 @@ export function renderAdminBotOnboarding(state: AppViewState) {
         </div>
         <p class="adminbot-form__hint">
           ${previewed
-            ? "Sending delivers exactly what is in the boxes above, mints a Slack Connect invite and copies the Drive workspace. None of it can be undone from here."
+            ? "Sending delivers exactly what is in the boxes above, invites them to any channels listed, and mints whatever the copy references. None of it can be undone from here."
             : "Preview first — the email is editable before it goes out, and Send appears once you have read it."}
         </p>
       </form>
