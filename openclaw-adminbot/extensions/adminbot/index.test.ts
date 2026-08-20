@@ -26,7 +26,6 @@ describe("adminbot plugin metadata", () => {
     expect(skillNames).toEqual([
       "adminbot-access-invites",
       "adminbot-calendar-email",
-      "adminbot-candidate-workflow",
       "adminbot-email-automation",
       "adminbot-join-form-triage",
       "adminbot-linkedin-from-twitter",
@@ -38,7 +37,6 @@ describe("adminbot plugin metadata", () => {
       "adminbot-workflows",
     ]);
     expect(orchestrator).toContain("name: adminbot-workflows");
-    expect(orchestrator).toContain("adminbot-candidate-workflow");
     expect(orchestrator).toContain("adminbot-paper-publish");
     expect(orchestrator).toContain("adminbot_propose_slack_message");
   });

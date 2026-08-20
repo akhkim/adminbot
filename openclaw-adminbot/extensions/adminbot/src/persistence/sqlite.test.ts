@@ -29,6 +29,66 @@ function unwrap<T>(
 }
 
 describe("AdminBotSqliteStore", () => {
+  it("keeps logistics requests, their files and their status across service instances", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(
+      first.service.upsertLabMember({
+        id: "ada",
+        name: "Ada",
+        privilege_level: "member",
+      }),
+    );
+    unwrap(
+      first.service.upsertLabMember({
+        id: "grace",
+        name: "Grace",
+        privilege_level: "member",
+      }),
+    );
+    const submitted = unwrap(
+      first.service.submitLogisticsRequest("ada", {
+        kind: "document_signature",
+        documents: [
+          {
+            name: "form.pdf",
+            size: 0,
+            data_base64: Buffer.from("signed").toString("base64"),
+          },
+        ],
+        description: "before the trip",
+      }),
+    );
+    unwrap(
+      first.service.submitLogisticsRequest("grace", {
+        kind: "book_meeting",
+        meetings: [{ purpose: "sync" }],
+      }),
+    );
+    unwrap(first.service.setLogisticsRequestStatus(submitted.id, "in_progress", "zhijing"));
+    first.close();
+
+    const second = createAdminBotSqliteService({ databasePath });
+    // The member index is the one that has to survive a reopen: "my requests" is the read every
+    // member does on every visit, and a lost filter would hand them the whole lab's queue.
+    const mine = unwrap(second.service.listLogisticsRequests("ada")).requests;
+    expect(mine).toHaveLength(1);
+    expect(mine[0]).toMatchObject({
+      id: submitted.id,
+      status: "in_progress",
+      member_name: "Ada",
+    });
+    expect(unwrap(second.service.listLogisticsRequests()).requests).toHaveLength(2);
+    const opened = unwrap(
+      second.service.getLogisticsRequest(submitted.id, {
+        member_id: "ada",
+        is_admin: false,
+      }),
+    );
+    expect(opened.documents?.[0]?.data_base64).toBe(Buffer.from("signed").toString("base64"));
+    second.close();
+  });
+
   it("auto-creates a local sqlite ledger and preserves proposals across service instances", () => {
     const databasePath = tempDbPath();
     const first = createAdminBotSqliteService({
@@ -119,7 +179,10 @@ describe("AdminBotSqliteStore", () => {
     });
     first.close();
 
-    const second = createAdminBotSqliteService({ databasePath, auditRetentionDays: 30 });
+    const second = createAdminBotSqliteService({
+      databasePath,
+      auditRetentionDays: 30,
+    });
     expect(second.service.listAuditEvents().map((event) => event.id)).toEqual(["aud_new"]);
     second.close();
   });
@@ -208,7 +271,13 @@ describe("AdminBotSqliteStore", () => {
       collaborator_subgroup: "external_prof",
     });
     // Reopening must not resurrect the subgroup once a promotion cleared it.
-    unwrap(second.service.upsertLabMember({ id: "prof", name: "Prof", privilege_level: "member" }));
+    unwrap(
+      second.service.upsertLabMember({
+        id: "prof",
+        name: "Prof",
+        privilege_level: "member",
+      }),
+    );
     second.close();
 
     const third = createAdminBotSqliteService({ databasePath });

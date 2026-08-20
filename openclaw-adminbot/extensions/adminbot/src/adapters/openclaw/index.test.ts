@@ -42,29 +42,6 @@ describe("AdminBot tool handlers", () => {
     });
   });
 
-  it("maps candidate decisions to T4 action proposals", async () => {
-    const { fetchImpl, calls } = captureFetch();
-    const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl });
-
-    await tools.proposeCandidateDecision({
-      decision: "accept_for_trial",
-      candidateName: "Jane Doe",
-      candidateEmail: "jane@example.test",
-      summary: "Accept Jane Doe for a two-week trial",
-      evidence: [{ source: "google_form", id: "form_1" }],
-    });
-
-    expect(calls[0]).toEqual({
-      url: "http://127.0.0.1:8765/proposals",
-      body: expect.objectContaining({
-        type: "candidate.accept_for_trial",
-        risk_tier: "T4",
-        dry_run: false,
-        target: { name: "Jane Doe", email: "jane@example.test" },
-      }),
-    });
-  });
-
   it("keeps join form classification observational", async () => {
     const { fetchImpl, calls } = captureFetch();
     const tools = createAdminBotToolHandlers(defaultAdminBotConfig, { fetchImpl });

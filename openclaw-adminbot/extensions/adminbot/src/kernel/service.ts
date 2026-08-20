@@ -12,8 +12,14 @@ import type {
   AdminBotExecutionResult,
   AdminBotLabMember,
   AdminBotLabMemberInput,
+  AdminBotLogisticsAttachment,
+  AdminBotLogisticsRequest,
+  AdminBotLogisticsRequestInput,
+  AdminBotLogisticsRequestStatus,
   AdminBotMemberCredential,
   AdminBotMemberOnboardingStep,
+  AdminBotMemberProfileOverviewRow,
+  AdminBotMemberTimelineCounts,
   AdminBotMemberNudgeChannel,
   AdminBotMemberNudgeRequest,
   AdminBotMemberNudgeResult,
@@ -55,13 +61,17 @@ import {
   isAdminBotTimezone,
 } from "../contracts/actions.js";
 import {
-  detectLocationDrift,
-  isNewObservation,
-  latestBySource,
-  observationFor,
-  selfReportedChange,
-} from "../workflows/members/location-history.js";
-import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
+  byUrgency,
+  prepareLogisticsRequest,
+  withoutAttachmentBytes,
+} from "../workflows/logistics/requests.js";
+import {
+  clearSettledRequestFiles,
+  signedDocumentEmailBody,
+  signedDocumentEmailSubject,
+  storedRequestBytes,
+  validateSignedDocuments,
+} from "../workflows/logistics/signed-documents.js";
 import { mergeAttendance } from "../workflows/meetings/attendance.js";
 import {
   byMostRecent,
@@ -70,6 +80,14 @@ import {
   redactMeetingForMember,
   validateMeeting,
 } from "../workflows/meetings/records.js";
+import {
+  detectLocationDrift,
+  isNewObservation,
+  latestBySource,
+  observationFor,
+  selfReportedChange,
+} from "../workflows/members/location-history.js";
+import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
 import {
   acknowledgeOnboardingStep,
   buildInitialOnboarding,
@@ -125,6 +143,11 @@ export type AdminBotServiceStore = {
   getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
   listMeetings(): AdminBotMeetingRecord[];
   deleteMeeting(meetingId: string): boolean;
+  saveLogisticsRequest(request: AdminBotLogisticsRequest): void;
+  getLogisticsRequest(requestId: string): AdminBotLogisticsRequest | undefined;
+  /** Every request, or one member's. Newest first; the service re-sorts by urgency on read. */
+  listLogisticsRequests(memberId?: string): AdminBotLogisticsRequest[];
+  deleteLogisticsRequest(requestId: string): boolean;
   saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void;
   listOpenReviewCycles(): AdminBotOpenReviewCycleRecord[];
   // Returns false when the milestone had already fired, which is how the caller
@@ -201,9 +224,7 @@ export type AdminBotActionExecutor = {
 export type AdminBotServiceOptions = {
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
-  reviewSlackProfilePhoto?: (params: {
-    slackUserId: string;
-  }) => Promise<{
+  reviewSlackProfilePhoto?: (params: { slackUserId: string }) => Promise<{
     compliant: boolean;
     issues: string[];
     summary: string;
@@ -218,16 +239,10 @@ export type AdminBotServiceOptions = {
 };
 
 const DEFAULT_ACTION_POLICIES = {
-  "candidate.accept_for_trial": approvalPolicy("T4", ["admin"]),
-  "candidate.accept_direct": approvalPolicy("T4", ["admin"]),
-  "candidate.decline": approvalPolicy("T4", ["admin"]),
-  "slack.invite_guest": approvalPolicy("T3", ["admin"]),
-  "slack.invite_member": approvalPolicy("T3", ["admin"]),
   "slack.send_message": approvalPolicy("T3", ["admin"]),
   "slack.profile_photo_update": autoPolicy("T1"),
   "slack.channel_naming_notify_owner": autoPolicy("T1"),
   "slack.rename_channel": autoPolicy("T1"),
-  "vector.invite": approvalPolicy("T3", ["admin"]),
   "calendar.create_tentative_hold": approvalPolicy("T2", ["admin"]),
   "calendar.send_invite": approvalPolicy("T3", ["admin"]),
   "calendar.add_attendees": approvalPolicy("T3", ["admin"]),
@@ -235,11 +250,6 @@ const DEFAULT_ACTION_POLICIES = {
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
   "email.send": approvalPolicy("T3", ["admin"]),
-  "recommendation_letter.draft": autoPolicy("T1"),
-  "recommendation_letter.send": approvalPolicy("T4", ["admin"], 2),
-  "reimbursement.prepare_packet": autoPolicy("T1"),
-  "reimbursement.submit": approvalPolicy("T4", ["admin"], 2),
-  "social_media.draft": autoPolicy("T1"),
   "social_media.post_publicly": approvalPolicy("T4", ["admin"], 2),
   "paper_publish.prepare": autoPolicy("T1"),
   "paper.overleaf_edit": approvalPolicy("T4", ["admin"], 2),
@@ -247,6 +257,11 @@ const DEFAULT_ACTION_POLICIES = {
   "paper_publish.nudge_author": approvalPolicy("T3", ["admin"]),
   "paper_publish.escalate_to_pi": approvalPolicy("T3", ["admin"]),
   "join_form.classify": autoPolicy("T0"),
+  // Auto-approved for the same reason member_nudge.send is: the only way to create one of these is
+  // POST /logistics/requests/:id/signed, which is admin-gated, so the admin gate is the approval.
+  // The recipient is never chosen by the caller either -- it is the address of the member who asked
+  // for the signature, read off the roster. resolvePolicy only honors auto_allowed below T2.
+  "logistics.send_signed_document": autoPolicy("T1"),
   // Deliberately auto-approved, unlike every other outbound-message type (slack.send_message,
   // email.send, paper_publish.nudge_author are all T3/approval-required): creating this proposal
   // already requires a real admin session via POST /nudges/send (never reachable
@@ -1132,9 +1147,9 @@ export class AdminBotService {
    * file unattached forever — including the very file that would have proved the meeting was long
    * enough to list after all.
    */
-  listMeetings(
-    options?: { includeShort?: boolean },
-  ): AdminBotServiceResponse<{ meetings: AdminBotMeetingRecord[] }> {
+  listMeetings(options?: {
+    includeShort?: boolean;
+  }): AdminBotServiceResponse<{ meetings: AdminBotMeetingRecord[] }> {
     return {
       ok: true,
       status: 200,
@@ -1217,6 +1232,330 @@ export class AdminBotService {
       details: { meeting_id: meetingId },
     });
     return { ok: true, status: 200, payload: { deleted: true, meeting_id: meetingId } };
+  }
+
+  /**
+   * A member asking the lab for something.
+   *
+   * The requester is taken from the authenticated session the route resolved, never from the body:
+   * a request is signed by whoever sent it, and a client that could name someone else could file a
+   * letter request in a colleague's name. Storing it reaches nothing outside this service, so there
+   * is no approval gate between a member and their own ask.
+   */
+  submitLogisticsRequest(
+    memberId: string,
+    input: AdminBotLogisticsRequestInput,
+  ): AdminBotServiceResponse<AdminBotLogisticsRequest> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    const prepared = prepareLogisticsRequest(
+      input,
+      { id: `logreq_${randomUUID()}`, member_id: member.id, member_name: member.name },
+      new Date().toISOString(),
+    );
+    if (!prepared.ok) {
+      return serviceError(400, prepared.error);
+    }
+    this.store.saveLogisticsRequest(prepared.request);
+    this.recordAudit({
+      type: "logistics_request.submitted",
+      actor: member.id,
+      details: {
+        request_id: prepared.request.id,
+        kind: prepared.request.kind,
+        ...(prepared.request.deadline_at ? { deadline_at: prepared.request.deadline_at } : {}),
+      },
+    });
+    // Echoed back without the bytes the caller just sent us: the client has the files already, and
+    // a submit that replied with 20MB of its own upload would double the cost of every send.
+    return { ok: true, status: 201, payload: withoutAttachmentBytes(prepared.request) };
+  }
+
+  /**
+   * The queue, most urgent first.
+   *
+   * `memberId` is the whole of the access decision: pass one and the reader sees their own requests
+   * and nobody else's, omit it for the admin view. It is decided here rather than in the route so
+   * no future caller reaches the lab-wide list by picking a different entry point -- the same
+   * reason listMeetingsForMember exists.
+   */
+  listLogisticsRequests(
+    memberId?: string,
+  ): AdminBotServiceResponse<{ requests: AdminBotLogisticsRequest[] }> {
+    const requests = this.store
+      .listLogisticsRequests(memberId)
+      .map(withoutAttachmentBytes)
+      .toSorted(byUrgency);
+    return { ok: true, status: 200, payload: { requests } };
+  }
+
+  /**
+   * One request in full, file bytes included -- this is the only read that carries them.
+   *
+   * A member may open their own; an admin may open anybody's. `is_admin` comes from the session's
+   * privilege level, and a member asking for someone else's request is told the same "unknown
+   * request" an id that never existed gets: whether a colleague has asked for letters is itself
+   * something they did not share.
+   */
+  getLogisticsRequest(
+    requestId: string,
+    viewer: { member_id: string; is_admin: boolean },
+  ): AdminBotServiceResponse<AdminBotLogisticsRequest> {
+    const request = this.store.getLogisticsRequest(requestId);
+    if (!request || (!viewer.is_admin && request.member_id !== viewer.member_id)) {
+      return serviceError(404, `unknown logistics request ${requestId}`);
+    }
+    return { ok: true, status: 200, payload: request };
+  }
+
+  /**
+   * The lab answering: picked up, done, declined.
+   *
+   * Admin-only, and deliberately not the same call a member uses to withdraw -- a requester grading
+   * their own request would make the column useless to the people working the queue. The note is
+   * what the member reads underneath a status, so "declined" is never just a word.
+   *
+   * Settling a request drops its stored files: nobody is waiting on them any more, and a database
+   * that backs a web UI is not where somebody's signed forms should sit indefinitely.
+   */
+  setLogisticsRequestStatus(
+    requestId: string,
+    status: AdminBotLogisticsRequestStatus,
+    actor: string,
+    note?: string,
+  ): AdminBotServiceResponse<AdminBotLogisticsRequest> {
+    const existing = this.store.getLogisticsRequest(requestId);
+    if (!existing) {
+      return serviceError(404, `unknown logistics request ${requestId}`);
+    }
+    if (status === "withdrawn") {
+      return serviceError(400, "only the requester can withdraw a request");
+    }
+    const now = new Date().toISOString();
+    const stored = clearSettledRequestFiles({
+      ...existing,
+      status,
+      updated_at: now,
+      decided_by: actor,
+      decided_at: now,
+      ...(note?.trim() ? { resolution_note: note.trim() } : {}),
+    });
+    this.store.saveLogisticsRequest(stored);
+    this.recordAudit({
+      type: "logistics_request.status_changed",
+      actor,
+      details: { request_id: requestId, from: existing.status, to: status },
+    });
+    this.auditClearedFiles(existing, stored, actor);
+    return { ok: true, status: 200, payload: withoutAttachmentBytes(stored) };
+  }
+
+  /**
+   * The requester taking it back.
+   *
+   * Marked rather than deleted: an admin who already started on a signature has to be able to see
+   * that the ask was withdrawn, and a row that silently vanished from the queue would leave them
+   * doing work nobody wants. The documents go with it -- a withdrawn request is not a place to keep
+   * somebody's paperwork.
+   */
+  withdrawLogisticsRequest(
+    requestId: string,
+    memberId: string,
+  ): AdminBotServiceResponse<AdminBotLogisticsRequest> {
+    const existing = this.store.getLogisticsRequest(requestId);
+    if (!existing || existing.member_id !== memberId) {
+      return serviceError(404, `unknown logistics request ${requestId}`);
+    }
+    if (existing.status === "completed") {
+      return serviceError(409, "a completed request cannot be withdrawn");
+    }
+    const stored = clearSettledRequestFiles({
+      ...existing,
+      status: "withdrawn",
+      updated_at: new Date().toISOString(),
+    });
+    this.store.saveLogisticsRequest(stored);
+    this.recordAudit({
+      type: "logistics_request.withdrawn",
+      actor: memberId,
+      details: { request_id: requestId, kind: existing.kind },
+    });
+    this.auditClearedFiles(existing, stored, memberId);
+    return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * The member correcting what they already sent.
+   *
+   * A resubmit rather than a patch: the form posts the whole request back, so the record is rebuilt
+   * from it exactly as a first submission would be, and the deadline is re-derived rather than left
+   * pointing at a date that has since been edited away. Identity and the submitted-at stamp are
+   * kept -- it is the same ask, corrected, and re-stamping it would move it down a queue it has
+   * been waiting in.
+   */
+  updateLogisticsRequest(
+    requestId: string,
+    memberId: string,
+    input: AdminBotLogisticsRequestInput,
+  ): AdminBotServiceResponse<AdminBotLogisticsRequest> {
+    const existing = this.store.getLogisticsRequest(requestId);
+    if (!existing || existing.member_id !== memberId) {
+      return serviceError(404, `unknown logistics request ${requestId}`);
+    }
+    if (existing.status !== "submitted") {
+      return serviceError(409, "only a request nobody has picked up yet can be edited");
+    }
+    const prepared = prepareLogisticsRequest(
+      { ...input, kind: existing.kind },
+      { id: existing.id, member_id: existing.member_id, member_name: existing.member_name },
+      existing.submitted_at,
+    );
+    if (!prepared.ok) {
+      return serviceError(400, prepared.error);
+    }
+    const stored: AdminBotLogisticsRequest = {
+      ...prepared.request,
+      updated_at: new Date().toISOString(),
+    };
+    this.store.saveLogisticsRequest(stored);
+    this.recordAudit({
+      type: "logistics_request.submitted",
+      actor: memberId,
+      details: { request_id: requestId, kind: stored.kind, edited: true },
+    });
+    return { ok: true, status: 200, payload: withoutAttachmentBytes(stored) };
+  }
+
+  /**
+   * The signed document going back to the member who asked for it.
+   *
+   * One call does the whole close-out, because these four things are one act and a queue where they
+   * can come apart is a queue with half-finished rows in it: the signed file is attached to the
+   * record, mailed to the requester, the request is marked completed, and every stored file on it
+   * is dropped.
+   *
+   * The recipient is read off the roster, never taken from the caller: an admin uploading a signed
+   * form chooses the file, not who receives it. The mail itself is a typed action -- it is the one
+   * part of this feature that reaches outside the service.
+   */
+  async fileSignedLogisticsDocument(
+    requestId: string,
+    actor: string,
+    signed: AdminBotLogisticsAttachment[],
+    note?: string,
+  ): Promise<AdminBotServiceResponse<AdminBotLogisticsRequest>> {
+    const existing = this.store.getLogisticsRequest(requestId);
+    if (!existing) {
+      return serviceError(404, `unknown logistics request ${requestId}`);
+    }
+    if (existing.kind !== "document_signature") {
+      return serviceError(409, "only a document signature request takes a signed document back");
+    }
+    const invalid = validateSignedDocuments(signed);
+    if (invalid) {
+      return serviceError(400, invalid);
+    }
+    const member = this.store.getLabMember(existing.member_id);
+    const recipient = member?.email?.trim();
+    if (!recipient) {
+      return serviceError(
+        409,
+        `${existing.member_name} has no email address on the roster, so the signed document cannot be sent`,
+      );
+    }
+    const sent = await this.sendSignedDocument(existing, recipient, signed, note);
+    if (!sent.ok) {
+      return sent;
+    }
+    const now = new Date().toISOString();
+    const stored = clearSettledRequestFiles({
+      ...existing,
+      // Recorded before the clear so the names survive it: what the request keeps is that a file
+      // called this was signed and sent, which is the part anybody looks back for.
+      signed_documents: signed,
+      signed_sent_at: now,
+      signed_sent_to: recipient,
+      status: "completed",
+      updated_at: now,
+      decided_by: actor,
+      decided_at: now,
+      ...(note?.trim() ? { resolution_note: note.trim() } : {}),
+    });
+    this.store.saveLogisticsRequest(stored);
+    this.recordAudit({
+      type: "logistics_request.signed_document_sent",
+      actor,
+      details: {
+        request_id: requestId,
+        to: recipient,
+        documents: signed.length,
+      },
+    });
+    this.recordAudit({
+      type: "logistics_request.status_changed",
+      actor,
+      details: { request_id: requestId, from: existing.status, to: "completed" },
+    });
+    this.auditClearedFiles(existing, stored, actor);
+    return { ok: true, status: 200, payload: withoutAttachmentBytes(stored) };
+  }
+
+  /** The mail itself: one approved action, and the request is not touched until it has gone. */
+  private async sendSignedDocument(
+    request: AdminBotLogisticsRequest,
+    recipient: string,
+    signed: AdminBotLogisticsAttachment[],
+    note?: string,
+  ): Promise<AdminBotServiceResponse<never>> {
+    const body = signedDocumentEmailBody(request, signed, note);
+    const proposal = this.createProposal({
+      type: "logistics.send_signed_document",
+      summary: `Email ${request.member_name} the signed documents for their request`,
+      target: { service: "email", channel: "email", target: recipient },
+      proposed_payload: {
+        to: recipient,
+        subject: signedDocumentEmailSubject(request),
+        body,
+        attachments: signed.map((file) => ({
+          name: file.name,
+          ...(file.content_type ? { content_type: file.content_type } : {}),
+          data_base64: file.data_base64 ?? "",
+        })),
+      },
+      undo_plan: "Send a follow-up email correcting or retracting the signed document.",
+    });
+    if (!proposal.ok) {
+      return serviceError(proposal.status, proposal.error.message);
+    }
+    const executed = await this.execute(proposal.payload.id, { dry_run: false });
+    if (!executed.ok) {
+      // The request is left exactly as it was: a member who never received the document must not
+      // find their request marked done.
+      return serviceError(502, `could not email the signed document: ${executed.error.message}`);
+    }
+    return { ok: true, status: 200, payload: undefined as never };
+  }
+
+  /** One audit line when a settled request stops holding files, so the drop is on the record. */
+  private auditClearedFiles(
+    before: AdminBotLogisticsRequest,
+    after: AdminBotLogisticsRequest,
+    actor: string,
+  ): void {
+    if (!after.files_cleared_at || before.files_cleared_at) {
+      return;
+    }
+    this.recordAudit({
+      type: "logistics_request.files_cleared",
+      actor,
+      details: {
+        request_id: after.id,
+        status: after.status,
+        bytes_freed: storedRequestBytes(before),
+      },
+    });
   }
 
   listPapers(): AdminBotServiceResponse<{ papers: AdminBotPaperRecord[] }> {
@@ -1705,6 +2044,52 @@ export class AdminBotService {
   }
 
   /**
+   * Every active member, and how far along their own record is.
+   *
+   * The lab-wide read behind the profile overview: who has filled their profile in, and who has
+   * actually used the timeline tool to say when they are working. Both are things a member owns
+   * and nobody else can do for them, which is why the answer is a list of names rather than a
+   * number -- the follow-up is a conversation with a person.
+   *
+   * Admin-only at the route, unlike listMembersWithIncompleteMandatoryFields: that one answers
+   * "is *my* profile complete" for the member's own dashboard, so it is open to anyone signed in.
+   * This one is everybody's completeness at once, which is a governance read.
+   *
+   * Alumni and external collaborators are left out for the same reason the reminder pass leaves
+   * them out: the fields are asked of people currently working here.
+   */
+  listMemberProfileOverview(): AdminBotServiceResponse<{
+    members: AdminBotMemberProfileOverviewRow[];
+    mandatory_field_count: number;
+  }> {
+    const remindedAt = this.lastMandatoryFieldsReminderByMember();
+    const members = this.store
+      .listLabMembers()
+      .filter((member) => member.status !== "alumni" && member.status !== "external")
+      .map((member) => {
+        const missing = missingMandatoryProfileFields(member);
+        const timeline = countTimelineEntries(member);
+        const reminded = remindedAt.get(member.id);
+        return {
+          id: member.id,
+          name: member.name,
+          ...(member.status ? { status: member.status } : {}),
+          privilege_level: member.privilege_level,
+          missing_fields: missing,
+          filled_field_count: MANDATORY_PROFILE_FIELDS.length - missing.length,
+          timeline,
+          ...(reminded ? { last_reminded_at: new Date(reminded).toISOString() } : {}),
+        };
+      })
+      .toSorted(byProfileProgress);
+    return {
+      ok: true,
+      status: 200,
+      payload: { members, mandatory_field_count: MANDATORY_PROFILE_FIELDS.length },
+    };
+  }
+
+  /**
    * Slack-nudge every member whose profile is missing a required field. Meant to run once a day
    * from cron (scripts/adminbot-mandatory-fields-cron.sh), not from a click: the message is fixed
    * and the recipient list is entirely server-computed from roster state, so there is no
@@ -1787,9 +2172,7 @@ export class AdminBotService {
   // Reviews Slack profile photos for active lab members and nudges non-compliant members with the
   // fixed guideline copy. Assessment can come from an injected AI reviewer or a deterministic
   // fallback when no reviewer is configured.
-  async runProfilePhotoReviewAndReminders(
-    actor: string,
-  ): Promise<
+  async runProfilePhotoReviewAndReminders(actor: string): Promise<
     AdminBotServiceResponse<{
       reviewed: number;
       non_compliant: number;
@@ -1799,7 +2182,12 @@ export class AdminBotService {
   > {
     const members = this.store
       .listLabMembers()
-      .filter((member) => member.status === "active" || member.status === "part_time" || member.status === "on_leave");
+      .filter(
+        (member) =>
+          member.status === "active" ||
+          member.status === "part_time" ||
+          member.status === "on_leave",
+      );
     const now = new Date().toISOString();
     let reviewed = 0;
     const nonCompliantMemberIds: string[] = [];
@@ -1879,9 +2267,7 @@ export class AdminBotService {
   }
 
   // Generates one AI-polished variant of the signed-in member's current Slack profile photo.
-  async polishOwnProfilePhoto(
-    memberId: string,
-  ): Promise<
+  async polishOwnProfilePhoto(memberId: string): Promise<
     AdminBotServiceResponse<{
       variant: AdminBotProfilePhotoPolishVariant;
       variants: AdminBotProfilePhotoPolishVariant[];
@@ -2608,15 +2994,57 @@ function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
   });
 }
 
+/**
+ * How many entries a member has put on their Time Availability page.
+ *
+ * "Timeline" in the brainstorming doc is that page: the hours-per-week rows, the time off, the
+ * dated milestones and the trips. Counted together rather than reported per list because the
+ * question it answers is "has this person told us when they are working at all", and one row of
+ * any kind is a different situation from none.
+ */
+function countTimelineEntries(member: AdminBotLabMember): AdminBotMemberTimelineCounts {
+  const availability = member.availability?.length ?? 0;
+  const timeOff = member.time_off?.length ?? 0;
+  const milestones = member.milestones?.length ?? 0;
+  const trips = member.trips?.length ?? 0;
+  return {
+    availability,
+    time_off: timeOff,
+    milestones,
+    trips,
+    total: availability + timeOff + milestones + trips,
+  };
+}
+
+/**
+ * Least finished first, which is the order this list is worked in.
+ *
+ * Missing profile fields dominate the sort and timeline entries break the tie: a member with a
+ * blank profile is a bigger gap than one who filled everything in but has not planned their term,
+ * and the name is the last tiebreak so the order is stable between reads.
+ */
+function byProfileProgress(
+  left: AdminBotMemberProfileOverviewRow,
+  right: AdminBotMemberProfileOverviewRow,
+): number {
+  if (left.missing_fields.length !== right.missing_fields.length) {
+    return right.missing_fields.length - left.missing_fields.length;
+  }
+  if (left.timeline.total !== right.timeline.total) {
+    return left.timeline.total - right.timeline.total;
+  }
+  return left.name.localeCompare(right.name);
+}
+
 // One shared, deterministic reminder rather than a message per missing field: the whole point of
 // this reminder is that nobody composes it, so its content can never be attacker- or
 // agent-controlled. Listing exactly which lab-wide fields are still checked (not each member's own
 // missing subset) keeps the message identical for every recipient, which is what lets it go out
 // through a single sendMemberNudge call instead of one per person.
 function buildMandatoryFieldsReminderMessage(): string {
-  const fields = MANDATORY_PROFILE_FIELDS.map((key) => adminBotMandatoryProfileFieldLabels[key]).join(
-    ", ",
-  );
+  const fields = MANDATORY_PROFILE_FIELDS.map(
+    (key) => adminBotMandatoryProfileFieldLabels[key],
+  ).join(", ");
   return [
     "Quick reminder: your AdminBot profile is missing one or more required fields " +
       `(${fields}).`,
@@ -2804,7 +3232,8 @@ type SocialUrlFieldSpec = {
 
 // Raster types only, and never image/svg+xml: an SVG is a document that can carry script, and this
 // value is handed straight to an <img src> in the Control UI.
-const INLINE_IMAGE_PATTERN = /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
+const INLINE_IMAGE_PATTERN =
+  /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
 
 // Matches MAX_AVATAR_BYTES in the Control UI's upload control. The client already refuses a larger
 // file; this is the same limit enforced where it counts, against the decoded bytes rather than the
@@ -3281,9 +3710,7 @@ function validateAvailability(member: AdminBotLabMemberInput): string | undefine
       }
     }
   }
-  return (
-    validateMilestones(member) ?? validateTrips(member) ?? validateDismissedDeadlines(member)
-  );
+  return validateMilestones(member) ?? validateTrips(member) ?? validateDismissedDeadlines(member);
 }
 
 // availability_updated_at is server-owned: it moves only when the schedule content

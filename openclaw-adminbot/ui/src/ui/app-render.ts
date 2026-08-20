@@ -39,17 +39,56 @@ import {
 } from "./adminbot/controllers/admin.ts";
 import type { AdminBotLoadMode } from "./adminbot/controllers/admin.ts";
 import {
+  downloadAdminBotLogisticsDocument,
+  loadAdminBotLogisticsRequests,
+  openAdminBotLogisticsRequest,
+  sendAdminBotSignedDocuments,
+  setAdminBotLogisticsRequestStatus,
+  submitAdminBotLogisticsRequest,
+  updateAdminBotLogisticsRequest,
+  withdrawAdminBotLogisticsRequest,
+} from "./adminbot/controllers/logistics.ts";
+import {
+  loadAdminBotProfileOverview,
+  remindAdminBotIncompleteProfiles,
+} from "./adminbot/controllers/profile-overview.ts";
+import {
+  clearLogisticsDraft,
+  createFactRow,
+  createSchoolRow,
+  clearMeetingRequestDraft,
+  clearRecommendationLettersDraft,
+  logisticsDraftScope,
+  restoreAdminBotLettersDraft,
+  restoreAdminBotLogisticsDraft,
+  restoreAdminBotMeetingDraft,
   saveAdminBotLettersDraft,
   saveAdminBotLogisticsDraft,
   saveAdminBotMeetingDraft,
 } from "./adminbot/data/logistics-draft.ts";
-import { loadAdminBotLogisticsRequests } from "./adminbot/data/logistics-requests.ts";
+import {
+  describeSubmitBlock,
+  filesToAttachments,
+  filledFacts,
+  filledMeetings,
+  filledSchools,
+  lettersRequestInput,
+  meetingRequestInput,
+  requestToFormState,
+  signatureRequestInput,
+  type LettersFormState,
+  type LogisticsRequestInput,
+  type LogisticsRequestKind,
+  type MeetingFormState,
+  type SignatureFormState,
+} from "./adminbot/data/logistics-requests.ts";
 import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
-import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
 import "./components/feedback-widget.ts";
+import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
+import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import { renderAdminBot, type AdminBotPanel } from "./adminbot/views/admin.ts";
 import {
   renderChangePasswordPopover,
@@ -58,16 +97,16 @@ import {
 import { renderDashboard } from "./adminbot/views/dashboard.ts";
 import { renderLabSharing } from "./adminbot/views/lab-sharing.ts";
 import { renderLanding } from "./adminbot/views/landing.ts";
-import { renderLoginGate } from "./adminbot/views/login-gate.ts";
-import { renderAdminBotLogistics } from "./adminbot/views/logistics.ts";
 import { renderLocationPrompt } from "./adminbot/views/location-prompt.ts";
+import { renderLoginGate } from "./adminbot/views/login-gate.ts";
+import { renderAdminBotLogistics, type LogisticsTemplate } from "./adminbot/views/logistics.ts";
 import { renderAdminBotMeetings } from "./adminbot/views/meetings.ts";
-import { EMPTY_TRIP_DRAFT } from "./adminbot/views/time-availability.trips.ts";
-import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import { ownPapers, renderMyWork } from "./adminbot/views/my-work.ts";
 import { renderOnboardingChecklist } from "./adminbot/views/onboarding-checklist.ts";
+import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
 import { renderPublicShell } from "./adminbot/views/public-shell.ts";
+import { EMPTY_TRIP_DRAFT } from "./adminbot/views/time-availability.trips.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
@@ -93,15 +132,10 @@ import {
   dismissChatError,
   switchChatSession,
 } from "./app-render.helpers.ts";
-import { hasOperatorAdminAccess, hasOperatorWriteAccess, warnQueryToken } from "./app-settings.ts";
+import { warnQueryToken } from "./app-settings.ts";
 import type { AppViewState } from "./app-view-state.ts";
 import { reconcileChatRunLifecycle } from "./chat/run-lifecycle.ts";
-import {
-  renderChatSessionSelect,
-  resolveChatAgentFilterId,
-  resolveChatAgentFilterOptions,
-  resolvePreferredSessionForAgent,
-} from "./chat/session-controls.ts";
+import { renderChatSessionSelect } from "./chat/session-controls.ts";
 import { clearChatMessagesFromCache } from "./chat/session-message-cache.ts";
 import {
   controlUiNowMs,
@@ -168,20 +202,6 @@ import {
   rotateDeviceToken,
 } from "./controllers/devices.ts";
 import {
-  backfillDreamDiary,
-  copyDreamingArchivePath,
-  dedupeDreamDiary,
-  loadDreamDiary,
-  loadDreamingStatus,
-  loadWikiImportInsights,
-  loadWikiMemoryPalace,
-  repairDreamingArtifacts,
-  resetGroundedShortTerm,
-  resetDreamDiary,
-  resolveConfiguredDreaming,
-  updateDreamingEnabled,
-} from "./controllers/dreaming.ts";
-import {
   loadExecApprovals,
   removeExecApprovalsFormValue,
   saveExecApprovals,
@@ -189,7 +209,6 @@ import {
 } from "./controllers/exec-approvals.ts";
 import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
-import { loadPresence } from "./controllers/presence.ts";
 import {
   branchSessionFromCheckpoint,
   deleteSessionsAndRefresh,
@@ -215,7 +234,6 @@ import {
   updateSkillEnabled,
 } from "./controllers/skills.ts";
 import "./components/dashboard-header.ts";
-import { captureSessionToWorkboard, getWorkboardState } from "./controllers/workboard.ts";
 import { getCronJobPayload } from "./cron-payload.ts";
 import { formatTimeMs } from "./format.ts";
 import { formatRelativeTimestamp } from "./format.ts";
@@ -232,7 +250,6 @@ import {
   titleForTab,
   type Tab,
 } from "./navigation.ts";
-import { isPluginEnabledInConfigSnapshot } from "./plugin-activation.ts";
 import { isCronSessionKey, resolveSessionDisplayName } from "./session-display.ts";
 import {
   buildAgentMainSessionKey,
@@ -271,8 +288,6 @@ import {
   createDefaultDraft,
   draftToCronFormPatch,
 } from "./views/cron-quick-create.ts";
-import { renderDreamingRestartConfirmation } from "./views/dreaming-restart-confirmation.ts";
-import { renderDreaming } from "./views/dreaming.ts";
 import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
 import { renderGuestReimbursements } from "./views/guest-reimbursements.ts";
@@ -292,18 +307,198 @@ function runUiTask<Args extends unknown[]>(
 }
 
 /**
- * Who a request saved in this browser belongs to.
+ * Whose drafts the logistics forms are currently showing.
  *
- * The drafts carry no owner -- they never leave the device that typed them, so there was nobody
- * else they could belong to. The roster name is what an admin recognises; the member id is the
- * fallback while the roster is still loading, and the last resort names the device's user at all.
+ * Drafts live in IndexedDB, which is per-origin rather than per-account: without a scope, a shared
+ * machine hands the next person the last one's half-written request and their attached documents.
+ * The submitted requests carry their owner from the service, so this is only about the local half.
  */
-function adminBotViewerName(state: AppViewState): string {
-  const memberId = state.memberId;
-  const member = memberId
-    ? state.adminBotData.members?.find((candidate) => candidate.id === memberId)
-    : undefined;
-  return member?.name?.trim() || memberId || t("logistics.requests.you");
+function adminBotLogisticsScope(state: AppViewState): string {
+  return logisticsDraftScope(state.memberId);
+}
+
+/** The three form states, in the shape the request builders and the "can this be sent" check want. */
+function adminBotSignatureForm(state: AppViewState): SignatureFormState {
+  return {
+    files: state.adminBotLogisticsSignatureFiles,
+    description: state.adminBotLogisticsDescription,
+    attachments: state.adminBotLogisticsAttachments,
+  };
+}
+
+function adminBotLettersForm(state: AppViewState): LettersFormState {
+  return {
+    schools: state.adminBotLettersSchools,
+    facts: state.adminBotLettersFacts,
+    cvOverleafUrl: state.adminBotLettersCvOverleafUrl,
+    driveFolderUrl: state.adminBotLettersDriveFolderUrl,
+  };
+}
+
+/** The form behind one template, in the shape the builders and the "can this be sent" check want. */
+function adminBotLogisticsForm(
+  state: AppViewState,
+  template: LogisticsTemplate,
+): SignatureFormState | LettersFormState | MeetingFormState {
+  if (template === "documentSignature") {
+    return adminBotSignatureForm(state);
+  }
+  if (template === "recommendationLetters") {
+    return adminBotLettersForm(state);
+  }
+  return { rows: state.adminBotMeetingRows };
+}
+
+const LOGISTICS_KIND: Record<LogisticsTemplate, LogisticsRequestKind> = {
+  documentSignature: "document_signature",
+  recommendationLetters: "recommendation_letters",
+  bookMeeting: "book_meeting",
+};
+
+/** Whether there is anything on this form to lose, which is what Discard is offered for. */
+function adminBotLogisticsHasContent(state: AppViewState, template: LogisticsTemplate): boolean {
+  if (template === "documentSignature") {
+    return Boolean(
+      state.adminBotLogisticsSignatureFiles.length ||
+      state.adminBotLogisticsDescription.trim() ||
+      state.adminBotLogisticsAttachments.length,
+    );
+  }
+  if (template === "recommendationLetters") {
+    return Boolean(
+      filledSchools(state.adminBotLettersSchools).length ||
+      filledFacts(state.adminBotLettersFacts).length ||
+      state.adminBotLettersCvOverleafUrl.trim() ||
+      state.adminBotLettersDriveFolderUrl.trim(),
+    );
+  }
+  return filledMeetings(state.adminBotMeetingRows).length > 0;
+}
+
+/** Everything a form loses when it is discarded, or when the request it held has been filed. */
+function resetAdminBotLogisticsForm(state: AppViewState, template: LogisticsTemplate): void {
+  if (template === "documentSignature") {
+    state.adminBotLogisticsSignatureFiles = [];
+    state.adminBotLogisticsDescription = "";
+    state.adminBotLogisticsAttachments = [];
+    state.adminBotLogisticsSavedAt = null;
+    state.adminBotLogisticsSaveError = null;
+    return;
+  }
+  if (template === "recommendationLetters") {
+    // Back to one blank row rather than none: an empty table has nothing to type in.
+    state.adminBotLettersSchools = [createSchoolRow()];
+    state.adminBotLettersFacts = [createFactRow()];
+    state.adminBotLettersCvOverleafUrl = "";
+    state.adminBotLettersDriveFolderUrl = "";
+    state.adminBotLettersSavedAt = null;
+    state.adminBotLettersSaveError = null;
+    return;
+  }
+  // Book Meeting opens empty on purpose: creating a row stamps "submitted", so a blank one would
+  // claim a request nobody made.
+  state.adminBotMeetingRows = [];
+  state.adminBotMeetingSavedAt = null;
+  state.adminBotMeetingSaveError = null;
+}
+
+async function clearAdminBotLogisticsDraft(
+  template: LogisticsTemplate,
+  scope: string,
+): Promise<void> {
+  try {
+    if (template === "documentSignature") {
+      await clearLogisticsDraft(scope);
+    } else if (template === "recommendationLetters") {
+      await clearRecommendationLettersDraft(scope);
+    } else {
+      await clearMeetingRequestDraft(scope);
+    }
+  } catch {
+    // A draft that would not clear is a stale form, not lost work: the member is looking at an
+    // empty one either way, and reporting a storage failure here would be noise.
+  }
+}
+
+function adminBotLogisticsRequestInput(
+  state: AppViewState,
+  template: LogisticsTemplate,
+): Promise<LogisticsRequestInput> {
+  if (template === "documentSignature") {
+    // The only one that is async: the picked files are read into base64 here.
+    return signatureRequestInput(adminBotSignatureForm(state));
+  }
+  if (template === "recommendationLetters") {
+    return Promise.resolve(lettersRequestInput(adminBotLettersForm(state)));
+  }
+  return Promise.resolve(meetingRequestInput({ rows: state.adminBotMeetingRows }));
+}
+
+/**
+ * Submit, discard and "why not" for one request template.
+ *
+ * Shared by all three because the three differ only in which form state they read: the button
+ * behaviour -- refuse to double-send, clear the form and its draft once the service has the
+ * request, leave everything untouched when it does not -- is the same request either way.
+ */
+function adminBotLogisticsSubmitProps(
+  state: AppViewState,
+  requestHostUpdate: (() => void) | undefined,
+  template: LogisticsTemplate,
+) {
+  const form = adminBotLogisticsForm(state, template);
+  const kind = LOGISTICS_KIND[template];
+  const blocked = state.memberId
+    ? describeSubmitBlock(kind, form)
+    : // Signing in is the first thing missing, and saying so beats a 401 after the upload.
+      ({ reason: "signed-out" } as const);
+  return {
+    submitting: state.adminBotLogisticsSubmitting,
+    submitError: state.adminBotLogisticsSubmitError,
+    submitted: Boolean(state.adminBotLogisticsSubmittedId),
+    submitBlocked: blocked,
+    hasContent: adminBotLogisticsHasContent(state, template),
+    editing: Boolean(state.adminBotLogisticsEditingId),
+    onCancelEdit: () => {
+      state.adminBotLogisticsEditingId = null;
+      resetAdminBotLogisticsForm(state, template);
+      requestHostUpdate?.();
+    },
+    onSubmit: () => {
+      if (blocked) {
+        // Nothing to send yet. The reason is already on screen next to the button, so pressing it
+        // is how a member finds out rather than a dead click.
+        return;
+      }
+      void (async () => {
+        const input = await adminBotLogisticsRequestInput(state, template);
+        const editingId = state.adminBotLogisticsEditingId;
+        // A correction is a PUT against the request already in the queue: sending it as a new one
+        // would leave the member with two asks for the same thing and an admin deciding which is
+        // current.
+        const filed = editingId
+          ? await updateAdminBotLogisticsRequest(state, editingId, input)
+          : Boolean(
+              await submitAdminBotLogisticsRequest(state, input, adminBotLogisticsScope(state)),
+            );
+        if (filed) {
+          state.adminBotLogisticsEditingId = null;
+          state.adminBotLogisticsSubmittedId = editingId ?? state.adminBotLogisticsSubmittedId;
+          resetAdminBotLogisticsForm(state, template);
+        }
+        requestHostUpdate?.();
+      })();
+    },
+    onDiscard: () => {
+      void (async () => {
+        resetAdminBotLogisticsForm(state, template);
+        state.adminBotLogisticsSubmittedId = null;
+        state.adminBotLogisticsSubmitError = null;
+        await clearAdminBotLogisticsDraft(template, adminBotLogisticsScope(state));
+        requestHostUpdate?.();
+      })();
+    },
+  };
 }
 
 function renderSettingsSectionNav(state: AppViewState) {
@@ -547,13 +742,11 @@ const lazyDeadlines = createLazyView(
   notifyLazyViewChanged,
 );
 const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewChanged);
-const lazyInstances = createLazyView(() => import("./views/instances.ts"), notifyLazyViewChanged);
 const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewChanged);
 const lazyNodes = createLazyView(() => import("./views/nodes.ts"), notifyLazyViewChanged);
 const lazySessions = createLazyView(() => import("./views/sessions.ts"), notifyLazyViewChanged);
 const lazySkills = createLazyView(() => import("./views/skills.ts"), notifyLazyViewChanged);
 const lazyUsage = createLazyView(() => import("./views/usage.ts"), notifyLazyViewChanged);
-const lazyWorkboard = createLazyView(() => import("./views/workboard.ts"), notifyLazyViewChanged);
 const lazyAdminBotRegistrations = createLazyView(
   () => import("./adminbot/views/registrations.ts"),
   notifyLazyViewChanged,
@@ -686,26 +879,6 @@ export function formatDreamNextCycle(nextRunAtMs: number | undefined): string | 
       "",
     ) || null
   );
-}
-
-function resolveDreamingNextCycle(
-  status: {
-    phases?: Record<string, { enabled: boolean; nextRunAtMs?: number }>;
-  } | null,
-): string | null {
-  if (!status?.phases) {
-    return null;
-  }
-  let nextRunAtMs: number | undefined;
-  for (const phase of Object.values(status.phases)) {
-    if (!phase.enabled || typeof phase.nextRunAtMs !== "number") {
-      continue;
-    }
-    if (nextRunAtMs === undefined || phase.nextRunAtMs < nextRunAtMs) {
-      nextRunAtMs = phase.nextRunAtMs;
-    }
-  }
-  return formatDreamNextCycle(nextRunAtMs);
 }
 
 let clawhubSearchTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1415,7 +1588,8 @@ function renderNudgeBell(state: AppViewState) {
                       <span class="bell__item-top">
                         <span class="bell__dot" aria-hidden="true"></span>
                         <span class="bell__item-text">
-                          <strong>${alert.by}</strong> ${alertText(alert).action}
+                          <strong>${alert.by}</strong>
+                          ${alertText(alert).action}
                           <strong>${alertText(alert).subject}</strong>
                         </span>
                       </span>
@@ -1541,116 +1715,6 @@ export function renderApp(state: AppViewState) {
         (configAssistantAvatarMissing ? null : (assistantAvatarUrl ?? null))));
   const configValue =
     state.configForm ?? (state.configSnapshot?.config as Record<string, unknown> | null);
-  const configuredDreaming = resolveConfiguredDreaming(configValue);
-  const dreamingOn = state.dreamingStatus?.enabled ?? configuredDreaming.enabled;
-  const dreamingNextCycle = resolveDreamingNextCycle(state.dreamingStatus);
-  const dreamingAgentOptions = resolveChatAgentFilterOptions(state);
-  const dreamingSelectedAgentId = resolveChatAgentFilterId(state, state.sessionKey);
-  const syncDreamingSelectedAgent = () => {
-    state.selectedAgentId = dreamingSelectedAgentId;
-  };
-  const dreamingLoading = state.dreamingStatusLoading || state.dreamingModeSaving;
-  const dreamingRefreshLoading = state.dreamingStatusLoading || state.dreamDiaryLoading;
-  const refreshDreaming = () => {
-    void (async () => {
-      syncDreamingSelectedAgent();
-      await loadConfig(state);
-      await Promise.all([
-        loadDreamingStatus(state),
-        loadDreamDiary(state),
-        loadWikiImportInsights(state),
-        loadWikiMemoryPalace(state),
-      ]);
-    })();
-  };
-  const openWikiPage = async (lookup: string) => {
-    if (!state.client || !state.connected) {
-      return null;
-    }
-    const payload: {
-      title?: unknown;
-      path?: unknown;
-      content?: unknown;
-      updatedAt?: unknown;
-      totalLines?: unknown;
-      truncated?: unknown;
-    } | null = await state.client.request("wiki.get", {
-      lookup,
-      fromLine: 1,
-      lineCount: 5000,
-    });
-    const title =
-      typeof payload?.title === "string" && payload.title.trim() ? payload.title.trim() : lookup;
-    const path =
-      typeof payload?.path === "string" && payload.path.trim() ? payload.path.trim() : lookup;
-    const content =
-      typeof payload?.content === "string" && payload.content.length > 0
-        ? payload.content
-        : "No wiki content available.";
-    const updatedAt =
-      typeof payload?.updatedAt === "string" && payload.updatedAt.trim()
-        ? payload.updatedAt.trim()
-        : undefined;
-    const totalLines =
-      typeof payload?.totalLines === "number" && Number.isFinite(payload.totalLines)
-        ? Math.max(0, Math.floor(payload.totalLines))
-        : undefined;
-    const truncated = payload?.truncated === true;
-    return {
-      title,
-      path,
-      content,
-      ...(totalLines !== undefined ? { totalLines } : {}),
-      ...(truncated ? { truncated } : {}),
-      ...(updatedAt ? { updatedAt } : {}),
-    };
-  };
-  const applyDreamingEnabled = (enabled: boolean) => {
-    if (
-      state.dreamingModeSaving ||
-      state.dreamingRestartConfirmLoading ||
-      state.dreamingRestartConfirmOpen ||
-      dreamingOn === enabled
-    ) {
-      return;
-    }
-    state.dreamingPendingEnabled = enabled;
-    state.dreamingRestartConfirmOpen = true;
-    state.dreamingStatusError = null;
-  };
-  const cancelDreamingRestart = () => {
-    if (state.dreamingRestartConfirmLoading) {
-      return;
-    }
-    state.dreamingRestartConfirmOpen = false;
-    state.dreamingPendingEnabled = null;
-    state.dreamingStatusError = null;
-  };
-  const confirmDreamingRestart = () => {
-    const enabled = state.dreamingPendingEnabled;
-    if (enabled == null || state.dreamingRestartConfirmLoading) {
-      return;
-    }
-    void (async () => {
-      state.dreamingRestartConfirmLoading = true;
-      state.dreamingStatusError = null;
-      try {
-        const updated = await updateDreamingEnabled(state, enabled);
-        if (!updated) {
-          if (!state.dreamingStatusError) {
-            state.dreamingStatusError = t("dreaming.restartConfirmation.failed");
-          }
-          return;
-        }
-        await loadConfig(state);
-        await loadDreamingStatus(state);
-        state.dreamingRestartConfirmOpen = false;
-        state.dreamingPendingEnabled = null;
-      } finally {
-        state.dreamingRestartConfirmLoading = false;
-      }
-    })();
-  };
   const basePath = normalizeBasePath(state.basePath ?? "");
   const resolveSelectedAgentId = () =>
     state.agentsSelectedId ??
@@ -2095,33 +2159,16 @@ export function renderApp(state: AppViewState) {
             snapshot: state.channelsSnapshot,
             lastError: state.channelsError,
             lastSuccessAt: state.channelsLastSuccess,
-            whatsappMessage: state.whatsappLoginMessage,
-            whatsappQrDataUrl: state.whatsappLoginQrDataUrl,
-            whatsappConnected: state.whatsappLoginConnected,
-            whatsappBusy: state.whatsappBusy,
             configSchema: state.configSchema,
             configSchemaLoading: state.configSchemaLoading,
             configForm: state.configForm,
             configUiHints: state.configUiHints,
             configSaving: state.configSaving,
             configFormDirty: state.configFormDirty,
-            nostrProfileFormState: state.nostrProfileFormState,
-            nostrProfileAccountId: state.nostrProfileAccountId,
             onRefresh: (probe) => void loadChannels(state, probe),
-            onWhatsAppStart: (force) => void state.handleWhatsAppStart(force),
-            onWhatsAppWait: () => void state.handleWhatsAppWait(),
-            onWhatsAppLogout: () => void state.handleWhatsAppLogout(),
             onConfigPatch: (path, value) => updateConfigFormValue(state, path, value),
             onConfigSave: () => void state.handleChannelConfigSave(),
             onConfigReload: () => void state.handleChannelConfigReload(),
-            onNostrProfileEdit: (accountId, profile) =>
-              state.handleNostrProfileEdit(accountId, profile),
-            onNostrProfileCancel: () => state.handleNostrProfileCancel(),
-            onNostrProfileFieldChange: (field, value) =>
-              state.handleNostrProfileFieldChange(field, value),
-            onNostrProfileSave: () => void state.handleNostrProfileSave(),
-            onNostrProfileImport: () => void state.handleNostrProfileImport(),
-            onNostrProfileToggleAdvanced: () => state.handleNostrProfileToggleAdvanced(),
           }),
         );
       case "communications":
@@ -2376,6 +2423,57 @@ export function renderApp(state: AppViewState) {
   // to ask" and must not re-trigger.
   if (state.tab === "profile" && hasMemberSession && state.adminBotLocationDrift === undefined) {
     void state.loadLocationPrompt?.().finally(() => requestHostUpdate?.());
+  }
+  // Logistics drafts are per-member, and this is where that is enforced. The scope changes when
+  // somebody signs in, signs out, or a second person uses the same browser -- and each time, the
+  // forms on screen belong to the previous scope and have to be cleared and refilled from that
+  // member's own drafts. Doing it here rather than at connect time is what makes a sign-in that
+  // happens after first paint restore anything at all.
+  const logisticsScope = adminBotLogisticsScope(state);
+  // Gated on the tab so a member who never opens Logistics never pays for an IndexedDB read. The
+  // scope comparison is what re-runs it when the signed-in member changes underneath an open tab.
+  if (state.tab === "adminbotLogistics" && state.adminBotLogisticsDraftScope !== logisticsScope) {
+    state.adminBotLogisticsDraftScope = logisticsScope;
+    // A correction belongs to the member who opened it. Left set across a scope change it would
+    // point the next person's Submit at a request they do not own.
+    state.adminBotLogisticsEditingId = null;
+    state.adminBotLogisticsSubmittedId = null;
+    resetAdminBotLogisticsForm(state, "documentSignature");
+    resetAdminBotLogisticsForm(state, "recommendationLetters");
+    resetAdminBotLogisticsForm(state, "bookMeeting");
+    // Fire-and-forget and silent on failure: putting a draft back is a convenience the member did
+    // not ask for on this visit, so it must never block a paint or raise an error of its own.
+    void Promise.all([
+      restoreAdminBotLogisticsDraft(state, logisticsScope),
+      restoreAdminBotLettersDraft(state, logisticsScope),
+      restoreAdminBotMeetingDraft(state, logisticsScope),
+    ]).finally(() => requestHostUpdate?.());
+  }
+  // Same "never asked" sentinel as the logistics queue: the overview is read when the tab is
+  // opened, and re-read after a reminder run clears the stamp.
+  if (
+    state.tab === "adminbotProfileOverview" &&
+    hasMemberSession &&
+    !state.adminBotProfileOverviewLoading &&
+    !state.adminBotProfileOverviewError &&
+    state.adminBotProfileOverviewLoadedAt === null
+  ) {
+    state.adminBotProfileOverviewLoadedAt = Date.now();
+    void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
+  }
+  // The request list is fetched when the tab is opened in view mode -- including on a reload that
+  // lands straight on it, which the mode-change handler alone would miss. `requests.length` is not
+  // the sentinel: a lab with no requests would re-ask on every render.
+  if (
+    state.tab === "adminbotLogistics" &&
+    state.adminBotLogisticsMode === "view" &&
+    hasMemberSession &&
+    !state.adminBotLogisticsRequestsLoading &&
+    !state.adminBotLogisticsRequestsError &&
+    state.adminBotLogisticsRequestsLoadedAt === null
+  ) {
+    state.adminBotLogisticsRequestsLoadedAt = Date.now();
+    void loadAdminBotLogisticsRequests(state).finally(() => requestHostUpdate?.());
   }
   // Same "never asked" sentinel as the calendar above: the meetings list is fetched once when the
   // tab is opened, and a lab that has recorded nothing sets [] rather than looping.
@@ -2826,7 +2924,7 @@ export function renderApp(state: AppViewState) {
       <main
         class="content ${isChat ? "content--chat" : ""} ${state.tab === "logs"
           ? "content--logs"
-          : ""} ${state.tab === "workboard" ? "content--workboard" : ""}"
+          : ""}"
       >
         ${state.updateStatusBanner
           ? html`<div class="callout ${state.updateStatusBanner.tone}" role="alert">
@@ -2875,33 +2973,6 @@ export function renderApp(state: AppViewState) {
                 <div class="page-sub">${subtitleForTab(state.tab)}</div>
               </div>
               <div class="page-meta">
-                ${state.tab === "dreams"
-                  ? html`
-                      <div class="dreaming-header-controls">
-                        <button
-                          class="btn btn--subtle btn--sm"
-                          ?disabled=${dreamingLoading || state.dreamDiaryLoading}
-                          @click=${refreshDreaming}
-                        >
-                          ${dreamingRefreshLoading
-                            ? t("dreaming.header.refreshing")
-                            : t("dreaming.header.refresh")}
-                        </button>
-                        <button
-                          class="dreams__phase-toggle ${dreamingOn
-                            ? "dreams__phase-toggle--on"
-                            : ""}"
-                          ?disabled=${dreamingLoading}
-                          @click=${() => applyDreamingEnabled(!dreamingOn)}
-                        >
-                          <span class="dreams__phase-toggle-dot"></span>
-                          <span class="dreams__phase-toggle-label">
-                            ${dreamingOn ? t("dreaming.header.on") : t("dreaming.header.off")}
-                          </span>
-                        </button>
-                      </div>
-                    `
-                  : nothing}
                 ${headerError ? html`<div class="pill danger">${headerError}</div>` : nothing}
               </div>
             </section>`}
@@ -2933,6 +3004,28 @@ export function renderApp(state: AppViewState) {
             `
           : nothing}
         ${state.tab === "labSharing" ? renderLabSharing(state) : nothing}
+        ${state.tab === "adminbotProfileOverview"
+          ? renderAdminBotProfileOverview({
+              members: state.adminBotProfileOverview,
+              mandatoryFieldCount: state.adminBotProfileOverviewFieldCount,
+              loading: state.adminBotProfileOverviewLoading,
+              error: state.adminBotProfileOverviewError,
+              notice: state.adminBotProfileOverviewNotice,
+              reminding: state.adminBotProfileOverviewReminding,
+              incompleteOnly: state.adminBotProfileOverviewIncompleteOnly,
+              onIncompleteOnlyChange: (incompleteOnly: boolean) => {
+                state.adminBotProfileOverviewIncompleteOnly = incompleteOnly;
+              },
+              onRemind: () => {
+                void remindAdminBotIncompleteProfiles(state).finally(() => requestHostUpdate?.());
+              },
+              // The follow-up to a thin row is a look at the person, which is Lab Members' job.
+              onOpenMember: (memberId: string) => {
+                state.selectedMemberId = memberId;
+                state.setTab("adminbotMembers");
+              },
+            })
+          : nothing}
         ${state.tab === "adminbotLogistics"
           ? renderAdminBotLogistics({
               role: accessRole,
@@ -2940,23 +3033,130 @@ export function renderApp(state: AppViewState) {
               onModeChange: (mode) => {
                 state.adminBotLogisticsMode = mode;
                 state.adminBotLogisticsOpenRequestId = null;
-                if (mode === "view") {
-                  // Re-read on every entry rather than once: the admin may have saved a request
-                  // themselves since the last look, and the list is cheap.
-                  void loadAdminBotLogisticsRequests(state, adminBotViewerName(state));
-                }
+                state.adminBotLogisticsOpenRequest = null;
+                // Clearing the stamp is what asks for a re-read; the effect above does the fetch,
+                // so entering the list has one path whether it was reached by this button or by a
+                // reload that landed on it. Re-read on every entry rather than once: an admin may
+                // have answered a request since the last look.
+                state.adminBotLogisticsRequestsLoadedAt = null;
               },
               requests: {
                 requests: state.adminBotLogisticsRequests,
                 loading: state.adminBotLogisticsRequestsLoading,
-                openRequestId: state.adminBotLogisticsOpenRequestId,
+                error: state.adminBotLogisticsRequestsError,
+                open: state.adminBotLogisticsOpenRequest,
+                openLoading: state.adminBotLogisticsOpenLoading,
+                viewerIsAdmin: accessRole === "admin",
+                viewerMemberId: state.memberId ?? null,
                 onOpenRequest: (requestId) => {
-                  state.adminBotLogisticsOpenRequestId = requestId;
+                  state.adminBotLogisticsStatusNote = "";
+                  void openAdminBotLogisticsRequest(state, requestId).finally(() =>
+                    requestHostUpdate?.(),
+                  );
+                },
+                onEdit: (requestId) => {
+                  const request = state.adminBotLogisticsOpenRequest;
+                  if (!request || request.id !== requestId) {
+                    return;
+                  }
+                  // Loaded from the request that was read in full, so the documents come back with
+                  // it rather than having to be picked off the member's disk again.
+                  const form = requestToFormState(request);
+                  if (form.signature) {
+                    state.adminBotLogisticsTemplate = "documentSignature";
+                    state.adminBotLogisticsSignatureFiles = form.signature.files;
+                    state.adminBotLogisticsDescription = form.signature.description;
+                    state.adminBotLogisticsAttachments = form.signature.attachments;
+                  } else if (form.letters) {
+                    state.adminBotLogisticsTemplate = "recommendationLetters";
+                    state.adminBotLettersSchools = [...form.letters.schools];
+                    state.adminBotLettersFacts = [...form.letters.facts];
+                    state.adminBotLettersCvOverleafUrl = form.letters.cvOverleafUrl;
+                    state.adminBotLettersDriveFolderUrl = form.letters.driveFolderUrl;
+                  } else if (form.meeting) {
+                    state.adminBotLogisticsTemplate = "bookMeeting";
+                    state.adminBotMeetingRows = [...form.meeting.rows];
+                  }
+                  state.adminBotLogisticsEditingId = requestId;
+                  state.adminBotLogisticsSubmittedId = null;
+                  state.adminBotLogisticsSubmitError = null;
+                  state.adminBotLogisticsMode = "make";
+                  state.adminBotLogisticsOpenRequest = null;
+                  state.adminBotLogisticsOpenRequestId = null;
+                },
+                onWithdraw: (requestId) => {
+                  void withdrawAdminBotLogisticsRequest(state, requestId).finally(() =>
+                    requestHostUpdate?.(),
+                  );
+                },
+                onSetStatus: (requestId, status, note) => {
+                  void setAdminBotLogisticsRequestStatus(state, requestId, status, note).finally(
+                    () => {
+                      state.adminBotLogisticsStatusNote = "";
+                      requestHostUpdate?.();
+                    },
+                  );
+                },
+                statusNote: state.adminBotLogisticsStatusNote,
+                onStatusNoteChange: (note) => {
+                  state.adminBotLogisticsStatusNote = note;
+                },
+              },
+              queue: {
+                requests: state.adminBotLogisticsRequests,
+                loading: state.adminBotLogisticsRequestsLoading,
+                error: state.adminBotLogisticsRequestsError,
+                showSettled: state.adminBotLogisticsShowSettled,
+                onShowSettledChange: (showSettled) => {
+                  state.adminBotLogisticsShowSettled = showSettled;
+                },
+                signingId: state.adminBotLogisticsSigningId,
+                downloadingId: state.adminBotLogisticsDownloadingId,
+                onDownload: (requestId, fileName) => {
+                  void downloadAdminBotLogisticsDocument(state, requestId, fileName).finally(() =>
+                    requestHostUpdate?.(),
+                  );
+                },
+                signedNote: state.adminBotLogisticsSignedNote,
+                onSignedNoteChange: (note) => {
+                  state.adminBotLogisticsSignedNote = note;
+                },
+                onSendSigned: (requestId, files) => {
+                  void (async () => {
+                    const documents = await filesToAttachments(files);
+                    const sent = await sendAdminBotSignedDocuments(
+                      state,
+                      requestId,
+                      documents,
+                      state.adminBotLogisticsSignedNote,
+                    );
+                    if (sent) {
+                      // The note belonged to the request that just went out; leaving it in the box
+                      // would attach it to whichever one is signed next.
+                      state.adminBotLogisticsSignedNote = "";
+                    }
+                    requestHostUpdate?.();
+                  })();
+                },
+                onOpenRequest: (requestId) => {
+                  state.adminBotLogisticsStatusNote = "";
+                  void openAdminBotLogisticsRequest(state, requestId).finally(() =>
+                    requestHostUpdate?.(),
+                  );
+                },
+                onSetStatus: (requestId, status) => {
+                  void setAdminBotLogisticsRequestStatus(state, requestId, status, "").finally(() =>
+                    requestHostUpdate?.(),
+                  );
                 },
               },
               template: state.adminBotLogisticsTemplate,
               onTemplateChange: (template) => {
                 state.adminBotLogisticsTemplate = template;
+                // Each template owns its own outcome line, so a submit reported on one form must
+                // not still be on screen when the member opens another.
+                state.adminBotLogisticsSubmittedId = null;
+                state.adminBotLogisticsSubmitError = null;
               },
               signature: {
                 files: state.adminBotLogisticsSignatureFiles,
@@ -2974,7 +3174,11 @@ export function renderApp(state: AppViewState) {
                 saving: state.adminBotLogisticsSaving,
                 savedAt: state.adminBotLogisticsSavedAt,
                 saveError: state.adminBotLogisticsSaveError,
-                onSave: () => void saveAdminBotLogisticsDraft(state),
+                onSave: () =>
+                  void saveAdminBotLogisticsDraft(state, adminBotLogisticsScope(state)).finally(
+                    () => requestHostUpdate?.(),
+                  ),
+                ...adminBotLogisticsSubmitProps(state, requestHostUpdate, "documentSignature"),
               },
               meeting: {
                 rows: state.adminBotMeetingRows,
@@ -2984,7 +3188,11 @@ export function renderApp(state: AppViewState) {
                 saving: state.adminBotMeetingSaving,
                 savedAt: state.adminBotMeetingSavedAt,
                 saveError: state.adminBotMeetingSaveError,
-                onSave: () => void saveAdminBotMeetingDraft(state),
+                onSave: () =>
+                  void saveAdminBotMeetingDraft(state, adminBotLogisticsScope(state)).finally(() =>
+                    requestHostUpdate?.(),
+                  ),
+                ...adminBotLogisticsSubmitProps(state, requestHostUpdate, "bookMeeting"),
               },
               letters: {
                 schools: state.adminBotLettersSchools,
@@ -3007,7 +3215,11 @@ export function renderApp(state: AppViewState) {
                 saving: state.adminBotLettersSaving,
                 savedAt: state.adminBotLettersSavedAt,
                 saveError: state.adminBotLettersSaveError,
-                onSave: () => void saveAdminBotLettersDraft(state),
+                onSave: () =>
+                  void saveAdminBotLettersDraft(state, adminBotLogisticsScope(state)).finally(() =>
+                    requestHostUpdate?.(),
+                  ),
+                ...adminBotLogisticsSubmitProps(state, requestHostUpdate, "recommendationLetters"),
               },
             })
           : nothing}
@@ -3269,34 +3481,8 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "adminbotDeadlines"
           ? renderLazyView(lazyDeadlines, (m) => m.renderDeadlines())
           : nothing}
-        ${state.tab === "instances"
-          ? renderLazyView(lazyInstances, (m) =>
-              m.renderInstances({
-                loading: state.presenceLoading,
-                entries: state.presenceEntries,
-                lastError: state.presenceError,
-                statusMessage: state.presenceStatus,
-                onRefresh: () => void loadPresence(state),
-              }),
-            )
-          : nothing}
         ${state.tab === "sessions"
           ? renderLazyView(lazySessions, (m) => {
-              const workboardState = getWorkboardState(state);
-              const workboardEnabled = isPluginEnabledInConfigSnapshot(
-                state.configSnapshot,
-                "workboard",
-                {
-                  enabledByDefault: false,
-                },
-              );
-              const operatorCanWrite = hasOperatorWriteAccess(
-                (
-                  state.hello as {
-                    auth?: { role?: string; scopes?: string[] };
-                  } | null
-                )?.auth ?? null,
-              );
               return m.renderSessions({
                 loading: state.sessionsLoading,
                 result: state.sessionsResult,
@@ -3315,12 +3501,6 @@ export function renderApp(state: AppViewState) {
                 page: state.sessionsPage,
                 pageSize: state.sessionsPageSize,
                 selectedKeys: state.sessionsSelectedKeys,
-                workboardSessionKeys: new Set(
-                  workboardState.cards
-                    .flatMap((card) => [card.sessionKey, card.execution?.sessionKey])
-                    .filter((key): key is string => typeof key === "string" && key.length > 0),
-                ),
-                workboardBusySessionKey: [...workboardState.capturingSessionKeys][0] ?? null,
                 expandedCheckpointKey: state.sessionsExpandedCheckpointKey,
                 checkpointItemsByKey: state.sessionsCheckpointItemsByKey,
                 checkpointLoadingKey: state.sessionsCheckpointLoadingKey,
@@ -3424,18 +3604,6 @@ export function renderApp(state: AppViewState) {
                   switchChatSession(state, sessionKey);
                   state.setTab("chat" as import("./navigation.ts").Tab);
                 },
-                onAddToWorkboard:
-                  workboardEnabled && operatorCanWrite
-                    ? runUiTask(async (session) => {
-                        await captureSessionToWorkboard({
-                          host: state,
-                          client: state.client,
-                          session,
-                          requestUpdate: requestHostUpdate,
-                        });
-                        state.setTab("workboard" as import("./navigation.ts").Tab);
-                      })
-                    : undefined,
                 onToggleCheckpointDetails: (sessionKey) =>
                   void toggleSessionCompactionCheckpoints(state, sessionKey),
                 onBranchFromCheckpoint: runUiTask(async (sessionKey, checkpointId) => {
@@ -3451,38 +3619,6 @@ export function renderApp(state: AppViewState) {
                 }),
                 onRestoreCheckpoint: (sessionKey, checkpointId) =>
                   void restoreSessionFromCheckpoint(state, sessionKey, checkpointId),
-              });
-            })
-          : nothing}
-        ${state.tab === "workboard"
-          ? renderLazyView(lazyWorkboard, (m) => {
-              const auth =
-                (
-                  state.hello as {
-                    auth?: { role?: string; scopes?: string[] };
-                  } | null
-                )?.auth ?? null;
-              return m.renderWorkboard({
-                host: state,
-                client: state.client,
-                connected: state.connected,
-                canWrite: hasOperatorWriteAccess(auth),
-                canModelOverride: hasOperatorAdminAccess(auth),
-                pluginEnabled: state.configSnapshot
-                  ? isPluginEnabledInConfigSnapshot(state.configSnapshot, "workboard", {
-                      enabledByDefault: false,
-                    })
-                  : null,
-                pluginEnablementError:
-                  !state.configSnapshot && !state.configLoading ? state.lastError : null,
-                agentsList: state.agentsList,
-                sessions: state.sessionsResult?.sessions ?? [],
-                onOpenSession: (sessionKey) => {
-                  switchChatSession(state, sessionKey);
-                  state.setTab("chat" as import("./navigation.ts").Tab);
-                },
-                onReloadConfig: () => void loadConfig(state, { discardPendingChanges: true }),
-                onRequestUpdate: requestHostUpdate,
               });
             })
           : nothing}
@@ -4357,104 +4493,9 @@ export function renderApp(state: AppViewState) {
               ),
             )
           : nothing}
-        ${state.tab === "dreams"
-          ? renderDreaming({
-              active: dreamingOn,
-              selectedAgentId: dreamingSelectedAgentId,
-              agentOptions: dreamingAgentOptions,
-              shortTermCount: state.dreamingStatus?.shortTermCount ?? 0,
-              groundedSignalCount: state.dreamingStatus?.groundedSignalCount ?? 0,
-              totalSignalCount: state.dreamingStatus?.totalSignalCount ?? 0,
-              promotedCount: state.dreamingStatus?.promotedToday ?? 0,
-              phases: state.dreamingStatus?.phases ?? undefined,
-              shortTermEntries: state.dreamingStatus?.shortTermEntries ?? [],
-              promotedEntries: state.dreamingStatus?.promotedEntries ?? [],
-              dreamingOf: null,
-              nextCycle: dreamingNextCycle,
-              timezone: state.dreamingStatus?.timezone ?? null,
-              statusLoading: state.dreamingStatusLoading,
-              statusError: state.dreamingStatusError,
-              modeSaving: state.dreamingModeSaving,
-              dreamDiaryLoading: state.dreamDiaryLoading,
-              dreamDiaryActionLoading: state.dreamDiaryActionLoading,
-              dreamDiaryActionMessage: state.dreamDiaryActionMessage,
-              dreamDiaryActionArchivePath: state.dreamDiaryActionArchivePath,
-              dreamDiaryError: state.dreamDiaryError,
-              dreamDiaryPath: state.dreamDiaryPath,
-              dreamDiaryContent: state.dreamDiaryContent,
-              memoryWikiEnabled: isPluginEnabledInConfigSnapshot(
-                state.configSnapshot,
-                "memory-wiki",
-                { enabledByDefault: false },
-              ),
-              wikiImportInsightsLoading: state.wikiImportInsightsLoading,
-              wikiImportInsightsError: state.wikiImportInsightsError,
-              wikiImportInsights: state.wikiImportInsights,
-              wikiMemoryPalaceLoading: state.wikiMemoryPalaceLoading,
-              wikiMemoryPalaceError: state.wikiMemoryPalaceError,
-              wikiMemoryPalace: state.wikiMemoryPalace,
-              onRefresh: refreshDreaming,
-              onSelectAgent: (agentId: string) => {
-                state.selectedAgentId = agentId;
-                switchChatSession(state, resolvePreferredSessionForAgent(state, agentId));
-                void loadDreamingStatus(state);
-                void loadDreamDiary(state);
-              },
-              onRefreshDiary: () => {
-                syncDreamingSelectedAgent();
-                void loadDreamDiary(state);
-              },
-              onRefreshImports: () => {
-                void (async () => {
-                  await loadConfig(state);
-                  await loadWikiImportInsights(state);
-                })();
-              },
-              onRefreshMemoryPalace: () => {
-                void (async () => {
-                  await loadConfig(state);
-                  await loadWikiMemoryPalace(state);
-                })();
-              },
-              onOpenConfig: () => void openConfigFile(state),
-              onOpenWikiPage: (lookup: string) => openWikiPage(lookup),
-              onBackfillDiary: () => {
-                syncDreamingSelectedAgent();
-                void backfillDreamDiary(state);
-              },
-              onCopyDreamingArchivePath: () => {
-                void copyDreamingArchivePath(state);
-              },
-              onDedupeDreamDiary: () => {
-                syncDreamingSelectedAgent();
-                void dedupeDreamDiary(state);
-              },
-              onResetDiary: () => {
-                syncDreamingSelectedAgent();
-                void resetDreamDiary(state);
-              },
-              onResetGroundedShortTerm: () => {
-                syncDreamingSelectedAgent();
-                void resetGroundedShortTerm(state);
-              },
-              onRepairDreamingArtifacts: () => {
-                syncDreamingSelectedAgent();
-                void repairDreamingArtifacts(state);
-              },
-              onRequestUpdate: requestHostUpdate,
-            })
-          : nothing}
       </main>
       ${renderFeedbackWidget(state)} ${renderExecApprovalPrompt(state)}
-      ${renderGatewayUrlConfirmation(state)}
-      ${renderDreamingRestartConfirmation({
-        open: state.dreamingRestartConfirmOpen,
-        loading: state.dreamingRestartConfirmLoading,
-        onConfirm: confirmDreamingRestart,
-        onCancel: cancelDreamingRestart,
-        hasError: Boolean(state.dreamingStatusError),
-      })}
-      ${nothing}
+      ${renderGatewayUrlConfirmation(state)} ${nothing}
     </div>
   `;
 }

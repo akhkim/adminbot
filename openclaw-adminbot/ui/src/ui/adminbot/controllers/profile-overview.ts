@@ -1,0 +1,101 @@
+// The Profile Overview tab's side of the wire.
+//
+// Two calls: read how far along everyone's record is, and run the reminder pass now rather than
+// waiting for the daily cron. Both are admin-only and the service enforces that; nothing here
+// decides who may look.
+import { t } from "../../../i18n/index.ts";
+import type { UiSettings } from "../../storage.ts";
+import {
+  fetchMemberProfileOverview,
+  loadStoredMemberSession,
+  resolveAdminBotBaseUrl,
+  runMandatoryFieldsReminder,
+  type MemberProfileOverviewRow,
+} from "../auth/session.ts";
+
+export type AdminBotProfileOverviewHost = {
+  settings: UiSettings;
+  adminBotProfileOverview: MemberProfileOverviewRow[];
+  /** How many fields count as complete. Zero until the first read answers. */
+  adminBotProfileOverviewFieldCount: number;
+  adminBotProfileOverviewLoading: boolean;
+  adminBotProfileOverviewError: string | null;
+  adminBotProfileOverviewLoadedAt: number | null;
+  adminBotProfileOverviewReminding: boolean;
+  adminBotProfileOverviewNotice: string | null;
+};
+
+function failureText(result: { kind: string; message?: string }, baseUrl: string): string {
+  if (result.kind === "unreachable") {
+    return t("profileOverview.error.unreachable", { url: baseUrl });
+  }
+  if (result.kind === "forbidden") {
+    return t("profileOverview.error.forbidden");
+  }
+  return result.message ?? t("profileOverview.error.failed");
+}
+
+function session(host: AdminBotProfileOverviewHost): { token: string; baseUrl: string } | null {
+  const stored = loadStoredMemberSession();
+  return stored
+    ? { token: stored.sessionToken, baseUrl: resolveAdminBotBaseUrl(host.settings) }
+    : null;
+}
+
+export async function loadAdminBotProfileOverview(
+  host: AdminBotProfileOverviewHost,
+): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotProfileOverviewError = t("profileOverview.error.signIn");
+    return;
+  }
+  host.adminBotProfileOverviewLoading = true;
+  host.adminBotProfileOverviewError = null;
+  try {
+    const result = await fetchMemberProfileOverview(wire.token, wire.baseUrl);
+    if (!result.ok) {
+      host.adminBotProfileOverview = [];
+      host.adminBotProfileOverviewError = failureText(result, wire.baseUrl);
+      return;
+    }
+    host.adminBotProfileOverview = result.value.members;
+    host.adminBotProfileOverviewFieldCount = result.value.mandatoryFieldCount;
+  } finally {
+    host.adminBotProfileOverviewLoading = false;
+  }
+}
+
+/**
+ * Sends the reminder now.
+ *
+ * The message and the recipients are both computed by the service from roster state -- this button
+ * chooses neither, which is why an admin can press it without composing anything. The service also
+ * keeps its own cadence, so a second press within the window sends nothing rather than nagging.
+ */
+export async function remindAdminBotIncompleteProfiles(
+  host: AdminBotProfileOverviewHost,
+): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotProfileOverviewError = t("profileOverview.error.signIn");
+    return;
+  }
+  host.adminBotProfileOverviewReminding = true;
+  host.adminBotProfileOverviewError = null;
+  host.adminBotProfileOverviewNotice = null;
+  try {
+    const result = await runMandatoryFieldsReminder(wire.token, wire.baseUrl);
+    if (!result.ok) {
+      host.adminBotProfileOverviewError = failureText(result, wire.baseUrl);
+      return;
+    }
+    host.adminBotProfileOverviewNotice = result.value.created
+      ? t("profileOverview.reminded", { count: String(result.value.created) })
+      : t("profileOverview.remindedNone");
+    // Re-read so the "last reminded" column reflects what just happened.
+    host.adminBotProfileOverviewLoadedAt = null;
+  } finally {
+    host.adminBotProfileOverviewReminding = false;
+  }
+}

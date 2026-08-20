@@ -268,7 +268,6 @@ the plugin tools even under the minimal profile.
         },
         "skills": [
           "adminbot-workflows",
-          "adminbot-candidate-workflow",
           "adminbot-join-form-triage",
           "adminbot-reimbursements",
           "adminbot-access-invites",
@@ -288,11 +287,8 @@ the plugin tools even under the minimal profile.
             "adminbot_run_email_automation",
             "adminbot_reason",
             "adminbot_propose_action",
-            "adminbot_propose_candidate_decision",
-            "adminbot_draft_social_post",
             "adminbot_prepare_paper_social_posts",
             "adminbot_prepare_overleaf_paper_edit",
-            "adminbot_prepare_reimbursement_packet",
             "adminbot_suggest_calendar_change",
             "adminbot_propose_slack_message",
             "adminbot_classify_join_form_response",
@@ -343,9 +339,9 @@ Every meaningful action should become an action proposal:
 
 ```json
 {
-  "type": "candidate.accept_for_trial",
-  "risk_tier": "T4",
-  "summary": "Accept Jane Doe for a two-week trial",
+  "type": "email.send",
+  "risk_tier": "T3",
+  "summary": "Email Jane Doe the trial offer",
   "target": {
     "name": "Jane Doe",
     "email": "jane@example.test"
@@ -357,7 +353,7 @@ Every meaningful action should become an action proposal:
     }
   ],
   "proposed_payload": {},
-  "rationale": "Strong match for the trial project.",
+  "rationale": "The trial decision was made offline; this sends the confirmation.",
   "undo_plan": "Return the candidate to review state and revoke onboarding tasks.",
   "idempotency_key": "candidate-jane-doe-trial-2026-06-08",
   "dry_run": true

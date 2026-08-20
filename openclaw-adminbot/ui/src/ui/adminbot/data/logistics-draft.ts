@@ -5,9 +5,10 @@
 // thread, into a store with a ~5MB cap that the whole origin shares. IndexedDB stores a File
 // directly through structured clone and is async.
 //
-// This is the member's own device and nothing else: the draft never leaves the browser. Saving is
-// a convenience so a half-filled request survives a reload, not a submission -- that path does not
-// exist yet and will go through propose -> approve -> execute when it does.
+// A draft never leaves the browser: saving is a convenience so a half-filled request survives a
+// reload, not a submission. Submitting is POST /logistics/requests -- see controllers/logistics.ts
+// -- and a submitted request clears the draft it was built from, so the two can never both claim
+// to be "the request".
 import { localTimezone } from "./timezones.ts";
 
 const DB_NAME = "adminbot-logistics";
@@ -18,6 +19,22 @@ const STORE_NAME = "drafts";
 const SIGNATURE_DRAFT_KEY = "document-signature";
 const LETTERS_DRAFT_KEY = "recommendation-letters";
 const MEETING_DRAFT_KEY = "book-meeting";
+
+/**
+ * The suffix that makes a draft key one person's.
+ *
+ * Drafts live in IndexedDB, which is per-origin and not per-account: on a shared machine, or after
+ * a logout and a different login, an unscoped key hands the next person the last one's half-written
+ * request -- and their attached documents with it. Scoping the key is what keeps that from being
+ * possible. A signed-out browser gets its own "anonymous" scope rather than sharing anybody's.
+ */
+export function logisticsDraftScope(memberId: string | null | undefined): string {
+  return memberId?.trim() || "anonymous";
+}
+
+function scopedKey(key: string, scope: string): string {
+  return `${key}:${scope}`;
+}
 
 export type LogisticsDraft = {
   description: string;
@@ -279,7 +296,9 @@ function parseMeetingRow(value: unknown): MeetingRequestRow | null {
   return createMeetingRow({
     ...(purpose === undefined ? {} : { purpose }),
     ...(preferredTime === undefined ? {} : { preferredTime }),
-    ...(timezone ? { timezone } : {}),
+    // `undefined` means the record never had the field; an empty string means the member cleared
+    // it on purpose, and putting the browser's zone back would silently answer for them.
+    ...(timezone === undefined ? {} : { timezone }),
     ...(lengthMinutes === undefined ? {} : { lengthMinutes }),
     // A stored stamp is kept as it is; only a row that never had one gets today's clock, which is
     // the least wrong answer available for a record written before the column existed.
@@ -383,45 +402,57 @@ async function withStore<T>(
   }
 }
 
-export async function saveLogisticsDraft(draft: LogisticsDraft): Promise<void> {
-  await withStore("readwrite", (store) => store.put(draft, SIGNATURE_DRAFT_KEY));
+export async function saveLogisticsDraft(draft: LogisticsDraft, scope: string): Promise<void> {
+  await withStore("readwrite", (store) => store.put(draft, scopedKey(SIGNATURE_DRAFT_KEY, scope)));
 }
 
-export async function loadLogisticsDraft(): Promise<LogisticsDraft | null> {
-  const stored = await withStore("readonly", (store) => store.get(SIGNATURE_DRAFT_KEY));
+export async function loadLogisticsDraft(scope: string): Promise<LogisticsDraft | null> {
+  const stored = await withStore("readonly", (store) =>
+    store.get(scopedKey(SIGNATURE_DRAFT_KEY, scope)),
+  );
   return parseLogisticsDraft(stored);
 }
 
-export async function clearLogisticsDraft(): Promise<void> {
-  await withStore("readwrite", (store) => store.delete(SIGNATURE_DRAFT_KEY));
+export async function clearLogisticsDraft(scope: string): Promise<void> {
+  await withStore("readwrite", (store) => store.delete(scopedKey(SIGNATURE_DRAFT_KEY, scope)));
 }
 
 export async function saveRecommendationLettersDraft(
   draft: RecommendationLettersDraft,
+  scope: string,
 ): Promise<void> {
-  await withStore("readwrite", (store) => store.put(draft, LETTERS_DRAFT_KEY));
+  await withStore("readwrite", (store) => store.put(draft, scopedKey(LETTERS_DRAFT_KEY, scope)));
 }
 
-export async function loadRecommendationLettersDraft(): Promise<RecommendationLettersDraft | null> {
-  const stored = await withStore("readonly", (store) => store.get(LETTERS_DRAFT_KEY));
+export async function loadRecommendationLettersDraft(
+  scope: string,
+): Promise<RecommendationLettersDraft | null> {
+  const stored = await withStore("readonly", (store) =>
+    store.get(scopedKey(LETTERS_DRAFT_KEY, scope)),
+  );
   return parseRecommendationLettersDraft(stored);
 }
 
-export async function clearRecommendationLettersDraft(): Promise<void> {
-  await withStore("readwrite", (store) => store.delete(LETTERS_DRAFT_KEY));
+export async function clearRecommendationLettersDraft(scope: string): Promise<void> {
+  await withStore("readwrite", (store) => store.delete(scopedKey(LETTERS_DRAFT_KEY, scope)));
 }
 
-export async function saveMeetingRequestDraft(draft: MeetingRequestDraft): Promise<void> {
-  await withStore("readwrite", (store) => store.put(draft, MEETING_DRAFT_KEY));
+export async function saveMeetingRequestDraft(
+  draft: MeetingRequestDraft,
+  scope: string,
+): Promise<void> {
+  await withStore("readwrite", (store) => store.put(draft, scopedKey(MEETING_DRAFT_KEY, scope)));
 }
 
-export async function loadMeetingRequestDraft(): Promise<MeetingRequestDraft | null> {
-  const stored = await withStore("readonly", (store) => store.get(MEETING_DRAFT_KEY));
+export async function loadMeetingRequestDraft(scope: string): Promise<MeetingRequestDraft | null> {
+  const stored = await withStore("readonly", (store) =>
+    store.get(scopedKey(MEETING_DRAFT_KEY, scope)),
+  );
   return parseMeetingRequestDraft(stored);
 }
 
-export async function clearMeetingRequestDraft(): Promise<void> {
-  await withStore("readwrite", (store) => store.delete(MEETING_DRAFT_KEY));
+export async function clearMeetingRequestDraft(scope: string): Promise<void> {
+  await withStore("readwrite", (store) => store.delete(scopedKey(MEETING_DRAFT_KEY, scope)));
 }
 
 function describeError(error: unknown): string {
@@ -429,17 +460,23 @@ function describeError(error: unknown): string {
 }
 
 /** Writes what is on screen now. Host state carries the outcome so the view can report it. */
-export async function saveAdminBotLogisticsDraft(host: LogisticsDraftHost): Promise<void> {
+export async function saveAdminBotLogisticsDraft(
+  host: LogisticsDraftHost,
+  scope: string,
+): Promise<void> {
   host.adminBotLogisticsSaving = true;
   host.adminBotLogisticsSaveError = null;
   const savedAt = Date.now();
   try {
-    await saveLogisticsDraft({
-      description: host.adminBotLogisticsDescription,
-      signatureFiles: host.adminBotLogisticsSignatureFiles,
-      attachments: host.adminBotLogisticsAttachments,
-      savedAt,
-    });
+    await saveLogisticsDraft(
+      {
+        description: host.adminBotLogisticsDescription,
+        signatureFiles: host.adminBotLogisticsSignatureFiles,
+        attachments: host.adminBotLogisticsAttachments,
+        savedAt,
+      },
+      scope,
+    );
     host.adminBotLogisticsSavedAt = savedAt;
   } catch (error) {
     host.adminBotLogisticsSaveError = describeError(error);
@@ -453,8 +490,11 @@ export async function saveAdminBotLogisticsDraft(host: LogisticsDraftHost): Prom
  * anything, or whose browser blocks IndexedDB, should get an empty form rather than an error for
  * something they did not ask for.
  */
-export async function restoreAdminBotLogisticsDraft(host: LogisticsDraftHost): Promise<void> {
-  const draft = await loadLogisticsDraft().catch(() => null);
+export async function restoreAdminBotLogisticsDraft(
+  host: LogisticsDraftHost,
+  scope: string,
+): Promise<void> {
+  const draft = await loadLogisticsDraft(scope).catch(() => null);
   if (!draft) {
     return;
   }
@@ -471,18 +511,22 @@ export async function restoreAdminBotLogisticsDraft(host: LogisticsDraftHost): P
  */
 export async function saveAdminBotLettersDraft(
   host: RecommendationLettersDraftHost,
+  scope: string,
 ): Promise<void> {
   host.adminBotLettersSaving = true;
   host.adminBotLettersSaveError = null;
   const savedAt = Date.now();
   try {
-    await saveRecommendationLettersDraft({
-      schools: host.adminBotLettersSchools,
-      facts: host.adminBotLettersFacts,
-      cvOverleafUrl: host.adminBotLettersCvOverleafUrl,
-      driveFolderUrl: host.adminBotLettersDriveFolderUrl,
-      savedAt,
-    });
+    await saveRecommendationLettersDraft(
+      {
+        schools: host.adminBotLettersSchools,
+        facts: host.adminBotLettersFacts,
+        cvOverleafUrl: host.adminBotLettersCvOverleafUrl,
+        driveFolderUrl: host.adminBotLettersDriveFolderUrl,
+        savedAt,
+      },
+      scope,
+    );
     host.adminBotLettersSavedAt = savedAt;
   } catch (error) {
     host.adminBotLettersSaveError = describeError(error);
@@ -494,8 +538,9 @@ export async function saveAdminBotLettersDraft(
 /** Silent on failure, for the same reason the signature restore is. */
 export async function restoreAdminBotLettersDraft(
   host: RecommendationLettersDraftHost,
+  scope: string,
 ): Promise<void> {
-  const draft = await loadRecommendationLettersDraft().catch(() => null);
+  const draft = await loadRecommendationLettersDraft(scope).catch(() => null);
   if (!draft) {
     return;
   }
@@ -511,12 +556,15 @@ export async function restoreAdminBotLettersDraft(
 }
 
 /** The meeting table's own save and restore, on the same contract as the other two. */
-export async function saveAdminBotMeetingDraft(host: MeetingRequestDraftHost): Promise<void> {
+export async function saveAdminBotMeetingDraft(
+  host: MeetingRequestDraftHost,
+  scope: string,
+): Promise<void> {
   host.adminBotMeetingSaving = true;
   host.adminBotMeetingSaveError = null;
   const savedAt = Date.now();
   try {
-    await saveMeetingRequestDraft({ meetings: host.adminBotMeetingRows, savedAt });
+    await saveMeetingRequestDraft({ meetings: host.adminBotMeetingRows, savedAt }, scope);
     host.adminBotMeetingSavedAt = savedAt;
   } catch (error) {
     host.adminBotMeetingSaveError = describeError(error);
@@ -526,8 +574,11 @@ export async function saveAdminBotMeetingDraft(host: MeetingRequestDraftHost): P
 }
 
 /** Silent on failure, for the same reason the other restores are. */
-export async function restoreAdminBotMeetingDraft(host: MeetingRequestDraftHost): Promise<void> {
-  const draft = await loadMeetingRequestDraft().catch(() => null);
+export async function restoreAdminBotMeetingDraft(
+  host: MeetingRequestDraftHost,
+  scope: string,
+): Promise<void> {
+  const draft = await loadMeetingRequestDraft(scope).catch(() => null);
   if (!draft) {
     return;
   }

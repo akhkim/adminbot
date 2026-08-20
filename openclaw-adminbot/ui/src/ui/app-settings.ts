@@ -42,13 +42,6 @@ import {
 } from "./controllers/cron.ts";
 import { loadDebug, type DebugState } from "./controllers/debug.ts";
 import { loadDevices, type DevicesState } from "./controllers/devices.ts";
-import {
-  loadDreamDiary,
-  loadDreamingStatus,
-  loadWikiImportInsights,
-  loadWikiMemoryPalace,
-  type DreamingState,
-} from "./controllers/dreaming.ts";
 import { loadExecApprovals, type ExecApprovalsState } from "./controllers/exec-approvals.ts";
 import { loadLogs, type LogsState } from "./controllers/logs.ts";
 import {
@@ -60,11 +53,6 @@ import { loadPresence, type PresenceState } from "./controllers/presence.ts";
 import { loadSessions, type SessionsState } from "./controllers/sessions.ts";
 import { loadSkills, reconcileSkillsAgentId, type SkillsState } from "./controllers/skills.ts";
 import { loadUsage, type UsageState } from "./controllers/usage.ts";
-import {
-  loadWorkboard,
-  stopWorkboardLifecycleRefresh,
-  stopWorkboardPolling,
-} from "./controllers/workboard.ts";
 import { resolveCronJobLastRunStatus } from "./cron-status.ts";
 import { syncCustomThemeStyleTag } from "./custom-theme.ts";
 import { isMonitoredAuthProvider } from "./model-auth-helpers.ts";
@@ -76,7 +64,6 @@ import {
   tabFromPath,
   type Tab,
 } from "./navigation.ts";
-import { normalizeAgentId, parseAgentSessionKey } from "./session-key.ts";
 import { syncSignedOutViewWithLocation } from "./signed-out-view.ts";
 import {
   normalizeTextScale,
@@ -130,26 +117,12 @@ type SettingsHost = {
   controlUiOverviewRefreshSeq?: number;
   controlUiCronRefreshSeq?: number;
   sessionsChangedReloadTimer?: number | ReturnType<typeof globalThis.setTimeout> | null;
-  dreamingStatusLoading: boolean;
-  dreamingStatusError: string | null;
-  dreamingStatus: import("./controllers/dreaming.js").DreamingStatus | null;
-  dreamingModeSaving: boolean;
-  dreamDiaryLoading: boolean;
-  dreamDiaryError: string | null;
-  dreamDiaryPath: string | null;
-  dreamDiaryContent: string | null;
 };
 
 type LocalUserIdentityHost = {
   userName?: string | null;
   userAvatar?: string | null;
 };
-
-function resolveDreamingAgentIdForSession(host: SettingsHost): string {
-  return normalizeAgentId(
-    parseAgentSessionKey(host.sessionKey)?.agentId ?? host.agentsList?.defaultId ?? "main",
-  );
-}
 
 type SettingsAppHost = SettingsHost &
   AgentFilesState &
@@ -161,7 +134,6 @@ type SettingsAppHost = SettingsHost &
   CronState &
   DebugState &
   DevicesState &
-  DreamingState &
   ExecApprovalsState &
   LogsState &
   NodesState &
@@ -491,8 +463,7 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         break;
       // The audience filters read the roster and the papers; the event list is a separate read.
       case "adminbotCalendar": {
-        const loadEvents = (app as { loadCalendarEvents?: () => Promise<void> })
-          .loadCalendarEvents;
+        const loadEvents = (app as { loadCalendarEvents?: () => Promise<void> }).loadCalendarEvents;
         await Promise.all([loadAdminBot(app), loadEvents?.() ?? Promise.resolve()]);
         break;
       }
@@ -504,25 +475,8 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         break;
       case "activity":
         break;
-      case "workboard":
-        await Promise.all([
-          loadConfig(app),
-          loadSessions(app),
-          loadAgents(app),
-          loadWorkboard({
-            host,
-            client: app.client,
-            force: true,
-            requestUpdate: host.requestUpdate,
-            refreshDiagnostics: hasOperatorWriteAccess(app.hello?.auth ?? null),
-          }),
-        ]);
-        break;
       case "channels":
         await loadChannelsTab(host);
-        break;
-      case "instances":
-        await loadPresence(app);
         break;
       case "usage":
         await loadUsage(app);
@@ -544,16 +498,6 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "nodes":
         await loadNodes(app);
         await Promise.allSettled([loadDevices(app), loadConfig(app), loadExecApprovals(app)]);
-        break;
-      case "dreams":
-        host.selectedAgentId = resolveDreamingAgentIdForSession(host);
-        await loadConfig(app);
-        await Promise.all([
-          loadDreamingStatus(app),
-          loadDreamDiary(app),
-          loadWikiImportInsights(app),
-          loadWikiMemoryPalace(app),
-        ]);
         break;
       case "chat": {
         try {
@@ -779,12 +723,6 @@ function applyTabSelection(
   (next === "debug" ? startDebugPolling : stopDebugPolling)(
     host as unknown as Parameters<typeof startDebugPolling>[0],
   );
-  if (next !== "workboard") {
-    stopWorkboardPolling(host as unknown as Parameters<typeof stopWorkboardPolling>[0]);
-    stopWorkboardLifecycleRefresh(
-      host as unknown as Parameters<typeof stopWorkboardLifecycleRefresh>[0],
-    );
-  }
 
   if (options.refreshPolicy === "always" || host.connected) {
     void refreshActiveTab(host);

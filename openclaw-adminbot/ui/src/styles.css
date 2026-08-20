@@ -12,8 +12,6 @@
 @import "./styles/meetings.css";
 @import "./styles/time-allocation-chart.css";
 @import "./styles/usage.css";
-@import "./styles/dreams.css";
-@import "./styles/workboard.css";
 @import "@create-markdown/preview/themes/system.css";
 
 .cm-preview {

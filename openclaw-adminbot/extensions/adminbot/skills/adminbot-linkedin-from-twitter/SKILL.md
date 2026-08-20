@@ -68,16 +68,13 @@ Use 2-4 short paragraphs plus an optional final link or call to action.
 
 ## AdminBot Output
 
-For draft-only requests, use `adminbot_draft_social_post` with:
+For draft-only requests, return the LinkedIn draft text in the conversation with
+a short source note naming the spreadsheet row, the source column, and the
+Twitter/X thread URL when one was used. There is no draft-only action type: the
+only social action a connector publishes is `social_media.post_publicly`.
 
-- `subject`: `LinkedIn post for <paper title>`
-- `sourceWork`: a concise note naming the spreadsheet row, the source column,
-  and the Twitter/X thread URL when used
-- `audience`: `LinkedIn research audience`
-- `tone`: the selected tone or `professional, clear, and celebratory`
-- `evidence`: spreadsheet URL, row identifier, source column, and thread URL
-
-Return the LinkedIn draft text to the user with a short source note.
+When the post should actually go out, use `adminbot_prepare_paper_social_posts`,
+which builds the approval-gated LinkedIn and X posts for the paper.
 
 For publication requests, use `adminbot_prepare_paper_social_posts` with
 `platforms=["linkedin"]` after the user confirms the exact LinkedIn text. Public

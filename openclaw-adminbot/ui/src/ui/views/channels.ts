@@ -9,7 +9,6 @@ import type {
   DiscordStatus,
   GoogleChatStatus,
   IMessageStatus,
-  NostrProfile,
   NostrStatus,
   SignalStatus,
   SlackStatus,
@@ -17,21 +16,14 @@ import type {
   WhatsAppStatus,
 } from "../types.ts";
 import { renderChannelConfigSection } from "./channels.config.ts";
-import { renderDiscordCard } from "./channels.discord.ts";
-import { renderGoogleChatCard } from "./channels.googlechat.ts";
-import { renderIMessageCard } from "./channels.imessage.ts";
-import { renderNostrCard } from "./channels.nostr.ts";
 import {
   channelEnabled,
   formatNullableBoolean,
   renderChannelAccountCount,
   resolveChannelDisplayState,
 } from "./channels.shared.ts";
-import { renderSignalCard } from "./channels.signal.ts";
 import { renderSlackCard } from "./channels.slack.ts";
-import { renderTelegramCard } from "./channels.telegram.ts";
 import type { ChannelKey, ChannelsChannelData, ChannelsProps } from "./channels.types.ts";
-import { renderWhatsAppCard } from "./channels.whatsapp.ts";
 
 export function renderChannels(props: ChannelsProps) {
   const channels = props.snapshot?.channels as Record<string, unknown> | null;
@@ -119,82 +111,20 @@ function resolveChannelOrder(snapshot: ChannelsStatusSnapshot | null): ChannelKe
   if (snapshot?.channelOrder?.length) {
     return snapshot.channelOrder;
   }
-  return ["whatsapp", "telegram", "discord", "googlechat", "slack", "signal", "imessage", "nostr"];
+  // Only Slack survives the plugin set this fork ships; anything else the gateway happens to
+  // report falls through to the generic card below.
+  return ["slack"];
 }
 
 function renderChannel(key: ChannelKey, props: ChannelsProps, data: ChannelsChannelData) {
   const accountCountLabel = renderChannelAccountCount(key, data.channelAccounts);
   switch (key) {
-    case "whatsapp":
-      return renderWhatsAppCard({
-        props,
-        whatsapp: data.whatsapp,
-        accountCountLabel,
-      });
-    case "telegram":
-      return renderTelegramCard({
-        props,
-        telegram: data.telegram,
-        telegramAccounts: data.channelAccounts?.telegram ?? [],
-        accountCountLabel,
-      });
-    case "discord":
-      return renderDiscordCard({
-        props,
-        discord: data.discord,
-        accountCountLabel,
-      });
-    case "googlechat":
-      return renderGoogleChatCard({
-        props,
-        googleChat: data.googlechat,
-        accountCountLabel,
-      });
     case "slack":
       return renderSlackCard({
         props,
         slack: data.slack,
         accountCountLabel,
       });
-    case "signal":
-      return renderSignalCard({
-        props,
-        signal: data.signal,
-        accountCountLabel,
-      });
-    case "imessage":
-      return renderIMessageCard({
-        props,
-        imessage: data.imessage,
-        accountCountLabel,
-      });
-    case "nostr": {
-      const nostrAccounts = data.channelAccounts?.nostr ?? [];
-      const primaryAccount = nostrAccounts[0];
-      const accountId = primaryAccount?.accountId ?? "default";
-      const profile =
-        (primaryAccount as { profile?: NostrProfile | null } | undefined)?.profile ?? null;
-      const showForm =
-        props.nostrProfileAccountId === accountId ? props.nostrProfileFormState : null;
-      const profileFormCallbacks = showForm
-        ? {
-            onFieldChange: props.onNostrProfileFieldChange,
-            onSave: props.onNostrProfileSave,
-            onImport: props.onNostrProfileImport,
-            onCancel: props.onNostrProfileCancel,
-            onToggleAdvanced: props.onNostrProfileToggleAdvanced,
-          }
-        : null;
-      return renderNostrCard({
-        props,
-        nostr: data.nostr,
-        nostrAccounts,
-        accountCountLabel,
-        profileFormState: showForm,
-        profileFormCallbacks,
-        onEditProfile: () => props.onNostrProfileEdit(accountId, profile),
-      });
-    }
     default:
       return renderGenericChannelCard(key, props, data.channelAccounts ?? {});
   }

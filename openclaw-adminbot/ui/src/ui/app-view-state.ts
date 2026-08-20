@@ -1,5 +1,6 @@
 // Control UI module implements app view state behavior.
 import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
+import type { LocationDrift, MeetingAttendee, MeetingRecord } from "./adminbot/auth/session.ts";
 import type {
   AdminBotDashboardData,
   AdminBotMemberNudgeState,
@@ -10,11 +11,6 @@ import type {
   MeetingRequestRow,
   RecommendationSchool,
 } from "./adminbot/data/logistics-draft.ts";
-import type {
-  LocationDrift,
-  MeetingAttendee,
-  MeetingRecord,
-} from "./adminbot/auth/session.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { BlockerSort } from "./adminbot/views/admin.ts";
@@ -75,7 +71,6 @@ import type {
   ToolsCatalogResult,
 } from "./types.ts";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
-import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
 import type { SessionLogEntry } from "./views/usage.ts";
 
 export type AppViewState = {
@@ -348,26 +343,6 @@ export type AppViewState = {
   configForm: Record<string, unknown> | null;
   configFormOriginal: Record<string, unknown> | null;
   selectedAgentId: string | null;
-  dreamingStatusLoading: boolean;
-  dreamingStatusError: string | null;
-  dreamingStatus: import("./controllers/dreaming.js").DreamingStatus | null;
-  dreamingModeSaving: boolean;
-  dreamingRestartConfirmOpen: boolean;
-  dreamingRestartConfirmLoading: boolean;
-  dreamingPendingEnabled: boolean | null;
-  dreamDiaryLoading: boolean;
-  dreamDiaryActionLoading: boolean;
-  dreamDiaryActionMessage: { kind: "success" | "error"; text: string } | null;
-  dreamDiaryActionArchivePath: string | null;
-  dreamDiaryError: string | null;
-  dreamDiaryPath: string | null;
-  dreamDiaryContent: string | null;
-  wikiImportInsightsLoading: boolean;
-  wikiImportInsightsError: string | null;
-  wikiImportInsights: import("./controllers/dreaming.js").WikiImportInsights | null;
-  wikiMemoryPalaceLoading: boolean;
-  wikiMemoryPalaceError: string | null;
-  wikiMemoryPalace: import("./controllers/dreaming.js").WikiMemoryPalace | null;
   configFormMode: "form" | "raw";
   configSettingsMode: "quick" | "advanced";
   configSearchQuery: string;
@@ -400,12 +375,6 @@ export type AppViewState = {
   channelsSnapshot: ChannelsStatusSnapshot | null;
   channelsError: string | null;
   channelsLastSuccess: number | null;
-  whatsappLoginMessage: string | null;
-  whatsappLoginQrDataUrl: string | null;
-  whatsappLoginConnected: boolean | null;
-  whatsappBusy: boolean;
-  nostrProfileFormState: NostrProfileFormState | null;
-  nostrProfileAccountId: string | null;
   configFormDirty: boolean;
   presenceLoading: boolean;
   presenceEntries: PresenceEntry[];
@@ -471,12 +440,54 @@ export type AppViewState = {
   // and save state are separate from the signature form's: only one is visible at a time, and a
   // shared "Saved at" would follow the member across and describe the wrong draft.
   adminBotLogisticsTemplate: LogisticsTemplate;
-  // Admin-only surface: make a request, or read the saved ones. Held for everyone because the view
-  // pins non-admins to "make" rather than the state being trusted to be absent.
+  // Make a request, or read the ones already made. Both modes are open to everyone: the service
+  // scopes the list to the caller, so a member's is their own requests and an admin's is the lab's.
   adminBotLogisticsMode: LogisticsMode;
   adminBotLogisticsRequests: LogisticsRequest[];
   adminBotLogisticsRequestsLoading: boolean;
+  adminBotLogisticsRequestsError: string | null;
+  // When the list was last read, and the "ask for it" signal: null means nothing has fetched it
+  // for the mode the tab is now in. Not `requests.length`, which would re-ask forever in a lab
+  // that has no requests yet.
+  adminBotLogisticsRequestsLoadedAt: number | null;
+  // Which request is open, and the copy of it that carries the file bytes. The list deliberately
+  // has none, so opening one is a second read and the two are held apart.
   adminBotLogisticsOpenRequestId: string | null;
+  adminBotLogisticsOpenRequest: LogisticsRequest | null;
+  adminBotLogisticsOpenLoading: boolean;
+  // The admin's note for the answer they are about to give, parked here so a re-render underneath
+  // them -- the request list reloading -- cannot eat half a sentence.
+  adminBotLogisticsStatusNote: string;
+  // Submitting, shared by the three forms because only one of them is ever on screen.
+  adminBotLogisticsSubmitting: boolean;
+  adminBotLogisticsSubmitError: string | null;
+  adminBotLogisticsSubmittedId: string | null;
+  // The request the forms are currently holding a correction to, or null when what is on screen is
+  // a new request. Submit sends a PUT for the first and a POST for the second.
+  adminBotLogisticsEditingId: string | null;
+  // The request whose signed document is being uploaded right now, so its row can say so and no
+  // second upload can start against the same one.
+  adminBotLogisticsSigningId: string | null;
+  // "<requestId>:<fileName>" while that one document is being fetched for download.
+  adminBotLogisticsDownloadingId: string | null;
+  // What an admin has typed to go with the signed document they are about to send.
+  adminBotLogisticsSignedNote: string;
+  // Whether the admin queue is showing only what is still outstanding, or everything.
+  adminBotLogisticsShowSettled: boolean;
+  // Whose drafts are currently on screen. Drafts are per-member (IndexedDB is per-origin, not per
+  // account), so this is what tells the render pass that the signed-in member changed and the
+  // forms are showing somebody else's work.
+  adminBotLogisticsDraftScope: string | null;
+  // Profile Overview: how far along every active member's own record is. `loadedAt` is the "ask for
+  // it" signal, the same sentinel the logistics queue uses.
+  adminBotProfileOverview: import("./adminbot/auth/session.ts").MemberProfileOverviewRow[];
+  adminBotProfileOverviewFieldCount: number;
+  adminBotProfileOverviewLoading: boolean;
+  adminBotProfileOverviewError: string | null;
+  adminBotProfileOverviewLoadedAt: number | null;
+  adminBotProfileOverviewReminding: boolean;
+  adminBotProfileOverviewNotice: string | null;
+  adminBotProfileOverviewIncompleteOnly: boolean;
   adminBotLettersSchools: RecommendationSchool[];
   adminBotLettersFacts: LetterFact[];
   // Book Meeting's own table and save state, kept apart from the other two for the same reason

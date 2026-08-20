@@ -7,7 +7,6 @@ import { getRenderedModalDialog, installDialogPolyfill } from "../../test-helper
 import { createStorageMock } from "../../test-helpers/storage.ts";
 import type { AppViewState } from "../app-view-state.ts";
 import type { ExecApprovalRequest } from "../controllers/exec-approval.ts";
-import { renderDreamingRestartConfirmation } from "./dreaming-restart-confirmation.ts";
 import { renderExecApprovalPrompt } from "./exec-approval.ts";
 import { renderGatewayUrlConfirmation } from "./gateway-url-confirmation.ts";
 
@@ -345,44 +344,5 @@ describe("approval and confirmation modals", () => {
     dispatchEscape(dialog);
 
     expect(handleGatewayUrlCancel).toHaveBeenCalledTimes(1);
-  });
-
-  it("uses the shared modal primitive for dreaming restart confirmation and cancels on Escape", async () => {
-    const onCancel = vi.fn();
-    render(
-      renderDreamingRestartConfirmation({
-        open: true,
-        loading: false,
-        onConfirm: vi.fn(),
-        onCancel,
-        hasError: false,
-      }),
-      container,
-    );
-
-    const { dialog } = await getRenderedDialog();
-
-    dispatchEscape(dialog);
-
-    expect(onCancel).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not cancel dreaming restart from Escape while loading", async () => {
-    const onCancel = vi.fn();
-    render(
-      renderDreamingRestartConfirmation({
-        open: true,
-        loading: true,
-        onConfirm: vi.fn(),
-        onCancel,
-        hasError: false,
-      }),
-      container,
-    );
-
-    const { dialog } = await getRenderedDialog();
-    dispatchEscape(dialog);
-
-    expect(onCancel).not.toHaveBeenCalled();
   });
 });

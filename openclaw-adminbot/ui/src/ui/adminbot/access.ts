@@ -85,6 +85,8 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotPapers: "admin",
   adminbot: "admin",
   adminbotRegistrations: "admin",
+  // Everybody's completeness at once, which is a governance read; the service re-checks it.
+  adminbotProfileOverview: "admin",
   adminbotOnboarding: "admin",
   adminbotSettings: "admin",
   adminbotAnnouncements: "admin",
@@ -101,9 +103,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   config: "admin",
   cron: "admin",
   debug: "admin",
-  dreams: "admin",
   infrastructure: "admin",
-  instances: "admin",
   logs: "admin",
   mcp: "admin",
   nodes: "admin",
@@ -111,7 +111,6 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   sessions: "admin",
   skills: "admin",
   usage: "admin",
-  workboard: "admin",
 };
 
 export function minimumRoleForTab(tab: Tab): AccessRole {
