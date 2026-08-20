@@ -28,11 +28,22 @@ import {
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
+import { openLinkedInDraftDialog } from "../linkedin-draft-dialog.ts";
+import {
+  diffForHistory,
+  emptyPaperGridState,
+  PAPER_GRID_THRESHOLD,
+  recordHistory,
+  renderPaperGrid,
+  type PaperGridState,
+} from "../paper-grid.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { findOwnMember } from "./profile.ts";
 
 export type MyWorkProps = {
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
+  /** Asks the host to re-render. The grid edits in place, so it needs to drive its own repaint. */
+  onRerender?: () => void;
 };
 
 export type BlockerDraft = {
@@ -113,6 +124,14 @@ function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
         @click=${() => openPaperFlowMap(paper)}
       >
         View PaperFlow
+      </button>
+      <button
+        type="button"
+        class="btn btn--sm"
+        data-testid=${`my-work-linkedin-${paper.id}`}
+        @click=${() => openLinkedInDraftDialog(paper)}
+      >
+        Draft LinkedIn post
       </button>
       ${next
         ? html`
@@ -684,14 +703,76 @@ function renderBlockers(state: AppViewState) {
   `;
 }
 
+// Grid mode is per-session UI state, not part of the app model: it changes nothing about the
+// papers and nobody needs it restored on reload. Kept module-level so a re-render mid-edit does
+// not throw away half-typed cells.
+let gridState: PaperGridState | null = null;
+
+function exitGrid(rerender: () => void): void {
+  gridState = null;
+  rerender();
+}
+
 export function renderMyWork(state: AppViewState, props: MyWorkProps) {
   const items = ownPapers(state);
+  // A grid for three papers is worse than three cards; the threshold is where the per-paper
+  // surface stops paying for itself.
+  const gridOffered = items.length > PAPER_GRID_THRESHOLD;
+  const rerender = () => props.onRerender?.();
+
+  if (gridOffered && gridState) {
+    return html`
+      <div class="my-work">
+        ${renderPaperGrid({
+          state: gridState,
+          papers: items,
+          onChange: rerender,
+          onSaveAll: (inputs) => {
+            if (!gridState) {
+              return;
+            }
+            gridState.saving = true;
+            gridState.notice = `Saving ${inputs.length} paper(s)…`;
+            // Diffed before the write: afterwards the record holds the new value and the old
+            // one is gone, so "changed X from A to B" would no longer be answerable.
+            const entries = diffForHistory(gridState, items);
+            gridState.history = recordHistory(entries);
+            rerender();
+            // One request per changed paper, because that is the endpoint that exists today.
+            // The seam for PATCH /papers/bulk is exactly here.
+            for (const input of inputs) {
+              props.onSavePaper(input);
+            }
+            gridState.saving = false;
+            gridState.edits = new Map();
+            gridState.notice = `Sent ${inputs.length} paper(s) · ${entries.length} change(s) logged.`;
+            rerender();
+          },
+          onExit: () => exitGrid(rerender),
+        })}
+      </div>
+    `;
+  }
+
   return html`
     <div class="my-work">
       ${renderBlockers(state)}
       <section class="my-work__section">
         <div class="my-work__section-head">
           <h2 class="my-work__section-title">${t("myWork.items.title")}</h2>
+          ${gridOffered
+            ? html`<button
+                type="button"
+                class="btn btn--sm"
+                data-testid="my-work-open-grid"
+                @click=${() => {
+                  gridState = emptyPaperGridState();
+                  rerender();
+                }}
+              >
+                Fill in as a spreadsheet (${items.length})
+              </button>`
+            : nothing}
           ${renderAddButton(state)}
         </div>
         ${items.length

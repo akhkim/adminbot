@@ -260,7 +260,11 @@ export type AuthErrorKind =
   | "email-unavailable"
   // Session authenticated but lacks admin privilege (403). Distinct from
   // auth-failed so governance surfaces can say "not allowed" instead of "sign in again".
-  | "forbidden";
+  | "forbidden"
+  // A generation step failed downstream (502) -- no OpenRouter key, or a PDF with no readable
+  // abstract. The route is authenticated, so its message is safe to show verbatim, and it is
+  // the only text that tells the author what to fix.
+  | "draft-failed";
 
 export type AuthResult<T> =
   | { ok: true; value: T }
@@ -991,6 +995,54 @@ export async function draftCalendarEvent(
  * The ledger still gets the proposal, the named approver and the execution — one click, same audit.
  */
 export type CalendarActionResult = { action_id: string; status: string; executed_at?: string };
+
+/**
+ * One LinkedIn announcement draft, generated from a paper PDF.
+ *
+ * Nothing about this round trip is stored -- not on the server, not here. The draft exists in
+ * the dialog until the author copies it, which is the whole point: the authoritative version is
+ * the one they post, and a saved copy would only ever be the stale one.
+ */
+export type LinkedInDraftAuthor = {
+  paperName: string;
+  displayName: string;
+  matched: boolean;
+  match: "none" | "exact" | "initial";
+  member_id?: string;
+  linkedin_url?: string;
+  linkedin_urn?: string;
+};
+
+export type LinkedInDraft = {
+  paper: { title: string; authors: string[]; abstract: string; url?: string };
+  text: string;
+  model: string;
+  issues: string[];
+  authors: LinkedInDraftAuthor[];
+};
+
+export async function draftLinkedInPost(
+  request: { pdfBase64: string; url?: string; venue?: string; note?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LinkedInDraft>> {
+  const result = await authedJson(baseUrl, "/papers/linkedin-draft", "POST", sessionToken, {
+    pdf_base64: request.pdfBase64,
+    ...(request.url ? { url: request.url } : {}),
+    ...(request.venue ? { venue: request.venue } : {}),
+    ...(request.note ? { note: request.note } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    // A 502 here carries the connector's own message -- a missing OPENROUTER_API_KEY, or a PDF
+    // with no extractable abstract. Both are things the person clicking can act on.
+    const body = result.body as { error?: { message?: string } } | null;
+    return { ok: false, kind: "draft-failed", message: body?.error?.message ?? "draft failed" };
+  }
+  return { ok: true, value: result.body as LinkedInDraft };
+}
 
 export async function createCalendarEvent(
   event: {
