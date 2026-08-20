@@ -7,6 +7,7 @@ import type {
   AdminBotApprovalRequest,
   AdminBotAuditEvent,
   AdminBotAuthSession,
+  AdminBotCvChangeEvent,
   AdminBotRegistrationStatus,
   AdminBotExecutionRequest,
   AdminBotExecutionResult,
@@ -112,6 +113,10 @@ export type AdminBotServiceStore = {
   saveLabMember(member: AdminBotLabMember): void;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(): AdminBotLabMember[];
+  // Returns the events actually inserted. A change already on record is ignored rather than
+  // re-dated, so re-scanning cannot make an old move look like it just happened.
+  recordCvChanges(events: AdminBotCvChangeEvent[]): AdminBotCvChangeEvent[];
+  listCvChangesSince(sinceIso: string): AdminBotCvChangeEvent[];
   savePaper(paper: AdminBotPaperRecord): void;
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
   listPapers(): AdminBotPaperRecord[];
@@ -305,6 +310,7 @@ const DEFAULT_SETTINGS = {
   // Ten minutes: long enough to drop test calls and accidental rejoins, short enough to keep a
   // genuinely quick stand-up. Admin-editable through /settings, so changing it needs no deploy.
   meeting_minimum_minutes: 10,
+  cv_recency_window_months: 3,
 } as const satisfies Omit<AdminBotSettings, "updated_at">;
 
 const SLACK_CHANNEL_NAME_ALLOWED_PREFIXES = [
@@ -631,6 +637,9 @@ export class AdminBotService {
     const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
     const next: AdminBotSettings = {
       ...current,
+      ...(typeof settings.cv_recency_window_months === "number"
+        ? { cv_recency_window_months: settings.cv_recency_window_months }
+        : {}),
       ...(typeof settings.paper_escalation_business_days === "number"
         ? { paper_escalation_business_days: settings.paper_escalation_business_days }
         : {}),
@@ -657,6 +666,7 @@ export class AdminBotService {
       type: "settings.updated",
       details: {
         paper_escalation_business_days: next.paper_escalation_business_days,
+        cv_recency_window_months: next.cv_recency_window_months,
         has_head_professor_member_id: Boolean(next.head_professor_member_id),
         has_applicant_sheet_id: Boolean(next.applicant_sheet_id),
         ...(next.applicant_last_reviewed_at
@@ -2496,6 +2506,9 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   // adminBotScheduleMemberFields) and self-editable, like the rows it explains.
   "availability_notes",
   "availability_doc_url",
+  // The link only. cv_snapshot is deliberately absent: it is what the scan compares against, so a
+  // member who could write it could hide or invent their own career changes.
+  "cv_url",
 ] as const;
 
 const SELF_PROFILE_PRIVILEGED_FIELDS = [
@@ -3320,6 +3333,16 @@ function validateSettings(settings: AdminBotSettingsInput): string | undefined {
   ) {
     // Zero is meaningful — it means list everything — so this floor is 0, not 1.
     return "meeting minimum minutes must be a non-negative integer";
+  }
+  if (
+    settings.cv_recency_window_months !== undefined &&
+    (!Number.isInteger(settings.cv_recency_window_months) ||
+      settings.cv_recency_window_months < 1 ||
+      // A window past five years stops separating news from history at all, which is the only
+      // job this setting has.
+      settings.cv_recency_window_months > 60)
+  ) {
+    return "cv recency window months must be a whole number between 1 and 60";
   }
   const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
   if (applicantLastReviewedAt && Number.isNaN(Date.parse(applicantLastReviewedAt))) {

@@ -504,6 +504,13 @@ export type AppViewState = {
   adminBotMemberNudge: AdminBotMemberNudgeState;
   adminBotBlockerSort: BlockerSort;
   nudgeBellOpen: boolean;
+  adminBotCvScan: import("./adminbot/controllers/admin.ts").AdminBotCvScanResult | null;
+  adminBotCvScanning: boolean;
+  adminBotCvDigest: import("./adminbot/controllers/admin.ts").AdminBotCvDigest | null;
+  adminBotCvDigestSince: string;
+  adminBotCvDigestLoading: boolean;
+  adminBotCvBlurbs: Record<string, string>;
+  adminBotCvBlurbMemberId: string | null;
   // Prototype-only: blockers a member raises from My Projects & Papers. Held in the browser
   // because the AdminBot service has no blocker route yet -- see views/my-work.ts.
   myWorkBlockerDraft: import("./adminbot/views/my-work.ts").BlockerDraft | null;

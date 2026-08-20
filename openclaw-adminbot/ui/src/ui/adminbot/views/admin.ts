@@ -7,6 +7,12 @@ import { icons } from "../../icons.ts";
 import type { MemberNudgeChannel, MemberProfileUpdate } from "../auth/session.ts";
 import type {
   AdminBotActionProposal,
+  AdminBotCvChange,
+  AdminBotCvDigest,
+  AdminBotCvEntry,
+  AdminBotCvRecency,
+  AdminBotCvScanMemberResult,
+  AdminBotCvScanResult,
   AdminBotDashboardData,
   AdminBotExternalCollaboratorSubgroup,
   AdminBotLabMember,
@@ -54,6 +60,19 @@ export type AdminBotProps = {
   data: AdminBotDashboardData;
   busyActionId: string | null;
   notice: { kind: "success" | "error"; text: string } | null;
+  // Result of the most recent CV scan this session. Null until one is run: the scan reaches out
+  // to every member's CV, so it happens when an admin asks for it and never on panel load.
+  cvScan: AdminBotCvScanResult | null;
+  cvScanning: boolean;
+  onScanCvs: () => void;
+  cvDigest: AdminBotCvDigest | null;
+  cvDigestSince: string;
+  cvDigestLoading: boolean;
+  onCvDigestSinceChange: (since: string) => void;
+  onLoadCvDigest: () => void;
+  cvBlurbs: Record<string, string>;
+  cvBlurbMemberId: string | null;
+  onDraftCvBlurb: (memberId: string) => void;
   onRefresh: () => void;
   onApprove: (proposal: AdminBotActionProposal) => void;
   onRemove: (proposal: AdminBotActionProposal) => void;
@@ -86,7 +105,8 @@ export type AdminBotPanel =
   | "settings"
   | "members"
   | "papers"
-  | "announcements";
+  | "announcements"
+  | "cv-updates";
 
 // Exported so My Projects & Papers advances a paper through the same named steps this page shows;
 // two step vocabularies would let the pages disagree about where a paper is.
@@ -2599,6 +2619,20 @@ function renderPanel(props: AdminBotProps) {
           ${renderPapers(props, props.data.papers)}
         </div>
       `;
+    case "cv-updates":
+      if (general) {
+        return renderPanel({ ...props, panel: "papers" });
+      }
+      return html`
+        <div class="card adminbot-card adminbot-card--wide">
+          <div class="card-title">CV updates</div>
+          <div class="card-sub">
+            Re-read every member's linked CV, show what changed since the last scan, and draft
+            newsletter copy from it. Members without a CV link are not listed.
+          </div>
+          ${renderCvUpdates(props)}
+        </div>
+      `;
     case "announcements":
       if (general) {
         return renderPanel({ ...props, panel: "papers" });
@@ -2613,6 +2647,246 @@ function renderPanel(props: AdminBotProps) {
         </div>
       `;
   }
+}
+
+const cvStatusLabels: Record<AdminBotCvScanMemberResult["status"], string> = {
+  changed: "Changed",
+  first_scan: "First scan",
+  unchanged: "No change",
+  skipped: "Skipped",
+  failed: "Could not read",
+};
+
+// The entry itself, without a wrapping element, so it can sit in a list item or a table cell.
+function renderCvEntryBody(entry: AdminBotCvEntry) {
+  const dates = [entry.start, entry.end].filter(Boolean).join(" – ");
+  return html`${entry.title}${entry.organization ? html` — ${entry.organization}` : nothing}
+  ${dates ? html`<span class="muted">(${dates})</span>` : nothing}`;
+}
+
+function renderCvEntry(entry: AdminBotCvEntry) {
+  return html`<li>${renderCvEntryBody(entry)}</li>`;
+}
+
+function renderCvUpdates(props: AdminBotProps) {
+  const scan = props.cvScan;
+  // Only members with a CV link ever appear in a result, so this counts the linked roster rather
+  // than the whole one -- "0 of 40" would read as a failure when most people simply have no link.
+  const linked = props.data.members.filter((member) => member.cv_url?.trim()).length;
+  // Resolved against the roster, not the last scan: a blurb is drafted per member and should
+  // survive re-scanning, and a member who has one is not necessarily in the newest result.
+  const blurbed = props.data.members.filter((member) => props.cvBlurbs[member.id]);
+  return html`
+    <div class="adminbot-cv">
+      <div class="adminbot-cv__actions">
+        <button
+          class="btn btn--sm primary"
+          type="button"
+          ?disabled=${props.cvScanning || linked === 0}
+          @click=${props.onScanCvs}
+        >
+          ${props.cvScanning ? "Scanning..." : "Scan CVs"}
+        </button>
+        <span class="muted"
+          >${linked} member${linked === 1 ? "" : "s"} with a CV link${scan
+            ? html` · last scan ${formatRelativeTimestamp(Date.parse(scan.scanned_at))}`
+            : nothing}</span
+        >
+        <label class="adminbot-cv__window">
+          <span>Announce jobs started within</span>
+          <input
+            type="number"
+            min="1"
+            max="60"
+            step="1"
+            .value=${String(props.data.settings?.cv_recency_window_months ?? 3)}
+            @change=${(event: Event) => {
+              const months = Number((event.target as HTMLInputElement).value);
+              // Out-of-range values are dropped rather than sent: the service would reject them,
+              // and this control saves on its own so there is no form to report the error on.
+              if (Number.isInteger(months) && months >= 1 && months <= 60) {
+                props.onSaveSettings({ cv_recency_window_months: months });
+              }
+            }}
+          />
+          <span>months</span>
+        </label>
+      </div>
+
+      ${linked === 0
+        ? html`<p class="muted">
+            No member has linked a CV yet. Members add theirs under My profile.
+          </p>`
+        : nothing}
+      ${scan?.newsletter_draft
+        ? html`<div class="adminbot-cv__draft">
+            <div class="adminbot-cv__section-title">Newsletter draft</div>
+            <div class="card-sub">
+              Built from new positions, degrees, and awards that started recently. Edit before
+              sending — nothing is published from here.
+            </div>
+            <textarea rows="8" .value=${scan.newsletter_draft} readonly></textarea>
+          </div>`
+        : nothing}
+      ${scan
+        ? html`
+            <div class="adminbot-cv__grid">
+              <div class="adminbot-cv__row adminbot-cv__row--head">
+                <span>Member</span><span>Status</span><span>Added</span><span>Removed</span>
+                <span></span>
+              </div>
+              ${scan.results.map(
+                (entry) => html`
+                  <div class="adminbot-cv__row">
+                    <strong>${entry.member_name}</strong>
+                    <span
+                      >${cvStatusLabels[entry.status]}
+                      ${entry.reason ? html`<small class="muted">${entry.reason}</small>` : nothing}
+                    </span>
+                    <span>
+                      ${entry.added.length
+                        ? html`<ul class="adminbot-cv__entries">
+                            ${entry.added.map(renderCvChange)}
+                          </ul>`
+                        : html`<span class="muted">—</span>`}
+                    </span>
+                    <span>
+                      ${entry.removed.length
+                        ? html`<ul class="adminbot-cv__entries">
+                            ${entry.removed.map(renderCvEntry)}
+                          </ul>`
+                        : html`<span class="muted">—</span>`}
+                    </span>
+                    <button
+                      class="btn btn--sm"
+                      type="button"
+                      ?disabled=${props.cvBlurbMemberId === entry.member_id}
+                      @click=${() => props.onDraftCvBlurb(entry.member_id)}
+                    >
+                      ${props.cvBlurbMemberId === entry.member_id
+                        ? "Drafting..."
+                        : props.cvBlurbs[entry.member_id]
+                          ? "Redraft"
+                          : "Draft blurb"}
+                    </button>
+                  </div>
+                `,
+              )}
+            </div>
+          `
+        : html`<p class="muted">
+            Run a scan to see what changed since each member's CV was last read.
+          </p>`}
+      ${blurbed.length
+        ? html`<div class="adminbot-cv__blurbs">
+            <div class="adminbot-cv__section-title">Member introductions</div>
+            ${blurbed.map(
+              (member) => html`
+                <div class="adminbot-cv__blurb">
+                  <div class="adminbot-cv__blurb-head">
+                    <strong>${member.name}</strong>
+                    <button
+                      class="btn btn--sm"
+                      type="button"
+                      ?disabled=${props.cvBlurbMemberId === member.id}
+                      @click=${() => props.onDraftCvBlurb(member.id)}
+                    >
+                      Redraft
+                    </button>
+                  </div>
+                  <textarea rows="4" .value=${props.cvBlurbs[member.id] ?? ""}></textarea>
+                </div>
+              `,
+            )}
+          </div>`
+        : nothing}
+
+      <div class="adminbot-cv__panel">
+        <div class="adminbot-cv__panel-head">
+          <div>
+            <div class="adminbot-cv__section-title">Digest</div>
+            <div class="card-sub">
+              Every change recorded since a date. A scan only reports its own run, so this is what
+              a monthly roundup reads from.
+            </div>
+          </div>
+          <div class="adminbot-cv__actions">
+            <label class="adminbot-form__field"
+              ><span>Since</span>
+              <input
+                type="date"
+                .value=${props.cvDigestSince}
+                @change=${(event: Event) =>
+                  props.onCvDigestSinceChange((event.target as HTMLInputElement).value)}
+              />
+            </label>
+            <button
+              class="btn btn--sm"
+              type="button"
+              ?disabled=${props.cvDigestLoading || !props.cvDigestSince}
+              @click=${props.onLoadCvDigest}
+            >
+              ${props.cvDigestLoading ? "Loading..." : "Build digest"}
+            </button>
+          </div>
+        </div>
+        ${props.cvDigest ? renderCvDigest(props.cvDigest) : nothing}
+      </div>
+    </div>
+  `;
+}
+
+const cvRecencyLabels: Record<AdminBotCvRecency, string> = {
+  recent: "recent",
+  backfilled: "backfilled",
+  undated: "no date",
+};
+
+// The recency is shown on every added line, because "changed but not announced" is otherwise
+// indistinguishable from "we missed it" to whoever is reading the table.
+function renderCvChange(change: AdminBotCvChange) {
+  return html`<li>
+    ${renderCvEntryBody(change.entry)}
+    <span
+      class="adminbot-cv__tag ${change.recency === "recent" ? "adminbot-cv__tag--recent" : ""}"
+      >${cvRecencyLabels[change.recency]}</span
+    >
+  </li>`;
+}
+
+function renderCvDigest(digest: AdminBotCvDigest) {
+  if (!digest.changes.length) {
+    return html`<div class="adminbot-cv__empty">
+      Nothing recorded since ${digest.since.slice(0, 10)}.
+      <small
+        >Changes are recorded when a scan finds a CV has been edited. A CV that has not changed
+        since its last scan produces nothing here.</small
+      >
+    </div>`;
+  }
+  return html`
+    ${digest.newsletter_draft
+      ? html`<textarea rows="8" .value=${digest.newsletter_draft} readonly></textarea>`
+      : html`<p class="muted">
+          ${digest.changes.length} change${digest.changes.length === 1 ? "" : "s"} recorded, none of
+          them recent enough to announce.
+        </p>`}
+    <div class="adminbot-cv__grid">
+      <div class="adminbot-cv__row adminbot-cv__row--digest adminbot-cv__row--head">
+        <span>Detected</span><span>Member</span><span>Entry</span><span>Recency</span>
+      </div>
+      ${digest.changes.map(
+        (change) => html`
+          <div class="adminbot-cv__row adminbot-cv__row--digest">
+            <span>${change.detected_at.slice(0, 10)}</span>
+            <strong>${change.member_name}</strong>
+            <span>${renderCvEntryBody(change.entry)}</span>
+            <span>${cvRecencyLabels[change.recency]}</span>
+          </div>
+        `,
+      )}
+    </div>
+  `;
 }
 
 export function renderAdminBot(props: AdminBotProps) {
