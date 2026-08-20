@@ -2,9 +2,9 @@
 // the console. Every other account arrives through claim/signup and needs an existing admin to
 // approve it, so a brand-new database has no way to bootstrap itself. Local development only:
 // on a real host the roster is imported and accounts are approved by a human admin.
-import { AdminBotAuthService } from "../extensions/adminbot/src/auth.js";
-import type { AdminBotLabMemberInput } from "../extensions/adminbot/src/contracts.js";
-import { createAdminBotSqliteService } from "../extensions/adminbot/src/service-sqlite.js";
+import type { AdminBotLabMemberInput } from "../extensions/adminbot/src/contracts/actions.js";
+import { createAdminBotSqliteService } from "../extensions/adminbot/src/persistence/sqlite.js";
+import { AdminBotAuthService } from "../extensions/adminbot/src/workflows/identity/auth.js";
 
 type Args = {
   databasePath: string;
