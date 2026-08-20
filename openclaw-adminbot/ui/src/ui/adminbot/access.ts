@@ -90,6 +90,9 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotOnboarding: "admin",
   adminbotSettings: "admin",
   adminbotAnnouncements: "admin",
+  // CV scanning reads career history the roster does not carry, so it stays on the admin side of
+  // the console rather than being visible to every signed-in member.
+  adminbotCvUpdates: "admin",
   // Reads the lab calendar and spends model time on drafting, and every button on it files a
   // governance-gated action. Admin, and the service re-checks both routes independently.
   adminbotCalendar: "admin",

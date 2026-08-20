@@ -898,6 +898,18 @@ describe("the split tables and the deadline panel", () => {
     );
   });
 
+  // The page reads top-down: the chart and the two commitment tables first, the deadlines as the
+  // closing block of the summary, the editors as cards after it.
+  it("puts the deadline panel after the chart and its tables", () => {
+    const container = renderView({ members: [scheduled()] });
+    const body = container.querySelector(".adminbot-time-availability__body")!;
+    const report = body.querySelector(".adminbot-time-availability__report")!;
+    const panel = body.querySelector('[data-testid="time-availability-deadlines"]')!;
+    expect(report).not.toBeNull();
+    expect(panel).not.toBeNull();
+    expect(report.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("offers the milestone form only on your own schedule", () => {
     expect(
       renderView({ members: [scheduled()] }).querySelector(
@@ -942,6 +954,18 @@ describe("the split tables and the deadline panel", () => {
     // Each keeps its own submit, so neither can clear the other's half-typed input.
     expect(jinesis.querySelector('[data-testid="time-availability-editor-submit"]')).not.toBeNull();
     expect(away.querySelector('[data-testid="time-away-editor-submit"]')).not.toBeNull();
+  });
+
+  // The away form's hint explains the action the submit button performs, so it sits in the same
+  // actions row, left of the button, rather than under the fields.
+  it("puts the time-away hint on the same row as its submit button", () => {
+    const container = renderView();
+    const away = container.querySelector('[data-testid="time-away-editor"]')!;
+    const actions = away.querySelector(".adminbot-time-availability__form-actions")!;
+    const hint = actions.querySelector(".adminbot-time-availability__form-hint");
+    expect(hint).not.toBeNull();
+    expect(hint?.textContent).toContain("whole day off");
+    expect(actions.querySelector('[data-testid="time-away-editor-submit"]')).not.toBeNull();
   });
 
   it("never offers Jinesis as a time-away category", () => {

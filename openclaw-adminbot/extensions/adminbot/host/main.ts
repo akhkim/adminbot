@@ -18,6 +18,7 @@ import {
 } from "../src/api/server.js";
 import { adminBotSlackActivityWindowDays } from "../src/contracts/actions.js";
 import { createCompositeAdminBotExecutor } from "../src/connectors/composite.js";
+import { createAdminBotCvScanDeps } from "../src/cv-scan.js";
 import { createGogAdminBotExecutor } from "../src/connectors/gog.js";
 import { createAdminBotMessageExecutor } from "../src/connectors/message.js";
 import { createAdminBotOpenReviewExecutor } from "../src/connectors/openreview.js";
@@ -801,6 +802,9 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     emailAutomationRunner: deps.runEmailAutomation,
     reimbursementWorkflow: createAdminBotReimbursementWorkflow({
       formScriptPath: path.join(repoRoot, "scripts/adminbot-reimbursement-from-email.py"),
+    }),
+    cvScanDeps: createAdminBotCvScanDeps({
+      extractScriptPath: path.join(repoRoot, "scripts/adminbot-cv-extract.py"),
     }),
     openReviewScriptPath: path.join(repoRoot, "scripts/adminbot-openreview.py"),
     dcsFormScriptPath: path.join(repoRoot, "scripts/adminbot-dcs-form-submit.ts"),

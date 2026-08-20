@@ -20,6 +20,12 @@ import type {
   AdminBotRemovePendingRequest,
   AdminBotSettingsInput,
 } from "../contracts/actions.js";
+import {
+  buildNewsletterDraft,
+  draftMemberBlurb,
+  runAdminBotCvScan,
+  type AdminBotCvScanDeps,
+} from "../cv-scan.js";
 import { askGuidebook } from "../guidebook/ask.js";
 import {
   AdminBotMemoryStore,
@@ -114,6 +120,9 @@ export type AdminBotMockServiceOptions = {
   onboardingSender?: AdminBotOnboardingSender;
   inviteToSlackConnect?: import("../workflows/onboarding/guide-sender.js").SlackConnectInviter;
   allowedOrigins?: string[];
+  // Fetch/extract/model steps behind the admin CV scan. Injected so tests can drive the scan
+  // without a network fetch, a python interpreter, or a running local model.
+  cvScanDeps?: AdminBotCvScanDeps;
   // Overrides the default `gws` CLI-backed calendar invite runner — used by tests to avoid
   // shelling out to a real `gws` binary.
   calendarInviteRunner?: (email: string) => Promise<void>;
@@ -279,6 +288,9 @@ function createAnonymousRateLimiter(): AnonymousRateLimiter {
 
 type AdminBotRouteContext = {
   service: AdminBotService;
+  // The raw store, for the CV change ledger. Everything else goes through the service; this is
+  // append-only bookkeeping with no policy of its own, so it does not earn a service method.
+  store: AdminBotServiceStore;
   auth: AdminBotAuthService;
   privacyBroker: AdminBotPrivacyBroker;
   sensitiveInfo: AdminBotSensitiveInfoDocument;
@@ -286,6 +298,7 @@ type AdminBotRouteContext = {
   reimbursementWorkflow?: AdminBotReimbursementWorkflow;
   openReviewWorkflow?: AdminBotOpenReviewWorkflow;
   fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
+  cvScanDeps?: AdminBotCvScanDeps;
   fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
   // Counts each member's messages in the activity window, by reading the channels the lab tracks.
   fetchSlackMessageCounts?: (
@@ -419,6 +432,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     : undefined;
   const ctx: AdminBotRouteContext = {
     service,
+    store,
     auth,
     privacyBroker,
     sensitiveInfo,
@@ -434,6 +448,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.deviceTokenIssuer ? { deviceTokenIssuer: options.deviceTokenIssuer } : {}),
     ...(openReviewWorkflow ? { openReviewWorkflow } : {}),
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
+    ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
     ...(options.fetchSlackTimezones ? { fetchSlackTimezones: options.fetchSlackTimezones } : {}),
     ...(options.fetchSlackMessageCounts
       ? { fetchSlackMessageCounts: options.fetchSlackMessageCounts }
@@ -948,6 +963,124 @@ async function handleAuthenticatedRoute(
       res,
       await service.refreshMemberMap(ctx.fetchSlackLocations, principalActor(principal)),
     );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/cv/scan") {
+    // Reading the roster's CVs exposes career history the roster itself does not carry, so it
+    // sits behind the same privileged gate as the member map rather than being open to members.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.cvScanDeps) {
+      sendJson(res, 503, { error: { message: "cv scanning is not configured" } });
+      return;
+    }
+    const members = service.listLabMembers();
+    if (!members.ok) {
+      sendServiceResult(res, members);
+      return;
+    }
+    // Read at scan time rather than captured at boot, so changing the window takes effect on the
+    // next scan instead of the next restart.
+    const cvSettings = service.getSettings();
+    const { result, snapshots } = await runAdminBotCvScan(
+      members.payload.members,
+      ctx.cvScanDeps,
+      cvSettings.ok ? cvSettings.payload.cv_recency_window_months : undefined,
+    );
+    // Snapshots are written through upsertLabMember rather than straight to the store so the
+    // scan cannot bypass member validation, and so a bad extraction fails one member's save
+    // instead of corrupting the roster.
+    for (const member of members.payload.members) {
+      const snapshot = snapshots.get(member.id);
+      if (!snapshot) {
+        continue;
+      }
+      const saved = service.upsertLabMember({ ...member, cv_snapshot: snapshot });
+      if (!saved.ok) {
+        const failed = result.results.find((entry) => entry.member_id === member.id);
+        if (failed) {
+          failed.status = "failed";
+          failed.reason = `could not save cv snapshot: ${saved.error.message}`;
+        }
+      }
+    }
+    // Recorded after the snapshots are saved, so a member whose snapshot failed to store does not
+    // leave a change on the ledger the next scan would then never re-detect.
+    ctx.store.recordCvChanges(
+      result.results
+        .filter((entry) => entry.status === "changed" || entry.status === "first_scan")
+        .flatMap((entry) =>
+          entry.added.map((change) => ({
+            member_id: entry.member_id,
+            member_name: entry.member_name,
+            detected_at: result.scanned_at,
+            recency: change.recency,
+            entry: change.entry,
+          })),
+        ),
+    );
+    sendJson(res, 200, result);
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/cv/digest") {
+    // Answers "what changed since X" from the ledger rather than from the last scan, which has
+    // already consumed its own diff by updating the snapshots.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const since = url.searchParams.get("since")?.trim();
+    if (!since || Number.isNaN(Date.parse(since))) {
+      sendJson(res, 400, { error: { message: "since must be an ISO timestamp" } });
+      return;
+    }
+    const changes = ctx.store.listCvChangesSince(since);
+    sendJson(res, 200, {
+      since,
+      changes,
+      newsletter_draft: buildNewsletterDraft(
+        changes.map((change) => ({
+          memberName: change.member_name,
+          change: { entry: change.entry, recency: change.recency },
+        })),
+      ),
+    });
+    return;
+  }
+  const blurb = /^\/cv\/blurb\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "POST" && blurb?.[1]) {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const member = ctx.store.getLabMember(decodeURIComponent(blurb[1]));
+    if (!member) {
+      sendJson(res, 404, { error: { message: "member not found" } });
+      return;
+    }
+    const entries = member.cv_snapshot?.entries ?? [];
+    if (!entries.length) {
+      // Distinct from a model failure: there is nothing wrong, this member's CV has simply never
+      // been scanned, and the fix is to scan rather than to retry.
+      sendJson(res, 409, {
+        error: { message: `${member.name} has no scanned CV yet — run a CV scan first` },
+      });
+      return;
+    }
+    try {
+      const text = await draftMemberBlurb(
+        {
+          name: member.name,
+          ...(member.role ? { role: member.role } : {}),
+          ...(member.research_topics?.length ? { research_topics: member.research_topics } : {}),
+        },
+        entries,
+      );
+      sendJson(res, 200, { member_id: member.id, blurb: text });
+    } catch (error) {
+      sendJson(res, 502, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+      });
+    }
     return;
   }
   if (req.method === "POST" && url.pathname === "/members/directory/refresh-slack") {

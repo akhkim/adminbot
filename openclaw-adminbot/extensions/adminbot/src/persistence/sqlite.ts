@@ -2,8 +2,10 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
+import { cvEntryKey } from "../contracts/actions.js";
 import type {
   AdminBotAccountRegistration,
+  AdminBotCvChangeEvent,
   AdminBotAuditEvent,
   AdminBotAuthSession,
   AdminBotExecutionResult,
@@ -124,6 +126,24 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         payload_json TEXT NOT NULL,
         PRIMARY KEY (venue_id, role, milestone_key)
       );
+
+      -- One row per entry a scan saw appear on someone's CV.
+      --
+      -- Kept because a scan consumes its own diff: the next scan compares against the snapshot the
+      -- last one stored, so without this the only record of a change is the draft shown once and
+      -- lost on navigation. A digest over "what changed in July" needs the history, not the last
+      -- run. The unique key is the change itself, so re-scanning cannot double-report it.
+      CREATE TABLE IF NOT EXISTS adminbot_cv_changes (
+        member_id TEXT NOT NULL,
+        entry_key TEXT NOT NULL,
+        detected_at TEXT NOT NULL,
+        recency TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        PRIMARY KEY (member_id, entry_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_cv_changes_detected_at
+        ON adminbot_cv_changes (detected_at);
 
       CREATE TABLE IF NOT EXISTS adminbot_lab_members (
         id TEXT PRIMARY KEY,
@@ -435,6 +455,39 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       )
       .all() as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
+  }
+
+  recordCvChanges(events: AdminBotCvChangeEvent[]): AdminBotCvChangeEvent[] {
+    const insert = this.db.prepare(
+      `INSERT OR IGNORE INTO adminbot_cv_changes (
+         member_id, entry_key, detected_at, recency, payload_json
+       ) VALUES (?, ?, ?, ?, ?)`,
+    );
+    const inserted: AdminBotCvChangeEvent[] = [];
+    for (const event of events) {
+      const result = insert.run(
+        event.member_id,
+        cvEntryKey(event.entry),
+        event.detected_at,
+        event.recency,
+        JSON.stringify(event),
+      );
+      // INSERT OR IGNORE reports zero changes when the row already existed, which is exactly the
+      // "seen this before" signal the caller needs.
+      if (result.changes > 0) {
+        inserted.push(event);
+      }
+    }
+    return inserted;
+  }
+
+  listCvChangesSince(sinceIso: string): AdminBotCvChangeEvent[] {
+    const rows = this.db
+      .prepare(
+        "SELECT payload_json FROM adminbot_cv_changes WHERE detected_at >= ? ORDER BY detected_at",
+      )
+      .all(sinceIso) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotCvChangeEvent>(row.payload_json));
   }
 
   saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void {

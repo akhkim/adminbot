@@ -20,8 +20,12 @@ import {
   resolveAdminBotBaseUrl,
   sendOnboardingGuide as sendOnboardingGuideRequest,
   saveOwnPaper,
+  scanMemberCvs,
+  fetchCvDigest,
+  draftMemberCvBlurb,
   sendMemberNudge,
   updateOwnProfile,
+  updateSettingsAsAdmin,
   updateOwnSchedule,
   upsertLabMemberAsAdmin,
 } from "../auth/session.ts";
@@ -84,6 +88,9 @@ export type AdminBotLabMember = {
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
+  // Link to the member's own CV PDF, self-editable like the availability planning doc. The scan
+  // reads it; the console never renders its contents, only what changed.
+  cv_url?: string;
   calendar_email?: string;
   correspondence_email?: string;
   github_url?: string;
@@ -96,8 +103,56 @@ export type AdminBotLabMember = {
   updated_at: string;
 };
 
+export type AdminBotCvEntry = {
+  // Mirrors AdminBotCvEntryKind in the service contracts; ui/ cannot import from extensions/.
+  kind: "position" | "education" | "award" | "publication" | "other";
+  title: string;
+  organization: string;
+  start?: string;
+  end?: string;
+  start_iso?: string;
+};
+
+// Whether an added entry is news or just a document edit. See the service's cv-scan.ts.
+export type AdminBotCvRecency = "recent" | "backfilled" | "undated";
+
+export type AdminBotCvChange = {
+  entry: AdminBotCvEntry;
+  recency: AdminBotCvRecency;
+};
+
+export type AdminBotCvScanMemberResult = {
+  member_id: string;
+  member_name: string;
+  status: "unchanged" | "changed" | "first_scan" | "skipped" | "failed";
+  reason?: string;
+  added: AdminBotCvChange[];
+  removed: AdminBotCvEntry[];
+};
+
+export type AdminBotCvScanResult = {
+  scanned_at: string;
+  results: AdminBotCvScanMemberResult[];
+  newsletter_draft: string;
+};
+
+export type AdminBotCvChangeEvent = {
+  member_id: string;
+  member_name: string;
+  detected_at: string;
+  recency: AdminBotCvRecency;
+  entry: AdminBotCvEntry;
+};
+
+export type AdminBotCvDigest = {
+  since: string;
+  changes: AdminBotCvChangeEvent[];
+  newsletter_draft: string;
+};
+
 export type AdminBotSettings = {
   paper_escalation_business_days: number;
+  cv_recency_window_months: number;
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
@@ -280,6 +335,7 @@ export async function sendOnboardingGuide(
 export type AdminBotSettingsSaveInput = {
   paper_escalation_business_days?: number;
   meeting_minimum_minutes?: number;
+  cv_recency_window_months?: number;
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
@@ -438,6 +494,19 @@ export type AdminBotHost = {
   adminBotPhotoApplyBusy: boolean;
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
+  // Last CV scan result and whether one is in flight. Session-scoped rather than persisted: a
+  // scan is a point-in-time read, and a stale one shown as current would be misleading.
+  adminBotCvScan: AdminBotCvScanResult | null;
+  adminBotCvScanning: boolean;
+  // Digest of recorded changes over a window, and the date it was asked for. Kept apart from the
+  // scan result because they answer different questions: one is "what did this run find", the
+  // other "what has the lab learned since a date".
+  adminBotCvDigest: AdminBotCvDigest | null;
+  adminBotCvDigestSince: string;
+  adminBotCvDigestLoading: boolean;
+  // Blurbs are per member and drafted on request, so they are held by id rather than as one slot.
+  adminBotCvBlurbs: Record<string, string>;
+  adminBotCvBlurbMemberId: string | null;
   // Calendar tab. Written by controllers/calendar.ts, which shares this host rather than owning a
   // second one: the invite half reads the same roster and papers the rest of the tab loaded.
   calendarEvents?: CalendarEvent[];
@@ -845,6 +914,124 @@ function requirePrivilegedSession(
     return null;
   }
   return { sessionToken: stored.sessionToken, baseUrl: resolveAdminBotBaseUrl(host.settings) };
+}
+
+// Re-reads every linked CV and replaces the panel's scan result. Deliberately not merged into the
+// previous result: a member whose link broke since the last run must stop showing that run's
+// changes as though they were still current.
+// One place to turn a failed CV call into something an admin can act on.
+//
+// These three routes are the newest in the service, so they are the ones a long-running dev
+// service will not have yet. "not-found" therefore means version skew, and saying so is the
+// difference between restarting a process and hunting a login problem that does not exist.
+function cvErrorText(kind: string, action: string): string {
+  if (kind === "unreachable") {
+    return ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE;
+  }
+  if (kind === "not-found") {
+    return `This AdminBot service does not have the ${action} endpoint — it is running older code than the console. Restart it with \`pnpm adminbot:dev\`.`;
+  }
+  if (kind === "forbidden") {
+    return `${action} requires an admin or core member session.`;
+  }
+  return `Could not ${action}: ${kind}`;
+}
+
+export function setAdminBotCvDigestSince(host: AdminBotHost, since: string): void {
+  host.adminBotCvDigestSince = since;
+}
+
+/** Loads recorded changes since the chosen date. Reads the ledger; never triggers a scan. */
+export async function loadAdminBotCvDigest(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  const since = host.adminBotCvDigestSince?.trim();
+  if (!since) {
+    host.adminBotNotice = { kind: "error", text: "Pick a date to summarise from." };
+    return;
+  }
+  host.adminBotCvDigestLoading = true;
+  host.adminBotNotice = null;
+  try {
+    // A date input gives YYYY-MM-DD; the service compares ISO timestamps, so anchor it to the
+    // start of that day rather than letting a bare date sort unpredictably against them.
+    const result = await fetchCvDigest(
+      `${since}T00:00:00.000Z`,
+      session.sessionToken,
+      session.baseUrl,
+    );
+    if (!result.ok) {
+      host.adminBotNotice = {
+        kind: "error",
+        text: cvErrorText(result.kind, "load the digest"),
+      };
+      return;
+    }
+    host.adminBotCvDigest = result.value as AdminBotCvDigest;
+  } finally {
+    host.adminBotCvDigestLoading = false;
+  }
+}
+
+/** Drafts one member's introduction from their stored CV entries. */
+export async function draftAdminBotCvBlurb(host: AdminBotHost, memberId: string): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  host.adminBotCvBlurbMemberId = memberId;
+  host.adminBotNotice = null;
+  try {
+    const result = await draftMemberCvBlurb(memberId, session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotNotice = {
+        kind: "error",
+        // A 409 carries the service's own sentence ("no scanned CV yet"), which is more useful
+        // than any fixed copy, so it wins when present.
+        text: result.message?.trim() || cvErrorText(result.kind, "draft a blurb"),
+      };
+      return;
+    }
+    const blurb = (result.value as { blurb?: string }).blurb ?? "";
+    host.adminBotCvBlurbs = { ...host.adminBotCvBlurbs, [memberId]: blurb };
+  } finally {
+    host.adminBotCvBlurbMemberId = null;
+  }
+}
+
+export async function scanAdminBotCvs(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  host.adminBotCvScanning = true;
+  host.adminBotNotice = null;
+  try {
+    const result = await scanMemberCvs(session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotNotice = {
+        kind: "error",
+        text: cvErrorText(result.kind, "scan CVs"),
+      };
+      return;
+    }
+    const scan = result.value as AdminBotCvScanResult;
+    host.adminBotCvScan = scan;
+    const changed = scan.results.filter((entry) => entry.status === "changed").length;
+    const failed = scan.results.filter((entry) => entry.status === "failed").length;
+    host.adminBotNotice = {
+      // A run where nothing changed is a success, not an empty state -- saying so stops an admin
+      // wondering whether the scan actually ran.
+      kind: failed ? "error" : "success",
+      text: `Scanned ${scan.results.length} CV${scan.results.length === 1 ? "" : "s"}: ${changed} changed${
+        failed ? `, ${failed} could not be read` : ""
+      }.`,
+    };
+  } finally {
+    host.adminBotCvScanning = false;
+  }
 }
 
 export async function removePendingAdminBotAction(
@@ -1375,17 +1562,27 @@ export async function saveAdminBotSettings(
   host: AdminBotHost,
   settings: AdminBotSettingsSaveInput,
 ): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
   host.adminBotNotice = null;
-  try {
-    await invokeAdminBotTool(host, "adminbot_update_settings", settings);
-    host.adminBotNotice = { kind: "success", text: "Saved AdminBot settings." };
-    await loadAdminBot(host);
-  } catch (err) {
+  const result = await updateSettingsAsAdmin(
+    settings as Record<string, unknown>,
+    session.sessionToken,
+    session.baseUrl,
+  );
+  if (!result.ok) {
     host.adminBotNotice = {
       kind: "error",
-      text: formatAdminBotToolError(err),
+      // The service names what it refused on a 400 (an out-of-range window, say), which beats any
+      // fixed copy this side could write.
+      text: result.message?.trim() || cvErrorText(result.kind, "save settings"),
     };
+    return;
   }
+  host.adminBotNotice = { kind: "success", text: "Saved AdminBot settings." };
+  await loadAdminBot(host);
 }
 
 export async function saveAdminBotSensitiveInfo(

@@ -30,6 +30,8 @@ import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
+  type AdminBotCvDigest,
+  type AdminBotCvScanResult,
   type AdminBotDashboardData,
   type AdminBotMemberNudgeState,
   type AdminBotReimbursementState,
@@ -634,6 +636,15 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMemberNudge: AdminBotMemberNudgeState = createEmptyAdminBotMemberNudgeState();
   @state() adminBotBlockerSort: BlockerSort = "stage";
   @state() nudgeBellOpen = false;
+  @state() adminBotCvScan: AdminBotCvScanResult | null = null;
+  @state() adminBotCvScanning = false;
+  @state() adminBotCvDigest: AdminBotCvDigest | null = null;
+  // Defaults to the start of the current month: the digest exists for periodic roundups, and a
+  // month is the period people actually write them for.
+  @state() adminBotCvDigestSince = new Date().toISOString().slice(0, 8) + "01";
+  @state() adminBotCvDigestLoading = false;
+  @state() adminBotCvBlurbs: Record<string, string> = {};
+  @state() adminBotCvBlurbMemberId: string | null = null;
   @state() myWorkBlockerDraft: BlockerDraft | null = null;
   @state() myWorkBlockers: Blocker[] = [];
   @state() myWorkProjectDraft: string | null = null;

@@ -456,6 +456,7 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "adminbotMembers":
       case "adminbotPapers":
       case "adminbotAnnouncements":
+      case "adminbotCvUpdates":
       // From `luke/time-allocation`: the tab reads the roster, so refreshing on it has to reload
       // the roster. Without a case here the refresh control was inert on that surface.
       case "adminbotTimeAvailability":

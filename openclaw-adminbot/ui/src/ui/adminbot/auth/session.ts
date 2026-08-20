@@ -137,6 +137,8 @@ export type MemberProfileUpdate = {
   timezone?: string;
   personal_website?: string;
   openreview_id?: string;
+  // The link only. cv_snapshot is not writable here: the service owns it, and a member who could
+  // set it could hide or invent their own career changes.
   cv_url?: string;
   intake_form_url?: string;
   linkedin_url?: string;
@@ -260,7 +262,12 @@ export type AuthErrorKind =
   | "email-unavailable"
   // Session authenticated but lacks admin privilege (403). Distinct from
   // auth-failed so governance surfaces can say "not allowed" instead of "sign in again".
-  | "forbidden";
+  | "forbidden"
+  // The service does not have this route (404). Almost always a version skew rather than anything
+  // to do with credentials: a long-lived dev service outliving the console that calls it. It used
+  // to fall through to auth-failed, which sent people to check their login for a problem that was
+  // really a process needing a restart.
+  | "not-found";
 
 export type AuthResult<T> =
   | { ok: true; value: T }
@@ -328,6 +335,11 @@ function mapErrorResponse(
     (body as { code?: unknown } | null)?.code === "pending_approval"
   ) {
     return { kind: "pending-approval" };
+  }
+  // Before this, 404 fell through to auth-failed and reported a missing route as a credentials
+  // problem. Kept above the catch-all so the distinction cannot be lost again.
+  if (response.status === 404) {
+    return { kind: "not-found" };
   }
   return { kind: "auth-failed" };
 }
@@ -500,6 +512,34 @@ export async function updateOwnSchedule(
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
   return { ok: true, value: result.body as LabMember };
+}
+
+/**
+ * Writes lab-wide settings over the signed-in admin's own member session (PUT /settings).
+ *
+ * Not through the adminbot_update_settings gateway tool: every gateway-tool call authenticates as
+ * the shared service principal, and the service's requireMemberPrivileged denies that principal
+ * for settings outright -- governance has to be driven by a real member session, or any signed-in
+ * member could change lab policy by asking the agent to. Same reasoning as
+ * upsertLabMemberAsAdmin below.
+ */
+export async function updateSettingsAsAdmin(
+  settings: Record<string, unknown>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/settings", "PUT", sessionToken, settings);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    // A 400 carries the service's own explanation of what it refused.
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
 }
 
 // Admin write for ANY member (self or otherwise), including governance fields.
@@ -1119,6 +1159,77 @@ export async function fetchMemberResource(
       return { ok: false, kind: "forbidden" };
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+// Runs the admin CV scan (POST /cv/scan) over the member's own session. Privileged server-side,
+// so a non-admin session gets `forbidden` back rather than an empty result -- the panel is
+// already admin-gated, and this keeps the two from disagreeing if that ever drifts.
+export async function scanMemberCvs(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/cv/scan", "POST", sessionToken, {});
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/** Reads recorded CV changes since a date (GET /cv/digest). */
+export async function fetchCvDigest(
+  since: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/cv/digest?since=${encodeURIComponent(since)}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/** Drafts one member's newsletter introduction (POST /cv/blurb/:id). */
+export async function draftMemberCvBlurb(
+  memberId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/cv/blurb/${encodeURIComponent(memberId)}`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    // 409 means the member has simply never been scanned; the message says so and is worth
+    // surfacing verbatim rather than flattening into a generic failure.
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: true }) };
   }
   return { ok: true, value: result.body };
 }

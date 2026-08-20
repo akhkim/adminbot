@@ -58,8 +58,7 @@ import {
 import {
   AOE_TIMEZONE,
   localTimezone,
-  TIMEZONE_LIST_ID,
-  timezoneSuggestions,
+  timezoneOptions,
 } from "../data/timezones.ts";
 import { renderMemberSelect } from "./member-select.ts";
 import {
@@ -885,10 +884,13 @@ type CommitmentFormProps = {
     update: (patch: Partial<TimeAvailabilityDraft>) => void;
     field: (key: keyof TimeAvailabilityDraft) => (event: Event) => void;
   }) => unknown;
+  // Rendered inside the actions row, before the submit button. The away form uses it to put its
+  // hint on the same line as the action it explains, left of the button.
+  footer?: unknown;
 };
 
 function renderCommitmentForm(form: CommitmentFormProps) {
-  const { props, existing, draft, onDraftChange, testId, titleKey, head } = form;
+  const { props, existing, draft, onDraftChange, testId, titleKey, head, footer } = form;
   const error = draftError(draft);
   const touched = Boolean(draft.start || draft.end || draft.hoursPerWeek || draft.customLabel);
   const update = (patch: Partial<TimeAvailabilityDraft>) => onDraftChange({ ...draft, ...patch });
@@ -932,6 +934,7 @@ function renderCommitmentForm(form: CommitmentFormProps) {
           <input type="text" .value=${draft.note} @input=${field("note")} />
         </label>
         <div class="adminbot-time-availability__form-actions">
+          ${footer ?? nothing}
           ${error && touched
             ? html`<span class="adminbot-time-availability__form-error" role="alert"
                 >${error}</span
@@ -1065,12 +1068,12 @@ function renderTimeAwayEditor(
               @input=${field("hoursPerWeek")}
             />
           </label>`}
-      <p class="adminbot-time-availability__form-hint">
-        ${draft.wholeDay
-          ? t("adminbotTimeAvailability.form.wholeDayHint")
-          : t("adminbotTimeAvailability.form.partialHint")}
-      </p>
     `,
+    footer: html`<p class="adminbot-time-availability__form-hint">
+      ${props.awayDraft.wholeDay
+        ? t("adminbotTimeAvailability.form.wholeDayHint")
+        : t("adminbotTimeAvailability.form.partialHint")}
+    </p>`,
   });
 }
 
@@ -1206,18 +1209,26 @@ function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: M
         </label>
         <label class="adminbot-form__field">
           <span>${t("adminbotTimeAvailability.milestones.timezone")}</span>
-          <!-- Free text against a shared datalist rather than a select: six hundred zones is six
-             hundred DOM nodes per control, and typing "toro" is how anyone finds theirs. -->
-          <input
-            type="text"
-            list=${TIMEZONE_LIST_ID}
+          <!-- A select rather than a datalist: one zone per form, and a select gives a dropdown
+             whose arrow sits where a dropdown's arrow is supposed to. Only the common zones are
+             offered -- six hundred slash-and-underscore names are a wall of text nobody scrolls --
+             and the viewer's own zone leads, labelled as theirs. -->
+          <select
             data-testid="time-availability-milestone-timezone"
             .value=${draft.timezone}
-            @input=${field("timezone")}
-          />
-          <datalist id=${TIMEZONE_LIST_ID}>
-            ${timezoneSuggestions().map((zone) => html`<option value=${zone}></option>`)}
-          </datalist>
+            @change=${(event: Event) => {
+              const zone = (event.currentTarget as HTMLSelectElement).value;
+              props.onMilestoneDraftChange({ ...draft, timezone: zone });
+            }}
+          >
+            ${timezoneOptions(draft.timezone).map(
+              (group) => html`<optgroup label=${group.label}>
+                ${group.options.map(
+                  (option) => html`<option value=${option.zone}>${option.label}</option>`,
+                )}
+              </optgroup>`,
+            )}
+          </select>
         </label>
         <label class="adminbot-form__field">
           <span>${t("adminbotTimeAvailability.milestones.label")}</span>
@@ -1828,7 +1839,6 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
       ${selectedMember
         ? html`
             <div class="adminbot-time-availability__body">
-              ${renderBigDeadlines(storedMilestones, props, editable, dismissedDeadlines)}
               <section class="adminbot-time-availability__report">
                 <div class="adminbot-time-availability__report-header">
                   <div>
@@ -1861,17 +1871,18 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                   : html`<div class="adminbot-time-availability__empty">
                       ${t("adminbotTimeAvailability.noAllocations")}
                     </div>`}
-                ${renderOverallNotes(props, storedNotes, editable)}
                 ${tasks.length
                   ? renderJinesisTable(tasks, storedAvailability, props, editable)
                   : nothing}
                 ${storedTimeOff.length ? renderOtherTable(storedTimeOff, props, editable) : nothing}
+                ${renderOverallNotes(props, storedNotes, editable)}
                 ${!hasAnything && !editable
                   ? html`<div class="adminbot-time-availability__empty">
                       ${t("adminbotTimeAvailability.noAllocations")}
                     </div>`
                   : nothing}
               </section>
+              ${renderBigDeadlines(storedMilestones, props, editable, dismissedDeadlines)}
             </div>
           `
         : html`

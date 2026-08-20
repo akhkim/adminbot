@@ -530,6 +530,105 @@ export function isAdminBotTimezone(value: string): boolean {
   }
 }
 
+// One dated line off a CV. `kind` is what makes a change newsworthy or not: a new `position` or
+// `education` entry is a career move worth announcing, an `award` is worth congratulating, and
+// anything the model cannot place lands in `other` and is reported but never drafted.
+export type AdminBotCvEntryKind =
+  | "position"
+  | "education"
+  | "award"
+  // A paper. `organization` carries the venue ("NeurIPS 2026", "Nature"), rather than adding a
+  // field: it is the thing that identifies the work alongside its title, which is exactly what
+  // `organization` does for every other kind, and cvEntryKey already keys on it.
+  | "publication"
+  | "other";
+
+export type AdminBotCvEntry = {
+  kind: AdminBotCvEntryKind;
+  title: string;
+  organization: string;
+  // Free text exactly as printed on the CV ("Sept 2025", "2024-present"). Kept verbatim because
+  // it is what the newsletter quotes back, and because CVs write ranges a hundred ways.
+  start?: string;
+  end?: string;
+  // `start` normalized to YYYY-MM, for deciding whether an entry describes something that just
+  // happened. Absent whenever the model could not place the date with confidence — a missing value
+  // means "unknown", never "old", so an undated entry is reported for a human rather than
+  // silently dropped or silently announced.
+  start_iso?: string;
+};
+
+// Why an added entry is, or is not, news.
+//
+// A CV edit is not a career event. Someone backfilling a 2019 internship has changed their
+// document, not their career, and announcing it would be wrong in a way that is obvious to every
+// reader but invisible to a plain diff. The three cases are kept apart rather than collapsed into
+// a boolean so the console can show what was skipped and why.
+export type AdminBotCvRecency = "recent" | "backfilled" | "undated";
+
+export type AdminBotCvSnapshot = {
+  fetched_at: string;
+  // Hash of the extracted CV text. A re-scan whose hash is unchanged skips the model call
+  // entirely, so repeat scans over an unchanged roster cost one fetch each and nothing more.
+  content_hash: string;
+  entries: AdminBotCvEntry[];
+};
+
+// What one member's CV produced on a scan. `status` is a closed set rather than an ok/error pair
+// so the console can tell "nothing changed" apart from "we could not read it" -- they look the
+// same in a count but mean opposite things to whoever is chasing the roster.
+// One entry that appeared on a CV, with the judgement of whether it is news.
+export type AdminBotCvChange = {
+  entry: AdminBotCvEntry;
+  recency: AdminBotCvRecency;
+};
+
+export type AdminBotCvScanMemberResult = {
+  member_id: string;
+  member_name: string;
+  status: "unchanged" | "changed" | "first_scan" | "skipped" | "failed";
+  // Present when status is "failed" or "skipped": why this member produced nothing.
+  reason?: string;
+  added: AdminBotCvChange[];
+  // Removals carry no recency: taking a line off a CV says nothing about when the thing happened,
+  // and it is never drafted either way.
+  removed: AdminBotCvEntry[];
+};
+
+/**
+ * Identity of a CV entry, for diffing and for the stored-change primary key.
+ *
+ * Dates are deliberately excluded. CVs get retyped and reformatted constantly ("Sept 2025" becomes
+ * "09/2025"), and keying on the date would report every such edit as a new job. Recency is judged
+ * separately, from `start_iso`.
+ *
+ * One definition, here rather than beside either caller, because the differ and the store must
+ * agree exactly: if they drifted, a change would be re-reported on every scan.
+ */
+export function cvEntryKey(entry: AdminBotCvEntry): string {
+  const normalize = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/gu, " ");
+  return [entry.kind, normalize(entry.title), normalize(entry.organization)].join(" ");
+}
+
+// A change, as stored. `detected_at` is when the scan noticed it, which is deliberately not the
+// same as when it happened — a member who updates their CV in September for a July move is
+// detected in September, and the digest window is about what the lab learned, not what occurred.
+export type AdminBotCvChangeEvent = {
+  member_id: string;
+  member_name: string;
+  detected_at: string;
+  recency: AdminBotCvRecency;
+  entry: AdminBotCvEntry;
+};
+
+export type AdminBotCvScanResult = {
+  scanned_at: string;
+  results: AdminBotCvScanMemberResult[];
+  // Newsletter copy built from the newsworthy additions across every member. Empty when nothing
+  // changed. Draft only -- publishing is not part of this flow.
+  newsletter_draft: string;
+};
+
 export type AdminBotLabMemberInput = {
   id: string;
   name: string;
@@ -675,6 +774,10 @@ export type AdminBotLabMemberInput = {
   // prefill the rows above. Member-owned and self-editable: whatever the importer gets wrong, the
   // member fixes in the same panel.
   availability_doc_url?: string;
+  // Career facts from the last successful CV scan, kept so the next scan has something to diff
+  // against. Deliberately holds the extracted *facts* and a hash, never the CV text: the roster is
+  // read whole on every members/capacity load, and a stored CV body would bloat all of them.
+  cv_snapshot?: AdminBotCvSnapshot;
   // Stamped server-side on every write that touches availability/time_off, so
   // the UI can show staleness without diffing payloads.
   availability_updated_at?: string;
@@ -690,6 +793,10 @@ export type AdminBotLabMember = Omit<AdminBotLabMemberInput, "privilege_level"> 
 
 export type AdminBotSettingsInput = {
   paper_escalation_business_days?: number;
+  // How many months back a CV entry's start date may sit and still count as news. Configurable
+  // because the right answer depends on how often a lab's members actually refresh their CVs:
+  // too tight and a real move lands as backfilled, too wide and "recently" stops meaning it.
+  cv_recency_window_months?: number;
   head_professor_member_id?: string;
   // Contact number the onboarding "what to expect" note hands to direct mentees. Governance
   // config rather than a repo constant: it is a real phone number, so it never belongs in the
@@ -707,6 +814,7 @@ export type AdminBotSettingsInput = {
 
 export type AdminBotSettings = {
   paper_escalation_business_days: number;
+  cv_recency_window_months: number;
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;

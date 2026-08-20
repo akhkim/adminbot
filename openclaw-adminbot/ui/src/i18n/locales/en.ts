@@ -418,6 +418,7 @@ export const en: TranslationMap = {
     adminbotSocialBot: "Social Media Bot",
     adminbotPapers: "Active Papers",
     adminbotAnnouncements: "Announcements",
+    adminbotCvUpdates: "CV Updates",
     adminbotCalendar: "Calendar",
     adminbotDeadlines: "Deadlines",
     activity: "Activity",
@@ -462,6 +463,7 @@ export const en: TranslationMap = {
     adminbotSocialBot: "Not built yet.",
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
+    adminbotCvUpdates: "Scan member CVs for career changes worth announcing.",
     adminbotCalendar: "Draft an event, and invite the people the roster can describe.",
     adminbotDeadlines: "Upcoming conference & workshop deadlines.",
     activity: "Browser-local tool activity summaries.",
@@ -1690,7 +1692,7 @@ export const en: TranslationMap = {
   },
   myWork: {
     items: {
-      title: "Projects & papers",
+      title: "Projects & Papers",
       empty: "Nothing on your record yet. Add your first project.",
       add: "Add a project",
       addSubmit: "Add",

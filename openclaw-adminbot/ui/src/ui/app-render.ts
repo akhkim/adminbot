@@ -29,6 +29,10 @@ import {
   saveAdminBotSensitiveInfo,
   markAdminBotNudgesSeen,
   saveAdminBotSettings,
+  scanAdminBotCvs,
+  setAdminBotCvDigestSince,
+  loadAdminBotCvDigest,
+  draftAdminBotCvBlurb,
   sendAdminBotMemberNudge,
   sendAdminBotReimbursementMessage,
   setAdminBotNudgeChannel,
@@ -790,6 +794,8 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
       return "papers";
     case "adminbotAnnouncements":
       return "announcements";
+    case "adminbotCvUpdates":
+      return "cv-updates";
     default:
       return null;
   }
@@ -3442,6 +3448,17 @@ export function renderApp(state: AppViewState) {
               onNudgeToggleRecipient: (memberId) => toggleAdminBotNudgeRecipient(state, memberId),
               onNudgeSetRecipients: (memberIds) => setAdminBotNudgeRecipients(state, memberIds),
               onSendNudge: () => void sendAdminBotMemberNudge(state),
+              cvScan: state.adminBotCvScan,
+              cvScanning: state.adminBotCvScanning,
+              onScanCvs: () => void scanAdminBotCvs(state),
+              cvDigest: state.adminBotCvDigest,
+              cvDigestSince: state.adminBotCvDigestSince,
+              cvDigestLoading: state.adminBotCvDigestLoading,
+              onCvDigestSinceChange: (since) => setAdminBotCvDigestSince(state, since),
+              onLoadCvDigest: () => void loadAdminBotCvDigest(state),
+              cvBlurbs: state.adminBotCvBlurbs,
+              cvBlurbMemberId: state.adminBotCvBlurbMemberId,
+              onDraftCvBlurb: (memberId) => void draftAdminBotCvBlurb(state, memberId),
               onRefresh: () => void loadAdminBot(state, adminBotMode),
               onApprove: (proposal) => void approveAdminBotAction(state, proposal),
               onRemove: (proposal) => void removePendingAdminBotAction(state, proposal),
