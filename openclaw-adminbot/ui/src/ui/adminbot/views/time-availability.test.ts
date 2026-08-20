@@ -898,16 +898,17 @@ describe("the split tables and the deadline panel", () => {
     );
   });
 
-  // The page reads top-down: the chart and the two commitment tables first, the deadlines as the
-  // closing block of the summary, the editors as cards after it.
-  it("puts the deadline panel after the chart and its tables", () => {
+  // The page reads top-down: the deadlines first, because a fixed date is what a term is planned
+  // around and it is the thing someone opens this page to check, then the chart and its two
+  // commitment tables, then the editors as cards after them.
+  it("puts the deadline panel before the chart and its tables", () => {
     const container = renderView({ members: [scheduled()] });
     const body = container.querySelector(".adminbot-time-availability__body")!;
     const report = body.querySelector(".adminbot-time-availability__report")!;
     const panel = body.querySelector('[data-testid="time-availability-deadlines"]')!;
     expect(report).not.toBeNull();
     expect(panel).not.toBeNull();
-    expect(report.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(panel.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("offers the milestone form only on your own schedule", () => {

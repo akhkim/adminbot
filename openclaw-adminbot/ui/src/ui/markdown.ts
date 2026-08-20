@@ -292,6 +292,7 @@ const APP_RESOURCE_ROOT_SEGMENTS = new Set([
   "__openclaw",
   "__openclaw__",
   "_next",
+  "adminbot-logo.png",
   "api",
   "apple-touch-icon.png",
   "assets",

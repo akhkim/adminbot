@@ -774,8 +774,8 @@ export function renderLoginGate(state: AppViewState) {
       ${renderSignedOutHeader(state, "back")}
       <div class="login-gate__card">
         <div class="login-gate__header">
-          <img class="login-gate__logo" src=${faviconSrc} alt="OpenClaw" />
-          <div class="login-gate__title">OpenClaw</div>
+          <img class="login-gate__logo" src=${faviconSrc} alt="AdminBot" />
+          <div class="login-gate__title">AdminBot</div>
           <div class="login-gate__sub">${t("login.subtitle")}</div>
         </div>
         ${state.loginPendingNotice

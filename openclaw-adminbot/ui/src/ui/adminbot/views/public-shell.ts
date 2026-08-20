@@ -135,10 +135,10 @@ export function renderPublicShell(state: AppViewState) {
           <div class="sidebar-shell">
             <div class="sidebar-shell__header">
               <div class="sidebar-brand">
-                <img class="sidebar-brand__logo" src=${agentLogoUrl(basePath)} alt="OpenClaw" />
+                <img class="sidebar-brand__logo" src=${agentLogoUrl(basePath)} alt="AdminBot" />
                 <span class="sidebar-brand__copy">
                   <span class="sidebar-brand__eyebrow">${t("nav.adminbot")}</span>
-                  <span class="sidebar-brand__title">OpenClaw</span>
+                  <span class="sidebar-brand__title">AdminBot</span>
                 </span>
               </div>
             </div>

@@ -39,7 +39,7 @@ export function renderGuestReimbursements(state: AppViewState) {
     <div class="login-gate guest-reimbursements">
       <div class="login-gate__card guest-reimbursements__card">
         <div class="login-gate__header">
-          <img class="login-gate__logo" src=${agentLogoUrl(basePath)} alt="OpenClaw" />
+          <img class="login-gate__logo" src=${agentLogoUrl(basePath)} alt="AdminBot" />
           <div class="login-gate__title">${t("login.guest.reimbursements")}</div>
           <div class="login-gate__sub">${t("login.guest.reimbursementsHint")}</div>
         </div>

@@ -511,7 +511,9 @@
   width: 32px;
   height: 32px;
   flex-shrink: 0;
-  border-radius: var(--radius-md);
+  /* The mark is a circle with transparent corners, so the frame is round rather than the
+     rounded square every other avatar in the shell uses. */
+  border-radius: 50%;
 }
 
 .sidebar-brand__copy {
@@ -612,6 +614,11 @@
 
 .nav-section__items {
   display: grid;
+  /* minmax(0, 1fr), not the default auto: a grid column sizes to its widest child, so one row
+     that cannot shrink -- "Social Media Bot" plus its COMING SOON badge -- widened every row in
+     the group past the 258px sidebar, and .sidebar-nav's overflow-x: hidden sheared the right
+     edge off the active row's highlight. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
 }
 
@@ -680,6 +687,8 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  /* Lets the row shrink inside its column instead of pushing past it; the label ellipsizes. */
+  min-width: 0;
   gap: 12px;
   /* Pointer-sized rows are the mobile layout's job (layout.mobile.css keeps 40px there); on a
      desktop sidebar the extra height only spreads a group out. */
@@ -726,6 +735,11 @@
   line-height: 3;
   letter-spacing: var(--tracking-tight);
   white-space: nowrap;
+  /* The label is what gives way when a row is too narrow -- the badge beside it stays whole,
+     because "coming soon" truncated to "comin..." says less than a clipped label does. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .nav-item:hover {
@@ -839,7 +853,7 @@
 .sidebar--collapsed .sidebar-brand__logo {
   width: 34px;
   height: 34px;
-  border-radius: var(--radius-md);
+  border-radius: 50%;
 }
 
 .sidebar-utility-group {

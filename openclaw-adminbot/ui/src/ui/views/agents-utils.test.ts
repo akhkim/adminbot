@@ -108,12 +108,18 @@ describe("sortLocaleStrings", () => {
 
 describe("agentLogoUrl", () => {
   it("keeps base-mounted control UI logo paths absolute to the mount", () => {
-    expect(agentLogoUrl("/ui")).toBe("/ui/favicon.svg");
-    expect(agentLogoUrl("/apps/openclaw/")).toBe("/apps/openclaw/favicon.svg");
+    expect(agentLogoUrl("/ui")).toBe("/ui/adminbot-logo.png");
+    expect(agentLogoUrl("/apps/openclaw/")).toBe("/apps/openclaw/adminbot-logo.png");
   });
 
   it("uses a root-relative fallback when no basePath is configured", () => {
-    expect(agentLogoUrl("")).toBe("/favicon.svg");
+    expect(agentLogoUrl("")).toBe("/adminbot-logo.png");
+  });
+
+  // The brand mark and the tab icon are separate assets on purpose: favicon.svg still has to
+  // read at 16px, where this logo's detail turns to mud.
+  it("does not serve the favicon as the brand mark", () => {
+    expect(agentLogoUrl("")).not.toContain("favicon");
   });
 });
 

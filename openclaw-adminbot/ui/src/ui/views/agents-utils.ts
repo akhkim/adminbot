@@ -246,7 +246,9 @@ export function resolveChatAvatarRenderUrl(
 }
 
 export function agentLogoUrl(basePath: string): string {
-  return controlUiPublicAssetPath("favicon.svg", basePath);
+  // The circular AdminBot mark, not favicon.svg. The favicon stays its own asset because a browser
+  // tab renders at 16px, where this logo's detail turns to mud and a flat glyph reads better.
+  return controlUiPublicAssetPath("adminbot-logo.png", basePath);
 }
 
 export function assistantAvatarFallbackUrl(basePath: string): string {
