@@ -62,6 +62,12 @@ import {
   isAdminBotTimezone,
 } from "../contracts/actions.js";
 import {
+  type AdminBotPaperSlot,
+  type AdminBotPaperSlotInput,
+  type AdminBotPaperSlotOwner,
+  type AdminBotPaperSlotRecord,
+} from "../contracts/paper-slots.js";
+import {
   byUrgency,
   prepareLogisticsRequest,
   withoutAttachmentBytes,
@@ -102,6 +108,19 @@ import {
   memberRelevanceNeedles,
   textMatchesNeedles,
 } from "../workflows/papers/openreview-matching.js";
+import {
+  actionablePaperSlots,
+  applyPaperSlotWrite,
+  blankPaperSlot,
+  buildPaperSlotNudgeMessage,
+  isAdminBotPaperSlot,
+  isPaperClosed,
+  isPaperDormant,
+  paperSlotProgress,
+  paperSlotRows,
+  waivePaperSlot,
+  type ActionablePaperSlot,
+} from "../workflows/papers/paper-slots.js";
 
 // Approver roles are privilege levels from the member roster, not a separate vocabulary: the
 // service can only ever verify the level on the authenticated session, so anything else here
@@ -139,6 +158,9 @@ export type AdminBotServiceStore = {
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
   listPapers(): AdminBotPaperRecord[];
   deletePaper(paperId: string): boolean;
+  savePaperSlot(record: AdminBotPaperSlotRecord): void;
+  /** One paper's slots, or every paper's when the id is omitted. */
+  listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
   appendMemberLocation(entry: AdminBotMemberLocationEntry): void;
   /** Newest first. `limit` is a cap, not a page: nothing here needs to walk a member's whole history. */
   listMemberLocations(memberId: string, limit?: number): AdminBotMemberLocationEntry[];
@@ -192,6 +214,29 @@ export type AdminBotServiceStore = {
   getSlackChannelNamingRecord(channelId: string): AdminBotSlackChannelNamingRecord | undefined;
   listSlackChannelNamingRecords(): AdminBotSlackChannelNamingRecord[];
   deleteSlackChannelNamingRecord(channelId: string): boolean;
+};
+
+/**
+ * One paper's line in the sweep: how much evidence is in, what is outstanding, and who owes it.
+ *
+ * Nothing here is stored. `provided_count`, `missing_slots` and `escalating` are all computed from
+ * the slot rows on read -- storing them would create a second source of truth that drifts the
+ * moment somebody writes a slot without going through this service.
+ */
+export type AdminBotPaperSlotOverviewRow = {
+  paper_id: string;
+  title: string;
+  venue?: string;
+  deadline?: string;
+  current_step: string;
+  provided_count: number;
+  required_count: number;
+  dormant: boolean;
+  closed: boolean;
+  missing_slots: AdminBotPaperSlot[];
+  escalating: boolean;
+  first_author_member_id?: string;
+  last_nudged_at?: string;
 };
 
 export type AdminBotSlackChannelNamingEvent = {
@@ -967,6 +1012,316 @@ export class AdminBotService {
       },
     });
     return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * One paper's evidence slots, every one of the 23, stored or not.
+   *
+   * The blanks are part of the answer: the card is a checklist, and a checklist that only lists
+   * the boxes somebody already ticked is not one.
+   */
+  listPaperSlots(paperId: string): AdminBotServiceResponse<{
+    paper: AdminBotPaperRecord;
+    slots: AdminBotPaperSlotRecord[];
+  }> {
+    const paper = this.store.getPaper(paperId);
+    if (!paper) {
+      return serviceError(404, "paper not found");
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { paper, slots: paperSlotRows(paperId, this.store.listPaperSlots(paperId)) },
+    };
+  }
+
+  /**
+   * Write one slot on one paper.
+   *
+   * `status` is never taken from the caller -- applyPaperSlotWrite derives it from the value, so
+   * "provided" always means something was actually provided. Ownership is the same rule the paper
+   * itself uses: an admin writes any paper, a member writes one they filed or are named on.
+   */
+  setPaperSlot(params: {
+    paperId: string;
+    slot: string;
+    input: AdminBotPaperSlotInput;
+    memberId: string;
+    privileged: boolean;
+  }): AdminBotServiceResponse<{ slot: AdminBotPaperSlotRecord }> {
+    const context = this.paperSlotContext(params);
+    if (!context.ok) {
+      return context.error;
+    }
+    const result = applyPaperSlotWrite({
+      existing: context.existing,
+      input: params.input,
+      memberId: params.memberId,
+      now: new Date(),
+    });
+    if (!result.ok) {
+      return serviceError(400, result.error);
+    }
+    this.store.savePaperSlot(result.record);
+    this.recordAudit({
+      type: "paper_slot.updated",
+      actor: params.memberId,
+      details: {
+        paper_id: params.paperId,
+        slot: result.record.slot,
+        status: result.record.status,
+      },
+    });
+    return { ok: true, status: 200, payload: { slot: result.record } };
+  }
+
+  /**
+   * Waive a slot. Admin-only: it is the one way a required artifact stops being required, so it is
+   * the one write a member must not be able to make on their own paper.
+   */
+  waivePaperSlot(params: {
+    paperId: string;
+    slot: string;
+    reason: string;
+    memberId: string;
+  }): AdminBotServiceResponse<{ slot: AdminBotPaperSlotRecord }> {
+    const context = this.paperSlotContext({ ...params, privileged: true });
+    if (!context.ok) {
+      return context.error;
+    }
+    const result = waivePaperSlot({
+      existing: context.existing,
+      memberId: params.memberId,
+      reason: params.reason,
+      now: new Date(),
+    });
+    if (!result.ok) {
+      return serviceError(400, result.error);
+    }
+    this.store.savePaperSlot(result.record);
+    this.recordAudit({
+      type: "paper_slot.waived",
+      actor: params.memberId,
+      details: { paper_id: params.paperId, slot: result.record.slot, reason: params.reason },
+    });
+    return { ok: true, status: 200, payload: { slot: result.record } };
+  }
+
+  /** Shared lookup and permission check behind both slot writes. */
+  private paperSlotContext(params: {
+    paperId: string;
+    slot: string;
+    memberId: string;
+    privileged: boolean;
+  }):
+    | { ok: true; paper: AdminBotPaperRecord; existing: AdminBotPaperSlotRecord }
+    | { ok: false; error: AdminBotServiceResponse<never> } {
+    const paper = this.store.getPaper(params.paperId);
+    if (!paper) {
+      return { ok: false, error: serviceError(404, "paper not found") };
+    }
+    if (!isAdminBotPaperSlot(params.slot)) {
+      return { ok: false, error: serviceError(400, "unknown slot") };
+    }
+    if (!params.privileged) {
+      const member = this.store.getLabMember(params.memberId);
+      if (!member || !this.memberOwnsPaper(member, paper)) {
+        return {
+          ok: false,
+          error: serviceError(403, "members can only edit papers they authored"),
+        };
+      }
+    }
+    const stored = this.store
+      .listPaperSlots(params.paperId)
+      .find((record) => record.slot === params.slot);
+    return { ok: true, paper, existing: stored ?? blankPaperSlot(params.paperId, params.slot) };
+  }
+
+  /**
+   * Every live paper, how much evidence it has, and what is outstanding on it right now.
+   *
+   * This is the read behind the My Projects & Papers header and the admin sweep: the same
+   * computation the nudge pass runs, returned instead of sent. Keeping them on one code path is
+   * what makes the button's count honest -- it says what pressing it would actually chase.
+   */
+  listPaperSlotOverview(nowIso?: string): AdminBotServiceResponse<{
+    papers: AdminBotPaperSlotOverviewRow[];
+  }> {
+    const now = nowIso ? new Date(nowIso) : new Date();
+    const papers = this.store.listPapers().map((paper) => {
+      const stored = this.store.listPaperSlots(paper.id);
+      const actionable = actionablePaperSlots(paper, stored, now);
+      const progress = paperSlotProgress(stored);
+      const lastNudged = stored
+        .map((record) => record.last_nudged_at)
+        .filter((value): value is string => Boolean(value))
+        .toSorted()
+        .at(-1);
+      const owed = this.resolvePaperSlotOwner(paper, "first_author");
+      return {
+        paper_id: paper.id,
+        title: paper.title,
+        ...(paper.venue ? { venue: paper.venue } : {}),
+        ...(paper.deadline ? { deadline: paper.deadline } : {}),
+        current_step: paper.current_step,
+        provided_count: progress.provided,
+        required_count: progress.total,
+        dormant: isPaperDormant(paper, now),
+        closed: isPaperClosed(paper),
+        missing_slots: actionable.map((entry) => entry.slot),
+        escalating: actionable.some((entry) => entry.escalate),
+        ...(owed[0] ? { first_author_member_id: owed[0] } : {}),
+        ...(lastNudged ? { last_nudged_at: lastNudged } : {}),
+      };
+    });
+    return { ok: true, status: 200, payload: { papers } };
+  }
+
+  /**
+   * The global nudge: one Slack message per person, naming exactly what they owe and on which
+   * paper.
+   *
+   * It composes nothing from caller input and picks nobody -- recipients and text are both derived
+   * from slot state and the registry, which is why it can run from a cron script as well as from
+   * an admin's button (same reasoning as sendMandatoryFieldsReminders).
+   *
+   * The cadence lives on the slot rather than on the schedule: a slot nudged inside the window is
+   * skipped no matter how often the pass runs, so a doubled crontab cannot turn this into a nag.
+   * `nudge_count` is stamped only for the slots a message actually went out for, so somebody with
+   * no Slack id on file never accumulates an escalation they were never told about.
+   */
+  async sendPaperSlotNudges(
+    actor: string,
+  ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult & { papers_considered: number }>> {
+    const now = new Date();
+    const cutoff = now.getTime() - PAPER_SLOT_NUDGE_INTERVAL_MS;
+    // Grouped by recipient rather than by paper: someone first-authoring three papers should get
+    // one message about three papers, not three messages.
+    const byRecipient = new Map<
+      string,
+      Array<{ paper: AdminBotPaperRecord; entries: ActionablePaperSlot[] }>
+    >();
+    const stamped: AdminBotPaperSlotRecord[] = [];
+    const papers = this.store.listPapers();
+
+    for (const paper of papers) {
+      const stored = this.store.listPaperSlots(paper.id);
+      const due = actionablePaperSlots(paper, stored, now).filter(
+        (entry) =>
+          !entry.record.last_nudged_at || Date.parse(entry.record.last_nudged_at) <= cutoff,
+      );
+      if (due.length === 0) {
+        continue;
+      }
+      for (const owner of PAPER_SLOT_OWNERS) {
+        const entries = due.filter((entry) => entry.owner === owner);
+        if (entries.length === 0) {
+          continue;
+        }
+        for (const memberId of this.resolvePaperSlotOwner(paper, owner)) {
+          const bucket = byRecipient.get(memberId) ?? [];
+          bucket.push({ paper, entries });
+          byRecipient.set(memberId, bucket);
+        }
+        stamped.push(
+          ...entries.map((entry) => ({
+            ...entry.record,
+            last_nudged_at: now.toISOString(),
+            nudge_count: entry.record.nudge_count + 1,
+          })),
+        );
+      }
+    }
+
+    if (byRecipient.size === 0) {
+      return {
+        ok: true,
+        status: 200,
+        payload: { created: [], skipped: [], papers_considered: papers.length },
+      };
+    }
+
+    const created: AdminBotStoredProposal[] = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+    const delivered = new Set<string>();
+    for (const [memberId, items] of byRecipient) {
+      const message = items
+        .map((item) =>
+          buildPaperSlotNudgeMessage({ paper: item.paper, entries: item.entries, now }),
+        )
+        .join("\n\n");
+      const result = await this.sendMemberNudge(
+        { channel: "slack", recipient_member_ids: [memberId], message },
+        actor,
+      );
+      if (!result.ok) {
+        skipped.push({ member_id: memberId, reason: result.error.message });
+        continue;
+      }
+      created.push(...result.payload.created);
+      skipped.push(...result.payload.skipped);
+      if (result.payload.created.length > 0) {
+        delivered.add(memberId);
+      }
+    }
+
+    // Only stamp when somebody was actually reached. A slot whose owner has no Slack id must stay
+    // eligible, or it silently drops out of every future pass.
+    if (delivered.size > 0) {
+      for (const record of stamped) {
+        this.store.savePaperSlot(record);
+      }
+      this.recordAudit({
+        type: "paper_slots.nudged",
+        actor,
+        details: { member_ids: [...delivered], slot_count: stamped.length },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { created, skipped, papers_considered: papers.length },
+    };
+  }
+
+  /**
+   * Who a slot's owner role resolves to on this paper.
+   *
+   * `first_author` prefers the explicit field, falls back to whoever filed the paper, and only
+   * then tries to match the first free-text author name against the roster -- names are how the
+   * paper spells them, so a match is a convenience, never an identity.
+   */
+  private resolvePaperSlotOwner(
+    paper: AdminBotPaperRecord,
+    owner: AdminBotPaperSlotOwner,
+  ): string[] {
+    const roster = this.store.listLabMembers();
+    const byName = new Map(
+      roster.map((member) => [member.name.trim().toLocaleLowerCase(), member]),
+    );
+    const firstAuthor =
+      paper.first_author_member_id ??
+      paper.submitted_by_member_id ??
+      byName.get((paper.authors[0] ?? "").trim().toLocaleLowerCase())?.id;
+    switch (owner) {
+      case "first_author":
+        return firstAuthor ? [firstAuthor] : [];
+      case "coauthors":
+        return paper.authors
+          .map((name) => byName.get(name.trim().toLocaleLowerCase())?.id)
+          .filter((id): id is string => Boolean(id) && id !== firstAuthor);
+      case "pi": {
+        const head =
+          paper.reminder?.head_professor_member_id ??
+          this.resolveSettings().head_professor_member_id;
+        return head ? [head] : [];
+      }
+      case "admin":
+        return roster
+          .filter((member) => member.privilege_level === "admin")
+          .map((member) => member.id);
+    }
   }
 
   /**
@@ -2913,15 +3268,29 @@ const OWN_PAPER_EDITABLE_FIELDS = [
   "current_step",
   "artifacts",
   "notes",
+  // Where the paper is aimed and when it is due. An author's own call, and it moves -- a missed
+  // deadline, a change of plan -- so it belongs with the fields they edit on their own card.
+  "venue",
+  "deadline",
 ] as const;
 
 // Governance the paper flow drives: mentor assignment, the reviewer checklist, and reminder cadence
 // (escalation windows and the head professor who gets escalated to). Ownership is server-stamped.
+//
+// The nudge-targeting and decision fields are here for the same reason: `first_author_member_id`
+// decides who every nudge on this paper goes to, `venue_decision`/`attempt` record what the venue
+// said, and `dormant_override` exempts a paper from the dormancy rule. Named explicitly rather
+// than left to fall off the editable list, so a member who tries gets a refusal instead of a
+// silent no-op.
 const OWN_PAPER_PRIVILEGED_FIELDS = [
   "mentor_member_id",
   "checks",
   "reminder",
   "submitted_by_member_id",
+  "first_author_member_id",
+  "venue_decision",
+  "attempt",
+  "dormant_override",
 ] as const;
 
 function paperMatchesNeedles(paper: AdminBotPaperRecord, needles: string[]): boolean {
@@ -2989,6 +3358,15 @@ function serviceError<T>(status: number, message: string): AdminBotServiceRespon
 // often as it likes -- daily is fine, and gives a member who fills their profile in on day one a
 // prompt exit from the list -- but nobody is nudged about the same gap more than once per window.
 const MANDATORY_FIELDS_REMINDER_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+
+// The same idea one level down: a *slot* is left alone for three days after it was nudged about.
+// Per-slot rather than per-paper, so filling in two of four artifacts genuinely quiets those two
+// and the next pass chases only what is still open.
+const PAPER_SLOT_NUDGE_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+
+// Fixed order, so a person owed slots in two roles on the same paper reads them in the same order
+// every time.
+const PAPER_SLOT_OWNERS: AdminBotPaperSlotOwner[] = ["first_author", "coauthors", "pi", "admin"];
 
 // The one list, shared with the Control UI through the contracts module so the reminder can never
 // chase a field the profile page calls optional. See adminBotMandatoryProfileFields.

@@ -2130,6 +2130,134 @@ export async function fetchMemberProfileOverview(
   };
 }
 
+// --- Paper evidence slots ---
+//
+// The tall table behind My Projects & Papers: one row per artifact per paper. The registry that
+// says what each slot is called and what shape it accepts is imported straight from the service's
+// contracts module (see views/paper-slots.ts), so this file only moves records, never rules.
+
+export type PaperSlotOverviewRow = {
+  paper_id: string;
+  title: string;
+  venue?: string;
+  deadline?: string;
+  current_step: string;
+  provided_count: number;
+  required_count: number;
+  dormant: boolean;
+  closed: boolean;
+  missing_slots: string[];
+  escalating: boolean;
+  first_author_member_id?: string;
+  last_nudged_at?: string;
+};
+
+/** Every paper's outstanding evidence, computed by the service on read. */
+export async function fetchPaperSlotOverview(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperSlotOverviewRow[]>> {
+  const result = await authedJson(baseUrl, "/papers/slot-overview", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { papers?: PaperSlotOverviewRow[] } | null;
+  return { ok: true, value: body?.papers ?? [] };
+}
+
+export type PaperSlotRow = {
+  paper_id: string;
+  slot: string;
+  status: "missing" | "provided" | "invalid" | "waived";
+  url?: string;
+  value_text?: string;
+  provided_at?: string;
+  invalid_reason?: string;
+  waived_reason?: string;
+  last_nudged_at?: string;
+  nudge_count: number;
+  snoozed_until?: string;
+};
+
+/** One paper's 23 slots, blanks included -- the card renders the checklist, not just the answers. */
+export async function fetchPaperSlots(
+  paperId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperSlotRow[]>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}/slots`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { slots?: PaperSlotRow[] } | null;
+  return { ok: true, value: body?.slots ?? [] };
+}
+
+/**
+ * Write one slot.
+ *
+ * The service derives `status` from the value, so this sends the value and nothing else -- there
+ * is deliberately no way for the browser to declare an artifact provided.
+ */
+export async function savePaperSlot(
+  paperId: string,
+  slot: string,
+  input: { url?: string; value_text?: string; done?: boolean; snoozed_until?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperSlotRow>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}/slots/${encodeURIComponent(slot)}`,
+    "PUT",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { slot?: PaperSlotRow } | null;
+  return body?.slot
+    ? { ok: true, value: body.slot }
+    : { ok: false, kind: "auth-failed", message: "the service returned no slot" };
+}
+
+/** Runs the paper-evidence nudge pass now. Recipients and text are server-computed, never ours. */
+export async function runPaperSlotReminder(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ created: number; skipped: number }>> {
+  const result = await authedJson(baseUrl, "/papers/slot-reminder/run", "POST", sessionToken, {});
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { created?: unknown[]; skipped?: unknown[] } | null;
+  return {
+    ok: true,
+    value: { created: body?.created?.length ?? 0, skipped: body?.skipped?.length ?? 0 },
+  };
+}
+
 /** Runs the daily mandatory-fields reminder now. Recipients are server-computed, never ours. */
 export async function runMandatoryFieldsReminder(
   sessionToken: string,

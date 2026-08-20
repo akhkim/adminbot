@@ -1690,6 +1690,19 @@ export const en: TranslationMap = {
         "The year and month you plan on leaving Jinesis for a new job or stage, like 2027-06. An estimate is fine — it is not a commitment.",
     },
   },
+  // My Projects & Papers' evidence checklist, and the global nudge that chases it.
+  paperSlots: {
+    nudge: "Nudge authors ({count})",
+    nudging: "Sending…",
+    nudgedCount: "Nudged {count} author(s) about what their papers still need.",
+    nudgedNone: "Nobody was due a nudge — everything outstanding was chased recently.",
+    error: {
+      signIn: "Sign in to see what your papers still need.",
+      unreachable: "Could not reach AdminBot at {url}.",
+      forbidden: "You do not have permission to do that.",
+      failed: "Could not load this paper's checklist.",
+    },
+  },
   myWork: {
     items: {
       title: "Projects & Papers",

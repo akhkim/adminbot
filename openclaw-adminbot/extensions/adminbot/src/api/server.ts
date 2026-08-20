@@ -20,6 +20,7 @@ import type {
   AdminBotRemovePendingRequest,
   AdminBotSettingsInput,
 } from "../contracts/actions.js";
+import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
 import {
   buildNewsletterDraft,
   draftMemberBlurb,
@@ -1718,6 +1719,66 @@ async function handleAuthenticatedRoute(
   }
   if (req.method === "GET" && url.pathname === "/papers") {
     sendServiceResult(res, service.listPapers());
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/papers/slot-overview") {
+    // Read-only, and the same records GET /papers already returns to any signed-in member -- this
+    // just adds what is outstanding on each. The write and the send below are the gated halves.
+    sendServiceResult(res, service.listPaperSlotOverview(url.searchParams.get("now") ?? undefined));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/slot-reminder/run") {
+    // Recipients and message are computed entirely from slot state and the registry; the caller
+    // supplies neither. Same safety model (and the same requirePrivileged, satisfied by the cron
+    // script's service principal) as /members/mandatory-fields-reminder/run.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, await service.sendPaperSlotNudges(principalActor(principal)));
+    return;
+  }
+  const paperSlot = /^\/papers\/([^/]+)\/slots\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "PUT" && paperSlot?.[1] && paperSlot[2]) {
+    if (principal.kind !== "member" && !isPrivileged(principal)) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.setPaperSlot({
+        paperId: decodeURIComponent(paperSlot[1]),
+        slot: decodeURIComponent(paperSlot[2]),
+        input: body as AdminBotPaperSlotInput,
+        memberId: principal.kind === "member" ? principal.member.id : principalActor(principal),
+        privileged: isPrivileged(principal),
+      }),
+    );
+    return;
+  }
+  const paperSlotWaiver = /^\/papers\/([^/]+)\/slots\/([^/]+)\/waive$/u.exec(url.pathname);
+  if (req.method === "POST" && paperSlotWaiver?.[1] && paperSlotWaiver[2]) {
+    // A waiver is how a required artifact stops being required, so it takes a genuine admin
+    // session rather than the shared service principal: the agent must not be able to excuse a
+    // paper from evidence it is supposed to produce.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = (await readJson(req)) as { reason?: string };
+    sendServiceResult(
+      res,
+      service.waivePaperSlot({
+        paperId: decodeURIComponent(paperSlotWaiver[1]),
+        slot: decodeURIComponent(paperSlotWaiver[2]),
+        reason: String(body?.reason ?? ""),
+        memberId: principalActor(principal),
+      }),
+    );
+    return;
+  }
+  const paperSlots = /^\/papers\/([^/]+)\/slots$/u.exec(url.pathname);
+  if (req.method === "GET" && paperSlots?.[1]) {
+    sendServiceResult(res, service.listPaperSlots(decodeURIComponent(paperSlots[1])));
     return;
   }
   const paper = /^\/papers\/([^/]+)$/u.exec(url.pathname);

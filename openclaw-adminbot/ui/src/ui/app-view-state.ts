@@ -488,6 +488,17 @@ export type AppViewState = {
   adminBotProfileOverviewReminding: boolean;
   adminBotProfileOverviewNotice: string | null;
   adminBotProfileOverviewIncompleteOnly: boolean;
+  // My Projects & Papers: what each paper still owes, and the slots of whichever cards are open.
+  // `loadedAt` is the same "ask for it" sentinel the overview above uses.
+  adminBotPaperSlotOverview: import("./adminbot/auth/session.ts").PaperSlotOverviewRow[];
+  adminBotPaperSlots: Record<string, import("./adminbot/auth/session.ts").PaperSlotRow[]>;
+  adminBotPaperSlotsOpen: string[];
+  adminBotPaperSlotsLoading: boolean;
+  adminBotPaperSlotsError: string | null;
+  adminBotPaperSlotsLoadedAt: number | null;
+  adminBotPaperSlotsNudging: boolean;
+  adminBotPaperSlotsNotice: string | null;
+  adminBotPaperSlotsBusyId: string | null;
   adminBotLettersSchools: RecommendationSchool[];
   adminBotLettersFacts: LetterFact[];
   // Book Meeting's own table and save state, kept apart from the other two for the same reason

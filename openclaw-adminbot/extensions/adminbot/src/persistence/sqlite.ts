@@ -23,6 +23,11 @@ import type {
   AdminBotSettings,
   AdminBotStoredProposal,
 } from "../contracts/actions.js";
+import type {
+  AdminBotPaperSlot,
+  AdminBotPaperSlotRecord,
+  AdminBotPaperSlotStatus,
+} from "../contracts/paper-slots.js";
 import {
   AdminBotService,
   type AdminBotActionExecutor,
@@ -164,6 +169,31 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_papers_step_idx
         ON adminbot_papers(current_step, updated_at);
+
+      -- One row per evidence slot, per paper. Real columns rather than a JSON blob on the paper:
+      -- the global nudge pass reads status, provided_at, last_nudged_at, nudge_count and
+      -- snoozed_until across every open paper at once, and that is a query, not a parse.
+      CREATE TABLE IF NOT EXISTS adminbot_paper_slots (
+        paper_id TEXT NOT NULL,
+        slot TEXT NOT NULL,
+        status TEXT NOT NULL,
+        url TEXT,
+        value_text TEXT,
+        provided_by_member_id TEXT,
+        provided_at TEXT,
+        validated_at TEXT,
+        invalid_reason TEXT,
+        waived_by_member_id TEXT,
+        waived_reason TEXT,
+        last_nudged_at TEXT,
+        nudge_count INTEGER NOT NULL DEFAULT 0,
+        snoozed_until TEXT,
+        PRIMARY KEY (paper_id, slot)
+      );
+
+      -- The nudge scan's own access pattern: every open slot in the lab, in one sweep.
+      CREATE INDEX IF NOT EXISTS adminbot_paper_slots_status_idx
+        ON adminbot_paper_slots(status, last_nudged_at);
 
       CREATE TABLE IF NOT EXISTS adminbot_member_locations (
         id TEXT PRIMARY KEY,
@@ -589,7 +619,73 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   deletePaper(paperId: string): boolean {
+    // The slots go with the paper. Leaving them would let a re-created id inherit the evidence of
+    // a paper somebody deleted.
+    this.db.prepare("DELETE FROM adminbot_paper_slots WHERE paper_id = ?").run(paperId);
     return this.db.prepare("DELETE FROM adminbot_papers WHERE id = ?").run(paperId).changes > 0;
+  }
+
+  savePaperSlot(record: AdminBotPaperSlotRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_paper_slots (
+          paper_id,
+          slot,
+          status,
+          url,
+          value_text,
+          provided_by_member_id,
+          provided_at,
+          validated_at,
+          invalid_reason,
+          waived_by_member_id,
+          waived_reason,
+          last_nudged_at,
+          nudge_count,
+          snoozed_until
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(paper_id, slot) DO UPDATE SET
+          status = excluded.status,
+          url = excluded.url,
+          value_text = excluded.value_text,
+          provided_by_member_id = excluded.provided_by_member_id,
+          provided_at = excluded.provided_at,
+          validated_at = excluded.validated_at,
+          invalid_reason = excluded.invalid_reason,
+          waived_by_member_id = excluded.waived_by_member_id,
+          waived_reason = excluded.waived_reason,
+          last_nudged_at = excluded.last_nudged_at,
+          nudge_count = excluded.nudge_count,
+          snoozed_until = excluded.snoozed_until`,
+      )
+      .run(
+        record.paper_id,
+        record.slot,
+        record.status,
+        record.url ?? null,
+        record.value_text ?? null,
+        record.provided_by_member_id ?? null,
+        record.provided_at ?? null,
+        record.validated_at ?? null,
+        record.invalid_reason ?? null,
+        record.waived_by_member_id ?? null,
+        record.waived_reason ?? null,
+        record.last_nudged_at ?? null,
+        record.nudge_count,
+        record.snoozed_until ?? null,
+      );
+  }
+
+  /** One paper's slots, or the whole lab's when no id is given -- the nudge pass wants the latter. */
+  listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[] {
+    const rows = (
+      paperId
+        ? this.db
+            .prepare("SELECT * FROM adminbot_paper_slots WHERE paper_id = ? ORDER BY slot")
+            .all(paperId)
+        : this.db.prepare("SELECT * FROM adminbot_paper_slots ORDER BY paper_id, slot").all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map((row) => paperSlotFromRow(row));
   }
 
   appendMemberLocation(entry: AdminBotMemberLocationEntry): void {
@@ -1093,6 +1189,40 @@ function ensureDatabaseDirectory(databasePath: string): void {
     return;
   }
   fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+}
+
+/**
+ * A slot row as the record.
+ *
+ * SQLite hands back `null` for an empty column and the record type uses optional keys, so the
+ * nullable columns are dropped rather than carried through as `null` -- otherwise every caller
+ * would have to treat "no URL" and "URL is null" as two different absences.
+ */
+function paperSlotFromRow(row: Record<string, unknown>): AdminBotPaperSlotRecord {
+  const text = (key: string): string | undefined => {
+    const value = row[key];
+    return typeof value === "string" && value.length > 0 ? value : undefined;
+  };
+  const optional = <K extends keyof AdminBotPaperSlotRecord>(key: K & string) => {
+    const value = text(key);
+    return value === undefined ? {} : { [key]: value };
+  };
+  return {
+    paper_id: String(row.paper_id),
+    slot: String(row.slot) as AdminBotPaperSlot,
+    status: String(row.status) as AdminBotPaperSlotStatus,
+    nudge_count: Number(row.nudge_count ?? 0),
+    ...optional("url"),
+    ...optional("value_text"),
+    ...optional("provided_by_member_id"),
+    ...optional("provided_at"),
+    ...optional("validated_at"),
+    ...optional("invalid_reason"),
+    ...optional("waived_by_member_id"),
+    ...optional("waived_reason"),
+    ...optional("last_nudged_at"),
+    ...optional("snoozed_until"),
+  };
 }
 
 function parseJson<T>(value: string): T {

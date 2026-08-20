@@ -375,6 +375,14 @@ export type AdminBotPaperRecord = {
   title: string;
   authors: string[];
   current_step: AdminBotPaperStep;
+  // Governance fields the service owns. Mirrored here so a card can show the venue and its
+  // deadline without a second read; nothing in the UI writes them.
+  first_author_member_id?: string;
+  venue?: string;
+  deadline?: string;
+  venue_decision?: "pending" | "accept" | "reject";
+  attempt?: number;
+  dormant_override?: boolean;
   artifacts?: Record<string, string | undefined>;
   mentor_member_id?: string;
   checks?: Record<string, boolean | undefined>;

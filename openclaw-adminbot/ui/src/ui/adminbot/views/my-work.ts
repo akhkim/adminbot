@@ -1,5 +1,15 @@
-// The signed-in member's own work: one list of the projects and papers they are on, where each is
-// up to, and anything holding one up.
+// The signed-in member's own work: one card per project or paper, and inside each card the whole
+// list of what that paper still owes.
+//
+// Shaped like the profile page on purpose. A member's own record is a list of typed fields with a
+// required mark, a hint about the shape each accepts, and autosave; the evidence a paper collects
+// is the same kind of list, so it is rendered the same way rather than as a second vocabulary for
+// the same idea. Closed, a card is a title and a progress line. Open, it is the form.
+//
+// The global nudge at the top is the same button Profile Overview carries, pointed at papers: it
+// composes nothing and picks nobody. The service walks every live paper, finds the artifacts whose
+// upstream evidence is already in, and messages whoever the slot registry says owes each one --
+// the first author for nearly all of them. Admin-only, because it messages the whole lab.
 //
 // Projects and papers are the same thing here because they are the same record in AdminBot: a
 // paper row moves through the PaperPublish steps from brainstorming to poster. Advancing one from
@@ -13,6 +23,7 @@ import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
+import type { PaperSlotOverviewRow, PaperSlotRow } from "../auth/session.ts";
 import {
   BLOCKER_TITLE_MAX,
   editBlockerInput,
@@ -29,10 +40,29 @@ import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
+import { renderPaperSlots } from "./paper-slots.ts";
 import { findOwnMember } from "./profile.ts";
 
 export type MyWorkProps = {
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
+  /** What each paper still owes, computed by the service -- see the note on `renderCardSummary`. */
+  overview: PaperSlotOverviewRow[];
+  /** Slots by paper id, loaded the first time a card is opened. */
+  slots: Record<string, PaperSlotRow[]>;
+  openIds: string[];
+  slotsBusyId: string | null;
+  slotsError: string | null;
+  slotsNotice: string | null;
+  nudging: boolean;
+  /** Hides the global nudge for a member. The service re-checks; this is the affordance, not the gate. */
+  canNudge: boolean;
+  onToggleCard: (paperId: string) => void;
+  onSaveSlot: (
+    paperId: string,
+    slot: string,
+    input: { url?: string; value_text?: string; done?: boolean },
+  ) => void;
+  onNudgeAuthors: () => void;
 };
 
 export type BlockerDraft = {
@@ -299,20 +329,109 @@ function renderPaperBlockers(state: AppViewState, props: MyWorkProps, paper: Adm
   `;
 }
 
+/**
+ * How much evidence one paper has, straight from the service.
+ *
+ * Not computed here, and deliberately so: the same walk decides who the global nudge messages, so
+ * a count derived in the browser could disagree with what pressing the button actually chases.
+ */
+function overviewFor(props: MyWorkProps, paperId: string): PaperSlotOverviewRow | undefined {
+  return props.overview.find((row) => row.paper_id === paperId);
+}
+
+/**
+ * The closed card: enough to decide whether to open it, and nothing else.
+ *
+ * A percentage alone was the old summary and it is not actionable -- "56%" tells nobody what to
+ * go and do. This carries the count *and* the first thing outstanding, which is the sentence
+ * somebody scanning five papers is actually looking for.
+ */
+function renderCardSummary(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const row = overviewFor(props, paper.id);
+  if (!row) {
+    return nothing;
+  }
+  const percent = row.required_count
+    ? Math.round((row.provided_count / row.required_count) * 100)
+    : 0;
+  const outstanding = row.missing_slots.length;
+  // Spans throughout, not divs and paragraphs: this renders inside the disclosure button, and a
+  // button may only contain phrasing content. The CSS gives them the layout back.
+  return html`
+    <span class="my-work-item__evidence">
+      <span
+        class=${`my-work-item__bar ${outstanding === 0 ? "is-complete" : ""}`}
+        role="img"
+        aria-label=${`${row.provided_count} of ${row.required_count} artifacts on file`}
+      >
+        <span class="my-work-item__fill" style="width: ${percent}%"></span>
+      </span>
+      <span class="my-work-item__evidence-count ab-num"
+        >${row.provided_count}/${row.required_count}</span
+      >
+      ${row.dormant
+        ? html`<span class="pill">Dormant</span>`
+        : outstanding
+          ? html`<span class="my-work-item__outstanding"
+              >${outstanding} outstanding${row.escalating ? " · escalating" : ""}</span
+            >`
+          : html`<span class="my-work-item__outstanding is-complete">Everything is in</span>`}
+    </span>
+  `;
+}
+
+/** Venue and deadline as the card's subtitle -- the two facts that decide how urgent it is. */
+function renderCardVenue(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const row = overviewFor(props, paper.id);
+  const venue = row?.venue ?? paper.venue ?? paper.artifacts?.conference;
+  const deadline = row?.deadline ?? paper.deadline;
+  if (!venue && !deadline) {
+    return nothing;
+  }
+  return html`
+    <span class="my-work-item__venue">
+      ${venue ? html`<span>${venue}</span>` : nothing}
+      ${deadline ? html`<span class="ab-num">${deadline.slice(0, 10)}</span>` : nothing}
+    </span>
+  `;
+}
+
+/**
+ * One paper, as a card that opens.
+ *
+ * The whole head is the toggle rather than a chevron off to one side: the target is the thing
+ * somebody is already pointing at, and a 23-field form behind a 16px hit area is a form nobody
+ * finds. The blocker button sits outside it so reporting a blocker does not also expand the card.
+ */
 function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWorkProps) {
-  const { index, percent } = paperProgress(paper);
+  const { index } = paperProgress(paper);
   const blocked = openEntries(paper).length > 0;
+  const open = props.openIds.includes(paper.id);
+  const panelId = `my-work-body-${paper.id}`;
   return html`
     <article
       class=${`my-work-item ${blocked ? "my-work-item--blocked" : ""}`}
+      ?data-open=${open}
       data-testid=${`my-work-item-${paper.id}`}
     >
       <div class="my-work-item__head">
-        <div class="my-work-item__copy">
-          <h3 class="my-work-item__title">${paper.title}</h3>
-          <p class="my-work-item__meta">${(paper.authors ?? []).join(", ")}</p>
-          ${renderTarget(paper, props)}
-        </div>
+        <button
+          type="button"
+          class="my-work-item__toggle"
+          aria-expanded=${open ? "true" : "false"}
+          aria-controls=${panelId}
+          data-testid=${`my-work-toggle-${paper.id}`}
+          @click=${() => props.onToggleCard(paper.id)}
+        >
+          <!-- One icon rotated by CSS, matching the Deadlines disclosure. Swapping the glyph in
+               JS would animate nothing and put the open state in two places. -->
+          <span class="my-work-item__chevron" aria-hidden="true">${icons.chevronRight}</span>
+          <span class="my-work-item__copy">
+            <span class="my-work-item__title">${paper.title}</span>
+            <span class="my-work-item__meta">${(paper.authors ?? []).join(", ")}</span>
+            ${renderCardVenue(paper, props)} ${renderCardSummary(paper, props)}
+          </span>
+        </button>
         <button
           type="button"
           class="btn btn--sm my-work-item__report"
@@ -325,8 +444,24 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
         </button>
       </div>
       ${renderPaperBlockers(state, props, paper)} ${renderBlockerForm(state, props, paper)}
-      ${renderStepper(paper, props, index)} ${renderNextStep(paper)}
-      ${renderStepControls(paper, props)}
+      <!-- The panel element is always here so aria-controls always resolves; only its contents
+           are conditional, because a closed card has not fetched its slots yet and 23 blank
+           fields in the DOM would be a lie rather than a saving. -->
+      <div class="my-work-item__body" id=${panelId} ?hidden=${!open}>
+        ${open
+          ? html`
+              ${renderTarget(paper, props)} ${renderStepper(paper, props, index)}
+              ${renderNextStep(paper)}
+              ${renderPaperSlots({
+                paperId: paper.id,
+                slots: props.slots[paper.id] ?? [],
+                loading: props.slotsBusyId === paper.id,
+                onSaveSlot: (slot, input) => props.onSaveSlot(paper.id, slot, input),
+              })}
+              ${renderStepControls(paper, props)}
+            `
+          : nothing}
+      </div>
     </article>
   `;
 }
@@ -721,6 +856,40 @@ function renderBlockers(state: AppViewState) {
   `;
 }
 
+/**
+ * The global nudge.
+ *
+ * One button, no composer and no recipient picker -- the same shape Profile Overview uses, for the
+ * same reason: the service derives both from state, so an admin pressing this is asking for the
+ * standing rule to be applied now rather than writing a message. The count is papers with
+ * something outstanding, which is what pressing it would actually chase.
+ *
+ * Disabled at zero rather than hidden: a button that vanishes when the lab is caught up gives no
+ * way to tell "everything is in" apart from "this feature is gone".
+ */
+function renderNudgeButton(props: MyWorkProps) {
+  if (!props.canNudge) {
+    return nothing;
+  }
+  const outstanding = props.overview.filter(
+    (row) => !row.dormant && !row.closed && row.missing_slots.length > 0,
+  ).length;
+  return html`
+    <button
+      type="button"
+      class="btn btn--sm"
+      data-testid="my-work-nudge-authors"
+      ?disabled=${props.nudging || outstanding === 0}
+      @click=${props.onNudgeAuthors}
+    >
+      <span aria-hidden="true">${icons.send}</span>
+      ${props.nudging
+        ? t("paperSlots.nudging")
+        : t("paperSlots.nudge", { count: String(outstanding) })}
+    </button>
+  `;
+}
+
 export function renderMyWork(state: AppViewState, props: MyWorkProps) {
   const items = ownPapers(state);
   return html`
@@ -729,8 +898,16 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
       <section class="my-work__section">
         <div class="my-work__section-head">
           <h2 class="my-work__section-title">${t("myWork.items.title")}</h2>
-          ${renderAddButton(state)}
+          <div class="my-work__section-actions">
+            ${renderNudgeButton(props)} ${renderAddButton(state)}
+          </div>
         </div>
+        ${props.slotsNotice
+          ? html`<p class="my-work__notice-line" role="status">${props.slotsNotice}</p>`
+          : nothing}
+        ${props.slotsError
+          ? html`<p class="my-work__error-line" role="alert">${props.slotsError}</p>`
+          : nothing}
         ${items.length
           ? html`<div class="my-work__items">
               ${items.map((paper) => renderItem(state, paper, props))}
