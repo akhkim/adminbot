@@ -282,7 +282,7 @@ const TASK_COPY: Record<string, { title: string; hint: string }> = {
   TV: { title: "Record the talk video", hint: "Short recorded version of the talk." },
   LG: { title: "Log the links in the shared folder", hint: "Put slides, poster and video where the lab can find them." },
   XD: { title: "Draft the X post", hint: "A short thread announcing the paper." },
-  LI: { title: "Adapt it for LinkedIn", hint: "Longer version of the X post." },
+  LI: { title: "Draft the LinkedIn post", hint: "The long-form announcement. Drafted from the paper, not from the X thread." },
   CP: { title: "Collect coauthor feedback", hint: "Send the draft posts round and wait for replies." },
   SF: { title: "Finalise the social copy", hint: "Fold the coauthor comments into a final version." },
   DR: { title: "Upload the PDF to Drive", hint: "The lab's own copy of the paper." },
