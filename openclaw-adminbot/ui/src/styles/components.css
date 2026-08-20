@@ -45,6 +45,7 @@
   display: block;
   width: 28px;
   height: 28px;
+  border-radius: 50%;
   margin-bottom: var(--space-6);
   opacity: 0.9;
 }
@@ -8794,6 +8795,13 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-time-availability {
   display: grid;
   gap: var(--space-5);
+  /* Everything on this page was reading small, and the --control-ui-text-* tokens are fixed at
+     :root, so scope slightly larger values here rather than touching the global scale. */
+  --control-ui-text-xs: 12.5px;
+  --control-ui-text-sm: 14px;
+  --control-ui-text-md: 16px;
+  --control-ui-text-lg: 18px;
+  --control-ui-text-xl: 20px;
 }
 
 .adminbot-time-availability__controls {
@@ -8906,7 +8914,7 @@ details[open] > .ov-expandable-toggle::after {
 .time-chart__bin {
   fill: var(--muted);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .time-chart__bar {
@@ -8932,7 +8940,7 @@ details[open] > .ov-expandable-toggle::after {
 .time-chart__total {
   fill: var(--text);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -8984,7 +8992,7 @@ details[open] > .ov-expandable-toggle::after {
 
 .time-chart__note {
   margin: 0;
-  font-size: var(--control-ui-text-xs);
+  font-size: var(--control-ui-text-sm);
   color: var(--muted);
 }
 
@@ -9571,14 +9579,30 @@ details[open] > .ov-expandable-toggle::after {
   grid-template-columns: 1fr;
 }
 
-.adminbot-time-availability__editor {
+/* The conference picker sits in the deadlines panel rather than the editor stack, but it is the
+   same kind of thing and reads as one. The shared part here is the inner grid; the editor stack
+   below the deadline panel turns each section into a card of its own, while the picker keeps a
+   divider so it stays part of the panel it lives in. */
+.adminbot-time-availability__editor,
+.adminbot-time-availability__deadline-add {
   display: grid;
   gap: var(--space-3);
+}
+
+.adminbot-time-availability__editor {
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
+}
+
+.adminbot-time-availability__deadline-add {
   padding-top: var(--space-4);
   border-top: 1px solid var(--border);
 }
 
-.adminbot-time-availability__form {
+.adminbot-time-availability__form,
+.adminbot-time-availability__deadline-form {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: var(--space-3);
@@ -9599,14 +9623,15 @@ details[open] > .ov-expandable-toggle::after {
 
 .adminbot-time-availability__form-error {
   color: var(--danger, #f87171);
-  font-size: var(--control-ui-text-xs);
+  font-size: var(--control-ui-text-sm);
 }
 
-/* Split tables, the big-deadlines banner, and the time-off column shading.
+/* Split tables, the big-deadlines panel, and the time-off column shading.
 
-   Deadlines used to sit in a narrow right-hand column beside the chart, which cost the chart a
-   third of the card's width and left the dates wrapping in a 220px gutter. It is a banner above
-   the chart now: one row, full width, so both get the space they were competing for. */
+   Deadlines used to sit above the chart, which made the graph read as the afterthought. The page
+   reads top-down now: the chart and the two commitment tables first, then the deadlines panel as
+   the summary's closing block, with the editors as cards after it. The single-column grid keeps
+   each block at full width. */
 .adminbot-time-availability__body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -9664,8 +9689,10 @@ details[open] > .ov-expandable-toggle::after {
    was moved here to get. They wrap rather than scroll -- the count varies with how many deadlines
    a member has entered, and a row that scrolls hides the later ones behind a clipped edge with
    nothing to say they are there. */
+/* 21rem, not 15: the widest thing a tile has to hold is a venue name beside a full AoE cutoff
+   ("23:59 Anywhere on Earth (UTC-12)"), and at 15rem that was clipped at the tile's own border. */
 .adminbot-time-availability__deadlines .adminbot-time-availability__deadline-list {
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr));
   gap: var(--space-3);
 }
 
@@ -9673,7 +9700,7 @@ details[open] > .ov-expandable-toggle::after {
    be read before the list rather than after it. */
 .adminbot-time-availability__deadline-hint {
   margin: 0 0 var(--space-3);
-  font-size: var(--control-ui-text-xs);
+  font-size: var(--control-ui-text-sm);
   color: var(--muted);
 }
 
@@ -9689,21 +9716,44 @@ details[open] > .ov-expandable-toggle::after {
 /* One tile per deadline: how long is left, what it is, when it falls. As a run of text on one
    line the dates ran together and nothing said which was close -- the whole reason to put this
    above a timeline is to answer "how much room do I have before the next one". */
+/* Three stacked rows -- countdown and actions, the name, the date -- rather than placing each span
+   into a two-column grid by hand. The old placement pinned the link and the remove button to the
+   same cell, so they drew on top of each other. */
 .adminbot-time-availability__deadline-list li {
   display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: baseline;
-  gap: 2px var(--space-2);
+  gap: var(--space-2);
   padding: var(--space-3);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg);
 }
 
+.adminbot-time-availability__deadline-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.adminbot-time-availability__deadline-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+/* The date and its cutoff are one fact; they sit together and wrap together rather than each
+   holding its own line at any width. */
+.adminbot-time-availability__deadline-when {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-2);
+}
+
 /* The countdown carries the urgency color the Deadlines board and the dashboard summary already
    use, so "critical" means the same red on all three. */
 .adminbot-time-availability__deadline-away {
-  grid-column: 1;
   font-size: var(--control-ui-text-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -9712,7 +9762,6 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-time-availability__deadline-label {
-  grid-column: 1 / -1;
   min-width: 0;
   font-weight: 600;
   line-height: 1.3;
@@ -9720,11 +9769,49 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .adminbot-time-availability__deadline-date {
-  grid-column: 1;
   font-size: var(--control-ui-text-xs);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   color: var(--muted);
+}
+
+/* The exact cutoff, next to the date it falls on. Muted like the date because the two are one
+   fact split across two spans, and tabular so a column of them lines up. */
+.adminbot-time-availability__deadline-clock {
+  font-size: var(--control-ui-text-xs);
+  font-variant-numeric: tabular-nums;
+  /* Was nowrap, which is what cut "Anywhere on Earth (UTC-12)" off at the tile border. It may wrap;
+     the tile grows a line instead of hiding the zone the cutoff is stated in. */
+  color: var(--muted);
+}
+
+/* The conference picker sits under the list, not in it: it adds a row rather than being one. */
+/* The conference picker is one of the tab's "Add ..." editors and takes its section, title, hint,
+   form grid and submit from those rules; only the select's own width is specific to it. */
+/* The picker's one field takes the whole row. In a shared auto-fit grid it landed in a 160px
+   column, which cut "ICLR 2027 · 09/19/2026" down to "ICLR 2027 · 09/" -- the date being the half
+   that tells two deadlines of the same venue apart. */
+.adminbot-time-availability__deadline-form .adminbot-form__field {
+  grid-column: 1 / -1;
+}
+
+.adminbot-time-availability__deadline-form select {
+  width: 100%;
+  min-width: 0;
+}
+
+/* The native select arrow hugs the field's right edge; draw a chevron a step in instead, so it
+   reads as part of the field rather than pinned to the border. Drawn once and no-repeat -- the
+   tiling the platform showed before (at `select.input`) came from a repeating background
+   repainting while the popup was open. */
+.adminbot-time-availability .adminbot-form select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23a1a1aa' d='M4 6l4 4 4-4z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px 14px;
 }
 
 /* The lab's conference dates are context; a member's own deadline is the one they entered and can
@@ -9739,11 +9826,8 @@ details[open] > .ov-expandable-toggle::after {
   background: color-mix(in srgb, var(--bg-accent) 40%, var(--bg));
 }
 
-.adminbot-time-availability__deadline-list li .btn,
-.adminbot-time-availability__deadline-list li a {
-  grid-column: 2;
-  grid-row: 1;
-  align-self: center;
+.adminbot-time-availability__deadline-list li .btn {
+  flex: 0 0 auto;
 }
 
 .adminbot-time-availability__milestone-form {
@@ -9757,18 +9841,34 @@ details[open] > .ov-expandable-toggle::after {
 .adminbot-time-availability__empty-note {
   margin: 0;
   color: var(--text-muted);
-  font-size: var(--control-ui-text-xs);
+  /* Hints were the smallest thing on the page; on this view they carry real guidance, so they
+     sit at the scoped --control-ui-text-sm (14px) rather than the caption size. */
+  font-size: var(--control-ui-text-sm);
 }
 
-/* The overall note sits between the chart and the tables: it is context for both, so it reads as a
-   block of prose on the page rather than as another card competing with them. The rule on the
-   leading edge is the only decoration — enough to mark it as one member's words, not a caption. */
+/* A hint that lives in the actions row (the time-away form's) is pushed to the left edge so the
+   submit button keeps the right edge; the hint explains the action the button performs. */
+.adminbot-time-availability__form-actions .adminbot-time-availability__form-hint {
+  margin-right: auto;
+}
+
+/* The micro-labels above each form control follow the scoped scale too, so a form does not read
+   as a grid of tiny captions. */
+.adminbot-time-availability .adminbot-form__field > span {
+  font-size: var(--control-ui-text-sm);
+}
+
+/* The overall note sits below the two commitment tables: it explains the rows above it, so it
+   reads as the closing card of the report rather than as a caption for it. Same grey panel as the
+   tables and the editor cards, so the report is a run of blocks rather than one card with prose
+   hanging off the side. */
 .adminbot-time-availability__notes {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 0 10px 12px;
-  border-left: 2px solid var(--border-strong);
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--bg) 88%, var(--bg-accent));
 }
 
 .adminbot-time-availability__notes-text {
@@ -9789,6 +9889,33 @@ details[open] > .ov-expandable-toggle::after {
   padding: 8px 10px;
   line-height: 1.5;
   resize: vertical;
+}
+
+/* The primary actions read as muted stone instead of the app-wide accent blue: on this dark page
+   a brighter fill reads as the action color without shouting, and it keeps the same neutral
+   family as the cards around it. Text stays light on it, so the button is elevated but not loud. */
+.adminbot-time-availability .btn.primary {
+  border-color: #45454d;
+  background: #2e2e34;
+  color: #e4e4e7;
+}
+
+.adminbot-time-availability .btn.primary:hover {
+  background: #3a3a42;
+  border-color: #505059;
+}
+
+.adminbot-time-availability .btn.primary:active {
+  background: #26262b;
+  border-color: #45454d;
+}
+
+/* The conference button's plus icon sits in an inline span, so the SVG rides the text baseline
+   and drifts off the button's vertical center. Making the span a flex box centers the glyph. */
+.adminbot-time-availability .btn.primary span[aria-hidden="true"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* A sentence under a control explaining a rule the control itself enforces (a locked field, a
@@ -9945,4 +10072,202 @@ select.input:focus {
   stroke: currentColor;
   fill: none;
   stroke-width: 1.5px;
+}
+
+/* CV updates panel.
+   Its own grid rather than .adminbot-table: that one hardcodes five columns for the members
+   table, and these rows carry stacked entry lists whose height varies per row. */
+.adminbot-cv {
+  display: grid;
+  gap: var(--space-5);
+}
+
+.adminbot-cv__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+/* The date field sits inline with its button, so it must not stretch like a form field. */
+.adminbot-cv__actions .adminbot-form__field {
+  flex: 0 0 auto;
+  max-width: 190px;
+}
+
+.adminbot-cv__grid {
+  display: grid;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.adminbot-cv__row {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.8fr) minmax(110px, 0.6fr) minmax(200px, 1.4fr) minmax(180px, 1fr) auto;
+  gap: var(--space-3);
+  align-items: start;
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--control-ui-text-sm);
+}
+
+.adminbot-cv__row:last-child {
+  border-bottom: 0;
+}
+
+.adminbot-cv__row--head {
+  color: var(--muted);
+  background: var(--bg-muted);
+  border-bottom: 1px solid var(--border-strong);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  align-items: center;
+}
+
+.adminbot-cv__row--digest {
+  grid-template-columns: minmax(100px, 0.5fr) minmax(120px, 0.7fr) minmax(240px, 2fr) minmax(90px, 0.4fr);
+}
+
+.adminbot-cv__entries {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adminbot-cv__entries li {
+  line-height: 1.4;
+}
+
+/* Recency is the difference between "announced" and "recorded but not news", so it reads as a
+   status chip rather than trailing prose. */
+.adminbot-cv__tag {
+  display: inline-block;
+  margin-left: var(--space-2);
+  padding: 1px 8px;
+  border-radius: var(--radius-full);
+  font-size: var(--control-ui-text-xs);
+  white-space: nowrap;
+  background: var(--bg-muted);
+  color: var(--muted);
+}
+
+.adminbot-cv__tag--recent {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+.adminbot-cv__draft {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.adminbot-cv__draft textarea,
+.adminbot-cv__blurb textarea {
+  width: 100%;
+  min-height: 120px;
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-strong);
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* Blurbs live below the table, full width. In a table cell they were a four-line box showing the
+   middle of a sentence, which is unreadable and unusable for copying. */
+.adminbot-cv__blurbs {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.adminbot-cv__blurb {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.adminbot-cv__blurb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.adminbot-cv__section-title {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+/* Digest reads as its own tool, not another draft box: a header line with the controls beside it,
+   then results. Sharing .adminbot-cv__draft made the two sections look interchangeable when one
+   produces copy and the other queries history. */
+.adminbot-cv__panel {
+  display: grid;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+}
+
+.adminbot-cv__panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.adminbot-cv__panel-head .card-sub {
+  margin-top: 2px;
+}
+
+/* Empty states carry the reason, so they need to read as a considered answer rather than a
+   sentence left lying on the background. */
+.adminbot-cv__empty {
+  padding: var(--space-4);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  text-align: center;
+}
+
+.adminbot-cv__empty small {
+  display: block;
+  margin-top: var(--space-1);
+  color: var(--muted);
+  opacity: 0.85;
+}
+
+/* The recency window sits with the scan button because it is what decides that scan's outcome.
+   Reads as a sentence rather than a labelled form field: it is one number in the middle of an
+   explanation, not a form someone fills in. */
+.adminbot-cv__window {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  white-space: nowrap;
+}
+
+.adminbot-cv__window input {
+  width: 64px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-strong);
+  font: inherit;
+  text-align: center;
 }

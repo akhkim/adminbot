@@ -1,0 +1,77 @@
+/* Meeting Recordings — the card list.
+   Card, button and muted-text chrome all come from components.css; this only spaces the parts of a
+   card and keeps the roster editor readable. */
+
+.meetings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Link row: the recording button, a Drive copy when there is one, and the passcode beside them.
+   Wrapping rather than truncating, because a passcode that is cut off is worse than a second line. */
+.meetings__links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+
+.meetings__overview {
+  margin: var(--space-3) 0;
+}
+
+.meetings__subhead {
+  margin: var(--space-3) 0 var(--space-2);
+  font-size: 0.9em;
+}
+
+.meetings__list {
+  margin: 0;
+  padding-left: var(--space-5);
+}
+
+/* The machine-written note, deliberately quiet but never hidden. */
+.meetings__provenance {
+  margin-top: var(--space-3);
+  font-size: 0.85em;
+}
+
+.meetings__attendance {
+  margin-top: var(--space-3);
+}
+
+.meetings__roster {
+  width: 100%;
+  margin-top: var(--space-2);
+  border-collapse: collapse;
+}
+
+.meetings__roster td {
+  padding: var(--space-1) 0;
+  vertical-align: baseline;
+}
+
+/* The whole label is the hit target, not just the box: ticking the wrong person off a roster is
+   easy to do and slow to notice. */
+.meetings__tick {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.meetings__file form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  max-width: 32rem;
+}
+
+.meetings__file label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}

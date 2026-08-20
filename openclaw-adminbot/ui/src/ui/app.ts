@@ -19,14 +19,24 @@ import type {
   MemberRegistration,
   RosterMember,
   CalendarEvent,
+  LocationDrift,
+  MeetingRecord,
   CalendarEventDraft,
   LabCalendar,
+} from "./adminbot/auth/session.ts";
+import type {
+  MemberProfileOverviewRow,
+  PaperCycle,
+  PaperNudgeBatch,
+  PaperSlotOverviewRow,
 } from "./adminbot/auth/session.ts";
 import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
 import {
   createEmptyAdminBotDashboardData,
   createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
+  type AdminBotCvDigest,
+  type AdminBotCvScanResult,
   type AdminBotDashboardData,
   type AdminBotMemberNudgeState,
   type AdminBotReimbursementState,
@@ -39,9 +49,20 @@ import {
   saveAdminBotCalendarEvent,
 } from "./adminbot/controllers/calendar.ts";
 import {
+  answerAdminBotLocationPrompt,
+  loadAdminBotLocationDrifts,
+  loadAdminBotLocationPrompt,
+} from "./adminbot/controllers/location-prompt.ts";
+import {
+  fileAdminBotMeeting,
+  loadAdminBotMeetings,
+  setAdminBotMeetingAttendance,
+} from "./adminbot/controllers/meetings.ts";
+import {
+  createFactRow,
   createSchoolRow,
-  restoreAdminBotLettersDraft,
-  restoreAdminBotLogisticsDraft,
+  type LetterFact,
+  type MeetingRequestRow,
   type RecommendationSchool,
 } from "./adminbot/data/logistics-draft.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
@@ -51,6 +72,7 @@ import type { BlockerSort } from "./adminbot/views/admin.ts";
 import type { LogisticsMode, LogisticsTemplate } from "./adminbot/views/logistics.ts";
 import type { Blocker, BlockerDraft } from "./adminbot/views/my-work.ts";
 import type { ProfileAccountCheck } from "./adminbot/views/profile-account-check.ts";
+import { EMPTY_TRIP_DRAFT, type TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
@@ -61,15 +83,6 @@ import {
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
   handleChannelConfigSave as handleChannelConfigSaveInternal,
-  handleNostrProfileCancel as handleNostrProfileCancelInternal,
-  handleNostrProfileEdit as handleNostrProfileEditInternal,
-  handleNostrProfileFieldChange as handleNostrProfileFieldChangeInternal,
-  handleNostrProfileImport as handleNostrProfileImportInternal,
-  handleNostrProfileSave as handleNostrProfileSaveInternal,
-  handleNostrProfileToggleAdvanced as handleNostrProfileToggleAdvancedInternal,
-  handleWhatsAppLogout as handleWhatsAppLogoutInternal,
-  handleWhatsAppStart as handleWhatsAppStartInternal,
-  handleWhatsAppWait as handleWhatsAppWaitInternal,
 } from "./app-channels.ts";
 import {
   handleAbortChat as handleAbortChatInternal,
@@ -137,11 +150,6 @@ import {
 } from "./controllers/agents.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
 import type { DevicePairingList } from "./controllers/devices.ts";
-import type {
-  DreamingStatus,
-  WikiImportInsights,
-  WikiMemoryPalace,
-} from "./controllers/dreaming.ts";
 import {
   dismissExecApprovalPrompt,
   isStaleApprovalResolutionError,
@@ -190,13 +198,11 @@ import type {
   SessionsListResult,
   SkillStatusReport,
   StatusSummary,
-  NostrProfile,
   ToolsCatalogResult,
   ToolsEffectiveResult,
 } from "./types.ts";
 import type { ChatAttachment, ChatQueueItem, CronFormState } from "./ui-types.ts";
 import { generateUUID } from "./uuid.ts";
-import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
 
 declare global {
   interface Window {
@@ -277,10 +283,24 @@ export class OpenClawApp extends LitElement {
   @state() onboardingResult:
     | import("./adminbot/controllers/admin.ts").AdminBotOnboardingResult
     | null = null;
+  @state() onboardingDraftSubject = "";
+  @state() onboardingDraftBody = "";
+  @state() onboardingProjectChannels = "";
   // Calendar tab. Declared here, not merely typed on AppViewState: an undeclared field is not a
   // reactive property, so writing one from a controller changes nothing on screen. That is what
   // made the whole tab inert — events loaded and never appeared, and typing in the assistant did
   // not re-render. The view tests could not catch it because they render with a plain object.
+  // Declared here for the same reason as the calendar block above: a controller writing a plain
+  // class field would change nothing on screen.
+  @state() adminBotTripDraft: TripDraft = EMPTY_TRIP_DRAFT;
+  @state() adminBotLocationDrift?: LocationDrift | null;
+  @state() adminBotLocationDrifts?: LocationDrift[];
+  @state() adminBotLocationSaving = false;
+  @state() adminBotLocationError: string | null = null;
+  @state() adminBotMeetings?: MeetingRecord[];
+  @state() adminBotMeetingsLoading = false;
+  @state() adminBotMeetingsSaving = false;
+  @state() adminBotMeetingsError: string | null = null;
   @state() calendarEvents?: CalendarEvent[];
   @state() calendarEventsLoading = false;
   @state() calendarEventsError: string | null = null;
@@ -486,26 +506,6 @@ export class OpenClawApp extends LitElement {
   @state() configForm: Record<string, unknown> | null = null;
   @state() configFormOriginal: Record<string, unknown> | null = null;
   @state() selectedAgentId: string | null = null;
-  @state() dreamingStatusLoading = false;
-  @state() dreamingStatusError: string | null = null;
-  @state() dreamingStatus: DreamingStatus | null = null;
-  @state() dreamingModeSaving = false;
-  @state() dreamingRestartConfirmOpen = false;
-  @state() dreamingRestartConfirmLoading = false;
-  @state() dreamingPendingEnabled: boolean | null = null;
-  @state() dreamDiaryLoading = false;
-  @state() dreamDiaryActionLoading = false;
-  @state() dreamDiaryActionMessage: { kind: "success" | "error"; text: string } | null = null;
-  @state() dreamDiaryActionArchivePath: string | null = null;
-  @state() dreamDiaryError: string | null = null;
-  @state() dreamDiaryPath: string | null = null;
-  @state() dreamDiaryContent: string | null = null;
-  @state() wikiImportInsightsLoading = false;
-  @state() wikiImportInsightsError: string | null = null;
-  @state() wikiImportInsights: WikiImportInsights | null = null;
-  @state() wikiMemoryPalaceLoading = false;
-  @state() wikiMemoryPalaceError: string | null = null;
-  @state() wikiMemoryPalace: WikiMemoryPalace | null = null;
   @state() configFormDirty = false;
   @state() configSettingsMode: "quick" | "advanced" = "quick";
   @state() configFormMode: "form" | "raw" = "form";
@@ -540,12 +540,6 @@ export class OpenClawApp extends LitElement {
   @state() channelsSnapshot: ChannelsStatusSnapshot | null = null;
   @state() channelsError: string | null = null;
   @state() channelsLastSuccess: number | null = null;
-  @state() whatsappLoginMessage: string | null = null;
-  @state() whatsappLoginQrDataUrl: string | null = null;
-  @state() whatsappLoginConnected: boolean | null = null;
-  @state() whatsappBusy = false;
-  @state() nostrProfileFormState: NostrProfileFormState | null = null;
-  @state() nostrProfileAccountId: string | null = null;
 
   @state() presenceLoading = false;
   @state() presenceEntries: PresenceEntry[] = [];
@@ -577,9 +571,58 @@ export class OpenClawApp extends LitElement {
   @state() adminBotLogisticsMode: LogisticsMode = "make";
   @state() adminBotLogisticsRequests: LogisticsRequest[] = [];
   @state() adminBotLogisticsRequestsLoading = false;
+  @state() adminBotLogisticsRequestsError: string | null = null;
+  @state() adminBotLogisticsRequestsLoadedAt: number | null = null;
   @state() adminBotLogisticsOpenRequestId: string | null = null;
+  // The open request is held apart from the list because it is a different read: the list carries
+  // no file bytes and this one does.
+  @state() adminBotLogisticsOpenRequest: LogisticsRequest | null = null;
+  @state() adminBotLogisticsOpenLoading = false;
+  @state() adminBotLogisticsStatusNote = "";
+  @state() adminBotLogisticsSubmitting = false;
+  @state() adminBotLogisticsSubmitError: string | null = null;
+  @state() adminBotLogisticsSubmittedId: string | null = null;
+  @state() adminBotLogisticsEditingId: string | null = null;
+  @state() adminBotLogisticsSigningId: string | null = null;
+  @state() adminBotLogisticsDownloadingId: string | null = null;
+  @state() adminBotLogisticsSignedNote = "";
+  @state() adminBotLogisticsShowSettled = false;
+  // Null until the first render pass reads the session, which is what triggers the drafts for the
+  // signed-in member to be loaded. See the scope effect in app-render.
+  @state() adminBotLogisticsDraftScope: string | null = null;
+  @state() adminBotProfileOverview: MemberProfileOverviewRow[] = [];
+  @state() adminBotProfileOverviewFieldCount = 0;
+  @state() adminBotProfileOverviewLoading = false;
+  @state() adminBotProfileOverviewError: string | null = null;
+  @state() adminBotProfileOverviewLoadedAt: number | null = null;
+  @state() adminBotProfileOverviewReminding = false;
+  @state() adminBotProfileOverviewNotice: string | null = null;
+  // Defaults to the people with something outstanding, which is what a sweep is looking for.
+  @state() adminBotProfileOverviewIncompleteOnly = true;
+  @state() adminBotPaperSlotOverview: PaperSlotOverviewRow[] = [];
+  @state() adminBotPaperSlots: Record<string, PaperCycle> = {};
+  // Nothing expanded on arrival: the page opens as a scannable list of papers, and the form is
+  // what you go into rather than what you land in.
+  @state() adminBotPaperSlotsOpen: string[] = [];
+  @state() adminBotPaperSlotsLoading = false;
+  @state() adminBotPaperSlotsError: string | null = null;
+  @state() adminBotPaperSlotsLoadedAt: number | null = null;
+  @state() adminBotPaperSlotsNudging = false;
+  @state() adminBotPaperSlotsNotice: string | null = null;
+  @state() adminBotPaperSlotsBusyId: string | null = null;
+  @state() adminBotPaperNudgeBatches: PaperNudgeBatch[] | null = null;
+  @state() adminBotPaperNudgeLoading = false;
+  @state() adminBotPaperNudgeSelected: string[] = [];
   // One blank row so the table opens ready to type in rather than empty.
   @state() adminBotLettersSchools: RecommendationSchool[] = [createSchoolRow()];
+  // One blank row here too, for the same reason: a table with no row is a table nobody can start.
+  @state() adminBotLettersFacts: LetterFact[] = [createFactRow()];
+  // Book Meeting opens empty rather than with a blank row: creating a row stamps "submitted", and
+  // a stamp nobody asked for would sit at the top of the queue on a request that does not exist.
+  @state() adminBotMeetingRows: MeetingRequestRow[] = [];
+  @state() adminBotMeetingSaving = false;
+  @state() adminBotMeetingSavedAt: number | null = null;
+  @state() adminBotMeetingSaveError: string | null = null;
   @state() adminBotLettersCvOverleafUrl = "";
   @state() adminBotLettersDriveFolderUrl = "";
   @state() adminBotLettersSaving = false;
@@ -612,6 +655,15 @@ export class OpenClawApp extends LitElement {
   @state() adminBotMemberNudge: AdminBotMemberNudgeState = createEmptyAdminBotMemberNudgeState();
   @state() adminBotBlockerSort: BlockerSort = "stage";
   @state() nudgeBellOpen = false;
+  @state() adminBotCvScan: AdminBotCvScanResult | null = null;
+  @state() adminBotCvScanning = false;
+  @state() adminBotCvDigest: AdminBotCvDigest | null = null;
+  // Defaults to the start of the current month: the digest exists for periodic roundups, and a
+  // month is the period people actually write them for.
+  @state() adminBotCvDigestSince = new Date().toISOString().slice(0, 8) + "01";
+  @state() adminBotCvDigestLoading = false;
+  @state() adminBotCvBlurbs: Record<string, string> = {};
+  @state() adminBotCvBlurbMemberId: string | null = null;
   @state() myWorkBlockerDraft: BlockerDraft | null = null;
   @state() myWorkBlockers: Blocker[] = [];
   @state() myWorkProjectDraft: string | null = null;
@@ -982,11 +1034,9 @@ export class OpenClawApp extends LitElement {
     handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
     this.nativeBridgeCleanup = initNativeBridge(this);
     void this.initWebPushState();
-    // Put saved logistics drafts back on screen, one per request template. Fire-and-forget and
-    // silent on failure: it is a convenience the member did not ask for on this visit, so it must
-    // never block the first paint or surface an error of its own.
-    void restoreAdminBotLogisticsDraft(this);
-    void restoreAdminBotLettersDraft(this);
+    // Logistics drafts are restored by the render pass rather than here: they are per-member now,
+    // and at connect time the member session has not necessarily resolved, so restoring on this
+    // line would read the signed-out scope and then never look again once someone signed in.
   }
 
   protected override firstUpdated() {
@@ -1375,48 +1425,12 @@ export class OpenClawApp extends LitElement {
     );
   }
 
-  async handleWhatsAppStart(force: boolean) {
-    await handleWhatsAppStartInternal(this, force);
-  }
-
-  async handleWhatsAppWait() {
-    await handleWhatsAppWaitInternal(this);
-  }
-
-  async handleWhatsAppLogout() {
-    await handleWhatsAppLogoutInternal(this);
-  }
-
   async handleChannelConfigSave() {
     await handleChannelConfigSaveInternal(this);
   }
 
   async handleChannelConfigReload() {
     await handleChannelConfigReloadInternal(this);
-  }
-
-  handleNostrProfileEdit(accountId: string, profile: NostrProfile | null) {
-    handleNostrProfileEditInternal(this, accountId, profile);
-  }
-
-  handleNostrProfileCancel() {
-    handleNostrProfileCancelInternal(this);
-  }
-
-  handleNostrProfileFieldChange(field: keyof NostrProfile, value: string) {
-    handleNostrProfileFieldChangeInternal(this, field, value);
-  }
-
-  async handleNostrProfileSave() {
-    await handleNostrProfileSaveInternal(this);
-  }
-
-  async handleNostrProfileImport() {
-    await handleNostrProfileImportInternal(this);
-  }
-
-  handleNostrProfileToggleAdvanced() {
-    handleNostrProfileToggleAdvancedInternal(this);
   }
 
   async handleExecApprovalDecision(decision: "allow-once" | "allow-always" | "deny") {
@@ -1513,6 +1527,44 @@ export class OpenClawApp extends LitElement {
 
   loadCalendarEvents(): Promise<void> {
     return loadAdminBotCalendar(this as unknown as Parameters<typeof loadAdminBotCalendar>[0]);
+  }
+
+  loadLocationPrompt(): Promise<void> {
+    return loadAdminBotLocationPrompt(
+      this as unknown as Parameters<typeof loadAdminBotLocationPrompt>[0],
+    );
+  }
+
+  loadLocationDrifts(): Promise<void> {
+    return loadAdminBotLocationDrifts(
+      this as unknown as Parameters<typeof loadAdminBotLocationDrifts>[0],
+    );
+  }
+
+  answerLocationPrompt(answer: { current_city?: string; timezone?: string }): Promise<void> {
+    return answerAdminBotLocationPrompt(
+      this as unknown as Parameters<typeof answerAdminBotLocationPrompt>[0],
+      answer,
+    );
+  }
+
+  loadMeetings(): Promise<void> {
+    return loadAdminBotMeetings(this as unknown as Parameters<typeof loadAdminBotMeetings>[0]);
+  }
+
+  toggleMeetingAttendance(
+    meetingId: string,
+    attendee: Parameters<typeof setAdminBotMeetingAttendance>[2],
+  ): Promise<void> {
+    return setAdminBotMeetingAttendance(
+      this as unknown as Parameters<typeof setAdminBotMeetingAttendance>[0],
+      meetingId,
+      attendee,
+    );
+  }
+
+  async fileMeeting(draft: Parameters<typeof fileAdminBotMeeting>[1]): Promise<void> {
+    await fileAdminBotMeeting(this as unknown as Parameters<typeof fileAdminBotMeeting>[0], draft);
   }
 
   requestCalendarDraft(): Promise<void> {

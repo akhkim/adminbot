@@ -14,8 +14,9 @@ Use this skill for observational classification of form responses.
 3. Use `adminbot_classify_join_form_response` with the raw answer map and
    rubric summary.
 4. Return the class, confidence, evidence pointers, and review questions.
-5. If a decision is requested, switch to `adminbot-candidate-workflow` and make
-   a separate T4 candidate proposal.
+5. If a decision is requested, hand the summary to an admin. Accepting or
+   declining a candidate is not something AdminBot can carry out: there is no
+   connector behind it, so a proposal would sit approved and unexecutable.
 
 ## Classification Guidance
 

@@ -24,6 +24,9 @@ export type TimeOffRow = {
   end: string;
   kind?: string;
   availability: "none" | "partial";
+  // Hours a week a "partial" row takes. Absent on whole-day rows, which zero the week outright,
+  // and absent on partial rows recorded before the form asked for a number.
+  hours_per_week?: number;
   note?: string;
   // The member's own name for this, used when `kind` is "other" so the closed enum stays closed.
   label?: string;
@@ -35,6 +38,10 @@ export type MilestoneRow = {
   date: string;
   label: string;
   link?: string;
+  // The wall-clock cutoff on `date` ("HH:MM") and the IANA zone it is read in. Both or neither;
+  // see AdminBotMemberMilestone in extensions/adminbot/src/contracts/actions.ts.
+  time?: string;
+  timezone?: string;
 };
 
 // Mirrors ADMINBOT_OPEN_PROJECT in extensions/adminbot/src/contracts/actions.ts: a sentinel project
@@ -86,6 +93,12 @@ export function milestoneRows(value: unknown): MilestoneRow[] {
             date: row.date,
             label: row.label,
             ...(typeof row.link === "string" ? { link: row.link } : {}),
+            // Dropped unless both halves are there: a time with no zone is the ambiguity the
+            // pair exists to remove, so half a pair is treated as no answer rather than as a
+            // number a reader would have to guess the zone for.
+            ...(typeof row.time === "string" && typeof row.timezone === "string" && row.timezone
+              ? { time: row.time, timezone: row.timezone }
+              : {}),
           },
         ]
       : [];
@@ -104,6 +117,11 @@ export function timeOffRows(value: unknown): TimeOffRow[] {
             start: row.start,
             end: row.end,
             availability: row.availability === "partial" ? ("partial" as const) : ("none" as const),
+            // Only kept when it is a usable figure: a stored 0 or a NaN says the same thing as no
+            // answer at all, and letting either through would draw a zero-height bar.
+            ...(Number.isFinite(Number(row.hours_per_week)) && Number(row.hours_per_week) > 0
+              ? { hours_per_week: Number(row.hours_per_week) }
+              : {}),
             ...(typeof row.kind === "string" ? { kind: row.kind } : {}),
             ...(typeof row.note === "string" ? { note: row.note } : {}),
             ...(typeof row.label === "string" ? { label: row.label } : {}),
@@ -112,6 +130,132 @@ export function timeOffRows(value: unknown): TimeOffRow[] {
         ]
       : [];
   });
+}
+
+/**
+ * A stretch away from home, with a place on it.
+ *
+ * Distinct from a TimeOffRow, which says a member is unavailable and nothing about where they are.
+ * Somebody working normal hours from Berlin is fully available and six hours off the lab's clock.
+ */
+export type TripRow = {
+  start: string;
+  end: string;
+  city: string;
+  timezone?: string;
+  note?: string;
+  link?: string;
+};
+
+export function tripRows(value: unknown): TripRow[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.flatMap((entry) => {
+    const row = entry as Partial<TripRow> | null;
+    // A row with no city is not a trip -- it is time off, and the service refuses it on write. One
+    // that reached the record before this field existed is dropped rather than drawn as a blank
+    // chip on somebody's calendar.
+    return row &&
+      typeof row.start === "string" &&
+      typeof row.end === "string" &&
+      typeof row.city === "string" &&
+      row.city.trim()
+      ? [
+          {
+            start: row.start,
+            end: row.end,
+            city: row.city,
+            ...(typeof row.timezone === "string" && row.timezone ? { timezone: row.timezone } : {}),
+            ...(typeof row.note === "string" ? { note: row.note } : {}),
+            ...(typeof row.link === "string" ? { link: row.link } : {}),
+          },
+        ]
+      : [];
+  });
+}
+
+/** One unbroken stretch inside a period during which the member is in one place. */
+export type WhereSegment = {
+  /** ISO dates, inclusive of both ends, so they can be read straight out to a person. */
+  start: string;
+  end: string;
+  city: string;
+  away: boolean;
+};
+
+/** One period of the chart's x axis, and where the member is for it. */
+export type WhereBin = {
+  label: string;
+  /** The place the member spends most of the period in, which is what the narrow cell shows. */
+  city: string;
+  /** False means "home", which the strip draws quietly so trips are what stands out. */
+  away: boolean;
+  /**
+   * Every stretch inside the period, in order, when the period is not all one place.
+   *
+   * A month with a five-day conference in it is three segments, and this is what the cell's hover
+   * spells out. A bare asterisk said only "not the whole period" and left the reader to guess
+   * which part of it.
+   */
+  segments: WhereSegment[];
+};
+
+const WHERE_DAY_MS = 86_400_000;
+
+/**
+ * Where a member is over each period of the chart, at whatever granularity the range switch chose.
+ *
+ * Takes the bins rather than computing them so this stays a pure function of the same division of
+ * time the bars already use: the strip has to say "where you are" for exactly the periods the chart
+ * says "what you are committed to" for, and two independent binnings would eventually disagree.
+ *
+ * Resolved a day at a time and then collapsed into runs. Walking days rather than intersecting
+ * ranges is what makes overlapping trips, one-day trips, and trips that straddle a period boundary
+ * all fall out of one rule -- the alternative is interval arithmetic whose corner cases are exactly
+ * the ones nobody thinks to test. A period is at most 31 days, so the cost is nothing.
+ */
+export function whereBins(
+  bins: readonly { startMs: number; endMs: number; label: string }[],
+  trips: readonly TripRow[],
+  home: string | null,
+): WhereBin[] {
+  const homeCity = home ?? "";
+  return bins.map((bin) => {
+    const segments: WhereSegment[] = [];
+    for (let day = bin.startMs; day < bin.endMs; day += WHERE_DAY_MS) {
+      const iso = new Date(day).toISOString().slice(0, 10);
+      const trip = tripOnDay(trips, iso);
+      const city = trip?.city ?? homeCity;
+      const away = Boolean(trip);
+      const last = segments.at(-1);
+      if (last && last.city === city && last.away === away) {
+        last.end = iso;
+        continue;
+      }
+      segments.push({ start: iso, end: iso, city, away });
+    }
+    // What the narrow cell can say is where most of the period is spent; the rest is in the hover.
+    const primary = segments.toSorted((left, right) => spanMs(right) - spanMs(left))[0];
+    return {
+      label: bin.label,
+      city: primary?.city ?? homeCity,
+      away: primary?.away ?? false,
+      segments: segments.length > 1 ? segments : [],
+    };
+  });
+}
+
+function spanMs(segment: WhereSegment): number {
+  return (
+    Date.parse(`${segment.end}T00:00:00Z`) - Date.parse(`${segment.start}T00:00:00Z`) +
+    WHERE_DAY_MS
+  );
+}
+
+/** The trip covering a day, if any. Last match wins, matching the service's own rule. */
+export function tripOnDay(trips: readonly TripRow[], dayIso: string): TripRow | undefined {
+  return trips.findLast((row) => row.start <= dayIso && row.end >= dayIso);
 }
 
 export function todayIso(now = new Date()): string {

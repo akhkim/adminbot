@@ -39,6 +39,14 @@ const DEFAULTED_DEPLOYMENT_TOKENS = {
     varName: "ADMINBOT_EMAIL_FORMAT_EXAMPLE",
     fallback: "zjin@cs.toronto.edu",
   },
+  // The portal's own address. It was previously declared `required` on the alumni mail and marked
+  // "derived" on the tab, which meant the field was hidden from the operator and filled by nobody:
+  // every alumni send failed the required-values check with a value no one could supply. It is one
+  // address for the whole deployment, so it belongs here with the other configured tokens.
+  dashboard_url: {
+    varName: "ADMINBOT_DASHBOARD_URL",
+    fallback: "https://jinesis-admin.vercel.app/",
+  },
 } as const;
 
 /**
@@ -99,11 +107,7 @@ type DeploymentTokens = {
   unresolvedOptional: Set<string>;
 };
 
-function resolveDeploymentTokens(
-  template: AdminBotOnboardingTemplate,
-  env: NodeJS.ProcessEnv,
-): DeploymentTokens {
-  const text = `${template.subject ?? ""}\n${template.body}`;
+function resolveDeploymentTokens(text: string, env: NodeJS.ProcessEnv): DeploymentTokens {
   const values: Record<string, string> = {};
   const missing: string[] = [];
   for (const [token, varName] of Object.entries(REQUIRED_DEPLOYMENT_TOKENS)) {
@@ -152,6 +156,28 @@ function dropUnresolvedLines(body: string, unresolved: ReadonlySet<string>): str
 
 export type AdminBotOnboardingValues = Readonly<Record<string, string | undefined>>;
 
+/**
+ * Copy the operator edited in the preview, standing in for the stored template.
+ *
+ * The edited text is still *filled*, not sent verbatim: the preview shows `{drive_folder_link}`
+ * and `{slack_connect_link}` unresolved because neither exists until the send provisions them, so
+ * an edited body has to go back through substitution or it would deliver the placeholder. Blank
+ * means "no edit here" -- an operator who clears the subject box gets the template's subject rather
+ * than an empty one.
+ */
+export type AdminBotGuideOverrides = { subject?: string; body?: string };
+
+/** Placeholders left in composed copy, which is the one thing that must never reach a recipient. */
+export function unfilledPlaceholders(text: string): string[] {
+  return [
+    ...new Set(
+      [...text.matchAll(/\{([a-z_]+)\}/gu)]
+        .map((match) => match[1] as string)
+        .filter((token) => !LITERAL_TOKENS.has(token)),
+    ),
+  ];
+}
+
 export type AdminBotComposedGuide = {
   template_id: string;
   subject: string;
@@ -185,12 +211,22 @@ function fill(text: string, values: AdminBotOnboardingValues): string {
   });
 }
 
-/** Required placeholders with no usable value, in template order. */
+/**
+ * Required placeholders with no usable value, in template order.
+ *
+ * `text` narrows the demand to what the copy being sent actually mentions. It matters only for
+ * edited copy: an operator who deleted the sentence carrying `{drive_guide_link}` should not still
+ * be asked for a Drive guide link. The stored copy uses every token it declares, so passing its own
+ * body changes nothing.
+ */
 export function missingGuideValues(
   template: AdminBotOnboardingTemplate,
   values: AdminBotOnboardingValues,
+  text?: string,
 ): string[] {
-  return template.required.filter((token) => !values[token]?.trim());
+  return template.required.filter(
+    (token) => (text === undefined || text.includes(`{${token}}`)) && !values[token]?.trim(),
+  );
 }
 
 /**
@@ -201,31 +237,34 @@ export function composeOnboardingGuide(
   templateId: string,
   values: AdminBotOnboardingValues,
   env: NodeJS.ProcessEnv = process.env,
+  overrides: AdminBotGuideOverrides = {},
 ): AdminBotGuideComposeResult {
   const template = findOnboardingTemplate(templateId);
   if (!template) {
     return { ok: false, missing: [], reason: "unknown-template" };
   }
-  const missing = missingGuideValues(template, values);
+  const subjectSource = overrides.subject?.trim() ? overrides.subject : template.subject;
+  const bodySource = overrides.body?.trim() ? overrides.body : template.body;
+  const missing = missingGuideValues(template, values, `${subjectSource ?? ""}\n${bodySource}`);
   if (missing.length > 0) {
     return { ok: false, missing, reason: "missing-values" };
   }
-  const deployment = resolveDeploymentTokens(template, env);
+  const deployment = resolveDeploymentTokens(`${subjectSource}\n${bodySource}`, env);
   if (deployment.missing.length > 0) {
     return { ok: false, missing: deployment.missing, reason: "missing-environment" };
   }
   const resolved = { ...values, ...deployment.values };
   // A supplement has no subject of its own because it is appended to another email; sending one
   // standalone still needs something in the header, so fall back rather than ship an empty subject.
-  const subject = template.subject
-    ? fill(template.subject, resolved)
+  const subject = subjectSource
+    ? fill(subjectSource, resolved)
     : "Working with the Jinesis AI Research Lab";
   return {
     ok: true,
     guide: {
       template_id: template.id,
       subject,
-      body: fill(dropUnresolvedLines(template.body, deployment.unresolvedOptional), resolved),
+      body: fill(dropUnresolvedLines(bodySource, deployment.unresolvedOptional), resolved),
     },
   };
 }

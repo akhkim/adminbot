@@ -5,15 +5,25 @@
 // into a form that proposes a typed action from contracts/actions.ts, so none of them may reach a
 // connector directly -- propose -> approve -> execute is the only path out of here.
 //
-// Document Signature and Recommendation Letters have their forms. Only the inputs exist so far:
-// what the member types and picks is held in app state, saved to their own device, and goes
-// nowhere until the action lands.
+// Each form has two ways out. Save keeps a draft on the member's own device so a half-filled
+// request survives a reload; Submit sends it to the service (POST /logistics/requests), which
+// stores it, stamps it with the session's member and puts it in the queue an admin works through
+// on the other tab. Storing a request has no external effect, which is why it needs no approval
+// gate -- the day AdminBot sends the letter or books the room, that send is the typed action.
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
 import type { AccessRole } from "../access.ts";
-import { createSchoolRow, type RecommendationSchool } from "../data/logistics-draft.ts";
+import {
+  createFactRow,
+  createMeetingRow,
+  createSchoolRow,
+  type LetterFact,
+  type MeetingRequestRow,
+  type RecommendationSchool,
+} from "../data/logistics-draft.ts";
+import { formatFileSize } from "../data/logistics-requests.ts";
 import {
   APPLICATION_STATUS_LIST_ID,
   APPLICATION_STATUS_SUGGESTIONS,
@@ -21,12 +31,24 @@ import {
   LETTER_STATUS_SUGGESTIONS,
   SCHOOL_FIELDS,
   TEMPLATE_FOLDER_URL,
+  TIMEZONE_LIST_ID,
+  timezoneSuggestions,
   type SchoolField,
 } from "./logistics-fields.ts";
+import {
+  renderAdminBotLogisticsQueue,
+  type AdminBotLogisticsQueueProps,
+} from "./logistics-requests.queue.ts";
 import {
   renderAdminBotLogisticsRequests,
   type AdminBotLogisticsRequestsProps,
 } from "./logistics-requests.ts";
+
+/** What `describeSubmitBlock` found, as the view needs it: a reason and, for a file, which one. */
+export type SubmitBlock = {
+  reason: "empty" | "no-name" | "no-purpose" | "file-too-big" | "request-too-big" | "signed-out";
+  file?: string;
+};
 
 export type LogisticsTemplate = "documentSignature" | "recommendationLetters" | "bookMeeting";
 
@@ -36,11 +58,29 @@ export type LogisticsMode = "make" | "view";
 // Saving is local-only (IndexedDB on the member's device) and per request type, so each container
 // reports its own outcome rather than sharing one "Saved at" that would follow the member from
 // form to form and describe the wrong draft.
+//
+// Submitting is shared, because only one form is ever on screen and a member can only be sending
+// one request at a time. Its outcome is not: `submitBlocked` is per-form, since what makes a
+// signature request unsendable is not what makes a letters request unsendable.
 type RequestSaveProps = {
   saving: boolean;
   savedAt: number | null;
   saveError: string | null;
   onSave: () => void;
+  onSubmit: () => void;
+  /** Why Submit would refuse right now, or null when it would go through. */
+  submitBlocked: SubmitBlock | null;
+  /** Shared across the three forms: only one of them is ever on screen. */
+  submitting: boolean;
+  submitError: string | null;
+  /** Set once a request landed, so the form can say so instead of looking like nothing happened. */
+  submitted: boolean;
+  /** Clears everything typed into this form, draft included. */
+  onDiscard: () => void;
+  hasContent: boolean;
+  /** Set while this form holds a request that was already sent and is being corrected. */
+  editing: boolean;
+  onCancelEdit: () => void;
 };
 
 export type AdminBotLogisticsProps = {
@@ -51,6 +91,12 @@ export type AdminBotLogisticsProps = {
   mode: LogisticsMode;
   onModeChange: (mode: LogisticsMode) => void;
   requests: AdminBotLogisticsRequestsProps;
+  /**
+   * The admin's spreadsheet of everyone's requests. Drawn instead of the member list when an admin
+   * is in view mode, and never for anyone else -- the service scopes the data either way, so this
+   * only decides which shape it is read in.
+   */
+  queue: AdminBotLogisticsQueueProps;
   template: LogisticsTemplate;
   onTemplateChange: (template: LogisticsTemplate) => void;
   signature: RequestSaveProps & {
@@ -61,9 +107,20 @@ export type AdminBotLogisticsProps = {
     attachments: File[];
     onAttachmentsChange: (files: File[]) => void;
   };
+  meeting: RequestSaveProps & {
+    rows: MeetingRequestRow[];
+    onRowsChange: (rows: MeetingRequestRow[]) => void;
+  };
   letters: RequestSaveProps & {
     schools: RecommendationSchool[];
     onSchoolsChange: (schools: RecommendationSchool[]) => void;
+    // The per-project record of what the member actually did, which the Drive template cannot
+    // supply and the writer would otherwise reconstruct from memory.
+    facts: LetterFact[];
+    onFactsChange: (facts: LetterFact[]) => void;
+    // Routes to My Projects, where the weekly updates the letter draws on already live. Passed in
+    // rather than reached for, because this view knows nothing about how navigation works.
+    onOpenMyProjects: () => void;
     cvOverleafUrl: string;
     onCvOverleafUrlChange: (url: string) => void;
     driveFolderUrl: string;
@@ -73,6 +130,7 @@ export type AdminBotLogisticsProps = {
 
 type SignatureProps = AdminBotLogisticsProps["signature"];
 type LettersProps = AdminBotLogisticsProps["letters"];
+type MeetingProps = AdminBotLogisticsProps["meeting"];
 
 // The documents to be signed are the point of the request, so this list is narrow on purpose.
 // Supporting attachments deliberately carry no accept list -- context arrives as anything.
@@ -99,21 +157,6 @@ function mergeFiles(existing: readonly File[], incoming: readonly File[]): File[
     return true;
   });
   return added.length ? [...existing, ...added] : [...existing];
-}
-
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  // One decimal below 10 so "1.4 MB" keeps its precision, none above so "247 KB" stays terse.
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
 
 // The drag highlight is a class toggled straight on the element rather than app state: dragover
@@ -303,6 +346,33 @@ function renderSupportingSection(props: SignatureProps) {
   `;
 }
 
+/**
+ * Why Submit is refusing, in the member's words.
+ *
+ * Said out loud rather than left to a disabled button: a button that does nothing and explains
+ * nothing is the reason people file a request twice and then email instead.
+ */
+function submitBlockText(block: SubmitBlock): string {
+  if (block.reason === "file-too-big") {
+    return t("logistics.request.blocked.fileTooBig", {
+      name: block.file ?? "",
+    });
+  }
+  if (block.reason === "request-too-big") {
+    return t("logistics.request.blocked.requestTooBig");
+  }
+  if (block.reason === "no-name") {
+    return t("logistics.request.blocked.noName");
+  }
+  if (block.reason === "no-purpose") {
+    return t("logistics.request.blocked.noPurpose");
+  }
+  if (block.reason === "signed-out") {
+    return t("logistics.request.blocked.signedOut");
+  }
+  return t("logistics.request.blocked.empty");
+}
+
 function renderRequestActions(props: RequestSaveProps) {
   const saved = props.savedAt
     ? new Date(props.savedAt).toLocaleTimeString([], {
@@ -310,24 +380,75 @@ function renderRequestActions(props: RequestSaveProps) {
         minute: "2-digit",
       })
     : null;
+  // A failed submit outranks everything else in this line, then a landed one, then the local draft:
+  // the member is looking here for the answer to the button they just pressed.
+  const status = props.submitError
+    ? html`<span class="logistics-request__status--error">${props.submitError}</span>`
+    : props.submitted
+      ? html`<span class="logistics-request__status--ok" data-testid="logistics-submitted"
+          >${t("logistics.request.submitted")}</span
+        >`
+      : props.saveError
+        ? html`<span class="logistics-request__status--error">${props.saveError}</span>`
+        : saved
+          ? t("logistics.request.savedAt", { time: saved })
+          : nothing;
   return html`
+    ${props.editing
+      ? html`
+          <!-- Said out loud because the form looks exactly like a new request otherwise, and a
+               member who thinks they are filing a second one will file a second one. -->
+          <p class="logistics-request__editing" data-testid="logistics-editing" role="status">
+            ${t("logistics.request.editing")}
+            <button class="logistics-facts__link" type="button" @click=${props.onCancelEdit}>
+              ${t("logistics.request.cancelEdit")}
+            </button>
+          </p>
+        `
+      : nothing}
     <div class="logistics-request__actions">
-      <!-- Status sits with the buttons rather than above them: it is the answer to pressing Save,
-           and a member who just pressed it is looking here. -->
-      <span class="logistics-request__status" role="status">
-        ${props.saveError
-          ? html`<span class="logistics-request__status--error">${props.saveError}</span>`
-          : saved
-            ? t("logistics.request.savedAt", { time: saved })
-            : nothing}
-      </span>
-      <button class="btn" type="button" ?disabled=${props.saving} @click=${props.onSave}>
+      <!-- Status sits with the buttons rather than above them: it is the answer to pressing one of
+           them, and a member who just did is looking here. -->
+      <span class="logistics-request__status" role="status">${status}</span>
+      ${props.submitBlocked && !props.submitted
+        ? html`
+            <span class="logistics-request__blocked" data-testid="logistics-blocked"
+              >${submitBlockText(props.submitBlocked)}</span
+            >
+          `
+        : nothing}
+      <button
+        class="btn btn--sm"
+        type="button"
+        ?disabled=${!props.hasContent || props.saving || props.submitting}
+        @click=${props.onDiscard}
+      >
+        ${t("logistics.request.discard")}
+      </button>
+      <button
+        class="btn"
+        type="button"
+        ?disabled=${props.saving || props.submitting}
+        @click=${props.onSave}
+      >
         ${props.saving ? t("logistics.request.saving") : t("logistics.request.save")}
       </button>
-      <!-- Submit has no handler yet: where a request goes is a typed action behind the approval
-           gate, and that is not designed. Wiring it to anything now would be the one thing this
-           surface must not do. -->
-      <button class="btn primary" type="button">${t("logistics.request.submit")}</button>
+      <!-- Left pressable while blocked on purpose: pressing it is how a member finds out what is
+           missing, and the reason is written next to it either way. Only an in-flight submit
+           disables it, so the same request cannot be filed twice by a double click. -->
+      <button
+        class="btn primary"
+        type="button"
+        data-testid="logistics-submit"
+        ?disabled=${props.submitting}
+        @click=${props.onSubmit}
+      >
+        ${props.submitting
+          ? t("logistics.request.submitting")
+          : props.editing
+            ? t("logistics.request.resend")
+            : t("logistics.request.submit")}
+      </button>
     </div>
   `;
 }
@@ -394,7 +515,13 @@ function renderSchoolCell(
         : html`
             <input
               class="logistics-schools__input"
-              type=${field.control === "date" ? "date" : field.control === "url" ? "url" : "text"}
+              type=${field.control === "date"
+                ? "date"
+                : field.control === "time"
+                  ? "time"
+                  : field.control === "url"
+                    ? "url"
+                    : "text"}
               list=${field.listId ?? nothing}
               aria-label=${label}
               placeholder=${placeholder}
@@ -436,6 +563,7 @@ function renderSchoolsSection(props: LettersProps) {
 
       ${renderStatusOptions(APPLICATION_STATUS_LIST_ID, APPLICATION_STATUS_SUGGESTIONS)}
       ${renderStatusOptions(LETTER_STATUS_LIST_ID, LETTER_STATUS_SUGGESTIONS)}
+      ${renderStatusOptions(TIMEZONE_LIST_ID, timezoneSuggestions())}
 
       <!-- Eight columns do not fit a laptop, and squeezing them would leave every field too narrow
            to read what was typed in it. The table keeps its width and this wrapper scrolls. -->
@@ -475,6 +603,306 @@ function renderSchoolsSection(props: LettersProps) {
         >
           <span aria-hidden="true">${icons.plus}</span>
           ${t("logistics.schools.add")}
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+/**
+ * The list of facts a letter is written from.
+ *
+ * The letter stays a Drive template -- structure, salutation, the writer's own voice -- because
+ * that is what a template is good at. What it cannot hold is the one thing only the member knows:
+ * which project, and what they did on it. Without this the writer works from memory and from
+ * whatever they can find in Slack, which is how a year of work becomes a sentence.
+ *
+ * The line under the heading routes to My Projects, which is where the member's projects and their
+ * current step already live -- it is the fastest way to remember what they worked on. It is not a
+ * source to copy from: there is no per-week contribution log anywhere yet (the brainstorming doc
+ * still lists that as open), so what goes in this table is written here or not at all.
+ */
+function renderFactsSection(props: LettersProps) {
+  const update = (row: LetterFact, key: "project" | "contribution") => (event: Event) => {
+    const control = event.currentTarget;
+    if (!(control instanceof HTMLInputElement) && !(control instanceof HTMLTextAreaElement)) {
+      return;
+    }
+    props.onFactsChange(
+      // Found by id, not by index: a removal above this row renumbers everything under it between
+      // the handler being made and being called.
+      props.facts.map((candidate) =>
+        candidate.id === row.id ? { ...candidate, [key]: control.value } : candidate,
+      ),
+    );
+  };
+  return html`
+    <section class="logistics-request__section logistics-schools" data-testid="logistics-facts">
+      <h3 class="card-title">${t("logistics.facts.title")}</h3>
+      <p class="card-sub">
+        ${t("logistics.facts.sub")}
+        <button
+          class="logistics-facts__link"
+          type="button"
+          @click=${() => props.onOpenMyProjects()}
+        >
+          ${t("logistics.facts.openMyProjects")}
+        </button>
+      </p>
+
+      <div class="logistics-schools__scroll">
+        <table class="logistics-schools__table">
+          <thead>
+            <tr>
+              <th scope="col" class="logistics-schools__head">
+                <span class="logistics-schools__head-name">${t("logistics.facts.project")}</span>
+              </th>
+              <th scope="col" class="logistics-schools__head">
+                <span class="logistics-schools__head-name"
+                  >${t("logistics.facts.contribution")}</span
+                >
+                <small class="logistics-schools__head-hint"
+                  >${t("logistics.facts.contributionHint")}</small
+                >
+              </th>
+              <th scope="col" class="logistics-schools__head logistics-schools__head--remove">
+                <span class="sr-only">${t("logistics.schools.removeColumn")}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            ${props.facts.length
+              ? repeat(
+                  props.facts,
+                  (row) => row.id,
+                  (row, index) => html`
+                    <tr class="logistics-schools__row">
+                      <td class="logistics-schools__cell">
+                        <input
+                          class="logistics-schools__input"
+                          type="text"
+                          aria-label=${t("logistics.schools.cell", {
+                            column: t("logistics.facts.project"),
+                            row: String(index + 1),
+                          })}
+                          placeholder=${t("logistics.facts.projectPlaceholder")}
+                          .value=${row.project}
+                          @input=${update(row, "project")}
+                        />
+                      </td>
+                      <td class="logistics-schools__cell">
+                        <textarea
+                          class="logistics-schools__input logistics-schools__notes"
+                          rows="2"
+                          aria-label=${t("logistics.schools.cell", {
+                            column: t("logistics.facts.contribution"),
+                            row: String(index + 1),
+                          })}
+                          placeholder=${t("logistics.facts.contributionPlaceholder")}
+                          .value=${row.contribution}
+                          @input=${update(row, "contribution")}
+                        ></textarea>
+                      </td>
+                      <td class="logistics-schools__cell logistics-schools__cell--remove">
+                        <button
+                          class="btn btn--icon btn--xs"
+                          type="button"
+                          aria-label=${t("logistics.facts.removeRow", { row: String(index + 1) })}
+                          @click=${() =>
+                            props.onFactsChange(
+                              props.facts.filter((candidate) => candidate.id !== row.id),
+                            )}
+                        >
+                          ${icons.x}
+                        </button>
+                      </td>
+                    </tr>
+                  `,
+                )
+              : html`
+                  <tr>
+                    <td class="logistics-schools__empty" colspan="3">
+                      ${t("logistics.facts.empty")}
+                    </td>
+                  </tr>
+                `}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="logistics-schools__actions">
+        <button
+          class="btn btn--sm"
+          type="button"
+          data-testid="logistics-facts-add"
+          @click=${() => props.onFactsChange([...props.facts, createFactRow()])}
+        >
+          <span aria-hidden="true">${icons.plus}</span>
+          ${t("logistics.facts.add")}
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+// Local formatting: "when they submitted" is read against the reader's own clock, and it is the
+// one column on this table that is not a claim the member is making.
+function submittedLabel(submittedAt: number): string {
+  if (!Number.isFinite(submittedAt) || submittedAt <= 0) {
+    return t("logistics.meeting.notSubmitted");
+  }
+  return new Date(submittedAt).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/**
+ * Book Meeting, as a spreadsheet rather than a form.
+ *
+ * A meeting request is four short facts, and the people who schedule them read many at once: which
+ * call, when it suits, on whose clock, and how long. A form per request meant opening each one to
+ * find out whether it was a fifteen-minute check-in or an hour-long committee call, which is the
+ * question that decides where it goes in a week. One row per request puts all four side by side.
+ *
+ * "Submitted" is stamped when the row is created and shown read-only. It is the column that decides
+ * order of service, so it is the one field a requester must not be able to write.
+ */
+function renderMeetingSection(props: MeetingProps) {
+  const update =
+    (row: MeetingRequestRow, key: "purpose" | "preferredTime" | "timezone" | "lengthMinutes") =>
+    (event: Event) => {
+      const control = event.currentTarget;
+      if (!(control instanceof HTMLInputElement)) {
+        return;
+      }
+      props.onRowsChange(
+        props.rows.map((candidate) =>
+          candidate.id === row.id ? { ...candidate, [key]: control.value } : candidate,
+        ),
+      );
+    };
+  const cellLabel = (column: string, index: number) =>
+    t("logistics.schools.cell", { column, row: String(index + 1) });
+  return html`
+    <section class="logistics-request__section logistics-schools" data-testid="logistics-meeting">
+      <h3 class="card-title">${t("logistics.meeting.title")}</h3>
+      <p class="card-sub">${t("logistics.meeting.sub")}</p>
+
+      ${renderStatusOptions(TIMEZONE_LIST_ID, timezoneSuggestions())}
+
+      <div class="logistics-schools__scroll">
+        <table class="logistics-schools__table">
+          <thead>
+            <tr>
+              ${[
+                t("logistics.meeting.submitted"),
+                t("logistics.meeting.purpose"),
+                t("logistics.meeting.preferredTime"),
+                t("logistics.meeting.timezone"),
+                t("logistics.meeting.length"),
+              ].map(
+                (heading) => html`
+                  <th scope="col" class="logistics-schools__head">
+                    <span class="logistics-schools__head-name">${heading}</span>
+                  </th>
+                `,
+              )}
+              <th scope="col" class="logistics-schools__head logistics-schools__head--remove">
+                <span class="sr-only">${t("logistics.schools.removeColumn")}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            ${props.rows.length
+              ? repeat(
+                  props.rows,
+                  (row) => row.id,
+                  (row, index) => html`
+                    <tr class="logistics-schools__row">
+                      <td class="logistics-schools__cell logistics-meeting__submitted">
+                        ${submittedLabel(row.submittedAt)}
+                      </td>
+                      <td class="logistics-schools__cell">
+                        <input
+                          class="logistics-schools__input"
+                          type="text"
+                          aria-label=${cellLabel(t("logistics.meeting.purpose"), index)}
+                          placeholder=${t("logistics.meeting.purposePlaceholder")}
+                          .value=${row.purpose}
+                          @input=${update(row, "purpose")}
+                        />
+                      </td>
+                      <td class="logistics-schools__cell">
+                        <input
+                          class="logistics-schools__input"
+                          type="datetime-local"
+                          aria-label=${cellLabel(t("logistics.meeting.preferredTime"), index)}
+                          .value=${row.preferredTime}
+                          @input=${update(row, "preferredTime")}
+                        />
+                      </td>
+                      <td class="logistics-schools__cell">
+                        <input
+                          class="logistics-schools__input"
+                          type="text"
+                          list=${TIMEZONE_LIST_ID}
+                          aria-label=${cellLabel(t("logistics.meeting.timezone"), index)}
+                          .value=${row.timezone}
+                          @input=${update(row, "timezone")}
+                        />
+                      </td>
+                      <td class="logistics-schools__cell">
+                        <input
+                          class="logistics-schools__input"
+                          type="number"
+                          min="5"
+                          max="480"
+                          step="5"
+                          aria-label=${cellLabel(t("logistics.meeting.length"), index)}
+                          placeholder=${t("logistics.meeting.lengthPlaceholder")}
+                          .value=${row.lengthMinutes}
+                          @input=${update(row, "lengthMinutes")}
+                        />
+                      </td>
+                      <td class="logistics-schools__cell logistics-schools__cell--remove">
+                        <button
+                          class="btn btn--icon btn--xs"
+                          type="button"
+                          aria-label=${t("logistics.meeting.removeRow", { row: String(index + 1) })}
+                          @click=${() =>
+                            props.onRowsChange(
+                              props.rows.filter((candidate) => candidate.id !== row.id),
+                            )}
+                        >
+                          ${icons.x}
+                        </button>
+                      </td>
+                    </tr>
+                  `,
+                )
+              : html`
+                  <tr>
+                    <td class="logistics-schools__empty" colspan="6">
+                      ${t("logistics.meeting.empty")}
+                    </td>
+                  </tr>
+                `}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="logistics-schools__actions">
+        <button
+          class="btn btn--sm"
+          type="button"
+          data-testid="logistics-meeting-add"
+          @click=${() => props.onRowsChange([...props.rows, createMeetingRow()])}
+        >
+          <span aria-hidden="true">${icons.plus}</span>
+          ${t("logistics.meeting.add")}
         </button>
       </div>
     </section>
@@ -576,14 +1004,24 @@ function renderLettersRequest(props: LettersProps) {
       class="card adminbot-card adminbot-card--wide logistics-request"
       data-testid="logistics-letters"
     >
-      ${renderSchoolsSection(props)} ${renderCvOverleafSection(props)}
+      ${renderSchoolsSection(props)} ${renderFactsSection(props)} ${renderCvOverleafSection(props)}
       ${renderDriveFolderSection(props)} ${renderRequestActions(props)}
     </div>
   `;
 }
 
-// Book Meeting carries no template of its own yet, so it selects nothing -- picking it would empty
-// the page. It stays in the row, and enabled, so the surface still names all three request types.
+// The same container shape again for Book Meeting: one table, then Save and Submit.
+function renderMeetingRequest(props: MeetingProps) {
+  return html`
+    <div
+      class="card adminbot-card adminbot-card--wide logistics-request"
+      data-testid="logistics-meeting-request"
+    >
+      ${renderMeetingSection(props)} ${renderRequestActions(props)}
+    </div>
+  `;
+}
+
 const TEMPLATE_BUTTONS: {
   template: LogisticsTemplate | null;
   labelKey: string;
@@ -600,7 +1038,7 @@ const TEMPLATE_BUTTONS: {
     icon: icons.fileText,
   },
   {
-    template: null,
+    template: "bookMeeting",
     labelKey: "logistics.templates.bookMeeting",
     icon: icons.clock,
   },
@@ -635,9 +1073,15 @@ function renderTemplates(props: AdminBotLogisticsProps) {
   `;
 }
 
-// Admins only, and above the templates because it decides what the rest of the page is: your own
-// request, or everyone's. A member never sees it -- renderAdminBotLogistics does not render it and
-// pins their mode to "make", so a stale "view" in app state cannot show them the list either.
+/**
+ * Above the templates, because it decides what the rest of the page is: making a request, or
+ * reading the ones already made.
+ *
+ * Everyone gets both modes now that requests are stored by the service -- a member who cannot see
+ * what they asked for has no way to check whether it arrived, and no way to take it back. What
+ * differs is what the list holds: the service scopes it to the caller, so a member's "view" is
+ * their own requests and an admin's is the lab's queue. The badge says which one you are reading.
+ */
 function renderAdminModes(props: AdminBotLogisticsProps, mode: LogisticsMode) {
   const button = (target: LogisticsMode, labelKey: string, icon: unknown) => html`
     <button
@@ -650,16 +1094,23 @@ function renderAdminModes(props: AdminBotLogisticsProps, mode: LogisticsMode) {
       ${t(labelKey)}
     </button>
   `;
+  const isAdmin = props.role === "admin";
   return html`
     <div class="card adminbot-card adminbot-card--wide" data-testid="logistics-admin">
       <div class="logistics-admin__heading">
         <div class="card-title">${t("logistics.admin.title")}</div>
-        <span class="pill">${t("logistics.admin.badge")}</span>
+        ${isAdmin ? html`<span class="pill">${t("logistics.admin.badge")}</span>` : nothing}
       </div>
-      <div class="card-sub">${t("logistics.admin.sub")}</div>
+      <div class="card-sub">
+        ${isAdmin ? t("logistics.admin.sub") : t("logistics.admin.memberSub")}
+      </div>
       <div class="logistics__templates">
         ${button("make", "logistics.admin.make", icons.penLine)}
-        ${button("view", "logistics.admin.view", icons.scrollText)}
+        ${button(
+          "view",
+          isAdmin ? "logistics.admin.view" : "logistics.admin.viewMine",
+          icons.scrollText,
+        )}
       </div>
     </div>
   `;
@@ -672,20 +1123,23 @@ function renderMakeRequest(props: AdminBotLogisticsProps) {
       ? renderLettersRequest(props.letters)
       : props.template === "documentSignature"
         ? renderSignatureRequest(props.signature)
-        : nothing}
+        : props.template === "bookMeeting"
+          ? renderMeetingRequest(props.meeting)
+          : nothing}
   `;
 }
 
 export function renderAdminBotLogistics(props: AdminBotLogisticsProps) {
-  const isAdmin = props.role === "admin";
-  // Everyone else gets the request forms and nothing else, whatever the mode in app state says.
-  const mode = isAdmin ? props.mode : "make";
   return html`
     <section class="adminbot-shell logistics" data-testid="adminbot-logistics">
-      ${isAdmin ? renderAdminModes(props, mode) : nothing}
-      ${mode === "view"
-        ? renderAdminBotLogisticsRequests(props.requests)
-        : renderMakeRequest(props)}
+      ${renderAdminModes(props, props.mode)}
+      ${props.mode !== "view"
+        ? renderMakeRequest(props)
+        : // An open request is a card either way: the queue is for working across rows, and reading
+          // one request in full is the same job for an admin as for anybody else.
+          props.role === "admin" && !props.requests.open && !props.requests.openLoading
+          ? renderAdminBotLogisticsQueue(props.queue)
+          : renderAdminBotLogisticsRequests(props.requests)}
     </section>
   `;
 }

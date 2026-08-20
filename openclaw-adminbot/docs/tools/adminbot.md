@@ -268,7 +268,6 @@ the plugin tools even under the minimal profile.
         },
         "skills": [
           "adminbot-workflows",
-          "adminbot-candidate-workflow",
           "adminbot-join-form-triage",
           "adminbot-reimbursements",
           "adminbot-access-invites",
@@ -288,11 +287,8 @@ the plugin tools even under the minimal profile.
             "adminbot_run_email_automation",
             "adminbot_reason",
             "adminbot_propose_action",
-            "adminbot_propose_candidate_decision",
-            "adminbot_draft_social_post",
             "adminbot_prepare_paper_social_posts",
             "adminbot_prepare_overleaf_paper_edit",
-            "adminbot_prepare_reimbursement_packet",
             "adminbot_suggest_calendar_change",
             "adminbot_propose_slack_message",
             "adminbot_classify_join_form_response",
@@ -343,9 +339,9 @@ Every meaningful action should become an action proposal:
 
 ```json
 {
-  "type": "candidate.accept_for_trial",
-  "risk_tier": "T4",
-  "summary": "Accept Jane Doe for a two-week trial",
+  "type": "email.send",
+  "risk_tier": "T3",
+  "summary": "Email Jane Doe the trial offer",
   "target": {
     "name": "Jane Doe",
     "email": "jane@example.test"
@@ -357,7 +353,7 @@ Every meaningful action should become an action proposal:
     }
   ],
   "proposed_payload": {},
-  "rationale": "Strong match for the trial project.",
+  "rationale": "The trial decision was made offline; this sends the confirmation.",
   "undo_plan": "Return the candidate to review state and revoke onboarding tasks.",
   "idempotency_key": "candidate-jane-doe-trial-2026-06-08",
   "dry_run": true
@@ -766,3 +762,55 @@ checks and audit logging.
 - [Skills config](/tools/skills-config)
 - [Lobster](/tools/lobster)
 - [Plugin manifest](/plugins/manifest)
+
+## Where members are, over time
+
+Three roster fields answer "where is this person" and each overwrites itself, so nothing could
+answer **"when did they move"** — which is the question that matters when a member spends three
+months in Berlin and keeps being invited to a 10am Toronto meeting.
+
+`adminbot_member_locations` is an append-only timeline fed by three sources:
+
+| Source           | Written by                                        |
+| ---------------- | ------------------------------------------------- |
+| `self_reported`  | any profile edit that changes `location` / `current_city` |
+| `login_ip`       | the country of a successful sign-in (IPinfo Lite, country-level only) |
+| `slack_profile`  | the member-map Slack sweep                        |
+
+An observation is appended only when it **differs** from the last one from the same source, so a
+member who signs in twice a day adds no rows and the timeline stays a change log.
+
+**Inference never writes a profile.** When recent sign-ins disagree with the profile for long
+enough — 2 sign-ins spanning 3 days, counted over the unbroken run of the current country — the
+member gets a banner on their own profile quoting the evidence. Confirming writes `current_city`
+and a timezone guessed from it through the ordinary self-edit; dismissing writes nothing and
+settles the question for that country only. A later move somewhere else asks again.
+
+Routes: `GET`/`POST /profile/location-prompt` (self only), `GET /lab/members/:id/locations` (self
+or admin), `GET /lab/location-drifts` (admin — everyone worth re-checking before scheduling).
+
+### Where it is used
+
+**Reporting.** Two paths. The banner on the profile is the reactive one, raised when sign-ins
+disagree. **Time Availability → "Trips away from home"** is the planned one: a member logs a city
+with a date range, the same way they log a commitment, and it is stored on `trips` alongside
+`availability` and `time_off`. The profile's `location` stays the home address.
+
+A trip is not time off. A time-off row says a member is unavailable and says nothing about where
+they are; somebody working normal hours from Berlin is fully available and six hours off the lab's
+clock, which is the case that produced 10am invites landing at 4pm.
+
+A logged trip also answers the drift prompt in advance: sign-ins from a country a member already
+logged a trip to raise no question, because they have already said where they are.
+
+**Scheduling.** The calendar grid carries a one-line `✈` marker on days somebody is away — the
+person's name when it is one, a count when it is more, with the full list in the tooltip. The
+invite list shows each attendee's own clock for the selected event, in bold with `(early)` / `(late)` when it lands before 08:00 or from 21:00. A member the
+roster cannot place reads "local time unknown" rather than a guessed clock face. An attendee whose
+recent sign-ins disagree with their profile carries a `⚑ may be in <country>` flag, because their
+local time was computed from a location nobody has confirmed.
+
+The zone comes from `resolveAttendeeZoneAt`, resolved against the event's own date, most specific
+first: a logged trip covering that day, then an explicit `timezone`, then a zone guessed from
+`current_city`, then from `location`. So September invites read in Berlin time and October invites
+read in home time without the member touching anything twice.

@@ -123,6 +123,10 @@ export function createGogAdminBotExecutor(
   const run = options.run ?? createGogRunner(options.env);
   return {
     async execute(proposal) {
+      if (proposal.type === "logistics.send_signed_document") {
+        await sendWithAttachments(proposal, run);
+        return { handled: true };
+      }
       const args = buildGogArgs(proposal);
       if (!args) {
         return { handled: false };
@@ -131,6 +135,72 @@ export function createGogAdminBotExecutor(
       return { handled: true };
     },
   };
+}
+
+/**
+ * An email whose attachments arrive as bytes rather than as paths.
+ *
+ * Its own path because `--attach` takes file paths and the signed document exists only as base64 in
+ * the proposal, so the bytes have to touch a disk somewhere. The scratch directory is removed
+ * whether or not the send worked: it holds somebody's signed paperwork, and it has no business
+ * outliving the call on a shared box.
+ */
+async function sendWithAttachments(proposal: AdminBotStoredProposal, run: GogRun): Promise<void> {
+  const payload = requirePayload(proposal);
+  const to = requireRecipients(payload, "to");
+  const subject = requireString(payload, "subject");
+  const body = requireString(payload, "body");
+  const attachments = readAttachments(payload);
+  if (!attachments.length) {
+    throw new Error(`${proposal.type} requires at least one attachment`);
+  }
+  const scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), "adminbot-signed-"));
+  try {
+    const paths: string[] = [];
+    for (const attachment of attachments) {
+      const filePath = path.join(scratch, safeAttachmentName(attachment.name));
+      await fs.promises.writeFile(filePath, Buffer.from(attachment.data_base64, "base64"));
+      paths.push(filePath);
+    }
+    const args = rootArgs("gmail.send", optionalString(payload, "account"));
+    args.push("gmail", "send", "--to", to, "--subject", subject, "--body", body);
+    args.push("--body-html", optionalString(payload, "body_html") ?? renderEmailBodyHtml(body));
+    for (const filePath of paths) {
+      // Repeated rather than comma-joined: a file name containing a comma would otherwise split
+      // into two paths that do not exist.
+      args.push("--attach", filePath);
+    }
+    await run(args);
+  } finally {
+    await fs.promises.rm(scratch, { recursive: true, force: true });
+  }
+}
+
+function readAttachments(
+  payload: Record<string, unknown>,
+): { name: string; data_base64: string }[] {
+  const raw = payload.attachments;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw.flatMap((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return [];
+    }
+    const record = entry as Record<string, unknown>;
+    const name = typeof record.name === "string" ? record.name.trim() : "";
+    const data = typeof record.data_base64 === "string" ? record.data_base64 : "";
+    return name && data ? [{ name, data_base64: data }] : [];
+  });
+}
+
+/** The name the recipient sees, with anything that could steer a path taken out of it. */
+export function safeAttachmentName(name: string): string {
+  const cleaned = path
+    .basename(name.trim())
+    .replace(/[^\w.\- ]+/gu, "_")
+    .slice(0, 120);
+  return cleaned || "document";
 }
 
 function buildGogArgs(proposal: AdminBotStoredProposal): string[] | undefined {

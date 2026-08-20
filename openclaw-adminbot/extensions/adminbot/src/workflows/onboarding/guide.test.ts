@@ -115,9 +115,32 @@ describe("composeOnboardingGuide", () => {
       return;
     }
     expect(result.reason).toBe("missing-values");
-    // The setup mail names the project and the channels; who supervises the work moved to the
-    // norms mail that follows it (coauthor_minor_norms), which is where contact_name lives now.
-    expect(result.missing).toContain("project_or_context");
+    // The setup mail names the channels and who to ask when Zhijing is busy; the project itself
+    // and who supervises the work moved to the norms mail that follows it (coauthor_minor_norms).
+    expect(result.missing).toContain("project_channel");
+    expect(result.missing).toContain("primary_contact");
+  });
+
+  // The alumni mail asked for a portal address the tab hid from the operator and nothing filled,
+  // so every alumni send failed on a value no one could supply. It is deployment config now.
+  it("fills the dashboard address from configuration rather than from the sender", () => {
+    const result = composeOnboardingGuide(
+      "alumni",
+      { first_name: "Ada", sender_name: "Zhijing", slack_connect_link: "https://slack.example" },
+      ENV,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.guide.body).toContain("https://jinesis-admin.vercel.app/");
+
+    const configured = composeOnboardingGuide(
+      "alumni",
+      { first_name: "Ada", sender_name: "Zhijing", slack_connect_link: "https://slack.example" },
+      { ...ENV, ADMINBOT_DASHBOARD_URL: "https://portal.example" },
+    );
+    expect(configured.ok && configured.guide.body).toContain("https://portal.example");
   });
 
   it("treats whitespace as missing rather than substituting it", () => {
@@ -464,6 +487,200 @@ describe("onboarding sender", () => {
       email: "ada@example.com",
     });
     expect(result.ok).toBe(false);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  // The preview is what the tab hands back as the body to send, so the two links that do not exist
+  // yet stay as their own placeholders rather than as a sentence describing them.
+  it("previews the provisioned links as placeholders", async () => {
+    const send = createAdminBotOnboardingSender({ env: ENV, sendEmail: vi.fn() });
+    const result = await send({
+      template_id: "trial_phase",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      preview: true,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.payload.body).toContain("{drive_folder_link}");
+  });
+
+  it("sends the operator's edited copy, with the provisioned links filled in", async () => {
+    const provisionDriveWorkspace = vi
+      .fn()
+      .mockResolvedValue({ folderId: "fld", link: "https://drive.example/fld" });
+    const sendEmail = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({ env: ENV, provisionDriveWorkspace, sendEmail });
+
+    const result = await send({
+      template_id: "trial_phase",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      subject_override: "Your trial with us",
+      body_override: "Hi Ada,\n\nYour workspace: {drive_folder_link}\n\nWarmly,\nAdminBot",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.payload.subject).toBe("Your trial with us");
+    expect(result.payload.body).toContain("Your workspace: https://drive.example/fld");
+    // The stored copy is a starting draft; nothing of it survives an edit that removed it.
+    expect(result.payload.body).not.toContain("three weeks");
+    expect(sendEmail.mock.calls[0]?.[0]?.subject).toBe("Your trial with us");
+  });
+
+  // Rule 1 holds for edited copy too, and the refusal comes before provisioning: finding out
+  // afterwards would leave a Drive folder and a Slack invite behind for a mail that never went.
+  it("refuses edited copy that still holds a placeholder, before provisioning anything", async () => {
+    const provisionDriveWorkspace = vi.fn();
+    const sendEmail = vi.fn();
+    const send = createAdminBotOnboardingSender({ env: ENV, provisionDriveWorkspace, sendEmail });
+
+    const result = await send({
+      template_id: "trial_phase",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      body_override:
+        "Hi Ada, your lead is {interview_lead} and your folder is {drive_folder_link}.",
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.status).toBe(422);
+    expect(result.error.missing).toEqual(["interview_lead"]);
+    expect(provisionDriveWorkspace).not.toHaveBeenCalled();
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  // An operator who deleted the sentence a value belonged to should not still be asked for it.
+  it("asks only for the values the edited copy still mentions", async () => {
+    const sendEmail = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({ env: ENV, sendEmail });
+
+    const result = await send({
+      template_id: "coauthor_minor",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      body_override: "Hi Ada,\n\nWelcome aboard.\n\nBest regards,\nAdminBot",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(sendEmail).toHaveBeenCalled();
+  });
+
+  // The coauthor mails promise a project-channel invite; until this existed nothing made that
+  // true, because the Connect invite only ever went to the one configured onboarding channel.
+  it("invites the recipient to each project channel before the mail goes out", async () => {
+    const order: string[] = [];
+    const inviteToSlackConnect = vi.fn(async ({ channelId }: { channelId: string }) => {
+      order.push(`invite:${channelId}`);
+      return { url: `https://slack.example/${channelId}` };
+    });
+    const sendEmail = vi.fn(async () => {
+      order.push("send");
+    });
+    const send = createAdminBotOnboardingSender({ env: ENV, inviteToSlackConnect, sendEmail });
+
+    const result = await send({
+      template_id: "disappearing_coauthor",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      values: { project_or_context: "alg-circuit" },
+      slack_project_channels: ["#proj-alg-circuit", "#proj-alg-circuit", " "],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    // Deduplicated, blanks dropped, and every invite lands before the mail.
+    expect(order).toEqual(["invite:#proj-alg-circuit", "send"]);
+    expect(result.payload.project_channel_invites).toEqual([
+      { channel: "#proj-alg-circuit", url: "https://slack.example/#proj-alg-circuit" },
+    ]);
+  });
+
+  // Slack answers a successful inviteShared without a url when the address already belongs to a
+  // Slack account. Treating that as failure withheld the email from five people Slack had already
+  // invited, which is the exact inverse of what the invite-then-send ordering is for.
+  it("sends when Slack invites without handing back a shareable link", async () => {
+    const sendEmail = vi.fn().mockResolvedValue(undefined);
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      inviteToSlackConnect: vi.fn().mockResolvedValue({ url: "" }),
+      sendEmail,
+    });
+
+    const result = await send({
+      template_id: "alumni",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      values: { sender_name: "Zhijing" },
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(sendEmail).toHaveBeenCalled();
+    expect(result.payload.body).toContain("check your inbox for the Slack invitation");
+    expect(result.payload.body).not.toMatch(/\{[a-z_]+\}/u);
+  });
+
+  // not_in_channel is the everyday case: a bot can only invite into a channel it is in. It used to
+  // escape as an exception and end the batch on whichever recipient hit it first.
+  it("refuses one send, rather than throwing, when the onboarding-channel invite fails", async () => {
+    const sendEmail = vi.fn();
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      inviteToSlackConnect: vi.fn().mockRejectedValue(new Error("An API error occurred: not_in_channel")),
+      sendEmail,
+    });
+
+    const result = await send({
+      template_id: "alumni",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      values: { sender_name: "Zhijing" },
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.status).toBe(502);
+    expect(result.error.message).toContain("not_in_channel");
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
+  it("does not send when a project-channel invite fails", async () => {
+    const sendEmail = vi.fn();
+    const send = createAdminBotOnboardingSender({
+      env: ENV,
+      inviteToSlackConnect: vi.fn().mockRejectedValue(new Error("no Slack channel named #proj-typo")),
+      sendEmail,
+    });
+
+    const result = await send({
+      template_id: "disappearing_coauthor",
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      values: { project_or_context: "alg-circuit" },
+      slack_project_channels: ["#proj-typo"],
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.error.status).toBe(502);
+    expect(result.error.message).toContain("#proj-typo");
     expect(sendEmail).not.toHaveBeenCalled();
   });
 

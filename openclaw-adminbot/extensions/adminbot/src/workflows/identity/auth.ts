@@ -1,4 +1,9 @@
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import {
+  isNewObservation,
+  latestBySource,
+  observationFor,
+} from "../members/location-history.js";
 import type {
   AdminBotAccountRegistration,
   AdminBotAuditEvent,
@@ -330,6 +335,21 @@ export class AdminBotAuthService {
         updated_at: this.now().toISOString(),
       });
       this.audit("auth.login_location_updated", memberId, { ...location });
+      // The stamp above is where they are *now* and overwrites itself; this is the timeline, which
+      // is what makes "when did they move" answerable and what the drift prompt reads. Appended
+      // only when the country changed, so a member signing in twice a day adds no rows.
+      if (location.country) {
+        const entry = observationFor({
+          memberId,
+          source: "login_ip",
+          raw: location.country,
+          observedAt: this.now().toISOString(),
+        });
+        const latest = latestBySource(this.store.listMemberLocations(memberId, 20)).get("login_ip");
+        if (entry && isNewObservation(latest, entry)) {
+          this.store.appendMemberLocation(entry);
+        }
+      }
     } catch {
       // Best-effort, per the option's own contract — nothing left to do with a failure here.
     }

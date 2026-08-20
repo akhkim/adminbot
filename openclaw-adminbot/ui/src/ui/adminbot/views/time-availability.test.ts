@@ -1,7 +1,7 @@
 import { render } from "lit";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
-import { upcomingMajorDeadlines } from "../data/deadline-time.ts";
+import { allUpcomingConferences, upcomingMajorDeadlines } from "../data/deadline-time.ts";
 import {
   allocationBins,
   rangeBins,
@@ -10,9 +10,12 @@ import {
   EMPTY_MILESTONE_DRAFT,
   EMPTY_TIME_AVAILABILITY_DRAFT,
   milestoneDraftError,
+  milestoneToRow,
   renderAdminBotTimeAvailability,
   type AdminBotTimeAvailabilityProps,
+  type MilestoneDraft,
 } from "./time-availability.ts";
+import { EMPTY_TRIP_DRAFT } from "./time-availability.trips.ts";
 
 // 40h capacity is the reference line the chart draws; commitments are shown in raw hours/week.
 function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
@@ -49,6 +52,8 @@ function props(overrides: Partial<AdminBotTimeAvailabilityProps> = {}) {
     onAwayDraftChange: () => {},
     milestoneDraft: { ...EMPTY_MILESTONE_DRAFT },
     onMilestoneDraftChange: () => {},
+    tripDraft: { ...EMPTY_TRIP_DRAFT },
+    onTripDraftChange: () => {},
     // The default fixture is a plain member reading their own schedule, which is the only page a
     // non-admin can reach at all.
     viewerIsAdmin: false,
@@ -360,12 +365,14 @@ describe("the chart", () => {
     const container = renderView({
       members: [
         member(),
-        member({ id: "other", name: "Bo" } as Partial<AdminBotLabMember>),
+        // Distinctive on purpose: this asserts on the page's whole text, and the deadline picker
+        // lists every venue in the snapshot -- a two-letter name would collide with a venue title.
+        member({ id: "other", name: "Zephyrine Quall" } as Partial<AdminBotLabMember>),
       ],
     });
     // Their own record renders; the other one is not reachable from this page.
     expect(container.textContent).toContain("Ada");
-    expect(container.textContent).not.toContain("Bo");
+    expect(container.textContent).not.toContain("Zephyrine");
   });
 
   it("selects nothing when a non-admin's selection is not their own record", () => {
@@ -480,6 +487,46 @@ describe("the whole-day toggle", () => {
     );
     expect(box).not.toBeNull();
     expect(box?.checked).toBe(true);
+  });
+
+  // A partial row used to be the claim "around, but less", with no number attached: no chart
+  // could draw it and no admin could plan against it. The hours field appears exactly when the
+  // whole-day answer stops being enough.
+  it("asks for hours as soon as the away row stops being a whole day", () => {
+    const whole = renderView({
+      awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "vacation" },
+    });
+    expect(whole.querySelector('[data-testid="time-away-hours"]')).toBeNull();
+
+    const partial = renderView({
+      awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "course_load", wholeDay: false },
+    });
+    expect(partial.querySelector('[data-testid="time-away-hours"]')).not.toBeNull();
+  });
+
+  it("refuses a partial row with no hours, and stores them when it has them", () => {
+    const base = {
+      ...EMPTY_TIME_AVAILABILITY_DRAFT,
+      category: "course_load" as const,
+      start: "2026-03-02",
+      end: "2026-03-15",
+      wholeDay: false,
+    };
+    expect(draftError(base)).not.toBeNull();
+    expect(draftError({ ...base, hoursPerWeek: "0" })).not.toBeNull();
+    expect(draftError({ ...base, hoursPerWeek: "200" })).not.toBeNull();
+    expect(draftError({ ...base, hoursPerWeek: "12" })).toBeNull();
+
+    const patch = draftToPatch({ ...base, hoursPerWeek: "12" }, { availability: [], timeOff: [] });
+    expect(patch.time_off?.[0]).toMatchObject({ availability: "partial", hours_per_week: 12 });
+
+    // A whole-day row zeroes the week by definition, so hours on it would be a second answer to
+    // a question already settled.
+    const wholeDay = draftToPatch(
+      { ...base, wholeDay: true, hoursPerWeek: "12" },
+      { availability: [], timeOff: [] },
+    );
+    expect(wholeDay.time_off?.[0]).not.toHaveProperty("hours_per_week");
   });
 
   // Jinesis work is measured in hours, so "away the whole day" is not a question it answers.
@@ -619,16 +666,60 @@ describe("draft validation for the new fields", () => {
 });
 
 describe("milestoneDraftError", () => {
+  const milestone = (fields: Partial<MilestoneDraft>): MilestoneDraft => ({
+    ...EMPTY_MILESTONE_DRAFT,
+    ...fields,
+  });
+
   it("requires a date and a name", () => {
     expect(milestoneDraftError({ ...EMPTY_MILESTONE_DRAFT })).not.toBeNull();
-    expect(milestoneDraftError({ date: "2027-06-12", label: "", link: "" })).not.toBeNull();
-    expect(milestoneDraftError({ date: "2027-06-12", label: "Graduation", link: "" })).toBeNull();
+    expect(milestoneDraftError(milestone({ date: "2027-06-12" }))).not.toBeNull();
+    expect(milestoneDraftError(milestone({ date: "2027-06-12", label: "Graduation" }))).toBeNull();
   });
 
   it("rejects a non-https link", () => {
     expect(
-      milestoneDraftError({ date: "2027-06-12", label: "Graduation", link: "http://x.com" }),
+      milestoneDraftError(
+        milestone({ date: "2027-06-12", label: "Graduation", link: "http://x.com" }),
+      ),
     ).not.toBeNull();
+  });
+
+  // A time with no zone is the ambiguity the pair exists to remove: the same digits mean
+  // seventeen different things depending on which clock they were read on.
+  it("refuses a time with no zone, and keeps the clock off the row unless both halves are there", () => {
+    expect(
+      milestoneDraftError(
+        milestone({ date: "2027-06-12", label: "Submission", time: "23:59", timezone: "" }),
+      ),
+    ).not.toBeNull();
+    expect(
+      milestoneDraftError(
+        milestone({
+          date: "2027-06-12",
+          label: "Submission",
+          time: "23:59",
+          timezone: "Etc/GMT+12",
+        }),
+      ),
+    ).toBeNull();
+
+    expect(
+      milestoneToRow(
+        milestone({
+          date: "2027-06-12",
+          label: "Submission",
+          time: "23:59",
+          timezone: "Etc/GMT+12",
+        }),
+      ),
+    ).toEqual({ date: "2027-06-12", label: "Submission", time: "23:59", timezone: "Etc/GMT+12" });
+    // A zone with no time is dropped rather than stored: the zone is prefilled, so keeping it
+    // would put a value on every whole-day milestone that nothing ever reads.
+    expect(milestoneToRow(milestone({ date: "2027-06-12", label: "Defence" }))).toEqual({
+      date: "2027-06-12",
+      label: "Defence",
+    });
   });
 });
 
@@ -659,18 +750,23 @@ describe("the split tables and the deadline panel", () => {
     ).toContain("20 h");
   });
 
-  // The member's own dates plus the two conference deadlines the whole lab plans around. The
-  // conferences come from the bundled snapshot the Deadlines tab already ships, through the same
-  // helper, so the two surfaces can never name a different "next" conference.
-  it("shows the member's own milestones alongside the next two conference deadlines", () => {
+  // The member's own dates plus the four nearest archival conference deadlines. Archival because
+  // that is the split a term is planned around -- those consume the paper -- and they come from
+  // the bundled snapshot the Deadlines tab already ships, through the same helper, so the two
+  // surfaces can never name a different "next" conference.
+  it("shows the member's own milestones alongside the four nearest archival conferences", () => {
     const panel = renderView({ members: [scheduled()] }).querySelector(
       '[data-testid="time-availability-deadlines"]',
     );
     expect(panel?.textContent).toContain("Graduation");
-    const expected = upcomingMajorDeadlines(Date.now(), 2);
-    expect(expected.length).toBe(2);
+    // Four is the cap, not a promise: the bundled snapshot holds as many archival conferences as
+    // it holds, and asserting a fixed count here would break every time it is regenerated.
+    const expected = upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true });
+    expect(expected.length).toBeGreaterThan(0);
+    expect(expected.length).toBeLessThanOrEqual(4);
     for (const entry of expected) {
       expect(panel?.textContent).toContain(entry.venue.name);
+      expect(entry.venue.archival).toBe(true);
     }
   });
 
@@ -683,9 +779,77 @@ describe("the split tables and the deadline panel", () => {
     const panel = renderView({
       members: [scheduled({ milestones: own } as Partial<AdminBotLabMember>)],
     }).querySelector('[data-testid="time-availability-deadlines"]');
-    for (const entry of upcomingMajorDeadlines(Date.now(), 2)) {
+    for (const entry of upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true })) {
       expect(panel?.textContent).toContain(entry.venue.name);
     }
+  });
+
+  // Four archival conferences is the right default and a bad restriction: the venue somebody needs
+  // on their timeline is often the fifth conference down. The picker reaches those, and copies the
+  // snapshot's own cutoff across so nobody retypes an AoE deadline wrong.
+  it("adds a venue the panel does not already show, with its exact cutoff", () => {
+    const onSaveSchedule = vi.fn();
+    const container = renderView({ members: [scheduled()], onSaveSchedule });
+    const picker = container.querySelector<HTMLSelectElement>(
+      '[data-testid="time-availability-conference-pick"]',
+    )!;
+    const shown = upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true }).map(
+      (entry) => entry.venue.id,
+    );
+    const offered = [...picker.options].map((option) => option.value);
+    expect(offered.length).toBeGreaterThan(0);
+    for (const id of shown) {
+      expect(offered).not.toContain(id);
+    }
+
+    picker.value = offered[0];
+    container
+      .querySelector<HTMLFormElement>('[data-testid="time-availability-add-conference"]')
+      ?.requestSubmit();
+    expect(onSaveSchedule).toHaveBeenCalledTimes(1);
+    const [, patch] = onSaveSchedule.mock.calls[0];
+    const added = patch.milestones.at(-1);
+    const venue = allUpcomingConferences(Date.now()).find(
+      (entry) => entry.venue.id === offered[0],
+    )!.venue;
+    expect(added.label).toBe(venue.name);
+    expect(added.date).toBe(venue.deadline_aoe.slice(0, 10));
+    expect(added.time).toBe(venue.deadline_aoe.slice(11, 16));
+    // AoE is UTC-12; stored as the IANA name so the number means the same to Intl as to a reader.
+    expect(added.timezone).toBe("Etc/GMT+12");
+  });
+
+  // Reading someone else's schedule is an admin act; adding to it is not.
+  it("keeps the conference picker off a schedule the viewer cannot edit", () => {
+    expect(
+      renderView({ members: [scheduled()], viewerMemberId: "someone-else" }).querySelector(
+        '[data-testid="time-availability-add-conference"]',
+      ),
+    ).toBeNull();
+  });
+
+  // A deadline stated to the minute has to say on whose clock, or the digits mean seventeen
+  // different things.
+  it("prints the exact cutoff and its zone on a milestone that carries one", () => {
+    const panel = renderView({
+      members: [
+        member({
+          milestones: [
+            {
+              date: "2027-06-12",
+              label: "Camera ready",
+              time: "17:00",
+              timezone: "America/Toronto",
+            },
+          ],
+        } as Partial<AdminBotLabMember>),
+      ],
+    }).querySelector('[data-testid="time-availability-deadlines"]')!;
+    const row = [...panel.querySelectorAll("li")].find((entry) =>
+      entry.textContent?.includes("Camera ready"),
+    );
+    expect(row?.textContent).toContain("17:00");
+    expect(row?.textContent).toContain("America/Toronto");
   });
 
   // The banner says what the list holds; the reminder about what belongs in it sits on the form
@@ -734,6 +898,19 @@ describe("the split tables and the deadline panel", () => {
     );
   });
 
+  // The page reads top-down: the deadlines first, because a fixed date is what a term is planned
+  // around and it is the thing someone opens this page to check, then the chart and its two
+  // commitment tables, then the editors as cards after them.
+  it("puts the deadline panel before the chart and its tables", () => {
+    const container = renderView({ members: [scheduled()] });
+    const body = container.querySelector(".adminbot-time-availability__body")!;
+    const report = body.querySelector(".adminbot-time-availability__report")!;
+    const panel = body.querySelector('[data-testid="time-availability-deadlines"]')!;
+    expect(report).not.toBeNull();
+    expect(panel).not.toBeNull();
+    expect(panel.compareDocumentPosition(report) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("offers the milestone form only on your own schedule", () => {
     expect(
       renderView({ members: [scheduled()] }).querySelector(
@@ -752,7 +929,7 @@ describe("the split tables and the deadline panel", () => {
     const container = renderView({
       members: [scheduled()],
       onSaveSchedule,
-      milestoneDraft: { date: "2026-11-03", label: "Thesis draft", link: "" },
+      milestoneDraft: { ...EMPTY_MILESTONE_DRAFT, date: "2026-11-03", label: "Thesis draft" },
     });
     container
       .querySelector<HTMLFormElement>('[data-testid="time-availability-milestone-form"]')
@@ -778,6 +955,18 @@ describe("the split tables and the deadline panel", () => {
     // Each keeps its own submit, so neither can clear the other's half-typed input.
     expect(jinesis.querySelector('[data-testid="time-availability-editor-submit"]')).not.toBeNull();
     expect(away.querySelector('[data-testid="time-away-editor-submit"]')).not.toBeNull();
+  });
+
+  // The away form's hint explains the action the submit button performs, so it sits in the same
+  // actions row, left of the button, rather than under the fields.
+  it("puts the time-away hint on the same row as its submit button", () => {
+    const container = renderView();
+    const away = container.querySelector('[data-testid="time-away-editor"]')!;
+    const actions = away.querySelector(".adminbot-time-availability__form-actions")!;
+    const hint = actions.querySelector(".adminbot-time-availability__form-hint");
+    expect(hint).not.toBeNull();
+    expect(hint?.textContent).toContain("whole day off");
+    expect(actions.querySelector('[data-testid="time-away-editor-submit"]')).not.toBeNull();
   });
 
   it("never offers Jinesis as a time-away category", () => {
@@ -875,5 +1064,227 @@ describe("the split tables and the deadline panel", () => {
         awayDraft: { ...EMPTY_TIME_AVAILABILITY_DRAFT, category: "other" },
       }).querySelector('[data-testid="time-availability-custom-label"]'),
     ).not.toBeNull();
+  });
+});
+
+describe("the trips editor's place on the tab", () => {
+  // Asked for by position, not just presence: "add a trip" is a sibling of "add a commitment" and
+  // reads as one only if it sits in the same stack, after the deadline editor.
+  it("is the last editor in the stack, below the big-deadline one", () => {
+    const view = renderView();
+    const editors = [
+      ...view.querySelectorAll<HTMLElement>(".adminbot-time-availability__editor"),
+    ].map((section) => section.dataset.testid);
+    expect(editors).toEqual([
+      "time-availability-editor",
+      "time-away-editor",
+      "time-availability-milestone-editor",
+      "time-availability-trip-editor",
+    ]);
+  });
+
+  // Where somebody will be is the part of their schedule an admin opens this page for, so the
+  // section stays; the form does not.
+  it("shows an admin someone else's trips without a form to change them", () => {
+    const view = renderView({
+      viewerIsAdmin: true,
+      viewerMemberId: "admin",
+      members: [member({ id: "m1", trips: [{ start: "2026-09-01", end: "2026-09-30", city: "Berlin" }] })],
+    });
+    expect(view.querySelector('[data-testid="time-availability-trip-editor"]')).not.toBeNull();
+    expect(view.querySelector('[data-testid="time-availability-trip-form"]')).toBeNull();
+    expect(view.querySelector('[data-testid="time-availability-editor"]')).toBeNull();
+    expect(view.textContent).toContain("Berlin");
+  });
+
+  it("draws no editor stack at all for a reader with nothing to see", () => {
+    const view = renderView({ viewerIsAdmin: true, viewerMemberId: "admin" });
+    expect(view.querySelector(".adminbot-time-availability__editors")).toBeNull();
+  });
+});
+
+describe("the where-strip under the chart", () => {
+  const berlin = { start: "2026-09-01", end: "2026-09-30", city: "Berlin" };
+
+  // The strip reads today's date through rangeBins, so the clock has to be driven: "which period
+  // am I where" is a question about now, and a test that only passes in September is not a test.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function renderOn(
+    day: string,
+    overrides: Partial<AdminBotLabMember> = { trips: [berlin] },
+  ): HTMLElement {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(`${day}T12:00:00Z`));
+    return renderView({
+      range: "year",
+      members: [member({ id: "m1", location: "Toronto", ...overrides })],
+    });
+  }
+
+  it("names a city per period, at the granularity the range switch chose", () => {
+    const cells = [
+      ...renderOn("2026-09-15").querySelectorAll(".adminbot-where-strip__cell"),
+    ].map((cell) => cell.textContent?.replace(/\s+/gu, " ").trim());
+    // "year" is twelve monthly bins, anchored to the start of this month.
+    expect(cells).toHaveLength(12);
+    expect(cells[0]).toContain("Berlin");
+    // Once the trip is over, the strip falls back to where they live.
+    expect(cells[1]).toContain("Toronto");
+  });
+
+  // The whole point: a period that is not all one place says which stretch was where, in a real
+  // element rather than a native title that a pointer often never triggers.
+  it("spells out from when to when, in which city", () => {
+    const view = renderOn("2026-09-15", {
+      trips: [{ start: "2026-09-20", end: "2026-09-24", city: "Vancouver" }],
+    });
+    const first = view.querySelector(".adminbot-where-strip__cell");
+    const rows = [...(first?.querySelectorAll(".adminbot-where-strip__detail-row") ?? [])].map(
+      (row) => row.textContent?.replace(/\s+/gu, " ").trim(),
+    );
+    expect(rows).toEqual([
+      "Sep 1 – Sep 19 Toronto",
+      "Sep 20 – Sep 24 Vancouver",
+      "Sep 25 – Sep 30 Toronto",
+    ]);
+    // The cell itself names the place most of the period is spent, plus how much it is not saying.
+    expect(first?.textContent).toContain("Toronto");
+    expect(first?.textContent).toContain("+2");
+  });
+
+  // The breakdown is what the "+2" points at, so it has to be reachable without a pointer.
+  it("puts the breakdown in the tab order and marks it as a tooltip", () => {
+    const first = renderOn("2026-09-15").querySelector(".adminbot-where-strip__cell");
+    expect(first?.getAttribute("tabindex")).toBe("0");
+    expect(first?.querySelector('[role="tooltip"]')).not.toBeNull();
+    // No native title: it is what gave a help cursor and then nothing.
+    expect(first?.hasAttribute("title")).toBe(false);
+  });
+
+  it("still names the place for a period spent in one city, without a count", () => {
+    const first = renderOn("2026-09-15").querySelector(".adminbot-where-strip__cell");
+    expect(
+      first?.querySelector(".adminbot-where-strip__detail")?.textContent?.replace(/\s+/gu, " "),
+    ).toContain("Berlin");
+    expect(first?.querySelector(".adminbot-where-strip__more")).toBeNull();
+  });
+
+  // Away is what the strip is for; a wall of the member's own city would bury it.
+  it("distinguishes away periods from home ones", () => {
+    const view = renderOn("2026-09-15");
+    expect(view.querySelectorAll(".adminbot-where-strip__cell--away")).toHaveLength(1);
+  });
+
+  // The bug this caught: a five-day conference makes no month majority-away, so a guard that asked
+  // only about the cell's own city hid the strip for exactly the case the hover explains.
+  it("still draws the strip for travel too short to dominate any period", () => {
+    const view = renderOn("2026-09-15", {
+      trips: [{ start: "2026-09-20", end: "2026-09-24", city: "Vancouver" }],
+    });
+    expect(view.querySelector('[data-testid="time-availability-where-strip"]')).not.toBeNull();
+  });
+
+  it("draws no strip at all for a member who is home the whole horizon", () => {
+    expect(
+      renderOn("2026-09-15", { trips: [] }).querySelector(
+        '[data-testid="time-availability-where-strip"]',
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("the big-deadlines panel", () => {
+  // Its own fixture: the one in "the split tables and the deadline panel" is scoped to that block.
+  const scheduled = (overrides: Partial<AdminBotLabMember> = {}) =>
+    member({ milestones: [{ date: "2027-06-12", label: "Graduation" }], ...overrides });
+
+  // The snapshot is 107 entries and 101 of them are workshops sharing a handful of instants, so an
+  // all-venues picker buried the conference somebody wanted under a hundred NeurIPS workshops.
+  it("offers conferences and no workshops", () => {
+    const picker = renderView({ members: [scheduled()] }).querySelector<HTMLSelectElement>(
+      '[data-testid="time-availability-conference-pick"]',
+    )!;
+    const conferences = new Set(
+      allUpcomingConferences(Date.now()).map((entry) => entry.venue.id),
+    );
+    const offered = [...picker.options].map((option) => option.value);
+    expect(offered.length).toBeGreaterThan(0);
+    for (const id of offered) {
+      expect(conferences.has(id)).toBe(true);
+    }
+  });
+
+  it("presents the picker as one of the tab's editors", () => {
+    const view = renderView({ members: [scheduled()] });
+    const section = view.querySelector('[data-testid="time-availability-add-conference-section"]');
+    expect(section?.querySelector(".card-title")?.textContent).toContain("Add a conference");
+    expect(section?.querySelector("button.primary")).not.toBeNull();
+    // Deliberately not classed as an editor: it lives in the deadlines panel, and the commitment
+    // form is found by .adminbot-time-availability__form.
+    expect(section?.classList.contains("adminbot-time-availability__editor")).toBe(false);
+    expect(section?.querySelector(".adminbot-time-availability__form")).toBeNull();
+  });
+
+  // The lab's four are context, not an instruction. Somebody not submitting to NeurIPS should be
+  // able to clear it off their own page without touching anyone else's.
+  it("lets a member hide one of the lab's preset conferences", () => {
+    const onSaveSchedule = vi.fn();
+    const view = renderView({ members: [scheduled()], onSaveSchedule });
+    view
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-deadline-remove-preset"]')
+      ?.click();
+    expect(onSaveSchedule).toHaveBeenCalledTimes(1);
+    const [, patch] = onSaveSchedule.mock.calls[0];
+    expect(patch.dismissed_deadlines).toHaveLength(1);
+    // Written as the venue name, which is also how an added venue is stored, so one identity
+    // covers both directions.
+    const nearest = upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true })[0];
+    expect(patch.dismissed_deadlines[0]).toBe(nearest?.venue.name);
+  });
+
+  it("drops a hidden conference from the panel and offers it back in the picker", () => {
+    const nearest = upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true })[0];
+    const view = renderView({
+      members: [scheduled({ dismissed_deadlines: [nearest?.venue.name ?? ""] })],
+    });
+    // The list, not the whole panel: the picker below it is inside the same aside, and offering
+    // the venue back there is the other half of what this test is checking.
+    const listed = view.querySelector(".adminbot-time-availability__deadline-list")?.textContent;
+    expect(listed).not.toContain(nearest?.venue.name);
+    const offered = [
+      ...view.querySelectorAll<HTMLOptionElement>(
+        '[data-testid="time-availability-conference-pick"] option',
+      ),
+    ].map((option) => option.value);
+    expect(offered).toContain(nearest?.venue.id);
+  });
+
+  // The bug this pins: the link and the remove button were both placed in the same grid cell, so
+  // they drew on top of each other, and the AoE cutoff was held on one line inside a narrow tile
+  // and clipped at its border.
+  it("gives each part of a deadline tile its own place", () => {
+    const tile = renderView({ members: [scheduled()] }).querySelector(
+      ".adminbot-time-availability__deadline-list li",
+    );
+    const actions = tile?.querySelector(".adminbot-time-availability__deadline-actions");
+    // The link and the button are siblings in the actions row, not two things in one cell.
+    expect(actions?.querySelector("a")).not.toBeNull();
+    expect(actions?.querySelector("button")).not.toBeNull();
+    // The date and its cutoff sit together, below the name.
+    const when = tile?.querySelector(".adminbot-time-availability__deadline-when");
+    expect(when?.querySelector(".adminbot-time-availability__deadline-date")).not.toBeNull();
+    expect(when?.querySelector(".adminbot-time-availability__deadline-clock")).not.toBeNull();
+    expect(tile?.querySelector(".adminbot-time-availability__deadline-label")).not.toBeNull();
+  });
+
+  it("keeps the hide button off a schedule the viewer cannot edit", () => {
+    expect(
+      renderView({ members: [scheduled()], viewerMemberId: "someone-else" }).querySelector(
+        '[data-testid="time-availability-deadline-remove-preset"]',
+      ),
+    ).toBeNull();
   });
 });

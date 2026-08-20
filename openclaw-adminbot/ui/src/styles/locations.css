@@ -1,0 +1,186 @@
+/* Where members are — the confirmation banner, the trips log, and the calendar's away
+   marker. Split out of meetings.css once that file held three unrelated features; card,
+   button and muted-text chrome all come from components.css, so this is only layout. */
+
+/* The confirmation banner: one card, with both answers peers on one row so neither reads as
+   the default. */
+.location-prompt__form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.location-prompt__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.location-prompt__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.location-prompt__note {
+  margin-top: var(--space-3);
+  font-size: 0.85em;
+}
+
+/* An attendee's local time in the calendar's invite list. The odd-hour variant is a weight change
+   rather than a color, so it still reads as a flag with color vision differences or in print. */
+.adminbot-calendar__match-local {
+  margin-left: var(--space-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.adminbot-calendar__match-local--odd {
+  font-weight: 600;
+}
+
+.adminbot-calendar__match-drift {
+  margin-left: var(--space-2);
+  font-size: 0.85em;
+}
+
+/* Trips: the list inside the tab's fourth editor. The section, its title, hint, form grid and
+   submit all come from .adminbot-time-availability__editor and friends in components.css, the same
+   as the three editors above it — only the row list is specific to trips. */
+.adminbot-trips__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.adminbot-trips__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-3);
+}
+
+.adminbot-trips__city {
+  font-weight: 600;
+}
+
+/* The trip that is running right now, which is the one a reader is looking for. */
+.adminbot-trips__row--active .adminbot-trips__city {
+  text-decoration: underline;
+}
+
+/* The where-strip under the chart: one cell per bar, so it divides the horizon the same way the
+   chart does. Equal-width columns rather than time-proportional ones, matching the chart's own
+   axis, which reads as "next, and next after that" rather than as elapsed time. */
+.adminbot-where-strip {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 2px;
+  margin-top: var(--space-2);
+}
+
+.adminbot-where-strip__cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  padding: var(--space-1) 2px;
+  border-top: 2px solid transparent;
+  font-size: 0.72em;
+  text-align: center;
+}
+
+/* Away is what the strip is for; home periods stay quiet so the trips are what the eye finds. */
+.adminbot-where-strip__cell--away {
+  border-top-color: currentColor;
+}
+
+.adminbot-where-strip__cell:not(.adminbot-where-strip__cell--away) .adminbot-where-strip__city {
+  opacity: 0.45;
+}
+
+.adminbot-where-strip__label {
+  opacity: 0.6;
+}
+
+.adminbot-where-strip__city {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "+2": there is more in this period than the one city the cell had room for. Quiet, because it is
+   a pointer at the hover rather than a figure worth reading on its own. */
+.adminbot-where-strip__more {
+  opacity: 0.55;
+  font-size: 0.9em;
+}
+
+/* The breakdown, revealed on hover and on keyboard focus. A native title gave a help cursor and
+   then often nothing -- slow, suppressed while the pointer moves, and unreachable by keyboard --
+   so the "+2" pointed at content that could not reliably be read. */
+.adminbot-where-strip__detail {
+  position: absolute;
+  bottom: calc(100% + var(--space-1));
+  left: 50%;
+  z-index: 5;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  min-width: max-content;
+  max-width: 18rem;
+  padding: var(--space-2) var(--space-3);
+  transform: translateX(-50%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated, var(--bg));
+  box-shadow: var(--shadow-md, 0 4px 16px rgb(0 0 0 / 35%));
+  font-size: var(--control-ui-text-xs);
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+}
+
+.adminbot-where-strip__cell:hover .adminbot-where-strip__detail,
+.adminbot-where-strip__cell:focus-visible .adminbot-where-strip__detail,
+.adminbot-where-strip__cell:focus .adminbot-where-strip__detail {
+  display: flex;
+}
+
+.adminbot-where-strip__detail-title {
+  font-weight: 600;
+  opacity: 0.7;
+}
+
+.adminbot-where-strip__detail-row {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
+.adminbot-where-strip__detail-range {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+/* Focusable so the breakdown is reachable without a pointer; the outline is the browser's. */
+.adminbot-where-strip__cell:focus-visible {
+  border-radius: var(--radius-sm);
+}
+
+/* Deliberately quiet: the grid's job is the calendar, and this is context beside it. */
+.adminbot-calendar__day-trips {
+  display: block;
+  font-size: 0.72em;
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -66,16 +66,13 @@ describe("iconForTab", () => {
       adminbotCalendar: "clock",
       adminbotDeadlines: "loader",
       activity: "activity",
-      workboard: "folder",
       channels: "link",
-      instances: "radio",
       sessions: "fileText",
       usage: "barChart",
       cron: "loader",
       agents: "folder",
       skills: "zap",
       nodes: "monitor",
-      dreams: "moon",
       config: "settings",
       communications: "send",
       appearance: "spark",
@@ -118,16 +115,13 @@ describe("titleForTab", () => {
       adminbotCalendar: "Calendar",
       adminbotDeadlines: "Deadlines",
       activity: "Activity",
-      workboard: "Workboard",
       channels: "Channels",
-      instances: "Instances",
       sessions: "Sessions",
       usage: "Usage",
       cron: "Tasks & Tools",
       agents: "Agents",
       skills: "Skills",
       nodes: "Nodes",
-      dreams: "Dreaming",
       config: "Settings",
       communications: "Communications",
       appearance: "Appearance",
@@ -164,16 +158,13 @@ describe("subtitleForTab", () => {
       adminbotCalendar: "Draft an event, and invite the people the roster can describe.",
       adminbotDeadlines: "Upcoming conference & workshop deadlines.",
       activity: "Browser-local tool activity summaries.",
-      workboard: "Agent work queue and session handoff.",
       channels: "Channels and settings.",
-      instances: "Connected clients and nodes.",
       sessions: "Active sessions and defaults.",
       usage: "API usage and costs.",
       cron: "Recurring runs, and tools you run on command.",
       agents: "Workspaces, tools, identities.",
       skills: "Skills and API keys.",
       nodes: "Paired devices and commands.",
-      dreams: "Memory dreaming, consolidation, and reflection.",
       config: "Edit openclaw.json.",
       communications: "Channels, messages, and audio settings.",
       appearance: "Theme, UI, and setup wizard settings.",
@@ -250,8 +241,6 @@ describe("tabFromPath", () => {
     expect(tabFromPath("/adminbot/deadlines")).toBe("adminbotDeadlines");
     expect(tabFromPath("/activity")).toBe("activity");
     expect(tabFromPath("/sessions")).toBe("sessions");
-    expect(tabFromPath("/dreaming")).toBe("dreams");
-    expect(tabFromPath("/dreams")).toBe("dreams");
   });
 
   // Root is the dashboard for a signed-in viewer; app-render still coerces a visitor's root to
@@ -287,8 +276,6 @@ describe("inferBasePathFromPathname", () => {
   it("returns empty string for direct tab path", () => {
     expect(inferBasePathFromPathname("/chat")).toBe("");
     expect(inferBasePathFromPathname("/overview")).toBe("");
-    expect(inferBasePathFromPathname("/dreaming")).toBe("");
-    expect(inferBasePathFromPathname("/dreams")).toBe("");
   });
 
   it("infers base path from nested paths", () => {

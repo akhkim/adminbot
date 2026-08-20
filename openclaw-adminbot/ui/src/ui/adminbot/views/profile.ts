@@ -1049,11 +1049,25 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
     member.id && props.onSave(member.id, collectBasics(form));
     runAccountChecks(form, state);
   };
+  // The explicit save. Autosave still does the work -- this button changes nothing about what is
+  // written, only about when the member gets to decide it happened. A form that only ever saves
+  // itself gives someone who has just corrected their phone number no way to *finish*: they either
+  // wait out a debounce they cannot see or navigate away and hope. Pressing this cancels the
+  // pending timer and commits immediately, so the toast is an answer to a deliberate act.
+  const saveNow = (form: HTMLFormElement) => {
+    if (basicsSaveTimer) {
+      clearTimeout(basicsSaveTimer);
+      basicsSaveTimer = undefined;
+    }
+    // Unconditional, unlike flushAutosave: with no pending timer that helper does nothing, and a
+    // Save button that silently no-ops because the debounce already fired is the one outcome a
+    // person pressing it cannot tell apart from a broken button.
+    commit(form)();
+  };
   return html`
     <section class="profile__section" data-testid="profile-basics">
       <div class="profile__section-head">
         <h2 class="profile__section-title">${t("profile.basics.title")}</h2>
-        <span class="profile__autosave-hint">${t("profile.basics.autosaveHint")}</span>
       </div>
       <form
         class="profile__form"
@@ -1122,6 +1136,23 @@ function renderBasics(state: AppViewState, member: LabMember, props: ProfileProp
             </div>
           `,
         )}
+        <div class="profile__form-actions">
+          <span class="profile__autosave-hint">${t("profile.basics.autosaveHint")}</span>
+          <button
+            type="button"
+            class="btn primary"
+            data-testid="profile-basics-save"
+            @click=${(event: Event) => {
+              const button = event.currentTarget as HTMLButtonElement;
+              const form = button.closest("form");
+              if (form instanceof HTMLFormElement) {
+                saveNow(form);
+              }
+            }}
+          >
+            ${t("profile.basics.save")}
+          </button>
+        </div>
       </form>
     </section>
   `;

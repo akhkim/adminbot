@@ -149,6 +149,10 @@ const STATIC_ASSET_EXTENSIONS = new Set([
 
 const CONTROL_UI_NAMESPACE_PREFIX = "/__openclaw__/";
 const CONTROL_UI_ROOT_PUBLIC_ASSETS = new Set([
+  // The sidebar and login-gate brand mark. Without it here a request for the logo under the
+  // internal namespace falls through to a literal "__openclaw__/adminbot-logo.png" on disk,
+  // 404s, and the <img> degrades to its alt text -- which is what shipping it missed.
+  "adminbot-logo.png",
   "apple-touch-icon.png",
   "favicon-32.png",
   "favicon.ico",

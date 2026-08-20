@@ -511,7 +511,9 @@
   width: 32px;
   height: 32px;
   flex-shrink: 0;
-  border-radius: var(--radius-md);
+  /* The mark is a circle with transparent corners, so the frame is round rather than the
+     rounded square every other avatar in the shell uses. */
+  border-radius: 50%;
 }
 
 .sidebar-brand__copy {
@@ -612,6 +614,11 @@
 
 .nav-section__items {
   display: grid;
+  /* minmax(0, 1fr), not the default auto: a grid column sizes to its widest child, so one row
+     that cannot shrink -- "Social Media Bot" plus its COMING SOON badge -- widened every row in
+     the group past the 258px sidebar, and .sidebar-nav's overflow-x: hidden sheared the right
+     edge off the active row's highlight. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
 }
 
@@ -680,6 +687,8 @@
   display: flex;
   align-items: center;
   justify-content: flex-start;
+  /* Lets the row shrink inside its column instead of pushing past it; the label ellipsizes. */
+  min-width: 0;
   gap: 12px;
   /* Pointer-sized rows are the mobile layout's job (layout.mobile.css keeps 40px there); on a
      desktop sidebar the extra height only spreads a group out. */
@@ -726,6 +735,11 @@
   line-height: 3;
   letter-spacing: var(--tracking-tight);
   white-space: nowrap;
+  /* The label is what gives way when a row is too narrow -- the badge beside it stays whole,
+     because "coming soon" truncated to "comin..." says less than a clipped label does. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .nav-item:hover {
@@ -839,7 +853,7 @@
 .sidebar--collapsed .sidebar-brand__logo {
   width: 34px;
   height: 34px;
-  border-radius: var(--radius-md);
+  border-radius: 50%;
 }
 
 .sidebar-utility-group {
@@ -2331,16 +2345,6 @@
   --control-ui-text-xl: 20px;
 }
 
-.my-work .my-work-add-form button[type="submit"] {
-  background: #dbdbdf;
-  color: #000000;
-  border-color: #2a2a30;
-}
-
-.my-work .my-work-add-form button[type="submit"]:hover {
-  background: #aaaac0;
-}
-
 .my-work-add-form {
   display: flex;
   align-items: center;
@@ -3105,6 +3109,16 @@
   color: var(--muted);
 }
 
+/* The hint and the explicit Save sit together at the foot of the form: the sentence explains why
+   the button is optional, and reading it beside the button is the only place that pairing lands. */
+.profile__form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
 .profile__account-check {
   font-size: var(--control-ui-text-xs);
 }
@@ -3306,10 +3320,34 @@
   flex-direction: column;
   gap: var(--space-5);
   padding: var(--space-4) var(--space-5);
-  border: 1px solid var(--border);
-  border-left: 2px solid transparent;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 50%, var(--border));
   border-radius: var(--radius-lg);
-  background: var(--bg-accent);
+  /* A touch lighter than the page so the card reads as a surface, without jumping all the way to
+     --bg-elevated. The mix percentage is the knob if this needs to go lighter or back. */
+  background: color-mix(in srgb, var(--bg-elevated) 72%, var(--bg-accent));
+  /* Newly added papers slide in softly; existing cards keep their DOM on re-render, so only the
+     fresh card animates. */
+  animation: rise 260ms var(--ease-out) both;
+}
+
+/* A short stagger on first paint so a full list reads as arriving together, not as one block. */
+.my-work__items > *:nth-child(1) {
+  animation-delay: 0ms;
+}
+.my-work__items > *:nth-child(2) {
+  animation-delay: 40ms;
+}
+.my-work__items > *:nth-child(3) {
+  animation-delay: 80ms;
+}
+.my-work__items > *:nth-child(4) {
+  animation-delay: 120ms;
+}
+.my-work__items > *:nth-child(5) {
+  animation-delay: 160ms;
+}
+.my-work__items > *:nth-child(n + 6) {
+  animation-delay: 200ms;
 }
 
 /* A blocked item is marked where the work is, not only in the band above it. */
@@ -4269,9 +4307,27 @@
   min-width: 0;
 }
 
+/* Name first, stage after it. A workshop track is ninety-nine rows that agree on their stage and
+   differ only in name, so the name carries the row and the stage rides along one step down in
+   size -- the reverse of what the panel used to print, which was the stage ninety-nine times. */
+.deadline-row__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
 .deadline-row__name {
   font-size: var(--control-ui-text-md);
   color: var(--text);
+}
+
+.deadline-row__stage {
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-tight);
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 /* Which deadline this is -- a commitment and a submission for one venue are different dates, and
@@ -4303,6 +4359,12 @@
   font-size: var(--control-ui-text-xs);
   letter-spacing: var(--tracking-tight);
   vertical-align: 1px;
+}
+
+/* Inside a row the chip is a flex item with its own gap; the inline margin is for the lead
+   card, where it sits in running text. */
+.deadline-row__title .deadline-row__route {
+  margin-left: 0;
 }
 
 .deadline-row__route[data-route="direct"] {
@@ -4927,68 +4989,145 @@
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  margin: 0 0 var(--space-2);
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
+  margin: 0 0 var(--space-3);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: var(--text);
 }
 
 .tasks__count {
-  padding: 0.1rem 0.45rem;
-  border: 1px solid var(--accent);
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--border);
   border-radius: 999px;
-  color: var(--accent);
-  letter-spacing: 0;
-  text-transform: none;
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
 }
 
 .tasks__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr));
-  gap: var(--space-2);
+  grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr));
+  gap: var(--space-3);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* Next-step suggestions read as notes, not as more chrome: a quiet card, no filled boxes. The
+   state -- yours, someone else's, optional -- is one colored edge plus a matching dot on the
+   branch chip, so a glance tells you whose move it is. */
 .task {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 0.15rem;
-  padding: var(--space-3);
+  gap: var(--space-1);
+  padding: var(--space-4);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius-sm);
-  background: var(--bg-muted, transparent);
+  border-radius: var(--radius-md);
+  background: var(--bg-accent);
+  overflow: hidden;
 }
 
-/* An approval is someone else's move, so it should not look like work you can pick up. */
+.task::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: var(--space-3);
+  bottom: var(--space-3);
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* An approval is someone else's move, so it should not look like work you can pick up. Warm, not
+   alarmed: amber says "awaiting others", the red edge the old design used said urgent. */
 .task--approval {
-  border-left-color: var(--danger, var(--warn));
+  background: var(--warn-subtle);
+}
+
+.task--approval::before {
+  background: var(--warn);
 }
 
 .task--optional {
-  border-left-color: var(--border);
   opacity: 0.75;
 }
 
+.task--optional::before {
+  background: var(--border-strong);
+}
+
 .task__branch {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.1rem 0.6rem 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--accent-subtle);
+  color: var(--accent);
   font-size: var(--control-ui-text-xs);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.task__branch::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.task--approval .task__branch {
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
+.task--optional .task__branch {
+  background: var(--bg-muted);
   color: var(--muted);
 }
 
 .task__label {
-  font-size: var(--control-ui-text-sm);
-  line-height: 1.3;
+  margin-top: var(--space-1);
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text-strong);
+}
+
+.task__hint {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted-strong);
+  line-height: 1.45;
+}
+
+/* The footer separates who owns it from what it unlocks, so the small print reads as a structured
+   answer instead of one long muted soup. */
+.task__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-1) var(--space-2);
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.task__who {
+  color: var(--muted-strong);
+  font-weight: 500;
+}
+
+.task__unblocks {
+  color: var(--muted);
 }
 
 .task__who,
 .task__unblocks {
   font-size: var(--control-ui-text-xs);
-  color: var(--muted);
+  line-height: 1.5;
 }
 
 /* ===========================================
@@ -6085,13 +6224,74 @@
   display: grid;
   grid-template-columns: 1fr;
   align-items: stretch;
-  gap: var(--space-3);
+  gap: var(--space-4);
   max-width: 30rem;
+  /* A centered card, so the form reads as its own thing rather than a raw strip glued to the list. */
+  margin-inline: auto;
+  padding: var(--space-6);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-md);
+  /* Drop in from above when the Add button opens it, so the scroll-to-form lands on motion, not a
+     hard cut. */
+  animation: form-drop 240ms var(--ease-out) both;
+  /* Room under any sticky chrome so the scroll target isn't half-hidden when we scroll to it. */
+  scroll-margin-block-start: var(--space-4);
+}
+
+@keyframes form-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.my-work-add-form__head {
+  display: grid;
+  gap: var(--space-1);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.my-work-add-form__head h3 {
+  margin: 0;
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  color: var(--text-strong);
+  line-height: 1.2;
+}
+
+.my-work-add-form__head p {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .my-work-add-form.register .input {
   flex: none;
   width: 100%;
+}
+
+.my-work-add-form.register .register__field {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.my-work-add-form.register .register__label {
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.my-work-add-form.register .register__hint {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
 }
 
 .my-work-add-form.register fieldset {
@@ -6111,6 +6311,31 @@
   gap: var(--space-1);
 }
 
+.my-work-add-form.register .register__actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: var(--space-1);
+}
+
+.my-work-add-form.register .register__actions button[type="submit"] {
+  background: #d4d4d8;
+  border-color: #d4d4d8;
+  color: #09090b;
+  font-weight: 600;
+}
+
+.my-work-add-form.register .register__actions button[type="submit"]:hover {
+  background: #e4e4e7;
+  border-color: #e4e4e7;
+}
+
+.my-work-add-form.register .register__actions button[type="submit"]:active {
+  background: #c6c6ca;
+  border-color: #c6c6ca;
+}
+
 /* Target venue and confidence, editable where they are displayed. Styled down to read as text
    until you touch them -- the card is for scanning, not a form. */
 .my-work-item__target {
@@ -6122,19 +6347,31 @@
 }
 
 .target__select {
-  padding: 0.15rem 0.4rem;
-  border: 1px solid transparent;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: transparent;
   color: var(--muted);
-  font-size: var(--control-ui-text-xs);
+  font-size: var(--control-ui-text-sm);
   font-family: inherit;
   cursor: pointer;
+  /* The card sits on a near-black surface and nothing here opts out of the dark scheme, but the
+     native popup follows the select's own color-scheme, not the page's: pin it so the option list
+     (and the platform arrow) stay dark on every engine instead of falling back to a light sheet. */
+  color-scheme: dark;
+}
+
+/* Bulletproof popup theming: some engines paint the option list from the select's background
+   (transparent here), which would leave a white sheet under the text. Give every option an
+   explicit dark surface so the open dropdown never flashes light. */
+.target__select option {
+  color: var(--text);
+  background-color: var(--bg-elevated);
 }
 
 .target__select:hover,
 .target__select:focus-visible {
-  border-color: var(--border);
+  border-color: var(--border-hover);
   color: var(--text);
 }
 
@@ -6230,18 +6467,100 @@
 .blocker-form {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  width: min(420px, 100%);
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel);
+  gap: var(--space-4);
+  width: 100%;
+  /* The item cards above use this inset surface; the form is a surface on the same system rather
+     than a squashed panel, and the card padding is the roomier of the two. */
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 50%, var(--border));
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+/* Stage and title on one row when the card is wide enough, each stacking full width otherwise. */
+.blocker-form__fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+/* Flex column, not grid: a grid row is sized by a select's option content (a beat taller than the
+   box it draws), which pushed the stage select down past its sibling. Flex sizes each control to
+   its own box, so the two fields' controls line up. */
+.blocker-form .register__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.blocker-form .register__label {
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.blocker-form .register__hint {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.blocker-form .register__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
 }
 
 .blocker-form__reviewer {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--control-ui-text-sm);
   color: var(--muted);
+}
+
+/* Reviewer reads left, buttons sit right -- each end of the footer keeps its own job. */
+.blocker-form__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+/* The stage select is a native control and ignores the field rule's line-height, so it rendered
+   a beat taller than the title input beside it -- two fields meant to read as one row. Strip the
+   native chrome and draw the same chevron the time-availability selects use, which makes the pair
+   measure the same height. */
+.blocker-form select.input {
+  appearance: none;
+  -webkit-appearance: none;
+  /* The select sizes its box to the option content even with the native chrome stripped, which
+     still came out a beat taller than the input beside it. Pin the height to the same line-box
+     formula `.input` measures, so the two fields in the pair always match. */
+  height: calc(var(--control-ui-text-md) * 1.45 + 12px + 2px);
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath fill='%23a1a1aa' d='M4 6l4 4 4-4z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 14px 14px;
+}
+
+/* The view's primary actions use the same muted dark button as the Time Availability editors:
+   the accent-blue default reads as the loudest thing on the page when it is just "add a row". */
+.my-work .btn.primary {
+  border: 1px solid #45454d;
+  background: #2e2e34;
+  color: #e4e4e7;
+}
+
+.my-work .btn.primary:hover {
+  background: #3a3a42;
+  border-color: #505059;
+}
+
+.my-work .btn.primary:active {
+  background: #26262b;
+  border-color: #45454d;
 }
 
 /* History on the left, sort controls on the right: the thing you rarely open stays out of the
@@ -6709,9 +7028,9 @@
   border: 1px solid rgb(217 164 65 / 35%);
   border-radius: 8px;
   background: rgb(217 164 65 / 8%);
-  font-size: 12px;
+  font-size: var(--control-ui-text-sm);
   line-height: 1.45;
-  color: var(--muted);
+  color: var(--text);
 }
 
 .blocker-form__notice-icon svg {

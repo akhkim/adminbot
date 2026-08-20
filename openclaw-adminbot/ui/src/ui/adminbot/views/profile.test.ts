@@ -1,8 +1,8 @@
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { adminBotMandatoryProfileFields } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { LabMember, MemberProfileUpdate } from "../auth/session.ts";
-import { adminBotMandatoryProfileFields } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { renderProfile } from "./profile.ts";
 
 function createMember(overrides: Partial<LabMember> = {}): LabMember {
@@ -986,10 +986,25 @@ describe("renderProfile visual structure", () => {
     expect(basics.querySelector('input[name="name"]')).not.toBeNull();
     expect(basics.querySelector('select[name="role"]')).not.toBeNull();
 
-    // The edit affordance and the duplicate fill-in-the-blanks form are both gone.
+    // The edit affordance and the duplicate fill-in-the-blanks form are both gone. The Save
+    // button that remains is not one of them: it does not gate editing, it ends it.
     expect(container.querySelector('[data-testid="profile-basics-edit"]')).toBeNull();
     expect(container.querySelector('[data-testid="profile-blanks"]')).toBeNull();
-    expect(basics.querySelector(".btn.primary")).toBeNull();
+  });
+
+  // Autosave still does the writing. The button exists so a member who has just made a correction
+  // can finish it, rather than waiting out a debounce they cannot see -- so it must commit even
+  // when no timer is pending, which is the case a flush-only handler silently no-ops on.
+  it("saves on demand as well as automatically", () => {
+    const member = createMember();
+    const state = createState(member);
+    const onSave = vi.fn();
+    const container = renderPage(state, onSave);
+
+    const save = container.querySelector<HTMLButtonElement>('[data-testid="profile-basics-save"]')!;
+    save.click();
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(onSave.mock.calls[0][0]).toBe(member.id);
   });
 
   it("keeps the governed email out of the always-editable record", () => {

@@ -116,6 +116,9 @@ MILESTONES = (
     "abstract",
     "direct_submission",
     "full_paper",
+    # A demo track is its own submission on its own date, not a stage of the main
+    # paper's review, but a paper meets it around where the full paper sits.
+    "demo",
     "commitment",
     "rebuttal",
     "notification",
@@ -126,6 +129,7 @@ MILESTONE_LABELS = {
     "abstract": "Abstract",
     "direct_submission": "Direct submission",
     "full_paper": "Full paper",
+    "demo": "Demo submission",
     "commitment": "ARR commitment",
     "rebuttal": "Rebuttal ends",
     "notification": "Notification",
@@ -144,6 +148,8 @@ _MILESTONE_FROM_LABEL = {
     "direct submission": "direct_submission",
     "full paper": "full_paper",
     "paper deadline": "full_paper",
+    "demo submission": "demo",
+    "system demonstrations": "demo",
     "commitment": "commitment",
     "arr commitment": "commitment",
     "rebuttal ends": "rebuttal",

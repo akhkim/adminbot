@@ -89,6 +89,7 @@ describe("AdminBot deadline dataset generation", () => {
       "abstract",
       "direct_submission",
       "full_paper",
+      "demo",
       "commitment",
       "rebuttal",
       "notification",

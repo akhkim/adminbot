@@ -40,7 +40,7 @@ const STEP_NODES: Record<string, NodeId[]> = {
   brainstorming_docs: ["BR"],
   overleaf_writing: ["OV", "PM", "FX", "PDF"],
   submission: ["CK", "SB"],
-  google_drive_pdf: ["DR", "DS", "DA"],
+  google_drive_pdf: ["DR", "DA"],
   arxiv_polish: ["AK", "PK", "GT"],
   social_posts: ["XD", "LI", "CP", "SF", "PS"],
   slide_making: ["SL"],
@@ -50,9 +50,11 @@ const STEP_NODES: Record<string, NodeId[]> = {
 /**
  * A stored artifact link proves its node is done.
  *
- * Only unambiguous mappings are listed. `google_drive_pdf_url` maps to `DR` (a Drive PDF exists)
- * and deliberately not to `DS`/`DA`, because one URL cannot say whether it is the submitted
- * version or the arXiv version — guessing there would report work as finished that nobody did.
+ * `google_drive_pdf_url` maps to `DR` (a Drive PDF exists). It used to stop there, because the
+ * graph carried both a submitted-version and an arXiv-version node and one URL could not say
+ * which it was. There is only one Drive PDF now, so the ambiguity that forced the caution is
+ * gone -- but this table stays conservative and lets the slot rows, which record the version
+ * explicitly, be the thing that closes `DA`.
  */
 const ARTIFACT_NODES: Array<[keyof NonNullable<AdminBotPaperRecord["artifacts"]>, NodeId]> = [
   ["brainstorming_doc_url", "BR"],
@@ -263,7 +265,6 @@ export function nextStepFor(paper: AdminBotPaperRecord): NextStep | undefined {
   };
 }
 
-
 /**
  * Human phrasing for every node, because the graph's own labels are written for the graph.
  *
@@ -272,36 +273,82 @@ export function nextStepFor(paper: AdminBotPaperRecord): NextStep | undefined {
  * saying what it means, so someone reading the card alone knows what to go and do.
  */
 const TASK_COPY: Record<string, { title: string; hint: string }> = {
-  BR: { title: "Write the brainstorm doc", hint: "A short write-up of the idea, so it can be registered with AdminBot." },
+  BR: {
+    title: "Write the brainstorm doc",
+    hint: "A short write-up of the idea, so it can be registered with AdminBot.",
+  },
   OV: { title: "Start the Overleaf draft", hint: "Create the project and get the skeleton in." },
-  PM: { title: "Get PaperMentor feedback", hint: "Run the draft past PaperMentor and collect its comments." },
+  PM: {
+    title: "Get PaperMentor feedback",
+    hint: "Run the draft past PaperMentor and collect its comments.",
+  },
   FX: { title: "Merge the easy fixes", hint: "Apply the low-cost suggestions from the review." },
-  PDF: { title: "Compile a clean PDF", hint: "The draft has to build without errors before anything else starts." },
+  PDF: {
+    title: "Compile a clean PDF",
+    hint: "The draft has to build without errors before anything else starts.",
+  },
   SL: { title: "Make the slides", hint: "Talk slides for the venue." },
   PO: { title: "Make the poster", hint: "Poster version, if the venue asks for one." },
   TV: { title: "Record the talk video", hint: "Short recorded version of the talk." },
-  LG: { title: "Log the links in the shared folder", hint: "Put slides, poster and video where the lab can find them." },
   XD: { title: "Draft the X post", hint: "A short thread announcing the paper." },
-  LI: { title: "Draft the LinkedIn post", hint: "The long-form announcement. Drafted from the paper, not from the X thread." },
-  CP: { title: "Collect coauthor feedback", hint: "Send the draft posts round and wait for replies." },
-  SF: { title: "Finalise the social copy", hint: "Fold the coauthor comments into a final version." },
+  LI: {
+    title: "Draft the LinkedIn post",
+    hint: "The long-form announcement. Drafted from the paper, not from the X thread.",
+  },
+  CP: {
+    title: "Collect coauthor feedback",
+    hint: "Send the draft posts round and wait for replies.",
+  },
+  SF: {
+    title: "Finalise the social copy",
+    hint: "Fold the coauthor comments into a final version.",
+  },
   DR: { title: "Upload the PDF to Drive", hint: "The lab's own copy of the paper." },
-  DS: { title: "Save the submitted version", hint: "Keep the exact PDF that went to the venue." },
   DA: { title: "Save the arXiv version", hint: "The version you intend to post publicly." },
-  AK: { title: "Finalise authors and acknowledgements", hint: "Check the author list and thank-yous before packaging." },
-  PK: { title: "Prepare the arXiv package", hint: "Build the upload bundle. Preparing it is not permission to post." },
-  GT: { title: "Get Zhijing's OK to post", hint: "An explicit yes is needed before anything goes public." },
-  BE: { title: "Update the tracking spreadsheet", hint: "Optional bookkeeping. Nothing waits on it." },
-  CK: { title: "Run the submission checks", hint: "Formatting, page limit, anonymity, references." },
+  AK: {
+    title: "Finalise authors and acknowledgements",
+    hint: "Check the author list and thank-yous before packaging.",
+  },
+  PK: {
+    title: "Prepare the arXiv package",
+    hint: "Build the upload bundle. Preparing it is not permission to post.",
+  },
+  GT: {
+    title: "Get Zhijing's OK to post",
+    hint: "An explicit yes is needed before anything goes public.",
+  },
+  BE: {
+    title: "Update the tracking spreadsheet",
+    hint: "Optional bookkeeping. Nothing waits on it.",
+  },
+  CK: {
+    title: "Run the submission checks",
+    hint: "Formatting, page limit, anonymity, references.",
+  },
   SB: { title: "Submit to the venue", hint: "Upload, and keep the submission id." },
   RV: { title: "Wait for reviews", hint: "The venue's clock. Nothing to do until they arrive." },
   RS: { title: "Write the rebuttal", hint: "Respond inside the rebuttal window. Hard deadline." },
-  DC: { title: "Record the decision", hint: "Log accept or reject so the rest of the flow continues." },
+  DC: {
+    title: "Record the decision",
+    hint: "Log accept or reject so the rest of the flow continues.",
+  },
   CM: { title: "Prepare the camera-ready", hint: "Final version for publication." },
-  CA: { title: "Register and book travel", hint: "Read the reimbursement policy first, then register, flights and hotel." },
-  RM: { title: "File your reimbursement", hint: "After the conference, once you have the receipts." },
-  RJ: { title: "Record the rejection", hint: "Log it so the paper can be revised for another venue." },
-  PS: { title: "Publish on X and LinkedIn", hint: "Both the social copy and the public link are ready." },
+  CA: {
+    title: "Register and book travel",
+    hint: "Read the reimbursement policy first, then register, flights and hotel.",
+  },
+  RM: {
+    title: "File your reimbursement",
+    hint: "After the conference, once you have the receipts.",
+  },
+  RJ: {
+    title: "Record the rejection",
+    hint: "Log it so the paper can be revised for another venue.",
+  },
+  PS: {
+    title: "Publish on X and LinkedIn",
+    hint: "Both the social copy and the public link are ready.",
+  },
 };
 
 /**

@@ -1,15 +1,21 @@
 // Control UI module implements app view state behavior.
 import type { ActivityEntry, ActivityStatus } from "./activity-model.ts";
+import type { LocationDrift, MeetingAttendee, MeetingRecord } from "./adminbot/auth/session.ts";
 import type {
   AdminBotDashboardData,
   AdminBotMemberNudgeState,
   AdminBotReimbursementState,
 } from "./adminbot/controllers/admin.ts";
-import type { RecommendationSchool } from "./adminbot/data/logistics-draft.ts";
+import type {
+  LetterFact,
+  MeetingRequestRow,
+  RecommendationSchool,
+} from "./adminbot/data/logistics-draft.ts";
 import type { LogisticsRequest } from "./adminbot/data/logistics-requests.ts";
 import type { MemberMap } from "./adminbot/data/member-map.ts";
 import type { BlockerSort } from "./adminbot/views/admin.ts";
 import type { LogisticsMode, LogisticsTemplate } from "./adminbot/views/logistics.ts";
+import type { TripDraft } from "./adminbot/views/time-availability.trips.ts";
 import type {
   MilestoneDraft,
   TimeAvailabilityDraft,
@@ -65,7 +71,6 @@ import type {
   ToolsCatalogResult,
 } from "./types.ts";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
-import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
 import type { SessionLogEntry } from "./views/usage.ts";
 
 export type AppViewState = {
@@ -101,6 +106,11 @@ export type AppViewState = {
   onboardingError?: string | null;
   onboardingMissing?: string[];
   onboardingResult?: import("./adminbot/controllers/admin.ts").AdminBotOnboardingResult | null;
+  /** The previewed email as the operator edited it; this is what a send delivers. */
+  onboardingDraftSubject?: string;
+  onboardingDraftBody?: string;
+  /** Comma-separated project channels the send invites them to. */
+  onboardingProjectChannels?: string;
   sendOnboardingGuide?: (options: { preview: boolean }) => Promise<void>;
   // Calendar tab. Two halves that share the roster the tab already has: a prompt that drafts an
   // event, and a picker that turns member facets into an invite list. Both end in a proposal.
@@ -131,6 +141,14 @@ export type AppViewState = {
   calendarExcludedMemberIds?: string[];
   calendarBusy?: boolean;
   loadCalendarEvents?: () => Promise<void>;
+  loadMeetings?: () => Promise<void>;
+  toggleMeetingAttendance?: (meetingId: string, attendee: MeetingAttendee) => Promise<void>;
+  fileMeeting?: (draft: {
+    topic: string;
+    started_at: string;
+    share_url: string;
+    passcode?: string;
+  }) => Promise<void>;
   requestCalendarDraft?: () => Promise<void>;
   saveCalendarEvent?: () => Promise<void>;
   sendCalendarInvites?: () => Promise<void>;
@@ -325,26 +343,6 @@ export type AppViewState = {
   configForm: Record<string, unknown> | null;
   configFormOriginal: Record<string, unknown> | null;
   selectedAgentId: string | null;
-  dreamingStatusLoading: boolean;
-  dreamingStatusError: string | null;
-  dreamingStatus: import("./controllers/dreaming.js").DreamingStatus | null;
-  dreamingModeSaving: boolean;
-  dreamingRestartConfirmOpen: boolean;
-  dreamingRestartConfirmLoading: boolean;
-  dreamingPendingEnabled: boolean | null;
-  dreamDiaryLoading: boolean;
-  dreamDiaryActionLoading: boolean;
-  dreamDiaryActionMessage: { kind: "success" | "error"; text: string } | null;
-  dreamDiaryActionArchivePath: string | null;
-  dreamDiaryError: string | null;
-  dreamDiaryPath: string | null;
-  dreamDiaryContent: string | null;
-  wikiImportInsightsLoading: boolean;
-  wikiImportInsightsError: string | null;
-  wikiImportInsights: import("./controllers/dreaming.js").WikiImportInsights | null;
-  wikiMemoryPalaceLoading: boolean;
-  wikiMemoryPalaceError: string | null;
-  wikiMemoryPalace: import("./controllers/dreaming.js").WikiMemoryPalace | null;
   configFormMode: "form" | "raw";
   configSettingsMode: "quick" | "advanced";
   configSearchQuery: string;
@@ -377,12 +375,6 @@ export type AppViewState = {
   channelsSnapshot: ChannelsStatusSnapshot | null;
   channelsError: string | null;
   channelsLastSuccess: number | null;
-  whatsappLoginMessage: string | null;
-  whatsappLoginQrDataUrl: string | null;
-  whatsappLoginConnected: boolean | null;
-  whatsappBusy: boolean;
-  nostrProfileFormState: NostrProfileFormState | null;
-  nostrProfileAccountId: string | null;
   configFormDirty: boolean;
   presenceLoading: boolean;
   presenceEntries: PresenceEntry[];
@@ -416,6 +408,23 @@ export type AppViewState = {
   adminBotMemberMap: MemberMap | null;
   adminBotMemberMapLoading: boolean;
   adminBotTimeAvailabilityMemberId: string;
+  // Meeting Recordings tab. The list as the service returned it -- already redacted for a member,
+  // full for an admin -- plus the two flags the view needs to distinguish "still loading" from
+  // "the lab has not recorded a meeting yet".
+  // Undefined is the "never asked" sentinel the render pass keys its one-shot fetch on; a load
+  // that genuinely finds nothing sets [], so an empty lab cannot loop.
+  adminBotMeetings?: MeetingRecord[];
+  adminBotTripDraft?: TripDraft;
+  adminBotLocationDrift?: LocationDrift | null;
+  adminBotLocationDrifts?: LocationDrift[];
+  adminBotLocationSaving?: boolean;
+  adminBotLocationError?: string | null;
+  loadLocationPrompt?: () => Promise<void>;
+  loadLocationDrifts?: () => Promise<void>;
+  answerLocationPrompt?: (answer: { current_city?: string; timezone?: string }) => Promise<void>;
+  adminBotMeetingsLoading: boolean;
+  adminBotMeetingsSaving: boolean;
+  adminBotMeetingsError: string | null;
   // Documents picked for a signature request, held here rather than in the view so a re-render
   // does not drop a file the member already chose. Replaced wholesale on every change: lit only
   // sees a @state() array as dirty when the reference changes.
@@ -431,13 +440,77 @@ export type AppViewState = {
   // and save state are separate from the signature form's: only one is visible at a time, and a
   // shared "Saved at" would follow the member across and describe the wrong draft.
   adminBotLogisticsTemplate: LogisticsTemplate;
-  // Admin-only surface: make a request, or read the saved ones. Held for everyone because the view
-  // pins non-admins to "make" rather than the state being trusted to be absent.
+  // Make a request, or read the ones already made. Both modes are open to everyone: the service
+  // scopes the list to the caller, so a member's is their own requests and an admin's is the lab's.
   adminBotLogisticsMode: LogisticsMode;
   adminBotLogisticsRequests: LogisticsRequest[];
   adminBotLogisticsRequestsLoading: boolean;
+  adminBotLogisticsRequestsError: string | null;
+  // When the list was last read, and the "ask for it" signal: null means nothing has fetched it
+  // for the mode the tab is now in. Not `requests.length`, which would re-ask forever in a lab
+  // that has no requests yet.
+  adminBotLogisticsRequestsLoadedAt: number | null;
+  // Which request is open, and the copy of it that carries the file bytes. The list deliberately
+  // has none, so opening one is a second read and the two are held apart.
   adminBotLogisticsOpenRequestId: string | null;
+  adminBotLogisticsOpenRequest: LogisticsRequest | null;
+  adminBotLogisticsOpenLoading: boolean;
+  // The admin's note for the answer they are about to give, parked here so a re-render underneath
+  // them -- the request list reloading -- cannot eat half a sentence.
+  adminBotLogisticsStatusNote: string;
+  // Submitting, shared by the three forms because only one of them is ever on screen.
+  adminBotLogisticsSubmitting: boolean;
+  adminBotLogisticsSubmitError: string | null;
+  adminBotLogisticsSubmittedId: string | null;
+  // The request the forms are currently holding a correction to, or null when what is on screen is
+  // a new request. Submit sends a PUT for the first and a POST for the second.
+  adminBotLogisticsEditingId: string | null;
+  // The request whose signed document is being uploaded right now, so its row can say so and no
+  // second upload can start against the same one.
+  adminBotLogisticsSigningId: string | null;
+  // "<requestId>:<fileName>" while that one document is being fetched for download.
+  adminBotLogisticsDownloadingId: string | null;
+  // What an admin has typed to go with the signed document they are about to send.
+  adminBotLogisticsSignedNote: string;
+  // Whether the admin queue is showing only what is still outstanding, or everything.
+  adminBotLogisticsShowSettled: boolean;
+  // Whose drafts are currently on screen. Drafts are per-member (IndexedDB is per-origin, not per
+  // account), so this is what tells the render pass that the signed-in member changed and the
+  // forms are showing somebody else's work.
+  adminBotLogisticsDraftScope: string | null;
+  // Profile Overview: how far along every active member's own record is. `loadedAt` is the "ask for
+  // it" signal, the same sentinel the logistics queue uses.
+  adminBotProfileOverview: import("./adminbot/auth/session.ts").MemberProfileOverviewRow[];
+  adminBotProfileOverviewFieldCount: number;
+  adminBotProfileOverviewLoading: boolean;
+  adminBotProfileOverviewError: string | null;
+  adminBotProfileOverviewLoadedAt: number | null;
+  adminBotProfileOverviewReminding: boolean;
+  adminBotProfileOverviewNotice: string | null;
+  adminBotProfileOverviewIncompleteOnly: boolean;
+  // My Projects & Papers: what each paper still owes, and the slots of whichever cards are open.
+  // `loadedAt` is the same "ask for it" sentinel the overview above uses.
+  adminBotPaperSlotOverview: import("./adminbot/auth/session.ts").PaperSlotOverviewRow[];
+  adminBotPaperSlots: Record<string, import("./adminbot/auth/session.ts").PaperCycle>;
+  adminBotPaperSlotsOpen: string[];
+  adminBotPaperSlotsLoading: boolean;
+  adminBotPaperSlotsError: string | null;
+  adminBotPaperSlotsLoadedAt: number | null;
+  adminBotPaperSlotsNudging: boolean;
+  adminBotPaperSlotsNotice: string | null;
+  adminBotPaperSlotsBusyId: string | null;
+  // The nudge preview. Null when closed; opening it sends nothing.
+  adminBotPaperNudgeBatches: import("./adminbot/auth/session.ts").PaperNudgeBatch[] | null;
+  adminBotPaperNudgeLoading: boolean;
+  adminBotPaperNudgeSelected: string[];
   adminBotLettersSchools: RecommendationSchool[];
+  adminBotLettersFacts: LetterFact[];
+  // Book Meeting's own table and save state, kept apart from the other two for the same reason
+  // they are kept apart from each other.
+  adminBotMeetingRows: MeetingRequestRow[];
+  adminBotMeetingSaving: boolean;
+  adminBotMeetingSavedAt: number | null;
+  adminBotMeetingSaveError: string | null;
   adminBotLettersCvOverleafUrl: string;
   adminBotLettersDriveFolderUrl: string;
   adminBotLettersSaving: boolean;
@@ -457,6 +530,13 @@ export type AppViewState = {
   adminBotMemberNudge: AdminBotMemberNudgeState;
   adminBotBlockerSort: BlockerSort;
   nudgeBellOpen: boolean;
+  adminBotCvScan: import("./adminbot/controllers/admin.ts").AdminBotCvScanResult | null;
+  adminBotCvScanning: boolean;
+  adminBotCvDigest: import("./adminbot/controllers/admin.ts").AdminBotCvDigest | null;
+  adminBotCvDigestSince: string;
+  adminBotCvDigestLoading: boolean;
+  adminBotCvBlurbs: Record<string, string>;
+  adminBotCvBlurbMemberId: string | null;
   // Prototype-only: blockers a member raises from My Projects & Papers. Held in the browser
   // because the AdminBot service has no blocker route yet -- see views/my-work.ts.
   myWorkBlockerDraft: import("./adminbot/views/my-work.ts").BlockerDraft | null;

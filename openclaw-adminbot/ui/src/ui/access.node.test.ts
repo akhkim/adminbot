@@ -97,6 +97,8 @@ describe("visibleTabsForRole", () => {
       "adminbotDeadlines",
       "adminbotSocialBot",
       "labSharing",
+      // Recordings of the lab's own meetings sit with Lab Sharing, above the roster.
+      "adminbotMeetings",
       "adminbotMembers",
     ]);
   });

@@ -137,6 +137,8 @@ export type MemberProfileUpdate = {
   timezone?: string;
   personal_website?: string;
   openreview_id?: string;
+  // The link only. cv_snapshot is not writable here: the service owns it, and a member who could
+  // set it could hide or invent their own career changes.
   cv_url?: string;
   intake_form_url?: string;
   linkedin_url?: string;
@@ -264,7 +266,12 @@ export type AuthErrorKind =
   // A generation step failed downstream (502) -- no OpenRouter key, or a PDF with no readable
   // abstract. The route is authenticated, so its message is safe to show verbatim, and it is
   // the only text that tells the author what to fix.
-  | "draft-failed";
+  | "draft-failed"
+  // The service does not have this route (404). Almost always a version skew rather than anything
+  // to do with credentials: a long-lived dev service outliving the console that calls it. It used
+  // to fall through to auth-failed, which sent people to check their login for a problem that was
+  // really a process needing a restart.
+  | "not-found";
 
 export type AuthResult<T> =
   | { ok: true; value: T }
@@ -332,6 +339,11 @@ function mapErrorResponse(
     (body as { code?: unknown } | null)?.code === "pending_approval"
   ) {
     return { kind: "pending-approval" };
+  }
+  // Before this, 404 fell through to auth-failed and reported a missing route as a credentials
+  // problem. Kept above the catch-all so the distinction cannot be lost again.
+  if (response.status === 404) {
+    return { kind: "not-found" };
   }
   return { kind: "auth-failed" };
 }
@@ -449,10 +461,21 @@ export type MemberMilestoneRow = {
  * (the service deletes an empty array rather than storing one, so it reads as "nothing recorded"
  * rather than as an empty chart).
  */
+export type MemberTripRow = {
+  start: string;
+  end: string;
+  city: string;
+  timezone?: string;
+  note?: string;
+  link?: string;
+};
+
 export type MemberScheduleUpdate = {
   availability?: MemberAvailabilityRow[];
   time_off?: MemberTimeOffRow[];
   milestones?: MemberMilestoneRow[];
+  trips?: MemberTripRow[];
+  dismissed_deadlines?: string[];
   // The overall note that explains the rows: a sentence or two for the admins, sent on its own
   // (every other key omitted) so saving it can never rewrite a list. "" clears it -- the service
   // deletes an emptied note rather than storing a blank one.
@@ -493,6 +516,34 @@ export async function updateOwnSchedule(
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
   return { ok: true, value: result.body as LabMember };
+}
+
+/**
+ * Writes lab-wide settings over the signed-in admin's own member session (PUT /settings).
+ *
+ * Not through the adminbot_update_settings gateway tool: every gateway-tool call authenticates as
+ * the shared service principal, and the service's requireMemberPrivileged denies that principal
+ * for settings outright -- governance has to be driven by a real member session, or any signed-in
+ * member could change lab policy by asking the agent to. Same reasoning as
+ * upsertLabMemberAsAdmin below.
+ */
+export async function updateSettingsAsAdmin(
+  settings: Record<string, unknown>,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/settings", "PUT", sessionToken, settings);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    // A 400 carries the service's own explanation of what it refused.
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
 }
 
 // Admin write for ANY member (self or otherwise), including governance fields.
@@ -654,6 +705,14 @@ export type OnboardingGuideRequest = {
   preview: boolean;
   /** Left out entirely when the tab has no opinion, so the service applies its own default. */
   submitDcsForm?: boolean;
+  /**
+   * The copy as the operator edited it in the preview. Sent only when it differs from what the
+   * preview returned, so an untouched preview still sends the stored template.
+   */
+  subjectOverride?: string;
+  bodyOverride?: string;
+  /** Channels the send should invite them to, by name or id; empty means none. */
+  projectChannels?: readonly string[];
 };
 
 export type OnboardingGuideResult = {
@@ -663,6 +722,7 @@ export type OnboardingGuideResult = {
   sent: boolean;
   drive_folder_link?: string;
   slack_connect_link?: string;
+  project_channel_invites?: { channel: string; url: string }[];
 };
 
 /**
@@ -688,6 +748,9 @@ export async function sendOnboardingGuide(
     values: request.values,
     preview: request.preview,
     ...(request.submitDcsForm === undefined ? {} : { submit_dcs_form: request.submitDcsForm }),
+    ...(request.subjectOverride ? { subject_override: request.subjectOverride } : {}),
+    ...(request.bodyOverride ? { body_override: request.bodyOverride } : {}),
+    ...(request.projectChannels?.length ? { slack_project_channels: request.projectChannels } : {}),
   });
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
@@ -1152,6 +1215,77 @@ export async function fetchMemberResource(
   return { ok: true, value: result.body };
 }
 
+// Runs the admin CV scan (POST /cv/scan) over the member's own session. Privileged server-side,
+// so a non-admin session gets `forbidden` back rather than an empty result -- the panel is
+// already admin-gated, and this keeps the two from disagreeing if that ever drifts.
+export async function scanMemberCvs(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/cv/scan", "POST", sessionToken, {});
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/** Reads recorded CV changes since a date (GET /cv/digest). */
+export async function fetchCvDigest(
+  since: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/cv/digest?since=${encodeURIComponent(since)}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/** Drafts one member's newsletter introduction (POST /cv/blurb/:id). */
+export async function draftMemberCvBlurb(
+  memberId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/cv/blurb/${encodeURIComponent(memberId)}`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    // 409 means the member has simply never been scanned; the message says so and is worth
+    // surfacing verbatim rather than flattening into a generic failure.
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: true }) };
+  }
+  return { ok: true, value: result.body };
+}
+
 // Creates or edits a paper over the member's own session (PUT /papers/:id). Papers are written on
 // the member Bearer rather than the gateway tool path because the service decides there what a
 // plain member may touch -- their own submissions, without the governance fields -- and because a
@@ -1572,4 +1706,855 @@ export function markOnboardingChecklistAcknowledged(memberId: string): void {
   } catch {
     // best-effort — quota/security failures just mean the warning card may reappear.
   }
+}
+
+// ---------------------------------------------------------------------------
+// Meeting recordings
+//
+// One GET for the list and two admin writes. The service decides what a member is allowed to see
+// (their own attendance and a headcount, never the roster), so there is nothing to redact here --
+// this is only the wire.
+// ---------------------------------------------------------------------------
+
+export type MeetingAttendee = {
+  member_id?: string;
+  display_name: string;
+  email?: string;
+  joined_at?: string;
+  minutes?: number;
+  source: "participant_report" | "transcript" | "manual";
+  present: boolean;
+};
+
+export type MeetingActionItem = {
+  text: string;
+  owner_member_id?: string;
+  owner_name?: string;
+};
+
+export type MeetingRecord = {
+  id: string;
+  topic: string;
+  started_at: string;
+  duration_minutes?: number;
+  recording: { share_url?: string; passcode?: string; drive_url?: string };
+  transcript?: { processed_at: string; speaker_names: string[]; duration_seconds?: number };
+  summary?: {
+    overview: string;
+    decisions: string[];
+    action_items: MeetingActionItem[];
+    generated_at: string;
+    model: string;
+  };
+  attendees?: MeetingAttendee[];
+  /** Present only on the member view; the admin view carries the roster itself. */
+  attendee_count?: number;
+  source: "zoom_email" | "manual";
+  notes?: string;
+};
+
+export async function fetchMeetings(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MeetingRecord[]>> {
+  const result = await authedJson(baseUrl, "/meetings", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { meetings?: MeetingRecord[] } | null;
+  return { ok: true, value: body?.meetings ?? [] };
+}
+
+export async function saveMeetingAttendance(
+  meetingId: string,
+  attendees: MeetingAttendee[],
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MeetingRecord>> {
+  const result = await authedJson(
+    baseUrl,
+    `/meetings/${encodeURIComponent(meetingId)}/attendance`,
+    "PUT",
+    sessionToken,
+    { attendees },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as MeetingRecord };
+}
+
+export async function createMeeting(
+  meeting: {
+    id: string;
+    topic: string;
+    started_at: string;
+    recording: { share_url?: string; passcode?: string; drive_url?: string };
+  },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MeetingRecord>> {
+  const result = await authedJson(baseUrl, "/meetings", "POST", sessionToken, meeting);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as MeetingRecord };
+}
+
+// ---------------------------------------------------------------------------
+// "You seem to have moved"
+//
+// The inferred half of a member's location never writes to their profile — see the service. These
+// two calls are the whole path by which an inference can become a fact: the member is shown what
+// was observed, and their answer goes through the ordinary self-edit.
+// ---------------------------------------------------------------------------
+
+export type LocationDrift = {
+  member_id: string;
+  observed_country: string;
+  observed_label?: string;
+  profile_location?: string;
+  profile_country?: string;
+  since: string;
+  observation_count: number;
+};
+
+export async function fetchLocationPrompt(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LocationDrift | null>> {
+  const result = await authedJson(baseUrl, "/profile/location-prompt", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { drift?: LocationDrift | null } | null;
+  return { ok: true, value: body?.drift ?? null };
+}
+
+/** An empty answer is a dismissal: it settles the question without touching the profile. */
+export async function answerLocationPrompt(
+  answer: { current_city?: string; timezone?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<true>> {
+  const result = await authedJson(
+    baseUrl,
+    "/profile/location-prompt",
+    "POST",
+    sessionToken,
+    answer,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: true };
+}
+
+/** Everyone whose recent sign-ins disagree with their profile. Admin-only; the service enforces it. */
+export async function fetchLocationDrifts(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LocationDrift[]>> {
+  const result = await authedJson(baseUrl, "/lab/location-drifts", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { drifts?: LocationDrift[] } | null;
+  return { ok: true, value: body?.drifts ?? [] };
+}
+
+// ---------------------------------------------------------------------------
+// Logistics requests
+//
+// The wire for the request templates: submit one, read the ones you are allowed to read, open a
+// single one in full, and -- for an admin -- say what the lab has done about it.
+//
+// Who may read what is the service's decision, not this file's. The same GET returns one member's
+// own requests and an admin's whole queue, so there is nothing to filter here and no bug in this
+// module can show a member somebody else's letter deadlines.
+// ---------------------------------------------------------------------------
+
+export type LogisticsRequestKind = "document_signature" | "recommendation_letters" | "book_meeting";
+
+export type LogisticsRequestStatus =
+  | "submitted"
+  | "in_progress"
+  | "completed"
+  | "declined"
+  | "withdrawn";
+
+/**
+ * A file on a request.
+ *
+ * `data_base64` is present only on the read that opens one request -- the list carries names and
+ * sizes -- and is gone for good once the request is settled and the service drops its files.
+ */
+export type LogisticsAttachment = {
+  name: string;
+  size: number;
+  content_type?: string;
+  data_base64?: string;
+};
+
+export type LogisticsSchool = {
+  school: string;
+  application_deadline?: string;
+  application_deadline_time?: string;
+  letter_deadline?: string;
+  letter_deadline_time?: string;
+  deadline_timezone?: string;
+  application_status?: string;
+  letter_status?: string;
+  program?: string;
+  program_link?: string;
+  notes?: string;
+};
+
+export type LogisticsFact = { project: string; contribution: string };
+
+export type LogisticsMeeting = {
+  purpose: string;
+  preferred_time?: string;
+  timezone?: string;
+  length_minutes?: number;
+  submitted_at?: string;
+};
+
+export type LogisticsRequestInput = {
+  kind: LogisticsRequestKind;
+  documents?: LogisticsAttachment[];
+  description?: string;
+  attachments?: LogisticsAttachment[];
+  schools?: LogisticsSchool[];
+  facts?: LogisticsFact[];
+  cv_overleaf_url?: string;
+  drive_folder_url?: string;
+  meetings?: LogisticsMeeting[];
+};
+
+export type LogisticsRequest = LogisticsRequestInput & {
+  id: string;
+  member_id: string;
+  member_name: string;
+  status: LogisticsRequestStatus;
+  submitted_at: string;
+  updated_at: string;
+  /** RFC3339 instant of the soonest thing the request is working towards. Derived by the service. */
+  deadline_at?: string;
+  /** The signed copy the lab sent back, and where it went. Bytes are dropped with the rest. */
+  signed_documents?: LogisticsAttachment[];
+  signed_sent_at?: string;
+  signed_sent_to?: string;
+  /** When the stored file bytes were dropped, so "never had one" reads differently from "gone". */
+  files_cleared_at?: string;
+  resolution_note?: string;
+  decided_by?: string;
+  decided_at?: string;
+};
+
+export async function fetchLogisticsRequests(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest[]>> {
+  const result = await authedJson(baseUrl, "/logistics/requests", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { requests?: LogisticsRequest[] } | null;
+  return { ok: true, value: body?.requests ?? [] };
+}
+
+/** One request with its file bytes -- the only read that carries them. */
+export async function fetchLogisticsRequest(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest>> {
+  const result = await authedJson(
+    baseUrl,
+    `/logistics/requests/${encodeURIComponent(requestId)}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as LogisticsRequest };
+}
+
+export async function submitLogisticsRequest(
+  input: LogisticsRequestInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest>> {
+  const result = await authedJson(baseUrl, "/logistics/requests", "POST", sessionToken, input);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as LogisticsRequest };
+}
+
+/** Replaces the content of a request nobody has picked up yet. The service refuses the rest. */
+export async function updateLogisticsRequest(
+  requestId: string,
+  input: LogisticsRequestInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest>> {
+  const result = await authedJson(
+    baseUrl,
+    `/logistics/requests/${encodeURIComponent(requestId)}`,
+    "PUT",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as LogisticsRequest };
+}
+
+export async function withdrawLogisticsRequest(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest>> {
+  const result = await authedJson(
+    baseUrl,
+    `/logistics/requests/${encodeURIComponent(requestId)}/withdraw`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as LogisticsRequest };
+}
+
+/** Admin-only; the service enforces it and refuses "withdrawn" here whoever asks. */
+export async function setLogisticsRequestStatus(
+  requestId: string,
+  status: LogisticsRequestStatus,
+  note: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest>> {
+  const result = await authedJson(
+    baseUrl,
+    `/logistics/requests/${encodeURIComponent(requestId)}/status`,
+    "PUT",
+    sessionToken,
+    { status, ...(note.trim() ? { resolution_note: note.trim() } : {}) },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as LogisticsRequest };
+}
+
+/**
+ * Returns the signed document to the member who asked for it.
+ *
+ * One call closes the request out: the service mails the file, marks the request completed and
+ * drops every stored copy. Admin-only, and the recipient is not ours to choose -- the service reads
+ * it off the roster.
+ */
+export async function sendSignedLogisticsDocuments(
+  requestId: string,
+  documents: LogisticsAttachment[],
+  note: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest>> {
+  const result = await authedJson(
+    baseUrl,
+    `/logistics/requests/${encodeURIComponent(requestId)}/signed`,
+    "POST",
+    sessionToken,
+    { documents, ...(note.trim() ? { resolution_note: note.trim() } : {}) },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as LogisticsRequest };
+}
+
+// ---------------------------------------------------------------------------
+// Profile overview
+//
+// How far along each member's own record is: the mandatory profile fields they have filled in, and
+// whether they have used the Time Availability page to say when they are working. Admin-only; the
+// service enforces it, because this is everybody's completeness at once rather than your own.
+// ---------------------------------------------------------------------------
+
+export type MemberTimelineCounts = {
+  availability: number;
+  time_off: number;
+  milestones: number;
+  trips: number;
+  total: number;
+};
+
+export type MemberProfileOverviewRow = {
+  id: string;
+  name: string;
+  status?: string;
+  privilege_level: string;
+  missing_fields: string[];
+  filled_field_count: number;
+  timeline: MemberTimelineCounts;
+  last_reminded_at?: string;
+};
+
+export type MemberProfileOverview = {
+  members: MemberProfileOverviewRow[];
+  /**
+   * How many fields count toward "complete".
+   *
+   * Taken from the service rather than counted here: it does not check `name` (a member cannot be
+   * created without one), so a client counting the field list itself would show everybody one
+   * short forever.
+   */
+  mandatoryFieldCount: number;
+};
+
+export async function fetchMemberProfileOverview(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberProfileOverview>> {
+  const result = await authedJson(baseUrl, "/members/profile-overview", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as {
+    members?: MemberProfileOverviewRow[];
+    mandatory_field_count?: number;
+  } | null;
+  return {
+    ok: true,
+    value: {
+      members: body?.members ?? [],
+      mandatoryFieldCount: body?.mandatory_field_count ?? 0,
+    },
+  };
+}
+
+// --- Paper evidence slots ---
+//
+// The tall table behind My Projects & Papers: one row per artifact per paper. The registry that
+// says what each slot is called and what shape it accepts is imported straight from the service's
+// contracts module (see views/paper-slots.ts), so this file only moves records, never rules.
+
+export type PaperSlotOverviewRow = {
+  paper_id: string;
+  title: string;
+  venue?: string;
+  deadline?: string;
+  current_step: string;
+  provided_count: number;
+  required_count: number;
+  dormant: boolean;
+  closed: boolean;
+  missing_slots: string[];
+  missing_acceptance_details?: string[];
+  cycle_closed?: boolean;
+  escalating: boolean;
+  first_author_member_id?: string;
+  last_nudged_at?: string;
+};
+
+/** Every paper's outstanding evidence, computed by the service on read. */
+export async function fetchPaperSlotOverview(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperSlotOverviewRow[]>> {
+  const result = await authedJson(baseUrl, "/papers/slot-overview", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { papers?: PaperSlotOverviewRow[] } | null;
+  return { ok: true, value: body?.papers ?? [] };
+}
+
+export type PaperSlotRow = {
+  paper_id: string;
+  slot: string;
+  status: "missing" | "provided" | "invalid" | "waived";
+  url?: string;
+  /** Absent, not blank, when the reader is not entitled to a credential slot. */
+  value_text?: string;
+  /** The free-text half of an enum slot. */
+  value_note?: string;
+  provided_at?: string;
+  invalid_reason?: string;
+  waived_reason?: string;
+};
+
+export type PaperSocialDraft = {
+  id: string;
+  paper_id: string;
+  platform: "x" | "linkedin";
+  body: string;
+  model?: string;
+  generated_at: string;
+  status: "draft" | "circulated" | "approved" | "superseded";
+};
+
+export type PaperSocialConsent = {
+  draft_id: string;
+  member_id: string;
+  decision: "pending" | "ok" | "changes_requested";
+  comment?: string;
+  asked_at: string;
+  decided_at?: string;
+};
+
+export type PaperAttendee = {
+  paper_id: string;
+  attendee_key: string;
+  member_id?: string;
+  name: string;
+  attending: "yes" | "no" | "unknown";
+  confirmed_at?: string;
+};
+
+export type PaperReimbursement = {
+  paper_id: string;
+  member_id: string;
+  status: "not_applicable" | "pending" | "submitted" | "reimbursed";
+  submitted_at?: string;
+  completed_at?: string;
+};
+
+/** Everything one card needs: the checklist plus the lists that hang off the paper. */
+export type PaperCycle = {
+  slots: PaperSlotRow[];
+  drafts: PaperSocialDraft[];
+  consents: PaperSocialConsent[];
+  attendees: PaperAttendee[];
+  reimbursements: PaperReimbursement[];
+  cycleClosed: boolean;
+  missingAcceptanceDetails: string[];
+};
+
+/** One paper's 25 slots, blanks included -- the card renders the checklist, not just the answers. */
+export async function fetchPaperSlots(
+  paperId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperCycle>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}/slots`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as {
+    slots?: PaperSlotRow[];
+    drafts?: PaperSocialDraft[];
+    consents?: PaperSocialConsent[];
+    attendees?: PaperAttendee[];
+    reimbursements?: PaperReimbursement[];
+    cycle_closed?: boolean;
+    missing_acceptance_details?: string[];
+  } | null;
+  return {
+    ok: true,
+    value: {
+      slots: body?.slots ?? [],
+      drafts: body?.drafts ?? [],
+      consents: body?.consents ?? [],
+      attendees: body?.attendees ?? [],
+      reimbursements: body?.reimbursements ?? [],
+      cycleClosed: Boolean(body?.cycle_closed),
+      missingAcceptanceDetails: body?.missing_acceptance_details ?? [],
+    },
+  };
+}
+
+/** Save a social draft. Supersedes whatever it replaces, server-side. */
+export async function savePaperSocialDraft(
+  paperId: string,
+  input: { platform: string; body: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperSocialDraft>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}/social-drafts`,
+    "POST",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { draft?: PaperSocialDraft } | null;
+  return body?.draft
+    ? { ok: true, value: body.draft }
+    : { ok: false, kind: "auth-failed", message: "the service returned no draft" };
+}
+
+/** Ask the paper's lab-member authors to sign off on a draft. */
+export async function circulatePaperSocialDraft(
+  draftId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/social-drafts/${encodeURIComponent(draftId)}/circulate`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/** The signed-in member's own answer on a draft. The service takes the id from the session. */
+export async function recordPaperSocialConsent(
+  draftId: string,
+  input: { decision: string; comment?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/social-drafts/${encodeURIComponent(draftId)}/consent`,
+    "POST",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+export async function savePaperAttendee(
+  paperId: string,
+  input: { name: string; member_id?: string; attending: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}/attendees`,
+    "PUT",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+export async function savePaperReimbursementStatus(
+  paperId: string,
+  memberId: string,
+  status: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}/reimbursements/${encodeURIComponent(memberId)}`,
+    "PUT",
+    sessionToken,
+    { status },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/**
+ * Write one slot.
+ *
+ * The service derives `status` from the value, so this sends the value and nothing else -- there
+ * is deliberately no way for the browser to declare an artifact provided.
+ */
+export async function savePaperSlot(
+  paperId: string,
+  slot: string,
+  input: { url?: string; value_text?: string; value_note?: string; done?: boolean },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperSlotRow>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}/slots/${encodeURIComponent(slot)}`,
+    "PUT",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { slot?: PaperSlotRow } | null;
+  return body?.slot
+    ? { ok: true, value: body.slot }
+    : { ok: false, kind: "auth-failed", message: "the service returned no slot" };
+}
+
+export type PaperNudgeBatch = {
+  member_id: string;
+  member_name: string;
+  /** False when there is no Slack id on file. The preview says so before anything is sent. */
+  deliverable: boolean;
+  item_count: number;
+  paper_titles: string[];
+  /** The composed message, exactly as it would arrive. */
+  message: string;
+};
+
+/**
+ * What would go out if the button were pressed right now.
+ *
+ * The same computation the send runs, returned instead of delivered -- so the preview is the send,
+ * looked at rather than performed.
+ */
+export async function fetchPaperNudgeBatches(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperNudgeBatch[]>> {
+  const result = await authedJson(baseUrl, "/papers/nudge-batches", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { batches?: PaperNudgeBatch[] } | null;
+  return { ok: true, value: body?.batches ?? [] };
+}
+
+/**
+ * Sends the batches. Recipients and text are server-computed, never ours.
+ *
+ * `recipientIds` narrows the send to the people an admin ticked in the preview; the service still
+ * recomputes the batches, so the list only ever subtracts.
+ */
+export async function runPaperSlotReminder(
+  sessionToken: string,
+  baseUrl: string,
+  recipientIds?: string[],
+): Promise<AuthResult<{ created: number; skipped: number }>> {
+  const result = await authedJson(baseUrl, "/papers/slot-reminder/run", "POST", sessionToken, {
+    ...(recipientIds?.length ? { recipient_member_ids: recipientIds } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { created?: unknown[]; skipped?: unknown[] } | null;
+  return {
+    ok: true,
+    value: { created: body?.created?.length ?? 0, skipped: body?.skipped?.length ?? 0 },
+  };
+}
+
+/** Runs the daily mandatory-fields reminder now. Recipients are server-computed, never ours. */
+export async function runMandatoryFieldsReminder(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ created: number; skipped: number }>> {
+  const result = await authedJson(
+    baseUrl,
+    "/members/mandatory-fields-reminder/run",
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { created?: unknown[]; skipped?: unknown[] } | null;
+  return {
+    ok: true,
+    value: { created: body?.created?.length ?? 0, skipped: body?.skipped?.length ?? 0 },
+  };
 }

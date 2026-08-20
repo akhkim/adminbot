@@ -241,47 +241,6 @@ describe("refreshActiveTab", () => {
     tools: null,
   } as const;
 
-  it("syncs selected agent before refreshing the Dreams tab", async () => {
-    const host = createHost();
-    host.tab = "dreams";
-    host.sessionKey = "agent:research:main";
-    mocks.loadDreamingStatusMock.mockImplementationOnce(async () => {
-      expect(host.selectedAgentId).toBe("research");
-    });
-    mocks.loadDreamDiaryMock.mockImplementationOnce(async () => {
-      expect(host.selectedAgentId).toBe("research");
-    });
-
-    await refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
-
-    expect(host.selectedAgentId).toBe("research");
-    expect(mocks.loadConfigMock).toHaveBeenCalledOnce();
-    expect(mocks.loadDreamingStatusMock).toHaveBeenCalledWith(host);
-    expect(mocks.loadDreamDiaryMock).toHaveBeenCalledWith(host);
-    expect(mocks.loadWikiImportInsightsMock).toHaveBeenCalledWith(host);
-    expect(mocks.loadWikiMemoryPalaceMock).toHaveBeenCalledWith(host);
-  });
-
-  for (const panel of ["files", "skills", "channels", "tools"] as const) {
-    it(`routes agents ${panel} panel refresh through the expected loaders`, async () => {
-      const host = createHost();
-      host.agentsPanel = panel;
-
-      await refreshActiveTab(host as never);
-
-      expectCommonAgentsTabRefresh(host);
-      expect(mocks.loadAgentFilesMock).toHaveBeenCalledTimes(panel === "files" ? 1 : 0);
-      expect(mocks.loadAgentSkillsMock).toHaveBeenCalledTimes(panel === "skills" ? 1 : 0);
-      expect(mocks.loadChannelsMock).toHaveBeenCalledTimes(panel === "channels" ? 1 : 0);
-      const expectedLoader = panelLoaderArgs[panel];
-      if (expectedLoader) {
-        const [loader, expectedArg] = expectedLoader;
-        expect(loader).toHaveBeenCalledWith(host, expectedArg);
-      }
-      expectNoCronLoaders();
-    });
-  }
-
   it("routes agents cron panel refresh through cron loaders", async () => {
     const host = createHost();
     host.agentsPanel = "cron";
@@ -339,50 +298,6 @@ describe("refreshActiveTab", () => {
     sessions.resolve();
   });
 
-  it("loads config before rendering session Workboard actions", async () => {
-    const host = createHost();
-    host.tab = "sessions";
-
-    await refreshActiveTab(host as never);
-
-    expect(mocks.loadConfigMock).toHaveBeenCalledOnce();
-    expect(mocks.loadSessionsMock).toHaveBeenCalledOnce();
-  });
-
-  it("refreshes workboard cards with config, sessions, and agents", async () => {
-    const host = createHost();
-    host.tab = "workboard";
-
-    await refreshActiveTab(host as never);
-
-    expect(mocks.loadConfigMock).toHaveBeenCalledWith(host);
-    expect(mocks.loadSessionsMock).toHaveBeenCalledWith(host);
-    expect(mocks.loadAgentsMock).toHaveBeenCalledWith(host);
-    expect(mocks.loadWorkboardMock).toHaveBeenCalledWith({
-      host,
-      client: host.client,
-      force: true,
-      requestUpdate: host.requestUpdate,
-      refreshDiagnostics: true,
-    });
-  });
-
-  it("keeps read-only Workboard tab preload on the read refresh path", async () => {
-    const host = createHost();
-    host.tab = "workboard";
-    host.hello = { auth: { role: "operator", scopes: ["operator.read"] } };
-
-    await refreshActiveTab(host as never);
-
-    expect(mocks.loadWorkboardMock).toHaveBeenCalledWith({
-      host,
-      client: host.client,
-      force: true,
-      requestUpdate: host.requestUpdate,
-      refreshDiagnostics: false,
-    });
-  });
-
   it("loads agents before rendering the Skills tab agent selector", async () => {
     const host = createHost();
     host.tab = "skills";
@@ -403,28 +318,6 @@ describe("refreshActiveTab", () => {
     expect(mocks.loadAgentsMock).toHaveBeenCalledWith(host);
     expect(mocks.reconcileSkillsAgentIdMock).toHaveBeenCalledWith(host, host.agentsList);
     expect(mocks.loadSkillsMock).toHaveBeenCalledWith(host);
-  });
-
-  it("starts node polling and stops inactive tab pollers on tab changes", () => {
-    vi.useFakeTimers();
-    const host = createHost();
-    host.tab = "workboard";
-    const pendingReload = vi.fn();
-    host.sessionsChangedReloadTimer = globalThis.setTimeout(() => pendingReload(), 1_000);
-
-    setTab(host as never, "nodes");
-
-    expect(host.sessionsChangedReloadTimer).toBeNull();
-    expect(mocks.startNodesPollingMock).toHaveBeenCalledWith(host);
-    expect(mocks.stopLogsPollingMock).toHaveBeenCalledWith(host);
-    expect(mocks.stopDebugPollingMock).toHaveBeenCalledWith(host);
-    expect(mocks.stopWorkboardPollingMock).toHaveBeenCalledWith(host);
-    expect(mocks.stopWorkboardLifecycleRefreshMock).toHaveBeenCalledWith(host);
-    vi.advanceTimersByTime(1_000);
-    expect(pendingReload).not.toHaveBeenCalled();
-
-    setTab(host as never, "sessions");
-    expect(mocks.stopNodesPollingMock).toHaveBeenCalledWith(host);
   });
 
   it("does not wait for secondary overview refreshes before resolving", async () => {
@@ -498,18 +391,6 @@ describe("refreshActiveTab", () => {
     await vi.waitFor(() => {
       expect(mocks.loadConfigSchemaMock).toHaveBeenCalledOnce();
     });
-  });
-
-  it("loads config, sessions, and agents before rendering the Workboard tab", async () => {
-    const host = createHost();
-    host.tab = "workboard";
-
-    await refreshActiveTab(host as never);
-
-    expect(mocks.loadConfigMock).toHaveBeenCalledOnce();
-    expect(mocks.loadSessionsMock).toHaveBeenCalledOnce();
-    expect(mocks.loadAgentsMock).toHaveBeenCalledOnce();
-    expect(mocks.loadConfigSchemaMock).not.toHaveBeenCalled();
   });
 
   it("does not start the deferred schema refresh when scoped settings fail to load", async () => {

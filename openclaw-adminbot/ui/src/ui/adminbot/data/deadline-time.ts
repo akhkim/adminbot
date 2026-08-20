@@ -79,16 +79,16 @@ function isMajorConference(venue: DeadlineVenue): boolean {
  * the same venue would answer "what is coming up" with one answer twice, so the earliest entry
  * represents its conference and the next distinct conference takes the second slot.
  */
-export function upcomingMajorDeadlines(now: number, limit: number): DeadlineEntry[] {
-  const upcoming = DEADLINE_VENUES.filter(isMajorConference)
-    .map((venue) => ({ venue, instant: aoeInstantMs(venue.deadline_aoe) }))
-    .filter((entry) => Number.isFinite(entry.instant) && entry.instant > now)
-    .toSorted((a, b) => a.instant - b.instant);
-
+export function upcomingMajorDeadlines(
+  now: number,
+  limit: number,
+  options: { archivalOnly?: boolean } = {},
+): DeadlineEntry[] {
+  const upcoming = allUpcomingConferences(now, options);
   const seen = new Set<string>();
   const picked: DeadlineEntry[] = [];
   for (const entry of upcoming) {
-    const key = (entry.venue.venue_group ?? "").trim() || entry.venue.name;
+    const key = conferenceGroupKey(entry);
     if (seen.has(key)) {
       continue;
     }
@@ -99,4 +99,46 @@ export function upcomingMajorDeadlines(now: number, limit: number): DeadlineEntr
     }
   }
   return picked;
+}
+
+/** The key that makes two dated rows the same conference. One conference, one slot on a summary. */
+export function conferenceGroupKey(entry: DeadlineEntry): string {
+  return (entry.venue.venue_group ?? "").trim() || entry.venue.name;
+}
+
+/**
+ * Every upcoming conference deadline, soonest first and undeduplicated.
+ *
+ * `upcomingMajorDeadlines` is the "what is next" answer and stops at a limit. This is the whole
+ * list, which is what a picker offering "add another conference" needs: the point of that control
+ * is to reach the ones the summary did not have room for, so a helper that had already cut them
+ * would be no use to it.
+ *
+ * `archivalOnly` narrows to venues that consume the paper. That is the split a member planning a
+ * submission is actually making -- an archival deadline is a commitment, a workshop is an
+ * opportunity -- and it is read off the flag the collector stamps rather than re-derived here.
+ */
+export function allUpcomingConferences(
+  now: number,
+  options: { archivalOnly?: boolean } = {},
+): DeadlineEntry[] {
+  return DEADLINE_VENUES.filter(isMajorConference)
+    .filter((venue) => !options.archivalOnly || venue.archival === true)
+    .map((venue) => ({ venue, instant: aoeInstantMs(venue.deadline_aoe) }))
+    .filter((entry) => Number.isFinite(entry.instant) && entry.instant > now)
+    .toSorted((a, b) => a.instant - b.instant);
+}
+
+/**
+ * Every upcoming venue in the snapshot, conferences and workshops alike, soonest first.
+ *
+ * Not deduplicated by conference group, unlike the summary helpers: this backs a picker where the
+ * reader is choosing one specific venue to put on their own timeline, and collapsing ninety-nine
+ * NeurIPS workshops into one row would hide the ninety-eight they did not want and misname the one
+ * they got.
+ */
+export function allUpcomingVenues(now: number): DeadlineEntry[] {
+  return DEADLINE_VENUES.map((venue) => ({ venue, instant: aoeInstantMs(venue.deadline_aoe) }))
+    .filter((entry) => Number.isFinite(entry.instant) && entry.instant > now)
+    .toSorted((a, b) => a.instant - b.instant);
 }

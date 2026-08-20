@@ -1,13 +1,20 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import type { AccessRole } from "../access.ts";
-import { createSchoolRow, type RecommendationSchool } from "../data/logistics-draft.ts";
-import type { LogisticsRequest } from "../data/logistics-requests.ts";
 import {
-  formatFileSize,
+  createFactRow,
+  createMeetingRow,
+  createSchoolRow,
+  type LetterFact,
+  type MeetingRequestRow,
+  type RecommendationSchool,
+} from "../data/logistics-draft.ts";
+import type { LogisticsRequest, LogisticsRequestStatus } from "../data/logistics-requests.ts";
+import {
   renderAdminBotLogistics,
   type LogisticsMode,
   type LogisticsTemplate,
+  type SubmitBlock,
 } from "./logistics.ts";
 
 type DrawOptions = {
@@ -15,7 +22,20 @@ type DrawOptions = {
   mode?: LogisticsMode;
   requests?: LogisticsRequest[];
   requestsLoading?: boolean;
-  openRequestId?: string | null;
+  requestsError?: string | null;
+  showSettled?: boolean;
+  signingId?: string | null;
+  signedNote?: string;
+  openRequest?: LogisticsRequest | null;
+  openLoading?: boolean;
+  viewerMemberId?: string | null;
+  statusNote?: string;
+  submitting?: boolean;
+  submitError?: string | null;
+  submitted?: boolean;
+  submitBlocked?: SubmitBlock | null;
+  hasContent?: boolean;
+  editing?: boolean;
   template?: LogisticsTemplate;
   signatureFiles?: File[];
   attachments?: File[];
@@ -24,6 +44,11 @@ type DrawOptions = {
   savedAt?: number | null;
   saveError?: string | null;
   schools?: RecommendationSchool[];
+  facts?: LetterFact[];
+  meetings?: MeetingRequestRow[];
+  meetingSaving?: boolean;
+  meetingSavedAt?: number | null;
+  meetingSaveError?: string | null;
   cvOverleafUrl?: string;
   driveFolderUrl?: string;
   lettersSaving?: boolean;
@@ -35,29 +60,91 @@ type Drawn = {
   container: HTMLElement;
   modeChanges: LogisticsMode[];
   opened: (string | null)[];
+  withdrawn: string[];
+  edited: string[];
+  settledToggles: boolean[];
+  signedNoteChanges: string[];
+  signedUploads: { id: string; files: File[] }[];
+  cancelledEdits: number;
+  answers: { id: string; status: LogisticsRequestStatus; note: string }[];
+  noteChanges: string[];
+  submits: number;
+  lettersSubmits: number;
+  meetingSubmits: number;
+  discards: number;
   signatureChanges: File[][];
   attachmentChanges: File[][];
   descriptionChanges: string[];
   templateChanges: LogisticsTemplate[];
   schoolChanges: RecommendationSchool[][];
+  factChanges: LetterFact[][];
+  meetingChanges: MeetingRequestRow[][];
+  myProjectsOpened: number;
   cvOverleafChanges: string[];
   driveFolderChanges: string[];
   saves: number;
   lettersSaves: number;
+  meetingSaves: number;
 };
 
+// The submit half of every form's props, which the three share: only one form is on screen at a
+// time, so a test that presses Submit is always pressing this one.
+function submitProps(options: DrawOptions, onSubmit: () => void) {
+  return {
+    onSubmit,
+    submitBlocked: options.submitBlocked ?? null,
+    submitting: options.submitting ?? false,
+    submitError: options.submitError ?? null,
+    submitted: options.submitted ?? false,
+    hasContent: options.hasContent ?? true,
+    editing: options.editing ?? false,
+    onCancelEdit: () => {
+      cancelEditCount += 1;
+    },
+    onDiscard: () => {
+      discardCount += 1;
+    },
+  };
+}
+
+// Counted outside `draw` because submitProps is called three times per render and the counter has
+// to survive all three.
+let discardCount = 0;
+let cancelEditCount = 0;
+
 function draw(options: DrawOptions = {}): Drawn {
+  discardCount = 0;
+  cancelEditCount = 0;
   const signatureChanges: File[][] = [];
   const attachmentChanges: File[][] = [];
   const descriptionChanges: string[] = [];
   const templateChanges: LogisticsTemplate[] = [];
   const schoolChanges: RecommendationSchool[][] = [];
+  const factChanges: LetterFact[][] = [];
+  const meetingChanges: MeetingRequestRow[][] = [];
   const cvOverleafChanges: string[] = [];
   const driveFolderChanges: string[] = [];
   const modeChanges: LogisticsMode[] = [];
   const opened: (string | null)[] = [];
+  const withdrawn: string[] = [];
+  const edited: string[] = [];
+  const settledToggles: boolean[] = [];
+  const signedNoteChanges: string[] = [];
+  const signedUploads: { id: string; files: File[] }[] = [];
+  const downloads: { id: string; name: string }[] = [];
+  const answers: {
+    id: string;
+    status: LogisticsRequestStatus;
+    note: string;
+  }[] = [];
+  const noteChanges: string[] = [];
+  let submits = 0;
+  let lettersSubmits = 0;
+  let meetingSubmits = 0;
   let saves = 0;
   let lettersSaves = 0;
+  let meetingSaves = 0;
+  let myProjectsOpened = 0;
   const container = document.createElement("div");
   document.body.append(container);
   render(
@@ -65,11 +152,35 @@ function draw(options: DrawOptions = {}): Drawn {
       role: options.role ?? "member",
       mode: options.mode ?? "make",
       onModeChange: (next) => modeChanges.push(next),
+      queue: {
+        requests: options.requests ?? [],
+        loading: options.requestsLoading ?? false,
+        error: options.requestsError ?? null,
+        showSettled: options.showSettled ?? false,
+        onShowSettledChange: (next) => settledToggles.push(next),
+        signingId: options.signingId ?? null,
+        downloadingId: null,
+        onDownload: (id, name) => downloads.push({ id, name }),
+        signedNote: options.signedNote ?? "",
+        onSignedNoteChange: (next) => signedNoteChanges.push(next),
+        onSendSigned: (id, files) => signedUploads.push({ id, files }),
+        onOpenRequest: (next) => opened.push(next),
+        onSetStatus: (id, status) => answers.push({ id, status, note: "" }),
+      },
       requests: {
         requests: options.requests ?? [],
         loading: options.requestsLoading ?? false,
-        openRequestId: options.openRequestId ?? null,
+        error: options.requestsError ?? null,
+        open: options.openRequest ?? null,
+        openLoading: options.openLoading ?? false,
+        viewerIsAdmin: (options.role ?? "member") === "admin",
+        viewerMemberId: options.viewerMemberId ?? "ada",
         onOpenRequest: (next) => opened.push(next),
+        onWithdraw: (id) => withdrawn.push(id),
+        onEdit: (id) => edited.push(id),
+        onSetStatus: (id, status, note) => answers.push({ id, status, note }),
+        statusNote: options.statusNote ?? "",
+        onStatusNoteChange: (next) => noteChanges.push(next),
       },
       template: options.template ?? "documentSignature",
       onTemplateChange: (next) => templateChanges.push(next),
@@ -86,10 +197,31 @@ function draw(options: DrawOptions = {}): Drawn {
         onSave: () => {
           saves += 1;
         },
+        ...submitProps(options, () => {
+          submits += 1;
+        }),
+      },
+      meeting: {
+        rows: options.meetings ?? [],
+        onRowsChange: (next) => meetingChanges.push(next),
+        saving: options.meetingSaving ?? false,
+        savedAt: options.meetingSavedAt ?? null,
+        saveError: options.meetingSaveError ?? null,
+        onSave: () => {
+          meetingSaves += 1;
+        },
+        ...submitProps(options, () => {
+          meetingSubmits += 1;
+        }),
       },
       letters: {
         schools: options.schools ?? [],
         onSchoolsChange: (next) => schoolChanges.push(next),
+        facts: options.facts ?? [],
+        onFactsChange: (next) => factChanges.push(next),
+        onOpenMyProjects: () => {
+          myProjectsOpened += 1;
+        },
         cvOverleafUrl: options.cvOverleafUrl ?? "",
         onCvOverleafUrlChange: (next) => cvOverleafChanges.push(next),
         driveFolderUrl: options.driveFolderUrl ?? "",
@@ -100,6 +232,9 @@ function draw(options: DrawOptions = {}): Drawn {
         onSave: () => {
           lettersSaves += 1;
         },
+        ...submitProps(options, () => {
+          lettersSubmits += 1;
+        }),
       },
     }),
     container,
@@ -108,20 +243,66 @@ function draw(options: DrawOptions = {}): Drawn {
     container,
     modeChanges,
     opened,
+    withdrawn,
+    edited,
+    settledToggles,
+    signedNoteChanges,
+    signedUploads,
+    get cancelledEdits() {
+      return cancelEditCount;
+    },
+    answers,
+    noteChanges,
     signatureChanges,
     attachmentChanges,
     descriptionChanges,
     templateChanges,
     schoolChanges,
+    factChanges,
+    meetingChanges,
     cvOverleafChanges,
     driveFolderChanges,
+    get myProjectsOpened() {
+      return myProjectsOpened;
+    },
+    get submits() {
+      return submits;
+    },
+    get lettersSubmits() {
+      return lettersSubmits;
+    },
+    get meetingSubmits() {
+      return meetingSubmits;
+    },
+    get discards() {
+      return discardCount;
+    },
     get saves() {
       return saves;
     },
     get lettersSaves() {
       return lettersSaves;
     },
+    get meetingSaves() {
+      return meetingSaves;
+    },
   };
+}
+
+/**
+ * The three template buttons alone.
+ *
+ * Scoped to the templates card because the mode switch above it reuses the same class: both are
+ * rows of peer buttons, and sharing the class is what keeps them looking like peers.
+ */
+function templateButtons(container: HTMLElement): HTMLButtonElement[] {
+  const card = container.querySelector<HTMLElement>("[data-testid='logistics-templates']");
+  return [...(card?.querySelectorAll<HTMLButtonElement>(".logistics__template") ?? [])];
+}
+
+function modeButtons(container: HTMLElement): HTMLButtonElement[] {
+  const card = container.querySelector<HTMLElement>("[data-testid='logistics-admin']");
+  return [...(card?.querySelectorAll<HTMLButtonElement>(".logistics__template") ?? [])];
 }
 
 function drawLetters(options: Omit<DrawOptions, "template"> = {}): Drawn {
@@ -171,9 +352,7 @@ function describedTextarea(container: HTMLElement): HTMLTextAreaElement {
 describe("renderAdminBotLogistics", () => {
   it("offers the three request templates", () => {
     const { container } = draw();
-    const labels = [...container.querySelectorAll(".logistics__template")].map((button) =>
-      button.textContent?.trim(),
-    );
+    const labels = templateButtons(container).map((button) => button.textContent?.trim());
     expect(labels).toEqual(["Document Signature", "Recommendation Letters", "Book Meeting"]);
   });
 
@@ -312,7 +491,7 @@ describe("request actions", () => {
     return [...container.querySelectorAll<HTMLButtonElement>(".logistics-request__actions .btn")];
   }
 
-  it("puts Save and Submit at the bottom of the shared container", () => {
+  it("puts Discard, Save and Submit at the bottom of the shared container", () => {
     const { container } = draw();
     const request = container.querySelector<HTMLElement>("[data-testid='logistics-request']");
     const actions = request?.querySelector(".logistics-request__actions");
@@ -320,6 +499,7 @@ describe("request actions", () => {
     // Last thing in the card, after both sections.
     expect(request?.lastElementChild).toBe(actions);
     expect(actionButtons(container).map((button) => button.textContent?.trim())).toEqual([
+      "Discard",
       "Save",
       "Submit",
     ]);
@@ -327,23 +507,79 @@ describe("request actions", () => {
 
   it("asks to save when Save is pressed", () => {
     const drawn = draw({ description: "Visa letter" });
-    actionButtons(drawn.container)[0].click();
+    actionButtons(drawn.container)[1].click();
     expect(drawn.saves).toBe(1);
+    expect(drawn.submits).toBe(0);
   });
 
-  it("does nothing when Submit is pressed", () => {
-    // Submit is deliberately inert until the request has a typed action behind the approval gate.
-    const drawn = draw({ description: "Visa letter" });
-    actionButtons(drawn.container)[1].click();
+  it("sends the request when Submit is pressed", () => {
+    const drawn = draw({ signatureFiles: [makeFile("contract.pdf")] });
+    actionButtons(drawn.container)[2].click();
+    expect(drawn.submits).toBe(1);
     expect(drawn.saves).toBe(0);
-    expect(drawn.descriptionChanges).toEqual([]);
+  });
+
+  it("throws away the form when Discard is pressed", () => {
+    const drawn = draw({ description: "Visa letter" });
+    actionButtons(drawn.container)[0].click();
+    expect(drawn.discards).toBe(1);
+  });
+
+  it("offers nothing to discard on a form with nothing on it", () => {
+    const { container } = draw({ hasContent: false });
+    expect(actionButtons(container)[0].disabled).toBe(true);
   });
 
   it("blocks a second Save while one is in flight", () => {
     const { container } = draw({ saving: true });
-    const [save] = actionButtons(container);
+    const save = actionButtons(container)[1];
     expect(save.disabled).toBe(true);
     expect(save.textContent?.trim()).toBe("Saving…");
+  });
+
+  it("blocks a second Submit while one is in flight, so one request is never filed twice", () => {
+    const { container } = draw({ submitting: true });
+    const submit = actionButtons(container)[2];
+    expect(submit.disabled).toBe(true);
+    expect(submit.textContent?.trim()).toBe("Sending…");
+  });
+
+  it("says why Submit would refuse, rather than leaving a dead button", () => {
+    const { container } = draw({ submitBlocked: { reason: "empty" } });
+    const blocked = container.querySelector("[data-testid='logistics-blocked']");
+    expect(blocked?.textContent?.trim()).toBe("Fill the request in before sending it.");
+    // Still pressable: pressing it is how a member finds out what is missing.
+    expect(actionButtons(container)[2].disabled).toBe(false);
+  });
+
+  it("names the file that is too big, since that is the one thing the member has to act on", () => {
+    const { container } = draw({
+      submitBlocked: { reason: "file-too-big", file: "scan.pdf" },
+    });
+    expect(container.querySelector("[data-testid='logistics-blocked']")?.textContent).toContain(
+      "scan.pdf",
+    );
+  });
+
+  it("says a request landed, and stops saying what is missing once it has", () => {
+    const { container } = draw({
+      submitted: true,
+      submitBlocked: { reason: "empty" },
+    });
+    expect(container.querySelector("[data-testid='logistics-submitted']")?.textContent).toContain(
+      "Sent to the lab.",
+    );
+    expect(container.querySelector("[data-testid='logistics-blocked']")).toBeNull();
+  });
+
+  it("shows a submit failure ahead of anything the local draft has to say", () => {
+    const { container } = draw({
+      savedAt: Date.now(),
+      submitError: "Could not reach the AdminBot service.",
+    });
+    const status = container.querySelector(".logistics-request__status");
+    expect(status?.textContent).toContain("Could not reach the AdminBot service.");
+    expect(status?.textContent).not.toContain("Saved on this device");
   });
 
   it("reports when the draft was last saved", () => {
@@ -370,15 +606,11 @@ describe("request actions", () => {
 });
 
 describe("template picker", () => {
-  function templateButtons(container: HTMLElement): HTMLButtonElement[] {
-    return [...container.querySelectorAll<HTMLButtonElement>(".logistics__template")];
-  }
-
   it("marks the template whose container is on screen", () => {
     const { container } = draw({ template: "recommendationLetters" });
     expect(templateButtons(container).map((button) => button.getAttribute("aria-pressed"))).toEqual(
-      // Book Meeting is not a toggle -- it selects nothing, so it claims no pressed state.
-      ["false", "true", null],
+      // All three select a container now, so all three carry a pressed state.
+      ["false", "true", "false"],
     );
   });
 
@@ -388,31 +620,50 @@ describe("template picker", () => {
     expect(drawn.templateChanges).toEqual(["recommendationLetters"]);
   });
 
-  it("leaves Book Meeting inert until it has a form of its own", () => {
+  it("asks for the meeting container when Book Meeting is pressed", () => {
     const drawn = draw();
     templateButtons(drawn.container)[2].click();
-    expect(drawn.templateChanges).toEqual([]);
+    expect(drawn.templateChanges).toEqual(["bookMeeting"]);
   });
 
   it("shows one request container at a time", () => {
     const signature = draw();
     expect(signature.container.querySelector("[data-testid='logistics-request']")).not.toBeNull();
     expect(signature.container.querySelector("[data-testid='logistics-letters']")).toBeNull();
+    expect(
+      signature.container.querySelector("[data-testid='logistics-meeting-request']"),
+    ).toBeNull();
 
     const letters = drawLetters();
     expect(letters.container.querySelector("[data-testid='logistics-request']")).toBeNull();
     expect(letters.container.querySelector("[data-testid='logistics-letters']")).not.toBeNull();
+
+    const meeting = draw({ template: "bookMeeting" });
+    expect(meeting.container.querySelector("[data-testid='logistics-letters']")).toBeNull();
+    expect(
+      meeting.container.querySelector("[data-testid='logistics-meeting-request']"),
+    ).not.toBeNull();
   });
 });
 
 describe("list of schools", () => {
+  // The facts table below reuses the same table styles, so every query here is scoped to the
+  // schools section rather than to the card -- otherwise a column count is really two tables'.
+  function schoolsTable(container: HTMLElement): HTMLElement {
+    return container.querySelector<HTMLElement>("[data-testid='logistics-schools']")!;
+  }
+
   function cellInput(container: HTMLElement, key: string): HTMLInputElement | null {
-    return container.querySelector<HTMLInputElement>(`.logistics-schools__cell--${key} input`);
+    return schoolsTable(container).querySelector<HTMLInputElement>(
+      `.logistics-schools__cell--${key} input`,
+    );
   }
 
   function removeButtons(container: HTMLElement): HTMLButtonElement[] {
     return [
-      ...container.querySelectorAll<HTMLButtonElement>(".logistics-schools__cell--remove button"),
+      ...schoolsTable(container).querySelectorAll<HTMLButtonElement>(
+        ".logistics-schools__cell--remove button",
+      ),
     ];
   }
 
@@ -425,13 +676,18 @@ describe("list of schools", () => {
     expect(card?.lastElementChild?.classList.contains("logistics-request__actions")).toBe(true);
   });
 
-  it("tracks a request by the eight things a letter writer has to know", () => {
+  it("tracks a request by the eleven things a letter writer has to know", () => {
     const { container } = drawLetters();
-    const names = [...container.querySelectorAll(".logistics-schools__head-name")];
+    const names = [...schoolsTable(container).querySelectorAll(".logistics-schools__head-name")];
     expect(names.map((name) => name.textContent?.trim())).toEqual([
       "School",
       "Application deadline",
+      // Each deadline carries its own clock, and one zone covers both: a school states its
+      // cutoffs on one clock, so two zone columns would be two chances to disagree.
+      "Time",
       "Letter deadline",
+      "Time",
+      "Time zone",
       "Application status",
       "Letter status",
       "Program",
@@ -440,21 +696,24 @@ describe("list of schools", () => {
     ]);
   });
 
-  it("qualifies the two column names that need it", () => {
+  it("qualifies the column names that need it", () => {
     const { container } = drawLetters();
-    const hints = [...container.querySelectorAll(".logistics-schools__head-hint")];
+    const hints = [...schoolsTable(container).querySelectorAll(".logistics-schools__head-hint")];
     expect(hints.map((hint) => hint.textContent?.trim())).toEqual([
       "if different",
+      "for both times on this row",
       "If it is not a regular program, what it looks for.",
     ]);
   });
 
   it("gives every column of a row its own control", () => {
     const { container } = drawLetters({ schools: [createSchoolRow()] });
-    const row = container.querySelector<HTMLElement>(".logistics-schools__row");
-    expect(row?.querySelectorAll("input, textarea")).toHaveLength(8);
+    const row = schoolsTable(container).querySelector<HTMLElement>(".logistics-schools__row");
+    expect(row?.querySelectorAll("input, textarea")).toHaveLength(11);
     expect(cellInput(container, "applicationDeadline")?.type).toBe("date");
+    expect(cellInput(container, "applicationDeadlineTime")?.type).toBe("time");
     expect(cellInput(container, "letterDeadline")?.type).toBe("date");
+    expect(cellInput(container, "letterDeadlineTime")?.type).toBe("time");
     expect(cellInput(container, "programLink")?.type).toBe("url");
     // A note is a sentence about the program, not a word.
     expect(row?.querySelector(".logistics-schools__cell--notes textarea")).not.toBeNull();
@@ -554,11 +813,19 @@ describe("list of schools", () => {
     const actions = [
       ...drawn.container.querySelectorAll<HTMLButtonElement>(".logistics-request__actions .btn"),
     ];
-    expect(actions.map((button) => button.textContent?.trim())).toEqual(["Save", "Submit"]);
+    expect(actions.map((button) => button.textContent?.trim())).toEqual([
+      "Discard",
+      "Save",
+      "Submit",
+    ]);
 
-    actions[0].click();
+    actions[1].click();
     expect(drawn.lettersSaves).toBe(1);
     expect(drawn.saves).toBe(0);
+    // Submit is the letters form's own too, not the signature form's.
+    actions[2].click();
+    expect(drawn.lettersSubmits).toBe(1);
+    expect(drawn.submits).toBe(0);
 
     const status = drawn.container.querySelector(".logistics-request__status");
     expect(status?.textContent).toContain("No local storage available.");
@@ -586,12 +853,15 @@ describe("letter request links", () => {
     return input;
   }
 
-  it("puts both link fields between the table and the actions", () => {
+  it("puts both link fields between the facts table and the actions", () => {
     const { container } = drawLetters();
     const card = section(container, "logistics-letters");
     const sections = [...card.querySelectorAll(":scope > .logistics-request__section")];
     expect(sections.map((entry) => entry.getAttribute("data-testid"))).toEqual([
       "logistics-schools",
+      // What the member did comes before where the letter is written and stored: it is the part
+      // only they can supply, and the two links are plumbing for it.
+      "logistics-facts",
       "logistics-cv-overleaf",
       "logistics-drive-folder",
     ]);
@@ -624,7 +894,9 @@ describe("letter request links", () => {
   });
 
   it("shows the links already saved and reports each box on its own", () => {
-    const drawn = drawLetters({ cvOverleafUrl: "https://www.overleaf.com/project/abc" });
+    const drawn = drawLetters({
+      cvOverleafUrl: "https://www.overleaf.com/project/abc",
+    });
     expect(linkInput(drawn.container, "logistics-cv-overleaf").value).toBe(
       "https://www.overleaf.com/project/abc",
     );
@@ -638,45 +910,77 @@ describe("letter request links", () => {
   });
 });
 
-describe("admin request modes", () => {
+describe("request modes", () => {
   const letters: LogisticsRequest = {
-    id: "recommendation-letters",
-    member: "Ada Lovelace",
-    savedAt: new Date(2026, 7, 1, 9, 30).getTime(),
-    deadline: "2026-12-01",
-    type: "recommendationLetters",
-    schools: [createSchoolRow({ school: "Stanford", applicationDeadline: "2026-12-01" })],
-    cvOverleafUrl: "https://www.overleaf.com/project/abc",
-    driveFolderUrl: "",
+    id: "logreq_letters",
+    kind: "recommendation_letters",
+    member_id: "ada",
+    member_name: "Ada Lovelace",
+    status: "submitted",
+    submitted_at: "2026-08-01T09:30:00.000Z",
+    updated_at: "2026-08-01T09:30:00.000Z",
+    deadline_at: "2026-12-01T23:59:00.000Z",
+    schools: [{ school: "Stanford", application_deadline: "2026-12-01" }],
+    facts: [{ project: "Causal NLP", contribution: "ran the ablations" }],
+    cv_overleaf_url: "https://www.overleaf.com/project/abc",
   };
   const signature: LogisticsRequest = {
-    id: "document-signature",
-    member: "Ada Lovelace",
-    savedAt: new Date(2026, 7, 2, 9, 30).getTime(),
-    deadline: null,
-    type: "documentSignature",
+    id: "logreq_signature",
+    kind: "document_signature",
+    member_id: "ada",
+    member_name: "Ada Lovelace",
+    status: "in_progress",
+    submitted_at: "2026-08-02T09:30:00.000Z",
+    updated_at: "2026-08-02T09:30:00.000Z",
     documents: [{ name: "visa-letter.pdf", size: 2048 }],
     description: "Needs the head's signature.",
     attachments: [],
   };
+  const meeting: LogisticsRequest = {
+    id: "logreq_meeting",
+    kind: "book_meeting",
+    member_id: "grace",
+    member_name: "Grace Hopper",
+    status: "submitted",
+    submitted_at: "2026-08-03T09:30:00.000Z",
+    updated_at: "2026-08-03T09:30:00.000Z",
+    // 14:00 in Toronto, as the service resolved it on the way in.
+    deadline_at: "2026-09-01T18:00:00.000Z",
+    meetings: [
+      {
+        purpose: "thesis check-in",
+        preferred_time: "2026-09-01T14:00",
+        timezone: "America/Toronto",
+        length_minutes: 30,
+      },
+    ],
+  };
 
-  function modeButtons(container: HTMLElement): HTMLButtonElement[] {
-    const admin = container.querySelector<HTMLElement>("[data-testid='logistics-admin']");
-    return [...(admin?.querySelectorAll<HTMLButtonElement>(".logistics__template") ?? [])];
-  }
-
-  it("hides the whole section from a member", () => {
+  it("offers a member their own requests, without calling it the lab's", () => {
     const { container } = draw({ role: "member" });
-    expect(container.querySelector("[data-testid='logistics-admin']")).toBeNull();
-    // The templates and the form are exactly what they saw before.
-    expect(container.querySelector("[data-testid='logistics-request']")).not.toBeNull();
+    const admin = container.querySelector<HTMLElement>("[data-testid='logistics-admin']");
+    expect(modeButtons(container).map((button) => button.textContent?.trim())).toEqual([
+      "Make a Request",
+      "My Requests",
+    ]);
+    // The admin badge is the one part that stays admin-only: it says whose queue you are reading.
+    expect(admin?.textContent).not.toContain("Admins only");
   });
 
-  it("never shows a member the request list, even with the view mode set", () => {
-    // A stale mode in app state must not be a way in: the view pins non-admins to making a request.
-    const { container } = draw({ role: "member", mode: "view", requests: [letters] });
-    expect(container.querySelector("[data-testid='logistics-requests']")).toBeNull();
-    expect(container.querySelector("[data-testid='logistics-request']")).not.toBeNull();
+  it("shows a member the requests they sent, and says they are theirs", () => {
+    const { container } = draw({
+      role: "member",
+      mode: "view",
+      requests: [letters],
+    });
+    const list = container.querySelector<HTMLElement>("[data-testid='logistics-requests']");
+    expect(list?.querySelector(".card-title")?.textContent?.trim()).toBe("My Requests");
+    // No User column: every row on this list is the reader.
+    expect(
+      [...container.querySelectorAll(".logistics-requests__head")].map((head) =>
+        head.textContent?.trim(),
+      ),
+    ).toEqual(["Type of Request", "Most Recent Deadline", "Status"]);
   });
 
   it("offers an admin the two modes above the templates", () => {
@@ -692,7 +996,7 @@ describe("admin request modes", () => {
     expect(admin?.textContent).toContain("Admins only");
   });
 
-  it("stays on Make a Request until an admin asks for the list", () => {
+  it("stays on Make a Request until the list is asked for", () => {
     const drawn = draw({ role: "admin" });
     expect(modeButtons(drawn.container)[0].getAttribute("aria-pressed")).toBe("true");
     expect(drawn.container.querySelector("[data-testid='logistics-request']")).not.toBeNull();
@@ -701,112 +1005,469 @@ describe("admin request modes", () => {
     expect(drawn.modeChanges).toEqual(["view"]);
   });
 
-  it("swaps the templates and the form for the list in view mode", () => {
-    const { container } = draw({ role: "admin", mode: "view", requests: [letters] });
-    expect(container.querySelector("[data-testid='logistics-requests']")).not.toBeNull();
+  it("swaps the templates and the form for the queue in view mode", () => {
+    const { container } = draw({
+      role: "admin",
+      mode: "view",
+      requests: [letters],
+    });
+    // An admin gets the spreadsheet; the member's own list is the other shape of the same data.
+    expect(container.querySelector("[data-testid='logistics-queue']")).not.toBeNull();
     // Reading the lab's requests is not the moment to be offered a new one.
     expect(container.querySelector("[data-testid='logistics-templates']")).toBeNull();
     expect(container.querySelector("[data-testid='logistics-request']")).toBeNull();
     expect(container.querySelector("[data-testid='logistics-letters']")).toBeNull();
   });
 
-  it("lists each request by user, type and soonest deadline", () => {
-    const { container } = draw({ role: "admin", mode: "view", requests: [letters, signature] });
+  it("gives a member the list rather than the admin's spreadsheet", () => {
+    const { container } = draw({ role: "member", mode: "view", requests: [letters] });
+    expect(container.querySelector("[data-testid='logistics-requests']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='logistics-queue']")).toBeNull();
+  });
+
+  it("lists a member's own requests by type, soonest deadline and where each stands", () => {
+    const { container } = draw({
+      role: "member",
+      mode: "view",
+      requests: [letters, signature, meeting],
+    });
     const headings = [...container.querySelectorAll(".logistics-requests__head")];
     expect(headings.map((heading) => heading.textContent?.trim())).toEqual([
-      "User",
       "Type of Request",
       "Most Recent Deadline",
+      "Status",
     ]);
     const rows = [...container.querySelectorAll(".logistics-requests__row")];
-    expect(rows.map((row) => row.textContent?.replace(/\s+/g, " ").trim())).toEqual([
-      "Ada Lovelace Recommendation Letters Dec 1, 2026",
+    expect(rows.map((row) => row.textContent?.replace(/\s+/gu, " ").trim())).toEqual([
+      "Recommendation Letters Dec 1, 2026 Submitted",
       // A signature request names no date, so it says so rather than inventing one.
-      "Ada Lovelace Document Signature No deadline",
+      "Document Signature No deadline In progress",
+      "Book Meeting Sep 1, 2026 Submitted",
     ]);
   });
 
   it("says the list is empty rather than showing a bare header", () => {
-    const { container } = draw({ role: "admin", mode: "view", requests: [] });
-    expect(container.querySelector(".logistics-requests__table")).toBeNull();
-    expect(container.querySelector(".logistics-requests__empty")?.textContent).toContain(
-      "No saved requests",
+    const member = draw({ role: "member", mode: "view", requests: [] });
+    expect(member.container.querySelector(".logistics-requests__empty")?.textContent).toContain(
+      "You have not sent a request yet",
     );
   });
 
-  it("says on screen that the list only covers this device", () => {
-    // The heading says "Current Requests"; this is what stops that reading as the whole lab.
-    const { container } = draw({ role: "admin", mode: "view", requests: [letters] });
-    expect(container.querySelector(".logistics-requests__scope")?.textContent).toContain(
-      "saved in the browser it was typed in",
+  it("reports a list that could not be read, instead of an empty one", () => {
+    const { container } = draw({
+      role: "admin",
+      mode: "view",
+      requests: [],
+      requestsError: "Could not reach the AdminBot service at http://127.0.0.1:8765.",
+    });
+    expect(container.querySelector(".logistics-requests__error")?.textContent).toContain(
+      "Could not reach the AdminBot service",
     );
   });
 
   it("opens a request from its row", () => {
     const drawn = draw({ role: "admin", mode: "view", requests: [letters] });
     drawn.container.querySelector<HTMLButtonElement>(".logistics-requests__open")?.click();
-    expect(drawn.opened).toContain("recommendation-letters");
+    expect(drawn.opened).toContain("logreq_letters");
+  });
+
+  it("waits rather than showing the list again while a request is being opened", () => {
+    const { container } = draw({
+      role: "admin",
+      mode: "view",
+      requests: [letters],
+      openLoading: true,
+    });
+    expect(container.querySelector(".logistics-requests__table")).toBeNull();
+    expect(container.querySelector(".logistics-requests__empty")?.textContent).toContain(
+      "Reading requests…",
+    );
   });
 
   it("shows a letters request in full, read-only, with a way back", () => {
     const { container } = draw({
       role: "admin",
       mode: "view",
-      requests: [letters],
-      openRequestId: "recommendation-letters",
+      openRequest: letters,
     });
     const detail = container.querySelector<HTMLElement>("[data-testid='logistics-request-detail']");
     expect(detail).not.toBeNull();
     expect(container.querySelector("[data-testid='logistics-requests']")).toBeNull();
     expect(detail?.querySelector(".card-title")?.textContent?.trim()).toBe("Ada Lovelace");
-    // Every column of the member's table, as text -- no inputs an admin could type into.
-    expect(detail?.querySelectorAll(".logistics-schools__head")).toHaveLength(8);
-    expect(detail?.querySelectorAll("input, textarea")).toHaveLength(0);
+    // Every column of the member's table, plus the two the facts table adds -- and no input an
+    // admin could type the member's answers into. The note box is the one control here, and it
+    // belongs to the answer, not to the request.
     expect(detail?.textContent).toContain("Stanford");
+    expect(detail?.querySelectorAll("input")).toHaveLength(0);
     expect(detail?.textContent).toContain("https://www.overleaf.com/project/abc");
+  });
+
+  it("shows the facts a letter is written from, which the writer cannot get anywhere else", () => {
+    const { container } = draw({
+      role: "admin",
+      mode: "view",
+      openRequest: letters,
+    });
+    const detail = container.querySelector<HTMLElement>("[data-testid='logistics-request-detail']");
+    expect(detail?.textContent).toContain("Causal NLP");
+    expect(detail?.textContent).toContain("ran the ablations");
+  });
+
+  it("shows a meeting request's rows, which used to be readable nowhere", () => {
+    const { container } = draw({
+      role: "admin",
+      mode: "view",
+      openRequest: meeting,
+    });
+    const detail = container.querySelector<HTMLElement>("[data-testid='logistics-request-detail']");
+    expect(detail?.textContent).toContain("thesis check-in");
+    expect(detail?.textContent).toContain("America/Toronto");
+    expect(detail?.textContent).toContain("30 min");
   });
 
   it("shows a signature request's documents and description", () => {
     const { container } = draw({
       role: "admin",
       mode: "view",
-      requests: [signature],
-      openRequestId: "document-signature",
+      openRequest: signature,
     });
     const detail = container.querySelector<HTMLElement>("[data-testid='logistics-request-detail']");
     expect(detail?.textContent).toContain("visa-letter.pdf");
     expect(detail?.textContent).toContain("Needs the head's signature.");
+    expect(detail?.textContent).toContain("2.0 KB");
   });
 
-  it("goes back to the list", () => {
-    const drawn = draw({
-      role: "admin",
-      mode: "view",
-      requests: [letters],
-      openRequestId: "recommendation-letters",
-    });
-    drawn.container.querySelector<HTMLButtonElement>(".logistics-detail__back .btn")?.click();
-    expect(drawn.opened).toEqual([null]);
-  });
-
-  it("falls back to the list when the open request is gone", () => {
-    // Cleared in another tab between the click and the render.
+  it("offers a document as a download once its bytes are there", () => {
+    const withBytes: LogisticsRequest = {
+      ...signature,
+      documents: [{ name: "visa-letter.pdf", size: 5, data_base64: "aGVsbG8=" }],
+    };
     const { container } = draw({
       role: "admin",
       mode: "view",
-      requests: [letters],
-      openRequestId: "document-signature",
+      openRequest: withBytes,
     });
-    expect(container.querySelector("[data-testid='logistics-requests']")).not.toBeNull();
-    expect(container.querySelector("[data-testid='logistics-request-detail']")).toBeNull();
+    const link = container.querySelector<HTMLAnchorElement>(".logistics-detail__files a");
+    expect(link?.getAttribute("download")).toBe("visa-letter.pdf");
+    expect(link?.getAttribute("href")).toContain("base64,aGVsbG8=");
+  });
+
+  it("goes back to the list", () => {
+    const drawn = draw({ role: "admin", mode: "view", openRequest: letters });
+    drawn.container.querySelector<HTMLButtonElement>(".logistics-detail__back .btn")?.click();
+    expect(drawn.opened).toEqual([null]);
   });
 });
 
-describe("formatFileSize", () => {
-  it("keeps a decimal below ten units and drops it above", () => {
-    expect(formatFileSize(512)).toBe("512 B");
-    expect(formatFileSize(1024)).toBe("1.0 KB");
-    expect(formatFileSize(1024 * 1024 * 1.44)).toBe("1.4 MB");
-    expect(formatFileSize(1024 * 247)).toBe("247 KB");
+describe("answering a request", () => {
+  const request: LogisticsRequest = {
+    id: "logreq_1",
+    kind: "document_signature",
+    member_id: "ada",
+    member_name: "Ada Lovelace",
+    status: "submitted",
+    submitted_at: "2026-08-02T09:30:00.000Z",
+    updated_at: "2026-08-02T09:30:00.000Z",
+    documents: [{ name: "visa-letter.pdf", size: 2048 }],
+  };
+
+  function answerButtons(container: HTMLElement): HTMLButtonElement[] {
+    const answer = container.querySelector<HTMLElement>("[data-testid='logistics-answer']");
+    return [...(answer?.querySelectorAll<HTMLButtonElement>(".btn") ?? [])];
+  }
+
+  it("offers an admin the three answers, and never 'withdrawn'", () => {
+    const { container } = draw({
+      role: "admin",
+      mode: "view",
+      openRequest: request,
+    });
+    expect(answerButtons(container).map((button) => button.textContent?.trim())).toEqual([
+      "In progress",
+      "Done",
+      "Declined",
+    ]);
+  });
+
+  it("sends the answer with the note the admin typed", () => {
+    const drawn = draw({
+      role: "admin",
+      mode: "view",
+      openRequest: request,
+      statusNote: "signed and in your pigeonhole",
+    });
+    answerButtons(drawn.container)[1].click();
+    expect(drawn.answers).toEqual([
+      {
+        id: "logreq_1",
+        status: "completed",
+        note: "signed and in your pigeonhole",
+      },
+    ]);
+  });
+
+  it("reports an edit to the note against app state, so a reload underneath cannot eat it", () => {
+    const drawn = draw({ role: "admin", mode: "view", openRequest: request });
+    const note = drawn.container.querySelector<HTMLTextAreaElement>(".logistics-detail__note");
+    note!.value = "asking the head first";
+    note!.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(drawn.noteChanges).toEqual(["asking the head first"]);
+  });
+
+  it("does not offer a member the answer controls at all", () => {
+    const { container } = draw({
+      role: "member",
+      mode: "view",
+      openRequest: request,
+    });
+    expect(container.querySelector("[data-testid='logistics-answer']")).toBeNull();
+  });
+
+  it("shows the member what the lab said back", () => {
+    const { container } = draw({
+      role: "member",
+      mode: "view",
+      openRequest: {
+        ...request,
+        status: "declined",
+        resolution_note: "ask again in May",
+      },
+    });
+    expect(container.querySelector("[data-testid='logistics-resolution']")?.textContent).toContain(
+      "ask again in May",
+    );
+  });
+});
+
+describe("correcting a request already sent", () => {
+  const mine: LogisticsRequest = {
+    id: "logreq_mine",
+    kind: "document_signature",
+    member_id: "ada",
+    member_name: "Ada Lovelace",
+    status: "submitted",
+    submitted_at: "2026-08-02T09:30:00.000Z",
+    updated_at: "2026-08-02T09:30:00.000Z",
+    documents: [{ name: "visa-letter.pdf", size: 2048 }],
+  };
+
+  function editButton(container: HTMLElement): HTMLButtonElement | null {
+    return container.querySelector<HTMLButtonElement>("[data-testid='logistics-edit']");
+  }
+
+  it("offers the requester their request back", () => {
+    const drawn = draw({ role: "member", mode: "view", openRequest: mine });
+    editButton(drawn.container)?.click();
+    expect(drawn.edited).toEqual(["logreq_mine"]);
+  });
+
+  it("stops offering it once the lab has picked the request up", () => {
+    // An edit past this point would move the ground under an admin mid-way through, and the
+    // service refuses it anyway.
+    for (const status of ["in_progress", "completed", "declined", "withdrawn"] as const) {
+      const { container } = draw({
+        role: "member",
+        mode: "view",
+        openRequest: { ...mine, status },
+      });
+      expect(editButton(container)).toBeNull();
+    }
+  });
+
+  it("is not offered on somebody else's request, however privileged the reader", () => {
+    const { container } = draw({
+      role: "admin",
+      mode: "view",
+      viewerMemberId: "zhijing",
+      openRequest: mine,
+    });
+    expect(editButton(container)).toBeNull();
+  });
+
+  it("says the form holds a correction, since it looks like a new request otherwise", () => {
+    const { container } = draw({ editing: true });
+    expect(container.querySelector("[data-testid='logistics-editing']")?.textContent).toContain(
+      "Correcting a request you already sent",
+    );
+    expect(
+      container.querySelector<HTMLButtonElement>("[data-testid='logistics-submit']")?.textContent,
+    ).toContain("Send the correction");
+  });
+
+  it("lets the member abandon the correction and start a new request", () => {
+    const drawn = draw({ editing: true });
+    drawn.container
+      .querySelector<HTMLElement>("[data-testid='logistics-editing']")
+      ?.querySelector<HTMLButtonElement>("button")
+      ?.click();
+    expect(drawn.cancelledEdits).toBe(1);
+  });
+
+  it("says nothing about correcting on a form holding a new request", () => {
+    const { container } = draw();
+    expect(container.querySelector("[data-testid='logistics-editing']")).toBeNull();
+  });
+});
+
+describe("withdrawing a request", () => {
+  const mine: LogisticsRequest = {
+    id: "logreq_mine",
+    kind: "document_signature",
+    member_id: "ada",
+    member_name: "Ada Lovelace",
+    status: "submitted",
+    submitted_at: "2026-08-02T09:30:00.000Z",
+    updated_at: "2026-08-02T09:30:00.000Z",
+    documents: [{ name: "visa-letter.pdf", size: 2048 }],
+  };
+
+  function withdrawButton(container: HTMLElement): HTMLButtonElement | null {
+    return (
+      [...container.querySelectorAll<HTMLButtonElement>(".logistics-detail__actions .btn")].find(
+        (button) => button.textContent?.includes("Withdraw"),
+      ) ?? null
+    );
+  }
+
+  it("lets the requester call their own request off", () => {
+    const drawn = draw({ role: "member", mode: "view", openRequest: mine });
+    withdrawButton(drawn.container)?.click();
+    expect(drawn.withdrawn).toEqual(["logreq_mine"]);
+  });
+
+  it("is not offered on somebody else's request", () => {
+    const { container } = draw({
+      role: "admin",
+      mode: "view",
+      viewerMemberId: "zhijing",
+      openRequest: mine,
+    });
+    expect(withdrawButton(container)).toBeNull();
+  });
+
+  it("is not offered once there is nothing left to call off", () => {
+    for (const status of ["completed", "withdrawn"] as const) {
+      const { container } = draw({
+        role: "member",
+        mode: "view",
+        openRequest: { ...mine, status },
+      });
+      expect(withdrawButton(container)).toBeNull();
+    }
+  });
+});
+
+// The letter itself stays a Drive template. What a template cannot hold is which project and what
+// the member did on it, which is why this table exists and why the weekly updates it draws on are
+// pointed at rather than asked for again.
+describe("list of facts", () => {
+  function factsTable(container: HTMLElement): HTMLElement {
+    return container.querySelector<HTMLElement>("[data-testid='logistics-facts']")!;
+  }
+
+  it("asks for one row per project, and routes to where the weekly updates already are", () => {
+    const drawn = drawLetters({
+      facts: [createFactRow({ project: "Causal NLP" })],
+    });
+    const table = factsTable(drawn.container);
+    const names = [...table.querySelectorAll(".logistics-schools__head-name")];
+    expect(names.map((name) => name.textContent?.trim())).toEqual(["Project", "What you did"]);
+    expect(table.querySelector<HTMLInputElement>("input")?.value).toBe("Causal NLP");
+
+    table.querySelector<HTMLButtonElement>(".logistics-facts__link")?.click();
+    expect(drawn.myProjectsOpened).toBe(1);
+  });
+
+  it("adds and removes a row without touching the others", () => {
+    const rows = [createFactRow({ project: "Causal NLP" }), createFactRow({ project: "Nudges" })];
+    const added = drawLetters({ facts: rows });
+    factsTable(added.container)
+      .querySelector<HTMLButtonElement>("[data-testid='logistics-facts-add']")
+      ?.click();
+    expect(added.factChanges[0]).toHaveLength(3);
+    expect(added.factChanges[0].slice(0, 2)).toEqual(rows);
+
+    const removed = drawLetters({ facts: rows });
+    factsTable(removed.container)
+      .querySelectorAll<HTMLButtonElement>(".logistics-schools__cell--remove button")[0]
+      ?.click();
+    expect(removed.factChanges[0]).toEqual([rows[1]]);
+  });
+
+  it("says the table is empty rather than showing a bare header", () => {
+    const { container } = drawLetters({ facts: [] });
+    expect(factsTable(container).querySelector(".logistics-schools__empty")).not.toBeNull();
+  });
+});
+
+// A meeting request is four short facts, and whoever schedules them reads many at once.
+describe("book meeting", () => {
+  function drawMeeting(options: Omit<DrawOptions, "template"> = {}): Drawn {
+    return draw({ ...options, template: "bookMeeting" });
+  }
+
+  it("lays a request out as a row: when they asked, what for, when, on whose clock, how long", () => {
+    const { container } = drawMeeting({ meetings: [createMeetingRow()] });
+    const names = [...container.querySelectorAll(".logistics-schools__head-name")];
+    expect(names.map((name) => name.textContent?.trim())).toEqual([
+      "Submitted",
+      "What the call is for",
+      "Preferred time",
+      "Time zone",
+      "Call length (min)",
+    ]);
+  });
+
+  // Order of service is decided by when the request arrived, so it is the one field a requester
+  // must not be able to write.
+  it("stamps the submitted time rather than offering it as a control", () => {
+    const { container } = drawMeeting({ meetings: [createMeetingRow()] });
+    const row = container.querySelector<HTMLElement>(".logistics-schools__row")!;
+    expect(row.querySelector(".logistics-meeting__submitted input")).toBeNull();
+    expect(row.querySelector(".logistics-meeting__submitted")?.textContent?.trim()).not.toBe("");
+    // The four columns a member fills in, and no fifth.
+    expect(row.querySelectorAll("input")).toHaveLength(4);
+  });
+
+  it("prefills the zone from the browser so a proposed time means a real instant", () => {
+    const { container } = drawMeeting({ meetings: [createMeetingRow()] });
+    const zone = [...container.querySelectorAll<HTMLInputElement>("input")].find(
+      (input) => input.getAttribute("list") !== null,
+    );
+    expect(zone?.value).toBe(Intl.DateTimeFormat().resolvedOptions().timeZone);
+  });
+
+  it("reports an edit against the row it was made in", () => {
+    const rows = [createMeetingRow(), createMeetingRow()];
+    const drawn = drawMeeting({ meetings: rows });
+    const lengths = [...drawn.container.querySelectorAll<HTMLInputElement>('input[type="number"]')];
+    lengths[1].value = "45";
+    lengths[1].dispatchEvent(new Event("input"));
+    expect(drawn.meetingChanges[0][0].lengthMinutes).toBe("");
+    expect(drawn.meetingChanges[0][1].lengthMinutes).toBe("45");
+  });
+
+  it("saves the meeting draft on its own Save, and reports its own outcome", () => {
+    const drawn = drawMeeting({
+      meetings: [createMeetingRow()],
+      meetingSavedAt: 0,
+    });
+    const actions = [
+      ...drawn.container.querySelectorAll<HTMLButtonElement>(".logistics-request__actions .btn"),
+    ];
+    actions[1].click();
+    expect(drawn.meetingSaves).toBe(1);
+    expect(drawn.saves).toBe(0);
+    expect(drawn.lettersSaves).toBe(0);
+
+    actions[2].click();
+    expect(drawn.meetingSubmits).toBe(1);
+    expect(drawn.submits).toBe(0);
+    expect(drawn.lettersSubmits).toBe(0);
+  });
+
+  it("opens empty rather than stamping a request nobody made", () => {
+    const { container } = drawMeeting();
+    expect(container.querySelector(".logistics-schools__empty")).not.toBeNull();
   });
 });

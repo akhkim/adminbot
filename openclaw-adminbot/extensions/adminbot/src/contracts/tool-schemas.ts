@@ -54,6 +54,14 @@ export const accessGrantSchema = Type.Object(
 export const settingsSchema = Type.Object(
   {
     paper_escalation_business_days: Type.Optional(Type.Integer({ minimum: 1 })),
+    cv_recency_window_months: Type.Optional(
+      Type.Integer({
+        minimum: 1,
+        maximum: 60,
+        description:
+          "How many months back a CV entry's start date may sit and still be drafted as news. Older additions are reported as backfilled and left out of the newsletter.",
+      }),
+    ),
     head_professor_member_id: Type.Optional(Type.String()),
     applicant_sheet_id: Type.Optional(Type.String()),
     applicant_last_reviewed_at: Type.Optional(Type.String()),

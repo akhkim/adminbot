@@ -7,7 +7,11 @@
 // that structure, so the answers cannot drift between the console, the Control UI, and the
 // reviewing-cycle automation.
 
-import type { AdminBotLabMember, AdminBotTimeOffRow } from "../../contracts/actions.js";
+import type {
+  AdminBotLabMember,
+  AdminBotMemberTrip,
+  AdminBotTimeOffRow,
+} from "../../contracts/actions.js";
 
 function covers(row: { start?: string; end?: string }, dayIso: string): boolean {
   const start = row.start ?? "";
@@ -25,4 +29,18 @@ export function fullyAwayOn(
   return (member.time_off ?? []).find(
     (row) => row.availability !== "partial" && covers(row, dayIso),
   );
+}
+
+/**
+ * The trip the member is on for `dayIso`, if any.
+ *
+ * The last matching row wins where two overlap. Overlapping trips are a data-entry slip rather than
+ * a meaningful state -- nobody is in two cities -- and taking the most recently added one means a
+ * correction typed today beats a stale row without the member having to find and delete it first.
+ */
+export function tripOn(
+  member: Pick<AdminBotLabMember, "trips">,
+  dayIso: string,
+): AdminBotMemberTrip | undefined {
+  return (member.trips ?? []).findLast((row) => covers(row, dayIso));
 }

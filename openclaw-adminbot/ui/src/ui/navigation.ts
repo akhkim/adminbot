@@ -25,7 +25,7 @@ export const TAB_GROUPS = [
   },
   // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
   // which is what someone browsing the lab's shared surface came to look at.
-  { label: "labSharing", tabs: ["labSharing", "adminbotMembers"] },
+  { label: "labSharing", tabs: ["labSharing", "adminbotMeetings", "adminbotMembers"] },
   {
     label: "admin",
     tabs: [
@@ -33,28 +33,33 @@ export const TAB_GROUPS = [
       "adminbotPapers",
       "adminbotRegistrations",
       "adminbotOnboarding",
+      "adminbotProfileOverview",
       "adminbotCalendar",
       "adminbotAnnouncements",
+      "adminbotCvUpdates",
       "adminbotSettings",
     ],
   },
   // Upstream OpenClaw's own operator surfaces. Every one of these is already admin-only in
   // access.ts, so collapsing the former control/agent/settings groups into one heading changes
   // where they sit, never who can reach them.
+  //
+  // Workboard, Instances and Dreams are deliberately absent: this deployment runs one gateway on
+  // one host for one lab, so there is no second instance to switch between and no board of agent
+  // work to keep; dreaming is an upstream idle-time feature nobody here uses. Their views still
+  // exist and their routes still resolve -- this only takes them out of the sidebar. Nodes stays:
+  // it is where paired devices are approved, which this deployment does use.
   {
     label: "openclaw",
     tabs: [
       "overview",
       "activity",
-      "workboard",
-      "instances",
       "sessions",
       "usage",
       "cron",
       "agents",
       "skills",
       "nodes",
-      "dreams",
       "config",
     ],
   },
@@ -82,17 +87,18 @@ export type Tab =
   | "adminbotReimbursements"
   | "adminbotSettings"
   | "adminbotMembers"
+  | "adminbotProfileOverview"
   | "adminbotTimeAvailability"
+  | "adminbotMeetings"
   | "adminbotLogistics"
   | "adminbotSocialBot"
   | "adminbotPapers"
   | "adminbotAnnouncements"
+  | "adminbotCvUpdates"
   | "adminbotCalendar"
   | "adminbotDeadlines"
   | "overview"
-  | "workboard"
   | "channels"
-  | "instances"
   | "sessions"
   | "usage"
   | "cron"
@@ -107,8 +113,7 @@ export type Tab =
   | "infrastructure"
   | "aiAgents"
   | "debug"
-  | "logs"
-  | "dreams";
+  | "logs";
 
 export const SETTINGS_TABS = [
   "config",
@@ -136,17 +141,18 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotReimbursements: "/adminbot/reimbursements",
   adminbotSettings: "/adminbot/settings",
   adminbotMembers: "/adminbot/members",
+  adminbotProfileOverview: "/adminbot/profile-overview",
   adminbotTimeAvailability: "/adminbot/time-availability",
+  adminbotMeetings: "/adminbot/meetings",
   adminbotLogistics: "/adminbot/logistics",
   adminbotSocialBot: "/adminbot/social-bot",
   adminbotPapers: "/adminbot/papers",
   adminbotAnnouncements: "/adminbot/announcements",
+  adminbotCvUpdates: "/adminbot/cv-updates",
   adminbotCalendar: "/adminbot/calendar",
   adminbotDeadlines: "/adminbot/deadlines",
   overview: "/overview",
-  workboard: "/workboard",
   channels: "/channels",
-  instances: "/instances",
   sessions: "/sessions",
   usage: "/usage",
   cron: "/cron",
@@ -162,12 +168,9 @@ const TAB_PATHS: Record<Tab, string> = {
   aiAgents: "/ai-agents",
   debug: "/debug",
   logs: "/logs",
-  dreams: "/dreaming",
 };
 
-const PATH_ALIASES: Record<string, Tab> = {
-  "/dreams": "dreams",
-};
+const PATH_ALIASES: Record<string, Tab> = {};
 
 const PATH_TO_TAB = new Map<string, Tab>([
   ...Object.entries(TAB_PATHS).map(([tab, path]) => [path, tab as Tab] as const),
@@ -297,10 +300,14 @@ export function iconForTab(tab: Tab): IconName {
       return "fileText";
     case "adminbotSettings":
       return "settings";
+    case "adminbotProfileOverview":
+      return "check";
     case "adminbotMembers":
       return "folder";
     case "adminbotTimeAvailability":
       return "clock";
+    case "adminbotMeetings":
+      return "play";
     case "adminbotLogistics":
       return "paperclip";
     case "adminbotSocialBot":
@@ -309,16 +316,14 @@ export function iconForTab(tab: Tab): IconName {
       return "fileText";
     case "adminbotAnnouncements":
       return "activity";
+    case "adminbotCvUpdates":
+      return "fileText";
     case "adminbotCalendar":
       return "clock";
     case "adminbotDeadlines":
       return "loader";
-    case "workboard":
-      return "folder";
     case "channels":
       return "link";
-    case "instances":
-      return "radio";
     case "sessions":
       return "fileText";
     case "usage":
@@ -347,8 +352,6 @@ export function iconForTab(tab: Tab): IconName {
       return "bug";
     case "logs":
       return "scrollText";
-    case "dreams":
-      return "moon";
     default:
       return "folder";
   }

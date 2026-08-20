@@ -11,7 +11,9 @@ Use this skill for social media drafting and public posting proposals.
 
 1. Identify the subject, source work, audience, and tone.
 2. Gather source links and evidence pointers.
-3. Use `adminbot_draft_social_post` for generic draft-only work.
+3. Use `adminbot_prepare_paper_social_posts` to build the posts. It proposes
+   `social_media.post_publicly`, which is the only social action a connector
+   actually publishes.
 4. Use `adminbot-linkedin-from-twitter` when a paper LinkedIn post should be
    generated from the PaperPublish spreadsheet `twitter_draft` column or a
    `Twitter Thread` link.

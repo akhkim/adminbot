@@ -16,18 +16,18 @@ function unwrap<T>(
 }
 
 describe("AdminBotService", () => {
-  it("keeps T4 candidate decisions pending until an allowed role approves the payload hash", () => {
+  it("keeps a gated action pending until an allowed role approves the payload hash", () => {
     const service = new AdminBotService();
     const proposal = unwrap(
       service.createProposal({
-        type: "candidate.accept_for_trial",
-        summary: "Accept Jane Doe for trial",
+        type: "email.send",
+        summary: "Email Jane Doe the trial offer",
         target: { name: "Jane Doe" },
       }),
     );
 
     expect(proposal.status).toBe("pending");
-    expect(proposal.risk_tier).toBe("T4");
+    expect(proposal.risk_tier).toBe("T3");
     expect(proposal.approval_requirement).toEqual({
       requires_approval: true,
       approver_roles: ["admin"],
@@ -579,6 +579,89 @@ describe("AdminBotService", () => {
       },
     ]) {
       expect(service.updateOwnProfile("sched", bad)).toMatchObject({ ok: false, status: 400 });
+    }
+  });
+
+  // A deadline stated to the minute has to say on whose clock. The same digits read in Toronto and
+  // Anywhere-on-Earth are seventeen hours apart, and a time stored without its zone cannot be
+  // corrected later because nobody knows which one was meant -- so the pair is all-or-nothing.
+  it("takes an exact cutoff on a milestone only as a time and a zone together", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "clock", name: "Clock", privilege_level: "member" }));
+
+    const saved = unwrap(
+      service.updateOwnProfile("clock", {
+        milestones: [
+          { date: "2027-06-12", label: "Camera ready", time: "17:00", timezone: "America/Toronto" },
+        ],
+      }),
+    );
+    expect(saved.milestones?.[0]).toMatchObject({ time: "17:00", timezone: "America/Toronto" });
+
+    for (const bad of [
+      { milestones: [{ date: "2027-06-12", label: "Deadline", time: "17:00" }] },
+      { milestones: [{ date: "2027-06-12", label: "Deadline", timezone: "America/Toronto" }] },
+      { milestones: [{ date: "2027-06-12", label: "Deadline", time: "5pm", timezone: "UTC" }] },
+      // Seconds are not accepted: nothing here is stated to the second, and allowing them would
+      // mean two spellings of the same minute.
+      {
+        milestones: [{ date: "2027-06-12", label: "Deadline", time: "17:00:00", timezone: "UTC" }],
+      },
+      { milestones: [{ date: "2027-06-12", label: "Deadline", time: "25:00", timezone: "UTC" }] },
+      // Asked of Intl rather than checked against a bundled list, which would go stale.
+      { milestones: [{ date: "2027-06-12", label: "Deadline", time: "17:00", timezone: "EST5" }] },
+    ]) {
+      expect(service.updateOwnProfile("clock", bad)).toMatchObject({ ok: false, status: 400 });
+    }
+  });
+
+  // A partial row used to be "around, but less" with no number attached, which no chart could draw
+  // and no admin could plan against.
+  it("takes hours on a partial time-off row and refuses them on a whole-day one", () => {
+    const service = new AdminBotService();
+    unwrap(service.upsertLabMember({ id: "hours", name: "Hours", privilege_level: "member" }));
+
+    const saved = unwrap(
+      service.updateOwnProfile("hours", {
+        time_off: [
+          {
+            start: "2026-09-08",
+            end: "2026-12-05",
+            kind: "course_load",
+            availability: "partial",
+            hours_per_week: 12,
+          },
+        ],
+      }),
+    );
+    expect(saved.time_off?.[0]?.hours_per_week).toBe(12);
+
+    for (const bad of [
+      {
+        time_off: [
+          {
+            start: "2026-09-08",
+            end: "2026-12-05",
+            kind: "course_load" as const,
+            availability: "partial" as const,
+            hours_per_week: 200,
+          },
+        ],
+      },
+      // A whole-day row zeroes the week by definition; hours on it would be stored and never read.
+      {
+        time_off: [
+          {
+            start: "2026-12-24",
+            end: "2027-01-02",
+            kind: "vacation" as const,
+            availability: "none" as const,
+            hours_per_week: 4,
+          },
+        ],
+      },
+    ]) {
+      expect(service.updateOwnProfile("hours", bad)).toMatchObject({ ok: false, status: 400 });
     }
   });
 
@@ -1164,8 +1247,8 @@ describe("AdminBotService", () => {
       const publicPost = unwrap(
         service.createProposal({ type: "social_media.post_publicly", summary: "Announce" }),
       );
-      const draft = unwrap(
-        service.createProposal({ type: "social_media.draft", summary: "Draft post" }),
+      const auto = unwrap(
+        service.createProposal({ type: "member_nudge.send", summary: "Nudge the roster" }),
       );
 
       expect(publicPost.approval_requirement).toEqual({
@@ -1174,8 +1257,8 @@ describe("AdminBotService", () => {
         min_approvals: 2,
       });
       expect(publicPost.status).toBe("pending");
-      expect(draft.approval_requirement.requires_approval).toBe(false);
-      expect(draft.status).toBe("approved");
+      expect(auto.approval_requirement.requires_approval).toBe(false);
+      expect(auto.status).toBe("approved");
     });
 
     it("does not let one person satisfy a two-person quorum", async () => {
@@ -1240,7 +1323,7 @@ describe("AdminBotService", () => {
     it("leaves stored approval requirements untouched when listing pending proposals", () => {
       const service = new AdminBotService();
       const proposal = unwrap(
-        service.createProposal({ type: "reimbursement.submit", summary: "Submit expenses" }),
+        service.createProposal({ type: "paper_publish.submit", summary: "Submit to NeurIPS" }),
       );
 
       unwrap(service.listPending());
@@ -1742,9 +1825,7 @@ describe("AdminBotService", () => {
       unwrap(service.upsertLabMember({ id: "blank", name: "Blank", privilege_level: "member" }));
       const missing = unwrap(service.listMembersWithIncompleteMandatoryFields()).members[0]
         ?.missing_fields;
-      expect(missing).toEqual(
-        adminBotMandatoryProfileFields.filter((field) => field !== "name"),
-      );
+      expect(missing).toEqual(adminBotMandatoryProfileFields.filter((field) => field !== "name"));
     });
 
     it("sends one Slack reminder per member with an incomplete profile", async () => {
@@ -1897,7 +1978,9 @@ describe("AdminBotService", () => {
       expect(result.non_compliant).toBe(1);
       expect(result.nudges_created).toBe(1);
       expect(reviewSlackProfilePhoto).toHaveBeenCalledTimes(2);
-      const reviewedMember = unwrap(service.listLabMembers()).members.find((member) => member.id === "bad");
+      const reviewedMember = unwrap(service.listLabMembers()).members.find(
+        (member) => member.id === "bad",
+      );
       expect(reviewedMember?.profile_photo_review?.assessment?.issues).toContain("face_not_clear");
     });
 
@@ -1925,7 +2008,9 @@ describe("AdminBotService", () => {
       const variantId = polished.variant.id;
       const applied = unwrap(await service.applyOwnPolishedProfilePhoto("sam", variantId));
       expect(applied.variant_id).toBe(variantId);
-      const updated = unwrap(service.listLabMembers()).members.find((member) => member.id === "sam");
+      const updated = unwrap(service.listLabMembers()).members.find(
+        (member) => member.id === "sam",
+      );
       expect(updated?.profile_photo_review?.selected_variant_id).toBe(variantId);
       expect(executor.execute).toHaveBeenCalled();
     });

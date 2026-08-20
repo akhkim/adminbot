@@ -20,8 +20,9 @@ Templates sections.
    After the proposal is approved and executed, send the exact approved payload
    through OpenClaw's `message` tool.
 4. For mutations, create separate proposals for each concrete change.
-5. Use existing action types when possible, especially `slack.invite_guest`,
-   `slack.invite_member`, and `slack.send_message`.
+5. Use existing action types when possible, especially `slack.send_message` and
+   `slack.rename_channel`. Invites are not among them -- see
+   `adminbot-access-invites` for what AdminBot can and cannot issue.
 6. If the required Slack action has no AdminBot type yet, draft the exact change
    and say the code surface needs a new typed action before execution.
 

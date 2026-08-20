@@ -1400,12 +1400,16 @@ describe("handleControlUiHttpRequest", () => {
         await fs.writeFile(path.join(tmp, "favicon.svg"), "<svg/>");
         await fs.writeFile(path.join(tmp, "manifest.webmanifest"), "{}");
         await fs.writeFile(path.join(tmp, "apple-touch-icon.png"), "png-bytes");
+        await fs.writeFile(path.join(tmp, "adminbot-logo.png"), "png-bytes");
         await fs.writeFile(path.join(tmp, "sw.js"), "self.addEventListener('push', () => {});");
 
         for (const [url, expectedType] of [
           ["/__openclaw__/favicon.svg", "image/svg+xml"],
           ["/__openclaw__/manifest.webmanifest", "application/manifest+json; charset=utf-8"],
           ["/__openclaw__/apple-touch-icon.png", "image/png"],
+          // The brand mark. Served through the gateway as well as from a static host, because
+          // the two disagree about this path and only the gateway needs the allowlist entry.
+          ["/__openclaw__/adminbot-logo.png", "image/png"],
           ["/__openclaw__/sw.js", "application/javascript; charset=utf-8"],
         ] as const) {
           const { res, end, handled } = await runControlUiRequest({

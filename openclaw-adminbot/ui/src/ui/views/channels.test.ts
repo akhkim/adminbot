@@ -8,7 +8,6 @@ import {
   resolveChannelDisplayState,
 } from "./channels.shared.ts";
 import type { ChannelsProps } from "./channels.types.ts";
-import { renderWhatsAppCard } from "./channels.whatsapp.ts";
 
 function createProps(snapshot: ChannelsProps["snapshot"]): ChannelsProps {
   return {
@@ -159,46 +158,5 @@ describe("channel display selectors", () => {
     expect(displayState.running).toBeNull();
     expect(displayState.connected).toBeNull();
     expect(channelEnabled("quietchat", props)).toBe(false);
-  });
-});
-
-describe("WhatsApp card actions", () => {
-  it("shows QR as the primary action before WhatsApp is linked", () => {
-    const onWhatsAppStart = vi.fn();
-    const { buttons, labels } = renderWhatsAppButtons({
-      linked: false,
-      onWhatsAppStart,
-    });
-
-    expect(labels).toEqual(["Save", "Reload", "Show QR", "Logout", "Refresh"]);
-
-    const showQr = buttons.find((button) => button.textContent?.trim() === "Show QR");
-    expect(showQr).toBeInstanceOf(HTMLButtonElement);
-    showQr!.click();
-    expect(onWhatsAppStart).toHaveBeenCalledWith(false);
-  });
-
-  it("uses relink as the explicit action after WhatsApp is linked", () => {
-    const onWhatsAppStart = vi.fn();
-    const { buttons, labels } = renderWhatsAppButtons({
-      linked: true,
-      onWhatsAppStart,
-    });
-
-    expect(labels).toEqual(["Save", "Reload", "Relink", "Logout", "Refresh"]);
-
-    const relink = buttons.find((button) => button.textContent?.trim() === "Relink");
-    expect(relink).toBeInstanceOf(HTMLButtonElement);
-    relink!.click();
-    expect(onWhatsAppStart).toHaveBeenCalledWith(true);
-  });
-
-  it("shows wait for scan only while a QR is displayed", () => {
-    const { labels } = renderWhatsAppButtons({
-      linked: false,
-      qrDataUrl: "data:image/png;base64,current-qr",
-    });
-
-    expect(labels).toEqual(["Save", "Reload", "Show QR", "Wait for scan", "Logout", "Refresh"]);
   });
 });

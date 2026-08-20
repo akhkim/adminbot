@@ -7,18 +7,31 @@ import type {
   AdminBotApprovalRequest,
   AdminBotAuditEvent,
   AdminBotAuthSession,
+  AdminBotCvChangeEvent,
   AdminBotRegistrationStatus,
   AdminBotExecutionRequest,
   AdminBotExecutionResult,
   AdminBotLabMember,
   AdminBotLabMemberInput,
+  AdminBotLogisticsAttachment,
+  AdminBotLogisticsRequest,
+  AdminBotLogisticsRequestInput,
+  AdminBotLogisticsRequestStatus,
   AdminBotMemberCredential,
   AdminBotMemberOnboardingStep,
+  AdminBotMemberProfileOverviewRow,
+  AdminBotMemberTimelineCounts,
   AdminBotMemberNudgeChannel,
   AdminBotMemberNudgeRequest,
   AdminBotMemberNudgeResult,
   AdminBotMemberNudgeSkip,
   AdminBotMemberOnboarding,
+  AdminBotLocationDrift,
+  AdminBotLocationSource,
+  AdminBotMemberLocationEntry,
+  AdminBotMeetingAttendee,
+  AdminBotMeetingRecord,
+  AdminBotMeetingRecordInput,
   AdminBotOpenReviewCycleRecord,
   AdminBotOpenReviewMilestoneRecord,
   AdminBotPaperArtifactLinks,
@@ -43,9 +56,57 @@ import {
   adminBotMandatoryProfileFields,
   adminBotMemberRoles,
   adminBotMemberStatuses,
+  ADMINBOT_DEADLINE_TIME_PATTERN,
   ADMINBOT_MAX_LABEL_LENGTH,
   adminBotTimeOffKinds,
+  isAdminBotTimezone,
 } from "../contracts/actions.js";
+import {
+  adminBotAttendanceStates,
+  adminBotAttendeeKey,
+  adminBotNudgeDomains,
+  adminBotReimbursementStates,
+  type AdminBotConferenceAttendeeRecord,
+  type AdminBotNudgeDomain,
+  type AdminBotNudgeLedgerRecord,
+  type AdminBotPaperReimbursementRecord,
+  type AdminBotSocialConsentRecord,
+  type AdminBotSocialDraftRecord,
+} from "../contracts/paper-cycle.js";
+import {
+  adminBotPaperSlotBranchPriority,
+  type AdminBotPaperSlot,
+  type AdminBotPaperSlotInput,
+  type AdminBotPaperSlotOwner,
+  type AdminBotPaperSlotRecord,
+} from "../contracts/paper-slots.js";
+import {
+  byUrgency,
+  prepareLogisticsRequest,
+  withoutAttachmentBytes,
+} from "../workflows/logistics/requests.js";
+import {
+  clearSettledRequestFiles,
+  signedDocumentEmailBody,
+  signedDocumentEmailSubject,
+  storedRequestBytes,
+  validateSignedDocuments,
+} from "../workflows/logistics/signed-documents.js";
+import { mergeAttendance } from "../workflows/meetings/attendance.js";
+import {
+  byMostRecent,
+  meetsDurationFloor,
+  mergeMeeting,
+  redactMeetingForMember,
+  validateMeeting,
+} from "../workflows/meetings/records.js";
+import {
+  detectLocationDrift,
+  isNewObservation,
+  latestBySource,
+  observationFor,
+  selfReportedChange,
+} from "../workflows/members/location-history.js";
 import { buildMemberMap, type AdminBotMemberMap } from "../workflows/members/member-map.js";
 import {
   acknowledgeOnboardingStep,
@@ -60,6 +121,29 @@ import {
   memberRelevanceNeedles,
   textMatchesNeedles,
 } from "../workflows/papers/openreview-matching.js";
+import { planPaperBackfill } from "../workflows/papers/paper-slot-backfill.js";
+import {
+  actionablePaperSlots,
+  applyPaperSlotWrite,
+  blankPaperSlot,
+  boundSnooze,
+  buildNudgeMessage,
+  draftConsentState,
+  isAdminBotPaperSlot,
+  isConferenceBranchOpen,
+  isCycleClosed,
+  isNudgeDue,
+  isPaperClosed,
+  isPaperDormant,
+  missingAcceptanceDetails,
+  paperSlotProgress,
+  paperSlotRows,
+  redactPaperSlots,
+  resolveConsentAudience,
+  shouldEscalate,
+  waivePaperSlot,
+  type NudgeItem,
+} from "../workflows/papers/paper-slots.js";
 
 // Approver roles are privilege levels from the member roster, not a separate vocabulary: the
 // service can only ever verify the level on the authenticated session, so anything else here
@@ -89,10 +173,42 @@ export type AdminBotServiceStore = {
   saveLabMember(member: AdminBotLabMember): void;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(): AdminBotLabMember[];
+  // Returns the events actually inserted. A change already on record is ignored rather than
+  // re-dated, so re-scanning cannot make an old move look like it just happened.
+  recordCvChanges(events: AdminBotCvChangeEvent[]): AdminBotCvChangeEvent[];
+  listCvChangesSince(sinceIso: string): AdminBotCvChangeEvent[];
   savePaper(paper: AdminBotPaperRecord): void;
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
   listPapers(): AdminBotPaperRecord[];
   deletePaper(paperId: string): boolean;
+  savePaperSlot(record: AdminBotPaperSlotRecord): void;
+  /** One paper's slots, or every paper's when the id is omitted. */
+  listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
+  saveNudgeLedgerEntry(record: AdminBotNudgeLedgerRecord): void;
+  /** The whole ledger, or one domain's slice. */
+  listNudgeLedger(domain?: string): AdminBotNudgeLedgerRecord[];
+  saveSocialDraft(record: AdminBotSocialDraftRecord): void;
+  listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[];
+  saveSocialConsent(record: AdminBotSocialConsentRecord): void;
+  listSocialConsents(draftId?: string): AdminBotSocialConsentRecord[];
+  saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void;
+  listConferenceAttendees(paperId?: string): AdminBotConferenceAttendeeRecord[];
+  savePaperReimbursement(record: AdminBotPaperReimbursementRecord): void;
+  listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[];
+  appendMemberLocation(entry: AdminBotMemberLocationEntry): void;
+  /** Newest first. `limit` is a cap, not a page: nothing here needs to walk a member's whole history. */
+  listMemberLocations(memberId: string, limit?: number): AdminBotMemberLocationEntry[];
+  /** Every member's entries since a timestamp, so the admin view is one query rather than one per member. */
+  listMemberLocationsSince(since: string): AdminBotMemberLocationEntry[];
+  saveMeeting(meeting: AdminBotMeetingRecord): void;
+  getMeeting(meetingId: string): AdminBotMeetingRecord | undefined;
+  listMeetings(): AdminBotMeetingRecord[];
+  deleteMeeting(meetingId: string): boolean;
+  saveLogisticsRequest(request: AdminBotLogisticsRequest): void;
+  getLogisticsRequest(requestId: string): AdminBotLogisticsRequest | undefined;
+  /** Every request, or one member's. Newest first; the service re-sorts by urgency on read. */
+  listLogisticsRequests(memberId?: string): AdminBotLogisticsRequest[];
+  deleteLogisticsRequest(requestId: string): boolean;
   saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void;
   listOpenReviewCycles(): AdminBotOpenReviewCycleRecord[];
   // Returns false when the milestone had already fired, which is how the caller
@@ -134,6 +250,49 @@ export type AdminBotServiceStore = {
   deleteSlackChannelNamingRecord(channelId: string): boolean;
 };
 
+/**
+ * One paper's line in the sweep: how much evidence is in, what is outstanding, and who owes it.
+ *
+ * Nothing here is stored. `provided_count`, `missing_slots` and `escalating` are all computed from
+ * the slot rows on read -- storing them would create a second source of truth that drifts the
+ * moment somebody writes a slot without going through this service.
+ */
+export type AdminBotPaperSlotOverviewRow = {
+  paper_id: string;
+  title: string;
+  venue?: string;
+  deadline?: string;
+  current_step: string;
+  provided_count: number;
+  required_count: number;
+  dormant: boolean;
+  closed: boolean;
+  missing_slots: AdminBotPaperSlot[];
+  /** Which acceptance details the author still owes, once the venue said yes. */
+  missing_acceptance_details: string[];
+  /** Every artifact in, and every attending author square on expenses. Derived, never stored. */
+  cycle_closed: boolean;
+  escalating: boolean;
+  first_author_member_id?: string;
+  last_nudged_at?: string;
+};
+
+/**
+ * One person's nudge, as the preview shows it and as the send would deliver it.
+ *
+ * Carries the composed message rather than a summary of it: the point of a manual send is that
+ * somebody reads what is about to go out in their name, and a paraphrase would not be that.
+ */
+export type AdminBotNudgeBatch = {
+  member_id: string;
+  member_name: string;
+  /** False when there is no Slack id on file, so the preview can say so before the send. */
+  deliverable: boolean;
+  item_count: number;
+  paper_titles: string[];
+  message: string;
+};
+
 export type AdminBotSlackChannelNamingEvent = {
   event_type: "channel_created" | "channel_rename";
   channel_id: string;
@@ -169,9 +328,7 @@ export type AdminBotActionExecutor = {
 export type AdminBotServiceOptions = {
   auditRetentionDays?: number;
   executor?: AdminBotActionExecutor;
-  reviewSlackProfilePhoto?: (params: {
-    slackUserId: string;
-  }) => Promise<{
+  reviewSlackProfilePhoto?: (params: { slackUserId: string }) => Promise<{
     compliant: boolean;
     issues: string[];
     summary: string;
@@ -186,16 +343,10 @@ export type AdminBotServiceOptions = {
 };
 
 const DEFAULT_ACTION_POLICIES = {
-  "candidate.accept_for_trial": approvalPolicy("T4", ["admin"]),
-  "candidate.accept_direct": approvalPolicy("T4", ["admin"]),
-  "candidate.decline": approvalPolicy("T4", ["admin"]),
-  "slack.invite_guest": approvalPolicy("T3", ["admin"]),
-  "slack.invite_member": approvalPolicy("T3", ["admin"]),
   "slack.send_message": approvalPolicy("T3", ["admin"]),
   "slack.profile_photo_update": autoPolicy("T1"),
   "slack.channel_naming_notify_owner": autoPolicy("T1"),
   "slack.rename_channel": autoPolicy("T1"),
-  "vector.invite": approvalPolicy("T3", ["admin"]),
   "calendar.create_tentative_hold": approvalPolicy("T2", ["admin"]),
   "calendar.send_invite": approvalPolicy("T3", ["admin"]),
   "calendar.add_attendees": approvalPolicy("T3", ["admin"]),
@@ -203,11 +354,6 @@ const DEFAULT_ACTION_POLICIES = {
   "calendar.cancel": approvalPolicy("T3", ["admin"]),
   "email.draft": approvalPolicy("T1", ["admin"]),
   "email.send": approvalPolicy("T3", ["admin"]),
-  "recommendation_letter.draft": autoPolicy("T1"),
-  "recommendation_letter.send": approvalPolicy("T4", ["admin"], 2),
-  "reimbursement.prepare_packet": autoPolicy("T1"),
-  "reimbursement.submit": approvalPolicy("T4", ["admin"], 2),
-  "social_media.draft": autoPolicy("T1"),
   "social_media.post_publicly": approvalPolicy("T4", ["admin"], 2),
   "paper_publish.prepare": autoPolicy("T1"),
   "paper.overleaf_edit": approvalPolicy("T4", ["admin"], 2),
@@ -215,6 +361,11 @@ const DEFAULT_ACTION_POLICIES = {
   "paper_publish.nudge_author": approvalPolicy("T3", ["admin"]),
   "paper_publish.escalate_to_pi": approvalPolicy("T3", ["admin"]),
   "join_form.classify": autoPolicy("T0"),
+  // Auto-approved for the same reason member_nudge.send is: the only way to create one of these is
+  // POST /logistics/requests/:id/signed, which is admin-gated, so the admin gate is the approval.
+  // The recipient is never chosen by the caller either -- it is the address of the member who asked
+  // for the signature, read off the roster. resolvePolicy only honors auto_allowed below T2.
+  "logistics.send_signed_document": autoPolicy("T1"),
   // Deliberately auto-approved, unlike every other outbound-message type (slack.send_message,
   // email.send, paper_publish.nudge_author are all T3/approval-required): creating this proposal
   // already requires a real admin session via POST /nudges/send (never reachable
@@ -264,8 +415,16 @@ const PRIVILEGE_ACCESS: Record<AdminBotPrivilegeLevel, AdminBotAccessGrant[]> = 
   ],
 };
 
+// How far back listLocationDrifts looks. Long enough that a member who moved a month ago and has
+// not been asked yet still shows up; short enough that the query stays one index scan.
+const LOCATION_DRIFT_WINDOW_MS = 90 * 24 * 60 * 60 * 1000;
+
 const DEFAULT_SETTINGS = {
   paper_escalation_business_days: 3,
+  // Ten minutes: long enough to drop test calls and accidental rejoins, short enough to keep a
+  // genuinely quick stand-up. Admin-editable through /settings, so changing it needs no deploy.
+  meeting_minimum_minutes: 10,
+  cv_recency_window_months: 3,
 } as const satisfies Omit<AdminBotSettings, "updated_at">;
 
 const SLACK_CHANNEL_NAME_ALLOWED_PREFIXES = [
@@ -592,8 +751,14 @@ export class AdminBotService {
     const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
     const next: AdminBotSettings = {
       ...current,
+      ...(typeof settings.cv_recency_window_months === "number"
+        ? { cv_recency_window_months: settings.cv_recency_window_months }
+        : {}),
       ...(typeof settings.paper_escalation_business_days === "number"
         ? { paper_escalation_business_days: settings.paper_escalation_business_days }
+        : {}),
+      ...(typeof settings.meeting_minimum_minutes === "number"
+        ? { meeting_minimum_minutes: settings.meeting_minimum_minutes }
         : {}),
       ...(headProfessorMemberId ? { head_professor_member_id: headProfessorMemberId } : {}),
       ...(headProfessorWhatsapp ? { head_professor_whatsapp: headProfessorWhatsapp } : {}),
@@ -615,6 +780,7 @@ export class AdminBotService {
       type: "settings.updated",
       details: {
         paper_escalation_business_days: next.paper_escalation_business_days,
+        cv_recency_window_months: next.cv_recency_window_months,
         has_head_professor_member_id: Boolean(next.head_professor_member_id),
         has_applicant_sheet_id: Boolean(next.applicant_sheet_id),
         ...(next.applicant_last_reviewed_at
@@ -685,6 +851,18 @@ export class AdminBotService {
       delete stored.availability_notes;
     }
     this.store.saveLabMember(stored);
+    // One hook covers every path that edits a profile — the member's own form, an admin, the
+    // roster importer — because they all land here. Recording it at the three call sites instead
+    // is how one of them ends up forgotten.
+    const moved = selfReportedChange(existing, stored);
+    if (moved) {
+      this.recordMemberLocation({
+        memberId: stored.id,
+        source: "self_reported",
+        raw: moved.raw,
+        ...(moved.timezone ? { timezone: moved.timezone } : {}),
+      });
+    }
     this.recordAudit({
       type: "lab_member.upserted",
       actor: member.id,
@@ -890,6 +1068,1536 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: stored };
   }
 
+  /**
+   * One paper's evidence slots, every one of the 23, stored or not.
+   *
+   * The blanks are part of the answer: the card is a checklist, and a checklist that only lists
+   * the boxes somebody already ticked is not one.
+   */
+  /**
+   * One paper's evidence slots, every one of the 25, stored or not.
+   *
+   * The blanks are part of the answer: the card is a checklist, and a checklist that only lists
+   * the boxes somebody already ticked is not one. Credentials come back only for an author of the
+   * paper or an admin.
+   */
+  listPaperSlots(
+    paperId: string,
+    viewer?: { memberId?: string; isAdmin?: boolean },
+  ): AdminBotServiceResponse<{
+    paper: AdminBotPaperRecord;
+    slots: AdminBotPaperSlotRecord[];
+    drafts: AdminBotSocialDraftRecord[];
+    consents: AdminBotSocialConsentRecord[];
+    attendees: AdminBotConferenceAttendeeRecord[];
+    reimbursements: AdminBotPaperReimbursementRecord[];
+    cycle_closed: boolean;
+    missing_acceptance_details: string[];
+  }> {
+    const paper = this.store.getPaper(paperId);
+    if (!paper) {
+      return serviceError(404, "paper not found");
+    }
+    const drafts = this.store.listSocialDrafts(paperId);
+    const stored = this.store.listPaperSlots(paperId);
+    const attendees = this.store.listConferenceAttendees(paperId);
+    const reimbursements = this.store.listPaperReimbursements(paperId);
+    const entitled = Boolean(
+      viewer?.isAdmin || (viewer?.memberId && this.memberOwnsPaperId(viewer.memberId, paper)),
+    );
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        paper,
+        slots: redactPaperSlots(paperSlotRows(paperId, stored, drafts), entitled),
+        drafts,
+        consents: drafts.flatMap((draft) => this.store.listSocialConsents(draft.id)),
+        attendees,
+        reimbursements,
+        cycle_closed: isCycleClosed({
+          paper,
+          slots: stored,
+          drafts,
+          attendees,
+          reimbursements,
+        }),
+        missing_acceptance_details: missingAcceptanceDetails(paper),
+      },
+    };
+  }
+
+  /**
+   * Write one slot on one paper.
+   *
+   * `status` is never taken from the caller -- applyPaperSlotWrite derives it from the value, so
+   * "provided" always means something was actually provided. Ownership is the same rule the paper
+   * itself uses: an admin writes any paper, a member writes one they filed or are named on.
+   */
+  setPaperSlot(params: {
+    paperId: string;
+    slot: string;
+    input: AdminBotPaperSlotInput;
+    memberId: string;
+    privileged: boolean;
+  }): AdminBotServiceResponse<{ slot: AdminBotPaperSlotRecord }> {
+    const context = this.paperSlotContext(params);
+    if (!context.ok) {
+      return context.error;
+    }
+    const result = applyPaperSlotWrite({
+      existing: context.existing,
+      input: params.input,
+      memberId: params.memberId,
+      now: new Date(),
+    });
+    if (!result.ok) {
+      return serviceError(400, result.error);
+    }
+    this.store.savePaperSlot(result.record);
+    // Deliberately no value in the audit details: one of these slots holds a credential, and an
+    // audit trail is read by more people than the paper is.
+    this.recordAudit({
+      type: "paper_slot.updated",
+      actor: params.memberId,
+      details: {
+        paper_id: params.paperId,
+        slot: result.record.slot,
+        status: result.record.status,
+      },
+    });
+    return { ok: true, status: 200, payload: { slot: result.record } };
+  }
+
+  /**
+   * Waive a slot. Admin-only: it is the one way a required artifact stops being required, so it is
+   * the one write a member must not be able to make on their own paper.
+   *
+   * This is also what stops the checklist from deadlocking a paper that legitimately has no poster
+   * or gets no submission id -- nothing hard-blocks a step, but a slot left open forever is a
+   * standing false claim that somebody still owes something.
+   */
+  waivePaperSlot(params: {
+    paperId: string;
+    slot: string;
+    reason: string;
+    memberId: string;
+  }): AdminBotServiceResponse<{ slot: AdminBotPaperSlotRecord }> {
+    const context = this.paperSlotContext({ ...params, privileged: true });
+    if (!context.ok) {
+      return context.error;
+    }
+    const result = waivePaperSlot({
+      existing: context.existing,
+      memberId: params.memberId,
+      reason: params.reason,
+      now: new Date(),
+    });
+    if (!result.ok) {
+      return serviceError(400, result.error);
+    }
+    this.store.savePaperSlot(result.record);
+    this.recordAudit({
+      type: "paper_slot.waived",
+      actor: params.memberId,
+      details: { paper_id: params.paperId, slot: result.record.slot, reason: params.reason },
+    });
+    return { ok: true, status: 200, payload: { slot: result.record } };
+  }
+
+  /** Shared lookup and permission check behind both slot writes. */
+  private paperSlotContext(params: {
+    paperId: string;
+    slot: string;
+    memberId: string;
+    privileged: boolean;
+  }):
+    | { ok: true; paper: AdminBotPaperRecord; existing: AdminBotPaperSlotRecord }
+    | { ok: false; error: AdminBotServiceResponse<never> } {
+    const paper = this.store.getPaper(params.paperId);
+    if (!paper) {
+      return { ok: false, error: serviceError(404, "paper not found") };
+    }
+    if (!isAdminBotPaperSlot(params.slot)) {
+      return { ok: false, error: serviceError(400, "unknown slot") };
+    }
+    if (!params.privileged && !this.memberOwnsPaperId(params.memberId, paper)) {
+      return {
+        ok: false,
+        error: serviceError(403, "members can only edit papers they authored"),
+      };
+    }
+    const stored = this.store
+      .listPaperSlots(params.paperId)
+      .find((record) => record.slot === params.slot);
+    return { ok: true, paper, existing: stored ?? blankPaperSlot(params.paperId, params.slot) };
+  }
+
+  private memberOwnsPaperId(memberId: string, paper: AdminBotPaperRecord): boolean {
+    const member = this.store.getLabMember(memberId);
+    return Boolean(member && this.memberOwnsPaper(member, paper));
+  }
+
+  /**
+   * Save a social draft, superseding whatever it replaces.
+   *
+   * The previous approved-or-circulated draft for the same platform is marked `superseded` rather
+   * than deleted, because the question "what did they actually agree to" has to stay answerable
+   * after somebody regenerates the copy.
+   */
+  saveSocialDraft(params: {
+    paperId: string;
+    platform: string;
+    body: string;
+    model?: string;
+    memberId: string;
+    privileged: boolean;
+  }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord }> {
+    const paper = this.store.getPaper(params.paperId);
+    if (!paper) {
+      return serviceError(404, "paper not found");
+    }
+    if (!params.privileged && !this.memberOwnsPaperId(params.memberId, paper)) {
+      return serviceError(403, "members can only edit papers they authored");
+    }
+    if (params.platform !== "x" && params.platform !== "linkedin") {
+      return serviceError(400, "platform must be x or linkedin");
+    }
+    const body = params.body.trim();
+    if (!body) {
+      return serviceError(400, "a draft needs a body");
+    }
+    const now = new Date().toISOString();
+    const draft: AdminBotSocialDraftRecord = {
+      // Random suffix, not just the clock: two saves inside the same millisecond would otherwise
+      // share an id, and the second would upsert over the first instead of superseding it --
+      // losing the very version somebody may already have consented to.
+      id: `${params.paperId}-${params.platform}-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`,
+      paper_id: params.paperId,
+      platform: params.platform,
+      body,
+      generated_at: now,
+      generated_by_member_id: params.memberId,
+      status: "draft",
+      ...(params.model ? { model: params.model } : {}),
+    };
+    for (const existing of this.store.listSocialDrafts(params.paperId)) {
+      if (existing.platform !== params.platform || existing.status === "superseded") {
+        continue;
+      }
+      this.store.saveSocialDraft({
+        ...existing,
+        status: "superseded",
+        superseded_by: draft.id,
+      });
+    }
+    this.store.saveSocialDraft(draft);
+    this.recordAudit({
+      type: "paper_social_draft.saved",
+      actor: params.memberId,
+      details: { paper_id: params.paperId, platform: params.platform, draft_id: draft.id },
+    });
+    return { ok: true, status: 200, payload: { draft } };
+  }
+
+  /**
+   * Ask the paper's lab-member authors to sign off on a draft.
+   *
+   * Only authors who resolve to a roster member get a row. AdminBot cannot reach an external
+   * coauthor, and a consent row for somebody it can never ask is a draft that can never be
+   * approved -- the first author handles those by email, as they already do.
+   */
+  circulateSocialDraft(params: {
+    draftId: string;
+    memberId: string;
+    privileged: boolean;
+  }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord; asked: string[] }> {
+    const draft = this.store.listSocialDrafts().find((row) => row.id === params.draftId);
+    if (!draft) {
+      return serviceError(404, "draft not found");
+    }
+    const paper = this.store.getPaper(draft.paper_id);
+    if (!paper) {
+      return serviceError(404, "paper not found");
+    }
+    if (!params.privileged && !this.memberOwnsPaperId(params.memberId, paper)) {
+      return serviceError(403, "members can only edit papers they authored");
+    }
+    if (draft.status === "superseded") {
+      return serviceError(400, "that draft has been replaced by a newer one");
+    }
+    const audience = resolveConsentAudience({
+      authors: paper.authors,
+      roster: this.store.listLabMembers(),
+      // The person circulating it does not consent to their own draft.
+      exclude: params.memberId,
+    });
+    const now = new Date().toISOString();
+    const existing = new Map(
+      this.store.listSocialConsents(draft.id).map((row) => [row.member_id, row]),
+    );
+    for (const memberId of audience) {
+      if (existing.has(memberId)) {
+        continue;
+      }
+      this.store.saveSocialConsent({
+        draft_id: draft.id,
+        member_id: memberId,
+        decision: "pending",
+        asked_at: now,
+      });
+    }
+    const circulated: AdminBotSocialDraftRecord = { ...draft, status: "circulated" };
+    this.store.saveSocialDraft(circulated);
+    this.recordAudit({
+      type: "paper_social_draft.circulated",
+      actor: params.memberId,
+      details: { paper_id: paper.id, draft_id: draft.id, asked: audience.length },
+    });
+    // Nobody on the roster to ask means nothing to wait for; approve it rather than parking the
+    // paper behind a consent round with no participants.
+    return {
+      ok: true,
+      status: 200,
+      payload: { draft: this.refreshDraftApproval(circulated), asked: audience },
+    };
+  }
+
+  /** One author's answer on one draft. Only that author may give it. */
+  recordSocialConsent(params: {
+    draftId: string;
+    memberId: string;
+    decision: string;
+    comment?: string;
+  }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord }> {
+    const draft = this.store.listSocialDrafts().find((row) => row.id === params.draftId);
+    if (!draft) {
+      return serviceError(404, "draft not found");
+    }
+    if (params.decision !== "ok" && params.decision !== "changes_requested") {
+      return serviceError(400, "decision must be ok or changes_requested");
+    }
+    const existing = this.store
+      .listSocialConsents(draft.id)
+      .find((row) => row.member_id === params.memberId);
+    if (!existing) {
+      return serviceError(403, "you were not asked to review this draft");
+    }
+    this.store.saveSocialConsent({
+      ...existing,
+      decision: params.decision,
+      decided_at: new Date().toISOString(),
+      ...(params.comment?.trim() ? { comment: params.comment.trim() } : {}),
+    });
+    this.recordAudit({
+      type: "paper_social_consent.recorded",
+      actor: params.memberId,
+      details: { draft_id: draft.id, decision: params.decision },
+    });
+    return { ok: true, status: 200, payload: { draft: this.refreshDraftApproval(draft) } };
+  }
+
+  /** Promote a circulated draft to approved once no consent row is outstanding. */
+  private refreshDraftApproval(draft: AdminBotSocialDraftRecord): AdminBotSocialDraftRecord {
+    if (draft.status === "superseded" || draft.status === "draft") {
+      return draft;
+    }
+    const state = draftConsentState(this.store.listSocialConsents(draft.id));
+    const next: AdminBotSocialDraftRecord = {
+      ...draft,
+      status: state.approved ? "approved" : "circulated",
+    };
+    if (next.status !== draft.status) {
+      this.store.saveSocialDraft(next);
+    }
+    return next;
+  }
+
+  /** Who is going. Author-provided; nothing here infers travel. */
+  setConferenceAttendee(params: {
+    paperId: string;
+    name: string;
+    memberId?: string;
+    attending: string;
+    actorId: string;
+    privileged: boolean;
+  }): AdminBotServiceResponse<{ attendee: AdminBotConferenceAttendeeRecord }> {
+    const paper = this.store.getPaper(params.paperId);
+    if (!paper) {
+      return serviceError(404, "paper not found");
+    }
+    if (!params.privileged && !this.memberOwnsPaperId(params.actorId, paper)) {
+      return serviceError(403, "members can only edit papers they authored");
+    }
+    if (!isAdminBotAttendanceState(params.attending)) {
+      return serviceError(400, "attending must be yes, no or unknown");
+    }
+    const name = params.name.trim();
+    if (!name && !params.memberId) {
+      return serviceError(400, "an attendee needs a name");
+    }
+    const attendee: AdminBotConferenceAttendeeRecord = {
+      paper_id: params.paperId,
+      attendee_key: adminBotAttendeeKey(params.memberId, name),
+      name: name || (this.store.getLabMember(params.memberId ?? "")?.name ?? ""),
+      attending: params.attending,
+      ...(params.memberId ? { member_id: params.memberId } : {}),
+      ...(params.attending === "unknown" ? {} : { confirmed_at: new Date().toISOString() }),
+    };
+    this.store.saveConferenceAttendee(attendee);
+    this.recordAudit({
+      type: "paper_attendee.updated",
+      actor: params.actorId,
+      details: { paper_id: params.paperId, attending: params.attending },
+    });
+    return { ok: true, status: 200, payload: { attendee } };
+  }
+
+  /**
+   * One author's reimbursement status on one paper.
+   *
+   * Status only: the claim itself is filed through the logistics flow, which knows about receipts.
+   * This is the lab's answer to "is that person square yet", and every attending author being
+   * square is the single condition that closes the paper.
+   */
+  setPaperReimbursement(params: {
+    paperId: string;
+    memberId: string;
+    status: string;
+    actorId: string;
+    privileged: boolean;
+  }): AdminBotServiceResponse<{ reimbursement: AdminBotPaperReimbursementRecord }> {
+    const paper = this.store.getPaper(params.paperId);
+    if (!paper) {
+      return serviceError(404, "paper not found");
+    }
+    // Your own row, the paper you authored, or an admin. A reimbursement is somebody's money, so
+    // an unrelated member must not be able to declare it settled.
+    const isOwn = params.actorId === params.memberId;
+    if (!params.privileged && !isOwn && !this.memberOwnsPaperId(params.actorId, paper)) {
+      return serviceError(403, "that is not your reimbursement to set");
+    }
+    if (!isAdminBotReimbursementState(params.status)) {
+      return serviceError(400, "unknown reimbursement status");
+    }
+    const now = new Date().toISOString();
+    const existing = this.store
+      .listPaperReimbursements(params.paperId)
+      .find((row) => row.member_id === params.memberId);
+    const reimbursement: AdminBotPaperReimbursementRecord = {
+      paper_id: params.paperId,
+      member_id: params.memberId,
+      status: params.status,
+      ...(existing?.submitted_at ? { submitted_at: existing.submitted_at } : {}),
+      ...(params.status === "submitted" && !existing?.submitted_at ? { submitted_at: now } : {}),
+      ...(params.status === "reimbursed" || params.status === "not_applicable"
+        ? { completed_at: existing?.completed_at ?? now }
+        : {}),
+    };
+    this.store.savePaperReimbursement(reimbursement);
+    this.recordAudit({
+      type: "paper_reimbursement.updated",
+      actor: params.actorId,
+      details: { paper_id: params.paperId, member_id: params.memberId, status: params.status },
+    });
+    return { ok: true, status: 200, payload: { reimbursement } };
+  }
+
+  /**
+   * Every live paper, how much evidence it has, and what is outstanding on it right now.
+   *
+   * This is the read behind the My Projects & Papers header and the admin sweep: the same
+   * computation the nudge pass runs, returned instead of sent. Keeping them on one code path is
+   * what makes the button's count honest -- it says what pressing it would actually chase.
+   */
+  listPaperSlotOverview(nowIso?: string): AdminBotServiceResponse<{
+    papers: AdminBotPaperSlotOverviewRow[];
+  }> {
+    const now = nowIso ? new Date(nowIso) : new Date();
+    const ledger = this.nudgeLedgerIndex();
+    const papers = this.store.listPapers().map((paper) => {
+      const stored = this.store.listPaperSlots(paper.id);
+      const drafts = this.store.listSocialDrafts(paper.id);
+      const attendees = this.store.listConferenceAttendees(paper.id);
+      const reimbursements = this.store.listPaperReimbursements(paper.id);
+      const actionable = actionablePaperSlots(paper, stored, now, drafts);
+      const progress = paperSlotProgress(paper.id, stored, drafts);
+      const lastNudged = actionable
+        .map((item) => ledger.get(`paper_slot|${item.subjectId}`)?.last_nudged_at)
+        .filter((value): value is string => Boolean(value))
+        .toSorted()
+        .at(-1);
+      const owed = this.resolvePaperSlotOwner(paper, "first_author");
+      return {
+        paper_id: paper.id,
+        title: paper.title,
+        ...(paper.venue ? { venue: paper.venue } : {}),
+        ...(paper.deadline ? { deadline: paper.deadline } : {}),
+        current_step: paper.current_step,
+        provided_count: progress.provided,
+        required_count: progress.total,
+        dormant: isPaperDormant(paper, now),
+        closed: isPaperClosed(paper),
+        cycle_closed: isCycleClosed({ paper, slots: stored, drafts, attendees, reimbursements }),
+        missing_slots: actionable
+          .map((item) => item.slot)
+          .filter((slot): slot is AdminBotPaperSlot => Boolean(slot)),
+        missing_acceptance_details: missingAcceptanceDetails(paper),
+        escalating: actionable.some((item) =>
+          shouldEscalate(item, ledger.get(`paper_slot|${item.subjectId}`)),
+        ),
+        ...(owed[0] ? { first_author_member_id: owed[0] } : {}),
+        ...(lastNudged ? { last_nudged_at: lastNudged } : {}),
+      };
+    });
+    return { ok: true, status: 200, payload: { papers } };
+  }
+
+  /** The ledger as a lookup, keyed the way the sweep asks for it. */
+  private nudgeLedgerIndex(): Map<string, AdminBotNudgeLedgerRecord> {
+    return new Map(
+      this.store
+        .listNudgeLedger()
+        .map((entry) => [`${entry.domain}|${entry.subject_id}|${entry.member_id}`, entry] as const)
+        .flatMap(([key, entry]) => [
+          [key, entry] as const,
+          // Also indexed without the member, so a caller that only knows the subject (the overview
+          // row, which reports the paper rather than one person) can still find the latest stamp.
+          [`${entry.domain}|${entry.subject_id}`, entry] as const,
+        ]),
+    );
+  }
+
+  /**
+   * The global nudge: one Slack message per person, naming exactly what they owe, across every
+   * paper they are on.
+   *
+   * It composes nothing from caller input and picks nobody -- recipients and text are both derived
+   * from state and the registry, which is why it can run from a cron script as well as from an
+   * admin's button (same reasoning as sendMandatoryFieldsReminders).
+   *
+   * The cadence lives in the nudge ledger, keyed by (domain, subject, person). That is what makes
+   * "one message instead of four" true rather than aspirational: every gatherer below writes into
+   * the same clock, so a person is asked about their poster and their unfilled profile in the same
+   * breath and is not asked again about either for three days.
+   */
+  /**
+   * Who currently owes what, batched one message per person.
+   *
+   * The gathering half of the sweep, split out from the sending half so the same walk can answer
+   * "what would go out" without anything going out. That split is the whole point of the manual
+   * flow: an admin reads the batches, sees the actual wording, and then decides -- rather than
+   * pressing a button that composes and sends in one motion and only afterwards says what it did.
+   *
+   * Recipients and text are derived entirely from state and the registry. Nothing here reads
+   * caller input, which is why the preview is trustworthy: it is not a rehearsal of the send, it
+   * is the same computation.
+   */
+  collectPaperNudgeBatches(nowIso?: string): AdminBotServiceResponse<{
+    batches: AdminBotNudgeBatch[];
+    papers_considered: number;
+  }> {
+    const now = nowIso ? new Date(nowIso) : new Date();
+    const gathered = this.gatherPaperNudges(now);
+    const roster = new Map(this.store.listLabMembers().map((member) => [member.id, member]));
+    const batches = [...gathered.byRecipient.entries()]
+      .map(([memberId, groups]) => {
+        const member = roster.get(memberId);
+        return {
+          member_id: memberId,
+          member_name: member?.name ?? memberId,
+          // Surfaced so the preview can say why somebody will be skipped *before* the send, rather
+          // than reporting it afterwards in a list of failures.
+          deliverable: Boolean(member?.slack_user_id),
+          item_count: [...groups.values()].reduce((total, group) => total + group.items.length, 0),
+          paper_titles: [...groups.keys()],
+          message: this.composeNudgeMessage(groups, now),
+        };
+      })
+      .toSorted((left, right) => right.item_count - left.item_count);
+    return {
+      ok: true,
+      status: 200,
+      payload: { batches, papers_considered: gathered.papersConsidered },
+    };
+  }
+
+  /** One person's batch as the message they would actually receive. */
+  private composeNudgeMessage(
+    groups: Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>,
+    now: Date,
+  ): string {
+    return buildNudgeMessage({
+      groups: [...groups.entries()].map(([title, group]) => ({
+        title,
+        ...(group.venue ? { venue: group.venue } : {}),
+        ...(group.deadline ? { deadline: group.deadline } : {}),
+        items: group.items.toSorted((left, right) => left.priority - right.priority),
+      })),
+      now,
+    });
+  }
+
+  /**
+   * The walk itself: every live paper, everything actionable on it, grouped by who owes it.
+   *
+   * Filtered against the ledger, so a person who was chased about the same thing two days ago does
+   * not appear at all -- the cadence protects people from a repeated manual press exactly as it
+   * protected them from a doubled crontab.
+   */
+  private gatherPaperNudges(now: Date): {
+    byRecipient: Map<
+      string,
+      Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>
+    >;
+    stamped: Array<{ item: NudgeItem; memberId: string }>;
+    papersConsidered: number;
+  } {
+    const ledger = new Map(
+      this.store
+        .listNudgeLedger()
+        .map((entry) => [`${entry.domain}|${entry.subject_id}|${entry.member_id}`, entry]),
+    );
+    const papers = this.store.listPapers();
+    const byRecipient = new Map<
+      string,
+      Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>
+    >();
+    const stamped: Array<{ item: NudgeItem; memberId: string }> = [];
+
+    const enqueue = (memberId: string, paper: AdminBotPaperRecord, item: NudgeItem) => {
+      const key = `${item.domain}|${item.subjectId}|${memberId}`;
+      if (!isNudgeDue(ledger.get(key), now, PAPER_SLOT_NUDGE_INTERVAL_MS)) {
+        return;
+      }
+      const forMember = byRecipient.get(memberId) ?? new Map();
+      const group = forMember.get(paper.title) ?? {
+        ...(paper.venue ? { venue: paper.venue } : {}),
+        ...(paper.deadline ? { deadline: paper.deadline } : {}),
+        items: [],
+      };
+      group.items.push(item);
+      forMember.set(paper.title, group);
+      byRecipient.set(memberId, forMember);
+      stamped.push({ item, memberId });
+    };
+
+    for (const paper of papers) {
+      if (isPaperDormant(paper, now) || isPaperClosed(paper)) {
+        continue;
+      }
+      const stored = this.store.listPaperSlots(paper.id);
+      const drafts = this.store.listSocialDrafts(paper.id);
+
+      for (const item of actionablePaperSlots(paper, stored, now, drafts)) {
+        for (const memberId of this.resolvePaperSlotOwner(paper, item.owner)) {
+          enqueue(memberId, paper, item);
+        }
+      }
+
+      // A circulated draft is waiting on named people, and they are the only ones who can move it.
+      for (const draft of drafts) {
+        if (draft.status !== "circulated") {
+          continue;
+        }
+        for (const consent of this.store.listSocialConsents(draft.id)) {
+          if (consent.decision !== "pending") {
+            continue;
+          }
+          enqueue(consent.member_id, paper, {
+            domain: "social_consent",
+            subjectId: draft.id,
+            owner: "coauthors",
+            label: `Sign off on the ${draft.platform === "x" ? "X" : "LinkedIn"} post draft`,
+            priority: adminBotPaperSlotBranchPriority.social,
+            deadlineBearing: false,
+          });
+        }
+      }
+
+      // The conference half only opens once the acceptance details are in, so a paper nobody has
+      // finished recording is not yet asked who is travelling.
+      if (!isConferenceBranchOpen(paper)) {
+        continue;
+      }
+      for (const attendee of this.store.listConferenceAttendees(paper.id)) {
+        if (attendee.attending !== "unknown") {
+          continue;
+        }
+        for (const memberId of this.resolvePaperSlotOwner(paper, "first_author")) {
+          enqueue(memberId, paper, {
+            domain: "conference_attendance",
+            subjectId: `${paper.id}:${attendee.attendee_key}`,
+            owner: "first_author",
+            label: `Confirm whether ${attendee.name} is attending`,
+            priority: adminBotPaperSlotBranchPriority.venue,
+            deadlineBearing: false,
+          });
+        }
+      }
+      for (const row of this.store.listPaperReimbursements(paper.id)) {
+        if (row.status !== "pending" && row.status !== "submitted") {
+          continue;
+        }
+        enqueue(row.member_id, paper, {
+          domain: "paper_reimbursement",
+          subjectId: `${paper.id}:${row.member_id}`,
+          owner: "first_author",
+          label:
+            row.status === "pending"
+              ? "File your conference reimbursement"
+              : "Your reimbursement is submitted and still open",
+          priority: adminBotPaperSlotBranchPriority.venue,
+          deadlineBearing: false,
+        });
+      }
+    }
+
+    return { byRecipient, stamped, papersConsidered: papers.length };
+  }
+
+  /**
+   * Send the batches. One Slack message per person, whatever they owe and on however many papers.
+   *
+   * Manual only: there is no cron behind this. Nudging the lab is a judgement about timing --
+   * whether a deadline week is the right moment to chase somebody about a poster -- and the person
+   * making that judgement should be looking at the batches when they make it. The route is still
+   * gated to a genuine admin session, and the message is still composed entirely from state, so
+   * pressing the button asks for the standing rule to be applied now rather than composing
+   * anything.
+   *
+   * `recipientIds` narrows a send to the people an admin picked out of the preview. Omitted, it
+   * sends every batch. Either way the batches themselves are recomputed here rather than taken
+   * from the caller -- the preview is a view of this computation, never an input to it.
+   */
+  async sendPaperSlotNudges(
+    actor: string,
+    options: { recipientIds?: string[] } = {},
+  ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult & { papers_considered: number }>> {
+    const now = new Date();
+    const { byRecipient, stamped, papersConsidered } = this.gatherPaperNudges(now);
+    const chosen = options.recipientIds?.length ? new Set(options.recipientIds) : undefined;
+
+    if (byRecipient.size === 0) {
+      return {
+        ok: true,
+        status: 200,
+        payload: { created: [], skipped: [], papers_considered: papersConsidered },
+      };
+    }
+
+    const created: AdminBotStoredProposal[] = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+    const delivered = new Set<string>();
+    for (const [memberId, groups] of byRecipient) {
+      if (chosen && !chosen.has(memberId)) {
+        continue;
+      }
+      const result = await this.sendMemberNudge(
+        {
+          channel: "slack",
+          recipient_member_ids: [memberId],
+          message: this.composeNudgeMessage(groups, now),
+        },
+        actor,
+      );
+      if (!result.ok) {
+        skipped.push({ member_id: memberId, reason: result.error.message });
+        continue;
+      }
+      created.push(...result.payload.created);
+      skipped.push(...result.payload.skipped);
+      if (result.payload.created.length > 0) {
+        delivered.add(memberId);
+      }
+    }
+
+    // Only stamp the people a message actually reached. Somebody with no Slack id on file has not
+    // been asked, and must not accumulate an escalation nobody ever told them about.
+    const ledger = new Map(
+      this.store
+        .listNudgeLedger()
+        .map((entry) => [`${entry.domain}|${entry.subject_id}|${entry.member_id}`, entry]),
+    );
+    for (const { item, memberId } of stamped) {
+      if (!delivered.has(memberId)) {
+        continue;
+      }
+      const entry = ledger.get(`${item.domain}|${item.subjectId}|${memberId}`);
+      this.store.saveNudgeLedgerEntry({
+        domain: item.domain,
+        subject_id: item.subjectId,
+        member_id: memberId,
+        last_nudged_at: now.toISOString(),
+        nudge_count: (entry?.nudge_count ?? 0) + 1,
+        ...(entry?.snoozed_until ? { snoozed_until: entry.snoozed_until } : {}),
+      });
+    }
+    if (delivered.size > 0) {
+      this.recordAudit({
+        type: "paper_slots.nudged",
+        actor,
+        details: { member_ids: [...delivered], item_count: stamped.length },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { created, skipped, papers_considered: papersConsidered },
+    };
+  }
+
+  /**
+   * The ledger, for tests and for the admin sweep view.
+   *
+   * Exposed rather than reached for through the store, so a caller cannot accidentally write it:
+   * the only thing that stamps a nudge is the sweep itself.
+   */
+  listNudgeLedgerForTest(domain?: string): AdminBotNudgeLedgerRecord[] {
+    return this.store.listNudgeLedger(domain);
+  }
+
+  /** Push one thing off for a while. The author's own call, and bounded by the service. */
+  snoozeNudge(params: {
+    domain: string;
+    subjectId: string;
+    memberId: string;
+    until: string;
+  }): AdminBotServiceResponse<{ snoozed_until: string }> {
+    if (!(adminBotNudgeDomains as readonly string[]).includes(params.domain)) {
+      return serviceError(400, "unknown nudge domain");
+    }
+    const bounded = boundSnooze(params.until, new Date());
+    if (!bounded.ok) {
+      return serviceError(400, bounded.error);
+    }
+    const existing = this.store
+      .listNudgeLedger(params.domain)
+      .find(
+        (entry) => entry.subject_id === params.subjectId && entry.member_id === params.memberId,
+      );
+    this.store.saveNudgeLedgerEntry({
+      domain: params.domain as AdminBotNudgeDomain,
+      subject_id: params.subjectId,
+      member_id: params.memberId,
+      nudge_count: existing?.nudge_count ?? 0,
+      ...(existing?.last_nudged_at ? { last_nudged_at: existing.last_nudged_at } : {}),
+      snoozed_until: bounded.until,
+    });
+    return { ok: true, status: 200, payload: { snoozed_until: bounded.until } };
+  }
+
+  /**
+   * Turn the artifacts already on the roster's papers into slot rows.
+   *
+   * Runs once, by hand, at the point evidence tracking is switched on -- and idempotently, so
+   * running it twice is safe. Without it the first sweep asks the author of every published paper
+   * in the lab for a brainstorm doc, which is how a lab learns to ignore AdminBot.
+   */
+  backfillPaperSlots(
+    actor: string,
+    options: { dryRun?: boolean; quietDays?: number } = {},
+  ): AdminBotServiceResponse<{
+    papers_scanned: number;
+    papers_changed: number;
+    slots_written: number;
+    venues_filled: number;
+    papers_settled: number;
+    dry_run: boolean;
+  }> {
+    const now = new Date();
+    let changed = 0;
+    let slotsWritten = 0;
+    let venuesFilled = 0;
+    let settled = 0;
+    const papers = this.store.listPapers();
+    for (const paper of papers) {
+      const plan = planPaperBackfill({
+        paper,
+        existing: this.store.listPaperSlots(paper.id),
+        now,
+        ...(options.quietDays === undefined ? {} : { quietDays: options.quietDays }),
+      });
+      if (plan.settled) {
+        settled += 1;
+      }
+      if (plan.slots.length === 0 && !plan.venue) {
+        continue;
+      }
+      changed += 1;
+      slotsWritten += plan.slots.length;
+      if (plan.venue) {
+        venuesFilled += 1;
+      }
+      if (options.dryRun) {
+        continue;
+      }
+      for (const slot of plan.slots) {
+        this.store.savePaperSlot(slot);
+      }
+      if (plan.venue) {
+        this.store.savePaper({ ...paper, venue: plan.venue, updated_at: now.toISOString() });
+      }
+    }
+    if (!options.dryRun && changed > 0) {
+      this.recordAudit({
+        type: "paper_slots.backfilled",
+        actor,
+        details: { papers: changed, slots: slotsWritten, venues: venuesFilled },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        papers_scanned: papers.length,
+        papers_changed: changed,
+        slots_written: slotsWritten,
+        venues_filled: venuesFilled,
+        papers_settled: settled,
+        dry_run: Boolean(options.dryRun),
+      },
+    };
+  }
+
+  /**
+   * Who a slot's owner role resolves to on this paper.
+   *
+   * `first_author` prefers the explicit field, falls back to whoever filed the paper, and only
+   * then tries to match the first free-text author name against the roster -- names are how the
+   * paper spells them, so a match is a convenience, never an identity.
+   */
+  private resolvePaperSlotOwner(
+    paper: AdminBotPaperRecord,
+    owner: AdminBotPaperSlotOwner,
+  ): string[] {
+    const roster = this.store.listLabMembers();
+    const byName = new Map(
+      roster.map((member) => [member.name.trim().toLocaleLowerCase(), member]),
+    );
+    const firstAuthor =
+      paper.first_author_member_id ??
+      paper.submitted_by_member_id ??
+      byName.get((paper.authors[0] ?? "").trim().toLocaleLowerCase())?.id;
+    switch (owner) {
+      case "first_author":
+        return firstAuthor ? [firstAuthor] : [];
+      case "coauthors":
+        return paper.authors
+          .map((name) => byName.get(name.trim().toLocaleLowerCase())?.id)
+          .filter((id): id is string => Boolean(id) && id !== firstAuthor);
+      case "pi": {
+        const head =
+          paper.reminder?.head_professor_member_id ??
+          this.resolveSettings().head_professor_member_id;
+        return head ? [head] : [];
+      }
+      case "admin":
+        return roster
+          .filter((member) => member.privilege_level === "admin")
+          .map((member) => member.id);
+    }
+  }
+
+  /**
+   * Append an observation of where a member is, when it says something new.
+   *
+   * Every source funnels through here — the login geolocation, a profile edit, an admin — so the
+   * "only record a change" rule is enforced in one place rather than at three call sites that
+   * would drift apart.
+   */
+  recordMemberLocation(params: {
+    memberId: string;
+    source: AdminBotLocationSource;
+    raw: string;
+    timezone?: string;
+  }): AdminBotServiceResponse<{ recorded: boolean; entry?: AdminBotMemberLocationEntry }> {
+    const entry = observationFor({
+      memberId: params.memberId,
+      source: params.source,
+      raw: params.raw,
+      observedAt: new Date().toISOString(),
+      ...(params.timezone ? { timezone: params.timezone } : {}),
+    });
+    if (!entry) {
+      return { ok: true, status: 200, payload: { recorded: false } };
+    }
+    const latest = latestBySource(this.store.listMemberLocations(params.memberId, 50)).get(
+      params.source,
+    );
+    if (!isNewObservation(latest, entry)) {
+      return { ok: true, status: 200, payload: { recorded: false } };
+    }
+    this.store.appendMemberLocation(entry);
+    this.recordAudit({
+      type: "member.location_observed",
+      actor: params.memberId,
+      details: { source: entry.source, country: entry.country, place: entry.place_label },
+    });
+    return { ok: true, status: 200, payload: { recorded: true, entry } };
+  }
+
+  listMemberLocations(
+    memberId: string,
+    limit?: number,
+  ): AdminBotServiceResponse<{ locations: AdminBotMemberLocationEntry[] }> {
+    if (!this.store.getLabMember(memberId)) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { locations: this.store.listMemberLocations(memberId, limit) },
+    };
+  }
+
+  /** The question to put to one member, if there is one. Drives the banner on their own profile. */
+  memberLocationDrift(
+    memberId: string,
+  ): AdminBotServiceResponse<{ drift: AdminBotLocationDrift | null }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    const drift = detectLocationDrift(
+      member,
+      this.store.listMemberLocations(memberId, 50),
+      new Date(),
+    );
+    return { ok: true, status: 200, payload: { drift: drift ?? null } };
+  }
+
+  /**
+   * Everyone the lab should re-check before scheduling something. Admin surface.
+   *
+   * One query over the recent window rather than one per member: the roster is ~160 people and
+   * this is rendered on a tab, not a cron.
+   */
+  listLocationDrifts(): AdminBotServiceResponse<{ drifts: AdminBotLocationDrift[] }> {
+    const since = new Date(Date.now() - LOCATION_DRIFT_WINDOW_MS).toISOString();
+    const byMember = new Map<string, AdminBotMemberLocationEntry[]>();
+    for (const entry of this.store.listMemberLocationsSince(since)) {
+      const held = byMember.get(entry.member_id);
+      if (held) {
+        held.push(entry);
+      } else {
+        byMember.set(entry.member_id, [entry]);
+      }
+    }
+    const now = new Date();
+    const drifts: AdminBotLocationDrift[] = [];
+    for (const [memberId, entries] of byMember) {
+      const member = this.store.getLabMember(memberId);
+      const drift = member ? detectLocationDrift(member, entries, now) : undefined;
+      if (drift) {
+        drifts.push(drift);
+      }
+    }
+    return { ok: true, status: 200, payload: { drifts } };
+  }
+
+  /**
+   * The member's answer to "you seem to have moved".
+   *
+   * Both answers are answers. A confirmation writes the location the member typed through the same
+   * self-edit whitelist as any profile field — so it stays self-reported, and the observation it
+   * produces is recorded as such. A dismissal writes no location at all and only stamps that the
+   * question was asked and settled for that country.
+   */
+  answerLocationPrompt(
+    memberId: string,
+    answer: { current_city?: string; timezone?: string },
+  ): AdminBotServiceResponse<AdminBotLabMember> {
+    const existing = this.store.getLabMember(memberId);
+    if (!existing) {
+      return serviceError(404, "member not found");
+    }
+    const drift = detectLocationDrift(
+      existing,
+      this.store.listMemberLocations(memberId, 50),
+      new Date(),
+    );
+    const city = answer.current_city?.trim();
+    if (city) {
+      const updated = this.updateOwnProfile(memberId, {
+        current_city: city,
+        ...(answer.timezone?.trim() ? { timezone: answer.timezone.trim() } : {}),
+      });
+      if (!updated.ok) {
+        return updated;
+      }
+    }
+    // Re-read: updateOwnProfile above wrote a new record, and stamping the answer onto the stale
+    // copy would undo it.
+    const current = this.store.getLabMember(memberId);
+    if (!current) {
+      return serviceError(404, "member not found");
+    }
+    const now = new Date().toISOString();
+    const stamped: AdminBotLabMember = {
+      ...current,
+      location_prompt_answered_at: now,
+      ...(drift?.observed_country
+        ? { location_prompt_answered_country: drift.observed_country }
+        : {}),
+      updated_at: now,
+    };
+    this.store.saveLabMember(stamped);
+    this.recordAudit({
+      type: "member.location_prompt_answered",
+      actor: memberId,
+      details: { moved: Boolean(city), asked_about: drift?.observed_country },
+    });
+    return { ok: true, status: 200, payload: stamped };
+  }
+
+  /**
+   * File a meeting, or fold an update into one already filed.
+   *
+   * Sparse by design: the hourly pass sends the notice first and the transcript and attendance
+   * whenever they turn up, so this is called several times per meeting with a different subset
+   * each time. mergeMeeting is what keeps the earlier fields.
+   */
+  upsertMeeting(input: AdminBotMeetingRecordInput): AdminBotServiceResponse<AdminBotMeetingRecord> {
+    const validation = validateMeeting(input);
+    if (validation) {
+      return serviceError(400, validation);
+    }
+    const existing = this.store.getMeeting(input.id);
+    const stored = mergeMeeting(existing, input, new Date().toISOString());
+    this.store.saveMeeting(stored);
+    this.recordAudit({
+      type: existing ? "meeting.updated" : "meeting.recorded",
+      actor: input.source,
+      details: {
+        meeting_id: stored.id,
+        started_at: stored.started_at,
+        has_summary: Boolean(stored.summary),
+        attendee_count: stored.attendees?.length ?? 0,
+      },
+    });
+    return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * Every meeting with its full roster. Callers must have checked for admin first.
+   *
+   * `includeShort` exists for the artifact cron, not for the UI: a transcript dropped for a short
+   * meeting still has to find its record, and a matcher that cannot see the record would leave the
+   * file unattached forever — including the very file that would have proved the meeting was long
+   * enough to list after all.
+   */
+  listMeetings(options?: {
+    includeShort?: boolean;
+  }): AdminBotServiceResponse<{ meetings: AdminBotMeetingRecord[] }> {
+    return {
+      ok: true,
+      status: 200,
+      payload: { meetings: this.listedMeetings(options?.includeShort ?? false) },
+    };
+  }
+
+  /**
+   * Every meeting as one member may see it: their own attendance line and a headcount, never the
+   * roster. The redaction happens here rather than in the route so no future caller can reach the
+   * unredacted list by picking a different entry point.
+   */
+  listMeetingsForMember(
+    memberId: string,
+  ): AdminBotServiceResponse<{ meetings: AdminBotMeetingRecord[] }> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        meetings: this.listedMeetings(false).map((meeting) =>
+          redactMeetingForMember(meeting, memberId),
+        ),
+      },
+    };
+  }
+
+  /**
+   * Correct the roster by hand.
+   *
+   * Every line written here is stamped `manual`, which is what makes it survive the next import:
+   * the person who was there but never unmuted has to stay ticked when the transcript pass runs
+   * again. Callers must have checked for admin first.
+   */
+  setMeetingAttendance(
+    meetingId: string,
+    attendees: readonly AdminBotMeetingAttendee[],
+    actor: string,
+  ): AdminBotServiceResponse<AdminBotMeetingRecord> {
+    const existing = this.store.getMeeting(meetingId);
+    if (!existing) {
+      return serviceError(404, `unknown meeting ${meetingId}`);
+    }
+    const corrected = attendees.map((attendee) => ({ ...attendee, source: "manual" as const }));
+    const stored: AdminBotMeetingRecord = {
+      ...existing,
+      attendees: mergeAttendance(existing.attendees ?? [], corrected),
+      updated_at: new Date().toISOString(),
+    };
+    this.store.saveMeeting(stored);
+    this.recordAudit({
+      type: "meeting.attendance_updated",
+      actor,
+      details: { meeting_id: meetingId, changed: corrected.length },
+    });
+    return { ok: true, status: 200, payload: stored };
+  }
+
+  private listedMeetings(includeShort: boolean): AdminBotMeetingRecord[] {
+    const floor = this.resolveSettings().meeting_minimum_minutes ?? 0;
+    return this.store
+      .listMeetings()
+      .filter((meeting) => includeShort || meetsDurationFloor(meeting, floor))
+      .toSorted(byMostRecent);
+  }
+
+  deleteMeeting(
+    meetingId: string,
+    actor: string,
+  ): AdminBotServiceResponse<{ deleted: true; meeting_id: string }> {
+    if (!this.store.deleteMeeting(meetingId)) {
+      return serviceError(404, `unknown meeting ${meetingId}`);
+    }
+    this.recordAudit({
+      type: "meeting.deleted",
+      actor,
+      details: { meeting_id: meetingId },
+    });
+    return { ok: true, status: 200, payload: { deleted: true, meeting_id: meetingId } };
+  }
+
+  /**
+   * A member asking the lab for something.
+   *
+   * The requester is taken from the authenticated session the route resolved, never from the body:
+   * a request is signed by whoever sent it, and a client that could name someone else could file a
+   * letter request in a colleague's name. Storing it reaches nothing outside this service, so there
+   * is no approval gate between a member and their own ask.
+   */
+  submitLogisticsRequest(
+    memberId: string,
+    input: AdminBotLogisticsRequestInput,
+  ): AdminBotServiceResponse<AdminBotLogisticsRequest> {
+    const member = this.store.getLabMember(memberId);
+    if (!member) {
+      return serviceError(404, `unknown member ${memberId}`);
+    }
+    const prepared = prepareLogisticsRequest(
+      input,
+      { id: `logreq_${randomUUID()}`, member_id: member.id, member_name: member.name },
+      new Date().toISOString(),
+    );
+    if (!prepared.ok) {
+      return serviceError(400, prepared.error);
+    }
+    this.store.saveLogisticsRequest(prepared.request);
+    this.recordAudit({
+      type: "logistics_request.submitted",
+      actor: member.id,
+      details: {
+        request_id: prepared.request.id,
+        kind: prepared.request.kind,
+        ...(prepared.request.deadline_at ? { deadline_at: prepared.request.deadline_at } : {}),
+      },
+    });
+    // Echoed back without the bytes the caller just sent us: the client has the files already, and
+    // a submit that replied with 20MB of its own upload would double the cost of every send.
+    return { ok: true, status: 201, payload: withoutAttachmentBytes(prepared.request) };
+  }
+
+  /**
+   * The queue, most urgent first.
+   *
+   * `memberId` is the whole of the access decision: pass one and the reader sees their own requests
+   * and nobody else's, omit it for the admin view. It is decided here rather than in the route so
+   * no future caller reaches the lab-wide list by picking a different entry point -- the same
+   * reason listMeetingsForMember exists.
+   */
+  listLogisticsRequests(
+    memberId?: string,
+  ): AdminBotServiceResponse<{ requests: AdminBotLogisticsRequest[] }> {
+    const requests = this.store
+      .listLogisticsRequests(memberId)
+      .map(withoutAttachmentBytes)
+      .toSorted(byUrgency);
+    return { ok: true, status: 200, payload: { requests } };
+  }
+
+  /**
+   * One request in full, file bytes included -- this is the only read that carries them.
+   *
+   * A member may open their own; an admin may open anybody's. `is_admin` comes from the session's
+   * privilege level, and a member asking for someone else's request is told the same "unknown
+   * request" an id that never existed gets: whether a colleague has asked for letters is itself
+   * something they did not share.
+   */
+  getLogisticsRequest(
+    requestId: string,
+    viewer: { member_id: string; is_admin: boolean },
+  ): AdminBotServiceResponse<AdminBotLogisticsRequest> {
+    const request = this.store.getLogisticsRequest(requestId);
+    if (!request || (!viewer.is_admin && request.member_id !== viewer.member_id)) {
+      return serviceError(404, `unknown logistics request ${requestId}`);
+    }
+    return { ok: true, status: 200, payload: request };
+  }
+
+  /**
+   * The lab answering: picked up, done, declined.
+   *
+   * Admin-only, and deliberately not the same call a member uses to withdraw -- a requester grading
+   * their own request would make the column useless to the people working the queue. The note is
+   * what the member reads underneath a status, so "declined" is never just a word.
+   *
+   * Settling a request drops its stored files: nobody is waiting on them any more, and a database
+   * that backs a web UI is not where somebody's signed forms should sit indefinitely.
+   */
+  setLogisticsRequestStatus(
+    requestId: string,
+    status: AdminBotLogisticsRequestStatus,
+    actor: string,
+    note?: string,
+  ): AdminBotServiceResponse<AdminBotLogisticsRequest> {
+    const existing = this.store.getLogisticsRequest(requestId);
+    if (!existing) {
+      return serviceError(404, `unknown logistics request ${requestId}`);
+    }
+    if (status === "withdrawn") {
+      return serviceError(400, "only the requester can withdraw a request");
+    }
+    const now = new Date().toISOString();
+    const stored = clearSettledRequestFiles({
+      ...existing,
+      status,
+      updated_at: now,
+      decided_by: actor,
+      decided_at: now,
+      ...(note?.trim() ? { resolution_note: note.trim() } : {}),
+    });
+    this.store.saveLogisticsRequest(stored);
+    this.recordAudit({
+      type: "logistics_request.status_changed",
+      actor,
+      details: { request_id: requestId, from: existing.status, to: status },
+    });
+    this.auditClearedFiles(existing, stored, actor);
+    return { ok: true, status: 200, payload: withoutAttachmentBytes(stored) };
+  }
+
+  /**
+   * The requester taking it back.
+   *
+   * Marked rather than deleted: an admin who already started on a signature has to be able to see
+   * that the ask was withdrawn, and a row that silently vanished from the queue would leave them
+   * doing work nobody wants. The documents go with it -- a withdrawn request is not a place to keep
+   * somebody's paperwork.
+   */
+  withdrawLogisticsRequest(
+    requestId: string,
+    memberId: string,
+  ): AdminBotServiceResponse<AdminBotLogisticsRequest> {
+    const existing = this.store.getLogisticsRequest(requestId);
+    if (!existing || existing.member_id !== memberId) {
+      return serviceError(404, `unknown logistics request ${requestId}`);
+    }
+    if (existing.status === "completed") {
+      return serviceError(409, "a completed request cannot be withdrawn");
+    }
+    const stored = clearSettledRequestFiles({
+      ...existing,
+      status: "withdrawn",
+      updated_at: new Date().toISOString(),
+    });
+    this.store.saveLogisticsRequest(stored);
+    this.recordAudit({
+      type: "logistics_request.withdrawn",
+      actor: memberId,
+      details: { request_id: requestId, kind: existing.kind },
+    });
+    this.auditClearedFiles(existing, stored, memberId);
+    return { ok: true, status: 200, payload: stored };
+  }
+
+  /**
+   * The member correcting what they already sent.
+   *
+   * A resubmit rather than a patch: the form posts the whole request back, so the record is rebuilt
+   * from it exactly as a first submission would be, and the deadline is re-derived rather than left
+   * pointing at a date that has since been edited away. Identity and the submitted-at stamp are
+   * kept -- it is the same ask, corrected, and re-stamping it would move it down a queue it has
+   * been waiting in.
+   */
+  updateLogisticsRequest(
+    requestId: string,
+    memberId: string,
+    input: AdminBotLogisticsRequestInput,
+  ): AdminBotServiceResponse<AdminBotLogisticsRequest> {
+    const existing = this.store.getLogisticsRequest(requestId);
+    if (!existing || existing.member_id !== memberId) {
+      return serviceError(404, `unknown logistics request ${requestId}`);
+    }
+    if (existing.status !== "submitted") {
+      return serviceError(409, "only a request nobody has picked up yet can be edited");
+    }
+    const prepared = prepareLogisticsRequest(
+      { ...input, kind: existing.kind },
+      { id: existing.id, member_id: existing.member_id, member_name: existing.member_name },
+      existing.submitted_at,
+    );
+    if (!prepared.ok) {
+      return serviceError(400, prepared.error);
+    }
+    const stored: AdminBotLogisticsRequest = {
+      ...prepared.request,
+      updated_at: new Date().toISOString(),
+    };
+    this.store.saveLogisticsRequest(stored);
+    this.recordAudit({
+      type: "logistics_request.submitted",
+      actor: memberId,
+      details: { request_id: requestId, kind: stored.kind, edited: true },
+    });
+    return { ok: true, status: 200, payload: withoutAttachmentBytes(stored) };
+  }
+
+  /**
+   * The signed document going back to the member who asked for it.
+   *
+   * One call does the whole close-out, because these four things are one act and a queue where they
+   * can come apart is a queue with half-finished rows in it: the signed file is attached to the
+   * record, mailed to the requester, the request is marked completed, and every stored file on it
+   * is dropped.
+   *
+   * The recipient is read off the roster, never taken from the caller: an admin uploading a signed
+   * form chooses the file, not who receives it. The mail itself is a typed action -- it is the one
+   * part of this feature that reaches outside the service.
+   */
+  async fileSignedLogisticsDocument(
+    requestId: string,
+    actor: string,
+    signed: AdminBotLogisticsAttachment[],
+    note?: string,
+  ): Promise<AdminBotServiceResponse<AdminBotLogisticsRequest>> {
+    const existing = this.store.getLogisticsRequest(requestId);
+    if (!existing) {
+      return serviceError(404, `unknown logistics request ${requestId}`);
+    }
+    if (existing.kind !== "document_signature") {
+      return serviceError(409, "only a document signature request takes a signed document back");
+    }
+    const invalid = validateSignedDocuments(signed);
+    if (invalid) {
+      return serviceError(400, invalid);
+    }
+    const member = this.store.getLabMember(existing.member_id);
+    const recipient = member?.email?.trim();
+    if (!recipient) {
+      return serviceError(
+        409,
+        `${existing.member_name} has no email address on the roster, so the signed document cannot be sent`,
+      );
+    }
+    const sent = await this.sendSignedDocument(existing, recipient, signed, note);
+    if (!sent.ok) {
+      return sent;
+    }
+    const now = new Date().toISOString();
+    const stored = clearSettledRequestFiles({
+      ...existing,
+      // Recorded before the clear so the names survive it: what the request keeps is that a file
+      // called this was signed and sent, which is the part anybody looks back for.
+      signed_documents: signed,
+      signed_sent_at: now,
+      signed_sent_to: recipient,
+      status: "completed",
+      updated_at: now,
+      decided_by: actor,
+      decided_at: now,
+      ...(note?.trim() ? { resolution_note: note.trim() } : {}),
+    });
+    this.store.saveLogisticsRequest(stored);
+    this.recordAudit({
+      type: "logistics_request.signed_document_sent",
+      actor,
+      details: {
+        request_id: requestId,
+        to: recipient,
+        documents: signed.length,
+      },
+    });
+    this.recordAudit({
+      type: "logistics_request.status_changed",
+      actor,
+      details: { request_id: requestId, from: existing.status, to: "completed" },
+    });
+    this.auditClearedFiles(existing, stored, actor);
+    return { ok: true, status: 200, payload: withoutAttachmentBytes(stored) };
+  }
+
+  /** The mail itself: one approved action, and the request is not touched until it has gone. */
+  private async sendSignedDocument(
+    request: AdminBotLogisticsRequest,
+    recipient: string,
+    signed: AdminBotLogisticsAttachment[],
+    note?: string,
+  ): Promise<AdminBotServiceResponse<never>> {
+    const body = signedDocumentEmailBody(request, signed, note);
+    const proposal = this.createProposal({
+      type: "logistics.send_signed_document",
+      summary: `Email ${request.member_name} the signed documents for their request`,
+      target: { service: "email", channel: "email", target: recipient },
+      proposed_payload: {
+        to: recipient,
+        subject: signedDocumentEmailSubject(request),
+        body,
+        attachments: signed.map((file) => ({
+          name: file.name,
+          ...(file.content_type ? { content_type: file.content_type } : {}),
+          data_base64: file.data_base64 ?? "",
+        })),
+      },
+      undo_plan: "Send a follow-up email correcting or retracting the signed document.",
+    });
+    if (!proposal.ok) {
+      return serviceError(proposal.status, proposal.error.message);
+    }
+    const executed = await this.execute(proposal.payload.id, { dry_run: false });
+    if (!executed.ok) {
+      // The request is left exactly as it was: a member who never received the document must not
+      // find their request marked done.
+      return serviceError(502, `could not email the signed document: ${executed.error.message}`);
+    }
+    return { ok: true, status: 200, payload: undefined as never };
+  }
+
+  /** One audit line when a settled request stops holding files, so the drop is on the record. */
+  private auditClearedFiles(
+    before: AdminBotLogisticsRequest,
+    after: AdminBotLogisticsRequest,
+    actor: string,
+  ): void {
+    if (!after.files_cleared_at || before.files_cleared_at) {
+      return;
+    }
+    this.recordAudit({
+      type: "logistics_request.files_cleared",
+      actor,
+      details: {
+        request_id: after.id,
+        status: after.status,
+        bytes_freed: storedRequestBytes(before),
+      },
+    });
+  }
+
   listPapers(): AdminBotServiceResponse<{ papers: AdminBotPaperRecord[] }> {
     return {
       ok: true,
@@ -967,6 +2675,15 @@ export class AdminBotService {
         delete stored.slack_location_updated_at;
       }
       this.store.saveLabMember(stored);
+      if (stored.slack_location) {
+        // Slack is a third opinion, not the profile: recorded as its own source so the timeline
+        // shows where each claim came from, and never compared against the profile for drift.
+        this.recordMemberLocation({
+          memberId: stored.id,
+          source: "slack_profile",
+          raw: stored.slack_location,
+        });
+      }
       updated += 1;
     }
     this.recordAudit({
@@ -1367,6 +3084,52 @@ export class AdminBotService {
   }
 
   /**
+   * Every active member, and how far along their own record is.
+   *
+   * The lab-wide read behind the profile overview: who has filled their profile in, and who has
+   * actually used the timeline tool to say when they are working. Both are things a member owns
+   * and nobody else can do for them, which is why the answer is a list of names rather than a
+   * number -- the follow-up is a conversation with a person.
+   *
+   * Admin-only at the route, unlike listMembersWithIncompleteMandatoryFields: that one answers
+   * "is *my* profile complete" for the member's own dashboard, so it is open to anyone signed in.
+   * This one is everybody's completeness at once, which is a governance read.
+   *
+   * Alumni and external collaborators are left out for the same reason the reminder pass leaves
+   * them out: the fields are asked of people currently working here.
+   */
+  listMemberProfileOverview(): AdminBotServiceResponse<{
+    members: AdminBotMemberProfileOverviewRow[];
+    mandatory_field_count: number;
+  }> {
+    const remindedAt = this.lastMandatoryFieldsReminderByMember();
+    const members = this.store
+      .listLabMembers()
+      .filter((member) => member.status !== "alumni" && member.status !== "external")
+      .map((member) => {
+        const missing = missingMandatoryProfileFields(member);
+        const timeline = countTimelineEntries(member);
+        const reminded = remindedAt.get(member.id);
+        return {
+          id: member.id,
+          name: member.name,
+          ...(member.status ? { status: member.status } : {}),
+          privilege_level: member.privilege_level,
+          missing_fields: missing,
+          filled_field_count: MANDATORY_PROFILE_FIELDS.length - missing.length,
+          timeline,
+          ...(reminded ? { last_reminded_at: new Date(reminded).toISOString() } : {}),
+        };
+      })
+      .toSorted(byProfileProgress);
+    return {
+      ok: true,
+      status: 200,
+      payload: { members, mandatory_field_count: MANDATORY_PROFILE_FIELDS.length },
+    };
+  }
+
+  /**
    * Slack-nudge every member whose profile is missing a required field. Meant to run once a day
    * from cron (scripts/adminbot-mandatory-fields-cron.sh), not from a click: the message is fixed
    * and the recipient list is entirely server-computed from roster state, so there is no
@@ -1449,9 +3212,7 @@ export class AdminBotService {
   // Reviews Slack profile photos for active lab members and nudges non-compliant members with the
   // fixed guideline copy. Assessment can come from an injected AI reviewer or a deterministic
   // fallback when no reviewer is configured.
-  async runProfilePhotoReviewAndReminders(
-    actor: string,
-  ): Promise<
+  async runProfilePhotoReviewAndReminders(actor: string): Promise<
     AdminBotServiceResponse<{
       reviewed: number;
       non_compliant: number;
@@ -1461,7 +3222,12 @@ export class AdminBotService {
   > {
     const members = this.store
       .listLabMembers()
-      .filter((member) => member.status === "active" || member.status === "part_time" || member.status === "on_leave");
+      .filter(
+        (member) =>
+          member.status === "active" ||
+          member.status === "part_time" ||
+          member.status === "on_leave",
+      );
     const now = new Date().toISOString();
     let reviewed = 0;
     const nonCompliantMemberIds: string[] = [];
@@ -1541,9 +3307,7 @@ export class AdminBotService {
   }
 
   // Generates one AI-polished variant of the signed-in member's current Slack profile photo.
-  async polishOwnProfilePhoto(
-    memberId: string,
-  ): Promise<
+  async polishOwnProfilePhoto(memberId: string): Promise<
     AdminBotServiceResponse<{
       variant: AdminBotProfilePhotoPolishVariant;
       variants: AdminBotProfilePhotoPolishVariant[];
@@ -2152,10 +3916,15 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
   "availability",
   "time_off",
   "milestones",
+  "trips",
+  "dismissed_deadlines",
   // The prose that goes with the three lists above. Admin-visible on read (see
   // adminBotScheduleMemberFields) and self-editable, like the rows it explains.
   "availability_notes",
   "availability_doc_url",
+  // The link only. cv_snapshot is deliberately absent: it is what the scan compares against, so a
+  // member who could write it could hide or invent their own career changes.
+  "cv_url",
 ] as const;
 
 const SELF_PROFILE_PRIVILEGED_FIELDS = [
@@ -2174,15 +3943,29 @@ const OWN_PAPER_EDITABLE_FIELDS = [
   "current_step",
   "artifacts",
   "notes",
+  // Where the paper is aimed and when it is due. An author's own call, and it moves -- a missed
+  // deadline, a change of plan -- so it belongs with the fields they edit on their own card.
+  "venue",
+  "deadline",
 ] as const;
 
 // Governance the paper flow drives: mentor assignment, the reviewer checklist, and reminder cadence
 // (escalation windows and the head professor who gets escalated to). Ownership is server-stamped.
+//
+// The nudge-targeting and decision fields are here for the same reason: `first_author_member_id`
+// decides who every nudge on this paper goes to, `venue_decision`/`attempt` record what the venue
+// said, and `dormant_override` exempts a paper from the dormancy rule. Named explicitly rather
+// than left to fall off the editable list, so a member who tries gets a refusal instead of a
+// silent no-op.
 const OWN_PAPER_PRIVILEGED_FIELDS = [
   "mentor_member_id",
   "checks",
   "reminder",
   "submitted_by_member_id",
+  "first_author_member_id",
+  "venue_decision",
+  "attempt",
+  "dormant_override",
 ] as const;
 
 function paperMatchesNeedles(paper: AdminBotPaperRecord, needles: string[]): boolean {
@@ -2251,6 +4034,25 @@ function serviceError<T>(status: number, message: string): AdminBotServiceRespon
 // prompt exit from the list -- but nobody is nudged about the same gap more than once per window.
 const MANDATORY_FIELDS_REMINDER_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
 
+// The same idea one level down: a *slot* is left alone for three days after it was nudged about.
+// Per-slot rather than per-paper, so filling in two of four artifacts genuinely quiets those two
+// and the next pass chases only what is still open.
+const PAPER_SLOT_NUDGE_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+
+// Fixed order, so a person owed slots in two roles on the same paper reads them in the same order
+// every time.
+function isAdminBotAttendanceState(
+  value: string,
+): value is (typeof adminBotAttendanceStates)[number] {
+  return (adminBotAttendanceStates as readonly string[]).includes(value);
+}
+
+function isAdminBotReimbursementState(
+  value: string,
+): value is (typeof adminBotReimbursementStates)[number] {
+  return (adminBotReimbursementStates as readonly string[]).includes(value);
+}
+
 // The one list, shared with the Control UI through the contracts module so the reminder can never
 // chase a field the profile page calls optional. See adminBotMandatoryProfileFields.
 //
@@ -2268,15 +4070,57 @@ function missingMandatoryProfileFields(member: AdminBotLabMember): string[] {
   });
 }
 
+/**
+ * How many entries a member has put on their Time Availability page.
+ *
+ * "Timeline" in the brainstorming doc is that page: the hours-per-week rows, the time off, the
+ * dated milestones and the trips. Counted together rather than reported per list because the
+ * question it answers is "has this person told us when they are working at all", and one row of
+ * any kind is a different situation from none.
+ */
+function countTimelineEntries(member: AdminBotLabMember): AdminBotMemberTimelineCounts {
+  const availability = member.availability?.length ?? 0;
+  const timeOff = member.time_off?.length ?? 0;
+  const milestones = member.milestones?.length ?? 0;
+  const trips = member.trips?.length ?? 0;
+  return {
+    availability,
+    time_off: timeOff,
+    milestones,
+    trips,
+    total: availability + timeOff + milestones + trips,
+  };
+}
+
+/**
+ * Least finished first, which is the order this list is worked in.
+ *
+ * Missing profile fields dominate the sort and timeline entries break the tie: a member with a
+ * blank profile is a bigger gap than one who filled everything in but has not planned their term,
+ * and the name is the last tiebreak so the order is stable between reads.
+ */
+function byProfileProgress(
+  left: AdminBotMemberProfileOverviewRow,
+  right: AdminBotMemberProfileOverviewRow,
+): number {
+  if (left.missing_fields.length !== right.missing_fields.length) {
+    return right.missing_fields.length - left.missing_fields.length;
+  }
+  if (left.timeline.total !== right.timeline.total) {
+    return left.timeline.total - right.timeline.total;
+  }
+  return left.name.localeCompare(right.name);
+}
+
 // One shared, deterministic reminder rather than a message per missing field: the whole point of
 // this reminder is that nobody composes it, so its content can never be attacker- or
 // agent-controlled. Listing exactly which lab-wide fields are still checked (not each member's own
 // missing subset) keeps the message identical for every recipient, which is what lets it go out
 // through a single sendMemberNudge call instead of one per person.
 function buildMandatoryFieldsReminderMessage(): string {
-  const fields = MANDATORY_PROFILE_FIELDS.map((key) => adminBotMandatoryProfileFieldLabels[key]).join(
-    ", ",
-  );
+  const fields = MANDATORY_PROFILE_FIELDS.map(
+    (key) => adminBotMandatoryProfileFieldLabels[key],
+  ).join(", ");
   return [
     "Quick reminder: your AdminBot profile is missing one or more required fields " +
       `(${fields}).`,
@@ -2301,7 +4145,7 @@ function buildProfilePhotoGuidelineMessage(): string {
     "",
     "How-To if you want to take a better photo yourself:",
     "- Use portrait mode and the back camera (higher quality), and have somebody take the photo for you.",
-    '- Many phones/apps can blur the background or change it to a pure color. Some members took good photos in 10 seconds using portrait mode.',
+    "- Many phones/apps can blur the background or change it to a pure color. Some members took good photos in 10 seconds using portrait mode.",
     "- Neutral backgrounds are usually better; you can use https://www.remove.bg/ to crop yourself and place yourself into a neutral background.",
     "- Usually the shot is chest-up and includes shoulders.",
     "",
@@ -2464,7 +4308,8 @@ type SocialUrlFieldSpec = {
 
 // Raster types only, and never image/svg+xml: an SVG is a document that can carry script, and this
 // value is handed straight to an <img src> in the Control UI.
-const INLINE_IMAGE_PATTERN = /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
+const INLINE_IMAGE_PATTERN =
+  /^data:image\/(?:png|jpeg|jpg|gif|webp);base64,([A-Za-z0-9+/]+={0,2})$/;
 
 // Matches MAX_AVATAR_BYTES in the Control UI's upload control. The client already refuses a larger
 // file; this is the same limit enforced where it counts, against the decoded bytes rather than the
@@ -2720,6 +4565,112 @@ function validateLabel(value: unknown, label: string): string | undefined {
   return undefined;
 }
 
+/**
+ * The optional wall-clock half of a dated deadline: "HH:MM" plus the zone it is read in.
+ *
+ * The pair is validated together because neither half is usable alone. A time with no zone is the
+ * failure this field exists to prevent -- a member in Toronto typing "23:59" for a deadline set in
+ * Anywhere-on-Earth is off by seventeen hours, and storing the number without the zone makes that
+ * mistake unrecoverable rather than merely made. Storing a zone with no time is harmless but
+ * meaningless, so it is refused too rather than kept as a value nothing ever reads.
+ */
+function validateDeadlineClock(
+  time: unknown,
+  timezone: unknown,
+  label: string,
+): string | undefined {
+  if (time === undefined && timezone === undefined) {
+    return undefined;
+  }
+  if (time !== undefined && typeof time !== "string") {
+    return `${label} time must be a string`;
+  }
+  if (timezone !== undefined && typeof timezone !== "string") {
+    return `${label} time zone must be a string`;
+  }
+  if (typeof time !== "string" || !ADMINBOT_DEADLINE_TIME_PATTERN.test(time)) {
+    return `${label} time must be HH:MM`;
+  }
+  if (typeof timezone !== "string" || !timezone.trim()) {
+    return `${label} time zone is required when a time is given`;
+  }
+  if (!isAdminBotTimezone(timezone)) {
+    return `${label} time zone is not a known IANA zone`;
+  }
+  return undefined;
+}
+
+/**
+ * Trips, validated like the other dated lists plus the two rules that are theirs alone.
+ *
+ * A city is required because a trip with no place is indistinguishable from time off, and the
+ * timezone -- when given -- has to be a real IANA zone, since everything downstream feeds it
+ * straight to Intl and a typo would otherwise surface as a silently missing local time.
+ */
+function validateTrips(member: AdminBotLabMemberInput): string | undefined {
+  if (member.trips === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(member.trips)) {
+    return "member trips must be a list";
+  }
+  if (member.trips.length > MAX_AVAILABILITY_ROWS) {
+    return `member trips cannot exceed ${MAX_AVAILABILITY_ROWS} rows`;
+  }
+  for (const row of member.trips) {
+    if (!Number.isFinite(parseIsoDate(row?.start)) || !Number.isFinite(parseIsoDate(row?.end))) {
+      return "trip start and end must be YYYY-MM-DD";
+    }
+    if (row.end < row.start) {
+      return "trip end cannot be before its start";
+    }
+    if (typeof row.city !== "string" || !row.city.trim()) {
+      return "trip city is required";
+    }
+    const cityError = validateLabel(row.city, "trip city");
+    if (cityError) {
+      return cityError;
+    }
+    if (row.timezone !== undefined && row.timezone !== "" && !isAdminBotTimezone(row.timezone)) {
+      return "trip time zone is not a known IANA zone";
+    }
+    const linkError = validateExternalLink(row.link, "trip");
+    if (linkError) {
+      return linkError;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The list of snapshot deadlines a member has dismissed.
+ *
+ * Bounded like every other member-supplied list, and each entry length-checked like a label: these
+ * are venue names copied off the bundled snapshot, and without a ceiling the field is an unbounded
+ * write on a record every admin reads.
+ */
+function validateDismissedDeadlines(member: AdminBotLabMemberInput): string | undefined {
+  if (member.dismissed_deadlines === undefined) {
+    return undefined;
+  }
+  if (!Array.isArray(member.dismissed_deadlines)) {
+    return "member dismissed deadlines must be a list";
+  }
+  if (member.dismissed_deadlines.length > MAX_AVAILABILITY_ROWS) {
+    return `member dismissed deadlines cannot exceed ${MAX_AVAILABILITY_ROWS} rows`;
+  }
+  for (const entry of member.dismissed_deadlines) {
+    if (typeof entry !== "string" || !entry.trim()) {
+      return "dismissed deadline names must be non-empty strings";
+    }
+    const labelError = validateLabel(entry, "dismissed deadline");
+    if (labelError) {
+      return labelError;
+    }
+  }
+  return undefined;
+}
+
 function validateMilestones(member: AdminBotLabMemberInput): string | undefined {
   if (member.milestones === undefined) {
     return undefined;
@@ -2745,6 +4696,10 @@ function validateMilestones(member: AdminBotLabMemberInput): string | undefined 
     const linkError = validateExternalLink(row.link, "milestone");
     if (linkError) {
       return linkError;
+    }
+    const clockError = validateDeadlineClock(row.time, row.timezone, "milestone");
+    if (clockError) {
+      return clockError;
     }
   }
   return undefined;
@@ -2807,6 +4762,20 @@ function validateAvailability(member: AdminBotLabMemberInput): string | undefine
       if (row.availability !== "none" && row.availability !== "partial") {
         return "time off availability must be none or partial";
       }
+      if (row.hours_per_week !== undefined) {
+        if (
+          !Number.isFinite(row.hours_per_week) ||
+          row.hours_per_week < 0 ||
+          row.hours_per_week > 168
+        ) {
+          return "time off hours per week must be between 0 and 168";
+        }
+        // Hours on a whole-day row would be two answers to the same question, and the chart
+        // reads the whole-day flag first -- so the number would be stored and never shown.
+        if (row.availability === "none") {
+          return "time off hours per week applies only to partial availability";
+        }
+      }
       const labelError = validateLabel(row.label, "time off label");
       if (labelError) {
         return labelError;
@@ -2817,7 +4786,7 @@ function validateAvailability(member: AdminBotLabMemberInput): string | undefine
       }
     }
   }
-  return validateMilestones(member);
+  return validateMilestones(member) ?? validateTrips(member) ?? validateDismissedDeadlines(member);
 }
 
 // availability_updated_at is server-owned: it moves only when the schedule content
@@ -2847,6 +4816,23 @@ function validateSettings(settings: AdminBotSettingsInput): string | undefined {
       settings.paper_escalation_business_days < 1)
   ) {
     return "paper escalation business days must be a positive integer";
+  }
+  if (
+    settings.meeting_minimum_minutes !== undefined &&
+    (!Number.isInteger(settings.meeting_minimum_minutes) || settings.meeting_minimum_minutes < 0)
+  ) {
+    // Zero is meaningful — it means list everything — so this floor is 0, not 1.
+    return "meeting minimum minutes must be a non-negative integer";
+  }
+  if (
+    settings.cv_recency_window_months !== undefined &&
+    (!Number.isInteger(settings.cv_recency_window_months) ||
+      settings.cv_recency_window_months < 1 ||
+      // A window past five years stops separating news from history at all, which is the only
+      // job this setting has.
+      settings.cv_recency_window_months > 60)
+  ) {
+    return "cv recency window months must be a whole number between 1 and 60";
   }
   const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
   if (applicantLastReviewedAt && Number.isNaN(Date.parse(applicantLastReviewedAt))) {

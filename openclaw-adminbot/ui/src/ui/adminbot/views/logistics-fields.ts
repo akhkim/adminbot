@@ -3,6 +3,12 @@
 // The form types these columns in and the admin detail reads them back, so the two would drift the
 // moment each kept its own list of headings. Both import this one.
 import type { RecommendationSchool } from "../data/logistics-draft.ts";
+// The zone column offers the shared list; see data/timezones.ts for why it is a datalist. Re-
+// exported so the view that renders these columns has one import for "what a school row is made
+// of", rather than reaching past this module for half of it.
+import { TIMEZONE_LIST_ID } from "../data/timezones.ts";
+
+export { TIMEZONE_LIST_ID, timezoneSuggestions } from "../data/timezones.ts";
 
 export type SchoolFieldKey = Exclude<keyof RecommendationSchool, "id">;
 
@@ -11,7 +17,7 @@ export type SchoolField = {
   labelKey: string;
   // Second line under the column name, for a heading that needs a qualifier to be understood.
   hintKey?: string;
-  control: "text" | "date" | "url" | "suggest" | "notes";
+  control: "text" | "date" | "time" | "url" | "suggest" | "notes";
   placeholderKey?: string;
   // Only for "suggest": the datalist this column's input reads its offered words from.
   listId?: string;
@@ -45,10 +51,26 @@ export const SCHOOL_FIELDS: SchoolField[] = [
     control: "date",
   },
   {
+    key: "applicationDeadlineTime",
+    labelKey: "logistics.schools.applicationDeadlineTime",
+    control: "time",
+  },
+  {
     key: "letterDeadline",
     labelKey: "logistics.schools.letterDeadline",
     hintKey: "logistics.schools.letterDeadlineHint",
     control: "date",
+  },
+  { key: "letterDeadlineTime", labelKey: "logistics.schools.letterDeadlineTime", control: "time" },
+  {
+    // Immediately after the two times, and shared by both: a school states its cutoffs on one
+    // clock, so a zone per deadline would be two chances to disagree about the same campus.
+    key: "deadlineTimezone",
+    labelKey: "logistics.schools.deadlineTimezone",
+    hintKey: "logistics.schools.deadlineTimezoneHint",
+    control: "suggest",
+    listId: TIMEZONE_LIST_ID,
+    placeholderKey: "logistics.schools.deadlineTimezonePlaceholder",
   },
   {
     key: "applicationStatus",

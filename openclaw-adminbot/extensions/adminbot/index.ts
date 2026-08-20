@@ -99,43 +99,6 @@ export default defineToolPlugin({
         createAdminBotToolHandlers(resolveConfig(config)).proposeAction(params),
     }),
     tool({
-      name: "adminbot_propose_candidate_decision",
-      label: "AdminBot propose candidate decision",
-      description:
-        "Propose accepting a candidate for trial, accepting directly, or declining. Candidate decisions are T4 and require explicit service-side approval.",
-      optional: true,
-      parameters: Type.Object({
-        decision: Type.Unsafe<"accept_for_trial" | "accept_direct" | "decline">({
-          type: "string",
-          enum: ["accept_for_trial", "accept_direct", "decline"],
-        }),
-        candidateName: Type.String(),
-        candidateEmail: Type.Optional(Type.String()),
-        summary: Type.String(),
-        evidence: evidenceArray,
-        rationale: Type.Optional(Type.String()),
-        proposedPayload: Type.Optional(Type.Unknown()),
-      }),
-      execute: (params, config) =>
-        createAdminBotToolHandlers(resolveConfig(config)).proposeCandidateDecision(params),
-    }),
-    tool({
-      name: "adminbot_draft_social_post",
-      label: "AdminBot draft social post",
-      description:
-        "Ask AdminBot to draft a social media post from trusted context. Publishing remains a separate T4 proposal.",
-      optional: true,
-      parameters: Type.Object({
-        subject: Type.String(),
-        sourceWork: Type.String(),
-        audience: Type.Optional(Type.String()),
-        tone: Type.Optional(Type.String()),
-        evidence: evidenceArray,
-      }),
-      execute: (params, config) =>
-        createAdminBotToolHandlers(resolveConfig(config)).draftSocialPost(params),
-    }),
-    tool({
       name: "adminbot_prepare_paper_social_posts",
       label: "AdminBot prepare paper social posts",
       description:
@@ -191,22 +154,6 @@ export default defineToolPlugin({
       }),
       execute: (params, config) =>
         createAdminBotToolHandlers(resolveConfig(config)).prepareOverleafPaperEdit(params),
-    }),
-    tool({
-      name: "adminbot_prepare_reimbursement_packet",
-      label: "AdminBot prepare reimbursement packet",
-      description:
-        "Prepare a reimbursement packet proposal. Submitting payment or reimbursement forms remains a separate T4 action.",
-      optional: true,
-      parameters: Type.Object({
-        claimant: Type.String(),
-        expenseSummary: Type.String(),
-        amount: Type.Optional(Type.String()),
-        evidence: evidenceArray,
-        proposedPayload: Type.Optional(Type.Unknown()),
-      }),
-      execute: (params, config) =>
-        createAdminBotToolHandlers(resolveConfig(config)).prepareReimbursementPacket(params),
     }),
     tool({
       name: "adminbot_reimbursement_converse",

@@ -57,6 +57,11 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // service strips the schedule fields from every other member's record on the way out
   // (adminBotScheduleMemberFields), and writing was already restricted to your own record.
   adminbotTimeAvailability: "member",
+  // Recordings of the lab's own meetings, for the lab's own members. The tab is member-level
+  // because the recording and the summary are what someone who missed the meeting came for; the
+  // attendance roster inside it is not, and the service hands a member only their own line and a
+  // headcount (listMeetingsForMember). Reading who else was there is an admin act.
+  adminbotMeetings: "member",
   // Each template starts a request made in the viewer's own name, so it needs an account behind
   // it -- a visitor has no identity for AdminBot to route the signature or the letter back to.
   adminbotLogistics: "member",
@@ -80,9 +85,14 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotPapers: "admin",
   adminbot: "admin",
   adminbotRegistrations: "admin",
+  // Everybody's completeness at once, which is a governance read; the service re-checks it.
+  adminbotProfileOverview: "admin",
   adminbotOnboarding: "admin",
   adminbotSettings: "admin",
   adminbotAnnouncements: "admin",
+  // CV scanning reads career history the roster does not carry, so it stays on the admin side of
+  // the console rather than being visible to every signed-in member.
+  adminbotCvUpdates: "admin",
   // Reads the lab calendar and spends model time on drafting, and every button on it files a
   // governance-gated action. Admin, and the service re-checks both routes independently.
   adminbotCalendar: "admin",
@@ -96,9 +106,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   config: "admin",
   cron: "admin",
   debug: "admin",
-  dreams: "admin",
   infrastructure: "admin",
-  instances: "admin",
   logs: "admin",
   mcp: "admin",
   nodes: "admin",
@@ -106,7 +114,6 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   sessions: "admin",
   skills: "admin",
   usage: "admin",
-  workboard: "admin",
 };
 
 export function minimumRoleForTab(tab: Tab): AccessRole {

@@ -1,4 +1,3 @@
-import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
 import type { GatewayBrowserClient } from "../../gateway.ts";
 import type { UiSettings } from "../../storage.ts";
 // Control UI controller for the AdminBot dashboard surface.
@@ -6,6 +5,8 @@ import {
   type CalendarEvent,
   type CalendarEventDraft,
   type LabCalendar,
+  type LocationDrift,
+  type MeetingRecord,
   type MemberNudgeChannel,
   type MemberProfileUpdate,
   type MemberScheduleUpdate,
@@ -19,13 +20,18 @@ import {
   resolveAdminBotBaseUrl,
   sendOnboardingGuide as sendOnboardingGuideRequest,
   saveOwnPaper,
+  scanMemberCvs,
+  fetchCvDigest,
+  draftMemberCvBlurb,
   sendMemberNudge,
   updateOwnProfile,
+  updateSettingsAsAdmin,
   updateOwnSchedule,
   upsertLabMemberAsAdmin,
 } from "../auth/session.ts";
-import type { AvailabilityRow, MilestoneRow, TimeOffRow } from "../data/availability.js";
+import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
 import { loadMemberMap, type MemberMap } from "../data/member-map.ts";
+import { papersWithUnread, seenSaveInput } from "../nudge-alerts.ts";
 
 export type AdminBotPrivilegeLevel = "external_collaborator" | "trial" | "member" | "admin";
 
@@ -69,6 +75,8 @@ export type AdminBotLabMember = {
   availability?: AvailabilityRow[];
   time_off?: TimeOffRow[];
   milestones?: MilestoneRow[];
+  trips?: TripRow[];
+  dismissed_deadlines?: string[];
   // The member's own prose about their schedule, for the admins who plan around it. Absent on
   // every roster copy but the member's own and an admin's -- the service strips it for everyone
   // else (adminBotScheduleMemberFields), same as the three lists above.
@@ -80,6 +88,9 @@ export type AdminBotLabMember = {
   affiliation?: string;
   timezone?: string;
   personal_website?: string;
+  // Link to the member's own CV PDF, self-editable like the availability planning doc. The scan
+  // reads it; the console never renders its contents, only what changed.
+  cv_url?: string;
   calendar_email?: string;
   correspondence_email?: string;
   github_url?: string;
@@ -92,12 +103,62 @@ export type AdminBotLabMember = {
   updated_at: string;
 };
 
+export type AdminBotCvEntry = {
+  // Mirrors AdminBotCvEntryKind in the service contracts; ui/ cannot import from extensions/.
+  kind: "position" | "education" | "award" | "publication" | "other";
+  title: string;
+  organization: string;
+  start?: string;
+  end?: string;
+  start_iso?: string;
+};
+
+// Whether an added entry is news or just a document edit. See the service's cv-scan.ts.
+export type AdminBotCvRecency = "recent" | "backfilled" | "undated";
+
+export type AdminBotCvChange = {
+  entry: AdminBotCvEntry;
+  recency: AdminBotCvRecency;
+};
+
+export type AdminBotCvScanMemberResult = {
+  member_id: string;
+  member_name: string;
+  status: "unchanged" | "changed" | "first_scan" | "skipped" | "failed";
+  reason?: string;
+  added: AdminBotCvChange[];
+  removed: AdminBotCvEntry[];
+};
+
+export type AdminBotCvScanResult = {
+  scanned_at: string;
+  results: AdminBotCvScanMemberResult[];
+  newsletter_draft: string;
+};
+
+export type AdminBotCvChangeEvent = {
+  member_id: string;
+  member_name: string;
+  detected_at: string;
+  recency: AdminBotCvRecency;
+  entry: AdminBotCvEntry;
+};
+
+export type AdminBotCvDigest = {
+  since: string;
+  changes: AdminBotCvChangeEvent[];
+  newsletter_draft: string;
+};
+
 export type AdminBotSettings = {
   paper_escalation_business_days: number;
+  cv_recency_window_months: number;
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
   applicant_last_reviewed_at?: string;
+  /** Recordings shorter than this are filed but not listed on the Meeting Recordings tab. */
+  meeting_minimum_minutes?: number;
   updated_at: string;
 };
 
@@ -163,6 +224,13 @@ export type AdminBotPaperSaveInput = {
   nudgeSeenAt?: string;
   topic?: string;
   reminderStatus?: "idle" | "waiting_on_authors" | "blocked" | "complete";
+  // What the venue said, and the four details the conference branch needs once it said yes. Sent
+  // as strings because they come straight off form controls; the service parses and validates.
+  venueDecision?: string;
+  acceptedVenue?: string;
+  acceptedYear?: string;
+  isArchival?: string;
+  presentationType?: string;
 };
 
 export type AdminBotOnboardingResult = {
@@ -172,6 +240,7 @@ export type AdminBotOnboardingResult = {
   sent: boolean;
   drive_folder_link?: string;
   slack_connect_link?: string;
+  project_channel_invites?: { channel: string; url: string }[];
 };
 
 export type AdminBotOnboardingHost = {
@@ -184,8 +253,21 @@ export type AdminBotOnboardingHost = {
   onboardingError?: string | null;
   onboardingMissing?: string[];
   onboardingResult?: AdminBotOnboardingResult | null;
+  /** The preview as the operator edited it; empty means they left it as composed. */
+  onboardingDraftSubject?: string;
+  onboardingDraftBody?: string;
+  /** Comma-separated project channels the send should invite them to. */
+  onboardingProjectChannels?: string;
   settings: UiSettings;
 };
+
+/** "#proj-a, proj-b" -> ["#proj-a", "proj-b"]; the service resolves names and ids alike. */
+export function parseProjectChannels(raw: string | undefined): string[] {
+  return (raw ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
 
 /**
  * Previews or sends an onboarding guide.
@@ -212,6 +294,16 @@ export async function sendOnboardingGuide(
     host.onboardingResult = null;
   }
   try {
+    // Only a send carries the edited copy. Re-previewing is how an operator gets back to the
+    // template after an edit they regret, so a preview deliberately recomposes from the form.
+    const edited = options.preview
+      ? {}
+      : {
+          ...(host.onboardingDraftSubject?.trim()
+            ? { subjectOverride: host.onboardingDraftSubject }
+            : {}),
+          ...(host.onboardingDraftBody?.trim() ? { bodyOverride: host.onboardingDraftBody } : {}),
+        };
     const result = await sendOnboardingGuideRequest(
       {
         templateId: host.onboardingTemplateId ?? "",
@@ -220,12 +312,20 @@ export async function sendOnboardingGuide(
         values: host.onboardingValues ?? {},
         preview: options.preview,
         submitDcsForm: host.onboardingSubmitDcsForm,
+        // Only on a real send: a preview mints nothing, so passing them would only invite noise.
+        ...(options.preview
+          ? {}
+          : { projectChannels: parseProjectChannels(host.onboardingProjectChannels) }),
+        ...edited,
       },
       stored.sessionToken,
       resolveAdminBotBaseUrl(host.settings),
     );
     if (result.ok) {
       host.onboardingResult = result.value;
+      // A fresh preview seeds the editable draft; a send replaces it with what actually went out.
+      host.onboardingDraftSubject = result.value.subject;
+      host.onboardingDraftBody = result.value.body;
       return;
     }
     if (result.kind === "missing") {
@@ -251,6 +351,8 @@ export async function sendOnboardingGuide(
 
 export type AdminBotSettingsSaveInput = {
   paper_escalation_business_days?: number;
+  meeting_minimum_minutes?: number;
+  cv_recency_window_months?: number;
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
@@ -290,6 +392,18 @@ export type AdminBotPaperRecord = {
   title: string;
   authors: string[];
   current_step: AdminBotPaperStep;
+  // Governance fields the service owns. Mirrored here so a card can show the venue and its
+  // deadline without a second read; nothing in the UI writes them.
+  first_author_member_id?: string;
+  venue?: string;
+  deadline?: string;
+  venue_decision?: "pending" | "accept" | "reject";
+  attempt?: number;
+  dormant_override?: boolean;
+  accepted_venue?: string;
+  accepted_year?: number;
+  is_archival?: boolean;
+  presentation_type?: string;
   artifacts?: Record<string, string | undefined>;
   mentor_member_id?: string;
   checks?: Record<string, boolean | undefined>;
@@ -409,6 +523,19 @@ export type AdminBotHost = {
   adminBotPhotoApplyBusy: boolean;
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
+  // Last CV scan result and whether one is in flight. Session-scoped rather than persisted: a
+  // scan is a point-in-time read, and a stale one shown as current would be misleading.
+  adminBotCvScan: AdminBotCvScanResult | null;
+  adminBotCvScanning: boolean;
+  // Digest of recorded changes over a window, and the date it was asked for. Kept apart from the
+  // scan result because they answer different questions: one is "what did this run find", the
+  // other "what has the lab learned since a date".
+  adminBotCvDigest: AdminBotCvDigest | null;
+  adminBotCvDigestSince: string;
+  adminBotCvDigestLoading: boolean;
+  // Blurbs are per member and drafted on request, so they are held by id rather than as one slot.
+  adminBotCvBlurbs: Record<string, string>;
+  adminBotCvBlurbMemberId: string | null;
   // Calendar tab. Written by controllers/calendar.ts, which shares this host rather than owning a
   // second one: the invite half reads the same roster and papers the rest of the tab loaded.
   calendarEvents?: CalendarEvent[];
@@ -427,6 +554,18 @@ export type AdminBotHost = {
   calendarOpenDay?: string | null;
   calendarOpenEventId?: string | null;
   calendarMessages?: Array<{ role: "user" | "assistant"; content: string }>;
+  // Meeting Recordings tab. Written by controllers/meetings.ts, which shares this host so the
+  // attendance editor can read the roster the dashboard already loaded.
+  adminBotMeetings?: MeetingRecord[];
+  // The "have you moved?" banner. Undefined is "not asked yet", null is "nothing to ask".
+  adminBotLocationDrift?: LocationDrift | null;
+  // The admin-side list, keyed by member on the calendar's invite panel.
+  adminBotLocationDrifts?: LocationDrift[];
+  adminBotLocationSaving?: boolean;
+  adminBotLocationError?: string | null;
+  adminBotMeetingsLoading: boolean;
+  adminBotMeetingsSaving: boolean;
+  adminBotMeetingsError: string | null;
   // Needed to resolve the AdminBot HTTP base URL for the direct admin-write path in
   // saveAdminBotMember — see the comment there for why this bypasses the gateway tool.
   settings: UiSettings;
@@ -806,6 +945,124 @@ function requirePrivilegedSession(
   return { sessionToken: stored.sessionToken, baseUrl: resolveAdminBotBaseUrl(host.settings) };
 }
 
+// Re-reads every linked CV and replaces the panel's scan result. Deliberately not merged into the
+// previous result: a member whose link broke since the last run must stop showing that run's
+// changes as though they were still current.
+// One place to turn a failed CV call into something an admin can act on.
+//
+// These three routes are the newest in the service, so they are the ones a long-running dev
+// service will not have yet. "not-found" therefore means version skew, and saying so is the
+// difference between restarting a process and hunting a login problem that does not exist.
+function cvErrorText(kind: string, action: string): string {
+  if (kind === "unreachable") {
+    return ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE;
+  }
+  if (kind === "not-found") {
+    return `This AdminBot service does not have the ${action} endpoint — it is running older code than the console. Restart it with \`pnpm adminbot:dev\`.`;
+  }
+  if (kind === "forbidden") {
+    return `${action} requires an admin or core member session.`;
+  }
+  return `Could not ${action}: ${kind}`;
+}
+
+export function setAdminBotCvDigestSince(host: AdminBotHost, since: string): void {
+  host.adminBotCvDigestSince = since;
+}
+
+/** Loads recorded changes since the chosen date. Reads the ledger; never triggers a scan. */
+export async function loadAdminBotCvDigest(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  const since = host.adminBotCvDigestSince?.trim();
+  if (!since) {
+    host.adminBotNotice = { kind: "error", text: "Pick a date to summarise from." };
+    return;
+  }
+  host.adminBotCvDigestLoading = true;
+  host.adminBotNotice = null;
+  try {
+    // A date input gives YYYY-MM-DD; the service compares ISO timestamps, so anchor it to the
+    // start of that day rather than letting a bare date sort unpredictably against them.
+    const result = await fetchCvDigest(
+      `${since}T00:00:00.000Z`,
+      session.sessionToken,
+      session.baseUrl,
+    );
+    if (!result.ok) {
+      host.adminBotNotice = {
+        kind: "error",
+        text: cvErrorText(result.kind, "load the digest"),
+      };
+      return;
+    }
+    host.adminBotCvDigest = result.value as AdminBotCvDigest;
+  } finally {
+    host.adminBotCvDigestLoading = false;
+  }
+}
+
+/** Drafts one member's introduction from their stored CV entries. */
+export async function draftAdminBotCvBlurb(host: AdminBotHost, memberId: string): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  host.adminBotCvBlurbMemberId = memberId;
+  host.adminBotNotice = null;
+  try {
+    const result = await draftMemberCvBlurb(memberId, session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotNotice = {
+        kind: "error",
+        // A 409 carries the service's own sentence ("no scanned CV yet"), which is more useful
+        // than any fixed copy, so it wins when present.
+        text: result.message?.trim() || cvErrorText(result.kind, "draft a blurb"),
+      };
+      return;
+    }
+    const blurb = (result.value as { blurb?: string }).blurb ?? "";
+    host.adminBotCvBlurbs = { ...host.adminBotCvBlurbs, [memberId]: blurb };
+  } finally {
+    host.adminBotCvBlurbMemberId = null;
+  }
+}
+
+export async function scanAdminBotCvs(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  host.adminBotCvScanning = true;
+  host.adminBotNotice = null;
+  try {
+    const result = await scanMemberCvs(session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotNotice = {
+        kind: "error",
+        text: cvErrorText(result.kind, "scan CVs"),
+      };
+      return;
+    }
+    const scan = result.value as AdminBotCvScanResult;
+    host.adminBotCvScan = scan;
+    const changed = scan.results.filter((entry) => entry.status === "changed").length;
+    const failed = scan.results.filter((entry) => entry.status === "failed").length;
+    host.adminBotNotice = {
+      // A run where nothing changed is a success, not an empty state -- saying so stops an admin
+      // wondering whether the scan actually ran.
+      kind: failed ? "error" : "success",
+      text: `Scanned ${scan.results.length} CV${scan.results.length === 1 ? "" : "s"}: ${changed} changed${
+        failed ? `, ${failed} could not be read` : ""
+      }.`,
+    };
+  } finally {
+    host.adminBotCvScanning = false;
+  }
+}
+
 export async function removePendingAdminBotAction(
   host: AdminBotHost,
   proposal: AdminBotActionProposal,
@@ -919,8 +1176,7 @@ export async function saveAdminBotMember(
                 // ..."); the generic line below cannot, and the whole record is sent on every save,
                 // so without the service's own sentence one bad field reads as the editor being
                 // broken. Same reasoning as saveAdminBotOwnProfile.
-                (result.message ??
-                "Couldn't save this member. Check the values and try again.");
+                (result.message ?? "Couldn't save this member. Check the values and try again.");
       host.adminBotNotice = { kind: "error", text: message };
       return;
     }
@@ -1260,6 +1516,17 @@ export async function saveAdminBotPaper(
     ...(paper.nudgeSeenAt === undefined ? {} : { nudge_seen_at: paper.nudgeSeenAt }),
     ...(paper.topic ? { topic: paper.topic } : {}),
   };
+  // Governance-shaped fields go on the record itself rather than into `artifacts`, and only when
+  // the form actually offered one -- an untouched control must not clear a stored value.
+  const acceptance = {
+    ...(paper.venueDecision ? { venue_decision: paper.venueDecision } : {}),
+    ...(paper.acceptedVenue === undefined ? {} : { accepted_venue: paper.acceptedVenue }),
+    ...(paper.acceptedYear ? { accepted_year: Number(paper.acceptedYear) } : {}),
+    ...(paper.isArchival === undefined || paper.isArchival === ""
+      ? {}
+      : { is_archival: paper.isArchival === "true" }),
+    ...(paper.presentationType ? { presentation_type: paper.presentationType } : {}),
+  };
   // Prefer the member's own session: the service scopes the write to what that member may change
   // (any paper for an admin, their own for an author). The gateway tool path stays as the fallback
   // for break-glass sessions that hold a gateway token but no member login.
@@ -1271,6 +1538,7 @@ export async function saveAdminBotPaper(
         title: paper.title,
         authors: paper.authors,
         current_step: paper.currentStep,
+        ...acceptance,
         ...(Object.keys(artifacts).length > 0 ? { artifacts } : {}),
         ...(paper.reminderStatus ? { reminder: { status: paper.reminderStatus } } : {}),
       },
@@ -1341,17 +1609,27 @@ export async function saveAdminBotSettings(
   host: AdminBotHost,
   settings: AdminBotSettingsSaveInput,
 ): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
   host.adminBotNotice = null;
-  try {
-    await invokeAdminBotTool(host, "adminbot_update_settings", settings);
-    host.adminBotNotice = { kind: "success", text: "Saved AdminBot settings." };
-    await loadAdminBot(host);
-  } catch (err) {
+  const result = await updateSettingsAsAdmin(
+    settings as Record<string, unknown>,
+    session.sessionToken,
+    session.baseUrl,
+  );
+  if (!result.ok) {
     host.adminBotNotice = {
       kind: "error",
-      text: formatAdminBotToolError(err),
+      // The service names what it refused on a 400 (an out-of-range window, say), which beats any
+      // fixed copy this side could write.
+      text: result.message?.trim() || cvErrorText(result.kind, "save settings"),
     };
+    return;
   }
+  host.adminBotNotice = { kind: "success", text: "Saved AdminBot settings." };
+  await loadAdminBot(host);
 }
 
 export async function saveAdminBotSensitiveInfo(

@@ -74,22 +74,6 @@ type GenericProposalParams = EvidenceParams & {
   idempotencyKey?: string;
 };
 
-type CandidateDecisionParams = EvidenceParams & {
-  decision: "accept_for_trial" | "accept_direct" | "decline";
-  candidateName: string;
-  candidateEmail?: string;
-  summary: string;
-  rationale?: string;
-  proposedPayload?: unknown;
-};
-
-type SocialPostParams = EvidenceParams & {
-  subject: string;
-  sourceWork: string;
-  audience?: string;
-  tone?: string;
-};
-
 type PaperSocialPostParams = EvidenceParams & {
   paperId?: string;
   title?: string;
@@ -128,13 +112,6 @@ type PaperOverleafEditParams = EvidenceParams & {
   mode?: AdminBotOverleafEditMode;
   policySource?: string;
   idempotencyKey?: string;
-};
-
-type ReimbursementParams = EvidenceParams & {
-  claimant: string;
-  expenseSummary: string;
-  amount?: string;
-  proposedPayload?: unknown;
 };
 
 type ReimbursementConversationParams = {
@@ -259,30 +236,6 @@ export function createAdminBotToolHandlers(
           ...(params.rationale ? { rationale: params.rationale } : {}),
           ...(params.undoPlan ? { undo_plan: params.undoPlan } : {}),
           ...(params.idempotencyKey ? { idempotency_key: params.idempotencyKey } : {}),
-        },
-        signal,
-      ),
-    proposeCandidateDecision: (params: CandidateDecisionParams) =>
-      client.createProposal(candidateDecisionProposal(params), signal),
-    draftSocialPost: (params: SocialPostParams) =>
-      client.createProposal(
-        {
-          type: "social_media.draft",
-          risk_tier: "T1",
-          summary: `Draft social post: ${params.subject}`,
-          target: {
-            subject: params.subject,
-            sourceWork: params.sourceWork,
-            ...(params.audience ? { audience: params.audience } : {}),
-            ...(params.tone ? { tone: params.tone } : {}),
-          },
-          evidence: params.evidence,
-          proposed_payload: {
-            subject: params.subject,
-            sourceWork: params.sourceWork,
-            audience: params.audience,
-            tone: params.tone,
-          },
         },
         signal,
       ),
@@ -420,26 +373,6 @@ export function createAdminBotToolHandlers(
         signal,
       );
     },
-    prepareReimbursementPacket: (params: ReimbursementParams) =>
-      client.createProposal(
-        {
-          type: "reimbursement.prepare_packet",
-          risk_tier: "T1",
-          summary: `Prepare reimbursement packet for ${params.claimant}`,
-          target: {
-            claimant: params.claimant,
-            expenseSummary: params.expenseSummary,
-            ...(params.amount ? { amount: params.amount } : {}),
-          },
-          evidence: params.evidence,
-          proposed_payload: params.proposedPayload ?? {
-            claimant: params.claimant,
-            expenseSummary: params.expenseSummary,
-            amount: params.amount,
-          },
-        },
-        signal,
-      ),
     suggestCalendarChange: async (params: CalendarParams) => {
       const resolved = await resolveCalendarSource(params, options.env ?? process.env);
       const normalized = normalizeCalendarProposalParams({
@@ -657,32 +590,6 @@ function readString(value: Record<string, unknown>, key: string): string | undef
 function slackTargetForMember(member: AdminBotLabMember | undefined): string | undefined {
   const slackUserId = member?.slack_user_id?.trim();
   return slackUserId ? `user:${slackUserId}` : undefined;
-}
-
-function candidateDecisionProposal(params: CandidateDecisionParams): AdminBotActionProposal {
-  const actionTypeByDecision = {
-    accept_for_trial: "candidate.accept_for_trial",
-    accept_direct: "candidate.accept_direct",
-    decline: "candidate.decline",
-  } as const satisfies Record<CandidateDecisionParams["decision"], AdminBotActionType>;
-  return {
-    type: actionTypeByDecision[params.decision],
-    risk_tier: "T4",
-    summary: params.summary,
-    target: {
-      name: params.candidateName,
-      ...(params.candidateEmail ? { email: params.candidateEmail } : {}),
-    },
-    evidence: params.evidence,
-    proposed_payload: params.proposedPayload ?? {
-      decision: params.decision,
-      candidateName: params.candidateName,
-      candidateEmail: params.candidateEmail,
-    },
-    ...(params.rationale ? { rationale: params.rationale } : {}),
-    undo_plan:
-      "Return the candidate to review state and revoke any onboarding tasks that were created.",
-  };
 }
 
 function normalizeCalendarProposalParams(

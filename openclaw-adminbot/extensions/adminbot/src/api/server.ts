@@ -10,6 +10,8 @@ import type {
   AdminBotApprovalRequest,
   AdminBotExecutionRequest,
   AdminBotLabMemberInput,
+  AdminBotMeetingAttendee,
+  AdminBotMeetingRecordInput,
   AdminBotMemberNudgeChannel,
   AdminBotMemberNudgeRequest,
   AdminBotPaperRecordInput,
@@ -18,13 +20,19 @@ import type {
   AdminBotRemovePendingRequest,
   AdminBotSettingsInput,
 } from "../contracts/actions.js";
+import type { AdminBotPaperSlotInput } from "../contracts/paper-slots.js";
+import {
+  buildNewsletterDraft,
+  draftMemberBlurb,
+  runAdminBotCvScan,
+  type AdminBotCvScanDeps,
+} from "../cv-scan.js";
 import { askGuidebook } from "../guidebook/ask.js";
 import {
   AdminBotMemoryStore,
   AdminBotService,
   type AdminBotActionExecutor,
   type AdminBotServiceOptions,
-  type AdminBotServiceResponse,
   type AdminBotServiceStore,
   type AdminBotSlackChannelNamingEvent,
 } from "../kernel/service.js";
@@ -68,6 +76,17 @@ import type {
   AdminBotReimbursementRequest,
   AdminBotReimbursementWorkflow,
 } from "../workflows/reimbursements/workflow.js";
+import {
+  PayloadTooLargeError,
+  asString,
+  readJson,
+  readJsonOrEmpty,
+  readRecord,
+  sendHtml,
+  sendJson,
+  sendServiceResult,
+} from "./server.http.js";
+import { handleLogisticsRoute } from "./server.logistics.js";
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:5173",
@@ -104,6 +123,9 @@ export type AdminBotMockServiceOptions = {
   onboardingSender?: AdminBotOnboardingSender;
   inviteToSlackConnect?: import("../workflows/onboarding/guide-sender.js").SlackConnectInviter;
   allowedOrigins?: string[];
+  // Fetch/extract/model steps behind the admin CV scan. Injected so tests can drive the scan
+  // without a network fetch, a python interpreter, or a running local model.
+  cvScanDeps?: AdminBotCvScanDeps;
   // Overrides the default `gws` CLI-backed calendar invite runner — used by tests to avoid
   // shelling out to a real `gws` binary.
   calendarInviteRunner?: (email: string) => Promise<void>;
@@ -272,6 +294,9 @@ function createAnonymousRateLimiter(): AnonymousRateLimiter {
 
 type AdminBotRouteContext = {
   service: AdminBotService;
+  // The raw store, for the CV change ledger. Everything else goes through the service; this is
+  // append-only bookkeeping with no policy of its own, so it does not earn a service method.
+  store: AdminBotServiceStore;
   auth: AdminBotAuthService;
   privacyBroker: AdminBotPrivacyBroker;
   sensitiveInfo: AdminBotSensitiveInfoDocument;
@@ -279,6 +304,7 @@ type AdminBotRouteContext = {
   reimbursementWorkflow?: AdminBotReimbursementWorkflow;
   openReviewWorkflow?: AdminBotOpenReviewWorkflow;
   fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
+  cvScanDeps?: AdminBotCvScanDeps;
   fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
   // Counts each member's messages in the activity window, by reading the channels the lab tracks.
   fetchSlackMessageCounts?: (
@@ -414,6 +440,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     : undefined;
   const ctx: AdminBotRouteContext = {
     service,
+    store,
     auth,
     privacyBroker,
     sensitiveInfo,
@@ -430,6 +457,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.deviceTokenIssuer ? { deviceTokenIssuer: options.deviceTokenIssuer } : {}),
     ...(openReviewWorkflow ? { openReviewWorkflow } : {}),
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
+    ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
     ...(options.fetchSlackTimezones ? { fetchSlackTimezones: options.fetchSlackTimezones } : {}),
     ...(options.fetchSlackMessageCounts
       ? { fetchSlackMessageCounts: options.fetchSlackMessageCounts }
@@ -462,6 +490,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     try {
       await routeRequest(req, res, ctx);
     } catch (error) {
+      if (error instanceof PayloadTooLargeError) {
+        sendJson(res, 413, { error: { message: error.message } });
+        return;
+      }
       sendJson(res, 500, {
         error: { message: error instanceof Error ? error.message : "mock service failed" },
       });
@@ -471,6 +503,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     server,
     service,
     auth,
+    // Exposed for the same reason `service` and `auth` are: tests drive this object graph
+    // directly to set up state that has no HTTP route, such as an observation dated three days
+    // ago. Nothing in production reaches for it.
+    store,
     async listen(port = 8765, host = "127.0.0.1") {
       await listen(server, port, host);
       return `http://${host}:${port}`;
@@ -936,6 +972,124 @@ async function handleAuthenticatedRoute(
       res,
       await service.refreshMemberMap(ctx.fetchSlackLocations, principalActor(principal)),
     );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/cv/scan") {
+    // Reading the roster's CVs exposes career history the roster itself does not carry, so it
+    // sits behind the same privileged gate as the member map rather than being open to members.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.cvScanDeps) {
+      sendJson(res, 503, { error: { message: "cv scanning is not configured" } });
+      return;
+    }
+    const members = service.listLabMembers();
+    if (!members.ok) {
+      sendServiceResult(res, members);
+      return;
+    }
+    // Read at scan time rather than captured at boot, so changing the window takes effect on the
+    // next scan instead of the next restart.
+    const cvSettings = service.getSettings();
+    const { result, snapshots } = await runAdminBotCvScan(
+      members.payload.members,
+      ctx.cvScanDeps,
+      cvSettings.ok ? cvSettings.payload.cv_recency_window_months : undefined,
+    );
+    // Snapshots are written through upsertLabMember rather than straight to the store so the
+    // scan cannot bypass member validation, and so a bad extraction fails one member's save
+    // instead of corrupting the roster.
+    for (const member of members.payload.members) {
+      const snapshot = snapshots.get(member.id);
+      if (!snapshot) {
+        continue;
+      }
+      const saved = service.upsertLabMember({ ...member, cv_snapshot: snapshot });
+      if (!saved.ok) {
+        const failed = result.results.find((entry) => entry.member_id === member.id);
+        if (failed) {
+          failed.status = "failed";
+          failed.reason = `could not save cv snapshot: ${saved.error.message}`;
+        }
+      }
+    }
+    // Recorded after the snapshots are saved, so a member whose snapshot failed to store does not
+    // leave a change on the ledger the next scan would then never re-detect.
+    ctx.store.recordCvChanges(
+      result.results
+        .filter((entry) => entry.status === "changed" || entry.status === "first_scan")
+        .flatMap((entry) =>
+          entry.added.map((change) => ({
+            member_id: entry.member_id,
+            member_name: entry.member_name,
+            detected_at: result.scanned_at,
+            recency: change.recency,
+            entry: change.entry,
+          })),
+        ),
+    );
+    sendJson(res, 200, result);
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/cv/digest") {
+    // Answers "what changed since X" from the ledger rather than from the last scan, which has
+    // already consumed its own diff by updating the snapshots.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const since = url.searchParams.get("since")?.trim();
+    if (!since || Number.isNaN(Date.parse(since))) {
+      sendJson(res, 400, { error: { message: "since must be an ISO timestamp" } });
+      return;
+    }
+    const changes = ctx.store.listCvChangesSince(since);
+    sendJson(res, 200, {
+      since,
+      changes,
+      newsletter_draft: buildNewsletterDraft(
+        changes.map((change) => ({
+          memberName: change.member_name,
+          change: { entry: change.entry, recency: change.recency },
+        })),
+      ),
+    });
+    return;
+  }
+  const blurb = /^\/cv\/blurb\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "POST" && blurb?.[1]) {
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const member = ctx.store.getLabMember(decodeURIComponent(blurb[1]));
+    if (!member) {
+      sendJson(res, 404, { error: { message: "member not found" } });
+      return;
+    }
+    const entries = member.cv_snapshot?.entries ?? [];
+    if (!entries.length) {
+      // Distinct from a model failure: there is nothing wrong, this member's CV has simply never
+      // been scanned, and the fix is to scan rather than to retry.
+      sendJson(res, 409, {
+        error: { message: `${member.name} has no scanned CV yet — run a CV scan first` },
+      });
+      return;
+    }
+    try {
+      const text = await draftMemberBlurb(
+        {
+          name: member.name,
+          ...(member.role ? { role: member.role } : {}),
+          ...(member.research_topics?.length ? { research_topics: member.research_topics } : {}),
+        },
+        entries,
+      );
+      sendJson(res, 200, { member_id: member.id, blurb: text });
+    } catch (error) {
+      sendJson(res, 502, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+      });
+    }
     return;
   }
   if (req.method === "POST" && url.pathname === "/members/directory/refresh-slack") {
@@ -1442,6 +1596,126 @@ async function handleAuthenticatedRoute(
     }
     return;
   }
+  if (req.method === "GET" && url.pathname === "/profile/location-prompt") {
+    // Self only, and deliberately so: "AdminBot thinks you have moved" is a statement about one
+    // person's whereabouts inferred from their IP, and it belongs to them before anyone else.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    sendServiceResult(res, service.memberLocationDrift(principal.member.id));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/profile/location-prompt") {
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.answerLocationPrompt(principal.member.id, {
+        ...(asString(body.current_city) ? { current_city: asString(body.current_city) } : {}),
+        ...(asString(body.timezone) ? { timezone: asString(body.timezone) } : {}),
+      }),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/lab/location-drifts") {
+    // Who to re-check before scheduling anything. A governance view over other people's
+    // whereabouts, so it is admin-only.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listLocationDrifts());
+    return;
+  }
+  const memberLocations = /^\/lab\/members\/([^/]+)\/locations$/u.exec(url.pathname);
+  if (req.method === "GET" && memberLocations?.[1]) {
+    const memberId = decodeURIComponent(memberLocations[1]);
+    // Your own timeline, or an admin's. Where a colleague has been for the last six months is not
+    // roster data — it is a movement history, and it stays with them and the people who schedule.
+    const isSelf = principal.kind === "member" && principal.member.id === memberId;
+    if (!isSelf && !requirePrivileged(res, principal)) {
+      return;
+    }
+    const rawLimit = url.searchParams.get("limit");
+    const limit = rawLimit ? Number(rawLimit) : undefined;
+    sendServiceResult(
+      res,
+      service.listMemberLocations(memberId, Number.isFinite(limit) ? limit : undefined),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/meetings") {
+    // Two audiences, one route. A member gets their own attendance and a headcount; the roster is
+    // personal data about everyone else and stays with the admins. The service principal reads as
+    // a member would -- it drives agent tool calls on behalf of whoever is chatting, so it is not
+    // entitled to a roster its caller could not see.
+    if (principal.kind === "member" && principal.member.privilege_level === "admin") {
+      sendServiceResult(res, service.listMeetings());
+      return;
+    }
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    sendServiceResult(res, service.listMeetingsForMember(principal.member.id));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/meetings") {
+    // Filing a meeting by hand: the recovery path for a recording whose notice never arrived, and
+    // the way a transcript or an attendance CSV gets attached from the browser.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = (await readJson(req)) as AdminBotMeetingRecordInput;
+    sendServiceResult(res, service.upsertMeeting({ ...body, source: body.source ?? "manual" }));
+    return;
+  }
+  const meetingAttendance = /^\/meetings\/([^/]+)\/attendance$/u.exec(url.pathname);
+  if (req.method === "PUT" && meetingAttendance?.[1]) {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const attendees = Array.isArray(body.attendees)
+      ? (body.attendees as AdminBotMeetingAttendee[])
+      : [];
+    sendServiceResult(
+      res,
+      service.setMeetingAttendance(
+        decodeURIComponent(meetingAttendance[1]),
+        attendees,
+        principal.kind === "member" ? principal.member.id : "service",
+      ),
+    );
+    return;
+  }
+  const meetingRecord = /^\/meetings\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "DELETE" && meetingRecord?.[1]) {
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.deleteMeeting(
+        decodeURIComponent(meetingRecord[1]),
+        principal.kind === "member" ? principal.member.id : "service",
+      ),
+    );
+    return;
+  }
+  if (url.pathname === "/logistics/requests" || url.pathname.startsWith("/logistics/requests/")) {
+    // A request is signed by the member who sent it, so there is nobody to attribute one to when
+    // the caller is the service principal driving an agent tool call on somebody's behalf.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    await handleLogisticsRoute(req, res, url, ctx.service, principal.member);
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/papers/relevant") {
     if (principal.kind !== "member") {
       sendJson(res, 400, { error: { message: "member principal required" } });
@@ -1486,6 +1760,230 @@ async function handleAuthenticatedRoute(
   }
   if (req.method === "GET" && url.pathname === "/papers") {
     sendServiceResult(res, service.listPapers());
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/papers/slot-overview") {
+    // Read-only, and the same records GET /papers already returns to any signed-in member -- this
+    // just adds what is outstanding on each. The write and the send below are the gated halves.
+    sendServiceResult(res, service.listPaperSlotOverview(url.searchParams.get("now") ?? undefined));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/papers/nudge-batches") {
+    // The preview. Read-only and computed by the same walk the send uses, so what an admin reads
+    // here is what would actually go out rather than a rehearsal of it.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.collectPaperNudgeBatches(url.searchParams.get("now") ?? undefined),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/slot-reminder/run") {
+    // Messages the whole lab under the presser's authority, so this takes a genuine admin member
+    // session and NOT the shared service principal -- unlike the mandatory-fields reminder, which
+    // a cron script triggers. There is deliberately no scheduled caller here: nudging is a
+    // judgement about timing, and the person making it should be looking at the batches when they
+    // do. The message is still composed entirely from state, so pressing the button asks for the
+    // standing rule to be applied now rather than composing anything.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    // An empty body is the ordinary case: "send every batch". Only a caller narrowing the send to
+    // people picked out of the preview sends anything at all, so requiring a body here would make
+    // the plain press the awkward one.
+    const body = readRecord(await readJsonOrEmpty(req));
+    const recipients = Array.isArray(body.recipient_member_ids)
+      ? body.recipient_member_ids.filter((id): id is string => typeof id === "string")
+      : undefined;
+    sendServiceResult(
+      res,
+      await service.sendPaperSlotNudges(principalActor(principal), {
+        ...(recipients?.length ? { recipientIds: recipients } : {}),
+      }),
+    );
+    return;
+  }
+  const paperSlot = /^\/papers\/([^/]+)\/slots\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "PUT" && paperSlot?.[1] && paperSlot[2]) {
+    if (principal.kind !== "member" && !isPrivileged(principal)) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.setPaperSlot({
+        paperId: decodeURIComponent(paperSlot[1]),
+        slot: decodeURIComponent(paperSlot[2]),
+        input: body as AdminBotPaperSlotInput,
+        memberId: principal.kind === "member" ? principal.member.id : principalActor(principal),
+        privileged: isPrivileged(principal),
+      }),
+    );
+    return;
+  }
+  const paperSlotWaiver = /^\/papers\/([^/]+)\/slots\/([^/]+)\/waive$/u.exec(url.pathname);
+  if (req.method === "POST" && paperSlotWaiver?.[1] && paperSlotWaiver[2]) {
+    // A waiver is how a required artifact stops being required, so it takes a genuine admin
+    // session rather than the shared service principal: the agent must not be able to excuse a
+    // paper from evidence it is supposed to produce.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = (await readJson(req)) as { reason?: string };
+    sendServiceResult(
+      res,
+      service.waivePaperSlot({
+        paperId: decodeURIComponent(paperSlotWaiver[1]),
+        slot: decodeURIComponent(paperSlotWaiver[2]),
+        reason: String(body?.reason ?? ""),
+        memberId: principalActor(principal),
+      }),
+    );
+    return;
+  }
+  const paperSlots = /^\/papers\/([^/]+)\/slots$/u.exec(url.pathname);
+  if (req.method === "GET" && paperSlots?.[1]) {
+    // The viewer decides whether the arXiv password comes back at all -- authors and admins only.
+    sendServiceResult(
+      res,
+      service.listPaperSlots(decodeURIComponent(paperSlots[1]), {
+        ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
+        isAdmin: isPrivileged(principal),
+      }),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/slots/backfill") {
+    // Rewrites evidence across every paper in the lab, so it takes a genuine admin session rather
+    // than the shared service principal: unlike the nudge pass, this is a one-off an operator
+    // chooses to run, and `dryRun` exists so they can look before they do.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = (await readJson(req)) as { dry_run?: boolean; quiet_days?: number };
+    sendServiceResult(
+      res,
+      service.backfillPaperSlots(principalActor(principal), {
+        dryRun: body?.dry_run === true,
+        ...(typeof body?.quiet_days === "number" ? { quietDays: body.quiet_days } : {}),
+      }),
+    );
+    return;
+  }
+  const paperDrafts = /^\/papers\/([^/]+)\/social-drafts$/u.exec(url.pathname);
+  if (req.method === "POST" && paperDrafts?.[1]) {
+    if (principal.kind !== "member" && !isPrivileged(principal)) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.saveSocialDraft({
+        paperId: decodeURIComponent(paperDrafts[1]),
+        platform: String(body.platform ?? ""),
+        body: String(body.body ?? ""),
+        ...(typeof body.model === "string" ? { model: body.model } : {}),
+        memberId: principal.kind === "member" ? principal.member.id : principalActor(principal),
+        privileged: isPrivileged(principal),
+      }),
+    );
+    return;
+  }
+  const draftCirculate = /^\/papers\/social-drafts\/([^/]+)\/circulate$/u.exec(url.pathname);
+  if (req.method === "POST" && draftCirculate?.[1]) {
+    if (principal.kind !== "member" && !isPrivileged(principal)) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.circulateSocialDraft({
+        draftId: decodeURIComponent(draftCirculate[1]),
+        memberId: principal.kind === "member" ? principal.member.id : principalActor(principal),
+        privileged: isPrivileged(principal),
+      }),
+    );
+    return;
+  }
+  const draftConsent = /^\/papers\/social-drafts\/([^/]+)\/consent$/u.exec(url.pathname);
+  if (req.method === "POST" && draftConsent?.[1]) {
+    // Consent is personal: it takes a member session and records that member's answer, never one
+    // supplied in the body. The service principal has nobody to speak for here.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.recordSocialConsent({
+        draftId: decodeURIComponent(draftConsent[1]),
+        memberId: principal.member.id,
+        decision: String(body.decision ?? ""),
+        ...(typeof body.comment === "string" ? { comment: body.comment } : {}),
+      }),
+    );
+    return;
+  }
+  const paperAttendees = /^\/papers\/([^/]+)\/attendees$/u.exec(url.pathname);
+  if (req.method === "PUT" && paperAttendees?.[1]) {
+    if (principal.kind !== "member" && !isPrivileged(principal)) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.setConferenceAttendee({
+        paperId: decodeURIComponent(paperAttendees[1]),
+        name: String(body.name ?? ""),
+        ...(typeof body.member_id === "string" ? { memberId: body.member_id } : {}),
+        attending: String(body.attending ?? ""),
+        actorId: principal.kind === "member" ? principal.member.id : principalActor(principal),
+        privileged: isPrivileged(principal),
+      }),
+    );
+    return;
+  }
+  const paperReimbursement = /^\/papers\/([^/]+)\/reimbursements\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "PUT" && paperReimbursement?.[1] && paperReimbursement[2]) {
+    if (principal.kind !== "member" && !isPrivileged(principal)) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.setPaperReimbursement({
+        paperId: decodeURIComponent(paperReimbursement[1]),
+        memberId: decodeURIComponent(paperReimbursement[2]),
+        status: String(body.status ?? ""),
+        actorId: principal.kind === "member" ? principal.member.id : principalActor(principal),
+        privileged: isPrivileged(principal),
+      }),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/nudges/snooze") {
+    // A member pushes back their own nudges and nobody else's, so the id comes from the session.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.snoozeNudge({
+        domain: String(body.domain ?? ""),
+        subjectId: String(body.subject_id ?? ""),
+        memberId: principal.member.id,
+        until: String(body.until ?? ""),
+      }),
+    );
     return;
   }
   const paper = /^\/papers\/([^/]+)$/u.exec(url.pathname);
@@ -1640,6 +2138,15 @@ async function handleAuthenticatedRoute(
     // Read-only roster scan (same shape as /papers/nudges), so no privilege gate: it powers the
     // dashboard's own-profile warning too, which any signed-in member may load.
     sendServiceResult(res, service.listMembersWithIncompleteMandatoryFields());
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/members/profile-overview") {
+    // Everybody's completeness at once is a governance read, unlike the incomplete-fields scan
+    // above which answers "is my own profile done" for any signed-in member's dashboard.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listMemberProfileOverview());
     return;
   }
   if (req.method === "POST" && url.pathname === "/members/mandatory-fields-reminder/run") {
@@ -1996,48 +2503,6 @@ function parseOrigins(value: string | undefined): string[] | undefined {
     .split(",")
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
-}
-
-function asString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-async function readJson(req: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-}
-
-function readRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  // Every JSON response here reflects live, mutable state (roster, sessions, map places...);
-  // without this a browser can silently serve a stale GET from its disk cache instead of
-  // re-asking the server, which is indistinguishable from the data actually being wrong.
-  res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify(body));
-}
-
-function sendHtml(res: ServerResponse, status: number, body: string): void {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.end(body);
-}
-
-function sendServiceResult<T>(res: ServerResponse, result: AdminBotServiceResponse<T>): void {
-  if (result.ok) {
-    sendJson(res, result.status, result.payload);
-    return;
-  }
-  sendJson(res, result.status, { error: result.error });
 }
 
 async function listen(server: Server, port: number, host: string): Promise<void> {

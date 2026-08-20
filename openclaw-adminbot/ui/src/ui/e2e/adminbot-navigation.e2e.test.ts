@@ -239,6 +239,52 @@ describeControlUiE2e("AdminBot Control UI navigation", () => {
     }
   });
 
+  // A grid column sizes to its widest child, so one nav row that could not shrink -- a label plus
+  // a COMING SOON badge, both nowrap -- widened every row in its group past the sidebar, and the
+  // active row's highlight was sheared off on the right by .sidebar-nav's overflow-x: hidden.
+  // Measured rather than eyeballed: the overhang was under 5px, which is easy to miss in review.
+  it("keeps every sidebar row inside the nav, so the active highlight is not clipped", async () => {
+    const context = await browser.newContext({
+      locale: "en-US",
+      serviceWorkers: "block",
+      viewport: { height: 900, width: 1280 },
+    });
+    const page = await context.newPage();
+    await installMockGateway(page, {
+      ...adminBotAgentScenario,
+      methodResponses: { "tools.invoke": adminBotToolResponses() },
+    });
+
+    try {
+      await page.goto(`${server.baseUrl}adminbot`);
+      await page.locator(".sidebar-nav .nav-item").first().waitFor({ timeout: 10_000 });
+
+      const overflow = await page.evaluate(() => {
+        const nav = document.querySelector(".sidebar-nav");
+        if (!nav) {
+          return null;
+        }
+        const navRight = nav.getBoundingClientRect().right;
+        return {
+          scroll: nav.scrollWidth - nav.clientWidth,
+          worst: Math.max(
+            0,
+            ...[...nav.querySelectorAll(".nav-item")].map(
+              (item) => item.getBoundingClientRect().right - navRight,
+            ),
+          ),
+        };
+      });
+
+      expect(overflow).not.toBeNull();
+      // Sub-pixel rounding is fine; a sheared corner is not.
+      expect(overflow!.worst).toBeLessThan(0.5);
+      expect(overflow!.scroll).toBeLessThanOrEqual(0);
+    } finally {
+      await context.close();
+    }
+  });
+
   it("shows setup guidance when AdminBot tools are unavailable", async () => {
     const context = await browser.newContext({
       locale: "en-US",

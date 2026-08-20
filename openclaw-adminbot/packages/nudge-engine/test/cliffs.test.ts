@@ -6,16 +6,15 @@
  * graph and reintroduces a cliff, the test named after it fails.
  */
 
-import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-
+import { describe, it } from "node:test";
+import { applyReset, emptyState } from "../src/adapters/backend.ts";
 import { paperflow, resetScope } from "../src/graph/paperflow.ts";
 import { tick, whyBlocked } from "../src/nudge.ts";
-import { prune, effectiveStatus } from "../src/resolver/prune.ts";
 import { frontier } from "../src/resolver/frontier.ts";
-import { resolveActionable } from "../src/resolver/resolve.ts";
 import { isAcyclic } from "../src/resolver/graph-ops.ts";
-import { applyReset, emptyState } from "../src/adapters/backend.ts";
+import { prune, effectiveStatus } from "../src/resolver/prune.ts";
+import { resolveActionable } from "../src/resolver/resolve.ts";
 import type { NodeId, PaperState, Status } from "../src/types.ts";
 
 /** Mark a list of nodes complete, everything else incomplete. */
@@ -45,7 +44,20 @@ describe("cliff 1-2 — cycles", () => {
 
 describe("cliff 3-4 — reset scope", () => {
   it("a rejection preserves branches 1-3 and re-opens only the venue subtree", () => {
-    const done = withComplete(...throughPdf, "SL", "PO", "TV", "LG", "XD", "LI", "CP", "SF", "CK", "SB", "RV", "DC");
+    const done = withComplete(
+      ...throughPdf,
+      "SL",
+      "PO",
+      "TV",
+      "XD",
+      "LI",
+      "CP",
+      "SF",
+      "CK",
+      "SB",
+      "RV",
+      "DC",
+    );
     const after = applyReset(done, resetScope);
 
     for (const id of resetScope.survives) {
@@ -62,11 +74,14 @@ describe("cliff 3-4 — reset scope", () => {
 
 describe("cliff 6-7 — joins", () => {
   it("a join is never nudged directly", () => {
-    const state = withComplete(...throughPdf, "SL", "PO");
+    // JN is the remaining AND-join: the public arXiv URL on one side, the finished social copy on
+    // the other. The talk branch used to carry one too, until the shared-folder node it closed was
+    // merged into the project folder the paper starts from.
+    const state = withComplete(...throughPdf, "XD", "LI", "CP", "SF");
     const result = tick(paperflow, state);
     const nudged = result.batches.flatMap((b) => b.nudges).map((n) => n.node);
-    assert.ok(!nudged.includes("LG"), "LG is an AND-join and must resolve through");
-    assert.ok(nudged.includes("TV"), "the missing predecessor is what gets nudged");
+    assert.ok(!nudged.includes("JN"), "JN is an AND-join and must resolve through");
+    assert.ok(!nudged.includes("PS"), "the join's successor is not actionable either");
   });
 
   it("resolve returns a set, so both sides of an AND-join are nudged", () => {
@@ -133,7 +148,10 @@ describe("cliff 9-12 — pruning", () => {
     assert.ok(prune(paperflow, rejected).notApplicable.has("CM"));
 
     const next = applyReset(rejected, resetScope);
-    assert.ok(!prune(paperflow, next).notApplicable.has("CM"), "attempt 2 can reach camera ready again");
+    assert.ok(
+      !prune(paperflow, next).notApplicable.has("CM"),
+      "attempt 2 can reach camera ready again",
+    );
   });
 });
 
@@ -155,7 +173,10 @@ describe("cliff 13-16 — approval", () => {
   });
 
   it("the gate nudge names the version being asked about", () => {
-    const state = { ...withComplete(...throughPdf, "DR", "DA", "AK", "PK"), version: "camera-ready" };
+    const state = {
+      ...withComplete(...throughPdf, "DR", "DA", "AK", "PK"),
+      version: "camera-ready",
+    };
     const result = tick(paperflow, state);
     const gate = result.batches.flatMap((b) => b.nudges).find((n) => n.node === "GT");
     assert.equal(gate?.version, "camera-ready");
@@ -216,12 +237,26 @@ describe("cliff 22-24 — volume", () => {
   });
 
   it("cliff 24 — a leaf that blocks nothing says so", () => {
-    const state = withComplete(...throughPdf, "DR");
+    // The talk branch ends at its two leaves. It used to converge on a "links logged in shared
+    // folder" join, which was removed once that folder became the same living project folder the
+    // paper starts from -- so the join only ever asked somebody to confirm a copy of a fact.
+    const state = withComplete(...throughPdf, "SL");
     const result = tick(paperflow, state);
-    const ds = result.batches.flatMap((b) => b.nudges).find((n) => n.node === "DS");
-    assert.ok(ds);
-    assert.equal(ds?.unblocks.length, 0);
-    assert.match(ds?.reason ?? "", /blocks nothing/i);
+    const talkVideo = result.batches.flatMap((b) => b.nudges).find((n) => n.node === "TV");
+    assert.ok(talkVideo);
+    assert.equal(talkVideo?.unblocks.length, 0);
+    assert.match(talkVideo?.reason ?? "", /blocks nothing/i);
+  });
+
+  it("cliff 24b — the removed nodes are gone from the graph, not just unreferenced", () => {
+    const ids = new Set(paperflow.nodes.map((node) => node.id));
+    assert.ok(!ids.has("DS"), "one Drive PDF per paper, not two");
+    assert.ok(!ids.has("LG"), "the shared folder is the project folder");
+    // Nothing may still point at them, or the resolver walks off the graph.
+    for (const edge of paperflow.edges) {
+      assert.ok(ids.has(edge.from), `edge from ${edge.from}`);
+      assert.ok(ids.has(edge.to), `edge to ${edge.to}`);
+    }
   });
 });
 

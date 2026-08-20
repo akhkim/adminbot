@@ -1,5 +1,15 @@
-// The signed-in member's own work: one list of the projects and papers they are on, where each is
-// up to, and anything holding one up.
+// The signed-in member's own work: one card per project or paper, and inside each card the whole
+// list of what that paper still owes.
+//
+// Shaped like the profile page on purpose. A member's own record is a list of typed fields with a
+// required mark, a hint about the shape each accepts, and autosave; the evidence a paper collects
+// is the same kind of list, so it is rendered the same way rather than as a second vocabulary for
+// the same idea. Closed, a card is a title and a progress line. Open, it is the form.
+//
+// The global nudge at the top is the same button Profile Overview carries, pointed at papers: it
+// composes nothing and picks nobody. The service walks every live paper, finds the artifacts whose
+// upstream evidence is already in, and messages whoever the slot registry says owes each one --
+// the first author for nearly all of them. Admin-only, because it messages the whole lab.
 //
 // Projects and papers are the same thing here because they are the same record in AdminBot: a
 // paper row moves through the PaperPublish steps from brainstorming to poster. Advancing one from
@@ -13,11 +23,7 @@ import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
-import type {
-  AdminBotPaperRecord,
-  AdminBotPaperSaveInput,
-  AdminBotPaperStep,
-} from "../controllers/admin.ts";
+import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
 import {
   BLOCKER_TITLE_MAX,
   editBlockerInput,
@@ -25,8 +31,13 @@ import {
   openEntries,
   resolveBlockerInput,
 } from "../blockers.ts";
-import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
+import type {
+  AdminBotPaperRecord,
+  AdminBotPaperSaveInput,
+  AdminBotPaperStep,
+} from "../controllers/admin.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
+import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
 import { openLinkedInDraftDialog } from "../linkedin-draft-dialog.ts";
 import {
@@ -38,12 +49,51 @@ import {
   type PaperGridState,
 } from "../paper-grid.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
+import { renderPaperCycle } from "./paper-cycle.ts";
+import { renderPaperSlots } from "./paper-slots.ts";
 import { findOwnMember } from "./profile.ts";
 
 export type MyWorkProps = {
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
   /** Asks the host to re-render. The grid edits in place, so it needs to drive its own repaint. */
   onRerender?: () => void;
+  /** What each paper still owes, computed by the service -- see the note on `renderCardSummary`. */
+  overview: PaperSlotOverviewRow[];
+  /** The whole cycle by paper id, loaded the first time a card is opened. */
+  slots: Record<string, PaperCycle>;
+  openIds: string[];
+  slotsBusyId: string | null;
+  slotsError: string | null;
+  slotsNotice: string | null;
+  nudging: boolean;
+  /** Hides the global nudge for a member. The service re-checks; this is the affordance, not the gate. */
+  canNudge: boolean;
+  /** The preview, or null when it is closed. Opening it sends nothing. */
+  nudgeBatches: PaperNudgeBatch[] | null;
+  nudgeLoading: boolean;
+  nudgeSelected: string[];
+  onReviewNudges: () => void;
+  onToggleNudgeRecipient: (memberId: string) => void;
+  onToggleCard: (paperId: string) => void;
+  onSaveSlot: (
+    paperId: string,
+    slot: string,
+    input: { url?: string; value_text?: string; value_note?: string; done?: boolean },
+  ) => void;
+  onNudgeAuthors: () => void;
+  /** The signed-in member, so their own consent rows get buttons and nobody else's do. */
+  memberId: string | null;
+  memberName: (memberId: string) => string;
+  onSaveDraft: (paperId: string, platform: string, body: string) => void;
+  onCirculateDraft: (paperId: string, draftId: string) => void;
+  onConsent: (paperId: string, draftId: string, decision: string, comment?: string) => void;
+  onSetAttendee: (
+    paperId: string,
+    name: string,
+    memberId: string | undefined,
+    attending: string,
+  ) => void;
+  onSetReimbursement: (paperId: string, memberId: string, status: string) => void;
 };
 
 export type BlockerDraft = {
@@ -203,55 +253,64 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
         </span>
       </p>
 
-      <label class="register__field">
-        <span class="register__label">Which stage is blocked?</span>
-        <select class="input" name="stage" data-testid=${`blocker-stage-${paper.id}`}>
-          ${paperSteps.map(
-            (step) => html`
-              <option value=${step} ?selected=${step === (editing?.stage || paper.current_step)}>
-                ${stepLabel(step)}
-              </option>
-            `,
-          )}
-        </select>
-      </label>
+      <div class="blocker-form__fields">
+        <label class="register__field">
+          <span class="register__label">Which stage is blocked?</span>
+          <select class="input" name="stage" data-testid=${`blocker-stage-${paper.id}`}>
+            ${paperSteps.map(
+              (step) => html`
+                <option value=${step} ?selected=${step === (editing?.stage || paper.current_step)}>
+                  ${stepLabel(step)}
+                </option>
+              `,
+            )}
+          </select>
+        </label>
 
-      <label class="register__field">
-        <span class="register__label">What is blocked? (short)</span>
-        <input
-          class="input"
-          name="title"
-          maxlength=${BLOCKER_TITLE_MAX}
-          placeholder="e.g. OpenReview rejects the PDF"
-          .value=${editing?.title ?? ""}
-          data-testid=${`blocker-title-${paper.id}`}
-        />
-        <span class="register__hint">Up to ${BLOCKER_TITLE_MAX} characters.</span>
-      </label>
+        <label class="register__field">
+          <span class="register__label">What is blocked? (short)</span>
+          <input
+            class="input"
+            name="title"
+            maxlength=${BLOCKER_TITLE_MAX}
+            placeholder="e.g. OpenReview rejects the PDF"
+            .value=${editing?.title ?? ""}
+            data-testid=${`blocker-title-${paper.id}`}
+          />
+          <span class="register__hint">Up to ${BLOCKER_TITLE_MAX} characters.</span>
+        </label>
+      </div>
 
       <label class="register__field">
         <span class="register__label">Details</span>
-        <textarea class="input" name="note" rows="4" placeholder=${t("myWork.blockers.placeholder")}>
+        <textarea
+          class="input"
+          name="note"
+          rows="4"
+          placeholder=${t("myWork.blockers.placeholder")}
+        >
 ${editing?.note ?? ""}</textarea
         >
       </label>
 
-      <p class="blocker-form__reviewer">
-        ${t("myWork.blockers.reviewer", { name: reviewerName(state) })}
-      </p>
-      <div class="register__actions">
-        <button type="submit" class="btn primary">
-          ${editing ? "Save changes" : t("myWork.blockers.submit")}
-        </button>
-        <button
-          type="button"
-          class="btn"
-          @click=${() => {
-            state.myWorkBlockerDraft = null;
-          }}
-        >
-          ${t("myWork.blockers.cancel")}
-        </button>
+      <div class="blocker-form__footer">
+        <p class="blocker-form__reviewer">
+          ${t("myWork.blockers.reviewer", { name: reviewerName(state) })}
+        </p>
+        <div class="register__actions">
+          <button type="submit" class="btn primary">
+            ${editing ? "Save changes" : t("myWork.blockers.submit")}
+          </button>
+          <button
+            type="button"
+            class="btn"
+            @click=${() => {
+              state.myWorkBlockerDraft = null;
+            }}
+          >
+            ${t("myWork.blockers.cancel")}
+          </button>
+        </div>
       </div>
     </form>
   `;
@@ -273,7 +332,9 @@ function renderPaperBlockers(state: AppViewState, props: MyWorkProps, paper: Adm
       ${open.map(
         (entry) => html`
           <li class="my-work-item__blocker">
-            <span class="my-work-item__blocker-icon" aria-hidden="true">${icons.alertTriangle}</span>
+            <span class="my-work-item__blocker-icon" aria-hidden="true"
+              >${icons.alertTriangle}</span
+            >
             <span class="my-work-item__blocker-copy">
               <span class="my-work-item__blocker-title">${entry.title}</span>
               <span class="my-work-item__blocker-meta">${stepLabel(entry.stage)}</span>
@@ -307,20 +368,244 @@ function renderPaperBlockers(state: AppViewState, props: MyWorkProps, paper: Adm
   `;
 }
 
+/**
+ * How much evidence one paper has, straight from the service.
+ *
+ * Not computed here, and deliberately so: the same walk decides who the global nudge messages, so
+ * a count derived in the browser could disagree with what pressing the button actually chases.
+ */
+function overviewFor(props: MyWorkProps, paperId: string): PaperSlotOverviewRow | undefined {
+  return props.overview.find((row) => row.paper_id === paperId);
+}
+
+/**
+ * The closed card: enough to decide whether to open it, and nothing else.
+ *
+ * A percentage alone was the old summary and it is not actionable -- "56%" tells nobody what to
+ * go and do. This carries the count *and* the first thing outstanding, which is the sentence
+ * somebody scanning five papers is actually looking for.
+ */
+function renderCardSummary(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const row = overviewFor(props, paper.id);
+  if (!row) {
+    return nothing;
+  }
+  const percent = row.required_count
+    ? Math.round((row.provided_count / row.required_count) * 100)
+    : 0;
+  const outstanding = row.missing_slots.length;
+  // Spans throughout, not divs and paragraphs: this renders inside the disclosure button, and a
+  // button may only contain phrasing content. The CSS gives them the layout back.
+  return html`
+    <span class="my-work-item__evidence">
+      <span
+        class=${`my-work-item__bar ${outstanding === 0 ? "is-complete" : ""}`}
+        role="img"
+        aria-label=${`${row.provided_count} of ${row.required_count} artifacts on file`}
+      >
+        <span class="my-work-item__fill" style="width: ${percent}%"></span>
+      </span>
+      <span class="my-work-item__evidence-count ab-num"
+        >${row.provided_count}/${row.required_count}</span
+      >
+      ${row.dormant
+        ? html`<span class="pill">Dormant</span>`
+        : outstanding
+          ? html`<span class="my-work-item__outstanding"
+              >${outstanding} outstanding${row.escalating ? " · escalating" : ""}</span
+            >`
+          : html`<span class="my-work-item__outstanding is-complete">Everything is in</span>`}
+    </span>
+  `;
+}
+
+/** Venue and deadline as the card's subtitle -- the two facts that decide how urgent it is. */
+function renderCardVenue(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const row = overviewFor(props, paper.id);
+  const venue = row?.venue ?? paper.venue ?? paper.artifacts?.conference;
+  const deadline = row?.deadline ?? paper.deadline;
+  if (!venue && !deadline) {
+    return nothing;
+  }
+  return html`
+    <span class="my-work-item__venue">
+      ${venue ? html`<span>${venue}</span>` : nothing}
+      ${deadline ? html`<span class="ab-num">${deadline.slice(0, 10)}</span>` : nothing}
+    </span>
+  `;
+}
+
+/**
+ * What the venue said, and what it owes once it said yes.
+ *
+ * Four details rather than one flag, and all four asked rather than inferred: `is_archival` is the
+ * one that decides whether this counts as a publication at all, and the same workshop can be
+ * archival one year and not the next. Until they are in, the conference half of the card stays
+ * shut -- "who is going" cannot be asked sensibly of a paper whose venue nobody has recorded.
+ */
+function renderAcceptance(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const decision = paper.venue_decision ?? "pending";
+  const save = (fields: Partial<AdminBotPaperSaveInput>) =>
+    props.onSavePaper({
+      id: paper.id,
+      title: paper.title,
+      authors: paper.authors ?? [],
+      currentStep: paper.current_step as AdminBotPaperStep,
+      ...fields,
+    });
+  return html`
+    <div class="paper-acceptance" data-testid=${`paper-acceptance-${paper.id}`}>
+      <label class="paper-acceptance__field">
+        <span class="register__label">Venue decision</span>
+        <select
+          class="input"
+          data-testid=${`paper-decision-${paper.id}`}
+          @change=${(event: Event) =>
+            save({ venueDecision: (event.target as HTMLSelectElement).value })}
+        >
+          ${["pending", "accept", "reject"].map(
+            (value) => html`
+              <option value=${value} ?selected=${value === decision}>
+                ${value === "pending"
+                  ? "Not heard yet"
+                  : value === "accept"
+                    ? "Accepted"
+                    : "Rejected"}
+              </option>
+            `,
+          )}
+        </select>
+      </label>
+      ${decision === "accept"
+        ? html`
+            <label class="paper-acceptance__field">
+              <span class="register__label">Accepted venue</span>
+              <input
+                class="input"
+                .value=${paper.accepted_venue ?? ""}
+                placeholder="e.g. ACL 2027"
+                data-testid=${`paper-accepted-venue-${paper.id}`}
+                @change=${(event: Event) =>
+                  save({ acceptedVenue: (event.target as HTMLInputElement).value })}
+              />
+            </label>
+            <label class="paper-acceptance__field">
+              <span class="register__label">Year</span>
+              <input
+                class="input"
+                type="number"
+                min="2000"
+                max="2100"
+                .value=${paper.accepted_year ? String(paper.accepted_year) : ""}
+                data-testid=${`paper-accepted-year-${paper.id}`}
+                @change=${(event: Event) =>
+                  save({ acceptedYear: (event.target as HTMLInputElement).value })}
+              />
+            </label>
+            <label class="paper-acceptance__field">
+              <span class="register__label">Archival?</span>
+              <select
+                class="input"
+                data-testid=${`paper-archival-${paper.id}`}
+                @change=${(event: Event) =>
+                  save({ isArchival: (event.target as HTMLSelectElement).value })}
+              >
+                <option value="" ?selected=${paper.is_archival === undefined}>Not said</option>
+                <option value="true" ?selected=${paper.is_archival === true}>
+                  Archival — counts as a publication
+                </option>
+                <option value="false" ?selected=${paper.is_archival === false}>Non-archival</option>
+              </select>
+            </label>
+            <label class="paper-acceptance__field">
+              <span class="register__label">Presentation</span>
+              <select
+                class="input"
+                data-testid=${`paper-presentation-${paper.id}`}
+                @change=${(event: Event) =>
+                  save({ presentationType: (event.target as HTMLSelectElement).value })}
+              >
+                <option value="" ?selected=${!paper.presentation_type}>Not said</option>
+                ${["poster", "findings", "main", "spotlight", "oral", "award"].map(
+                  (type) => html`
+                    <option value=${type} ?selected=${type === paper.presentation_type}>
+                      ${type[0]?.toUpperCase()}${type.slice(1)}
+                    </option>
+                  `,
+                )}
+              </select>
+            </label>
+          `
+        : nothing}
+    </div>
+  `;
+}
+
+/** The lists that hang off a paper: drafts and their sign-offs, who travelled, who is square. */
+function renderCycle(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const cycle = props.slots[paper.id];
+  if (!cycle) {
+    return nothing;
+  }
+  return renderPaperCycle({
+    paperId: paper.id,
+    drafts: cycle.drafts,
+    consents: cycle.consents,
+    attendees: cycle.attendees,
+    reimbursements: cycle.reimbursements,
+    conferenceOpen:
+      paper.venue_decision === "accept" && cycle.missingAcceptanceDetails.length === 0,
+    missingAcceptanceDetails: cycle.missingAcceptanceDetails,
+    cycleClosed: cycle.cycleClosed,
+    memberId: props.memberId,
+    memberName: props.memberName,
+    onSaveDraft: (platform: string, body: string) => props.onSaveDraft(paper.id, platform, body),
+    onCirculateDraft: (draftId: string) => props.onCirculateDraft(paper.id, draftId),
+    onConsent: (draftId: string, decision: string, comment?: string) =>
+      props.onConsent(paper.id, draftId, decision, comment),
+    onSetAttendee: (name: string, memberId: string | undefined, attending: string) =>
+      props.onSetAttendee(paper.id, name, memberId, attending),
+    onSetReimbursement: (memberId: string, status: string) =>
+      props.onSetReimbursement(paper.id, memberId, status),
+  });
+}
+
+/**
+ * One paper, as a card that opens.
+ *
+ * The whole head is the toggle rather than a chevron off to one side: the target is the thing
+ * somebody is already pointing at, and a 23-field form behind a 16px hit area is a form nobody
+ * finds. The blocker button sits outside it so reporting a blocker does not also expand the card.
+ */
 function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWorkProps) {
-  const { index, percent } = paperProgress(paper);
+  const { index } = paperProgress(paper);
   const blocked = openEntries(paper).length > 0;
+  const open = props.openIds.includes(paper.id);
+  const panelId = `my-work-body-${paper.id}`;
   return html`
     <article
       class=${`my-work-item ${blocked ? "my-work-item--blocked" : ""}`}
+      ?data-open=${open}
       data-testid=${`my-work-item-${paper.id}`}
     >
       <div class="my-work-item__head">
-        <div class="my-work-item__copy">
-          <h3 class="my-work-item__title">${paper.title}</h3>
-          <p class="my-work-item__meta">${(paper.authors ?? []).join(", ")}</p>
-          ${renderTarget(paper, props)}
-        </div>
+        <button
+          type="button"
+          class="my-work-item__toggle"
+          aria-expanded=${open ? "true" : "false"}
+          aria-controls=${panelId}
+          data-testid=${`my-work-toggle-${paper.id}`}
+          @click=${() => props.onToggleCard(paper.id)}
+        >
+          <!-- One icon rotated by CSS, matching the Deadlines disclosure. Swapping the glyph in
+               JS would animate nothing and put the open state in two places. -->
+          <span class="my-work-item__chevron" aria-hidden="true">${icons.chevronRight}</span>
+          <span class="my-work-item__copy">
+            <span class="my-work-item__title">${paper.title}</span>
+            <span class="my-work-item__meta">${(paper.authors ?? []).join(", ")}</span>
+            ${renderCardVenue(paper, props)} ${renderCardSummary(paper, props)}
+          </span>
+        </button>
         <button
           type="button"
           class="btn btn--sm my-work-item__report"
@@ -333,9 +618,24 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
         </button>
       </div>
       ${renderPaperBlockers(state, props, paper)} ${renderBlockerForm(state, props, paper)}
-      ${renderStepper(paper, props, index)}
-      ${renderNextStep(paper)}
-      ${renderStepControls(paper, props)}
+      <!-- The panel element is always here so aria-controls always resolves; only its contents
+           are conditional, because a closed card has not fetched its slots yet and 23 blank
+           fields in the DOM would be a lie rather than a saving. -->
+      <div class="my-work-item__body" id=${panelId} ?hidden=${!open}>
+        ${open
+          ? html`
+              ${renderTarget(paper, props)} ${renderStepper(paper, props, index)}
+              ${renderNextStep(paper)} ${renderAcceptance(paper, props)}
+              ${renderPaperSlots({
+                paperId: paper.id,
+                slots: props.slots[paper.id]?.slots ?? [],
+                loading: props.slotsBusyId === paper.id,
+                onSaveSlot: (slot, input) => props.onSaveSlot(paper.id, slot, input),
+              })}
+              ${renderCycle(paper, props)} ${renderStepControls(paper, props)}
+            `
+          : nothing}
+      </div>
     </article>
   `;
 }
@@ -394,9 +694,7 @@ function renderTarget(paper: AdminBotPaperRecord, props: MyWorkProps) {
         data-testid=${`target-venue-${paper.id}`}
         @change=${(event: Event) => save((event.target as HTMLSelectElement).value, confidence)}
       >
-        ${!known && current
-          ? html`<option value=${current} selected>${current}</option>`
-          : nothing}
+        ${!known && current ? html`<option value=${current} selected>${current}</option>` : nothing}
         ${venues.map(
           (venue) => html`
             <option value=${venue.name} ?selected=${venue.name === current}>
@@ -430,7 +728,11 @@ function renderStepper(paper: AdminBotPaperRecord, props: MyWorkProps, currentIn
         .slice(currentIndex, targetIndex)
         .map((value) => stepLabel(value))
         .join(", ");
-      if (!globalThis.confirm(`Jumping to ${stepLabel(step)} marks these as done: ${names}.\n\nContinue?`)) {
+      if (
+        !globalThis.confirm(
+          `Jumping to ${stepLabel(step)} marks these as done: ${names}.\n\nContinue?`,
+        )
+      ) {
         return;
       }
     }
@@ -441,8 +743,7 @@ function renderStepper(paper: AdminBotPaperRecord, props: MyWorkProps, currentIn
     <div class="stepper" role="group" aria-label=${`${paper.title} progress`}>
       <ol class="stepper__track">
         ${paperSteps.map((step, index) => {
-          const state =
-            index < currentIndex ? "done" : index === currentIndex ? "current" : "todo";
+          const state = index < currentIndex ? "done" : index === currentIndex ? "current" : "todo";
           return html`
             <li class=${`stepper__step stepper__step--${state}`}>
               <button
@@ -512,15 +813,19 @@ function renderNextStep(paper: AdminBotPaperRecord) {
               <span class="task__branch">${task.branch || "Task"}</span>
               <strong class="task__label">${task.label}</strong>
               ${task.hint ? html`<span class="task__hint">${task.hint}</span>` : nothing}
-              <span class="task__who">
-                ${task.isApproval ? `Approval from ${task.waitingOn}` : `Owner: ${task.waitingOn}`}
-              </span>
-              <span class="task__unblocks">
-                ${task.optional
-                  ? "Blocks nothing"
-                  : task.unblocks.length
-                    ? `Unblocks ${task.unblocks.slice(0, 2).join(", ")}`
-                    : "Last step on this branch"}
+              <span class="task__footer">
+                <span class="task__who">
+                  ${task.isApproval
+                    ? `Approval from ${task.waitingOn}`
+                    : `Owner: ${task.waitingOn}`}
+                </span>
+                <span class="task__unblocks">
+                  ${task.optional
+                    ? "Blocks nothing"
+                    : task.unblocks.length
+                      ? `Unblocks ${task.unblocks.slice(0, 2).join(", ")}`
+                      : "Last step on this branch"}
+                </span>
               </span>
             </li>
           `,
@@ -541,6 +846,19 @@ function renderAddButton(state: AppViewState) {
       data-testid="my-work-add-project"
       @click=${() => {
         state.myWorkProjectDraft = "";
+        // The form renders below the list, out of view for anyone with more than a few papers.
+        // Lit commits the re-render in a microtask, so the form exists by the next frame -- bring
+        // it up and drop the cursor in the title box instead of leaving the user to hunt for it.
+        window.requestAnimationFrame(() => {
+          const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+          document.querySelector<HTMLElement>("#my-work-add-form")?.scrollIntoView({
+            behavior: reduceMotion ? "auto" : "smooth",
+            block: "start",
+          });
+          document
+            .querySelector<HTMLInputElement>("#my-work-add-form input[name='title']")
+            ?.focus();
+        });
       }}
     >
       ${t("myWork.items.add")}
@@ -588,6 +906,7 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
   const member = findOwnMember(state);
   return html`
     <form
+      id="my-work-add-form"
       class="my-work-add-form register"
       @submit=${(event: SubmitEvent) => {
         event.preventDefault();
@@ -614,10 +933,16 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
         state.myWorkProjectDraft = null;
       }}
     >
+      <div class="my-work-add-form__head">
+        <h3>${t("myWork.items.add")}</h3>
+        <p>Starts at the first step and shows up on Active Papers too.</p>
+      </div>
+
       <label class="register__field">
         <span class="register__label">Title</span>
         <input
           class="input"
+          name="title"
           placeholder=${t("myWork.items.namePlaceholder")}
           .value=${draft}
           @input=${(event: Event) => {
@@ -655,16 +980,18 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
         </div>
         <span class="register__hint">A rough call, so everyone reads the plan the same way.</span>
       </fieldset>
-      <button type="submit" class="btn">${t("myWork.items.addSubmit")}</button>
-      <button
-        type="button"
-        class="btn"
-        @click=${() => {
-          state.myWorkProjectDraft = null;
-        }}
-      >
-        ${t("myWork.blockers.cancel")}
-      </button>
+      <div class="register__actions">
+        <button type="submit" class="btn">${t("myWork.items.addSubmit")}</button>
+        <button
+          type="button"
+          class="btn"
+          @click=${() => {
+            state.myWorkProjectDraft = null;
+          }}
+        >
+          ${t("myWork.blockers.cancel")}
+        </button>
+      </div>
     </form>
   `;
 }
@@ -711,6 +1038,122 @@ let gridState: PaperGridState | null = null;
 function exitGrid(rerender: () => void): void {
   gridState = null;
   rerender();
+}
+
+/**
+ * The global nudge.
+ *
+ * One button, no composer and no recipient picker -- the same shape Profile Overview uses, for the
+ * same reason: the service derives both from state, so an admin pressing this is asking for the
+ * standing rule to be applied now rather than writing a message. The count is papers with
+ * something outstanding, which is what pressing it would actually chase.
+ *
+ * Disabled at zero rather than hidden: a button that vanishes when the lab is caught up gives no
+ * way to tell "everything is in" apart from "this feature is gone".
+ */
+function renderNudgeButton(props: MyWorkProps) {
+  if (!props.canNudge) {
+    return nothing;
+  }
+  const outstanding = props.overview.filter(
+    (row) => !row.dormant && !row.closed && row.missing_slots.length > 0,
+  ).length;
+  const open = props.nudgeBatches !== null;
+  return html`
+    <button
+      type="button"
+      class="btn btn--sm"
+      data-testid="my-work-review-nudges"
+      ?disabled=${props.nudgeLoading || outstanding === 0}
+      aria-expanded=${open ? "true" : "false"}
+      @click=${props.onReviewNudges}
+    >
+      <span aria-hidden="true">${icons.send}</span>
+      ${props.nudgeLoading
+        ? t("paperSlots.nudgeLoading")
+        : open
+          ? t("paperSlots.nudgeClose")
+          : t("paperSlots.nudgeReview", { count: String(outstanding) })}
+    </button>
+  `;
+}
+
+/**
+ * The batches, before anything goes out.
+ *
+ * This is the whole difference between a manual nudge and a scheduled one. A cron job can send a
+ * message nobody read; a person pressing a button should be able to see the words that will
+ * arrive under their name, and to leave somebody out of this round without waiving anything or
+ * editing the paper. So the preview shows the composed message verbatim, one card per person, and
+ * the send takes the ticks.
+ *
+ * Somebody with no Slack id on file is shown, unticked and unticking, rather than hidden: "we
+ * cannot reach this person" is a fact worth seeing when you are asking why they never respond.
+ */
+function renderNudgePreview(props: MyWorkProps) {
+  const batches = props.nudgeBatches;
+  if (!batches) {
+    return nothing;
+  }
+  if (batches.length === 0) {
+    return html`<p class="nudge-preview__empty" data-testid="my-work-nudge-preview">
+      ${t("paperSlots.nudgedNone")}
+    </p>`;
+  }
+  const selected = batches.filter(
+    (batch) => batch.deliverable && props.nudgeSelected.includes(batch.member_id),
+  );
+  return html`
+    <section class="nudge-preview" data-testid="my-work-nudge-preview">
+      <p class="nudge-preview__lede">
+        ${t("paperSlots.nudgePreviewLede", { count: String(batches.length) })}
+      </p>
+      <ul class="nudge-preview__list">
+        ${batches.map(
+          (batch) => html`
+            <li class="nudge-preview__item ${batch.deliverable ? "" : "is-unreachable"}">
+              <label class="nudge-preview__head">
+                <input
+                  type="checkbox"
+                  ?checked=${props.nudgeSelected.includes(batch.member_id)}
+                  ?disabled=${!batch.deliverable}
+                  data-testid=${`nudge-pick-${batch.member_id}`}
+                  @change=${() => props.onToggleNudgeRecipient(batch.member_id)}
+                />
+                <span class="nudge-preview__name">${batch.member_name}</span>
+                <span class="nudge-preview__count">
+                  ${t("paperSlots.nudgeItems", {
+                    items: String(batch.item_count),
+                    papers: String(batch.paper_titles.length),
+                  })}
+                </span>
+                ${batch.deliverable
+                  ? nothing
+                  : html`<span class="nudge-preview__unreachable"
+                      >${t("paperSlots.nudgeUnreachable")}</span
+                    >`}
+              </label>
+              <pre class="nudge-preview__message">${batch.message}</pre>
+            </li>
+          `,
+        )}
+      </ul>
+      <div class="nudge-preview__actions">
+        <button
+          type="button"
+          class="btn primary"
+          data-testid="my-work-nudge-authors"
+          ?disabled=${props.nudging || selected.length === 0}
+          @click=${props.onNudgeAuthors}
+        >
+          ${props.nudging
+            ? t("paperSlots.nudging")
+            : t("paperSlots.nudgeSend", { count: String(selected.length) })}
+        </button>
+        <span class="nudge-preview__hint">${t("paperSlots.nudgeHint")}</span>
+      </div>
+    </section>
+  `;
 }
 
 export function renderMyWork(state: AppViewState, props: MyWorkProps) {
@@ -760,21 +1203,30 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
       <section class="my-work__section">
         <div class="my-work__section-head">
           <h2 class="my-work__section-title">${t("myWork.items.title")}</h2>
-          ${gridOffered
-            ? html`<button
-                type="button"
-                class="btn btn--sm"
-                data-testid="my-work-open-grid"
-                @click=${() => {
-                  gridState = emptyPaperGridState();
-                  rerender();
-                }}
-              >
-                Fill in as a spreadsheet (${items.length})
-              </button>`
-            : nothing}
-          ${renderAddButton(state)}
+          <div class="my-work__section-actions">
+            ${gridOffered
+              ? html`<button
+                  type="button"
+                  class="btn btn--sm"
+                  data-testid="my-work-open-grid"
+                  @click=${() => {
+                    gridState = emptyPaperGridState();
+                    rerender();
+                  }}
+                >
+                  Fill in as a spreadsheet (${items.length})
+                </button>`
+              : nothing}
+            ${renderNudgeButton(props)} ${renderAddButton(state)}
+          </div>
         </div>
+        ${renderNudgePreview(props)}
+        ${props.slotsNotice
+          ? html`<p class="my-work__notice-line" role="status">${props.slotsNotice}</p>`
+          : nothing}
+        ${props.slotsError
+          ? html`<p class="my-work__error-line" role="alert">${props.slotsError}</p>`
+          : nothing}
         ${items.length
           ? html`<div class="my-work__items">
               ${items.map((paper) => renderItem(state, paper, props))}

@@ -3,16 +3,10 @@ export const adminBotRiskTiers = ["T0", "T1", "T2", "T3", "T4"] as const;
 export type AdminBotRiskTier = (typeof adminBotRiskTiers)[number];
 
 export const adminBotActionTypes = [
-  "candidate.accept_for_trial",
-  "candidate.accept_direct",
-  "candidate.decline",
-  "slack.invite_guest",
-  "slack.invite_member",
   "slack.send_message",
   "slack.profile_photo_update",
   "slack.channel_naming_notify_owner",
   "slack.rename_channel",
-  "vector.invite",
   "calendar.create_tentative_hold",
   "calendar.send_invite",
   // Adds people to an event that already exists. Distinct from `calendar.reschedule`, which is the
@@ -23,11 +17,6 @@ export const adminBotActionTypes = [
   "calendar.cancel",
   "email.draft",
   "email.send",
-  "recommendation_letter.draft",
-  "recommendation_letter.send",
-  "reimbursement.prepare_packet",
-  "reimbursement.submit",
-  "social_media.draft",
   "social_media.post_publicly",
   "paper_publish.prepare",
   "paper.overleaf_edit",
@@ -35,6 +24,9 @@ export const adminBotActionTypes = [
   "paper_publish.nudge_author",
   "paper_publish.escalate_to_pi",
   "join_form.classify",
+  // Mailing a signed document back to the member who asked for it. An external effect (Gmail with
+  // an attachment), so it is a typed action rather than a call out of the service.
+  "logistics.send_signed_document",
   "member_nudge.send",
   "openreview.nudge",
   "openreview.warning",
@@ -148,6 +140,34 @@ export const adminBotMandatoryProfileFields = [
 
 export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFields)[number];
 
+/** How many entries a member has on their Time Availability page, by list. */
+export type AdminBotMemberTimelineCounts = {
+  availability: number;
+  time_off: number;
+  milestones: number;
+  trips: number;
+  total: number;
+};
+
+/**
+ * One member's row on the profile overview: how much of their own record they have filled in.
+ *
+ * `filled_field_count` is carried rather than derived so every reader agrees on the denominator --
+ * the mandatory field list is versioned in this file and a client that counted it itself would
+ * drift the moment a field is added.
+ */
+export type AdminBotMemberProfileOverviewRow = {
+  id: string;
+  name: string;
+  status?: string;
+  privilege_level: AdminBotPrivilegeLevel;
+  missing_fields: string[];
+  filled_field_count: number;
+  timeline: AdminBotMemberTimelineCounts;
+  /** When the daily reminder pass last nudged them, so nobody is chased twice in a day. */
+  last_reminded_at?: string;
+};
+
 /**
  * Plain-English names for the fields above, used to compose the reminder.
  *
@@ -244,6 +264,10 @@ export const adminBotScheduleMemberFields = [
   "availability",
   "time_off",
   "milestones",
+  // Where a member will be for the next three weeks is planning data, like the rest of this list:
+  // their own to read and edit, and visible to the admins who schedule around it.
+  "trips",
+  "dismissed_deadlines",
   "availability_notes",
   "availability_doc_url",
   "availability_updated_at",
@@ -418,10 +442,44 @@ export type AdminBotTimeOffRow = {
   // "partial" still counts toward capacity at a reduced rate; "none" zeroes the
   // week. Callers must not infer this from `kind` — a conference can be either.
   availability: "none" | "partial";
+  // How many hours a week this commitment actually takes, for a "partial" row.
+  //
+  // A whole-day row needs no figure: it zeroes the week by definition. A partial one was a claim
+  // with no number attached — "around, but less" — which no chart could draw and no admin could
+  // plan against, so a member with a twelve-hour-a-week course and a member with a standing
+  // Tuesday call recorded the identical row. This is that missing number, in the same unit and
+  // range as `AdminBotAvailabilityRow.hours_per_week` so the two stack.
+  //
+  // Omitted on a "none" row, and optional on a "partial" one: rows written before this field
+  // existed have no answer, and inventing one would put hours on a chart nobody typed.
+  hours_per_week?: number;
   note?: string;
   // What the member called this when `kind` is "other". The enum stays closed so the categories
   // mean the same thing lab-wide; this is the escape hatch for the one that does not fit.
   label?: string;
+  link?: string;
+};
+
+/**
+ * A stretch away from home: a conference, an internship, a term abroad, a month at a parent's.
+ *
+ * A range with a place on it, which is the one thing none of the other schedule rows carry. A
+ * `time_off` row says a member is unavailable and a `trips` row says nothing about availability at
+ * all -- somebody working normal hours from Berlin is fully available and six hours off the lab's
+ * clock, which is exactly the case that kept producing 10am invites that land at 4pm. Logged the
+ * same way a commitment is, because it is the same act: a member saying in advance what their next
+ * few weeks look like.
+ *
+ * `timezone` is optional and derived from the city by the form. It is stored rather than re-derived
+ * on read so a member who corrects the guess keeps their correction.
+ */
+export type AdminBotMemberTrip = {
+  start: string;
+  end: string;
+  /** Free text, the way a member writes a place: "Berlin", "Berlin, Germany", "NeurIPS (Vancouver)". */
+  city: string;
+  timezone?: string;
+  note?: string;
   link?: string;
 };
 
@@ -435,6 +493,140 @@ export type AdminBotMemberMilestone = {
   date: string;
   label: string;
   link?: string;
+  // The wall-clock cutoff on `date`, as "HH:MM" on a 24-hour clock, and the zone that clock is
+  // read in (an IANA name — "America/Toronto", not "EST"). Both optional and both meaningless
+  // alone: a time with no zone is a number a reader in another country has to guess at, and a zone
+  // with no time says nothing. A milestone with neither is a whole-day deadline, which is what
+  // every stored row was before these fields existed.
+  //
+  // Kept off `date` rather than folded into an ISO instant because the date is what the timeline,
+  // the countdown and the "in N days" label all sort and bucket by; an instant would make every
+  // one of them re-derive a calendar day in a zone none of them knows.
+  time?: string;
+  timezone?: string;
+};
+
+// "HH:MM" on a 24-hour clock, which is what <input type="time"> hands back. Seconds are not
+// accepted: no deadline in this system is stated to the second, and allowing them would mean two
+// spellings of the same minute.
+export const ADMINBOT_DEADLINE_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/u;
+
+/**
+ * Whether a string names a time zone this runtime can actually resolve.
+ *
+ * Asked of Intl rather than checked against a bundled list: the list a validator ships goes stale,
+ * and the only zones worth storing are the ones the formatter on the other end can print.
+ */
+export function isAdminBotTimezone(value: string): boolean {
+  try {
+    // Constructing is the check -- Intl throws a RangeError on a zone it cannot resolve. The
+    // formatter is read back rather than discarded so this is an expression with a use, not a
+    // `new` for side effects.
+    return Boolean(
+      new Intl.DateTimeFormat("en-US", { timeZone: value }).resolvedOptions().timeZone,
+    );
+  } catch {
+    return false;
+  }
+}
+
+// One dated line off a CV. `kind` is what makes a change newsworthy or not: a new `position` or
+// `education` entry is a career move worth announcing, an `award` is worth congratulating, and
+// anything the model cannot place lands in `other` and is reported but never drafted.
+export type AdminBotCvEntryKind =
+  | "position"
+  | "education"
+  | "award"
+  // A paper. `organization` carries the venue ("NeurIPS 2026", "Nature"), rather than adding a
+  // field: it is the thing that identifies the work alongside its title, which is exactly what
+  // `organization` does for every other kind, and cvEntryKey already keys on it.
+  | "publication"
+  | "other";
+
+export type AdminBotCvEntry = {
+  kind: AdminBotCvEntryKind;
+  title: string;
+  organization: string;
+  // Free text exactly as printed on the CV ("Sept 2025", "2024-present"). Kept verbatim because
+  // it is what the newsletter quotes back, and because CVs write ranges a hundred ways.
+  start?: string;
+  end?: string;
+  // `start` normalized to YYYY-MM, for deciding whether an entry describes something that just
+  // happened. Absent whenever the model could not place the date with confidence — a missing value
+  // means "unknown", never "old", so an undated entry is reported for a human rather than
+  // silently dropped or silently announced.
+  start_iso?: string;
+};
+
+// Why an added entry is, or is not, news.
+//
+// A CV edit is not a career event. Someone backfilling a 2019 internship has changed their
+// document, not their career, and announcing it would be wrong in a way that is obvious to every
+// reader but invisible to a plain diff. The three cases are kept apart rather than collapsed into
+// a boolean so the console can show what was skipped and why.
+export type AdminBotCvRecency = "recent" | "backfilled" | "undated";
+
+export type AdminBotCvSnapshot = {
+  fetched_at: string;
+  // Hash of the extracted CV text. A re-scan whose hash is unchanged skips the model call
+  // entirely, so repeat scans over an unchanged roster cost one fetch each and nothing more.
+  content_hash: string;
+  entries: AdminBotCvEntry[];
+};
+
+// What one member's CV produced on a scan. `status` is a closed set rather than an ok/error pair
+// so the console can tell "nothing changed" apart from "we could not read it" -- they look the
+// same in a count but mean opposite things to whoever is chasing the roster.
+// One entry that appeared on a CV, with the judgement of whether it is news.
+export type AdminBotCvChange = {
+  entry: AdminBotCvEntry;
+  recency: AdminBotCvRecency;
+};
+
+export type AdminBotCvScanMemberResult = {
+  member_id: string;
+  member_name: string;
+  status: "unchanged" | "changed" | "first_scan" | "skipped" | "failed";
+  // Present when status is "failed" or "skipped": why this member produced nothing.
+  reason?: string;
+  added: AdminBotCvChange[];
+  // Removals carry no recency: taking a line off a CV says nothing about when the thing happened,
+  // and it is never drafted either way.
+  removed: AdminBotCvEntry[];
+};
+
+/**
+ * Identity of a CV entry, for diffing and for the stored-change primary key.
+ *
+ * Dates are deliberately excluded. CVs get retyped and reformatted constantly ("Sept 2025" becomes
+ * "09/2025"), and keying on the date would report every such edit as a new job. Recency is judged
+ * separately, from `start_iso`.
+ *
+ * One definition, here rather than beside either caller, because the differ and the store must
+ * agree exactly: if they drifted, a change would be re-reported on every scan.
+ */
+export function cvEntryKey(entry: AdminBotCvEntry): string {
+  const normalize = (value: string) => value.trim().toLocaleLowerCase().replace(/\s+/gu, " ");
+  return [entry.kind, normalize(entry.title), normalize(entry.organization)].join(" ");
+}
+
+// A change, as stored. `detected_at` is when the scan noticed it, which is deliberately not the
+// same as when it happened — a member who updates their CV in September for a July move is
+// detected in September, and the digest window is about what the lab learned, not what occurred.
+export type AdminBotCvChangeEvent = {
+  member_id: string;
+  member_name: string;
+  detected_at: string;
+  recency: AdminBotCvRecency;
+  entry: AdminBotCvEntry;
+};
+
+export type AdminBotCvScanResult = {
+  scanned_at: string;
+  results: AdminBotCvScanMemberResult[];
+  // Newsletter copy built from the newsworthy additions across every member. Empty when nothing
+  // changed. Draft only -- publishing is not part of this flow.
+  newsletter_draft: string;
 };
 
 export type AdminBotLabMemberInput = {
@@ -545,10 +737,34 @@ export type AdminBotLabMemberInput = {
   last_login_at?: string;
   last_login_country?: string;
   last_login_continent?: string;
+  /**
+   * When the member last answered the "you seem to have moved" question, either way.
+   *
+   * Stamped on a confirmation *and* on a dismissal, because both are answers: someone who signs in
+   * from a conference for a week should be able to say "no, still Toronto" and not be asked again
+   * for that trip. A later move to a different country starts a new divergence and asks again.
+   */
+  location_prompt_answered_at?: string;
+  /** The country the member was asked about when they last answered, so a new country re-asks. */
+  location_prompt_answered_country?: string;
   availability?: AdminBotAvailabilityRow[];
   time_off?: AdminBotTimeOffRow[];
   // Dated milestones the member is planning back from. Self-editable like the two lists above.
   milestones?: AdminBotMemberMilestone[];
+  // Where the member is when that is not home, over a range. Self-editable like the lists above,
+  // and read by anything that needs a member's local time on a given date.
+  trips?: AdminBotMemberTrip[];
+  /**
+   * Conference deadlines from the bundled snapshot that this member has taken off their own panel.
+   *
+   * By venue name rather than id: the snapshot is regenerated from OpenReview, and an id that
+   * shifted between regenerations would quietly resurrect a row somebody dismissed. The name is
+   * also what an added venue is stored as on `milestones`, so one identity covers both directions.
+   *
+   * A dismissal is per member and hides nothing for anyone else -- the lab's deadline board is
+   * unaffected. Re-adding the venue from the picker brings it back as the member's own row.
+   */
+  dismissed_deadlines?: string[];
   // The complication the three lists above cannot express: a custody arrangement, a visa date that
   // may move, a medical treatment that makes some weeks unpredictable. Written for the admins who
   // plan around it -- see adminBotScheduleMemberFields, which keeps it off every other member's
@@ -558,6 +774,10 @@ export type AdminBotLabMemberInput = {
   // prefill the rows above. Member-owned and self-editable: whatever the importer gets wrong, the
   // member fixes in the same panel.
   availability_doc_url?: string;
+  // Career facts from the last successful CV scan, kept so the next scan has something to diff
+  // against. Deliberately holds the extracted *facts* and a hash, never the CV text: the roster is
+  // read whole on every members/capacity load, and a stored CV body would bloat all of them.
+  cv_snapshot?: AdminBotCvSnapshot;
   // Stamped server-side on every write that touches availability/time_off, so
   // the UI can show staleness without diffing payloads.
   availability_updated_at?: string;
@@ -573,6 +793,10 @@ export type AdminBotLabMember = Omit<AdminBotLabMemberInput, "privilege_level"> 
 
 export type AdminBotSettingsInput = {
   paper_escalation_business_days?: number;
+  // How many months back a CV entry's start date may sit and still count as news. Configurable
+  // because the right answer depends on how often a lab's members actually refresh their CVs:
+  // too tight and a real move lands as backfilled, too wide and "recently" stops meaning it.
+  cv_recency_window_months?: number;
   head_professor_member_id?: string;
   // Contact number the onboarding "what to expect" note hands to direct mentees. Governance
   // config rather than a repo constant: it is a real phone number, so it never belongs in the
@@ -580,14 +804,23 @@ export type AdminBotSettingsInput = {
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
   applicant_last_reviewed_at?: string;
+  /**
+   * Recorded meetings shorter than this are filed but not listed. A test call, a two-minute room
+   * check and a meeting somebody rejoined by accident all produce a cloud recording, and a tab
+   * three-quarters full of them is a tab nobody reads. Zero shows everything.
+   */
+  meeting_minimum_minutes?: number;
 };
 
 export type AdminBotSettings = {
   paper_escalation_business_days: number;
+  cv_recency_window_months: number;
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
   applicant_last_reviewed_at?: string;
+  /** See the note on AdminBotSettingsInput. Optional so a settings row written before meetings existed still parses. */
+  meeting_minimum_minutes?: number;
   updated_at: string;
 };
 
@@ -662,11 +895,54 @@ export type AdminBotPaperReminderState = {
   head_professor_member_id?: string;
 };
 
+/**
+ * What the venue said. `pending` is the normal state; a `reject` prunes every branch downstream of
+ * the decision, and the paper comes back as a new attempt at another venue rather than as a new
+ * record -- keeping the history of a paper on the paper.
+ */
+export const adminBotPaperVenueDecisions = ["pending", "accept", "reject"] as const;
+
+export type AdminBotPaperVenueDecision = (typeof adminBotPaperVenueDecisions)[number];
+
+/** How the paper appears at the venue. Ordered least to most prominent. */
+export const adminBotPaperPresentationTypes = [
+  "poster",
+  "findings",
+  "main",
+  "spotlight",
+  "oral",
+  "award",
+] as const;
+
+export type AdminBotPaperPresentationType = (typeof adminBotPaperPresentationTypes)[number];
+
 export type AdminBotPaperRecordInput = {
   id: string;
   title: string;
   authors: string[];
   current_step: AdminBotPaperStep;
+  // Who the nudges go to by default. Free-text `authors` cannot answer this: it is how the paper
+  // spells the names, not who on the roster owes the work.
+  first_author_member_id?: string;
+  // The venue as a plain string ("ICLR 2027") and its deadline as a date, so a hard-deadline nudge
+  // does not have to guess which of the deadline board's rows this paper meant.
+  venue?: string;
+  deadline?: string;
+  venue_decision?: AdminBotPaperVenueDecision;
+  /** Increments on reject -> new venue. Same record, next try. */
+  attempt?: number;
+  /** Admin-only exemption from the 24-month dormancy rule. */
+  dormant_override?: boolean;
+  // Acceptance details. Author-provided, and only meaningful once `venue_decision` is `accept`;
+  // the conference branch (who is going, posters, reimbursements) stays shut until all four are
+  // in, because none of it can be asked sensibly without them. Nothing infers these today --
+  // reading them off OpenReview is plausible later, and would still end in the author confirming.
+  accepted_venue?: string;
+  accepted_year?: number;
+  // Archival vs non-archival decides whether this counts as a publication, which is why it is
+  // asked rather than guessed: the same workshop can be either in different years.
+  is_archival?: boolean;
+  presentation_type?: AdminBotPaperPresentationType;
   artifacts?: AdminBotPaperArtifactLinks;
   mentor_member_id?: string;
   checks?: {
@@ -873,6 +1149,15 @@ export type AdminBotAuditEvent = {
     | "lab_member.upserted"
     | "lab_member.notes_migrated"
     | "paper.upserted"
+    | "paper_slot.updated"
+    | "paper_slot.waived"
+    | "paper_slots.nudged"
+    | "paper_social_draft.saved"
+    | "paper_social_draft.circulated"
+    | "paper_social_consent.recorded"
+    | "paper_attendee.updated"
+    | "paper_reimbursement.updated"
+    | "paper_slots.backfilled"
     | "paper.deleted"
     | "onboarding.guide_sent"
     | "settings.updated"
@@ -901,6 +1186,15 @@ export type AdminBotAuditEvent = {
     | "mandatory_fields.reminded"
     | "onboarding.step_updated"
     | "reimbursement.anonymous_use"
+    // A member asking the lab for something, and the lab answering. The submit line is what makes
+    // "nobody told me" checkable; the status line is who answered and when.
+    | "logistics_request.submitted"
+    | "logistics_request.status_changed"
+    | "logistics_request.withdrawn"
+    // The signed document going back to the member who asked for it, and the copies being dropped
+    // once it has.
+    | "logistics_request.signed_document_sent"
+    | "logistics_request.files_cleared"
     | "openreview.cycle_run"
     | "openreview.milestone_sent"
     | "openreview.milestone_blocked"
@@ -912,6 +1206,16 @@ export type AdminBotAuditEvent = {
     | "profile_photo.polished"
     | "profile_photo.applied"
     | "auth.login_location_updated"
+    // Where members are. An observation is a fact about a person's whereabouts, and the answer to
+    // the prompt is the only thing that turns one into a profile change, so both are recorded.
+    | "member.location_observed"
+    | "member.location_prompt_answered"
+    // Recorded meetings. Filing one is not an external effect, but attendance is personal data
+    // and a summary is machine-written, so who filed or corrected what stays answerable.
+    | "meeting.recorded"
+    | "meeting.updated"
+    | "meeting.attendance_updated"
+    | "meeting.deleted"
     // Slack channel-naming enforcement. The sweep renames other people's channels, which is an
     // external effect with no undo, so who triggered a pass and what it did is recorded here.
     | "slack.channel_naming_checked"
@@ -975,4 +1279,306 @@ export type AdminBotAuthSession = {
   expires_at: string;
   last_seen_at: string;
   revoked_at?: string;
+};
+
+// ---------------------------------------------------------------------------
+// Where members are, over time
+//
+// The roster already carries three location fields, and each answers a different question:
+// `location` is where a member lives, `current_city` is where they are right now, and
+// `last_login_country` is where they last signed in from. All three are point-in-time: each write
+// overwrites the last, so nothing in the system could ever answer "when did they move".
+//
+// That question is what a scheduling lab actually needs. A member on a three-month internship in
+// Berlin who never edits their profile keeps getting invited to a 10am Toronto meeting that is 4pm
+// where they are, and nothing surfaces the mismatch — the login geolocation *knows*, and
+// deliberately does not write it anywhere a scheduler would look, because an inferred country must
+// never silently overwrite what a person told us about themselves.
+//
+// So observations are appended here instead of overwriting anything, and divergence between what
+// is inferred and what is on the profile becomes a question put to the member rather than a write
+// behind their back. The member's answer is the only thing that changes the profile.
+// ---------------------------------------------------------------------------
+
+export const adminBotLocationSources = [
+  "self_reported",
+  "login_ip",
+  "slack_profile",
+  "admin",
+] as const;
+
+export type AdminBotLocationSource = (typeof adminBotLocationSources)[number];
+
+export type AdminBotMemberLocationEntry = {
+  id: string;
+  member_id: string;
+  observed_at: string;
+  source: AdminBotLocationSource;
+  /** The text the source gave, kept verbatim so an unresolved place is still diagnosable. */
+  raw: string;
+  /** Gazetteer key, when the text resolved to a place the map knows. */
+  place_key?: string;
+  place_label?: string;
+  country?: string;
+  /**
+   * Only ever set on a self-report. Inference states a country and never a timezone: the two are
+   * not the same claim, and countries with several zones would make it a guess presented as fact.
+   */
+  timezone?: string;
+};
+
+/** What the member is being asked to confirm, and the evidence for asking. */
+export type AdminBotLocationDrift = {
+  member_id: string;
+  /** Where the recent sign-ins say they are. */
+  observed_country: string;
+  observed_label?: string;
+  /** What the profile says, for the question to quote back. */
+  profile_location?: string;
+  profile_country?: string;
+  /** When the divergence started, and how many sign-ins have agreed with it since. */
+  since: string;
+  observation_count: number;
+};
+
+// ---------------------------------------------------------------------------
+// Meetings
+//
+// A recorded group meeting: the link members open, who was there, and a summary of what was said.
+//
+// The account this comes from is an educational Zoom with developer mode off, so there is no API
+// behind any of it. A record is assembled from the notice Zoom mails the host (link, topic, time),
+// a participant CSV a host exports by hand (attendance), and the cloud recording's own transcript
+// (summary). Each arrives separately and none is guaranteed, so every field past the link is
+// optional and a record is worth keeping with only some of them.
+//
+// What is deliberately absent is the transcript itself. It is read, summarized and dropped: lab
+// meetings discuss unpublished work and people's circumstances, and a verbatim record of that in
+// a database that backs a web UI is a liability nobody asked for. `transcript` keeps the fact that
+// one was processed, not what it said.
+// ---------------------------------------------------------------------------
+
+/** Where an attendance line came from. Ranked in `mergeAttendance`: manual beats every import. */
+export type AdminBotMeetingAttendanceSource = "participant_report" | "transcript" | "manual";
+
+export type AdminBotMeetingAttendee = {
+  /** Set when the row resolved to someone on the roster. Absent means a guest, or an unmatched name. */
+  member_id?: string;
+  /** The name as Zoom reported it, kept even when matched so an admin can see what was matched. */
+  display_name: string;
+  email?: string;
+  joined_at?: string;
+  minutes?: number;
+  source: AdminBotMeetingAttendanceSource;
+  /** False records a considered absence — an admin unticking someone an import added. */
+  present: boolean;
+};
+
+export type AdminBotMeetingActionItem = {
+  text: string;
+  owner_member_id?: string;
+  /** The name the summarizer read off the transcript, when it did not resolve to a member. */
+  owner_name?: string;
+};
+
+export type AdminBotMeetingSummary = {
+  overview: string;
+  decisions: string[];
+  action_items: AdminBotMeetingActionItem[];
+  generated_at: string;
+  /** Which local model wrote it. Recorded because a summary is machine-written and readers should be able to tell which machine. */
+  model: string;
+};
+
+export type AdminBotMeetingRecordingLinks = {
+  /** The Zoom share URL from the notice. The one field a meeting record cannot be created without. */
+  share_url?: string;
+  passcode?: string;
+  /** Copy on the lab's Drive, which is what survives Zoom's cloud retention window deleting the original. */
+  drive_url?: string;
+};
+
+export type AdminBotMeetingTranscriptState = {
+  processed_at: string;
+  /** Speakers the transcript named, which is what pre-ticks the attendance roster. */
+  speaker_names: string[];
+  duration_seconds?: number;
+};
+
+export type AdminBotMeetingRecordInput = {
+  id: string;
+  topic: string;
+  /** RFC3339. Falls back to when the notice was received if Zoom's date line did not parse. */
+  started_at: string;
+  duration_minutes?: number;
+  host_email?: string;
+  recording: AdminBotMeetingRecordingLinks;
+  transcript?: AdminBotMeetingTranscriptState;
+  summary?: AdminBotMeetingSummary;
+  attendees?: AdminBotMeetingAttendee[];
+  /** How the record got here: parsed from a forwarded notice, or filed by hand in the Control UI. */
+  source: "zoom_email" | "manual";
+  notes?: string;
+};
+
+export type AdminBotMeetingRecord = AdminBotMeetingRecordInput & {
+  created_at: string;
+  updated_at: string;
+  /**
+   * How many people were present. Derived on read, never stored: a member is not shown the roster,
+   * and a headcount is the part of it that is useful to whoever missed the meeting without naming
+   * anybody. Absent on the admin view, which has the roster itself.
+   */
+  attendee_count?: number;
+};
+
+// ---------------------------------------------------------------------------
+// Logistics requests
+//
+// The routine asks a member makes of the lab: sign these documents, write these recommendation
+// letters, book me this meeting. Each has a fixed shape, which is why they are templates in the
+// Control UI and one record type here rather than free-text tickets.
+//
+// A submitted request is a stored record, not a typed action -- storing one reaches nothing outside
+// this service, so a member never waits on an approval to be heard. The one outbound step is the
+// signed document going back, and that is `logistics.send_signed_document` above.
+//
+// The kinds are open-coded rather than one payload blob because an admin's queue sorts and filters
+// on them, and because each kind carries different fields that the service validates separately.
+// ---------------------------------------------------------------------------
+
+export const adminBotLogisticsRequestKinds = [
+  "document_signature",
+  "recommendation_letters",
+  "book_meeting",
+] as const;
+
+export type AdminBotLogisticsRequestKind = (typeof adminBotLogisticsRequestKinds)[number];
+
+/**
+ * Where a request stands, from the lab's side.
+ *
+ * `submitted` is the only status a member can create, and `withdrawn` the only one they can move it
+ * to: everything between is the lab saying what it has done, and a requester grading their own
+ * request would make the column useless to the people working through the list.
+ */
+export const adminBotLogisticsRequestStatuses = [
+  "submitted",
+  "in_progress",
+  "completed",
+  "declined",
+  "withdrawn",
+] as const;
+
+export type AdminBotLogisticsRequestStatus = (typeof adminBotLogisticsRequestStatuses)[number];
+
+/** Statuses that mean nobody is waiting on this request any more. */
+export const adminBotLogisticsSettledStatuses = [
+  "completed",
+  "declined",
+  "withdrawn",
+] as const satisfies readonly AdminBotLogisticsRequestStatus[];
+
+/**
+ * A file travelling with a request, bytes and all.
+ *
+ * Base64 in the record rather than a blob store because there is no blob store: every other record
+ * here is one JSON payload in one row, and a second storage system for the handful of PDFs a lab
+ * signs each term would be more moving parts than the feature is worth. Two things keep that safe:
+ * the size caps in `workflows/logistics/requests.ts`, and the fact that the bytes are dropped once
+ * the request is settled -- see `clearSettledRequestFiles`. What is left then is this same record
+ * with `size` and `name` intact and `data_base64` gone, which still reads as a complete history.
+ */
+export type AdminBotLogisticsAttachment = {
+  name: string;
+  /** Bytes of the decoded file, checked against the caps rather than trusted from the client. */
+  size: number;
+  /** As the browser reported it. Advisory: the service never executes or renders these. */
+  content_type?: string;
+  /** Standard base64, no data: prefix. Absent on a list read, and after the request is settled. */
+  data_base64?: string;
+};
+
+/** One school on a recommendation letters request, as the member filled the row in. */
+export type AdminBotLogisticsSchool = {
+  school: string;
+  /** yyyy-mm-dd. Both deadlines are optional: a member often knows one before the other. */
+  application_deadline?: string;
+  /** HH:mm, in `deadline_timezone`. A date with no time is treated as end of that day. */
+  application_deadline_time?: string;
+  letter_deadline?: string;
+  letter_deadline_time?: string;
+  /** IANA zone both times on this row are read in. Blank means the dates are whole-day. */
+  deadline_timezone?: string;
+  application_status?: string;
+  letter_status?: string;
+  program?: string;
+  program_link?: string;
+  notes?: string;
+};
+
+/** One line of what the member actually did, which is the part a letter template cannot supply. */
+export type AdminBotLogisticsFact = {
+  project: string;
+  contribution: string;
+};
+
+/** One proposed meeting on a book-meeting request. */
+export type AdminBotLogisticsMeeting = {
+  purpose: string;
+  /** yyyy-mm-ddTHH:mm as typed, read in `timezone`. */
+  preferred_time?: string;
+  timezone?: string;
+  length_minutes?: number;
+  /** When the member added the row, which is what decides order of service. */
+  submitted_at?: string;
+};
+
+export type AdminBotLogisticsRequestInput = {
+  kind: AdminBotLogisticsRequestKind;
+  /** Document signature. */
+  documents?: AdminBotLogisticsAttachment[];
+  description?: string;
+  attachments?: AdminBotLogisticsAttachment[];
+  /** Recommendation letters. */
+  schools?: AdminBotLogisticsSchool[];
+  facts?: AdminBotLogisticsFact[];
+  cv_overleaf_url?: string;
+  drive_folder_url?: string;
+  /** Book meeting. */
+  meetings?: AdminBotLogisticsMeeting[];
+};
+
+export type AdminBotLogisticsRequest = AdminBotLogisticsRequestInput & {
+  id: string;
+  /** Who asked. Taken from the session, never from the body: a request is signed by whoever sent it. */
+  member_id: string;
+  /** The roster name at submission time, so a queue stays readable after someone leaves. */
+  member_name: string;
+  status: AdminBotLogisticsRequestStatus;
+  submitted_at: string;
+  updated_at: string;
+  /**
+   * RFC3339 instant of the soonest thing this request is working towards, or absent when it names
+   * none. Derived on write from the dates, times and zones the member gave, so every reader sorts
+   * the same way and no client has to re-implement "which of these is soonest".
+   */
+  deadline_at?: string;
+  /**
+   * What the lab sent back, signed.
+   *
+   * Kept only until it has been mailed and the request settled; what survives is the name and the
+   * fact that it was sent, which is what an admin looking at an old request needs to know.
+   */
+  signed_documents?: AdminBotLogisticsAttachment[];
+  /** When the signed document was mailed to the requester, and to which address. */
+  signed_sent_at?: string;
+  signed_sent_to?: string;
+  /** When the stored file bytes were dropped, so a reader can tell "never had one" from "gone". */
+  files_cleared_at?: string;
+  /** What the lab said back, shown to the member. Set with the status. */
+  resolution_note?: string;
+  /** Which admin last moved the status, for the member reading "declined" and wondering who by. */
+  decided_by?: string;
+  decided_at?: string;
 };

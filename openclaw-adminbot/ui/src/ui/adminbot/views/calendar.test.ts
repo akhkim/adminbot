@@ -718,3 +718,149 @@ describe("calendarInviteSelection", () => {
     expect(selection.emails).toEqual([]);
   });
 });
+
+describe("attendee local times on the invite list", () => {
+  const EVENT = {
+    id: "evt-1",
+    summary: "Lab meeting",
+    // 10:00 in Toronto, which is 16:00 in Berlin and 23:00 in Tokyo.
+    start: "2026-09-01T10:00:00-04:00",
+    attendees: [],
+  };
+
+  function withMembers(members: AdminBotLabMember[], extra: Partial<AppViewState> = {}) {
+    return renderToDiv(
+      state({
+        calendarAudience: { conference: "NeurIPS 2026" },
+        calendarSelectedEventId: "evt-1",
+        calendarEvents: [EVENT],
+        adminBotData: {
+          ...state().adminBotData,
+          members,
+        },
+        ...extra,
+      } as Partial<AppViewState>),
+    );
+  }
+
+  // The failure this exists for: pick a time that suits the room, send it, and find out from the
+  // person who took it at 5am.
+  it("shows each attendee's own clock", () => {
+    const container = withMembers([member({ timezone: "Europe/Berlin" })]);
+    const matches = container.querySelector('[data-testid="calendar-matches"]');
+    expect(matches?.textContent).toMatch(/(?:16|4):00/u);
+  });
+
+  it("flags a time that lands outside the attendee's day", () => {
+    const container = withMembers([member({ timezone: "Asia/Tokyo" })]);
+    const odd = container.querySelector(".adminbot-calendar__match-local--odd");
+    expect(odd?.textContent).toContain("late");
+  });
+
+  it("does not flag a civil hour", () => {
+    const container = withMembers([member({ timezone: "America/Toronto" })]);
+    expect(container.querySelector(".adminbot-calendar__match-local--odd")).toBeNull();
+  });
+
+  // An invented local time is indistinguishable from a real one once it is on screen.
+  it("says the time is unknown rather than guessing one", () => {
+    const container = withMembers([member({ location: "a boat" })]);
+    expect(container.querySelector('[data-testid="calendar-matches"]')?.textContent).toContain(
+      "local time unknown",
+    );
+  });
+
+  it("falls back to the location when no timezone is stated", () => {
+    const container = withMembers([member({ location: "Berlin" })]);
+    expect(container.querySelector('[data-testid="calendar-matches"]')?.textContent).toMatch(
+      /(?:16|4):00/u,
+    );
+  });
+
+  // A member whose sign-ins disagree with their profile has a local time computed from a location
+  // nobody has confirmed, so the row says so rather than presenting it as fact.
+  it("flags an attendee whose recent sign-ins disagree with their profile", () => {
+    const container = withMembers([member({ timezone: "America/Toronto" })], {
+      adminBotLocationDrifts: [
+        {
+          member_id: "m1",
+          observed_country: "Germany",
+          since: "2026-08-10T09:00:00.000Z",
+          observation_count: 4,
+        },
+      ],
+    } as Partial<AppViewState>);
+    expect(container.querySelector(".adminbot-calendar__match-drift")?.textContent).toContain(
+      "Germany",
+    );
+  });
+
+  it("shows no flag for a roster nobody has drifted on", () => {
+    const container = withMembers([member({ timezone: "America/Toronto" })]);
+    expect(container.querySelector(".adminbot-calendar__match-drift")).toBeNull();
+  });
+});
+
+describe("trips on the calendar", () => {
+  const berlin = { start: "2026-09-01", end: "2026-09-30", city: "Berlin", timezone: "Europe/Berlin" };
+
+  it("marks the days a member is away, naming them when it is only one", () => {
+    const container = renderToDiv(
+      state({
+        calendarMonth: "2026-09-01",
+        adminBotData: { ...state().adminBotData, members: [member({ trips: [berlin] })] },
+      } as Partial<AppViewState>),
+    );
+    const marker = container.querySelector('[data-testid="calendar-trips-2026-09-15"]');
+    expect(marker?.textContent).toContain("Ada Lovelace in Berlin");
+    // The names live in the tooltip so a busy month does not turn the grid into a roster.
+    expect(marker?.getAttribute("title")).toContain("Ada Lovelace — Berlin");
+  });
+
+  it("counts instead of naming once more than one person is away", () => {
+    const container = renderToDiv(
+      state({
+        calendarMonth: "2026-09-01",
+        adminBotData: {
+          ...state().adminBotData,
+          members: [
+            member({ trips: [berlin] }),
+            member({ id: "m2", name: "Mei Chen", trips: [{ ...berlin, city: "Tokyo" }] }),
+          ],
+        },
+      } as Partial<AppViewState>),
+    );
+    expect(
+      container.querySelector('[data-testid="calendar-trips-2026-09-15"]')?.textContent,
+    ).toContain("2 away");
+  });
+
+  it("marks nothing on a day nobody is travelling", () => {
+    const container = renderToDiv(
+      state({
+        calendarMonth: "2026-10-01",
+        adminBotData: { ...state().adminBotData, members: [member({ trips: [berlin] })] },
+      } as Partial<AppViewState>),
+    );
+    expect(container.querySelector('[data-testid="calendar-trips-2026-10-15"]')).toBeNull();
+  });
+
+  it("reads an attendee's local time from the trip they are on that week", () => {
+    const container = renderToDiv(
+      state({
+        calendarAudience: { conference: "NeurIPS 2026" },
+        calendarSelectedEventId: "evt-1",
+        calendarEvents: [
+          { id: "evt-1", summary: "Lab meeting", start: "2026-09-15T14:00:00Z", attendees: [] },
+        ],
+        adminBotData: {
+          ...state().adminBotData,
+          members: [member({ location: "Toronto", trips: [berlin] })],
+        },
+      } as Partial<AppViewState>),
+    );
+    const matches = container.querySelector('[data-testid="calendar-matches"]');
+    expect(matches?.textContent).toContain("in Berlin");
+    expect(matches?.textContent).toMatch(/(?:16|4):00/u);
+  });
+});

@@ -551,3 +551,459 @@
     justify-content: flex-start;
   }
 }
+
+/* The "My Projects" pointer in the facts section. A button, not an anchor: it switches tabs inside
+   the app rather than navigating, so it must not offer a URL it cannot honour. Styled as the link
+   it reads as. */
+.logistics-facts__link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.logistics-facts__link:hover {
+  color: var(--accent-hover, var(--accent));
+}
+
+/* Stamped, not typed. Rendered as text so it reads as a fact about the row rather than as an empty
+   control someone is meant to fill in. */
+.logistics-meeting__submitted {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+  white-space: nowrap;
+}
+
+/* Where a request stands.
+   Built on the same token set as .pill so a status here reads as the same kind of object as every
+   other badge in the UI, but kept as its own class: these five are a closed set with fixed meanings,
+   and a status that could be given any pill modifier at the call site would drift the day someone
+   adds a sixth. */
+
+.logistics-status {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 2px var(--space-2);
+  background: var(--bg-muted);
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Waiting on the lab: the accent, because it is the one state that is somebody's to act on. */
+.logistics-status--submitted {
+  border-color: var(--accent-muted);
+  color: var(--accent);
+}
+
+.logistics-status--in_progress {
+  border-color: var(--warn-muted);
+  background: var(--warn-subtle);
+  color: var(--warn);
+}
+
+.logistics-status--completed {
+  border-color: var(--ok-muted);
+  background: var(--ok-subtle);
+  color: var(--ok);
+}
+
+.logistics-status--declined {
+  border-color: var(--danger-muted);
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+/* Withdrawn is the requester's own doing and needs no color: it is a row to skip, not a warning. */
+.logistics-status--withdrawn {
+  color: var(--muted);
+}
+
+/* A submit that landed says so in the same line the save status uses, so a member reads one place
+   for the answer to whichever button they pressed. */
+.logistics-request__status--ok {
+  color: var(--ok);
+}
+
+/* Why Submit would refuse, sitting between the status and the buttons. Not an error color: nothing
+   has gone wrong yet, the request is just not finished. */
+.logistics-request__blocked {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--warn);
+  font-size: var(--control-ui-text-sm);
+}
+
+.logistics-requests__error {
+  margin-top: var(--space-3);
+  color: var(--danger);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* The detail header: who asked, and where it stands, on one line. */
+.logistics-detail__heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+/* What the lab said back. Set apart from the request's own fields because it is the answer, not
+   part of the ask. */
+.logistics-detail__resolution {
+  margin-top: var(--space-3);
+  border-left: 2px solid var(--ok-muted);
+  padding-left: var(--space-3);
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+}
+
+.logistics-detail__file-size {
+  margin-left: var(--space-2);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.logistics-detail__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+/* The admin's answer controls, last in the card because answering is what you do after reading. */
+.logistics-detail__answer {
+  margin-top: var(--space-6);
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+}
+
+.logistics-detail__note {
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+}
+
+.logistics-detail__answer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+/* The column heading proper, above its qualifier. Sized here rather than inherited so a one-word
+   heading and a wrapped two-line one line up at the top of the row. */
+.logistics-schools__head-name {
+  display: block;
+  font-weight: 600;
+}
+
+/* Correcting a request already sent. Sits above the buttons because it changes what pressing
+   Submit means, and a member who does not read it will file the same ask twice. */
+.logistics-request__editing {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-5);
+  color: var(--warn);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* Documents that stay in Drive while a request is corrected. Sits above the drop zone, because it
+   is the answer to "where are my files" that an empty picker otherwise poses. */
+.logistics-request__kept {
+  margin-top: var(--space-3);
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* The admin queue: a spreadsheet, not a list of cards.
+   Dense on purpose -- somebody working through everyone's requests reads across a row, and the two
+   things they do (take the document, give it back signed) are the last two columns. */
+
+.logistics-queue__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.logistics-queue__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-sm);
+  white-space: nowrap;
+}
+
+.logistics-queue__note {
+  margin-top: var(--space-4);
+  max-width: 42rem;
+}
+
+/* Eight columns do not fit a laptop and squeezing them makes every cell unreadable, so the table
+   keeps its width and this wrapper scrolls -- same decision as the schools table. */
+.logistics-queue__scroll {
+  overflow-x: auto;
+  margin-top: var(--space-4);
+}
+
+.logistics-queue__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--control-ui-text-sm);
+}
+
+.logistics-queue__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  border-bottom: 1px solid var(--border-strong);
+  padding: var(--space-2) var(--space-3);
+  background: var(--card);
+  color: var(--muted-strong);
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.logistics-queue__row {
+  border-bottom: 1px solid var(--border);
+}
+
+.logistics-queue__row:hover {
+  background: var(--bg-hover);
+}
+
+/* A finished row stays readable but stops competing with the ones still waiting. */
+.logistics-queue__row[data-status="completed"],
+.logistics-queue__row[data-status="declined"],
+.logistics-queue__row[data-status="withdrawn"] {
+  color: var(--muted);
+}
+
+.logistics-queue__cell {
+  padding: var(--space-2) var(--space-3);
+  vertical-align: top;
+}
+
+/* The one column that is prose. Capped so a long explanation cannot push the actions off screen. */
+.logistics-queue__cell--context {
+  max-width: 22rem;
+  min-width: 12rem;
+}
+
+.logistics-queue__cell--documents {
+  min-width: 12rem;
+}
+
+.logistics-queue__cell--sign {
+  white-space: nowrap;
+}
+
+.logistics-queue__files {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.logistics-queue__file {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--accent);
+  word-break: break-word;
+}
+
+.logistics-queue__file.muted {
+  color: var(--muted);
+}
+
+.logistics-queue__size {
+  margin-left: var(--space-2);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+.logistics-queue__status {
+  min-height: var(--control-h-sm);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0 var(--space-2);
+  background: var(--bg);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* The label is the button: the input inside it is sr-only, so the whole control is one target. */
+.logistics-queue__upload {
+  cursor: pointer;
+}
+
+.logistics-queue__upload[data-busy] {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.logistics-queue__sent {
+  color: var(--ok);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* Profile Overview — the admin's sweep of who has filled their own record in.
+   Shares the queue's density decisions: a row is scanned, not read. */
+
+.profile-overview__heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.profile-overview__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.profile-overview__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-sm);
+}
+
+.profile-overview__notice {
+  margin-top: var(--space-3);
+  color: var(--ok);
+  font-size: var(--control-ui-text-sm);
+}
+
+.profile-overview__scroll {
+  overflow-x: auto;
+  margin-top: var(--space-4);
+}
+
+.profile-overview__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--control-ui-text-sm);
+}
+
+.profile-overview__head {
+  border-bottom: 1px solid var(--border-strong);
+  padding: var(--space-2) var(--space-3);
+  color: var(--muted-strong);
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.profile-overview__row {
+  border-bottom: 1px solid var(--border);
+}
+
+/* A finished row stays legible but stops competing with the ones that need a conversation. */
+.profile-overview__row[data-complete="true"] {
+  color: var(--muted);
+}
+
+.profile-overview__cell {
+  padding: var(--space-2) var(--space-3);
+  vertical-align: top;
+}
+
+.profile-overview__cell--missing {
+  max-width: 24rem;
+}
+
+.profile-overview__status {
+  margin-left: var(--space-2);
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* The bar is the scannable part; the percentage beside it is for the row you stop on. */
+.profile-overview__progress {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 9rem;
+}
+
+.profile-overview__bar {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  overflow: hidden;
+}
+
+.profile-overview__bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--warn);
+}
+
+.profile-overview__bar.is-complete .profile-overview__bar-fill {
+  background: var(--ok);
+}
+
+.profile-overview__percent {
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-xs);
+  min-width: 2.5rem;
+  text-align: right;
+}
+
+.profile-overview__done {
+  color: var(--ok);
+  font-size: var(--control-ui-text-xs);
+}
+
+/* Named blanks rather than a count: the name is the thing an admin repeats to the member. */
+.profile-overview__missing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.profile-overview__missing li {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 0 var(--space-2);
+  color: var(--muted-strong);
+  font-size: var(--control-ui-text-xs);
+  white-space: nowrap;
+}
+
+.profile-overview__timeline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.profile-overview__timeline.is-short {
+  color: var(--warn);
+}
+
+.profile-overview__flag {
+  font-size: var(--control-ui-text-xs);
+  text-transform: lowercase;
+}

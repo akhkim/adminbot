@@ -36,22 +36,41 @@ import { html, nothing } from "lit";
 import { i18n, t } from "../../../i18n/index.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import { icons } from "../../icons.ts";
-import { aoeInstantMs, MS_DAY, upcomingMajorDeadlines, urgencyOf } from "../data/deadline-time.ts";
-import { renderMemberSelect } from "./member-select.ts";
-import {
-  renderTimeAllocationChart,
-  type TimeAllocationInterval,
-  type TimeAllocationTask as ChartTask,
-} from "./time-allocation-chart.ts";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
 import {
   availabilityRows,
   milestoneRows,
   timeOffRows,
+  tripRows,
+  whereBins,
   type AvailabilityRow,
   type MilestoneRow,
   type TimeOffRow,
+  type TripRow,
 } from "../data/availability.ts";
+import {
+  allUpcomingConferences,
+  aoeInstantMs,
+  MS_DAY,
+  upcomingMajorDeadlines,
+  urgencyOf,
+} from "../data/deadline-time.ts";
+import {
+  AOE_TIMEZONE,
+  localTimezone,
+  timezoneOptions,
+} from "../data/timezones.ts";
+import { renderMemberSelect } from "./member-select.ts";
+import {
+  renderTrips,
+  renderWhereStrip,
+  type TripDraft,
+} from "./time-availability.trips.ts";
+import {
+  renderTimeAllocationChart,
+  type TimeAllocationInterval,
+  type TimeAllocationTask as ChartTask,
+} from "./time-allocation-chart.ts";
 
 type TimeAllocationTask = {
   key: string;
@@ -176,15 +195,39 @@ export type MilestoneDraft = {
   date: string;
   label: string;
   link: string;
+  /**
+   * The wall-clock cutoff on `date`, "HH:MM", and the zone it is read in.
+   *
+   * Both optional, and refused unless they arrive together: a bare time is the mistake the pair
+   * exists to prevent. A member typing "23:59" for a deadline stated Anywhere-on-Earth means
+   * something seventeen hours later than the same digits read in Toronto, and a stored number with
+   * no zone cannot be corrected later because nobody knows which one was meant.
+   *
+   * Left blank the milestone is a whole-day deadline, which is what every row was before this.
+   */
+  time: string;
+  timezone: string;
 };
 
-export const EMPTY_MILESTONE_DRAFT: MilestoneDraft = { date: "", label: "", link: "" };
+export const EMPTY_MILESTONE_DRAFT: MilestoneDraft = {
+  date: "",
+  label: "",
+  link: "",
+  time: "",
+  // Prefilled with the browser's own zone rather than blank. Someone who types a time almost
+  // always means their own clock, and a zone they have to go and find first is how a field ends up
+  // answered wrong or left empty.
+  timezone: localTimezone(),
+};
 
 /** Everything the editor may rewrite. An omitted list is left as it is. */
 export type SchedulePatch = {
   availability?: AvailabilityRow[];
   time_off?: TimeOffRow[];
   milestones?: MilestoneRow[];
+  trips?: TripRow[];
+  /** Snapshot conferences this member has hidden from their own panel. */
+  dismissed_deadlines?: string[];
   /**
    * The overall note, sent alone so saving prose can never rewrite a list.
    *
@@ -217,6 +260,9 @@ export type AdminBotTimeAvailabilityProps = {
    * (adminBotScheduleMemberFields), so this is the affordance for a rule already enforced there.
    */
   viewerIsAdmin: boolean;
+  /** The trips log's draft, kept out here so a re-render cannot wipe half-typed input. */
+  tripDraft?: TripDraft;
+  onTripDraftChange?: (draft: TripDraft) => void;
   /** The Jinesis-commitment form's draft. Its category is always "jinesis". */
   draft: TimeAvailabilityDraft;
   onDraftChange: (draft: TimeAvailabilityDraft) => void;
@@ -248,9 +294,14 @@ const CHART_NEUTRAL_COLOR = "#9AA0AA";
 
 // How many rows the side table shows before it stops being a summary.
 const BIG_DEADLINE_LIMIT = 6;
-// Two, matching the profile page's deadline summary: enough to see what is next and what follows
-// it, few enough to stay one line on the banner.
-const CONFERENCE_DEADLINE_COUNT = 2;
+// Four, and archival only.
+//
+// Two was "what is next" -- fine on a dashboard card, too short here, where the panel sits beside a
+// timeline someone is planning a term against and the question is which submission cycles fall
+// inside it. Archival only because that is the split the planning turns on: an archival deadline
+// consumes the paper, so it is a commitment to schedule around, while a workshop is an option. The
+// full board still lists every venue of both kinds.
+const CONFERENCE_DEADLINE_COUNT = 4;
 
 /**
  * How far away a deadline is, counted in calendar days.
@@ -367,6 +418,45 @@ export function timeOffLabel(row: TimeOffRow): string {
  * reduced rate, and there is no stored number saying by how much — guessing one would put a made-up
  * figure on a chart that is otherwise entirely what they typed.
  */
+/**
+ * Partial time-away rows as chart series.
+ *
+ * Only the ones that state their hours. A whole-day row is not a series -- it removes days from the
+ * bin rather than stacking on it -- and a partial row written before the form asked for a number
+ * still has nothing to draw, so it stays where it always was: in the table, not on the chart.
+ *
+ * They stack alongside the Jinesis work because that is what they are competing with. A member with
+ * thirty hours of lab work and twelve hours of coursework is not a member with thirty hours of lab
+ * work, and drawing only the first of those was the reason capacity on this chart read as headroom
+ * that did not exist.
+ */
+function awayTasks(rows: readonly TimeOffRow[]): TimeAllocationTask[] {
+  return rows.flatMap((row) => {
+    const hours = row.hours_per_week;
+    if (row.availability !== "partial" || !hours || !Number.isFinite(hours) || hours <= 0) {
+      return [];
+    }
+    const start = dateMs(row.start);
+    const end = dateMs(row.end);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) {
+      return [];
+    }
+    const name = timeOffLabel(row);
+    return [
+      {
+        // Namespaced so a course called "Thesis" can never merge into a Jinesis project of the
+        // same name, which would put non-lab hours under a lab project's color and total.
+        key: `away:${name}`,
+        name,
+        start: row.start,
+        end: row.end,
+        hours,
+        ...(row.note?.trim() ? { note: row.note.trim() } : {}),
+      },
+    ];
+  });
+}
+
 function suppressedRanges(rows: readonly TimeOffRow[]): Array<{ start: string; end: string }> {
   return rows
     .filter((row) => row.availability !== "partial")
@@ -662,6 +752,15 @@ export function draftError(draft: TimeAvailabilityDraft): string | null {
       return t("adminbotTimeAvailability.form.errorHours");
     }
   }
+  // A partial row has to say by how much. Without a figure it is the claim "around, but less",
+  // which no chart can draw and no admin can plan against -- a twelve-hour course and a standing
+  // Tuesday call used to record the identical row.
+  if (draft.category !== "jinesis" && !draft.wholeDay) {
+    const away = Number(draft.hoursPerWeek);
+    if (!draft.hoursPerWeek.trim() || !Number.isFinite(away) || away <= 0 || away > 168) {
+      return t("adminbotTimeAvailability.form.errorAwayHours");
+    }
+  }
   if (draft.category === "other" && !draft.customLabel.trim()) {
     return t("adminbotTimeAvailability.form.errorCustomLabel");
   }
@@ -691,7 +790,27 @@ export function milestoneDraftError(draft: MilestoneDraft): string | null {
   if (!draft.label.trim()) {
     return t("adminbotTimeAvailability.milestones.errorLabel");
   }
+  // A time with no zone is refused rather than stored and guessed at later; see MilestoneDraft.
+  // The other way round is allowed to pass here because the zone is prefilled and a member who
+  // never touches the time field would otherwise meet an error about a control they did not use --
+  // milestoneToRow drops a zone with no time.
+  if (draft.time && !draft.timezone.trim()) {
+    return t("adminbotTimeAvailability.milestones.errorTimezone");
+  }
   return linkError(draft.link);
+}
+
+/** The stored row a milestone draft becomes. The clock is stored only when it is a complete pair. */
+export function milestoneToRow(draft: MilestoneDraft): MilestoneRow {
+  const link = draft.link.trim();
+  const time = draft.time.trim();
+  const timezone = draft.timezone.trim();
+  return {
+    date: draft.date,
+    label: draft.label.trim(),
+    ...(link ? { link } : {}),
+    ...(time && timezone ? { time, timezone } : {}),
+  };
 }
 
 /** Splits the draft into the list it belongs on. Jinesis costs hours; everything else is time away. */
@@ -729,6 +848,9 @@ export function draftToPatch(
         // Only "none" suppresses the Jinesis hours underneath; "partial" is recorded and shown but
         // never subtracted, because no stored figure says by how much.
         availability: draft.wholeDay ? "none" : "partial",
+        // Only on a partial row: a whole-day row zeroes the week by definition, so hours on it
+        // would be a second answer to a question already settled.
+        ...(draft.wholeDay ? {} : { hours_per_week: Number(draft.hoursPerWeek) }),
         ...(label ? { label } : {}),
         ...(note ? { note } : {}),
         ...(link ? { link } : {}),
@@ -762,10 +884,13 @@ type CommitmentFormProps = {
     update: (patch: Partial<TimeAvailabilityDraft>) => void;
     field: (key: keyof TimeAvailabilityDraft) => (event: Event) => void;
   }) => unknown;
+  // Rendered inside the actions row, before the submit button. The away form uses it to put its
+  // hint on the same line as the action it explains, left of the button.
+  footer?: unknown;
 };
 
 function renderCommitmentForm(form: CommitmentFormProps) {
-  const { props, existing, draft, onDraftChange, testId, titleKey, head } = form;
+  const { props, existing, draft, onDraftChange, testId, titleKey, head, footer } = form;
   const error = draftError(draft);
   const touched = Boolean(draft.start || draft.end || draft.hoursPerWeek || draft.customLabel);
   const update = (patch: Partial<TimeAvailabilityDraft>) => onDraftChange({ ...draft, ...patch });
@@ -809,6 +934,7 @@ function renderCommitmentForm(form: CommitmentFormProps) {
           <input type="text" .value=${draft.note} @input=${field("note")} />
         </label>
         <div class="adminbot-time-availability__form-actions">
+          ${footer ?? nothing}
           ${error && touched
             ? html`<span class="adminbot-time-availability__form-error" role="alert"
                 >${error}</span
@@ -927,12 +1053,27 @@ function renderTimeAwayEditor(
         />
         <span>${t("adminbotTimeAvailability.form.wholeDay")}</span>
       </label>
-      <p class="adminbot-time-availability__form-hint">
-        ${draft.wholeDay
-          ? t("adminbotTimeAvailability.form.wholeDayHint")
-          : t("adminbotTimeAvailability.form.partialHint")}
-      </p>
+      ${draft.wholeDay
+        ? nothing
+        : html`<label class="adminbot-form__field">
+            <span>${t("adminbotTimeAvailability.form.awayHours")}</span>
+            <input
+              type="number"
+              min="0.5"
+              max="168"
+              step="0.5"
+              required
+              data-testid="time-away-hours"
+              .value=${draft.hoursPerWeek}
+              @input=${field("hoursPerWeek")}
+            />
+          </label>`}
     `,
+    footer: html`<p class="adminbot-time-availability__form-hint">
+      ${props.awayDraft.wholeDay
+        ? t("adminbotTimeAvailability.form.wholeDayHint")
+        : t("adminbotTimeAvailability.form.partialHint")}
+    </p>`,
   });
 }
 
@@ -1037,51 +1178,290 @@ function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: M
       <p class="adminbot-time-availability__form-hint">
         ${t("adminbotTimeAvailability.milestones.formHint")}
       </p>
+      <form
+        class="adminbot-form adminbot-time-availability__form adminbot-time-availability__milestone-form"
+        data-testid="time-availability-milestone-form"
+        @submit=${(event: Event) => {
+          event.preventDefault();
+          if (milestoneDraftError(draft)) {
+            return;
+          }
+          props.onSaveSchedule(props.selectedMemberId, {
+            milestones: [...existing, milestoneToRow(draft)],
+          });
+        }}
+      >
+        <label class="adminbot-form__field">
+          <span>${t("adminbotTimeAvailability.milestones.date")}</span>
+          <input type="date" .value=${draft.date} @input=${field("date")} />
+        </label>
+        <!-- Time and zone sit together and immediately after the date, because they are one answer
+           split across three controls. Both are optional: a thesis deadline is usually a day, and
+           forcing a minute onto it would make people invent one. -->
+        <label class="adminbot-form__field">
+          <span>${t("adminbotTimeAvailability.milestones.time")}</span>
+          <input
+            type="time"
+            data-testid="time-availability-milestone-time"
+            .value=${draft.time}
+            @input=${field("time")}
+          />
+        </label>
+        <label class="adminbot-form__field">
+          <span>${t("adminbotTimeAvailability.milestones.timezone")}</span>
+          <!-- A select rather than a datalist: one zone per form, and a select gives a dropdown
+             whose arrow sits where a dropdown's arrow is supposed to. Only the common zones are
+             offered -- six hundred slash-and-underscore names are a wall of text nobody scrolls --
+             and the viewer's own zone leads, labelled as theirs. -->
+          <select
+            data-testid="time-availability-milestone-timezone"
+            .value=${draft.timezone}
+            @change=${(event: Event) => {
+              const zone = (event.currentTarget as HTMLSelectElement).value;
+              props.onMilestoneDraftChange({ ...draft, timezone: zone });
+            }}
+          >
+            ${timezoneOptions(draft.timezone).map(
+              (group) => html`<optgroup label=${group.label}>
+                ${group.options.map(
+                  (option) => html`<option value=${option.zone}>${option.label}</option>`,
+                )}
+              </optgroup>`,
+            )}
+          </select>
+        </label>
+        <label class="adminbot-form__field">
+          <span>${t("adminbotTimeAvailability.milestones.label")}</span>
+          <input
+            type="text"
+            data-testid="time-availability-milestone-label"
+            .value=${draft.label}
+            @input=${field("label")}
+          />
+        </label>
+        <label class="adminbot-form__field">
+          <span>${t("adminbotTimeAvailability.form.link")}</span>
+          <input type="url" .value=${draft.link} @input=${field("link")} />
+        </label>
+        <div class="adminbot-time-availability__form-actions">
+          ${error && touched
+            ? html`<span class="adminbot-time-availability__form-error" role="alert"
+                >${error}</span
+              >`
+            : nothing}
+          <button
+            type="submit"
+            class="btn primary"
+            data-testid="time-availability-milestone-add"
+            ?disabled=${props.saving || error !== null}
+          >
+            ${t("adminbotTimeAvailability.milestones.submit")}
+          </button>
+        </div>
+      </form>
+    </section>
+  `;
+}
+
+/**
+ * How a "HH:MM in <zone>" wall clock lands on the real timeline.
+ *
+ * Not `Date.parse` with an offset appended: the offset for a zone is not a constant, and half the
+ * deadlines in a research year fall on the wrong side of a daylight-saving change from the one
+ * a fixed offset would have been read at. Asked of Intl at the instant in question instead, then
+ * asked again at the corrected instant -- the second pass only matters when the first guess landed
+ * on the other side of a transition, which is exactly the case a single pass gets wrong.
+ */
+function zoneOffsetMs(instant: number, timezone: string): number {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: timezone,
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    }).formatToParts(new Date(instant));
+    const part = (type: Intl.DateTimeFormatPartTypes) =>
+      Number(parts.find((candidate) => candidate.type === type)?.value);
+    const asUtc = Date.UTC(
+      part("year"),
+      part("month") - 1,
+      part("day"),
+      // Intl can render midnight as hour 24 under hour12:false; %24 folds it back onto the day
+      // Date.UTC already has from the date parts.
+      part("hour") % 24,
+      part("minute"),
+      part("second"),
+    );
+    return asUtc - instant;
+  } catch {
+    return Number.NaN;
+  }
+}
+
+function zonedInstantMs(date: string, time: string, timezone: string): number {
+  const naive = Date.parse(`${date}T${time}:00Z`);
+  if (!Number.isFinite(naive)) {
+    return Number.NaN;
+  }
+  let instant = naive;
+  for (let pass = 0; pass < 2; pass += 1) {
+    const offset = zoneOffsetMs(instant, timezone);
+    if (!Number.isFinite(offset)) {
+      return Number.NaN;
+    }
+    instant = naive - offset;
+  }
+  return instant;
+}
+
+/** The instant a milestone actually falls at: its stated clock, or the end of its day. */
+function milestoneInstant(row: MilestoneRow): number {
+  if (row.time && row.timezone) {
+    const exact = zonedInstantMs(row.date, row.time, row.timezone);
+    if (Number.isFinite(exact)) {
+      return exact;
+    }
+  }
+  // A date with no time is read as the end of that day, so "today" stays today rather than
+  // turning critical at midnight.
+  return aoeInstantMs(`${row.date} 23:59:59`);
+}
+
+/** "23:59 AoE" / "17:00 America/Toronto", or nothing for a whole-day deadline. */
+function clockLabel(time: string | undefined, timezone: string | undefined) {
+  if (!time || !timezone) {
+    return nothing;
+  }
+  const zone =
+    timezone === AOE_TIMEZONE ? t("adminbotTimeAvailability.milestones.aoeZone") : timezone;
+  return html`<span class="adminbot-time-availability__deadline-clock">${time} ${zone}</span>`;
+}
+
+/**
+ * A venue the member could add to their own panel.
+ *
+ * Everything upcoming in the snapshot except what the panel already shows: the four automatic rows
+ * are excluded because an "add" list whose first four entries are the four rows above it answers
+ * the wrong question, and so is anything already on the member's own list.
+ *
+ * Deliberately wider than the four. Those are archival conferences, which is the right default and
+ * a bad restriction -- the venue somebody actually needs on their timeline is as often a workshop
+ * with its own date, or the fifth conference down. Narrowing the picker to the same rule that fills
+ * the panel would leave it offering nothing exactly when the panel was already enough.
+ */
+function addableVenues(
+  now: number,
+  milestones: readonly MilestoneRow[],
+  dismissed: readonly string[],
+) {
+  const hidden = new Set(dismissed.map((name) => name.trim()));
+  const shown = new Set(
+    upcomingMajorDeadlines(now, CONFERENCE_DEADLINE_COUNT, { archivalOnly: true })
+      .filter((entry) => !hidden.has(entry.venue.name.trim()))
+      .map((entry) => entry.venue.id),
+  );
+  // Matched on the label because that is what an added venue is stored as -- the milestone list
+  // holds no venue id, and inventing one would mean a second identity for the same row.
+  const added = new Set(milestones.map((row) => row.label.trim()));
+  // Conferences only. The snapshot is 107 entries and 101 of them are workshops sharing a handful
+  // of instants, so an all-venues picker was a hundred NeurIPS workshops with the conference
+  // somebody actually wanted buried among them.
+  return allUpcomingConferences(now).filter(
+    (entry) => !shown.has(entry.venue.id) && !added.has(entry.venue.name.trim()),
+  );
+}
+
+/**
+ * The "add another conference" control.
+ *
+ * The four nearest archival deadlines arrive on their own, which covers the common case and none of
+ * the others: a member submitting to a venue in the sixth slot, or to one the lab does not treat as
+ * major, had no way to put it on their own timeline short of retyping the date as a personal
+ * milestone and getting the AoE cutoff wrong. Picking it here copies the snapshot's own date, time
+ * and zone onto their milestone list, so the row is exact and it is theirs -- removable, unlike the
+ * four the panel shows on everyone's page.
+ *
+ * The selection lives in the DOM rather than in app state on purpose: it is discarded the moment it
+ * is used, and a draft that survives a re-render would outlive the reason anyone chose it.
+ */
+function renderAddConference(
+  props: AdminBotTimeAvailabilityProps,
+  milestones: readonly MilestoneRow[],
+  now: number,
+  dismissed: readonly string[],
+) {
+  const options = addableVenues(now, milestones, dismissed);
+  if (!options.length) {
+    return nothing;
+  }
+  return html`
+    <!-- Styled as one of the tab's editors and deliberately not classed as one: it lives in the
+         deadlines panel, above them, and .adminbot-time-availability__form is how the commitment
+         form is found. Sharing that class would have made "the form" ambiguous. -->
+    <section
+      class="adminbot-time-availability__deadline-add"
+      data-testid="time-availability-add-conference-section"
+    >
+      <div class="card-title">${t("adminbotTimeAvailability.milestones.addConference")}</div>
+      <p class="adminbot-time-availability__form-hint">
+        ${t("adminbotTimeAvailability.milestones.addConferenceHint")}
+      </p>
     <form
-      class="adminbot-form adminbot-time-availability__form adminbot-time-availability__milestone-form"
-      data-testid="time-availability-milestone-form"
+      class="adminbot-form adminbot-time-availability__deadline-form"
+      data-testid="time-availability-add-conference"
       @submit=${(event: Event) => {
         event.preventDefault();
-        if (milestoneDraftError(draft)) {
+        const form = event.currentTarget as HTMLFormElement;
+        const select = form.querySelector("select");
+        const picked = options.find((entry) => entry.venue.id === select?.value);
+        if (!picked) {
           return;
         }
-        const link = draft.link.trim();
+        const { venue } = picked;
         props.onSaveSchedule(props.selectedMemberId, {
           milestones: [
-            ...existing,
-            { date: draft.date, label: draft.label.trim(), ...(link ? { link } : {}) },
+            ...milestones,
+            {
+              date: venue.deadline_aoe.slice(0, 10),
+              label: venue.name,
+              // The snapshot states every deadline in AoE, so the clock is copied across with the
+              // zone that makes it mean what the conference said.
+              time: venue.deadline_aoe.slice(11, 16),
+              timezone: AOE_TIMEZONE,
+              ...(venue.link ? { link: venue.link } : {}),
+            },
           ],
         });
       }}
     >
-      <label class="adminbot-form__field">
-        <span>${t("adminbotTimeAvailability.milestones.date")}</span>
-        <input type="date" .value=${draft.date} @input=${field("date")} />
-      </label>
-      <label class="adminbot-form__field">
-        <span>${t("adminbotTimeAvailability.milestones.label")}</span>
-        <input
-          type="text"
-          data-testid="time-availability-milestone-label"
-          .value=${draft.label}
-          @input=${field("label")}
-        />
-      </label>
-      <label class="adminbot-form__field">
-        <span>${t("adminbotTimeAvailability.form.link")}</span>
-        <input type="url" .value=${draft.link} @input=${field("link")} />
+      <label class="adminbot-form__field" for="time-availability-conference-pick">
+        <span>${t("adminbotTimeAvailability.milestones.conference")}</span>
+        <select
+          id="time-availability-conference-pick"
+          data-testid="time-availability-conference-pick"
+        >
+          ${options.map(
+            (entry) => html`
+              <option value=${entry.venue.id}>
+                ${entry.venue.name} · ${tableDate(entry.venue.deadline_aoe.slice(0, 10))}
+              </option>
+            `,
+          )}
+        </select>
       </label>
       <div class="adminbot-time-availability__form-actions">
-        ${error && touched
-          ? html`<span class="adminbot-time-availability__form-error" role="alert">${error}</span>`
-          : nothing}
         <button
           type="submit"
           class="btn primary"
-          data-testid="time-availability-milestone-add"
-          ?disabled=${props.saving || error !== null}
+          data-testid="time-availability-conference-add"
+          ?disabled=${props.saving}
         >
-          ${t("adminbotTimeAvailability.milestones.submit")}
+          <span aria-hidden="true">${icons.plus}</span>
+          ${t("adminbotTimeAvailability.milestones.submitConference")}
         </button>
       </div>
     </form>
@@ -1090,51 +1470,56 @@ function renderMilestoneEditor(props: AdminBotTimeAvailabilityProps, existing: M
 }
 
 /**
- * The side panel: this member's own dated milestones, and only theirs.
+ * The side panel: the four nearest archival conference deadlines, plus this member's own dates.
  *
- * It used to merge in the lab's conference deadlines from the bundled venue snapshot. That made the
- * panel read as a shared board — the same five conference dates on all 159 schedules — which buried
- * the two or three dates that are actually personal to the member whose page you are looking at,
- * and made "remove" available on some rows and not others for no reason a reader could see. The
- * Deadlines tab already lists every conference date, for everyone, with countdowns; this panel is
- * the part that cannot come from there.
+ * It briefly listed only the member's own rows. That went too far in the other direction: the
+ * conference dates are what a term is planned around, and a timeline with no marker for the next
+ * submission cycle makes a member work out for themselves whether the block they are looking at
+ * lands before or after it. What made the earlier version unreadable was volume and sameness --
+ * every workshop under every conference, identical on all 159 schedules. Four archival conferences
+ * is the part that is actually shared, and everything else is one click away on the Deadlines tab
+ * or added deliberately through the picker below.
  */
 function renderBigDeadlines(
   milestones: readonly MilestoneRow[],
   props: AdminBotTimeAvailabilityProps,
   editable: boolean,
+  dismissed: readonly string[],
 ) {
   const now = Date.now();
   const today = new Date(now).toISOString().slice(0, 10);
-  // The two nearest major conference deadlines are always on the banner, whether or not this
-  // member has entered anything: they are the dates the whole lab plans around, and a member
-  // reading their own timeline is asking "how much room do I have before the next one".
   // upcomingMajorDeadlines is the same helper the Deadlines board and the dashboard summary use,
   // so the three surfaces can never disagree about which conference is next.
-  const conferences = upcomingMajorDeadlines(now, CONFERENCE_DEADLINE_COUNT).map((entry) => ({
+  const hidden = new Set(dismissed.map((name) => name.trim()));
+  const conferences = upcomingMajorDeadlines(now, CONFERENCE_DEADLINE_COUNT, {
+    archivalOnly: true,
+  })
+    .filter((entry) => !hidden.has(entry.venue.name.trim()))
+    .map((entry) => ({
     date: entry.venue.deadline_aoe.slice(0, 10),
     instant: entry.instant,
     label: entry.venue.name,
     link: entry.venue.link,
-    own: false,
-  }));
+    time: entry.venue.deadline_aoe.slice(11, 16),
+      timezone: AOE_TIMEZONE,
+      own: false,
+    }));
   const mine = milestones
     .filter((row) => row.date >= today)
     .map((row) => ({
       date: row.date,
-      // A personal milestone is a date with no time on it. Read as end of that day, so "today"
-      // stays today rather than turning critical at midnight.
-      instant: aoeInstantMs(`${row.date} 23:59:59`),
+      instant: milestoneInstant(row),
       label: row.label,
       link: row.link,
+      time: row.time,
+      timezone: row.timezone,
       own: true,
     }))
     .slice(0, BIG_DEADLINE_LIMIT);
   // Conferences are added after the member's own rows are capped, so a full personal list can
-  // never push them off the banner.
-  const rows = [...mine, ...conferences].toSorted((left, right) =>
-    left.date.localeCompare(right.date),
-  );
+  // never push them off the banner. Sorted by instant rather than by date so two things on the
+  // same day fall in the order they actually happen.
+  const rows = [...mine, ...conferences].toSorted((left, right) => left.instant - right.instant);
 
   return html`
     <aside class="adminbot-time-availability__deadlines" data-testid="time-availability-deadlines">
@@ -1143,42 +1528,68 @@ function renderBigDeadlines(
         ${t("adminbotTimeAvailability.milestones.hint")}
       </p>
       <ul class="adminbot-time-availability__deadline-list">
-            ${rows.map(
-              (row) => html`
-                <li data-own=${String(row.own)} data-urgency=${urgencyOf(row.instant, now)}>
-                  <span class="adminbot-time-availability__deadline-away">
-                    ${daysAwayLabel(row.date, now)}
-                  </span>
-                  <span class="adminbot-time-availability__deadline-label">${row.label}</span>
-                  <span class="adminbot-time-availability__deadline-date">
-                    ${tableDate(row.date)}
-                  </span>
+        ${rows.map(
+          (row) => html`
+            <li data-own=${String(row.own)} data-urgency=${urgencyOf(row.instant, now)}>
+              <!-- Three explicit rows rather than grid placement per span. The link and the remove
+                   button were both pinned to the same cell, so they drew on top of each other, and
+                   the AoE clock was held on one line inside a 15rem tile, so it was cut off at the
+                   border. Countdown and actions share the top row; the name and the date each get
+                   their own and may wrap. -->
+              <div class="adminbot-time-availability__deadline-top">
+                <span class="adminbot-time-availability__deadline-away">
+                  ${daysAwayLabel(row.date, now)}
+                </span>
+                <span class="adminbot-time-availability__deadline-actions">
                   ${renderLink(row.link)}
-                  ${editable && row.own
-                    ? html`<button
-                        type="button"
-                        class="btn btn--sm"
-                        ?disabled=${props.saving}
-                        @click=${() =>
-                          props.onSaveSchedule(props.selectedMemberId, {
-                            milestones: milestones.filter(
-                              (candidate) =>
-                                !(candidate.date === row.date && candidate.label === row.label),
-                            ),
-                          })}
-                      >
-                        ${t("adminbotTimeAvailability.form.remove")}
-                      </button>`
-                    : nothing}
-                </li>
-              `,
-            )}
+                  <!-- Both kinds of row can go. A member's own row is deleted; one of the lab's
+                       four is hidden for this member only, since the snapshot is shared and
+                       nobody's panel should edit everyone else's. Re-adding it from the picker
+                       below brings it back as their own row. -->
+                  ${editable
+                ? html`<button
+                    type="button"
+                    class="btn btn--sm"
+                    data-testid=${`time-availability-deadline-remove-${row.own ? "own" : "preset"}`}
+                    ?disabled=${props.saving}
+                    title=${row.own ? "" : t("adminbotTimeAvailability.milestones.removePresetHint")}
+                    @click=${() =>
+                      props.onSaveSchedule(
+                        props.selectedMemberId,
+                        row.own
+                          ? {
+                              milestones: milestones.filter(
+                                (candidate) =>
+                                  !(candidate.date === row.date && candidate.label === row.label),
+                              ),
+                            }
+                          : { dismissed_deadlines: [...dismissed, row.label] },
+                      )}
+                  >
+                    ${row.own
+                      ? t("adminbotTimeAvailability.form.remove")
+                      : t("adminbotTimeAvailability.milestones.removePreset")}
+                  </button>`
+                : nothing}
+                </span>
+              </div>
+              <span class="adminbot-time-availability__deadline-label">${row.label}</span>
+              <div class="adminbot-time-availability__deadline-when">
+                <span class="adminbot-time-availability__deadline-date">
+                  ${tableDate(row.date)}
+                </span>
+                ${clockLabel(row.time, row.timezone)}
+              </div>
+            </li>
+          `,
+        )}
       </ul>
       ${mine.length
         ? nothing
         : html`<p class="adminbot-time-availability__empty-note">
             ${t("adminbotTimeAvailability.milestones.empty")}
           </p>`}
+      ${editable ? renderAddConference(props, milestones, now, dismissed) : nothing}
     </aside>
   `;
 }
@@ -1290,7 +1701,11 @@ function renderOtherTable(
                 <td>${tableDate(row.end)}</td>
                 <td>
                   ${row.availability === "partial"
-                    ? t("adminbotTimeAvailability.tables.partial")
+                    ? row.hours_per_week
+                      ? t("adminbotTimeAvailability.tables.partialHours", {
+                          hours: formatNumber(row.hours_per_week),
+                        })
+                      : t("adminbotTimeAvailability.tables.partial")
                     : t("adminbotTimeAvailability.tables.wholeDay")}
                 </td>
                 <td>
@@ -1368,8 +1783,22 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   const storedAvailability = selectedMember ? availabilityRows(selectedMember.availability) : [];
   const storedTimeOff = selectedMember ? timeOffRows(selectedMember.time_off) : [];
   const storedMilestones = selectedMember ? milestoneRows(selectedMember.milestones) : [];
+  const storedTrips = tripRows(selectedMember?.trips);
+  const dismissedDeadlines = (selectedMember?.dismissed_deadlines ?? []).filter(
+    (name): name is string => typeof name === "string",
+  );
+  // Built from the same bins the bars use, so "where you are" and "what you are committed to" are
+  // divided into the same periods and cannot drift apart when the range switch changes.
+  const whereStrip = whereBins(
+    rangeBins(props.range, Date.now()),
+    storedTrips,
+    selectedMember?.current_city?.trim() || selectedMember?.location?.trim() || null,
+  );
   const storedNotes = String(selectedMember?.availability_notes ?? "");
   const tasks = selectedMember ? jinesisTasks(selectedMember) : [];
+  // The chart shows both; the Jinesis table below it shows only `tasks`, because the two lists are
+  // stored separately and the table's remove button writes back to one of them.
+  const chartSeries = [...tasks, ...awayTasks(storedTimeOff)];
   const weeklyCapacity = Number(selectedMember?.hours_per_week);
   const capacity = Number.isFinite(weeklyCapacity) && weeklyCapacity > 0 ? weeklyCapacity : 0;
   // Editing is self-only: the service routes a member session to its own record, so offering the
@@ -1410,7 +1839,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
       ${selectedMember
         ? html`
             <div class="adminbot-time-availability__body">
-              ${renderBigDeadlines(storedMilestones, props, editable)}
+              ${renderBigDeadlines(storedMilestones, props, editable, dismissedDeadlines)}
               <section class="adminbot-time-availability__report">
                 <div class="adminbot-time-availability__report-header">
                   <div>
@@ -1425,28 +1854,29 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                       </span>`
                     : nothing}
                 </div>
-                ${!capacity && tasks.length
+                ${!capacity && chartSeries.length
                   ? html`<div class="callout warning" data-testid="time-availability-no-capacity">
                       ${t("adminbotTimeAvailability.capacityNoteUnset")}
                     </div>`
                   : nothing}
-                ${tasks.length
+                ${chartSeries.length
                   ? html`<div class="adminbot-time-chart-wrap">
                       ${renderTimeAllocationChart(
-                        chartTasks(tasks, capacity),
+                        chartTasks(chartSeries, capacity),
                         selectedMember.name,
                         selectedMember.id,
                         chartInterval(props.range),
                       )}
+                      ${renderWhereStrip(whereStrip)}
                     </div>`
                   : html`<div class="adminbot-time-availability__empty">
                       ${t("adminbotTimeAvailability.noAllocations")}
                     </div>`}
-                ${renderOverallNotes(props, storedNotes, editable)}
                 ${tasks.length
                   ? renderJinesisTable(tasks, storedAvailability, props, editable)
                   : nothing}
                 ${storedTimeOff.length ? renderOtherTable(storedTimeOff, props, editable) : nothing}
+                ${renderOverallNotes(props, storedNotes, editable)}
                 ${!hasAnything && !editable
                   ? html`<div class="adminbot-time-availability__empty">
                       ${t("adminbotTimeAvailability.noAllocations")}
@@ -1460,17 +1890,37 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
               ${t("adminbotTimeAvailability.empty")}
             </div>
           `}
-      ${editable
+      <!-- The editor stack. Trips render for a reader who cannot edit too, because where somebody
+           will be is the part of their schedule an admin is looking this page up for; the section
+           itself drops its form in that case. The other three are writes and nothing else, so
+           they stay behind the editable check. -->
+      ${editable || storedTrips.length
         ? html`<div class="adminbot-time-availability__editors">
-            ${renderJinesisEditor(props, {
-              availability: storedAvailability,
-              timeOff: storedTimeOff,
-            })}
-            ${renderTimeAwayEditor(props, {
-              availability: storedAvailability,
-              timeOff: storedTimeOff,
-            })}
-            ${renderMilestoneEditor(props, [...storedMilestones])}
+            ${editable
+              ? html`${renderJinesisEditor(props, {
+                  availability: storedAvailability,
+                  timeOff: storedTimeOff,
+                })}
+                ${renderTimeAwayEditor(props, {
+                  availability: storedAvailability,
+                  timeOff: storedTimeOff,
+                })}
+                ${renderMilestoneEditor(props, [...storedMilestones])}`
+              : nothing}
+            ${props.tripDraft
+              ? renderTrips({
+                  trips: storedTrips,
+                  homeLocation: selectedMember?.location ?? null,
+                  draft: props.tripDraft,
+                  onDraftChange: (draft) => props.onTripDraftChange?.(draft),
+                  editable,
+                  saving: props.saving,
+                  // Straight through the schedule write the other lists use, so a trip is stored
+                  // beside the commitments it sits next to rather than in a channel of its own.
+                  onSave: (trips) =>
+                    selectedMember && props.onSaveSchedule(selectedMember.id, { trips }),
+                })
+              : nothing}
           </div>`
         : nothing}
     </div>
