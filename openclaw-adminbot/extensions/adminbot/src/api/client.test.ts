@@ -28,7 +28,7 @@ describe("AdminBotClient", () => {
 
     await expect(
       client.createProposal({
-        type: "social_media.draft",
+        type: "email.draft",
         summary: "Draft post",
       }),
     ).resolves.toEqual({ id: "act_1" });
@@ -39,7 +39,7 @@ describe("AdminBotClient", () => {
         method: "POST",
         headers: expect.objectContaining({ Authorization: "Bearer secret-token" }),
         body: JSON.stringify({
-          type: "social_media.draft",
+          type: "email.draft",
           summary: "Draft post",
           dry_run: true,
         }),
@@ -56,7 +56,7 @@ describe("AdminBotClient", () => {
 
     await expect(
       client.createProposal({
-        type: "social_media.draft",
+        type: "email.draft",
         summary: "Draft post",
       }),
     ).rejects.toThrow(/loopback/);

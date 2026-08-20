@@ -1828,3 +1828,329 @@ export async function fetchLocationDrifts(
   const body = result.body as { drifts?: LocationDrift[] } | null;
   return { ok: true, value: body?.drifts ?? [] };
 }
+
+// ---------------------------------------------------------------------------
+// Logistics requests
+//
+// The wire for the request templates: submit one, read the ones you are allowed to read, open a
+// single one in full, and -- for an admin -- say what the lab has done about it.
+//
+// Who may read what is the service's decision, not this file's. The same GET returns one member's
+// own requests and an admin's whole queue, so there is nothing to filter here and no bug in this
+// module can show a member somebody else's letter deadlines.
+// ---------------------------------------------------------------------------
+
+export type LogisticsRequestKind = "document_signature" | "recommendation_letters" | "book_meeting";
+
+export type LogisticsRequestStatus =
+  | "submitted"
+  | "in_progress"
+  | "completed"
+  | "declined"
+  | "withdrawn";
+
+/**
+ * A file on a request.
+ *
+ * `data_base64` is present only on the read that opens one request -- the list carries names and
+ * sizes -- and is gone for good once the request is settled and the service drops its files.
+ */
+export type LogisticsAttachment = {
+  name: string;
+  size: number;
+  content_type?: string;
+  data_base64?: string;
+};
+
+export type LogisticsSchool = {
+  school: string;
+  application_deadline?: string;
+  application_deadline_time?: string;
+  letter_deadline?: string;
+  letter_deadline_time?: string;
+  deadline_timezone?: string;
+  application_status?: string;
+  letter_status?: string;
+  program?: string;
+  program_link?: string;
+  notes?: string;
+};
+
+export type LogisticsFact = { project: string; contribution: string };
+
+export type LogisticsMeeting = {
+  purpose: string;
+  preferred_time?: string;
+  timezone?: string;
+  length_minutes?: number;
+  submitted_at?: string;
+};
+
+export type LogisticsRequestInput = {
+  kind: LogisticsRequestKind;
+  documents?: LogisticsAttachment[];
+  description?: string;
+  attachments?: LogisticsAttachment[];
+  schools?: LogisticsSchool[];
+  facts?: LogisticsFact[];
+  cv_overleaf_url?: string;
+  drive_folder_url?: string;
+  meetings?: LogisticsMeeting[];
+};
+
+export type LogisticsRequest = LogisticsRequestInput & {
+  id: string;
+  member_id: string;
+  member_name: string;
+  status: LogisticsRequestStatus;
+  submitted_at: string;
+  updated_at: string;
+  /** RFC3339 instant of the soonest thing the request is working towards. Derived by the service. */
+  deadline_at?: string;
+  /** The signed copy the lab sent back, and where it went. Bytes are dropped with the rest. */
+  signed_documents?: LogisticsAttachment[];
+  signed_sent_at?: string;
+  signed_sent_to?: string;
+  /** When the stored file bytes were dropped, so "never had one" reads differently from "gone". */
+  files_cleared_at?: string;
+  resolution_note?: string;
+  decided_by?: string;
+  decided_at?: string;
+};
+
+export async function fetchLogisticsRequests(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest[]>> {
+  const result = await authedJson(baseUrl, "/logistics/requests", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { requests?: LogisticsRequest[] } | null;
+  return { ok: true, value: body?.requests ?? [] };
+}
+
+/** One request with its file bytes -- the only read that carries them. */
+export async function fetchLogisticsRequest(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest>> {
+  const result = await authedJson(
+    baseUrl,
+    `/logistics/requests/${encodeURIComponent(requestId)}`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as LogisticsRequest };
+}
+
+export async function submitLogisticsRequest(
+  input: LogisticsRequestInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest>> {
+  const result = await authedJson(baseUrl, "/logistics/requests", "POST", sessionToken, input);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as LogisticsRequest };
+}
+
+/** Replaces the content of a request nobody has picked up yet. The service refuses the rest. */
+export async function updateLogisticsRequest(
+  requestId: string,
+  input: LogisticsRequestInput,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest>> {
+  const result = await authedJson(
+    baseUrl,
+    `/logistics/requests/${encodeURIComponent(requestId)}`,
+    "PUT",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as LogisticsRequest };
+}
+
+export async function withdrawLogisticsRequest(
+  requestId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest>> {
+  const result = await authedJson(
+    baseUrl,
+    `/logistics/requests/${encodeURIComponent(requestId)}/withdraw`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as LogisticsRequest };
+}
+
+/** Admin-only; the service enforces it and refuses "withdrawn" here whoever asks. */
+export async function setLogisticsRequestStatus(
+  requestId: string,
+  status: LogisticsRequestStatus,
+  note: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest>> {
+  const result = await authedJson(
+    baseUrl,
+    `/logistics/requests/${encodeURIComponent(requestId)}/status`,
+    "PUT",
+    sessionToken,
+    { status, ...(note.trim() ? { resolution_note: note.trim() } : {}) },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as LogisticsRequest };
+}
+
+/**
+ * Returns the signed document to the member who asked for it.
+ *
+ * One call closes the request out: the service mails the file, marks the request completed and
+ * drops every stored copy. Admin-only, and the recipient is not ours to choose -- the service reads
+ * it off the roster.
+ */
+export async function sendSignedLogisticsDocuments(
+  requestId: string,
+  documents: LogisticsAttachment[],
+  note: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<LogisticsRequest>> {
+  const result = await authedJson(
+    baseUrl,
+    `/logistics/requests/${encodeURIComponent(requestId)}/signed`,
+    "POST",
+    sessionToken,
+    { documents, ...(note.trim() ? { resolution_note: note.trim() } : {}) },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as LogisticsRequest };
+}
+
+// ---------------------------------------------------------------------------
+// Profile overview
+//
+// How far along each member's own record is: the mandatory profile fields they have filled in, and
+// whether they have used the Time Availability page to say when they are working. Admin-only; the
+// service enforces it, because this is everybody's completeness at once rather than your own.
+// ---------------------------------------------------------------------------
+
+export type MemberTimelineCounts = {
+  availability: number;
+  time_off: number;
+  milestones: number;
+  trips: number;
+  total: number;
+};
+
+export type MemberProfileOverviewRow = {
+  id: string;
+  name: string;
+  status?: string;
+  privilege_level: string;
+  missing_fields: string[];
+  filled_field_count: number;
+  timeline: MemberTimelineCounts;
+  last_reminded_at?: string;
+};
+
+export type MemberProfileOverview = {
+  members: MemberProfileOverviewRow[];
+  /**
+   * How many fields count toward "complete".
+   *
+   * Taken from the service rather than counted here: it does not check `name` (a member cannot be
+   * created without one), so a client counting the field list itself would show everybody one
+   * short forever.
+   */
+  mandatoryFieldCount: number;
+};
+
+export async function fetchMemberProfileOverview(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<MemberProfileOverview>> {
+  const result = await authedJson(baseUrl, "/members/profile-overview", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as {
+    members?: MemberProfileOverviewRow[];
+    mandatory_field_count?: number;
+  } | null;
+  return {
+    ok: true,
+    value: {
+      members: body?.members ?? [],
+      mandatoryFieldCount: body?.mandatory_field_count ?? 0,
+    },
+  };
+}
+
+/** Runs the daily mandatory-fields reminder now. Recipients are server-computed, never ours. */
+export async function runMandatoryFieldsReminder(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<{ created: number; skipped: number }>> {
+  const result = await authedJson(
+    baseUrl,
+    "/members/mandatory-fields-reminder/run",
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { created?: unknown[]; skipped?: unknown[] } | null;
+  return {
+    ok: true,
+    value: { created: body?.created?.length ?? 0, skipped: body?.skipped?.length ?? 0 },
+  };
+}

@@ -16,18 +16,18 @@ function unwrap<T>(
 }
 
 describe("AdminBotService", () => {
-  it("keeps T4 candidate decisions pending until an allowed role approves the payload hash", () => {
+  it("keeps a gated action pending until an allowed role approves the payload hash", () => {
     const service = new AdminBotService();
     const proposal = unwrap(
       service.createProposal({
-        type: "candidate.accept_for_trial",
-        summary: "Accept Jane Doe for trial",
+        type: "email.send",
+        summary: "Email Jane Doe the trial offer",
         target: { name: "Jane Doe" },
       }),
     );
 
     expect(proposal.status).toBe("pending");
-    expect(proposal.risk_tier).toBe("T4");
+    expect(proposal.risk_tier).toBe("T3");
     expect(proposal.approval_requirement).toEqual({
       requires_approval: true,
       approver_roles: ["admin"],
@@ -1247,8 +1247,8 @@ describe("AdminBotService", () => {
       const publicPost = unwrap(
         service.createProposal({ type: "social_media.post_publicly", summary: "Announce" }),
       );
-      const draft = unwrap(
-        service.createProposal({ type: "social_media.draft", summary: "Draft post" }),
+      const auto = unwrap(
+        service.createProposal({ type: "member_nudge.send", summary: "Nudge the roster" }),
       );
 
       expect(publicPost.approval_requirement).toEqual({
@@ -1257,8 +1257,8 @@ describe("AdminBotService", () => {
         min_approvals: 2,
       });
       expect(publicPost.status).toBe("pending");
-      expect(draft.approval_requirement.requires_approval).toBe(false);
-      expect(draft.status).toBe("approved");
+      expect(auto.approval_requirement.requires_approval).toBe(false);
+      expect(auto.status).toBe("approved");
     });
 
     it("does not let one person satisfy a two-person quorum", async () => {
@@ -1323,7 +1323,7 @@ describe("AdminBotService", () => {
     it("leaves stored approval requirements untouched when listing pending proposals", () => {
       const service = new AdminBotService();
       const proposal = unwrap(
-        service.createProposal({ type: "reimbursement.submit", summary: "Submit expenses" }),
+        service.createProposal({ type: "paper_publish.submit", summary: "Submit to NeurIPS" }),
       );
 
       unwrap(service.listPending());
@@ -1825,9 +1825,7 @@ describe("AdminBotService", () => {
       unwrap(service.upsertLabMember({ id: "blank", name: "Blank", privilege_level: "member" }));
       const missing = unwrap(service.listMembersWithIncompleteMandatoryFields()).members[0]
         ?.missing_fields;
-      expect(missing).toEqual(
-        adminBotMandatoryProfileFields.filter((field) => field !== "name"),
-      );
+      expect(missing).toEqual(adminBotMandatoryProfileFields.filter((field) => field !== "name"));
     });
 
     it("sends one Slack reminder per member with an incomplete profile", async () => {
@@ -1980,7 +1978,9 @@ describe("AdminBotService", () => {
       expect(result.non_compliant).toBe(1);
       expect(result.nudges_created).toBe(1);
       expect(reviewSlackProfilePhoto).toHaveBeenCalledTimes(2);
-      const reviewedMember = unwrap(service.listLabMembers()).members.find((member) => member.id === "bad");
+      const reviewedMember = unwrap(service.listLabMembers()).members.find(
+        (member) => member.id === "bad",
+      );
       expect(reviewedMember?.profile_photo_review?.assessment?.issues).toContain("face_not_clear");
     });
 
@@ -2008,7 +2008,9 @@ describe("AdminBotService", () => {
       const variantId = polished.variant.id;
       const applied = unwrap(await service.applyOwnPolishedProfilePhoto("sam", variantId));
       expect(applied.variant_id).toBe(variantId);
-      const updated = unwrap(service.listLabMembers()).members.find((member) => member.id === "sam");
+      const updated = unwrap(service.listLabMembers()).members.find(
+        (member) => member.id === "sam",
+      );
       expect(updated?.profile_photo_review?.selected_variant_id).toBe(variantId);
       expect(executor.execute).toHaveBeenCalled();
     });

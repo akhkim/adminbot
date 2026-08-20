@@ -13,14 +13,16 @@ Use this skill for recommendation-letter drafting and sending proposals.
    delivery channel.
 2. Gather accomplishments and examples from permitted evidence.
 3. Draft only supported claims. Ask questions for missing facts.
-4. Use `adminbot_propose_action` with `type="recommendation_letter.draft"` when
-   tracking the draft in AdminBot is useful.
+4. Hand the draft back in the conversation. There is no letter-drafting action
+   type: nothing in `connectors/` can send a letter, so a proposal would sit
+   approved and unexecutable.
 
-## Sending
+## Where a letter request actually lives
 
-Sending a recommendation letter is T4. Use `adminbot_propose_action` with
-`type="recommendation_letter.send"` only after the final content, recipient,
-deadline, and delivery method are confirmed.
+A member asks for letters through the Control UI's **Logistics -> Recommendation
+Letters** template, which stores the schools, both deadlines per school with the
+timezone they are read in, the CV and Drive links, and the per-project record of
+what the member actually did. An admin works that queue.
 
-Include the final document id or hash, not the full private letter text, when a
-pointer is enough.
+That request is the system of record. Use this skill to help write the letter
+itself; do not try to file the request or the send on the member's behalf.

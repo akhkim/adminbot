@@ -14,17 +14,19 @@ describe("TAB_GROUPS", () => {
     expect(openclaw?.tabs).toEqual([
       "overview",
       "activity",
-      "workboard",
-      "instances",
       "sessions",
       "usage",
       "cron",
       "agents",
       "skills",
       "nodes",
-      "dreams",
       "config",
     ]);
+    // Retired from the sidebar for this deployment: one gateway, one host, no agent work board.
+    // Nodes stays -- it is the device-pairing approval surface.
+    for (const retired of ["workboard", "instances", "dreams"]) {
+      expect(TAB_GROUPS.flatMap((group) => group.tabs as readonly string[])).not.toContain(retired);
+    }
     expect(SETTINGS_TABS.every((tab) => isSettingsTab(tab))).toBe(true);
     // Channel management stays a settings slice reached from inside the config page.
     expect(SETTINGS_TABS).toContain("channels");

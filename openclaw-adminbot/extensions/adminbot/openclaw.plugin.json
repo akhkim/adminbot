@@ -10,11 +10,8 @@
       "adminbot_run_email_automation",
       "adminbot_reason",
       "adminbot_propose_action",
-      "adminbot_propose_candidate_decision",
-      "adminbot_draft_social_post",
       "adminbot_prepare_paper_social_posts",
       "adminbot_prepare_overleaf_paper_edit",
-      "adminbot_prepare_reimbursement_packet",
       "adminbot_reimbursement_converse",
       "adminbot_reimbursement_generate",
       "adminbot_suggest_calendar_change",
@@ -53,19 +50,10 @@
     "adminbot_propose_action": {
       "optional": true
     },
-    "adminbot_propose_candidate_decision": {
-      "optional": true
-    },
-    "adminbot_draft_social_post": {
-      "optional": true
-    },
     "adminbot_prepare_paper_social_posts": {
       "optional": true
     },
     "adminbot_prepare_overleaf_paper_edit": {
-      "optional": true
-    },
-    "adminbot_prepare_reimbursement_packet": {
       "optional": true
     },
     "adminbot_reimbursement_converse": {

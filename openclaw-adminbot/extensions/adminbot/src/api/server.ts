@@ -32,7 +32,6 @@ import {
   AdminBotService,
   type AdminBotActionExecutor,
   type AdminBotServiceOptions,
-  type AdminBotServiceResponse,
   type AdminBotServiceStore,
   type AdminBotSlackChannelNamingEvent,
 } from "../kernel/service.js";
@@ -75,6 +74,16 @@ import type {
   AdminBotReimbursementRequest,
   AdminBotReimbursementWorkflow,
 } from "../workflows/reimbursements/workflow.js";
+import {
+  PayloadTooLargeError,
+  asString,
+  readJson,
+  readRecord,
+  sendHtml,
+  sendJson,
+  sendServiceResult,
+} from "./server.http.js";
+import { handleLogisticsRoute } from "./server.logistics.js";
 
 const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:5173",
@@ -472,6 +481,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     try {
       await routeRequest(req, res, ctx);
     } catch (error) {
+      if (error instanceof PayloadTooLargeError) {
+        sendJson(res, 413, { error: { message: error.message } });
+        return;
+      }
       sendJson(res, 500, {
         error: { message: error instanceof Error ? error.message : "mock service failed" },
       });
@@ -1651,6 +1664,16 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  if (url.pathname === "/logistics/requests" || url.pathname.startsWith("/logistics/requests/")) {
+    // A request is signed by the member who sent it, so there is nobody to attribute one to when
+    // the caller is the service principal driving an agent tool call on somebody's behalf.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    await handleLogisticsRoute(req, res, url, ctx.service, principal.member);
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/papers/relevant") {
     if (principal.kind !== "member") {
       sendJson(res, 400, { error: { message: "member principal required" } });
@@ -1849,6 +1872,15 @@ async function handleAuthenticatedRoute(
     // Read-only roster scan (same shape as /papers/nudges), so no privilege gate: it powers the
     // dashboard's own-profile warning too, which any signed-in member may load.
     sendServiceResult(res, service.listMembersWithIncompleteMandatoryFields());
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/members/profile-overview") {
+    // Everybody's completeness at once is a governance read, unlike the incomplete-fields scan
+    // above which answers "is my own profile done" for any signed-in member's dashboard.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listMemberProfileOverview());
     return;
   }
   if (req.method === "POST" && url.pathname === "/members/mandatory-fields-reminder/run") {
@@ -2205,48 +2237,6 @@ function parseOrigins(value: string | undefined): string[] | undefined {
     .split(",")
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);
-}
-
-function asString(value: unknown): string {
-  return typeof value === "string" ? value : "";
-}
-
-async function readJson(req: IncomingMessage): Promise<unknown> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-}
-
-function readRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
-function sendJson(res: ServerResponse, status: number, body: unknown): void {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  // Every JSON response here reflects live, mutable state (roster, sessions, map places...);
-  // without this a browser can silently serve a stale GET from its disk cache instead of
-  // re-asking the server, which is indistinguishable from the data actually being wrong.
-  res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify(body));
-}
-
-function sendHtml(res: ServerResponse, status: number, body: string): void {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "text/html; charset=utf-8");
-  res.end(body);
-}
-
-function sendServiceResult<T>(res: ServerResponse, result: AdminBotServiceResponse<T>): void {
-  if (result.ok) {
-    sendJson(res, result.status, result.payload);
-    return;
-  }
-  sendJson(res, result.status, { error: result.error });
 }
 
 async function listen(server: Server, port: number, host: string): Promise<void> {

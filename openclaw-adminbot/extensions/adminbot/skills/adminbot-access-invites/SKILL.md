@@ -23,12 +23,15 @@ access proposals.
    - `admin`
      For `external_collaborator`, also set `collaboratorSubgroup` (see below).
      It is rejected for any other privilege level.
-4. Choose the action type:
-   - `slack.invite_guest`
-   - `slack.invite_member`
-   - `vector.invite`
-5. Use `adminbot_propose_action`.
-6. Report approval requirements and what execution would change.
+4. Decide guest vs full member vs Vector using the rules below, and say which
+   you chose and why.
+5. Report what has to happen next by hand. AdminBot cannot issue any of these
+   invites itself -- no connector implements one -- so the decision and the
+   drafted email are the deliverable, not a proposal.
+
+The one invite the service does send is the Slack Connect invite that goes out
+with the onboarding guide (`workflows/onboarding/guide-sender.ts`), which is
+triggered by sending a member their onboarding guide rather than by an action.
 
 ## External Collaborator Subgroups
 
@@ -103,9 +106,10 @@ Pass `--strict` to fail the run when someone on the roster has no email.
 
 ## Slack Invite Decision
 
-- Use `slack.invite_guest` / Slack Connect when the person is an external
-  collaborator who only needs shared-channel access or lightweight coordination.
-- Use `slack.invite_member` only when the person should join the full workspace.
+- Use a Slack Connect (guest) invite when the person is an external collaborator
+  who only needs shared-channel access or lightweight coordination.
+- Choose full workspace membership only when the person should join the whole
+  workspace.
   For the UofT/DCS workspace, full membership requires a DCS email first. If the
   person only has an external email, send the DCS-email setup instructions before
   proposing the workspace member invite.
@@ -213,7 +217,7 @@ Best,
 
 After the invitee sends their `@cs.toronto.edu` address, do not draft another
 email reply by default. Treat the DCS address as the target for the actual
-workspace invite and propose a `slack.invite_member` action through OpenClaw
+workspace invite by hand
 Slack access.
 
 The proposal should make the external effect explicit, for example:
@@ -236,7 +240,7 @@ Only draft a follow-up email if the user explicitly asks for one.
   `channels` when known, `sponsor`, and `duration` when applicable.
 - Include `proposed_payload.email` only when drafting/sending an email, with
   `to`, `cc`, `subject`, and `body`. A full member invite after DCS email
-  arrival should instead use the Slack invite payload for `slack.invite_member`.
+  arrival should instead be sent the full workspace invite.
 
 ## Guardrails
 

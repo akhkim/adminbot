@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { Value } from "typebox/value";
 import { describe, expect, it, vi } from "vitest";
 import type { AdminBotEmailPayload, AdminBotStoredProposal } from "../contracts/actions.js";
@@ -285,5 +286,90 @@ describe("readGogSheetRows", () => {
     await expect(
       readGogSheetRows("sheet-3", { capture: async () => "", env: {} }),
     ).resolves.toEqual([]);
+  });
+});
+
+describe("logistics.send_signed_document", () => {
+  it("writes the attachment to a file and hands gog its path", async () => {
+    const calls: string[][] = [];
+    const executor = createGogAdminBotExecutor({ run: async (args) => void calls.push(args) });
+    const result = await executor.execute({
+      id: "act_1",
+      type: "logistics.send_signed_document",
+      summary: "Email the signed document",
+      status: "approved",
+      risk_tier: "T1",
+      created_at: "2026-08-19T00:00:00.000Z",
+      payload_hash: "hash",
+      approval_requirement: { requires_approval: false, approver_roles: [], min_approvals: 0 },
+      approvals: [],
+      proposed_payload: {
+        to: "ada@cs.toronto.edu",
+        subject: "Signed: Visa letter",
+        body: "Your document has been signed.",
+        attachments: [
+          {
+            name: "form signed.pdf",
+            content_type: "application/pdf",
+            data_base64: Buffer.from("%PDF-1.4 signed").toString("base64"),
+          },
+        ],
+      },
+    } as never);
+
+    expect(result).toEqual({ handled: true });
+    const [args] = calls;
+    expect(args).toContain("send");
+    expect(args).toContain("ada@cs.toronto.edu");
+    const attachAt = args.indexOf("--attach");
+    expect(attachAt).toBeGreaterThan(-1);
+    // A real path, with the spaces in the member's file name preserved and the directory ours.
+    expect(args[attachAt + 1]).toMatch(/adminbot-signed-.*form signed\.pdf$/u);
+  });
+
+  it("takes the scratch copy of somebody's signed paperwork away again", async () => {
+    let attached = "";
+    const executor = createGogAdminBotExecutor({
+      run: async (args) => {
+        attached = args[args.indexOf("--attach") + 1] ?? "";
+      },
+    });
+    await executor.execute({
+      id: "act_1",
+      type: "logistics.send_signed_document",
+      summary: "Email the signed document",
+      status: "approved",
+      risk_tier: "T1",
+      created_at: "2026-08-19T00:00:00.000Z",
+      payload_hash: "hash",
+      approval_requirement: { requires_approval: false, approver_roles: [], min_approvals: 0 },
+      approvals: [],
+      proposed_payload: {
+        to: "ada@cs.toronto.edu",
+        subject: "Signed",
+        body: "Attached.",
+        attachments: [{ name: "signed.pdf", data_base64: Buffer.from("x").toString("base64") }],
+      },
+    } as never);
+    expect(attached).toBeTruthy();
+    expect(fs.existsSync(attached)).toBe(false);
+  });
+
+  it("refuses to send an email that was supposed to carry a document and does not", async () => {
+    const executor = createGogAdminBotExecutor({ run: async () => {} });
+    await expect(
+      executor.execute({
+        id: "act_1",
+        type: "logistics.send_signed_document",
+        summary: "Email the signed document",
+        status: "approved",
+        risk_tier: "T1",
+        created_at: "2026-08-19T00:00:00.000Z",
+        payload_hash: "hash",
+        approval_requirement: { requires_approval: false, approver_roles: [], min_approvals: 0 },
+        approvals: [],
+        proposed_payload: { to: "ada@cs.toronto.edu", subject: "Signed", body: "Attached." },
+      } as never),
+    ).rejects.toThrow(/attachment/u);
   });
 });

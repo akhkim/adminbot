@@ -5,8 +5,11 @@
 // into a form that proposes a typed action from contracts/actions.ts, so none of them may reach a
 // connector directly -- propose -> approve -> execute is the only path out of here.
 //
-// All three have their forms now. Only the inputs exist so far: what the member types and picks is
-// held in app state, saved to their own device, and goes nowhere until the action lands.
+// Each form has two ways out. Save keeps a draft on the member's own device so a half-filled
+// request survives a reload; Submit sends it to the service (POST /logistics/requests), which
+// stores it, stamps it with the session's member and puts it in the queue an admin works through
+// on the other tab. Storing a request has no external effect, which is why it needs no approval
+// gate -- the day AdminBot sends the letter or books the room, that send is the typed action.
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import { t } from "../../../i18n/index.ts";
@@ -20,6 +23,7 @@ import {
   type MeetingRequestRow,
   type RecommendationSchool,
 } from "../data/logistics-draft.ts";
+import { formatFileSize } from "../data/logistics-requests.ts";
 import {
   APPLICATION_STATUS_LIST_ID,
   APPLICATION_STATUS_SUGGESTIONS,
@@ -32,9 +36,19 @@ import {
   type SchoolField,
 } from "./logistics-fields.ts";
 import {
+  renderAdminBotLogisticsQueue,
+  type AdminBotLogisticsQueueProps,
+} from "./logistics-requests.queue.ts";
+import {
   renderAdminBotLogisticsRequests,
   type AdminBotLogisticsRequestsProps,
 } from "./logistics-requests.ts";
+
+/** What `describeSubmitBlock` found, as the view needs it: a reason and, for a file, which one. */
+export type SubmitBlock = {
+  reason: "empty" | "no-name" | "no-purpose" | "file-too-big" | "request-too-big" | "signed-out";
+  file?: string;
+};
 
 export type LogisticsTemplate = "documentSignature" | "recommendationLetters" | "bookMeeting";
 
@@ -44,11 +58,29 @@ export type LogisticsMode = "make" | "view";
 // Saving is local-only (IndexedDB on the member's device) and per request type, so each container
 // reports its own outcome rather than sharing one "Saved at" that would follow the member from
 // form to form and describe the wrong draft.
+//
+// Submitting is shared, because only one form is ever on screen and a member can only be sending
+// one request at a time. Its outcome is not: `submitBlocked` is per-form, since what makes a
+// signature request unsendable is not what makes a letters request unsendable.
 type RequestSaveProps = {
   saving: boolean;
   savedAt: number | null;
   saveError: string | null;
   onSave: () => void;
+  onSubmit: () => void;
+  /** Why Submit would refuse right now, or null when it would go through. */
+  submitBlocked: SubmitBlock | null;
+  /** Shared across the three forms: only one of them is ever on screen. */
+  submitting: boolean;
+  submitError: string | null;
+  /** Set once a request landed, so the form can say so instead of looking like nothing happened. */
+  submitted: boolean;
+  /** Clears everything typed into this form, draft included. */
+  onDiscard: () => void;
+  hasContent: boolean;
+  /** Set while this form holds a request that was already sent and is being corrected. */
+  editing: boolean;
+  onCancelEdit: () => void;
 };
 
 export type AdminBotLogisticsProps = {
@@ -59,6 +91,12 @@ export type AdminBotLogisticsProps = {
   mode: LogisticsMode;
   onModeChange: (mode: LogisticsMode) => void;
   requests: AdminBotLogisticsRequestsProps;
+  /**
+   * The admin's spreadsheet of everyone's requests. Drawn instead of the member list when an admin
+   * is in view mode, and never for anyone else -- the service scopes the data either way, so this
+   * only decides which shape it is read in.
+   */
+  queue: AdminBotLogisticsQueueProps;
   template: LogisticsTemplate;
   onTemplateChange: (template: LogisticsTemplate) => void;
   signature: RequestSaveProps & {
@@ -119,21 +157,6 @@ function mergeFiles(existing: readonly File[], incoming: readonly File[]): File[
     return true;
   });
   return added.length ? [...existing, ...added] : [...existing];
-}
-
-export function formatFileSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`;
-  }
-  const units = ["KB", "MB", "GB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  // One decimal below 10 so "1.4 MB" keeps its precision, none above so "247 KB" stays terse.
-  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
 }
 
 // The drag highlight is a class toggled straight on the element rather than app state: dragover
@@ -323,6 +346,33 @@ function renderSupportingSection(props: SignatureProps) {
   `;
 }
 
+/**
+ * Why Submit is refusing, in the member's words.
+ *
+ * Said out loud rather than left to a disabled button: a button that does nothing and explains
+ * nothing is the reason people file a request twice and then email instead.
+ */
+function submitBlockText(block: SubmitBlock): string {
+  if (block.reason === "file-too-big") {
+    return t("logistics.request.blocked.fileTooBig", {
+      name: block.file ?? "",
+    });
+  }
+  if (block.reason === "request-too-big") {
+    return t("logistics.request.blocked.requestTooBig");
+  }
+  if (block.reason === "no-name") {
+    return t("logistics.request.blocked.noName");
+  }
+  if (block.reason === "no-purpose") {
+    return t("logistics.request.blocked.noPurpose");
+  }
+  if (block.reason === "signed-out") {
+    return t("logistics.request.blocked.signedOut");
+  }
+  return t("logistics.request.blocked.empty");
+}
+
 function renderRequestActions(props: RequestSaveProps) {
   const saved = props.savedAt
     ? new Date(props.savedAt).toLocaleTimeString([], {
@@ -330,24 +380,75 @@ function renderRequestActions(props: RequestSaveProps) {
         minute: "2-digit",
       })
     : null;
+  // A failed submit outranks everything else in this line, then a landed one, then the local draft:
+  // the member is looking here for the answer to the button they just pressed.
+  const status = props.submitError
+    ? html`<span class="logistics-request__status--error">${props.submitError}</span>`
+    : props.submitted
+      ? html`<span class="logistics-request__status--ok" data-testid="logistics-submitted"
+          >${t("logistics.request.submitted")}</span
+        >`
+      : props.saveError
+        ? html`<span class="logistics-request__status--error">${props.saveError}</span>`
+        : saved
+          ? t("logistics.request.savedAt", { time: saved })
+          : nothing;
   return html`
+    ${props.editing
+      ? html`
+          <!-- Said out loud because the form looks exactly like a new request otherwise, and a
+               member who thinks they are filing a second one will file a second one. -->
+          <p class="logistics-request__editing" data-testid="logistics-editing" role="status">
+            ${t("logistics.request.editing")}
+            <button class="logistics-facts__link" type="button" @click=${props.onCancelEdit}>
+              ${t("logistics.request.cancelEdit")}
+            </button>
+          </p>
+        `
+      : nothing}
     <div class="logistics-request__actions">
-      <!-- Status sits with the buttons rather than above them: it is the answer to pressing Save,
-           and a member who just pressed it is looking here. -->
-      <span class="logistics-request__status" role="status">
-        ${props.saveError
-          ? html`<span class="logistics-request__status--error">${props.saveError}</span>`
-          : saved
-            ? t("logistics.request.savedAt", { time: saved })
-            : nothing}
-      </span>
-      <button class="btn" type="button" ?disabled=${props.saving} @click=${props.onSave}>
+      <!-- Status sits with the buttons rather than above them: it is the answer to pressing one of
+           them, and a member who just did is looking here. -->
+      <span class="logistics-request__status" role="status">${status}</span>
+      ${props.submitBlocked && !props.submitted
+        ? html`
+            <span class="logistics-request__blocked" data-testid="logistics-blocked"
+              >${submitBlockText(props.submitBlocked)}</span
+            >
+          `
+        : nothing}
+      <button
+        class="btn btn--sm"
+        type="button"
+        ?disabled=${!props.hasContent || props.saving || props.submitting}
+        @click=${props.onDiscard}
+      >
+        ${t("logistics.request.discard")}
+      </button>
+      <button
+        class="btn"
+        type="button"
+        ?disabled=${props.saving || props.submitting}
+        @click=${props.onSave}
+      >
         ${props.saving ? t("logistics.request.saving") : t("logistics.request.save")}
       </button>
-      <!-- Submit has no handler yet: where a request goes is a typed action behind the approval
-           gate, and that is not designed. Wiring it to anything now would be the one thing this
-           surface must not do. -->
-      <button class="btn primary" type="button">${t("logistics.request.submit")}</button>
+      <!-- Left pressable while blocked on purpose: pressing it is how a member finds out what is
+           missing, and the reason is written next to it either way. Only an in-flight submit
+           disables it, so the same request cannot be filed twice by a double click. -->
+      <button
+        class="btn primary"
+        type="button"
+        data-testid="logistics-submit"
+        ?disabled=${props.submitting}
+        @click=${props.onSubmit}
+      >
+        ${props.submitting
+          ? t("logistics.request.submitting")
+          : props.editing
+            ? t("logistics.request.resend")
+            : t("logistics.request.submit")}
+      </button>
     </div>
   `;
 }
@@ -516,9 +617,10 @@ function renderSchoolsSection(props: LettersProps) {
  * which project, and what they did on it. Without this the writer works from memory and from
  * whatever they can find in Slack, which is how a year of work becomes a sentence.
  *
- * The weekly updates that back these claims are already written, on My Projects. The line under
- * the heading routes there rather than asking for them again: a member who has been filing weekly
- * updates all term should be copying from them, not retyping the term.
+ * The line under the heading routes to My Projects, which is where the member's projects and their
+ * current step already live -- it is the fastest way to remember what they worked on. It is not a
+ * source to copy from: there is no per-week contribution log anywhere yet (the brainstorming doc
+ * still lists that as open), so what goes in this table is written here or not at all.
  */
 function renderFactsSection(props: LettersProps) {
   const update = (row: LetterFact, key: "project" | "contribution") => (event: Event) => {
@@ -935,7 +1037,11 @@ const TEMPLATE_BUTTONS: {
     labelKey: "logistics.templates.recommendationLetters",
     icon: icons.fileText,
   },
-  { template: "bookMeeting", labelKey: "logistics.templates.bookMeeting", icon: icons.clock },
+  {
+    template: "bookMeeting",
+    labelKey: "logistics.templates.bookMeeting",
+    icon: icons.clock,
+  },
 ];
 
 function renderTemplates(props: AdminBotLogisticsProps) {
@@ -967,9 +1073,15 @@ function renderTemplates(props: AdminBotLogisticsProps) {
   `;
 }
 
-// Admins only, and above the templates because it decides what the rest of the page is: your own
-// request, or everyone's. A member never sees it -- renderAdminBotLogistics does not render it and
-// pins their mode to "make", so a stale "view" in app state cannot show them the list either.
+/**
+ * Above the templates, because it decides what the rest of the page is: making a request, or
+ * reading the ones already made.
+ *
+ * Everyone gets both modes now that requests are stored by the service -- a member who cannot see
+ * what they asked for has no way to check whether it arrived, and no way to take it back. What
+ * differs is what the list holds: the service scopes it to the caller, so a member's "view" is
+ * their own requests and an admin's is the lab's queue. The badge says which one you are reading.
+ */
 function renderAdminModes(props: AdminBotLogisticsProps, mode: LogisticsMode) {
   const button = (target: LogisticsMode, labelKey: string, icon: unknown) => html`
     <button
@@ -982,16 +1094,23 @@ function renderAdminModes(props: AdminBotLogisticsProps, mode: LogisticsMode) {
       ${t(labelKey)}
     </button>
   `;
+  const isAdmin = props.role === "admin";
   return html`
     <div class="card adminbot-card adminbot-card--wide" data-testid="logistics-admin">
       <div class="logistics-admin__heading">
         <div class="card-title">${t("logistics.admin.title")}</div>
-        <span class="pill">${t("logistics.admin.badge")}</span>
+        ${isAdmin ? html`<span class="pill">${t("logistics.admin.badge")}</span>` : nothing}
       </div>
-      <div class="card-sub">${t("logistics.admin.sub")}</div>
+      <div class="card-sub">
+        ${isAdmin ? t("logistics.admin.sub") : t("logistics.admin.memberSub")}
+      </div>
       <div class="logistics__templates">
         ${button("make", "logistics.admin.make", icons.penLine)}
-        ${button("view", "logistics.admin.view", icons.scrollText)}
+        ${button(
+          "view",
+          isAdmin ? "logistics.admin.view" : "logistics.admin.viewMine",
+          icons.scrollText,
+        )}
       </div>
     </div>
   `;
@@ -1011,15 +1130,16 @@ function renderMakeRequest(props: AdminBotLogisticsProps) {
 }
 
 export function renderAdminBotLogistics(props: AdminBotLogisticsProps) {
-  const isAdmin = props.role === "admin";
-  // Everyone else gets the request forms and nothing else, whatever the mode in app state says.
-  const mode = isAdmin ? props.mode : "make";
   return html`
     <section class="adminbot-shell logistics" data-testid="adminbot-logistics">
-      ${isAdmin ? renderAdminModes(props, mode) : nothing}
-      ${mode === "view"
-        ? renderAdminBotLogisticsRequests(props.requests)
-        : renderMakeRequest(props)}
+      ${renderAdminModes(props, props.mode)}
+      ${props.mode !== "view"
+        ? renderMakeRequest(props)
+        : // An open request is a card either way: the queue is for working across rows, and reading
+          // one request in full is the same job for an admin as for anybody else.
+          props.role === "admin" && !props.requests.open && !props.requests.openLoading
+          ? renderAdminBotLogisticsQueue(props.queue)
+          : renderAdminBotLogisticsRequests(props.requests)}
     </section>
   `;
 }

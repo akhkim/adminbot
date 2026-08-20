@@ -10,6 +10,7 @@ import type {
   AdminBotAuthSession,
   AdminBotExecutionResult,
   AdminBotLabMember,
+  AdminBotLogisticsRequest,
   AdminBotMeetingRecord,
   AdminBotMemberLocationEntry,
   AdminBotMemberCredential,
@@ -190,6 +191,21 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       -- column is the whole access pattern.
       CREATE INDEX IF NOT EXISTS adminbot_meetings_started_idx
         ON adminbot_meetings(started_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_logistics_requests (
+        id TEXT PRIMARY KEY,
+        member_id TEXT NOT NULL,
+        submitted_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      -- Two reads, both newest-first: the admin queue over everyone, and a member's own requests.
+      -- The member index carries the sort column so "my requests" stays one index scan.
+      CREATE INDEX IF NOT EXISTS adminbot_logistics_requests_submitted_idx
+        ON adminbot_logistics_requests(submitted_at DESC);
+      CREATE INDEX IF NOT EXISTS adminbot_logistics_requests_member_idx
+        ON adminbot_logistics_requests(member_id, submitted_at DESC);
 
       CREATE TABLE IF NOT EXISTS adminbot_settings (
         id TEXT PRIMARY KEY,
@@ -592,7 +608,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
          WHERE member_id = ? ORDER BY observed_at DESC LIMIT ?`,
       )
       // -1 is SQLite's "no limit", which keeps this one statement rather than two.
-      .all(memberId, typeof limit === "number" ? limit : -1) as Array<{ payload_json: string }>;
+      .all(memberId, typeof limit === "number" ? limit : -1) as Array<{
+      payload_json: string;
+    }>;
     return rows.map((row) => parseJson<AdminBotMemberLocationEntry>(row.payload_json));
   }
 
@@ -637,8 +655,63 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   deleteMeeting(meetingId: string): boolean {
+    return this.db.prepare("DELETE FROM adminbot_meetings WHERE id = ?").run(meetingId).changes > 0;
+  }
+
+  saveLogisticsRequest(request: AdminBotLogisticsRequest): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_logistics_requests (
+          id,
+          member_id,
+          submitted_at,
+          updated_at,
+          payload_json
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          member_id = excluded.member_id,
+          submitted_at = excluded.submitted_at,
+          updated_at = excluded.updated_at,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        request.id,
+        request.member_id,
+        request.submitted_at,
+        request.updated_at,
+        JSON.stringify(request),
+      );
+  }
+
+  getLogisticsRequest(requestId: string): AdminBotLogisticsRequest | undefined {
+    const row = this.db
+      .prepare("SELECT payload_json FROM adminbot_logistics_requests WHERE id = ?")
+      .get(requestId) as { payload_json?: string } | undefined;
+    return row?.payload_json ? parseJson<AdminBotLogisticsRequest>(row.payload_json) : undefined;
+  }
+
+  listLogisticsRequests(memberId?: string): AdminBotLogisticsRequest[] {
+    const rows = (
+      memberId
+        ? this.db
+            .prepare(
+              `SELECT payload_json FROM adminbot_logistics_requests
+               WHERE member_id = ? ORDER BY submitted_at DESC`,
+            )
+            .all(memberId)
+        : this.db
+            .prepare(
+              "SELECT payload_json FROM adminbot_logistics_requests ORDER BY submitted_at DESC",
+            )
+            .all()
+    ) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotLogisticsRequest>(row.payload_json));
+  }
+
+  deleteLogisticsRequest(requestId: string): boolean {
     return (
-      this.db.prepare("DELETE FROM adminbot_meetings WHERE id = ?").run(meetingId).changes > 0
+      this.db.prepare("DELETE FROM adminbot_logistics_requests WHERE id = ?").run(requestId)
+        .changes > 0
     );
   }
 
@@ -915,7 +988,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
           FROM adminbot_sessions WHERE token_hash = ?`,
       )
       .get(tokenHash) as
-      | (Omit<AdminBotAuthSession, "revoked_at"> & { revoked_at: string | null })
+      | (Omit<AdminBotAuthSession, "revoked_at"> & {
+          revoked_at: string | null;
+        })
       | undefined;
     if (!row) {
       return undefined;
@@ -978,7 +1053,9 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     const row = this.db
       .prepare("SELECT payload_json FROM adminbot_slack_channel_naming WHERE channel_id = ?")
       .get(channelId) as { payload_json?: string } | undefined;
-    return row?.payload_json ? parseJson<AdminBotSlackChannelNamingRecord>(row.payload_json) : undefined;
+    return row?.payload_json
+      ? parseJson<AdminBotSlackChannelNamingRecord>(row.payload_json)
+      : undefined;
   }
 
   listSlackChannelNamingRecords(): AdminBotSlackChannelNamingRecord[] {

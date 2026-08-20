@@ -3,16 +3,10 @@ export const adminBotRiskTiers = ["T0", "T1", "T2", "T3", "T4"] as const;
 export type AdminBotRiskTier = (typeof adminBotRiskTiers)[number];
 
 export const adminBotActionTypes = [
-  "candidate.accept_for_trial",
-  "candidate.accept_direct",
-  "candidate.decline",
-  "slack.invite_guest",
-  "slack.invite_member",
   "slack.send_message",
   "slack.profile_photo_update",
   "slack.channel_naming_notify_owner",
   "slack.rename_channel",
-  "vector.invite",
   "calendar.create_tentative_hold",
   "calendar.send_invite",
   // Adds people to an event that already exists. Distinct from `calendar.reschedule`, which is the
@@ -23,11 +17,6 @@ export const adminBotActionTypes = [
   "calendar.cancel",
   "email.draft",
   "email.send",
-  "recommendation_letter.draft",
-  "recommendation_letter.send",
-  "reimbursement.prepare_packet",
-  "reimbursement.submit",
-  "social_media.draft",
   "social_media.post_publicly",
   "paper_publish.prepare",
   "paper.overleaf_edit",
@@ -35,6 +24,9 @@ export const adminBotActionTypes = [
   "paper_publish.nudge_author",
   "paper_publish.escalate_to_pi",
   "join_form.classify",
+  // Mailing a signed document back to the member who asked for it. An external effect (Gmail with
+  // an attachment), so it is a typed action rather than a call out of the service.
+  "logistics.send_signed_document",
   "member_nudge.send",
   "openreview.nudge",
   "openreview.warning",
@@ -147,6 +139,34 @@ export const adminBotMandatoryProfileFields = [
 ] as const;
 
 export type AdminBotMandatoryProfileField = (typeof adminBotMandatoryProfileFields)[number];
+
+/** How many entries a member has on their Time Availability page, by list. */
+export type AdminBotMemberTimelineCounts = {
+  availability: number;
+  time_off: number;
+  milestones: number;
+  trips: number;
+  total: number;
+};
+
+/**
+ * One member's row on the profile overview: how much of their own record they have filled in.
+ *
+ * `filled_field_count` is carried rather than derived so every reader agrees on the denominator --
+ * the mandatory field list is versioned in this file and a client that counted it itself would
+ * drift the moment a field is added.
+ */
+export type AdminBotMemberProfileOverviewRow = {
+  id: string;
+  name: string;
+  status?: string;
+  privilege_level: AdminBotPrivilegeLevel;
+  missing_fields: string[];
+  filled_field_count: number;
+  timeline: AdminBotMemberTimelineCounts;
+  /** When the daily reminder pass last nudged them, so nobody is chased twice in a day. */
+  last_reminded_at?: string;
+};
 
 /**
  * Plain-English names for the fields above, used to compose the reminder.
@@ -1114,6 +1134,15 @@ export type AdminBotAuditEvent = {
     | "mandatory_fields.reminded"
     | "onboarding.step_updated"
     | "reimbursement.anonymous_use"
+    // A member asking the lab for something, and the lab answering. The submit line is what makes
+    // "nobody told me" checkable; the status line is who answered and when.
+    | "logistics_request.submitted"
+    | "logistics_request.status_changed"
+    | "logistics_request.withdrawn"
+    // The signed document going back to the member who asked for it, and the copies being dropped
+    // once it has.
+    | "logistics_request.signed_document_sent"
+    | "logistics_request.files_cleared"
     | "openreview.cycle_run"
     | "openreview.milestone_sent"
     | "openreview.milestone_blocked"
@@ -1349,4 +1378,155 @@ export type AdminBotMeetingRecord = AdminBotMeetingRecordInput & {
    * anybody. Absent on the admin view, which has the roster itself.
    */
   attendee_count?: number;
+};
+
+// ---------------------------------------------------------------------------
+// Logistics requests
+//
+// The routine asks a member makes of the lab: sign these documents, write these recommendation
+// letters, book me this meeting. Each has a fixed shape, which is why they are templates in the
+// Control UI and one record type here rather than free-text tickets.
+//
+// A submitted request is a stored record, not a typed action -- storing one reaches nothing outside
+// this service, so a member never waits on an approval to be heard. The one outbound step is the
+// signed document going back, and that is `logistics.send_signed_document` above.
+//
+// The kinds are open-coded rather than one payload blob because an admin's queue sorts and filters
+// on them, and because each kind carries different fields that the service validates separately.
+// ---------------------------------------------------------------------------
+
+export const adminBotLogisticsRequestKinds = [
+  "document_signature",
+  "recommendation_letters",
+  "book_meeting",
+] as const;
+
+export type AdminBotLogisticsRequestKind = (typeof adminBotLogisticsRequestKinds)[number];
+
+/**
+ * Where a request stands, from the lab's side.
+ *
+ * `submitted` is the only status a member can create, and `withdrawn` the only one they can move it
+ * to: everything between is the lab saying what it has done, and a requester grading their own
+ * request would make the column useless to the people working through the list.
+ */
+export const adminBotLogisticsRequestStatuses = [
+  "submitted",
+  "in_progress",
+  "completed",
+  "declined",
+  "withdrawn",
+] as const;
+
+export type AdminBotLogisticsRequestStatus = (typeof adminBotLogisticsRequestStatuses)[number];
+
+/** Statuses that mean nobody is waiting on this request any more. */
+export const adminBotLogisticsSettledStatuses = [
+  "completed",
+  "declined",
+  "withdrawn",
+] as const satisfies readonly AdminBotLogisticsRequestStatus[];
+
+/**
+ * A file travelling with a request, bytes and all.
+ *
+ * Base64 in the record rather than a blob store because there is no blob store: every other record
+ * here is one JSON payload in one row, and a second storage system for the handful of PDFs a lab
+ * signs each term would be more moving parts than the feature is worth. Two things keep that safe:
+ * the size caps in `workflows/logistics/requests.ts`, and the fact that the bytes are dropped once
+ * the request is settled -- see `clearSettledRequestFiles`. What is left then is this same record
+ * with `size` and `name` intact and `data_base64` gone, which still reads as a complete history.
+ */
+export type AdminBotLogisticsAttachment = {
+  name: string;
+  /** Bytes of the decoded file, checked against the caps rather than trusted from the client. */
+  size: number;
+  /** As the browser reported it. Advisory: the service never executes or renders these. */
+  content_type?: string;
+  /** Standard base64, no data: prefix. Absent on a list read, and after the request is settled. */
+  data_base64?: string;
+};
+
+/** One school on a recommendation letters request, as the member filled the row in. */
+export type AdminBotLogisticsSchool = {
+  school: string;
+  /** yyyy-mm-dd. Both deadlines are optional: a member often knows one before the other. */
+  application_deadline?: string;
+  /** HH:mm, in `deadline_timezone`. A date with no time is treated as end of that day. */
+  application_deadline_time?: string;
+  letter_deadline?: string;
+  letter_deadline_time?: string;
+  /** IANA zone both times on this row are read in. Blank means the dates are whole-day. */
+  deadline_timezone?: string;
+  application_status?: string;
+  letter_status?: string;
+  program?: string;
+  program_link?: string;
+  notes?: string;
+};
+
+/** One line of what the member actually did, which is the part a letter template cannot supply. */
+export type AdminBotLogisticsFact = {
+  project: string;
+  contribution: string;
+};
+
+/** One proposed meeting on a book-meeting request. */
+export type AdminBotLogisticsMeeting = {
+  purpose: string;
+  /** yyyy-mm-ddTHH:mm as typed, read in `timezone`. */
+  preferred_time?: string;
+  timezone?: string;
+  length_minutes?: number;
+  /** When the member added the row, which is what decides order of service. */
+  submitted_at?: string;
+};
+
+export type AdminBotLogisticsRequestInput = {
+  kind: AdminBotLogisticsRequestKind;
+  /** Document signature. */
+  documents?: AdminBotLogisticsAttachment[];
+  description?: string;
+  attachments?: AdminBotLogisticsAttachment[];
+  /** Recommendation letters. */
+  schools?: AdminBotLogisticsSchool[];
+  facts?: AdminBotLogisticsFact[];
+  cv_overleaf_url?: string;
+  drive_folder_url?: string;
+  /** Book meeting. */
+  meetings?: AdminBotLogisticsMeeting[];
+};
+
+export type AdminBotLogisticsRequest = AdminBotLogisticsRequestInput & {
+  id: string;
+  /** Who asked. Taken from the session, never from the body: a request is signed by whoever sent it. */
+  member_id: string;
+  /** The roster name at submission time, so a queue stays readable after someone leaves. */
+  member_name: string;
+  status: AdminBotLogisticsRequestStatus;
+  submitted_at: string;
+  updated_at: string;
+  /**
+   * RFC3339 instant of the soonest thing this request is working towards, or absent when it names
+   * none. Derived on write from the dates, times and zones the member gave, so every reader sorts
+   * the same way and no client has to re-implement "which of these is soonest".
+   */
+  deadline_at?: string;
+  /**
+   * What the lab sent back, signed.
+   *
+   * Kept only until it has been mailed and the request settled; what survives is the name and the
+   * fact that it was sent, which is what an admin looking at an old request needs to know.
+   */
+  signed_documents?: AdminBotLogisticsAttachment[];
+  /** When the signed document was mailed to the requester, and to which address. */
+  signed_sent_at?: string;
+  signed_sent_to?: string;
+  /** When the stored file bytes were dropped, so a reader can tell "never had one" from "gone". */
+  files_cleared_at?: string;
+  /** What the lab said back, shown to the member. Set with the status. */
+  resolution_note?: string;
+  /** Which admin last moved the status, for the member reading "declined" and wondering who by. */
+  decided_by?: string;
+  decided_at?: string;
 };
