@@ -1692,7 +1692,17 @@ export const en: TranslationMap = {
   },
   // My Projects & Papers' evidence checklist, and the global nudge that chases it.
   paperSlots: {
-    nudge: "Nudge authors ({count})",
+    // Nudges are sent by hand, from the preview below the button -- there is no schedule behind
+    // them, so the copy is about reviewing first and sending second.
+    nudgeReview: "Review nudges ({count})",
+    nudgeClose: "Close preview",
+    nudgeLoading: "Working out who owes what…",
+    nudgePreviewLede:
+      "{count} people would be messaged. This is exactly what they would receive — untick anyone you would rather leave out of this round.",
+    nudgeItems: "{items} outstanding across {papers} paper(s)",
+    nudgeUnreachable: "No Slack account on file",
+    nudgeSend: "Send {count} message(s)",
+    nudgeHint: "Nothing is sent until you press this. Each person gets one message.",
     nudging: "Sending…",
     nudgedCount: "Nudged {count} author(s) about what their papers still need.",
     nudgedNone: "Nobody was due a nudge — everything outstanding was chased recently.",
@@ -1702,6 +1712,12 @@ export const en: TranslationMap = {
       forbidden: "You do not have permission to do that.",
       failed: "Could not load this paper's checklist.",
     },
+  },
+  paperCycle: {
+    socialTitle: "Social drafts",
+    attendeesTitle: "Who is going",
+    reimbursementsTitle: "Reimbursements",
+    closed: "Everything on this paper is finished, expenses included.",
   },
   myWork: {
     items: {

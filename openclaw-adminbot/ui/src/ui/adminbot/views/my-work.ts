@@ -23,7 +23,7 @@ import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
-import type { PaperSlotOverviewRow, PaperSlotRow } from "../auth/session.ts";
+import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
 import {
   BLOCKER_TITLE_MAX,
   editBlockerInput,
@@ -40,6 +40,7 @@ import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
+import { renderPaperCycle } from "./paper-cycle.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
 import { findOwnMember } from "./profile.ts";
 
@@ -47,8 +48,8 @@ export type MyWorkProps = {
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
   /** What each paper still owes, computed by the service -- see the note on `renderCardSummary`. */
   overview: PaperSlotOverviewRow[];
-  /** Slots by paper id, loaded the first time a card is opened. */
-  slots: Record<string, PaperSlotRow[]>;
+  /** The whole cycle by paper id, loaded the first time a card is opened. */
+  slots: Record<string, PaperCycle>;
   openIds: string[];
   slotsBusyId: string | null;
   slotsError: string | null;
@@ -56,13 +57,32 @@ export type MyWorkProps = {
   nudging: boolean;
   /** Hides the global nudge for a member. The service re-checks; this is the affordance, not the gate. */
   canNudge: boolean;
+  /** The preview, or null when it is closed. Opening it sends nothing. */
+  nudgeBatches: PaperNudgeBatch[] | null;
+  nudgeLoading: boolean;
+  nudgeSelected: string[];
+  onReviewNudges: () => void;
+  onToggleNudgeRecipient: (memberId: string) => void;
   onToggleCard: (paperId: string) => void;
   onSaveSlot: (
     paperId: string,
     slot: string,
-    input: { url?: string; value_text?: string; done?: boolean },
+    input: { url?: string; value_text?: string; value_note?: string; done?: boolean },
   ) => void;
   onNudgeAuthors: () => void;
+  /** The signed-in member, so their own consent rows get buttons and nobody else's do. */
+  memberId: string | null;
+  memberName: (memberId: string) => string;
+  onSaveDraft: (paperId: string, platform: string, body: string) => void;
+  onCirculateDraft: (paperId: string, draftId: string) => void;
+  onConsent: (paperId: string, draftId: string, decision: string, comment?: string) => void;
+  onSetAttendee: (
+    paperId: string,
+    name: string,
+    memberId: string | undefined,
+    attending: string,
+  ) => void;
+  onSetReimbursement: (paperId: string, memberId: string, status: string) => void;
 };
 
 export type BlockerDraft = {
@@ -397,6 +417,141 @@ function renderCardVenue(paper: AdminBotPaperRecord, props: MyWorkProps) {
 }
 
 /**
+ * What the venue said, and what it owes once it said yes.
+ *
+ * Four details rather than one flag, and all four asked rather than inferred: `is_archival` is the
+ * one that decides whether this counts as a publication at all, and the same workshop can be
+ * archival one year and not the next. Until they are in, the conference half of the card stays
+ * shut -- "who is going" cannot be asked sensibly of a paper whose venue nobody has recorded.
+ */
+function renderAcceptance(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const decision = paper.venue_decision ?? "pending";
+  const save = (fields: Partial<AdminBotPaperSaveInput>) =>
+    props.onSavePaper({
+      id: paper.id,
+      title: paper.title,
+      authors: paper.authors ?? [],
+      currentStep: paper.current_step as AdminBotPaperStep,
+      ...fields,
+    });
+  return html`
+    <div class="paper-acceptance" data-testid=${`paper-acceptance-${paper.id}`}>
+      <label class="paper-acceptance__field">
+        <span class="register__label">Venue decision</span>
+        <select
+          class="input"
+          data-testid=${`paper-decision-${paper.id}`}
+          @change=${(event: Event) =>
+            save({ venueDecision: (event.target as HTMLSelectElement).value })}
+        >
+          ${["pending", "accept", "reject"].map(
+            (value) => html`
+              <option value=${value} ?selected=${value === decision}>
+                ${value === "pending"
+                  ? "Not heard yet"
+                  : value === "accept"
+                    ? "Accepted"
+                    : "Rejected"}
+              </option>
+            `,
+          )}
+        </select>
+      </label>
+      ${decision === "accept"
+        ? html`
+            <label class="paper-acceptance__field">
+              <span class="register__label">Accepted venue</span>
+              <input
+                class="input"
+                .value=${paper.accepted_venue ?? ""}
+                placeholder="e.g. ACL 2027"
+                data-testid=${`paper-accepted-venue-${paper.id}`}
+                @change=${(event: Event) =>
+                  save({ acceptedVenue: (event.target as HTMLInputElement).value })}
+              />
+            </label>
+            <label class="paper-acceptance__field">
+              <span class="register__label">Year</span>
+              <input
+                class="input"
+                type="number"
+                min="2000"
+                max="2100"
+                .value=${paper.accepted_year ? String(paper.accepted_year) : ""}
+                data-testid=${`paper-accepted-year-${paper.id}`}
+                @change=${(event: Event) =>
+                  save({ acceptedYear: (event.target as HTMLInputElement).value })}
+              />
+            </label>
+            <label class="paper-acceptance__field">
+              <span class="register__label">Archival?</span>
+              <select
+                class="input"
+                data-testid=${`paper-archival-${paper.id}`}
+                @change=${(event: Event) =>
+                  save({ isArchival: (event.target as HTMLSelectElement).value })}
+              >
+                <option value="" ?selected=${paper.is_archival === undefined}>Not said</option>
+                <option value="true" ?selected=${paper.is_archival === true}>
+                  Archival — counts as a publication
+                </option>
+                <option value="false" ?selected=${paper.is_archival === false}>Non-archival</option>
+              </select>
+            </label>
+            <label class="paper-acceptance__field">
+              <span class="register__label">Presentation</span>
+              <select
+                class="input"
+                data-testid=${`paper-presentation-${paper.id}`}
+                @change=${(event: Event) =>
+                  save({ presentationType: (event.target as HTMLSelectElement).value })}
+              >
+                <option value="" ?selected=${!paper.presentation_type}>Not said</option>
+                ${["poster", "findings", "main", "spotlight", "oral", "award"].map(
+                  (type) => html`
+                    <option value=${type} ?selected=${type === paper.presentation_type}>
+                      ${type[0]?.toUpperCase()}${type.slice(1)}
+                    </option>
+                  `,
+                )}
+              </select>
+            </label>
+          `
+        : nothing}
+    </div>
+  `;
+}
+
+/** The lists that hang off a paper: drafts and their sign-offs, who travelled, who is square. */
+function renderCycle(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const cycle = props.slots[paper.id];
+  if (!cycle) {
+    return nothing;
+  }
+  return renderPaperCycle({
+    paperId: paper.id,
+    drafts: cycle.drafts,
+    consents: cycle.consents,
+    attendees: cycle.attendees,
+    reimbursements: cycle.reimbursements,
+    conferenceOpen:
+      paper.venue_decision === "accept" && cycle.missingAcceptanceDetails.length === 0,
+    missingAcceptanceDetails: cycle.missingAcceptanceDetails,
+    cycleClosed: cycle.cycleClosed,
+    memberId: props.memberId,
+    memberName: props.memberName,
+    onSaveDraft: (platform: string, body: string) => props.onSaveDraft(paper.id, platform, body),
+    onCirculateDraft: (draftId: string) => props.onCirculateDraft(paper.id, draftId),
+    onConsent: (draftId: string, decision: string, comment?: string) =>
+      props.onConsent(paper.id, draftId, decision, comment),
+    onSetAttendee: (name: string, memberId: string | undefined, attending: string) =>
+      props.onSetAttendee(paper.id, name, memberId, attending),
+    onSetReimbursement: (memberId: string, status: string) =>
+      props.onSetReimbursement(paper.id, memberId, status),
+  });
+}
+
+/**
  * One paper, as a card that opens.
  *
  * The whole head is the toggle rather than a chevron off to one side: the target is the thing
@@ -451,14 +606,14 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
         ${open
           ? html`
               ${renderTarget(paper, props)} ${renderStepper(paper, props, index)}
-              ${renderNextStep(paper)}
+              ${renderNextStep(paper)} ${renderAcceptance(paper, props)}
               ${renderPaperSlots({
                 paperId: paper.id,
-                slots: props.slots[paper.id] ?? [],
+                slots: props.slots[paper.id]?.slots ?? [],
                 loading: props.slotsBusyId === paper.id,
                 onSaveSlot: (slot, input) => props.onSaveSlot(paper.id, slot, input),
               })}
-              ${renderStepControls(paper, props)}
+              ${renderCycle(paper, props)} ${renderStepControls(paper, props)}
             `
           : nothing}
       </div>
@@ -874,19 +1029,101 @@ function renderNudgeButton(props: MyWorkProps) {
   const outstanding = props.overview.filter(
     (row) => !row.dormant && !row.closed && row.missing_slots.length > 0,
   ).length;
+  const open = props.nudgeBatches !== null;
   return html`
     <button
       type="button"
       class="btn btn--sm"
-      data-testid="my-work-nudge-authors"
-      ?disabled=${props.nudging || outstanding === 0}
-      @click=${props.onNudgeAuthors}
+      data-testid="my-work-review-nudges"
+      ?disabled=${props.nudgeLoading || outstanding === 0}
+      aria-expanded=${open ? "true" : "false"}
+      @click=${props.onReviewNudges}
     >
       <span aria-hidden="true">${icons.send}</span>
-      ${props.nudging
-        ? t("paperSlots.nudging")
-        : t("paperSlots.nudge", { count: String(outstanding) })}
+      ${props.nudgeLoading
+        ? t("paperSlots.nudgeLoading")
+        : open
+          ? t("paperSlots.nudgeClose")
+          : t("paperSlots.nudgeReview", { count: String(outstanding) })}
     </button>
+  `;
+}
+
+/**
+ * The batches, before anything goes out.
+ *
+ * This is the whole difference between a manual nudge and a scheduled one. A cron job can send a
+ * message nobody read; a person pressing a button should be able to see the words that will
+ * arrive under their name, and to leave somebody out of this round without waiving anything or
+ * editing the paper. So the preview shows the composed message verbatim, one card per person, and
+ * the send takes the ticks.
+ *
+ * Somebody with no Slack id on file is shown, unticked and unticking, rather than hidden: "we
+ * cannot reach this person" is a fact worth seeing when you are asking why they never respond.
+ */
+function renderNudgePreview(props: MyWorkProps) {
+  const batches = props.nudgeBatches;
+  if (!batches) {
+    return nothing;
+  }
+  if (batches.length === 0) {
+    return html`<p class="nudge-preview__empty" data-testid="my-work-nudge-preview">
+      ${t("paperSlots.nudgedNone")}
+    </p>`;
+  }
+  const selected = batches.filter(
+    (batch) => batch.deliverable && props.nudgeSelected.includes(batch.member_id),
+  );
+  return html`
+    <section class="nudge-preview" data-testid="my-work-nudge-preview">
+      <p class="nudge-preview__lede">
+        ${t("paperSlots.nudgePreviewLede", { count: String(batches.length) })}
+      </p>
+      <ul class="nudge-preview__list">
+        ${batches.map(
+          (batch) => html`
+            <li class="nudge-preview__item ${batch.deliverable ? "" : "is-unreachable"}">
+              <label class="nudge-preview__head">
+                <input
+                  type="checkbox"
+                  ?checked=${props.nudgeSelected.includes(batch.member_id)}
+                  ?disabled=${!batch.deliverable}
+                  data-testid=${`nudge-pick-${batch.member_id}`}
+                  @change=${() => props.onToggleNudgeRecipient(batch.member_id)}
+                />
+                <span class="nudge-preview__name">${batch.member_name}</span>
+                <span class="nudge-preview__count">
+                  ${t("paperSlots.nudgeItems", {
+                    items: String(batch.item_count),
+                    papers: String(batch.paper_titles.length),
+                  })}
+                </span>
+                ${batch.deliverable
+                  ? nothing
+                  : html`<span class="nudge-preview__unreachable"
+                      >${t("paperSlots.nudgeUnreachable")}</span
+                    >`}
+              </label>
+              <pre class="nudge-preview__message">${batch.message}</pre>
+            </li>
+          `,
+        )}
+      </ul>
+      <div class="nudge-preview__actions">
+        <button
+          type="button"
+          class="btn primary"
+          data-testid="my-work-nudge-authors"
+          ?disabled=${props.nudging || selected.length === 0}
+          @click=${props.onNudgeAuthors}
+        >
+          ${props.nudging
+            ? t("paperSlots.nudging")
+            : t("paperSlots.nudgeSend", { count: String(selected.length) })}
+        </button>
+        <span class="nudge-preview__hint">${t("paperSlots.nudgeHint")}</span>
+      </div>
+    </section>
   `;
 }
 
@@ -902,6 +1139,7 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
             ${renderNudgeButton(props)} ${renderAddButton(state)}
           </div>
         </div>
+        ${renderNudgePreview(props)}
         ${props.slotsNotice
           ? html`<p class="my-work__notice-line" role="status">${props.slotsNotice}</p>`
           : nothing}

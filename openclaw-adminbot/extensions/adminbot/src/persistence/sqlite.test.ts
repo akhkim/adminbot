@@ -45,8 +45,8 @@ describe("AdminBotSqliteStore", () => {
     unwrap(
       first.service.setPaperSlot({
         paperId: "p1",
-        slot: "brainstorm_doc",
-        input: { url: "https://example.com/doc" },
+        slot: "project_folder",
+        input: { url: "https://docs.google.com/document/d/x" },
         memberId: "ada",
         privileged: true,
       }),
@@ -55,13 +55,12 @@ describe("AdminBotSqliteStore", () => {
 
     const second = createAdminBotSqliteService({ databasePath });
     const stored = unwrap(second.service.listPaperSlots("p1")).slots.find(
-      (slot) => slot.slot === "brainstorm_doc",
+      (slot) => slot.slot === "project_folder",
     );
     expect(stored).toMatchObject({
       status: "provided",
-      url: "https://example.com/doc",
+      url: "https://docs.google.com/document/d/x",
       provided_by_member_id: "ada",
-      nudge_count: 0,
     });
     // Nullable columns come back absent rather than null, so nothing downstream has to treat "no
     // URL" and "URL is null" as two different absences.

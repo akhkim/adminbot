@@ -62,6 +62,19 @@ import {
   isAdminBotTimezone,
 } from "../contracts/actions.js";
 import {
+  adminBotAttendanceStates,
+  adminBotAttendeeKey,
+  adminBotNudgeDomains,
+  adminBotReimbursementStates,
+  type AdminBotConferenceAttendeeRecord,
+  type AdminBotNudgeDomain,
+  type AdminBotNudgeLedgerRecord,
+  type AdminBotPaperReimbursementRecord,
+  type AdminBotSocialConsentRecord,
+  type AdminBotSocialDraftRecord,
+} from "../contracts/paper-cycle.js";
+import {
+  adminBotPaperSlotBranchPriority,
   type AdminBotPaperSlot,
   type AdminBotPaperSlotInput,
   type AdminBotPaperSlotOwner,
@@ -108,18 +121,28 @@ import {
   memberRelevanceNeedles,
   textMatchesNeedles,
 } from "../workflows/papers/openreview-matching.js";
+import { planPaperBackfill } from "../workflows/papers/paper-slot-backfill.js";
 import {
   actionablePaperSlots,
   applyPaperSlotWrite,
   blankPaperSlot,
-  buildPaperSlotNudgeMessage,
+  boundSnooze,
+  buildNudgeMessage,
+  draftConsentState,
   isAdminBotPaperSlot,
+  isConferenceBranchOpen,
+  isCycleClosed,
+  isNudgeDue,
   isPaperClosed,
   isPaperDormant,
+  missingAcceptanceDetails,
   paperSlotProgress,
   paperSlotRows,
+  redactPaperSlots,
+  resolveConsentAudience,
+  shouldEscalate,
   waivePaperSlot,
-  type ActionablePaperSlot,
+  type NudgeItem,
 } from "../workflows/papers/paper-slots.js";
 
 // Approver roles are privilege levels from the member roster, not a separate vocabulary: the
@@ -161,6 +184,17 @@ export type AdminBotServiceStore = {
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
   /** One paper's slots, or every paper's when the id is omitted. */
   listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
+  saveNudgeLedgerEntry(record: AdminBotNudgeLedgerRecord): void;
+  /** The whole ledger, or one domain's slice. */
+  listNudgeLedger(domain?: string): AdminBotNudgeLedgerRecord[];
+  saveSocialDraft(record: AdminBotSocialDraftRecord): void;
+  listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[];
+  saveSocialConsent(record: AdminBotSocialConsentRecord): void;
+  listSocialConsents(draftId?: string): AdminBotSocialConsentRecord[];
+  saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void;
+  listConferenceAttendees(paperId?: string): AdminBotConferenceAttendeeRecord[];
+  savePaperReimbursement(record: AdminBotPaperReimbursementRecord): void;
+  listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[];
   appendMemberLocation(entry: AdminBotMemberLocationEntry): void;
   /** Newest first. `limit` is a cap, not a page: nothing here needs to walk a member's whole history. */
   listMemberLocations(memberId: string, limit?: number): AdminBotMemberLocationEntry[];
@@ -234,9 +268,29 @@ export type AdminBotPaperSlotOverviewRow = {
   dormant: boolean;
   closed: boolean;
   missing_slots: AdminBotPaperSlot[];
+  /** Which acceptance details the author still owes, once the venue said yes. */
+  missing_acceptance_details: string[];
+  /** Every artifact in, and every attending author square on expenses. Derived, never stored. */
+  cycle_closed: boolean;
   escalating: boolean;
   first_author_member_id?: string;
   last_nudged_at?: string;
+};
+
+/**
+ * One person's nudge, as the preview shows it and as the send would deliver it.
+ *
+ * Carries the composed message rather than a summary of it: the point of a manual send is that
+ * somebody reads what is about to go out in their name, and a paraphrase would not be that.
+ */
+export type AdminBotNudgeBatch = {
+  member_id: string;
+  member_name: string;
+  /** False when there is no Slack id on file, so the preview can say so before the send. */
+  deliverable: boolean;
+  item_count: number;
+  paper_titles: string[];
+  message: string;
 };
 
 export type AdminBotSlackChannelNamingEvent = {
@@ -1020,18 +1074,56 @@ export class AdminBotService {
    * The blanks are part of the answer: the card is a checklist, and a checklist that only lists
    * the boxes somebody already ticked is not one.
    */
-  listPaperSlots(paperId: string): AdminBotServiceResponse<{
+  /**
+   * One paper's evidence slots, every one of the 25, stored or not.
+   *
+   * The blanks are part of the answer: the card is a checklist, and a checklist that only lists
+   * the boxes somebody already ticked is not one. Credentials come back only for an author of the
+   * paper or an admin.
+   */
+  listPaperSlots(
+    paperId: string,
+    viewer?: { memberId?: string; isAdmin?: boolean },
+  ): AdminBotServiceResponse<{
     paper: AdminBotPaperRecord;
     slots: AdminBotPaperSlotRecord[];
+    drafts: AdminBotSocialDraftRecord[];
+    consents: AdminBotSocialConsentRecord[];
+    attendees: AdminBotConferenceAttendeeRecord[];
+    reimbursements: AdminBotPaperReimbursementRecord[];
+    cycle_closed: boolean;
+    missing_acceptance_details: string[];
   }> {
     const paper = this.store.getPaper(paperId);
     if (!paper) {
       return serviceError(404, "paper not found");
     }
+    const drafts = this.store.listSocialDrafts(paperId);
+    const stored = this.store.listPaperSlots(paperId);
+    const attendees = this.store.listConferenceAttendees(paperId);
+    const reimbursements = this.store.listPaperReimbursements(paperId);
+    const entitled = Boolean(
+      viewer?.isAdmin || (viewer?.memberId && this.memberOwnsPaperId(viewer.memberId, paper)),
+    );
     return {
       ok: true,
       status: 200,
-      payload: { paper, slots: paperSlotRows(paperId, this.store.listPaperSlots(paperId)) },
+      payload: {
+        paper,
+        slots: redactPaperSlots(paperSlotRows(paperId, stored, drafts), entitled),
+        drafts,
+        consents: drafts.flatMap((draft) => this.store.listSocialConsents(draft.id)),
+        attendees,
+        reimbursements,
+        cycle_closed: isCycleClosed({
+          paper,
+          slots: stored,
+          drafts,
+          attendees,
+          reimbursements,
+        }),
+        missing_acceptance_details: missingAcceptanceDetails(paper),
+      },
     };
   }
 
@@ -1063,6 +1155,8 @@ export class AdminBotService {
       return serviceError(400, result.error);
     }
     this.store.savePaperSlot(result.record);
+    // Deliberately no value in the audit details: one of these slots holds a credential, and an
+    // audit trail is read by more people than the paper is.
     this.recordAudit({
       type: "paper_slot.updated",
       actor: params.memberId,
@@ -1078,6 +1172,10 @@ export class AdminBotService {
   /**
    * Waive a slot. Admin-only: it is the one way a required artifact stops being required, so it is
    * the one write a member must not be able to make on their own paper.
+   *
+   * This is also what stops the checklist from deadlocking a paper that legitimately has no poster
+   * or gets no submission id -- nothing hard-blocks a step, but a slot left open forever is a
+   * standing false claim that somebody still owes something.
    */
   waivePaperSlot(params: {
     paperId: string;
@@ -1123,19 +1221,286 @@ export class AdminBotService {
     if (!isAdminBotPaperSlot(params.slot)) {
       return { ok: false, error: serviceError(400, "unknown slot") };
     }
-    if (!params.privileged) {
-      const member = this.store.getLabMember(params.memberId);
-      if (!member || !this.memberOwnsPaper(member, paper)) {
-        return {
-          ok: false,
-          error: serviceError(403, "members can only edit papers they authored"),
-        };
-      }
+    if (!params.privileged && !this.memberOwnsPaperId(params.memberId, paper)) {
+      return {
+        ok: false,
+        error: serviceError(403, "members can only edit papers they authored"),
+      };
     }
     const stored = this.store
       .listPaperSlots(params.paperId)
       .find((record) => record.slot === params.slot);
     return { ok: true, paper, existing: stored ?? blankPaperSlot(params.paperId, params.slot) };
+  }
+
+  private memberOwnsPaperId(memberId: string, paper: AdminBotPaperRecord): boolean {
+    const member = this.store.getLabMember(memberId);
+    return Boolean(member && this.memberOwnsPaper(member, paper));
+  }
+
+  /**
+   * Save a social draft, superseding whatever it replaces.
+   *
+   * The previous approved-or-circulated draft for the same platform is marked `superseded` rather
+   * than deleted, because the question "what did they actually agree to" has to stay answerable
+   * after somebody regenerates the copy.
+   */
+  saveSocialDraft(params: {
+    paperId: string;
+    platform: string;
+    body: string;
+    model?: string;
+    memberId: string;
+    privileged: boolean;
+  }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord }> {
+    const paper = this.store.getPaper(params.paperId);
+    if (!paper) {
+      return serviceError(404, "paper not found");
+    }
+    if (!params.privileged && !this.memberOwnsPaperId(params.memberId, paper)) {
+      return serviceError(403, "members can only edit papers they authored");
+    }
+    if (params.platform !== "x" && params.platform !== "linkedin") {
+      return serviceError(400, "platform must be x or linkedin");
+    }
+    const body = params.body.trim();
+    if (!body) {
+      return serviceError(400, "a draft needs a body");
+    }
+    const now = new Date().toISOString();
+    const draft: AdminBotSocialDraftRecord = {
+      // Random suffix, not just the clock: two saves inside the same millisecond would otherwise
+      // share an id, and the second would upsert over the first instead of superseding it --
+      // losing the very version somebody may already have consented to.
+      id: `${params.paperId}-${params.platform}-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`,
+      paper_id: params.paperId,
+      platform: params.platform,
+      body,
+      generated_at: now,
+      generated_by_member_id: params.memberId,
+      status: "draft",
+      ...(params.model ? { model: params.model } : {}),
+    };
+    for (const existing of this.store.listSocialDrafts(params.paperId)) {
+      if (existing.platform !== params.platform || existing.status === "superseded") {
+        continue;
+      }
+      this.store.saveSocialDraft({
+        ...existing,
+        status: "superseded",
+        superseded_by: draft.id,
+      });
+    }
+    this.store.saveSocialDraft(draft);
+    this.recordAudit({
+      type: "paper_social_draft.saved",
+      actor: params.memberId,
+      details: { paper_id: params.paperId, platform: params.platform, draft_id: draft.id },
+    });
+    return { ok: true, status: 200, payload: { draft } };
+  }
+
+  /**
+   * Ask the paper's lab-member authors to sign off on a draft.
+   *
+   * Only authors who resolve to a roster member get a row. AdminBot cannot reach an external
+   * coauthor, and a consent row for somebody it can never ask is a draft that can never be
+   * approved -- the first author handles those by email, as they already do.
+   */
+  circulateSocialDraft(params: {
+    draftId: string;
+    memberId: string;
+    privileged: boolean;
+  }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord; asked: string[] }> {
+    const draft = this.store.listSocialDrafts().find((row) => row.id === params.draftId);
+    if (!draft) {
+      return serviceError(404, "draft not found");
+    }
+    const paper = this.store.getPaper(draft.paper_id);
+    if (!paper) {
+      return serviceError(404, "paper not found");
+    }
+    if (!params.privileged && !this.memberOwnsPaperId(params.memberId, paper)) {
+      return serviceError(403, "members can only edit papers they authored");
+    }
+    if (draft.status === "superseded") {
+      return serviceError(400, "that draft has been replaced by a newer one");
+    }
+    const audience = resolveConsentAudience({
+      authors: paper.authors,
+      roster: this.store.listLabMembers(),
+      // The person circulating it does not consent to their own draft.
+      exclude: params.memberId,
+    });
+    const now = new Date().toISOString();
+    const existing = new Map(
+      this.store.listSocialConsents(draft.id).map((row) => [row.member_id, row]),
+    );
+    for (const memberId of audience) {
+      if (existing.has(memberId)) {
+        continue;
+      }
+      this.store.saveSocialConsent({
+        draft_id: draft.id,
+        member_id: memberId,
+        decision: "pending",
+        asked_at: now,
+      });
+    }
+    const circulated: AdminBotSocialDraftRecord = { ...draft, status: "circulated" };
+    this.store.saveSocialDraft(circulated);
+    this.recordAudit({
+      type: "paper_social_draft.circulated",
+      actor: params.memberId,
+      details: { paper_id: paper.id, draft_id: draft.id, asked: audience.length },
+    });
+    // Nobody on the roster to ask means nothing to wait for; approve it rather than parking the
+    // paper behind a consent round with no participants.
+    return {
+      ok: true,
+      status: 200,
+      payload: { draft: this.refreshDraftApproval(circulated), asked: audience },
+    };
+  }
+
+  /** One author's answer on one draft. Only that author may give it. */
+  recordSocialConsent(params: {
+    draftId: string;
+    memberId: string;
+    decision: string;
+    comment?: string;
+  }): AdminBotServiceResponse<{ draft: AdminBotSocialDraftRecord }> {
+    const draft = this.store.listSocialDrafts().find((row) => row.id === params.draftId);
+    if (!draft) {
+      return serviceError(404, "draft not found");
+    }
+    if (params.decision !== "ok" && params.decision !== "changes_requested") {
+      return serviceError(400, "decision must be ok or changes_requested");
+    }
+    const existing = this.store
+      .listSocialConsents(draft.id)
+      .find((row) => row.member_id === params.memberId);
+    if (!existing) {
+      return serviceError(403, "you were not asked to review this draft");
+    }
+    this.store.saveSocialConsent({
+      ...existing,
+      decision: params.decision,
+      decided_at: new Date().toISOString(),
+      ...(params.comment?.trim() ? { comment: params.comment.trim() } : {}),
+    });
+    this.recordAudit({
+      type: "paper_social_consent.recorded",
+      actor: params.memberId,
+      details: { draft_id: draft.id, decision: params.decision },
+    });
+    return { ok: true, status: 200, payload: { draft: this.refreshDraftApproval(draft) } };
+  }
+
+  /** Promote a circulated draft to approved once no consent row is outstanding. */
+  private refreshDraftApproval(draft: AdminBotSocialDraftRecord): AdminBotSocialDraftRecord {
+    if (draft.status === "superseded" || draft.status === "draft") {
+      return draft;
+    }
+    const state = draftConsentState(this.store.listSocialConsents(draft.id));
+    const next: AdminBotSocialDraftRecord = {
+      ...draft,
+      status: state.approved ? "approved" : "circulated",
+    };
+    if (next.status !== draft.status) {
+      this.store.saveSocialDraft(next);
+    }
+    return next;
+  }
+
+  /** Who is going. Author-provided; nothing here infers travel. */
+  setConferenceAttendee(params: {
+    paperId: string;
+    name: string;
+    memberId?: string;
+    attending: string;
+    actorId: string;
+    privileged: boolean;
+  }): AdminBotServiceResponse<{ attendee: AdminBotConferenceAttendeeRecord }> {
+    const paper = this.store.getPaper(params.paperId);
+    if (!paper) {
+      return serviceError(404, "paper not found");
+    }
+    if (!params.privileged && !this.memberOwnsPaperId(params.actorId, paper)) {
+      return serviceError(403, "members can only edit papers they authored");
+    }
+    if (!isAdminBotAttendanceState(params.attending)) {
+      return serviceError(400, "attending must be yes, no or unknown");
+    }
+    const name = params.name.trim();
+    if (!name && !params.memberId) {
+      return serviceError(400, "an attendee needs a name");
+    }
+    const attendee: AdminBotConferenceAttendeeRecord = {
+      paper_id: params.paperId,
+      attendee_key: adminBotAttendeeKey(params.memberId, name),
+      name: name || (this.store.getLabMember(params.memberId ?? "")?.name ?? ""),
+      attending: params.attending,
+      ...(params.memberId ? { member_id: params.memberId } : {}),
+      ...(params.attending === "unknown" ? {} : { confirmed_at: new Date().toISOString() }),
+    };
+    this.store.saveConferenceAttendee(attendee);
+    this.recordAudit({
+      type: "paper_attendee.updated",
+      actor: params.actorId,
+      details: { paper_id: params.paperId, attending: params.attending },
+    });
+    return { ok: true, status: 200, payload: { attendee } };
+  }
+
+  /**
+   * One author's reimbursement status on one paper.
+   *
+   * Status only: the claim itself is filed through the logistics flow, which knows about receipts.
+   * This is the lab's answer to "is that person square yet", and every attending author being
+   * square is the single condition that closes the paper.
+   */
+  setPaperReimbursement(params: {
+    paperId: string;
+    memberId: string;
+    status: string;
+    actorId: string;
+    privileged: boolean;
+  }): AdminBotServiceResponse<{ reimbursement: AdminBotPaperReimbursementRecord }> {
+    const paper = this.store.getPaper(params.paperId);
+    if (!paper) {
+      return serviceError(404, "paper not found");
+    }
+    // Your own row, the paper you authored, or an admin. A reimbursement is somebody's money, so
+    // an unrelated member must not be able to declare it settled.
+    const isOwn = params.actorId === params.memberId;
+    if (!params.privileged && !isOwn && !this.memberOwnsPaperId(params.actorId, paper)) {
+      return serviceError(403, "that is not your reimbursement to set");
+    }
+    if (!isAdminBotReimbursementState(params.status)) {
+      return serviceError(400, "unknown reimbursement status");
+    }
+    const now = new Date().toISOString();
+    const existing = this.store
+      .listPaperReimbursements(params.paperId)
+      .find((row) => row.member_id === params.memberId);
+    const reimbursement: AdminBotPaperReimbursementRecord = {
+      paper_id: params.paperId,
+      member_id: params.memberId,
+      status: params.status,
+      ...(existing?.submitted_at ? { submitted_at: existing.submitted_at } : {}),
+      ...(params.status === "submitted" && !existing?.submitted_at ? { submitted_at: now } : {}),
+      ...(params.status === "reimbursed" || params.status === "not_applicable"
+        ? { completed_at: existing?.completed_at ?? now }
+        : {}),
+    };
+    this.store.savePaperReimbursement(reimbursement);
+    this.recordAudit({
+      type: "paper_reimbursement.updated",
+      actor: params.actorId,
+      details: { paper_id: params.paperId, member_id: params.memberId, status: params.status },
+    });
+    return { ok: true, status: 200, payload: { reimbursement } };
   }
 
   /**
@@ -1149,12 +1514,16 @@ export class AdminBotService {
     papers: AdminBotPaperSlotOverviewRow[];
   }> {
     const now = nowIso ? new Date(nowIso) : new Date();
+    const ledger = this.nudgeLedgerIndex();
     const papers = this.store.listPapers().map((paper) => {
       const stored = this.store.listPaperSlots(paper.id);
-      const actionable = actionablePaperSlots(paper, stored, now);
-      const progress = paperSlotProgress(stored);
-      const lastNudged = stored
-        .map((record) => record.last_nudged_at)
+      const drafts = this.store.listSocialDrafts(paper.id);
+      const attendees = this.store.listConferenceAttendees(paper.id);
+      const reimbursements = this.store.listPaperReimbursements(paper.id);
+      const actionable = actionablePaperSlots(paper, stored, now, drafts);
+      const progress = paperSlotProgress(paper.id, stored, drafts);
+      const lastNudged = actionable
+        .map((item) => ledger.get(`paper_slot|${item.subjectId}`)?.last_nudged_at)
         .filter((value): value is string => Boolean(value))
         .toSorted()
         .at(-1);
@@ -1169,8 +1538,14 @@ export class AdminBotService {
         required_count: progress.total,
         dormant: isPaperDormant(paper, now),
         closed: isPaperClosed(paper),
-        missing_slots: actionable.map((entry) => entry.slot),
-        escalating: actionable.some((entry) => entry.escalate),
+        cycle_closed: isCycleClosed({ paper, slots: stored, drafts, attendees, reimbursements }),
+        missing_slots: actionable
+          .map((item) => item.slot)
+          .filter((slot): slot is AdminBotPaperSlot => Boolean(slot)),
+        missing_acceptance_details: missingAcceptanceDetails(paper),
+        escalating: actionable.some((item) =>
+          shouldEscalate(item, ledger.get(`paper_slot|${item.subjectId}`)),
+        ),
         ...(owed[0] ? { first_author_member_id: owed[0] } : {}),
         ...(lastNudged ? { last_nudged_at: lastNudged } : {}),
       };
@@ -1178,81 +1553,252 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: { papers } };
   }
 
+  /** The ledger as a lookup, keyed the way the sweep asks for it. */
+  private nudgeLedgerIndex(): Map<string, AdminBotNudgeLedgerRecord> {
+    return new Map(
+      this.store
+        .listNudgeLedger()
+        .map((entry) => [`${entry.domain}|${entry.subject_id}|${entry.member_id}`, entry] as const)
+        .flatMap(([key, entry]) => [
+          [key, entry] as const,
+          // Also indexed without the member, so a caller that only knows the subject (the overview
+          // row, which reports the paper rather than one person) can still find the latest stamp.
+          [`${entry.domain}|${entry.subject_id}`, entry] as const,
+        ]),
+    );
+  }
+
   /**
-   * The global nudge: one Slack message per person, naming exactly what they owe and on which
-   * paper.
+   * The global nudge: one Slack message per person, naming exactly what they owe, across every
+   * paper they are on.
    *
    * It composes nothing from caller input and picks nobody -- recipients and text are both derived
-   * from slot state and the registry, which is why it can run from a cron script as well as from
-   * an admin's button (same reasoning as sendMandatoryFieldsReminders).
+   * from state and the registry, which is why it can run from a cron script as well as from an
+   * admin's button (same reasoning as sendMandatoryFieldsReminders).
    *
-   * The cadence lives on the slot rather than on the schedule: a slot nudged inside the window is
-   * skipped no matter how often the pass runs, so a doubled crontab cannot turn this into a nag.
-   * `nudge_count` is stamped only for the slots a message actually went out for, so somebody with
-   * no Slack id on file never accumulates an escalation they were never told about.
+   * The cadence lives in the nudge ledger, keyed by (domain, subject, person). That is what makes
+   * "one message instead of four" true rather than aspirational: every gatherer below writes into
+   * the same clock, so a person is asked about their poster and their unfilled profile in the same
+   * breath and is not asked again about either for three days.
+   */
+  /**
+   * Who currently owes what, batched one message per person.
+   *
+   * The gathering half of the sweep, split out from the sending half so the same walk can answer
+   * "what would go out" without anything going out. That split is the whole point of the manual
+   * flow: an admin reads the batches, sees the actual wording, and then decides -- rather than
+   * pressing a button that composes and sends in one motion and only afterwards says what it did.
+   *
+   * Recipients and text are derived entirely from state and the registry. Nothing here reads
+   * caller input, which is why the preview is trustworthy: it is not a rehearsal of the send, it
+   * is the same computation.
+   */
+  collectPaperNudgeBatches(nowIso?: string): AdminBotServiceResponse<{
+    batches: AdminBotNudgeBatch[];
+    papers_considered: number;
+  }> {
+    const now = nowIso ? new Date(nowIso) : new Date();
+    const gathered = this.gatherPaperNudges(now);
+    const roster = new Map(this.store.listLabMembers().map((member) => [member.id, member]));
+    const batches = [...gathered.byRecipient.entries()]
+      .map(([memberId, groups]) => {
+        const member = roster.get(memberId);
+        return {
+          member_id: memberId,
+          member_name: member?.name ?? memberId,
+          // Surfaced so the preview can say why somebody will be skipped *before* the send, rather
+          // than reporting it afterwards in a list of failures.
+          deliverable: Boolean(member?.slack_user_id),
+          item_count: [...groups.values()].reduce((total, group) => total + group.items.length, 0),
+          paper_titles: [...groups.keys()],
+          message: this.composeNudgeMessage(groups, now),
+        };
+      })
+      .toSorted((left, right) => right.item_count - left.item_count);
+    return {
+      ok: true,
+      status: 200,
+      payload: { batches, papers_considered: gathered.papersConsidered },
+    };
+  }
+
+  /** One person's batch as the message they would actually receive. */
+  private composeNudgeMessage(
+    groups: Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>,
+    now: Date,
+  ): string {
+    return buildNudgeMessage({
+      groups: [...groups.entries()].map(([title, group]) => ({
+        title,
+        ...(group.venue ? { venue: group.venue } : {}),
+        ...(group.deadline ? { deadline: group.deadline } : {}),
+        items: group.items.toSorted((left, right) => left.priority - right.priority),
+      })),
+      now,
+    });
+  }
+
+  /**
+   * The walk itself: every live paper, everything actionable on it, grouped by who owes it.
+   *
+   * Filtered against the ledger, so a person who was chased about the same thing two days ago does
+   * not appear at all -- the cadence protects people from a repeated manual press exactly as it
+   * protected them from a doubled crontab.
+   */
+  private gatherPaperNudges(now: Date): {
+    byRecipient: Map<
+      string,
+      Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>
+    >;
+    stamped: Array<{ item: NudgeItem; memberId: string }>;
+    papersConsidered: number;
+  } {
+    const ledger = new Map(
+      this.store
+        .listNudgeLedger()
+        .map((entry) => [`${entry.domain}|${entry.subject_id}|${entry.member_id}`, entry]),
+    );
+    const papers = this.store.listPapers();
+    const byRecipient = new Map<
+      string,
+      Map<string, { venue?: string; deadline?: string; items: NudgeItem[] }>
+    >();
+    const stamped: Array<{ item: NudgeItem; memberId: string }> = [];
+
+    const enqueue = (memberId: string, paper: AdminBotPaperRecord, item: NudgeItem) => {
+      const key = `${item.domain}|${item.subjectId}|${memberId}`;
+      if (!isNudgeDue(ledger.get(key), now, PAPER_SLOT_NUDGE_INTERVAL_MS)) {
+        return;
+      }
+      const forMember = byRecipient.get(memberId) ?? new Map();
+      const group = forMember.get(paper.title) ?? {
+        ...(paper.venue ? { venue: paper.venue } : {}),
+        ...(paper.deadline ? { deadline: paper.deadline } : {}),
+        items: [],
+      };
+      group.items.push(item);
+      forMember.set(paper.title, group);
+      byRecipient.set(memberId, forMember);
+      stamped.push({ item, memberId });
+    };
+
+    for (const paper of papers) {
+      if (isPaperDormant(paper, now) || isPaperClosed(paper)) {
+        continue;
+      }
+      const stored = this.store.listPaperSlots(paper.id);
+      const drafts = this.store.listSocialDrafts(paper.id);
+
+      for (const item of actionablePaperSlots(paper, stored, now, drafts)) {
+        for (const memberId of this.resolvePaperSlotOwner(paper, item.owner)) {
+          enqueue(memberId, paper, item);
+        }
+      }
+
+      // A circulated draft is waiting on named people, and they are the only ones who can move it.
+      for (const draft of drafts) {
+        if (draft.status !== "circulated") {
+          continue;
+        }
+        for (const consent of this.store.listSocialConsents(draft.id)) {
+          if (consent.decision !== "pending") {
+            continue;
+          }
+          enqueue(consent.member_id, paper, {
+            domain: "social_consent",
+            subjectId: draft.id,
+            owner: "coauthors",
+            label: `Sign off on the ${draft.platform === "x" ? "X" : "LinkedIn"} post draft`,
+            priority: adminBotPaperSlotBranchPriority.social,
+            deadlineBearing: false,
+          });
+        }
+      }
+
+      // The conference half only opens once the acceptance details are in, so a paper nobody has
+      // finished recording is not yet asked who is travelling.
+      if (!isConferenceBranchOpen(paper)) {
+        continue;
+      }
+      for (const attendee of this.store.listConferenceAttendees(paper.id)) {
+        if (attendee.attending !== "unknown") {
+          continue;
+        }
+        for (const memberId of this.resolvePaperSlotOwner(paper, "first_author")) {
+          enqueue(memberId, paper, {
+            domain: "conference_attendance",
+            subjectId: `${paper.id}:${attendee.attendee_key}`,
+            owner: "first_author",
+            label: `Confirm whether ${attendee.name} is attending`,
+            priority: adminBotPaperSlotBranchPriority.venue,
+            deadlineBearing: false,
+          });
+        }
+      }
+      for (const row of this.store.listPaperReimbursements(paper.id)) {
+        if (row.status !== "pending" && row.status !== "submitted") {
+          continue;
+        }
+        enqueue(row.member_id, paper, {
+          domain: "paper_reimbursement",
+          subjectId: `${paper.id}:${row.member_id}`,
+          owner: "first_author",
+          label:
+            row.status === "pending"
+              ? "File your conference reimbursement"
+              : "Your reimbursement is submitted and still open",
+          priority: adminBotPaperSlotBranchPriority.venue,
+          deadlineBearing: false,
+        });
+      }
+    }
+
+    return { byRecipient, stamped, papersConsidered: papers.length };
+  }
+
+  /**
+   * Send the batches. One Slack message per person, whatever they owe and on however many papers.
+   *
+   * Manual only: there is no cron behind this. Nudging the lab is a judgement about timing --
+   * whether a deadline week is the right moment to chase somebody about a poster -- and the person
+   * making that judgement should be looking at the batches when they make it. The route is still
+   * gated to a genuine admin session, and the message is still composed entirely from state, so
+   * pressing the button asks for the standing rule to be applied now rather than composing
+   * anything.
+   *
+   * `recipientIds` narrows a send to the people an admin picked out of the preview. Omitted, it
+   * sends every batch. Either way the batches themselves are recomputed here rather than taken
+   * from the caller -- the preview is a view of this computation, never an input to it.
    */
   async sendPaperSlotNudges(
     actor: string,
+    options: { recipientIds?: string[] } = {},
   ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult & { papers_considered: number }>> {
     const now = new Date();
-    const cutoff = now.getTime() - PAPER_SLOT_NUDGE_INTERVAL_MS;
-    // Grouped by recipient rather than by paper: someone first-authoring three papers should get
-    // one message about three papers, not three messages.
-    const byRecipient = new Map<
-      string,
-      Array<{ paper: AdminBotPaperRecord; entries: ActionablePaperSlot[] }>
-    >();
-    const stamped: AdminBotPaperSlotRecord[] = [];
-    const papers = this.store.listPapers();
-
-    for (const paper of papers) {
-      const stored = this.store.listPaperSlots(paper.id);
-      const due = actionablePaperSlots(paper, stored, now).filter(
-        (entry) =>
-          !entry.record.last_nudged_at || Date.parse(entry.record.last_nudged_at) <= cutoff,
-      );
-      if (due.length === 0) {
-        continue;
-      }
-      for (const owner of PAPER_SLOT_OWNERS) {
-        const entries = due.filter((entry) => entry.owner === owner);
-        if (entries.length === 0) {
-          continue;
-        }
-        for (const memberId of this.resolvePaperSlotOwner(paper, owner)) {
-          const bucket = byRecipient.get(memberId) ?? [];
-          bucket.push({ paper, entries });
-          byRecipient.set(memberId, bucket);
-        }
-        stamped.push(
-          ...entries.map((entry) => ({
-            ...entry.record,
-            last_nudged_at: now.toISOString(),
-            nudge_count: entry.record.nudge_count + 1,
-          })),
-        );
-      }
-    }
+    const { byRecipient, stamped, papersConsidered } = this.gatherPaperNudges(now);
+    const chosen = options.recipientIds?.length ? new Set(options.recipientIds) : undefined;
 
     if (byRecipient.size === 0) {
       return {
         ok: true,
         status: 200,
-        payload: { created: [], skipped: [], papers_considered: papers.length },
+        payload: { created: [], skipped: [], papers_considered: papersConsidered },
       };
     }
 
     const created: AdminBotStoredProposal[] = [];
     const skipped: AdminBotMemberNudgeSkip[] = [];
     const delivered = new Set<string>();
-    for (const [memberId, items] of byRecipient) {
-      const message = items
-        .map((item) =>
-          buildPaperSlotNudgeMessage({ paper: item.paper, entries: item.entries, now }),
-        )
-        .join("\n\n");
+    for (const [memberId, groups] of byRecipient) {
+      if (chosen && !chosen.has(memberId)) {
+        continue;
+      }
       const result = await this.sendMemberNudge(
-        { channel: "slack", recipient_member_ids: [memberId], message },
+        {
+          channel: "slack",
+          recipient_member_ids: [memberId],
+          message: this.composeNudgeMessage(groups, now),
+        },
         actor,
       );
       if (!result.ok) {
@@ -1266,22 +1812,151 @@ export class AdminBotService {
       }
     }
 
-    // Only stamp when somebody was actually reached. A slot whose owner has no Slack id must stay
-    // eligible, or it silently drops out of every future pass.
-    if (delivered.size > 0) {
-      for (const record of stamped) {
-        this.store.savePaperSlot(record);
+    // Only stamp the people a message actually reached. Somebody with no Slack id on file has not
+    // been asked, and must not accumulate an escalation nobody ever told them about.
+    const ledger = new Map(
+      this.store
+        .listNudgeLedger()
+        .map((entry) => [`${entry.domain}|${entry.subject_id}|${entry.member_id}`, entry]),
+    );
+    for (const { item, memberId } of stamped) {
+      if (!delivered.has(memberId)) {
+        continue;
       }
+      const entry = ledger.get(`${item.domain}|${item.subjectId}|${memberId}`);
+      this.store.saveNudgeLedgerEntry({
+        domain: item.domain,
+        subject_id: item.subjectId,
+        member_id: memberId,
+        last_nudged_at: now.toISOString(),
+        nudge_count: (entry?.nudge_count ?? 0) + 1,
+        ...(entry?.snoozed_until ? { snoozed_until: entry.snoozed_until } : {}),
+      });
+    }
+    if (delivered.size > 0) {
       this.recordAudit({
         type: "paper_slots.nudged",
         actor,
-        details: { member_ids: [...delivered], slot_count: stamped.length },
+        details: { member_ids: [...delivered], item_count: stamped.length },
       });
     }
     return {
       ok: true,
       status: 200,
-      payload: { created, skipped, papers_considered: papers.length },
+      payload: { created, skipped, papers_considered: papersConsidered },
+    };
+  }
+
+  /**
+   * The ledger, for tests and for the admin sweep view.
+   *
+   * Exposed rather than reached for through the store, so a caller cannot accidentally write it:
+   * the only thing that stamps a nudge is the sweep itself.
+   */
+  listNudgeLedgerForTest(domain?: string): AdminBotNudgeLedgerRecord[] {
+    return this.store.listNudgeLedger(domain);
+  }
+
+  /** Push one thing off for a while. The author's own call, and bounded by the service. */
+  snoozeNudge(params: {
+    domain: string;
+    subjectId: string;
+    memberId: string;
+    until: string;
+  }): AdminBotServiceResponse<{ snoozed_until: string }> {
+    if (!(adminBotNudgeDomains as readonly string[]).includes(params.domain)) {
+      return serviceError(400, "unknown nudge domain");
+    }
+    const bounded = boundSnooze(params.until, new Date());
+    if (!bounded.ok) {
+      return serviceError(400, bounded.error);
+    }
+    const existing = this.store
+      .listNudgeLedger(params.domain)
+      .find(
+        (entry) => entry.subject_id === params.subjectId && entry.member_id === params.memberId,
+      );
+    this.store.saveNudgeLedgerEntry({
+      domain: params.domain as AdminBotNudgeDomain,
+      subject_id: params.subjectId,
+      member_id: params.memberId,
+      nudge_count: existing?.nudge_count ?? 0,
+      ...(existing?.last_nudged_at ? { last_nudged_at: existing.last_nudged_at } : {}),
+      snoozed_until: bounded.until,
+    });
+    return { ok: true, status: 200, payload: { snoozed_until: bounded.until } };
+  }
+
+  /**
+   * Turn the artifacts already on the roster's papers into slot rows.
+   *
+   * Runs once, by hand, at the point evidence tracking is switched on -- and idempotently, so
+   * running it twice is safe. Without it the first sweep asks the author of every published paper
+   * in the lab for a brainstorm doc, which is how a lab learns to ignore AdminBot.
+   */
+  backfillPaperSlots(
+    actor: string,
+    options: { dryRun?: boolean; quietDays?: number } = {},
+  ): AdminBotServiceResponse<{
+    papers_scanned: number;
+    papers_changed: number;
+    slots_written: number;
+    venues_filled: number;
+    papers_settled: number;
+    dry_run: boolean;
+  }> {
+    const now = new Date();
+    let changed = 0;
+    let slotsWritten = 0;
+    let venuesFilled = 0;
+    let settled = 0;
+    const papers = this.store.listPapers();
+    for (const paper of papers) {
+      const plan = planPaperBackfill({
+        paper,
+        existing: this.store.listPaperSlots(paper.id),
+        now,
+        ...(options.quietDays === undefined ? {} : { quietDays: options.quietDays }),
+      });
+      if (plan.settled) {
+        settled += 1;
+      }
+      if (plan.slots.length === 0 && !plan.venue) {
+        continue;
+      }
+      changed += 1;
+      slotsWritten += plan.slots.length;
+      if (plan.venue) {
+        venuesFilled += 1;
+      }
+      if (options.dryRun) {
+        continue;
+      }
+      for (const slot of plan.slots) {
+        this.store.savePaperSlot(slot);
+      }
+      if (plan.venue) {
+        this.store.savePaper({ ...paper, venue: plan.venue, updated_at: now.toISOString() });
+      }
+    }
+    if (!options.dryRun && changed > 0) {
+      this.recordAudit({
+        type: "paper_slots.backfilled",
+        actor,
+        details: { papers: changed, slots: slotsWritten, venues: venuesFilled },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        papers_scanned: papers.length,
+        papers_changed: changed,
+        slots_written: slotsWritten,
+        venues_filled: venuesFilled,
+        papers_settled: settled,
+        dry_run: Boolean(options.dryRun),
+      },
     };
   }
 
@@ -3366,7 +4041,17 @@ const PAPER_SLOT_NUDGE_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
 
 // Fixed order, so a person owed slots in two roles on the same paper reads them in the same order
 // every time.
-const PAPER_SLOT_OWNERS: AdminBotPaperSlotOwner[] = ["first_author", "coauthors", "pi", "admin"];
+function isAdminBotAttendanceState(
+  value: string,
+): value is (typeof adminBotAttendanceStates)[number] {
+  return (adminBotAttendanceStates as readonly string[]).includes(value);
+}
+
+function isAdminBotReimbursementState(
+  value: string,
+): value is (typeof adminBotReimbursementStates)[number] {
+  return (adminBotReimbursementStates as readonly string[]).includes(value);
+}
 
 // The one list, shared with the Control UI through the contracts module so the reminder can never
 // chase a field the profile page calls optional. See adminBotMandatoryProfileFields.

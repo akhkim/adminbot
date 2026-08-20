@@ -296,3 +296,264 @@
   font-size: var(--control-ui-text-xs);
   color: var(--muted);
 }
+
+/* --- Revision 2: the enum and credential fields, and the lists that hang off a paper --- */
+
+/* State plus "where is it", side by side: two halves of one answer about a physical object. */
+.paper-slot__enum {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.paper-slot__hint {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.paper-cycle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.paper-cycle__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.paper-cycle__draft {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.paper-cycle__draft-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.paper-cycle__draft-body {
+  width: 100%;
+  resize: vertical;
+}
+
+.paper-cycle__consents {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.paper-cycle__consent {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* The colour is the answer: who is still holding the post up is the only question this list is
+   asked. */
+.paper-cycle__consent[data-decision="ok"] .paper-cycle__consent-state {
+  color: var(--ok);
+}
+
+.paper-cycle__consent[data-decision="changes_requested"] .paper-cycle__consent-state {
+  color: var(--warn);
+}
+
+.paper-cycle__consent[data-decision="pending"] .paper-cycle__consent-state {
+  color: var(--muted);
+}
+
+.paper-cycle__consent-name {
+  font-weight: 600;
+}
+
+.paper-cycle__consent-comment {
+  flex-basis: 100%;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.paper-cycle__consent-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.paper-cycle__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.paper-cycle__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 200px);
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--control-ui-text-sm);
+}
+
+.paper-cycle__add {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.paper-cycle__add .input {
+  flex: 1;
+}
+
+.paper-cycle__blocked {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--warn);
+}
+
+.paper-cycle__closed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--ok);
+}
+
+.paper-cycle__closed svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* The venue decision and the four details that follow it. */
+.paper-acceptance {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.paper-acceptance__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* --- The nudge preview: what would go out, before it goes out --- */
+
+.nudge-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  animation: rise 200ms var(--ease-out) both;
+}
+
+.nudge-preview__lede,
+.nudge-preview__empty {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.nudge-preview__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 420px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.nudge-preview__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+/* Shown rather than hidden: "we cannot reach this person" is worth seeing when you are wondering
+   why they never answer. */
+.nudge-preview__item.is-unreachable {
+  opacity: 0.7;
+}
+
+.nudge-preview__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.nudge-preview__name {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.nudge-preview__count {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.nudge-preview__unreachable {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  font-size: var(--control-ui-text-xs);
+  color: var(--warn);
+}
+
+/* The message verbatim. A paraphrase would defeat the point of reviewing it, and Slack's own line
+   breaks are load-bearing in a list of bullets. */
+.nudge-preview__message {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.nudge-preview__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.nudge-preview__hint {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}

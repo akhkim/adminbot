@@ -2,7 +2,7 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
-import type { PaperSlotOverviewRow, PaperSlotRow } from "../auth/session.ts";
+import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { renderMyWork, type MyWorkProps } from "./my-work.ts";
 
@@ -19,13 +19,25 @@ function paper(overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecor
   };
 }
 
+function batch(fields: Partial<PaperNudgeBatch> = {}): PaperNudgeBatch {
+  return {
+    member_id: "ada",
+    member_name: "Ada Lovelace",
+    deliverable: true,
+    item_count: 2,
+    paper_titles: ["Causal abstraction"],
+    message: "*Causal abstraction* still needs:\n\u2022 Talk slides",
+    ...fields,
+  };
+}
+
 function overviewRow(overrides: Partial<PaperSlotOverviewRow> = {}): PaperSlotOverviewRow {
   return {
     paper_id: "p1",
     title: "Causal abstraction",
     current_step: "overleaf_writing",
     provided_count: 3,
-    required_count: 22,
+    required_count: 21,
     dormant: false,
     closed: false,
     missing_slots: ["overleaf"],
@@ -37,10 +49,12 @@ function overviewRow(overrides: Partial<PaperSlotOverviewRow> = {}): PaperSlotOv
 type DrawOptions = {
   papers?: AdminBotPaperRecord[];
   overview?: PaperSlotOverviewRow[];
-  slots?: Record<string, PaperSlotRow[]>;
+  slots?: Record<string, PaperCycle>;
   openIds?: string[];
   canNudge?: boolean;
   nudging?: boolean;
+  nudgeBatches?: PaperNudgeBatch[] | null;
+  nudgeSelected?: string[];
   notice?: string | null;
   error?: string | null;
 };
@@ -48,6 +62,8 @@ type DrawOptions = {
 function draw(options: DrawOptions = {}) {
   const toggled: string[] = [];
   const nudges: number[] = [];
+  const reviews: number[] = [];
+  const picked: string[] = [];
   const state = {
     memberId: "ada",
     adminBotData: {
@@ -68,14 +84,26 @@ function draw(options: DrawOptions = {}) {
     slotsNotice: options.notice ?? null,
     nudging: options.nudging ?? false,
     canNudge: options.canNudge ?? true,
+    nudgeBatches: options.nudgeBatches ?? null,
+    nudgeLoading: false,
+    nudgeSelected: options.nudgeSelected ?? [],
+    onReviewNudges: () => reviews.push(1),
+    onToggleNudgeRecipient: (id: string) => picked.push(id),
     onToggleCard: (id) => toggled.push(id),
     onSaveSlot: () => {},
     onNudgeAuthors: () => nudges.push(1),
+    memberId: "ada",
+    memberName: (id: string) => id,
+    onSaveDraft: () => {},
+    onCirculateDraft: () => {},
+    onConsent: () => {},
+    onSetAttendee: () => {},
+    onSetReimbursement: () => {},
   };
   const container = document.createElement("div");
   document.body.append(container);
   render(renderMyWork(state, props), container);
-  return { container, toggled, nudges };
+  return { container, toggled, nudges, reviews, picked };
 }
 
 describe("renderMyWork", () => {
@@ -136,13 +164,13 @@ describe("renderMyWork", () => {
   it("summarises a closed card with the count and what is outstanding, not a bare percentage", () => {
     const { container } = draw();
     const head = container.querySelector('[data-testid="my-work-toggle-p1"]');
-    expect(head?.textContent).toContain("3/22");
+    expect(head?.textContent).toContain("3/21");
     expect(head?.textContent).toContain("1 outstanding");
   });
 
   it("says so when a paper has everything in", () => {
     const { container } = draw({
-      overview: [overviewRow({ provided_count: 22, missing_slots: [] })],
+      overview: [overviewRow({ provided_count: 21, missing_slots: [] })],
     });
     expect(container.textContent).toContain("Everything is in");
   });
@@ -156,25 +184,71 @@ describe("renderMyWork", () => {
     expect(head?.textContent).toContain("2026-09-24");
   });
 
-  it("counts only live papers with something outstanding on the nudge button", () => {
-    const { container, nudges } = draw({
+  it("counts only live papers with something outstanding on the review button", () => {
+    const { container, reviews } = draw({
       papers: [paper(), paper({ id: "p2", title: "Second" })],
       overview: [overviewRow(), overviewRow({ paper_id: "p2", dormant: true })],
     });
     const button = container.querySelector<HTMLButtonElement>(
-      '[data-testid="my-work-nudge-authors"]',
+      '[data-testid="my-work-review-nudges"]',
     );
     expect(button?.textContent).toContain("1");
     button?.click();
-    expect(nudges).toEqual([1]);
+    // Opening the preview sends nothing -- that is the whole point of the manual flow.
+    expect(reviews).toEqual([1]);
   });
 
-  it("disables the nudge rather than hiding it when the lab is caught up", () => {
-    const { container } = draw({
-      overview: [overviewRow({ missing_slots: [] })],
-    });
-    const button = container.querySelector<HTMLButtonElement>(
+  it("sends nothing until the preview is open and Send is pressed", () => {
+    const closed = draw();
+    expect(closed.container.querySelector('[data-testid="my-work-nudge-authors"]')).toBeNull();
+
+    const open = draw({ nudgeBatches: [batch()], nudgeSelected: ["ada"] });
+    const send = open.container.querySelector<HTMLButtonElement>(
       '[data-testid="my-work-nudge-authors"]',
+    );
+    expect(send).not.toBeNull();
+    send?.click();
+    expect(open.nudges).toEqual([1]);
+  });
+
+  it("shows the message verbatim, so somebody reads what goes out under their name", () => {
+    const { container } = draw({
+      nudgeBatches: [batch({ message: "*Causal abstraction* still needs:\n• Talk slides" })],
+      nudgeSelected: ["ada"],
+    });
+    expect(container.querySelector(".nudge-preview__message")?.textContent).toContain(
+      "• Talk slides",
+    );
+  });
+
+  it("shows an unreachable person, unticked and unticking", () => {
+    // "We cannot reach this person" is worth seeing when you are wondering why they never answer.
+    const { container } = draw({
+      nudgeBatches: [batch({ member_id: "bob", member_name: "Bob", deliverable: false })],
+      nudgeSelected: [],
+    });
+    const pick = container.querySelector<HTMLInputElement>('[data-testid="nudge-pick-bob"]');
+    expect(pick?.disabled).toBe(true);
+    expect(container.textContent).toContain("No Slack account on file");
+  });
+
+  it("will not send with nobody ticked", () => {
+    const { container } = draw({ nudgeBatches: [batch()], nudgeSelected: [] });
+    expect(
+      container.querySelector<HTMLButtonElement>('[data-testid="my-work-nudge-authors"]')?.disabled,
+    ).toBe(true);
+  });
+
+  it("lets an admin drop one person from this round", () => {
+    const { container, picked } = draw({ nudgeBatches: [batch()], nudgeSelected: ["ada"] });
+    container.querySelector<HTMLInputElement>('[data-testid="nudge-pick-ada"]')?.click();
+    expect(picked).toEqual(["ada"]);
+  });
+
+  it("disables the review button rather than hiding it when the lab is caught up", () => {
+    const { container } = draw({ overview: [overviewRow({ missing_slots: [] })] });
+    const button = container.querySelector<HTMLButtonElement>(
+      '[data-testid="my-work-review-nudges"]',
     );
     expect(button).not.toBeNull();
     expect(button?.disabled).toBe(true);
@@ -182,6 +256,7 @@ describe("renderMyWork", () => {
 
   it("keeps the global nudge off a member's page -- it messages the whole lab", () => {
     const { container } = draw({ canNudge: false });
+    expect(container.querySelector('[data-testid="my-work-review-nudges"]')).toBeNull();
     expect(container.querySelector('[data-testid="my-work-nudge-authors"]')).toBeNull();
   });
 

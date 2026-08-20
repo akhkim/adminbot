@@ -13,6 +13,7 @@ import { html, nothing } from "lit";
 import {
   adminBotPaperSlotRegistry,
   adminBotPaperSlots,
+  adminBotPosterPhysicalStates,
   isAdminBotPaperSlotSettled,
   type AdminBotPaperSlot,
   type AdminBotPaperSlotBranch,
@@ -25,7 +26,19 @@ export type PaperSlotsProps = {
   paperId: string;
   slots: PaperSlotRow[];
   loading: boolean;
-  onSaveSlot: (slot: string, input: { url?: string; value_text?: string; done?: boolean }) => void;
+  onSaveSlot: (
+    slot: string,
+    input: { url?: string; value_text?: string; value_note?: string; done?: boolean },
+  ) => void;
+};
+
+/** Plain-English states for the one enum slot. */
+const POSTER_PHYSICAL_LABELS: Record<string, string> = {
+  not_needed: "Not needed",
+  to_print: "Still to print",
+  printed: "Printed",
+  with_author: "With the author",
+  shipped: "Shipped",
 };
 
 /** Reading order of the card: the writing, then the venue, then everything a finished paper trails. */
@@ -117,20 +130,94 @@ function renderInput(
   };
 
   if (definition.kind === "bool") {
+    // A derived gate is a readout, not a control: it follows the social drafts below, and the
+    // service refuses a direct write to it. Offering a checkbox that always errors would be worse
+    // than offering none.
+    const readOnly = disabled || Boolean(definition.derived);
     return html`
       <label class="paper-slot__check">
         <input
           type="checkbox"
           ?checked=${row?.status === "provided" || row?.status === "waived"}
-          ?disabled=${disabled}
+          ?disabled=${readOnly}
           data-testid=${`paper-slot-${props.paperId}-${slot}`}
           @change=${(event: Event) =>
             props.onSaveSlot(slot, {
               done: (event.target as HTMLInputElement).checked,
             })}
         />
-        <span>${row?.status === "provided" ? "Done" : "Mark done"}</span>
+        <span>
+          ${definition.derived
+            ? row?.status === "provided"
+              ? "Approved draft on file"
+              : "Waiting on an approved draft"
+            : row?.status === "provided"
+              ? "Done"
+              : "Mark done"}
+        </span>
       </label>
+    `;
+  }
+
+  if (definition.kind === "enum") {
+    // Two halves of one answer: the closed state, and where the thing physically is.
+    return html`
+      <span class="paper-slot__enum">
+        <select
+          class="input"
+          ?disabled=${disabled}
+          data-testid=${`paper-slot-${props.paperId}-${slot}`}
+          @change=${(event: Event) =>
+            props.onSaveSlot(slot, {
+              value_text: (event.target as HTMLSelectElement).value,
+              value_note: row?.value_note ?? "",
+            })}
+        >
+          <option value="" ?selected=${!row?.value_text}></option>
+          ${adminBotPosterPhysicalStates.map(
+            (state) => html`
+              <option value=${state} ?selected=${state === row?.value_text}>
+                ${POSTER_PHYSICAL_LABELS[state] ?? state}
+              </option>
+            `,
+          )}
+        </select>
+        <input
+          class="input"
+          type="text"
+          placeholder="Where is it?"
+          .value=${row?.value_note ?? ""}
+          ?disabled=${disabled || !row?.value_text}
+          data-testid=${`paper-slot-note-${props.paperId}-${slot}`}
+          @change=${(event: Event) =>
+            props.onSaveSlot(slot, {
+              value_text: row?.value_text ?? "",
+              value_note: (event.target as HTMLInputElement).value,
+            })}
+        />
+      </span>
+    `;
+  }
+
+  if (definition.kind === "secret6") {
+    // A credential, so it is typed into a password field and never rendered back once stored: the
+    // service only returns it to an author or an admin, and even they do not need it on screen to
+    // know it is on file.
+    return html`
+      <input
+        class="input paper-slot__input"
+        type="password"
+        maxlength="6"
+        autocomplete="off"
+        placeholder=${row?.status === "provided" ? "On file — type to replace" : "6 characters"}
+        ?disabled=${disabled}
+        data-testid=${`paper-slot-${props.paperId}-${slot}`}
+        @change=${(event: Event) => {
+          const field = event.target as HTMLInputElement;
+          props.onSaveSlot(slot, { value_text: field.value });
+          field.value = "";
+        }}
+      />
     `;
   }
 

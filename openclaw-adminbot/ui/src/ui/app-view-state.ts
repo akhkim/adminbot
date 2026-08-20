@@ -491,7 +491,7 @@ export type AppViewState = {
   // My Projects & Papers: what each paper still owes, and the slots of whichever cards are open.
   // `loadedAt` is the same "ask for it" sentinel the overview above uses.
   adminBotPaperSlotOverview: import("./adminbot/auth/session.ts").PaperSlotOverviewRow[];
-  adminBotPaperSlots: Record<string, import("./adminbot/auth/session.ts").PaperSlotRow[]>;
+  adminBotPaperSlots: Record<string, import("./adminbot/auth/session.ts").PaperCycle>;
   adminBotPaperSlotsOpen: string[];
   adminBotPaperSlotsLoading: boolean;
   adminBotPaperSlotsError: string | null;
@@ -499,6 +499,10 @@ export type AppViewState = {
   adminBotPaperSlotsNudging: boolean;
   adminBotPaperSlotsNotice: string | null;
   adminBotPaperSlotsBusyId: string | null;
+  // The nudge preview. Null when closed; opening it sends nothing.
+  adminBotPaperNudgeBatches: import("./adminbot/auth/session.ts").PaperNudgeBatch[] | null;
+  adminBotPaperNudgeLoading: boolean;
+  adminBotPaperNudgeSelected: string[];
   adminBotLettersSchools: RecommendationSchool[];
   adminBotLettersFacts: LetterFact[];
   // Book Meeting's own table and save state, kept apart from the other two for the same reason

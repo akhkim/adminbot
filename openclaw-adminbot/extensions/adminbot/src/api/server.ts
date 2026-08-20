@@ -79,6 +79,7 @@ import {
   PayloadTooLargeError,
   asString,
   readJson,
+  readJsonOrEmpty,
   readRecord,
   sendHtml,
   sendJson,
@@ -1727,14 +1728,41 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.listPaperSlotOverview(url.searchParams.get("now") ?? undefined));
     return;
   }
-  if (req.method === "POST" && url.pathname === "/papers/slot-reminder/run") {
-    // Recipients and message are computed entirely from slot state and the registry; the caller
-    // supplies neither. Same safety model (and the same requirePrivileged, satisfied by the cron
-    // script's service principal) as /members/mandatory-fields-reminder/run.
+  if (req.method === "GET" && url.pathname === "/papers/nudge-batches") {
+    // The preview. Read-only and computed by the same walk the send uses, so what an admin reads
+    // here is what would actually go out rather than a rehearsal of it.
     if (!requirePrivileged(res, principal)) {
       return;
     }
-    sendServiceResult(res, await service.sendPaperSlotNudges(principalActor(principal)));
+    sendServiceResult(
+      res,
+      service.collectPaperNudgeBatches(url.searchParams.get("now") ?? undefined),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/slot-reminder/run") {
+    // Messages the whole lab under the presser's authority, so this takes a genuine admin member
+    // session and NOT the shared service principal -- unlike the mandatory-fields reminder, which
+    // a cron script triggers. There is deliberately no scheduled caller here: nudging is a
+    // judgement about timing, and the person making it should be looking at the batches when they
+    // do. The message is still composed entirely from state, so pressing the button asks for the
+    // standing rule to be applied now rather than composing anything.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    // An empty body is the ordinary case: "send every batch". Only a caller narrowing the send to
+    // people picked out of the preview sends anything at all, so requiring a body here would make
+    // the plain press the awkward one.
+    const body = readRecord(await readJsonOrEmpty(req));
+    const recipients = Array.isArray(body.recipient_member_ids)
+      ? body.recipient_member_ids.filter((id): id is string => typeof id === "string")
+      : undefined;
+    sendServiceResult(
+      res,
+      await service.sendPaperSlotNudges(principalActor(principal), {
+        ...(recipients?.length ? { recipientIds: recipients } : {}),
+      }),
+    );
     return;
   }
   const paperSlot = /^\/papers\/([^/]+)\/slots\/([^/]+)$/u.exec(url.pathname);
@@ -1778,7 +1806,144 @@ async function handleAuthenticatedRoute(
   }
   const paperSlots = /^\/papers\/([^/]+)\/slots$/u.exec(url.pathname);
   if (req.method === "GET" && paperSlots?.[1]) {
-    sendServiceResult(res, service.listPaperSlots(decodeURIComponent(paperSlots[1])));
+    // The viewer decides whether the arXiv password comes back at all -- authors and admins only.
+    sendServiceResult(
+      res,
+      service.listPaperSlots(decodeURIComponent(paperSlots[1]), {
+        ...(principal.kind === "member" ? { memberId: principal.member.id } : {}),
+        isAdmin: isPrivileged(principal),
+      }),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/slots/backfill") {
+    // Rewrites evidence across every paper in the lab, so it takes a genuine admin session rather
+    // than the shared service principal: unlike the nudge pass, this is a one-off an operator
+    // chooses to run, and `dryRun` exists so they can look before they do.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = (await readJson(req)) as { dry_run?: boolean; quiet_days?: number };
+    sendServiceResult(
+      res,
+      service.backfillPaperSlots(principalActor(principal), {
+        dryRun: body?.dry_run === true,
+        ...(typeof body?.quiet_days === "number" ? { quietDays: body.quiet_days } : {}),
+      }),
+    );
+    return;
+  }
+  const paperDrafts = /^\/papers\/([^/]+)\/social-drafts$/u.exec(url.pathname);
+  if (req.method === "POST" && paperDrafts?.[1]) {
+    if (principal.kind !== "member" && !isPrivileged(principal)) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.saveSocialDraft({
+        paperId: decodeURIComponent(paperDrafts[1]),
+        platform: String(body.platform ?? ""),
+        body: String(body.body ?? ""),
+        ...(typeof body.model === "string" ? { model: body.model } : {}),
+        memberId: principal.kind === "member" ? principal.member.id : principalActor(principal),
+        privileged: isPrivileged(principal),
+      }),
+    );
+    return;
+  }
+  const draftCirculate = /^\/papers\/social-drafts\/([^/]+)\/circulate$/u.exec(url.pathname);
+  if (req.method === "POST" && draftCirculate?.[1]) {
+    if (principal.kind !== "member" && !isPrivileged(principal)) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.circulateSocialDraft({
+        draftId: decodeURIComponent(draftCirculate[1]),
+        memberId: principal.kind === "member" ? principal.member.id : principalActor(principal),
+        privileged: isPrivileged(principal),
+      }),
+    );
+    return;
+  }
+  const draftConsent = /^\/papers\/social-drafts\/([^/]+)\/consent$/u.exec(url.pathname);
+  if (req.method === "POST" && draftConsent?.[1]) {
+    // Consent is personal: it takes a member session and records that member's answer, never one
+    // supplied in the body. The service principal has nobody to speak for here.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.recordSocialConsent({
+        draftId: decodeURIComponent(draftConsent[1]),
+        memberId: principal.member.id,
+        decision: String(body.decision ?? ""),
+        ...(typeof body.comment === "string" ? { comment: body.comment } : {}),
+      }),
+    );
+    return;
+  }
+  const paperAttendees = /^\/papers\/([^/]+)\/attendees$/u.exec(url.pathname);
+  if (req.method === "PUT" && paperAttendees?.[1]) {
+    if (principal.kind !== "member" && !isPrivileged(principal)) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.setConferenceAttendee({
+        paperId: decodeURIComponent(paperAttendees[1]),
+        name: String(body.name ?? ""),
+        ...(typeof body.member_id === "string" ? { memberId: body.member_id } : {}),
+        attending: String(body.attending ?? ""),
+        actorId: principal.kind === "member" ? principal.member.id : principalActor(principal),
+        privileged: isPrivileged(principal),
+      }),
+    );
+    return;
+  }
+  const paperReimbursement = /^\/papers\/([^/]+)\/reimbursements\/([^/]+)$/u.exec(url.pathname);
+  if (req.method === "PUT" && paperReimbursement?.[1] && paperReimbursement[2]) {
+    if (principal.kind !== "member" && !isPrivileged(principal)) {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.setPaperReimbursement({
+        paperId: decodeURIComponent(paperReimbursement[1]),
+        memberId: decodeURIComponent(paperReimbursement[2]),
+        status: String(body.status ?? ""),
+        actorId: principal.kind === "member" ? principal.member.id : principalActor(principal),
+        privileged: isPrivileged(principal),
+      }),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/nudges/snooze") {
+    // A member pushes back their own nudges and nobody else's, so the id comes from the session.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.snoozeNudge({
+        domain: String(body.domain ?? ""),
+        subjectId: String(body.subject_id ?? ""),
+        memberId: principal.member.id,
+        until: String(body.until ?? ""),
+      }),
+    );
     return;
   }
   const paper = /^\/papers\/([^/]+)$/u.exec(url.pathname);

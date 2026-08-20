@@ -53,10 +53,17 @@ import {
   withdrawAdminBotLogisticsRequest,
 } from "./adminbot/controllers/logistics.ts";
 import {
+  circulateAdminBotSocialDraft,
+  loadAdminBotNudgeBatches,
   loadAdminBotPaperSlotOverview,
   nudgeAdminBotPaperAuthors,
+  recordAdminBotSocialConsent,
   saveAdminBotPaperSlot,
+  saveAdminBotSocialDraft,
+  setAdminBotPaperAttendee,
+  setAdminBotPaperReimbursement,
   toggleAdminBotPaperCard,
+  toggleAdminBotPaperNudgeRecipient,
 } from "./adminbot/controllers/paper-slots.ts";
 import {
   loadAdminBotProfileOverview,
@@ -3371,6 +3378,49 @@ export function renderApp(state: AppViewState) {
               },
               onNudgeAuthors: () => {
                 void nudgeAdminBotPaperAuthors(state).finally(() => requestHostUpdate?.());
+              },
+              nudgeBatches: state.adminBotPaperNudgeBatches,
+              nudgeLoading: state.adminBotPaperNudgeLoading,
+              nudgeSelected: state.adminBotPaperNudgeSelected,
+              onReviewNudges: () => {
+                void loadAdminBotNudgeBatches(state).finally(() => requestHostUpdate?.());
+              },
+              onToggleNudgeRecipient: (memberId: string) => {
+                toggleAdminBotPaperNudgeRecipient(state, memberId);
+                requestHostUpdate?.();
+              },
+              memberId: state.memberId ?? null,
+              memberName: (memberId: string) =>
+                (state.adminBotData?.members ?? []).find((member) => member.id === memberId)
+                  ?.name ?? memberId,
+              onSaveDraft: (paperId, platform, body) => {
+                void saveAdminBotSocialDraft(state, paperId, platform, body).finally(() =>
+                  requestHostUpdate?.(),
+                );
+              },
+              onCirculateDraft: (paperId, draftId) => {
+                void circulateAdminBotSocialDraft(state, paperId, draftId).finally(() =>
+                  requestHostUpdate?.(),
+                );
+              },
+              onConsent: (paperId, draftId, decision, comment) => {
+                void recordAdminBotSocialConsent(
+                  state,
+                  paperId,
+                  draftId,
+                  decision,
+                  comment,
+                ).finally(() => requestHostUpdate?.());
+              },
+              onSetAttendee: (paperId, name, memberId, attending) => {
+                void setAdminBotPaperAttendee(state, paperId, name, memberId, attending).finally(
+                  () => requestHostUpdate?.(),
+                );
+              },
+              onSetReimbursement: (paperId, memberId, status) => {
+                void setAdminBotPaperReimbursement(state, paperId, memberId, status).finally(() =>
+                  requestHostUpdate?.(),
+                );
               },
             })
           : nothing}

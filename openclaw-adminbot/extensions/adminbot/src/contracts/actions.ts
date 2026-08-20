@@ -904,6 +904,18 @@ export const adminBotPaperVenueDecisions = ["pending", "accept", "reject"] as co
 
 export type AdminBotPaperVenueDecision = (typeof adminBotPaperVenueDecisions)[number];
 
+/** How the paper appears at the venue. Ordered least to most prominent. */
+export const adminBotPaperPresentationTypes = [
+  "poster",
+  "findings",
+  "main",
+  "spotlight",
+  "oral",
+  "award",
+] as const;
+
+export type AdminBotPaperPresentationType = (typeof adminBotPaperPresentationTypes)[number];
+
 export type AdminBotPaperRecordInput = {
   id: string;
   title: string;
@@ -921,6 +933,16 @@ export type AdminBotPaperRecordInput = {
   attempt?: number;
   /** Admin-only exemption from the 24-month dormancy rule. */
   dormant_override?: boolean;
+  // Acceptance details. Author-provided, and only meaningful once `venue_decision` is `accept`;
+  // the conference branch (who is going, posters, reimbursements) stays shut until all four are
+  // in, because none of it can be asked sensibly without them. Nothing infers these today --
+  // reading them off OpenReview is plausible later, and would still end in the author confirming.
+  accepted_venue?: string;
+  accepted_year?: number;
+  // Archival vs non-archival decides whether this counts as a publication, which is why it is
+  // asked rather than guessed: the same workshop can be either in different years.
+  is_archival?: boolean;
+  presentation_type?: AdminBotPaperPresentationType;
   artifacts?: AdminBotPaperArtifactLinks;
   mentor_member_id?: string;
   checks?: {
@@ -1130,6 +1152,12 @@ export type AdminBotAuditEvent = {
     | "paper_slot.updated"
     | "paper_slot.waived"
     | "paper_slots.nudged"
+    | "paper_social_draft.saved"
+    | "paper_social_draft.circulated"
+    | "paper_social_consent.recorded"
+    | "paper_attendee.updated"
+    | "paper_reimbursement.updated"
+    | "paper_slots.backfilled"
     | "paper.deleted"
     | "onboarding.guide_sent"
     | "settings.updated"

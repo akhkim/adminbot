@@ -54,11 +54,11 @@ function seed(service: AdminBotService): void {
 }
 
 describe("listPaperSlots", () => {
-  it("answers with all 23 rows, so the card renders a checklist rather than a list of answers", () => {
+  it("answers with all 25 rows, so the card renders a checklist rather than a list of answers", () => {
     const service = new AdminBotService();
     seed(service);
     const { slots } = unwrap(service.listPaperSlots("p1"));
-    expect(slots).toHaveLength(23);
+    expect(slots).toHaveLength(25);
     expect(slots.every((slot) => slot.status === "missing")).toBe(true);
   });
 
@@ -77,8 +77,8 @@ describe("setPaperSlot", () => {
     const { slot } = unwrap(
       service.setPaperSlot({
         paperId: "p1",
-        slot: "brainstorm_doc",
-        input: { url: "https://example.com/doc" },
+        slot: "project_folder",
+        input: { url: "https://docs.google.com/document/d/x" },
         memberId: "ada",
         privileged: false,
       }),
@@ -99,8 +99,8 @@ describe("setPaperSlot", () => {
     expect(
       service.setPaperSlot({
         paperId: "p1",
-        slot: "brainstorm_doc",
-        input: { url: "https://example.com/doc" },
+        slot: "project_folder",
+        input: { url: "https://docs.google.com/document/d/x" },
         memberId: "eve",
         privileged: false,
       }),
@@ -173,8 +173,8 @@ describe("listPaperSlotOverview", () => {
     unwrap(
       service.setPaperSlot({
         paperId: "p1",
-        slot: "brainstorm_doc",
-        input: { url: "https://example.com/doc" },
+        slot: "project_folder",
+        input: { url: "https://docs.google.com/document/d/x" },
         memberId: "ada",
         privileged: false,
       }),
@@ -183,12 +183,55 @@ describe("listPaperSlotOverview", () => {
     expect(row).toMatchObject({
       paper_id: "p1",
       provided_count: 1,
-      required_count: 22,
-      missing_slots: ["overleaf"],
+      missing_slots: ["overleaf_edit"],
       first_author_member_id: "ada",
       dormant: false,
       closed: false,
+      cycle_closed: false,
     });
+  });
+});
+
+describe("collectPaperNudgeBatches", () => {
+  it("says who would be messaged and exactly what they would receive, without sending", async () => {
+    const service = serviceWithDelivery();
+    seed(service);
+    const { batches, papers_considered } = unwrap(service.collectPaperNudgeBatches());
+    expect(papers_considered).toBe(1);
+    expect(batches).toHaveLength(1);
+    expect(batches[0]).toMatchObject({
+      member_id: "ada",
+      member_name: "Ada Lovelace",
+      deliverable: true,
+      item_count: 1,
+    });
+    expect(batches[0]?.message).toContain("Project folder or brainstorm doc");
+    // Nothing left the service: reading the preview must not consume the cadence.
+    expect(service.listNudgeLedgerForTest()).toEqual([]);
+    const after = unwrap(await service.sendPaperSlotNudges("zhijing"));
+    expect(after.created).toHaveLength(1);
+  });
+
+  it("flags a recipient with no Slack id instead of quietly dropping them", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        id: "ada",
+        name: "Ada Lovelace",
+        privilege_level: "member",
+      } as never),
+    );
+    unwrap(
+      service.upsertPaper({
+        id: "p1",
+        title: "Causal abstraction",
+        authors: ["Ada Lovelace"],
+        current_step: "overleaf_writing",
+        first_author_member_id: "ada",
+      }),
+    );
+    const { batches } = unwrap(service.collectPaperNudgeBatches());
+    expect(batches[0]).toMatchObject({ member_id: "ada", deliverable: false });
   });
 });
 
@@ -199,10 +242,12 @@ describe("sendPaperSlotNudges", () => {
     const result = unwrap(await service.sendPaperSlotNudges("zhijing"));
     expect(result.created).toHaveLength(1);
     expect(result.created[0]?.summary).toContain("Ada Lovelace");
-    const slots = unwrap(service.listPaperSlots("p1")).slots;
-    const brainstorm = slots.find((slot) => slot.slot === "brainstorm_doc");
-    expect(brainstorm?.nudge_count).toBe(1);
-    expect(brainstorm?.last_nudged_at).toBeTruthy();
+    // The counters live in the ledger now, keyed by who was asked -- that is what lets one sweep
+    // batch a person's papers, profile and reimbursements into a single message.
+    const ledger = service.listNudgeLedgerForTest("paper_slot");
+    const entry = ledger.find((row) => row.subject_id === "p1:project_folder");
+    expect(entry).toMatchObject({ member_id: "ada", nudge_count: 1 });
+    expect(entry?.last_nudged_at).toBeTruthy();
   });
 
   it("keeps its own cadence, so running twice does not nag", async () => {
@@ -219,7 +264,7 @@ describe("sendPaperSlotNudges", () => {
     unwrap(
       service.waivePaperSlot({
         paperId: "p1",
-        slot: "brainstorm_doc",
+        slot: "project_folder",
         reason: "predates AdminBot",
         memberId: "zhijing",
       }),
@@ -236,10 +281,19 @@ describe("sendPaperSlotNudges", () => {
     const service = new AdminBotService();
     seed(service);
     unwrap(await service.sendPaperSlotNudges("cron"));
-    const brainstorm = unwrap(service.listPaperSlots("p1")).slots.find(
-      (slot) => slot.slot === "brainstorm_doc",
-    );
-    expect(brainstorm?.nudge_count).toBe(0);
+    expect(service.listNudgeLedgerForTest("paper_slot")).toEqual([]);
+  });
+
+  it("sends only to the people an admin picked out of the preview", async () => {
+    const service = serviceWithDelivery();
+    seed(service);
+    // Ada owes the project folder; nobody else owes anything on this paper.
+    const result = unwrap(await service.sendPaperSlotNudges("zhijing", { recipientIds: ["bob"] }));
+    expect(result.created).toHaveLength(0);
+    // Ada was not messaged, so her cadence is untouched and she is still due next time.
+    expect(service.listNudgeLedgerForTest()).toEqual([]);
+    const second = unwrap(await service.sendPaperSlotNudges("zhijing", { recipientIds: ["ada"] }));
+    expect(second.created).toHaveLength(1);
   });
 
   it("says nothing at all when there are no papers", async () => {
