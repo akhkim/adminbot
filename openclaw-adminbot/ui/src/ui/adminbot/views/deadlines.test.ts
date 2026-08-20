@@ -27,7 +27,9 @@ async function renderView(): Promise<HTMLElement> {
 
 async function settle(container: HTMLElement): Promise<void> {
   await (
-    container.querySelector("adminbot-deadlines-view") as { updateComplete?: Promise<unknown> }
+    container.querySelector("adminbot-deadlines-view") as {
+      updateComplete?: Promise<unknown>;
+    }
   )?.updateComplete;
 }
 
@@ -129,9 +131,9 @@ describe("renderDeadlines", () => {
     expect(workshops.querySelectorAll(".deadline-row__date").length).toBe(0);
   });
 
-// The split the board exists to make: an archival venue publishes the paper, so it cannot then go
-// to a second one, while a workshop leaves it free. The classification is stamped on the data by
-// scripts/adminbot_deadlines.py -- these assert the board reads it rather than re-deriving it.
+  // The split the board exists to make: an archival venue publishes the paper, so it cannot then go
+  // to a second one, while a workshop leaves it free. The classification is stamped on the data by
+  // scripts/adminbot_deadlines.py -- these assert the board reads it rather than re-deriving it.
   it("separates archival dates from non-archival ones inside a conference", async () => {
     const container = await renderView();
 
@@ -166,9 +168,7 @@ describe("renderDeadlines", () => {
     expect(nonArchival).toBeLessThanOrEqual(all);
     expect(archival + nonArchival).toBeLessThanOrEqual(all);
 
-    container
-      .querySelector<HTMLButtonElement>('[data-testid="deadline-filter-archival"]')!
-      .click();
+    container.querySelector<HTMLButtonElement>('[data-testid="deadline-filter-archival"]')!.click();
     await settle(container);
 
     // The counts still describe the whole board, not the filtered view.
@@ -182,8 +182,8 @@ describe("renderDeadlines", () => {
     ).toBe("true");
   });
 
-// A venue is not one date. Sub-deadlines are separate rows sharing a venue_group, so opening a
-// conference shows each one counting down separately, in the order a paper meets them.
+  // A venue is not one date. Sub-deadlines are separate rows sharing a venue_group, so opening a
+  // conference shows each one counting down separately, in the order a paper meets them.
   it("lists a conference's sub-deadlines under it, named by stage", async () => {
     const container = await renderView();
 
@@ -201,6 +201,45 @@ describe("renderDeadlines", () => {
     expect(names).toContain("Full paper");
     // Stage order, which is also date order here.
     expect(names.indexOf("Abstract")).toBeLessThan(names.indexOf("Full paper"));
+  });
+
+  // Ninety-nine workshops under one conference share a stage ("ARR commitment") and differ only in
+  // name. Naming the rows by the stage made the panel ninety-nine identical lines; the name leads.
+  it("names a workshop row by the workshop, with its stage alongside", async () => {
+    const container = await renderView();
+
+    conferenceNamed(container, "EMNLP")
+      .querySelector<HTMLButtonElement>('[data-testid="conference-toggle"]')!
+      .click();
+    await settle(container);
+
+    const rows = [
+      ...conferenceNamed(container, "EMNLP").querySelectorAll<HTMLElement>(".deadline-row"),
+    ];
+    const commitments = rows.filter(
+      (row) => row.querySelector(".deadline-row__stage")?.textContent?.trim() === "ARR commitment",
+    );
+    // Several workshops share that stage, which is exactly why the stage cannot be the name.
+    expect(commitments.length).toBeGreaterThan(1);
+    const names = commitments.map(
+      (row) => row.querySelector(".deadline-row__name")?.textContent?.trim() ?? "",
+    );
+    for (const name of names) {
+      expect(name).not.toBe("ARR commitment");
+      expect(name).not.toBe("");
+      // The conference is the heading above, so it is not repeated on the row.
+      expect(name).not.toContain("(EMNLP 2026)");
+    }
+    expect(new Set(names).size).toBe(names.length);
+    // OpenReview suffixes commitment venues with the route; the stage beside the name says it
+    // already, and on the name it pushes out the part that identifies the workshop.
+    for (const name of names) {
+      expect(name.toLowerCase()).not.toMatch(/arr[\s_-]*commitment\)?$/u);
+    }
+    // And the route chip does not repeat the word the stage already says.
+    expect(
+      commitments[0].querySelector('.deadline-row__route[data-route="commitment"]'),
+    ).toBeNull();
   });
 
   it("keeps the full venue name on a conference with a single date", async () => {

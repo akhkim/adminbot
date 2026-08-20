@@ -4307,9 +4307,27 @@
   min-width: 0;
 }
 
+/* Name first, stage after it. A workshop track is ninety-nine rows that agree on their stage and
+   differ only in name, so the name carries the row and the stage rides along one step down in
+   size -- the reverse of what the panel used to print, which was the stage ninety-nine times. */
+.deadline-row__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
 .deadline-row__name {
   font-size: var(--control-ui-text-md);
   color: var(--text);
+}
+
+.deadline-row__stage {
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: var(--tracking-tight);
+  color: var(--muted);
+  white-space: nowrap;
 }
 
 /* Which deadline this is -- a commitment and a submission for one venue are different dates, and
@@ -4341,6 +4359,12 @@
   font-size: var(--control-ui-text-xs);
   letter-spacing: var(--tracking-tight);
   vertical-align: 1px;
+}
+
+/* Inside a row the chip is a flex item with its own gap; the inline margin is for the lead
+   card, where it sits in running text. */
+.deadline-row__title .deadline-row__route {
+  margin-left: 0;
 }
 
 .deadline-row__route[data-route="direct"] {

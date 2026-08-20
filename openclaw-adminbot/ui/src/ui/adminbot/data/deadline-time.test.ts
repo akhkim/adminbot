@@ -58,12 +58,20 @@ describe("urgencyOf", () => {
 describe("upcomingMajorDeadlines", () => {
   const now = Date.UTC(2026, 7, 10);
 
+  // Named venues would pin this to whichever CFPs the snapshot happened to carry the day it was
+  // regenerated; the behavior is that the soonest conference deadlines come back in order.
   it("returns the soonest upcoming conference deadlines, earliest first", () => {
     const picked = upcomingMajorDeadlines(now, 2);
     expect(picked).toHaveLength(2);
-    expect(picked[0].venue.name).toContain("ICLR 2027");
-    expect(picked[1].venue.name).toContain("NAACL 2027");
+    expect(picked[0].instant).toBeGreaterThan(now);
     expect(picked[0].instant).toBeLessThan(picked[1].instant);
+    // Nothing sooner was skipped over: no other conference deadline sits before the first pick.
+    const soonest = Math.min(
+      ...DEADLINE_VENUES.filter((venue) => venue.venue_type === "conference")
+        .map((venue) => aoeInstantMs(venue.deadline_aoe))
+        .filter((instant) => instant > now),
+    );
+    expect(picked[0].instant).toBe(soonest);
   });
 
   // The snapshot is 101 workshops to 4 conferences, so without this filter the summary would be

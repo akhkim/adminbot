@@ -31,11 +31,11 @@ Every venue carries an `archival` flag, and the board is organised around it,
 because it is the question a member is actually asking when they scan these
 dates:
 
-- **Archival** — publishing here consumes the paper, so it cannot then go to a
-  second archival venue. The *ACL main and demo tracks, and the ML conferences'
-  main tracks.
-- **Non-archival** — the paper stays free to be submitted onward. Every
-  workshop, and IASEAI.
+- **Archival** — counts as publishing the paper, so it cannot be submitted
+  anywhere else afterwards. The *ACL main and demo tracks, and the ML
+  conferences' main tracks.
+- **Non-archival** — does not count as publishing, so the same paper can still
+  go to a conference afterwards. Every workshop, and IASEAI.
 - Neither — a rebuttal is work on a paper already in, not somewhere to send a
   new one, so it sits outside both columns.
 
@@ -61,7 +61,8 @@ what the collector classifies on.
 A venue is not one date. A conference runs an abstract deadline, then the full paper, then
 rebuttal, then camera-ready; an ARR venue runs a direct submission and a commitment. Each is
 **its own row sharing a `venue_group`**, tagged with `milestone` (`abstract`,
-`direct_submission`, `full_paper`, `commitment`, `rebuttal`, `notification`, `camera_ready`).
+`direct_submission`, `full_paper`, `demo`, `commitment`, `rebuttal`, `notification`,
+`camera_ready`).
 That is what lets the board group them under one conference and count down to each separately,
 and what orders them in the sequence a paper meets them rather than by date alone.
 
@@ -72,9 +73,8 @@ whose label is not recognised still renders; it just sorts last and shows its ra
 **OpenReview cannot supply these.** It exposes one dated stage per workshop (`-/Submission`) and
 none at all for main conferences — abstract, camera-ready and rebuttal dates are simply not in
 its group or invitation data. So sub-deadlines beyond the submission are curated, the same as
-main-conference dates. Today only ICLR 2027 carries a second row (abstract + full paper); its
-full-paper date had been sitting inside the display name as prose, where nothing could count
-down to it.
+main-conference dates. ICLR 2027 carries abstract + full paper, EACL 2027 carries its demo track
+alongside its ARR commitment, and NAACL 2027 carries both ARR routes.
 
 ### What the weekly sweep fetches
 
@@ -82,14 +82,17 @@ down to it.
 rolling two-year window (never a pinned year — a hardcoded one would keep working
 until its round closed and then return nothing forever without failing). Each
 workshop's deadline comes from its **Submission invitation**, not its group: the
-group's `date`/`start_date` are when the workshop *runs*, months after the CFP
+group's `date`/`start_date` are when the workshop _runs_, months after the CFP
 closes. An expired invitation answers 400, which is exactly the past deadlines
 this file means to drop.
 
 Main-conference dates stay in the curated table in
 `scripts/adminbot-deadline-collect.py` and always win — they change slowly and
-must be exact. **Still needing a verified CFP: ICML, COLM, CLeaR and IASEAI main
-tracks, and ACL/EACL.** Add them there as their official dates are announced.
+must be exact. Every date there is off the venue's own CFP page and names it in a
+comment. A tracked venue whose next round has not announced a date sits in
+`PENDING` in the same file rather than getting a guessed one, and the collector
+prints that list at the end of every run — today: ACL 2027 (main + demo),
+EMNLP 2027, NAACL 2027 demo, NeurIPS/ICML/COLM/CLeaR 2027 and IASEAI 2027.
 
 ## OpenReview stop-condition
 

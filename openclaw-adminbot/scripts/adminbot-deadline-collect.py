@@ -34,7 +34,24 @@ from adminbot_deadlines import (  # noqa: E402
 OUT  = os.path.join(DEADLINES_DIR, "venues.json")
 
 # --- curated, source-verified upcoming conference milestones (AoE 23:59:59) ---
-# Update these when the next cycle's official CFP is announced.
+#
+# The set tracked here is the guidebook's, not a wishlist (see is_archival in
+# adminbot_deadlines.py, which is where the policy is written):
+#
+#   archival      main and demo tracks of ACL / EMNLP / NAACL / EACL, and
+#                 NeurIPS / ICML / ICLR / COLM / CLeaR
+#   non-archival  IASEAI, plus the workshops of every family above except CLeaR
+#                 (swept live from OpenReview, not listed here)
+#   ARR           both routes into an *ACL venue -- direct submission into a cycle
+#                 and commitment of an existing review -- plus the cycle itself
+#
+# Nothing outside that set belongs in this table. A venue inside it whose next
+# round has not published a date belongs in PENDING below, not here with a guessed
+# one: a wrong date on this board is planned against.
+#
+# Each date below is off the venue's own CFP page. Update when the next cycle's
+# official CFP is announced; `python3 scripts/adminbot-deadline-collect.py` prints
+# what is still missing.
 CONFERENCES = [
     dict(id="emnlp2026_commitment", name="EMNLP 2026 (main, ARR commitment)",
          venue_type="conference", venue_group="EMNLP 2026", track="main",
@@ -52,35 +69,74 @@ CONFERENCES = [
     #   direct     -- submit fresh into the cycle, then commit the reviews later
     #   commitment -- attach reviews a paper already has to a specific venue
     # The cycle itself is not a venue, so it is not archival on its own; the venue a
-    # paper is eventually committed to is what decides that.
+    # paper is eventually committed to is what decides that. Each cycle is its own
+    # row: a paper aiming at any *ACL venue is choosing which cycle to enter, and the
+    # commitment dates below are all downstream of one of them.
+    # Source: https://aclrollingreview.org/dates
     dict(id="arr_2026_august", name="ARR — August 2026 cycle (direct submission)",
          venue_type="conference", venue_group="ARR August 2026", track="cycle",
          venue_family="ARR", submission_type="direct",
          deadline_label="ARR submission", deadline_aoe="2026-08-03 23:59:59",
          notification_aoe="", link="https://aclrollingreview.org/dates"),
-    # ICLR runs an abstract deadline and then the full paper five days later. That second date used
+    dict(id="arr_2026_october", name="ARR — October 2026 cycle (direct submission)",
+         venue_type="conference", venue_group="ARR October 2026", track="cycle",
+         venue_family="ARR", submission_type="direct",
+         deadline_label="ARR submission", deadline_aoe="2026-10-12 23:59:59",
+         notification_aoe="", link="https://aclrollingreview.org/dates"),
+    # ICLR runs an abstract deadline and then the full paper a week later. That second date used
     # to live inside the display name ("abstract; paper Sep 24"), where nothing could count down to
     # it and the board could not show it as its own deadline. One row per sub-deadline; they share a
     # venue_group, which is what groups them under one conference.
+    # Source: https://iclr.cc/Conferences/2027/CallForPapers
     dict(id="iclr2027_abstract", name="ICLR 2027",
          venue_type="conference", venue_group="ICLR 2027", track="main",
-         deadline_label="abstract deadline", deadline_aoe="2026-09-19 23:59:59",
+         deadline_label="abstract deadline", deadline_aoe="2026-09-18 23:59:59",
          notification_aoe="", link="https://iclr.cc/Conferences/2027"),
     dict(id="iclr2027_paper", name="ICLR 2027",
          venue_type="conference", venue_group="ICLR 2027", track="main",
-         deadline_label="full paper", deadline_aoe="2026-09-24 23:59:59",
+         deadline_label="full paper", deadline_aoe="2026-09-25 23:59:59",
          notification_aoe="", link="https://iclr.cc/Conferences/2027"),
+    # EACL 2027 takes the August cycle's reviews; its demo track runs its own review and
+    # its own deadline, and is archival like the main track.
+    # Source: https://2027.eacl.org/calls/papers/ and /calls/demos/
+    dict(id="eacl2027_demo", name="EACL 2027 (system demonstrations)",
+         venue_type="conference", venue_group="EACL 2027", track="demo",
+         deadline_label="demo submission", deadline_aoe="2026-09-22 23:59:59",
+         notification_aoe="2026-12-18 23:59:59", link="https://2027.eacl.org/calls/demos/"),
+    dict(id="eacl2027_commitment", name="EACL 2027 (main, ARR commitment)",
+         venue_type="conference", venue_group="EACL 2027", track="main",
+         submission_type="commitment",
+         deadline_label="commitment", deadline_aoe="2026-10-11 23:59:59",
+         notification_aoe="2026-11-12 23:59:59", link="https://2027.eacl.org/calls/papers/"),
+    # NAACL 2027 runs on the October cycle: submit into it by Oct 12, commit by Dec 20.
+    # Source: https://aclrollingreview.org/dates and https://2027.naacl.org/
     dict(id="naacl2027_paper", name="NAACL 2027 (main, ARR submission)",
          venue_type="conference", venue_group="NAACL 2027", track="main",
          submission_type="direct",
          deadline_label="paper submission (ARR)", deadline_aoe="2026-10-12 23:59:59",
          notification_aoe="", link="https://2027.naacl.org/"),
-    # EACL 2027 also runs on the ARR August cycle (submission Aug 3 -> commit Oct 11).
-    # Uncomment to track it:
-    # dict(id="eacl2027_commitment", name="EACL 2027 (ARR commitment)",
-    #      venue_type="conference", venue_group="EACL 2027", track="main",
-    #      deadline_label="commitment", deadline_aoe="2026-10-11 23:59:59",
-    #      notification_aoe="", link="https://2027.eacl.org/"),
+    dict(id="naacl2027_commitment", name="NAACL 2027 (main, ARR commitment)",
+         venue_type="conference", venue_group="NAACL 2027", track="main",
+         submission_type="commitment",
+         deadline_label="commitment", deadline_aoe="2026-12-20 23:59:59",
+         notification_aoe="", link="https://2027.naacl.org/"),
+]
+
+# Tracked by the guidebook, but the next round has published no date yet. Listed so the
+# gap is visible: an absent venue otherwise looks exactly like a venue nobody wants
+# tracked, which is how ACL's own main track went missing from a board that carried a
+# hundred of its workshops. main() prints these; move one into CONFERENCES the moment
+# its CFP names a date, and never invent the date to close the gap early.
+PENDING = [
+    ("ACL 2027 (main, ARR commitment)", "https://2027.aclweb.org/"),
+    ("ACL 2027 (system demonstrations)", "https://2027.aclweb.org/"),
+    ("EMNLP 2027 (main + demo)", "https://2027.emnlp.org/"),
+    ("NAACL 2027 (system demonstrations)", "https://2027.naacl.org/"),
+    ("NeurIPS 2027 (main)", "https://neurips.cc/Conferences/2027"),
+    ("ICML 2027 (main)", "https://icml.cc/Conferences/2027"),
+    ("COLM 2027 (main)", "https://colmweb.org/"),
+    ("CLeaR 2027 (main)", "https://www.cclear.cc/"),
+    ("IASEAI 2027 (non-archival)", "https://www.iaseai.org/"),
 ]
 
 # Curated non-NeurIPS workshops (each has its own per-workshop deadline).
@@ -375,6 +431,13 @@ def main():
                 "export const DEADLINE_VENUES: DeadlineVenue[] = "
                 + json.dumps(slim, ensure_ascii=False, indent=2) + ";\n")
     print(f"wrote {ui_ds}")
+
+    # Coverage report, not a failure: these are venues the guidebook tracks whose next
+    # round has not announced a date. Printed every run so the gap stays visible.
+    if PENDING:
+        print(f"\n{len(PENDING)} tracked venue(s) awaiting an announced date:")
+        for name, where in PENDING:
+            print(f"  - {name}  ({where})")
 
 
 if __name__ == "__main__":

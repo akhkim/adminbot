@@ -165,6 +165,7 @@ const MILESTONE_ORDER = [
   "abstract",
   "direct_submission",
   "full_paper",
+  "demo",
   "commitment",
   "rebuttal",
   "notification",
@@ -175,6 +176,7 @@ const MILESTONE_LABELS: Record<string, string> = {
   abstract: "Abstract",
   direct_submission: "Direct submission",
   full_paper: "Full paper",
+  demo: "Demo submission",
   commitment: "ARR commitment",
   rebuttal: "Rebuttal ends",
   notification: "Notification",
@@ -189,23 +191,75 @@ function milestoneRank(venue: DeadlineVenue): number {
 /**
  * What a row is called once its conference is already the heading above it.
  *
- * When several rows share a venue_group they are that venue's sub-deadlines, and repeating
- * "ICLR 2027" on each one says nothing — the milestone is the only part that differs, so it becomes
- * the row's name. A lone row keeps its full venue name, because there the name is the information.
+ * Two shapes of row end up in the same list. A workshop is its own venue and its name is the
+ * whole information -- ninety-nine of them share one date and one stage, so naming them by the
+ * stage prints "ARR commitment" ninety-nine times and hides the only part that differs. A
+ * conference's own sub-deadlines are the opposite: they all carry the conference's name, so
+ * repeating "ICLR 2027" down the panel says nothing and the stage is what differs.
+ *
+ * So the name leads whenever the row has a name of its own, with the stage kept alongside it in
+ * smaller type; a row whose name is just the conference falls back to being named by its stage.
  */
-function rowTitle(venue: DeadlineVenue, siblings: number): string {
-  if (siblings < 2) {
-    return venue.name;
+function rowTitle(venue: DeadlineVenue, conferenceKey: string): { name: string; stage: string } {
+  const stage = MILESTONE_LABELS[venue.milestone ?? ""] ?? venue.deadline_label ?? "";
+  const own = ownName(stripRoute(venue.name, stage), conferenceKey);
+  if (!own) {
+    return { name: stage || venue.name, stage: "" };
   }
-  return MILESTONE_LABELS[venue.milestone ?? ""] ?? venue.deadline_label ?? venue.name;
+  return { name: own, stage };
+}
+
+/**
+ * The part of a venue name that is not the conference already named above it.
+ *
+ * "NLP4PI — 5th Workshop on NLP for Positive Impact (EMNLP 2026)" under the EMNLP 2026 heading is
+ * that trailing parenthesis repeated on every row. Returns "" when nothing is left, which is how
+ * a conference's own row ("ICLR 2027" under ICLR 2027) says it has no name of its own.
+ */
+function ownName(name: string, conferenceKey: string): string {
+  const key = conferenceKey.trim();
+  let out = name.trim();
+  if (key) {
+    // Only an exact naming of the conference is stripped: "(main, ARR submission)" is a track,
+    // not a repeat of the heading, and dropping it would lose which submission this is.
+    out = out.replace(new RegExp(`\\s*[([]\\s*${escapeRegex(key)}\\s*[)\\]]$`, "iu"), "");
+    out = out.replace(new RegExp(`^${escapeRegex(key)}\\s*[-—:–]\\s*`, "iu"), "");
+    if (out.trim().toLowerCase() === key.toLowerCase()) {
+      return "";
+    }
+  }
+  return out.trim();
+}
+
+// OpenReview names a commitment venue by suffixing its title, so half a workshop track arrives
+// as "... (ARR Commitment)" or "... -- ARR Commitment". The stage beside the name already says
+// that, and it is the tail of the name, where it pushes the part that identifies the workshop
+// out of the visible line.
+const ROUTE_SUFFIX =
+  /\s*(?:[([]\s*ARR[\s_-]*commitment\s*[)\]]|[-—–:]{0,2}\s*ARR[\s_-]*commitment)$/iu;
+
+function stripRoute(name: string, stage: string): string {
+  if (stage.toLowerCase() !== "arr commitment") {
+    return name;
+  }
+  return name.replace(ROUTE_SUFFIX, "").trim() || name;
+}
+
+function escapeRegex(value: string): string {
+  return value.replaceAll(/[.*+?^${}()|[\]\\]/gu, String.raw`\$&`);
 }
 
 // Which ARR route a date is, spelled out. The *ACL venues take papers two ways and
 // only one of them is open to any given paper: `direct` starts a fresh review cycle,
 // `commitment` attaches reviews the paper already has. Reading that off a
 // deadline_label like "commitment" meant knowing the convention; the chip says it.
-function renderRoute(venue: DeadlineVenue) {
+function renderRoute(venue: DeadlineVenue, stage = "") {
   if (venue.submission_type !== "direct" && venue.submission_type !== "commitment") {
+    return nothing;
+  }
+  // The stage next to it may already be the route spelled out ("ARR commitment"), and a chip
+  // repeating the word beside it is the noise the stage was added to remove.
+  if (stage.toLowerCase().includes(venue.submission_type)) {
     return nothing;
   }
   const direct = venue.submission_type === "direct";
@@ -295,9 +349,9 @@ class AdminbotDeadlinesView extends LitElement {
 
   // One deadline inside an opened conference. The date column disappears whenever the whole list
   // shares one date, which for a workshop track is the normal case.
-  private renderEntry(entry: Entry, shared: SharedFacts, now: number, siblings = 1) {
+  private renderEntry(entry: Entry, shared: SharedFacts, now: number, conferenceKey: string) {
     const { venue, instant } = entry;
-    const title = rowTitle(venue, siblings);
+    const { name, stage } = rowTitle(venue, conferenceKey);
     return html`
       <li class="deadline-row" data-urgency=${urgencyOf(instant, now)}>
         <span class="deadline-row__countdown">${countdownLabel(instant - now)}</span>
@@ -305,9 +359,12 @@ class AdminbotDeadlinesView extends LitElement {
           ? nothing
           : html`<span class="deadline-row__date">${aoeDateLabel(venue.deadline_aoe)}</span>`}
         <span class="deadline-row__body">
-          <span class="deadline-row__name"
-            >${title}${title === venue.name ? renderLabel(venue) : nothing}${renderRoute(venue)}</span
-          >
+          <span class="deadline-row__title">
+            <span class="deadline-row__name">${name}</span>
+            ${stage
+              ? html`<span class="deadline-row__stage">${stage}</span>`
+              : nothing}${renderRoute(venue, stage)}
+          </span>
           ${venue.notification_aoe && !shared.notification
             ? html`<span class="deadline-row__note"
                 >notified ${aoeDateLabel(venue.notification_aoe)}</span
@@ -319,7 +376,13 @@ class AdminbotDeadlinesView extends LitElement {
     `;
   }
 
-  private renderSection(title: string, entries: Entry[], now: number, hoist: boolean) {
+  private renderSection(
+    title: string,
+    entries: Entry[],
+    now: number,
+    hoist: boolean,
+    conferenceKey: string,
+  ) {
     if (!entries.length) {
       return nothing;
     }
@@ -333,13 +396,6 @@ class AdminbotDeadlinesView extends LitElement {
       shared.date ? `all due ${aoeDateLabel(shared.date)} AoE` : "",
       shared.notification ? `notified ${aoeDateLabel(shared.notification)}` : "",
     ].filter(Boolean);
-    // How many rows each venue_group contributes, so a row can tell whether it is one of several
-    // sub-deadlines of the same venue or a venue on its own.
-    const siblings = new Map<string, number>();
-    for (const entry of entries) {
-      const key = (entry.venue.venue_group ?? "").trim() || entry.venue.name;
-      siblings.set(key, (siblings.get(key) ?? 0) + 1);
-    }
     // Sub-deadlines of one venue read in the order a paper meets them (abstract before full paper
     // before camera-ready), which is not always date order when two share a day. Across venues,
     // date wins.
@@ -361,14 +417,7 @@ class AdminbotDeadlinesView extends LitElement {
             : nothing}
         </p>
         <ul class="deadline-section__list">
-          ${ordered.map((entry) =>
-            this.renderEntry(
-              entry,
-              shared,
-              now,
-              siblings.get((entry.venue.venue_group ?? "").trim() || entry.venue.name) ?? 1,
-            ),
-          )}
+          ${ordered.map((entry) => this.renderEntry(entry, shared, now, conferenceKey))}
         </ul>
       </div>
     `;
@@ -399,9 +448,21 @@ class AdminbotDeadlinesView extends LitElement {
           <span class="conference__counts">${counts.join(" · ")}</span>
         </button>
         <div class="conference__panel" id=${panelId} ?hidden=${!open}>
-          ${this.renderSection("Archival — publishing here consumes the paper", archival, now, false)}
-          ${this.renderSection("Non-archival — the paper stays free", nonArchival, now, true)}
-          ${this.renderSection("Other dates", other, now, false)}
+          ${this.renderSection(
+            "Archival — counts as publishing; the paper cannot be submitted elsewhere afterwards",
+            archival,
+            now,
+            false,
+            key,
+          )}
+          ${this.renderSection(
+            "Non-archival — does not count as publishing; you can still submit the paper elsewhere",
+            nonArchival,
+            now,
+            true,
+            key,
+          )}
+          ${this.renderSection("Other dates", other, now, false, key)}
         </div>
       </li>
     `;
@@ -460,8 +521,9 @@ class AdminbotDeadlinesView extends LitElement {
         <p class="deadlines__intro">
           Times are AoE (UTC&#8209;12) and countdowns tick live. ${conferences.length}
           ${conferences.length === 1 ? "conference" : "conferences"}, ${total} deadlines. Archival
-          venues publish the paper, so it cannot go to a second one; non-archival venues leave it
-          free. Open a conference for its dates.
+          venues publish the paper, so it cannot then be submitted anywhere else; non-archival
+          venues do not, so the same paper can still go to a conference afterwards. Open a
+          conference for its dates.
         </p>
         ${conferences.length
           ? html`<ul class="conferences">
