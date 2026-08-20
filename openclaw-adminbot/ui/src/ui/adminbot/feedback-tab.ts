@@ -26,6 +26,7 @@ export const FEEDBACK_TABS: Partial<Record<Tab, FeedbackConfig>> = {
   adminbotMembers: { featureId: "members", githubFile: file("admin.ts") },
   adminbotReimbursements: { featureId: "reimbursements", githubFile: file("reimbursements.ts") },
   adminbotDeadlines: { featureId: "deadlines", githubFile: file("deadlines.ts") },
+  adminbotLogistics: { featureId: "logistics", githubFile: file("logistics.ts") },
 };
 
 export function feedbackConfigForTab(tab: Tab): FeedbackConfig | null {

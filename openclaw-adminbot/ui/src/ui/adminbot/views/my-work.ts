@@ -13,11 +13,6 @@ import { html, nothing } from "lit";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
-import type {
-  AdminBotPaperRecord,
-  AdminBotPaperSaveInput,
-  AdminBotPaperStep,
-} from "../controllers/admin.ts";
 import {
   BLOCKER_TITLE_MAX,
   editBlockerInput,
@@ -25,8 +20,13 @@ import {
   openEntries,
   resolveBlockerInput,
 } from "../blockers.ts";
-import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
+import type {
+  AdminBotPaperRecord,
+  AdminBotPaperSaveInput,
+  AdminBotPaperStep,
+} from "../controllers/admin.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
+import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { findOwnMember } from "./profile.ts";
@@ -184,55 +184,64 @@ function renderBlockerForm(state: AppViewState, props: MyWorkProps, paper: Admin
         </span>
       </p>
 
-      <label class="register__field">
-        <span class="register__label">Which stage is blocked?</span>
-        <select class="input" name="stage" data-testid=${`blocker-stage-${paper.id}`}>
-          ${paperSteps.map(
-            (step) => html`
-              <option value=${step} ?selected=${step === (editing?.stage || paper.current_step)}>
-                ${stepLabel(step)}
-              </option>
-            `,
-          )}
-        </select>
-      </label>
+      <div class="blocker-form__fields">
+        <label class="register__field">
+          <span class="register__label">Which stage is blocked?</span>
+          <select class="input" name="stage" data-testid=${`blocker-stage-${paper.id}`}>
+            ${paperSteps.map(
+              (step) => html`
+                <option value=${step} ?selected=${step === (editing?.stage || paper.current_step)}>
+                  ${stepLabel(step)}
+                </option>
+              `,
+            )}
+          </select>
+        </label>
 
-      <label class="register__field">
-        <span class="register__label">What is blocked? (short)</span>
-        <input
-          class="input"
-          name="title"
-          maxlength=${BLOCKER_TITLE_MAX}
-          placeholder="e.g. OpenReview rejects the PDF"
-          .value=${editing?.title ?? ""}
-          data-testid=${`blocker-title-${paper.id}`}
-        />
-        <span class="register__hint">Up to ${BLOCKER_TITLE_MAX} characters.</span>
-      </label>
+        <label class="register__field">
+          <span class="register__label">What is blocked? (short)</span>
+          <input
+            class="input"
+            name="title"
+            maxlength=${BLOCKER_TITLE_MAX}
+            placeholder="e.g. OpenReview rejects the PDF"
+            .value=${editing?.title ?? ""}
+            data-testid=${`blocker-title-${paper.id}`}
+          />
+          <span class="register__hint">Up to ${BLOCKER_TITLE_MAX} characters.</span>
+        </label>
+      </div>
 
       <label class="register__field">
         <span class="register__label">Details</span>
-        <textarea class="input" name="note" rows="4" placeholder=${t("myWork.blockers.placeholder")}>
+        <textarea
+          class="input"
+          name="note"
+          rows="4"
+          placeholder=${t("myWork.blockers.placeholder")}
+        >
 ${editing?.note ?? ""}</textarea
         >
       </label>
 
-      <p class="blocker-form__reviewer">
-        ${t("myWork.blockers.reviewer", { name: reviewerName(state) })}
-      </p>
-      <div class="register__actions">
-        <button type="submit" class="btn primary">
-          ${editing ? "Save changes" : t("myWork.blockers.submit")}
-        </button>
-        <button
-          type="button"
-          class="btn"
-          @click=${() => {
-            state.myWorkBlockerDraft = null;
-          }}
-        >
-          ${t("myWork.blockers.cancel")}
-        </button>
+      <div class="blocker-form__footer">
+        <p class="blocker-form__reviewer">
+          ${t("myWork.blockers.reviewer", { name: reviewerName(state) })}
+        </p>
+        <div class="register__actions">
+          <button type="submit" class="btn primary">
+            ${editing ? "Save changes" : t("myWork.blockers.submit")}
+          </button>
+          <button
+            type="button"
+            class="btn"
+            @click=${() => {
+              state.myWorkBlockerDraft = null;
+            }}
+          >
+            ${t("myWork.blockers.cancel")}
+          </button>
+        </div>
       </div>
     </form>
   `;
@@ -254,7 +263,9 @@ function renderPaperBlockers(state: AppViewState, props: MyWorkProps, paper: Adm
       ${open.map(
         (entry) => html`
           <li class="my-work-item__blocker">
-            <span class="my-work-item__blocker-icon" aria-hidden="true">${icons.alertTriangle}</span>
+            <span class="my-work-item__blocker-icon" aria-hidden="true"
+              >${icons.alertTriangle}</span
+            >
             <span class="my-work-item__blocker-copy">
               <span class="my-work-item__blocker-title">${entry.title}</span>
               <span class="my-work-item__blocker-meta">${stepLabel(entry.stage)}</span>
@@ -314,8 +325,7 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
         </button>
       </div>
       ${renderPaperBlockers(state, props, paper)} ${renderBlockerForm(state, props, paper)}
-      ${renderStepper(paper, props, index)}
-      ${renderNextStep(paper)}
+      ${renderStepper(paper, props, index)} ${renderNextStep(paper)}
       ${renderStepControls(paper, props)}
     </article>
   `;
@@ -375,9 +385,7 @@ function renderTarget(paper: AdminBotPaperRecord, props: MyWorkProps) {
         data-testid=${`target-venue-${paper.id}`}
         @change=${(event: Event) => save((event.target as HTMLSelectElement).value, confidence)}
       >
-        ${!known && current
-          ? html`<option value=${current} selected>${current}</option>`
-          : nothing}
+        ${!known && current ? html`<option value=${current} selected>${current}</option>` : nothing}
         ${venues.map(
           (venue) => html`
             <option value=${venue.name} ?selected=${venue.name === current}>
@@ -411,7 +419,11 @@ function renderStepper(paper: AdminBotPaperRecord, props: MyWorkProps, currentIn
         .slice(currentIndex, targetIndex)
         .map((value) => stepLabel(value))
         .join(", ");
-      if (!globalThis.confirm(`Jumping to ${stepLabel(step)} marks these as done: ${names}.\n\nContinue?`)) {
+      if (
+        !globalThis.confirm(
+          `Jumping to ${stepLabel(step)} marks these as done: ${names}.\n\nContinue?`,
+        )
+      ) {
         return;
       }
     }
@@ -422,8 +434,7 @@ function renderStepper(paper: AdminBotPaperRecord, props: MyWorkProps, currentIn
     <div class="stepper" role="group" aria-label=${`${paper.title} progress`}>
       <ol class="stepper__track">
         ${paperSteps.map((step, index) => {
-          const state =
-            index < currentIndex ? "done" : index === currentIndex ? "current" : "todo";
+          const state = index < currentIndex ? "done" : index === currentIndex ? "current" : "todo";
           return html`
             <li class=${`stepper__step stepper__step--${state}`}>
               <button
@@ -493,15 +504,19 @@ function renderNextStep(paper: AdminBotPaperRecord) {
               <span class="task__branch">${task.branch || "Task"}</span>
               <strong class="task__label">${task.label}</strong>
               ${task.hint ? html`<span class="task__hint">${task.hint}</span>` : nothing}
-              <span class="task__who">
-                ${task.isApproval ? `Approval from ${task.waitingOn}` : `Owner: ${task.waitingOn}`}
-              </span>
-              <span class="task__unblocks">
-                ${task.optional
-                  ? "Blocks nothing"
-                  : task.unblocks.length
-                    ? `Unblocks ${task.unblocks.slice(0, 2).join(", ")}`
-                    : "Last step on this branch"}
+              <span class="task__footer">
+                <span class="task__who">
+                  ${task.isApproval
+                    ? `Approval from ${task.waitingOn}`
+                    : `Owner: ${task.waitingOn}`}
+                </span>
+                <span class="task__unblocks">
+                  ${task.optional
+                    ? "Blocks nothing"
+                    : task.unblocks.length
+                      ? `Unblocks ${task.unblocks.slice(0, 2).join(", ")}`
+                      : "Last step on this branch"}
+                </span>
               </span>
             </li>
           `,
@@ -522,6 +537,19 @@ function renderAddButton(state: AppViewState) {
       data-testid="my-work-add-project"
       @click=${() => {
         state.myWorkProjectDraft = "";
+        // The form renders below the list, out of view for anyone with more than a few papers.
+        // Lit commits the re-render in a microtask, so the form exists by the next frame -- bring
+        // it up and drop the cursor in the title box instead of leaving the user to hunt for it.
+        window.requestAnimationFrame(() => {
+          const reduceMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
+          document.querySelector<HTMLElement>("#my-work-add-form")?.scrollIntoView({
+            behavior: reduceMotion ? "auto" : "smooth",
+            block: "start",
+          });
+          document
+            .querySelector<HTMLInputElement>("#my-work-add-form input[name='title']")
+            ?.focus();
+        });
       }}
     >
       ${t("myWork.items.add")}
@@ -569,6 +597,7 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
   const member = findOwnMember(state);
   return html`
     <form
+      id="my-work-add-form"
       class="my-work-add-form register"
       @submit=${(event: SubmitEvent) => {
         event.preventDefault();
@@ -595,10 +624,16 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
         state.myWorkProjectDraft = null;
       }}
     >
+      <div class="my-work-add-form__head">
+        <h3>${t("myWork.items.add")}</h3>
+        <p>Starts at the first step and shows up on Active Papers too.</p>
+      </div>
+
       <label class="register__field">
         <span class="register__label">Title</span>
         <input
           class="input"
+          name="title"
           placeholder=${t("myWork.items.namePlaceholder")}
           .value=${draft}
           @input=${(event: Event) => {
@@ -636,16 +671,18 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
         </div>
         <span class="register__hint">A rough call, so everyone reads the plan the same way.</span>
       </fieldset>
-      <button type="submit" class="btn">${t("myWork.items.addSubmit")}</button>
-      <button
-        type="button"
-        class="btn"
-        @click=${() => {
-          state.myWorkProjectDraft = null;
-        }}
-      >
-        ${t("myWork.blockers.cancel")}
-      </button>
+      <div class="register__actions">
+        <button type="submit" class="btn">${t("myWork.items.addSubmit")}</button>
+        <button
+          type="button"
+          class="btn"
+          @click=${() => {
+            state.myWorkProjectDraft = null;
+          }}
+        >
+          ${t("myWork.blockers.cancel")}
+        </button>
+      </div>
     </form>
   `;
 }
