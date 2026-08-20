@@ -1,0 +1,559 @@
+/* My Projects & Papers: the card that opens, and the evidence checklist inside it.
+
+   Split out of layout.css rather than appended to it: the card head, the slot grid and the
+   status pills are one feature, and layout.css is already the file everything lands in by
+   default. The bar and fill classes are deliberately the ones the card already used, so a paper's
+   progress line looks the same open or closed. */
+
+/* The whole head is the toggle. A 23-field form behind a chevron-sized target is a form nobody
+   finds, so the title, the authors, the venue and the progress line are all part of the button. */
+.my-work-item__toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.my-work-item__toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: var(--radius-md);
+}
+
+/* Same disclosure affordance as the Deadlines list: one chevron, rotated on open, so the two
+   expandable surfaces on this site behave identically. */
+.my-work-item__chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  margin-top: 3px;
+  color: var(--muted);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.my-work-item__chevron svg {
+  width: 12px;
+  height: 12px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.my-work-item[data-open] .my-work-item__chevron {
+  transform: rotate(90deg);
+}
+
+.my-work-item__toggle .my-work-item__copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  flex: 1;
+}
+
+/* Both of these live inside the disclosure button, so they are spans in the markup; flex puts the
+   layout back. */
+.my-work-item__venue {
+  display: flex;
+  gap: var(--space-3);
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.my-work-item__evidence {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+/* The shared bar is a block rule in layout.css; as a span it needs the box back. */
+.my-work-item__evidence .my-work-item__bar {
+  display: block;
+}
+
+.my-work-item__evidence .my-work-item__bar {
+  max-width: 180px;
+}
+
+.my-work-item__bar.is-complete .my-work-item__fill {
+  background: var(--ok);
+}
+
+.my-work-item__evidence-count {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* The sentence somebody scanning a list of papers is actually looking for. */
+.my-work-item__outstanding {
+  font-size: var(--control-ui-text-xs);
+  color: var(--warn);
+}
+
+.my-work-item__outstanding.is-complete {
+  color: var(--ok);
+}
+
+.my-work-item__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  animation: rise 200ms var(--ease-out) both;
+}
+
+/* `hidden` loses to `display: flex` in the cascade, so say it explicitly -- otherwise a closed
+   card would render its panel anyway. */
+.my-work-item__body[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .my-work-item__chevron {
+    transition: none;
+  }
+
+  /* A disclosure fires on every open, unlike the card's once-per-paint entrance, so it is the one
+     worth suppressing outright. */
+  .my-work-item__body {
+    animation: none;
+  }
+}
+
+/* Second child of the existing space-between section head. Wraps rather than overflowing, since
+   this is two buttons on a heading row that is already tight on a phone. */
+.my-work__section-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-3);
+}
+
+.my-work__notice-line,
+.my-work__error-line {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+}
+
+.my-work__notice-line {
+  color: var(--ok);
+}
+
+.my-work__error-line {
+  color: var(--danger);
+}
+
+/* --- The checklist itself --- */
+
+.paper-slots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.paper-slots__loading {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.paper-slots__group-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.paper-slots__group-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Two columns where there is room, one where there is not. Auto-fit rather than a fixed count so
+   the form reflows inside a card that is itself inside a sidebar layout. */
+.paper-slots__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-4);
+}
+
+.paper-slot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+/* Still shown, not hidden: the checklist is the point, and a card that grew as work progressed
+   would read as the paper acquiring new requirements rather than revealing them. */
+.paper-slot--blocked {
+  opacity: 0.72;
+}
+
+.paper-slot--invalid {
+  border-color: var(--danger);
+}
+
+.paper-slot__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.paper-slot__label {
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.paper-slot__optional {
+  margin-left: var(--space-2);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.paper-slot__pill {
+  flex-shrink: 0;
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.paper-slot__pill--done {
+  background: color-mix(in srgb, var(--ok) 18%, transparent);
+  color: var(--ok);
+}
+
+.paper-slot__pill--invalid {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
+
+.paper-slot__pill--waived {
+  background: color-mix(in srgb, var(--info) 18%, transparent);
+  color: var(--info);
+}
+
+.paper-slot__input {
+  width: 100%;
+}
+
+.paper-slot__check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--control-ui-text-sm);
+  cursor: pointer;
+}
+
+/* Owner, what it unblocks and the shape it accepts, on one wrapping line. Three separate rows of
+   fine print under every field turns a 23-field form into a page nobody reads. */
+.paper-slot__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.paper-slot__owner {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-muted);
+}
+
+.paper-slot__error {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--danger);
+}
+
+.paper-slot__note {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* --- Revision 2: the enum and credential fields, and the lists that hang off a paper --- */
+
+/* State plus "where is it", side by side: two halves of one answer about a physical object. */
+.paper-slot__enum {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-2);
+}
+
+.paper-slot__hint {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.paper-cycle {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border);
+}
+
+.paper-cycle__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.paper-cycle__draft {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.paper-cycle__draft-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.paper-cycle__draft-body {
+  width: 100%;
+  resize: vertical;
+}
+
+.paper-cycle__consents {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.paper-cycle__consent {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--control-ui-text-sm);
+}
+
+/* The colour is the answer: who is still holding the post up is the only question this list is
+   asked. */
+.paper-cycle__consent[data-decision="ok"] .paper-cycle__consent-state {
+  color: var(--ok);
+}
+
+.paper-cycle__consent[data-decision="changes_requested"] .paper-cycle__consent-state {
+  color: var(--warn);
+}
+
+.paper-cycle__consent[data-decision="pending"] .paper-cycle__consent-state {
+  color: var(--muted);
+}
+
+.paper-cycle__consent-name {
+  font-weight: 600;
+}
+
+.paper-cycle__consent-comment {
+  flex-basis: 100%;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.paper-cycle__consent-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.paper-cycle__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.paper-cycle__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 200px);
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--control-ui-text-sm);
+}
+
+.paper-cycle__add {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.paper-cycle__add .input {
+  flex: 1;
+}
+
+.paper-cycle__blocked {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--warn);
+}
+
+.paper-cycle__closed {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--ok);
+}
+
+.paper-cycle__closed svg {
+  width: 16px;
+  height: 16px;
+}
+
+/* The venue decision and the four details that follow it. */
+.paper-acceptance {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+.paper-acceptance__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* --- The nudge preview: what would go out, before it goes out --- */
+
+.nudge-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  animation: rise 200ms var(--ease-out) both;
+}
+
+.nudge-preview__lede,
+.nudge-preview__empty {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted);
+}
+
+.nudge-preview__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  max-height: 420px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.nudge-preview__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+}
+
+/* Shown rather than hidden: "we cannot reach this person" is worth seeing when you are wondering
+   why they never answer. */
+.nudge-preview__item.is-unreachable {
+  opacity: 0.7;
+}
+
+.nudge-preview__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.nudge-preview__name {
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.nudge-preview__count {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.nudge-preview__unreachable {
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--warn) 18%, transparent);
+  font-size: var(--control-ui-text-xs);
+  color: var(--warn);
+}
+
+/* The message verbatim. A paraphrase would defeat the point of reviewing it, and Slack's own line
+   breaks are load-bearing in a list of bullets. */
+.nudge-preview__message {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-x: auto;
+}
+
+.nudge-preview__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.nudge-preview__hint {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}

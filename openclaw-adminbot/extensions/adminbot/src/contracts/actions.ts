@@ -895,11 +895,54 @@ export type AdminBotPaperReminderState = {
   head_professor_member_id?: string;
 };
 
+/**
+ * What the venue said. `pending` is the normal state; a `reject` prunes every branch downstream of
+ * the decision, and the paper comes back as a new attempt at another venue rather than as a new
+ * record -- keeping the history of a paper on the paper.
+ */
+export const adminBotPaperVenueDecisions = ["pending", "accept", "reject"] as const;
+
+export type AdminBotPaperVenueDecision = (typeof adminBotPaperVenueDecisions)[number];
+
+/** How the paper appears at the venue. Ordered least to most prominent. */
+export const adminBotPaperPresentationTypes = [
+  "poster",
+  "findings",
+  "main",
+  "spotlight",
+  "oral",
+  "award",
+] as const;
+
+export type AdminBotPaperPresentationType = (typeof adminBotPaperPresentationTypes)[number];
+
 export type AdminBotPaperRecordInput = {
   id: string;
   title: string;
   authors: string[];
   current_step: AdminBotPaperStep;
+  // Who the nudges go to by default. Free-text `authors` cannot answer this: it is how the paper
+  // spells the names, not who on the roster owes the work.
+  first_author_member_id?: string;
+  // The venue as a plain string ("ICLR 2027") and its deadline as a date, so a hard-deadline nudge
+  // does not have to guess which of the deadline board's rows this paper meant.
+  venue?: string;
+  deadline?: string;
+  venue_decision?: AdminBotPaperVenueDecision;
+  /** Increments on reject -> new venue. Same record, next try. */
+  attempt?: number;
+  /** Admin-only exemption from the 24-month dormancy rule. */
+  dormant_override?: boolean;
+  // Acceptance details. Author-provided, and only meaningful once `venue_decision` is `accept`;
+  // the conference branch (who is going, posters, reimbursements) stays shut until all four are
+  // in, because none of it can be asked sensibly without them. Nothing infers these today --
+  // reading them off OpenReview is plausible later, and would still end in the author confirming.
+  accepted_venue?: string;
+  accepted_year?: number;
+  // Archival vs non-archival decides whether this counts as a publication, which is why it is
+  // asked rather than guessed: the same workshop can be either in different years.
+  is_archival?: boolean;
+  presentation_type?: AdminBotPaperPresentationType;
   artifacts?: AdminBotPaperArtifactLinks;
   mentor_member_id?: string;
   checks?: {
@@ -1106,6 +1149,15 @@ export type AdminBotAuditEvent = {
     | "lab_member.upserted"
     | "lab_member.notes_migrated"
     | "paper.upserted"
+    | "paper_slot.updated"
+    | "paper_slot.waived"
+    | "paper_slots.nudged"
+    | "paper_social_draft.saved"
+    | "paper_social_draft.circulated"
+    | "paper_social_consent.recorded"
+    | "paper_attendee.updated"
+    | "paper_reimbursement.updated"
+    | "paper_slots.backfilled"
     | "paper.deleted"
     | "onboarding.guide_sent"
     | "settings.updated"

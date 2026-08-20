@@ -29,6 +29,60 @@ function unwrap<T>(
 }
 
 describe("AdminBotSqliteStore", () => {
+  it("keeps a paper's evidence slots across service instances, and drops them with the paper", () => {
+    const databasePath = tempDbPath();
+    const first = createAdminBotSqliteService({ databasePath });
+    unwrap(first.service.upsertLabMember({ id: "ada", name: "Ada", privilege_level: "member" }));
+    unwrap(
+      first.service.upsertPaper({
+        id: "p1",
+        title: "Causal abstraction",
+        authors: ["Ada"],
+        current_step: "overleaf_writing",
+        first_author_member_id: "ada",
+      }),
+    );
+    unwrap(
+      first.service.setPaperSlot({
+        paperId: "p1",
+        slot: "project_folder",
+        input: { url: "https://docs.google.com/document/d/x" },
+        memberId: "ada",
+        privileged: true,
+      }),
+    );
+    first.close();
+
+    const second = createAdminBotSqliteService({ databasePath });
+    const stored = unwrap(second.service.listPaperSlots("p1")).slots.find(
+      (slot) => slot.slot === "project_folder",
+    );
+    expect(stored).toMatchObject({
+      status: "provided",
+      url: "https://docs.google.com/document/d/x",
+      provided_by_member_id: "ada",
+    });
+    // Nullable columns come back absent rather than null, so nothing downstream has to treat "no
+    // URL" and "URL is null" as two different absences.
+    expect(stored?.waived_reason).toBeUndefined();
+
+    // Deleting the paper takes its slots with it: a re-created id must not inherit the evidence of
+    // a paper somebody removed.
+    unwrap(second.service.deletePaper("p1"));
+    unwrap(
+      second.service.upsertPaper({
+        id: "p1",
+        title: "Causal abstraction, again",
+        authors: ["Ada"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+    expect(
+      unwrap(second.service.listPaperSlots("p1")).slots.every((slot) => slot.status === "missing"),
+    ).toBe(true);
+    second.close();
+  });
+
   it("keeps logistics requests, their files and their status across service instances", () => {
     const databasePath = tempDbPath();
     const first = createAdminBotSqliteService({ databasePath });

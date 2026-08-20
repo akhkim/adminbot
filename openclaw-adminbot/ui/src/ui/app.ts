@@ -24,7 +24,12 @@ import type {
   CalendarEventDraft,
   LabCalendar,
 } from "./adminbot/auth/session.ts";
-import type { MemberProfileOverviewRow } from "./adminbot/auth/session.ts";
+import type {
+  MemberProfileOverviewRow,
+  PaperCycle,
+  PaperNudgeBatch,
+  PaperSlotOverviewRow,
+} from "./adminbot/auth/session.ts";
 import type { AudienceFilter } from "./adminbot/calendar-audience.ts";
 import {
   createEmptyAdminBotDashboardData,
@@ -594,6 +599,20 @@ export class OpenClawApp extends LitElement {
   @state() adminBotProfileOverviewNotice: string | null = null;
   // Defaults to the people with something outstanding, which is what a sweep is looking for.
   @state() adminBotProfileOverviewIncompleteOnly = true;
+  @state() adminBotPaperSlotOverview: PaperSlotOverviewRow[] = [];
+  @state() adminBotPaperSlots: Record<string, PaperCycle> = {};
+  // Nothing expanded on arrival: the page opens as a scannable list of papers, and the form is
+  // what you go into rather than what you land in.
+  @state() adminBotPaperSlotsOpen: string[] = [];
+  @state() adminBotPaperSlotsLoading = false;
+  @state() adminBotPaperSlotsError: string | null = null;
+  @state() adminBotPaperSlotsLoadedAt: number | null = null;
+  @state() adminBotPaperSlotsNudging = false;
+  @state() adminBotPaperSlotsNotice: string | null = null;
+  @state() adminBotPaperSlotsBusyId: string | null = null;
+  @state() adminBotPaperNudgeBatches: PaperNudgeBatch[] | null = null;
+  @state() adminBotPaperNudgeLoading = false;
+  @state() adminBotPaperNudgeSelected: string[] = [];
   // One blank row so the table opens ready to type in rather than empty.
   @state() adminBotLettersSchools: RecommendationSchool[] = [createSchoolRow()];
   // One blank row here too, for the same reason: a table with no row is a table nobody can start.

@@ -23,6 +23,18 @@ import type {
   AdminBotSettings,
   AdminBotStoredProposal,
 } from "../contracts/actions.js";
+import type {
+  AdminBotConferenceAttendeeRecord,
+  AdminBotNudgeLedgerRecord,
+  AdminBotPaperReimbursementRecord,
+  AdminBotSocialConsentRecord,
+  AdminBotSocialDraftRecord,
+} from "../contracts/paper-cycle.js";
+import type {
+  AdminBotPaperSlot,
+  AdminBotPaperSlotRecord,
+  AdminBotPaperSlotStatus,
+} from "../contracts/paper-slots.js";
 import {
   AdminBotService,
   type AdminBotActionExecutor,
@@ -165,6 +177,99 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       CREATE INDEX IF NOT EXISTS adminbot_papers_step_idx
         ON adminbot_papers(current_step, updated_at);
 
+      -- One row per evidence slot, per paper. Real columns rather than a JSON blob on the paper:
+      -- the nudge sweep reads status across every open paper at once, and that is a query, not a
+      -- parse. value_note is the free-text half of an enum slot (where the poster physically is);
+      -- value_text holds the state itself.
+      --
+      -- No nudge columns here: how often somebody has been chased about this belongs to the
+      -- person, not to the artifact, and lives in adminbot_nudge_ledger.
+      CREATE TABLE IF NOT EXISTS adminbot_paper_slots (
+        paper_id TEXT NOT NULL,
+        slot TEXT NOT NULL,
+        status TEXT NOT NULL,
+        url TEXT,
+        value_text TEXT,
+        value_note TEXT,
+        provided_by_member_id TEXT,
+        provided_at TEXT,
+        validated_at TEXT,
+        invalid_reason TEXT,
+        waived_by_member_id TEXT,
+        waived_reason TEXT,
+        PRIMARY KEY (paper_id, slot)
+      );
+
+      -- The nudge scan's own access pattern: every open slot in the lab, in one sweep.
+      CREATE INDEX IF NOT EXISTS adminbot_paper_slots_status_idx
+        ON adminbot_paper_slots(status);
+
+      -- One clock for every nudge in the lab, keyed by what it is about and who was asked. This
+      -- is what lets one sweep say everything a person owes in a single message rather than
+      -- letting four subsystems each keep their own cadence and all fire on the same morning.
+      CREATE TABLE IF NOT EXISTS adminbot_nudge_ledger (
+        domain TEXT NOT NULL,
+        subject_id TEXT NOT NULL,
+        member_id TEXT NOT NULL,
+        last_nudged_at TEXT,
+        nudge_count INTEGER NOT NULL DEFAULT 0,
+        snoozed_until TEXT,
+        PRIMARY KEY (domain, subject_id, member_id)
+      );
+
+      -- "What has this person been chased about lately" is the sweep's question, so that is the
+      -- index.
+      CREATE INDEX IF NOT EXISTS adminbot_nudge_ledger_member_idx
+        ON adminbot_nudge_ledger(member_id, last_nudged_at);
+
+      -- The social draft itself, kept because consent is asked against a specific wording.
+      CREATE TABLE IF NOT EXISTS adminbot_paper_social_drafts (
+        id TEXT PRIMARY KEY,
+        paper_id TEXT NOT NULL,
+        platform TEXT NOT NULL,
+        body TEXT NOT NULL,
+        model TEXT,
+        generated_at TEXT NOT NULL,
+        generated_by_member_id TEXT,
+        status TEXT NOT NULL,
+        superseded_by TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_paper_social_drafts_paper_idx
+        ON adminbot_paper_social_drafts(paper_id, platform, generated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS adminbot_paper_social_draft_consents (
+        draft_id TEXT NOT NULL,
+        member_id TEXT NOT NULL,
+        decision TEXT NOT NULL,
+        comment TEXT,
+        asked_at TEXT NOT NULL,
+        decided_at TEXT,
+        PRIMARY KEY (draft_id, member_id)
+      );
+
+      -- attendee_key is a stored column, not the coalesce() expression the spec named: SQLite
+      -- cannot key on an expression, and the service has to agree with the memory store about
+      -- what counts as the same person twice anyway.
+      CREATE TABLE IF NOT EXISTS adminbot_paper_conference_attendees (
+        paper_id TEXT NOT NULL,
+        attendee_key TEXT NOT NULL,
+        member_id TEXT,
+        name TEXT NOT NULL,
+        attending TEXT NOT NULL,
+        confirmed_at TEXT,
+        PRIMARY KEY (paper_id, attendee_key)
+      );
+
+      CREATE TABLE IF NOT EXISTS adminbot_paper_reimbursements (
+        paper_id TEXT NOT NULL,
+        member_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        submitted_at TEXT,
+        completed_at TEXT,
+        PRIMARY KEY (paper_id, member_id)
+      );
+
       CREATE TABLE IF NOT EXISTS adminbot_member_locations (
         id TEXT PRIMARY KEY,
         member_id TEXT NOT NULL,
@@ -274,6 +379,58 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
     `);
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
+    this.migratePaperSlotColumns();
+  }
+
+  /**
+   * Bring an `adminbot_paper_slots` written by the first revision up to this one.
+   *
+   * `CREATE TABLE IF NOT EXISTS` is a no-op against a table that already exists, so a database
+   * created by the previous release keeps its old shape forever unless something says otherwise.
+   * Two changes: `value_note` is new, and the three nudge columns moved to the ledger.
+   *
+   * The nudge columns are read across into the ledger rather than dropped, because they are the
+   * only record of who has already been chased -- dropping them would re-nudge everybody once.
+   * They are then left in place: SQLite can drop a column, but a stale column nothing reads costs
+   * nothing, and rewriting a live table to remove one is the riskier half of this migration for
+   * no benefit.
+   */
+  private migratePaperSlotColumns(): void {
+    const columns = new Set(
+      (
+        this.db.prepare("PRAGMA table_info(adminbot_paper_slots)").all() as Array<{ name: string }>
+      ).map((row) => row.name),
+    );
+    if (!columns.has("value_note")) {
+      this.db.exec("ALTER TABLE adminbot_paper_slots ADD COLUMN value_note TEXT");
+    }
+    if (!columns.has("nudge_count")) {
+      return;
+    }
+    // One row per (slot, member) is not knowable from the old table -- it recorded the nudge, not
+    // who received it -- so the paper's first author is the best available answer, and it is who
+    // the old pass would have been messaging in all but a handful of cases.
+    this.db.exec(`
+      INSERT OR IGNORE INTO adminbot_nudge_ledger
+        (domain, subject_id, member_id, last_nudged_at, nudge_count, snoozed_until)
+      SELECT
+        'paper_slot',
+        s.paper_id || ':' || s.slot,
+        COALESCE(
+          json_extract(p.payload_json, '$.first_author_member_id'),
+          json_extract(p.payload_json, '$.submitted_by_member_id')
+        ),
+        s.last_nudged_at,
+        s.nudge_count,
+        s.snoozed_until
+      FROM adminbot_paper_slots s
+      JOIN adminbot_papers p ON p.id = s.paper_id
+      WHERE s.nudge_count > 0
+        AND COALESCE(
+          json_extract(p.payload_json, '$.first_author_member_id'),
+          json_extract(p.payload_json, '$.submitted_by_member_id')
+        ) IS NOT NULL
+    `);
   }
 
   // `core_member` was retired and its access grants folded into `member`, so rows seeded before
@@ -589,7 +746,295 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
   }
 
   deletePaper(paperId: string): boolean {
+    // Everything hanging off the paper goes with it. Leaving any of it would let a re-created id
+    // inherit the evidence, the drafts and the consents of a paper somebody deleted.
+    const drafts = this.db
+      .prepare("SELECT id FROM adminbot_paper_social_drafts WHERE paper_id = ?")
+      .all(paperId) as Array<{ id: string }>;
+    for (const draft of drafts) {
+      this.db
+        .prepare("DELETE FROM adminbot_paper_social_draft_consents WHERE draft_id = ?")
+        .run(draft.id);
+    }
+    for (const table of [
+      "adminbot_paper_slots",
+      "adminbot_paper_social_drafts",
+      "adminbot_paper_conference_attendees",
+      "adminbot_paper_reimbursements",
+    ]) {
+      this.db.prepare(`DELETE FROM ${table} WHERE paper_id = ?`).run(paperId);
+    }
+    this.db
+      .prepare(
+        "DELETE FROM adminbot_nudge_ledger WHERE domain = 'paper_slot' AND subject_id LIKE ?",
+      )
+      .run(`${paperId}:%`);
     return this.db.prepare("DELETE FROM adminbot_papers WHERE id = ?").run(paperId).changes > 0;
+  }
+
+  savePaperSlot(record: AdminBotPaperSlotRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_paper_slots (
+          paper_id,
+          slot,
+          status,
+          url,
+          value_text,
+          value_note,
+          provided_by_member_id,
+          provided_at,
+          validated_at,
+          invalid_reason,
+          waived_by_member_id,
+          waived_reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(paper_id, slot) DO UPDATE SET
+          status = excluded.status,
+          url = excluded.url,
+          value_text = excluded.value_text,
+          value_note = excluded.value_note,
+          provided_by_member_id = excluded.provided_by_member_id,
+          provided_at = excluded.provided_at,
+          validated_at = excluded.validated_at,
+          invalid_reason = excluded.invalid_reason,
+          waived_by_member_id = excluded.waived_by_member_id,
+          waived_reason = excluded.waived_reason`,
+      )
+      .run(
+        record.paper_id,
+        record.slot,
+        record.status,
+        record.url ?? null,
+        record.value_text ?? null,
+        record.value_note ?? null,
+        record.provided_by_member_id ?? null,
+        record.provided_at ?? null,
+        record.validated_at ?? null,
+        record.invalid_reason ?? null,
+        record.waived_by_member_id ?? null,
+        record.waived_reason ?? null,
+      );
+  }
+
+  saveNudgeLedgerEntry(record: AdminBotNudgeLedgerRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_nudge_ledger
+          (domain, subject_id, member_id, last_nudged_at, nudge_count, snoozed_until)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(domain, subject_id, member_id) DO UPDATE SET
+           last_nudged_at = excluded.last_nudged_at,
+           nudge_count = excluded.nudge_count,
+           snoozed_until = excluded.snoozed_until`,
+      )
+      .run(
+        record.domain,
+        record.subject_id,
+        record.member_id,
+        record.last_nudged_at ?? null,
+        record.nudge_count,
+        record.snoozed_until ?? null,
+      );
+  }
+
+  /** The whole ledger, or one domain's slice. The sweep wants all of it in one read. */
+  listNudgeLedger(domain?: string): AdminBotNudgeLedgerRecord[] {
+    const rows = (
+      domain
+        ? this.db.prepare("SELECT * FROM adminbot_nudge_ledger WHERE domain = ?").all(domain)
+        : this.db.prepare("SELECT * FROM adminbot_nudge_ledger").all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      domain: String(row.domain) as AdminBotNudgeLedgerRecord["domain"],
+      subject_id: String(row.subject_id),
+      member_id: String(row.member_id),
+      nudge_count: Number(row.nudge_count ?? 0),
+      ...optionalText(row, "last_nudged_at"),
+      ...optionalText(row, "snoozed_until"),
+    }));
+  }
+
+  saveSocialDraft(record: AdminBotSocialDraftRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_paper_social_drafts
+          (id, paper_id, platform, body, model, generated_at, generated_by_member_id, status, superseded_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           body = excluded.body,
+           model = excluded.model,
+           status = excluded.status,
+           superseded_by = excluded.superseded_by`,
+      )
+      .run(
+        record.id,
+        record.paper_id,
+        record.platform,
+        record.body,
+        record.model ?? null,
+        record.generated_at,
+        record.generated_by_member_id ?? null,
+        record.status,
+        record.superseded_by ?? null,
+      );
+  }
+
+  listSocialDrafts(paperId?: string): AdminBotSocialDraftRecord[] {
+    const rows = (
+      paperId
+        ? this.db
+            .prepare(
+              "SELECT * FROM adminbot_paper_social_drafts WHERE paper_id = ? ORDER BY generated_at DESC",
+            )
+            .all(paperId)
+        : this.db
+            .prepare("SELECT * FROM adminbot_paper_social_drafts ORDER BY generated_at DESC")
+            .all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      id: String(row.id),
+      paper_id: String(row.paper_id),
+      platform: String(row.platform) as AdminBotSocialDraftRecord["platform"],
+      body: String(row.body),
+      generated_at: String(row.generated_at),
+      status: String(row.status) as AdminBotSocialDraftRecord["status"],
+      ...optionalText(row, "model"),
+      ...optionalText(row, "generated_by_member_id"),
+      ...optionalText(row, "superseded_by"),
+    }));
+  }
+
+  saveSocialConsent(record: AdminBotSocialConsentRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_paper_social_draft_consents
+          (draft_id, member_id, decision, comment, asked_at, decided_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(draft_id, member_id) DO UPDATE SET
+           decision = excluded.decision,
+           comment = excluded.comment,
+           decided_at = excluded.decided_at`,
+      )
+      .run(
+        record.draft_id,
+        record.member_id,
+        record.decision,
+        record.comment ?? null,
+        record.asked_at,
+        record.decided_at ?? null,
+      );
+  }
+
+  listSocialConsents(draftId?: string): AdminBotSocialConsentRecord[] {
+    const rows = (
+      draftId
+        ? this.db
+            .prepare("SELECT * FROM adminbot_paper_social_draft_consents WHERE draft_id = ?")
+            .all(draftId)
+        : this.db.prepare("SELECT * FROM adminbot_paper_social_draft_consents").all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      draft_id: String(row.draft_id),
+      member_id: String(row.member_id),
+      decision: String(row.decision) as AdminBotSocialConsentRecord["decision"],
+      asked_at: String(row.asked_at),
+      ...optionalText(row, "comment"),
+      ...optionalText(row, "decided_at"),
+    }));
+  }
+
+  saveConferenceAttendee(record: AdminBotConferenceAttendeeRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_paper_conference_attendees
+          (paper_id, attendee_key, member_id, name, attending, confirmed_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(paper_id, attendee_key) DO UPDATE SET
+           member_id = excluded.member_id,
+           name = excluded.name,
+           attending = excluded.attending,
+           confirmed_at = excluded.confirmed_at`,
+      )
+      .run(
+        record.paper_id,
+        record.attendee_key,
+        record.member_id ?? null,
+        record.name,
+        record.attending,
+        record.confirmed_at ?? null,
+      );
+  }
+
+  listConferenceAttendees(paperId?: string): AdminBotConferenceAttendeeRecord[] {
+    const rows = (
+      paperId
+        ? this.db
+            .prepare(
+              "SELECT * FROM adminbot_paper_conference_attendees WHERE paper_id = ? ORDER BY name",
+            )
+            .all(paperId)
+        : this.db
+            .prepare("SELECT * FROM adminbot_paper_conference_attendees ORDER BY paper_id, name")
+            .all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      paper_id: String(row.paper_id),
+      attendee_key: String(row.attendee_key),
+      name: String(row.name),
+      attending: String(row.attending) as AdminBotConferenceAttendeeRecord["attending"],
+      ...optionalText(row, "member_id"),
+      ...optionalText(row, "confirmed_at"),
+    }));
+  }
+
+  savePaperReimbursement(record: AdminBotPaperReimbursementRecord): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_paper_reimbursements
+          (paper_id, member_id, status, submitted_at, completed_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT(paper_id, member_id) DO UPDATE SET
+           status = excluded.status,
+           submitted_at = excluded.submitted_at,
+           completed_at = excluded.completed_at`,
+      )
+      .run(
+        record.paper_id,
+        record.member_id,
+        record.status,
+        record.submitted_at ?? null,
+        record.completed_at ?? null,
+      );
+  }
+
+  listPaperReimbursements(paperId?: string): AdminBotPaperReimbursementRecord[] {
+    const rows = (
+      paperId
+        ? this.db
+            .prepare("SELECT * FROM adminbot_paper_reimbursements WHERE paper_id = ?")
+            .all(paperId)
+        : this.db.prepare("SELECT * FROM adminbot_paper_reimbursements").all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map((row) => ({
+      paper_id: String(row.paper_id),
+      member_id: String(row.member_id),
+      status: String(row.status) as AdminBotPaperReimbursementRecord["status"],
+      ...optionalText(row, "submitted_at"),
+      ...optionalText(row, "completed_at"),
+    }));
+  }
+
+  /** One paper's slots, or the whole lab's when no id is given -- the nudge pass wants the latter. */
+  listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[] {
+    const rows = (
+      paperId
+        ? this.db
+            .prepare("SELECT * FROM adminbot_paper_slots WHERE paper_id = ? ORDER BY slot")
+            .all(paperId)
+        : this.db.prepare("SELECT * FROM adminbot_paper_slots ORDER BY paper_id, slot").all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map((row) => paperSlotFromRow(row));
   }
 
   appendMemberLocation(entry: AdminBotMemberLocationEntry): void {
@@ -1093,6 +1538,44 @@ function ensureDatabaseDirectory(databasePath: string): void {
     return;
   }
   fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+}
+
+/**
+ * A slot row as the record.
+ *
+ * SQLite hands back `null` for an empty column and the record type uses optional keys, so the
+ * nullable columns are dropped rather than carried through as `null` -- otherwise every caller
+ * would have to treat "no URL" and "URL is null" as two different absences.
+ */
+function paperSlotFromRow(row: Record<string, unknown>): AdminBotPaperSlotRecord {
+  const text = (key: string): string | undefined => {
+    const value = row[key];
+    return typeof value === "string" && value.length > 0 ? value : undefined;
+  };
+  const optional = <K extends keyof AdminBotPaperSlotRecord>(key: K & string) => {
+    const value = text(key);
+    return value === undefined ? {} : { [key]: value };
+  };
+  return {
+    paper_id: String(row.paper_id),
+    slot: String(row.slot) as AdminBotPaperSlot,
+    status: String(row.status) as AdminBotPaperSlotStatus,
+    ...optional("url"),
+    ...optional("value_text"),
+    ...optional("value_note"),
+    ...optional("provided_by_member_id"),
+    ...optional("provided_at"),
+    ...optional("validated_at"),
+    ...optional("invalid_reason"),
+    ...optional("waived_by_member_id"),
+    ...optional("waived_reason"),
+  };
+}
+
+/** The same drop-the-null rule as paperSlotFromRow, for the cycle tables. */
+function optionalText(row: Record<string, unknown>, key: string): Record<string, string> {
+  const value = row[key];
+  return typeof value === "string" && value.length > 0 ? { [key]: value } : {};
 }
 
 function parseJson<T>(value: string): T {

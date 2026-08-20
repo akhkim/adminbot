@@ -1690,6 +1690,35 @@ export const en: TranslationMap = {
         "The year and month you plan on leaving Jinesis for a new job or stage, like 2027-06. An estimate is fine — it is not a commitment.",
     },
   },
+  // My Projects & Papers' evidence checklist, and the global nudge that chases it.
+  paperSlots: {
+    // Nudges are sent by hand, from the preview below the button -- there is no schedule behind
+    // them, so the copy is about reviewing first and sending second.
+    nudgeReview: "Review nudges ({count})",
+    nudgeClose: "Close preview",
+    nudgeLoading: "Working out who owes what…",
+    nudgePreviewLede:
+      "{count} people would be messaged. This is exactly what they would receive — untick anyone you would rather leave out of this round.",
+    nudgeItems: "{items} outstanding across {papers} paper(s)",
+    nudgeUnreachable: "No Slack account on file",
+    nudgeSend: "Send {count} message(s)",
+    nudgeHint: "Nothing is sent until you press this. Each person gets one message.",
+    nudging: "Sending…",
+    nudgedCount: "Nudged {count} author(s) about what their papers still need.",
+    nudgedNone: "Nobody was due a nudge — everything outstanding was chased recently.",
+    error: {
+      signIn: "Sign in to see what your papers still need.",
+      unreachable: "Could not reach AdminBot at {url}.",
+      forbidden: "You do not have permission to do that.",
+      failed: "Could not load this paper's checklist.",
+    },
+  },
+  paperCycle: {
+    socialTitle: "Social drafts",
+    attendeesTitle: "Who is going",
+    reimbursementsTitle: "Reimbursements",
+    closed: "Everything on this paper is finished, expenses included.",
+  },
   myWork: {
     items: {
       title: "Projects & Papers",

@@ -214,6 +214,13 @@ export type AdminBotPaperSaveInput = {
   nudgeSeenAt?: string;
   topic?: string;
   reminderStatus?: "idle" | "waiting_on_authors" | "blocked" | "complete";
+  // What the venue said, and the four details the conference branch needs once it said yes. Sent
+  // as strings because they come straight off form controls; the service parses and validates.
+  venueDecision?: string;
+  acceptedVenue?: string;
+  acceptedYear?: string;
+  isArchival?: string;
+  presentationType?: string;
 };
 
 export type AdminBotOnboardingResult = {
@@ -375,6 +382,18 @@ export type AdminBotPaperRecord = {
   title: string;
   authors: string[];
   current_step: AdminBotPaperStep;
+  // Governance fields the service owns. Mirrored here so a card can show the venue and its
+  // deadline without a second read; nothing in the UI writes them.
+  first_author_member_id?: string;
+  venue?: string;
+  deadline?: string;
+  venue_decision?: "pending" | "accept" | "reject";
+  attempt?: number;
+  dormant_override?: boolean;
+  accepted_venue?: string;
+  accepted_year?: number;
+  is_archival?: boolean;
+  presentation_type?: string;
   artifacts?: Record<string, string | undefined>;
   mentor_member_id?: string;
   checks?: Record<string, boolean | undefined>;
@@ -1481,6 +1500,17 @@ export async function saveAdminBotPaper(
     ...(paper.nudgeSeenAt === undefined ? {} : { nudge_seen_at: paper.nudgeSeenAt }),
     ...(paper.topic ? { topic: paper.topic } : {}),
   };
+  // Governance-shaped fields go on the record itself rather than into `artifacts`, and only when
+  // the form actually offered one -- an untouched control must not clear a stored value.
+  const acceptance = {
+    ...(paper.venueDecision ? { venue_decision: paper.venueDecision } : {}),
+    ...(paper.acceptedVenue === undefined ? {} : { accepted_venue: paper.acceptedVenue }),
+    ...(paper.acceptedYear ? { accepted_year: Number(paper.acceptedYear) } : {}),
+    ...(paper.isArchival === undefined || paper.isArchival === ""
+      ? {}
+      : { is_archival: paper.isArchival === "true" }),
+    ...(paper.presentationType ? { presentation_type: paper.presentationType } : {}),
+  };
   // Prefer the member's own session: the service scopes the write to what that member may change
   // (any paper for an admin, their own for an author). The gateway tool path stays as the fallback
   // for break-glass sessions that hold a gateway token but no member login.
@@ -1492,6 +1522,7 @@ export async function saveAdminBotPaper(
         title: paper.title,
         authors: paper.authors,
         current_step: paper.currentStep,
+        ...acceptance,
         ...(Object.keys(artifacts).length > 0 ? { artifacts } : {}),
         ...(paper.reminderStatus ? { reminder: { status: paper.reminderStatus } } : {}),
       },

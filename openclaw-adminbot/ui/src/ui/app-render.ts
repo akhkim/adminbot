@@ -53,6 +53,19 @@ import {
   withdrawAdminBotLogisticsRequest,
 } from "./adminbot/controllers/logistics.ts";
 import {
+  circulateAdminBotSocialDraft,
+  loadAdminBotNudgeBatches,
+  loadAdminBotPaperSlotOverview,
+  nudgeAdminBotPaperAuthors,
+  recordAdminBotSocialConsent,
+  saveAdminBotPaperSlot,
+  saveAdminBotSocialDraft,
+  setAdminBotPaperAttendee,
+  setAdminBotPaperReimbursement,
+  toggleAdminBotPaperCard,
+  toggleAdminBotPaperNudgeRecipient,
+} from "./adminbot/controllers/paper-slots.ts";
+import {
   loadAdminBotProfileOverview,
   remindAdminBotIncompleteProfiles,
 } from "./adminbot/controllers/profile-overview.ts";
@@ -2467,6 +2480,19 @@ export function renderApp(state: AppViewState) {
     state.adminBotProfileOverviewLoadedAt = Date.now();
     void loadAdminBotProfileOverview(state).finally(() => requestHostUpdate?.());
   }
+  // My Projects & Papers reads the same way: the overview when the tab opens, and again after a
+  // nudge run or a slot write clears the stamp. Individual papers' slots are fetched per card, in
+  // the toggle handler, since a closed card needs none of them.
+  if (
+    state.tab === "myWork" &&
+    hasMemberSession &&
+    !state.adminBotPaperSlotsLoading &&
+    !state.adminBotPaperSlotsError &&
+    state.adminBotPaperSlotsLoadedAt === null
+  ) {
+    state.adminBotPaperSlotsLoadedAt = Date.now();
+    void loadAdminBotPaperSlotOverview(state).finally(() => requestHostUpdate?.());
+  }
   // The request list is fetched when the tab is opened in view mode -- including on a reload that
   // lands straight on it, which the mode-change handler alone would miss. `requests.length` is not
   // the sentinel: a lab with no requests would re-ask on every render.
@@ -3332,6 +3358,70 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "myWork"
           ? renderMyWork(state, {
               onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
+              overview: state.adminBotPaperSlotOverview,
+              slots: state.adminBotPaperSlots,
+              openIds: state.adminBotPaperSlotsOpen,
+              slotsBusyId: state.adminBotPaperSlotsBusyId,
+              slotsError: state.adminBotPaperSlotsError,
+              slotsNotice: state.adminBotPaperSlotsNotice,
+              nudging: state.adminBotPaperSlotsNudging,
+              // Messaging the whole lab is a governance act, so the button follows the same rule
+              // as Profile Overview's. The service re-checks; this only hides the affordance.
+              canNudge: adminBotMode === "admin",
+              onToggleCard: (paperId) => {
+                void toggleAdminBotPaperCard(state, paperId).finally(() => requestHostUpdate?.());
+              },
+              onSaveSlot: (paperId, slot, input) => {
+                void saveAdminBotPaperSlot(state, paperId, slot, input).finally(() =>
+                  requestHostUpdate?.(),
+                );
+              },
+              onNudgeAuthors: () => {
+                void nudgeAdminBotPaperAuthors(state).finally(() => requestHostUpdate?.());
+              },
+              nudgeBatches: state.adminBotPaperNudgeBatches,
+              nudgeLoading: state.adminBotPaperNudgeLoading,
+              nudgeSelected: state.adminBotPaperNudgeSelected,
+              onReviewNudges: () => {
+                void loadAdminBotNudgeBatches(state).finally(() => requestHostUpdate?.());
+              },
+              onToggleNudgeRecipient: (memberId: string) => {
+                toggleAdminBotPaperNudgeRecipient(state, memberId);
+                requestHostUpdate?.();
+              },
+              memberId: state.memberId ?? null,
+              memberName: (memberId: string) =>
+                (state.adminBotData?.members ?? []).find((member) => member.id === memberId)
+                  ?.name ?? memberId,
+              onSaveDraft: (paperId, platform, body) => {
+                void saveAdminBotSocialDraft(state, paperId, platform, body).finally(() =>
+                  requestHostUpdate?.(),
+                );
+              },
+              onCirculateDraft: (paperId, draftId) => {
+                void circulateAdminBotSocialDraft(state, paperId, draftId).finally(() =>
+                  requestHostUpdate?.(),
+                );
+              },
+              onConsent: (paperId, draftId, decision, comment) => {
+                void recordAdminBotSocialConsent(
+                  state,
+                  paperId,
+                  draftId,
+                  decision,
+                  comment,
+                ).finally(() => requestHostUpdate?.());
+              },
+              onSetAttendee: (paperId, name, memberId, attending) => {
+                void setAdminBotPaperAttendee(state, paperId, name, memberId, attending).finally(
+                  () => requestHostUpdate?.(),
+                );
+              },
+              onSetReimbursement: (paperId, memberId, status) => {
+                void setAdminBotPaperReimbursement(state, paperId, memberId, status).finally(() =>
+                  requestHostUpdate?.(),
+                );
+              },
             })
           : nothing}
         ${state.tab === "overview"

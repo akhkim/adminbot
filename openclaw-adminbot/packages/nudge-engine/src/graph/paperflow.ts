@@ -20,37 +20,47 @@ export const paperflow: Graph = {
     { id: "OV", label: "Overleaf draft", cls: "action", owner: "first_author", branch: "core" },
     { id: "PM", label: "PaperMentor review", cls: "action", owner: "first_author", branch: "core" },
     { id: "FX", label: "Fixes merged", cls: "action", owner: "first_author", branch: "core" },
-    { id: "PDF", label: "Compiled paper PDF ready", cls: "action", owner: "first_author", branch: "core" },
+    {
+      id: "PDF",
+      label: "Compiled paper PDF ready",
+      cls: "action",
+      owner: "first_author",
+      branch: "core",
+    },
 
     // ── branch 1: talk artifacts ────────────────────────────────────────────────
     { id: "SL", label: "Slides", cls: "action", owner: "first_author", branch: "talk" },
     { id: "PO", label: "Poster", cls: "action", owner: "first_author", branch: "talk" },
     { id: "TV", label: "Talk video", cls: "action", owner: "first_author", branch: "talk" },
-    {
-      id: "LG",
-      label: "Links logged in shared folder",
-      cls: "join",
-      owner: "first_author",
-      branch: "talk",
-      evidence: "shared_folder_links",
-    },
+    // No join closes this branch. "Links logged in shared folder" used to, but the folder it
+    // logged into is the same living project folder the paper starts from -- so the link is
+    // already there by the time there is anything to log, and the node only ever asked somebody
+    // to confirm a copy of a fact. Branch 1 just ends at its two leaves.
 
     // ── branch 2: social ────────────────────────────────────────────────────────
     { id: "XD", label: "X post draft", cls: "action", owner: "first_author", branch: "social" },
     { id: "LI", label: "LinkedIn post", cls: "action", owner: "first_author", branch: "social" },
     { id: "CP", label: "Coauthor feedback", cls: "action", owner: "coauthors", branch: "social" },
-    { id: "SF", label: "Final social draft", cls: "action", owner: "first_author", branch: "social" },
+    {
+      id: "SF",
+      label: "Final social draft",
+      cls: "action",
+      owner: "first_author",
+      branch: "social",
+    },
 
     // ── branch 3: archival and arXiv ────────────────────────────────────────────
-    { id: "DR", label: "Internal Drive PDF", cls: "action", owner: "first_author", branch: "archive" },
     {
-      id: "DS",
-      label: "Drive PDF, submitted version",
+      id: "DR",
+      label: "Internal Drive PDF",
       cls: "action",
       owner: "first_author",
       branch: "archive",
-      evidence: "drive_file",
     },
+    // One Drive PDF per paper, not two: DR feeds DA directly. A submitted-version copy was a
+    // second artifact nobody could tell apart from the arXiv one -- a single Drive link could not
+    // say which version it was, so asking for both invited exactly the mix-up it was meant to
+    // prevent.
     {
       id: "DA",
       label: "Drive PDF, arXiv version",
@@ -59,7 +69,13 @@ export const paperflow: Graph = {
       branch: "archive",
       evidence: "drive_file",
     },
-    { id: "AK", label: "Author list and acknowledgements", cls: "action", owner: "first_author", branch: "archive" },
+    {
+      id: "AK",
+      label: "Author list and acknowledgements",
+      cls: "action",
+      owner: "first_author",
+      branch: "archive",
+    },
     {
       // OR-join: the preprint path (AK) alone is enough. Under AND, a reject prunes CM and
       // this branch would deadlock permanently and silently.
@@ -89,7 +105,13 @@ export const paperflow: Graph = {
     },
 
     // ── branch 4: venue ─────────────────────────────────────────────────────────
-    { id: "CK", label: "Final submission checks", cls: "action", owner: "first_author", branch: "venue" },
+    {
+      id: "CK",
+      label: "Final submission checks",
+      cls: "action",
+      owner: "first_author",
+      branch: "venue",
+    },
     {
       id: "SB",
       label: "Submitted to venue",
@@ -142,8 +164,20 @@ export const paperflow: Graph = {
     { id: "RJ", label: "Rejected", cls: "action", owner: "first_author", branch: "venue" },
 
     // ── convergence ─────────────────────────────────────────────────────────────
-    { id: "JN", label: "Both inputs present", cls: "join", owner: "first_author", branch: "social" },
-    { id: "PS", label: "Publish X and LinkedIn", cls: "action", owner: "first_author", branch: "social" },
+    {
+      id: "JN",
+      label: "Both inputs present",
+      cls: "join",
+      owner: "first_author",
+      branch: "social",
+    },
+    {
+      id: "PS",
+      label: "Publish X and LinkedIn",
+      cls: "action",
+      owner: "first_author",
+      branch: "social",
+    },
   ],
 
   edges: [
@@ -159,14 +193,11 @@ export const paperflow: Graph = {
 
     { from: "SL", to: "PO", kind: "requires" },
     { from: "SL", to: "TV", kind: "requires" },
-    { from: "PO", to: "LG", kind: "requires" },
-    { from: "TV", to: "LG", kind: "requires" },
 
     { from: "XD", to: "LI", kind: "requires", label: "Adapt and lengthen" },
     { from: "LI", to: "CP", kind: "requires", label: "Email round" },
     { from: "CP", to: "SF", kind: "requires" },
 
-    { from: "DR", to: "DS", kind: "requires" },
     { from: "DR", to: "DA", kind: "requires" },
     { from: "DA", to: "AK", kind: "requires" },
     { from: "AK", to: "PK", kind: "requires" },
@@ -206,7 +237,7 @@ export const resetScope = {
   /** Re-opened for revision. */
   reopened: ["OV", "PM", "FX", "PDF"],
   /** Untouched — this work stays valid across attempts. */
-  survives: ["SL", "PO", "TV", "LG", "XD", "LI", "CP", "SF", "DR", "DS", "DA", "AK"],
+  survives: ["SL", "PO", "TV", "XD", "LI", "CP", "SF", "DR", "DA", "AK"],
 } as const;
 
 /** Branch ordering for nudge priority. Deadline-bearing work outranks cosmetic work. */

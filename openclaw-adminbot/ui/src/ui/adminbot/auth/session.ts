@@ -2130,6 +2130,358 @@ export async function fetchMemberProfileOverview(
   };
 }
 
+// --- Paper evidence slots ---
+//
+// The tall table behind My Projects & Papers: one row per artifact per paper. The registry that
+// says what each slot is called and what shape it accepts is imported straight from the service's
+// contracts module (see views/paper-slots.ts), so this file only moves records, never rules.
+
+export type PaperSlotOverviewRow = {
+  paper_id: string;
+  title: string;
+  venue?: string;
+  deadline?: string;
+  current_step: string;
+  provided_count: number;
+  required_count: number;
+  dormant: boolean;
+  closed: boolean;
+  missing_slots: string[];
+  missing_acceptance_details?: string[];
+  cycle_closed?: boolean;
+  escalating: boolean;
+  first_author_member_id?: string;
+  last_nudged_at?: string;
+};
+
+/** Every paper's outstanding evidence, computed by the service on read. */
+export async function fetchPaperSlotOverview(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperSlotOverviewRow[]>> {
+  const result = await authedJson(baseUrl, "/papers/slot-overview", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { papers?: PaperSlotOverviewRow[] } | null;
+  return { ok: true, value: body?.papers ?? [] };
+}
+
+export type PaperSlotRow = {
+  paper_id: string;
+  slot: string;
+  status: "missing" | "provided" | "invalid" | "waived";
+  url?: string;
+  /** Absent, not blank, when the reader is not entitled to a credential slot. */
+  value_text?: string;
+  /** The free-text half of an enum slot. */
+  value_note?: string;
+  provided_at?: string;
+  invalid_reason?: string;
+  waived_reason?: string;
+};
+
+export type PaperSocialDraft = {
+  id: string;
+  paper_id: string;
+  platform: "x" | "linkedin";
+  body: string;
+  model?: string;
+  generated_at: string;
+  status: "draft" | "circulated" | "approved" | "superseded";
+};
+
+export type PaperSocialConsent = {
+  draft_id: string;
+  member_id: string;
+  decision: "pending" | "ok" | "changes_requested";
+  comment?: string;
+  asked_at: string;
+  decided_at?: string;
+};
+
+export type PaperAttendee = {
+  paper_id: string;
+  attendee_key: string;
+  member_id?: string;
+  name: string;
+  attending: "yes" | "no" | "unknown";
+  confirmed_at?: string;
+};
+
+export type PaperReimbursement = {
+  paper_id: string;
+  member_id: string;
+  status: "not_applicable" | "pending" | "submitted" | "reimbursed";
+  submitted_at?: string;
+  completed_at?: string;
+};
+
+/** Everything one card needs: the checklist plus the lists that hang off the paper. */
+export type PaperCycle = {
+  slots: PaperSlotRow[];
+  drafts: PaperSocialDraft[];
+  consents: PaperSocialConsent[];
+  attendees: PaperAttendee[];
+  reimbursements: PaperReimbursement[];
+  cycleClosed: boolean;
+  missingAcceptanceDetails: string[];
+};
+
+/** One paper's 25 slots, blanks included -- the card renders the checklist, not just the answers. */
+export async function fetchPaperSlots(
+  paperId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperCycle>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}/slots`,
+    "GET",
+    sessionToken,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as {
+    slots?: PaperSlotRow[];
+    drafts?: PaperSocialDraft[];
+    consents?: PaperSocialConsent[];
+    attendees?: PaperAttendee[];
+    reimbursements?: PaperReimbursement[];
+    cycle_closed?: boolean;
+    missing_acceptance_details?: string[];
+  } | null;
+  return {
+    ok: true,
+    value: {
+      slots: body?.slots ?? [],
+      drafts: body?.drafts ?? [],
+      consents: body?.consents ?? [],
+      attendees: body?.attendees ?? [],
+      reimbursements: body?.reimbursements ?? [],
+      cycleClosed: Boolean(body?.cycle_closed),
+      missingAcceptanceDetails: body?.missing_acceptance_details ?? [],
+    },
+  };
+}
+
+/** Save a social draft. Supersedes whatever it replaces, server-side. */
+export async function savePaperSocialDraft(
+  paperId: string,
+  input: { platform: string; body: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperSocialDraft>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}/social-drafts`,
+    "POST",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { draft?: PaperSocialDraft } | null;
+  return body?.draft
+    ? { ok: true, value: body.draft }
+    : { ok: false, kind: "auth-failed", message: "the service returned no draft" };
+}
+
+/** Ask the paper's lab-member authors to sign off on a draft. */
+export async function circulatePaperSocialDraft(
+  draftId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/social-drafts/${encodeURIComponent(draftId)}/circulate`,
+    "POST",
+    sessionToken,
+    {},
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/** The signed-in member's own answer on a draft. The service takes the id from the session. */
+export async function recordPaperSocialConsent(
+  draftId: string,
+  input: { decision: string; comment?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/social-drafts/${encodeURIComponent(draftId)}/consent`,
+    "POST",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+export async function savePaperAttendee(
+  paperId: string,
+  input: { name: string; member_id?: string; attending: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}/attendees`,
+    "PUT",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+export async function savePaperReimbursementStatus(
+  paperId: string,
+  memberId: string,
+  status: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}/reimbursements/${encodeURIComponent(memberId)}`,
+    "PUT",
+    sessionToken,
+    { status },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/**
+ * Write one slot.
+ *
+ * The service derives `status` from the value, so this sends the value and nothing else -- there
+ * is deliberately no way for the browser to declare an artifact provided.
+ */
+export async function savePaperSlot(
+  paperId: string,
+  slot: string,
+  input: { url?: string; value_text?: string; value_note?: string; done?: boolean },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperSlotRow>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}/slots/${encodeURIComponent(slot)}`,
+    "PUT",
+    sessionToken,
+    input,
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  const body = result.body as { slot?: PaperSlotRow } | null;
+  return body?.slot
+    ? { ok: true, value: body.slot }
+    : { ok: false, kind: "auth-failed", message: "the service returned no slot" };
+}
+
+export type PaperNudgeBatch = {
+  member_id: string;
+  member_name: string;
+  /** False when there is no Slack id on file. The preview says so before anything is sent. */
+  deliverable: boolean;
+  item_count: number;
+  paper_titles: string[];
+  /** The composed message, exactly as it would arrive. */
+  message: string;
+};
+
+/**
+ * What would go out if the button were pressed right now.
+ *
+ * The same computation the send runs, returned instead of delivered -- so the preview is the send,
+ * looked at rather than performed.
+ */
+export async function fetchPaperNudgeBatches(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<PaperNudgeBatch[]>> {
+  const result = await authedJson(baseUrl, "/papers/nudge-batches", "GET", sessionToken);
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { batches?: PaperNudgeBatch[] } | null;
+  return { ok: true, value: body?.batches ?? [] };
+}
+
+/**
+ * Sends the batches. Recipients and text are server-computed, never ours.
+ *
+ * `recipientIds` narrows the send to the people an admin ticked in the preview; the service still
+ * recomputes the batches, so the list only ever subtracts.
+ */
+export async function runPaperSlotReminder(
+  sessionToken: string,
+  baseUrl: string,
+  recipientIds?: string[],
+): Promise<AuthResult<{ created: number; skipped: number }>> {
+  const result = await authedJson(baseUrl, "/papers/slot-reminder/run", "POST", sessionToken, {
+    ...(recipientIds?.length ? { recipient_member_ids: recipientIds } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  const body = result.body as { created?: unknown[]; skipped?: unknown[] } | null;
+  return {
+    ok: true,
+    value: { created: body?.created?.length ?? 0, skipped: body?.skipped?.length ?? 0 },
+  };
+}
+
 /** Runs the daily mandatory-fields reminder now. Recipients are server-computed, never ours. */
 export async function runMandatoryFieldsReminder(
   sessionToken: string,

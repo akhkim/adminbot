@@ -24,14 +24,11 @@ flowchart TD
 
     SL --> PO[Poster]
     SL --> TV[Talk video]
-    PO --> LG[Links logged in shared folder]
-    TV --> LG
 
     XD -->|Adapt and lengthen| LI[LinkedIn post]
     LI -->|Email round| CP[Coauthor feedback]
     CP --> SF[Final social draft]
 
-    DR --> DS[Drive PDF, submitted version]
     DR --> DA[Drive PDF, arXiv version]
     DA --> AK[Author list and acknowledgements]
     AK --> PK[arXiv package prepared]
@@ -65,9 +62,9 @@ flowchart TD
     classDef hub fill:#F1EFE8,stroke:#5F5E5A,color:#2C2C2A
 
     class BR,OV,PM,FX,PDF hub
-    class SL,PO,TV,LG pres
+    class SL,PO,TV pres
     class XD,LI,CP,SF,PS soc
-    class DR,DS,DA,AK,PK,BE rel
+    class DR,DA,AK,PK,BE rel
     class CK,SB,RV,RB,RS,DC,AC,CM,RJ,CA,RM conf
     class GT,JN gate
 ```

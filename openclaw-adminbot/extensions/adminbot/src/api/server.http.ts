@@ -33,6 +33,27 @@ export async function readJson(req: IncomingMessage, maxBytes?: number): Promise
   return JSON.parse(Buffer.concat(chunks).toString("utf8"));
 }
 
+/**
+ * The same read, but an empty body is an empty object rather than a parse error.
+ *
+ * For routes where the body is entirely optional -- a button that posts nothing when it means
+ * "all of it" -- so the common press is not the one that has to send `{}` to work.
+ */
+export async function readJsonOrEmpty(req: IncomingMessage, maxBytes?: number): Promise<unknown> {
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    total += buffer.length;
+    if (maxBytes !== undefined && total > maxBytes) {
+      throw new PayloadTooLargeError(maxBytes);
+    }
+    chunks.push(buffer);
+  }
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  return raw ? JSON.parse(raw) : {};
+}
+
 /** Thrown by `readJson` past its cap, so the route answers 413 rather than dying on a parse. */
 export class PayloadTooLargeError extends Error {
   constructor(readonly maxBytes: number) {
