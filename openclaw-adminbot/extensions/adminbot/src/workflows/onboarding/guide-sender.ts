@@ -30,6 +30,18 @@ import {
 const execFile = promisify(execFileCallback);
 const GOG_TIMEOUT_MS = 45_000;
 // The full-member guide: the one mail whose copy promises a CS account request.
+/**
+ * Whose Drive folder is provisioned with the lab's templates in it.
+ *
+ * Everyone else who gets a folder -- trial-phase students, co-authors, visiting professors,
+ * acquaintances -- gets an empty one. The prototype holds the lab's own working documents, and
+ * handing those to someone on a trial or to an external collaborator shares more of the lab than
+ * their relationship to it warrants. Keyed on the template rather than on a roster lookup because
+ * the send path is what decides which onboarding someone is getting, and a recipient is often not
+ * on the roster yet at the moment the folder is created.
+ */
+const FULL_MEMBER_TEMPLATE_IDS = new Set(["member", "member_what_to_expect"]);
+
 const DCS_FORM_TEMPLATE_ID = "member";
 const GOG_MAX_OUTPUT_BYTES = 1024 * 1024;
 
@@ -330,6 +342,7 @@ export function createAdminBotOnboardingSender(
       }
       const workspace = await options.provisionDriveWorkspace({
         folderName: driveWorkspaceFolderName(name),
+        includeContents: FULL_MEMBER_TEMPLATE_IDS.has(template.id),
       });
       driveLink = workspace.link;
       values.drive_folder_link = workspace.link;

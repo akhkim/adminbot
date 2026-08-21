@@ -371,8 +371,12 @@ async function main(): Promise<void> {
     // `sendEmail` (gog), and the same out-of-process invite script the service spawns. Everything
     // else about the run -- the composer, the checks, the order -- is identical either way.
     const send = createAdminBotOnboardingSender({
-      provisionDriveWorkspace: async ({ folderName }) => {
-        performed.push(`Drive: copy the workspace prototype to "${folderName}" and share it`);
+      provisionDriveWorkspace: async ({ folderName, includeContents }) => {
+        performed.push(
+          includeContents
+            ? `Drive: copy the workspace prototype to "${folderName}" and share it`
+            : `Drive: create an empty "${folderName}" and share it (not a full member)`,
+        );
         if (args.send) {
           throw new Error("Drive provisioning is not wired into this script; use the tab instead");
         }

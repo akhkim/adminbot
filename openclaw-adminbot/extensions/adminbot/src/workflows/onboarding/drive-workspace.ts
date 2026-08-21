@@ -22,7 +22,18 @@ export const DEFAULT_DRIVE_PROTOTYPE_FOLDER_ID = "1abl0CdA2Le3t2WxOy8Fb8UUMsmiQb
 
 export type DriveWorkspace = { folderId: string; link: string };
 
-export type DriveWorkspaceProvisioner = (params: { folderName: string }) => Promise<DriveWorkspace>;
+export type DriveWorkspaceProvisioner = (params: {
+  folderName: string;
+  /**
+   * Whether to copy the prototype's contents in, or hand over an empty folder.
+   *
+   * Only full members get the templates and worksheets: everyone else who receives a folder --
+   * trial-phase students, co-authors, visiting professors -- gets somewhere to put their own files
+   * and nothing of the lab's. The folder itself is still created and shared either way, because the
+   * onboarding copy links to it regardless of who is reading.
+   */
+  includeContents: boolean;
+}) => Promise<DriveWorkspace>;
 
 type GogRun = (args: string[]) => Promise<string>;
 
@@ -89,20 +100,24 @@ export function createDriveWorkspaceProvisioner(
     ...rest,
   ];
 
-  return async ({ folderName }) => {
+  return async ({ folderName, includeContents }) => {
     const name = folderName.trim();
     if (!name) {
       throw new Error("a folder name is required to provision a Drive workspace");
     }
+    // Not read at all for an empty workspace: listing the prototype only exists to copy it, and a
+    // prototype that has gone missing should not fail a send that was never going to touch it.
     // `--max 0` means "no limit" for `drive tree` but is rejected by `drive ls`, which is how a
     // half-built folder got left behind during development.
-    const children = listPrototypeChildren(
-      readJson(
-        await run(gogArgs("ls", "--parent", prototypeFolderId, "--max", "1000")),
-        "drive ls",
-      ),
-    );
-    if (children.length === 0) {
+    const children = includeContents
+      ? listPrototypeChildren(
+          readJson(
+            await run(gogArgs("ls", "--parent", prototypeFolderId, "--max", "1000")),
+            "drive ls",
+          ),
+        )
+      : [];
+    if (includeContents && children.length === 0) {
       throw new Error("prototype folder is empty; refusing to provision an empty workspace");
     }
 
