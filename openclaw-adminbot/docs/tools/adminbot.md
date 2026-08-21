@@ -395,6 +395,33 @@ Alumni are left off both. Both Slack actions -- "Refresh from Slack"
 page's own toolbar; the console tab carries no chrome of its own around the
 iframe, so there is exactly one place to trigger either.
 
+Both are also reachable without a person: `scripts/adminbot-member-directory-cron.sh`
+calls `POST /members/directory/refresh-slack` once a day as an OpenClaw cron job,
+so timezones stay current for the calendar without an admin remembering to press
+the button. Slack is the only zone source that updates itself when somebody
+travels or moves, and a stale zone mis-schedules meetings silently. The wrapper
+authenticates with `ADMINBOT_SERVICE_TOKEN` out of the mode-600 env file, the
+same way the OpenReview and mandatory-fields passes do, and its stdout becomes
+the Cron tab's run summary. Register it the same way as the OpenReview job (see
+[adminbot-openreview.md](adminbot-openreview.md)):
+
+```bash
+pnpm openclaw cron add \
+  --name adminbot-member-directory \
+  --description "Daily Slack timezone/directory sync" \
+  --cron "40 5 * * *" \
+  --command-argv '["bash","<repo>/scripts/adminbot-member-directory-cron.sh"]' \
+  --timeout-seconds 900 \
+  --no-deliver
+```
+
+The pass stamps `timezone` from Slack's `tz`, backfills `slack_user_id` by email
+for members the roster never linked, and re-tallies 7-day message counts -- one
+route does all three, and the timezone is the reason it runs daily. A member
+Slack answers nothing for has their zone cleared; a member the *lookup failed*
+for keeps what they had, so one bad night on the Slack API cannot blank the
+roster's mandatory timezone field.
+
 The endpoint is public, but its response shape depends on who's asking:
 
 - Signed in as **admin**: `{ mode: "full", places: [...{ ...place, members:

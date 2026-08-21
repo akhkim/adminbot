@@ -42,6 +42,12 @@ export const TAB_GROUPS = [
       "adminbotProfileOverview",
       "adminbotCalendar",
       "adminbotAnnouncements",
+      // Tasks & Tools (the `cron` tab) sits with lab governance rather than under OpenClaw: what
+      // it actually lists here is the lab's own scheduled passes -- the OpenReview cadence, the
+      // daily Slack timezone sync, the CV digest -- plus the on-demand jobs an admin presses. An
+      // admin looking for "when does the nudge go out" was looking under Admin and finding an
+      // operator heading instead.
+      "cron",
       "adminbotSettings",
     ],
   },
@@ -61,7 +67,6 @@ export const TAB_GROUPS = [
       "activity",
       "sessions",
       "usage",
-      "cron",
       "agents",
       "skills",
       "nodes",

@@ -16,7 +16,6 @@ describe("TAB_GROUPS", () => {
       "activity",
       "sessions",
       "usage",
-      "cron",
       "agents",
       "skills",
       "nodes",
@@ -58,20 +57,25 @@ describe("TAB_GROUPS", () => {
       "adminbotLogistics",
       "adminbotReimbursements",
       "adminbotDeadlines",
+      "adminbotConferencePapers",
       "adminbotSocialBot",
     ]);
     // Chat is no longer a group of its own: asking AdminBot something is the second half of the
     // guidebook surface, which the sidebar footer renders.
     expect(TAB_GROUPS.flatMap((group) => group.tabs as readonly string[])).not.toContain("chat");
     // The roster is part of the lab's shared surface, not a tool you operate.
-    expect(byLabel("labSharing")).toEqual(["labSharing", "adminbotMembers"]);
+    expect(byLabel("labSharing")).toEqual(["labSharing", "adminbotMeetings", "adminbotMembers"]);
     expect(byLabel("admin")).toEqual([
       "adminbot",
       "adminbotPapers",
       "adminbotRegistrations",
       "adminbotOnboarding",
+      "adminbotProfileOverview",
       "adminbotCalendar",
       "adminbotAnnouncements",
+      // Tasks & Tools: the jobs listed there are the lab's own scheduled passes, so it is
+      // governance rather than an upstream operator surface.
+      "cron",
       "adminbotSettings",
     ]);
   });
