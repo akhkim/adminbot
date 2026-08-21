@@ -17,6 +17,7 @@ import {
   type FocusEvent as ReactFocusEvent,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
+  useId,
   useState,
 } from "react";
 import { createPortal, flushSync } from "react-dom";
@@ -39,6 +40,7 @@ export type TimeAllocationTask = {
   id: string;
   key: string;
   sourceIndex: number;
+  source: "jinesis" | "outside";
   name: string;
   start: string;
   end: string;
@@ -47,6 +49,20 @@ export type TimeAllocationTask = {
   // Whatever the member wrote about this allocation ("Shared with Mei"). Shown under its row in
   // the tooltip, the same fact the table's hover text carries.
   note?: string;
+};
+
+export type TimeAllocationAwayRange = {
+  id: string;
+  name: string;
+  start: string;
+  end: string;
+  note?: string;
+};
+
+type TimeAllocationCategory = {
+  key: string;
+  name: string;
+  source: TimeAllocationTask["source"];
 };
 
 type TimeAllocationSegment = {
@@ -60,6 +76,8 @@ type TimeAllocationSegment = {
   dayCount: number;
   overCapacityDays: number;
   nearCapacityDays: number;
+  awayDays: number;
+  awayRanges: readonly TimeAllocationAwayRange[];
 };
 
 type TimeAllocationChartDatum = {
@@ -72,7 +90,9 @@ type TimeAllocationChartDatum = {
   dayCount: number;
   overCapacityDays: number;
   nearCapacityDays: number;
-  [key: string]: string | number;
+  awayDays: number;
+  awayRanges: readonly TimeAllocationAwayRange[];
+  [key: string]: string | number | readonly TimeAllocationAwayRange[];
 };
 
 type TimeAllocationTooltipEntry = {
@@ -89,6 +109,7 @@ type TimeAllocationTooltipProps = {
   payload?: readonly TimeAllocationTooltipEntry[];
   label?: string | number;
   notes?: ReadonlyMap<string, string>;
+  outsideKeys?: ReadonlySet<string>;
 };
 
 export type TimeAllocationInterval = "day" | "week" | "month";
@@ -106,6 +127,11 @@ const CHART_COLORS = [
   "#D4A72C",
 ] as const;
 const CHART_NEUTRAL_COLOR = "#9AA0AA";
+const AWAY_BACKGROUND_KEY = "__away_background__";
+// Recharts omits a Bar's background when that series is exactly zero. A tiny transparent value,
+// held to one rendered pixel, gives the whole-day background an anchor without changing any
+// allocation total or tooltip value.
+const AWAY_BACKGROUND_CARRIER_VALUE = 0.000_001;
 
 // recharts 3.x types declare `children` as a required prop. Passing children as createElement's
 // rest arguments -- which is how this chart is written, and how React itself reads them -- does
@@ -216,10 +242,15 @@ function formatPercentage(value: number): string {
 
 
 
-function taskCategories(
-  tasks: readonly TimeAllocationTask[],
-): Array<{ key: string; name: string }> {
-  return [...new Map(tasks.map((task) => [task.key, { key: task.key, name: task.name }])).values()];
+function taskCategories(tasks: readonly TimeAllocationTask[]): TimeAllocationCategory[] {
+  return [
+    ...new Map(
+      tasks.map((task) => [
+        task.key,
+        { key: task.key, name: task.name, source: task.source } satisfies TimeAllocationCategory,
+      ]),
+    ).values(),
+  ];
 }
 
 function taskColors(tasks: readonly TimeAllocationTask[]): Map<string, string> {
@@ -241,11 +272,23 @@ function taskColors(tasks: readonly TimeAllocationTask[]): Map<string, string> {
 
 function dailyAllocations(
   tasks: readonly TimeAllocationTask[],
-  categories: ReadonlyArray<{ key: string; name: string }>,
+  categories: readonly TimeAllocationCategory[],
+  awayRanges: readonly TimeAllocationAwayRange[],
   day: string,
-): { allocations: Array<{ key: string; name: string; effort: number }>; total: number } {
-  const byKey = new Map<string, number>();
+): {
+  allocations: Array<{ key: string; name: string; effort: number }>;
+  total: number;
+  awayRanges: readonly TimeAllocationAwayRange[];
+} {
   const dayEnd = isoDate(dateMs(day) + DAY_MS);
+  const away = awayRanges.filter((range) => range.start < dayEnd && exclusiveEnd(range.end) > day);
+  // A whole-day answer is a calendar constraint, not another allocation. Clear the work on that
+  // date before larger intervals average their daily values, or a week containing leave would
+  // continue to advertise hours the member explicitly said were unavailable.
+  if (away.length > 0) {
+    return { allocations: [], total: 0, awayRanges: away };
+  }
+  const byKey = new Map<string, number>();
   for (const task of tasks) {
     if (task.start < dayEnd && exclusiveEnd(task.end) > day) {
       byKey.set(task.key, (byKey.get(task.key) ?? 0) + task.effort);
@@ -258,13 +301,15 @@ function dailyAllocations(
   return {
     allocations,
     total: allocations.reduce((sum, allocation) => sum + allocation.effort, 0),
+    awayRanges: [],
   };
 }
 
 // Every interval is reduced from daily values. This gives partial weeks and months a
 // time-weighted average while retaining daily peak and capacity-risk information.
-function allocationSegments(
+export function allocationSegments(
   tasks: readonly TimeAllocationTask[],
+  awayRanges: readonly TimeAllocationAwayRange[],
   windowStart: string,
   interval: TimeAllocationInterval,
 ): TimeAllocationSegment[] {
@@ -277,7 +322,7 @@ function allocationSegments(
       { length: Math.round((dateMs(end) - dateMs(start)) / DAY_MS) },
       (_, dayOffset) => {
         const day = isoDate(dateMs(start) + dayOffset * DAY_MS);
-        return dailyAllocations(tasks, categories, day);
+        return dailyAllocations(tasks, categories, awayRanges, day);
       },
     );
     const allocations = categories.flatMap((category) => {
@@ -291,6 +336,9 @@ function allocationSegments(
       return effort > 0 ? [{ ...category, effort }] : [];
     });
     const dailyTotals = days.map((day) => day.total);
+    const segmentAwayRanges = [
+      ...new Map(days.flatMap((day) => day.awayRanges).map((range) => [range.id, range])).values(),
+    ];
     segments.push({
       start,
       end,
@@ -302,6 +350,8 @@ function allocationSegments(
       dayCount: days.length,
       overCapacityDays: dailyTotals.filter((total) => total > 100).length,
       nearCapacityDays: dailyTotals.filter((total) => total >= 90 && total <= 100).length,
+      awayDays: days.filter((day) => day.awayRanges.length > 0).length,
+      awayRanges: segmentAwayRanges,
     });
   }
   return segments;
@@ -314,7 +364,7 @@ function yAxisMaximum(segments: readonly TimeAllocationSegment[]): number {
 
 function chartData(
   segments: readonly TimeAllocationSegment[],
-  categories: ReadonlyArray<{ key: string; name: string }>,
+  categories: readonly TimeAllocationCategory[],
 ): TimeAllocationChartDatum[] {
   return segments.map((segment) => {
     const datum: TimeAllocationChartDatum = {
@@ -327,6 +377,8 @@ function chartData(
       dayCount: segment.dayCount,
       overCapacityDays: segment.overCapacityDays,
       nearCapacityDays: segment.nearCapacityDays,
+      awayDays: segment.awayDays,
+      awayRanges: segment.awayRanges,
     };
     for (const category of categories) {
       datum[category.key] = 0;
@@ -343,18 +395,30 @@ function TimeAllocationTooltip({
   payload,
   label,
   notes,
+  outsideKeys,
 }: TimeAllocationTooltipProps): ReactNode {
   if (!active || !payload?.length) {
     return null;
   }
-  const visibleAllocations = payload.filter((entry) => Number(entry.value) > 0);
+  const visibleAllocations = payload.filter(
+    (entry) => entry.dataKey !== AWAY_BACKGROUND_KEY && Number(entry.value) > 0,
+  );
+  const outsideAllocations = visibleAllocations.filter((entry) =>
+    outsideKeys?.has(String(entry.dataKey)),
+  );
+  const jinesisAllocations = visibleAllocations.filter(
+    (entry) => !outsideKeys?.has(String(entry.dataKey)),
+  );
   const segment = payload[0]?.payload;
   const total = Number(segment?.total ?? 0);
+  const awayDays = Number(segment?.awayDays ?? 0);
+  const dayCount = Number(segment?.dayCount ?? 0);
+  const awayRanges = segment?.awayRanges ?? [];
   return createElement(
     "div",
     { className: "adminbot-time-chart__tooltip" },
     createElement("div", { className: "adminbot-time-chart__tooltip-label" }, label),
-    ...visibleAllocations.map((entry) =>
+    ...jinesisAllocations.map((entry) =>
       createElement(
         "div",
         {
@@ -379,6 +443,63 @@ function TimeAllocationTooltip({
           : null,
       ),
     ),
+    outsideAllocations.length > 0 || awayDays > 0
+      ? createElement(
+          "div",
+          { className: "adminbot-time-chart__tooltip-away" },
+          createElement("i", { className: "adminbot-time-chart__away-swatch" }),
+          createElement(
+            "div",
+            null,
+            createElement(
+              "strong",
+              null,
+              t("adminbotTimeAvailability.legendTimeOff"),
+            ),
+            ...outsideAllocations.map((entry) =>
+              createElement(
+                "div",
+                {
+                  className: "adminbot-time-chart__tooltip-away-allocation",
+                  key: String(entry.dataKey),
+                },
+                createElement("span", null, entry.name),
+                createElement("span", null, formatPercentage(Number(entry.value))),
+                notes?.get(String(entry.dataKey))
+                  ? createElement(
+                      "small",
+                      { className: "adminbot-time-chart__tooltip-note" },
+                      notes.get(String(entry.dataKey)),
+                    )
+                  : null,
+              ),
+            ),
+            awayDays > 0
+              ? createElement(
+                  "span",
+                  { className: "adminbot-time-chart__tooltip-away-period" },
+                  dayCount === 1
+                    ? t("adminbotTimeAvailability.tables.wholeDay")
+                    : `${awayDays} / ${dayCount} days away`,
+                )
+              : null,
+            ...awayRanges.map((range) =>
+              createElement(
+                "span",
+                { key: range.id },
+                `${range.name} · ${shortDate(range.start)}–${shortDate(range.end)}`,
+                range.note
+                  ? createElement(
+                      "small",
+                      { className: "adminbot-time-chart__tooltip-note" },
+                      range.note,
+                    )
+                  : null,
+              ),
+            ),
+          ),
+        )
+      : null,
     createElement(
       "div",
       {
@@ -483,40 +604,180 @@ function ChartPageButton({
   );
 }
 
+type AwayBackgroundProps = {
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  payload?: TimeAllocationChartDatum;
+  patternId: string;
+};
+
+function AwayBackground({
+  x,
+  y,
+  width,
+  height,
+  payload,
+  patternId,
+}: AwayBackgroundProps): ReactNode {
+  const awayDays = Number(payload?.awayDays ?? 0);
+  const dayCount = Number(payload?.dayCount ?? 0);
+  if (
+    awayDays <= 0 ||
+    dayCount <= 0 ||
+    !Number.isFinite(x) ||
+    !Number.isFinite(y) ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height)
+  ) {
+    return null;
+  }
+  const label =
+    dayCount === 1
+      ? t("adminbotTimeAvailability.tables.wholeDay")
+      : `${awayDays}/${dayCount} days away`;
+  return createElement(
+    "g",
+    { className: "adminbot-time-chart__away-background", "aria-hidden": true },
+    createElement("rect", {
+      x,
+      y,
+      width,
+      height,
+      rx: 2,
+      fill: `url(#${patternId})`,
+      opacity: awayDays === dayCount ? 0.72 : 0.2 + (awayDays / dayCount) * 0.32,
+    }),
+    Number(width) >= 54
+      ? createElement(
+          "text",
+          {
+            x: Number(x) + Number(width) / 2,
+            y: Number(y) + 14,
+            textAnchor: "middle",
+            className: "adminbot-time-chart__away-label",
+          },
+          label,
+        )
+      : null,
+  );
+}
+
+function TimeAllocationLegend({
+  categories,
+  colors,
+  hasWholeDayAway,
+}: {
+  categories: readonly TimeAllocationCategory[];
+  colors: ReadonlyMap<string, string>;
+  hasWholeDayAway: boolean;
+}): ReactNode {
+  return createElement(
+    "div",
+    { className: "adminbot-time-chart__legend" },
+    ...categories.map((category) =>
+      createElement(
+        "span",
+        { className: "adminbot-time-chart__legend-item", key: category.key },
+        createElement("i", {
+          className:
+            category.source === "outside"
+              ? "adminbot-time-chart__legend-swatch adminbot-time-chart__legend-swatch--outside"
+              : "adminbot-time-chart__legend-swatch",
+          style: { backgroundColor: colors.get(category.key) ?? CHART_NEUTRAL_COLOR },
+        }),
+        category.source === "outside"
+          ? `${category.name} · ${t("adminbotTimeAvailability.legendTimeOff")}`
+          : category.name,
+      ),
+    ),
+    hasWholeDayAway
+      ? createElement(
+          "span",
+          { className: "adminbot-time-chart__legend-item" },
+          createElement("i", {
+            className:
+              "adminbot-time-chart__legend-swatch adminbot-time-chart__legend-swatch--away",
+          }),
+          t("adminbotTimeAvailability.tables.wholeDay"),
+        )
+      : null,
+  );
+}
+
 function EffortStackChart({
   tasks,
+  awayRanges,
   memberName,
   interval,
 }: {
   tasks: readonly TimeAllocationTask[];
+  awayRanges: readonly TimeAllocationAwayRange[];
   memberName: string;
   interval: TimeAllocationInterval;
 }): ReactNode {
+  const patternPrefix = `adminbot-time-chart-${useId().replace(/[^\dA-Z_-]/giu, "")}`;
   const [windowStart, setWindowStart] = useState(() =>
     alignIntervalStart(
-      tasks.map((task) => task.start).toSorted()[0] ?? isoDate(Date.now()),
+      [
+        ...tasks.map((task) => task.start),
+        ...awayRanges.map((range) => range.start),
+      ].toSorted()[0] ?? isoDate(Date.now()),
       interval,
     ),
   );
-  const segments = allocationSegments(tasks, windowStart, interval);
+  const segments = allocationSegments(tasks, awayRanges, windowStart, interval);
   const taskNotes = new Map(
-    tasks.flatMap((task) => (task.note ? ([[task.key, task.note]] as Array<[string, string]>) : [])),
+    tasks.flatMap((task) =>
+      task.note ? ([[task.key, task.note]] as Array<[string, string]>) : [],
+    ),
   );
   const colors = taskColors(tasks);
   const categories = taskCategories(tasks);
-  const data = chartData(segments, categories);
+  const outsideKeys = new Set(
+    categories
+      .filter((category) => category.source === "outside")
+      .map((category) => category.key),
+  );
+  // Recharts draws a Bar's background across the complete plot height. Keep that responsibility on
+  // an invisible series rather than the first task: a fully-away day has no task bar to attach to.
+  const chartCategories: TimeAllocationCategory[] = [
+    { key: AWAY_BACKGROUND_KEY, name: "", source: "jinesis" },
+    ...categories,
+  ];
+  const data = chartData(segments, chartCategories).map((datum) => ({
+    ...datum,
+    [AWAY_BACKGROUND_KEY]: AWAY_BACKGROUND_CARRIER_VALUE,
+  }));
+  const outsidePatternIds = new Map(
+    categories
+      .filter((category) => category.source === "outside")
+      .map((category, index) => [category.key, `${patternPrefix}-outside-${index}`]),
+  );
+  const awayPatternId = `${patternPrefix}-away`;
   const segmentSummary = segments
-    .filter((segment) => segment.allocations.length > 0)
+    .filter((segment) => segment.allocations.length > 0 || segment.awayDays > 0)
     .map((segment) => {
-      const allocationSummary = t("adminbotTimeAvailability.segmentSummary", {
-        start: tableDate(segment.start),
-        end: tableDate(isoDate(dateMs(segment.end) - DAY_MS)),
-        allocations: segment.allocations
-          .map((allocation) => `${allocation.name} ${formatPercentage(allocation.effort)}`)
-          .join(", "),
-        total: formatPercentage(segment.total),
-      });
-      return `${allocationSummary} Peak daily allocation ${formatPercentage(segment.peakTotal)}. Active days ${segment.activeDays} of ${segment.dayCount}. Days over 100%: ${segment.overCapacityDays}. Days near capacity: ${segment.nearCapacityDays}.`;
+      const start = tableDate(segment.start);
+      const end = tableDate(isoDate(dateMs(segment.end) - DAY_MS));
+      const summaries =
+        segment.allocations.length > 0
+          ? [
+              t("adminbotTimeAvailability.segmentSummary", {
+                start,
+                end,
+                allocations: segment.allocations
+                  .map((allocation) => `${allocation.name} ${formatPercentage(allocation.effort)}`)
+                  .join(", "),
+                total: formatPercentage(segment.total),
+              }),
+            ]
+          : [];
+      if (segment.awayDays > 0) {
+        summaries.push(t("adminbotTimeAvailability.segmentSummaryOff", { start, end }));
+      }
+      return `${summaries.join(" ")} Peak daily allocation ${formatPercentage(segment.peakTotal)}. Active days ${segment.activeDays} of ${segment.dayCount}. Days away: ${segment.awayDays}. Days over 100%: ${segment.overCapacityDays}. Days near capacity: ${segment.nearCapacityDays}.`;
     })
     .join(" ");
   const renderTotalLabel = (categoryKey: string, labelProps: unknown) => {
@@ -590,7 +851,7 @@ function EffortStackChart({
           role: "img",
           "aria-label": t("adminbotTimeAvailability.chartAria", { member: memberName }),
         },
-        tasks.length === 0
+        tasks.length === 0 && awayRanges.length === 0
           ? createElement(
               "div",
               { className: "adminbot-time-chart__empty" },
@@ -613,6 +874,55 @@ function EffortStackChart({
                   barGap: 0,
                   accessibilityLayer: true,
                 },
+                createElement(
+                  "defs",
+                  null,
+                  createElement(
+                    "pattern",
+                    {
+                      id: awayPatternId,
+                      width: 8,
+                      height: 8,
+                      patternUnits: "userSpaceOnUse",
+                    },
+                    createElement("rect", {
+                      width: 8,
+                      height: 8,
+                      fill: "#4B5563",
+                    }),
+                    createElement("path", {
+                      d: "M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6",
+                      stroke: "#CBD5E1",
+                      strokeWidth: 1.5,
+                    }),
+                  ),
+                  ...categories.flatMap((category) => {
+                    const id = outsidePatternIds.get(category.key);
+                    if (!id) {
+                      return [];
+                    }
+                    const color = colors.get(category.key) ?? CHART_NEUTRAL_COLOR;
+                    return [
+                      createElement(
+                        "pattern",
+                        {
+                          id,
+                          key: id,
+                          width: 8,
+                          height: 8,
+                          patternUnits: "userSpaceOnUse",
+                        },
+                        createElement("rect", { width: 8, height: 8, fill: color }),
+                        createElement("path", {
+                          d: "M-2 2 L2 -2 M0 8 L8 0 M6 10 L10 6",
+                          stroke: "#FFFFFF",
+                          strokeOpacity: 0.68,
+                          strokeWidth: 1.5,
+                        }),
+                      ),
+                    ];
+                  }),
+                ),
                 createElement(CartesianGrid, {
                   strokeDasharray: "3 3",
                   stroke: "#2A2E35",
@@ -629,11 +939,16 @@ function EffortStackChart({
                   tickFormatter: (value: number) => formatPercentage(value),
                 }),
                 createElement(Tooltip, {
-                  content: createElement(TimeAllocationTooltip, { notes: taskNotes }),
+                  content: createElement(TimeAllocationTooltip, { notes: taskNotes, outsideKeys }),
                   cursor: { fill: "rgba(255,255,255,0.04)" },
                 }),
                 createElement(Legend, {
                   wrapperStyle: { fontSize: 12, color: "#9AA0AA" },
+                  content: createElement(TimeAllocationLegend, {
+                    categories,
+                    colors,
+                    hasWholeDayAway: awayRanges.length > 0,
+                  }),
                 }),
                 createElement(ReferenceLine, {
                   y: 100,
@@ -641,7 +956,7 @@ function EffortStackChart({
                   strokeDasharray: "4 4",
                   strokeOpacity: 0.6,
                 }),
-                ...categories.map((category) =>
+                ...chartCategories.map((category, categoryIndex) =>
                   createElement(
                     Bar,
                     {
@@ -649,15 +964,33 @@ function EffortStackChart({
                       dataKey: category.key,
                       name: category.name,
                       stackId: "stack",
-                      fill: colors.get(category.key) ?? CHART_NEUTRAL_COLOR,
+                      fill:
+                        category.key === AWAY_BACKGROUND_KEY
+                          ? "transparent"
+                          : outsidePatternIds.has(category.key)
+                            ? `url(#${outsidePatternIds.get(category.key)})`
+                            : (colors.get(category.key) ?? CHART_NEUTRAL_COLOR),
                       className: "adminbot-time-chart__segment",
                       isAnimationActive: false,
+                      minPointSize: category.key === AWAY_BACKGROUND_KEY ? 1 : 0,
+                      ...(categoryIndex === 0
+                        ? {
+                            background: (backgroundProps: unknown) =>
+                              createElement(AwayBackground, {
+                                ...(backgroundProps as Omit<AwayBackgroundProps, "patternId">),
+                                patternId: awayPatternId,
+                              }),
+                          }
+                        : {}),
                     },
-                    createElement(LabelList, {
-                      dataKey: "total",
-                      position: "top",
-                      content: (labelProps: unknown) => renderTotalLabel(category.key, labelProps),
-                    }),
+                    category.key !== AWAY_BACKGROUND_KEY
+                      ? createElement(LabelList, {
+                          dataKey: "total",
+                          position: "top",
+                          content: (labelProps: unknown) =>
+                            renderTotalLabel(category.key, labelProps),
+                        })
+                      : null,
                   ),
                 ),
               ),
@@ -681,6 +1014,7 @@ function EffortStackChart({
 class AdminBotEffortStackChartElement extends HTMLElement {
   private reactRoot: Root | undefined;
   private chartTasks: readonly TimeAllocationTask[] = [];
+  private chartAwayRanges: readonly TimeAllocationAwayRange[] = [];
   private chartMemberId = "";
   private chartMemberName = "";
   private chartInterval: TimeAllocationInterval = "day";
@@ -691,6 +1025,15 @@ class AdminBotEffortStackChartElement extends HTMLElement {
 
   set tasks(tasks: readonly TimeAllocationTask[]) {
     this.chartTasks = tasks;
+    this.renderChart();
+  }
+
+  get awayRanges(): readonly TimeAllocationAwayRange[] {
+    return this.chartAwayRanges;
+  }
+
+  set awayRanges(awayRanges: readonly TimeAllocationAwayRange[]) {
+    this.chartAwayRanges = awayRanges;
     this.renderChart();
   }
 
@@ -731,12 +1074,17 @@ class AdminBotEffortStackChartElement extends HTMLElement {
       return;
     }
     this.reactRoot ??= createRoot(this);
-    const firstTaskStart = this.chartTasks.map((task) => task.start).toSorted()[0] ?? "no-tasks";
+    const firstScheduleStart =
+      [
+        ...this.chartTasks.map((task) => task.start),
+        ...this.chartAwayRanges.map((range) => range.start),
+      ].toSorted()[0] ?? "no-schedule";
     flushSync(() => {
       this.reactRoot?.render(
         createElement(EffortStackChart, {
-          key: `${this.chartMemberId}:${firstTaskStart}:${this.chartInterval}`,
+          key: `${this.chartMemberId}:${firstScheduleStart}:${this.chartInterval}`,
           tasks: this.chartTasks,
+          awayRanges: this.chartAwayRanges,
           memberName: this.chartMemberName,
           interval: this.chartInterval,
         }),
@@ -754,12 +1102,14 @@ export function renderTimeAllocationChart(
   memberName: string,
   memberId: string,
   interval: TimeAllocationInterval,
+  awayRanges: readonly TimeAllocationAwayRange[] = [],
 ) {
   return html`
     <adminbot-effort-stack-chart
       .memberId=${memberId}
       .interval=${interval}
       .tasks=${tasks}
+      .awayRanges=${awayRanges}
       .memberName=${memberName}
     ></adminbot-effort-stack-chart>
   `;

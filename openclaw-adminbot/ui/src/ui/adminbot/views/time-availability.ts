@@ -68,6 +68,7 @@ import {
 } from "./time-availability.trips.ts";
 import {
   renderTimeAllocationChart,
+  type TimeAllocationAwayRange as ChartAwayRange,
   type TimeAllocationInterval,
   type TimeAllocationTask as ChartTask,
 } from "./time-allocation-chart.ts";
@@ -75,6 +76,7 @@ import {
 type TimeAllocationTask = {
   key: string;
   name: string;
+  source: "jinesis" | "outside";
   start: string;
   end: string;
   /** Hours per week this commitment asks for. */
@@ -448,9 +450,32 @@ function awayTasks(rows: readonly TimeOffRow[]): TimeAllocationTask[] {
         // same name, which would put non-lab hours under a lab project's color and total.
         key: `away:${name}`,
         name,
+        source: "outside",
         start: row.start,
         end: row.end,
         hours,
+        ...(row.note?.trim() ? { note: row.note.trim() } : {}),
+      },
+    ];
+  });
+}
+
+function wholeDayAwayRanges(rows: readonly TimeOffRow[]): ChartAwayRange[] {
+  return rows.flatMap((row, index) => {
+    if (
+      row.availability === "partial" ||
+      !Number.isFinite(dateMs(row.start)) ||
+      !Number.isFinite(dateMs(row.end)) ||
+      row.end < row.start
+    ) {
+      return [];
+    }
+    return [
+      {
+        id: `whole-day:${index}:${row.start}:${row.end}`,
+        name: timeOffLabel(row),
+        start: row.start,
+        end: row.end,
         ...(row.note?.trim() ? { note: row.note.trim() } : {}),
       },
     ];
@@ -484,6 +509,7 @@ function jinesisTasks(member: AdminBotLabMember): TimeAllocationTask[] {
       {
         key: row.project ? `project:${row.project}` : "baseline",
         name: taskName(row.project),
+        source: "jinesis",
         start: row.start,
         end: row.end,
         hours: weeklyHours,
@@ -1763,6 +1789,7 @@ function chartTasks(tasks: readonly TimeAllocationTask[], weeklyCapacity: number
     key: task.key,
     sourceIndex: index,
     name: task.name,
+    source: task.source,
     start: task.start,
     end: task.end,
     effort: (task.hours / capacity) * 100,
@@ -1799,6 +1826,7 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
   // The chart shows both; the Jinesis table below it shows only `tasks`, because the two lists are
   // stored separately and the table's remove button writes back to one of them.
   const chartSeries = [...tasks, ...awayTasks(storedTimeOff)];
+  const wholeDayAway = wholeDayAwayRanges(storedTimeOff);
   const weeklyCapacity = Number(selectedMember?.hours_per_week);
   const capacity = Number.isFinite(weeklyCapacity) && weeklyCapacity > 0 ? weeklyCapacity : 0;
   // Editing is self-only: the service routes a member session to its own record, so offering the
@@ -1859,13 +1887,14 @@ export function renderAdminBotTimeAvailability(props: AdminBotTimeAvailabilityPr
                       ${t("adminbotTimeAvailability.capacityNoteUnset")}
                     </div>`
                   : nothing}
-                ${chartSeries.length
+                ${chartSeries.length || wholeDayAway.length
                   ? html`<div class="adminbot-time-chart-wrap">
                       ${renderTimeAllocationChart(
                         chartTasks(chartSeries, capacity),
                         selectedMember.name,
                         selectedMember.id,
                         chartInterval(props.range),
+                        wholeDayAway,
                       )}
                       ${renderWhereStrip(whereStrip)}
                     </div>`
