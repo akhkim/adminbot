@@ -1,12 +1,15 @@
-import { timingSafeEqual } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { createIpinfoLiteGeolocator } from "../connectors/ip-geolocation.js";
+import { createOllamaEmbedder } from "../connectors/embeddings.js";
+import { createIpinfoGeolocator } from "../connectors/ip-geolocation.js";
+import { createOpenReviewNotesReader } from "../connectors/openreview-notes.js";
 import {
   adminBotRegistrationStatuses,
   redactConfidentialMemberFields,
 } from "../contracts/actions.js";
 import type {
   AdminBotActionProposal,
+  AdminBotCvScanResult,
   AdminBotApprovalRequest,
   AdminBotExecutionRequest,
   AdminBotLabMemberInput,
@@ -33,6 +36,7 @@ import {
   AdminBotService,
   type AdminBotActionExecutor,
   type AdminBotServiceOptions,
+  type AdminBotServiceResponse,
   type AdminBotServiceStore,
   type AdminBotSlackChannelNamingEvent,
 } from "../kernel/service.js";
@@ -48,6 +52,7 @@ import { createEventDraftRunner } from "../workflows/calendar/event-draft.js";
 import { createCalendarEventsReader } from "../workflows/calendar/events.js";
 import { resolveLabCalendar } from "../workflows/calendar/lab-calendar.js";
 import { toAbsoluteRfc3339 } from "../workflows/calendar/time.js";
+import { renderCvDigestDocument } from "../workflows/cv/digest-doc.js";
 import { renderDeadlinesWebUi } from "../workflows/deadlines/board.js";
 import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { createAccountApprovedEmailRunner } from "../workflows/identity/account-approved-email.js";
@@ -72,6 +77,7 @@ import {
   createAdminBotOpenReviewWorkflow,
   type AdminBotOpenReviewWorkflow,
 } from "../workflows/papers/openreview-workflow.js";
+import { buildVenueIndex, searchVenue } from "../workflows/papers/venue-index.js";
 import type {
   AdminBotReimbursementRequest,
   AdminBotReimbursementWorkflow,
@@ -96,6 +102,18 @@ const DEFAULT_ALLOWED_ORIGINS = [
 ];
 const SESSION_COOKIE = "adminbot_session";
 const SESSION_COOKIE_MAX_AGE_SECONDS = 604800;
+
+/**
+ * Where the CV digest is published, and how.
+ *
+ * `documentUrl` travels with the writer rather than being derived at the call site so the console
+ * can link straight to what it just rewrote, without the UI having to know how a Docs URL is
+ * spelled.
+ */
+export type AdminBotCvDigestPublisher = {
+  documentUrl: string;
+  publish: (markdown: string) => Promise<void>;
+};
 
 export type AdminBotMockServiceOptions = {
   databasePath?: string;
@@ -126,6 +144,16 @@ export type AdminBotMockServiceOptions = {
   // Fetch/extract/model steps behind the admin CV scan. Injected so tests can drive the scan
   // without a network fetch, a python interpreter, or a running local model.
   cvScanDeps?: AdminBotCvScanDeps;
+  // Publishes the rendered CV digest to its Google Doc. Injected so tests never shell out to
+  // `gog`, and so a deployment without a configured document simply has no job rather than a
+  // button that fails at the CLI.
+  cvDigestPublisher?: AdminBotCvDigestPublisher;
+  // Reads a venue's accepted papers from OpenReview, and turns text into vectors. Injected so the
+  // conference-paper tool is testable without a network and so a deployment without OpenReview
+  // credentials simply has no index job rather than a button that fails inside a connector.
+  venuePapersReader?: import("../connectors/openreview-notes.js").OpenReviewNotesReader;
+  embedder?: import("../connectors/embeddings.js").Embedder;
+  embeddingModel?: string;
   // Overrides the default `gws` CLI-backed calendar invite runner — used by tests to avoid
   // shelling out to a real `gws` binary.
   calendarInviteRunner?: (email: string) => Promise<void>;
@@ -187,10 +215,14 @@ export type AdminBotMockServiceOptions = {
   // Coarsely geolocates a login's source IP so the roster can show where an account last signed
   // in from. Injected because reaching a public geolocation API is a composition-layer concern,
   // same as the Slack reads above. Left unset, the login path simply skips the stamp — and when
-  // IPINFO_TOKEN is configured, createIpinfoLiteGeolocator supplies the default.
+  // IPINFO_TOKEN is configured, createIpinfoGeolocator supplies the default.
   //
   // Country/continent only, and deliberately never written to `location`, which is self-reported.
-  geolocateIp?: (ip: string) => Promise<{ country?: string; continent?: string } | undefined>;
+  geolocateIp?: (
+    ip: string,
+  ) => Promise<
+    { country?: string; continent?: string; city?: string; timezone?: string } | undefined
+  >;
   // Periodic sweep cadence for Slack channel naming enforcement. Disabled when unset.
   slackChannelNamingSweepIntervalMs?: number;
   reviewSlackProfilePhoto?: NonNullable<AdminBotServiceOptions["reviewSlackProfilePhoto"]>;
@@ -305,6 +337,12 @@ type AdminBotRouteContext = {
   openReviewWorkflow?: AdminBotOpenReviewWorkflow;
   fetchSlackLocations?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string>>;
   cvScanDeps?: AdminBotCvScanDeps;
+  cvDigestPublisher?: AdminBotCvDigestPublisher;
+  venuePapersReader?: import("../connectors/openreview-notes.js").OpenReviewNotesReader;
+  // Always present: the server builds both from the environment, and an absent embedder would
+  // make every search path optional-chained for a case that cannot happen.
+  embedder: import("../connectors/embeddings.js").Embedder;
+  embeddingModel: string;
   fetchSlackTimezones?: (slackUserIds: string[]) => Promise<ReadonlyMap<string, string | null>>;
   // Counts each member's messages in the activity window, by reading the channels the lab tracks.
   fetchSlackMessageCounts?: (
@@ -353,6 +391,12 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
   const gatewayUrl = trimmedEnv(options.gatewayUrl ?? process.env.ADMINBOT_GATEWAY_WS_URL);
   const serviceToken = trimmedEnv(options.serviceToken ?? process.env.ADMINBOT_SERVICE_TOKEN);
   const ipinfoToken = trimmedEnv(options.ipinfoToken ?? process.env.IPINFO_TOKEN);
+  // Built here rather than injected from the launcher, like the geolocator above: both are pure
+  // functions of the environment, and the composition root has nothing to add to either.
+  const venuePapersReader = options.venuePapersReader ?? createOpenReviewNotesReader();
+  const embedder = options.embedder ?? createOllamaEmbedder();
+  const embeddingModel =
+    options.embeddingModel ?? process.env.ADMINBOT_EMBED_MODEL?.trim() ?? "embeddinggemma:latest";
   const allowedOrigins = new Set(
     options.allowedOrigins ??
       parseOrigins(process.env.ADMINBOT_ALLOWED_ORIGINS) ??
@@ -386,7 +430,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(options.geolocateIp
       ? { geolocateIp: options.geolocateIp }
       : ipinfoToken
-        ? { geolocateIp: createIpinfoLiteGeolocator(ipinfoToken) }
+        ? { geolocateIp: createIpinfoGeolocator(ipinfoToken) }
         : {}),
   });
   // The same runner the approval path gets, so an onboarding send and an approval file the DCS
@@ -458,6 +502,10 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     ...(openReviewWorkflow ? { openReviewWorkflow } : {}),
     ...(options.fetchSlackLocations ? { fetchSlackLocations: options.fetchSlackLocations } : {}),
     ...(options.cvScanDeps ? { cvScanDeps: options.cvScanDeps } : {}),
+    ...(options.cvDigestPublisher ? { cvDigestPublisher: options.cvDigestPublisher } : {}),
+    ...(venuePapersReader ? { venuePapersReader } : {}),
+    embedder,
+    embeddingModel,
     ...(options.fetchSlackTimezones ? { fetchSlackTimezones: options.fetchSlackTimezones } : {}),
     ...(options.fetchSlackMessageCounts
       ? { fetchSlackMessageCounts: options.fetchSlackMessageCounts }
@@ -984,52 +1032,214 @@ async function handleAuthenticatedRoute(
       sendJson(res, 503, { error: { message: "cv scanning is not configured" } });
       return;
     }
-    const members = service.listLabMembers();
-    if (!members.ok) {
-      sendServiceResult(res, members);
+    const scan = await scanAndRecordCvs(ctx, service);
+    if (!scan.ok) {
+      sendServiceResult(res, scan.failure);
       return;
     }
-    // Read at scan time rather than captured at boot, so changing the window takes effect on the
-    // next scan instead of the next restart.
-    const cvSettings = service.getSettings();
-    const { result, snapshots } = await runAdminBotCvScan(
-      members.payload.members,
-      ctx.cvScanDeps,
-      cvSettings.ok ? cvSettings.payload.cv_recency_window_months : undefined,
+    sendJson(res, 200, scan.result);
+    return;
+  }
+  // Members: which conferences are searchable, and how fresh each index is. Member-level because
+  // the whole point of the tool is that a member opens it; nothing here is about a person.
+  if (req.method === "GET" && url.pathname === "/venue-papers/sources") {
+    if (principal.kind !== "member" && principal.kind !== "service") {
+      sendJson(res, 401, { error: { message: "sign in to browse conference papers" } });
+      return;
+    }
+    const settings = service.getSettings();
+    const sources = settings.ok ? (settings.payload.venue_sources ?? []) : [];
+    const statuses = new Map(
+      ctx.store.listVenueIndexStatuses().map((status) => [status.venue_id, status]),
     );
-    // Snapshots are written through upsertLabMember rather than straight to the store so the
-    // scan cannot bypass member validation, and so a bad extraction fails one member's save
-    // instead of corrupting the roster.
-    for (const member of members.payload.members) {
-      const snapshot = snapshots.get(member.id);
-      if (!snapshot) {
-        continue;
-      }
-      const saved = service.upsertLabMember({ ...member, cv_snapshot: snapshot });
-      if (!saved.ok) {
-        const failed = result.results.find((entry) => entry.member_id === member.id);
-        if (failed) {
-          failed.status = "failed";
-          failed.reason = `could not save cv snapshot: ${saved.error.message}`;
-        }
+    sendJson(res, 200, {
+      // `indexed_at`/`embedding_model` are left undefined for a venue that has never been indexed
+      // rather than conditionally spread in: JSON.stringify drops undefined values, so the wire
+      // shape is the same and the object is built once instead of twice.
+      sources: sources.map((source) => {
+        const status = statuses.get(source.id);
+        return {
+          venue_id: source.id,
+          label: source.label,
+          paper_count: status?.paper_count ?? 0,
+          indexed_at: status?.indexed_at,
+          embedding_model: status?.embedding_model,
+        };
+      }),
+    });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/venue-papers/search") {
+    if (principal.kind !== "member" && principal.kind !== "service") {
+      sendJson(res, 401, { error: { message: "sign in to search conference papers" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const venueId = asString(body.venue_id)?.trim() ?? "";
+    const interests = asString(body.interests)?.trim() ?? "";
+    if (!venueId) {
+      sendJson(res, 400, { error: { message: "venue_id is required" } });
+      return;
+    }
+    if (!interests) {
+      sendJson(res, 400, { error: { message: "tell it what you work on first" } });
+      return;
+    }
+    const settings = service.getSettings();
+    const source = (settings.ok ? (settings.payload.venue_sources ?? []) : []).find(
+      (entry) => entry.id === venueId,
+    );
+    // Only configured venues are searchable. Without this a member could name any OpenReview id
+    // and read whatever happened to be indexed under it.
+    if (!source) {
+      sendJson(res, 404, { error: { message: "that conference is not on the list" } });
+      return;
+    }
+    const rows = ctx.store.listVenuePapers(venueId);
+    if (!rows.length) {
+      sendJson(res, 409, {
+        error: {
+          message: `${source.label} has not been indexed yet — an admin can build it from the Cron tab`,
+        },
+      });
+      return;
+    }
+    try {
+      const ranking = await searchVenue({ rows, interests, embed: ctx.embedder });
+      sendJson(res, 200, {
+        venue_id: venueId,
+        label: source.label,
+        searched: rows.length,
+        ...ranking,
+      });
+    } catch (error) {
+      sendJson(res, 502, {
+        error: { message: error instanceof Error ? error.message : String(error) },
+      });
+    }
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/venue-papers/index") {
+    // Admin-only: a rebuild is minutes of somebody else's API quota and this box's CPU.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.venuePapersReader) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "conference paper indexing is not configured — set OPENREVIEW_USERNAME and OPENREVIEW_PASSWORD",
+        },
+      });
+      return;
+    }
+    const readVenue = ctx.venuePapersReader;
+    const settings = service.getSettings();
+    const sources = settings.ok ? (settings.payload.venue_sources ?? []) : [];
+    if (!sources.length) {
+      sendJson(res, 409, {
+        error: { message: "no conferences are configured — add one in Settings first" },
+      });
+      return;
+    }
+    const built: unknown[] = [];
+    const failed: Array<{ venue_id: string; reason: string }> = [];
+    for (const source of sources) {
+      try {
+        const { papers, result } = await buildVenueIndex(source, {
+          readVenue,
+          embed: ctx.embedder,
+          embeddingModel: ctx.embeddingModel,
+          now: () => new Date(),
+        });
+        // An empty venue is stored as empty rather than skipped: a conference whose decisions were
+        // withdrawn should stop returning last year's papers.
+        ctx.store.replaceVenueIndex(source.id, papers, result.indexed_at, result.embedding_model);
+        built.push(result);
+      } catch (error) {
+        // One unreachable venue does not abort the rest: they are independent conferences, and a
+        // whole-run abort would mean one bad id blocks every other index from refreshing.
+        failed.push({
+          venue_id: source.id,
+          reason: error instanceof Error ? error.message : String(error),
+        });
       }
     }
-    // Recorded after the snapshots are saved, so a member whose snapshot failed to store does not
-    // leave a change on the ledger the next scan would then never re-detect.
-    ctx.store.recordCvChanges(
-      result.results
-        .filter((entry) => entry.status === "changed" || entry.status === "first_scan")
-        .flatMap((entry) =>
-          entry.added.map((change) => ({
-            member_id: entry.member_id,
-            member_name: entry.member_name,
-            detected_at: result.scanned_at,
-            recency: change.recency,
-            entry: change.entry,
-          })),
-        ),
-    );
-    sendJson(res, 200, result);
+    ctx.store.recordAudit({
+      id: `aud_${randomUUID()}`,
+      timestamp: new Date().toISOString(),
+      type: "venue_index.rebuilt",
+      actor: principalActor(principal),
+      details: { built: built.length, failed: failed.length },
+    });
+    sendJson(res, 200, { built, failed });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/cv/publish-digest") {
+    // Same privileged gate as the scan it runs: the job reads every member's career history and
+    // then writes it somewhere durable, which is strictly more than the scan alone does.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    if (!ctx.cvScanDeps) {
+      sendJson(res, 503, { error: { message: "cv scanning is not configured" } });
+      return;
+    }
+    if (!ctx.cvDigestPublisher) {
+      sendJson(res, 503, {
+        error: {
+          message:
+            "cv digest publishing is not configured — set ADMINBOT_CV_DIGEST_DOC_ID and restart",
+        },
+      });
+      return;
+    }
+    const publisher = ctx.cvDigestPublisher;
+    const scan = await scanAndRecordCvs(ctx, service);
+    if (!scan.ok) {
+      sendServiceResult(res, scan.failure);
+      return;
+    }
+    // Rendered from the whole ledger, not from the scan that just ran: a scan consumes its own
+    // diff, so a quiet week returns nothing and would otherwise blank the document. See
+    // workflows/cv/digest-doc.ts.
+    const document = renderCvDigestDocument(ctx.store.listCvChangesSince(LEDGER_EPOCH), new Date());
+    try {
+      await publisher.publish(document.markdown);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      ctx.store.recordAudit({
+        id: `aud_${randomUUID()}`,
+        timestamp: new Date().toISOString(),
+        type: "cv.digest_failed",
+        actor: principalActor(principal),
+        details: { document_url: publisher.documentUrl, reason: message },
+      });
+      sendJson(res, 502, { error: { message: `could not write the CV digest doc: ${message}` } });
+      return;
+    }
+    ctx.store.recordAudit({
+      id: `aud_${randomUUID()}`,
+      timestamp: new Date().toISOString(),
+      type: "cv.digest_published",
+      actor: principalActor(principal),
+      details: {
+        document_url: publisher.documentUrl,
+        day_count: document.day_count,
+        change_count: document.change_count,
+        scanned_at: scan.result.scanned_at,
+      },
+    });
+    sendJson(res, 200, {
+      document_url: publisher.documentUrl,
+      published_at: scan.result.scanned_at,
+      day_count: document.day_count,
+      change_count: document.change_count,
+      scan: scan.result,
+    });
     return;
   }
   if (req.method === "GET" && url.pathname === "/cv/digest") {
@@ -2271,6 +2481,76 @@ function requirePrivileged(res: ServerResponse, principal: AdminBotPrincipal): b
   }
   sendJson(res, 403, { error: { message: "insufficient privileges" } });
   return false;
+}
+
+// The oldest timestamp any ledger row can carry, so "list everything" reuses the same
+// `detected_at >= ?` query the since-filter uses rather than needing a second statement.
+const LEDGER_EPOCH = "1970-01-01T00:00:00.000Z";
+
+type CvScanFailure = Extract<AdminBotServiceResponse<never>, { ok: false }>;
+
+type CvScanOutcome =
+  | { ok: true; result: AdminBotCvScanResult }
+  | { ok: false; failure: CvScanFailure };
+
+/**
+ * Runs a CV scan over the roster, persists each member's new snapshot, and appends what changed to
+ * the ledger.
+ *
+ * Shared by `/cv/scan` and `/cv/publish-digest` because the digest job is "scan, then publish":
+ * two copies would let the button and the scan disagree about what a scan even does, and the
+ * ordering below (snapshots before ledger) is load-bearing enough that it should exist once.
+ */
+async function scanAndRecordCvs(
+  ctx: AdminBotRouteContext,
+  service: AdminBotService,
+): Promise<CvScanOutcome> {
+  const members = service.listLabMembers();
+  if (!members.ok) {
+    return { ok: false, failure: members };
+  }
+  // Read at scan time rather than captured at boot, so changing the window takes effect on the
+  // next scan instead of the next restart.
+  const cvSettings = service.getSettings();
+  const { result, snapshots } = await runAdminBotCvScan(
+    members.payload.members,
+    // Callers check this before calling; asserted here so the helper has one contract.
+    ctx.cvScanDeps as AdminBotCvScanDeps,
+    cvSettings.ok ? cvSettings.payload.cv_recency_window_months : undefined,
+  );
+  // Snapshots are written through upsertLabMember rather than straight to the store so the scan
+  // cannot bypass member validation, and so a bad extraction fails one member's save instead of
+  // corrupting the roster.
+  for (const member of members.payload.members) {
+    const snapshot = snapshots.get(member.id);
+    if (!snapshot) {
+      continue;
+    }
+    const saved = service.upsertLabMember({ ...member, cv_snapshot: snapshot });
+    if (!saved.ok) {
+      const failed = result.results.find((entry) => entry.member_id === member.id);
+      if (failed) {
+        failed.status = "failed";
+        failed.reason = `could not save cv snapshot: ${saved.error.message}`;
+      }
+    }
+  }
+  // Recorded after the snapshots are saved, so a member whose snapshot failed to store does not
+  // leave a change on the ledger the next scan would then never re-detect.
+  ctx.store.recordCvChanges(
+    result.results
+      .filter((entry) => entry.status === "changed" || entry.status === "first_scan")
+      .flatMap((entry) =>
+        entry.added.map((change) => ({
+          member_id: entry.member_id,
+          member_name: entry.member_name,
+          detected_at: result.scanned_at,
+          recency: change.recency,
+          entry: change.entry,
+        })),
+      ),
+  );
+  return { ok: true, result };
 }
 
 function readStringList(value: unknown): string[] {

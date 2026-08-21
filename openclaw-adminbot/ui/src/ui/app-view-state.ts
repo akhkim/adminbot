@@ -530,13 +530,16 @@ export type AppViewState = {
   adminBotMemberNudge: AdminBotMemberNudgeState;
   adminBotBlockerSort: BlockerSort;
   nudgeBellOpen: boolean;
-  adminBotCvScan: import("./adminbot/controllers/admin.ts").AdminBotCvScanResult | null;
-  adminBotCvScanning: boolean;
-  adminBotCvDigest: import("./adminbot/controllers/admin.ts").AdminBotCvDigest | null;
-  adminBotCvDigestSince: string;
-  adminBotCvDigestLoading: boolean;
-  adminBotCvBlurbs: Record<string, string>;
-  adminBotCvBlurbMemberId: string | null;
+  // Last press of the CV digest job on the Cron tab. Session-scoped on purpose: the durable
+  // record of a run is the audit row and the document itself, and this only exists so the button
+  // can report what it just did.
+  adminBotCvDigestJob: import("./adminbot/controllers/admin.ts").AdminBotCvDigestJobState;
+  // Conference Papers tab. Held whole rather than as a dozen flat fields: every part of it is
+  // replaced together on each search, and a half-updated search is not a state worth expressing.
+  adminBotVenuePapers: import("./adminbot/controllers/admin.ts").AdminBotVenuePapersState;
+  // Last press of the conference index job on the Cron tab. Same shape as the CV digest job: both
+  // are "an admin pressed a button and something slow happened".
+  adminBotVenueIndexJob: import("./adminbot/controllers/admin.ts").AdminBotCvDigestJobState;
   // Prototype-only: blockers a member raises from My Projects & Papers. Held in the browser
   // because the AdminBot service has no blocker route yet -- see views/my-work.ts.
   myWorkBlockerDraft: import("./adminbot/views/my-work.ts").BlockerDraft | null;

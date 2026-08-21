@@ -25,7 +25,9 @@ describe("renderAdminBotWebUi", () => {
     const configured = renderAdminBotWebUi();
     expect(configured).toContain('const CONTROL_UI_URL = "https://ui.example.com"');
     expect(configured).toContain('searchParams.get("passwordReset")');
-    expect(configured).toContain('target.searchParams.set("adminBotUrl", window.location.origin)');
+    // The service origin is deliberately not handed on: the Control UI knows which AdminBot it
+    // talks to, and this console's host has no business appearing in a member-facing URL.
+    expect(configured).not.toContain('searchParams.set("adminBotUrl"');
     expect(configured).toContain("window.location.replace(target.toString())");
     // Same origin would only redirect back here, so the handoff bails out instead of looping.
     expect(configured).toContain("if (target.origin === window.location.origin) return;");

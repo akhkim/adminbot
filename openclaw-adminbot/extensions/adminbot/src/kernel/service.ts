@@ -47,6 +47,9 @@ import type {
   AdminBotRiskTier,
   AdminBotSettings,
   AdminBotSettingsInput,
+  AdminBotVenueIndexStatus,
+  AdminBotVenuePaper,
+  AdminBotVenueSource,
   AdminBotStoredProposal,
   AdminBotPrivilegeLevel,
 } from "../contracts/actions.js";
@@ -177,6 +180,16 @@ export type AdminBotServiceStore = {
   // re-dated, so re-scanning cannot make an old move look like it just happened.
   recordCvChanges(events: AdminBotCvChangeEvent[]): AdminBotCvChangeEvent[];
   listCvChangesSince(sinceIso: string): AdminBotCvChangeEvent[];
+  // Replaces a venue's index in one go. A rebuild is all-or-nothing: half an old conference mixed
+  // with half a new one would rank against a corpus that never existed.
+  replaceVenueIndex(
+    venueId: string,
+    papers: AdminBotVenuePaper[],
+    indexedAt: string,
+    model: string,
+  ): void;
+  listVenuePapers(venueId: string): AdminBotVenuePaper[];
+  listVenueIndexStatuses(): Omit<AdminBotVenueIndexStatus, "label">[];
   savePaper(paper: AdminBotPaperRecord): void;
   getPaper(paperId: string): AdminBotPaperRecord | undefined;
   listPapers(): AdminBotPaperRecord[];
@@ -764,6 +777,11 @@ export class AdminBotService {
       ...(headProfessorWhatsapp ? { head_professor_whatsapp: headProfessorWhatsapp } : {}),
       ...(applicantSheetId ? { applicant_sheet_id: applicantSheetId } : {}),
       ...(applicantLastReviewedAt ? { applicant_last_reviewed_at: applicantLastReviewedAt } : {}),
+      // Replaced wholesale rather than merged: the list is ordered and an admin removing a venue
+      // has to be able to express that, which a merge cannot.
+      ...(settings.venue_sources
+        ? { venue_sources: normalizeVenueSources(settings.venue_sources) }
+        : {}),
       updated_at: new Date().toISOString(),
     };
     if (settings.head_professor_member_id !== undefined && !headProfessorMemberId) {
@@ -4807,6 +4825,25 @@ function availabilityStamp(
     return { availability_updated_at: now };
   }
   return previous ? { availability_updated_at: previous } : {};
+}
+
+/**
+ * Trims a venue list and drops the entries that cannot identify a venue.
+ *
+ * A blank id is silently dropped rather than rejected: the settings form submits its rows as a
+ * block, so a half-typed row an admin has not finished is a normal intermediate state, not an
+ * error worth refusing the whole save for.
+ */
+function normalizeVenueSources(sources: AdminBotVenueSource[]): AdminBotVenueSource[] {
+  const seen = new Set<string>();
+  return sources.flatMap((source) => {
+    const id = source.id?.trim() ?? "";
+    if (!id || seen.has(id)) {
+      return [];
+    }
+    seen.add(id);
+    return [{ id, label: source.label?.trim() || id }];
+  });
 }
 
 function validateSettings(settings: AdminBotSettingsInput): string | undefined {

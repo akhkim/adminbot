@@ -1,10 +1,142 @@
 import { describe, expect, it } from "vitest";
 import {
+  LOGIN_CITY_FRESH_DAYS,
   attendeeHourVerdict,
   localTimeAt,
   resolveAttendeeZone,
   resolveAttendeeZoneAt,
 } from "./attendee-time.ts";
+
+const NOW = new Date("2026-08-20T12:00:00.000Z");
+
+function agoDays(days: number): string {
+  return new Date(NOW.getTime() - days * 86_400_000).toISOString();
+}
+
+describe("resolveAttendeeZone: a recent sign-in", () => {
+  it("outranks the profile while it is fresh, because it is the only signal about today", () => {
+    expect(
+      resolveAttendeeZone(
+        {
+          timezone: "America/Toronto",
+          location: "Toronto",
+          last_login_city: "Zurich",
+          last_login_timezone: "Europe/Zurich",
+          last_login_at: agoDays(1),
+        },
+        NOW,
+      ),
+    ).toEqual({ zone: "Europe/Zurich", source: "login_city", from: "Zurich" });
+  });
+
+  it("stops counting once it is older than the freshness window", () => {
+    expect(
+      resolveAttendeeZone(
+        {
+          timezone: "America/Toronto",
+          last_login_city: "Zurich",
+          last_login_timezone: "Europe/Zurich",
+          last_login_at: agoDays(LOGIN_CITY_FRESH_DAYS + 1),
+        },
+        NOW,
+      ),
+    ).toEqual({ zone: "America/Toronto", source: "timezone", from: "America/Toronto" });
+  });
+
+  it("still counts right at the edge of the window", () => {
+    const zone = resolveAttendeeZone(
+      {
+        timezone: "America/Toronto",
+        last_login_city: "Zurich",
+        last_login_timezone: "Europe/Zurich",
+        last_login_at: agoDays(LOGIN_CITY_FRESH_DAYS),
+      },
+      NOW,
+    );
+    expect(zone?.source).toBe("login_city");
+  });
+
+  // A city with no timestamp says nothing about when they were there.
+  it("is ignored without a sign-in time", () => {
+    expect(
+      resolveAttendeeZone({ timezone: "America/Toronto", last_login_city: "Zurich" }, NOW),
+    ).toEqual({ zone: "America/Toronto", source: "timezone", from: "America/Toronto" });
+  });
+
+  it("guesses the zone from the city when the provider gave no zone", () => {
+    expect(
+      resolveAttendeeZone({ last_login_city: "Berlin", last_login_at: agoDays(1) }, NOW),
+    ).toEqual({ zone: "Europe/Berlin", source: "login_city", from: "Berlin" });
+  });
+
+  // A city the gazetteer has never heard of resolves to nothing, and must fall through rather
+  // than report a member as being in an undefined zone.
+  it("falls through when neither the provider nor the gazetteer knows the zone", () => {
+    expect(
+      resolveAttendeeZone(
+        {
+          timezone: "America/Toronto",
+          last_login_city: "Nowheresville",
+          last_login_at: agoDays(1),
+        },
+        NOW,
+      ),
+    ).toEqual({ zone: "America/Toronto", source: "timezone", from: "America/Toronto" });
+  });
+
+  // Clock skew puts a sign-in slightly ahead of "now" routinely; a month ahead is a broken record.
+  it("tolerates small clock skew but discards a sign-in from the future", () => {
+    const skewed = resolveAttendeeZone(
+      { last_login_city: "Berlin", last_login_at: new Date(NOW.getTime() + 60_000).toISOString() },
+      NOW,
+    );
+    expect(skewed?.source).toBe("login_city");
+
+    const absurd = resolveAttendeeZone(
+      {
+        timezone: "America/Toronto",
+        last_login_city: "Berlin",
+        last_login_at: agoDays(-30),
+      },
+      NOW,
+    );
+    expect(absurd?.source).toBe("timezone");
+  });
+
+  // A logged trip is a statement about a specific date; a sign-in is only about right now.
+  it("loses to a trip covering the day of the event", () => {
+    expect(
+      resolveAttendeeZoneAt(
+        {
+          trips: [{ start: "2026-09-01", end: "2026-09-30", city: "Berlin" }],
+          last_login_city: "Zurich",
+          last_login_timezone: "Europe/Zurich",
+          last_login_at: agoDays(1),
+        },
+        "2026-09-15T10:00:00.000Z",
+        NOW,
+      ),
+    ).toMatchObject({ source: "trip", from: "Berlin" });
+  });
+});
+
+describe("resolveAttendeeZone: the Slack profile location", () => {
+  it("is the last resort, below where they live", () => {
+    expect(
+      resolveAttendeeZone({ location: "Toronto", slack_location: "Berlin" }, NOW),
+    ).toMatchObject({ source: "location" });
+    expect(resolveAttendeeZone({ slack_location: "Berlin" }, NOW)).toEqual({
+      zone: "Europe/Berlin",
+      source: "slack_location",
+      from: "Berlin",
+    });
+  });
+
+  // Slack profile locations are free text and frequently are not places at all.
+  it("resolves to nothing when the Slack text is not a place", () => {
+    expect(resolveAttendeeZone({ slack_location: "the moon" }, NOW)).toBeUndefined();
+  });
+});
 
 describe("resolveAttendeeZone", () => {
   it("prefers what the member stated over what can be inferred", () => {
@@ -83,9 +215,7 @@ describe("attendeeHourVerdict", () => {
 describe("resolveAttendeeZoneAt", () => {
   const traveller = {
     location: "Toronto",
-    trips: [
-      { start: "2026-09-01", end: "2026-09-30", city: "Berlin", timezone: "Europe/Berlin" },
-    ],
+    trips: [{ start: "2026-09-01", end: "2026-09-30", city: "Berlin", timezone: "Europe/Berlin" }],
   };
 
   // The point of logging a trip: September invites read in Berlin time and October invites back in
@@ -104,7 +234,10 @@ describe("resolveAttendeeZoneAt", () => {
   it("guesses the zone from the trip's city when the row carries none", () => {
     expect(
       resolveAttendeeZoneAt(
-        { location: "Toronto", trips: [{ start: "2026-09-01", end: "2026-09-30", city: "Berlin" }] },
+        {
+          location: "Toronto",
+          trips: [{ start: "2026-09-01", end: "2026-09-30", city: "Berlin" }],
+        },
         "2026-09-15T14:00:00.000Z",
       ),
     ).toMatchObject({ zone: "Europe/Berlin", source: "trip" });
@@ -113,15 +246,20 @@ describe("resolveAttendeeZoneAt", () => {
   // A trip beats an explicit profile timezone: it is the more specific and more recent statement.
   it("outranks the profile timezone", () => {
     expect(
-      resolveAttendeeZoneAt({ ...traveller, timezone: "America/Toronto" }, "2026-09-15T14:00:00.000Z")
-        ?.source,
+      resolveAttendeeZoneAt(
+        { ...traveller, timezone: "America/Toronto" },
+        "2026-09-15T14:00:00.000Z",
+      )?.source,
     ).toBe("trip");
   });
 
   it("ignores a trip whose city resolves to nothing rather than losing the zone entirely", () => {
     expect(
       resolveAttendeeZoneAt(
-        { location: "Toronto", trips: [{ start: "2026-09-01", end: "2026-09-30", city: "a boat" }] },
+        {
+          location: "Toronto",
+          trips: [{ start: "2026-09-01", end: "2026-09-30", city: "a boat" }],
+        },
         "2026-09-15T14:00:00.000Z",
       ),
     ).toMatchObject({ zone: "America/Toronto", source: "location" });

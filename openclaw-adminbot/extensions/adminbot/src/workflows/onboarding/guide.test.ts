@@ -326,7 +326,11 @@ describe("onboarding sender", () => {
     if (!result.ok) {
       return;
     }
-    expect(provisionDriveWorkspace).toHaveBeenCalledWith({ folderName: "Zhijing-AdaLovelace" });
+    // Trial phase is not full membership, so the folder is created and shared but left empty.
+    expect(provisionDriveWorkspace).toHaveBeenCalledWith({
+      folderName: "Zhijing-AdaLovelace",
+      includeContents: false,
+    });
     expect(result.payload.sent).toBe(true);
     expect(result.payload.body).toContain("https://drive.example/fld");
     expect(sendEmail).toHaveBeenCalledWith(
@@ -639,7 +643,9 @@ describe("onboarding sender", () => {
     const sendEmail = vi.fn();
     const send = createAdminBotOnboardingSender({
       env: ENV,
-      inviteToSlackConnect: vi.fn().mockRejectedValue(new Error("An API error occurred: not_in_channel")),
+      inviteToSlackConnect: vi
+        .fn()
+        .mockRejectedValue(new Error("An API error occurred: not_in_channel")),
       sendEmail,
     });
 
@@ -663,7 +669,9 @@ describe("onboarding sender", () => {
     const sendEmail = vi.fn();
     const send = createAdminBotOnboardingSender({
       env: ENV,
-      inviteToSlackConnect: vi.fn().mockRejectedValue(new Error("no Slack channel named #proj-typo")),
+      inviteToSlackConnect: vi
+        .fn()
+        .mockRejectedValue(new Error("no Slack channel named #proj-typo")),
       sendEmail,
     });
 

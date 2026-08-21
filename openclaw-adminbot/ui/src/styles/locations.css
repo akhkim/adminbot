@@ -73,6 +73,15 @@
   text-decoration: underline;
 }
 
+/* The trip currently loaded into the form below, so a reader can tell which row the fields they
+   are looking at belong to. Marked rather than hidden: the row stays readable while it is edited,
+   which is what makes "is this the one I meant" answerable without scrolling back and forth. */
+.adminbot-trips__row--editing {
+  border-left: 2px solid var(--accent, var(--border-strong));
+  margin-left: calc(-1 * var(--space-3));
+  padding-left: calc(var(--space-3) - 2px);
+}
+
 /* The where-strip under the chart: one cell per bar, so it divides the horizon the same way the
    chart does. Equal-width columns rather than time-proportional ones, matching the chart's own
    axis, which reads as "next, and next after that" rather than as elapsed time. */

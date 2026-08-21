@@ -21,7 +21,13 @@ export const TAB_GROUPS = [
   // sidebar footer offers in place of the old external docs link.
   {
     label: "generalTools",
-    tabs: ["adminbotLogistics", "adminbotReimbursements", "adminbotDeadlines", "adminbotSocialBot"],
+    tabs: [
+      "adminbotLogistics",
+      "adminbotReimbursements",
+      "adminbotDeadlines",
+      "adminbotConferencePapers",
+      "adminbotSocialBot",
+    ],
   },
   // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
   // which is what someone browsing the lab's shared surface came to look at.
@@ -36,7 +42,12 @@ export const TAB_GROUPS = [
       "adminbotProfileOverview",
       "adminbotCalendar",
       "adminbotAnnouncements",
-      "adminbotCvUpdates",
+      // Tasks & Tools (the `cron` tab) sits with lab governance rather than under OpenClaw: what
+      // it actually lists here is the lab's own scheduled passes -- the OpenReview cadence, the
+      // daily Slack timezone sync, the CV digest -- plus the on-demand jobs an admin presses. An
+      // admin looking for "when does the nudge go out" was looking under Admin and finding an
+      // operator heading instead.
+      "cron",
       "adminbotSettings",
     ],
   },
@@ -56,7 +67,6 @@ export const TAB_GROUPS = [
       "activity",
       "sessions",
       "usage",
-      "cron",
       "agents",
       "skills",
       "nodes",
@@ -94,7 +104,7 @@ export type Tab =
   | "adminbotSocialBot"
   | "adminbotPapers"
   | "adminbotAnnouncements"
-  | "adminbotCvUpdates"
+  | "adminbotConferencePapers"
   | "adminbotCalendar"
   | "adminbotDeadlines"
   | "overview"
@@ -148,7 +158,7 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotSocialBot: "/adminbot/social-bot",
   adminbotPapers: "/adminbot/papers",
   adminbotAnnouncements: "/adminbot/announcements",
-  adminbotCvUpdates: "/adminbot/cv-updates",
+  adminbotConferencePapers: "/adminbot/conference-papers",
   adminbotCalendar: "/adminbot/calendar",
   adminbotDeadlines: "/adminbot/deadlines",
   overview: "/overview",
@@ -316,7 +326,7 @@ export function iconForTab(tab: Tab): IconName {
       return "fileText";
     case "adminbotAnnouncements":
       return "activity";
-    case "adminbotCvUpdates":
+    case "adminbotConferencePapers":
       return "fileText";
     case "adminbotCalendar":
       return "clock";

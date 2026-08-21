@@ -6,6 +6,8 @@ import { cvEntryKey } from "../contracts/actions.js";
 import type {
   AdminBotAccountRegistration,
   AdminBotCvChangeEvent,
+  AdminBotVenueIndexStatus,
+  AdminBotVenuePaper,
   AdminBotAuditEvent,
   AdminBotAuthSession,
   AdminBotExecutionResult,
@@ -156,6 +158,25 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_cv_changes_detected_at
         ON adminbot_cv_changes (detected_at);
+
+      -- One row per accepted paper in a searchable venue, with the vector it is ranked by.
+      --
+      -- The vector is a JSON array rather than a blob: it is written once per rebuild and read as
+      -- a whole row, so the parse cost is paid on the read path either way, and JSON keeps the
+      -- table inspectable when a ranking looks wrong. indexed_at and embedding_model are
+      -- repeated on every row rather than kept in a venues table, which keeps a rebuild a single
+      -- delete-and-insert with nothing to keep in step.
+      CREATE TABLE IF NOT EXISTS adminbot_venue_papers (
+        venue_id TEXT NOT NULL,
+        paper_id TEXT NOT NULL,
+        indexed_at TEXT NOT NULL,
+        embedding_model TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        PRIMARY KEY (venue_id, paper_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_venue_papers_venue
+        ON adminbot_venue_papers (venue_id);
 
       CREATE TABLE IF NOT EXISTS adminbot_lab_members (
         id TEXT PRIMARY KEY,
@@ -645,6 +666,67 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       )
       .all(sinceIso) as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotCvChangeEvent>(row.payload_json));
+  }
+
+  replaceVenueIndex(
+    venueId: string,
+    papers: AdminBotVenuePaper[],
+    indexedAt: string,
+    model: string,
+  ): void {
+    const remove = this.db.prepare("DELETE FROM adminbot_venue_papers WHERE venue_id = ?");
+    const insert = this.db.prepare(
+      `INSERT INTO adminbot_venue_papers (
+         venue_id, paper_id, indexed_at, embedding_model, payload_json
+       ) VALUES (?, ?, ?, ?, ?)`,
+    );
+    // Explicit BEGIN/COMMIT so a failed rebuild leaves the previous index intact: without it a
+    // crash mid-insert leaves the venue half-indexed and silently ranking against a partial
+    // corpus. Written out rather than via a helper because node:sqlite's DatabaseSync has no
+    // `transaction()` wrapper -- that is better-sqlite3, which this file does not use.
+    this.db.exec("BEGIN");
+    try {
+      remove.run(venueId);
+      for (const paper of papers) {
+        insert.run(venueId, paper.paper_id, indexedAt, model, JSON.stringify(paper));
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  listVenuePapers(venueId: string): AdminBotVenuePaper[] {
+    const rows = this.db
+      .prepare("SELECT payload_json FROM adminbot_venue_papers WHERE venue_id = ?")
+      .all(venueId) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotVenuePaper>(row.payload_json));
+  }
+
+  listVenueIndexStatuses(): Omit<AdminBotVenueIndexStatus, "label">[] {
+    const rows = this.db
+      .prepare(
+        `SELECT venue_id, COUNT(*) AS paper_count,
+                MAX(indexed_at) AS indexed_at,
+                MAX(embedding_model) AS embedding_model
+         FROM adminbot_venue_papers GROUP BY venue_id`,
+      )
+      .all() as Array<{
+      venue_id: string;
+      paper_count: number;
+      indexed_at: string | null;
+      embedding_model: string | null;
+    }>;
+    // Built without a conditional spread: MAX() over a grouped column is null only for an empty
+    // group, which cannot happen here, and `undefined` reads the same as an absent key to every
+    // caller. Matches how the route serialises the same record.
+    return rows.map((row) => ({
+      venue_id: row.venue_id,
+      paper_count: row.paper_count,
+      indexed_at: row.indexed_at ?? undefined,
+      embedding_model: row.embedding_model ?? undefined,
+    }));
   }
 
   saveOpenReviewCycle(cycle: AdminBotOpenReviewCycleRecord): void {

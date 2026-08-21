@@ -26,6 +26,15 @@ export type TripDraft = {
   end: string;
   timezone: string;
   note: string;
+  /**
+   * Which logged trip this draft is rewriting, or null when it is a new one.
+   *
+   * Carried on the draft rather than as a second piece of state because the two are always
+   * changed together: every path that loads a row into the form also has to say which row it came
+   * from, and holding them apart is what lets "editing trip 2" survive a draft reset and overwrite
+   * the wrong trip.
+   */
+  editingIndex: number | null;
 };
 
 export const EMPTY_TRIP_DRAFT: TripDraft = {
@@ -34,6 +43,7 @@ export const EMPTY_TRIP_DRAFT: TripDraft = {
   end: "",
   timezone: "",
   note: "",
+  editingIndex: null,
 };
 
 export type TripsProps = {
@@ -61,6 +71,18 @@ export function tripDraftError(draft: TripDraft): string | null {
     return t("adminbotTimeAvailability.trips.errorOrder");
   }
   return null;
+}
+
+/** A logged trip loaded back into the form that produced it. */
+function toDraft(row: TripRow, index: number): TripDraft {
+  return {
+    city: row.city,
+    start: row.start,
+    end: row.end,
+    timezone: row.timezone ?? "",
+    note: row.note ?? "",
+    editingIndex: index,
+  };
 }
 
 function toRow(draft: TripDraft): TripRow {
@@ -96,29 +118,48 @@ function formatRange(row: { start: string; end: string }): string {
         })
       : value;
   };
-  return row.start === row.end
-    ? format(row.start)
-    : `${format(row.start)} – ${format(row.end)}`;
+  return row.start === row.end ? format(row.start) : `${format(row.start)} – ${format(row.end)}`;
 }
 
 function renderRow(props: TripsProps, row: TripRow, index: number, today: string) {
   const active = row.start <= today && row.end >= today;
+  const isBeingEdited = props.draft.editingIndex === index;
   return html`
-    <li class="adminbot-trips__row ${active ? "adminbot-trips__row--active" : ""}">
+    <li
+      class="adminbot-trips__row ${active ? "adminbot-trips__row--active" : ""} ${isBeingEdited
+        ? "adminbot-trips__row--editing"
+        : ""}"
+    >
       <span class="adminbot-trips__city">${row.city}</span>
       <span class="adminbot-trips__dates">${formatRange(row)}</span>
       ${row.timezone ? html`<span class="muted">${row.timezone}</span>` : nothing}
       ${row.note ? html`<span class="muted">${row.note}</span>` : nothing}
       ${props.editable
         ? html`<button
-            type="button"
-            class="btn btn--sm"
-            data-testid=${`time-availability-trip-remove-${index}`}
-            ?disabled=${props.saving}
-            @click=${() => props.onSave(props.trips.filter((_, at) => at !== index))}
-          >
-            ${t("adminbotTimeAvailability.trips.remove")}
-          </button>`
+              type="button"
+              class="btn btn--sm"
+              data-testid=${`time-availability-trip-edit-${index}`}
+              ?disabled=${props.saving}
+              @click=${() => props.onDraftChange(toDraft(row, index))}
+            >
+              ${t("adminbotTimeAvailability.trips.edit")}
+            </button>
+            <button
+              type="button"
+              class="btn btn--sm"
+              data-testid=${`time-availability-trip-remove-${index}`}
+              ?disabled=${props.saving}
+              @click=${() => {
+                props.onSave(props.trips.filter((_, at) => at !== index));
+                // Removing the row being edited would leave the form pointed at an index that is
+                // now a different trip, so the edit is abandoned with it.
+                if (props.draft.editingIndex === index) {
+                  props.onDraftChange(EMPTY_TRIP_DRAFT);
+                }
+              }}
+            >
+              ${t("adminbotTimeAvailability.trips.remove")}
+            </button>`
         : nothing}
     </li>
   `;
@@ -126,16 +167,14 @@ function renderRow(props: TripsProps, row: TripRow, index: number, today: string
 
 export function renderTrips(props: TripsProps) {
   const today = props.today ?? todayIso();
+  const editing = props.draft.editingIndex !== null;
   const error = tripDraftError(props.draft);
   const touched = Boolean(props.draft.city || props.draft.start || props.draft.end);
   const patch = (change: Partial<TripDraft>) => props.onDraftChange({ ...props.draft, ...change });
   const field = (key: keyof TripDraft) => (event: Event) =>
     patch({ [key]: (event.currentTarget as HTMLInputElement).value } as Partial<TripDraft>);
   return html`
-    <section
-      class="adminbot-time-availability__editor"
-      data-testid="time-availability-trip-editor"
-    >
+    <section class="adminbot-time-availability__editor" data-testid="time-availability-trip-editor">
       <div class="card-title">${t("adminbotTimeAvailability.form.tripTitle")}</div>
       <p class="adminbot-time-availability__form-hint">
         ${props.homeLocation
@@ -157,13 +196,16 @@ export function renderTrips(props: TripsProps) {
                 if (tripDraftError(props.draft)) {
                   return;
                 }
-                // Kept sorted by start date: the list is read as a timeline, and appending in entry
-                // order puts a trip logged today after one that already happened.
-                props.onSave(
-                  [...props.trips, toRow(props.draft)].toSorted((left, right) =>
-                    left.start.localeCompare(right.start),
-                  ),
-                );
+                const replacing = props.draft.editingIndex;
+                // Replaced in place when editing, appended otherwise. Kept sorted by start date
+                // either way: the list is read as a timeline, and appending in entry order puts a
+                // trip logged today after one that already happened -- and an edit that moves a
+                // trip's dates has to re-sort for the same reason.
+                const next =
+                  replacing === null
+                    ? [...props.trips, toRow(props.draft)]
+                    : props.trips.map((row, at) => (at === replacing ? toRow(props.draft) : row));
+                props.onSave(next.toSorted((left, right) => left.start.localeCompare(right.start)));
                 props.onDraftChange(EMPTY_TRIP_DRAFT);
               }}
             >
@@ -227,13 +269,24 @@ export function renderTrips(props: TripsProps) {
                       >${error}</span
                     >`
                   : nothing}
+                ${editing
+                  ? html`<button
+                      type="button"
+                      class="btn"
+                      data-testid="time-availability-trip-cancel"
+                      ?disabled=${props.saving}
+                      @click=${() => props.onDraftChange(EMPTY_TRIP_DRAFT)}
+                    >
+                      ${t("common.cancel")}
+                    </button>`
+                  : nothing}
                 <button
                   type="submit"
                   class="btn primary"
                   data-testid="time-availability-trip-add"
                   ?disabled=${props.saving || error !== null}
                 >
-                  ${t("adminbotTimeAvailability.trips.submit")}
+                  ${editing ? t("common.save") : t("adminbotTimeAvailability.trips.submit")}
                 </button>
               </div>
             </form>
@@ -264,9 +317,7 @@ export function renderWhereStrip(bins: readonly WhereBin[]) {
   // Any travel at all in the horizon, not just a period that is *mostly* travel: a five-day
   // conference makes no month majority-away, and hiding the strip for it would hide exactly the
   // case the breakdown was added to explain.
-  const travels = bins.some(
-    (bin) => bin.away || bin.segments.some((segment) => segment.away),
-  );
+  const travels = bins.some((bin) => bin.away || bin.segments.some((segment) => segment.away));
   if (!travels) {
     return nothing;
   }
@@ -278,9 +329,7 @@ export function renderWhereStrip(bins: readonly WhereBin[]) {
           : [{ start: "", end: "", city: bin.city, away: bin.away }];
         return html`
           <div
-            class="adminbot-where-strip__cell ${bin.away
-              ? "adminbot-where-strip__cell--away"
-              : ""}"
+            class="adminbot-where-strip__cell ${bin.away ? "adminbot-where-strip__cell--away" : ""}"
             tabindex="0"
           >
             <span class="adminbot-where-strip__label">${bin.label}</span>
@@ -288,9 +337,7 @@ export function renderWhereStrip(bins: readonly WhereBin[]) {
             <!-- How many other places the period also covers. A count rather than an asterisk:
                  "+2" says there is more here and roughly how much. -->
             ${bin.segments.length > 1
-              ? html`<span class="adminbot-where-strip__more"
-                  >+${bin.segments.length - 1}</span
-                >`
+              ? html`<span class="adminbot-where-strip__more">+${bin.segments.length - 1}</span>`
               : nothing}
             <span class="adminbot-where-strip__detail" role="tooltip">
               <span class="adminbot-where-strip__detail-title">${bin.label}</span>

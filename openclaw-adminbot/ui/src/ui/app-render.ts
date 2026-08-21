@@ -15,6 +15,12 @@ import {
 import {
   applyAdminBotOwnProfilePhoto,
   approveAdminBotAction,
+  runAdminBotCvDigestJob,
+  runAdminBotVenueIndexJob,
+  searchAdminBotVenuePapers,
+  setAdminBotVenue,
+  setAdminBotVenueInterests,
+  toggleAdminBotVenueAbstract,
   deleteAdminBotPaper,
   executeAdminBotAction,
   generateAdminBotReimbursement,
@@ -29,10 +35,6 @@ import {
   saveAdminBotSensitiveInfo,
   markAdminBotNudgesSeen,
   saveAdminBotSettings,
-  scanAdminBotCvs,
-  setAdminBotCvDigestSince,
-  loadAdminBotCvDigest,
-  draftAdminBotCvBlurb,
   sendAdminBotMemberNudge,
   sendAdminBotReimbursementMessage,
   setAdminBotNudgeChannel,
@@ -758,6 +760,10 @@ const lazyDeadlines = createLazyView(
   () => import("./adminbot/views/deadlines.ts"),
   notifyLazyViewChanged,
 );
+const lazyConferencePapers = createLazyView(
+  () => import("./adminbot/views/conference-papers.ts"),
+  notifyLazyViewChanged,
+);
 const lazyDebug = createLazyView(() => import("./views/debug.ts"), notifyLazyViewChanged);
 const lazyLogs = createLazyView(() => import("./views/logs.ts"), notifyLazyViewChanged);
 const lazyNodes = createLazyView(() => import("./views/nodes.ts"), notifyLazyViewChanged);
@@ -807,8 +813,6 @@ function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminB
       return "papers";
     case "adminbotAnnouncements":
       return "announcements";
-    case "adminbotCvUpdates":
-      return "cv-updates";
     default:
       return null;
   }
@@ -3539,17 +3543,6 @@ export function renderApp(state: AppViewState) {
               onNudgeToggleRecipient: (memberId) => toggleAdminBotNudgeRecipient(state, memberId),
               onNudgeSetRecipients: (memberIds) => setAdminBotNudgeRecipients(state, memberIds),
               onSendNudge: () => void sendAdminBotMemberNudge(state),
-              cvScan: state.adminBotCvScan,
-              cvScanning: state.adminBotCvScanning,
-              onScanCvs: () => void scanAdminBotCvs(state),
-              cvDigest: state.adminBotCvDigest,
-              cvDigestSince: state.adminBotCvDigestSince,
-              cvDigestLoading: state.adminBotCvDigestLoading,
-              onCvDigestSinceChange: (since) => setAdminBotCvDigestSince(state, since),
-              onLoadCvDigest: () => void loadAdminBotCvDigest(state),
-              cvBlurbs: state.adminBotCvBlurbs,
-              cvBlurbMemberId: state.adminBotCvBlurbMemberId,
-              onDraftCvBlurb: (memberId) => void draftAdminBotCvBlurb(state, memberId),
               onRefresh: () => void loadAdminBot(state, adminBotMode),
               onApprove: (proposal) => void approveAdminBotAction(state, proposal),
               onRemove: (proposal) => void removePendingAdminBotAction(state, proposal),
@@ -3588,6 +3581,17 @@ export function renderApp(state: AppViewState) {
           : nothing}
         ${state.tab === "adminbotDeadlines"
           ? renderLazyView(lazyDeadlines, (m) => m.renderDeadlines())
+          : nothing}
+        ${state.tab === "adminbotConferencePapers"
+          ? renderLazyView(lazyConferencePapers, (m) =>
+              m.renderConferencePapers({
+                state: state.adminBotVenuePapers,
+                onVenueChange: (venueId) => setAdminBotVenue(state, venueId),
+                onInterestsChange: (interests) => setAdminBotVenueInterests(state, interests),
+                onSearch: () => void searchAdminBotVenuePapers(state),
+                onToggleAbstract: (paperId) => toggleAdminBotVenueAbstract(state, paperId),
+              }),
+            )
           : nothing}
         ${state.tab === "sessions"
           ? renderLazyView(lazySessions, (m) => {
@@ -3738,6 +3742,48 @@ export function renderApp(state: AppViewState) {
           ? renderLazyView(lazyCron, (m) =>
               m.renderCron({
                 basePath: state.basePath,
+                commandJobs: [
+                  {
+                    id: "venue-index",
+                    name: "Conference paper index",
+                    description:
+                      "Fetch every accepted paper from the configured conferences and index them, so members can search them on Conference Papers. Takes a couple of minutes per conference.",
+                    status: state.adminBotVenueIndexJob.status,
+                    ...(state.adminBotVenueIndexJob.detail
+                      ? { detail: state.adminBotVenueIndexJob.detail }
+                      : {}),
+                    ...(state.adminBotVenueIndexJob.finishedAtMs
+                      ? { finishedAtMs: state.adminBotVenueIndexJob.finishedAtMs }
+                      : {}),
+                  },
+                  {
+                    id: "cv-digest",
+                    name: "CV digest",
+                    description:
+                      "Re-read every member's linked CV, record what changed, and rewrite the CV Updates doc with today's date.",
+                    status: state.adminBotCvDigestJob.status,
+                    ...(state.adminBotCvDigestJob.detail
+                      ? { detail: state.adminBotCvDigestJob.detail }
+                      : {}),
+                    ...(state.adminBotCvDigestJob.resultUrl
+                      ? {
+                          resultUrl: state.adminBotCvDigestJob.resultUrl,
+                          resultLabel: "Open the doc",
+                        }
+                      : {}),
+                    ...(state.adminBotCvDigestJob.finishedAtMs
+                      ? { finishedAtMs: state.adminBotCvDigestJob.finishedAtMs }
+                      : {}),
+                  },
+                ],
+                onRunCommandJob: (id) => {
+                  if (id === "cv-digest") {
+                    void runAdminBotCvDigestJob(state);
+                  }
+                  if (id === "venue-index") {
+                    void runAdminBotVenueIndexJob(state);
+                  }
+                },
                 loading: state.cronLoading,
                 status: state.cronStatus,
                 jobs: visibleCronJobs,

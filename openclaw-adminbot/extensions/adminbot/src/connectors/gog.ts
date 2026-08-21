@@ -49,6 +49,64 @@ export type GogSheetReadOptions = {
 // Unbounded A1 range over the first tab, which is where Google Forms writes linked responses.
 const DEFAULT_SHEET_RANGE = "A:ZZ";
 
+export type GogDocWriteOptions = {
+  env?: NodeJS.ProcessEnv;
+  // Which tab to replace. Google Docs put everything in a single tab ("t.0") unless someone adds
+  // more, and replacing the wrong one would silently write to a tab nobody reads.
+  tab?: string;
+  run?: GogRun;
+};
+
+const DEFAULT_DOC_TAB = "t.0";
+
+/**
+ * Replaces a Google Doc's body with rendered markdown.
+ *
+ * The markdown goes to a scratch file rather than stdin: `--file -` would work, but the shared
+ * runner here is execFile-based with no stdin plumbing, and a temp file is the same shape
+ * sendWithAttachments already uses. The directory is removed either way -- a failed write should
+ * not leave lab CV history sitting in /tmp on a shared box.
+ *
+ * `--replace` rather than `--append`: the document is a full rendering of the ledger, so appending
+ * would duplicate every prior entry on each run.
+ */
+export async function writeGogDocMarkdown(
+  documentId: string,
+  markdown: string,
+  options: GogDocWriteOptions = {},
+): Promise<void> {
+  const id = documentId.trim();
+  if (!id) {
+    throw new Error("gog docs write requires a document id");
+  }
+  if (!markdown.trim()) {
+    // Replacing a document with nothing is almost always a rendering bug upstream, and it destroys
+    // whatever the last good run published. Refused rather than executed.
+    throw new Error("gog docs write refuses an empty document body");
+  }
+  const run = options.run ?? createGogRunner(options.env);
+  const scratch = await fs.promises.mkdtemp(path.join(os.tmpdir(), "adminbot-doc-"));
+  try {
+    const filePath = path.join(scratch, "body.md");
+    await fs.promises.writeFile(filePath, markdown, "utf8");
+    const args = rootArgs("docs.write", optionalAccount(options.env));
+    args.push(
+      "docs",
+      "write",
+      id,
+      "--file",
+      filePath,
+      "--markdown",
+      "--replace",
+      "--tab",
+      options.tab?.trim() || DEFAULT_DOC_TAB,
+    );
+    await run(args);
+  } finally {
+    await fs.promises.rm(scratch, { recursive: true, force: true });
+  }
+}
+
 /** Reads a spreadsheet range with the same non-interactive gog contract the executor uses. */
 export async function readGogSheetRows(
   spreadsheetId: string,

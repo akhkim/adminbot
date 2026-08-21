@@ -383,6 +383,22 @@
   height: 0.875em;
 }
 
+/* The one control on the signature card. An <a> styled as a button, because it leaves the app:
+   it has to be a real link so the browser's own "open in new tab" and copy-link work on it. */
+.logistics-signature__link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  text-decoration: none;
+  width: fit-content;
+}
+
+.logistics-signature__link svg {
+  width: 0.875em;
+  height: 0.875em;
+}
+
 /* The admin band above the templates, and the request list it opens. */
 
 .logistics-admin__heading {

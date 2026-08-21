@@ -1,9 +1,4 @@
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
-import {
-  isNewObservation,
-  latestBySource,
-  observationFor,
-} from "../members/location-history.js";
 import type {
   AdminBotAccountRegistration,
   AdminBotAuditEvent,
@@ -15,6 +10,7 @@ import type {
 } from "../../contracts/actions.js";
 import { adminBotMemberRoles } from "../../contracts/actions.js";
 import type { AdminBotServiceStore } from "../../kernel/service.js";
+import { isNewObservation, latestBySource, observationFor } from "../members/location-history.js";
 
 // scrypt cost parameters. Serialized alongside every hash so a future cost bump can be
 // detected per-credential without a migration; verify re-derives with the stored params.
@@ -110,7 +106,11 @@ export type AdminBotAuthServiceOptions = {
   // Slack-access request form on the new member's behalf. Same contract as the two above.
   // Best-effort, fired but not awaited on a successful login (see login()): resolving it can take
   // a moment and must never slow down or fail the sign-in it happened alongside.
-  geolocateIp?: (ip: string) => Promise<{ country?: string; continent?: string } | undefined>;
+  geolocateIp?: (
+    ip: string,
+  ) => Promise<
+    { country?: string; continent?: string; city?: string; timezone?: string } | undefined
+  >;
   gatewayToken?: string;
   gatewayUrl?: string;
   sessionTtlMs?: number;
@@ -148,7 +148,6 @@ const SIGNUP_PROFILE_FIELDS = [
   "notes",
 ] as const;
 
-
 // Case and spacing differences are the same answer, not a different one: "PhD student" typed by
 // an older client is the vocabulary's "PhD Student".
 function normalizeMemberRole(value: string): string | undefined {
@@ -175,7 +174,9 @@ export class AdminBotAuthService {
   }) => Promise<void>;
   private readonly geolocateIp?: (
     ip: string,
-  ) => Promise<{ country?: string; continent?: string } | undefined>;
+  ) => Promise<
+    { country?: string; continent?: string; city?: string; timezone?: string } | undefined
+  >;
   private readonly gatewayToken?: string;
   private readonly gatewayUrl?: string;
   private readonly sessionTtlMs: number;
@@ -318,7 +319,7 @@ export class AdminBotAuthService {
   private async recordLoginLocation(memberId: string, remoteIp: string): Promise<void> {
     try {
       const location = await this.geolocateIp?.(remoteIp);
-      if (!location || (!location.country && !location.continent)) {
+      if (!location || (!location.country && !location.continent && !location.city)) {
         return;
       }
       // Re-read rather than reuse the `member` from login(): logins can race, and this must
@@ -332,6 +333,10 @@ export class AdminBotAuthService {
         last_login_at: this.now().toISOString(),
         ...(location.country ? { last_login_country: location.country } : {}),
         ...(location.continent ? { last_login_continent: location.continent } : {}),
+        // Written alongside the country and read only with `last_login_at`, which is what keeps a
+        // stale city out of a scheduling decision. Still never touches `location`/`current_city`.
+        ...(location.city ? { last_login_city: location.city } : {}),
+        ...(location.timezone ? { last_login_timezone: location.timezone } : {}),
         updated_at: this.now().toISOString(),
       });
       this.audit("auth.login_location_updated", memberId, { ...location });

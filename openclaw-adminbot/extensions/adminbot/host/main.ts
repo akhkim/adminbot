@@ -13,18 +13,19 @@ import path from "node:path";
 import { promisify } from "node:util";
 import {
   createAdminBotMockService,
+  type AdminBotCvDigestPublisher,
   type DevicePairingApproval,
   type DeviceTokenIssuance,
 } from "../src/api/server.js";
-import { adminBotSlackActivityWindowDays } from "../src/contracts/actions.js";
 import { createCompositeAdminBotExecutor } from "../src/connectors/composite.js";
-import { createAdminBotCvScanDeps } from "../src/cv-scan.js";
-import { createGogAdminBotExecutor } from "../src/connectors/gog.js";
+import { createGogAdminBotExecutor, writeGogDocMarkdown } from "../src/connectors/gog.js";
 import { createAdminBotMessageExecutor } from "../src/connectors/message.js";
 import { createAdminBotOpenReviewExecutor } from "../src/connectors/openreview.js";
 import { createAdminBotOverleafExecutor } from "../src/connectors/overleaf.js";
 import { createAdminBotSlackAdminExecutor } from "../src/connectors/slack-admin.js";
 import { createAdminBotSocialExecutor } from "../src/connectors/social.js";
+import { adminBotSlackActivityWindowDays } from "../src/contracts/actions.js";
+import { createAdminBotCvScanDeps } from "../src/cv-scan.js";
 import type { AdminBotActionExecutor } from "../src/kernel/service.js";
 import { createAdminBotReimbursementWorkflow } from "../src/workflows/reimbursements/workflow.js";
 
@@ -283,7 +284,9 @@ function extractOpenAiOutputText(payload: unknown): string | undefined {
   return undefined;
 }
 
-async function reviewPhotoWithOpenAi(imageUrl: string): Promise<Omit<ProfilePhotoReviewResult, "photoUrl">> {
+async function reviewPhotoWithOpenAi(
+  imageUrl: string,
+): Promise<Omit<ProfilePhotoReviewResult, "photoUrl">> {
   const apiKey = process.env.OPENAI_API_KEY?.trim();
   if (!apiKey) {
     throw new Error("OPENAI_API_KEY is not set");
@@ -303,8 +306,7 @@ async function reviewPhotoWithOpenAi(imageUrl: string): Promise<Omit<ProfilePhot
           content: [
             {
               type: "input_text",
-              text:
-                "Assess this Slack profile photo for these exact rules: big enough headshot; face visible and preferably front-facing; clean background (blurred/single-color or easy to clean via BG remover). Respond as strict JSON schema only.",
+              text: "Assess this Slack profile photo for these exact rules: big enough headshot; face visible and preferably front-facing; clean background (blurred/single-color or easy to clean via BG remover). Respond as strict JSON schema only.",
             },
             { type: "input_image", image_url: imageUrl },
           ],
@@ -772,10 +774,30 @@ export function createIpLocationResolver() {
   };
 }
 
+/**
+ * The CV digest's destination, or nothing when none is configured.
+ *
+ * Fails closed rather than defaulting to a document id: publishing a roster's career history into
+ * whichever doc happened to be hardcoded is worse than the job being unavailable, and the route
+ * already answers 503 with the variable name when this is absent.
+ */
+function createCvDigestPublisher(): AdminBotCvDigestPublisher | undefined {
+  const documentId = process.env.ADMINBOT_CV_DIGEST_DOC_ID?.trim();
+  if (!documentId) {
+    return undefined;
+  }
+  const tab = process.env.ADMINBOT_CV_DIGEST_DOC_TAB?.trim();
+  return {
+    documentUrl: `https://docs.google.com/document/d/${documentId}/edit`,
+    publish: (markdown) => writeGogDocMarkdown(documentId, markdown, tab ? { tab } : {}),
+  };
+}
+
 /** Builds the AdminBot service with every executor wired. */
 export function createAdminBotHost(deps: AdminBotHostDeps) {
   const { repoRoot } = deps;
   const profilePhotoUpdateExecutor = createSlackProfilePhotoUpdateExecutor();
+  const cvDigestPublisher = createCvDigestPublisher();
   return createAdminBotMockService({
     databasePath: path.join(repoRoot, "state/adminbot.sqlite"),
     auditRetentionDays: AUDIT_RETENTION_DAYS,
@@ -806,6 +828,7 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
     cvScanDeps: createAdminBotCvScanDeps({
       extractScriptPath: path.join(repoRoot, "scripts/adminbot-cv-extract.py"),
     }),
+    ...(cvDigestPublisher ? { cvDigestPublisher } : {}),
     openReviewScriptPath: path.join(repoRoot, "scripts/adminbot-openreview.py"),
     dcsFormScriptPath: path.join(repoRoot, "scripts/adminbot-dcs-form-submit.ts"),
     fetchSlackLocations: createSlackLocationReader(repoRoot),

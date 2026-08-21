@@ -12,7 +12,23 @@
 import { tripOnDay, type TripRow } from "./availability.ts";
 import { timezoneForLocation } from "./timezone-for-location.ts";
 
-export type AttendeeZoneSource = "trip" | "timezone" | "current_city" | "location";
+export type AttendeeZoneSource =
+  | "trip"
+  | "login_city"
+  | "timezone"
+  | "current_city"
+  | "location"
+  | "slack_location";
+
+/**
+ * How recent a sign-in has to be for the city it came from to mean "where they are".
+ *
+ * Three days: long enough to cover a weekend away from the console, short enough that it still
+ * describes the present. Past that the city is history, and history is what `location` is for.
+ */
+export const LOGIN_CITY_FRESH_DAYS = 3;
+
+const DAY_MS = 86_400_000;
 
 export type AttendeeZone = {
   zone: string;
@@ -26,17 +42,46 @@ type ZonedMember = {
   current_city?: string | null;
   location?: string | null;
   trips?: TripRow[] | null;
+  /** Inferred from the last sign-in's IP, and only usable next to `last_login_at`. */
+  last_login_city?: string | null;
+  last_login_timezone?: string | null;
+  last_login_at?: string | null;
+  /** What the member put in their Slack profile, which is not always what the roster says. */
+  slack_location?: string | null;
 };
 
 /**
  * The best zone available for a member, or undefined when the roster says nothing usable.
  *
- * Ordered by how directly the member said it: an explicit timezone is a statement, where they are
- * now is a statement a zone can be derived from, and where they live is the fallback. Undefined is
- * a real answer and must stay one — showing a made-up local time is worse than showing none,
- * because a reader cannot tell the difference between a guess and a fact once it is a clock face.
+ * The ladder, most specific first:
+ *
+ *   1. a sign-in from the last few days — inferred, but it is *evidence about now*, and someone
+ *      who flew somewhere on Friday has a right clock here days before they edit their profile.
+ *      Only ever consulted while it is fresh; see LOGIN_CITY_FRESH_DAYS.
+ *   2. `timezone` — carried over from their Slack profile or typed in.
+ *   3. `current_city` — where they said they are right now, when no timezone is set.
+ *   4. `location` — where they live.
+ *   5. `slack_location` — the free text on their Slack profile, last because it is the least
+ *      structured thing here and often says "🌍" or a team name rather than a place.
+ *
+ * Rungs 2-4 keep the order they have always had. Only rung 1 is new, and it sits on top because a
+ * recent sign-in is the one signal here that is about *today*: everything below it is a standing
+ * fact that stays true while someone is away from home, which is exactly when it is wrong. Note
+ * this is the only place inference outranks a self-report, and it is scoped to that freshness
+ * window — nothing here is ever written back to the member's own fields.
+ *
+ * Undefined is a real answer and must stay one — showing a made-up local time is worse than
+ * showing none, because a reader cannot tell the difference between a guess and a fact once it is
+ * a clock face.
  */
-export function resolveAttendeeZone(member: ZonedMember): AttendeeZone | undefined {
+export function resolveAttendeeZone(
+  member: ZonedMember,
+  now: Date = new Date(),
+): AttendeeZone | undefined {
+  const login = recentLoginZone(member, now);
+  if (login) {
+    return login;
+  }
   const explicit = member.timezone?.trim();
   if (explicit) {
     return { zone: explicit, source: "timezone", from: explicit };
@@ -51,7 +96,40 @@ export function resolveAttendeeZone(member: ZonedMember): AttendeeZone | undefin
   if (home && fromHome) {
     return { zone: fromHome, source: "location", from: home };
   }
+  const slack = member.slack_location?.trim();
+  const fromSlack = slack ? timezoneForLocation(slack) : null;
+  if (slack && fromSlack) {
+    return { zone: fromSlack, source: "slack_location", from: slack };
+  }
   return undefined;
+}
+
+/**
+ * The zone of a sign-in recent enough to still describe where someone is, or undefined.
+ *
+ * The provider's own IANA zone is preferred over guessing one from the city name: it is the same
+ * lookup done better, and the gazetteer here only knows the cities the lab has met in. Either way
+ * the *city* is what gets reported as the source, because "Zurich" is what a reader can check and
+ * "Europe/Zurich" is what they would have to take on trust.
+ */
+function recentLoginZone(member: ZonedMember, now: Date): AttendeeZone | undefined {
+  const city = member.last_login_city?.trim();
+  const at = member.last_login_at?.trim();
+  if (!city || !at) {
+    return undefined;
+  }
+  const seen = new Date(at);
+  if (Number.isNaN(seen.getTime())) {
+    return undefined;
+  }
+  const age = now.getTime() - seen.getTime();
+  // A clock skew that puts the sign-in slightly in the future is not a reason to discard it; a
+  // sign-in from next month is, because something is wrong with the record.
+  if (age > LOGIN_CITY_FRESH_DAYS * DAY_MS || age < -DAY_MS) {
+    return undefined;
+  }
+  const zone = member.last_login_timezone?.trim() || timezoneForLocation(city);
+  return zone ? { zone, source: "login_city", from: city } : undefined;
 }
 
 /**
@@ -86,7 +164,10 @@ export type AttendeeHourVerdict = "fine" | "early" | "late";
  * meet across ten zones and somebody has to take the early call -- it is that whoever picks the
  * time should see they are picking it, rather than finding out from the person who got up at 5am.
  */
-export function attendeeHourVerdict(zone: string, instant: string): AttendeeHourVerdict | undefined {
+export function attendeeHourVerdict(
+  zone: string,
+  instant: string,
+): AttendeeHourVerdict | undefined {
   const parsed = new Date(instant);
   if (Number.isNaN(parsed.getTime())) {
     return undefined;
@@ -125,6 +206,7 @@ export function attendeeHourVerdict(zone: string, instant: string): AttendeeHour
 export function resolveAttendeeZoneAt(
   member: ZonedMember,
   instant: string,
+  now: Date = new Date(),
 ): AttendeeZone | undefined {
   const parsed = new Date(instant);
   if (!Number.isNaN(parsed.getTime())) {
@@ -134,5 +216,5 @@ export function resolveAttendeeZoneAt(
       return { zone, source: "trip", from: trip.city };
     }
   }
-  return resolveAttendeeZone(member);
+  return resolveAttendeeZone(member, now);
 }

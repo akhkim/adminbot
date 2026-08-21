@@ -20,9 +20,10 @@ import {
   resolveAdminBotBaseUrl,
   sendOnboardingGuide as sendOnboardingGuideRequest,
   saveOwnPaper,
-  scanMemberCvs,
-  fetchCvDigest,
-  draftMemberCvBlurb,
+  fetchVenueSources,
+  rebuildVenueIndexes,
+  publishCvDigest,
+  searchVenuePapers,
   sendMemberNudge,
   updateOwnProfile,
   updateSettingsAsAdmin,
@@ -87,6 +88,15 @@ export type AdminBotLabMember = {
   current_city?: string;
   affiliation?: string;
   timezone?: string;
+  // What the member wrote in their Slack profile. Free text and often not a place at all, so it
+  // is the last thing the Calendar tab falls back to when resolving somebody's clock.
+  slack_location?: string;
+  // Inferred from the IP of the last sign-in, never self-reported and never written back to the
+  // fields above. Read only together: a city with no timestamp says nothing about where someone
+  // is now, which is the only question the Calendar tab asks it.
+  last_login_at?: string;
+  last_login_city?: string;
+  last_login_timezone?: string;
   personal_website?: string;
   // Link to the member's own CV PDF, self-editable like the availability planning doc. The scan
   // reads it; the console never renders its contents, only what changed.
@@ -103,51 +113,106 @@ export type AdminBotLabMember = {
   updated_at: string;
 };
 
-export type AdminBotCvEntry = {
-  // Mirrors AdminBotCvEntryKind in the service contracts; ui/ cannot import from extensions/.
-  kind: "position" | "education" | "award" | "publication" | "other";
-  title: string;
-  organization: string;
-  start?: string;
-  end?: string;
-  start_iso?: string;
+/**
+ * A member's stored topics as the one string the interests box shows.
+ *
+ * Mirrors `interestsFromTopics` in the service's venue-relevance.ts; ui/ cannot import from
+ * extensions/. Kept in step because what the box shows has to be exactly what gets embedded.
+ */
+function interestsFromTopics(topics: readonly string[] | undefined): string {
+  return (topics ?? [])
+    .map((topic) => topic.trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+/** A conference an admin has made searchable. Mirrors the service contract. */
+export type AdminBotVenueSource = {
+  /** OpenReview group id, e.g. "ICLR.cc/2025/Conference". */
+  id: string;
+  /** What a member sees in the picker, e.g. "ICLR 2025". */
+  label: string;
 };
 
-// Whether an added entry is news or just a document edit. See the service's cv-scan.ts.
-export type AdminBotCvRecency = "recent" | "backfilled" | "undated";
-
-export type AdminBotCvChange = {
-  entry: AdminBotCvEntry;
-  recency: AdminBotCvRecency;
+/** One conference a member can search, and how fresh its index is. */
+export type AdminBotVenueSourceView = {
+  venue_id: string;
+  label: string;
+  paper_count: number;
+  indexed_at?: string;
+  embedding_model?: string;
 };
 
-export type AdminBotCvScanMemberResult = {
-  member_id: string;
-  member_name: string;
-  status: "unchanged" | "changed" | "first_scan" | "skipped" | "failed";
-  reason?: string;
-  added: AdminBotCvChange[];
-  removed: AdminBotCvEntry[];
+export type AdminBotVenuePaperHit = {
+  paper: {
+    id: string;
+    title: string;
+    abstract: string;
+    keywords: string[];
+    venue: string;
+    pdf_url?: string;
+    forum_url: string;
+  };
+  score: number;
+  /** 1 is the best match in this conference for this search, 0 the median one. */
+  relevance: number;
+  matched_keywords: string[];
 };
 
-export type AdminBotCvScanResult = {
-  scanned_at: string;
-  results: AdminBotCvScanMemberResult[];
-  newsletter_draft: string;
+export type AdminBotVenueSearchResult = {
+  venue_id: string;
+  label: string;
+  /** How many accepted papers were ranked, so "12 of 3,704" is answerable. */
+  searched: number;
+  results: AdminBotVenuePaperHit[];
+  /** The conference was searched and nothing in it was close to these interests. */
+  nothing_relevant: boolean;
 };
 
-export type AdminBotCvChangeEvent = {
-  member_id: string;
-  member_name: string;
-  detected_at: string;
-  recency: AdminBotCvRecency;
-  entry: AdminBotCvEntry;
+export type AdminBotVenuePapersState = {
+  sources: AdminBotVenueSourceView[];
+  loadingSources: boolean;
+  venueId: string;
+  /** Free text, prefilled from the member's own research_topics and editable per search. */
+  interests: string;
+  /** False until the member edits the box, so a prefill can be refreshed and an edit cannot. */
+  interestsTouched: boolean;
+  searching: boolean;
+  error: string | null;
+  result: AdminBotVenueSearchResult | null;
+  /** Which result rows have their abstract open. */
+  expanded: string[];
 };
 
-export type AdminBotCvDigest = {
-  since: string;
-  changes: AdminBotCvChangeEvent[];
-  newsletter_draft: string;
+export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
+  return {
+    sources: [],
+    loadingSources: false,
+    venueId: "",
+    interests: "",
+    interestsTouched: false,
+    searching: false,
+    error: null,
+    result: null,
+    expanded: [],
+  };
+}
+
+export type AdminBotCvDigestJobStatus = "idle" | "running" | "ok" | "error";
+
+export type AdminBotCvDigestJobState = {
+  status: AdminBotCvDigestJobStatus;
+  detail?: string;
+  resultUrl?: string;
+  finishedAtMs?: number;
+};
+
+/** What POST /cv/publish-digest answers with. Mirrors the service; ui/ cannot import extensions/. */
+export type AdminBotCvDigestPublishResult = {
+  document_url: string;
+  published_at: string;
+  day_count: number;
+  change_count: number;
 };
 
 export type AdminBotSettings = {
@@ -159,6 +224,7 @@ export type AdminBotSettings = {
   applicant_last_reviewed_at?: string;
   /** Recordings shorter than this are filed but not listed on the Meeting Recordings tab. */
   meeting_minimum_minutes?: number;
+  venue_sources?: AdminBotVenueSource[];
   updated_at: string;
 };
 
@@ -357,6 +423,7 @@ export type AdminBotSettingsSaveInput = {
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
   applicant_last_reviewed_at?: string;
+  venue_sources?: AdminBotVenueSource[];
 };
 
 export type AdminBotPaperStep =
@@ -523,19 +590,14 @@ export type AdminBotHost = {
   adminBotPhotoApplyBusy: boolean;
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
-  // Last CV scan result and whether one is in flight. Session-scoped rather than persisted: a
-  // scan is a point-in-time read, and a stale one shown as current would be misleading.
-  adminBotCvScan: AdminBotCvScanResult | null;
-  adminBotCvScanning: boolean;
-  // Digest of recorded changes over a window, and the date it was asked for. Kept apart from the
-  // scan result because they answer different questions: one is "what did this run find", the
-  // other "what has the lab learned since a date".
-  adminBotCvDigest: AdminBotCvDigest | null;
-  adminBotCvDigestSince: string;
-  adminBotCvDigestLoading: boolean;
-  // Blurbs are per member and drafted on request, so they are held by id rather than as one slot.
-  adminBotCvBlurbs: Record<string, string>;
-  adminBotCvBlurbMemberId: string | null;
+  // Last press of the CV digest job. Session-scoped: the durable record of a run is the audit
+  // row and the document it wrote, so this only has to survive long enough to report the outcome.
+  adminBotCvDigestJob: AdminBotCvDigestJobState;
+  adminBotVenuePapers: AdminBotVenuePapersState;
+  adminBotVenueIndexJob: AdminBotCvDigestJobState;
+  // The viewer's own roster id, for prefilling their interests from their profile. Null under
+  // break-glass gateway access, where there is no "me" to read topics from.
+  memberId: string | null;
   // Calendar tab. Written by controllers/calendar.ts, which shares this host rather than owning a
   // second one: the invite half reads the same roster and papers the rest of the tab loaded.
   calendarEvents?: CalendarEvent[];
@@ -966,101 +1028,229 @@ function cvErrorText(kind: string, action: string): string {
   return `Could not ${action}: ${kind}`;
 }
 
-export function setAdminBotCvDigestSince(host: AdminBotHost, since: string): void {
-  host.adminBotCvDigestSince = since;
-}
-
-/** Loads recorded changes since the chosen date. Reads the ledger; never triggers a scan. */
-export async function loadAdminBotCvDigest(host: AdminBotHost): Promise<void> {
+/**
+ * Rebuilds every configured conference index.
+ *
+ * The slow job of the pair: a few thousand papers fetched from OpenReview and embedded one batch
+ * at a time, roughly a minute and a half per conference. It reports per-venue rather than pass or
+ * fail because the venues are independent — one dead id should not read as "indexing is broken".
+ */
+export async function runAdminBotVenueIndexJob(host: AdminBotHost): Promise<void> {
   const session = requirePrivilegedSession(host);
   if (!session) {
     return;
   }
-  const since = host.adminBotCvDigestSince?.trim();
-  if (!since) {
-    host.adminBotNotice = { kind: "error", text: "Pick a date to summarise from." };
+  host.adminBotVenueIndexJob = { status: "running" };
+  try {
+    const result = await rebuildVenueIndexes(session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotVenueIndexJob = {
+        status: "error",
+        detail: result.message?.trim() || cvErrorText(result.kind, "rebuild the paper indexes"),
+        finishedAtMs: Date.now(),
+      };
+      return;
+    }
+    const payload = result.value as {
+      built?: Array<{ label?: string; paper_count?: number }>;
+      failed?: Array<{ venue_id: string; reason: string }>;
+    };
+    const built = payload.built ?? [];
+    const failed = payload.failed ?? [];
+    const papers = built.reduce((total, entry) => total + (entry.paper_count ?? 0), 0);
+    host.adminBotVenueIndexJob = {
+      status: failed.length ? "error" : "ok",
+      detail: failed.length
+        ? `Indexed ${built.length} of ${built.length + failed.length}: ${failed
+            .map((entry) => `${entry.venue_id} (${entry.reason})`)
+            .join("; ")}`
+        : `Indexed ${papers.toLocaleString()} papers across ${built.length} conference${
+            built.length === 1 ? "" : "s"
+          }.`,
+      finishedAtMs: Date.now(),
+    };
+  } catch (error) {
+    host.adminBotVenueIndexJob = {
+      status: "error",
+      detail: error instanceof Error ? error.message : String(error),
+      finishedAtMs: Date.now(),
+    };
+  }
+}
+
+/**
+ * Loads the conference list, and prefills the interests box from the member's own topics.
+ *
+ * The prefill only ever happens while the box is untouched. Re-opening the tab should pick up a
+ * profile edit, but re-loading the list must never overwrite a sentence the member is part way
+ * through typing.
+ */
+export async function loadAdminBotVenueSources(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
     return;
   }
-  host.adminBotCvDigestLoading = true;
-  host.adminBotNotice = null;
+  host.adminBotVenuePapers = { ...host.adminBotVenuePapers, loadingSources: true, error: null };
   try {
-    // A date input gives YYYY-MM-DD; the service compares ISO timestamps, so anchor it to the
-    // start of that day rather than letting a bare date sort unpredictably against them.
-    const result = await fetchCvDigest(
-      `${since}T00:00:00.000Z`,
+    const result = await fetchVenueSources(session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotVenuePapers = {
+        ...host.adminBotVenuePapers,
+        loadingSources: false,
+        error: result.message?.trim() || cvErrorText(result.kind, "load the conference list"),
+      };
+      return;
+    }
+    const sources = (result.value as { sources?: AdminBotVenueSourceView[] })?.sources ?? [];
+    const state = host.adminBotVenuePapers;
+    const self = host.adminBotData?.members?.find((member) => member.id === host.memberId);
+    host.adminBotVenuePapers = {
+      ...state,
+      sources,
+      loadingSources: false,
+      // Default to the first conference an admin listed; the list is ordered deliberately.
+      venueId: state.venueId || (sources[0]?.venue_id ?? ""),
+      interests: state.interestsTouched
+        ? state.interests
+        : interestsFromTopics(self?.research_topics),
+    };
+  } catch (error) {
+    host.adminBotVenuePapers = {
+      ...host.adminBotVenuePapers,
+      loadingSources: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export function setAdminBotVenue(host: AdminBotHost, venueId: string): void {
+  // The old result belonged to a different conference; keeping it on screen under a new heading
+  // would be a lie about what was searched.
+  host.adminBotVenuePapers = {
+    ...host.adminBotVenuePapers,
+    venueId,
+    result: null,
+    error: null,
+    expanded: [],
+  };
+}
+
+export function setAdminBotVenueInterests(host: AdminBotHost, interests: string): void {
+  host.adminBotVenuePapers = {
+    ...host.adminBotVenuePapers,
+    interests,
+    interestsTouched: true,
+  };
+}
+
+export function toggleAdminBotVenueAbstract(host: AdminBotHost, paperId: string): void {
+  const open = host.adminBotVenuePapers.expanded;
+  host.adminBotVenuePapers = {
+    ...host.adminBotVenuePapers,
+    expanded: open.includes(paperId) ? open.filter((id) => id !== paperId) : [...open, paperId],
+  };
+}
+
+/** Ranks the chosen conference against the interests currently in the box. */
+export async function searchAdminBotVenuePapers(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  const { venueId, interests } = host.adminBotVenuePapers;
+  if (!venueId || !interests.trim()) {
+    return;
+  }
+  host.adminBotVenuePapers = {
+    ...host.adminBotVenuePapers,
+    searching: true,
+    error: null,
+    expanded: [],
+  };
+  try {
+    const result = await searchVenuePapers(
+      { venueId, interests },
       session.sessionToken,
       session.baseUrl,
     );
     if (!result.ok) {
-      host.adminBotNotice = {
-        kind: "error",
-        text: cvErrorText(result.kind, "load the digest"),
+      host.adminBotVenuePapers = {
+        ...host.adminBotVenuePapers,
+        searching: false,
+        result: null,
+        error: result.message?.trim() || cvErrorText(result.kind, "search the conference"),
       };
       return;
     }
-    host.adminBotCvDigest = result.value as AdminBotCvDigest;
-  } finally {
-    host.adminBotCvDigestLoading = false;
-  }
-}
-
-/** Drafts one member's introduction from their stored CV entries. */
-export async function draftAdminBotCvBlurb(host: AdminBotHost, memberId: string): Promise<void> {
-  const session = requirePrivilegedSession(host);
-  if (!session) {
-    return;
-  }
-  host.adminBotCvBlurbMemberId = memberId;
-  host.adminBotNotice = null;
-  try {
-    const result = await draftMemberCvBlurb(memberId, session.sessionToken, session.baseUrl);
-    if (!result.ok) {
-      host.adminBotNotice = {
-        kind: "error",
-        // A 409 carries the service's own sentence ("no scanned CV yet"), which is more useful
-        // than any fixed copy, so it wins when present.
-        text: result.message?.trim() || cvErrorText(result.kind, "draft a blurb"),
-      };
-      return;
-    }
-    const blurb = (result.value as { blurb?: string }).blurb ?? "";
-    host.adminBotCvBlurbs = { ...host.adminBotCvBlurbs, [memberId]: blurb };
-  } finally {
-    host.adminBotCvBlurbMemberId = null;
-  }
-}
-
-export async function scanAdminBotCvs(host: AdminBotHost): Promise<void> {
-  const session = requirePrivilegedSession(host);
-  if (!session) {
-    return;
-  }
-  host.adminBotCvScanning = true;
-  host.adminBotNotice = null;
-  try {
-    const result = await scanMemberCvs(session.sessionToken, session.baseUrl);
-    if (!result.ok) {
-      host.adminBotNotice = {
-        kind: "error",
-        text: cvErrorText(result.kind, "scan CVs"),
-      };
-      return;
-    }
-    const scan = result.value as AdminBotCvScanResult;
-    host.adminBotCvScan = scan;
-    const changed = scan.results.filter((entry) => entry.status === "changed").length;
-    const failed = scan.results.filter((entry) => entry.status === "failed").length;
-    host.adminBotNotice = {
-      // A run where nothing changed is a success, not an empty state -- saying so stops an admin
-      // wondering whether the scan actually ran.
-      kind: failed ? "error" : "success",
-      text: `Scanned ${scan.results.length} CV${scan.results.length === 1 ? "" : "s"}: ${changed} changed${
-        failed ? `, ${failed} could not be read` : ""
-      }.`,
+    host.adminBotVenuePapers = {
+      ...host.adminBotVenuePapers,
+      searching: false,
+      result: result.value as AdminBotVenueSearchResult,
     };
-  } finally {
-    host.adminBotCvScanning = false;
+  } catch (error) {
+    host.adminBotVenuePapers = {
+      ...host.adminBotVenuePapers,
+      searching: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
+}
+
+/**
+ * Runs the CV digest job: scan every linked CV, then rewrite the CV Updates doc from the whole
+ * change ledger.
+ *
+ * The scan is the slow half — one fetch and, for anything that changed, one model call per member
+ * — so the button reports "running" for as long as it takes rather than optimistically claiming
+ * success. Nothing here is optimistic: the state only advances once the service says the document
+ * was written, because the point of the job is that the doc actually changed.
+ */
+export async function runAdminBotCvDigestJob(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  host.adminBotCvDigestJob = { status: "running" };
+  host.adminBotNotice = null;
+  try {
+    const result = await publishCvDigest(session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotCvDigestJob = {
+        status: "error",
+        // The service's own sentence when it sent one (a missing document id, a gog failure);
+        // the generic copy only when it did not.
+        detail: result.message?.trim() || cvErrorText(result.kind, "publish the CV digest"),
+        finishedAtMs: Date.now(),
+      };
+      return;
+    }
+    const published = result.value as AdminBotCvDigestPublishResult;
+    host.adminBotCvDigestJob = {
+      status: "ok",
+      detail: describeDigestRun(published),
+      resultUrl: published.document_url,
+      finishedAtMs: Date.now(),
+    };
+  } catch (error) {
+    // A thrown error here is a bug or a dead network rather than a service refusal, but leaving
+    // the button stuck on "Running…" would be worse than saying so.
+    host.adminBotCvDigestJob = {
+      status: "error",
+      detail: error instanceof Error ? error.message : String(error),
+      finishedAtMs: Date.now(),
+    };
+  }
+}
+
+// A run that published nothing is still a run: the document was rewritten with a fresh date, and
+// saying "0 updates" is what stops an admin pressing the button again to check.
+function describeDigestRun(published: AdminBotCvDigestPublishResult): string {
+  if (published.change_count === 0) {
+    return "No CV updates recorded yet — the document was refreshed with today's date.";
+  }
+  const updates = `${published.change_count} update${published.change_count === 1 ? "" : "s"}`;
+  const days = `${published.day_count} day${published.day_count === 1 ? "" : "s"}`;
+  return `Published ${updates} across ${days}.`;
 }
 
 export async function removePendingAdminBotAction(

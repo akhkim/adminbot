@@ -30,8 +30,8 @@ export function adminBotConsoleScript(): string {
     // origin an operator most easily points the reset mail at. This console cannot redeem a reset
     // token — it only changes a password for an already signed-in member — so hand the token to the
     // Control UI, which has the confirm step, rather than showing a sign-in form the member has no
-    // password for. adminBotUrl pins the Control UI back to this service: the token is only valid
-    // against the AdminBot that minted it.
+    // password for. The service origin is not passed along: the Control UI knows which AdminBot it
+    // talks to, and naming this host in a member-facing URL is what the fallback console is not for.
     const CONTROL_UI_URL = ${JSON.stringify(resolveAdminBotControlUiUrl())};
     (function handOffPasswordReset() {
       try {
@@ -41,7 +41,6 @@ export function adminBotConsoleScript(): string {
         // Same origin means the Control UI is this page; redirecting would only loop.
         if (target.origin === window.location.origin) return;
         target.searchParams.set("passwordReset", token);
-        target.searchParams.set("adminBotUrl", window.location.origin);
         window.location.replace(target.toString());
       } catch (error) {
         /* A malformed Control UI URL must not take the console down with it. */

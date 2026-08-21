@@ -27,9 +27,15 @@ import type {
   CronSortDir,
 } from "../types.ts";
 import type { CronFormState } from "../ui-types.ts";
+import { renderCronCommandJobs, type CronCommandJob } from "./cron-command-jobs.ts";
 
 export type CronProps = {
   basePath: string;
+  // Jobs the operator triggers by hand, rendered above the scheduled ones. Optional so a caller
+  // that has none (tests, embeddings of this view without an AdminBot service) simply omits the
+  // section rather than passing an empty array it has to construct.
+  commandJobs?: CronCommandJob[];
+  onRunCommandJob?: (id: string) => void;
   loading: boolean;
   jobsLoadingMore: boolean;
   status: CronStatus | null;
@@ -478,6 +484,12 @@ export function renderCron(props: CronProps) {
 
     <section class=${`cron-workspace ${formCollapsed ? "cron-workspace--form-collapsed" : ""}`}>
       <div class="cron-workspace-main">
+        ${props.commandJobs?.length && props.onRunCommandJob
+          ? renderCronCommandJobs({
+              jobs: props.commandJobs,
+              onRun: props.onRunCommandJob,
+            })
+          : nothing}
         <section class="card">
           <div
             class="row"

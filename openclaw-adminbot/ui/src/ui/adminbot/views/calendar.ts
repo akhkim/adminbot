@@ -18,12 +18,6 @@ import { i18n } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { buildExternalLinkRel, EXTERNAL_LINK_TARGET } from "../../external-link.ts";
 import type { CalendarEvent } from "../auth/session.ts";
-import { tripOnDay, tripRows } from "../data/availability.ts";
-import {
-  attendeeHourVerdict,
-  localTimeAt,
-  resolveAttendeeZoneAt,
-} from "../data/attendee-time.ts";
 import {
   knownCities,
   knownConferences,
@@ -42,6 +36,13 @@ import {
   monthStartKey,
   shiftMonth,
 } from "../calendar-month.ts";
+import {
+  attendeeHourVerdict,
+  localTimeAt,
+  resolveAttendeeZoneAt,
+  type AttendeeZoneSource,
+} from "../data/attendee-time.ts";
+import { tripOnDay, tripRows } from "../data/availability.ts";
 
 const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 // How many events a square shows before the rest collapse into "N more". Four is what fits the
@@ -713,6 +714,63 @@ function renderSelectedEvent(state: AppViewState) {
   `;
 }
 
+/**
+ * Whether the two place filters and the timezone filter narrow together or widen.
+ *
+ * Drawn as one more field in the same row rather than as a switch above it, because it *is* one
+ * more thing about how the audience is chosen, and the alternative -- a control that silently
+ * changes what the three selects beside it mean -- is worth exactly one plain label.
+ *
+ * Hidden until at least two of the three are set: with one filter there is nothing to combine, so
+ * the control would be a question with only one answer.
+ */
+/**
+ * Where a zone came from, in words, for the tooltip on an attendee's local time.
+ *
+ * A map rather than a chain of ternaries so a new source cannot silently inherit another one's
+ * label -- which is what "home location" was doing to every source the chain did not name. The
+ * wording is the point: "from a sign-in 2 days ago" tells a reader this is inferred and lets them
+ * discount it, where "from their timezone" is a fact the member stated.
+ */
+const ZONE_SOURCE_LABELS: Record<AttendeeZoneSource, string> = {
+  trip: "from their logged trip",
+  login_city: "guessed from a recent sign-in",
+  timezone: "from their timezone",
+  current_city: "from the city they say they are in",
+  location: "from their home location",
+  slack_location: "guessed from their Slack profile",
+};
+
+function zoneSourceLabel(source: AttendeeZoneSource): string {
+  return ZONE_SOURCE_LABELS[source];
+}
+
+function renderPlaceModeSelect(state: AppViewState, filter: AudienceFilter) {
+  const set = [filter.currentCity, filter.homeCity, filter.timezone].filter((value) =>
+    value?.trim(),
+  );
+  if (set.length < 2) {
+    return nothing;
+  }
+  return html`
+    <label class="adminbot-form__field">
+      <span>Combine place &amp; timezone</span>
+      <select
+        data-testid="calendar-filter-place-mode"
+        @change=${(event: Event) => {
+          const value = (event.target as HTMLSelectElement).value;
+          setFilter(state, { placeMode: value === "or" ? "or" : "and" });
+        }}
+      >
+        <option value="and" ?selected=${(filter.placeMode ?? "and") === "and"}>
+          Match all of them
+        </option>
+        <option value="or" ?selected=${filter.placeMode === "or"}>Match any of them</option>
+      </select>
+    </label>
+  `;
+}
+
 function renderFilterSelect(params: {
   label: string;
   testId: string;
@@ -742,7 +800,6 @@ function renderFilterSelect(params: {
   `;
 }
 
-
 /**
  * What the event's start reads as on one attendee's clock, and whether that is a civil hour.
  *
@@ -755,11 +812,7 @@ function renderFilterSelect(params: {
  * has a local time computed from a location nobody has confirmed, so the row says so instead of
  * quietly presenting it as fact.
  */
-function renderAttendeeTime(
-  state: AppViewState,
-  memberId: string,
-  startsAt: string | undefined,
-) {
+function renderAttendeeTime(state: AppViewState, memberId: string, startsAt: string | undefined) {
   const member = (state.adminBotData.members ?? []).find((entry) => entry.id === memberId);
   // Resolved against the event's own date, so a member on a logged trip is read in the zone they
   // will actually be in that week rather than the one their profile names.
@@ -770,7 +823,9 @@ function renderAttendeeTime(
   if (!local && !drift) {
     return zone
       ? nothing
-      : html`<span class="adminbot-calendar__match-local muted" title="No location or timezone on their profile"
+      : html`<span
+          class="adminbot-calendar__match-local muted"
+          title="No location or timezone on their profile"
           >local time unknown</span
         >`;
   }
@@ -780,7 +835,7 @@ function renderAttendeeTime(
           class="adminbot-calendar__match-local ${verdict === "fine"
             ? ""
             : "adminbot-calendar__match-local--odd"}"
-          title=${`${zone?.zone ?? ""} — from their ${zone?.source === "trip" ? "logged trip" : zone?.source === "timezone" ? "timezone" : zone?.source === "current_city" ? "current city" : "home location"} (${zone?.from ?? ""})`}
+          title=${zone ? `${zone.zone} — ${zoneSourceLabel(zone.source)} (${zone.from})` : ""}
           >${local}${verdict && verdict !== "fine" ? ` (${verdict})` : ""}${zone?.source === "trip"
             ? ` · in ${zone.from}`
             : ""}</span
@@ -868,6 +923,7 @@ function renderInvitePanel(state: AppViewState) {
           anyLabel: "Any timezone",
           onChange: (timezone) => setFilter(state, { timezone }),
         })}
+        ${renderPlaceModeSelect(state, filter)}
         ${renderFilterSelect({
           label: "Membership",
           testId: "calendar-filter-privilege",

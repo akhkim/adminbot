@@ -274,6 +274,20 @@ export const adminBotScheduleMemberFields = [
 ] as const;
 
 /**
+ * Inferred location fine-grained enough that only the member and the admins should see it.
+ *
+ * `last_login_country` is deliberately not here: a country has been on every member's record,
+ * visible lab-wide, since login geolocation shipped. A *city* is a different disclosure -- it says
+ * which neighbourhood-sized place somebody was in last night, which nobody asked to publish -- so
+ * it is held to the same audience as the schedule fields above: yourself, and the admins who
+ * schedule around you.
+ */
+export const adminBotInferredLocationMemberFields = [
+  "last_login_city",
+  "last_login_timezone",
+] as const;
+
+/**
  * A member record with the confidential fields removed unless the viewer is entitled to them.
  *
  * Deletes the keys rather than blanking them: an empty string is indistinguishable from a member
@@ -298,9 +312,55 @@ export function redactConfidentialMemberFields<T extends { id?: string }>(
     for (const field of adminBotScheduleMemberFields) {
       delete copy[field];
     }
+    for (const field of adminBotInferredLocationMemberFields) {
+      delete copy[field];
+    }
   }
   return copy as T;
 }
+
+/**
+ * One accepted paper as it sits in a venue's search index.
+ *
+ * The embedding vector is stored beside the paper rather than recomputed per search: a venue is
+ * thousands of papers and embedding them is the expensive half of this feature, while a member's
+ * own interests are one short string embedded on demand. So the index is built rarely (an admin
+ * job) and read constantly.
+ */
+export type AdminBotVenuePaper = {
+  venue_id: string;
+  paper_id: string;
+  title: string;
+  abstract: string;
+  keywords: string[];
+  /** Track as the venue words it: "ICLR 2025 Oral", "ACL 2025 Findings". */
+  venue: string;
+  pdf_url?: string;
+  forum_url: string;
+  vector: number[];
+};
+
+/** What an indexed venue looks like from outside: how much is in it, and how stale it is. */
+export type AdminBotVenueIndexStatus = {
+  venue_id: string;
+  label: string;
+  paper_count: number;
+  indexed_at?: string;
+  /**
+   * The embedding model the vectors were built with. Recorded because a query embedded by a
+   * different model is not comparable to them -- it scores as noise rather than failing loudly,
+   * so the mismatch has to be visible somewhere.
+   */
+  embedding_model?: string;
+};
+
+/** A conference an admin has made searchable. */
+export type AdminBotVenueSource = {
+  /** OpenReview group id, e.g. "ICLR.cc/2025/Conference". */
+  id: string;
+  /** What a member sees in the picker, e.g. "ICLR 2025". */
+  label: string;
+};
 
 export const adminBotMemberStatuses = [
   "active",
@@ -738,6 +798,19 @@ export type AdminBotLabMemberInput = {
   last_login_country?: string;
   last_login_continent?: string;
   /**
+   * City-level location of the most recent sign-in, and the timezone the provider reports for it.
+   *
+   * Finer-grained than `last_login_country`, and carried for one reason: scheduling. A member who
+   * flew somewhere last night has a correct clock here days before they get round to editing their
+   * profile, and a country is not a timezone. Inferred like the two fields above and under the same
+   * rule -- never written to `location`, `current_city` or `timezone`, which are the member's own.
+   *
+   * Read only alongside `last_login_at`: a city is a statement about where someone was at that
+   * moment, and a month-old one says nothing about today. See ADMINBOT_LOGIN_CITY_FRESH_DAYS.
+   */
+  last_login_city?: string;
+  last_login_timezone?: string;
+  /**
    * When the member last answered the "you seem to have moved" question, either way.
    *
    * Stamped on a confirmation *and* on a dismissal, because both are answers: someone who signs in
@@ -810,6 +883,8 @@ export type AdminBotSettingsInput = {
    * three-quarters full of them is a tab nobody reads. Zero shows everything.
    */
   meeting_minimum_minutes?: number;
+  /** See AdminBotSettings.venue_sources. */
+  venue_sources?: AdminBotVenueSource[];
 };
 
 export type AdminBotSettings = {
@@ -821,6 +896,13 @@ export type AdminBotSettings = {
   applicant_last_reviewed_at?: string;
   /** See the note on AdminBotSettingsInput. Optional so a settings row written before meetings existed still parses. */
   meeting_minimum_minutes?: number;
+  /**
+   * Conferences members can search for relevant papers, newest first as an admin orders them.
+   *
+   * Admin-owned rather than free entry: each venue is a few thousand papers to fetch and embed,
+   * so an arbitrary id typed by a member would be a multi-minute job triggered by a typo.
+   */
+  venue_sources?: AdminBotVenueSource[];
   updated_at: string;
 };
 
@@ -1219,7 +1301,15 @@ export type AdminBotAuditEvent = {
     // Slack channel-naming enforcement. The sweep renames other people's channels, which is an
     // external effect with no undo, so who triggered a pass and what it did is recorded here.
     | "slack.channel_naming_checked"
-    | "slack.channel_naming_swept";
+    | "slack.channel_naming_swept"
+    // The CV digest job. It rewrites a Google Doc without going through propose/approve -- the
+    // job is admin-only on both the tab and the route -- so the audit row is the only record that
+    // the document changed and who changed it.
+    | "cv.digest_published"
+    | "cv.digest_failed"
+    // Rebuilding the conference paper indexes. It spends a few minutes of an external API's quota
+    // and replaces what every member then searches, so who triggered one is worth keeping.
+    | "venue_index.rebuilt";
   timestamp: string;
   actor?: string;
   details?: Record<string, unknown>;
