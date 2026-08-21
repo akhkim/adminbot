@@ -631,6 +631,18 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                 slots: props.slots[paper.id]?.slots ?? [],
                 loading: props.slotsBusyId === paper.id,
                 onSaveSlot: (slot, input) => props.onSaveSlot(paper.id, slot, input),
+                showAllSlots: showAllSlots.has(paper.id),
+                onToggleShowAll: () => {
+                  if (showAllSlots.has(paper.id)) {
+                    showAllSlots.delete(paper.id);
+                  } else {
+                    showAllSlots.add(paper.id);
+                  }
+                  props.onRerender?.();
+                },
+                // The LinkedIn gate opens the same dialog the card's button does, because that
+                // is the only thing that can actually satisfy it.
+                onOpenDraft: () => openLinkedInDraftDialog(paper),
               })}
               ${renderCycle(paper, props)} ${renderStepControls(paper, props)}
             `
@@ -1034,6 +1046,10 @@ function renderBlockers(state: AppViewState) {
 // papers and nobody needs it restored on reload. Kept module-level so a re-render mid-edit does
 // not throw away half-typed cells.
 let gridState: PaperGridState | null = null;
+
+// Which cards have been expanded to their full checklist. Per session and per card: it is a
+// viewing preference, not a fact about the paper.
+const showAllSlots = new Set<string>();
 
 function exitGrid(rerender: () => void): void {
   gridState = null;

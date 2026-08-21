@@ -10,7 +10,12 @@ type Saved = {
   input: { url?: string; value_text?: string; done?: boolean };
 };
 
-function draw(slots: PaperSlotRow[], loading = false) {
+/**
+ * `showAll` defaults to true here because most of these cases assert how one specific field
+ * renders, and the card's default view deliberately hides fields that are still waiting on
+ * upstream evidence. The filtering itself is covered by its own describe block below.
+ */
+function draw(slots: PaperSlotRow[], loading = false, showAll = true) {
   const saved: Saved[] = [];
   const container = document.createElement("div");
   document.body.append(container);
@@ -19,6 +24,8 @@ function draw(slots: PaperSlotRow[], loading = false) {
       paperId: "p1",
       slots,
       loading,
+      showAllSlots: showAll,
+      onToggleShowAll: () => {},
       onSaveSlot: (slot, input) => saved.push({ slot, input }),
     }),
     container,
@@ -31,7 +38,7 @@ function row(fields: Partial<PaperSlotRow> & { slot: string }): PaperSlotRow {
 }
 
 describe("renderPaperSlots", () => {
-  it("shows every slot, filled or not -- the card is the checklist", () => {
+  it("shows every slot when the card is expanded -- the checklist is still all there", () => {
     const { container } = draw([]);
     expect(container.querySelectorAll(".paper-slot")).toHaveLength(25);
   });
@@ -149,5 +156,126 @@ describe("renderPaperSlots", () => {
     const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
     expect(overleaf?.textContent).toContain("overleaf.com");
     expect(overleaf?.textContent).toContain("/project/");
+  });
+});
+
+describe("renderPaperSlots -- only what is ready", () => {
+  it("fills the grid without showing the whole checklist", () => {
+    // Two competing failures: 25 boxes is a wall, and 2 boxes leaves the grid looking broken
+    // and says nothing about what comes next. The working set sits between them.
+    const { container } = draw([], false, false);
+    const shown = container.querySelectorAll(".paper-slot");
+    expect(shown.length).toBeGreaterThanOrEqual(5);
+    expect(shown.length).toBeLessThanOrEqual(9);
+  });
+
+  it("includes what opens next, not only what is unblocked today", () => {
+    // overleaf_edit waits on project_folder alone, so it is the next thing to open and is
+    // worth showing now -- it is what makes the sequence legible.
+    const { container } = draw([], false, false);
+    expect(container.querySelector('[data-testid="paper-slot-p1-overleaf_edit"]')).not.toBeNull();
+  });
+
+  it("hides work that is more than one step away", () => {
+    const { container } = draw([], false, false);
+    // arxiv sits behind several unfinished slots, so it is not part of the working set yet.
+    expect(container.querySelector('[data-testid="paper-slot-p1-arxiv"]')).toBeNull();
+    expect(container.querySelector('[data-testid="paper-slot-p1-project_folder"]')).not.toBeNull();
+  });
+
+  it("reveals the next field once its upstream is provided", () => {
+    const { container } = draw(
+      [row({ slot: "project_folder", status: "provided", url: "https://docs.google.com/document/d/x" })],
+      false,
+      false,
+    );
+    expect(container.querySelector('[data-testid="paper-slot-p1-overleaf_edit"]')).not.toBeNull();
+  });
+
+  it("keeps a wrong answer on screen so it can be corrected", () => {
+    // An invalid value is shown even when its branch is otherwise out of reach: hiding it would
+    // leave a paper permanently "needs fixing" with nowhere to fix it.
+    const { container } = draw(
+      [row({ slot: "arxiv", status: "invalid", url: "nope", invalid_reason: "that is not a URL" })],
+      false,
+      false,
+    );
+    expect(container.querySelector('[data-testid="paper-slot-p1-arxiv"]')).not.toBeNull();
+  });
+
+  it("drops a finished field out of the working set", () => {
+    const { container } = draw(
+      [row({ slot: "project_folder", status: "provided", url: "https://docs.google.com/document/d/x" })],
+      false,
+      false,
+    );
+    expect(container.querySelector('[data-testid="paper-slot-p1-project_folder"]')).toBeNull();
+  });
+
+  it("says how many are held back, so nothing looks lost", () => {
+    const { container } = draw([], false, false);
+    expect(container.querySelector(".paper-slots__filter-text")?.textContent).toContain("further off");
+  });
+});
+
+describe("social draft gates", () => {
+  it("opens the drafting tool instead of offering a checkbox nobody can tick", () => {
+    // The gate reads its truth from paper_social_drafts, so a checkbox here could only ever
+    // disagree with it. What the author wants when they click it is the drafting tool.
+    const opened: string[] = [];
+    const container = document.createElement("div");
+    document.body.append(container);
+    render(
+      renderPaperSlots({
+        paperId: "p1",
+        slots: [],
+        loading: false,
+        showAllSlots: true,
+        onSaveSlot: () => {},
+        onOpenDraft: (platform) => opened.push(platform),
+      }),
+      container,
+    );
+    const gate = container.querySelector<HTMLButtonElement>(
+      '[data-testid="paper-slot-p1-linkedin_draft"]',
+    );
+    expect(gate?.tagName).toBe("BUTTON");
+    gate?.click();
+    expect(opened).toEqual(["linkedin"]);
+  });
+});
+
+describe("field guidance", () => {
+  it("shows a worked example rather than the shape of a URL", () => {
+    // "https://…" tells someone what a URL looks like, which they knew, and nothing about
+    // which URL. The arXiv slot is the sharpest case: /abs/ and /pdf/ are both valid URLs.
+    const { container } = draw([]);
+    const arxiv = container.querySelector<HTMLInputElement>('[data-testid="paper-slot-p1-arxiv"]');
+    expect(arxiv?.placeholder).toBe("https://arxiv.org/abs/2306.05836");
+    expect(arxiv?.placeholder).not.toBe("https://…");
+  });
+
+  it("gives the submission id a real specimen, not 'e.g. 4821'", () => {
+    const { container } = draw([]);
+    const id = container.querySelector<HTMLInputElement>(
+      '[data-testid="paper-slot-p1-submission_id"]',
+    );
+    expect(id?.placeholder).toBe("Ax7Kq2Lm9P");
+  });
+
+  it("puts a help control on every field, including the checkbox ones", () => {
+    const { container } = draw([]);
+    const helps = container.querySelectorAll(".paper-slot__help");
+    const fields = container.querySelectorAll(".paper-slot");
+    expect(helps.length).toBe(fields.length);
+  });
+
+  it("explains in the popover what to put, and repeats the example", () => {
+    const { container } = draw([]);
+    const help = container.querySelector(
+      '[data-testid="paper-slot-help-p1-overleaf_edit"]',
+    )?.parentElement;
+    expect(help?.textContent).toContain("address bar");
+    expect(help?.textContent).toContain("overleaf.com/project/");
   });
 });

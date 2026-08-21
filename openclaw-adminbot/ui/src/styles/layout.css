@@ -7536,3 +7536,89 @@
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+
+/* The slot filter bar: how much of the checklist is in view, and the way back to all of it. */
+.paper-slots__filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.paper-slots__filter-text {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+/* A draft gate opens the drafting tool rather than pretending to be a tickable box. Styled as
+   a link-ish control so it does not read as one more field to fill in. */
+.paper-slot__draft-open {
+  padding: var(--space-1) 0;
+  border: 0;
+  background: none;
+  color: var(--accent, #534ab7);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.paper-slot__draft-open:hover {
+  opacity: 0.8;
+}
+
+/* Per-field help. A <details> rather than a title tooltip: reachable on touch and by keyboard,
+   and it stays open while the reader types the value it is describing. */
+.paper-slot__help {
+  display: inline;
+}
+
+.paper-slot__help > summary {
+  display: inline-grid;
+  place-items: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-left: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-muted);
+  font-size: 0.75em;
+  line-height: 1;
+  cursor: help;
+  list-style: none;
+  vertical-align: middle;
+  user-select: none;
+}
+
+.paper-slot__help > summary::-webkit-details-marker {
+  display: none;
+}
+
+.paper-slot__help > summary:hover,
+.paper-slot__help[open] > summary {
+  border-color: var(--accent, #534ab7);
+  color: var(--accent, #534ab7);
+}
+
+.paper-slot__help > p {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2);
+  border-left: 2px solid var(--accent, #534ab7);
+  background: color-mix(in srgb, var(--text) 5%, var(--bg));
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.85em;
+  font-weight: 400;
+  line-height: 1.5;
+}
+
+.paper-slot__help-example {
+  color: var(--text-muted);
+}
+
+.paper-slot__help-example code {
+  overflow-wrap: anywhere;
+}

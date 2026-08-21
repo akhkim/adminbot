@@ -184,12 +184,31 @@
   height: 14px;
 }
 
-/* Two columns where there is room, one where there is not. Auto-fit rather than a fixed count so
-   the form reflows inside a card that is itself inside a sidebar layout. */
+/* A fixed three-up grid, not auto-fit.
+   `auto-fit` collapses empty tracks, so a branch with one field stretched that field across the
+   whole row and a branch with two split it in half -- every group came out a different shape and
+   the section read as broken rather than as a form. A fixed track count keeps a lone field the
+   same size as one sitting in a full row. */
 .paper-slots__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  /* No `grid-auto-rows: 1fr` here. It sizes every row in the section alike, so a row holding one
+     checkbox was stretched to match the tallest row of link fields and came out enormous. Cards
+     stretch within their own row (the grid default) and rows size to their own content. */
   gap: var(--space-4);
+}
+
+@media (width <= 1100px) {
+  .paper-slots__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (width <= 700px) {
+  .paper-slots__grid {
+    grid-template-columns: minmax(0, 1fr);
+    grid-auto-rows: auto;
+  }
 }
 
 .paper-slot {
@@ -200,6 +219,16 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--bg);
+  /* Fills its own row so a checkbox card matches the link card beside it, with a floor so a
+     lone short field still reads as the same object rather than a strip. */
+  height: 100%;
+  min-height: 9.5rem;
+}
+
+/* The meta line sits at the foot of the card, which is what keeps the inputs on one line across
+   a row even when the notes under them differ in length. */
+.paper-slot__meta {
+  margin-top: auto;
 }
 
 /* Still shown, not hidden: the checklist is the point, and a card that grew as work progressed
@@ -220,9 +249,20 @@
 }
 
 .paper-slot__label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
   font-size: var(--control-ui-text-sm);
   font-weight: 600;
   color: var(--text-strong);
+}
+
+/* The badge is a flex item now, so it sits beside the label instead of dropping to its own line
+   under a long one and pushing the field down. */
+.paper-slot__label .paper-slot__help > summary {
+  margin-left: 0;
+  flex: none;
 }
 
 .paper-slot__optional {
