@@ -40,16 +40,13 @@ export function createPasswordResetEmailRunner(
   const env = options.env ?? process.env;
   const gog = resolveGogExecutable(options.env);
   const controlUiUrl = options.controlUiUrl?.trim() || resolveAdminBotControlUiUrl(env);
-  // Pins the Control UI back to the AdminBot that minted the token when this deployment publishes
-  // a public service origin; unset, the Control UI keeps whatever its own build declared.
-  const adminBotUrl = env.ADMINBOT_PUBLIC_URL?.trim();
   return async ({ email, name, token, expiresInMinutes }) => {
     const to = email.trim();
     if (!to) {
       throw new Error("password reset email requires a non-empty email");
     }
     const account = env.GOG_ACCOUNT?.trim();
-    const resetUrl = buildPasswordResetUrl({ token, controlUiUrl, adminBotUrl });
+    const resetUrl = buildPasswordResetUrl({ token, controlUiUrl });
     const body = buildPasswordResetEmailBody({ name, resetUrl, expiresInMinutes });
     const args = [
       "--json",

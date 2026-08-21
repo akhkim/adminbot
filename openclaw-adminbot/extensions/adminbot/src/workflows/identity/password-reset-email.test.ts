@@ -45,15 +45,18 @@ describe("createPasswordResetEmailRunner", () => {
     );
     expect(url.origin).toBe("https://ui.example.com");
     expect(url.searchParams.get("passwordReset")).toBe("tok-1");
-    // ...and tells that Control UI which AdminBot minted the token.
-    expect(url.searchParams.get("adminBotUrl")).toBe("https://admin.example.com");
   });
 
-  it("omits adminBotUrl when the deployment publishes no public service origin", async () => {
-    const url = resetUrlFrom(
-      await captureArgs({ ADMINBOT_CONTROL_UI_URL: "https://ui.example.com" }),
-    );
-    expect(url.searchParams.has("adminBotUrl")).toBe(false);
+  // Even with a public service origin configured, it must not travel in the link: admin.safe.eu is
+  // the API, and a member should never be sent to it.
+  it("never names the service origin, however the deployment is configured", async () => {
+    for (const env of [
+      { ADMINBOT_CONTROL_UI_URL: "https://ui.example.com" },
+      { ADMINBOT_CONTROL_UI_URL: "https://ui.example.com", ADMINBOT_PUBLIC_URL: "https://admin.example.com" },
+    ]) {
+      const url = resetUrlFrom(await captureArgs(env));
+      expect([...url.searchParams.keys()]).toEqual(["passwordReset"]);
+    }
   });
 
   it("refuses an empty recipient rather than mailing nobody", async () => {

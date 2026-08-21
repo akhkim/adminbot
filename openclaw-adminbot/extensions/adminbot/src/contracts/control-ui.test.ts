@@ -44,16 +44,15 @@ describe("buildPasswordResetUrl", () => {
     ).toBe("https://ui.example.com/?passwordReset=abc-123");
   });
 
-  it("pins the AdminBot the token was minted against when one is published", () => {
+  // The service host used to travel in the link as `adminBotUrl`. It no longer does: the Control
+  // UI already knows which AdminBot it talks to, and the service origin has no business being in
+  // a member's inbox.
+  it("names the token and nothing else", () => {
     const url = new URL(
-      buildPasswordResetUrl({
-        token: "abc-123",
-        controlUiUrl: "https://ui.example.com",
-        adminBotUrl: "https://admin.example.com/",
-      }),
+      buildPasswordResetUrl({ token: "abc-123", controlUiUrl: "https://ui.example.com" }),
     );
+    expect([...url.searchParams.keys()]).toEqual(["passwordReset"]);
     expect(url.searchParams.get("passwordReset")).toBe("abc-123");
-    expect(url.searchParams.get("adminBotUrl")).toBe("https://admin.example.com");
   });
 
   it("escapes a token that would otherwise break the query string", () => {

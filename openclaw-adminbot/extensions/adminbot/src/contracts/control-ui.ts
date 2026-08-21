@@ -30,20 +30,20 @@ export function resolveAdminBotControlUiUrl(env: NodeJS.ProcessEnv = process.env
 }
 
 /**
- * Builds the Control UI URL a reset token is redeemed at. `adminBotUrl` pins the service the
- * Control UI talks back to: the token is only valid against the AdminBot that issued it, and the
- * Control UI is a static deployment that would otherwise fall back to whatever its build declared.
+ * Builds the Control UI URL a reset token is redeemed at.
+ *
+ * The token only — the service origin is deliberately not named here. An earlier version pinned
+ * the Control UI back to the issuing AdminBot with an `adminBotUrl` parameter, which meant the
+ * service host appeared in every member's inbox. The Control UI already knows which service it
+ * talks to (its build declares one, and a member can override it in settings), so the parameter
+ * bought nothing for the single-service deployment this lab runs.
+ *
+ * The trade-off, stated because it is real: a deployment running two AdminBot services would need
+ * that pin back, or a token minted by one could land on a Control UI pointed at the other and be
+ * rejected. One service, one Control UI — see DEFAULT_ADMINBOT_CONTROL_UI_URL above.
  */
-export function buildPasswordResetUrl(params: {
-  token: string;
-  controlUiUrl?: string;
-  adminBotUrl?: string;
-}): string {
+export function buildPasswordResetUrl(params: { token: string; controlUiUrl?: string }): string {
   const base = stripTrailingSlashes(params.controlUiUrl?.trim() || DEFAULT_ADMINBOT_CONTROL_UI_URL);
   const query = new URLSearchParams({ passwordReset: params.token });
-  const adminBotUrl = params.adminBotUrl?.trim();
-  if (adminBotUrl) {
-    query.set("adminBotUrl", stripTrailingSlashes(adminBotUrl));
-  }
   return `${base}/?${query.toString()}`;
 }
