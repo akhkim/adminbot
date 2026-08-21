@@ -1163,63 +1163,85 @@ export async function fetchMemberResource(
   return { ok: true, value: result.body };
 }
 
-// Runs the admin CV scan (POST /cv/scan) over the member's own session. Privileged server-side,
-// so a non-admin session gets `forbidden` back rather than an empty result -- the panel is
-// already admin-gated, and this keeps the two from disagreeing if that ever drifts.
-export async function scanMemberCvs(
+/** Lists the conferences an admin has made searchable, with how fresh each index is. */
+export async function fetchVenueSources(
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<unknown>> {
-  const result = await authedJson(baseUrl, "/cv/scan", "POST", sessionToken, {});
+  const result = await authedJson(baseUrl, "/venue-papers/sources", "GET", sessionToken);
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
-    if (result.response.status === 403) {
-      return { ok: false, kind: "forbidden" };
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/**
+ * Ranks one conference's accepted papers against what the member says they work on.
+ *
+ * Carries the service's own sentence up for every failure, not just 400: "that conference has not
+ * been indexed yet" (409) and "the embedding model is not reachable" (502) are both things the
+ * reader can act on, and the generic copy would throw them away.
+ */
+export async function searchVenuePapers(
+  params: { venueId: string; interests: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/venue-papers/search", "POST", sessionToken, {
+    venue_id: params.venueId,
+    interests: params.interests,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
   return { ok: true, value: result.body };
 }
 
-/** Reads recorded CV changes since a date (GET /cv/digest). */
-export async function fetchCvDigest(
-  since: string,
+/** Rebuilds every configured conference index (POST /venue-papers/index). Admin only. */
+export async function rebuildVenueIndexes(
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<unknown>> {
-  const result = await authedJson(
-    baseUrl,
-    `/cv/digest?since=${encodeURIComponent(since)}`,
-    "GET",
-    sessionToken,
-  );
+  const result = await authedJson(baseUrl, "/venue-papers/index", "POST", sessionToken, {});
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
   if (!result.response.ok) {
     if (result.response.status === 403) {
       return { ok: false, kind: "forbidden" };
+    }
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
     }
     return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
   return { ok: true, value: result.body };
 }
 
-/** Drafts one member's newsletter introduction (POST /cv/blurb/:id). */
-export async function draftMemberCvBlurb(
-  memberId: string,
+/**
+ * Runs the CV digest job (POST /cv/publish-digest): scan every linked CV, then rewrite the CV
+ * Updates doc from the whole change ledger.
+ *
+ * Privileged server-side like the scan it wraps. 503 comes back when the service has no document
+ * configured, which is a deployment gap rather than a permission problem, so it is mapped through
+ * the same error path and shown with the service's own message.
+ */
+export async function publishCvDigest(
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<unknown>> {
-  const result = await authedJson(
-    baseUrl,
-    `/cv/blurb/${encodeURIComponent(memberId)}`,
-    "POST",
-    sessionToken,
-    {},
-  );
+  const result = await authedJson(baseUrl, "/cv/publish-digest", "POST", sessionToken, {});
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
   }
@@ -1227,9 +1249,14 @@ export async function draftMemberCvBlurb(
     if (result.response.status === 403) {
       return { ok: false, kind: "forbidden" };
     }
-    // 409 means the member has simply never been scanned; the message says so and is worth
-    // surfacing verbatim rather than flattening into a generic failure.
-    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: true }) };
+    // 502 (Google refused the write) and 503 (no document configured) both carry a sentence the
+    // operator needs -- a missing env var, a locked gog keyring -- and mapErrorResponse only
+    // preserves messages on 400. Lifted here so the button can say what actually went wrong.
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
   }
   return { ok: true, value: result.body };
 }

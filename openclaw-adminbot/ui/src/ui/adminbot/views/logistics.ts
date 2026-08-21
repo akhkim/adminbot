@@ -30,6 +30,7 @@ import {
   LETTER_STATUS_LIST_ID,
   LETTER_STATUS_SUGGESTIONS,
   SCHOOL_FIELDS,
+  SIGNATURE_FORM_URL,
   TEMPLATE_FOLDER_URL,
   TIMEZONE_LIST_ID,
   timezoneSuggestions,
@@ -984,14 +985,45 @@ function renderDriveFolderSection(props: LettersProps) {
 
 // One container for the whole request: the documents, the optional context that travels with them,
 // and the two actions that close it out.
+/**
+ * Signature requests are filed on a Google Form now, so this is a signpost rather than a form.
+ *
+ * The upload path is kept for one case only: a request that was already submitted and is being
+ * corrected. Those were filed with documents attached, and dropping the editor would strand the
+ * member with a sent request they can no longer fix. Nothing new is ever created through it --
+ * the tab only reaches that branch from the "edit" control on an existing request.
+ */
 function renderSignatureRequest(props: SignatureProps) {
+  if (props.editing) {
+    return html`
+      <div
+        class="card adminbot-card adminbot-card--wide logistics-upload logistics-request"
+        data-testid="logistics-request"
+      >
+        ${renderSignatureSection(props)} ${renderSupportingSection(props)}
+        ${renderRequestActions(props)}
+      </div>
+    `;
+  }
   return html`
     <div
-      class="card adminbot-card adminbot-card--wide logistics-upload logistics-request"
-      data-testid="logistics-request"
+      class="card adminbot-card adminbot-card--wide logistics-request"
+      data-testid="logistics-signature-form"
     >
-      ${renderSignatureSection(props)} ${renderSupportingSection(props)}
-      ${renderRequestActions(props)}
+      <section class="logistics-request__section">
+        <h3 class="card-title">${t("logistics.signature.title")}</h3>
+        <p class="card-sub">${t("logistics.signature.sub")}</p>
+        <a
+          class="btn primary logistics-signature__link"
+          href=${SIGNATURE_FORM_URL}
+          target="_blank"
+          rel="noreferrer noopener"
+          data-testid="logistics-signature-form-link"
+        >
+          ${t("logistics.signature.openForm")}
+          <span aria-hidden="true">${icons.externalLink}</span>
+        </a>
+      </section>
     </div>
   `;
 }

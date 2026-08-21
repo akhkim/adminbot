@@ -30,6 +30,75 @@ function paper(overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecor
   } as AdminBotPaperRecord;
 }
 
+describe("selectAudience: combining place with timezone", () => {
+  const people = [
+    member({ id: "berlin", name: "Berliner", location: "Berlin", timezone: "Europe/Berlin" }),
+    member({ id: "placeless", name: "Zoned only", timezone: "Europe/Berlin" }),
+    member({ id: "zoneless", name: "Placed only", location: "Berlin" }),
+    member({ id: "neither", name: "Elsewhere", location: "Toronto", timezone: "America/Toronto" }),
+  ];
+
+  it("narrows by default, matching only members who satisfy both", () => {
+    const result = selectAudience(people, [], {
+      homeCity: "Berlin",
+      timezone: "Europe/Berlin",
+    });
+    expect(result.matches.map((match) => match.member_id)).toEqual(["berlin"]);
+  });
+
+  // The point of the mode: a roster that knows a city for one person and only a zone for another
+  // should not drop both when an operator wants "everyone on Berlin hours".
+  it("widens on or, taking members who satisfy either", () => {
+    const result = selectAudience(people, [], {
+      homeCity: "Berlin",
+      timezone: "Europe/Berlin",
+      placeMode: "or",
+    });
+    expect(result.matches.map((match) => match.member_id).toSorted()).toEqual([
+      "berlin",
+      "placeless",
+      "zoneless",
+    ]);
+  });
+
+  // Listing a filter somebody failed as their reason for being included would be a lie.
+  it("credits only the filters a member actually met", () => {
+    const result = selectAudience(people, [], {
+      homeCity: "Berlin",
+      timezone: "Europe/Berlin",
+      placeMode: "or",
+    });
+    const placeless = result.matches.find((match) => match.member_id === "placeless");
+    expect(placeless?.reasons).toEqual(["Europe/Berlin"]);
+  });
+
+  // Who someone *is* stays ANDed on top, or an OR would re-invite people just excluded by level.
+  it("keeps membership filters ANDed even in or mode", () => {
+    const result = selectAudience(
+      [
+        member({ id: "admin", location: "Berlin", privilege_level: "admin" }),
+        member({ id: "plain", timezone: "Europe/Berlin", privilege_level: "member" }),
+      ],
+      [],
+      {
+        homeCity: "Berlin",
+        timezone: "Europe/Berlin",
+        placeMode: "or",
+        privilegeLevels: ["admin"],
+      },
+    );
+    expect(result.matches.map((match) => match.member_id)).toEqual(["admin"]);
+  });
+
+  it("behaves the same in either mode when only one place filter is set", () => {
+    const and = selectAudience(people, [], { timezone: "Europe/Berlin" });
+    const or = selectAudience(people, [], { timezone: "Europe/Berlin", placeMode: "or" });
+    expect(or.matches.map((match) => match.member_id)).toEqual(
+      and.matches.map((match) => match.member_id),
+    );
+  });
+});
+
 describe("selectAudience", () => {
   // "Invite the whole lab" is a decision, not the thing that happens when nothing is picked.
   it("matches nobody when no filter is set", () => {

@@ -33,6 +33,20 @@ export type AudienceFilter = {
   homeCity?: string;
   /** IANA zone, matched exactly — these are picked from a list, never typed. */
   timezone?: string;
+  /**
+   * How the two place filters and the timezone filter combine with each other.
+   *
+   * "and" (the default, and how every other filter on this panel behaves) narrows: somebody has to
+   * be in the city *and* on that clock. "or" widens, and exists because the two describe the same
+   * intent from different directions — "everyone I'd be scheduling around European hours" is some
+   * people the roster places in Berlin and some it only knows a zone for, and requiring both
+   * silently drops whoever is missing one of the two fields.
+   *
+   * Only these three combine this way. Membership and status stay ANDed on top either way: they
+   * are about who someone *is*, not where, and an OR across those would quietly invite people the
+   * operator had just excluded.
+   */
+  placeMode?: "and" | "or";
   privilegeLevels?: string[];
   statuses?: string[];
 };
@@ -74,6 +88,48 @@ function fold(value: string | undefined): string {
  * mail has gone out. The trade-off is deliberate: a stored "Greater Toronto Area" does not answer
  * a "Toronto" filter, and should be typed as the city it is.
  */
+/**
+ * Whether a member satisfies the place filters, and the reasons they did.
+ *
+ * Returns undefined for "not in the audience", which is distinct from an empty reason list: a
+ * member passes trivially when no place filter is set at all, and that has to read as a pass
+ * rather than as a match with nothing to show for it.
+ */
+function matchPlace(
+  member: AdminBotLabMember,
+  wanted: { currentCity?: string; homeCity?: string; timezone?: string },
+  mode: "and" | "or",
+): string[] | undefined {
+  const checks: Array<{ set: boolean; hit: boolean; reason: string }> = [
+    {
+      set: Boolean(wanted.currentCity),
+      hit: cityMatches(member.current_city, wanted.currentCity ?? ""),
+      reason: `currently in ${member.current_city}`,
+    },
+    {
+      set: Boolean(wanted.homeCity),
+      hit: cityMatches(member.location, wanted.homeCity ?? ""),
+      reason: `based in ${member.location}`,
+    },
+    {
+      set: Boolean(wanted.timezone),
+      hit: (member.timezone ?? "") === wanted.timezone,
+      reason: wanted.timezone ?? "",
+    },
+  ];
+  const active = checks.filter((check) => check.set);
+  if (!active.length) {
+    return [];
+  }
+  const hits = active.filter((check) => check.hit);
+  // In "or" one hit is enough, and only the filters actually met are given as reasons -- listing
+  // a filter someone failed as their reason for being included is worse than saying nothing.
+  if (mode === "or") {
+    return hits.length ? hits.map((check) => check.reason) : undefined;
+  }
+  return hits.length === active.length ? hits.map((check) => check.reason) : undefined;
+}
+
 function cityMatches(stored: string | undefined, wanted: string): boolean {
   const haystack = fold(stored);
   const needle = fold(wanted);
@@ -154,6 +210,7 @@ export function selectAudience(
   const currentCity = filter.currentCity?.trim();
   const homeCity = filter.homeCity?.trim();
   const timezone = filter.timezone?.trim();
+  const placeMode = filter.placeMode ?? "and";
   const privileges = filter.privilegeLevels?.filter((level) => level.trim()) ?? [];
   const statuses = filter.statuses?.filter((status) => status.trim()) ?? [];
   const active =
@@ -179,24 +236,13 @@ export function selectAudience(
       }
       reasons.push(`writing for ${conference}`);
     }
-    if (currentCity) {
-      if (!cityMatches(member.current_city, currentCity)) {
-        continue;
-      }
-      reasons.push(`currently in ${member.current_city}`);
+    // Evaluated together rather than as three independent gates, because in "or" mode a member
+    // who fails one of them can still be in the audience on the strength of another.
+    const place = matchPlace(member, { currentCity, homeCity, timezone }, placeMode);
+    if (!place) {
+      continue;
     }
-    if (homeCity) {
-      if (!cityMatches(member.location, homeCity)) {
-        continue;
-      }
-      reasons.push(`based in ${member.location}`);
-    }
-    if (timezone) {
-      if ((member.timezone ?? "") !== timezone) {
-        continue;
-      }
-      reasons.push(timezone);
-    }
+    reasons.push(...place);
     if (privileges.length) {
       if (!privileges.includes(member.privilege_level ?? "")) {
         continue;

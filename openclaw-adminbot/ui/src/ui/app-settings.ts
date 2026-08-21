@@ -1,7 +1,11 @@
 // Control UI module implements app settings behavior.
 import { roleScopesAllow } from "../../../src/shared/operator-scope-compat.js";
 import { t } from "../i18n/index.ts";
-import { loadAdminBot, type AdminBotHost } from "./adminbot/controllers/admin.ts";
+import {
+  loadAdminBot,
+  loadAdminBotVenueSources,
+  type AdminBotHost,
+} from "./adminbot/controllers/admin.ts";
 import {
   loadAdminBotRegistrations,
   type AdminBotRegistrationsHost,
@@ -456,11 +460,16 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
       case "adminbotMembers":
       case "adminbotPapers":
       case "adminbotAnnouncements":
-      case "adminbotCvUpdates":
       // From `luke/time-allocation`: the tab reads the roster, so refreshing on it has to reload
       // the roster. Without a case here the refresh control was inert on that surface.
       case "adminbotTimeAvailability":
         await loadAdminBot(app);
+        break;
+      // Needs the roster too: the interests box is prefilled from the viewer's own topics, which
+      // only exist once the member list has loaded.
+      case "adminbotConferencePapers":
+        await loadAdminBot(app);
+        await loadAdminBotVenueSources(app);
         break;
       // The audience filters read the roster and the papers; the event list is a separate read.
       case "adminbotCalendar": {

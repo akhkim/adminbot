@@ -1623,6 +1623,46 @@ describe("AdminBotService", () => {
     });
   });
 
+  // A country has been lab-visible since login geolocation shipped; a city is a much finer
+  // disclosure and is held to the same audience as the schedule fields.
+  describe("inferred login location", () => {
+    const ada = {
+      id: "ada",
+      name: "Ada",
+      last_login_country: "Switzerland",
+      last_login_city: "Zurich",
+      last_login_timezone: "Europe/Zurich",
+    };
+
+    it("keeps the city for the member themselves and for an admin", () => {
+      expect(
+        redactConfidentialMemberFields(ada, {
+          memberId: "ada",
+          isAdmin: false,
+          isMemberSession: true,
+        }),
+      ).toEqual(ada);
+      expect(
+        redactConfidentialMemberFields(ada, {
+          memberId: "bob",
+          isAdmin: true,
+          isMemberSession: true,
+        }),
+      ).toEqual(ada);
+    });
+
+    it("hides the city from another member, but keeps the country they always saw", () => {
+      const seen = redactConfidentialMemberFields(ada, {
+        memberId: "bob",
+        isAdmin: false,
+        isMemberSession: true,
+      });
+      expect("last_login_city" in seen).toBe(false);
+      expect("last_login_timezone" in seen).toBe(false);
+      expect(seen.last_login_country).toBe("Switzerland");
+    });
+  });
+
   describe("slack activity", () => {
     it("classifies from the stored count against the shared threshold", () => {
       const base = { slack_user_id: "U1", slack_activity_checked_at: "2026-08-11T00:00:00.000Z" };

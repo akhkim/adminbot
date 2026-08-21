@@ -95,6 +95,9 @@ describe("visibleTabsForRole", () => {
       "adminbotLogistics",
       "adminbotReimbursements",
       "adminbotDeadlines",
+      // Reads a public conference programme against the viewer's own interests, and writes
+      // nothing.
+      "adminbotConferencePapers",
       "adminbotSocialBot",
       "labSharing",
       // Recordings of the lab's own meetings sit with Lab Sharing, above the roster.

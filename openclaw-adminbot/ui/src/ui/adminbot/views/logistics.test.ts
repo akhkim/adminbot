@@ -18,6 +18,8 @@ import {
 } from "./logistics.ts";
 
 type DrawOptions = {
+  /** False draws the Google Form signpost instead of the correction form. */
+  signatureEditing?: boolean;
   role?: AccessRole;
   mode?: LogisticsMode;
   requests?: LogisticsRequest[];
@@ -200,6 +202,10 @@ function draw(options: DrawOptions = {}): Drawn {
         ...submitProps(options, () => {
           submits += 1;
         }),
+        // Defaults to the correction path, because that is the only route that still renders the
+        // upload form: a new signature request is filed on the Google Form now, and the tab shows
+        // a link instead. Tests covering that link pass `signatureEditing: false`.
+        editing: options.signatureEditing ?? true,
       },
       meeting: {
         rows: options.meetings ?? [],
@@ -486,14 +492,58 @@ describe("supporting content", () => {
   });
 });
 
+describe("the signature Google Form signpost", () => {
+  it("offers the form link instead of an upload zone for a new request", () => {
+    const { container } = draw({ signatureEditing: false });
+
+    const link = container.querySelector<HTMLAnchorElement>(
+      "[data-testid='logistics-signature-form-link']",
+    );
+    expect(link?.getAttribute("href")).toBe(
+      "https://docs.google.com/forms/d/1yNvSz65dU8hozDXhASuyFk8kvQuhj0hD2X9znHMzz9U",
+    );
+    expect(container.querySelector("[data-testid='logistics-signature-drop']")).toBeNull();
+    expect(container.querySelector("[data-testid='logistics-supporting']")).toBeNull();
+  });
+
+  // It leaves the app, so it has to open away from the console and not hand the form the page it
+  // was opened from.
+  it("opens the form in a new tab without leaking the referrer", () => {
+    const { container } = draw({ signatureEditing: false });
+    const link = container.querySelector<HTMLAnchorElement>(
+      "[data-testid='logistics-signature-form-link']",
+    );
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(link?.getAttribute("rel")).toContain("noopener");
+  });
+
+  // Nothing is filed from this tab any more, so none of the request controls belong on the card.
+  it("carries no Save or Submit, since the form is what files the request", () => {
+    const { container } = draw({ signatureEditing: false });
+    expect(container.querySelector("[data-testid='logistics-submit']")).toBeNull();
+    expect(container.querySelector(".logistics-request__actions")).toBeNull();
+  });
+
+  // The one case that still needs the old editor: a request filed before the switch, being fixed.
+  it("still draws the upload form when an already-sent request is being corrected", () => {
+    const { container } = draw({ signatureEditing: true });
+    expect(container.querySelector("[data-testid='logistics-signature-drop']")).not.toBeNull();
+    expect(container.querySelector("[data-testid='logistics-signature-form-link']")).toBeNull();
+  });
+});
+
 describe("request actions", () => {
   function actionButtons(container: HTMLElement): HTMLButtonElement[] {
     return [...container.querySelectorAll<HTMLButtonElement>(".logistics-request__actions .btn")];
   }
 
+  // Read off Book Meeting rather than the signature form: the signature card only renders a form
+  // while correcting an already-sent request, and a correction relabels these very buttons.
   it("puts Discard, Save and Submit at the bottom of the shared container", () => {
-    const { container } = draw();
-    const request = container.querySelector<HTMLElement>("[data-testid='logistics-request']");
+    const { container } = draw({ template: "bookMeeting" });
+    const request = container.querySelector<HTMLElement>(
+      "[data-testid='logistics-meeting-request']",
+    );
     const actions = request?.querySelector(".logistics-request__actions");
     expect(actions).not.toBeNull();
     // Last thing in the card, after both sections.
@@ -1304,7 +1354,7 @@ describe("correcting a request already sent", () => {
   });
 
   it("says nothing about correcting on a form holding a new request", () => {
-    const { container } = draw();
+    const { container } = draw({ template: "bookMeeting" });
     expect(container.querySelector("[data-testid='logistics-editing']")).toBeNull();
   });
 });

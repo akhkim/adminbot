@@ -44,8 +44,125 @@ function renderView(overrides: Partial<TripsProps> = {}): HTMLElement {
 }
 
 function draft(overrides: Partial<TripDraft> = {}): TripDraft {
-  return { ...EMPTY_TRIP_DRAFT, city: "Berlin", start: "2026-09-01", end: "2026-09-30", ...overrides };
+  return {
+    ...EMPTY_TRIP_DRAFT,
+    city: "Berlin",
+    start: "2026-09-01",
+    end: "2026-09-30",
+    ...overrides,
+  };
 }
+
+describe("editing a logged trip", () => {
+  const TOKYO: TripRow = { start: "2026-11-01", end: "2026-11-10", city: "Tokyo" };
+
+  it("loads the row it was pressed on into the form", () => {
+    const onDraftChange = vi.fn();
+    const container = renderView({ trips: [BERLIN, TOKYO], onDraftChange });
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-trip-edit-1"]')
+      ?.click();
+
+    expect(onDraftChange).toHaveBeenCalledWith({
+      city: "Tokyo",
+      start: "2026-11-01",
+      end: "2026-11-10",
+      timezone: "",
+      note: "",
+      editingIndex: 1,
+    });
+  });
+
+  it("replaces that row on save instead of adding another", () => {
+    const onSave = vi.fn();
+    const container = renderView({
+      trips: [BERLIN, TOKYO],
+      draft: draft({ city: "Kyoto", start: "2026-11-02", end: "2026-11-12", editingIndex: 1 }),
+      onSave,
+    });
+
+    container
+      .querySelector<HTMLFormElement>('[data-testid="time-availability-trip-form"]')
+      ?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+
+    const saved = onSave.mock.calls[0]?.[0] as TripRow[];
+    expect(saved).toHaveLength(2);
+    expect(saved.map((row) => row.city)).toEqual(["Berlin", "Kyoto"]);
+  });
+
+  // An edit that moves a trip's dates has to re-sort for the same reason adding one does: the list
+  // is read as a timeline.
+  it("re-sorts when an edit moves the trip earlier", () => {
+    const onSave = vi.fn();
+    const container = renderView({
+      trips: [BERLIN, TOKYO],
+      draft: draft({ city: "Tokyo", start: "2026-08-01", end: "2026-08-10", editingIndex: 1 }),
+      onSave,
+    });
+
+    container
+      .querySelector<HTMLFormElement>('[data-testid="time-availability-trip-form"]')
+      ?.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }));
+
+    const saved = onSave.mock.calls[0]?.[0] as TripRow[];
+    expect(saved.map((row) => row.city)).toEqual(["Tokyo", "Berlin"]);
+  });
+
+  it("offers a cancel that clears the draft, and only while editing", () => {
+    const onDraftChange = vi.fn();
+    const idle = renderView({ draft: EMPTY_TRIP_DRAFT });
+    expect(idle.querySelector('[data-testid="time-availability-trip-cancel"]')).toBeNull();
+
+    const editing = renderView({ draft: draft({ editingIndex: 0 }), onDraftChange });
+    editing
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-trip-cancel"]')
+      ?.click();
+    expect(onDraftChange).toHaveBeenCalledWith(EMPTY_TRIP_DRAFT);
+  });
+
+  // Removing the row under edit would otherwise leave the form pointed at an index that now holds
+  // a different trip, so a later save would overwrite the wrong one.
+  it("abandons the edit when the row being edited is removed", () => {
+    const onDraftChange = vi.fn();
+    const onSave = vi.fn();
+    const container = renderView({
+      trips: [BERLIN, TOKYO],
+      draft: draft({ editingIndex: 1 }),
+      onDraftChange,
+      onSave,
+    });
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-trip-remove-1"]')
+      ?.click();
+
+    expect(onSave).toHaveBeenCalledWith([BERLIN]);
+    expect(onDraftChange).toHaveBeenCalledWith(EMPTY_TRIP_DRAFT);
+  });
+
+  it("leaves the edit alone when a different row is removed", () => {
+    const onDraftChange = vi.fn();
+    const container = renderView({
+      trips: [BERLIN, TOKYO],
+      draft: draft({ editingIndex: 1 }),
+      onDraftChange,
+    });
+
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-trip-remove-0"]')
+      ?.click();
+
+    expect(onDraftChange).not.toHaveBeenCalled();
+  });
+
+  it("marks the row that is being edited", () => {
+    const container = renderView({ trips: [BERLIN, TOKYO], draft: draft({ editingIndex: 1 }) });
+    const rows = [...container.querySelectorAll(".adminbot-trips__row")];
+    expect(rows[0]?.className).not.toContain("adminbot-trips__row--editing");
+    expect(rows[1]?.className).toContain("adminbot-trips__row--editing");
+  });
+});
 
 describe("renderTrips", () => {
   it("renders as one of the tab's editor sections, like the three above it", () => {
@@ -65,7 +182,9 @@ describe("renderTrips", () => {
   });
 
   it("marks nothing as running outside every trip", () => {
-    expect(renderView({ today: "2026-10-15" }).querySelector(".adminbot-trips__row--active")).toBeNull();
+    expect(
+      renderView({ today: "2026-10-15" }).querySelector(".adminbot-trips__row--active"),
+    ).toBeNull();
   });
 
   // The running trip is stated on the chart above, beside the capacity pill. Repeating it here
@@ -99,7 +218,9 @@ describe("renderTrips", () => {
   it("guesses the timezone from the city as it is typed", () => {
     const onDraftChange = vi.fn();
     const view = renderView({ onDraftChange });
-    const city = view.querySelector<HTMLInputElement>('[data-testid="time-availability-trip-city"]')!;
+    const city = view.querySelector<HTMLInputElement>(
+      '[data-testid="time-availability-trip-city"]',
+    )!;
     city.value = "Berlin";
     city.dispatchEvent(new Event("input", { bubbles: true }));
     expect(onDraftChange).toHaveBeenCalledWith(
@@ -110,7 +231,9 @@ describe("renderTrips", () => {
   it("never overwrites a timezone the member typed", () => {
     const onDraftChange = vi.fn();
     const view = renderView({ onDraftChange, draft: draft({ timezone: "Asia/Tokyo", city: "" }) });
-    const city = view.querySelector<HTMLInputElement>('[data-testid="time-availability-trip-city"]')!;
+    const city = view.querySelector<HTMLInputElement>(
+      '[data-testid="time-availability-trip-city"]',
+    )!;
     city.value = "Berlin";
     city.dispatchEvent(new Event("input", { bubbles: true }));
     expect(onDraftChange).toHaveBeenCalledWith(
@@ -122,7 +245,9 @@ describe("renderTrips", () => {
     const onSave = vi.fn();
     const second: TripRow = { start: "2026-11-01", end: "2026-11-05", city: "Vancouver" };
     const view = renderView({ trips: [BERLIN, second], onSave });
-    view.querySelector<HTMLButtonElement>('[data-testid="time-availability-trip-remove-1"]')?.click();
+    view
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-trip-remove-1"]')
+      ?.click();
     expect(onSave).toHaveBeenCalledWith([BERLIN]);
   });
 

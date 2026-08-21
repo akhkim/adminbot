@@ -3385,6 +3385,216 @@
   max-width: 520px;
 }
 
+/* Conference Papers: one question at the top, a ranked list under it. */
+
+.conference-papers__controls {
+  margin-top: 12px;
+  align-items: start;
+}
+
+.conference-papers__interests textarea {
+  resize: vertical;
+  min-height: 3.2em;
+}
+
+.conference-papers__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.conference-papers__list {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.conference-papers__hit {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.conference-papers__hit:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* Bar plus number: the bar is what makes twenty rows comparable at a glance, the number is what
+   makes one row quotable. */
+.conference-papers__match {
+  flex: 0 0 3.5rem;
+  display: grid;
+  gap: 4px;
+  justify-items: center;
+}
+
+.conference-papers__match-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  position: relative;
+  overflow: hidden;
+}
+
+.conference-papers__match-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--match, 0%);
+  background: var(--accent);
+}
+
+.conference-papers__match-value {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+
+.conference-papers__body {
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.conference-papers__title {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 650;
+  text-decoration: none;
+  line-height: 1.35;
+}
+
+.conference-papers__title:hover {
+  text-decoration: underline;
+}
+
+.conference-papers__meta {
+  font-size: 12px;
+}
+
+.conference-papers__keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.conference-papers__keyword {
+  font-size: 11px;
+  opacity: 0.65;
+}
+
+/* The keywords that echo what the member typed, which is the row explaining itself. */
+.conference-papers__keyword--matched {
+  opacity: 1;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.conference-papers__abstract-toggle {
+  justify-self: start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.conference-papers__abstract {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  max-width: 70ch;
+}
+
+@media (max-width: 640px) {
+  .conference-papers__hit {
+    flex-direction: column;
+  }
+
+  .conference-papers__match {
+    flex: none;
+    grid-auto-flow: column;
+    justify-items: start;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .conference-papers__match-bar {
+    max-width: 120px;
+  }
+}
+
+.cron-command-jobs {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.cron-command-job {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  background: color-mix(in srgb, var(--bg-elevated) 58%, transparent);
+}
+
+.cron-command-job__text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.cron-command-job__name {
+  color: var(--text-strong);
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.cron-command-job__desc {
+  font-size: 13px;
+  line-height: 1.45;
+  max-width: 560px;
+}
+
+.cron-command-job__outcome {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  margin-top: 2px;
+}
+
+.cron-command-job__outcome--error {
+  color: var(--danger, var(--text-strong));
+}
+
+/* The button must not shrink under a long job description on a narrow viewport. */
+.cron-command-job__actions {
+  flex: 0 0 auto;
+}
+
+@media (max-width: 640px) {
+  .cron-command-job {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
 .cron-job-group__title {
   color: var(--text-strong);
   font-size: 13px;
@@ -8982,11 +9192,7 @@ details[open] > .ov-expandable-toggle::after {
 }
 
 .time-chart__legend-away {
-  background: repeating-linear-gradient(
-    45deg,
-    var(--border-strong) 0 2px,
-    transparent 2px 4px
-  );
+  background: repeating-linear-gradient(45deg, var(--border-strong) 0 2px, transparent 2px 4px);
   border: 1px solid var(--border);
 }
 
@@ -9816,7 +10022,9 @@ details[open] > .ov-expandable-toggle::after {
 
 /* The lab's conference dates are context; a member's own deadline is the one they entered and can
    remove, so it keeps the full-strength name and a marked edge. */
-.adminbot-time-availability__deadline-list li[data-own="false"] .adminbot-time-availability__deadline-label {
+.adminbot-time-availability__deadline-list
+  li[data-own="false"]
+  .adminbot-time-availability__deadline-label {
   font-weight: 500;
   color: var(--text-muted);
 }
@@ -10104,7 +10312,9 @@ select.input:focus {
 
 .adminbot-cv__row {
   display: grid;
-  grid-template-columns: minmax(120px, 0.8fr) minmax(110px, 0.6fr) minmax(200px, 1.4fr) minmax(180px, 1fr) auto;
+  grid-template-columns:
+    minmax(120px, 0.8fr) minmax(110px, 0.6fr) minmax(200px, 1.4fr) minmax(180px, 1fr)
+    auto;
   gap: var(--space-3);
   align-items: start;
   padding: var(--space-3);
@@ -10127,7 +10337,10 @@ select.input:focus {
 }
 
 .adminbot-cv__row--digest {
-  grid-template-columns: minmax(100px, 0.5fr) minmax(120px, 0.7fr) minmax(240px, 2fr) minmax(90px, 0.4fr);
+  grid-template-columns: minmax(100px, 0.5fr) minmax(120px, 0.7fr) minmax(240px, 2fr) minmax(
+      90px,
+      0.4fr
+    );
 }
 
 .adminbot-cv__entries {

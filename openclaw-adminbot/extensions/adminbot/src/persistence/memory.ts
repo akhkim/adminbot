@@ -11,6 +11,8 @@ import type {
   AdminBotAuditEvent,
   AdminBotAuthSession,
   AdminBotCvChangeEvent,
+  AdminBotVenueIndexStatus,
+  AdminBotVenuePaper,
   AdminBotExecutionResult,
   AdminBotLabMember,
   AdminBotLogisticsRequest,
@@ -293,6 +295,33 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return [...this.cvChanges.values()]
       .filter((event) => event.detected_at >= sinceIso)
       .toSorted((left, right) => left.detected_at.localeCompare(right.detected_at));
+  }
+
+  private readonly venueIndexes = new Map<
+    string,
+    { papers: AdminBotVenuePaper[]; indexedAt: string; model: string }
+  >();
+
+  replaceVenueIndex(
+    venueId: string,
+    papers: AdminBotVenuePaper[],
+    indexedAt: string,
+    model: string,
+  ): void {
+    this.venueIndexes.set(venueId, { papers: [...papers], indexedAt, model });
+  }
+
+  listVenuePapers(venueId: string): AdminBotVenuePaper[] {
+    return [...(this.venueIndexes.get(venueId)?.papers ?? [])];
+  }
+
+  listVenueIndexStatuses(): Omit<AdminBotVenueIndexStatus, "label">[] {
+    return [...this.venueIndexes.entries()].map(([venueId, entry]) => ({
+      venue_id: venueId,
+      paper_count: entry.papers.length,
+      indexed_at: entry.indexedAt,
+      embedding_model: entry.model,
+    }));
   }
 
   saveLogisticsRequest(request: AdminBotLogisticsRequest): void {

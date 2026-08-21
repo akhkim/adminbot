@@ -36,6 +36,12 @@ export const LETTER_STATUS_SUGGESTIONS = ["requested", "submitted"];
 export const TEMPLATE_FOLDER_URL =
   "https://drive.google.com/drive/folders/1Ld_fhN--dk1P2bM9P_3W-TsYgsQG0Wj2";
 
+// Where signature requests are filed now. The upload form that used to live on this tab was
+// replaced by this form, so the tab points at it rather than collecting documents itself. A URL
+// for the same reason as the folder above: a locale bundle is no place for a link.
+export const SIGNATURE_FORM_URL =
+  "https://docs.google.com/forms/d/1yNvSz65dU8hozDXhASuyFk8kvQuhj0hD2X9znHMzz9U";
+
 // In the order a member works across a row: which school, when each deadline falls, where both
 // halves of the request stand, then what the program is.
 export const SCHOOL_FIELDS: SchoolField[] = [

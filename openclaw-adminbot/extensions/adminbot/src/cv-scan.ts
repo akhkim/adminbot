@@ -23,9 +23,7 @@ const execFileAsync = promisify(execFile);
 // enormous from being pulled into memory before anyone looks at its type.
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
 
-export type AdminBotCvExtraction =
-  | { ok: true; text: string }
-  | { ok: false; reason: string };
+export type AdminBotCvExtraction = { ok: true; text: string } | { ok: false; reason: string };
 
 export type AdminBotCvScanDeps = {
   fetchPdf: (url: string, signal?: AbortSignal) => Promise<Uint8Array>;
@@ -156,18 +154,30 @@ const ISO_MONTH = /^(\d{4})-(\d{2})/u;
 // Month names as CVs write them, including the "Sept" that neither three-letter nor full-name
 // parsing catches on its own.
 const MONTH_NAMES: Record<string, number> = {
-  jan: 1, january: 1,
-  feb: 2, february: 2,
-  mar: 3, march: 3,
-  apr: 4, april: 4,
+  jan: 1,
+  january: 1,
+  feb: 2,
+  february: 2,
+  mar: 3,
+  march: 3,
+  apr: 4,
+  april: 4,
   may: 5,
-  jun: 6, june: 6,
-  jul: 7, july: 7,
-  aug: 8, august: 8,
-  sep: 9, sept: 9, september: 9,
-  oct: 10, october: 10,
-  nov: 11, november: 11,
-  dec: 12, december: 12,
+  jun: 6,
+  june: 6,
+  jul: 7,
+  july: 7,
+  aug: 8,
+  august: 8,
+  sep: 9,
+  sept: 9,
+  september: 9,
+  oct: 10,
+  october: 10,
+  nov: 11,
+  november: 11,
+  dec: 12,
+  december: 12,
 };
 
 /**
@@ -294,7 +304,7 @@ export function buildNewsletterDraft(
   const publicationLines = new Map<string, { names: string[]; entry: AdminBotCvEntry }>();
   for (const row of newsworthy) {
     if (row.change.entry.kind !== "publication") {
-      lines.push(`- ${row.memberName} — ${sentenceFor(row.change.entry)}`);
+      lines.push(`- ${row.memberName} — ${describeCvEntry(row.change.entry)}`);
       continue;
     }
     const key = cvEntryKey(row.change.entry);
@@ -308,7 +318,7 @@ export function buildNewsletterDraft(
     publicationLines.set(key, { names: [row.memberName], entry: row.change.entry });
   }
   for (const { names, entry } of publicationLines.values()) {
-    lines.push(`- ${formatNameList(names)} — ${sentenceFor(entry)}`);
+    lines.push(`- ${formatNameList(names)} — ${describeCvEntry(entry)}`);
   }
   if (!lines.length) {
     return "";
@@ -335,7 +345,13 @@ function draftFromResults(results: AdminBotCvScanMemberResult[]): string {
   );
 }
 
-function sentenceFor(entry: AdminBotCvEntry): string {
+/**
+ * One CV entry as a newsletter sentence.
+ *
+ * Exported because the digest document renders the same ledger the newsletter draft does; two
+ * phrasings of one entry would let the doc and the draft describe the same move differently.
+ */
+export function describeCvEntry(entry: AdminBotCvEntry): string {
   const when = entry.start?.trim() ? ` (${entry.start.trim()})` : "";
   switch (entry.kind) {
     case "education":
@@ -426,7 +442,9 @@ export async function assertPublicHost(
   }
   for (const record of records) {
     if (!isPublicIpAddress(record.address)) {
-      throw new Error(`cv url host ${hostname} resolves to a non-public address (${record.address})`);
+      throw new Error(
+        `cv url host ${hostname} resolves to a non-public address (${record.address})`,
+      );
     }
   }
 }
