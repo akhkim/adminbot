@@ -167,6 +167,14 @@ export type AdminBotPaperSlotDefinition = {
   /** Whether a venue deadline makes this one urgent enough to escalate. */
   deadlineBearing: boolean;
   /**
+   * A real specimen of the answer, shown greyed in the empty field.
+   *
+   * "https://…" tells someone the shape of a URL, which they already knew, and nothing about
+   * which URL. A worked example does: it is the difference between "a link" and "the /abs/ page
+   * of the arXiv listing, not the PDF".
+   */
+  example?: string;
+  /**
    * Status comes from somewhere else and this slot rejects direct writes. Only the two social
    * draft gates, which read `paper_social_drafts`.
    */
@@ -215,7 +223,8 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     urlPath: ["/document/", "/drive/folders/"],
     // This is also where the talk materials end up, which is why there is no separate
     // "links logged in shared folder" slot: it is the same folder, already linked.
-    hint: "The living folder for this paper. Slides, poster and video go here too.",
+    hint: "The Drive folder or doc where this paper lives. Slides, poster and video end up here too.",
+    example: "https://drive.google.com/drive/folders/1aBcD…",
   },
   overleaf_view: {
     subOf: "overleaf_edit",
@@ -234,7 +243,8 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     deadlineBearing: false,
     urlHosts: ["overleaf.com"],
     urlPath: ["/read/"],
-    hint: "Safe to share. Read-only.",
+    hint: "Overleaf's read-only share link. Safe to paste in a channel — nobody can edit the paper with it.",
+    example: "https://overleaf.com/read/xzqvbnmklpqr",
   },
   overleaf_edit: {
     groupLabel: "Overleaf",
@@ -249,7 +259,8 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     deadlineBearing: true,
     urlHosts: ["overleaf.com"],
     urlPath: ["/project/"],
-    hint: "Hands over write access — not the one to paste in a public channel.",
+    hint: "The URL in your address bar while editing. Hands over write access, so keep it to coauthors.",
+    example: "https://overleaf.com/project/65f2a1c9d4e3b7a801f6",
   },
   papermentor_review: {
     kind: "bool",
@@ -261,6 +272,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["overleaf_edit"],
     required: true,
     deadlineBearing: true,
+    hint: "Tick once PaperMentor has run over the draft and you have its comments back.",
   },
   fixes_merged: {
     kind: "bool",
@@ -272,6 +284,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["papermentor_review"],
     required: true,
     deadlineBearing: true,
+    hint: "Tick once you have applied the low-cost suggestions from that review. Not every suggestion — the cheap ones.",
   },
   pdf_ready: {
     kind: "bool",
@@ -283,6 +296,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["fixes_merged"],
     required: true,
     deadlineBearing: true,
+    hint: "Tick when Overleaf compiles with no errors and the PDF is the one you would submit.",
   },
   submission: {
     groupLabel: "Submitted to venue",
@@ -295,6 +309,8 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["pdf_ready"],
     required: true,
     deadlineBearing: true,
+    hint: "Your paper's page on the venue's system — the OpenReview forum, or CMT/HotCRP elsewhere.",
+    example: "https://openreview.net/forum?id=Ax7Kq2Lm9P",
   },
   submission_id: {
     subOf: "submission",
@@ -307,6 +323,8 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["submission"],
     required: true,
     deadlineBearing: true,
+    hint: "The identifier the venue assigned you. Read it off the submission page you just pasted.",
+    example: "Ax7Kq2Lm9P",
   },
   drive_pdf_arxiv: {
     kind: "link",
@@ -319,7 +337,8 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     required: true,
     deadlineBearing: false,
     urlHosts: ["drive.google.com", "docs.google.com"],
-    hint: "One copy per paper — the version you intend to post.",
+    hint: "The lab's own copy of the exact PDF you intend to post publicly.",
+    example: "https://drive.google.com/file/d/1PdF9x…",
   },
   authors_ack: {
     kind: "bool",
@@ -331,6 +350,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["drive_pdf_arxiv"],
     required: true,
     deadlineBearing: false,
+    hint: "Tick once the author list and the thank-yous are final and everyone named has seen them.",
   },
   arxiv_paper_password: {
     kind: "secret6",
@@ -342,7 +362,8 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["authors_ack"],
     required: true,
     deadlineBearing: false,
-    hint: "Six characters, letters and digits. Shared with your coauthors, nobody else.",
+    hint: "The six-character code arXiv issues so coauthors can claim the paper. Letters and digits mixed.",
+    example: "k7m2q9",
   },
   pi_approval: {
     kind: "bool",
@@ -354,6 +375,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["authors_ack"],
     required: true,
     deadlineBearing: false,
+    hint: "Only Zhijing ticks this. It is the explicit yes to post publicly — preparing the package is not permission.",
   },
   arxiv: {
     kind: "link",
@@ -367,6 +389,8 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     deadlineBearing: false,
     urlHosts: ["arxiv.org"],
     urlPath: ["/abs/"],
+    hint: "The /abs/ listing page, not the /pdf/ file. This is the link the announcements will point at.",
+    example: "https://arxiv.org/abs/2306.05836",
   },
   x_draft: {
     kind: "bool",
@@ -379,7 +403,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     required: true,
     deadlineBearing: false,
     derived: true,
-    hint: "Provided once an approved X draft exists below.",
+    hint: "Provided once an approved X draft exists. Write it with the drafting tool.",
   },
   linkedin_draft: {
     kind: "bool",
@@ -392,7 +416,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     required: true,
     deadlineBearing: false,
     derived: true,
-    hint: "Provided once an approved LinkedIn draft exists below.",
+    hint: "Provided once an approved LinkedIn draft exists. Write it with the drafting tool.",
   },
   coauthor_feedback: {
     kind: "bool",
@@ -404,6 +428,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["x_draft", "linkedin_draft"],
     required: true,
     deadlineBearing: false,
+    hint: "Tick once the draft posts have gone round the coauthors and you have their replies.",
   },
   social_final: {
     kind: "bool",
@@ -415,6 +440,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["coauthor_feedback"],
     required: true,
     deadlineBearing: false,
+    hint: "Tick once the coauthors' comments are folded in and the copy is what you will actually post.",
   },
   x_post: {
     groupLabel: "Published",
@@ -429,6 +455,8 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     deadlineBearing: false,
     urlHosts: ["x.com", "twitter.com"],
     urlPath: ["/status/"],
+    hint: "The published thread, after it is live. Paste the link to the first post.",
+    example: "https://x.com/JinesisLab/status/1839274650192837",
   },
   linkedin_post: {
     subOf: "x_post",
@@ -443,6 +471,8 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     deadlineBearing: false,
     urlHosts: ["linkedin.com"],
     urlPath: ["/posts/", "/feed/update/"],
+    hint: "The published post, after it is live. Open it on LinkedIn and copy the address.",
+    example: "https://www.linkedin.com/posts/jinesis-lab_activity-7239182736450",
   },
   slides: {
     kind: "link",
@@ -456,6 +486,8 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     deadlineBearing: false,
     urlHosts: ["docs.google.com"],
     urlPath: ["/presentation/"],
+    hint: "The talk slides for this venue, as a Google Slides deck.",
+    example: "https://docs.google.com/presentation/d/1Sl1De…",
   },
   poster: {
     groupLabel: "Poster",
@@ -470,6 +502,8 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     // presenting a poster rather than leaving it open forever.
     required: true,
     deadlineBearing: false,
+    hint: "The poster file, wherever it lives. Any https link is fine.",
+    example: "https://drive.google.com/file/d/1Po5t3r…",
   },
   poster_physical: {
     subOf: "poster",
@@ -483,7 +517,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     // Bookkeeping about an object in the world. Useful to know, never worth a Slack message.
     required: false,
     deadlineBearing: false,
-    hint: "Printed yet, and where is it?",
+    hint: "Whether the poster is printed yet, and where the physical copy is right now.",
   },
   talk_video: {
     kind: "link",
@@ -495,6 +529,8 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["slides"],
     required: true,
     deadlineBearing: false,
+    hint: "The recorded talk, if the venue asked for one or the lab wants a copy.",
+    example: "https://drive.google.com/file/d/1V1De0…",
   },
   backend_sheet: {
     kind: "bool",
@@ -506,6 +542,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: [],
     required: false,
     deadlineBearing: false,
+    hint: "Admin bookkeeping in the tracking spreadsheet. Optional — nothing waits on it.",
   },
 };
 

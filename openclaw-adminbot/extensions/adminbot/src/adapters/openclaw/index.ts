@@ -26,6 +26,7 @@ import {
   buildPaperSocialPayload,
   type AdminBotSocialPlatform,
 } from "../../workflows/papers/social-posting.js";
+import { createLinkedInDraftRunner } from "../../connectors/social-draft.js";
 import type {
   AdminBotReimbursementMessage,
   AdminBotReimbursementReceipt,
@@ -84,6 +85,21 @@ type PaperSocialPostParams = EvidenceParams & {
   platforms?: AdminBotSocialPlatform[];
   linkedinVisibility?: "PUBLIC" | "CONNECTIONS";
   idempotencyKey?: string;
+};
+
+/**
+ * A PaperFlow "Draft the LinkedIn post" run.
+ *
+ * The PDF is the input rather than a URL because this fires at the Social stage, where the
+ * compiled PDF is the one artifact guaranteed to exist -- arXiv may not be up yet.
+ */
+type LinkedInDraftParams = EvidenceParams & {
+  /** Base64 of the compiled paper PDF. */
+  pdfBase64: string;
+  filename?: string;
+  url?: string;
+  venue?: string;
+  note?: string;
 };
 
 type PaperOverleafEditParams = EvidenceParams & {
@@ -223,6 +239,28 @@ export function createAdminBotToolHandlers(
         },
         signal,
       ),
+    /**
+     * PaperFlow "Draft the LinkedIn post" — PDF in, post out, nothing written.
+     *
+     * Runs in parallel with the X draft and blocks neither. It creates no proposal: the draft
+     * is a suggestion the author copies into LinkedIn's own composer, so there is no external
+     * effect to gate and no record worth keeping. Publishing through AdminBot is a separate
+     * T4 action needing two admins.
+     */
+    prepareLinkedInDraft: async (params: LinkedInDraftParams) => {
+      const draftLinkedInPost = createLinkedInDraftRunner();
+      const membersResult = await client.listLabMembers(signal);
+      const members = readArray<AdminBotLabMember>(membersResult, "members");
+      return draftLinkedInPost({
+        pdfBase64: params.pdfBase64,
+        members,
+        ...(params.filename ? { filename: params.filename } : {}),
+        ...(params.url ? { url: params.url } : {}),
+        ...(params.venue ? { venue: params.venue } : {}),
+        ...(params.note ? { note: params.note } : {}),
+        ...(signal ? { signal } : {}),
+      });
+    },
     preparePaperSocialPosts: async (params: PaperSocialPostParams) => {
       const [membersResult, papersResult] = await Promise.all([
         client.listLabMembers(signal),

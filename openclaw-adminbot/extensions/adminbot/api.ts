@@ -32,6 +32,7 @@ export type { AdminBotActionExecutor } from "./src/kernel/service.js";
 export { createGogAdminBotExecutor } from "./src/connectors/gog.js";
 export { renderEmailBodyHtml } from "./src/connectors/email-html.js";
 export { createAdminBotSocialExecutor } from "./src/connectors/social.js";
+export { createLinkedInDraftRunner } from "./src/connectors/social-draft.js";
 export { createAdminBotOverleafExecutor } from "./src/connectors/overleaf.js";
 export { createAdminBotMessageExecutor } from "./src/connectors/message.js";
 export { createAdminBotOpenReviewExecutor } from "./src/connectors/openreview.js";

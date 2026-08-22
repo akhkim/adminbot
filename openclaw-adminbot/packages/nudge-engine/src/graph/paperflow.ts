@@ -38,8 +38,12 @@ export const paperflow: Graph = {
     // to confirm a copy of a fact. Branch 1 just ends at its two leaves.
 
     // ── branch 2: social ────────────────────────────────────────────────────────
+    // XD and LI are drafted in PARALLEL, both straight off the PDF. LinkedIn used to hang off
+    // X ("adapt and lengthen"), which made a 280-character thread the source text for a
+    // 900-2200 character post and blocked LinkedIn on work it does not need. They are separate
+    // pieces of writing from the same abstract, so they are separate branches from the same node.
     { id: "XD", label: "X post draft", cls: "action", owner: "first_author", branch: "social" },
-    { id: "LI", label: "LinkedIn post", cls: "action", owner: "first_author", branch: "social" },
+    { id: "LI", label: "LinkedIn post draft", cls: "action", owner: "first_author", branch: "social" },
     { id: "CP", label: "Coauthor feedback", cls: "action", owner: "coauthors", branch: "social" },
     {
       id: "SF",
@@ -188,13 +192,14 @@ export const paperflow: Graph = {
 
     { from: "PDF", to: "SL", kind: "requires", label: "Branch 1" },
     { from: "PDF", to: "XD", kind: "requires", label: "Branch 2" },
+    { from: "PDF", to: "LI", kind: "requires", label: "Branch 2" },
     { from: "PDF", to: "DR", kind: "requires", label: "Branch 3" },
     { from: "PDF", to: "CK", kind: "requires", label: "Branch 4" },
 
     { from: "SL", to: "PO", kind: "requires" },
     { from: "SL", to: "TV", kind: "requires" },
 
-    { from: "XD", to: "LI", kind: "requires", label: "Adapt and lengthen" },
+    { from: "XD", to: "CP", kind: "requires", label: "Email round" },
     { from: "LI", to: "CP", kind: "requires", label: "Email round" },
     { from: "CP", to: "SF", kind: "requires" },
 

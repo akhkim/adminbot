@@ -19,14 +19,15 @@ flowchart TD
 
     PDF -->|Branch 1| SL[Slides]
     PDF -->|Branch 2| XD[X post draft]
+    PDF -->|Branch 2| LI[LinkedIn post draft]
     PDF -->|Branch 3| DR[Internal Drive PDF]
     PDF -->|Branch 4| CK[Final submission checks]
 
     SL --> PO[Poster]
     SL --> TV[Talk video]
 
-    XD -->|Adapt and lengthen| LI[LinkedIn post]
-    LI -->|Email round| CP[Coauthor feedback]
+    XD -->|Email round| CP[Coauthor feedback]
+    LI -->|Email round| CP
     CP --> SF[Final social draft]
 
     DR --> DA[Drive PDF, arXiv version]

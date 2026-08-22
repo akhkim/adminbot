@@ -291,7 +291,10 @@ const TASK_COPY: Record<string, { title: string; hint: string }> = {
   PO: { title: "Make the poster", hint: "Poster version, if the venue asks for one." },
   TV: { title: "Record the talk video", hint: "Short recorded version of the talk." },
   XD: { title: "Draft the X post", hint: "A short thread announcing the paper." },
-  LI: { title: "Adapt it for LinkedIn", hint: "Longer version of the X post." },
+  LI: {
+    title: "Draft the LinkedIn post",
+    hint: "The long-form announcement. Drafted from the paper, not from the X thread.",
+  },
   CP: {
     title: "Collect coauthor feedback",
     hint: "Send the draft posts round and wait for replies.",

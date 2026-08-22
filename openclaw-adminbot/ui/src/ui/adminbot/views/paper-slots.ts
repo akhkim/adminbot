@@ -54,6 +54,11 @@ export type PaperSlotsProps = {
     slot: string,
     input: { url?: string; value_text?: string; value_note?: string; done?: boolean },
   ) => void;
+  /** Show every field rather than just the ones that are ready. Per card, per session. */
+  showAllSlots?: boolean;
+  onToggleShowAll?: () => void;
+  /** Opens the drafting tool for a social gate. Absent leaves the gate as a read-only checkbox. */
+  onOpenDraft?: (platform: "linkedin" | "x") => void;
 };
 
 /** Plain-English states for the one enum slot. */
@@ -164,6 +169,24 @@ function renderInput(
     // service refuses a direct write to it. Offering a checkbox that always errors would be worse
     // than offering none.
     const readOnly = disabled || Boolean(definition.derived);
+    // The social draft gates are read-only by design: their truth lives in `paper_social_drafts`,
+    // so a checkbox here could only ever disagree with it. What the author actually wants when
+    // they click one is the drafting tool, so that is what it opens.
+    if (definition.derived && props.onOpenDraft) {
+      const platform = slot === "linkedin_draft" ? "linkedin" : "x";
+      const done = row?.status === "provided";
+      return html`
+        <button
+          type="button"
+          class="paper-slot__draft-open"
+          data-testid=${`paper-slot-${props.paperId}-${slot}`}
+          @click=${() => props.onOpenDraft?.(platform)}
+        >
+          ${done ? "Approved draft on file — open" : "Write the draft"}
+        </button>
+      `;
+    }
+
     return html`
       <label class="paper-slot__check">
         <input
@@ -239,7 +262,9 @@ function renderInput(
         type="password"
         maxlength="6"
         autocomplete="off"
-        placeholder=${row?.status === "provided" ? "On file — type to replace" : "6 characters"}
+        placeholder=${row?.status === "provided"
+          ? "On file — type to replace"
+          : (definition.example ?? "6 characters")}
         ?disabled=${disabled}
         data-testid=${`paper-slot-${props.paperId}-${slot}`}
         @change=${(event: Event) => {
@@ -257,7 +282,7 @@ function renderInput(
       type=${definition.kind === "link" ? "url" : "text"}
       .value=${(definition.kind === "link" ? row?.url : row?.value_text) ?? ""}
       ?disabled=${disabled}
-      placeholder=${definition.kind === "link" ? "https://…" : "e.g. 4821"}
+      placeholder=${definition.example ?? (definition.kind === "link" ? "https://…" : "e.g. 4821")}
       autocomplete="off"
       data-testid=${`paper-slot-${props.paperId}-${slot}`}
       @change=${(event: Event) => commit((event.target as HTMLInputElement).value)}
@@ -293,6 +318,24 @@ function renderChildSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
           ${definition.required
             ? nothing
             : html`<span class="paper-slot__optional">optional</span>`}
+          <!-- A <details> rather than a tooltip: it works on touch, it is reachable by keyboard,
+               and the answer stays open while the reader types the value it describes. -->
+          ${definition.hint
+            ? html`<details class="paper-slot__help">
+                <summary
+                  aria-label=${`What goes in ${definition.label}?`}
+                  data-testid=${`paper-slot-help-${props.paperId}-${slot}`}
+                >
+                  ?
+                </summary>
+                <p>${definition.hint}</p>
+                ${definition.example
+                  ? html`<p class="paper-slot__help-example">
+                      For example <code>${definition.example}</code>
+                    </p>`
+                  : nothing}
+              </details>`
+            : nothing}
         </span>
         ${statusPill(row)}
       </div>
@@ -324,6 +367,24 @@ function renderSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
           ${definition.required
             ? nothing
             : html`<span class="paper-slot__optional">optional</span>`}
+          <!-- A <details> rather than a tooltip: it works on touch, it is reachable by keyboard,
+               and the answer stays open while the reader types the value it describes. -->
+          ${definition.hint
+            ? html`<details class="paper-slot__help">
+                <summary
+                  aria-label=${`What goes in ${definition.label}?`}
+                  data-testid=${`paper-slot-help-${props.paperId}-${slot}`}
+                >
+                  ?
+                </summary>
+                <p>${definition.hint}</p>
+                ${definition.example
+                  ? html`<p class="paper-slot__help-example">
+                      For example <code>${definition.example}</code>
+                    </p>`
+                  : nothing}
+              </details>`
+            : nothing}
         </span>
         ${statusPill(row)}
       </div>
@@ -533,16 +594,102 @@ function topLevelSlots(branch: AdminBotPaperSlotBranch): AdminBotPaperSlot[] {
   });
 }
 
+/** Roughly three rows of the square grid: enough to see the shape of the work, few enough to read. */
+const VISIBLE_SLOT_LIMIT = 9;
+
+/**
+ * Which slots are worth showing right now.
+ *
+ * Twenty-five fields at once is a wall, and "Missing" ends up meaning two different things --
+ * overdue, and not-your-turn-yet. But filtering to only what is unblocked is too sharp the
+ * other way: a fresh paper has exactly two reachable fields, which leaves the grid looking
+ * broken and says nothing about what comes next.
+ *
+ * So the working set is three tiers, in priority order, capped at VISIBLE_SLOT_LIMIT:
+ *
+ *   1. anything already filled in wrongly -- it has to stay reachable to be corrected
+ *   2. everything actionable now -- the parallel frontier
+ *   3. near-future work: blocked by exactly one thing, so it is what opens next
+ *
+ * Tier 3 is what keeps the grid full and the sequence legible. The rest is behind the toggle.
+ */
+function slotDistance(definition: AdminBotPaperSlotDefinition, slots: PaperSlotRow[]): number {
+  return definition.upstream.filter(
+    (slot) => !isAdminBotPaperSlotSettled(rowFor(slots, slot)?.status ?? "missing"),
+  ).length;
+}
+
+export function visibleSlots(
+  slots: PaperSlotRow[],
+  limit = VISIBLE_SLOT_LIMIT,
+): AdminBotPaperSlot[] {
+  const open = adminBotPaperSlots.filter(
+    (slot) => !isAdminBotPaperSlotSettled(rowFor(slots, slot)?.status ?? "missing"),
+  );
+  const rank = (slot: AdminBotPaperSlot): number => {
+    if ((rowFor(slots, slot)?.status ?? "missing") === "invalid") {
+      return 0;
+    }
+    const distance = slotDistance(adminBotPaperSlotRegistry[slot], slots);
+    return distance === 0 ? 1 : distance === 1 ? 2 : 3;
+  };
+  return open
+    .filter((slot) => rank(slot) <= 2)
+    .sort((left, right) => rank(left) - rank(right))
+    .slice(0, limit);
+}
+
+/**
+ * A top-level row is drawn when it is in the working set, or when one of its halves is.
+ *
+ * Without the second clause a settled submission page would take its own unfilled id off the card
+ * with it -- the parent hosts the child, so hiding the parent hides work that is genuinely ready.
+ */
+function rowIsVisible(slot: AdminBotPaperSlot, visible: ReadonlySet<AdminBotPaperSlot>): boolean {
+  return visible.has(slot) || childrenOf(slot).some((child) => visible.has(child));
+}
+
 export function renderPaperSlots(props: PaperSlotsProps) {
   if (props.loading && props.slots.length === 0) {
     return html`<p class="paper-slots__loading">Loading this paper's checklist…</p>`;
   }
+
+  const visible = new Set(visibleSlots(props.slots));
+  const isOpen = (slot: AdminBotPaperSlot) => visible.has(slot);
+  const ready = [...visible].filter(
+    (slot) => slotDistance(adminBotPaperSlotRegistry[slot], props.slots) === 0,
+  ).length;
+  const hidden = adminBotPaperSlots.length - visible.size;
+  const showAll = props.showAllSlots ?? false;
+
   return html`
     <div class="paper-slots" data-testid=${`paper-slots-${props.paperId}`}>
       ${renderDetails(props)}
+      <div class="paper-slots__filter">
+        <span class="paper-slots__filter-text">
+          ${showAll
+            ? `Showing all ${adminBotPaperSlots.length} fields`
+            : `${ready} you can do now · ${visible.size - ready} coming up · ${hidden} further off`}
+        </span>
+        ${props.onToggleShowAll
+          ? html`<button
+              type="button"
+              class="btn btn--sm"
+              data-testid=${`paper-slots-toggle-${props.paperId}`}
+              @click=${() => props.onToggleShowAll?.()}
+            >
+              ${showAll ? "Show only what's ready" : "Show all fields"}
+            </button>`
+          : nothing}
+      </div>
       ${adminBotPaperSlotChartOrder.map((branch) => {
-        const slots = topLevelSlots(branch);
+        const slots = topLevelSlots(branch).filter(
+          (slot) => showAll || rowIsVisible(slot, visible),
+        );
         const branchNumber = adminBotPaperFlowBranchNumber[branch];
+        // The venue section still draws when it has no open field left: the ladder below it is
+        // the half of that branch nobody fills in, and hiding it would hide the paper's position
+        // in the venue cycle exactly when the cycle is the only thing still running.
         if (slots.length === 0 && !(branch === "venue" && (props.stages?.length ?? 0) > 0)) {
           return nothing;
         }

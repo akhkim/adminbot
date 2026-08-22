@@ -63,6 +63,7 @@ import {
 } from "../workflows/identity/auth.js";
 import { allowedGatewayScopesForPrivilege } from "../workflows/identity/device-pairing-scopes.js";
 import { createPasswordResetEmailRunner } from "../workflows/identity/password-reset-email.js";
+import { createLinkedInDraftRunner } from "../connectors/social-draft.js";
 import { toPublicMemberMapSummary } from "../workflows/members/member-map.js";
 import { createCalendarInviteRunner } from "../workflows/onboarding/calendar-invite.js";
 import { createDcsFormRunner } from "../workflows/onboarding/dcs-form.js";
@@ -170,6 +171,9 @@ export type AdminBotMockServiceOptions = {
     token: string;
     expiresInMinutes: number;
   }) => Promise<void>;
+  // Generates a LinkedIn announcement draft from a paper PDF. Injected so tests can assert the
+  // route without an OpenRouter round trip; defaults to the real connector.
+  linkedInDraftRunner?: import("../connectors/social-draft.js").LinkedInDraftRunner;
   // Overrides the default DCS-form-submission runner outright (tests use this to assert on the
   // call without launching a real browser). If unset, dcsFormScriptPath decides whether one gets
   // built at all.
@@ -348,6 +352,8 @@ type AdminBotRouteContext = {
   resolveSlackUserIdsByEmail?: (emails: string[]) => Promise<ReadonlyMap<string, string>>;
   readCalendarEvents?: import("../workflows/calendar/events.js").CalendarEventsReader;
   draftCalendarEvent?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
+  // Generates a LinkedIn announcement draft from a paper PDF. Nothing it returns is persisted.
+  draftLinkedInPost: import("../connectors/social-draft.js").LinkedInDraftRunner;
   labCalendar: import("../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
@@ -483,6 +489,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     privacyBroker,
     sensitiveInfo,
     onboardingSender,
+    draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
     ...(runEmailAutomation ? { runEmailAutomation } : {}),
     ...(options.reimbursementWorkflow
       ? { reimbursementWorkflow: options.reimbursementWorkflow }
@@ -1764,6 +1771,39 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, service.acknowledgeOwnOnboardingStep(principal.member.id, stepId));
+    return;
+  }
+  // Generate a LinkedIn announcement draft. Deliberately NOT a proposal and NOT persisted:
+  // the draft is a suggestion a human copies, edits and posts by hand, so storing it would
+  // create a stale second copy of something whose only real version ends up on LinkedIn.
+  // Nothing here writes -- the PDF is read, the post is returned, both are then forgotten.
+  if (req.method === "POST" && url.pathname === "/papers/linkedin-draft") {
+    if (principal.kind === "anonymous") {
+      sendJson(res, 401, { error: { message: "authentication required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    const pdfBase64 = typeof body.pdf_base64 === "string" ? body.pdf_base64 : "";
+    if (!pdfBase64) {
+      sendJson(res, 400, { error: { message: "pdf_base64 is required" } });
+      return;
+    }
+    const membersResult = service.listLabMembers();
+    const members = membersResult.ok ? membersResult.payload.members : [];
+    try {
+      const draft = await ctx.draftLinkedInPost({
+        pdfBase64,
+        members,
+        ...(typeof body.url === "string" ? { url: body.url } : {}),
+        ...(typeof body.venue === "string" ? { venue: body.venue } : {}),
+        ...(typeof body.note === "string" ? { note: body.note } : {}),
+      });
+      sendJson(res, 200, draft);
+    } catch (error) {
+      // The message names the missing env var or the extraction failure, and it is the only
+      // thing the author can act on, so it is surfaced rather than swallowed into a 500.
+      sendJson(res, 502, { error: { message: (error as Error).message } });
+    }
     return;
   }
   if (req.method === "GET" && url.pathname === "/profile/location-prompt") {

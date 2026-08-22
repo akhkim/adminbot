@@ -378,3 +378,36 @@ describe("conference attendance — a decision that opens two branches", () => {
     assert.equal(isAcyclic(paperflow), true);
   });
 });
+
+describe("social branch — the two drafts are parallel", () => {
+  /** Helper: the frontier for a state, with pruning applied the way the router sees it. */
+  function frontierFor(state: PaperState): NodeId[] {
+    const { notApplicable } = prune(paperflow, state);
+    return frontier(
+      paperflow,
+      effectiveStatus(paperflow, state, { notApplicable, prunedEdges: new Set() }),
+    );
+  }
+
+  it("a clean PDF opens the X draft and the LinkedIn draft at the same time", () => {
+    const open = frontierFor(withComplete(...throughPdf));
+    assert.ok(open.includes("XD"), "X draft should be actionable off the PDF");
+    assert.ok(open.includes("LI"), "LinkedIn draft should be actionable off the PDF");
+  });
+
+  it("the LinkedIn draft does not wait on the X draft", () => {
+    // The regression this guards: LI used to require XD ("adapt and lengthen"), so a paper with
+    // a finished LinkedIn post but no X thread reported LinkedIn as still blocked.
+    const open = frontierFor(withComplete(...throughPdf, "LI"));
+    assert.ok(open.includes("XD"), "X draft is still open");
+    assert.ok(!open.includes("LI"), "LinkedIn draft is done, not re-opened");
+  });
+
+  it("coauthor feedback waits for BOTH drafts, so the email round goes out once", () => {
+    const xOnly = frontierFor(withComplete(...throughPdf, "XD"));
+    assert.ok(!xOnly.includes("CP"), "one draft is not enough to start the email round");
+
+    const both = frontierFor(withComplete(...throughPdf, "XD", "LI"));
+    assert.ok(both.includes("CP"), "both drafts present opens coauthor feedback");
+  });
+});

@@ -2,6 +2,7 @@ import type { AdminBotStoredProposal } from "../contracts/actions.js";
 import type { AdminBotActionExecutor } from "../kernel/service.js";
 import {
   assertSocialPayloadReady,
+  buildLinkedInCommentary,
   type AdminBotPaperSocialPayload,
 } from "../workflows/papers/social-posting.js";
 
@@ -63,11 +64,17 @@ async function postLinkedIn(
 ): Promise<void> {
   const accessToken = requireEnv(env, "LINKEDIN_ACCESS_TOKEN");
   const author = requireEnv(env, "LINKEDIN_AUTHOR_URN");
-  const version = env.LINKEDIN_VERSION?.trim() || "202506";
+  // LinkedIn deactivates a version roughly a year after release, and a deactivated version fails
+  // the whole post. Kept in step with the standalone generator (paper-post-lib.mjs); override with
+  // LINKEDIN_VERSION when this one ages out.
+  const version = env.LINKEDIN_VERSION?.trim() || "202606";
   const text = payload.linkedin?.text.trim();
   if (!text) {
     throw new Error("linkedin post text is required");
   }
+  // Never send the raw draft: `commentary` is Little Text Format, so reserved characters must be
+  // escaped, and authors with a stored URN become real @mentions here rather than plain names.
+  const commentary = buildLinkedInCommentary(text, payload.tags.resolved);
   const response = await fetchImpl("https://api.linkedin.com/rest/posts", {
     method: "POST",
     headers: {
@@ -78,7 +85,7 @@ async function postLinkedIn(
     },
     body: JSON.stringify({
       author,
-      commentary: text,
+      commentary,
       visibility: payload.linkedin?.visibility ?? "PUBLIC",
       distribution: {
         feedDistribution: "MAIN_FEED",

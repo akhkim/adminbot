@@ -276,8 +276,18 @@ export type AdminBotPaperSaveInput = {
    */
   venue?: string;
   currentStep: AdminBotPaperStep;
+  // Artifact links. Only the two below were ever settable from the per-paper card; the rest
+  // arrived with the bulk grid, which edits every link slot at once. The service already
+  // accepts a whole `artifacts` object (OWN_PAPER_EDITABLE_FIELDS), so widening this type is
+  // the entire change -- without it the grid would silently drop most of what was typed.
   overleafEditUrl?: string;
+  overleafViewUrl?: string;
+  brainstormingDocUrl?: string;
+  submissionUrl?: string;
   googleDrivePdfUrl?: string;
+  arxivUrl?: string;
+  googleSlidesUrl?: string;
+  posterUrl?: string;
   conference?: string;
   /** How likely the authors think this venue is, as a percentage string. */
   confidence?: string;
@@ -1693,7 +1703,13 @@ export async function saveAdminBotPaper(
   host.adminBotNotice = null;
   const artifacts = {
     ...(paper.overleafEditUrl ? { overleaf_edit_url: paper.overleafEditUrl } : {}),
+    ...(paper.overleafViewUrl ? { overleaf_view_url: paper.overleafViewUrl } : {}),
+    ...(paper.brainstormingDocUrl ? { brainstorming_doc_url: paper.brainstormingDocUrl } : {}),
+    ...(paper.submissionUrl ? { submission_url: paper.submissionUrl } : {}),
     ...(paper.googleDrivePdfUrl ? { google_drive_pdf_url: paper.googleDrivePdfUrl } : {}),
+    ...(paper.arxivUrl ? { arxiv_url: paper.arxivUrl } : {}),
+    ...(paper.googleSlidesUrl ? { google_slides_url: paper.googleSlidesUrl } : {}),
+    ...(paper.posterUrl ? { poster_url: paper.posterUrl } : {}),
     ...(paper.conference ? { conference: paper.conference } : {}),
     ...(paper.confidence ? { confidence: paper.confidence } : {}),
     ...(paper.blockerLog === undefined ? {} : { blocker_log: paper.blockerLog }),

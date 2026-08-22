@@ -3362,6 +3362,7 @@ export function renderApp(state: AppViewState) {
         ${state.tab === "myWork"
           ? renderMyWork(state, {
               onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
+              onRerender: () => requestHostUpdate?.(),
               overview: state.adminBotPaperSlotOverview,
               slots: state.adminBotPaperSlots,
               openIds: state.adminBotPaperSlotsOpen,
