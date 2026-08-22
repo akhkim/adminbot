@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
-import { renderMyWork, type MyWorkProps } from "./my-work.ts";
+import { renderMyWork, type MyWorkProps, ownPapers } from "./my-work.ts";
 
 function paper(overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecord {
   return {
@@ -267,5 +267,40 @@ describe("renderMyWork", () => {
     });
     expect(container.querySelector(".my-work__notice-line")?.textContent).toContain("Nudged 2");
     expect(container.querySelector(".my-work__error-line")?.textContent).toContain("Could not");
+  });
+});
+
+describe("ownPapers — whose paper is it", () => {
+  function stateWith(authors: string[], memberName: string) {
+    return {
+      memberId: "me",
+      adminBotData: {
+        members: [{ id: "me", name: memberName, privilege_level: "member", access: [] }],
+        papers: [
+          {
+            id: "p1",
+            title: "Preserving Historical Truth",
+            authors,
+            current_step: "arxiv_polish",
+            submitted_by_member_id: "someone-else",
+          },
+        ],
+      },
+    } as never;
+  }
+
+  it("finds a paper where the author list marks equal contribution", () => {
+    // Regression: a co-first author could not see their own paper, because the venue's asterisk
+    // made the name compare unequal to the roster's.
+    const papers = ownPapers(stateWith(["Francesco Ortu*", "Joeun Yook*"], "Joeun Yook"));
+    expect(papers.map((p) => p.title)).toEqual(["Preserving Historical Truth"]);
+  });
+
+  it("finds a paper listing the name with an accent the roster omits", () => {
+    expect(ownPapers(stateWith(["Bernhard Schölkopf"], "Bernhard Scholkopf"))).toHaveLength(1);
+  });
+
+  it("does not claim somebody else's paper", () => {
+    expect(ownPapers(stateWith(["Andrew Yook", "Jane Doe"], "Joeun Yook"))).toHaveLength(0);
   });
 });

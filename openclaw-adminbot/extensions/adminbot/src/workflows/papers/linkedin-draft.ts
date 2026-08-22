@@ -13,6 +13,7 @@
  */
 
 import type { AdminBotLabMember } from "../../contracts/actions.js";
+import { normalizePersonName, toFirstLast } from "../../contracts/person-names.js";
 
 /** What the draft is written from. `abstract` is the only permitted source of claims. */
 export type AdminBotPaperSource = {
@@ -167,33 +168,10 @@ export function pickDirectives(random: AdminBotDraftRandom = Math.random): strin
 // own LinkedIn URL is immediately taggable and a name that has drifted is caught here rather
 // than shipped in a post.
 
-/**
- * Fold a name to something comparable: accents stripped, punctuation dropped, case flattened.
- *
- * The accent strip is what makes "Schölkopf" match "Scholkopf" and "Šimko" match "Simko".
- * Author lists and rosters disagree about diacritics constantly, and a false "not in the
- * roster" is worse than useless: it trains the reviewer to ignore the warning.
- */
-export function normalizePersonName(value: string): string {
-  return value
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z ]/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
-}
-
-/** arXiv and BibTeX render authors as "Last, First"; everything downstream wants "First Last". */
-export function toFirstLast(author: string): string {
-  const comma = author.indexOf(",");
-  if (comma < 0) {
-    return author.trim();
-  }
-  const last = author.slice(0, comma).trim();
-  const first = author.slice(comma + 1).trim();
-  return first ? `${first} ${last}` : last;
-}
+// Name folding lives in contracts/person-names.ts so the Control UI's "which papers are mine"
+// filter compares names the same way this does. Re-exported because callers and tests here
+// already import them from this module.
+export { normalizePersonName, toFirstLast } from "../../contracts/person-names.js";
 
 /**
  * Cross-check the paper's author list against registered members.
