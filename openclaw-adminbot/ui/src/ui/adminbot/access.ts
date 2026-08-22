@@ -67,7 +67,6 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   adminbotLogistics: "member",
   chat: "member",
   // Nothing behind it yet; member-level so the placeholder sits with the tools it will join.
-  adminbotSocialBot: "member",
   // Home for anyone signed in. Every card on it is gated on the viewer's own role, so the page
   // never needs privilege beyond having an account.
   dashboard: "member",
