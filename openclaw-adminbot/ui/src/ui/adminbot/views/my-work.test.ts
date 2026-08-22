@@ -1,10 +1,17 @@
 // My Projects & Papers: the card list, what a closed card says, and the global nudge above it.
 import { render } from "lit";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AppViewState } from "../../app-view-state.ts";
 import type { PaperCycle, PaperNudgeBatch, PaperSlotOverviewRow } from "../auth/session.ts";
 import type { AdminBotPaperRecord } from "../controllers/admin.ts";
 import { renderMyWork, type MyWorkProps, ownPapers } from "./my-work.ts";
+
+// The draft dialog is imperative and talks to AdminBot, so the interesting assertion is what the
+// card hands it, not what it renders.
+const openDraft = vi.fn();
+vi.mock("../linkedin-draft-dialog.ts", () => ({
+  openLinkedInDraftDialog: (...args: unknown[]) => openDraft(...args),
+}));
 
 function paper(overrides: Partial<AdminBotPaperRecord> = {}): AdminBotPaperRecord {
   return {
@@ -71,6 +78,7 @@ function draw(options: DrawOptions = {}) {
       members: [],
       settings: {},
     },
+    settings: { adminBotUrl: "https://admin.safe.eu" },
     myWorkBlockerDraft: null,
     myWorkProjectDraft: null,
   } as unknown as AppViewState;
@@ -302,5 +310,19 @@ describe("ownPapers — whose paper is it", () => {
 
   it("does not claim somebody else's paper", () => {
     expect(ownPapers(stateWith(["Andrew Yook", "Jane Doe"], "Joeun Yook"))).toHaveLength(0);
+  });
+});
+
+describe("draft the LinkedIn post", () => {
+  it("hands the dialog the console's configured AdminBot URL", () => {
+    // Regression: the button called the dialog with no settings, so it resolved the service from
+    // this page's own hostname and every draft failed as "AdminBot is not reachable".
+    openDraft.mockClear();
+    const { container } = draw({ openIds: ["p1"] });
+    container.querySelector<HTMLButtonElement>('[data-testid="my-work-linkedin-p1"]')?.click();
+    expect(openDraft).toHaveBeenCalledTimes(1);
+    expect(openDraft.mock.calls[0][1]).toEqual({
+      settings: { adminBotUrl: "https://admin.safe.eu" },
+    });
   });
 });

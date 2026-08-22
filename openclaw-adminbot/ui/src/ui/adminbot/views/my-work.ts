@@ -176,7 +176,13 @@ function saveStep(props: MyWorkProps, paper: AdminBotPaperRecord, step: AdminBot
 
 // Two ways to move a paper, because they answer different questions: "it moved on" (Next) and
 // "it is actually at X" (the picker). Both write the same field.
-function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
+//
+// Takes `state` for the one reason the other row helpers do not need it: the draft dialog posts to
+// /papers/linkedin-draft, so it needs the console's configured AdminBot URL. Called without it,
+// resolveAdminBotBaseUrl falls back to this page's own hostname and a guessed port -- which is not
+// where AdminBot lives when the console is served from anywhere but the service itself, so every
+// draft died as "AdminBot is not reachable" before the request left the browser.
+function renderStepControls(state: AppViewState, paper: AdminBotPaperRecord, props: MyWorkProps) {
   const { index } = paperProgress(paper);
   const next = index >= 0 && index < paperSteps.length - 1 ? paperSteps[index + 1] : null;
   return html`
@@ -193,7 +199,7 @@ function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
         type="button"
         class="btn btn--sm"
         data-testid=${`my-work-linkedin-${paper.id}`}
-        @click=${() => openLinkedInDraftDialog(paper)}
+        @click=${() => openLinkedInDraftDialog(paper, { settings: state.settings })}
       >
         Draft LinkedIn post
       </button>
@@ -674,9 +680,9 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                 },
                 // The LinkedIn gate opens the same dialog the card's button does, because that
                 // is the only thing that can actually satisfy it.
-                onOpenDraft: () => openLinkedInDraftDialog(paper),
+                onOpenDraft: () => openLinkedInDraftDialog(paper, { settings: state.settings }),
               })}
-              ${renderCycle(paper, props)} ${renderStepControls(paper, props)}
+              ${renderCycle(paper, props)} ${renderStepControls(state, paper, props)}
             `
           : nothing}
       </div>
