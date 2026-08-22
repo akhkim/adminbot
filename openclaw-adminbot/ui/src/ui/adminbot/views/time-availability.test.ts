@@ -33,7 +33,7 @@ function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
 function tasks(
   entries: Array<{ key: string; name: string; start: string; end: string; hours: number }>,
 ) {
-  return entries;
+  return entries.map((entry) => ({ ...entry, source: "jinesis" as const }));
 }
 
 function props(overrides: Partial<AdminBotTimeAvailabilityProps> = {}) {
@@ -1055,6 +1055,35 @@ describe("the split tables and the deadline panel", () => {
       tasks: ReadonlyArray<{ name: string; note?: string }>;
     };
     expect(chart.tasks.some((task) => task.note === "Shared with Mei")).toBe(true);
+  });
+
+  it("hands whole-day time off to the chart even when there are no hour allocations", () => {
+    const container = renderView({
+      members: [
+        member({
+          availability: [],
+          time_off: [
+            {
+              start: "2026-12-24",
+              end: "2027-01-02",
+              kind: "vacation",
+              availability: "none",
+              note: "Family, phone off",
+            },
+          ],
+        }),
+      ],
+    });
+    const chart = container.querySelector("adminbot-effort-stack-chart") as unknown as {
+      tasks: readonly unknown[];
+      awayRanges: ReadonlyArray<{ name: string; note?: string }>;
+    };
+
+    expect(chart).not.toBeNull();
+    expect(chart.tasks).toEqual([]);
+    expect(chart.awayRanges).toEqual([
+      expect.objectContaining({ name: "Holiday", note: "Family, phone off" }),
+    ]);
   });
 
   it("asks for a custom name only for the 'other' category", () => {

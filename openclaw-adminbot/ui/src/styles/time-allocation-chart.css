@@ -99,6 +99,54 @@
 .adminbot-time-chart .recharts-legend-wrapper {
   z-index: 1 !important;
 }
+.adminbot-time-chart__legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 16px;
+  color: #9aa0aa;
+  font-size: var(--control-ui-text-xs);
+}
+.adminbot-time-chart__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.adminbot-time-chart__legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+.adminbot-time-chart__legend-swatch--outside {
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0,
+    transparent 3px,
+    rgb(255 255 255 / 72%) 3px,
+    rgb(255 255 255 / 72%) 4px
+  );
+}
+.adminbot-time-chart__legend-swatch--away,
+.adminbot-time-chart__away-swatch {
+  border: 1px solid #7c8796;
+  background-color: #4b5563;
+  background-image: repeating-linear-gradient(
+    135deg,
+    transparent 0,
+    transparent 3px,
+    #cbd5e1 3px,
+    #cbd5e1 4px
+  );
+}
+.adminbot-time-chart__away-label {
+  fill: #e2e8f0;
+  font-size: 10px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: rgb(17 24 39 / 72%);
+  stroke-width: 2px;
+}
 .adminbot-time-chart__tooltip {
   min-width: 180px;
   padding: 9px 11px;
@@ -125,6 +173,48 @@
 }
 .adminbot-time-chart__tooltip-task {
   gap: 6px;
+}
+.adminbot-time-chart__tooltip-away {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #40444c;
+}
+.adminbot-time-chart__tooltip-away > i {
+  width: 10px;
+  height: 10px;
+  margin-top: 3px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+.adminbot-time-chart__tooltip-away > div,
+.adminbot-time-chart__tooltip-away span,
+.adminbot-time-chart__tooltip-away small {
+  display: block;
+}
+.adminbot-time-chart__tooltip-away span {
+  margin-top: 2px;
+}
+.adminbot-time-chart__tooltip-away-allocation {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px var(--space-4);
+  margin-top: 3px;
+}
+.adminbot-time-chart__tooltip-away-allocation > span:last-of-type {
+  font-variant-numeric: tabular-nums;
+}
+.adminbot-time-chart__tooltip-away-allocation > small {
+  grid-column: 1 / -1;
+}
+.adminbot-time-chart__tooltip-away-period {
+  margin-top: 6px !important;
+  padding-top: 5px;
+  border-top: 1px solid #40444c;
+  color: #e5e5e5;
+  font-weight: 500;
 }
 .adminbot-time-chart__tooltip-task i,
 .adminbot-time-allocation-table__task {
