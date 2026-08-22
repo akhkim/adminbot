@@ -120,7 +120,7 @@ import { renderLocationPrompt } from "./adminbot/views/location-prompt.ts";
 import { renderLoginGate } from "./adminbot/views/login-gate.ts";
 import { renderAdminBotLogistics, type LogisticsTemplate } from "./adminbot/views/logistics.ts";
 import { renderAdminBotMeetings } from "./adminbot/views/meetings.ts";
-import { ownPapers, renderMyWork } from "./adminbot/views/my-work.ts";
+import { ownPapers, renderMyWork, type MyWorkProps } from "./adminbot/views/my-work.ts";
 import { renderOnboardingChecklist } from "./adminbot/views/onboarding-checklist.ts";
 import { renderAdminBotProfileOverview } from "./adminbot/views/profile-overview.ts";
 import { renderProfile } from "./adminbot/views/profile.ts";
@@ -783,6 +783,81 @@ const lazyAdminBotCalendar = createLazyView(
   () => import("./adminbot/views/calendar.ts"),
   notifyLazyViewChanged,
 );
+
+/**
+ * The paper workspace's wiring, shared by the two surfaces that draw it.
+ *
+ * My Projects & Papers and Active Papers are the same cards over different rows: the member's own
+ * papers, or the lab's. Building the handlers once is what keeps that true -- two copies of this
+ * object is how the two pages would quietly grow different save paths.
+ */
+function paperWorkspaceProps(
+  state: AppViewState,
+  requestHostUpdate: (() => void) | undefined,
+): MyWorkProps {
+  return {
+    onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
+    onRerender: () => requestHostUpdate?.(),
+    overview: state.adminBotPaperSlotOverview,
+    slots: state.adminBotPaperSlots,
+    openIds: state.adminBotPaperSlotsOpen,
+    slotsBusyId: state.adminBotPaperSlotsBusyId,
+    slotsError: state.adminBotPaperSlotsError,
+    slotsNotice: state.adminBotPaperSlotsNotice,
+    nudging: state.adminBotPaperSlotsNudging,
+    // Each surface sets this: Active Papers is where the lab gets chased, and a member's
+    // own page never does. The service re-checks; this only hides the affordance.
+    canNudge: false,
+    onToggleCard: (paperId) => {
+      void toggleAdminBotPaperCard(state, paperId).finally(() => requestHostUpdate?.());
+    },
+    onSaveSlot: (paperId, slot, input) => {
+      void saveAdminBotPaperSlot(state, paperId, slot, input).finally(() => requestHostUpdate?.());
+    },
+    onNudgeAuthors: () => {
+      void nudgeAdminBotPaperAuthors(state).finally(() => requestHostUpdate?.());
+    },
+    nudgeBatches: state.adminBotPaperNudgeBatches,
+    nudgeLoading: state.adminBotPaperNudgeLoading,
+    nudgeSelected: state.adminBotPaperNudgeSelected,
+    onReviewNudges: () => {
+      void loadAdminBotNudgeBatches(state).finally(() => requestHostUpdate?.());
+    },
+    onToggleNudgeRecipient: (memberId: string) => {
+      toggleAdminBotPaperNudgeRecipient(state, memberId);
+      requestHostUpdate?.();
+    },
+    memberId: state.memberId ?? null,
+    memberName: (memberId: string) =>
+      (state.adminBotData?.members ?? []).find((member) => member.id === memberId)?.name ??
+      memberId,
+    onSaveDraft: (paperId, platform, body) => {
+      void saveAdminBotSocialDraft(state, paperId, platform, body).finally(() =>
+        requestHostUpdate?.(),
+      );
+    },
+    onCirculateDraft: (paperId, draftId) => {
+      void circulateAdminBotSocialDraft(state, paperId, draftId).finally(() =>
+        requestHostUpdate?.(),
+      );
+    },
+    onConsent: (paperId, draftId, decision, comment) => {
+      void recordAdminBotSocialConsent(state, paperId, draftId, decision, comment).finally(() =>
+        requestHostUpdate?.(),
+      );
+    },
+    onSetAttendee: (paperId, name, memberId, attending) => {
+      void setAdminBotPaperAttendee(state, paperId, name, memberId, attending).finally(() =>
+        requestHostUpdate?.(),
+      );
+    },
+    onSetReimbursement: (paperId, memberId, status) => {
+      void setAdminBotPaperReimbursement(state, paperId, memberId, status).finally(() =>
+        requestHostUpdate?.(),
+      );
+    },
+  };
+}
 
 function adminBotPanelForTab(tab: Tab, mode: AdminBotLoadMode = "admin"): AdminBotPanel | null {
   if (mode === "general") {
@@ -2490,7 +2565,8 @@ export function renderApp(state: AppViewState) {
   if (
     // The Admin tab's "Next step per paper" reads the same overview, so opening Admin directly
     // has to fetch it too -- otherwise that list renders empty until someone visits My Work.
-    (state.tab === "myWork" || state.tab === "adminbot") &&
+    // Active Papers draws the same cards over every paper in the lab, so it needs it as well.
+    (state.tab === "myWork" || state.tab === "adminbot" || state.tab === "adminbotPapers") &&
     hasMemberSession &&
     !state.adminBotPaperSlotsLoading &&
     !state.adminBotPaperSlotsError &&
@@ -3367,72 +3443,22 @@ export function renderApp(state: AppViewState) {
           : nothing}
         ${state.tab === "myWork"
           ? renderMyWork(state, {
-              onSavePaper: (paper) => void saveAdminBotPaper(state, paper),
-              onRerender: () => requestHostUpdate?.(),
-              overview: state.adminBotPaperSlotOverview,
-              slots: state.adminBotPaperSlots,
-              openIds: state.adminBotPaperSlotsOpen,
-              slotsBusyId: state.adminBotPaperSlotsBusyId,
-              slotsError: state.adminBotPaperSlotsError,
-              slotsNotice: state.adminBotPaperSlotsNotice,
-              nudging: state.adminBotPaperSlotsNudging,
-              // Messaging the whole lab is a governance act, so the button follows the same rule
-              // as Profile Overview's. The service re-checks; this only hides the affordance.
-              canNudge: adminBotMode === "admin",
-              onToggleCard: (paperId) => {
-                void toggleAdminBotPaperCard(state, paperId).finally(() => requestHostUpdate?.());
-              },
-              onSaveSlot: (paperId, slot, input) => {
-                void saveAdminBotPaperSlot(state, paperId, slot, input).finally(() =>
-                  requestHostUpdate?.(),
-                );
-              },
-              onNudgeAuthors: () => {
-                void nudgeAdminBotPaperAuthors(state).finally(() => requestHostUpdate?.());
-              },
-              nudgeBatches: state.adminBotPaperNudgeBatches,
-              nudgeLoading: state.adminBotPaperNudgeLoading,
-              nudgeSelected: state.adminBotPaperNudgeSelected,
-              onReviewNudges: () => {
-                void loadAdminBotNudgeBatches(state).finally(() => requestHostUpdate?.());
-              },
-              onToggleNudgeRecipient: (memberId: string) => {
-                toggleAdminBotPaperNudgeRecipient(state, memberId);
-                requestHostUpdate?.();
-              },
-              memberId: state.memberId ?? null,
-              memberName: (memberId: string) =>
-                (state.adminBotData?.members ?? []).find((member) => member.id === memberId)
-                  ?.name ?? memberId,
-              onSaveDraft: (paperId, platform, body) => {
-                void saveAdminBotSocialDraft(state, paperId, platform, body).finally(() =>
-                  requestHostUpdate?.(),
-                );
-              },
-              onCirculateDraft: (paperId, draftId) => {
-                void circulateAdminBotSocialDraft(state, paperId, draftId).finally(() =>
-                  requestHostUpdate?.(),
-                );
-              },
-              onConsent: (paperId, draftId, decision, comment) => {
-                void recordAdminBotSocialConsent(
-                  state,
-                  paperId,
-                  draftId,
-                  decision,
-                  comment,
-                ).finally(() => requestHostUpdate?.());
-              },
-              onSetAttendee: (paperId, name, memberId, attending) => {
-                void setAdminBotPaperAttendee(state, paperId, name, memberId, attending).finally(
-                  () => requestHostUpdate?.(),
-                );
-              },
-              onSetReimbursement: (paperId, memberId, status) => {
-                void setAdminBotPaperReimbursement(state, paperId, memberId, status).finally(() =>
-                  requestHostUpdate?.(),
-                );
-              },
+              ...paperWorkspaceProps(state, requestHostUpdate),
+              // Chasing the lab is an admin act and it lives on Active Papers now. A member
+              // opening their own page gets their work, and nothing pointed at anyone else.
+              canNudge: false,
+            })
+          : nothing}
+        <!-- Active Papers: the same cards, the same fields and the same writes as a member's own
+             page, over every paper in the lab, plus the nudge run that chases them. Sits above the
+             admin-only sections below it (stats, the pre-registration board, reminder escalations
+             and Add paper), which answer questions about the set rather than about one paper. -->
+        ${state.tab === "adminbotPapers" && adminBotMode === "admin"
+          ? renderMyWork(state, {
+              ...paperWorkspaceProps(state, requestHostUpdate),
+              papers: state.adminBotData?.papers ?? [],
+              title: "All papers",
+              canNudge: true,
             })
           : nothing}
         ${state.tab === "overview"

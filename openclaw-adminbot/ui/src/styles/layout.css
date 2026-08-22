@@ -6283,6 +6283,23 @@
   gap: var(--space-2);
 }
 
+/* Year beside venue: the year is a fixed four characters, so it takes only what it needs and the
+   venue name gets the rest. Wraps to two rows on a narrow card rather than squeezing both. */
+.my-work-add-form.register .register__row {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.my-work-add-form.register .register__row .input {
+  width: auto;
+  flex: 1 1 12rem;
+}
+
+.my-work-add-form.register .register__row .input[name="venueYear"] {
+  flex: 0 0 auto;
+}
+
 .my-work-add-form.register .register__label {
   font-size: var(--control-ui-text-sm);
   font-weight: 600;
@@ -6334,6 +6351,51 @@
 .my-work-add-form.register .register__actions button[type="submit"]:active {
   background: #c6c6ca;
   border-color: #c6c6ca;
+}
+
+/* A finished paper: the badge beside the title, and the disclosure the finished ones live in.
+   Dimmed rather than hidden -- these are the lab's publication record, not clutter, and they come
+   back to full contrast on hover so reading one does not mean reopening it. */
+.my-work-item__badge {
+  margin-left: var(--space-2);
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.my-work-item--done {
+  opacity: 0.72;
+}
+
+.my-work-item--done:hover,
+.my-work-item--done[data-open] {
+  opacity: 1;
+}
+
+.my-work__done {
+  margin-top: var(--space-4);
+}
+
+.my-work__done-summary {
+  cursor: pointer;
+  padding: var(--space-2) 0;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.my-work__done-summary:hover {
+  color: var(--text);
+}
+
+.my-work__done[open] .my-work__done-summary {
+  margin-bottom: var(--space-2);
 }
 
 /* Target venue and confidence, editable where they are displayed. Styled down to read as text
