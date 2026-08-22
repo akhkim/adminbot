@@ -9,9 +9,19 @@ import { createAdminBotSqliteService } from "../extensions/adminbot/src/persiste
 type CsvRecord = Record<string, string>;
 
 type Options = {
-  studentsCsv: string;
+  studentsCsv?: string;
   papersCsv?: string;
   database: string;
+  /**
+   * Select paper rows by publication year instead of by `isOngoing`. The default selection is
+   * "work still in flight", which is the right answer for seeding a live board and the wrong one
+   * for backfilling a year: an accepted paper has a venue and no "Under Review" mark, which is
+   * exactly what `isOngoing` filters out.
+   */
+  papersYear?: string;
+  /** Insert rows that are not in the database yet, and leave every existing paper untouched. */
+  onlyNew: boolean;
+  dryRun: boolean;
 };
 
 const STUDENT = {
@@ -71,19 +81,21 @@ function main() {
     auditRetentionDays: 30,
   });
   try {
-    const memberCount = importMembers(service, options.studentsCsv);
-    const paperCount = options.papersCsv ? importPapers(service, options.papersCsv) : 0;
+    const memberCount = options.studentsCsv ? importMembers(service, options.studentsCsv) : 0;
+    const paperCount = options.papersCsv ? importPapers(service, options.papersCsv, options) : 0;
     const members = service.listLabMembers();
     const papers = service.listPapers();
     if (!members.ok || !papers.ok) {
       throw new Error("failed to read imported AdminBot records");
     }
     console.log(
-      "Imported " +
+      (options.dryRun ? "Would import " : "Imported ") +
         memberCount +
         " member profiles and " +
         paperCount +
-        " ongoing papers into " +
+        (options.papersYear
+          ? " papers from " + options.papersYear + " into "
+          : " ongoing papers into ") +
         options.database +
         ".",
     );
@@ -102,6 +114,9 @@ function main() {
 function parseArgs(args: string[]): Options {
   let studentsCsv: string | undefined;
   let papersCsv: string | undefined;
+  let papersYear: string | undefined;
+  let onlyNew = false;
+  let dryRun = false;
   let database = "state/adminbot.sqlite";
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -112,6 +127,13 @@ function parseArgs(args: string[]): Options {
     } else if ((arg === "--papers-csv" || arg === "--papers") && value) {
       papersCsv = path.resolve(value);
       index += 1;
+    } else if (arg === "--papers-year" && value) {
+      papersYear = value.trim();
+      index += 1;
+    } else if (arg === "--only-new") {
+      onlyNew = true;
+    } else if (arg === "--dry-run") {
+      dryRun = true;
     } else if (arg === "--database" && value) {
       database = path.resolve(value);
       index += 1;
@@ -119,15 +141,19 @@ function parseArgs(args: string[]): Options {
       throw new Error("unknown argument: " + arg);
     }
   }
-  if (!studentsCsv) {
+  if (!studentsCsv && !papersCsv) {
     throw new Error(
       "usage: node --import tsx scripts/import-adminbot-data.ts " +
-        "--students-csv <path> [--papers-csv <path>] [--database <path>]",
+        "[--students-csv <path>] [--papers-csv <path>] [--papers-year <YYYY>] " +
+        "[--only-new] [--dry-run] [--database <path>]",
     );
   }
   return {
-    studentsCsv,
+    ...(studentsCsv ? { studentsCsv } : {}),
     ...(papersCsv ? { papersCsv } : {}),
+    ...(papersYear ? { papersYear } : {}),
+    onlyNew,
+    dryRun,
     database,
   };
 }
@@ -190,6 +216,7 @@ function importMembers(
 function importPapers(
   service: ReturnType<typeof createAdminBotSqliteService>["service"],
   csvPath: string,
+  options: Pick<Options, "papersYear" | "onlyNew" | "dryRun">,
 ): number {
   const records = parseCsvRecords(fs.readFileSync(csvPath, "utf8"));
   const existingResult = service.listPapers();
@@ -198,6 +225,11 @@ function importPapers(
   }
   const existingPapers = existingResult.payload.papers;
   const usedIds = new Set(existingPapers.map((paper) => paper.id));
+  // Counted rather than silently dropped: a sheet row with no title or no author list cannot
+  // become a paper, and "82 rows, 15 imported" is only a useful sentence if it says where the
+  // other 67 went.
+  let skippedIncomplete = 0;
+  let skippedExisting = 0;
   let imported = 0;
   for (const row of records) {
     const title = clean(row.Title);
@@ -205,29 +237,57 @@ function importPapers(
       .split(",")
       .map((author) => author.replace(/[\u2020*]/gu, "").trim())
       .filter(Boolean);
-    if (!title || authors.length === 0 || !isOngoing(row)) {
+    const selected = options.papersYear ? clean(row.Year) === options.papersYear : isOngoing(row);
+    if (!selected) {
+      continue;
+    }
+    if (!title || authors.length === 0) {
+      skippedIncomplete += 1;
+      continue;
+    }
+    const existing = existingPapers.find(
+      (paper) => normalizeName(paper.title) === normalizeName(title),
+    );
+    if (existing && options.onlyNew) {
+      skippedExisting += 1;
       continue;
     }
     const links = paperLinks(row);
     const record: AdminBotPaperRecordInput = {
-      id:
-        existingPapers.find((paper) => normalizeName(paper.title) === normalizeName(title))?.id ??
-        uniqueId(title, usedIds),
+      id: existing?.id ?? uniqueId(title, usedIds),
       title,
       authors,
-      current_step: clean(row["Under Review"])
-        ? "submission"
-        : urlOnly(row.overleaf)
-          ? "overleaf_writing"
-          : "brainstorming_docs",
+      // A named venue means the paper left the building, whatever the review column says: rows
+      // selected by year include accepted and published work, which "Under Review" alone reads as
+      // brainstorming. "Preprint" is not a venue in that sense -- nobody submitted to it.
+      current_step:
+        clean(row["Under Review"]) || (clean(row.Venue) && !/^preprint$/iu.test(clean(row.Venue)))
+          ? "submission"
+          : urlOnly(row.overleaf)
+            ? "overleaf_writing"
+            : "brainstorming_docs",
       ...(links ? { artifacts: links } : {}),
       notes: paperNotes(row),
     };
+    if (options.dryRun) {
+      console.log("would import: " + record.id + "  (" + title + ")");
+      imported += 1;
+      continue;
+    }
     const result = service.upsertPaper(record);
     if (!result.ok) {
       throw new Error("failed to import paper " + title + ": " + result.error.message);
     }
     imported += 1;
+  }
+  if (skippedExisting || skippedIncomplete) {
+    console.log(
+      "Skipped " +
+        skippedExisting +
+        " paper(s) already in the database and " +
+        skippedIncomplete +
+        " row(s) with no title or no authors.",
+    );
   }
   return imported;
 }
