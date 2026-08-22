@@ -76,7 +76,7 @@ function upTo(last: AdminBotPaperSlot): AdminBotPaperSlotRecord[] {
 
 describe("the registry", () => {
   it("declares every slot, so a read can never meet one it has no rules for", () => {
-    expect(adminBotPaperSlots).toHaveLength(25);
+    expect(adminBotPaperSlots).toHaveLength(24);
     for (const slot of adminBotPaperSlots) {
       expect(adminBotPaperSlotRegistry[slot]).toBeDefined();
     }
@@ -135,7 +135,7 @@ describe("the registry", () => {
 describe("paperSlotRows", () => {
   it("returns every slot, blanks included -- the card is a checklist, not a list of answers", () => {
     const rows = paperSlotRows("p1", [provided("overleaf_edit")]);
-    expect(rows).toHaveLength(25);
+    expect(rows).toHaveLength(24);
     expect(rows.find((row) => row.slot === "overleaf_edit")?.status).toBe("provided");
     expect(rows.find((row) => row.slot === "arxiv")?.status).toBe("missing");
   });
@@ -358,17 +358,10 @@ describe("actionablePaperSlots", () => {
     expect(open).not.toContain("overleaf_view");
   });
 
-  it("only asks for a rebuttal while the venue has not decided", () => {
-    const ready = upTo("submission_id");
-    expect(actionablePaperSlots(paper(), ready, NOW).map((item) => item.slot)).toContain(
-      "rebuttal_doc",
-    );
-    // Once the venue has answered there is no rebuttal window left to chase.
-    expect(
-      actionablePaperSlots(paper({ venue_decision: "accept" }), ready, NOW).map(
-        (item) => item.slot,
-      ),
-    ).not.toContain("rebuttal_doc");
+  it("has no rebuttal slot: the venue ladder closes that one from a bcc now", () => {
+    // It used to be a link somebody pasted, chased only while the venue had not decided. Keeping
+    // both it and the `rebuttal` stage would give the card two accounts of the same fact.
+    expect(adminBotPaperSlots as readonly string[]).not.toContain("rebuttal_doc");
   });
 
   it("ranks venue work above the rest when several are open at once", () => {

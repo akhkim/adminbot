@@ -366,15 +366,6 @@ export function actionablePaperSlots(
     if (!definition.upstream.every(settled)) {
       continue;
     }
-    // The rebuttal is the venue's clock, not ours, and it only exists if reviews came back asking
-    // for one. Chasing it on every submitted paper would ask most authors for a document that has
-    // no reason to exist.
-    // `undefined` is the same state as `pending` -- a paper filed before the column existed has
-    // not heard back either. Testing for "not pending" would have skipped the rebuttal on every
-    // paper in the database.
-    if (slot === "rebuttal_doc" && (paper.venue_decision ?? "pending") !== "pending") {
-      continue;
-    }
     out.push({
       domain: "paper_slot",
       subjectId: adminBotPaperSlotSubjectId(paper.id, slot),

@@ -54,11 +54,11 @@ function seed(service: AdminBotService): void {
 }
 
 describe("listPaperSlots", () => {
-  it("answers with all 25 rows, so the card renders a checklist rather than a list of answers", () => {
+  it("answers with all 24 rows, so the card renders a checklist rather than a list of answers", () => {
     const service = new AdminBotService();
     seed(service);
     const { slots } = unwrap(service.listPaperSlots("p1"));
-    expect(slots).toHaveLength(25);
+    expect(slots).toHaveLength(24);
     expect(slots.every((slot) => slot.status === "missing")).toBe(true);
   });
 

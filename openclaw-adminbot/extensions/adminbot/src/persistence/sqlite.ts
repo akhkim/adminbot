@@ -37,6 +37,7 @@ import type {
   AdminBotPaperSlotRecord,
   AdminBotPaperSlotStatus,
 } from "../contracts/paper-slots.js";
+import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
 import {
   AdminBotService,
   type AdminBotActionExecutor,
@@ -70,6 +71,15 @@ function serviceOptions(options: AdminBotSqliteServiceOptions): AdminBotServiceO
       ? { auditRetentionDays: options.auditRetentionDays }
       : {}),
     ...(options.executor ? { executor: options.executor } : {}),
+    // Read here rather than in the kernel so the service stays free of process globals: both
+    // callers (the API server and the hourly email script) build the service through this factory
+    // and both already load ~/.openclaw/.env before they do.
+    ...(process.env.ADMINBOT_BOT_EMAIL?.trim()
+      ? { paperflowBotEmail: process.env.ADMINBOT_BOT_EMAIL.trim() }
+      : {}),
+    ...(process.env.ADMINBOT_PAPERFLOW_PRIORITY_MEMBER_ID?.trim()
+      ? { paperflowPriorityMemberId: process.env.ADMINBOT_PAPERFLOW_PRIORITY_MEMBER_ID.trim() }
+      : {}),
   };
 }
 
@@ -242,6 +252,25 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       -- index.
       CREATE INDEX IF NOT EXISTS adminbot_nudge_ledger_member_idx
         ON adminbot_nudge_ledger(member_id, last_nudged_at);
+
+      -- One row per venue-cycle stage AdminBot has seen the closing mail for. Keyed by
+      -- (paper, stage) rather than by message: a stage closes once, and a second bcc on the same
+      -- decision is a duplicate rather than a second fact.
+      --
+      -- Separate from adminbot_paper_slots because it answers a different question. A slot is an
+      -- artifact somebody in the lab produces; this is an event the venue caused, and the only
+      -- thing anybody here can do about it is report that it happened.
+      CREATE TABLE IF NOT EXISTS adminbot_paperflow_evidence (
+        paper_id TEXT NOT NULL,
+        stage TEXT NOT NULL,
+        message_id TEXT,
+        subject TEXT,
+        sender TEXT,
+        recorded_at TEXT NOT NULL,
+        recorded_by TEXT NOT NULL,
+        confidence REAL,
+        PRIMARY KEY (paper_id, stage)
+      );
 
       -- The social draft itself, kept because consent is asked against a specific wording.
       CREATE TABLE IF NOT EXISTS adminbot_paper_social_drafts (
@@ -843,14 +872,15 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       "adminbot_paper_social_drafts",
       "adminbot_paper_conference_attendees",
       "adminbot_paper_reimbursements",
+      "adminbot_paperflow_evidence",
     ]) {
       this.db.prepare(`DELETE FROM ${table} WHERE paper_id = ?`).run(paperId);
     }
-    this.db
-      .prepare(
-        "DELETE FROM adminbot_nudge_ledger WHERE domain = 'paper_slot' AND subject_id LIKE ?",
-      )
-      .run(`${paperId}:%`);
+    for (const domain of ["paper_slot", "paperflow_stage"]) {
+      this.db
+        .prepare("DELETE FROM adminbot_nudge_ledger WHERE domain = ? AND subject_id LIKE ?")
+        .run(domain, `${paperId}:%`);
+    }
     return this.db.prepare("DELETE FROM adminbot_papers WHERE id = ?").run(paperId).changes > 0;
   }
 
@@ -1117,6 +1147,59 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
         : this.db.prepare("SELECT * FROM adminbot_paper_slots ORDER BY paper_id, slot").all()
     ) as Array<Record<string, unknown>>;
     return rows.map((row) => paperSlotFromRow(row));
+  }
+
+  savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void {
+    // First sighting wins. A stage that already closed stays closed with the mail that closed it:
+    // a later bcc on the same decision is the author forwarding the thread again, and letting it
+    // overwrite would rewrite when the lab actually found out.
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_paperflow_evidence
+          (paper_id, stage, message_id, subject, sender, recorded_at, recorded_by, confidence)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(paper_id, stage) DO NOTHING`,
+      )
+      .run(
+        record.paper_id,
+        record.stage,
+        record.message_id ?? null,
+        record.subject ?? null,
+        record.sender ?? null,
+        record.recorded_at,
+        record.recorded_by,
+        record.confidence ?? null,
+      );
+  }
+
+  listPaperflowEvidence(paperId?: string): AdminBotPaperflowEvidenceRecord[] {
+    const rows = (
+      paperId
+        ? this.db
+            .prepare("SELECT * FROM adminbot_paperflow_evidence WHERE paper_id = ? ORDER BY stage")
+            .all(paperId)
+        : this.db
+            .prepare("SELECT * FROM adminbot_paperflow_evidence ORDER BY paper_id, stage")
+            .all()
+    ) as Array<Record<string, unknown>>;
+    return rows.map((row) => {
+      const record: AdminBotPaperflowEvidenceRecord = {
+        paper_id: String(row.paper_id),
+        stage: String(row.stage) as AdminBotPaperflowEvidenceRecord["stage"],
+        recorded_at: String(row.recorded_at),
+        recorded_by: String(row.recorded_by) as AdminBotPaperflowEvidenceRecord["recorded_by"],
+      };
+      Object.assign(
+        record,
+        optionalText(row, "message_id"),
+        optionalText(row, "subject"),
+        optionalText(row, "sender"),
+      );
+      if (row.confidence !== null && row.confidence !== undefined) {
+        record.confidence = Number(row.confidence);
+      }
+      return record;
+    });
   }
 
   appendMemberLocation(entry: AdminBotMemberLocationEntry): void {

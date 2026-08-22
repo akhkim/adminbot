@@ -1975,6 +1975,55 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  if (req.method === "GET" && url.pathname === "/papers/paperflow-stages") {
+    // The preview for the stage sweep, computed by the same walk the send uses. Privileged only:
+    // it lists every paper's venue position and who is holding it, which is governance state.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.collectPaperflowStageNudges(url.searchParams.get("now") ?? undefined),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/paperflow-stages/run") {
+    // requirePrivileged, not requireMemberPrivileged, for the same reason
+    // /members/mandatory-fields-reminder/run takes the service principal: the route accepts no
+    // message and no recipient list. Both are derived from the author list and the stage registry,
+    // so there is no admin-composed content for the member-session gate to protect. This is the
+    // route scripts/adminbot-paperflow-nudge-cron.sh authenticates to.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, await service.sendPaperflowStageNudges(principalActor(principal)));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/paperflow-evidence") {
+    // Written by the hourly email pass when a bcc lands, and by an admin closing a stage by hand.
+    // Privileged either way: closing a stage silently stops a chase, which is a governance effect
+    // even though it looks like a note.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.recordPaperflowEvidence({
+        paperId: typeof body.paper_id === "string" ? body.paper_id : "",
+        stage: typeof body.stage === "string" ? body.stage : "",
+        actor: principalActor(principal),
+        ...(typeof body.message_id === "string" ? { messageId: body.message_id } : {}),
+        ...(typeof body.subject === "string" ? { subject: body.subject } : {}),
+        ...(typeof body.sender === "string" ? { sender: body.sender } : {}),
+        ...(typeof body.confidence === "number" ? { confidence: body.confidence } : {}),
+        // An admin closing a stage by hand is not held to the classifier's confidence floor --
+        // they are the confirmation the floor exists to demand.
+        ...(body.recorded_by === "admin" ? { recordedBy: "admin" as const } : {}),
+      }),
+    );
+    return;
+  }
   const paperSlot = /^\/papers\/([^/]+)\/slots\/([^/]+)$/u.exec(url.pathname);
   if (req.method === "PUT" && paperSlot?.[1] && paperSlot[2]) {
     if (principal.kind !== "member" && !isPrivileged(principal)) {

@@ -75,7 +75,7 @@ export const BACKFILL_SETTLED_REASON =
  */
 export const BACKFILL_SETTLED_QUIET_DAYS = 90;
 
-/** All 25, so pass 3 can close whatever passes 1 and 2 left open. */
+/** All of them, so pass 3 can close whatever passes 1 and 2 left open. */
 const ALL_SLOTS = Object.keys(adminBotPaperSlotRegistry) as AdminBotPaperSlot[];
 
 /** Every slot upstream of `slot`, transitively. */

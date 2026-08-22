@@ -784,6 +784,8 @@ checks and audit logging.
 
 ## Related
 
+- [PaperFlow stage nudges](/tools/adminbot-paperflow-nudges)
+- [Email triage](/tools/adminbot-email-triage)
 - [Standing orders](/automation/standing-orders)
 - [Per-agent sandbox and tool restrictions](/tools/multi-agent-sandbox-tools)
 - [Skills config](/tools/skills-config)

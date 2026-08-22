@@ -34,7 +34,9 @@ export const adminBotPaperSlots = [
   "pdf_ready",
   "submission",
   "submission_id",
-  "rebuttal_doc",
+  // No `rebuttal_doc`. The rebuttal used to be a link somebody pasted; it is now one of the venue
+  // stages the bcc loop closes (contracts/paperflow-stages.ts), and keeping both would give the
+  // card two accounts of the same fact that are free to disagree.
   "drive_pdf_arxiv",
   "authors_ack",
   "arxiv_paper_password",
@@ -83,6 +85,36 @@ export type AdminBotPaperSlotStatus = "missing" | "provided" | "invalid" | "waiv
 export type AdminBotPaperSlotBranch = "venue" | "core" | "archive" | "social" | "talk";
 
 /** Lower sorts first. Venue deadlines outrank the writing, which outranks anything cosmetic. */
+/**
+ * Where each branch sits on the PaperFlow chart.
+ *
+ * `core` is the trunk -- the chart draws it top to bottom and everything else hangs off
+ * "Compiled paper PDF ready" -- so it has no branch number. The other four carry the chart's own
+ * "Branch 1".."Branch 4" edge labels, which is what lets the card be read side by side with the
+ * diagram instead of asking somebody to hold a translation in their head.
+ *
+ * Deliberately separate from `adminBotPaperSlotBranchPriority`: that one is what to chase first,
+ * this one is what to draw first, and they disagree on purpose. The venue branch has the hard
+ * clocks and so outranks everything for nudging, but it is Branch 4 on the chart and reading it
+ * first would put the card and the diagram in different orders.
+ */
+export const adminBotPaperFlowBranchNumber: Record<AdminBotPaperSlotBranch, number | null> = {
+  core: null,
+  talk: 1,
+  social: 2,
+  archive: 3,
+  venue: 4,
+};
+
+/** Trunk first, then the chart's own branch numbering. The reading order of a paper card. */
+export const adminBotPaperSlotChartOrder: readonly AdminBotPaperSlotBranch[] = [
+  "core",
+  "talk",
+  "social",
+  "archive",
+  "venue",
+];
+
 export const adminBotPaperSlotBranchPriority: Record<AdminBotPaperSlotBranch, number> = {
   venue: 0,
   core: 1,
@@ -143,6 +175,21 @@ export type AdminBotPaperSlotDefinition = {
   urlHosts?: readonly string[];
   /** `link` slots only: a path the URL must contain. Any one of them satisfies it. */
   urlPath?: readonly string[];
+  /**
+   * Render this slot inside another one's row rather than as a row of its own.
+   *
+   * Four pairs of slots are two halves of one PaperFlow node -- the two Overleaf links are both
+   * `OV`, the submission page and its id are both `SB` -- and showing them as separate rows made
+   * the card claim more steps than the chart has. They stay separate slots because the service
+   * validates them separately and each carries its own status; only the drawing changes.
+   */
+  subOf?: AdminBotPaperSlot;
+  /**
+   * The heading for the row when this slot has children. Without it a merged row would be titled
+   * after whichever half happens to be the parent, which reads as the other half being an
+   * afterthought rather than the two being one thing.
+   */
+  groupLabel?: string;
   /** A line under the control, for slots whose point is not guessable from the label. */
   hint?: string;
 };
@@ -171,6 +218,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     hint: "The living folder for this paper. Slides, poster and video go here too.",
   },
   overleaf_view: {
+    subOf: "overleaf_edit",
     kind: "link",
     node: "OV",
     owner: "first_author",
@@ -189,6 +237,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     hint: "Safe to share. Read-only.",
   },
   overleaf_edit: {
+    groupLabel: "Overleaf",
     kind: "link",
     node: "OV",
     owner: "first_author",
@@ -236,6 +285,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     deadlineBearing: true,
   },
   submission: {
+    groupLabel: "Submitted to venue",
     kind: "link",
     node: "SB",
     owner: "first_author",
@@ -247,6 +297,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     deadlineBearing: true,
   },
   submission_id: {
+    subOf: "submission",
     kind: "text",
     node: "SB",
     owner: "first_author",
@@ -256,22 +307,6 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     upstream: ["submission"],
     required: true,
     deadlineBearing: true,
-  },
-  rebuttal_doc: {
-    kind: "link",
-    node: "RS",
-    owner: "first_author",
-    gates: null,
-    branch: "venue",
-    label: "Rebuttal doc",
-    // The rebuttal window is a hard clock the venue sets, so this is deadline-bearing even though
-    // it releases no step of ours.
-    upstream: ["submission_id"],
-    required: true,
-    deadlineBearing: true,
-    urlHosts: ["docs.google.com", "drive.google.com"],
-    urlPath: ["/document/", "/drive/folders/"],
-    hint: "Only once reviews are in and a rebuttal is actually due.",
   },
   drive_pdf_arxiv: {
     kind: "link",
@@ -382,6 +417,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     deadlineBearing: false,
   },
   x_post: {
+    groupLabel: "Published",
     kind: "link",
     node: "PS",
     owner: "first_author",
@@ -395,6 +431,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     urlPath: ["/status/"],
   },
   linkedin_post: {
+    subOf: "x_post",
     kind: "link",
     node: "PS",
     owner: "first_author",
@@ -421,6 +458,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     urlPath: ["/presentation/"],
   },
   poster: {
+    groupLabel: "Poster",
     kind: "link",
     node: "PO",
     owner: "first_author",
@@ -434,6 +472,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     deadlineBearing: false,
   },
   poster_physical: {
+    subOf: "poster",
     kind: "enum",
     node: "PO",
     owner: "first_author",

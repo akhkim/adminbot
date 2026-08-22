@@ -133,6 +133,10 @@ export type AdminBotPaperReimbursementRecord = {
  */
 export const adminBotNudgeDomains = [
   "paper_slot",
+  // The venue-cycle stages chased by email rather than in the Slack sweep. Same ledger because
+  // the cadence still belongs to the person: an author who was emailed about reviews this morning
+  // should not also be Slacked about a poster this afternoon.
+  "paperflow_stage",
   "social_consent",
   "conference_attendance",
   "paper_reimbursement",

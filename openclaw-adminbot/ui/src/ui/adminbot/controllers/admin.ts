@@ -267,6 +267,14 @@ export type AdminBotPaperSaveInput = {
   id: string;
   title: string;
   authors: string[];
+  /** Names of people asked to read the draft. Sent whole; the service trims and de-blanks. */
+  feedbackGivers?: string[];
+  /**
+   * Where the paper is aimed. This is the record's own `venue` field, not `artifacts.conference`:
+   * `venue` is what the stage nudges quote and the deadline board matches on, and having two
+   * places to write the same answer is how they came to disagree.
+   */
+  venue?: string;
   currentStep: AdminBotPaperStep;
   overleafEditUrl?: string;
   googleDrivePdfUrl?: string;
@@ -447,7 +455,10 @@ export type AdminBotPaperTimeline = {
 export type AdminBotPaperRecord = {
   id: string;
   title: string;
+  /** In the order the paper prints them. Order decides who the PaperFlow stage nudges go to. */
   authors: string[];
+  /** People asked to read the draft. Not authors, and not the social consent list. */
+  feedback_givers?: string[];
   current_step: AdminBotPaperStep;
   // Governance fields the service owns. Mirrored here so a card can show the venue and its
   // deadline without a second read; nothing in the UI writes them.
@@ -1692,6 +1703,13 @@ export async function saveAdminBotPaper(
   };
   // Governance-shaped fields go on the record itself rather than into `artifacts`, and only when
   // the form actually offered one -- an untouched control must not clear a stored value.
+  // The author's own details, editable from their card. Kept apart from `acceptance` below
+  // because that one carries governance fields a member is forbidden to send at all -- mixing
+  // them would make a member's ordinary edit look like an attempt to record a venue decision.
+  const details = {
+    ...(paper.feedbackGivers === undefined ? {} : { feedback_givers: paper.feedbackGivers }),
+    ...(paper.venue === undefined ? {} : { venue: paper.venue }),
+  };
   const acceptance = {
     ...(paper.venueDecision ? { venue_decision: paper.venueDecision } : {}),
     ...(paper.acceptedVenue === undefined ? {} : { accepted_venue: paper.acceptedVenue }),
@@ -1712,6 +1730,7 @@ export async function saveAdminBotPaper(
         title: paper.title,
         authors: paper.authors,
         current_step: paper.currentStep,
+        ...details,
         ...acceptance,
         ...(Object.keys(artifacts).length > 0 ? { artifacts } : {}),
         ...(paper.reminderStatus ? { reminder: { status: paper.reminderStatus } } : {}),

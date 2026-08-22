@@ -7,7 +7,9 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { promisify } from "node:util";
 import {
+  adminBotPaperflowEvidenceMinConfidence,
   createAdminBotSqliteService,
+  isAdminBotPaperflowStage,
   looksLikeZoomRecordingNotice,
   noticeToMeeting,
   renderEmailBodyHtml,
@@ -23,6 +25,7 @@ import {
   type EmailReplyPurpose,
   type ModelClassification,
   type ModelEmailDraft,
+  type PaperflowCandidate,
 } from "./adminbot-email-model.js";
 
 const execFileAsync = promisify(execFile);
@@ -68,6 +71,46 @@ const DCS_FORM = "https://forms.office.com/r/TgGWBGWLZa";
 const CONTROL_UI_URL = "https://jinesis-admin.vercel.app/";
 const CONTROL_UI_ORIGIN = "https://jinesis-admin.vercel.app";
 const DEFAULT_TIMEZONE = "America/Toronto";
+
+/**
+ * Where a message ends up once this pass is finished with it.
+ *
+ * Labels rather than a trash call, which is what this used to do. Deleting a handled message made
+ * the inbox a to-do list, which is the right shape, but it also threw away the only record of what
+ * the automation actually did with a message -- and the failures, which are the ones somebody has
+ * to act on, were left sitting in the inbox looking exactly like mail nobody had processed yet.
+ *
+ * So: every message the pass touches gets exactly one of these, and only the completed ones leave
+ * the inbox. What is left in the inbox is then precisely the work outstanding, and each piece of it
+ * says why it is there.
+ */
+const OUTCOME_LABELS = {
+  completed: "AdminBot/Handled",
+  needs_review: "AdminBot/Needs Review",
+  failed: "AdminBot/Error",
+} as const;
+
+export type EmailOutcome = keyof typeof OUTCOME_LABELS;
+
+const ALL_OUTCOME_LABELS = Object.values(OUTCOME_LABELS);
+
+/**
+ * The label change one outcome makes.
+ *
+ * Pure and exported so the filing rule can be asserted without a mailbox. The rule is small but
+ * it is the whole feature: which labels come off matters as much as which goes on, because a
+ * message that failed last hour and was handled this hour must not end up carrying both.
+ */
+export function outcomeLabelChange(outcome: EmailOutcome): { add: string[]; remove: string[] } {
+  const add = OUTCOME_LABELS[outcome];
+  const remove = ALL_OUTCOME_LABELS.filter((label) => label !== add);
+  // Only a completed message leaves the inbox. What is left in the inbox is then exactly the work
+  // still outstanding, which is the entire point of labelling rather than trashing.
+  if (outcome === "completed") {
+    remove.push("INBOX");
+  }
+  return { add: [add], remove };
+}
 
 export type EmailMessage = {
   id: string;
@@ -251,6 +294,10 @@ export function authorizeClassification(
     }
     return classification;
   }
+  // A bcc closes a stage, and a closed stage stops the chase -- silently, because the failure is a
+  // message that never gets sent. So it has to come from inside the lab. The roster check is done
+  // by the caller (it needs the store); here we only refuse the obviously-outside case where the
+  // sender is not a known address at all and the pass has no roster to consult.
   const privilegedCategory =
     classification.category === "calendar_event" ||
     classification.category === "reimbursement" ||
@@ -504,10 +551,58 @@ class GoogleClient {
     await command(GOG, this.args(["gmail", "mark-read", messageId]));
   }
 
-  // Gmail's trash, not a permanent delete: a wrongly handled message is still
-  // recoverable from the bin for 30 days.
-  async trash(messageId: string): Promise<void> {
-    await command(GOG, this.args(["gmail", "trash", messageId]));
+  /**
+   * Create whichever outcome labels the mailbox does not have yet.
+   *
+   * Once per run, not once per message: labels are a property of the mailbox, and re-checking
+   * three of them for every message would be forty API calls an hour to learn nothing. Gmail
+   * rejects a duplicate label rather than returning the existing one, so this reads the list
+   * first instead of creating blindly and swallowing the error -- swallowing it would also
+   * swallow a genuine permissions failure, and then every file below would fail one at a time
+   * with a confusing message.
+   */
+  async ensureOutcomeLabels(): Promise<void> {
+    const result = await command(GOG, this.args(["gmail", "labels", "list", "--results-only"]));
+    const payload = parseJson<unknown>(result.stdout);
+    const rows = Array.isArray(payload)
+      ? payload
+      : ((payload as { labels?: unknown[] })?.labels ?? []);
+    const existing = new Set(
+      rows.flatMap((row) => {
+        const name = row && typeof row === "object" ? (row as { name?: unknown }).name : undefined;
+        return typeof name === "string" && name ? [name] : [];
+      }),
+    );
+    for (const label of ALL_OUTCOME_LABELS) {
+      if (existing.has(label)) {
+        continue;
+      }
+      await command(GOG, this.args(["gmail", "labels", "create", label]));
+    }
+  }
+
+  /**
+   * File a message under its outcome.
+   *
+   * The other two outcome labels are always removed, so a message that failed last hour and was
+   * handled this hour does not carry both. Only a completed message leaves the inbox: the whole
+   * point is that what remains in the inbox is what still needs a person.
+   */
+  async file(messageId: string, outcome: EmailOutcome): Promise<void> {
+    const { add, remove } = outcomeLabelChange(outcome);
+    await command(
+      GOG,
+      this.args([
+        "gmail",
+        "messages",
+        "modify",
+        messageId,
+        "--add",
+        add.join(","),
+        "--remove",
+        remove.join(","),
+      ]),
+    );
   }
 
   async createEvent(event: CalendarEvent): Promise<unknown> {
@@ -798,12 +893,118 @@ function extractResultThreadId(result: unknown): string | undefined {
   );
 }
 
+/**
+ * Close the PaperFlow stage a bcc'd venue mail proves has happened.
+ *
+ * Three gates before anything is written, in cheapening order: the sender has to be somebody in
+ * the lab, the model has to pick a paper out of the closed candidate set, and the pick has to
+ * survive being re-checked against that set. Failing any of them raises "queued for review",
+ * which the caller turns into a needs-review label rather than a failure -- an unmatched bcc is
+ * not an error, it is a message a human should glance at.
+ */
+async function recordPaperflowBcc(
+  message: EmailMessage,
+  model: AdminBotEmailModel,
+  databasePath: string,
+): Promise<{ paperId: string; stage: string; confidence: number }> {
+  const { service, store, close } = createAdminBotSqliteService({ databasePath });
+  try {
+    const sender = normalizeAddress(message.from);
+    const known = store
+      .listLabMembers()
+      .some((member) =>
+        [member.email, member.calendar_email, member.correspondence_email]
+          .filter((address): address is string => Boolean(address))
+          .some((address) => address.trim().toLowerCase() === sender),
+      );
+    if (!known && !privilegedSenders().has(sender)) {
+      throw new Error(
+        `paperflow bcc from ${sender} is not a lab address; queued for review rather than closing a stage`,
+      );
+    }
+
+    const open = service.collectPaperflowStageNudges();
+    if (!open.ok) {
+      throw new Error(open.error.message);
+    }
+    const candidates: PaperflowCandidate[] = open.payload.items.map((item) => {
+      const paper = store.getPaper(item.paper_id);
+      const submissionId = store
+        .listPaperSlots(item.paper_id)
+        .find((row) => row.slot === "submission_id" && row.status === "provided")?.value_text;
+      const candidate: PaperflowCandidate = {
+        paperId: item.paper_id,
+        title: item.title,
+        openStage: item.stage,
+        authors: paper?.authors ?? [],
+      };
+      // The venue name and the submission id are the two strongest signals the matcher has after
+      // the title, so they are attached when the lab has them and left off when it does not --
+      // an empty string would read as "this paper has no venue" rather than "we never recorded it".
+      if (item.venue) {
+        candidate.venue = item.venue;
+      }
+      if (submissionId) {
+        candidate.submissionId = submissionId;
+      }
+      return candidate;
+    });
+
+    const match = await model.paperflowEvidence(message, candidates);
+    if (!match.paperId || !match.stage) {
+      throw new Error(`paperflow bcc matched no open paper (${match.reason}); queued for review`);
+    }
+    // The model was constrained to this set, but a constrained decode is a strong hint rather than
+    // a guarantee, and the cost of trusting it wrongly is a paper nobody chases again.
+    const candidate = candidates.find((entry) => entry.paperId === match.paperId);
+    if (!candidate) {
+      throw new Error(
+        `paperflow bcc named a paper that has no open stage (${match.paperId}); queued for review`,
+      );
+    }
+    // Held before the guard narrows it: after the narrowing the name is unavailable to quote back,
+    // and "that is not a stage" is only useful if it says which one was meant.
+    const namedStage: string = match.stage;
+    if (!isAdminBotPaperflowStage(match.stage)) {
+      throw new Error(`${namedStage} is not a PaperFlow stage; queued for review`);
+    }
+    if (match.stage !== candidate.openStage) {
+      throw new Error(
+        `paperflow bcc named ${namedStage} but ${candidate.title} is waiting on ${candidate.openStage}; queued for review`,
+      );
+    }
+    if (match.confidence < adminBotPaperflowEvidenceMinConfidence) {
+      throw new Error(
+        `paperflow bcc match was only ${Math.round(match.confidence * 100)}% confident on ${candidate.title}; queued for review`,
+      );
+    }
+
+    const recorded = service.recordPaperflowEvidence({
+      paperId: match.paperId,
+      stage: match.stage,
+      messageId: message.id,
+      subject: message.subject,
+      sender,
+      confidence: match.confidence,
+      recordedBy: "email_bcc",
+      actor: "email_automation",
+    });
+    if (!recorded.ok) {
+      throw new Error(recorded.error.message);
+    }
+    return { paperId: match.paperId, stage: match.stage, confidence: match.confidence };
+  } finally {
+    close();
+  }
+}
+
 async function processMessage(
   message: EmailMessage,
   classification: Classification,
   state: StateStore,
   google: GoogleClient,
   model: AdminBotEmailModel,
+  databasePath: string,
 ): Promise<boolean> {
   if (!state.begin(message, classification)) return false;
   try {
@@ -952,12 +1153,15 @@ async function processMessage(
       await state.effect(message.id, "send_reimbursement", () =>
         google.send(adminRecipient(), draft.subject, draft.body, files),
       );
+    } else if (classification.category === "paperflow_bcc") {
+      // No reply and no acknowledgement. The author was told bcc'ing is all that is needed, and a
+      // robot writing back "thanks, noted" to every forwarded decision is how people start
+      // filtering the address they were asked to bcc.
+      await state.effect(message.id, "paperflow_evidence", () =>
+        recordPaperflowBcc(message, model, databasePath),
+      );
     }
     await state.effect(message.id, "mark_read", () => google.markRead(message.id));
-    // Only fully handled messages are deleted, and only after every other
-    // effect landed. Anything that failed or went to needs_review returns
-    // through the catch below and stays in the inbox for a human.
-    await state.effect(message.id, "trash", () => google.trash(message.id));
     state.finish(message.id, "completed");
     return true;
   } catch (error) {
@@ -983,7 +1187,11 @@ async function processMessage(
  * Returns false when the mail turns out not to be a notice after all, so the caller falls through
  * to the normal path rather than swallowing the message.
  */
-function fileRecordingNotice(message: EmailMessage, state: StateStore, databasePath: string): boolean {
+function fileRecordingNotice(
+  message: EmailMessage,
+  state: StateStore,
+  databasePath: string,
+): boolean {
   const meeting = noticeToMeeting({
     id: message.id,
     subject: message.subject,
@@ -995,7 +1203,9 @@ function fileRecordingNotice(message: EmailMessage, state: StateStore, databaseP
   if (!meeting) {
     return false;
   }
-  if (!state.begin(message, { category: "meeting_recording", reason: "Zoom cloud recording notice" })) {
+  if (
+    !state.begin(message, { category: "meeting_recording", reason: "Zoom cloud recording notice" })
+  ) {
     return true;
   }
   const { service, close } = createAdminBotSqliteService({ databasePath });
@@ -1032,13 +1242,40 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
   try {
     const messages = await google.search();
     summary.found = messages.length;
+    // Nothing to file if nothing arrived, and an empty hour is most hours -- so the label check
+    // is skipped rather than run on a pass that will not use it.
+    if (messages.length > 0) {
+      await google.ensureOutcomeLabels();
+    }
+    // Filing is the last thing that happens to a message, whatever path it took, so it lives here
+    // rather than in each branch. Its own failure is recorded and swallowed: a message that was
+    // genuinely handled must not be reported as failed because a label could not be written, and
+    // the label is a filing aid rather than part of the work.
+    const file = async (messageId: string, outcome: EmailOutcome): Promise<void> => {
+      try {
+        await state.effect(messageId, `file_${outcome}`, () => google.file(messageId, outcome));
+      } catch (error) {
+        summary.errors.push(
+          `${messageId}: could not file as ${outcome}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    };
     for (const message of messages) {
       // Deterministic branch first: a recording notice is machine-readable and must never reach
       // the classifier, which would file it as unknown and park it for a human.
       if (looksLikeZoomRecordingNotice(message.subject, message.body)) {
         try {
           if (fileRecordingNotice(message, state, databasePath)) {
-            summary.completed += 1;
+            const outcome = state.db
+              .prepare("SELECT status FROM adminbot_email_messages WHERE message_id=?")
+              .get(message.id) as { status?: string } | undefined;
+            if (outcome?.status === "needs_review") {
+              summary.needs_review += 1;
+              await file(message.id, "needs_review");
+            } else {
+              summary.completed += 1;
+              await file(message.id, "completed");
+            }
             continue;
           }
         } catch (error) {
@@ -1046,6 +1283,7 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
           summary.errors.push(
             `${message.id}: ${error instanceof Error ? error.message : String(error)}`,
           );
+          await file(message.id, "failed");
           continue;
         }
       }
@@ -1055,27 +1293,44 @@ export async function runEmailAutomation(): Promise<EmailAutomationSummary> {
       try {
         const modelClassification = await model.classify(message, onboarding);
         const classification = authorizeClassification(message, modelClassification, onboarding);
-        const processed = await processMessage(message, classification, state, google, model);
+        const processed = await processMessage(
+          message,
+          classification,
+          state,
+          google,
+          model,
+          databasePath,
+        );
         if (!processed) {
+          // Already handled on an earlier pass, so it already carries its label. Re-filing it
+          // would be a second write saying the same thing.
           summary.skipped += 1;
           continue;
         }
         const status = state.db
           .prepare("SELECT status FROM adminbot_email_messages WHERE message_id=?")
           .get(message.id) as { status?: string } | undefined;
-        if (status?.status === "completed") summary.completed += 1;
-        if (status?.status === "needs_review") summary.needs_review += 1;
+        if (status?.status === "completed") {
+          summary.completed += 1;
+          await file(message.id, "completed");
+        }
+        if (status?.status === "needs_review") {
+          summary.needs_review += 1;
+          await file(message.id, "needs_review");
+        }
       } catch (error) {
         const status = state.db
           .prepare("SELECT status FROM adminbot_email_messages WHERE message_id=?")
           .get(message.id) as { status?: string } | undefined;
         if (status?.status === "needs_review") {
           summary.needs_review += 1;
+          await file(message.id, "needs_review");
         } else {
           summary.failed += 1;
           summary.errors.push(
             `${message.id}: ${error instanceof Error ? error.message : String(error)}`,
           );
+          await file(message.id, "failed");
         }
       }
     }

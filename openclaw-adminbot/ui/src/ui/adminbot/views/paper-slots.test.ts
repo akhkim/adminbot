@@ -2,15 +2,19 @@
 // answer on file cannot be used.
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
-import type { PaperSlotRow } from "../auth/session.ts";
-import { renderPaperSlots } from "./paper-slots.ts";
+import type { PaperflowStageRow, PaperSlotRow } from "../auth/session.ts";
+import { renderPaperSlots, type PaperDetailsProps } from "./paper-slots.ts";
 
 type Saved = {
   slot: string;
   input: { url?: string; value_text?: string; done?: boolean };
 };
 
-function draw(slots: PaperSlotRow[], loading = false) {
+function draw(
+  slots: PaperSlotRow[],
+  loading = false,
+  extra: { stages?: PaperflowStageRow[]; details?: PaperDetailsProps } = {},
+) {
   const saved: Saved[] = [];
   const container = document.createElement("div");
   document.body.append(container);
@@ -19,11 +23,16 @@ function draw(slots: PaperSlotRow[], loading = false) {
       paperId: "p1",
       slots,
       loading,
+      ...extra,
       onSaveSlot: (slot, input) => saved.push({ slot, input }),
     }),
     container,
   );
   return { container, saved };
+}
+
+function stage(fields: Partial<PaperflowStageRow> & { stage: string }): PaperflowStageRow {
+  return { label: fields.stage, node: "RV", state: "upcoming", ...fields };
 }
 
 function row(fields: Partial<PaperSlotRow> & { slot: string }): PaperSlotRow {
@@ -33,7 +42,163 @@ function row(fields: Partial<PaperSlotRow> & { slot: string }): PaperSlotRow {
 describe("renderPaperSlots", () => {
   it("shows every slot, filled or not -- the card is the checklist", () => {
     const { container } = draw([]);
-    expect(container.querySelectorAll(".paper-slot")).toHaveLength(25);
+    // 24 slots, four of which are the second half of a node their parent already draws, so the
+    // card is 20 rows. The chart has 20-odd nodes; the card used to claim 25 steps it did not
+    // have, which is what made it read as longer than the process it describes.
+    expect(container.querySelectorAll(".paper-slot")).toHaveLength(20);
+    expect(container.querySelectorAll(".paper-slot__child")).toHaveLength(4);
+  });
+
+  it("draws the two halves of a node in one row rather than two", () => {
+    const { container } = draw([]);
+    // The submission page and its id are both node SB. Two rows made the card claim two steps.
+    const parent = container.querySelector('[data-testid="paper-slot-row-p1-submission"]');
+    expect(parent?.querySelector('[data-testid="paper-slot-child-p1-submission_id"]')).toBeTruthy();
+    expect(container.querySelector('[data-testid="paper-slot-row-p1-submission_id"]')).toBeNull();
+  });
+
+  it("titles a merged row after the node, not after whichever half is the parent", () => {
+    const { container } = draw([]);
+    const parent = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
+    expect(parent?.querySelector(".paper-slot__label")?.textContent).toContain("Overleaf");
+  });
+
+  it("orders the sections as the chart numbers them: trunk, then Branch 1 to 4", () => {
+    const { container } = draw([]);
+    const branches = [...container.querySelectorAll("[data-testid^='paper-slots-branch-p1-']")].map(
+      (node) => node.getAttribute("data-testid"),
+    );
+    expect(branches).toEqual([
+      "paper-slots-branch-p1-core",
+      "paper-slots-branch-p1-talk",
+      "paper-slots-branch-p1-social",
+      "paper-slots-branch-p1-archive",
+      "paper-slots-branch-p1-venue",
+    ]);
+  });
+
+  it("marks the trunk apart from the branches that hang off it", () => {
+    const { container } = draw([]);
+    const trunk = container.querySelector('[data-testid="paper-slots-branch-p1-core"]');
+    const branch = container.querySelector('[data-testid="paper-slots-branch-p1-venue"]');
+    expect(trunk?.classList.contains("paper-slots__group--trunk")).toBe(true);
+    expect(branch?.classList.contains("paper-slots__group--branch")).toBe(true);
+    // The chart's own edge label, so the card can be read beside the diagram.
+    expect(branch?.querySelector(".paper-slots__branch-number")?.textContent).toContain("Branch 4");
+  });
+
+  it("has no rebuttal field: the bcc loop closes that stage now", () => {
+    const { container } = draw([]);
+    expect(container.querySelector('[data-testid="paper-slot-p1-rebuttal_doc"]')).toBeNull();
+  });
+
+  describe("the venue ladder", () => {
+    const stages = [
+      stage({
+        stage: "reviews_out",
+        label: "Reviews",
+        state: "closed",
+        closed_at: "2026-08-12T00:00:00.000Z",
+        closed_by_subject: "ARR reviews available",
+        closed_by: "email_bcc",
+      }),
+      stage({ stage: "rebuttal", label: "Rebuttal window", state: "closed", closed_by: "admin" }),
+      stage({ stage: "decision", label: "Decision", state: "waiting" }),
+      stage({ stage: "camera_ready", label: "Camera ready" }),
+      stage({ stage: "conference", label: "Conference attendance" }),
+    ];
+
+    it("shows what closed a rung, so a stage that closed itself can be checked", () => {
+      const { container } = draw([], false, { stages });
+      const reviews = container.querySelector('[data-testid="paper-stage-p1-reviews_out"]');
+      expect(reviews?.textContent).toContain("ARR reviews available");
+    });
+
+    it("names the one rung anybody can act on, and what the action is", () => {
+      const { container } = draw([], false, { stages });
+      const decision = container.querySelector('[data-testid="paper-stage-p1-decision"]');
+      expect(decision?.textContent).toContain("bcc us when it lands");
+    });
+
+    it("offers no control at all: nothing a person does closes these", () => {
+      const { container } = draw([], false, { stages });
+      const ladder = container.querySelector('[data-testid="paper-stages-p1"]');
+      expect(ladder?.querySelectorAll("input, select, button")).toHaveLength(0);
+    });
+
+    it("distinguishes not-yet-reached from waiting, rather than collapsing both to blank", () => {
+      const { container } = draw([], false, { stages });
+      // Otherwise an unsubmitted paper looks like one whose decision is overdue.
+      const upcoming = container.querySelector('[data-testid="paper-stage-p1-camera_ready"]');
+      expect(upcoming?.classList.contains("paper-stage--upcoming")).toBe(true);
+    });
+
+    it("is absent entirely when the card has no stage data", () => {
+      const { container } = draw([]);
+      expect(container.querySelector('[data-testid="paper-stages-p1"]')).toBeNull();
+    });
+  });
+
+  describe("the paper's own details", () => {
+    const details = (onSaveDetails?: PaperDetailsProps["onSaveDetails"]): PaperDetailsProps => ({
+      authors: ["Ada Lovelace", "Rahul Babu Shrestha"],
+      feedbackGivers: ["Bernhard Schölkopf"],
+      venue: "ICLR 2027",
+      ...(onSaveDetails ? { onSaveDetails } : {}),
+    });
+
+    it("lets an author edit the author list, which decides who the stage emails reach", () => {
+      const saves: unknown[] = [];
+      const { container } = draw([], false, {
+        details: details((next) => saves.push(next)),
+      });
+      const field = container.querySelector<HTMLInputElement>('[data-testid="paper-authors-p1"]');
+      expect(field?.value).toBe("Ada Lovelace, Rahul Babu Shrestha");
+      field!.value = "Rahul Babu Shrestha, Ada Lovelace";
+      field!.dispatchEvent(new Event("change"));
+      expect(saves).toEqual([
+        expect.objectContaining({ authors: ["Rahul Babu Shrestha", "Ada Lovelace"] }),
+      ]);
+    });
+
+    it("keeps feedback givers apart from authors", () => {
+      const { container } = draw([], false, { details: details(() => {}) });
+      const givers = container.querySelector<HTMLInputElement>(
+        '[data-testid="paper-feedback-givers-p1"]',
+      );
+      expect(givers?.value).toBe("Bernhard Schölkopf");
+    });
+
+    it("takes the aimed conference, which the stage emails quote", () => {
+      const saves: Array<{ venue: string }> = [];
+      const { container } = draw([], false, {
+        details: details((next) => saves.push(next)),
+      });
+      const venue = container.querySelector<HTMLInputElement>('[data-testid="paper-venue-p1"]');
+      expect(venue?.value).toBe("ICLR 2027");
+      venue!.value = "NeurIPS 2027";
+      venue!.dispatchEvent(new Event("change"));
+      expect(saves[0]?.venue).toBe("NeurIPS 2027");
+    });
+
+    it("drops blank entries rather than storing an author nobody can resolve", () => {
+      const saves: Array<{ authors: string[] }> = [];
+      const { container } = draw([], false, {
+        details: details((next) => saves.push(next)),
+      });
+      const field = container.querySelector<HTMLInputElement>('[data-testid="paper-authors-p1"]');
+      field!.value = "Ada Lovelace, , Rahul Babu Shrestha,";
+      field!.dispatchEvent(new Event("change"));
+      expect(saves[0]?.authors).toEqual(["Ada Lovelace", "Rahul Babu Shrestha"]);
+    });
+
+    it("renders read-only for somebody who may not edit the paper", () => {
+      const { container } = draw([], false, { details: details() });
+      expect(container.querySelector('[data-testid="paper-authors-p1"]')).toBeNull();
+      expect(container.querySelector(".paper-detail__readonly")?.textContent).toContain(
+        "Ada Lovelace",
+      );
+    });
   });
 
   it("renders a link slot as a URL box and a bool slot as a checkbox", () => {
