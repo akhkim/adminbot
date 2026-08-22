@@ -280,6 +280,12 @@ export type AdminBotPaperSaveInput = {
   arxivUrl?: string;
   googleSlidesUrl?: string;
   posterUrl?: string;
+  /**
+   * Conference pre-registration, JSON-encoded. See venue-targets.ts for the shape and for why it
+   * lives in `artifacts` rather than a column: the service merges that map on write, so this
+   * needs no schema change and becomes a backfill once the table exists.
+   */
+  venueTargets?: string;
   conference?: string;
   /** How likely the authors think this venue is, as a percentage string. */
   confidence?: string;
@@ -1699,6 +1705,8 @@ export async function saveAdminBotPaper(
     ...(paper.arxivUrl ? { arxiv_url: paper.arxivUrl } : {}),
     ...(paper.googleSlidesUrl ? { google_slides_url: paper.googleSlidesUrl } : {}),
     ...(paper.posterUrl ? { poster_url: paper.posterUrl } : {}),
+    // Sent even when empty, because clearing every venue has to be able to erase the key.
+    ...(paper.venueTargets === undefined ? {} : { venue_targets: paper.venueTargets }),
     ...(paper.conference ? { conference: paper.conference } : {}),
     ...(paper.confidence ? { confidence: paper.confidence } : {}),
     ...(paper.blockerLog === undefined ? {} : { blocker_log: paper.blockerLog }),

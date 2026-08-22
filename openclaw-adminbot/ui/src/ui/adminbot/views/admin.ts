@@ -1,6 +1,16 @@
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
+import {
+  adminBotPaperSlotRegistry,
+  type AdminBotPaperSlotDefinition,
+} from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
+import type { PaperSlotOverviewRow } from "../auth/session.ts";
+import {
+  PRE_REGISTRATION_VENUES,
+  daysUntil,
+  readVenueTargets,
+} from "../venue-targets.ts";
 import { adminBotMemberRoles } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
@@ -33,7 +43,6 @@ import type {
 } from "../controllers/admin.ts";
 import { renderAvailabilitySchedule, renderAvailabilityStrip } from "../data/availability.js";
 import { noteField, parseMemberNotes } from "../data/member-notes.ts";
-import { nextStepFor, type NextStep } from "../next-step.ts";
 import { notifyFields, nudgeSaveInput } from "../nudge-alerts.ts";
 
 export type BlockerSort = "stage" | "age" | "paper";
@@ -41,6 +50,16 @@ import { renderAdminBotReimbursements } from "./reimbursements.ts";
 
 export type AdminBotProps = {
   panel: AdminBotPanel;
+  /**
+   * What each paper still owes, computed by the service from `paper_slots`.
+   *
+   * Passed in rather than derived here so this view and the nudge batches answer "what is next"
+   * from the same table. Absent while the tab is still loading, which renders as empty.
+   */
+  paperSlotOverview?: PaperSlotOverviewRow[];
+  /** Venue id the pre-registration table is filtered to; empty shows every upcoming venue. */
+  venueFilter?: string;
+  onVenueFilter?: (venueId: string) => void;
   mode?: "admin" | "general";
   /** Which column the reported-blocker list is sorted by. */
   blockerSort?: BlockerSort;
@@ -928,18 +947,6 @@ function renderPendingActions(props: AdminBotProps) {
   `;
 }
 
-function renderCompactSummary(rows: Array<{ title: string; meta: string; detail: string }>) {
-  if (rows.length === 0)
-    return html`<div class="adminbot-empty adminbot-empty--compact">No records yet.</div>`;
-  return html`<div class="adminbot-summary-list">
-    ${rows.map(
-      (row) =>
-        html`<div class="adminbot-summary-list__row">
-          <strong>${row.title}</strong><span>${row.meta}</span><span>${row.detail}</span>
-        </div>`,
-    )}
-  </div>`;
-}
 
 function papersForMember(
   member: AdminBotLabMember,
@@ -1850,14 +1857,11 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
     ${props.signedInMemberId ? renderAddPaperCard(props, { governance: false }) : nothing}`;
   }
   return html`
-    ${renderPaperOverview(props, papers)} ${renderPaperStats(papers)}
+    ${renderPaperOverview(props, papers)} ${renderPreRegistrationBoard(papers, props)}
+    ${renderPaperStats(papers)}
     ${renderBlockers(props, papers)}
     <article class="adminbot-editor-card">
       <div class="card-title">Next step per paper</div>
-      <div class="card-sub">
-        Derived from the PaperFlow dependency graph — what each paper is waiting on right now,
-        before anything is overdue.
-      </div>
       ${renderNextSteps(props, papers)}
     </article>
     <article class="adminbot-editor-card">
@@ -1876,13 +1880,19 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
  * back -- so it needs no approval gate. The copy stays because the bell is a reminder, not a
  * conversation: the admin usually wants to say the same thing wherever the lab actually talks.
  */
-function sendNudge(event: Event, props: AdminBotProps, paper: AdminBotPaperRecord, next: NextStep) {
+function sendNudge(
+  event: Event,
+  props: AdminBotProps,
+  paper: AdminBotPaperRecord,
+  headline: string,
+  message: string,
+) {
   // From the roster, not from the login form's name field: that one holds what someone typed
   // while signing up, which is empty for every already-registered admin.
   const self = props.data.members.find((member) => member.id === props.signedInMemberId);
   const by = self?.name?.trim() || "An admin";
-  props.onSavePaper(nudgeSaveInput(paper, next.headline, by));
-  copyNudge(event, next.message);
+  props.onSavePaper(nudgeSaveInput(paper, headline, by));
+  copyNudge(event, message);
 }
 
 /**
@@ -1919,6 +1929,114 @@ function copyNudge(event: Event, message: string) {
  * Four numbers rather than a chart. The question an admin has walking past this page is "how much
  * is in flight and how much of it is real", and a chart takes longer to read than that deserves.
  */
+
+/**
+ * The venue table, as close to the spreadsheet it replaces as a web page gets.
+ *
+ * Four columns -- title, venue, authors, Overleaf -- one row per paper, sorted by how ready it is.
+ * An earlier version grouped rows under a heading per venue, which read as a dashboard and had
+ * two faults the sheet does not: a paper aimed at two venues appeared twice, and the venue moved
+ * out of the row so you could not scan the column. One row per paper, venue in a cell.
+ *
+ * Sorted highest-confidence first, matching the sheet's own rule -- "from most ready" -- because
+ * the top of this list is the answer to "what is actually going in".
+ */
+function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminBotProps) {
+  const venues = PRE_REGISTRATION_VENUES.filter((venue) => {
+    const days = daysUntil(venue.deadline);
+    return days !== undefined && days >= 0;
+  }).sort((left, right) => (daysUntil(left.deadline) ?? 0) - (daysUntil(right.deadline) ?? 0));
+
+  if (venues.length === 0) {
+    return nothing;
+  }
+
+  // Filtering to one venue changes what "most ready" means: ranked by the odds on *that* venue,
+  // and papers not aimed at it drop out entirely rather than sorting to the bottom. That is the
+  // question an admin has three weeks out -- "what is going to ICLR" -- not "rank everything".
+  const filter = props.venueFilter ?? "";
+  const open = new Set(
+    filter ? [filter] : venues.map((venue) => venue.venue_id),
+  );
+  const rows = papers
+    .map((paper) => ({
+      paper,
+      targets: readVenueTargets(paper).filter((target) => open.has(target.venue_id)),
+    }))
+    .filter((row) => row.targets.length > 0)
+    .sort((left, right) => (right.targets[0]?.confidence ?? 0) - (left.targets[0]?.confidence ?? 0));
+
+  return html`
+    <article class="adminbot-editor-card venue-table-card" data-testid="prereg-board">
+      <div class="venue-table__head">
+        <div class="card-title">Upcoming pre-registration</div>
+        <div class="venue-table__filters">
+          <button
+            type="button"
+            class="venue-table__filter ${filter === "" ? "is-on" : ""}"
+            @click=${() => props.onVenueFilter?.("")}
+          >
+            All venues
+          </button>
+          ${venues.map(
+            (venue) => html`<button
+              type="button"
+              class="venue-table__filter ${filter === venue.venue_id ? "is-on" : ""}"
+              data-testid=${`venue-filter-${venue.venue_id}`}
+              @click=${() => props.onVenueFilter?.(venue.venue_id)}
+            >
+              ${venue.label}
+              <span class="venue-table__days">${daysUntil(venue.deadline)}d</span>
+            </button>`,
+          )}
+        </div>
+      </div>
+      ${rows.length === 0
+        ? html`<p class="venue-table__empty">
+            Nobody has pre-registered for these yet.
+          </p>`
+        : html`
+            <div class="venue-table__scroll">
+              <table class="venue-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Title</th>
+                    <th scope="col">Venue</th>
+                    <th scope="col">Authors</th>
+                    <th scope="col">Overleaf</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${rows.map(({ paper, targets }) => {
+                    const link =
+                      paper.artifacts?.overleaf_edit_url ?? paper.artifacts?.overleaf_view_url;
+                    return html`<tr>
+                      <td class="venue-table__title">${paper.title}</td>
+                      <td class="venue-table__venue">
+                        ${targets.map(
+                          (target) => html`<span class="venue-table__target"
+                            ><strong>${target.confidence}%</strong> ${target.label}</span
+                          >`,
+                        )}
+                      </td>
+                      <td class="venue-table__authors">${(paper.authors ?? []).join(", ")}</td>
+                      <td class="venue-table__link">
+                        ${link
+                          ? html`<a href=${link} target="_blank" rel="noreferrer noopener"
+                              >Overleaf</a
+                            >`
+                          : html`<span class="venue-table__missing">—</span>`}
+                      </td>
+                    </tr>`;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          `}
+    </article>
+  `;
+}
+
 function renderPaperStats(papers: AdminBotPaperRecord[]) {
   const withVenue = papers.filter((paper) => paper.artifacts?.conference?.trim());
   const confident = papers.filter((paper) => {
@@ -2199,11 +2317,46 @@ function renderBlockers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
 
 // The dependency-based counterpart to renderNudges. That one answers "who is late"; this one
 // answers "what is next and who owns it", which is knowable the moment a step completes rather
-// than three business days later. Read-only: computed in the browser, writes nothing.
+// than three business days later.
+//
+// Reads the server's slot overview, not the paper's `artifacts` blob. It used to recompute the
+// answer in the browser from that blob, which made this the second engine answering a question
+// `paper_slots` already answers -- and the two disagreed whenever the backfill had not run, this
+// view reporting a paper well along while its own card read 0 of 22. One table, one answer.
+/**
+ * The registry is keyed by a union; `missing_slots` arrives as plain strings off the wire. A
+ * lookup that can miss is the honest shape -- a slot the server knows and this build does not is
+ * a version skew, and it should render as nothing rather than crash the list.
+ */
+function slotDefinition(slot: string): AdminBotPaperSlotDefinition | undefined {
+  return (adminBotPaperSlotRegistry as Record<string, AdminBotPaperSlotDefinition | undefined>)[
+    slot
+  ];
+}
+
+const NEXT_STEP_OWNER_LABELS: Record<string, string> = {
+  first_author: "the first author",
+  coauthors: "the coauthors",
+  pi: "the PI",
+  admin: "an admin",
+};
+
+/** The sentence an admin pastes into Slack. Named for the slot, so it says what to actually do. */
+function nextStepNudgeMessage(
+  paper: AdminBotPaperRecord,
+  row: PaperSlotOverviewRow,
+  label: string,
+  waitingOn: string,
+): string {
+  const deadline = row.deadline ? ` (deadline ${row.deadline})` : "";
+  return `"${paper.title}"${deadline} is waiting on ${waitingOn} for: ${label}. ${row.provided_count} of ${row.required_count} fields are in.`;
+}
+
 function renderNextSteps(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
-  const rows = papers
-    .map((paper) => ({ paper, next: nextStepFor(paper) }))
-    .filter((row): row is { paper: AdminBotPaperRecord; next: NextStep } => Boolean(row.next));
+  const byId = new Map(papers.map((paper) => [paper.id, paper]));
+  const rows = (props.paperSlotOverview ?? [])
+    .filter((row) => !row.dormant && !row.closed && byId.has(row.paper_id))
+    .map((row) => ({ row, paper: byId.get(row.paper_id) as AdminBotPaperRecord }));
 
   if (rows.length === 0) {
     return html`<div class="adminbot-empty adminbot-empty--compact">
@@ -2213,49 +2366,62 @@ function renderNextSteps(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
 
   return html`
     <div class="adminbot-next-list">
-      ${rows.map(({ paper, next }) =>
-        next.done
-          ? html`<article class="adminbot-next adminbot-next--done">
+      ${rows.map(({ row, paper }) => {
+        const open = row.missing_slots.filter((slot) => slotDefinition(slot) !== undefined);
+        const first = open[0];
+        if (!first) {
+          return html`<article class="adminbot-next adminbot-next--done">
+            <strong>${paper.title}</strong>
+            <span class="adminbot-next__waiting">Finished</span>
+          </article>`;
+        }
+        const definition = slotDefinition(first);
+        if (!definition) {
+          return nothing;
+        }
+        // The PI's yes is the one approval in the graph, so it reads differently from work.
+        const isApproval = definition.owner === "pi";
+        const waitingOn = NEXT_STEP_OWNER_LABELS[definition.owner] ?? definition.owner;
+        const alsoOpen = open
+          .slice(1, 4)
+          .map((slot) => slotDefinition(slot)?.label ?? slot);
+        const message = nextStepNudgeMessage(paper, row, definition.label, waitingOn);
+        return html`
+          <article class="adminbot-next ${isApproval ? "adminbot-next--approval" : ""}">
+            <div class="adminbot-next__head">
               <strong>${paper.title}</strong>
-              <span class="adminbot-next__waiting">Finished</span>
-            </article>`
-          : html`
-              <article class="adminbot-next ${next.isApproval ? "adminbot-next--approval" : ""}">
-                <div class="adminbot-next__head">
-                  <strong>${paper.title}</strong>
-                  <span class="adminbot-next__waiting">
-                    ${next.isApproval ? "Approval from" : "Waiting on"} ${next.waitingOn}
-                  </span>
-                </div>
-                <div class="adminbot-next__step">
-                  ${next.headline}${next.unblocks
-                    ? html`<span class="adminbot-next__why"> — unblocks ${next.unblocks}</span>`
-                    : nothing}
-                </div>
-                ${next.alsoOpen.length > 0
-                  ? html`<div class="adminbot-next__also">
-                      Also open: ${next.alsoOpen.join(", ")}
-                    </div>`
-                  : nothing}
-                <div class="adminbot-next__also">
-                  ${next.evidenceCount > 0
-                    ? `Confirmed by ${next.evidenceCount} stored link${next.evidenceCount === 1 ? "" : "s"}`
-                    : "No artifact links yet — estimated from the current step only"}
-                </div>
-                <div class="adminbot-next__actions">
-                  <button
-                    type="button"
-                    class="btn btn--sm"
-                    data-testid=${`nudge-${paper.id}`}
-                    title=${next.message}
-                    @click=${(event: Event) => sendNudge(event, props, paper, next)}
-                  >
-                    Nudge ${next.waitingOn}
-                  </button>
-                </div>
-              </article>
-            `,
-      )}
+              <span class="adminbot-next__waiting">
+                ${isApproval ? "Approval from" : "Waiting on"} ${waitingOn}
+              </span>
+            </div>
+            <div class="adminbot-next__step">
+              ${definition.label}${definition.gates
+                ? html`<span class="adminbot-next__why">
+                    — unblocks ${definition.gates.replace(/_/gu, " ")}</span
+                  >`
+                : nothing}
+            </div>
+            ${alsoOpen.length > 0
+              ? html`<div class="adminbot-next__also">Also open: ${alsoOpen.join(", ")}</div>`
+              : nothing}
+            <div class="adminbot-next__also">
+              ${row.provided_count} of ${row.required_count} provided
+            </div>
+            <div class="adminbot-next__actions">
+              <button
+                type="button"
+                class="btn btn--sm"
+                data-testid=${`nudge-${paper.id}`}
+                title=${message}
+                @click=${(event: Event) =>
+                  sendNudge(event, props, paper, definition.label, message)}
+              >
+                Nudge ${waitingOn}
+              </button>
+            </div>
+          </article>
+        `;
+      })}
     </div>
   `;
 }

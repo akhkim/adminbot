@@ -655,6 +655,8 @@ export class OpenClawApp extends LitElement {
     createEmptyAdminBotReimbursementState();
   @state() adminBotMemberNudge: AdminBotMemberNudgeState = createEmptyAdminBotMemberNudgeState();
   @state() adminBotBlockerSort: BlockerSort = "stage";
+  /** Which venue the pre-registration table is filtered to. Empty means every upcoming venue. */
+  @state() adminBotVenueFilter = "";
   @state() nudgeBellOpen = false;
   @state() adminBotCvDigestJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() adminBotVenuePapers: AdminBotVenuePapersState = createEmptyVenuePapersState();

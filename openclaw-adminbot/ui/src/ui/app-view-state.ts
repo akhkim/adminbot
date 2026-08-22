@@ -529,6 +529,7 @@ export type AppViewState = {
   adminBotReimbursement: AdminBotReimbursementState;
   adminBotMemberNudge: AdminBotMemberNudgeState;
   adminBotBlockerSort: BlockerSort;
+  adminBotVenueFilter: string;
   nudgeBellOpen: boolean;
   // Last press of the CV digest job on the Cron tab. Session-scoped on purpose: the durable
   // record of a run is the audit row and the document itself, and this only exists so the button

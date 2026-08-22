@@ -40,6 +40,14 @@ import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
 import { openLinkedInDraftDialog } from "../linkedin-draft-dialog.ts";
+import { openPreRegistrationDialog } from "../pre-registration.ts";
+import {
+  formatVenueTargets,
+  nextDeadlineVenue,
+  papersNeedingRegistration,
+  readVenueTargets,
+} from "../venue-targets.ts";
+import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
 import {
   diffForHistory,
   emptyPaperGridState,
@@ -128,12 +136,18 @@ export function reviewerName(state: AppViewState): string {
 export function ownPapers(state: AppViewState): AdminBotPaperRecord[] {
   const member = findOwnMember(state);
   const memberId = state.memberId;
-  const name = (member?.name ?? "").trim().toLowerCase();
+  const name = member?.name ?? "";
   return (state.adminBotData?.papers ?? []).filter(
     (paper) =>
       (memberId && paper.submitted_by_member_id === memberId) ||
       (memberId && paper.mentor_member_id === memberId) ||
-      (name && (paper.authors ?? []).some((author) => author.trim().toLowerCase() === name)),
+      // Author entries carry marks that are about authorship, not identity -- "Joeun Yook*" for
+      // equal contribution, "Yook, Joeun" from a BibTeX paste, an accent the roster spells
+      // differently. This used to be a raw lowercase comparison, so a co-first author was
+      // invisible on their own paper: the one character the venue added to mark the credit was
+      // the character that hid it.
+      (name.length > 0 &&
+        (paper.authors ?? []).some((author) => isSamePerson(author, name))),
   );
 }
 
@@ -624,7 +638,8 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
       <div class="my-work-item__body" id=${panelId} ?hidden=${!open}>
         ${open
           ? html`
-              ${renderTarget(paper, props)} ${renderStepper(paper, props, index)}
+              ${renderVenueTargets(paper)} ${renderTarget(paper, props)}
+              ${renderStepper(paper, props, index)}
               ${renderNextStep(paper)} ${renderAcceptance(paper, props)}
               ${renderPaperSlots({
                 paperId: paper.id,
@@ -728,6 +743,26 @@ function renderTarget(paper: AdminBotPaperRecord, props: MyWorkProps) {
           `,
         )}
       </select>
+    </p>
+  `;
+}
+
+/**
+ * Where this paper is aimed, stated rather than implied.
+ *
+ * The venue and the odds used to live only in two small selects, which is the right control for
+ * changing them and the wrong one for reading them: a deadline three weeks out rendered as grey
+ * 11px text between two dropdowns. This says it once, in words, at the top of the card.
+ */
+function renderVenueTargets(paper: AdminBotPaperRecord) {
+  const targets = readVenueTargets(paper);
+  if (targets.length === 0) {
+    return nothing;
+  }
+  return html`
+    <p class="paper-targets" data-testid=${`paper-targets-${paper.id}`}>
+      <span class="paper-targets__label">Pre-registered</span>
+      <span class="paper-targets__value">${formatVenueTargets(targets)}</span>
     </p>
   `;
 }
@@ -1172,6 +1207,61 @@ function renderNudgePreview(props: MyWorkProps) {
   `;
 }
 
+
+/**
+ * The pre-registration banner.
+ *
+ * Deliberately the loudest thing on the page, and deliberately temporary: it appears only while a
+ * deadline is close and only while this member still has a paper that has not been pointed at it.
+ * Register everything and it disappears, which is the only honest way to make a banner people do
+ * not learn to scroll past.
+ *
+ * The count is of the member's own unregistered papers rather than the lab's, because a number
+ * about other people's work is not a prompt to do anything.
+ */
+function renderPreRegistrationBanner(papers: AdminBotPaperRecord[], props: MyWorkProps) {
+  const next = nextDeadlineVenue();
+  if (!next || papers.length === 0) {
+    return nothing;
+  }
+  const outstanding = papersNeedingRegistration(papers, next.venue.venue_id);
+  if (outstanding.length === 0) {
+    return nothing;
+  }
+  const registered = papers.length - outstanding.length;
+  return html`
+    <section
+      class="prereg-banner ${next.days <= 14 ? "prereg-banner--urgent" : ""}"
+      data-testid="prereg-banner"
+    >
+      <div class="prereg-banner__text">
+        <div class="prereg-banner__title">
+          <span aria-hidden="true">🚨</span> Conference pre-registration —
+          ${next.venue.label}
+        </div>
+        <div class="prereg-banner__sub">
+          ${next.days} day${next.days === 1 ? "" : "s"} to the deadline ·
+          ${outstanding.length} of your ${papers.length} paper${papers.length === 1 ? "" : "s"}
+          not registered yet${registered > 0 ? ` · ${registered} done` : ""}
+        </div>
+      </div>
+      <button
+        type="button"
+        class="btn primary prereg-banner__cta"
+        data-testid="prereg-open"
+        @click=${() =>
+          openPreRegistrationDialog({
+            papers,
+            onSavePaper: props.onSavePaper,
+            onDone: () => props.onRerender?.(),
+          })}
+      >
+        Pre-register a paper
+      </button>
+    </section>
+  `;
+}
+
 export function renderMyWork(state: AppViewState, props: MyWorkProps) {
   const items = ownPapers(state);
   // A grid for three papers is worse than three cards; the threshold is where the per-paper
@@ -1215,7 +1305,7 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
 
   return html`
     <div class="my-work">
-      ${renderBlockers(state)}
+      ${renderPreRegistrationBanner(items, props)} ${renderBlockers(state)}
       <section class="my-work__section">
         <div class="my-work__section-head">
           <h2 class="my-work__section-title">${t("myWork.items.title")}</h2>

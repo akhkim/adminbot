@@ -7493,6 +7493,15 @@
   gap: var(--space-1);
 }
 
+/* `hidden` hides by setting `display: none` in the UA stylesheet, which any author `display`
+   rule outranks -- so the progress bar and the draft pane rendered from the moment the dialog
+   opened, before a PDF had even been chosen. These re-assert it at a specificity that wins. */
+.lidraft__progress[hidden],
+.lidraft__output[hidden],
+.lidraft__issues[hidden] {
+  display: none;
+}
+
 .lidraft__bar-track {
   position: relative;
   height: 4px;
@@ -7621,4 +7630,405 @@
 
 .paper-slot__help-example code {
   overflow-wrap: anywhere;
+}
+
+/* ── Conference pre-registration ───────────────────────────────────────────
+   The banner is the loudest thing on the page on purpose, and it removes itself
+   once this member has nothing left to register — the only honest way to keep a
+   banner from becoming furniture. */
+.prereg-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid color-mix(in srgb, #f59e0b 55%, transparent);
+  border-left: 5px solid #f59e0b;
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, #f59e0b 16%, var(--bg)),
+    color-mix(in srgb, #f59e0b 6%, var(--bg))
+  );
+}
+
+/* Two weeks out it stops being amber. */
+.prereg-banner--urgent {
+  border-color: color-mix(in srgb, #ef4444 60%, transparent);
+  border-left-color: #ef4444;
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, #ef4444 18%, var(--bg)),
+    color-mix(in srgb, #ef4444 6%, var(--bg))
+  );
+}
+
+.prereg-banner__title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.prereg-banner__sub {
+  margin-top: var(--space-1);
+  color: var(--text-muted);
+  font-size: 0.9em;
+}
+
+.prereg-banner__cta {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Where a paper is aimed, said in words rather than inferred from two dropdowns. */
+.paper-targets {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  flex-wrap: wrap;
+}
+
+.paper-targets__label {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent, #534ab7) 20%, var(--bg));
+  color: var(--text);
+  font-size: 0.75em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.paper-targets__value {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ── the dialog ─────────────────────────────────────────────────────────── */
+.prereg {
+  width: min(94vw, 760px);
+  max-height: 90vh;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised, var(--bg));
+  color: var(--text);
+  overflow: hidden;
+}
+
+.prereg::backdrop {
+  background: rgb(0 0 0 / 55%);
+  backdrop-filter: blur(2px);
+}
+
+.prereg__bar,
+.prereg__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.prereg__foot {
+  border-bottom: 0;
+  border-top: 1px solid var(--border);
+}
+
+.prereg__sub,
+.prereg__foot-note {
+  margin-left: var(--space-2);
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.prereg__body {
+  padding: var(--space-3);
+  overflow-y: auto;
+  max-height: calc(90vh - 9rem);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.prereg__step {
+  margin: 0 0 var(--space-2);
+  font-size: 0.95rem;
+}
+
+.prereg__step em {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* Papers as buttons, not a select: the title is the only thing being chosen, and a list you can
+   see at once is faster than one you have to open. */
+.prereg__papers {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-height: 15rem;
+  overflow-y: auto;
+}
+
+.prereg__paper {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.prereg__paper:hover {
+  border-color: var(--accent, #534ab7);
+}
+
+.prereg__paper.is-selected {
+  border-color: var(--accent, #534ab7);
+  background: color-mix(in srgb, var(--accent, #534ab7) 14%, var(--bg));
+}
+
+.prereg__already {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.prereg__venues {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--space-3);
+}
+
+.prereg__venue {
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.prereg__venue.is-on {
+  border-color: var(--accent, #534ab7);
+  background: color-mix(in srgb, var(--accent, #534ab7) 10%, var(--bg));
+}
+
+.prereg__venue-toggle {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  width: 100%;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.prereg__due {
+  color: var(--text-muted);
+  font-size: 0.8em;
+  font-weight: 400;
+}
+
+.prereg__odds {
+  display: flex;
+  gap: var(--space-1);
+  margin-top: var(--space-2);
+}
+
+.prereg__odds[hidden] {
+  display: none;
+}
+
+.prereg__odd {
+  flex: 1;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.prereg__odd.is-on {
+  border-color: var(--accent, #534ab7);
+  background: var(--accent, #534ab7);
+  color: #fff;
+  font-weight: 700;
+}
+
+.prereg__nothere,
+.prereg__missing-note {
+  margin: var(--space-2) 0 0;
+  color: var(--text-muted);
+  font-size: 0.85em;
+  line-height: 1.5;
+}
+
+/* The one gap worth interrupting for: without an Overleaf link the paper lands in the admin
+   table as a blank cell in the column people actually click. */
+.prereg__missing {
+  margin: 0 var(--space-3) var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, #f59e0b 45%, transparent);
+  border-left: 4px solid #f59e0b;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, #f59e0b 8%, var(--bg));
+}
+
+.prereg__missing .prereg__step {
+  margin-bottom: var(--space-1);
+}
+
+.prereg__overleaf {
+  width: 100%;
+  margin-top: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+/* The venue table. Deliberately plain: it stands in for a spreadsheet column people read every
+   day, so density and a scannable Venue column matter more than decoration. The only colour is
+   the deadline chip, which is the one thing that is time-critical. */
+.venue-table-card {
+  margin-bottom: var(--space-4);
+}
+
+.venue-table__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-3);
+}
+
+.venue-table__filters {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.venue-table__filter {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.venue-table__filter:hover {
+  border-color: var(--accent, #534ab7);
+}
+
+.venue-table__filter.is-on {
+  border-color: var(--accent, #534ab7);
+  background: var(--accent, #534ab7);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* The countdown rides on the filter chip rather than sitting in its own row: it is an attribute
+   of the venue, and a separate strip of dates was one more thing to read. */
+.venue-table__days {
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+.venue-table__scroll {
+  overflow-x: auto;
+}
+
+.venue-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+/* Ruled on all four sides, like the sheet. Without vertical rules the Venue and Authors columns
+   ran into each other -- "ICLR 2027" and "50% ARR October" read as one string -- which is the
+   whole reason a table beats a list here. */
+.venue-table th,
+.venue-table td {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.venue-table tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--text) 3%, transparent);
+}
+
+.venue-table thead th {
+  background: color-mix(in srgb, var(--text) 6%, var(--bg));
+}
+
+.venue-table thead th {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.venue-table__title {
+  font-weight: 600;
+  min-width: 22ch;
+}
+
+/* A paper aimed at two venues keeps one row and stacks them here, so the column stays scannable
+   and no paper is listed twice. */
+.venue-table__venue {
+  white-space: nowrap;
+}
+
+.venue-table__target {
+  display: block;
+  font-variant-numeric: tabular-nums;
+}
+
+.venue-table__authors {
+  color: var(--text-muted);
+  min-width: 18ch;
+}
+
+.venue-table__link {
+  white-space: nowrap;
+}
+
+.venue-table__missing {
+  color: var(--text-muted);
+}
+
+.venue-table__empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9em;
 }

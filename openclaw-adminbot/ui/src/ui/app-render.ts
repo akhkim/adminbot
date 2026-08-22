@@ -2488,7 +2488,9 @@ export function renderApp(state: AppViewState) {
   // nudge run or a slot write clears the stamp. Individual papers' slots are fetched per card, in
   // the toggle handler, since a closed card needs none of them.
   if (
-    state.tab === "myWork" &&
+    // The Admin tab's "Next step per paper" reads the same overview, so opening Admin directly
+    // has to fetch it too -- otherwise that list renders empty until someone visits My Work.
+    (state.tab === "myWork" || state.tab === "adminbot") &&
     hasMemberSession &&
     !state.adminBotPaperSlotsLoading &&
     !state.adminBotPaperSlotsError &&
@@ -3519,6 +3521,7 @@ export function renderApp(state: AppViewState) {
         ${adminBotPanel
           ? renderAdminBot({
               panel: adminBotPanel,
+              paperSlotOverview: state.adminBotPaperSlotOverview,
               connected: state.connected,
               loading: state.adminBotLoading,
               error: state.adminBotError,
@@ -3536,6 +3539,10 @@ export function renderApp(state: AppViewState) {
               blockerSort: state.adminBotBlockerSort,
               onBlockerSort: (key) => {
                 state.adminBotBlockerSort = key;
+              },
+              venueFilter: state.adminBotVenueFilter,
+              onVenueFilter: (venueId) => {
+                state.adminBotVenueFilter = venueId;
               },
               onNudgeChannelChange: (channel) => setAdminBotNudgeChannel(state, channel),
               onNudgeMessageChange: (message) => setAdminBotNudgeMessage(state, message),

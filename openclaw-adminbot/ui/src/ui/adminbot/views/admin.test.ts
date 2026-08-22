@@ -961,3 +961,161 @@ describe("renderAdminBot papers panel — member self-service", () => {
     expect(container.querySelector("#adminbot-add-paper")).toBeNull();
   });
 });
+
+describe("Next step per paper — reads the slot overview", () => {
+  const paper = {
+    id: "p1",
+    title: "Preserving Historical Truth",
+    authors: ["Joeun Yook*"],
+    current_step: "arxiv_polish",
+  } as never;
+
+  function draw(rows: never) {
+    return renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        paperSlotOverview: rows,
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members,
+          papers: [paper] as AdminBotPaperRecord[],
+          loadedAt: Date.now(),
+        },
+      }),
+    );
+  }
+
+  function overview(missing: string[], provided = 8, required = 22) {
+    return [
+      {
+        paper_id: "p1",
+        title: "Preserving Historical Truth",
+        current_step: "arxiv_polish",
+        provided_count: provided,
+        required_count: required,
+        dormant: false,
+        closed: false,
+        missing_slots: missing,
+      },
+    ] as never;
+  }
+
+  it("names the first missing slot and what it unblocks", () => {
+    const container = draw(overview(["arxiv"]));
+    const text = container.textContent ?? "";
+    expect(text).toContain("arXiv abstract page");
+    expect(text).toContain("unblocks social posts");
+  });
+
+  it("counts progress from the slot table, not from artifact links", () => {
+    // The old view counted keys in the `artifacts` blob, which disagreed with the card whenever
+    // the backfill had not run.
+    const container = draw(overview(["arxiv"]));
+    expect(container.textContent).toContain("8 of 22 provided");
+  });
+
+  it("lists the rest as also open", () => {
+    const container = draw(overview(["arxiv", "slides", "poster"]));
+    expect(container.textContent).toContain("Also open:");
+    expect(container.textContent).toContain("Talk slides");
+  });
+
+  it("says who owns it, and calls the PI's slot an approval", () => {
+    const container = draw(overview(["pi_approval"]));
+    expect(container.textContent).toContain("Approval from");
+    expect(container.textContent).toContain("the PI");
+  });
+
+  it("skips dormant and closed papers", () => {
+    const rows = overview(["arxiv"]) as unknown as Array<Record<string, unknown>>;
+    rows[0]!.dormant = true;
+    const container = draw(rows as never);
+    expect(container.textContent).toContain("Nothing actionable");
+  });
+
+  it("ignores a slot this build does not know, rather than crashing", () => {
+    // Version skew: the service ships a slot the console has not learned yet.
+    const container = draw(overview(["not_a_real_slot", "arxiv"]));
+    expect(container.textContent).toContain("arXiv abstract page");
+  });
+});
+
+describe("pre-registration venue table", () => {
+  const papers = [
+    {
+      id: "a",
+      title: "Aimed at both",
+      authors: ["Alice", "Bob"],
+      current_step: "overleaf_writing",
+      artifacts: {
+        overleaf_edit_url: "https://overleaf.com/project/abc",
+        venue_targets: JSON.stringify([
+          { venue_id: "iclr2027_paper", label: "ICLR 2027", confidence: 50 },
+          { venue_id: "arr_2026_october", label: "ARR October", confidence: 99 },
+        ]),
+      },
+    },
+    {
+      id: "b",
+      title: "ICLR only",
+      authors: ["Carol"],
+      current_step: "overleaf_writing",
+      artifacts: {
+        venue_targets: JSON.stringify([
+          { venue_id: "iclr2027_paper", label: "ICLR 2027", confidence: 80 },
+        ]),
+      },
+    },
+    { id: "c", title: "Not registered", authors: [], current_step: "overleaf_writing" },
+  ] as never as AdminBotPaperRecord[];
+
+  function draw(venueFilter = "") {
+    return renderToDiv(
+      baseProps({
+        mode: "admin",
+        panel: "papers",
+        venueFilter,
+        data: { ...createEmptyAdminBotDashboardData(), members, papers, loadedAt: Date.now() },
+      }),
+    );
+  }
+
+  it("shows one row per paper, not one per venue", () => {
+    const board = draw().querySelector('[data-testid="prereg-board"]');
+    expect(board?.querySelectorAll("tbody tr")).toHaveLength(2);
+  });
+
+  it("omits papers with no venue at all", () => {
+    expect(draw().querySelector('[data-testid="prereg-board"]')?.textContent).not.toContain(
+      "Not registered",
+    );
+  });
+
+  it("carries the spreadsheet's four columns", () => {
+    const head = draw().querySelector('[data-testid="prereg-board"] thead')?.textContent ?? "";
+    for (const column of ["Title", "Venue", "Authors", "Overleaf"]) {
+      expect(head).toContain(column);
+    }
+  });
+
+  it("filtering to a venue drops papers not aimed at it", () => {
+    const board = draw("arr_2026_october").querySelector('[data-testid="prereg-board"]');
+    expect(board?.textContent).toContain("Aimed at both");
+    expect(board?.textContent).not.toContain("ICLR only");
+  });
+
+  it("filtering re-ranks by that venue's odds, not the paper's best", () => {
+    // Unfiltered, "Aimed at both" leads on its 99% ARR. Filtered to ICLR its 50% puts it second.
+    const rows = draw("iclr2027_paper").querySelectorAll(
+      '[data-testid="prereg-board"] tbody tr',
+    );
+    expect(rows[0]?.textContent).toContain("ICLR only");
+    expect(rows[1]?.textContent).toContain("Aimed at both");
+  });
+
+  it("marks a missing Overleaf link rather than leaving the cell ambiguous", () => {
+    const board = draw("iclr2027_paper").querySelector('[data-testid="prereg-board"]');
+    expect(board?.querySelector(".venue-table__missing")).not.toBeNull();
+  });
+});
