@@ -82,11 +82,15 @@ describe("renderPaperSlots", () => {
     expect(container.textContent).toContain("the link must be a /abs/ URL");
   });
 
-  it("says what a blocked slot is waiting for instead of hiding it", () => {
+  it("dims a slot that is not reachable yet, without narrating why", () => {
+    // The "Waiting on X" line, the "unblocks Y" line and the host/path spec were three rows of
+    // small grey type under every field. The dimming carries the same meaning without turning the
+    // card into a dependency graph.
     const { container } = draw([]);
     const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
     expect(overleaf?.className).toContain("paper-slot--blocked");
-    expect(overleaf?.textContent).toContain("Waiting on Project folder");
+    expect(overleaf?.textContent).not.toContain("Waiting on");
+    expect(overleaf?.textContent).not.toContain("unblocks");
   });
 
   it("stops asking once the upstream slot is in", () => {

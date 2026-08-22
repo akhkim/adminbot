@@ -76,22 +76,6 @@ function rowFor(slots: PaperSlotRow[], slot: AdminBotPaperSlot): PaperSlotRow | 
   return slots.find((row) => row.slot === slot);
 }
 
-/**
- * Whether a field is worth filling in yet.
- *
- * A slot whose upstream evidence is still missing is shown, not hidden -- the checklist is the
- * point -- but it says what it is waiting for. Hiding it would make the card grow as work
- * progressed, which reads as the paper acquiring new requirements rather than revealing them.
- */
-function waitingOn(definition: AdminBotPaperSlotDefinition, slots: PaperSlotRow[]): string | null {
-  const blocked = definition.upstream.filter(
-    (slot) => !isAdminBotPaperSlotSettled(rowFor(slots, slot)?.status ?? "missing"),
-  );
-  if (blocked.length === 0) {
-    return null;
-  }
-  return blocked.map((slot) => adminBotPaperSlotRegistry[slot].label).join(" and ");
-}
 
 function statusPill(row: PaperSlotRow | undefined) {
   const status = row?.status ?? "missing";
@@ -107,15 +91,6 @@ function statusPill(row: PaperSlotRow | undefined) {
   }
 }
 
-/** The accepted shape, from the same host and path list the service validates against. */
-function shapeHint(definition: AdminBotPaperSlotDefinition): string | null {
-  if (definition.kind !== "link") {
-    return null;
-  }
-  const hosts = definition.urlHosts?.length ? definition.urlHosts.join(" or ") : "any https link";
-  const path = definition.urlPath?.length ? `, a ${definition.urlPath.join(" or ")} URL` : "";
-  return `${hosts}${path}`;
-}
 
 function renderInput(
   props: PaperSlotsProps,
@@ -263,8 +238,9 @@ function renderInput(
 function renderSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
   const definition = adminBotPaperSlotRegistry[slot];
   const row = rowFor(props.slots, slot);
-  const blocked = waitingOn(definition, props.slots);
-  const shape = shapeHint(definition);
+  // Kept for the dimmed treatment only: a field that is shown but not yet reachable reads
+  // faintly instead of announcing what it is waiting for.
+  const blocked = slotDistance(definition, props.slots) > 0;
   return html`
     <div
       class=${`paper-slot ${blocked ? "paper-slot--blocked" : ""} ${
@@ -300,24 +276,23 @@ function renderSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
         ${statusPill(row)}
       </div>
       ${renderInput(props, slot, definition, row)}
-      <p class="paper-slot__meta">
-        ${definition.owner === "first_author"
-          ? nothing
-          : html`<span class="paper-slot__owner">${OWNER_LABELS[definition.owner]}</span>`}
-        ${definition.gates
-          ? html`<span class="paper-slot__gates"
-              >unblocks ${definition.gates.replace(/_/gu, " ")}</span
-            >`
-          : nothing}
-        ${shape ? html`<span class="paper-slot__shape">${shape}</span>` : nothing}
-      </p>
+      <!-- "unblocks submission", the host/path spec and "Waiting on X" all used to sit here in
+           small grey type under every field. Three lines of machinery per box, across every box:
+           the card read as a dependency graph rather than a form. The format guidance moved into
+           the placeholder and the "?", which is where someone filling a field actually looks, and
+           the ordering is already expressed by which fields the card offers at all. Only the
+           owner survives, and only when it is not the person reading. -->
+      ${definition.owner === "first_author"
+        ? nothing
+        : html`<p class="paper-slot__meta">
+            <span class="paper-slot__owner">${OWNER_LABELS[definition.owner]}</span>
+          </p>`}
       ${row?.status === "invalid" && row.invalid_reason
         ? html`<p class="paper-slot__error" role="alert">${row.invalid_reason}</p>`
         : nothing}
       ${row?.status === "waived" && row.waived_reason
         ? html`<p class="paper-slot__note">Waived by an admin: ${row.waived_reason}</p>`
         : nothing}
-      ${blocked ? html`<p class="paper-slot__note">Waiting on ${blocked}.</p>` : nothing}
     </div>
   `;
 }
