@@ -35,6 +35,7 @@ import type {
   AdminBotSocialDraftRecord,
 } from "../contracts/paper-cycle.js";
 import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
+import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
 import type { AdminBotServiceStore, AdminBotSlackChannelNamingRecord } from "../kernel/service.js";
 
 export class AdminBotMemoryStore implements AdminBotServiceStore {
@@ -46,6 +47,8 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   // Keyed `paperId\u0000slot`, matching the SQLite composite primary key so both stores collapse a
   // re-save onto the same row.
   private readonly paperSlots = new Map<string, AdminBotPaperSlotRecord>();
+  // Keyed `paperId\u0000stage`, matching the SQLite composite primary key.
+  private readonly paperflowEvidence = new Map<string, AdminBotPaperflowEvidenceRecord>();
   // Keyed exactly as their SQLite primary keys are, so a re-save collapses onto the same row in
   // both stores rather than accumulating duplicates in one of them.
   private readonly nudgeLedger = new Map<string, AdminBotNudgeLedgerRecord>();
@@ -144,6 +147,7 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       this.socialDrafts,
       this.conferenceAttendees,
       this.paperReimbursements,
+      this.paperflowEvidence,
     ] as Array<Map<string, { paper_id: string }>>) {
       for (const [key, record] of [...map.entries()]) {
         if (record.paper_id === paperId) {
@@ -152,7 +156,10 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       }
     }
     for (const [key, entry] of [...this.nudgeLedger.entries()]) {
-      if (entry.domain === "paper_slot" && entry.subject_id.startsWith(`${paperId}:`)) {
+      if (
+        (entry.domain === "paper_slot" || entry.domain === "paperflow_stage") &&
+        entry.subject_id.startsWith(`${paperId}:`)
+      ) {
         this.nudgeLedger.delete(key);
       }
     }
@@ -219,6 +226,25 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       .toSorted(
         (left, right) =>
           left.paper_id.localeCompare(right.paper_id) || left.slot.localeCompare(right.slot),
+      );
+  }
+
+  savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void {
+    // First sighting wins, matching the sqlite store's ON CONFLICT DO NOTHING: a stage that
+    // already closed keeps the mail that closed it.
+    const key = `${record.paper_id}\u0000${record.stage}`;
+    if (this.paperflowEvidence.has(key)) {
+      return;
+    }
+    this.paperflowEvidence.set(key, record);
+  }
+
+  listPaperflowEvidence(paperId?: string): AdminBotPaperflowEvidenceRecord[] {
+    return [...this.paperflowEvidence.values()]
+      .filter((record) => paperId === undefined || record.paper_id === paperId)
+      .toSorted(
+        (left, right) =>
+          left.paper_id.localeCompare(right.paper_id) || left.stage.localeCompare(right.stage),
       );
   }
 

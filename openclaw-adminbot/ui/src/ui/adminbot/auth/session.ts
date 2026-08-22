@@ -2263,6 +2263,22 @@ export type PaperSlotRow = {
   waived_reason?: string;
 };
 
+/**
+ * One rung of the venue ladder, as the card draws it.
+ *
+ * There is no save path for these on purpose: the only thing that closes a rung is the mail
+ * arriving in the bot mailbox. Mirrors AdminBotPaperflowStageView in the service.
+ */
+export type PaperflowStageRow = {
+  stage: string;
+  label: string;
+  node: string;
+  state: "closed" | "waiting" | "upcoming";
+  closed_at?: string;
+  closed_by_subject?: string;
+  closed_by?: "email_bcc" | "admin";
+};
+
 export type PaperSocialDraft = {
   id: string;
   paper_id: string;
@@ -2306,11 +2322,13 @@ export type PaperCycle = {
   consents: PaperSocialConsent[];
   attendees: PaperAttendee[];
   reimbursements: PaperReimbursement[];
+  /** The venue ladder. Read-only: closed by a bcc, never by a control on this card. */
+  stages: PaperflowStageRow[];
   cycleClosed: boolean;
   missingAcceptanceDetails: string[];
 };
 
-/** One paper's 25 slots, blanks included -- the card renders the checklist, not just the answers. */
+/** One paper's slots and venue ladder, blanks included -- the card renders the whole cycle. */
 export async function fetchPaperSlots(
   paperId: string,
   sessionToken: string,
@@ -2334,6 +2352,7 @@ export async function fetchPaperSlots(
     consents?: PaperSocialConsent[];
     attendees?: PaperAttendee[];
     reimbursements?: PaperReimbursement[];
+    paperflow_stages?: PaperflowStageRow[];
     cycle_closed?: boolean;
     missing_acceptance_details?: string[];
   } | null;
@@ -2345,6 +2364,7 @@ export async function fetchPaperSlots(
       consents: body?.consents ?? [],
       attendees: body?.attendees ?? [],
       reimbursements: body?.reimbursements ?? [],
+      stages: body?.paperflow_stages ?? [],
       cycleClosed: Boolean(body?.cycle_closed),
       missingAcceptanceDetails: body?.missing_acceptance_details ?? [],
     },

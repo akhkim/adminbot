@@ -43,6 +43,26 @@ export type {
 } from "./src/workflows/papers/openreview-workflow.js";
 export { createCompositeAdminBotExecutor } from "./src/connectors/composite.js";
 export { createAdminBotSqliteService, AdminBotSqliteStore } from "./src/persistence/sqlite.js";
+// PaperFlow venue-cycle stages. Exported for scripts/adminbot-email-automation.ts, which reads the
+// open stages to hand the classifier a closed set to choose from, and writes back the evidence
+// when a bcc closes one.
+export {
+  adminBotPaperflowStages,
+  adminBotPaperflowStageRegistry,
+  adminBotPaperflowEvidenceMinConfidence,
+  isAdminBotPaperflowStage,
+} from "./src/contracts/paperflow-stages.js";
+export type {
+  AdminBotPaperflowEvidenceRecord,
+  AdminBotPaperflowStage,
+} from "./src/contracts/paperflow-stages.js";
+export type { AdminBotPaperflowStageNudge } from "./src/kernel/service.js";
+export {
+  isFullMember,
+  openPaperflowStage,
+  paperflowRecipient,
+  paperflowStageEmail,
+} from "./src/workflows/papers/paperflow-stages.js";
 export {
   createAdminBotMockService,
   type DevicePairingApprover,

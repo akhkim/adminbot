@@ -212,11 +212,11 @@ describe("the paper-evidence reads", () => {
     });
   });
 
-  it("returns all 25 slots for one paper, blanks included", async () => {
+  it("returns all 24 slots for one paper, blanks included", async () => {
     const { baseUrl } = await startLab();
     const result = await call(baseUrl, "GET", "/papers/p1/slots");
     expect(result.status).toBe(200);
-    expect(result.body.slots).toHaveLength(25);
+    expect(result.body.slots).toHaveLength(24);
   });
 });
 
@@ -523,7 +523,7 @@ describe("the global nudge, end to end", () => {
     });
     expect(ledger[0]?.last_nudged_at).toBeTruthy();
     // Nothing was stamped for the slot that is already in, or for anything still gated.
-    expect(slots.length).toBe(25);
+    expect(slots.length).toBe(24);
   });
 
   it("keeps its cadence, so a doubled cron cannot nag", async () => {

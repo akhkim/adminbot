@@ -597,3 +597,167 @@
   font-size: var(--control-ui-text-xs);
   color: var(--muted);
 }
+
+/* --- The card drawn to the shape of the chart ---
+   The trunk gets a flat, full-width treatment and the four branches are indented under a shared
+   rail, so the fan-out at "compiled PDF" is visible without anyone having to know the diagram. */
+
+.paper-slots__group--branch {
+  position: relative;
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--border);
+}
+
+.paper-slots__group--trunk {
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+/* The chart's own "Branch 1".."Branch 4" edge labels, so the card and the diagram can be read
+   side by side rather than translated between. */
+.paper-slots__branch-number {
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2, var(--bg));
+  font-size: var(--control-ui-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.paper-slots__group-blurb {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-3);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* --- What the paper is, above what has been done to it --- */
+
+.paper-slots__details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--space-4);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border);
+}
+
+.paper-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.paper-detail__label {
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.paper-detail__hint,
+.paper-detail__readonly {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* --- Merged rows: two halves of one chart node --- */
+
+.paper-slot__sublabel {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.paper-slot__children {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding-left: var(--space-3);
+  border-left: 1px solid var(--border);
+}
+
+.paper-slot__child {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.paper-slot__child--invalid .paper-slot__child-label {
+  color: var(--danger);
+}
+
+.paper-slot__child-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.paper-slot__child-label {
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* --- The venue ladder: watched, not filled in ---
+   Visually unlike a slot on purpose. Every control on this card is something a person does; none
+   of these are, and the difference has to survive a glance. */
+
+.paper-stages {
+  margin-top: var(--space-4);
+  padding: var(--space-3);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-2, transparent);
+}
+
+.paper-stages__lede {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.paper-stages__lede-icon svg {
+  width: 13px;
+  height: 13px;
+}
+
+.paper-stages__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.paper-stage {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  font-size: var(--control-ui-text-sm);
+}
+
+.paper-stage__label {
+  min-width: 8.5rem;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.paper-stage__detail {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* The one rung anybody can act on. It is the only thing in the strip that is not grey. */
+.paper-stage--waiting .paper-stage__label,
+.paper-stage__detail--waiting {
+  color: var(--accent, var(--text-strong));
+}
+
+.paper-stage--upcoming {
+  opacity: 0.6;
+}

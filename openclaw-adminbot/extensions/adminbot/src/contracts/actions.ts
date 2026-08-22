@@ -1001,7 +1001,20 @@ export type AdminBotPaperPresentationType = (typeof adminBotPaperPresentationTyp
 export type AdminBotPaperRecordInput = {
   id: string;
   title: string;
+  /**
+   * The author list, in the order the paper prints it. Free text, because it is how the *paper*
+   * spells the names -- which is not always how the roster does, and is the thing a reader
+   * recognises. Order is load-bearing: the PaperFlow stage nudges walk it to find the first full
+   * member (workflows/papers/paperflow-stages.ts).
+   */
   authors: string[];
+  /**
+   * People asked to read and comment on the draft, as names. Distinct from `authors`: a feedback
+   * giver has not signed the paper and may never appear on it, and distinct from the social
+   * coauthor-consent rows, which are about a post rather than the draft. Kept because "who have
+   * we actually shown this to" is a question the card could not answer at all before.
+   */
+  feedback_givers?: string[];
   current_step: AdminBotPaperStep;
   // Who the nudges go to by default. Free-text `authors` cannot answer this: it is how the paper
   // spells the names, not who on the roster owes the work.
@@ -1234,6 +1247,8 @@ export type AdminBotAuditEvent = {
     | "paper_slot.updated"
     | "paper_slot.waived"
     | "paper_slots.nudged"
+    | "paperflow_stages.nudged"
+    | "paperflow_stage.evidenced"
     | "paper_social_draft.saved"
     | "paper_social_draft.circulated"
     | "paper_social_consent.recorded"

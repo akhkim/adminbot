@@ -84,6 +84,14 @@ import {
   type AdminBotPaperSlotRecord,
 } from "../contracts/paper-slots.js";
 import {
+  adminBotPaperflowEvidenceMinConfidence,
+  adminBotPaperflowStageRegistry,
+  adminBotPaperflowStages,
+  isAdminBotPaperflowStage,
+  type AdminBotPaperflowEvidenceRecord,
+  type AdminBotPaperflowStage,
+} from "../contracts/paperflow-stages.js";
+import {
   byUrgency,
   prepareLogisticsRequest,
   withoutAttachmentBytes,
@@ -147,6 +155,11 @@ import {
   waivePaperSlot,
   type NudgeItem,
 } from "../workflows/papers/paper-slots.js";
+import {
+  openPaperflowStage,
+  paperflowRecipient,
+  paperflowStageEmail,
+} from "../workflows/papers/paperflow-stages.js";
 
 // Approver roles are privilege levels from the member roster, not a separate vocabulary: the
 // service can only ever verify the level on the authenticated session, so anything else here
@@ -197,6 +210,10 @@ export type AdminBotServiceStore = {
   savePaperSlot(record: AdminBotPaperSlotRecord): void;
   /** One paper's slots, or every paper's when the id is omitted. */
   listPaperSlots(paperId?: string): AdminBotPaperSlotRecord[];
+  /** First sighting wins: a stage that already closed keeps the mail that closed it. */
+  savePaperflowEvidence(record: AdminBotPaperflowEvidenceRecord): void;
+  /** One paper's stage evidence, or every paper's when the id is omitted. */
+  listPaperflowEvidence(paperId?: string): AdminBotPaperflowEvidenceRecord[];
   saveNudgeLedgerEntry(record: AdminBotNudgeLedgerRecord): void;
   /** The whole ledger, or one domain's slice. */
   listNudgeLedger(domain?: string): AdminBotNudgeLedgerRecord[];
@@ -296,6 +313,54 @@ export type AdminBotPaperSlotOverviewRow = {
  * Carries the composed message rather than a summary of it: the point of a manual send is that
  * somebody reads what is about to go out in their name, and a paraphrase would not be that.
  */
+/**
+ * One rung of the venue ladder as the paper card draws it.
+ *
+ * Read-only by construction: there is no write path for these, because the only thing that closes
+ * one is the mail arriving. That is the point of returning them alongside the editable slots --
+ * the card can show the whole cycle while making it obvious which half a person fills in and
+ * which half fills itself in.
+ */
+export type AdminBotPaperflowStageView = {
+  stage: AdminBotPaperflowStage;
+  label: string;
+  /** The PaperFlow node id, so the card and the chart can be read side by side. */
+  node: string;
+  state: "closed" | "waiting" | "upcoming";
+  closed_at?: string;
+  /** The bcc'd mail's subject, so a closed rung says what closed it. */
+  closed_by_subject?: string;
+  closed_by?: "email_bcc" | "admin";
+};
+
+/**
+ * One paper's outstanding venue-cycle stage, as the preview shows it and as the send would mail it.
+ *
+ * `unroutable_reason` rather than omission: a paper with no lab member on the author list has
+ * nobody to chase, and dropping it from the list would make it indistinguishable from a paper
+ * with nothing outstanding -- which is exactly the paper an admin needs to see.
+ */
+export type AdminBotPaperflowStageNudge = {
+  paper_id: string;
+  title: string;
+  stage: AdminBotPaperflowStage;
+  stage_label: string;
+  reason: string;
+  deadline_bearing: boolean;
+  venue?: string;
+  recipient_member_id?: string;
+  recipient_name?: string;
+  /** Where in the author list the recipient sits, 0-based, so a surprising pick is visible. */
+  recipient_author_index?: number;
+  /** True when the configured priority member was taken ahead of an earlier author. */
+  prioritized?: boolean;
+  unroutable_reason?: string;
+  last_nudged_at?: string;
+  nudge_count: number;
+  /** False when the cadence or a snooze says this one is not going out on this pass. */
+  due: boolean;
+};
+
 export type AdminBotNudgeBatch = {
   member_id: string;
   member_name: string;
@@ -353,6 +418,18 @@ export type AdminBotServiceOptions = {
     instructions: string;
     iteration: number;
   }) => Promise<{ image_data_url: string; note?: string }>;
+  /**
+   * The mailbox authors are told to bcc so a venue-cycle stage closes itself. Absent means the
+   * deployment has no bot mailbox configured, and the PaperFlow stage sweep declines to send:
+   * a nudge whose whole payload is "bcc us at" is worse than silence without an address to name.
+   */
+  paperflowBotEmail?: string;
+  /**
+   * A roster member who takes the venue cycle ahead of author order when they are on the paper.
+   * Configuration rather than a name in a conditional, so the day it stops being true it is one
+   * env var to unset rather than a code change.
+   */
+  paperflowPriorityMemberId?: string;
 };
 
 const DEFAULT_ACTION_POLICIES = {
@@ -1054,6 +1131,13 @@ export class AdminBotService {
     const stored: AdminBotPaperRecord = {
       ...existing,
       ...paper,
+      // Both name lists are trimmed and de-blanked on write rather than on read. The stage sweep
+      // matches authors by name and an empty row would look like an author nobody can resolve,
+      // which reads as "this paper has no lab member on it" -- the one state that stops the chase.
+      authors: normalizeNameList(paper.authors),
+      ...(paper.feedback_givers === undefined
+        ? {}
+        : { feedback_givers: normalizeNameList(paper.feedback_givers) }),
       artifacts: {
         ...existing?.artifacts,
         ...paper.artifacts,
@@ -1109,6 +1193,8 @@ export class AdminBotService {
     consents: AdminBotSocialConsentRecord[];
     attendees: AdminBotConferenceAttendeeRecord[];
     reimbursements: AdminBotPaperReimbursementRecord[];
+    /** The venue ladder, in order, with the mail that closed each rung. */
+    paperflow_stages: AdminBotPaperflowStageView[];
     cycle_closed: boolean;
     missing_acceptance_details: string[];
   }> {
@@ -1133,6 +1219,7 @@ export class AdminBotService {
         consents: drafts.flatMap((draft) => this.store.listSocialConsents(draft.id)),
         attendees,
         reimbursements,
+        paperflow_stages: this.paperflowStageViews(paper, stored),
         cycle_closed: isCycleClosed({
           paper,
           slots: stored,
@@ -1143,6 +1230,45 @@ export class AdminBotService {
         missing_acceptance_details: missingAcceptanceDetails(paper),
       },
     };
+  }
+
+  /**
+   * The venue ladder for one paper: every stage, in order, and what closed it.
+   *
+   * All five rungs are returned whether or not they have happened, for the same reason the slot
+   * read returns blanks -- the card is a picture of the whole cycle, and one that only listed the
+   * rungs already climbed would keep growing as the paper progressed, which reads as the venue
+   * inventing new requirements rather than the paper moving through known ones.
+   */
+  private paperflowStageViews(
+    paper: AdminBotPaperRecord,
+    slots: AdminBotPaperSlotRecord[],
+  ): AdminBotPaperflowStageView[] {
+    const evidence = this.store.listPaperflowEvidence(paper.id);
+    const open = openPaperflowStage({ paper, slots, evidence, now: new Date() });
+    return adminBotPaperflowStages.map((stage) => {
+      const closed = evidence.find((row) => row.stage === stage);
+      const definition = adminBotPaperflowStageRegistry[stage];
+      const view: AdminBotPaperflowStageView = {
+        stage,
+        label: definition.label,
+        node: definition.node,
+        // Three states, never two: "closed", "this is the one we are waiting on", and "not yet
+        // reached". Collapsing the last two would make a paper that has not been submitted look
+        // like a paper whose decision is overdue.
+        state: closed ? "closed" : open?.stage === stage ? "waiting" : "upcoming",
+      };
+      if (closed?.recorded_at) {
+        view.closed_at = closed.recorded_at;
+      }
+      if (closed?.subject) {
+        view.closed_by_subject = closed.subject;
+      }
+      if (closed?.recorded_by) {
+        view.closed_by = closed.recorded_by;
+      }
+      return view;
+    });
   }
 
   /**
@@ -1863,6 +1989,243 @@ export class AdminBotService {
       status: 200,
       payload: { created, skipped, papers_considered: papersConsidered },
     };
+  }
+
+  /**
+   * Every paper currently waiting on a venue-cycle stage, with who would hear about it.
+   *
+   * The same computation the stage sweep runs, returned instead of sent -- the same arrangement
+   * `collectPaperNudgeBatches` has with `sendPaperSlotNudges`, and for the same reason: a preview
+   * that is a different calculation from the send is a preview that lies.
+   */
+  collectPaperflowStageNudges(nowIso?: string): AdminBotServiceResponse<{
+    items: AdminBotPaperflowStageNudge[];
+  }> {
+    const now = nowIso ? new Date(nowIso) : new Date();
+    if (Number.isNaN(now.getTime())) {
+      return serviceError(400, "now must be a date");
+    }
+    return { ok: true, status: 200, payload: { items: this.gatherPaperflowStages(now).items } };
+  }
+
+  private gatherPaperflowStages(now: Date): { items: AdminBotPaperflowStageNudge[] } {
+    const ledger = this.nudgeLedgerIndex();
+    const roster = this.store.listLabMembers();
+    const priorityMemberId = this.options.paperflowPriorityMemberId;
+    const items: AdminBotPaperflowStageNudge[] = [];
+
+    for (const paper of this.store.listPapers()) {
+      const open = openPaperflowStage({
+        paper,
+        slots: this.store.listPaperSlots(paper.id),
+        evidence: this.store.listPaperflowEvidence(paper.id),
+        now,
+      });
+      if (!open) {
+        continue;
+      }
+      const recipient = paperflowRecipient(paper, roster, priorityMemberId);
+      const entry = recipient
+        ? ledger.get(`paperflow_stage|${open.subjectId}|${recipient.member.id}`)
+        : ledger.get(`paperflow_stage|${open.subjectId}`);
+      items.push({
+        paper_id: paper.id,
+        title: paper.title,
+        stage: open.stage,
+        stage_label: adminBotPaperflowStageRegistry[open.stage].label,
+        reason: open.reason,
+        deadline_bearing: open.deadlineBearing,
+        // A paper with no full member on it is reported rather than dropped. Silently skipping it
+        // makes an unowned paper indistinguishable from a paper with nothing outstanding, which is
+        // exactly the paper somebody needs to look at.
+        ...(recipient
+          ? {
+              recipient_member_id: recipient.member.id,
+              recipient_name: recipient.member.name,
+              recipient_author_index: recipient.authorIndex,
+              prioritized: recipient.prioritized,
+            }
+          : { unroutable_reason: "no full member on the author list" }),
+        ...(paper.venue ? { venue: paper.venue } : {}),
+        ...(entry?.last_nudged_at ? { last_nudged_at: entry.last_nudged_at } : {}),
+        nudge_count: entry?.nudge_count ?? 0,
+        due: isNudgeDue(entry, now, PAPERFLOW_STAGE_NUDGE_INTERVAL_MS),
+      });
+    }
+    return { items };
+  }
+
+  /**
+   * Email the author holding each paper's venue cycle about the stage it is waiting on.
+   *
+   * Email rather than Slack, and separate from `sendPaperSlotNudges`, because the answer is an
+   * email: the whole loop is "we ask, the venue writes to you, you bcc us and this stops". A Slack
+   * DM asking somebody to bcc a mailbox makes them switch apps to answer, and the reply path is
+   * where these die.
+   *
+   * Composes nothing from caller input and picks nobody -- recipients come from the author list and
+   * the text from the registry -- so it runs from cron on the same footing as
+   * `sendMandatoryFieldsReminders`.
+   */
+  async sendPaperflowStageNudges(
+    actor: string,
+  ): Promise<
+    AdminBotServiceResponse<
+      AdminBotMemberNudgeResult & { papers_considered: number; unroutable: string[] }
+    >
+  > {
+    const botEmail = this.options.paperflowBotEmail?.trim();
+    if (!botEmail) {
+      return serviceError(
+        503,
+        "paperflow stage nudges need a bot mailbox to name; set ADMINBOT_BOT_EMAIL",
+      );
+    }
+    const now = new Date();
+    const { items } = this.gatherPaperflowStages(now);
+    const created: AdminBotStoredProposal[] = [];
+    const skipped: AdminBotMemberNudgeSkip[] = [];
+    const unroutable: string[] = [];
+    const stamped: Array<{ subjectId: string; memberId: string }> = [];
+
+    for (const item of items) {
+      if (!item.recipient_member_id) {
+        unroutable.push(item.paper_id);
+        continue;
+      }
+      if (!item.due) {
+        continue;
+      }
+      const paper = this.store.getPaper(item.paper_id);
+      const member = this.store.getLabMember(item.recipient_member_id);
+      if (!paper || !member) {
+        continue;
+      }
+      const entry = this.nudgeLedgerIndex().get(
+        `paperflow_stage|${item.paper_id}:${item.stage}|${member.id}`,
+      );
+      const mail = paperflowStageEmail({
+        paper,
+        stage: item.stage,
+        recipient: {
+          member,
+          authorIndex: item.recipient_author_index ?? 0,
+          prioritized: item.prioritized ?? false,
+        },
+        botEmail,
+        ...(entry ? { entry } : {}),
+      });
+      // One mail per paper per stage rather than one per person: unlike the slot sweep, two papers
+      // at different stages have nothing to say to each other, and a single digest would bury the
+      // one bcc instruction that is the entire point of the message.
+      const result = await this.sendMemberNudge(
+        {
+          channel: "email",
+          recipient_member_ids: [member.id],
+          subject: mail.subject,
+          message: mail.body,
+        },
+        actor,
+      );
+      if (!result.ok) {
+        skipped.push({ member_id: member.id, reason: result.error.message });
+        continue;
+      }
+      created.push(...result.payload.created);
+      skipped.push(...result.payload.skipped);
+      if (result.payload.created.length > 0) {
+        stamped.push({ subjectId: `${item.paper_id}:${item.stage}`, memberId: member.id });
+      }
+    }
+
+    // Only people a message actually reached. Somebody with no address on file has not been asked
+    // and must not accumulate a count nobody ever told them about -- same rule as the slot sweep.
+    const ledger = this.nudgeLedgerIndex();
+    for (const { subjectId, memberId } of stamped) {
+      const entry = ledger.get(`paperflow_stage|${subjectId}|${memberId}`);
+      this.store.saveNudgeLedgerEntry({
+        domain: "paperflow_stage",
+        subject_id: subjectId,
+        member_id: memberId,
+        last_nudged_at: now.toISOString(),
+        nudge_count: (entry?.nudge_count ?? 0) + 1,
+        ...(entry?.snoozed_until ? { snoozed_until: entry.snoozed_until } : {}),
+      });
+    }
+    if (stamped.length > 0 || unroutable.length > 0) {
+      this.recordAudit({
+        type: "paperflow_stages.nudged",
+        actor,
+        details: { sent: stamped.length, unroutable: unroutable.length },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: { created, skipped, papers_considered: items.length, unroutable },
+    };
+  }
+
+  /**
+   * Close a venue-cycle stage because the mail that proves it happened arrived.
+   *
+   * This is the other half of the nudge: the ask names a mailbox, and a bcc to that mailbox lands
+   * here. Recording it is what stops the chase, so the confidence floor matters -- a false close is
+   * silent by construction, because the failure mode is a message that never gets sent.
+   *
+   * Idempotent on (paper, stage): a second bcc on the same decision is the author forwarding the
+   * thread again, not a second decision.
+   */
+  recordPaperflowEvidence(params: {
+    paperId: string;
+    stage: string;
+    messageId?: string;
+    subject?: string;
+    sender?: string;
+    confidence?: number;
+    recordedBy?: AdminBotPaperflowEvidenceRecord["recorded_by"];
+    actor: string;
+  }): AdminBotServiceResponse<{ recorded: boolean; record: AdminBotPaperflowEvidenceRecord }> {
+    if (!isAdminBotPaperflowStage(params.stage)) {
+      return serviceError(400, `${params.stage} is not a PaperFlow stage`);
+    }
+    const paper = this.store.getPaper(params.paperId);
+    if (!paper) {
+      return serviceError(404, "paper not found");
+    }
+    const recordedBy = params.recordedBy ?? "email_bcc";
+    if (
+      recordedBy === "email_bcc" &&
+      (params.confidence ?? 0) < adminBotPaperflowEvidenceMinConfidence
+    ) {
+      return serviceError(
+        422,
+        `the match was only ${Math.round((params.confidence ?? 0) * 100)}% confident; a human should confirm which paper and stage this closes`,
+      );
+    }
+    const existing = this.store
+      .listPaperflowEvidence(params.paperId)
+      .find((row) => row.stage === params.stage);
+    if (existing) {
+      return { ok: true, status: 200, payload: { recorded: false, record: existing } };
+    }
+    const record: AdminBotPaperflowEvidenceRecord = {
+      paper_id: params.paperId,
+      stage: params.stage,
+      recorded_at: new Date().toISOString(),
+      recorded_by: recordedBy,
+      ...(params.messageId ? { message_id: params.messageId } : {}),
+      ...(params.subject ? { subject: params.subject } : {}),
+      ...(params.sender ? { sender: params.sender } : {}),
+      ...(typeof params.confidence === "number" ? { confidence: params.confidence } : {}),
+    };
+    this.store.savePaperflowEvidence(record);
+    this.recordAudit({
+      type: "paperflow_stage.evidenced",
+      actor: params.actor,
+      details: { paper_id: params.paperId, stage: params.stage, recorded_by: recordedBy },
+    });
+    return { ok: true, status: 200, payload: { recorded: true, record } };
   }
 
   /**
@@ -3961,6 +4324,8 @@ const OWN_PAPER_EDITABLE_FIELDS = [
   "current_step",
   "artifacts",
   "notes",
+  // Who read the draft. The author's own record of who they asked, so it is theirs to edit.
+  "feedback_givers",
   // Where the paper is aimed and when it is due. An author's own call, and it moves -- a missed
   // deadline, a change of plan -- so it belongs with the fields they edit on their own card.
   "venue",
@@ -4056,6 +4421,12 @@ const MANDATORY_FIELDS_REMINDER_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
 // Per-slot rather than per-paper, so filling in two of four artifacts genuinely quiets those two
 // and the next pass chases only what is still open.
 const PAPER_SLOT_NUDGE_INTERVAL_MS = 3 * 24 * 60 * 60 * 1000;
+
+// A venue-cycle stage is asked about once a week, not every three days like a slot. The author
+// cannot make the answer arrive any sooner -- the venue decides when reviews land -- so a tighter
+// cadence buys nothing and spends the one thing that makes these mails work, which is that
+// receiving one still means something.
+const PAPERFLOW_STAGE_NUDGE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Fixed order, so a person owed slots in two roles on the same paper reads them in the same order
 // every time.
@@ -4878,6 +5249,11 @@ function validateSettings(settings: AdminBotSettingsInput): string | undefined {
   return undefined;
 }
 
+/** Trimmed, blank-free, order preserved. Author order decides who the stage nudges go to. */
+function normalizeNameList(values: readonly string[] | undefined): string[] {
+  return (values ?? []).map((value) => value.trim()).filter(Boolean);
+}
+
 function validatePaper(paper: AdminBotPaperRecordInput): string | undefined {
   if (!paper.id.trim()) {
     return "paper id is required";
@@ -4885,8 +5261,11 @@ function validatePaper(paper: AdminBotPaperRecordInput): string | undefined {
   if (!paper.title.trim()) {
     return "paper title is required";
   }
-  if (paper.authors.length === 0) {
+  if (normalizeNameList(paper.authors).length === 0) {
     return "paper authors are required";
+  }
+  if (paper.feedback_givers && !Array.isArray(paper.feedback_givers)) {
+    return "feedback givers must be a list of names";
   }
   return undefined;
 }

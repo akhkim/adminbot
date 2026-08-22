@@ -644,6 +644,23 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
               ${renderPaperSlots({
                 paperId: paper.id,
                 slots: props.slots[paper.id]?.slots ?? [],
+                stages: props.slots[paper.id]?.stages ?? [],
+                details: {
+                  authors: paper.authors ?? [],
+                  feedbackGivers: paper.feedback_givers ?? [],
+                  venue: paper.venue ?? paper.artifacts?.conference ?? "",
+                  // Written through the same paper save every other control on this card uses, so
+                  // the three details and the step pointer cannot end up on different records.
+                  onSaveDetails: (details) =>
+                    props.onSavePaper({
+                      id: paper.id,
+                      title: paper.title,
+                      authors: details.authors,
+                      feedbackGivers: details.feedbackGivers,
+                      venue: details.venue,
+                      currentStep: paper.current_step,
+                    }),
+                },
                 loading: props.slotsBusyId === paper.id,
                 onSaveSlot: (slot, input) => props.onSaveSlot(paper.id, slot, input),
                 showAllSlots: showAllSlots.has(paper.id),

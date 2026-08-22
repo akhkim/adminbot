@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   authorizeClassification,
   formatTalkLatex,
+  outcomeLabelChange,
   resolveEmailAutomationSlackAccount,
   type EmailMessage,
 } from "../../scripts/adminbot-email-automation.js";
@@ -136,5 +137,33 @@ describe("adminbot email automation", () => {
     ).toBe(
       "\\item \\cvtalk{Emergent AI Safety Risks in Multi-Agent LLMs}{(Upcoming) Invited Keynote at the Cooperative AI Foundation Summer School 2026, Toronto, Canada}{2026/8/3-4}",
     );
+  });
+
+  describe("outcomeLabelChange", () => {
+    it("files a handled message out of the inbox", () => {
+      const change = outcomeLabelChange("completed");
+      expect(change.add).toEqual(["AdminBot/Handled"]);
+      // The inbox is the to-do list: what the automation finished does not belong on it.
+      expect(change.remove).toContain("INBOX");
+    });
+
+    it("leaves the ones needing a person in the inbox, labelled with why", () => {
+      for (const outcome of ["needs_review", "failed"] as const) {
+        const change = outcomeLabelChange(outcome);
+        // This is the whole reason these are labels and not a trash call: a failure that was
+        // deleted is a failure nobody ever acts on, and a failure left unlabelled in the inbox
+        // looks exactly like mail that has not been processed yet.
+        expect(change.remove).not.toContain("INBOX");
+      }
+      expect(outcomeLabelChange("needs_review").add).toEqual(["AdminBot/Needs Review"]);
+      expect(outcomeLabelChange("failed").add).toEqual(["AdminBot/Error"]);
+    });
+
+    it("clears the other two outcomes, so a retried message never carries both", () => {
+      const change = outcomeLabelChange("completed");
+      expect(change.remove).toContain("AdminBot/Error");
+      expect(change.remove).toContain("AdminBot/Needs Review");
+      expect(change.remove).not.toContain("AdminBot/Handled");
+    });
   });
 });
