@@ -3011,7 +3011,11 @@ export function renderApp(state: AppViewState) {
                 <div class="page-sub">${subtitleForTab(state.tab)}</div>
               </div>
               <div class="page-meta">
-                ${headerError ? html`<div class="pill danger">${headerError}</div>` : nothing}
+                <!-- role="alert" because this appears after the page has rendered: a failure
+                     that arrives silently is a failure a screen-reader user never hears. -->
+                ${headerError
+                  ? html`<div class="pill danger" role="alert">${headerError}</div>`
+                  : nothing}
               </div>
             </section>`}
         ${state.tab === "dashboard" ? renderDashboard(state, accessRole) : nothing}
