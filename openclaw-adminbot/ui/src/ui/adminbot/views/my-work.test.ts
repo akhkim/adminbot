@@ -69,25 +69,35 @@ type DrawOptions = {
   notice?: string | null;
   error?: string | null;
   personal?: boolean;
+  /** Reuse a state object across two draws, for the controls that keep a draft in view state. */
+  state?: AppViewState;
 };
 
 function draw(options: DrawOptions = {}) {
+  // Every draw starts from an empty document. Containers used to pile up in `document.body`, and
+  // an `#id` selector resolves through the document's id map before it checks containment -- so a
+  // second card carrying the same id as an earlier test's found the earlier element, failed the
+  // containment check and came back null.
+  document.body.replaceChildren();
   const toggled: string[] = [];
   const nudges: number[] = [];
   const reviews: number[] = [];
   const picked: string[] = [];
   const saved: AdminBotPaperSaveInput[] = [];
-  const state = {
-    memberId: "ada",
-    adminBotData: {
-      papers: options.papers ?? [paper()],
-      members: [],
-      settings: {},
-    },
-    settings: { adminBotUrl: "https://admin.safe.eu" },
-    myWorkBlockerDraft: null,
-    myWorkProjectDraft: options.projectDraft ?? null,
-  } as unknown as AppViewState;
+  const state =
+    options.state ??
+    ({
+      memberId: "ada",
+      adminBotData: {
+        papers: options.papers ?? [paper()],
+        members: [],
+        settings: {},
+      },
+      settings: { adminBotUrl: "https://admin.safe.eu" },
+      myWorkBlockerDraft: null,
+      myWorkProjectDraft: options.projectDraft ?? null,
+      myWorkProjectVenues: [],
+    } as unknown as AppViewState);
   const props: MyWorkProps = {
     onSavePaper: (input: AdminBotPaperSaveInput) => saved.push(input),
     ...(options.scopedPapers ? { papers: options.scopedPapers } : {}),
@@ -120,7 +130,7 @@ function draw(options: DrawOptions = {}) {
   const container = document.createElement("div");
   document.body.append(container);
   render(renderMyWork(state, props), container);
-  return { container, toggled, nudges, reviews, picked, saved };
+  return { container, toggled, nudges, reviews, picked, saved, state };
 }
 
 describe("renderMyWork", () => {
@@ -466,18 +476,68 @@ describe("target venue", () => {
     expect(saved.at(-1)?.conference).toBe("EMNLP 2026 (system demonstrations)");
   });
 
-  it("offers the same two selects when registering a paper", () => {
-    const { container, saved } = draw({ projectDraft: "Causal abstraction" });
+  it("offers one conference select per row, the conference before the year", () => {
+    const { container } = draw({ projectDraft: "Causal abstraction" });
+    // Regression: the form carried two selects sharing one form name, so FormData read the first
+    // -- the one with no sensible default -- and the "defaults to the next deadline" hint below
+    // it was never true.
+    expect(container.querySelectorAll('[data-testid^="register-venue-"]').length).toBeGreaterThan(
+      0,
+    );
+    const row = container.querySelector('[data-testid="register-venue-row-0"]');
+    const order = [...(row?.querySelectorAll("select") ?? [])].map((select) =>
+      select.getAttribute("data-testid"),
+    );
+    expect(order).toEqual(["register-venue-0", "register-venue-year-0", "register-venue-odds-0"]);
+  });
+
+  it("registers a paper against the venue and year picked on the row", () => {
+    const { container, saved, state } = draw({ projectDraft: "Causal abstraction" });
     const form = container.querySelector<HTMLFormElement>("#my-work-add-form");
-    const venue = container.querySelector<HTMLSelectElement>('[data-testid="register-venue"]');
+    const venue = container.querySelector<HTMLSelectElement>('[data-testid="register-venue-0"]');
     const yearSelect = container.querySelector<HTMLSelectElement>(
-      '[data-testid="register-venue-year"]',
+      '[data-testid="register-venue-year-0"]',
     );
     expect(venue).not.toBeNull();
+    // The rows report through change into view state rather than through FormData, so that adding
+    // a second venue does not lose what was typed into the first.
     yearSelect!.value = String(year + 1);
+    yearSelect!.dispatchEvent(new Event("change"));
     venue!.value = "COLM-workshop";
+    venue!.dispatchEvent(new Event("change"));
     form?.dispatchEvent(new Event("submit", { cancelable: true }));
     expect(saved.at(-1)?.conference).toBe(`COLM ${year + 1} (workshop)`);
+    expect(state.myWorkProjectVenues).toEqual([]);
+  });
+
+  it("takes several conferences, each with its own probability", () => {
+    // A paper genuinely can be 80% one venue and 50% another: independent bets on the same work,
+    // not a distribution that has to sum to anything.
+    const { container, saved, state } = draw({ projectDraft: "Causal abstraction" });
+    const pick = (testid: string, value: string) => {
+      const select = container.querySelector<HTMLSelectElement>(`[data-testid="${testid}"]`);
+      select!.value = value;
+      select!.dispatchEvent(new Event("change"));
+    };
+    pick("register-venue-0", "COLM-workshop");
+    pick("register-venue-odds-0", "80");
+    container.querySelector<HTMLButtonElement>('[data-testid="register-venue-add"]')?.click();
+    expect(state.myWorkProjectVenues).toHaveLength(2);
+
+    // Submitted straight from state rather than after a re-render: the handlers read live state,
+    // so a form that has not been redrawn still files what was actually picked.
+    container
+      .querySelector<HTMLFormElement>("#my-work-add-form")
+      ?.dispatchEvent(new Event("submit", { cancelable: true }));
+
+    const targets = JSON.parse(saved.at(-1)?.venueTargets ?? "[]");
+    expect(targets).toHaveLength(2);
+    expect(targets[0]).toMatchObject({ venue_id: "COLM-workshop", confidence: 80 });
+    // The second row carries its own odds, defaulted rather than inherited from the first.
+    expect(targets[1]).toMatchObject({ confidence: 50 });
+    // The first target still lands in the legacy pair the deadline board and stage nudges read.
+    expect(saved.at(-1)?.conference).toContain("COLM");
+    expect(saved.at(-1)?.confidence).toBe("80");
   });
 });
 

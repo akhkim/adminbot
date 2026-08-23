@@ -108,8 +108,12 @@ export function openLinkedInDraftDialog(
     <div class="lidraft__body">
       <div class="lidraft__inputs">
         <label class="lidraft__field">
-          <span>Paper PDF</span>
+          <span>Paper PDF <em>(optional)</em></span>
           <input type="file" accept="application/pdf,.pdf" data-el="pdf" />
+          <small
+            >Leave empty and the Drive copy recorded on this paper is used. Attach one to override
+            it.</small
+          >
         </label>
         <label class="lidraft__field">
           <span>Venue / session <em>(optional)</em></span>
@@ -264,9 +268,11 @@ export function openLinkedInDraftDialog(
       return;
     }
     const file = pdfInput?.files?.[0];
+    // No upload required. The paper usually already carries the Drive copy of this exact PDF --
+    // the card chases the author for it -- so the service is asked to read that one instead. A
+    // file chosen here still wins: it is the one the person in front of the dialog picked.
     if (!file && !lastPdfBase64) {
-      setStatus("Choose the paper PDF first.");
-      return;
+      setStatus("Reading the PDF this paper already has on file…");
     }
     if (file && file.size > MAX_PDF_BYTES) {
       setStatus("That PDF is over 20 MB — use the compiled paper rather than a scan.");
@@ -280,7 +286,7 @@ export function openLinkedInDraftDialog(
       }
       const result = await draftLinkedInPost(
         {
-          pdfBase64: lastPdfBase64,
+          ...(lastPdfBase64 ? { pdfBase64: lastPdfBase64 } : { paperId: paper.id }),
           ...(paper.artifacts?.arxiv_url ? { url: paper.artifacts.arxiv_url } : {}),
           ...(venueInput?.value.trim() ? { venue: venueInput.value.trim() } : {}),
           ...(noteInput?.value.trim() ? { note: noteInput.value.trim() } : {}),

@@ -77,6 +77,7 @@ import {
   createAdminBotOpenReviewWorkflow,
   type AdminBotOpenReviewWorkflow,
 } from "../workflows/papers/openreview-workflow.js";
+import { resolvePaperPdfSource } from "../workflows/papers/paper-pdf-source.js";
 import { buildVenueIndex, searchVenue } from "../workflows/papers/venue-index.js";
 import type {
   AdminBotReimbursementRequest,
@@ -174,6 +175,8 @@ export type AdminBotMockServiceOptions = {
   // Generates a LinkedIn announcement draft from a paper PDF. Injected so tests can assert the
   // route without an OpenRouter round trip; defaults to the real connector.
   linkedInDraftRunner?: import("../connectors/social-draft.js").LinkedInDraftRunner;
+  /** Reads one Drive file as base64, so a draft can use the PDF the paper already names. */
+  readDrivePdfBase64?: (fileId: string) => Promise<string>;
   // Overrides the default DCS-form-submission runner outright (tests use this to assert on the
   // call without launching a real browser). If unset, dcsFormScriptPath decides whether one gets
   // built at all.
@@ -354,6 +357,14 @@ type AdminBotRouteContext = {
   draftCalendarEvent?: import("../workflows/calendar/event-draft.js").EventDraftRunner;
   // Generates a LinkedIn announcement draft from a paper PDF. Nothing it returns is persisted.
   draftLinkedInPost: import("../connectors/social-draft.js").LinkedInDraftRunner;
+  /**
+   * Downloads one Drive file and returns it base64-encoded.
+   *
+   * Injected rather than imported so the route stays testable without a Google session, and so the
+   * one place that shells out to gog for this is the host wiring. Absent means the deployment
+   * cannot fetch a PDF for itself, and the route says so instead of pretending.
+   */
+  readDrivePdfBase64?: (fileId: string) => Promise<string>;
   labCalendar: import("../workflows/calendar/lab-calendar.js").AdminBotLabCalendar;
   serviceToken?: string;
   devicePairingApprover?: DevicePairingApprover;
@@ -490,6 +501,7 @@ export function createAdminBotMockService(options: AdminBotMockServiceOptions = 
     sensitiveInfo,
     onboardingSender,
     draftLinkedInPost: options.linkedInDraftRunner ?? createLinkedInDraftRunner(),
+    ...(options.readDrivePdfBase64 ? { readDrivePdfBase64: options.readDrivePdfBase64 } : {}),
     ...(runEmailAutomation ? { runEmailAutomation } : {}),
     ...(options.reimbursementWorkflow
       ? { reimbursementWorkflow: options.reimbursementWorkflow }
@@ -1846,10 +1858,54 @@ async function handleAuthenticatedRoute(
       return;
     }
     const body = readRecord(await readJson(req));
-    const pdfBase64 = typeof body.pdf_base64 === "string" ? body.pdf_base64 : "";
+    let pdfBase64 = typeof body.pdf_base64 === "string" ? body.pdf_base64 : "";
+    // An upload is no longer required. The author has usually already given the lab this exact
+    // file -- `drive_pdf_arxiv` is the Drive copy of the PDF they intend to post, and the card
+    // chases them for it -- so asking them to find it again was asking for their own homework.
+    // An uploaded file still wins: it is the one the person in front of the dialog chose.
     if (!pdfBase64) {
-      sendJson(res, 400, { error: { message: "pdf_base64 is required" } });
-      return;
+      const paperId = typeof body.paper_id === "string" ? body.paper_id : "";
+      if (!paperId) {
+        sendJson(res, 400, {
+          error: { message: "attach a PDF, or send paper_id so the Drive copy can be used" },
+        });
+        return;
+      }
+      const cycle = service.listPaperSlots(paperId);
+      if (!cycle.ok) {
+        sendServiceResult(res, cycle);
+        return;
+      }
+      const source = resolvePaperPdfSource(cycle.payload.slots);
+      if (source.kind === "none") {
+        sendJson(res, 400, { error: { message: source.reason } });
+        return;
+      }
+      if (!ctx.readDrivePdfBase64) {
+        sendJson(res, 503, {
+          error: {
+            message:
+              "this deployment cannot read Drive files; attach the PDF here instead",
+          },
+        });
+        return;
+      }
+      try {
+        pdfBase64 = await ctx.readDrivePdfBase64(source.fileId);
+      } catch (error) {
+        sendJson(res, 502, {
+          error: {
+            message: `could not read the Drive copy (${(error as Error).message}); attach the PDF here instead`,
+          },
+        });
+        return;
+      }
+      if (!pdfBase64) {
+        sendJson(res, 502, {
+          error: { message: "the Drive copy came back empty; attach the PDF here instead" },
+        });
+        return;
+      }
     }
     const membersResult = service.listLabMembers();
     const members = membersResult.ok ? membersResult.payload.members : [];

@@ -69,6 +69,7 @@ import { openPaperFlowMap } from "../paperflow-map.ts";
 import { openPreRegistrationDialog } from "../pre-registration.ts";
 import {
   formatVenueTargets,
+  serializeVenueTargets,
   nextDeadlineVenue,
   papersNeedingRegistration,
   readVenueTargets,
@@ -1233,18 +1234,39 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
   const draft = state.myWorkProjectDraft ?? "";
   const member = findOwnMember(state);
   const fallback = defaultTarget();
+  // Seeded from the next deadline, held in view state so a re-render (typing the title, adding a
+  // row) does not throw away what has been picked.
+  //
+  // Read through a function rather than captured once: every handler below runs after the render
+  // that created it, and a handler that closed over the array would write whatever was on screen
+  // when it was drawn. That is invisible while a re-render happens between every click and wrong
+  // the moment one does not -- the submit would file the seeded venue over the picked one.
+  const currentTargets = () =>
+    state.myWorkProjectVenues?.length
+      ? state.myWorkProjectVenues
+      : [{ venueId: fallback.id, year: fallback.year, confidence: 50 }];
+  const targets = currentTargets();
+  const updateTarget = (
+    index: number,
+    patch: Partial<{ venueId: string; year: number; confidence: number }>,
+  ) => {
+    state.myWorkProjectVenues = currentTargets().map((target, at) =>
+      at === index ? { ...target, ...patch } : target,
+    );
+    props.onRerender?.();
+  };
   return html`
     <form
       id="my-work-add-form"
       class="my-work-add-form register"
       @submit=${(event: SubmitEvent) => {
         event.preventDefault();
-        const form = event.currentTarget as HTMLFormElement;
-        const data = new FormData(form);
         const title = draft.trim();
         if (!title) {
           return;
         }
+        const rows = currentTargets();
+        const primary = rows[0] ?? { venueId: fallback.id, year: fallback.year, confidence: 50 };
         props.onSavePaper({
           // Slugged from the title: the service upserts by id, and a member filing a paper has no
           // id to offer.
@@ -1256,13 +1278,22 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
           title,
           authors: member?.name?.trim() ? [member.name.trim()] : [],
           currentStep: paperSteps[0],
-          conference: formatVenue(
-            String(data.get("venue") ?? ""),
-            Number(data.get("venueYear") ?? fallback.year),
+          // Every target, each with its own odds -- the shape venue-targets.ts already stores.
+          venueTargets: serializeVenueTargets(
+            rows.map((target) => ({
+              venue_id: target.venueId,
+              label: formatVenue(target.venueId, target.year),
+              confidence: target.confidence,
+            })),
           ),
-          confidence: String(data.get("confidence") ?? ""),
+          // The first target also lands in the legacy pair. The deadline board, the venue-stage
+          // nudges and the card's own target line all read `artifacts.conference`, and none of
+          // them understands a list yet; writing both keeps one paper from reading two ways.
+          conference: formatVenue(primary.venueId, primary.year),
+          confidence: String(primary.confidence),
         });
         state.myWorkProjectDraft = null;
+        state.myWorkProjectVenues = [];
       }}
     >
       <div class="my-work-add-form__head">
@@ -1283,40 +1314,104 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
         />
       </label>
 
+      <!-- One row per venue the paper is aimed at, each with its own odds.
+           A paper genuinely can be 80% ICLR and 50% ARR October: those are independent bets on
+           the same work, not a distribution that has to sum to anything -- which is why the
+           probability sits on the row rather than on the form.
+
+           Conference before year, because the conference is the decision and the year follows
+           from it. There was also a second venue select above this row: two controls sharing one
+           form name, so FormData read the first and the "defaults to the next deadline" promise
+           below was never actually kept. -->
       <div class="register__field">
-        <span class="register__label">Target venue</span>
-        <select class="input" name="venue" data-testid="register-venue">
-          ${ARCHIVAL_VENUES.map(
-            (venue: CatalogVenue, index: number) => html`
-              <option value=${venue.id} ?selected=${index === 0}>${venue.label}</option>
-            `,
-          )}
-          ${NON_ARCHIVAL_VENUES.map(
-            (venue: CatalogVenue) => html` <option value=${venue.id}>${venue.label}</option> `,
-          )}
-          <option value="">Other / not decided yet</option>
-        </select>
-        <div class="register__row">
-          <label class="sr-only" for="register-venue-year">Target year</label>
-          <select
-            class="input"
-            id="register-venue-year"
-            name="venueYear"
-            data-testid="register-venue-year"
-          >
-            ${venueYears().map(
-              (year) => html`
-                <option value=${String(year)} ?selected=${year === fallback.year}>${year}</option>
-              `,
-            )}
-          </select>
-          <label class="sr-only" for="register-venue">Target venue</label>
-          <select class="input" id="register-venue" name="venue" data-testid="register-venue">
-            ${venueOptions(fallback.id)}
-            <option value="" ?selected=${!fallback.id}>Other / not decided yet</option>
-          </select>
-        </div>
-        <span class="register__hint">Defaults to the next deadline. Change it any time.</span>
+        <span class="register__label">Target venues</span>
+        ${targets.map(
+          (target, index) => html`
+            <div class="register__row register__row--venue" data-testid=${`register-venue-row-${index}`}>
+              <label class="sr-only" for=${`register-venue-${index}`}>Target venue</label>
+              <select
+                class="input"
+                id=${`register-venue-${index}`}
+                data-testid=${`register-venue-${index}`}
+                @change=${(event: Event) =>
+                  updateTarget(index, { venueId: (event.target as HTMLSelectElement).value })}
+              >
+                ${venueOptions(target.venueId)}
+                <option value="" ?selected=${!target.venueId}>Other / not decided yet</option>
+              </select>
+              <label class="sr-only" for=${`register-venue-year-${index}`}>Target year</label>
+              <select
+                class="input"
+                id=${`register-venue-year-${index}`}
+                data-testid=${`register-venue-year-${index}`}
+                @change=${(event: Event) =>
+                  updateTarget(index, {
+                    year: Number((event.target as HTMLSelectElement).value),
+                  })}
+              >
+                ${venueYears().map(
+                  (year) => html`
+                    <option value=${String(year)} ?selected=${year === target.year}>
+                      ${year}
+                    </option>
+                  `,
+                )}
+              </select>
+              <label class="sr-only" for=${`register-venue-odds-${index}`}>How likely</label>
+              <select
+                class="input"
+                id=${`register-venue-odds-${index}`}
+                data-testid=${`register-venue-odds-${index}`}
+                @change=${(event: Event) =>
+                  updateTarget(index, {
+                    confidence: Number((event.target as HTMLSelectElement).value),
+                  })}
+              >
+                ${CONFIDENCE_OPTIONS.map(
+                  (value) => html`
+                    <option value=${value} ?selected=${Number(value) === target.confidence}>
+                      ${value}% likely
+                    </option>
+                  `,
+                )}
+              </select>
+              ${targets.length > 1
+                ? html`<button
+                    type="button"
+                    class="btn btn--sm"
+                    title="Remove this venue"
+                    data-testid=${`register-venue-remove-${index}`}
+                    @click=${() => {
+                      state.myWorkProjectVenues = currentTargets().filter(
+                        (_, at) => at !== index,
+                      );
+                      props.onRerender?.();
+                    }}
+                  >
+                    ${icons.x}
+                  </button>`
+                : nothing}
+            </div>
+          `,
+        )}
+        <button
+          type="button"
+          class="btn btn--sm"
+          data-testid="register-venue-add"
+          @click=${() => {
+            state.myWorkProjectVenues = [
+              ...currentTargets(),
+              { venueId: "", year: fallback.year, confidence: 50 },
+            ];
+            props.onRerender?.();
+          }}
+        >
+          Add another conference
+        </button>
+        <span class="register__hint">
+          Defaults to the next deadline. Add as many as the paper is genuinely aimed at, each with
+          its own odds.
+        </span>
       </div>
 
       <fieldset class="register__field">

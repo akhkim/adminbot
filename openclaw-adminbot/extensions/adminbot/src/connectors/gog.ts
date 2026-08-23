@@ -412,6 +412,46 @@ function buildCalendarDeleteArgs(proposal: AdminBotStoredProposal): string[] {
   return args;
 }
 
+/**
+ * Download one Drive file and return it base64-encoded.
+ *
+ * Its own function rather than a proposal: nothing leaves the lab and nothing is written, so the
+ * propose/approve/execute gate has nothing to protect here -- this is a read, in service of a
+ * draft the author is about to look at. It shells to the same `gog` every other Google action
+ * uses, so it inherits one auth story rather than inventing a second.
+ */
+export async function readDriveFileBase64(
+  fileId: string,
+  options: { command?: string; commandArgsPrefix?: string[]; env?: NodeJS.ProcessEnv } = {},
+): Promise<string> {
+  const command = options.command ?? "gog";
+  const output = path.join(
+    os.tmpdir(),
+    `adminbot-drive-${fileId.replace(/[^a-zA-Z0-9_-]/gu, "")}-${Date.now()}.pdf`,
+  );
+  const args = [
+    ...(options.commandArgsPrefix ?? []),
+    ...rootArgs("drive.download", optionalAccount(options.env)),
+    "drive",
+    "download",
+    fileId,
+    "--output",
+    output,
+  ];
+  try {
+    await execFile(command, args, {
+      maxBuffer: GOG_MAX_OUTPUT_BYTES,
+      timeout: GOG_TIMEOUT_MS,
+      ...(options.env ? { env: options.env } : {}),
+    });
+    return (await fs.promises.readFile(output)).toString("base64");
+  } finally {
+    // Best effort: a leftover temp PDF is a copy of a paper sitting on disk, so it goes even when
+    // the download failed halfway.
+    await fs.promises.rm(output, { force: true }).catch(() => {});
+  }
+}
+
 function rootArgs(commandPath: string, account?: string, force = false): string[] {
   const args = ["--json", "--no-input", "--enable-commands-exact", commandPath];
   if (account) {

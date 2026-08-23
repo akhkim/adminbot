@@ -18,7 +18,11 @@ import {
   type DeviceTokenIssuance,
 } from "../src/api/server.js";
 import { createCompositeAdminBotExecutor } from "../src/connectors/composite.js";
-import { createGogAdminBotExecutor, writeGogDocMarkdown } from "../src/connectors/gog.js";
+import {
+  readDriveFileBase64,
+  createGogAdminBotExecutor,
+  writeGogDocMarkdown,
+} from "../src/connectors/gog.js";
 import { createAdminBotMessageExecutor } from "../src/connectors/message.js";
 import { createAdminBotOpenReviewExecutor } from "../src/connectors/openreview.js";
 import { createAdminBotOverleafExecutor } from "../src/connectors/overleaf.js";
@@ -819,6 +823,9 @@ export function createAdminBotHost(deps: AdminBotHostDeps) {
         send: process.env.ADMINBOT_OPENREVIEW_SEND === "1",
       }),
     ]),
+    // Lets a LinkedIn draft use the Drive copy the paper already names instead of demanding the
+    // author upload the same PDF again. Same gog binary, same account, as every other Google read.
+    readDrivePdfBase64: (fileId: string) => readDriveFileBase64(fileId),
     ...(deps.inviteToSlackConnect ? { inviteToSlackConnect: deps.inviteToSlackConnect } : {}),
     sensitiveInfoPath: path.join(os.homedir(), ".openclaw/adminbot-sensitive-information.md"),
     emailAutomationRunner: deps.runEmailAutomation,

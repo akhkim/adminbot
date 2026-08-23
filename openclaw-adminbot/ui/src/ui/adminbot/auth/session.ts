@@ -1187,12 +1187,15 @@ export type LinkedInDraft = {
 };
 
 export async function draftLinkedInPost(
-  request: { pdfBase64: string; url?: string; venue?: string; note?: string },
+  request: { pdfBase64?: string; paperId?: string; url?: string; venue?: string; note?: string },
   sessionToken: string,
   baseUrl: string,
 ): Promise<AuthResult<LinkedInDraft>> {
   const result = await authedJson(baseUrl, "/papers/linkedin-draft", "POST", sessionToken, {
-    pdf_base64: request.pdfBase64,
+    // Either is enough. An attached file wins; otherwise the service reads the Drive copy the
+    // paper already names, which the card has been chasing the author for anyway.
+    ...(request.pdfBase64 ? { pdf_base64: request.pdfBase64 } : {}),
+    ...(request.paperId ? { paper_id: request.paperId } : {}),
     ...(request.url ? { url: request.url } : {}),
     ...(request.venue ? { venue: request.venue } : {}),
     ...(request.note ? { note: request.note } : {}),
