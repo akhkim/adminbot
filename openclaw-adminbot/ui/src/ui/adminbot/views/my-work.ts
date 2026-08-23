@@ -32,16 +32,20 @@ import {
   resolveBlockerInput,
 } from "../blockers.ts";
 import type {
+  AdminBotLabMember,
   AdminBotPaperRecord,
   AdminBotPaperSaveInput,
   AdminBotPaperStep,
 } from "../controllers/admin.ts";
-import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import { openPaperFlowMap } from "../paperflow-map.ts";
 import { openLinkedInDraftDialog } from "../linkedin-draft-dialog.ts";
 import { openPreRegistrationDialog } from "../pre-registration.ts";
+import { decisionOf, isDecisionAnswered, renderDecisionBanner } from "../decision-popup.ts";
+import { buildCoauthorEmail, firstFullMemberAuthor } from "../coauthor-email.ts";
 import {
+  DATED_VENUE_CHOICES,
+  VENUE_FAMILIES,
   formatVenueTargets,
   nextDeadlineVenue,
   papersNeedingRegistration,
@@ -716,10 +720,13 @@ const STEPPER_SHORT_LABELS: Record<string, string> = {
 function renderTarget(paper: AdminBotPaperRecord, props: MyWorkProps) {
   const current = paper.artifacts?.conference ?? "";
   const confidence = paper.artifacts?.confidence ?? "";
-  const venues = upcomingVenues();
-  // Keep whatever the paper already names, even once its deadline has passed, or editing the
-  // confidence would silently retarget the paper.
-  const known = venues.some((venue) => venue.name === current);
+  // Keep whatever the paper already names, even when it is not one of the offered options, or
+  // editing the confidence would silently retarget the paper.
+  const offered = [
+    ...DATED_VENUE_CHOICES.map((choice) => choice.value),
+    ...VENUE_FAMILIES.flatMap((family) => family.venues),
+  ];
+  const known = offered.includes(current);
 
   const save = (conference: string, odds: string) =>
     props.onSavePaper({
@@ -739,11 +746,24 @@ function renderTarget(paper: AdminBotPaperRecord, props: MyWorkProps) {
         @change=${(event: Event) => save((event.target as HTMLSelectElement).value, confidence)}
       >
         ${!known && current ? html`<option value=${current} selected>${current}</option>` : nothing}
-        ${venues.map(
-          (venue) => html`
-            <option value=${venue.name} ?selected=${venue.name === current}>
-              ${venue.name} · ${venue.deadline_aoe.slice(0, 10)}
-            </option>
+        <optgroup label="Due next">
+          ${DATED_VENUE_CHOICES.map(
+            (choice) => html`
+              <option value=${choice.value} ?selected=${choice.value === current}>
+                ${choice.label} · ${choice.note}
+              </option>
+            `,
+          )}
+        </optgroup>
+        ${VENUE_FAMILIES.map(
+          (family) => html`
+            <optgroup label=${family.group}>
+              ${family.venues.map(
+                (venue) => html`
+                  <option value=${venue} ?selected=${venue === current}>${venue}</option>
+                `,
+              )}
+            </optgroup>
           `,
         )}
         <option value="" ?selected=${!current}>Other / not decided yet</option>
@@ -930,37 +950,6 @@ function renderAddButton(state: AppViewState) {
   `;
 }
 
-/**
- * Venues worth offering when registering a paper: the next few real deadlines, soonest first.
- *
- * Read from the bundled deadline board rather than a hand-kept list, so the default is whatever
- * is actually next rather than whatever someone typed last year. Archival conference deadlines
- * only -- camera-ready and commitment rows are not things you target from scratch.
- */
-function upcomingVenues(now = new Date()) {
-  const future = DEADLINE_VENUES.filter((venue) => {
-    const due = Date.parse(venue.deadline_aoe.replace(" ", "T") + "Z");
-    return Number.isFinite(due) && due > now.getTime();
-  })
-    // Archival conferences only. Sorting purely by date buries ICLR and ARR under fifty workshop
-    // commitment deadlines, so the default ends up a venue nobody was aiming for.
-    .filter((venue) => venue.venue_type === "conference" && venue.archival)
-    .sort((left, right) => left.deadline_aoe.localeCompare(right.deadline_aoe));
-
-  // One row per venue, not one per milestone: ICLR appears twice (abstract, then full paper) and
-  // offering both as separate targets asks a question nobody means to answer. Keep the paper
-  // deadline, since that is the one people are working towards.
-  const byGroup = new Map<string, (typeof future)[number]>();
-  for (const venue of future) {
-    const key = venue.venue_group || venue.name;
-    const kept = byGroup.get(key);
-    const isPaperDeadline = venue.milestone !== "abstract";
-    if (!kept || (isPaperDeadline && kept.milestone === "abstract")) {
-      byGroup.set(key, venue);
-    }
-  }
-  return [...byGroup.values()].slice(0, 2);
-}
 
 /** How sure the authors are about hitting this venue. Coarse on purpose: finer is false precision. */
 const CONFIDENCE_OPTIONS = ["30", "50", "80", "99"];
@@ -1018,10 +1007,10 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
       <label class="register__field">
         <span class="register__label">Target venue</span>
         <select class="input" name="venue" data-testid="register-venue">
-          ${upcomingVenues().map(
-            (venue, index) => html`
-              <option value=${venue.name} ?selected=${index === 0}>
-                ${venue.name} · ${venue.deadline_aoe.slice(0, 10)}
+          ${DATED_VENUE_CHOICES.map(
+            (choice, index) => html`
+              <option value=${choice.value} ?selected=${index === 0}>
+                ${choice.label} · ${choice.note}
               </option>
             `,
           )}
@@ -1236,6 +1225,140 @@ function renderNudgePreview(props: MyWorkProps) {
  * The count is of the member's own unregistered papers rather than the lab's, because a number
  * about other people's work is not a prompt to do anything.
  */
+/**
+ * Decisions this member has not answered, and what they have half-picked.
+ *
+ * Session state, not app state: dismissing is a "not right now", and the stored flag is what
+ * makes an answer permanent. Kept module-level so a re-render mid-answer does not lose the
+ * buttons already pressed.
+ */
+const collapsedDecisions = new Set<string>();
+/** Papers whose answer was written in this session, so the button can say so before a reload. */
+const savedDecisions = new Set<string>();
+/**
+ * Papers edited since their answer was written.
+ *
+ * Needed because `isDecisionAnswered` reads the stored flag, which stays true once an answer has
+ * ever been saved -- so without this, changing Track from Main to Spotlight left the button
+ * reading "Saved ✓" while describing something older than the screen.
+ */
+const dirtyDecisions = new Set<string>();
+/** The coauthor-email task: whether the box is open, and the body as edited. */
+const emailTasks = new Map<string, { open: boolean; body: string }>();
+const decisionDrafts = new Map<
+  string,
+  { presentation: string; attending: "yes" | "no" | ""; nextVenue: string }
+>();
+
+/** The venue as the banner names it, so the mail and the heading never disagree. */
+function venueOf(paper: AdminBotPaperRecord): string {
+  return paper.accepted_venue?.trim() || paper.artifacts?.conference?.trim() || "the venue";
+}
+
+function renderDecisionBanners(
+  papers: AdminBotPaperRecord[],
+  props: MyWorkProps,
+  members: AdminBotLabMember[],
+) {
+  const memberId = props.memberId;
+  if (!memberId) {
+    return nothing;
+  }
+  // Every decided paper, answered or not. The banner is the record of the decision as well as
+  // the prompt for it, so it does not leave when the prompt is satisfied.
+  const waiting = papers.filter((paper) => decisionOf(paper) !== null);
+  if (waiting.length === 0) {
+    return nothing;
+  }
+  return html`${waiting.map((paper) => {
+    const decision = decisionOf(paper);
+    if (!decision) {
+      return nothing;
+    }
+    // "Saved" survives a re-render but not a fresh page load, where the stored flag takes over.
+    // An edit since the last write beats both.
+    const saved =
+      !dirtyDecisions.has(paper.id) && (savedDecisions.has(paper.id) || isDecisionAnswered(paper));
+    const draft = decisionDrafts.get(paper.id) ?? {
+      presentation: paper.presentation_type ?? "",
+      attending: "" as const,
+      nextVenue: "",
+    };
+    return renderDecisionBanner({
+      paper,
+      decision,
+      draft,
+      saved,
+      dirty: dirtyDecisions.has(paper.id),
+      members,
+      // One person per paper is asked, and author order decides who, so everybody can predict
+      // the answer from the paper rather than from who opened AdminBot first.
+      isEmailOwner: firstFullMemberAuthor(paper, members)?.id === memberId,
+      email: emailTasks.get(paper.id) ?? null,
+      onToggleEmail: () => {
+        const current = emailTasks.get(paper.id);
+        emailTasks.set(paper.id, {
+          open: !current?.open,
+          body:
+            current?.body ??
+            buildCoauthorEmail(paper, decision, venueOf(paper), props.memberName(memberId)).body,
+        });
+        props.onRerender?.();
+      },
+      onEmailBody: (body) => {
+        emailTasks.set(paper.id, { open: true, body });
+        props.onRerender?.();
+      },
+      onResetEmail: () => {
+        emailTasks.set(paper.id, {
+          open: true,
+          body: buildCoauthorEmail(paper, decision, venueOf(paper), props.memberName(memberId)).body,
+        });
+        props.onRerender?.();
+      },
+      onReset: () => {
+        decisionDrafts.set(paper.id, { presentation: "", attending: "", nextVenue: "" });
+        savedDecisions.delete(paper.id);
+        dirtyDecisions.add(paper.id);
+        props.onRerender?.();
+      },
+      onDraft: (patch) => {
+        decisionDrafts.set(paper.id, { ...draft, ...patch });
+        // Any change re-arms the button: "Saved" must never describe something older than the
+        // thing on screen.
+        savedDecisions.delete(paper.id);
+        dirtyDecisions.add(paper.id);
+        props.onRerender?.();
+      },
+      onSavePaper: (input) => {
+        savedDecisions.add(paper.id);
+        dirtyDecisions.delete(paper.id);
+        props.onSavePaper(input);
+      },
+      onSetAttendance: (attending) =>
+        props.onSetAttendee(paper.id, props.memberName(memberId), memberId, attending),
+      onPreRegister: () =>
+        openPreRegistrationDialog({
+          papers,
+          onSavePaper: props.onSavePaper,
+          onDone: () => props.onRerender?.(),
+        }),
+      collapsed: collapsedDecisions.has(paper.id),
+      onToggleCollapsed: () => {
+        // Collapsed, not gone. The decision is still unanswered, and a banner that vanishes on
+        // "not now" takes the news with it -- the author has no way back to it short of noticing
+        // a dropdown deep in the card.
+        if (collapsedDecisions.has(paper.id)) {
+          collapsedDecisions.delete(paper.id);
+        } else {
+          collapsedDecisions.add(paper.id);
+        }
+        props.onRerender?.();
+      },
+    });
+  })}`;
+}
+
 function renderPreRegistrationBanner(papers: AdminBotPaperRecord[], props: MyWorkProps) {
   const next = nextDeadlineVenue();
   if (!next || papers.length === 0) {
@@ -1322,7 +1445,8 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
 
   return html`
     <div class="my-work">
-      ${renderPreRegistrationBanner(items, props)} ${renderBlockers(state)}
+      ${renderPreRegistrationBanner(items, props)} ${renderDecisionBanners(items, props, state.adminBotData?.members ?? [])}
+      ${renderBlockers(state)}
       <section class="my-work__section">
         <div class="my-work__section-head">
           <h2 class="my-work__section-title">${t("myWork.items.title")}</h2>

@@ -129,3 +129,37 @@ export function papersNeedingRegistration(
     (paper) => !readVenueTargets(paper).some((target) => target.venue_id === venueId),
   );
 }
+
+// ── the venue picker on a paper card ─────────────────────────────────────────────────────
+//
+// Two sections, because two different questions are being answered. The top is "what is due
+// next", which needs dates and is short by construction. The rest is "where might this go",
+// which needs names and nothing else -- a paper aimed at COLM in March does not benefit from
+// seeing a date twelve months out, and dating everything is what buried ICLR under fifty
+// workshop commitment deadlines in the first place.
+//
+// ARR is here despite being marked non-archival in the deadline dataset: it is the front door
+// for every *ACL venue and the most common thing this lab submits to, so filtering on `archival`
+// -- which is what the old picker did -- dropped the single most useful row.
+
+/** The imminent ones, with their real deadlines. Kept to two: it is a prompt, not a calendar. */
+export const DATED_VENUE_CHOICES = [
+  { value: "ICLR 2027", label: "ICLR 2027", note: "abstract 18 Sep · paper 25 Sep 2026" },
+  { value: "ARR October 2026", label: "ARR October 2026", note: "submission 12 Oct 2026" },
+];
+
+/** Everything else, by name. Grouped the way people talk about them. */
+export const VENUE_FAMILIES: Array<{ group: string; venues: string[] }> = [
+  {
+    group: "Machine learning",
+    venues: ["NeurIPS", "ICML", "ICLR", "COLM", "AAAI", "IJCAI"],
+  },
+  {
+    group: "NLP",
+    venues: ["ARR", "ACL", "EMNLP", "NAACL", "EACL"],
+  },
+  {
+    group: "Journals",
+    venues: ["TACL", "TMLR", "Nature"],
+  },
+];

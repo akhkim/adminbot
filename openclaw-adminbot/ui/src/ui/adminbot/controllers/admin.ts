@@ -294,6 +294,12 @@ export type AdminBotPaperSaveInput = {
    * needs no schema change and becomes a backfill once the table exists.
    */
   venueTargets?: string;
+  /**
+   * Stamp saying which decision the author has already been shown, so the popup never reopens on
+   * one they have answered. Keyed on the decision rather than a bare flag: a rejected paper that
+   * is resubmitted gets a second decision, and that one deserves telling too.
+   */
+  decisionSeen?: string;
   conference?: string;
   /** How likely the authors think this venue is, as a percentage string. */
   confidence?: string;
@@ -1718,6 +1724,7 @@ export async function saveAdminBotPaper(
     ...(paper.posterUrl ? { poster_url: paper.posterUrl } : {}),
     // Sent even when empty, because clearing every venue has to be able to erase the key.
     ...(paper.venueTargets === undefined ? {} : { venue_targets: paper.venueTargets }),
+    ...(paper.decisionSeen ? { decision_seen: paper.decisionSeen } : {}),
     ...(paper.conference ? { conference: paper.conference } : {}),
     ...(paper.confidence ? { confidence: paper.confidence } : {}),
     ...(paper.blockerLog === undefined ? {} : { blocker_log: paper.blockerLog }),
@@ -1741,7 +1748,11 @@ export async function saveAdminBotPaper(
     ...(paper.isArchival === undefined || paper.isArchival === ""
       ? {}
       : { is_archival: paper.isArchival === "true" }),
-    ...(paper.presentationType ? { presentation_type: paper.presentationType } : {}),
+    // Sent even when empty, so clearing the choice actually clears it. Dropping falsy values
+    // here made Reset look like it worked and then quietly leave the old track on file.
+    ...(paper.presentationType === undefined
+      ? {}
+      : { presentation_type: paper.presentationType }),
   };
   // Prefer the member's own session: the service scopes the write to what that member may change
   // (any paper for an admin, their own for an author). The gateway tool path stays as the fallback
