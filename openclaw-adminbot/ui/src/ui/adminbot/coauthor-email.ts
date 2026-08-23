@@ -28,10 +28,54 @@ function isFullMember(member: AdminBotLabMember): boolean {
  * Author order decides it, so the answer is stable and everybody can predict it from the paper
  * itself rather than from who happened to open AdminBot first.
  */
+/**
+ * Who sends the mail for the EMNLP 2026 cycle, decided by hand.
+ *
+ * The rule below -- first full member on the author list -- is the one the lab wants, and it is
+ * kept. It is only as good as the roster it reads, and the deployed roster disagrees with the
+ * lab's own list of 49 full members: Francesco Ortu is not on that list but is labelled a member
+ * up there, so the rule handed him a paper he should never have been offered. Rather than let a
+ * data error decide who writes to eight coauthors, these nine are pinned.
+ *
+ * Keyed on a distinctive phrase from the title, because the OpenReview submission numbers are not
+ * stored on the record and the ids differ between the local database and Aurora.
+ *
+ * Delete this table once the roster is corrected -- it is a statement about one cycle, not a rule.
+ */
+const EMNLP_2026_SENDERS: Array<{ titleContains: string; sender: string }> = [
+  { titleContains: "preserving historical truth", sender: "Joeun Yook" },
+  { titleContains: "pruneground", sender: "Terry Zhang" },
+  { titleContains: "linear probes emerge", sender: "Vedant Palit" },
+  { titleContains: "tracing multilingual", sender: "Zhijing Jin" },
+  { titleContains: "computation graph recovery", sender: "Terry Zhang" },
+  { titleContains: "simulating democratic deliberation", sender: "Ryan Faulkner" },
+  { titleContains: "fluid reasoning representations", sender: "Terry Zhang" },
+  { titleContains: "second-order bias", sender: "Terry Zhang" },
+  { titleContains: "alignment tuning", sender: "Terry Zhang" },
+];
+
+function pinnedSender(
+  paper: AdminBotPaperRecord,
+  members: AdminBotLabMember[],
+): AdminBotLabMember | undefined {
+  const title = (paper.title ?? "").toLowerCase();
+  const pinned = EMNLP_2026_SENDERS.find((entry) => title.includes(entry.titleContains));
+  if (!pinned) {
+    return undefined;
+  }
+  // Resolved through the roster rather than invented, so the mail still gets a real id and a real
+  // address. If the named person is missing from the roster the rule below takes over.
+  return members.find((member) => isSamePerson(pinned.sender, member.name));
+}
+
 export function firstFullMemberAuthor(
   paper: AdminBotPaperRecord,
   members: AdminBotLabMember[],
 ): AdminBotLabMember | undefined {
+  const pinned = pinnedSender(paper, members);
+  if (pinned) {
+    return pinned;
+  }
   for (const author of paper.authors ?? []) {
     const match = members.find((member) => isFullMember(member) && isSamePerson(author, member.name));
     if (match) {

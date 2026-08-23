@@ -100,3 +100,62 @@ describe("the draft", () => {
     expect(ADMINBOT_BCC).toBe("jinesis.adminbot@gmail.com");
   });
 });
+
+describe("the pinned EMNLP 2026 senders", () => {
+  const roster = [
+    { id: "terry", name: "Terry Zhang", privilege_level: "member" },
+    { id: "joeun", name: "Joeun Yook", privilege_level: "member" },
+    { id: "vedant", name: "Vedant Palit", privilege_level: "member" },
+    { id: "ryan", name: "Ryan Faulkner", privilege_level: "member" },
+    { id: "zhijing", name: "Zhijing Jin", privilege_level: "admin" },
+    // Labelled a member on the deployed roster, and not on the lab's list of 49. This is the row
+    // the pinning exists to overrule.
+    { id: "francesco", name: "Francesco Ortu", privilege_level: "member" },
+  ] as never[];
+
+  const titled = (title: string, authors: string[]) =>
+    ({ id: title, title, authors }) as never;
+
+  it("gives Terry the five that are his", () => {
+    const his = [
+      "PruneGround: Plug-and-play Spatial Pruning",
+      "Computation Graph Recovery from Chain-of-Thought",
+      "Fluid Reasoning Representations",
+      "Evaluating Second-Order Bias of LLMs",
+      "How Does Alignment Tuning Shape Representations",
+    ];
+    for (const title of his) {
+      expect(firstFullMemberAuthor(titled(title, ["Someone Else", "Zhijing Jin"]), roster)?.id).toBe(
+        "terry",
+      );
+    }
+  });
+
+  it("overrules a roster row the lab does not recognise", () => {
+    const paper = titled("Preserving Historical Truth: Detecting Historical Revisionism", [
+      "Francesco Ortu*",
+      "Joeun Yook*",
+      "Keenan Samway",
+      "Zhijing Jin",
+    ]);
+    expect(firstFullMemberAuthor(paper, roster)?.id).toBe("joeun");
+  });
+
+  it("assigns the remaining three", () => {
+    expect(firstFullMemberAuthor(titled("How Do Linear Probes Emerge?", []), roster)?.id).toBe(
+      "vedant",
+    );
+    expect(
+      firstFullMemberAuthor(titled("Simulating Democratic Deliberation", []), roster)?.id,
+    ).toBe("ryan");
+    expect(
+      firstFullMemberAuthor(titled("Tracing Multilingual Representations in LLMs", []), roster)?.id,
+    ).toBe("zhijing");
+  });
+
+  it("leaves every other paper to the rule", () => {
+    const paper = titled("Some Unrelated Paper", ["Francesco Ortu", "Joeun Yook"]);
+    expect(firstFullMemberAuthor(paper, roster)?.id).toBe("francesco");
+  });
+});
+
