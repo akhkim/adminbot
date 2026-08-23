@@ -150,7 +150,7 @@ function renderDraft(props: PaperCycleProps, platform: string) {
         ? html`
             <button
               type="button"
-              class="btn btn--sm"
+              class="btn btn--sm paper-cycle__circulate"
               data-testid=${`paper-draft-circulate-${props.paperId}-${platform}`}
               @click=${() => props.onCirculateDraft(draft.id)}
             >
@@ -173,11 +173,14 @@ function renderDraft(props: PaperCycleProps, platform: string) {
 
 function renderAttendees(props: PaperCycleProps) {
   return html`
-    <div class="paper-cycle__group">
-      <h4 class="paper-slots__group-title">
-        <span class="paper-slots__group-icon" aria-hidden="true">${icons.user}</span>
-        Who is going
-      </h4>
+    <details class="paper-cycle__group" open>
+      <summary class="paper-slots__group-head">
+        <h4 class="paper-slots__group-title">
+          <span class="paper-slots__group-icon" aria-hidden="true">${icons.user}</span>
+          Who is going
+        </h4>
+        <span class="paper-slots__group-chevron" aria-hidden="true">${icons.chevronDown}</span>
+      </summary>
       ${props.attendees.length
         ? html`<ul class="paper-cycle__rows">
             ${props.attendees.map(
@@ -227,7 +230,7 @@ function renderAttendees(props: PaperCycleProps) {
         />
         <button type="submit" class="btn btn--sm">Add</button>
       </form>
-    </div>
+    </details>
   `;
 }
 
@@ -246,11 +249,14 @@ function renderReimbursements(props: PaperCycleProps) {
   }
   const byMember = new Map(props.reimbursements.map((row) => [row.member_id, row]));
   return html`
-    <div class="paper-cycle__group">
-      <h4 class="paper-slots__group-title">
-        <span class="paper-slots__group-icon" aria-hidden="true">${icons.wrench}</span>
-        Reimbursements
-      </h4>
+    <details class="paper-cycle__group" open>
+      <summary class="paper-slots__group-head">
+        <h4 class="paper-slots__group-title">
+          <span class="paper-slots__group-icon" aria-hidden="true">${icons.wrench}</span>
+          Reimbursements
+        </h4>
+        <span class="paper-slots__group-chevron" aria-hidden="true">${icons.chevronDown}</span>
+      </summary>
       <ul class="paper-cycle__rows">
         ${going.map((attendee) => {
           const memberId = attendee.member_id as string;
@@ -278,23 +284,26 @@ function renderReimbursements(props: PaperCycleProps) {
         Everyone who travelled being square is what closes this paper — not somebody deciding it
         looks finished.
       </p>
-    </div>
+    </details>
   `;
 }
 
 export function renderPaperCycle(props: PaperCycleProps) {
   return html`
     <div class="paper-cycle" data-testid=${`paper-cycle-${props.paperId}`}>
-      <section class="paper-cycle__group">
-        <h4 class="paper-slots__group-title">
-          <span class="paper-slots__group-icon" aria-hidden="true">${icons.globe}</span>
-          Social drafts
-        </h4>
+      <details class="paper-cycle__group" id=${`paper-social-drafts-${props.paperId}`} open>
+        <summary class="paper-slots__group-head">
+          <h4 class="paper-slots__group-title">
+            <span class="paper-slots__group-icon" aria-hidden="true">${icons.globe}</span>
+            Social drafts
+          </h4>
+          <span class="paper-slots__group-chevron" aria-hidden="true">${icons.chevronDown}</span>
+        </summary>
         <p class="paper-slot__note">
           Stored so the coauthors named in a post can be shown it before it goes out.
         </p>
         ${["x", "linkedin"].map((platform) => renderDraft(props, platform))}
-      </section>
+      </details>
 
       ${props.missingAcceptanceDetails.length
         ? html`<p class="paper-cycle__blocked">

@@ -15,7 +15,15 @@ type Saved = {
  * renders, and the card's default view deliberately hides fields that are still waiting on
  * upstream evidence. The filtering itself is covered by its own describe block below.
  */
-function draw(
+/**
+ * Render the card and wait for it to actually exist.
+ *
+ * The checklist now hands each branch's cards to <adminbot-paper-slot-deck>, a custom element, so
+ * the rows arrive one microtask later than the synchronous `render()` call: the element has to
+ * upgrade and Lit has to run its first update. Querying straight after `render` finds an empty
+ * container -- which is what made every assertion in this file report zero rows.
+ */
+async function draw(
   slots: PaperSlotRow[],
   loading = false,
   extra: { stages?: PaperflowStageRow[]; details?: PaperDetailsProps; showAll?: boolean } = {},
@@ -36,6 +44,12 @@ function draw(
     }),
     container,
   );
+  await customElements.whenDefined("adminbot-paper-slot-deck");
+  await Promise.all(
+    [...container.querySelectorAll("adminbot-paper-slot-deck")].map(
+      (deck) => (deck as HTMLElement & { updateComplete?: Promise<unknown> }).updateComplete,
+    ),
+  );
   return { container, saved };
 }
 
@@ -48,31 +62,32 @@ function row(fields: Partial<PaperSlotRow> & { slot: string }): PaperSlotRow {
 }
 
 describe("renderPaperSlots", () => {
-  it("shows every slot when the card is expanded -- the checklist is still all there", () => {
-    const { container } = draw([]);
-    // 24 slots, four of which are the second half of a node their parent already draws, so the
-    // card is 20 rows. The chart has 20-odd nodes; the card used to claim 25 steps it did not
-    // have, which is what made it read as longer than the process it describes.
+  it("shows every slot when the card is expanded -- the checklist is still all there", async () => {
+    const { container } = await draw([]);
+    // The deck rework made a merged node a header row plus one child per half, so the four
+    // second-halves became five child rows (both halves of "Published" are children now) and the
+    // parent is a label with a status pill. The invariant that matters is unchanged: every field
+    // in the registry is somewhere on the card.
     expect(container.querySelectorAll(".paper-slot")).toHaveLength(20);
-    expect(container.querySelectorAll(".paper-slot__child")).toHaveLength(4);
+    expect(container.querySelectorAll(".paper-slot__child")).toHaveLength(5);
   });
 
-  it("draws the two halves of a node in one row rather than two", () => {
-    const { container } = draw([]);
+  it("draws the two halves of a node in one row rather than two", async () => {
+    const { container } = await draw([]);
     // The submission page and its id are both node SB. Two rows made the card claim two steps.
     const parent = container.querySelector('[data-testid="paper-slot-row-p1-submission"]');
     expect(parent?.querySelector('[data-testid="paper-slot-child-p1-submission_id"]')).toBeTruthy();
     expect(container.querySelector('[data-testid="paper-slot-row-p1-submission_id"]')).toBeNull();
   });
 
-  it("titles a merged row after the node, not after whichever half is the parent", () => {
-    const { container } = draw([]);
+  it("titles a merged row after the node, not after whichever half is the parent", async () => {
+    const { container } = await draw([]);
     const parent = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
     expect(parent?.querySelector(".paper-slot__label")?.textContent).toContain("Overleaf");
   });
 
-  it("orders the sections as the chart numbers them: trunk, then Branch 1 to 4", () => {
-    const { container } = draw([]);
+  it("orders the sections as the chart numbers them: trunk, then Branch 1 to 4", async () => {
+    const { container } = await draw([]);
     const branches = [...container.querySelectorAll("[data-testid^='paper-slots-branch-p1-']")].map(
       (node) => node.getAttribute("data-testid"),
     );
@@ -85,8 +100,8 @@ describe("renderPaperSlots", () => {
     ]);
   });
 
-  it("marks the trunk apart from the branches that hang off it", () => {
-    const { container } = draw([]);
+  it("marks the trunk apart from the branches that hang off it", async () => {
+    const { container } = await draw([]);
     const trunk = container.querySelector('[data-testid="paper-slots-branch-p1-core"]');
     const branch = container.querySelector('[data-testid="paper-slots-branch-p1-venue"]');
     expect(trunk?.classList.contains("paper-slots__group--trunk")).toBe(true);
@@ -95,8 +110,8 @@ describe("renderPaperSlots", () => {
     expect(branch?.querySelector(".paper-slots__branch-number")?.textContent).toContain("Branch 4");
   });
 
-  it("has no rebuttal field: the bcc loop closes that stage now", () => {
-    const { container } = draw([]);
+  it("has no rebuttal field: the bcc loop closes that stage now", async () => {
+    const { container } = await draw([]);
     expect(container.querySelector('[data-testid="paper-slot-p1-rebuttal_doc"]')).toBeNull();
   });
 
@@ -116,33 +131,33 @@ describe("renderPaperSlots", () => {
       stage({ stage: "conference", label: "Conference attendance" }),
     ];
 
-    it("shows what closed a rung, so a stage that closed itself can be checked", () => {
-      const { container } = draw([], false, { stages });
+    it("shows what closed a rung, so a stage that closed itself can be checked", async () => {
+      const { container } = await draw([], false, { stages });
       const reviews = container.querySelector('[data-testid="paper-stage-p1-reviews_out"]');
       expect(reviews?.textContent).toContain("ARR reviews available");
     });
 
-    it("names the one rung anybody can act on, and what the action is", () => {
-      const { container } = draw([], false, { stages });
+    it("names the one rung anybody can act on, and what the action is", async () => {
+      const { container } = await draw([], false, { stages });
       const decision = container.querySelector('[data-testid="paper-stage-p1-decision"]');
       expect(decision?.textContent).toContain("bcc us when it lands");
     });
 
-    it("offers no control at all: nothing a person does closes these", () => {
-      const { container } = draw([], false, { stages });
+    it("offers no control at all: nothing a person does closes these", async () => {
+      const { container } = await draw([], false, { stages });
       const ladder = container.querySelector('[data-testid="paper-stages-p1"]');
       expect(ladder?.querySelectorAll("input, select, button")).toHaveLength(0);
     });
 
-    it("distinguishes not-yet-reached from waiting, rather than collapsing both to blank", () => {
-      const { container } = draw([], false, { stages });
+    it("distinguishes not-yet-reached from waiting, rather than collapsing both to blank", async () => {
+      const { container } = await draw([], false, { stages });
       // Otherwise an unsubmitted paper looks like one whose decision is overdue.
       const upcoming = container.querySelector('[data-testid="paper-stage-p1-camera_ready"]');
       expect(upcoming?.classList.contains("paper-stage--upcoming")).toBe(true);
     });
 
-    it("is absent entirely when the card has no stage data", () => {
-      const { container } = draw([]);
+    it("is absent entirely when the card has no stage data", async () => {
+      const { container } = await draw([]);
       expect(container.querySelector('[data-testid="paper-stages-p1"]')).toBeNull();
     });
   });
@@ -156,9 +171,9 @@ describe("renderPaperSlots", () => {
       ...(onSaveDetails ? { onSaveDetails } : {}),
     });
 
-    it("lets an author edit the author list, which decides who the stage emails reach", () => {
+    it("lets an author edit the author list, which decides who the stage emails reach", async () => {
       const saves: unknown[] = [];
-      const { container } = draw([], false, {
+      const { container } = await draw([], false, {
         details: details((next) => saves.push(next)),
       });
       const field = container.querySelector<HTMLInputElement>('[data-testid="paper-authors-p1"]');
@@ -170,17 +185,17 @@ describe("renderPaperSlots", () => {
       ]);
     });
 
-    it("keeps feedback givers apart from authors", () => {
-      const { container } = draw([], false, { details: details(() => {}) });
+    it("keeps feedback givers apart from authors", async () => {
+      const { container } = await draw([], false, { details: details(() => {}) });
       const givers = container.querySelector<HTMLInputElement>(
         '[data-testid="paper-feedback-givers-p1"]',
       );
       expect(givers?.value).toBe("Bernhard Schölkopf");
     });
 
-    it("takes the aimed conference, which the stage emails quote", () => {
+    it("takes the aimed conference, which the stage emails quote", async () => {
       const saves: Array<{ venue: string }> = [];
-      const { container } = draw([], false, {
+      const { container } = await draw([], false, {
         details: details((next) => saves.push(next)),
       });
       const venue = container.querySelector<HTMLInputElement>('[data-testid="paper-venue-p1"]');
@@ -190,9 +205,9 @@ describe("renderPaperSlots", () => {
       expect(saves[0]?.venue).toBe("NeurIPS 2027");
     });
 
-    it("takes what each author does as a paragraph, and sends it with the save", () => {
+    it("takes what each author does as a paragraph, and sends it with the save", async () => {
       const saves: Array<{ authorRoles: string }> = [];
-      const { container } = draw([], false, {
+      const { container } = await draw([], false, {
         details: details((next) => saves.push(next)),
       });
       const roles = container.querySelector<HTMLTextAreaElement>(
@@ -207,15 +222,15 @@ describe("renderPaperSlots", () => {
       expect(saves[0]).toMatchObject({ venue: "ICLR 2027" });
     });
 
-    it("shows the contributions paragraph read-only to somebody who may not edit", () => {
-      const { container } = draw([], false, { details: details() });
+    it("shows the contributions paragraph read-only to somebody who may not edit", async () => {
+      const { container } = await draw([], false, { details: details() });
       expect(container.querySelector('[data-testid="paper-author-roles-p1"]')).toBeNull();
       expect(container.textContent).toContain("Ada ran the experiments.");
     });
 
-    it("drops blank entries rather than storing an author nobody can resolve", () => {
+    it("drops blank entries rather than storing an author nobody can resolve", async () => {
       const saves: Array<{ authors: string[] }> = [];
-      const { container } = draw([], false, {
+      const { container } = await draw([], false, {
         details: details((next) => saves.push(next)),
       });
       const field = container.querySelector<HTMLInputElement>('[data-testid="paper-authors-p1"]');
@@ -224,8 +239,8 @@ describe("renderPaperSlots", () => {
       expect(saves[0]?.authors).toEqual(["Ada Lovelace", "Rahul Babu Shrestha"]);
     });
 
-    it("renders read-only for somebody who may not edit the paper", () => {
-      const { container } = draw([], false, { details: details() });
+    it("renders read-only for somebody who may not edit the paper", async () => {
+      const { container } = await draw([], false, { details: details() });
       expect(container.querySelector('[data-testid="paper-authors-p1"]')).toBeNull();
       expect(container.querySelector(".paper-detail__readonly")?.textContent).toContain(
         "Ada Lovelace",
@@ -233,8 +248,8 @@ describe("renderPaperSlots", () => {
     });
   });
 
-  it("renders a link slot as a URL box and a bool slot as a checkbox", () => {
-    const { container } = draw([]);
+  it("renders a link slot as a URL box and a bool slot as a checkbox", async () => {
+    const { container } = await draw([]);
     const link = container.querySelector<HTMLInputElement>(
       '[data-testid="paper-slot-p1-overleaf_edit"]',
     );
@@ -245,8 +260,8 @@ describe("renderPaperSlots", () => {
     expect(bool?.type).toBe("checkbox");
   });
 
-  it("sends the value, never a status -- the service decides what counts as provided", () => {
-    const { container, saved } = draw([]);
+  it("sends the value, never a status -- the service decides what counts as provided", async () => {
+    const { container, saved } = await draw([]);
     const input = container.querySelector<HTMLInputElement>(
       '[data-testid="paper-slot-p1-project_folder"]',
     );
@@ -258,8 +273,8 @@ describe("renderPaperSlots", () => {
     ]);
   });
 
-  it("keeps a refused link on screen next to the reason", () => {
-    const { container } = draw([
+  it("keeps a refused link on screen next to the reason", async () => {
+    const { container } = await draw([
       row({
         slot: "arxiv",
         status: "invalid",
@@ -272,25 +287,25 @@ describe("renderPaperSlots", () => {
     expect(container.textContent).toContain("the link must be a /abs/ URL");
   });
 
-  it("dims a slot that is not reachable yet, without narrating why", () => {
+  it("dims a slot that is not reachable yet, without narrating why", async () => {
     // The "Waiting on X" line, the "unblocks Y" line and the host/path spec were three rows of
     // small grey type under every field. The dimming carries the same meaning without turning the
     // card into a dependency graph.
-    const { container } = draw([]);
+    const { container } = await draw([]);
     const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
     expect(overleaf?.className).toContain("paper-slot--blocked");
     expect(overleaf?.textContent).not.toContain("Waiting on");
     expect(overleaf?.textContent).not.toContain("unblocks");
   });
 
-  it("stops asking once the upstream slot is in", () => {
-    const { container } = draw([row({ slot: "project_folder", status: "provided" })]);
+  it("stops asking once the upstream slot is in", async () => {
+    const { container } = await draw([row({ slot: "project_folder", status: "provided" })]);
     const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
     expect(overleaf?.className).not.toContain("paper-slot--blocked");
   });
 
-  it("locks a waived slot and says who lifted it", () => {
-    const { container } = draw([
+  it("locks a waived slot and says who lifted it", async () => {
+    const { container } = await draw([
       row({
         slot: "poster",
         status: "waived",
@@ -302,14 +317,14 @@ describe("renderPaperSlots", () => {
     expect(container.textContent).toContain("no poster session");
   });
 
-  it("marks the advisory slot optional, since nothing waits on it", () => {
-    const { container } = draw([]);
+  it("marks the advisory slot optional, since nothing waits on it", async () => {
+    const { container } = await draw([]);
     const sheet = container.querySelector('[data-testid="paper-slot-row-p1-backend_sheet"]');
     expect(sheet?.textContent).toContain("optional");
   });
 
-  it("renders the credential as a password field and never echoes it back", () => {
-    const { container } = draw([row({ slot: "arxiv_paper_password", status: "provided" })]);
+  it("renders the credential as a password field and never echoes it back", async () => {
+    const { container } = await draw([row({ slot: "arxiv_paper_password", status: "provided" })]);
     const field = container.querySelector<HTMLInputElement>(
       '[data-testid="paper-slot-p1-arxiv_paper_password"]',
     );
@@ -320,8 +335,8 @@ describe("renderPaperSlots", () => {
     expect(field?.placeholder).toContain("On file");
   });
 
-  it("gives the enum slot a state and a place, and locks the place until a state is picked", () => {
-    const { container, saved } = draw([]);
+  it("gives the enum slot a state and a place, and locks the place until a state is picked", async () => {
+    const { container, saved } = await draw([]);
     const state = container.querySelector<HTMLSelectElement>(
       '[data-testid="paper-slot-p1-poster_physical"]',
     );
@@ -336,8 +351,8 @@ describe("renderPaperSlots", () => {
     expect(saved[0]).toMatchObject({ slot: "poster_physical", input: { value_text: "printed" } });
   });
 
-  it("shows a derived gate as a readout, since the service refuses a direct write", () => {
-    const { container } = draw([]);
+  it("shows a derived gate as a readout, since the service refuses a direct write", async () => {
+    const { container } = await draw([]);
     const gate = container.querySelector<HTMLInputElement>('[data-testid="paper-slot-p1-x_draft"]');
     expect(gate?.disabled).toBe(true);
     expect(
@@ -345,8 +360,8 @@ describe("renderPaperSlots", () => {
     ).toContain("Waiting on an approved draft");
   });
 
-  it("shows the accepted shape on a link slot, from the same rules the service enforces", () => {
-    const { container } = draw([]);
+  it("shows the accepted shape on a link slot, from the same rules the service enforces", async () => {
+    const { container } = await draw([]);
     const overleaf = container.querySelector('[data-testid="paper-slot-row-p1-overleaf_edit"]');
     expect(overleaf?.textContent).toContain("overleaf.com");
     expect(overleaf?.textContent).toContain("/project/");
@@ -354,31 +369,32 @@ describe("renderPaperSlots", () => {
 });
 
 describe("renderPaperSlots -- only what is ready", () => {
-  it("fills the grid without showing the whole checklist", () => {
-    // Two competing failures: 25 boxes is a wall, and 2 boxes leaves the grid looking broken
-    // and says nothing about what comes next. The working set sits between them.
-    const { container } = draw([], false, { showAll: false });
-    const shown = container.querySelectorAll(".paper-slot");
-    expect(shown.length).toBeGreaterThanOrEqual(5);
-    expect(shown.length).toBeLessThanOrEqual(9);
+  it("keeps every field in the deck rather than hiding what is not ready", async () => {
+    // This reverses the old working-set rule, deliberately: 25 boxes was a wall only while they
+    // were a grid, and the deck shows one card at a time with arrows through the rest. A settled
+    // field keeps rendering with its done pill, so paging back reviews the history too.
+    const { container } = await draw([], false, { showAll: false });
+    expect(container.querySelectorAll(".paper-slot")).toHaveLength(20);
   });
 
-  it("includes what opens next, not only what is unblocked today", () => {
+  it("includes what opens next, not only what is unblocked today", async () => {
     // overleaf_edit waits on project_folder alone, so it is the next thing to open and is
     // worth showing now -- it is what makes the sequence legible.
-    const { container } = draw([], false, { showAll: false });
+    const { container } = await draw([], false, { showAll: false });
     expect(container.querySelector('[data-testid="paper-slot-p1-overleaf_edit"]')).not.toBeNull();
   });
 
-  it("hides work that is more than one step away", () => {
-    const { container } = draw([], false, { showAll: false });
-    // arxiv sits behind several unfinished slots, so it is not part of the working set yet.
-    expect(container.querySelector('[data-testid="paper-slot-p1-arxiv"]')).toBeNull();
+  it("keeps far-off work in the deck, marked as waiting rather than removed", async () => {
+    const { container } = await draw([], false, { showAll: false });
+    // arxiv sits behind several unfinished slots. It is still a card in the deck -- the deck says
+    // what it waits on rather than dropping it, which is what makes flipping through the branch a
+    // picture of the whole process.
+    expect(container.querySelector('[data-testid="paper-slot-p1-arxiv"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="paper-slot-p1-project_folder"]')).not.toBeNull();
   });
 
-  it("reveals the next field once its upstream is provided", () => {
-    const { container } = draw(
+  it("reveals the next field once its upstream is provided", async () => {
+    const { container } = await draw(
       [
         row({
           slot: "project_folder",
@@ -392,10 +408,10 @@ describe("renderPaperSlots -- only what is ready", () => {
     expect(container.querySelector('[data-testid="paper-slot-p1-overleaf_edit"]')).not.toBeNull();
   });
 
-  it("keeps a wrong answer on screen so it can be corrected", () => {
+  it("keeps a wrong answer on screen so it can be corrected", async () => {
     // An invalid value is shown even when its branch is otherwise out of reach: hiding it would
     // leave a paper permanently "needs fixing" with nowhere to fix it.
-    const { container } = draw(
+    const { container } = await draw(
       [row({ slot: "arxiv", status: "invalid", url: "nope", invalid_reason: "that is not a URL" })],
       false,
       { showAll: false },
@@ -403,8 +419,8 @@ describe("renderPaperSlots -- only what is ready", () => {
     expect(container.querySelector('[data-testid="paper-slot-p1-arxiv"]')).not.toBeNull();
   });
 
-  it("drops a finished field out of the working set", () => {
-    const { container } = draw(
+  it("keeps a finished field in the deck", async () => {
+    const { container } = await draw(
       [
         row({
           slot: "project_folder",
@@ -415,11 +431,13 @@ describe("renderPaperSlots -- only what is ready", () => {
       false,
       { showAll: false },
     );
-    expect(container.querySelector('[data-testid="paper-slot-p1-project_folder"]')).toBeNull();
+    // Finished fields stay in the deck with their done pill: the deck is the branch's history as
+    // well as its to-do list.
+    expect(container.querySelector('[data-testid="paper-slot-p1-project_folder"]')).not.toBeNull();
   });
 
-  it("says how many are held back, so nothing looks lost", () => {
-    const { container } = draw([], false, { showAll: false });
+  it("says how many are held back, so nothing looks lost", async () => {
+    const { container } = await draw([], false, { showAll: false });
     expect(container.querySelector(".paper-slots__filter-text")?.textContent).toContain(
       "further off",
     );
@@ -427,7 +445,7 @@ describe("renderPaperSlots -- only what is ready", () => {
 });
 
 describe("social draft gates", () => {
-  it("opens the drafting tool instead of offering a checkbox nobody can tick", () => {
+  it("opens the drafting tool instead of offering a checkbox nobody can tick", async () => {
     // The gate reads its truth from paper_social_drafts, so a checkbox here could only ever
     // disagree with it. What the author wants when they click it is the drafting tool.
     const opened: string[] = [];
@@ -444,6 +462,13 @@ describe("social draft gates", () => {
       }),
       container,
     );
+    // This one renders inline rather than through `draw`, so it has to flush the deck itself.
+    await customElements.whenDefined("adminbot-paper-slot-deck");
+    await Promise.all(
+      [...container.querySelectorAll("adminbot-paper-slot-deck")].map(
+        (deck) => (deck as HTMLElement & { updateComplete?: Promise<unknown> }).updateComplete,
+      ),
+    );
     const gate = container.querySelector<HTMLButtonElement>(
       '[data-testid="paper-slot-p1-linkedin_draft"]',
     );
@@ -454,36 +479,40 @@ describe("social draft gates", () => {
 });
 
 describe("field guidance", () => {
-  it("shows a worked example rather than the shape of a URL", () => {
+  it("shows a worked example rather than the shape of a URL", async () => {
     // "https://…" tells someone what a URL looks like, which they knew, and nothing about
     // which URL. The arXiv slot is the sharpest case: /abs/ and /pdf/ are both valid URLs.
-    const { container } = draw([]);
+    const { container } = await draw([]);
     const arxiv = container.querySelector<HTMLInputElement>('[data-testid="paper-slot-p1-arxiv"]');
     expect(arxiv?.placeholder).toBe("https://arxiv.org/abs/2306.05836");
     expect(arxiv?.placeholder).not.toBe("https://…");
   });
 
-  it("gives the submission id a real specimen, not 'e.g. 4821'", () => {
-    const { container } = draw([]);
+  it("gives the submission id a real specimen, not 'e.g. 4821'", async () => {
+    const { container } = await draw([]);
     const id = container.querySelector<HTMLInputElement>(
       '[data-testid="paper-slot-p1-submission_id"]',
     );
     expect(id?.placeholder).toBe("Ax7Kq2Lm9P");
   });
 
-  it("puts a help control on every field, including the checkbox ones", () => {
-    const { container } = draw([]);
-    const helps = container.querySelectorAll(".paper-slot__help");
-    // Every field, not every row: four of them are the nested half of a merged row, and a merged
-    // row must not quietly lose the guidance its second field had.
-    const fields = container.querySelectorAll(".paper-slot, .paper-slot__child");
-    expect(helps.length).toBe(fields.length);
+  it("puts a help control on every field, including the checkbox ones", async () => {
+    const { container } = await draw([]);
+    // Every field, not every row. A merged node renders as a header row plus one child per half,
+    // and the header is a label and a pill rather than a field -- so it is the children that must
+    // each keep their guidance, which is the thing a merged row could quietly lose.
+    const fields = [...container.querySelectorAll(".paper-slot, .paper-slot__child")].filter(
+      (row) => !row.querySelector(".paper-slot__children"),
+    );
+    const withoutHelp = fields.filter((row) => !row.querySelector(".paper-slot__help"));
+    expect(withoutHelp).toEqual([]);
+    expect(fields.length).toBeGreaterThan(20);
   });
 
   // A question mark next to a field reads as a query about the field; an "i" says there is an
   // explanation here, which is what the badge actually offers.
-  it("marks the help badge with an info glyph, not a question mark", () => {
-    const { container } = draw([]);
+  it("marks the help badge with an info glyph, not a question mark", async () => {
+    const { container } = await draw([]);
     const badge = container.querySelector<HTMLElement>(
       '[data-testid="paper-slot-help-p1-overleaf_edit"]',
     );
@@ -491,8 +520,8 @@ describe("field guidance", () => {
     expect(badge?.getAttribute("aria-label")).toContain("Overleaf project link");
   });
 
-  it("explains in the popover what to put, and repeats the example", () => {
-    const { container } = draw([]);
+  it("explains in the popover what to put, and repeats the example", async () => {
+    const { container } = await draw([]);
     const help = container.querySelector(
       '[data-testid="paper-slot-help-p1-overleaf_edit"]',
     )?.parentElement;

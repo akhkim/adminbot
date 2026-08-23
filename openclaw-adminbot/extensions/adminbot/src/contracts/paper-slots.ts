@@ -319,7 +319,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     owner: "first_author",
     gates: "google_drive_pdf",
     branch: "venue",
-    label: "Submission id",
+    label: "Submission ID",
     upstream: ["submission"],
     required: true,
     deadlineBearing: true,
@@ -459,7 +459,7 @@ export const adminBotPaperSlotRegistry: Record<AdminBotPaperSlot, AdminBotPaperS
     example: "https://x.com/JinesisLab/status/1839274650192837",
   },
   linkedin_post: {
-    subOf: "x_post",
+    groupLabel: "Published",
     kind: "link",
     node: "PS",
     owner: "first_author",
@@ -647,10 +647,13 @@ export function validateAdminBotPaperSlotUrl(
 export function validateAdminBotPaperSecret(raw: string): AdminBotPaperSlotValueCheck {
   const value = raw.trim();
   if (!/^[A-Za-z0-9]{6}$/u.test(value)) {
-    return { ok: false, reason: "the password is exactly 6 letters and digits" };
+    return {
+      ok: false,
+      reason: "the arXiv password must be exactly 6 characters, mixing letters and digits",
+    };
   }
   if (!/[A-Za-z]/u.test(value) || !/[0-9]/u.test(value)) {
-    return { ok: false, reason: "the password mixes letters and digits" };
+    return { ok: false, reason: "the arXiv password must mix letters and digits (e.g. ab12cd)" };
   }
   return { ok: true };
 }
