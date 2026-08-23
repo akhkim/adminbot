@@ -30,6 +30,16 @@ import {
 
 export type AdminBotPaperSlotsHost = {
   settings: UiSettings;
+  /** The roster, for deciding who may be nudged. See `nudgeableBatches`. */
+  adminBotData?: {
+    members?: {
+      id: string;
+      name?: string;
+      privilege_level?: string;
+      status?: string;
+    }[];
+    settings?: { head_professor_member_id?: string };
+  } | null;
   adminBotPaperSlotOverview: PaperSlotOverviewRow[];
   /** The whole cycle by paper id -- slots, drafts, consents, attendees, reimbursements. */
   adminBotPaperSlots: Record<string, PaperCycle>;
@@ -57,6 +67,54 @@ function failureText(result: { kind: string; message?: string }, baseUrl: string
     return t("paperSlots.error.forbidden");
   }
   return result.message ?? t("paperSlots.error.failed");
+}
+
+/**
+ * The lab's head, who is chased by nobody.
+ *
+ * Read from settings when they name one. The fallback is here because that setting is not
+ * populated on the live service yet and "do not nudge the PI" is not a rule anyone wants to
+ * discover by having sent one -- set `head_professor_member_id` in Settings and this constant
+ * stops being consulted.
+ */
+const FALLBACK_HEAD_PROFESSOR_MEMBER_ID = "zhijing-jin";
+
+function headProfessorMemberId(host: AdminBotPaperSlotsHost): string {
+  return (
+    host.adminBotData?.settings?.head_professor_member_id?.trim() ||
+    FALLBACK_HEAD_PROFESSOR_MEMBER_ID
+  );
+}
+
+/**
+ * Who this pass is allowed to message.
+ *
+ * The service computes batches for whoever owes something; this narrows them to the people the
+ * lab actually chases. Trial members, external collaborators, alumni and anyone off the roster
+ * are excluded on the same rule `isFullMember` applies server-side -- AdminBot has no standing to
+ * chase an outside coauthor -- and the head professor is excluded because the escalation path runs
+ * towards them, not at them.
+ *
+ * Filtered rather than hidden-and-sent: a name that is not on this list never reaches the preview,
+ * so what an admin reads before pressing is exactly who gets a message.
+ */
+export function nudgeableBatches(
+  host: AdminBotPaperSlotsHost,
+  batches: PaperNudgeBatch[],
+): PaperNudgeBatch[] {
+  const head = headProfessorMemberId(host);
+  const byId = new Map((host.adminBotData?.members ?? []).map((member) => [member.id, member]));
+  return batches.filter((batch) => {
+    if (batch.member_id === head) {
+      return false;
+    }
+    const member = byId.get(batch.member_id);
+    if (!member) {
+      return false;
+    }
+    const full = member.privilege_level === "member" || member.privilege_level === "admin";
+    return full && member.status !== "alumni" && member.status !== "external";
+  });
 }
 
 function session(host: AdminBotPaperSlotsHost): { token: string; baseUrl: string } | null {
@@ -314,10 +372,11 @@ export async function loadAdminBotNudgeBatches(host: AdminBotPaperSlotsHost): Pr
       host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
       return;
     }
-    host.adminBotPaperNudgeBatches = result.value;
+    const eligible = nudgeableBatches(host, result.value);
+    host.adminBotPaperNudgeBatches = eligible;
     // Everyone who can actually be reached starts ticked: the common case is "send the lot", and
     // somebody with no Slack id would only be an unsendable row to untick later.
-    host.adminBotPaperNudgeSelected = result.value
+    host.adminBotPaperNudgeSelected = eligible
       .filter((batch) => batch.deliverable)
       .map((batch) => batch.member_id);
   } finally {
@@ -347,22 +406,48 @@ export async function nudgeAdminBotPaperAuthors(host: AdminBotPaperSlotsHost): P
     host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
     return;
   }
+  const recipients = [...host.adminBotPaperNudgeSelected];
+  if (recipients.length === 0) {
+    return;
+  }
   host.adminBotPaperSlotsNudging = true;
   host.adminBotPaperSlotsError = null;
   host.adminBotPaperSlotsNotice = null;
+  let created = 0;
+  const unreachable: string[] = [];
   try {
-    const result = await runPaperSlotReminder(
-      wire.token,
-      wire.baseUrl,
-      host.adminBotPaperNudgeSelected,
-    );
-    if (!result.ok) {
-      host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
-      return;
+    // One request per recipient rather than one for the whole run.
+    //
+    // The service messages people in a loop and answers when the last one is done, so a full pass
+    // holds a single request open for as long as every Slack call takes together. Reached over the
+    // public tunnel that is long enough for the edge to give up on it, and the error page it
+    // substitutes carries no CORS header -- so the browser discards the response and the page can
+    // only say it could not reach AdminBot, whether or not the messages went out. Sending one at a
+    // time keeps every request short, and makes a failure name the person it belongs to instead of
+    // condemning the batch.
+    for (const [index, memberId] of recipients.entries()) {
+      host.adminBotPaperSlotsNotice = t("paperSlots.nudgingProgress", {
+        done: String(index),
+        total: String(recipients.length),
+      });
+      const result = await runPaperSlotReminder(wire.token, wire.baseUrl, [memberId]);
+      if (!result.ok) {
+        // Keep going: one unreachable recipient is not a reason to leave the rest unchased, and
+        // the ledger is stamped per person, so the ones that landed stay landed.
+        unreachable.push(memberId);
+        continue;
+      }
+      created += result.value.created;
     }
-    host.adminBotPaperSlotsNotice = result.value.created
-      ? t("paperSlots.nudgedCount", { count: String(result.value.created) })
+    host.adminBotPaperSlotsNotice = created
+      ? t("paperSlots.nudgedCount", { count: String(created) })
       : t("paperSlots.nudgedNone");
+    if (unreachable.length > 0) {
+      host.adminBotPaperSlotsError = t("paperSlots.error.someUnsent", {
+        count: String(unreachable.length),
+        url: wire.baseUrl,
+      });
+    }
     // The preview is spent: those people are now inside the cadence window and would not appear
     // in a fresh one. Leaving it on screen would invite a second press that sends nothing.
     host.adminBotPaperNudgeBatches = null;

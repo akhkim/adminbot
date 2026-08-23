@@ -1704,11 +1704,13 @@ export const en: TranslationMap = {
     nudgeSend: "Send {count} message(s)",
     nudgeHint: "Nothing is sent until you press this. Each person gets one message.",
     nudging: "Sending…",
+    nudgingProgress: "Sending… {done} of {total} done.",
     nudgedCount: "Nudged {count} author(s) about what their papers still need.",
     nudgedNone: "Nobody was due a nudge — everything outstanding was chased recently.",
     error: {
       signIn: "Sign in to see what your papers still need.",
       unreachable: "Could not reach AdminBot at {url}.",
+      someUnsent: "{count} message(s) did not go out — AdminBot at {url} did not answer for them.",
       forbidden: "You do not have permission to do that.",
       failed: "Could not load this paper's checklist.",
     },
