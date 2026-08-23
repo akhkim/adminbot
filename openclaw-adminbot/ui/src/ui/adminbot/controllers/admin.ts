@@ -303,6 +303,11 @@ export type AdminBotPaperSaveInput = {
   conference?: string;
   /** How likely the authors think this venue is, as a percentage string. */
   confidence?: string;
+  /**
+   * ISO timestamp of when the paper was presented and closed out, or "" to reopen it. See
+   * paper-completion.ts: it lives in `artifacts` for the same reason `venueTargets` does.
+   */
+  completedAt?: string;
   /** One live blocker per paper, stored on the record so admins can see and sort it. */
   blockerLog?: string;
   /** In-app nudge alert, written by an admin and cleared by the member who reads it. */
@@ -1727,6 +1732,8 @@ export async function saveAdminBotPaper(
     ...(paper.decisionSeen ? { decision_seen: paper.decisionSeen } : {}),
     ...(paper.conference ? { conference: paper.conference } : {}),
     ...(paper.confidence ? { confidence: paper.confidence } : {}),
+    // Sent even when empty: reopening a paper has to be able to erase the key, not just skip it.
+    ...(paper.completedAt === undefined ? {} : { completed_at: paper.completedAt }),
     ...(paper.blockerLog === undefined ? {} : { blocker_log: paper.blockerLog }),
     ...(paper.nudgeLog === undefined ? {} : { nudge_log: paper.nudgeLog }),
     ...(paper.nudgeSeenAt === undefined ? {} : { nudge_seen_at: paper.nudgeSeenAt }),

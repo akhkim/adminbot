@@ -382,17 +382,15 @@ describe("renderApp assistant avatar routing", () => {
     );
   });
 
-  it("shows a retryable Workboard config error after config loading fails", async () => {
-    const request = vi.fn(async () => ({
-      config: {},
-      hash: "hash-reloaded",
-      issues: [],
-      raw: "{}",
-      valid: true,
-    }));
+  it("announces a config load failure in the page header", async () => {
+    // Was written against the Workboard tab and its Retry button, neither of which exists any
+    // more: the tab is gone from navigation, and the retry affordance went with it. What survives
+    // -- and what this now covers -- is that the failure reaches the header and is announced
+    // rather than appearing as a silent pill.
+    // Any ordinary tab: config loads at startup wherever the user happens to be, and the header
+    // is what carries the failure. Not the config tab itself -- that one hides the header.
     const state = createState({
-      tab: "workboard",
-      client: { request } as unknown as AppViewState["client"],
+      tab: "sessions",
       configLoading: false,
       configSnapshot: null,
       lastError: "config.get failed",
@@ -403,14 +401,7 @@ describe("renderApp assistant avatar routing", () => {
       render(renderApp(state), container);
       expect(container.querySelector('[role="alert"]')?.textContent).toContain("config.get failed");
     });
-
-    [...container.querySelectorAll<HTMLButtonElement>("button")]
-      .find((button) => button.textContent?.trim() === "Retry")
-      ?.click();
-
-    await vi.waitFor(() => {
-      expect(request).toHaveBeenCalledWith("config.get", {});
-    });
+    expect(container.querySelector(".page-meta .pill.danger")?.getAttribute("role")).toBe("alert");
   });
 
   it("routes chat errors through the chat view instead of the shared header", () => {

@@ -58,7 +58,6 @@ describe("TAB_GROUPS", () => {
       "adminbotReimbursements",
       "adminbotDeadlines",
       "adminbotConferencePapers",
-      "adminbotSocialBot",
     ]);
     // Chat is no longer a group of its own: asking AdminBot something is the second half of the
     // guidebook surface, which the sidebar footer renders.

@@ -132,7 +132,13 @@ describeBrowserLayout("touch-primary form controls", () => {
     }
   });
 
-  it("keeps native select affordances visible in light mode", async () => {
+  it("leaves the platform's own select arrow unpainted", async () => {
+    // Inverted on purpose from what this used to assert. The chevron was once drawn as a
+    // background image with `appearance: none`, and Chrome repaints the control strip while a
+    // select's popup is open -- which tiled that image into a row of arrows across the closed box
+    // with the label smeared under it. `color-scheme: dark` now makes the native arrow theme
+    // itself, so the rule is that nothing paints over it. See the comment at `select.input`
+    // in components.css.
     const fixture = await openMobileFixture();
     const { page } = fixture;
     try {
@@ -141,17 +147,20 @@ describeBrowserLayout("touch-primary form controls", () => {
           const style = getComputedStyle(node as HTMLElement);
           return {
             image: style.backgroundImage,
+            appearance: style.appearance,
             paddingRight: Number.parseFloat(style.paddingRight),
-            repeat: style.backgroundRepeat,
           };
         }),
       );
 
       expect(selects).toHaveLength(2);
       for (const select of selects) {
-        expect(select.image).not.toBe("none");
-        expect(select.paddingRight).toBeGreaterThanOrEqual(32);
-        expect(select.repeat).toContain("no-repeat");
+        // Nothing to tile: this is the assertion that would have caught the repaint bug.
+        expect(select.image).toBe("none");
+        // The platform still draws the control, so the arrow is there without us drawing it.
+        expect(select.appearance).not.toBe("none");
+        // Room between the longest label and the arrow the platform puts in the corner.
+        expect(select.paddingRight).toBeGreaterThan(0);
       }
     } finally {
       await closeMobileFixture(fixture);

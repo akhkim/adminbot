@@ -499,6 +499,30 @@
   min-width: 0;
 }
 
+/* "Mark as presented and completed", and the reason it is refused when it is refused. Spans the
+   whole grid rather than sitting in a column: it acts on the paper, not on one of the fields. */
+.paper-completion {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+}
+
+.paper-completion__done {
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.paper-completion__why {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
 /* --- The nudge preview: what would go out, before it goes out --- */
 
 .nudge-preview {

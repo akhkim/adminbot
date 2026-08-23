@@ -238,12 +238,17 @@ img.chat-avatar {
   background: transparent;
 }
 
+/* Room for the hover actions, which are absolutely positioned 8px from the bubble's right edge.
+   The pair of icon buttons measures ~68px, so 70px reserved less than they occupy and a short
+   message ("Done.") ran under them -- the bubble shrinks to its text, and the overlap only shows
+   up on the short ones. Sized to the buttons plus their offset, with a little slack: re-measure
+   this if the action buttons change size or a third one is added. */
 .chat-bubble.has-copy {
-  padding-right: 70px;
+  padding-right: 84px;
 }
 
 .chat-bubble--has-actions {
-  padding-right: 70px;
+  padding-right: 84px;
 }
 
 .chat-duplicate-count {

@@ -1,6 +1,6 @@
 # AdminBot — Lab Admin Assistant
 
-<p align="center">
+<p align="center"> 
   <strong>Approval-gated AI operations for the lab.</strong>
 </p>
 

@@ -26,7 +26,6 @@ export const TAB_GROUPS = [
       "adminbotReimbursements",
       "adminbotDeadlines",
       "adminbotConferencePapers",
-      "adminbotSocialBot",
     ],
   },
   // Lab Members sits with Lab Sharing, not in the shared tools: the roster is who the lab is,
@@ -62,23 +61,18 @@ export const TAB_GROUPS = [
   // it is where paired devices are approved, which this deployment does use.
   {
     label: "openclaw",
-    tabs: [
-      "overview",
-      "activity",
-      "sessions",
-      "usage",
-      "agents",
-      "skills",
-      "nodes",
-      "config",
-    ],
+    tabs: ["overview", "activity", "sessions", "usage", "agents", "skills", "nodes", "config"],
   },
 ] as const;
 
 // Tabs that hold a place in the sidebar for a tool nobody has built yet. They render greyed out
 // and refuse clicks, so the slot is visible without routing anyone at a view that does not exist.
 // Delete the entry — not the tab — when the real surface lands.
-export const UNIMPLEMENTED_TABS: readonly Tab[] = ["adminbotSocialBot"];
+//
+// Empty today: Social Media Bot was the only one, and it is gone rather than built. Drafting the
+// post is a step of a paper, so it lives on that paper's card in My Projects & Papers -- a tab of
+// its own would have been a second place to start the same job, with no paper in hand.
+export const UNIMPLEMENTED_TABS: readonly Tab[] = [];
 
 export function isTabImplemented(tab: Tab): boolean {
   return !UNIMPLEMENTED_TABS.includes(tab);
@@ -101,7 +95,6 @@ export type Tab =
   | "adminbotTimeAvailability"
   | "adminbotMeetings"
   | "adminbotLogistics"
-  | "adminbotSocialBot"
   | "adminbotPapers"
   | "adminbotAnnouncements"
   | "adminbotConferencePapers"
@@ -155,7 +148,6 @@ const TAB_PATHS: Record<Tab, string> = {
   adminbotTimeAvailability: "/adminbot/time-availability",
   adminbotMeetings: "/adminbot/meetings",
   adminbotLogistics: "/adminbot/logistics",
-  adminbotSocialBot: "/adminbot/social-bot",
   adminbotPapers: "/adminbot/papers",
   adminbotAnnouncements: "/adminbot/announcements",
   adminbotConferencePapers: "/adminbot/conference-papers",
@@ -320,8 +312,6 @@ export function iconForTab(tab: Tab): IconName {
       return "play";
     case "adminbotLogistics":
       return "paperclip";
-    case "adminbotSocialBot":
-      return "send";
     case "adminbotPapers":
       return "fileText";
     case "adminbotAnnouncements":

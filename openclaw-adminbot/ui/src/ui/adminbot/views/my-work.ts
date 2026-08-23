@@ -20,6 +20,7 @@
 // Blockers are real records now, not browser state: they are written onto the paper the same way
 // the step is, so an admin sees a report the moment it is filed. See blockers.ts.
 import { html, nothing } from "lit";
+import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
 import { t } from "../../../i18n/index.ts";
 import type { AppViewState } from "../../app-view-state.ts";
 import { icons } from "../../icons.ts";
@@ -38,20 +39,24 @@ import type {
   AdminBotPaperStep,
 } from "../controllers/admin.ts";
 import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
-import { openPaperFlowMap } from "../paperflow-map.ts";
 import { openLinkedInDraftDialog } from "../linkedin-draft-dialog.ts";
-import { openPreRegistrationDialog } from "../pre-registration.ts";
 import { decisionOf, isDecisionAnswered, renderDecisionBanner } from "../decision-popup.ts";
 import { buildCoauthorEmail, firstFullMemberAuthor } from "../coauthor-email.ts";
+import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import {
-  DATED_VENUE_CHOICES,
-  VENUE_FAMILIES,
-  formatVenueTargets,
-  nextDeadlineVenue,
-  papersNeedingRegistration,
-  readVenueTargets,
-} from "../venue-targets.ts";
-import { isSamePerson } from "../../../../../extensions/adminbot/src/contracts/person-names.js";
+  ARCHIVAL_VENUES,
+  type CatalogVenue,
+  NON_ARCHIVAL_VENUES,
+  formatVenue,
+  parseVenue,
+  venueYears,
+} from "../data/venue-catalog.ts";
+import {
+  completedOnLabel,
+  completionReadiness,
+  isPaperCompleted,
+  partitionByCompletion,
+} from "../paper-completion.ts";
 import {
   diffForHistory,
   emptyPaperGridState,
@@ -60,6 +65,14 @@ import {
   renderPaperGrid,
   type PaperGridState,
 } from "../paper-grid.ts";
+import { openPaperFlowMap } from "../paperflow-map.ts";
+import { openPreRegistrationDialog } from "../pre-registration.ts";
+import {
+  formatVenueTargets,
+  nextDeadlineVenue,
+  papersNeedingRegistration,
+  readVenueTargets,
+} from "../venue-targets.ts";
 import { paperSteps, stepLabels } from "./admin.ts";
 import { renderPaperCycle } from "./paper-cycle.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
@@ -67,6 +80,15 @@ import { findOwnMember } from "./profile.ts";
 
 export type MyWorkProps = {
   onSavePaper: (paper: AdminBotPaperSaveInput) => void;
+  /**
+   * Which papers this surface is about. Defaults to the signed-in member's own, which is what
+   * My Projects & Papers means; Active Papers passes the whole lab. The cards, their fields and
+   * every write are identical either way -- an admin editing any paper is the same gesture as an
+   * author editing theirs, and the service decides what each is allowed to change.
+   */
+  papers?: AdminBotPaperRecord[];
+  /** Section heading. Defaults to My Projects & Papers' own. */
+  title?: string;
   /** Asks the host to re-render. The grid edits in place, so it needs to drive its own repaint. */
   onRerender?: () => void;
   /** What each paper still owes, computed by the service -- see the note on `renderCardSummary`. */
@@ -150,8 +172,7 @@ export function ownPapers(state: AppViewState): AdminBotPaperRecord[] {
       // differently. This used to be a raw lowercase comparison, so a co-first author was
       // invisible on their own paper: the one character the venue added to mark the credit was
       // the character that hid it.
-      (name.length > 0 &&
-        (paper.authors ?? []).some((author) => isSamePerson(author, name))),
+      (name.length > 0 && (paper.authors ?? []).some((author) => isSamePerson(author, name))),
   );
 }
 
@@ -180,7 +201,13 @@ function saveStep(props: MyWorkProps, paper: AdminBotPaperRecord, step: AdminBot
 
 // Two ways to move a paper, because they answer different questions: "it moved on" (Next) and
 // "it is actually at X" (the picker). Both write the same field.
-function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
+//
+// Takes `state` for the one reason the other row helpers do not need it: the draft dialog posts to
+// /papers/linkedin-draft, so it needs the console's configured AdminBot URL. Called without it,
+// resolveAdminBotBaseUrl falls back to this page's own hostname and a guessed port -- which is not
+// where AdminBot lives when the console is served from anywhere but the service itself, so every
+// draft died as "AdminBot is not reachable" before the request left the browser.
+function renderStepControls(state: AppViewState, paper: AdminBotPaperRecord, props: MyWorkProps) {
   const { index } = paperProgress(paper);
   const next = index >= 0 && index < paperSteps.length - 1 ? paperSteps[index + 1] : null;
   return html`
@@ -197,7 +224,7 @@ function renderStepControls(paper: AdminBotPaperRecord, props: MyWorkProps) {
         type="button"
         class="btn btn--sm"
         data-testid=${`my-work-linkedin-${paper.id}`}
-        @click=${() => openLinkedInDraftDialog(paper)}
+        @click=${() => openLinkedInDraftDialog(paper, { settings: state.settings })}
       >
         Draft LinkedIn post
       </button>
@@ -555,6 +582,58 @@ function renderAcceptance(paper: AdminBotPaperRecord, props: MyWorkProps) {
             </label>
           `
         : nothing}
+      ${renderCompletion(paper, props)}
+    </div>
+  `;
+}
+
+/**
+ * "This one is finished" -- the last thing anybody does to a paper.
+ *
+ * Sits at the end of the acceptance block because that is where its precondition is decided: the
+ * venue decision is two controls above it, so the answer to "why is this greyed out" is on screen
+ * at the same time as the question. See paper-completion.ts for why presenting is a claim a person
+ * makes rather than something the service works out.
+ */
+function renderCompletion(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const done = isPaperCompleted(paper);
+  const { ready, reason } = completionReadiness(paper);
+  const write = (completedAt: string) =>
+    props.onSavePaper({
+      id: paper.id,
+      title: paper.title,
+      authors: paper.authors ?? [],
+      currentStep: paper.current_step as AdminBotPaperStep,
+      completedAt,
+    });
+  return html`
+    <div class="paper-completion" data-testid=${`paper-completion-${paper.id}`}>
+      ${done
+        ? html`
+            <p class="paper-completion__done">
+              Completed <span class="ab-num">${completedOnLabel(paper)}</span>
+            </p>
+            <button
+              type="button"
+              class="btn btn--sm"
+              data-testid=${`paper-reopen-${paper.id}`}
+              @click=${() => write("")}
+            >
+              Reopen
+            </button>
+          `
+        : html`
+            <button
+              type="button"
+              class="btn btn--sm"
+              ?disabled=${!ready}
+              data-testid=${`paper-complete-${paper.id}`}
+              @click=${() => write(new Date().toISOString())}
+            >
+              Mark as presented and completed
+            </button>
+            ${reason ? html`<span class="paper-completion__why">${reason}</span>` : nothing}
+          `}
     </div>
   `;
 }
@@ -599,10 +678,13 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
   const { index } = paperProgress(paper);
   const blocked = openEntries(paper).length > 0;
   const open = props.openIds.includes(paper.id);
+  const done = isPaperCompleted(paper);
   const panelId = `my-work-body-${paper.id}`;
   return html`
     <article
-      class=${`my-work-item ${blocked ? "my-work-item--blocked" : ""}`}
+      class=${`my-work-item ${blocked ? "my-work-item--blocked" : ""} ${
+        done ? "my-work-item--done" : ""
+      }`}
       ?data-open=${open}
       data-testid=${`my-work-item-${paper.id}`}
     >
@@ -619,7 +701,16 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                JS would animate nothing and put the open state in two places. -->
           <span class="my-work-item__chevron" aria-hidden="true">${icons.chevronRight}</span>
           <span class="my-work-item__copy">
-            <span class="my-work-item__title">${paper.title}</span>
+            <span class="my-work-item__title">
+              ${paper.title}
+              ${done
+                ? html`<span
+                    class="my-work-item__badge"
+                    data-testid=${`my-work-done-badge-${paper.id}`}
+                    >Completed</span
+                  >`
+                : nothing}
+            </span>
             <span class="my-work-item__meta">${(paper.authors ?? []).join(", ")}</span>
             ${renderCardVenue(paper, props)} ${renderCardSummary(paper, props)}
           </span>
@@ -643,8 +734,8 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
         ${open
           ? html`
               ${renderVenueTargets(paper)} ${renderTarget(paper, props)}
-              ${renderStepper(paper, props, index)}
-              ${renderNextStep(paper)} ${renderAcceptance(paper, props)}
+              ${renderStepper(paper, props, index)} ${renderNextStep(paper)}
+              ${renderAcceptance(paper, props)}
               ${renderPaperSlots({
                 paperId: paper.id,
                 slots: props.slots[paper.id]?.slots ?? [],
@@ -678,9 +769,9 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                 },
                 // The LinkedIn gate opens the same dialog the card's button does, because that
                 // is the only thing that can actually satisfy it.
-                onOpenDraft: () => openLinkedInDraftDialog(paper),
+                onOpenDraft: () => openLinkedInDraftDialog(paper, { settings: state.settings }),
               })}
-              ${renderCycle(paper, props)} ${renderStepControls(paper, props)}
+              ${renderCycle(paper, props)} ${renderStepControls(state, paper, props)}
             `
           : nothing}
       </div>
@@ -714,19 +805,21 @@ const STEPPER_SHORT_LABELS: Record<string, string> = {
  * Target venue and confidence, editable in place.
  *
  * Asked once at registration, but a paper's target moves -- a missed deadline, a change of plan,
- * a rejection. Making it a pair of selects on the card means changing it is one click where the
- * information already is, instead of a form somewhere else.
+ * a rejection. Making it selects on the card means changing it is one click where the information
+ * already is, instead of a form somewhere else.
+ *
+ * Year and venue are separate because they change for different reasons: a slipped paper keeps its
+ * venue and moves a year, and a rejected one keeps the year and moves venue. One combined list
+ * would make either edit a hunt through every venue-year pair.
  */
 function renderTarget(paper: AdminBotPaperRecord, props: MyWorkProps) {
   const current = paper.artifacts?.conference ?? "";
   const confidence = paper.artifacts?.confidence ?? "";
-  // Keep whatever the paper already names, even when it is not one of the offered options, or
-  // editing the confidence would silently retarget the paper.
-  const offered = [
-    ...DATED_VENUE_CHOICES.map((choice) => choice.value),
-    ...VENUE_FAMILIES.flatMap((family) => family.venues),
-  ];
-  const known = offered.includes(current);
+  const parsed = parseVenue(current);
+  // Keep whatever the paper already names when the catalog cannot express it, or touching either
+  // select would silently retarget the paper.
+  const custom = current && !parsed.id ? current : "";
+  const year = parsed.year ?? defaultTarget().year;
 
   const save = (conference: string, odds: string) =>
     props.onSavePaper({
@@ -738,34 +831,47 @@ function renderTarget(paper: AdminBotPaperRecord, props: MyWorkProps) {
       confidence: odds,
     });
 
+  // Both selects write the one `conference` field, so whichever one moved has to read the other.
+  const retarget = (event: Event) => {
+    const root = (event.target as HTMLElement).closest(".my-work-item__target");
+    const pick = (role: string) =>
+      root?.querySelector<HTMLSelectElement>(`[data-role="${role}"]`)?.value ?? "";
+    const venueId = pick("venue-name");
+    if (!venueId) {
+      save("", confidence);
+      return;
+    }
+    if (venueId === custom) {
+      save(custom, confidence);
+      return;
+    }
+    save(formatVenue(venueId, Number(pick("venue-year"))), confidence);
+  };
+
   return html`
     <p class="my-work-item__target">
       <select
         class="target__select"
-        data-testid=${`target-venue-${paper.id}`}
-        @change=${(event: Event) => save((event.target as HTMLSelectElement).value, confidence)}
+        data-role="venue-year"
+        aria-label="Target year"
+        data-testid=${`target-venue-year-${paper.id}`}
+        @change=${retarget}
       >
-        ${!known && current ? html`<option value=${current} selected>${current}</option>` : nothing}
-        <optgroup label="Due next">
-          ${DATED_VENUE_CHOICES.map(
-            (choice) => html`
-              <option value=${choice.value} ?selected=${choice.value === current}>
-                ${choice.label} · ${choice.note}
-              </option>
-            `,
-          )}
-        </optgroup>
-        ${VENUE_FAMILIES.map(
-          (family) => html`
-            <optgroup label=${family.group}>
-              ${family.venues.map(
-                (venue) => html`
-                  <option value=${venue} ?selected=${venue === current}>${venue}</option>
-                `,
-              )}
-            </optgroup>
+        ${venueYears().map(
+          (option) => html`
+            <option value=${String(option)} ?selected=${option === year}>${option}</option>
           `,
         )}
+      </select>
+      <select
+        class="target__select"
+        data-role="venue-name"
+        aria-label="Target venue"
+        data-testid=${`target-venue-${paper.id}`}
+        @change=${retarget}
+      >
+        ${custom ? html`<option value=${custom} selected>${custom}</option>` : nothing}
+        ${venueOptions(parsed.id ?? "")}
         <option value="" ?selected=${!current}>Other / not decided yet</option>
       </select>
       <select
@@ -801,6 +907,28 @@ function renderVenueTargets(paper: AdminBotPaperRecord) {
       <span class="paper-targets__label">Pre-registered</span>
       <span class="paper-targets__value">${formatVenueTargets(targets)}</span>
     </p>
+  `;
+}
+
+/**
+ * The venue select's options, grouped by whether publishing there consumes the paper.
+ *
+ * Shared by the card and the registration form so the two can never offer different venues -- the
+ * card is where a registration gets corrected, and a venue missing from one of them would read as
+ * the target having been dropped.
+ */
+function venueOptions(selectedId: string) {
+  const group = (label: string, entries: CatalogVenue[]) => html`
+    <optgroup label=${label}>
+      ${entries.map(
+        (entry) => html`
+          <option value=${entry.id} ?selected=${entry.id === selectedId}>${entry.label}</option>
+        `,
+      )}
+    </optgroup>
+  `;
+  return html`
+    ${group("Archival", ARCHIVAL_VENUES)} ${group("Non-archival", NON_ARCHIVAL_VENUES)}
   `;
 }
 
@@ -950,6 +1078,58 @@ function renderAddButton(state: AppViewState) {
   `;
 }
 
+/**
+ * The next real archival deadlines, soonest first.
+ *
+ * Read from the bundled deadline board rather than a hand-kept list, so a new paper defaults to
+ * whatever is actually next rather than to whatever someone typed last year. The venue *list* is
+ * the catalog (data/venue-catalog.ts); this only decides which of its entries opens selected.
+ * Archival conference deadlines only -- camera-ready and commitment rows are not things you target
+ * from scratch.
+ */
+function upcomingVenues(now = new Date()) {
+  const future = DEADLINE_VENUES.filter((venue) => {
+    const due = Date.parse(venue.deadline_aoe.replace(" ", "T") + "Z");
+    return Number.isFinite(due) && due > now.getTime();
+  })
+    // Archival conferences only. Sorting purely by date buries ICLR and ARR under fifty workshop
+    // commitment deadlines, so the default ends up a venue nobody was aiming for.
+    .filter((venue) => venue.venue_type === "conference" && venue.archival)
+    .toSorted((left, right) => left.deadline_aoe.localeCompare(right.deadline_aoe));
+
+  // One row per venue, not one per milestone: ICLR appears twice (abstract, then full paper) and
+  // offering both as separate targets asks a question nobody means to answer. Keep the paper
+  // deadline, since that is the one people are working towards.
+  const byGroup = new Map<string, (typeof future)[number]>();
+  for (const venue of future) {
+    const key = venue.venue_group || venue.name;
+    const kept = byGroup.get(key);
+    const isPaperDeadline = venue.milestone !== "abstract";
+    if (!kept || (isPaperDeadline && kept.milestone === "abstract")) {
+      byGroup.set(key, venue);
+    }
+  }
+  return [...byGroup.values()].slice(0, 6);
+}
+
+/**
+ * What a new paper is aimed at before anyone says otherwise: the next real deadline.
+ *
+ * The deadline board is still the source of the default -- it is the only thing that knows what is
+ * actually next -- but the answer is expressed as a catalog venue and a year, so the two selects
+ * open on it. A deadline the catalog cannot name (a workshop, an ARR cycle) falls through to no
+ * venue rather than to a target nobody can then edit.
+ */
+function defaultTarget(now = new Date()) {
+  const year = now.getUTCFullYear();
+  for (const venue of upcomingVenues(now)) {
+    const parsed = parseVenue(venue.name);
+    if (parsed.id) {
+      return { id: parsed.id, year: parsed.year ?? year };
+    }
+  }
+  return { id: "", year };
+}
 
 /** How sure the authors are about hitting this venue. Coarse on purpose: finer is false precision. */
 const CONFIDENCE_OPTIONS = ["30", "50", "80", "99"];
@@ -957,6 +1137,7 @@ const CONFIDENCE_OPTIONS = ["30", "50", "80", "99"];
 function renderAddForm(state: AppViewState, props: MyWorkProps) {
   const draft = state.myWorkProjectDraft ?? "";
   const member = findOwnMember(state);
+  const fallback = defaultTarget();
   return html`
     <form
       id="my-work-add-form"
@@ -980,7 +1161,10 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
           title,
           authors: member?.name?.trim() ? [member.name.trim()] : [],
           currentStep: paperSteps[0],
-          conference: String(data.get("venue") ?? ""),
+          conference: formatVenue(
+            String(data.get("venue") ?? ""),
+            Number(data.get("venueYear") ?? fallback.year),
+          ),
           confidence: String(data.get("confidence") ?? ""),
         });
         state.myWorkProjectDraft = null;
@@ -1004,20 +1188,43 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
         />
       </label>
 
-      <label class="register__field">
+      <div class="register__field">
         <span class="register__label">Target venue</span>
         <select class="input" name="venue" data-testid="register-venue">
-          ${DATED_VENUE_CHOICES.map(
-            (choice, index) => html`
-              <option value=${choice.value} ?selected=${index === 0}>
-                ${choice.label} · ${choice.note}
-              </option>
+          ${ARCHIVAL_VENUES.map(
+            (venue: CatalogVenue, index: number) => html`
+              <option value=${venue.id} ?selected=${index === 0}>${venue.label}</option>
+            `,
+          )}
+          ${NON_ARCHIVAL_VENUES.map(
+            (venue: CatalogVenue) => html`
+              <option value=${venue.id}>${venue.label}</option>
             `,
           )}
           <option value="">Other / not decided yet</option>
         </select>
+        <div class="register__row">
+          <label class="sr-only" for="register-venue-year">Target year</label>
+          <select
+            class="input"
+            id="register-venue-year"
+            name="venueYear"
+            data-testid="register-venue-year"
+          >
+            ${venueYears().map(
+              (year) => html`
+                <option value=${String(year)} ?selected=${year === fallback.year}>${year}</option>
+              `,
+            )}
+          </select>
+          <label class="sr-only" for="register-venue">Target venue</label>
+          <select class="input" id="register-venue" name="venue" data-testid="register-venue">
+            ${venueOptions(fallback.id)}
+            <option value="" ?selected=${!fallback.id}>Other / not decided yet</option>
+          </select>
+        </div>
         <span class="register__hint">Defaults to the next deadline. Change it any time.</span>
-      </label>
+      </div>
 
       <fieldset class="register__field">
         <legend class="register__label">How likely is this venue?</legend>
@@ -1052,8 +1259,8 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
 // Derived from the papers themselves rather than from a separate list, so a member and an admin
 // are always looking at the same records -- a blocker filed here is the one that shows up in
 // Zhijing's sorted view, and clearing it there clears it here.
-function renderBlockers(state: AppViewState) {
-  const blockers = ownPapers(state).flatMap((paper) =>
+function renderBlockers(state: AppViewState, items: AdminBotPaperRecord[]) {
+  const blockers = items.flatMap((paper) =>
     openEntries(paper).map((blocker) => ({ paper, blocker })),
   );
   if (!blockers.length) {
@@ -1149,7 +1356,10 @@ function renderNudgeButton(props: MyWorkProps) {
  */
 function renderNudgePreview(props: MyWorkProps) {
   const batches = props.nudgeBatches;
-  if (!batches) {
+  // Gated on its own rather than trusting that the only way to fill `nudgeBatches` is the
+  // admin-only button above: this block names every member who owes something and quotes the
+  // message that would go to them, which is not a member's view of their own page.
+  if (!props.canNudge || !batches) {
     return nothing;
   }
   if (batches.length === 0) {
@@ -1212,7 +1422,6 @@ function renderNudgePreview(props: MyWorkProps) {
     </section>
   `;
 }
-
 
 /**
  * The pre-registration banner.
@@ -1376,13 +1585,12 @@ function renderPreRegistrationBanner(papers: AdminBotPaperRecord[], props: MyWor
     >
       <div class="prereg-banner__text">
         <div class="prereg-banner__title">
-          <span aria-hidden="true">🚨</span> Conference pre-registration —
-          ${next.venue.label}
+          <span aria-hidden="true">🚨</span> Conference pre-registration — ${next.venue.label}
         </div>
         <div class="prereg-banner__sub">
-          ${next.days} day${next.days === 1 ? "" : "s"} to the deadline ·
-          ${outstanding.length} of your ${papers.length} paper${papers.length === 1 ? "" : "s"}
-          not registered yet${registered > 0 ? ` · ${registered} done` : ""}
+          ${next.days} day${next.days === 1 ? "" : "s"} to the deadline · ${outstanding.length} of
+          your ${papers.length} paper${papers.length === 1 ? "" : "s"} not registered
+          yet${registered > 0 ? ` · ${registered} done` : ""}
         </div>
       </div>
       <button
@@ -1403,7 +1611,9 @@ function renderPreRegistrationBanner(papers: AdminBotPaperRecord[], props: MyWor
 }
 
 export function renderMyWork(state: AppViewState, props: MyWorkProps) {
-  const items = ownPapers(state);
+  const items = props.papers ?? ownPapers(state);
+  // Two lists, one source: a finished paper is still the member's, it just stops being work.
+  const { ongoing, completed } = partitionByCompletion(items);
   // A grid for three papers is worse than three cards; the threshold is where the per-paper
   // surface stops paying for itself.
   const gridOffered = items.length > PAPER_GRID_THRESHOLD;
@@ -1445,11 +1655,12 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
 
   return html`
     <div class="my-work">
-      ${renderPreRegistrationBanner(items, props)} ${renderDecisionBanners(items, props, state.adminBotData?.members ?? [])}
-      ${renderBlockers(state)}
+      ${renderPreRegistrationBanner(items, props)}
+      ${renderDecisionBanners(items, props, state.adminBotData?.members ?? [])}
+      ${renderBlockers(state, items)}
       <section class="my-work__section">
         <div class="my-work__section-head">
-          <h2 class="my-work__section-title">${t("myWork.items.title")}</h2>
+          <h2 class="my-work__section-title">${props.title ?? t("myWork.items.title")}</h2>
           <div class="my-work__section-actions">
             ${gridOffered
               ? html`<button
@@ -1475,9 +1686,32 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
           ? html`<p class="my-work__error-line" role="alert">${props.slotsError}</p>`
           : nothing}
         ${items.length
-          ? html`<div class="my-work__items">
-              ${items.map((paper) => renderItem(state, paper, props))}
-            </div>`
+          ? html`
+              <div class="my-work__items">
+                ${ongoing.map((paper) => renderItem(state, paper, props))}
+              </div>
+              ${completed.length
+                ? html`
+                    <!-- Finished papers stay on the page rather than disappearing: they are the
+                         record of what the lab published, and a list that silently shrinks is how
+                         somebody loses a paper. Below the live ones, and behind a disclosure, so
+                         they cost a line rather than a scroll. -->
+                    <details class="my-work__done" data-testid="my-work-completed">
+                      <summary class="my-work__done-summary">
+                        Completed (${completed.length})
+                      </summary>
+                      <div class="my-work__items">
+                        ${completed.map((paper) => renderItem(state, paper, props))}
+                      </div>
+                    </details>
+                  `
+                : nothing}
+              ${ongoing.length === 0
+                ? html`<p class="my-work__empty">
+                    Nothing in flight — every paper here is finished.
+                  </p>`
+                : nothing}
+            `
           : html`<p class="my-work__empty">${t("myWork.items.empty")}</p>`}
         <p class="my-work__notice">${t("myWork.items.syncNotice")}</p>
         ${state.myWorkProjectDraft !== null ? renderAddForm(state, props) : nothing}
