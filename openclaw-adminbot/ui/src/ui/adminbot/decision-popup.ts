@@ -83,6 +83,28 @@ function seenStamp(paper: AdminBotPaperRecord, decision: string): string {
 }
 
 
+/**
+ * What to call the venue on the banner.
+ *
+ * `accepted_venue` is the clean answer where it exists. Where it does not, the fallback is
+ * `artifacts.conference`, which on real rows carries the spreadsheet's own phrasing -- "ARR
+ * Acceptance; to be committed to EMNLP". Printing that verbatim produces "Accepted to ARR
+ * Acceptance; to be committed to EMNLP", which reads as a bug even though every word is true.
+ * ARR is a review pool rather than a venue: the conference at the end of the sentence is the one
+ * the paper was accepted to, so that is the one the banner names.
+ */
+export function displayVenue(paper: AdminBotPaperRecord): string {
+  const accepted = paper.accepted_venue?.trim();
+  if (accepted) {
+    return accepted;
+  }
+  const conference = paper.artifacts?.conference?.trim();
+  if (!conference) {
+    return "the venue";
+  }
+  return /committed to\s+(.+)$/iu.exec(conference)?.[1]?.trim() || conference;
+}
+
 export type DecisionBannerProps = {
   paper: AdminBotPaperRecord;
   decision: "accept" | "reject";
@@ -123,7 +145,7 @@ export type DecisionBannerProps = {
 
 export function renderDecisionBanner(props: DecisionBannerProps) {
   const { paper, decision, draft } = props;
-  const venue = paper.accepted_venue?.trim() || paper.artifacts?.conference?.trim() || "the venue";
+  const venue = displayVenue(paper);
 
   const acknowledge = () => {
     const input: AdminBotPaperSaveInput = {

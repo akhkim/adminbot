@@ -46,3 +46,23 @@ describe("matching an author entry to a roster name", () => {
     expect(toFirstLast("Jin, Zhijing")).toBe("Zhijing Jin");
   });
 });
+
+describe("a middle name on one side only", () => {
+  it("matches the full signature against the short roster name", () => {
+    // The case this exists for: five EMNLP submissions signed "Terry Jingchen Zhang" against a
+    // roster that says "Terry Zhang". Without this the duty silently moved to the next author.
+    expect(isSamePerson("Terry Jingchen Zhang", "Terry Zhang")).toBe(true);
+    expect(isSamePerson("Zhang, Terry Jingchen", "Terry Zhang")).toBe(true);
+    expect(isSamePerson("Punya Syon Pandey", "Punya Pandey")).toBe(true);
+  });
+
+  it("still refuses two different people", () => {
+    expect(isSamePerson("Terry Jingchen Zhang", "Terry Chen")).toBe(false);
+    expect(isSamePerson("Terry Zhang", "Jingchen Zhang")).toBe(false);
+    // Two different middle names is two people, not one.
+    expect(isSamePerson("Terry Jingchen Zhang", "Terry Wei Zhang")).toBe(false);
+    // An initial is not a name.
+    expect(isSamePerson("T. Zhang", "Terry Zhang")).toBe(false);
+  });
+});
+

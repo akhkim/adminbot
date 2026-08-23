@@ -72,47 +72,58 @@ export function unreachableAuthors(
 
 export type CoauthorEmailDraft = { subject: string; body: string };
 
+/**
+ * The lab's own wording, kept verbatim.
+ *
+ * What the record already knows -- the title, the venue -- is substituted. Everything else stays
+ * in [BRACKETS], because those are the parts a human has to decide: the short title, the
+ * camera-ready date, who is presenting, the revision plan. Filling them in with a guess would be
+ * worse than leaving the bracket, since a wrong date in a mail to seven coauthors is not a
+ * formatting problem.
+ */
 export function buildCoauthorEmail(
   paper: AdminBotPaperRecord,
   decision: "accept" | "reject",
   venue: string,
   senderName: string,
 ): CoauthorEmailDraft {
-  const track = paper.presentation_type ? ` (${paper.presentation_type})` : "";
+  const signature = senderName || "[YOUR NAME]";
   if (decision === "accept") {
     return {
-      subject: `Accepted to ${venue}: ${paper.title}`,
+      subject: `Accepted 🎉 [PAPER_SHORT_TITLE] at ${venue}`,
       body: [
-        "Dear all,",
+        "Dear All,",
         "",
-        `Our paper "${paper.title}" has been accepted to ${venue}${track}.`,
+        `Wonderful news: ${paper.title} has been accepted at ${venue}! Congratulations, and thank you for being part of this.`,
         "",
-        "[ADD THE CAMERA-READY DEADLINE AND WHAT YOU NEED FROM EACH PERSON]",
+        "Next steps on our side:",
         "",
-        "[SAY WHO IS PLANNING TO ATTEND, AND ASK THE REST TO CONFIRM]",
+        "Camera-ready is due [DATE]; we will circulate the final version, and we will double-check your name and affiliation once more before it is frozen.",
         "",
-        "Thanks all for the work on this.",
+        "We will prepare social media announcements (on LinkedIn, Twitter/X, etc.) and, as always, send you the drafts for a look before anything is posted.",
         "",
-        "Best,",
-        senderName || "[YOUR NAME]",
+        `[IF_APPLICABLE: "On conference attendance: [WHO_ATTENDS] will present. If you plan to be at [VENUE_LOCATION], it would be lovely to plan a dinner."]`,
+        "",
+        "Best regards,",
+        signature,
       ].join("\n"),
     };
   }
   return {
-    subject: `${venue} decision: ${paper.title}`,
+    subject: `[PAPER_SHORT_TITLE]: ${venue} outcome and next steps`,
     body: [
-      "Dear all,",
+      "Dear All,",
       "",
-      `Our paper "${paper.title}" was not accepted at ${venue}.`,
+      `The ${venue} decision for ${paper.title} unfortunately came back negative. We plan to revise the paper and resubmit to [NEXT_VENUE] (deadline [DATE]).`,
       "",
-      "[SUMMARISE WHAT THE REVIEWS ASKED FOR]",
+      `Our main action items will be [PLAN, e.g., "add more experiments across XX_model, ...", "address the evaluation concern with the additional experiments Reviewer 2 suggested, ..."].`,
       "",
-      "[PROPOSE THE NEXT VENUE AND THE TIMELINE YOU HAVE IN MIND]",
+      "The reviews are here: [REVIEWS_LINK]. We will share with you the updated draft once we are finished. In the meantime, please do not hesitate to let us know if you have any additional feedback.",
       "",
-      "Thanks all for the work on this.",
+      "Thank you for your support all along the way!",
       "",
-      "Best,",
-      senderName || "[YOUR NAME]",
+      "Best regards,",
+      signature,
     ].join("\n"),
   };
 }

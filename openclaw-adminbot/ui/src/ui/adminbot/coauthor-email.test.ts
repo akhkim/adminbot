@@ -77,16 +77,19 @@ describe("the draft", () => {
       "EMNLP 2026",
       "Joeun Yook",
     );
-    expect(draft.subject).toBe("Accepted to EMNLP 2026: A paper");
-    expect(draft.body).toContain("accepted to EMNLP 2026 (findings)");
+    expect(draft.subject).toBe("Accepted 🎉 [PAPER_SHORT_TITLE] at EMNLP 2026");
+    expect(draft.body).toContain("A paper has been accepted at EMNLP 2026!");
+    expect(draft.body).toContain("Camera-ready is due [DATE]");
     expect(draft.body).toContain("Joeun Yook");
     expect(hasPlaceholders(draft.body)).toBe(true);
   });
 
   it("says something different on a rejection", () => {
     const draft = buildCoauthorEmail(paper([]), "reject", "ICLR 2027", "Joeun Yook");
-    expect(draft.body).toContain("was not accepted at ICLR 2027");
-    expect(draft.body).toContain("[PROPOSE THE NEXT VENUE");
+    expect(draft.subject).toBe("[PAPER_SHORT_TITLE]: ICLR 2027 outcome and next steps");
+    expect(draft.body).toContain("The ICLR 2027 decision for A paper unfortunately came back");
+    expect(draft.body).toContain("resubmit to [NEXT_VENUE]");
+    expect(draft.body).toContain("[REVIEWS_LINK]");
   });
 
   it("stops warning once the brackets are filled in", () => {

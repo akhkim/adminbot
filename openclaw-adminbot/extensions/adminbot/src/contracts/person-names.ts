@@ -49,5 +49,35 @@ export function toFirstLast(author: string): string {
 export function isSamePerson(authorEntry: string, memberName: string): boolean {
   const author = normalizePersonName(toFirstLast(authorEntry));
   const member = normalizePersonName(memberName);
-  return author.length > 0 && author === member;
+  if (author.length === 0 || member.length === 0) {
+    return false;
+  }
+  if (author === member) {
+    return true;
+  }
+  // A middle name on one side only.
+  //
+  // People sign papers with their full name and join the roster with the short one -- "Terry
+  // Jingchen Zhang" on five submissions, "Terry Zhang" on the member list. Requiring an exact
+  // match made him invisible to the author matcher, which silently moved every duty he owned onto
+  // the next person down the author list. That is a worse failure than the collision this guards
+  // against, because it is invisible: nothing looks wrong, the wrong person is just asked.
+  //
+  // Deliberately narrow. Both first and last name must match in full, and the two spellings must
+  // differ only by extra middle tokens on one side. "Terry Zhang" still does not match "Terry
+  // Chen", and an initial does not stand in for a name -- `normalizePersonName` has already
+  // dropped the periods that would make "T" look like a match for "Terry".
+  const authorParts = author.split(" ");
+  const memberParts = member.split(" ");
+  if (authorParts.length < 2 || memberParts.length < 2) {
+    return false;
+  }
+  const sameEnds =
+    authorParts[0] === memberParts[0] &&
+    authorParts[authorParts.length - 1] === memberParts[memberParts.length - 1];
+  if (!sameEnds) {
+    return false;
+  }
+  // One side has to be the plain first-last form; two different middle names are two people.
+  return authorParts.length === 2 || memberParts.length === 2;
 }

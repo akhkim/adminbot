@@ -8337,3 +8337,23 @@
   color: var(--warning, #a67c00);
   font-size: 0.85em;
 }
+
+/* "Not now": the same banner, shrunk to one line. Without these rules the verdict and the Open
+   button stacked, which read as a stray coloured bar rather than as a banner someone had closed. */
+.decision-banner--collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+}
+
+.decision-banner__verdict-line {
+  font-weight: 600;
+  min-width: 0;
+}
+
+.decision-banner--collapsed .decision-banner__paper {
+  font-weight: 400;
+  color: var(--text-muted);
+}
