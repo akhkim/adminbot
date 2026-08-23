@@ -3330,6 +3330,14 @@
   animation: rise 260ms var(--ease-out) both;
 }
 
+.my-work-item__controls {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-top: var(--space-4);   /* add this line */
+}
+
 /* A short stagger on first paint so a full list reads as arriving together, not as one block. */
 .my-work__items > *:nth-child(1) {
   animation-delay: 0ms;
@@ -6531,12 +6539,13 @@
   flex-direction: column;
   gap: var(--space-4);
   width: 100%;
-  /* The item cards above use this inset surface; the form is a surface on the same system rather
-     than a squashed panel, and the card padding is the roomier of the two. */
+  /* The form opens over the card list, so it must read as the topmost surface: a step lighter
+     than --bg-elevated (which every card already uses), plus an edge and shadow to separate it. */
   padding: var(--space-4) var(--space-5);
-  border: 1px solid color-mix(in srgb, var(--border-strong) 50%, var(--border));
+  border: 1px solid color-mix(in srgb, #fff 7%, transparent);
   border-radius: var(--radius-lg);
-  background: var(--bg-elevated);
+  background: color-mix(in srgb, var(--bg-elevated) 97%, #fff);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
 }
 
 /* Stage and title on one row when the card is wide enough, each stacking full width otherwise. */
@@ -7608,29 +7617,73 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The slot filter bar: how much of the checklist is in view, and the way back to all of it. */
-.paper-slots__filter {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin-bottom: var(--space-2);
-  flex-wrap: wrap;
+.paper-slot__help > summary,
+.paper-slot__child .paper-slot__help > summary {
+  list-style: none;
+}
+.paper-slot__help > summary::-webkit-details-marker {
+  display: none;
+}
+.paper-slot__help > summary::marker {
+  content: "";
+  display: none;
 }
 
-.paper-slots__filter-text {
+/* Hover tooltip: the ? is a circle that shows a tooltip on hover, not inline on click. */
+.paper-slot__help {
+  position: relative;
+  display: inline-flex;
+  vertical-align: middle;
+}
+.paper-slot__help-trigger {
+  width: 1.3em;
+  height: 1.3em;
+  border-radius: 50%;
+  background: var(--bg-accent);
+  border: 1px solid var(--border-strong);
   color: var(--text-muted);
-  font-size: 0.85em;
+  font-size: inherit;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  line-height: 1;
+}
+.paper-slot__help-tip {
+  display: none;
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: max-content;
+  max-width: 300px;
+  padding: var(--space-3) var(--space-4);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 400;
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-word;
+  z-index: 10;
+  pointer-events: none;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+.paper-slot__help:hover > .paper-slot__help-tip,
+.paper-slot__help-trigger:focus + .paper-slot__help-tip {
+  display: block;
 }
 
-/* A draft gate opens the drafting tool rather than pretending to be a tickable box. Styled as
-   a link-ish control so it does not read as one more field to fill in. */
 .paper-slot__draft-open {
   padding: var(--space-1) 0;
   border: 0;
   background: none;
-  color: var(--accent, #534ab7);
+  color: var(--branch-accent, var(--accent, #534ab7));
   font: inherit;
+  font-weight: 600;
   text-align: left;
   cursor: pointer;
   text-decoration: underline;
@@ -7641,58 +7694,538 @@
   opacity: 0.8;
 }
 
-/* Per-field help. A <details> rather than a title tooltip: reachable on touch and by keyboard,
-   and it stays open while the reader types the value it is describing. */
+.paper-slot__head,
+.paper-slot__child-head {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.paper-slot__label,
+.paper-slot__child-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.paper-slot__pill {
+  flex-shrink: 0;
+  margin-inline-start: 0;
+}
+
+.paper-slot__optional,
 .paper-slot__help {
-  display: inline;
+  flex-shrink: 0;
 }
 
-.paper-slot__help > summary {
-  display: inline-grid;
-  place-items: center;
-  width: 1.15rem;
-  height: 1.15rem;
-  margin-left: var(--space-1);
-  border: 1px solid var(--border);
+.paper-slots__group[data-testid*="-core"] {
+  --branch-accent: #a49dfa;
+  --branch-strong: #7f77dd;
+  --branch-border: rgba(127, 119, 221, 0.16);
+  --branch-accent-subtle: rgba(127, 119, 221, 0.03);
+}
+.paper-slots__group[data-testid*="-venue"] {
+  --branch-accent: #9dc7f2;
+  --branch-strong: #5a9bd6;
+  --branch-border: rgba(90, 155, 214, 0.16);
+  --branch-accent-subtle: rgba(133, 183, 235, 0.03);
+}
+.paper-slots__group[data-testid*="-archive"] {
+  --branch-accent: #c4b5a0;
+  --branch-strong: #a8967a;
+  --branch-border: rgba(168, 150, 122, 0.18);
+  --branch-accent-subtle: rgba(168, 150, 122, 0.03);
+}
+.paper-slots__group[data-testid*="-social"] {
+  --branch-accent: #8bb89a;
+  --branch-strong: #6fa07e;
+  --branch-border: rgba(111, 160, 126, 0.18);
+  --branch-accent-subtle: rgba(111, 160, 126, 0.03);
+}
+.paper-slots__group[data-testid*="-talk"] {
+  --branch-accent: #c9a0b0;
+  --branch-strong: #b08090;
+  --branch-border: rgba(176, 128, 144, 0.16);
+  --branch-accent-subtle: rgba(176, 128, 144, 0.03);
+}
+
+.paper-slots__group {
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px solid var(--branch-border, rgba(255, 255, 255, 0.25));
+  border-top: 3px solid var(--branch-strong, var(--border-strong));
+  border-radius: var(--radius-md, var(--radius-sm));
+  background: var(--branch-accent-subtle, var(--bg-accent));
+}
+
+.paper-slots__group--trunk {
+  background: var(--branch-accent-subtle, var(--bg-accent));
+}
+
+/* paper-slots.css is imported AFTER this file and re-declares these variants with dim,
+   page-colored edges (a grey left rail on branches, a hairline under the trunk), so any
+   equal-specificity rule here loses the cascade -- that is why sections looked open on one
+   side. Outrank it with a descendant selector and draw the edges in each branch's own tint. */
+.paper-slots .paper-slots__group--trunk {
+  border-bottom: 1px solid var(--branch-border, rgba(255, 255, 255, 0.25));
+}
+
+.paper-slots .paper-slots__group--branch {
+  border-left: 2px solid var(--branch-strong, rgba(255, 255, 255, 0.35));
+}
+
+.paper-slots__group-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-1);
+  font-size: 1em;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--branch-strong, var(--text));
+}
+
+.paper-slots__group-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6em;
+  height: 1.6em;
+  padding: 0.25em;
   border-radius: 50%;
-  color: var(--text-muted);
-  font-size: 0.75em;
-  line-height: 1;
-  cursor: help;
-  list-style: none;
-  vertical-align: middle;
-  user-select: none;
+  background: var(--branch-strong, var(--border-strong));
+  color: #fff;
 }
 
-.paper-slot__help > summary::-webkit-details-marker {
+
+.paper-slots__group-icon svg {
+  fill: #fff;
+  stroke: #fff;
+}
+
+.paper-slots__branch-number {
+  /* The branch name already renders next to this chip, so the number is noise -- hide it and
+     the title reads "Venue", "Social", ... instead of "Branch 4: Venue". */
   display: none;
 }
 
-.paper-slot__help > summary:hover,
-.paper-slot__help[open] > summary {
-  border-color: var(--accent, #534ab7);
-  color: var(--accent, #534ab7);
-}
-
-.paper-slot__help > p {
-  margin: var(--space-2) 0 0;
-  padding: var(--space-2);
-  border-left: 2px solid var(--accent, #534ab7);
-  background: color-mix(in srgb, var(--text) 5%, var(--bg));
-  border-radius: var(--radius-sm);
+.paper-slots__group-blurb {
+  margin: 0 0 var(--space-3);
+  font-size: 0.8em;
+  font-style: italic;
   color: var(--text);
-  font-size: 0.85em;
-  font-weight: 400;
-  line-height: 1.5;
+  opacity: 0.8;
 }
 
-.paper-slot__help-example {
+.paper-slots__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr));
+  gap: var(--space-3);
+  align-items: start;
+}
+
+
+.paper-slot {
+  width: 100%;
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg) 85%, var(--branch-accent-subtle, transparent));
+  transition: opacity 0.15s ease;
+}
+
+
+.paper-slot--grouped {
+  border-left: 3px solid var(--branch-strong, var(--border-strong));
+}
+
+.paper-slot--blocked {
+  opacity: 0.55;
+  background: var(--bg-accent);
+}
+
+.paper-slot--invalid {
+  opacity: 1;
+}
+
+.paper-slot__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 0.9em;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.paper-slot__sublabel {
+  display: block;
+  margin: -0.3rem 0 var(--space-2);
+  font-size: 0.8em;
   color: var(--text-muted);
 }
 
-.paper-slot__help-example code {
-  overflow-wrap: anywhere;
+.paper-slot__optional {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  background: var(--bg-accent);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 500;
+  text-transform: none;
+  line-height: 1.6;
+  vertical-align: middle;
 }
+
+/* ── Status pills — fit to content, bigger radius, roomy so text never clips ── */
+
+.paper-slot__pill {
+  flex-shrink: 0;
+  white-space: nowrap;
+  width: fit-content;
+  padding: 0.25rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-accent);
+  color: var(--text);
+  font-size: 0.74em;
+  font-weight: 700;
+}
+
+.paper-slot__pill--done {
+  background: color-mix(in srgb, var(--success, #2f9e5b) 18%, var(--bg));
+  border-color: var(--success, #2f9e5b);
+  color: #6fd196;
+}
+
+.paper-slot__pill--invalid {
+  background: color-mix(in srgb, var(--danger, #d1453b) 18%, var(--bg));
+  border-color: var(--danger, #d1453b);
+  color: #f28b8a;
+}
+
+.paper-slot__pill--waived {
+  background: var(--bg-accent);
+  border-color: var(--border-strong);
+  color: var(--text-muted);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* ── Inputs / controls inside a slot ──────────────────────────────────────── */
+
+.paper-slot__input,
+.paper-slot select.input {
+  width: 100%;
+}
+
+.paper-slot__check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 0.9em;
+}
+
+.paper-slot__enum {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.paper-slot__enum .input:first-child {
+  font-weight: 500;
+}
+
+.paper-slot__meta {
+  margin: var(--space-2) 0 0;
+  font-size: 0.8em;
+  color: var(--text-muted);
+}
+
+.paper-slot__owner {
+  padding: 0.05rem 0.5rem;
+  border-radius: 999px;
+  background: var(--bg-accent);
+  border: 1px solid var(--border-strong);
+  color: var(--text);
+}
+
+.paper-slot__note {
+  margin: var(--space-2) 0 0;
+  font-size: 0.8em;
+  color: var(--muted-strong, var(--text-muted));
+  line-height: 1.4;
+}
+
+.paper-slot__error {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 8px;
+  border: 1px solid var(--danger, #d1453b);
+  background: color-mix(in srgb, var(--danger, #d1453b) 16%, var(--bg));
+  color: #f28b8a;
+  font-size: 0.8em;
+  font-weight: 500;
+}
+
+/* ── Nested half-slots (e.g. "Submission page" + "Submission id") ────────── */
+
+.paper-slot__children {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-inline-start: var(--space-3);
+  border-inline-start: 2px solid var(--branch-strong, var(--border));
+}
+
+.paper-slot__child {
+  padding: var(--space-1) 0 var(--space-1) var(--space-2);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.paper-slot__child--invalid {
+}
+
+.paper-slot__child-label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: 0.8em;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* ── Details block (authors / feedback / venue) above the checklist ──────── */
+
+.paper-slots__details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md, var(--radius-sm));
+  background: var(--bg-accent);
+}
+
+.paper-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.paper-detail__label {
+  /* Sentence case on purpose: the all-caps version shouted three quiet metadata fields. */
+  font-size: 0.7em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--muted-strong, var(--text-muted));
+}
+
+.paper-detail__hint {
+  font-size: 0.75em;
+  color: var(--text-muted);
+}
+
+.paper-detail__readonly {
+  margin: 0;
+  font-size: 0.9em;
+  color: var(--text);
+}
+
+/* ── Checklist header row: count line reads as a heading, toggle sits right ── */
+
+.paper-slots__filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.paper-slots__filter-text {
+  font-size: 1.05em;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ── Social Drafts circulation block ──────────────────────────────────────── */
+
+/* This block renders outside the branch sections, so it never inherits a branch palette and
+   previously drew as bare chrome. Give it the social palette directly. */
+.paper-cycle {
+  --branch-accent: #f5b866;
+  --branch-strong: #e0942f;
+  --branch-border: rgba(224, 148, 47, 0.45);
+  --branch-accent-subtle: rgba(239, 159, 39, 0.08);
+}
+
+.paper-cycle__draft {
+  border: 1px solid var(--branch-border);
+  border-left: 3px solid var(--branch-strong);
+  border-radius: var(--radius-md, 12px);
+  background: color-mix(in srgb, var(--bg) 85%, var(--branch-accent-subtle));
+}
+
+/* ── Venue stages: vertical timeline instead of a flat label/value list ──── */
+
+.paper-stages {
+  margin-top: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--branch-border, var(--border-strong));
+  border-radius: var(--radius-md, var(--radius-sm));
+  /* Lighter than the venue card behind it: this tracker is a sub-card of the branch, not another
+     slab of page background. Venue's own tokens are inherited here. */
+  background: color-mix(in srgb, var(--bg-elevated) 78%, var(--branch-accent-subtle, transparent));
+}
+
+.paper-stages__lede {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  font-size: 0.8em;
+  color: var(--text);
+}
+
+.paper-stages__lede-icon {
+  display: inline-flex;
+  width: 1.5em;
+  height: 1.5em;
+  color: #fff;
+}
+
+.paper-stages__lede-icon svg {
+  width: 20px;
+  height: 20px;
+  stroke: #fff;
+  fill: #fff;
+}
+
+.paper-stages__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0 0 0 0.4rem;
+  padding: 0;
+  list-style: none;
+  border-inline-start: 2px solid var(--border-strong);
+}
+
+.paper-stage {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) 0 var(--space-2) var(--space-4);
+}
+
+.paper-stage::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -0.4rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.35);
+  border: 2px solid var(--bg-accent);
+}
+
+.paper-stage__label {
+  font-size: 0.9em;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.paper-stage__detail {
+  font-size: 0.8em;
+  color: var(--text-muted);
+}
+
+.paper-stage--closed::before {
+  background: var(--success, #2f9e5b);
+}
+.paper-stage--closed .paper-stage__detail {
+  color: #6fd196;
+}
+
+.paper-stage--waiting::before {
+  background: var(--warn, #d9a441);
+}
+.paper-stage__detail--waiting {
+  color: #e0b466;
+  font-weight: 600;
+}
+
+.paper-slot .input {
+  width: 100%;
+  padding: var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85em;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.paper-slot .input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.paper-slot .input:hover:not(:disabled) {
+  border-color: var(--branch-strong, var(--border-strong));
+}
+
+.paper-slot .input:focus {
+  outline: none;
+  border-color: var(--branch-strong, var(--accent));
+  background: var(--bg);
+  box-shadow: 0 0 0 3px var(--branch-accent-subtle, color-mix(in srgb, var(--accent) 12%, transparent));
+}
+
+.paper-slot .input:disabled {
+  background: var(--bg-accent);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.paper-slot input[type="password"] {
+  font-family: var(--font-mono, monospace);
+  letter-spacing: 0.15em;
+}
+
+.paper-slot__check input[type="checkbox"] {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--branch-strong, var(--accent));
+  cursor: pointer;
+}
+
+.paper-slot__check span {
+  font-size: 0.85em;
+  color: var(--text);
+}
+
+.paper-slot__head + .paper-slot__input,
+.paper-slot__head + .paper-slot__check,
+.paper-slot__head + .paper-slot__enum,
+.paper-slot__head + input {
+  margin-top: var(--space-1);
+}
+
 
 /* ── Conference pre-registration ───────────────────────────────────────────
    The banner is the loudest thing on the page on purpose, and it removes itself
@@ -8363,4 +8896,525 @@
   color: var(--text-muted);
   font-size: 0.9em;
   align-self: center;
+}
+
+/* ── Paper card overrides that must beat paper-slots.css ────────────────────
+   paper-slots.css is the LAST stylesheet imported, so it wins every tie against this file.
+   Everything below out-specifies it (descendant or doubled class) instead of fighting order.
+   Scope note: .paper-cycle renders as a sibling of .paper-slots, so it uses doubled classes
+   rather than a descendant. */
+
+/* Slot cards take their branch's tint, so the X/LinkedIn panels stop reading as bare grey
+   boxes floating on the section. */
+.paper-slots .paper-slot {
+  /* A whisper of the branch hue on the edge, and a nearly clear fill -- the card should feel
+     like glass in the branch's color, not a painted tile. */
+  border: 1px solid color-mix(in srgb, var(--branch-accent) 35%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--branch-accent) 1%, transparent);
+}
+
+/* Inside a deck every card shares one transparency; state still reads via the status pill. */
+.my-work-item .paper-slot-deck .paper-slot,
+.my-work-item .paper-slot-deck .paper-slot--blocked {
+  opacity: 1;
+  background: color-mix(in srgb, var(--branch-accent) 1%, transparent);
+}
+
+.paper-slots .paper-slot--invalid {
+}
+
+/* Venue tracker: almost-white sub-card, so its text flips dark and the timeline dots go dark
+   too -- white-on-white would vanish. The lede icon rides in a branch-colored badge so it
+   stays white without disappearing. */
+.paper-slots .paper-stages {
+  padding: var(--space-3) var(--space-4);
+  border: 1px dashed var(--branch-border, var(--border-strong));
+  border-radius: var(--radius-md, var(--radius-sm));
+  /* Dark sub-card, as before -- "lighter" was about the type below, not this surface. */
+  background: color-mix(in srgb, var(--bg-elevated) 78%, var(--branch-accent-subtle, transparent));
+}
+
+.paper-slots .paper-stages__lede {
+  color: #fafafa;
+}
+
+.paper-slots .paper-stages__list {
+  border-inline-start-color: rgba(255, 255, 255, 0.28);
+}
+
+.paper-slots .paper-stage::before {
+  background: rgba(255, 255, 255, 0.6);
+  border-color: var(--bg-elevated);
+}
+
+.paper-slots .paper-stage__label {
+  color: #f4f4f5;
+}
+
+.paper-slots .paper-stage__detail {
+  color: #e4e4e7;
+}
+
+.paper-slots .paper-stage--closed::before {
+  background: #34d17b;
+}
+
+.paper-slots .paper-stage--closed .paper-stage__detail {
+  color: #6fd196;
+}
+
+.paper-slots .paper-stage--waiting::before {
+  background: #f5b866;
+}
+
+.paper-slots .paper-stage--waiting .paper-stage__label,
+.paper-slots .paper-stage__detail--waiting {
+  color: #ffd28a;
+}
+
+.paper-slots .paper-stages__lede-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--branch-strong, #e0942f);
+}
+
+.paper-slots .paper-stages__lede-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: #fff;
+  fill: #fff;
+}
+
+/* Social Drafts circulation block (sibling of the checklist): social palette + amber-edged
+   draft panels, outranking the plain chrome paper-slots.css gives them. */
+/* Whole-block card, matching how the branch sections read: tinted surface, colored top edge.
+   The draft panels inside drop to transparent so the section reads as one card, not tiles. */
+.paper-cycle.paper-cycle {
+  /* Palette only. No card chrome here: the three groups inside are themselves full cards,
+     exactly like Writing/Talk/Archive/Venue -- an outer box around them is what made this
+     section read as a different, broken thing. */
+  --branch-accent: #8fd8e8;
+  --branch-strong: #48aec4;
+  --branch-border: rgba(72, 174, 196, 0.18);
+  --branch-accent-subtle: rgba(72, 174, 196, 0.03);
+}
+
+/* Same card body the branch sections get from .paper-slots__group, mirrored for the cycle
+   groups so open/closed behavior and surfaces are indistinguishable. Block flow, not the
+   flex+gap paper-slots.css gives these -- otherwise every child gets an even 12px gap and the
+   rhythm stops matching the branches. */
+.my-work-item details.paper-cycle__group {
+  display: block;
+  gap: 0;
+  margin-top: var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--branch-border);
+  border-top: 3px solid rgba(72, 174, 196, 0.35);
+  border-radius: var(--radius-md, var(--radius-sm));
+  background: var(--branch-accent-subtle);
+}
+
+.my-work-item details.paper-cycle__group[open] {
+  padding-bottom: var(--space-4);
+}
+
+/* Post-draft panels (X / LinkedIn): quiet sub-cards with the cyan left edge. */
+.paper-cycle__draft.paper-cycle__draft {
+  border: 1px solid var(--branch-border);
+  border-left: 3px solid rgba(72, 174, 196, 0.4);
+  border-radius: 12px;
+  background: color-mix(in srgb, #48aec4 1%, transparent);
+}
+
+/* The panels sat flush under the note and against each other; give each its own air so the
+   section breathes like the checklist grids. */
+.my-work-item details.paper-cycle__group .paper-cycle__draft {
+  margin-top: var(--space-3);
+}
+
+/* ── Branch headers: built for expandable sections ──────────────────────────
+   Scoped to .my-work-item (not .paper-slots): the Social Drafts block reuses these title
+   classes from OUTSIDE the checklist container, and paper-slots.css (imported last) ships
+   quieter defaults for exactly these selectors. Subtle bumps only. */
+.my-work-item .paper-slots__group-title {
+  margin: 0;
+  /* Explicit scale, not em: 1.05em inherited the card's body size and ballooned. Sentence case,
+     too -- paper-slots.css uppercases this heading and nothing had unset it. */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--control-ui-text-md);
+  font-weight: 700;
+  text-transform: none;
+  letter-spacing: 0.02em;
+  color: var(--branch-accent, var(--text));
+}
+
+/* Icon badges center their glyph instead of faking it with padding arithmetic. Fixed pixels --
+   em here kept inheriting whatever the surrounding section's type scale was. */
+.my-work-item .paper-slots__group-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+}
+
+.my-work-item .paper-slots__group-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* The globe glyph fills its viewBox edge-to-edge, so at the shared size it out-punches the
+   other icons -- give the cycle sections' badges a smaller frame. */
+.my-work-item .paper-cycle .paper-slots__group-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.my-work-item .paper-cycle .paper-slots__group-icon svg {
+  width: 12px;
+  height: 12px;
+}
+
+/* The disclosure header row: whole strip is the click target, chevron flips on open. */
+.my-work-item .paper-slots__group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  cursor: pointer;
+  list-style: none;
+  border-radius: var(--radius-sm);
+  padding: var(--space-1) var(--space-2);
+  margin-inline: calc(-1 * var(--space-2));
+}
+
+.my-work-item .paper-slots__group-head::-webkit-details-marker {
+  display: none;
+}
+
+.my-work-item .paper-slots__group-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  color: var(--muted);
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.my-work-item .paper-slots__group-chevron svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+}
+
+.my-work-item details[open] > .paper-slots__group-head {
+  margin-bottom: var(--space-3);
+}
+
+/* ── Branch slot deck ────────────────────────────────────────────────────────
+   One field at a time; arrows page through. The active card spans the branch's full inner
+   width instead of sharing a grid, so long inputs and hints get room to breathe. */
+.paper-slot-deck__bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.paper-slot-deck__count {
+  margin-inline-end: auto;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.paper-slot-deck__arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--branch-border, var(--border));
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.paper-slot-deck__arrow:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--branch-accent) 14%, transparent);
+}
+
+.paper-slot-deck__arrow:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.paper-slot-deck__arrow svg {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+  fill: none;
+}
+
+/* The shared chevron glyph, mirrored to point back. */
+.paper-slot-deck__arrow--prev svg {
+  transform: scaleX(-1);
+}
+
+.paper-slot-deck__item[hidden] {
+  display: none;
+}
+
+/* The active card owns the row: full width, natural height (the old grid forced a tall
+   minimum on every card whether it needed it or not). */
+.my-work-item .paper-slot-deck .paper-slot {
+  width: 100%;
+  min-height: 0;
+}
+
+/* Branch blurbs ride up under the header with a negative top margin; the cycle section's
+   first line is a .paper-slot__note with none, so mirror it or the gap reads bigger. */
+.my-work-item details.paper-cycle__group > .paper-slots__group-head + .paper-slot__note {
+  margin-top: calc(-1 * var(--space-2));
+}
+
+.my-work-item details[open] > .paper-slots__group-head .paper-slots__group-chevron {
+  transform: rotate(180deg);
+}
+
+/* Closed sections collapse to a thin strip; open ones keep room for the body. Same paddings on
+   every section so all strips share one height. */
+.my-work-item details.paper-slots__group,
+.my-work-item details.paper-cycle__group {
+  padding: var(--space-2) var(--space-4);
+}
+
+.my-work-item details.paper-slots__group[open],
+.my-work-item details.paper-cycle__group[open] {
+  padding-bottom: var(--space-4);
+}
+
+/* Open state: the header gets air before the blurb/body starts. */
+.my-work-item .paper-slots__group-blurb {
+  margin-top: var(--space-3);
+}
+
+.my-work-item .paper-slots__group-icon {
+  width: 1.7em;
+  height: 1.7em;
+  padding: 0.3em;
+}
+
+.my-work-item .paper-slots__group-icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.my-work-item .paper-slots__group-blurb {
+  font-style: normal;
+  opacity: 1;
+  font-size: 0.85em;
+  color: #c6c6cc;
+}
+
+/* ── Next-step (advance) button ──────────────────────────────────────────────
+   Pushed to the right edge of the controls row; a step bigger than its siblings with a quiet
+   accent glow -- it is the one action on this card that moves the paper forward. */
+.my-work-item__controls {
+  justify-content: flex-start;
+}
+
+.my-work-item__controls .btn[data-testid^="my-work-advance"] {
+  margin-inline-start: auto;
+  min-height: calc(var(--control-h-md) + 4px);
+  padding-inline: var(--space-4);
+  font-size: var(--control-ui-text-sm);
+  font-weight: 600;
+  color: #dbe7ff;
+  border-color: color-mix(in srgb, var(--accent, #5b8def) 50%, var(--border-strong));
+  background: color-mix(in srgb, var(--accent, #5b8def) 9%, transparent);
+}
+
+.my-work-item__controls .btn[data-testid^="my-work-advance"]:hover {
+  border-color: color-mix(in srgb, var(--accent, #5b8def) 70%, var(--border-strong));
+  background: color-mix(in srgb, var(--accent, #5b8def) 16%, transparent);
+}
+
+.paper-cycle__circulate:hover {
+  border-color: color-mix(in srgb, #8fd8e8 60%, var(--border-strong));
+  background: color-mix(in srgb, #8fd8e8 12%, transparent);
+}
+
+/* ── Summary stats: say what the numbers count ──────────────────────────────
+   One unit label on the pair; the other two spans already carry their own words ("2 outstanding",
+   "Everything is in"), so the headline reads as a sentence instead of stacked labels. */
+.my-work-item__evidence-count::after {
+  content: " artifacts";
+  font-weight: 400;
+  color: var(--muted);
+}
+
+/* ── Native dropdown options: keep them dark ────────────────────────────────
+   The popup list paints its own background; without this the inherited white option text lands
+   on a light surface and vanishes. */
+select.target__select option,
+select.target__select optgroup,
+.my-work-item select.input option {
+  background: #141417;
+  color: #e4e4e7;
+}
+
+select.target__select optgroup {
+  color: #a1a1aa;
+  font-weight: 600;
+}
+
+/* ── People involved: the details block as a color-coded section ────────────
+   Authors, feedback givers and aimed conference each get a full-width row under one heading.
+   Rose, so it stops duplicating the core branch's purple. */
+.paper-slots .paper-slots__details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  border: 1px solid rgba(180, 180, 190, 0.15);
+  border-top: 3px solid rgba(160, 160, 170, 0.4);
+  border-radius: var(--radius-md, var(--radius-sm));
+  background: color-mix(in srgb, #b0b0b8 2%, var(--bg));
+  padding: var(--space-4);
+}
+
+.paper-slots .paper-slots__details::before {
+  content: "People Involved";
+  display: block;
+  margin-bottom: var(--space-3);
+  font-size: 1.05em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #a8a8b0;
+}
+
+.paper-slots .paper-detail {
+  width: 100%;
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.paper-slots .paper-detail:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+/* The subsection stays one unit -- label, value, hint together. Only the value control
+   stretches; the blanket child rule before this made every span its own row. */
+.paper-slots .paper-detail .input {
+  width: 100%;
+}
+
+.paper-slots .paper-detail__label {
+  text-transform: none;
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+}
+
+.paper-slots .paper-detail__readonly {
+  font-size: var(--control-ui-text-sm);
+}
+
+/* ── Venue decision: same section treatment, venue blue ─────────────────────
+   One --vd-text drives the whole component: heading, field captions, and the controls
+   themselves (text, border, ground) all read the current state's hue. */
+.my-work-item .paper-acceptance {
+  --vd-text: #a9bfd6;
+  border: 1px solid rgba(157, 199, 242, 0.16);
+  border-top: 3px solid rgba(90, 155, 214, 0.35);
+  border-radius: var(--radius-md, var(--radius-sm));
+  background: color-mix(in srgb, #9dc7f2 1%, var(--bg));
+  padding: var(--space-3);
+}
+
+.my-work-item .paper-acceptance::before {
+  content: "Venue Decision";
+  grid-column: 1 / -1;
+  margin-bottom: var(--space-2);
+  font-size: 1.05em;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--vd-text);
+}
+
+/* The section heading already says it; the first field's own caption is a duplicate. */
+.my-work-item .paper-acceptance .paper-acceptance__field:first-of-type > .register__label {
+  display: none;
+}
+
+.my-work-item .paper-acceptance .register__label {
+  color: var(--vd-text);
+}
+
+.my-work-item .paper-acceptance .input {
+  color: var(--vd-text);
+  border-color: color-mix(in srgb, var(--vd-text) 30%, transparent);
+  background: color-mix(in srgb, var(--vd-text) 3%, var(--bg));
+}
+
+.my-work-item .paper-acceptance select.input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.2em;
+  color: #fff;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a9bfd6' stroke-width='1.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7em center;
+}
+
+/* The open dropdown paints its own surface, so the state hue has to be restated for its
+   options -- --vd-text inherits this far, the flat dark-option rule further up does not win.
+   The background mixes a visible share of the state hue; text matches. */
+.my-work-item .paper-acceptance select option {
+  background: color-mix(in srgb, var(--vd-text) 14%, #141417);
+  color: var(--vd-text);
+}
+
+.my-work-item .paper-acceptance select option:checked {
+  background: color-mix(in srgb, var(--vd-text) 24%, #141417);
+}
+
+/* Decision state tints -- whisper-level green/red. The decision value is stamped on the card
+   as data-decision (attribute selectors work in every browser, unlike :has()), and --vd-text
+   carries the hue into the heading, captions, controls, and the open dropdown's options.
+   Pending keeps the neutral-blue base above. */
+.my-work-item .paper-acceptance[data-decision="accept"] {
+  --vd-text: #8fc7a4;
+  border-color: rgba(47, 158, 91, 0.18);
+  border-top-color: rgba(47, 158, 91, 0.3);
+  background: color-mix(in srgb, #2f9e5b 1%, var(--bg));
+}
+
+.my-work-item .paper-acceptance[data-decision="reject"] {
+  --vd-text: #d9a8a2;
+  border-color: rgba(209, 69, 59, 0.16);
+  border-top-color: rgba(209, 69, 59, 0.3);
+  background: color-mix(in srgb, #d1453b 1%, var(--bg));
+}
+
+/* Completion row: hint on the left edge, action button on the right edge. The DOM order is
+   [button, hint] (or [done-note, reopen]), so reverse the axis and split the free space. */
+.my-work-item .paper-completion {
+  flex-direction: row-reverse;
+  justify-content: space-between;
 }

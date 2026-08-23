@@ -20,7 +20,7 @@
 // slot is called, what kind of answer it takes, which hosts a link may be on and what it gates are
 // one list that the server validates against and this form renders from -- so a field can never
 // offer a shape the service will refuse.
-import { html, nothing } from "lit";
+import { html, nothing, type TemplateResult } from "lit";
 import {
   adminBotPaperFlowBranchNumber,
   adminBotPaperSlotChartOrder,
@@ -33,6 +33,7 @@ import {
   type AdminBotPaperSlotDefinition,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
+import "./paper-slot-deck.ts";
 import type { PaperflowStageRow, PaperSlotRow } from "../auth/session.ts";
 
 export type PaperDetailsProps = {
@@ -88,11 +89,11 @@ const BRANCH_BLURBS: Record<AdminBotPaperSlotBranch, string> = {
 };
 
 const BRANCH_ICONS: Record<AdminBotPaperSlotBranch, keyof typeof icons> = {
-  core: "fileText",
+  core: "check",
   venue: "send",
-  archive: "archive",
-  social: "globe",
-  talk: "monitor",
+  archive: "radio",
+  social: "alertTriangle",
+  talk: "chevronRight",
 };
 
 const OWNER_LABELS: Record<string, string> = {
@@ -309,23 +310,25 @@ function renderChildSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
           ${definition.required
             ? nothing
             : html`<span class="paper-slot__optional">optional</span>`}
-          <!-- A <details> rather than a tooltip: it works on touch, it is reachable by keyboard,
-               and the answer stays open while the reader types the value it describes. -->
           ${definition.hint
-            ? html`<details class="paper-slot__help">
-                <summary
+            ? html`<span class="paper-slot__help">
+                <span
+                  class="paper-slot__help-trigger"
                   aria-label=${`What goes in ${definition.label}?`}
                   data-testid=${`paper-slot-help-${props.paperId}-${slot}`}
+                  tabindex="0"
                 >
                   ?
-                </summary>
-                <p>${definition.hint}</p>
-                ${definition.example
-                  ? html`<p class="paper-slot__help-example">
-                      For example <code>${definition.example}</code>
-                    </p>`
-                  : nothing}
-              </details>`
+                </span>
+                <span class="paper-slot__help-tip">
+                  ${definition.hint}
+                  ${definition.example
+                    ? html`<span class="paper-slot__help-example">
+                        — e.g. <code>${definition.example}</code>
+                      </span>`
+                    : nothing}
+                </span>
+              </span>`
             : nothing}
         </span>
         ${statusPill(row)}
@@ -357,23 +360,25 @@ function renderSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
           ${definition.required
             ? nothing
             : html`<span class="paper-slot__optional">optional</span>`}
-          <!-- A <details> rather than a tooltip: it works on touch, it is reachable by keyboard,
-               and the answer stays open while the reader types the value it describes. -->
           ${definition.hint
-            ? html`<details class="paper-slot__help">
-                <summary
+            ? html`<span class="paper-slot__help">
+                <span
+                  class="paper-slot__help-trigger"
                   aria-label=${`What goes in ${definition.label}?`}
                   data-testid=${`paper-slot-help-${props.paperId}-${slot}`}
+                  tabindex="0"
                 >
                   ?
-                </summary>
-                <p>${definition.hint}</p>
-                ${definition.example
-                  ? html`<p class="paper-slot__help-example">
-                      For example <code>${definition.example}</code>
-                    </p>`
-                  : nothing}
-              </details>`
+                </span>
+                <span class="paper-slot__help-tip">
+                  ${definition.hint}
+                  ${definition.example
+                    ? html`<span class="paper-slot__help-example">
+                        — e.g. <code>${definition.example}</code>
+                      </span>`
+                    : nothing}
+                </span>
+              </span>`
             : nothing}
         </span>
         ${statusPill(row)}
@@ -500,7 +505,7 @@ function renderDetails(props: PaperSlotsProps) {
       ${save
         ? html`
             <label class="paper-detail">
-              <span class="paper-detail__label">Aimed conference</span>
+              <span class="paper-detail__label">Target conference</span>
               <input
                 class="input"
                 type="text"
@@ -519,7 +524,7 @@ function renderDetails(props: PaperSlotsProps) {
           `
         : html`
             <div class="paper-detail">
-              <span class="paper-detail__label">Aimed conference</span>
+              <span class="paper-detail__label">Target conference</span>
               <p class="paper-detail__readonly">${details.venue || "—"}</p>
             </div>
           `}
@@ -581,6 +586,58 @@ function topLevelSlots(branch: AdminBotPaperSlotBranch): AdminBotPaperSlot[] {
     const definition = adminBotPaperSlotRegistry[slot];
     return definition.branch === branch && !definition.subOf;
   });
+}
+
+/**
+ * Group consecutive top-level slots that share a groupLabel into one card.
+ * Slots without a groupLabel, or whose groupLabel differs from the previous slot, stand alone.
+ */
+function renderGroupedSlots(
+  props: PaperSlotsProps,
+  slots: AdminBotPaperSlot[],
+): TemplateResult[] {
+  const items: TemplateResult[] = [];
+  let i = 0;
+  while (i < slots.length) {
+    const def = adminBotPaperSlotRegistry[slots[i]];
+    const groupLabel = def.groupLabel;
+    if (groupLabel) {
+      const group: AdminBotPaperSlot[] = [];
+      while (i < slots.length && adminBotPaperSlotRegistry[slots[i]].groupLabel === groupLabel) {
+        group.push(slots[i]);
+        i++;
+      }
+      if (group.length === 1) {
+        items.push(renderSlot(props, group[0]));
+      } else {
+        const first = adminBotPaperSlotRegistry[group[0]];
+        const row0 = rowFor(props.slots, group[0]);
+        const blocked0 = waitingOn(first, props.slots);
+        items.push(html`
+          <div
+            class=${`paper-slot paper-slot--grouped ${blocked0 ? "paper-slot--blocked" : ""} ${
+              row0?.status === "invalid" ? "paper-slot--invalid" : ""
+            }`}
+            data-testid=${`paper-slot-row-${props.paperId}-${group[0]}`}
+          >
+            <div class="paper-slot__head">
+              <span class="paper-slot__label">
+                ${groupLabel}
+              </span>
+              ${statusPill(row0)}
+            </div>
+            <div class="paper-slot__children">
+              ${group.map((slot) => renderChildSlot(props, slot))}
+            </div>
+          </div>
+        `);
+      }
+    } else {
+      items.push(renderSlot(props, slots[i]));
+      i++;
+    }
+  }
+  return items;
 }
 
 /** Roughly three rows of the square grid: enough to see the shape of the work, few enough to read. */
@@ -671,9 +728,9 @@ export function renderPaperSlots(props: PaperSlotsProps) {
           : nothing}
       </div>
       ${adminBotPaperSlotChartOrder.map((branch) => {
-        const slots = topLevelSlots(branch).filter(
-          (slot) => showAll || rowIsVisible(slot, visible),
-        );
+        // Every field stays in the deck once shown -- settled ones keep rendering with their
+        // done pill rather than vanishing, so flipping through reviews history too.
+        const slots = topLevelSlots(branch);
         const branchNumber = adminBotPaperFlowBranchNumber[branch];
         // The venue section still draws when it has no open field left: the ladder below it is
         // the half of that branch nobody fills in, and hiding it would hide the paper's position
@@ -682,23 +739,32 @@ export function renderPaperSlots(props: PaperSlotsProps) {
           return nothing;
         }
         return html`
-          <section
+          <details
             class=${`paper-slots__group ${branchNumber === null ? "paper-slots__group--trunk" : "paper-slots__group--branch"}`}
             data-testid=${`paper-slots-branch-${props.paperId}-${branch}`}
+            open
           >
-            <h4 class="paper-slots__group-title">
-              <span class="paper-slots__group-icon" aria-hidden="true"
-                >${icons[BRANCH_ICONS[branch]]}</span
+            <summary class="paper-slots__group-head">
+              <h4 class="paper-slots__group-title">
+                <span class="paper-slots__group-icon" aria-hidden="true"
+                  >${icons[BRANCH_ICONS[branch]]}</span
+                >
+                ${branchNumber === null
+                  ? nothing
+                  : html`<span class="paper-slots__branch-number">Branch ${branchNumber}</span>`}
+                ${BRANCH_LABELS[branch]}
+              </h4>
+              <span class="paper-slots__group-chevron" aria-hidden="true"
+                >${icons.chevronDown}</span
               >
-              ${branchNumber === null
-                ? nothing
-                : html`<span class="paper-slots__branch-number">Branch ${branchNumber}</span>`}
-              ${BRANCH_LABELS[branch]}
-            </h4>
+            </summary>
             <p class="paper-slots__group-blurb">${BRANCH_BLURBS[branch]}</p>
-            <div class="paper-slots__grid">${slots.map((slot) => renderSlot(props, slot))}</div>
+            <adminbot-paper-slot-deck
+              class="paper-slots__deck"
+              .items=${renderGroupedSlots(props, slots)}
+            ></adminbot-paper-slot-deck>
             ${branch === "venue" ? renderStages(props) : nothing}
-          </section>
+          </details>
         `;
       })}
     </div>

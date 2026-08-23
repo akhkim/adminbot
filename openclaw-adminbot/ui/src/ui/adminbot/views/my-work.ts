@@ -508,14 +508,23 @@ function renderAcceptance(paper: AdminBotPaperRecord, props: MyWorkProps) {
       ...fields,
     });
   return html`
-    <div class="paper-acceptance" data-testid=${`paper-acceptance-${paper.id}`}>
+    <div
+      class="paper-acceptance"
+      data-decision=${decision}
+      data-testid=${`paper-acceptance-${paper.id}`}
+    >
       <label class="paper-acceptance__field">
         <span class="register__label">Venue decision</span>
         <select
           class="input"
           data-testid=${`paper-decision-${paper.id}`}
-          @change=${(event: Event) =>
-            save({ venueDecision: (event.target as HTMLSelectElement).value })}
+          @change=${(event: Event) => {
+            const value = (event.target as HTMLSelectElement).value;
+            (event.target as HTMLSelectElement)
+              .closest(".paper-acceptance")
+              ?.setAttribute("data-decision", value);
+            save({ venueDecision: value });
+          }}
         >
           ${["pending", "accept", "reject"].map(
             (value) => html`
@@ -776,9 +785,14 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                   }
                   props.onRerender?.();
                 },
-                // The LinkedIn gate opens the same dialog the card's button does, because that
-                // is the only thing that can actually satisfy it.
-                onOpenDraft: () => openLinkedInDraftDialog(paper, { settings: state.settings }),
+                // Clicking "Write the draft" scrolls to the Social drafts section and opens it.
+                onOpenDraft: (_platform) => {
+                  const el = document.getElementById(`paper-social-drafts-${paper.id}`);
+                  if (el instanceof HTMLDetailsElement) {
+                    el.open = true;
+                    el.scrollIntoView({ behavior: "smooth", block: "start" });
+                  }
+                },
               })}
               ${renderCycle(paper, props)} ${renderStepControls(state, paper, props)}
             `

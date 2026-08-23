@@ -183,11 +183,13 @@ export function openPaperFlowMap(paper: AdminBotPaperRecord): void {
     originY = event.clientY - y;
     canvas.setPointerCapture(event.pointerId);
     canvas.classList.add("is-dragging");
+    event.preventDefault();
   });
   canvas.addEventListener("pointermove", (event) => {
     if (!dragging) {
       return;
     }
+    event.preventDefault();
     x = event.clientX - originX;
     y = event.clientY - originY;
     apply();

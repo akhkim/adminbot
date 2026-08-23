@@ -238,7 +238,6 @@
 }
 
 .paper-slot--invalid {
-  border-color: var(--danger);
 }
 
 .paper-slot__head {
@@ -696,8 +695,6 @@
   flex-direction: column;
   gap: var(--space-3);
   margin-top: var(--space-2);
-  padding-left: var(--space-3);
-  border-left: 1px solid var(--border);
 }
 
 .paper-slot__child {
@@ -707,7 +704,6 @@
 }
 
 .paper-slot__child--invalid .paper-slot__child-label {
-  color: var(--danger);
 }
 
 .paper-slot__child-head {
@@ -718,9 +714,13 @@
 }
 
 .paper-slot__child-label {
-  font-size: var(--control-ui-text-xs);
+  font-size: var(--control-ui-text-sm);
   font-weight: 600;
   color: var(--text);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
 }
 
 /* --- The venue ladder: watched, not filled in ---
