@@ -8357,3 +8357,10 @@
   font-weight: 400;
   color: var(--text-muted);
 }
+
+/* Who was asked, shown to everyone who was not. Quiet: it is context, not a task. */
+.decision-todo__owner {
+  color: var(--text-muted);
+  font-size: 0.9em;
+  align-self: center;
+}

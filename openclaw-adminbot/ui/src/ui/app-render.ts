@@ -3447,6 +3447,9 @@ export function renderApp(state: AppViewState) {
               // Chasing the lab is an admin act and it lives on Active Papers now. A member
               // opening their own page gets their work, and nothing pointed at anyone else.
               canNudge: false,
+              // The pre-registration and decision banners belong to whoever is reading. Active
+              // Papers, which shares this renderer, does not set this.
+              personal: true,
             })
           : nothing}
         <!-- Active Papers: the same cards, the same fields and the same writes as a member's own

@@ -28,6 +28,7 @@ import { PRE_REGISTRATION_VENUES } from "./venue-targets.ts";
 import {
   ADMINBOT_BCC,
   buildCoauthorEmail,
+  firstFullMemberAuthor,
   coauthorEmails,
   hasPlaceholders,
   unreachableAuthors,
@@ -294,7 +295,7 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
             >
               TODO · email the coauthors
             </button>`
-          : nothing}
+          : renderEmailOwnerNote(props)}
       </div>
       ${props.isEmailOwner && props.email?.open
         ? renderEmailTask(props, venue)
@@ -303,6 +304,28 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
   `;
 }
 
+
+/**
+ * What the other coauthors see where the sender sees a TODO.
+ *
+ * Silence was the old answer, and it was unreadable in both directions: somebody who should have
+ * been asked could not tell whether the rule had picked them and failed to draw, or picked
+ * somebody else on purpose. Naming the person makes a wrong pick visible the moment it happens
+ * -- which is how the roster spelling that hid Terry stayed hidden for a week.
+ */
+function renderEmailOwnerNote(props: DecisionBannerProps) {
+  const owner = firstFullMemberAuthor(props.paper, props.members);
+  if (!owner) {
+    // No full member on the author list at all: the duty has no owner, and saying so is the only
+    // way anybody finds out. Usually it means a roster name is spelled differently here.
+    return html`<span class="decision-todo__owner">
+      No Jinesis member matched this author list, so nobody has been asked to email the coauthors.
+    </span>`;
+  }
+  return html`<span class="decision-todo__owner">
+    ${owner.name} is asked to email the coauthors.
+  </span>`;
+}
 
 /**
  * The one task this decision creates for a person rather than for the record.

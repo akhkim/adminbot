@@ -68,6 +68,7 @@ type DrawOptions = {
   nudgeSelected?: string[];
   notice?: string | null;
   error?: string | null;
+  personal?: boolean;
 };
 
 function draw(options: DrawOptions = {}) {
@@ -108,6 +109,7 @@ function draw(options: DrawOptions = {}) {
     onSaveSlot: () => {},
     onNudgeAuthors: () => nudges.push(1),
     memberId: "ada",
+    personal: options.personal ?? false,
     memberName: (id: string) => id,
     onSaveDraft: () => {},
     onCirculateDraft: () => {},
@@ -527,3 +529,29 @@ describe("Active Papers draws the same workspace", () => {
     );
   });
 });
+
+describe("the banners above the list", () => {
+  const decided = {
+    id: "d1",
+    title: "A decided paper",
+    authors: ["Ada Lovelace"],
+    current_step: "submission",
+    venue_decision: "accept",
+    accepted_venue: "EMNLP 2026",
+  } as never;
+
+  it("draws the decision banner on the member's own page", () => {
+    const { container } = draw({ scopedPapers: [decided], personal: true });
+    expect(container.querySelector('[data-testid="decision-banner-d1"]')).not.toBeNull();
+  });
+
+  it("draws none of them on Active Papers", () => {
+    // The admin view shares this renderer for the cards and the writes. The banners are addressed
+    // to one person: a decision prompt on somebody else's paper invites an admin to answer a
+    // question that was asked of the author.
+    const { container } = draw({ scopedPapers: [decided] });
+    expect(container.querySelector('[data-testid="decision-banner-d1"]')).toBeNull();
+    expect(container.querySelector('[data-testid="prereg-open"]')).toBeNull();
+  });
+});
+

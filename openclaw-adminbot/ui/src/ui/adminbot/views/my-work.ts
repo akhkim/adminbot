@@ -116,6 +116,15 @@ export type MyWorkProps = {
   ) => void;
   onNudgeAuthors: () => void;
   /** The signed-in member, so their own consent rows get buttons and nobody else's do. */
+  /**
+   * The member's own page, rather than the admin view over every paper in the lab.
+   *
+   * Active Papers reuses this renderer to get the same cards and the same writes, and that is
+   * worth keeping -- but the banners above the list are addressed to one person. "137 of your 137
+   * papers not registered" and a decision prompt on somebody else's paper are both wrong there,
+   * and the second one invites an admin to answer a question that was asked of the author.
+   */
+  personal?: boolean;
   memberId: string | null;
   memberName: (memberId: string) => string;
   onSaveDraft: (paperId: string, platform: string, body: string) => void;
@@ -1502,7 +1511,16 @@ function renderDecisionBanners(
       members,
       // One person per paper is asked, and author order decides who, so everybody can predict
       // the answer from the paper rather than from who opened AdminBot first.
-      isEmailOwner: firstFullMemberAuthor(paper, members)?.id === memberId,
+      // Matched on id where the session carries one, and on name otherwise. A member whose
+      // roster row is not the row the session names -- a duplicate entry, an import that made a
+      // second row -- would otherwise be told nothing at all on their own paper.
+      isEmailOwner: (() => {
+        const owner = firstFullMemberAuthor(paper, members);
+        if (!owner) {
+          return false;
+        }
+        return owner.id === memberId || isSamePerson(owner.name, props.memberName(memberId));
+      })(),
       email: emailTasks.get(paper.id) ?? null,
       onToggleEmail: () => {
         const current = emailTasks.get(paper.id);
@@ -1655,8 +1673,10 @@ export function renderMyWork(state: AppViewState, props: MyWorkProps) {
 
   return html`
     <div class="my-work">
-      ${renderPreRegistrationBanner(items, props)}
-      ${renderDecisionBanners(items, props, state.adminBotData?.members ?? [])}
+      ${props.personal ? renderPreRegistrationBanner(items, props) : nothing}
+      ${props.personal
+        ? renderDecisionBanners(items, props, state.adminBotData?.members ?? [])
+        : nothing}
       ${renderBlockers(state, items)}
       <section class="my-work__section">
         <div class="my-work__section-head">
