@@ -1473,17 +1473,15 @@ function renderDecisionBanners(
   if (!memberId) {
     return nothing;
   }
-  // Every decided paper, answered or not. The banner is the record of the decision as well as
-  // the prompt for it, so it does not leave when the prompt is satisfied.
-  const waiting = papers.filter((paper) => decisionOf(paper) !== null);
+  // Every paper, decided or not. An undecided one draws as a single line offering the two
+  // answers: the surface built to carry the news is also the one that records it, which is what
+  // makes the feature usable on a database where nothing has been decided yet.
+  const waiting = papers;
   if (waiting.length === 0) {
     return nothing;
   }
   return html`${waiting.map((paper) => {
     const decision = decisionOf(paper);
-    if (!decision) {
-      return nothing;
-    }
     // "Saved" survives a re-render but not a fresh page load, where the stored flag takes over.
     // An edit since the last write beats both.
     const saved =
@@ -1510,7 +1508,10 @@ function renderDecisionBanners(
           open: !current?.open,
           body:
             current?.body ??
-            buildCoauthorEmail(paper, decision, venueOf(paper), props.memberName(memberId)).body,
+            (decision
+              ? buildCoauthorEmail(paper, decision, venueOf(paper), props.memberName(memberId))
+                  .body
+              : ""),
         });
         props.onRerender?.();
       },
@@ -1521,7 +1522,9 @@ function renderDecisionBanners(
       onResetEmail: () => {
         emailTasks.set(paper.id, {
           open: true,
-          body: buildCoauthorEmail(paper, decision, venueOf(paper), props.memberName(memberId)).body,
+          body: decision
+            ? buildCoauthorEmail(paper, decision, venueOf(paper), props.memberName(memberId)).body
+            : "",
         });
         props.onRerender?.();
       },
@@ -1531,6 +1534,19 @@ function renderDecisionBanners(
         dirtyDecisions.add(paper.id);
         props.onRerender?.();
       },
+      onDecide: (next) =>
+        props.onSavePaper({
+          id: paper.id,
+          title: paper.title,
+          authors: paper.authors ?? [],
+          currentStep: paper.current_step as AdminBotPaperStep,
+          venueDecision: next,
+          // The venue already named on the paper becomes the accepted one, so the banner has
+          // something to say beyond "accepted to the venue".
+          ...(next === "accept" && paper.artifacts?.conference
+            ? { acceptedVenue: paper.artifacts.conference }
+            : {}),
+        }),
       onDraft: (patch) => {
         decisionDrafts.set(paper.id, { ...draft, ...patch });
         // Any change re-arms the button: "Saved" must never describe something older than the
