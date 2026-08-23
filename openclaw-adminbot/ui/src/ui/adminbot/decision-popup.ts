@@ -95,16 +95,16 @@ function seenStamp(paper: AdminBotPaperRecord, decision: string): string {
  * the paper was accepted to, so that is the one the banner names.
  */
 export function displayVenue(paper: AdminBotPaperRecord): string {
-  const accepted = paper.accepted_venue?.trim();
-  if (accepted) {
-    return accepted;
-  }
-  const conference = paper.artifacts?.conference?.trim();
-  if (!conference) {
+  const raw = paper.accepted_venue?.trim() || paper.artifacts?.conference?.trim();
+  if (!raw) {
     return "the venue";
   }
-  return /committed to\s+(.+)$/iu.exec(conference)?.[1]?.trim() || conference;
+  // Applied to both fields, not just the fallback. The deployed rows carry the whole sentence in
+  // accepted_venue as well, which is how "Accepted to ARR Acceptance; to be committed to EMNLP"
+  // survived the first pass at this.
+  return /committed to\s+(.+)$/iu.exec(raw)?.[1]?.trim() || raw;
 }
+
 
 export type DecisionBannerProps = {
   paper: AdminBotPaperRecord;

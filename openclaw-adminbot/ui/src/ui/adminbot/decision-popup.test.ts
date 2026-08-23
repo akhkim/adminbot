@@ -63,7 +63,8 @@ describe("what the banner calls the venue", () => {
     expect(displayVenue(withVenue("EMNLP 2026", "ARR"))).toBe("EMNLP 2026");
   });
 
-  it("names the conference an ARR commitment points at", () => {
+  it("names the conference an ARR commitment points at, from either field", () => {
+    expect(displayVenue(withVenue("ARR Acceptance; to be committed to EMNLP"))).toBe("EMNLP");
     // Straight from a real row. Printing it whole gave "Accepted to ARR Acceptance; to be
     // committed to EMNLP", which reads as a bug even though every word of it is true.
     expect(displayVenue(withVenue(undefined, "ARR Acceptance; to be committed to EMNLP"))).toBe(
