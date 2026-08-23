@@ -1,4 +1,9 @@
 import { createHash, randomUUID } from "node:crypto";
+import {
+  adminBotTimelineEntryTarget,
+  isAdminBotFullMember,
+  type AdminBotProfileReminderScope,
+} from "../contracts/actions.js";
 import type {
   AdminBotAccessGrant,
   AdminBotAccountRegistration,
@@ -65,6 +70,21 @@ import {
   isAdminBotTimezone,
 } from "../contracts/actions.js";
 import {
+  adminBotFeedbackCommentMax,
+  adminBotFeedbackId,
+  adminBotFeedbackMaxRating,
+  adminBotFeedbackMinRating,
+  summarizeAdminBotFeedback,
+  type AdminBotFeedbackEntry,
+  type AdminBotFeedbackSummary,
+} from "../contracts/feedback.js";
+import {
+  findDuplicateMembers,
+  planMemberMerge,
+  type MemberDuplicatePair,
+  type MemberMergeConflict,
+} from "../contracts/member-duplicates.js";
+import {
   adminBotAttendanceStates,
   adminBotAttendeeKey,
   adminBotNudgeDomains,
@@ -83,6 +103,14 @@ import {
   type AdminBotPaperSlotOwner,
   type AdminBotPaperSlotRecord,
 } from "../contracts/paper-slots.js";
+import {
+  adminBotWeeklyUpdateBodyMax,
+  adminBotWeekStart,
+  buildWeeklyUpdateMessage,
+  findWeeklyUpdateGaps,
+  type AdminBotPaperWeeklyUpdate,
+  type AdminBotWeeklyUpdateGap,
+} from "../contracts/paper-weekly-updates.js";
 import {
   adminBotPaperflowEvidenceMinConfidence,
   adminBotPaperflowStageRegistry,
@@ -128,6 +156,11 @@ import {
   resolveMemberOnboarding,
   setOnboardingStepStatus,
 } from "../workflows/onboarding/onboarding.js";
+import {
+  authorMemberIds,
+  authorNamesFromLinks,
+  buildAuthorLinks,
+} from "../workflows/papers/author-links.js";
 import {
   memberRelevanceNeedles,
   textMatchesNeedles,
@@ -189,6 +222,17 @@ export type AdminBotServiceStore = {
   saveLabMember(member: AdminBotLabMember): void;
   getLabMember(memberId: string): AdminBotLabMember | undefined;
   listLabMembers(): AdminBotLabMember[];
+  /** Removes one roster row. False when there was nothing to remove. */
+  deleteLabMember(memberId: string): boolean;
+  /**
+   * Repoints every record that names one member at another, returning what moved per table.
+   *
+   * The store owns this rather than the service because the store is the only layer that knows
+   * which tables carry a member id -- a merge that missed one would leave a reimbursement or a
+   * consent row pointing at an id that no longer exists, which reads downstream as the person
+   * never having been asked.
+   */
+  reassignMemberReferences(fromMemberId: string, toMemberId: string): Record<string, number>;
   // Returns the events actually inserted. A change already on record is ignored rather than
   // re-dated, so re-scanning cannot make an old move look like it just happened.
   recordCvChanges(events: AdminBotCvChangeEvent[]): AdminBotCvChangeEvent[];
@@ -274,6 +318,15 @@ export type AdminBotServiceStore = {
   revokeSession(tokenHash: string, revokedAt: string): void;
   revokeSessionsForMember(memberId: string, revokedAt: string): void;
   pruneSessionsBefore(cutoffIso: string): number;
+  /** Upserts one author's account of one week on one paper. Re-saving the same week replaces. */
+  savePaperWeeklyUpdate(update: AdminBotPaperWeeklyUpdate): void;
+  listPaperWeeklyUpdates(params?: {
+    paperId?: string;
+    weekStart?: string;
+  }): AdminBotPaperWeeklyUpdate[];
+  /** Upserts one member's verdict on one surface. Re-rating replaces; see contracts/feedback.ts. */
+  saveFeedback(entry: AdminBotFeedbackEntry): void;
+  listFeedback(featureId?: string): AdminBotFeedbackEntry[];
   saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void;
   getSlackChannelNamingRecord(channelId: string): AdminBotSlackChannelNamingRecord | undefined;
   listSlackChannelNamingRecords(): AdminBotSlackChannelNamingRecord[];
@@ -987,6 +1040,353 @@ export class AdminBotService {
     return { ok: true, status: 200, payload: { members: this.store.listLabMembers() } };
   }
 
+  /**
+   * One author's account of their own week on one paper.
+   *
+   * A member writes their own entry and nobody else's -- not even an admin, who gets no exception
+   * here for the same reason they get none on a reimbursement they did not make: the value of the
+   * log is that each line is first-hand. What an admin can do is read it and chase a missing one.
+   *
+   * The week is the caller's only when they say so: an entry defaults to the week containing
+   * `now`, so the ordinary case (writing on Sunday about the week just ending) needs no date at
+   * all, and back-filling last week is possible but deliberate.
+   */
+  savePaperWeeklyUpdate(params: {
+    paperId: string;
+    memberId: string;
+    body: string;
+    weekStart?: string;
+    nowIso?: string;
+  }): AdminBotServiceResponse<{ update: AdminBotPaperWeeklyUpdate }> {
+    const paper = this.store.getPaper(params.paperId);
+    if (!paper) {
+      return serviceError(404, "paper not found");
+    }
+    const member = this.store.getLabMember(params.memberId);
+    if (!member) {
+      return serviceError(404, "member not found");
+    }
+    const body = params.body.trim().slice(0, adminBotWeeklyUpdateBodyMax);
+    if (!body) {
+      return serviceError(400, "a weekly update needs something in it");
+    }
+    const now = params.nowIso ?? new Date().toISOString();
+    const weekStart = params.weekStart ?? adminBotWeekStart(now);
+    if (!/^\d{4}-\d{2}-\d{2}$/u.test(weekStart)) {
+      return serviceError(400, "week_start must be a YYYY-MM-DD date");
+    }
+    const existing = this.store
+      .listPaperWeeklyUpdates({ paperId: params.paperId, weekStart })
+      .find((update) => update.member_id === params.memberId);
+    const update: AdminBotPaperWeeklyUpdate = {
+      paper_id: params.paperId,
+      member_id: params.memberId,
+      week_start: weekStart,
+      body,
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
+    };
+    this.store.savePaperWeeklyUpdate(update);
+    this.recordAudit({
+      type: "paper_weekly_update.saved",
+      actor: params.memberId,
+      // The prose stays out of the audit line: it is somebody's account of their own week, and
+      // the audit log is read by more people than the paper card is.
+      details: { paper_id: params.paperId, week_start: weekStart },
+    });
+    return { ok: true, status: 200, payload: { update } };
+  }
+
+  listPaperWeeklyUpdates(
+    paperId: string,
+  ): AdminBotServiceResponse<{ updates: AdminBotPaperWeeklyUpdate[] }> {
+    return {
+      ok: true,
+      status: 200,
+      payload: { updates: this.store.listPaperWeeklyUpdates({ paperId }) },
+    };
+  }
+
+  /**
+   * Who has not written their entry for the week containing `nowIso`.
+   *
+   * The preview behind the Sunday sweep, and the same walk it sends from. Dormant and closed
+   * papers are left out: nobody owes a weekly line on a paper that is resting or rejected, and a
+   * sweep that asked would teach people to ignore it.
+   */
+  collectWeeklyUpdateGaps(nowIso?: string): AdminBotServiceResponse<{
+    week_start: string;
+    gaps: AdminBotWeeklyUpdateGap[];
+  }> {
+    const now = nowIso ? new Date(nowIso) : new Date();
+    const weekStart = adminBotWeekStart(now);
+    const papers = this.store
+      .listPapers()
+      .filter((paper) => !isPaperDormant(paper, now) && !isPaperClosed(paper))
+      .map((paper) => ({
+        id: paper.id,
+        title: paper.title,
+        // Everyone on the author list the roster can name, first author included. A weekly line is
+        // asked of the people doing the work, which is not the same set as the one slot ownership
+        // picks out -- that one names a single person to chase for an artifact.
+        member_ids: [
+          ...this.resolvePaperSlotOwner(paper, "first_author"),
+          ...this.resolvePaperSlotOwner(paper, "coauthors"),
+        ],
+      }));
+    const gaps = findWeeklyUpdateGaps({
+      papers,
+      updates: this.store.listPaperWeeklyUpdates({ weekStart }),
+      weekStart,
+    });
+    return { ok: true, status: 200, payload: { week_start: weekStart, gaps } };
+  }
+
+  /**
+   * The Sunday pass: one Slack message per person, listing every paper they owe a line on.
+   *
+   * Cadence is a property of the product, not of whatever schedule invokes it -- the audit ledger
+   * records who was asked about which week, so a crontab that fires hourly, a manual press and two
+   * hosts running the same job cannot turn this into a nag. That is also why the week is in the
+   * ledger key: the same person is asked again next week, and only next week.
+   */
+  async sendWeeklyUpdateNudges(
+    actor: string,
+    nowIso?: string,
+  ): Promise<
+    AdminBotServiceResponse<AdminBotMemberNudgeResult & { week_start: string; asked: string[] }>
+  > {
+    const collected = this.collectWeeklyUpdateGaps(nowIso);
+    if (!collected.ok) {
+      return collected;
+    }
+    const { week_start: weekStart, gaps } = collected.payload;
+    const alreadyAsked = this.weeklyUpdateAskedFor(weekStart);
+    const byMember = new Map<string, string[]>();
+    for (const gap of gaps) {
+      if (alreadyAsked.has(gap.member_id)) {
+        continue;
+      }
+      byMember.set(gap.member_id, [...(byMember.get(gap.member_id) ?? []), gap.paper_title]);
+    }
+    const created: AdminBotMemberNudgeResult["created"] = [];
+    const skipped: AdminBotMemberNudgeResult["skipped"] = [];
+    const asked: string[] = [];
+    for (const [memberId, titles] of byMember) {
+      const result = await this.sendMemberNudge(
+        {
+          channel: "slack",
+          recipient_member_ids: [memberId],
+          message: buildWeeklyUpdateMessage({ titles, weekStart }),
+        },
+        actor,
+      );
+      if (!result.ok) {
+        skipped.push({ member_id: memberId, reason: result.error.message });
+        continue;
+      }
+      created.push(...result.payload.created);
+      skipped.push(...result.payload.skipped);
+      if (result.payload.created.length > 0) {
+        asked.push(memberId);
+      }
+    }
+    if (asked.length > 0) {
+      this.recordAudit({
+        type: "paper_weekly_updates.nudged",
+        actor,
+        details: { week_start: weekStart, member_ids: asked },
+      });
+    }
+    return { ok: true, status: 200, payload: { created, skipped, week_start: weekStart, asked } };
+  }
+
+  /** Members already asked about this week, from the audit ledger. */
+  private weeklyUpdateAskedFor(weekStart: string): Set<string> {
+    const asked = new Set<string>();
+    for (const event of this.store.listAuditEvents()) {
+      if (event.type !== "paper_weekly_updates.nudged") {
+        continue;
+      }
+      const details = event.details as { week_start?: unknown; member_ids?: unknown } | undefined;
+      if (details?.week_start !== weekStart || !Array.isArray(details.member_ids)) {
+        continue;
+      }
+      for (const id of details.member_ids) {
+        if (typeof id === "string") {
+          asked.add(id);
+        }
+      }
+    }
+    return asked;
+  }
+
+  /**
+   * Every pair of roster rows that looks like one person.
+   *
+   * Read-only and computed on demand -- see findDuplicateMembers for why it is not an index. This
+   * is the list behind the Lab Members duplicates panel; nothing merges without an admin naming
+   * both ids.
+   */
+  listDuplicateMembers(): AdminBotServiceResponse<{
+    pairs: MemberDuplicatePair<AdminBotLabMember>[];
+  }> {
+    return {
+      ok: true,
+      status: 200,
+      payload: { pairs: findDuplicateMembers(this.store.listLabMembers()) },
+    };
+  }
+
+  /**
+   * Fold one roster row into another and retire it.
+   *
+   * The lab's two ingestion paths -- the Quick-Start survey and the Slack member export -- write
+   * different halves of the same person under different ids, so "Terry Jingchen Zhang" holds the
+   * career detail and "Terry Zhang" holds the Slack id and the address. Neither page shows the
+   * whole person, and every count that walks the roster counts them twice.
+   *
+   * Three things happen, in this order, and the order matters:
+   *
+   *   1. the survivor gains everything only the duplicate knew (planMemberMerge; a disagreement
+   *      is kept as the survivor's answer and reported, never silently resolved)
+   *   2. every row that named the duplicate is repointed at the survivor, including the login
+   *      credential -- if the survivor has none of their own
+   *   3. the duplicate's sessions are revoked and the row is deleted
+   *
+   * Reversible only from the audit line, which is why that line carries the whole retired record
+   * rather than its id: undoing a merge means re-creating it, and a merge is easy to regret when
+   * two people really do share a name.
+   */
+  mergeLabMembers(params: {
+    survivorId: string;
+    duplicateId: string;
+    actorId: string;
+  }): AdminBotServiceResponse<{
+    member: AdminBotLabMember;
+    conflicts: MemberMergeConflict[];
+    moved: Record<string, number>;
+  }> {
+    if (params.survivorId === params.duplicateId) {
+      return serviceError(400, "a member cannot be merged into themselves");
+    }
+    const survivor = this.store.getLabMember(params.survivorId);
+    if (!survivor) {
+      return serviceError(404, "member not found");
+    }
+    const duplicate = this.store.getLabMember(params.duplicateId);
+    if (!duplicate) {
+      return serviceError(404, "duplicate member not found");
+    }
+    const now = new Date().toISOString();
+    const { patch, conflicts } = planMemberMerge(
+      survivor as unknown as Record<string, unknown>,
+      duplicate as unknown as Record<string, unknown>,
+    );
+    const merged: AdminBotLabMember = {
+      ...survivor,
+      ...(patch as Partial<AdminBotLabMember>),
+      id: survivor.id,
+      updated_at: now,
+    };
+    this.store.saveLabMember(merged);
+    const moved = this.store.reassignMemberReferences(params.duplicateId, params.survivorId);
+    this.store.revokeSessionsForMember(params.duplicateId, now);
+    this.store.deleteLabMember(params.duplicateId);
+    this.recordAudit({
+      type: "lab_member.merged",
+      actor: params.actorId,
+      details: {
+        survivor_id: params.survivorId,
+        duplicate_id: params.duplicateId,
+        moved,
+        conflicts,
+        // The whole retired record: a merge has no undo, and an id alone would not be enough to
+        // put back what was folded in.
+        retired_record: duplicate,
+      },
+    });
+    return { ok: true, status: 200, payload: { member: merged, conflicts, moved } };
+  }
+
+  /**
+   * Record what somebody thought of one surface.
+   *
+   * Any principal may write one, including an anonymous caller: the widget sits behind a login
+   * today, but refusing unauthenticated feedback would mean the first public surface to carry it
+   * silently drops every rating. What an anonymous row cannot do is accumulate -- it keys on the
+   * feature alone, so the last one stands (see adminBotFeedbackId).
+   *
+   * The rating is validated rather than clamped. A 0 or a 7 means the caller and this service
+   * disagree about the scale, and quietly turning it into a 1 or a 5 would put a number nobody
+   * chose into the average.
+   */
+  recordFeedback(input: {
+    featureId: string;
+    rating: number;
+    comment?: string;
+    githubFile?: string;
+    memberId?: string;
+    memberName?: string;
+  }): AdminBotServiceResponse<{ entry: AdminBotFeedbackEntry }> {
+    const featureId = input.featureId.trim();
+    if (!featureId) {
+      return serviceError(400, "feedback needs a feature id");
+    }
+    if (
+      !Number.isInteger(input.rating) ||
+      input.rating < adminBotFeedbackMinRating ||
+      input.rating > adminBotFeedbackMaxRating
+    ) {
+      return serviceError(
+        400,
+        `rating must be a whole number from ${adminBotFeedbackMinRating} to ${adminBotFeedbackMaxRating}`,
+      );
+    }
+    const now = new Date().toISOString();
+    const id = adminBotFeedbackId(featureId, input.memberId);
+    const existing = this.store.listFeedback(featureId).find((entry) => entry.id === id);
+    const comment = input.comment?.trim().slice(0, adminBotFeedbackCommentMax);
+    const entry: AdminBotFeedbackEntry = {
+      id,
+      feature_id: featureId,
+      rating: input.rating,
+      ...(comment ? { comment } : {}),
+      ...(input.githubFile ? { github_file: input.githubFile } : {}),
+      ...(input.memberId ? { member_id: input.memberId } : {}),
+      ...(input.memberName ? { member_name: input.memberName } : {}),
+      // Kept from the first submission: "when did this person first tell us" is the question a
+      // changed rating should not be able to reset.
+      submitted_at: existing?.submitted_at ?? now,
+      updated_at: now,
+    };
+    this.store.saveFeedback(entry);
+    this.recordAudit({
+      type: "feedback.recorded",
+      ...(input.memberId ? { actor: input.memberId } : {}),
+      details: { feature_id: featureId, rating: input.rating, has_comment: Boolean(comment) },
+    });
+    return { ok: true, status: 200, payload: { entry } };
+  }
+
+  /**
+   * Every verdict, and the per-surface summary over them.
+   *
+   * Worst-rated first: the list exists to find what is not working, and a table sorted by feature
+   * name buries that under whatever happens to start with an A.
+   */
+  listFeedback(featureId?: string): AdminBotServiceResponse<{
+    entries: AdminBotFeedbackEntry[];
+    summaries: AdminBotFeedbackSummary[];
+  }> {
+    const entries = this.store.listFeedback(featureId);
+    return {
+      ok: true,
+      status: 200,
+      payload: { entries, summaries: summarizeAdminBotFeedback(entries) },
+    };
+  }
+
   // Self-service profile edit for a member principal. Only the whitelisted profile fields are
   // writable here; privilege_level/access_overrides/status/email are governance-owned and never
   // accepted from the member's own request so a member cannot escalate their own access.
@@ -1072,8 +1472,23 @@ export class AdminBotService {
   // A member owns a paper they filed, or one that names them in `authors`. Author entries are free
   // text, so an id or email matches outright while a bare name only counts when it is unambiguous
   // on the roster — otherwise two people sharing a name would inherit each other's edit rights.
+  /**
+   * Whose paper is this?
+   *
+   * Everyone who wrote it, not whoever filed it. `author_links` is the answer somebody recorded
+   * when they picked the author, and it is checked first because it is the only one of these that
+   * is not a guess. The name matching below it survives for papers written before the picker
+   * existed -- it is why the first save on an old paper quietly links it, after which this method
+   * never has to guess about that paper again.
+   */
   private memberOwnsPaper(member: AdminBotLabMember, paper: AdminBotPaperRecord): boolean {
     if (paper.submitted_by_member_id === member.id) {
+      return true;
+    }
+    if (paper.first_author_member_id === member.id) {
+      return true;
+    }
+    if (authorMemberIds(paper.author_links ?? []).includes(member.id)) {
       return true;
     }
     const authors = paper.authors.map((author) => author.trim().toLocaleLowerCase());
@@ -1149,10 +1564,24 @@ export class AdminBotService {
       // Both name lists are trimmed and de-blanked on write rather than on read. The stage sweep
       // matches authors by name and an empty row would look like an author nobody can resolve,
       // which reads as "this paper has no lab member on it" -- the one state that stops the chase.
-      authors: normalizeNameList(paper.authors),
+      // The author list, resolved to people. `authors` is regenerated from the links rather than
+      // stored alongside them, so the printed spelling and the identities behind it cannot drift;
+      // a caller that sent only names gets whatever the roster can unambiguously name linked for
+      // them, which is what repairs every paper filed before the picker existed.
+      ...(() => {
+        const links = buildAuthorLinks({
+          ...(paper.author_links ? { links: paper.author_links } : {}),
+          names: paper.authors,
+          roster: this.store.listLabMembers(),
+        });
+        return { author_links: links, authors: authorNamesFromLinks(links) };
+      })(),
       ...(paper.feedback_givers === undefined
         ? {}
         : { feedback_givers: normalizeNameList(paper.feedback_givers) }),
+      // Trimmed on write like the name lists, so "cleared" is an empty string rather than a field
+      // holding a newline that reads as filled in everywhere it is checked.
+      ...(paper.author_roles === undefined ? {} : { author_roles: paper.author_roles.trim() }),
       artifacts: {
         ...existing?.artifacts,
         ...paper.artifacts,
@@ -1210,6 +1639,8 @@ export class AdminBotService {
     reimbursements: AdminBotPaperReimbursementRecord[];
     /** The venue ladder, in order, with the mail that closed each rung. */
     paperflow_stages: AdminBotPaperflowStageView[];
+    /** Who wrote what about their own week, newest week first. */
+    weekly_updates: AdminBotPaperWeeklyUpdate[];
     cycle_closed: boolean;
     missing_acceptance_details: string[];
   }> {
@@ -1235,6 +1666,10 @@ export class AdminBotService {
         attendees,
         reimbursements,
         paperflow_stages: this.paperflowStageViews(paper, stored),
+        // Carried on the same read as the rest of the cycle: the card opens once and the weekly
+        // log is part of what "this paper right now" means, so a second fetch would only add a
+        // second thing that can be stale.
+        weekly_updates: this.store.listPaperWeeklyUpdates({ paperId }),
         cycle_closed: isCycleClosed({
           paper,
           slots: stored,
@@ -2377,17 +2812,26 @@ export class AdminBotService {
     const byName = new Map(
       roster.map((member) => [member.name.trim().toLocaleLowerCase(), member]),
     );
+    // The recorded links first, name matching only for the papers that have none. External
+    // coauthors carry no roster id, so they fall out of every one of these lists by construction
+    // -- which is the whole point of recording them as emails rather than as half-members.
+    const linked = authorMemberIds(paper.author_links ?? []);
     const firstAuthor =
       paper.first_author_member_id ??
       paper.submitted_by_member_id ??
+      linked[0] ??
       byName.get((paper.authors[0] ?? "").trim().toLocaleLowerCase())?.id;
     switch (owner) {
       case "first_author":
         return firstAuthor ? [firstAuthor] : [];
       case "coauthors":
-        return paper.authors
-          .map((name) => byName.get(name.trim().toLocaleLowerCase())?.id)
-          .filter((id): id is string => Boolean(id) && id !== firstAuthor);
+        return (
+          linked.length > 0
+            ? linked
+            : paper.authors
+                .map((name) => byName.get(name.trim().toLocaleLowerCase())?.id)
+                .filter((id): id is string => Boolean(id))
+        ).filter((id) => id !== firstAuthor);
       case "pi": {
         const head =
           paper.reminder?.head_professor_member_id ??
@@ -3384,6 +3828,82 @@ export class AdminBotService {
    *   - notes keeps whatever prose remains, and is cleared only when nothing is left.
    * Re-running it is a no-op once the lines are gone, so a partial run is safe to repeat.
    */
+  /**
+   * Link the author lists of every paper that predates the picker.
+   *
+   * Without this, an old paper only becomes visible to its coauthors the next time somebody saves
+   * it -- which for a finished paper is never. One pass fixes the back catalogue; after it, the
+   * links are maintained by the card.
+   *
+   * `dryRun` is the default. The pass rewrites the author list of every paper in the lab, and
+   * seeing what it would link before it links it is worth one extra call.
+   */
+  backfillPaperAuthorLinks(params: { actor: string; dryRun?: boolean }): AdminBotServiceResponse<{
+    dry_run: boolean;
+    papers_scanned: number;
+    papers_updated: number;
+    authors_linked: number;
+    unresolved: Array<{ paper_id: string; name: string }>;
+  }> {
+    const dryRun = params.dryRun !== false;
+    const roster = this.store.listLabMembers();
+    const papers = this.store.listPapers();
+    const now = new Date().toISOString();
+    let papersUpdated = 0;
+    let authorsLinked = 0;
+    const unresolved: Array<{ paper_id: string; name: string }> = [];
+    for (const paper of papers) {
+      const links = buildAuthorLinks({
+        ...(paper.author_links ? { links: paper.author_links } : {}),
+        names: paper.authors,
+        roster,
+      });
+      const before = JSON.stringify(paper.author_links ?? []);
+      const linkedNow = links.filter((link) => link.member_id || link.email).length;
+      const linkedBefore = (paper.author_links ?? []).filter(
+        (link) => link.member_id || link.email,
+      ).length;
+      for (const link of links) {
+        if (!link.member_id && !link.email) {
+          unresolved.push({ paper_id: paper.id, name: link.name });
+        }
+      }
+      if (before === JSON.stringify(links)) {
+        continue;
+      }
+      papersUpdated += 1;
+      authorsLinked += Math.max(0, linkedNow - linkedBefore);
+      if (!dryRun) {
+        this.store.savePaper({
+          ...paper,
+          author_links: links,
+          authors: authorNamesFromLinks(links),
+          updated_at: now,
+        });
+      }
+    }
+    if (!dryRun && papersUpdated > 0) {
+      this.recordAudit({
+        type: "paper_author_links.backfilled",
+        actor: params.actor,
+        details: { papers_updated: papersUpdated, authors_linked: authorsLinked },
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        dry_run: dryRun,
+        papers_scanned: papers.length,
+        papers_updated: papersUpdated,
+        authors_linked: authorsLinked,
+        // Names the roster could not place: a person who left, an external nobody has recorded an
+        // address for, or two members who share a name. Each one is a row somebody should open.
+        unresolved,
+      },
+    };
+  }
+
   migrateMemberNotesToFields(actor: string): AdminBotServiceResponse<{
     membersScanned: number;
     membersUpdated: number;
@@ -3545,46 +4065,114 @@ export class AdminBotService {
    */
   async sendMandatoryFieldsReminders(
     actor: string,
+    options: {
+      /**
+       * Which gap to chase. `both` is the default and the reason this parameter exists: the sweep
+       * used to chase only missing profile fields, so a full member with a complete profile who
+       * had never opened the timeline tool was never asked -- which is most of the people the
+       * Profile Overview page was built to find.
+       */
+      include?: AdminBotProfileReminderScope;
+      /** Narrows to people an admin picked out of the page. Only ever subtracts. */
+      recipientIds?: string[];
+    } = {},
   ): Promise<AdminBotServiceResponse<AdminBotMemberNudgeResult>> {
-    const incomplete = this.listMembersWithIncompleteMandatoryFields();
-    if (!incomplete.ok) {
-      return incomplete;
-    }
+    const include = options.include ?? "both";
+    const chosen = options.recipientIds?.length ? new Set(options.recipientIds) : undefined;
+    const attention = this.membersNeedingProfileAttention().filter((row) => {
+      if (chosen && !chosen.has(row.id)) {
+        return false;
+      }
+      const wantsProfile = include !== "timeline" && row.missing_fields.length > 0;
+      const wantsTimeline = include !== "profile" && row.timeline_short;
+      return wantsProfile || wantsTimeline;
+    });
     // Who was reminded recently, so the cadence is a property of the product rather than of
     // whatever schedule happens to invoke the cron script. A misconfigured crontab, a manual run,
     // or two hosts running the same job cannot turn this into a daily nag.
     const remindedAt = this.lastMandatoryFieldsReminderByMember();
     const cutoff = Date.now() - MANDATORY_FIELDS_REMINDER_INTERVAL_MS;
-    const recipients = incomplete.payload.members
-      .map((member) => member.id)
-      .filter((id) => (remindedAt.get(id) ?? 0) <= cutoff);
-    if (recipients.length === 0) {
+    const due = attention.filter((row) => (remindedAt.get(row.id) ?? 0) <= cutoff);
+    if (due.length === 0) {
       return { ok: true, status: 200, payload: { created: [], skipped: [] } };
     }
-    const result = await this.sendMemberNudge(
-      {
-        channel: "slack",
-        recipient_member_ids: recipients,
-        message: buildMandatoryFieldsReminderMessage(),
-      },
-      actor,
-    );
-    if (result.ok) {
+    // Grouped by the message they get rather than sent one request per person: three shapes at
+    // most, and everybody in a group is owed exactly the same sentence. A member missing both is
+    // told both in one message -- two separate nudges about the same page reads as a system that
+    // does not know what it already sent.
+    const groups = new Map<string, string[]>();
+    for (const row of due) {
+      const needsProfile = include !== "timeline" && row.missing_fields.length > 0;
+      const needsTimeline = include !== "profile" && row.timeline_short;
+      const key = `${needsProfile ? "p" : ""}${needsTimeline ? "t" : ""}`;
+      groups.set(key, [...(groups.get(key) ?? []), row.id]);
+    }
+    const created: AdminBotMemberNudgeResult["created"] = [];
+    const skipped: AdminBotMemberNudgeResult["skipped"] = [];
+    const notified: string[] = [];
+    for (const [key, recipients] of groups) {
+      const result = await this.sendMemberNudge(
+        {
+          channel: "slack",
+          recipient_member_ids: recipients,
+          message: buildProfileReminderMessage({
+            profile: key.includes("p"),
+            timeline: key.includes("t"),
+          }),
+        },
+        actor,
+      );
+      if (!result.ok) {
+        for (const id of recipients) {
+          skipped.push({ member_id: id, reason: result.error.message });
+        }
+        continue;
+      }
+      created.push(...result.payload.created);
+      skipped.push(...result.payload.skipped);
       // Stamp only the members a nudge was actually created for. Someone sendMemberNudge skipped
       // (no Slack id on file, say) has not been reminded, and must not wait three days to be
       // considered again.
-      const notified = recipients.filter(
-        (id) => !result.payload.skipped.some((skip) => skip.member_id === id),
+      notified.push(
+        ...recipients.filter((id) => !result.payload.skipped.some((skip) => skip.member_id === id)),
       );
-      if (notified.length > 0) {
-        this.recordAudit({
-          type: "mandatory_fields.reminded",
-          actor,
-          details: { member_ids: notified },
-        });
-      }
     }
-    return result;
+    if (notified.length > 0) {
+      this.recordAudit({
+        type: "mandatory_fields.reminded",
+        actor,
+        details: { member_ids: notified, include },
+      });
+    }
+    return { ok: true, status: 200, payload: { created, skipped } };
+  }
+
+  /**
+   * Everyone with a gap only they can close, and which gap it is.
+   *
+   * Two different questions in one walk, because they are chased in one message. The profile half
+   * is asked of every active member; the timeline half only of full members (see
+   * isAdminBotFullMember) -- a term plan is a thing the lab asks of its own people, and asking a
+   * coauthor at another university when they are working is both useless and slightly rude.
+   */
+  membersNeedingProfileAttention(): Array<{
+    id: string;
+    name: string;
+    missing_fields: string[];
+    timeline_short: boolean;
+  }> {
+    return this.store
+      .listLabMembers()
+      .filter((member) => member.status !== "alumni" && member.status !== "external")
+      .map((member) => ({
+        id: member.id,
+        name: member.name,
+        missing_fields: missingMandatoryProfileFields(member),
+        timeline_short:
+          isAdminBotFullMember(member) &&
+          countTimelineEntries(member).total < adminBotTimelineEntryTarget,
+      }))
+      .filter((row) => row.missing_fields.length > 0 || row.timeline_short);
   }
 
   /** Epoch millis of the last mandatory-fields reminder each member received. */
@@ -4347,6 +4935,12 @@ const OWN_PAPER_EDITABLE_FIELDS = [
   "notes",
   // Who read the draft. The author's own record of who they asked, so it is theirs to edit.
   "feedback_givers",
+  // What each author does on the paper. Theirs to write for the same reason the author list is.
+  "author_roles",
+  // Who the author list actually names. Editable by an author for the same reason `authors` is --
+  // and it is the field that decides which coauthors can see the paper at all, so a member adding
+  // a colleague here is giving them access to a paper they already wrote.
+  "author_links",
   // Where the paper is aimed and when it is due. An author's own call, and it moves -- a missed
   // deadline, a change of plan -- so it belongs with the fields they edit on their own card.
   "venue",
@@ -4527,16 +5121,37 @@ function byProfileProgress(
 // agent-controlled. Listing exactly which lab-wide fields are still checked (not each member's own
 // missing subset) keeps the message identical for every recipient, which is what lets it go out
 // through a single sendMemberNudge call instead of one per person.
-function buildMandatoryFieldsReminderMessage(): string {
-  const fields = MANDATORY_PROFILE_FIELDS.map(
-    (key) => adminBotMandatoryProfileFieldLabels[key],
-  ).join(", ");
-  return [
-    "Quick reminder: your AdminBot profile is missing one or more required fields " +
-      `(${fields}).`,
-    "Open your profile page in the Control UI and fill in what's missing — it saves as you type.",
-    "Already done? You'll stop getting this once every required field is filled in.",
-  ].join("\n");
+/**
+ * The reminder, in the shape of whatever this person is actually missing.
+ *
+ * One message rather than two when both are outstanding: they are two halves of the same page, and
+ * a member who gets one nudge about their profile and another about their timeline reads a system
+ * that does not know what it already sent.
+ */
+function buildProfileReminderMessage(needs: { profile: boolean; timeline: boolean }): string {
+  const lines: string[] = [];
+  if (needs.profile) {
+    const fields = MANDATORY_PROFILE_FIELDS.map(
+      (key) => adminBotMandatoryProfileFieldLabels[key],
+    ).join(", ");
+    lines.push(
+      `Quick reminder: your AdminBot profile is missing one or more required fields (${fields}).`,
+      "Open your profile page in the Control UI and fill in what's missing — it saves as you type.",
+    );
+  }
+  if (needs.timeline) {
+    if (lines.length > 0) {
+      lines.push("");
+    }
+    lines.push(
+      "Your timeline is empty. Add when you are working, when you are away, and the milestones " +
+        "you are aiming at, on the Time Availability page.",
+      "It is what the lab plans deadlines and meetings around — without it, nobody can tell " +
+        "whether you are free next month.",
+    );
+  }
+  lines.push("", "Already done? You'll stop getting this once it is filled in.");
+  return lines.join("\n");
 }
 
 const PROFILE_PHOTO_RULES_TEXT = [
@@ -5282,11 +5897,23 @@ function validatePaper(paper: AdminBotPaperRecordInput): string | undefined {
   if (!paper.title.trim()) {
     return "paper title is required";
   }
-  if (normalizeNameList(paper.authors).length === 0) {
+  // Either list satisfies it: the card's picker sends `author_links` (names plus who they are) and
+  // never touches `authors`, which upsertPaper regenerates from the links a moment later. Checking
+  // only `authors` would refuse every save the picker makes.
+  const namedAuthors =
+    normalizeNameList(paper.authors).length +
+    (paper.author_links ?? []).filter((link) => link.name?.trim()).length;
+  if (namedAuthors === 0) {
     return "paper authors are required";
+  }
+  if (paper.author_links !== undefined && !Array.isArray(paper.author_links)) {
+    return "author links must be a list";
   }
   if (paper.feedback_givers && !Array.isArray(paper.feedback_givers)) {
     return "feedback givers must be a list of names";
+  }
+  if (paper.author_roles !== undefined && typeof paper.author_roles !== "string") {
+    return "author roles must be a paragraph of text";
   }
   return undefined;
 }

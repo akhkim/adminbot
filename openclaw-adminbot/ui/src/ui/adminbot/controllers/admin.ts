@@ -28,6 +28,7 @@ import {
   updateOwnProfile,
   updateSettingsAsAdmin,
   updateOwnSchedule,
+  mergeLabMembersAsAdmin,
   upsertLabMemberAsAdmin,
 } from "../auth/session.ts";
 import type { AvailabilityRow, MilestoneRow, TimeOffRow, TripRow } from "../data/availability.js";
@@ -241,26 +242,28 @@ export type AdminBotLabMemberSaveInput = {
   privilegeLevel?: AdminBotPrivilegeLevel;
   collaboratorSubgroup?: AdminBotExternalCollaboratorSubgroup;
   notes?: string;
-  role?: string;
   status?: AdminBotMemberStatus;
-  researchTopics?: string[];
-  projects?: string[];
-  hoursPerWeek?: number;
-  // No `availability` here on purpose. The stored schedule is a list of rows the service validates
-  // as one (validateAvailability in extensions/adminbot/src/kernel/service.ts), written from the
-  // Time Availability tab; this form has no schedule control at all. It used to carry a free-text
-  // `availability` string, which every save sent as "" and the service rejected with 400 "member
-  // availability must be a list" — the whole edit lost to a field nobody could see or fill in.
-  location?: string;
-  affiliation?: string;
-  timezone?: string;
-  personalWebsite?: string;
-  // Promoted out of the notes line convention, which stored these with no server-side schema
-  // alongside fields that already owned the same fact. See migrateMemberNotesToFields.
-  joinedMonth?: string;
-  whatsapp?: string;
-  calendarEmail?: string;
-  githubUrl?: string;
+  /**
+   * Every profile field the roster editor collected, already in the service's wire shape.
+   *
+   * One bag rather than a camelCase key per field, and this is the change that keeps the Lab
+   * Members editor and the Profile page in step: both render from the shared member field
+   * registry (ui/src/ui/adminbot/member-fields.ts), whose keys *are* the wire names, so a new
+   * field needs no entry here and no line in `adminMemberUpdatePayload`. The previous shape
+   * named fifteen fields in camelCase and mapped each one back by hand, which is how the editor
+   * came to be missing eleven of the fields the profile page already had.
+   *
+   * Governance stays above, spelled out: privilege, status, email and the collaborator subgroup
+   * are not profile facts, only an admin session may write them, and they should be visible in
+   * this type rather than hidden inside a generic bag.
+   *
+   * No `availability` in here either way. The stored schedule is a list of rows the service
+   * validates as one (validateAvailability in extensions/adminbot/src/kernel/service.ts), written
+   * from the Time Availability tab; this form has no schedule control at all. It used to carry a
+   * free-text `availability` string, which every save sent as "" and the service rejected with
+   * 400 "member availability must be a list" — the whole edit lost to a field nobody could see.
+   */
+  profile?: Record<string, unknown>;
 };
 
 export type AdminBotPaperSaveInput = {
@@ -269,6 +272,10 @@ export type AdminBotPaperSaveInput = {
   authors: string[];
   /** Names of people asked to read the draft. Sent whole; the service trims and de-blanks. */
   feedbackGivers?: string[];
+  /** What each author does on the paper. Sent whole; "" clears it. */
+  authorRoles?: string;
+  /** The author list as people. Sent whole; the service regenerates `authors` from it. */
+  authorLinks?: Array<{ name: string; member_id?: string; email?: string }>;
   /**
    * Where the paper is aimed. This is the record's own `venue` field, not `artifacts.conference`:
    * `venue` is what the stage nudges quote and the deadline board matches on, and having two
@@ -486,6 +493,14 @@ export type AdminBotPaperRecord = {
   authors: string[];
   /** People asked to read the draft. Not authors, and not the social consent list. */
   feedback_givers?: string[];
+  /** What each author does on the paper, in prose. Free text; see the record contract. */
+  author_roles?: string;
+  /**
+   * The author list with each entry linked to whoever it names -- a roster id for a lab member, an
+   * email for somebody who is not on the roster. This is what decides whose My Projects page the
+   * paper appears on; `authors` above is only how the paper spells the names.
+   */
+  author_links?: Array<{ name: string; member_id?: string; email?: string }>;
   current_step: AdminBotPaperStep;
   // Governance fields the service owns. Mirrored here so a card can show the venue and its
   // deadline without a second read; nothing in the UI writes them.
@@ -1343,20 +1358,44 @@ function adminMemberUpdatePayload(member: AdminBotLabMemberSaveInput) {
     ...(member.privilegeLevel ? { privilege_level: member.privilegeLevel } : {}),
     ...(member.collaboratorSubgroup ? { collaborator_subgroup: member.collaboratorSubgroup } : {}),
     ...(member.notes ? { notes: member.notes } : {}),
-    ...(member.role ? { role: member.role } : {}),
     ...(member.status ? { status: member.status } : {}),
-    ...(member.researchTopics ? { research_topics: member.researchTopics } : {}),
-    ...(member.projects ? { projects: member.projects } : {}),
-    ...(member.hoursPerWeek !== undefined ? { hours_per_week: member.hoursPerWeek } : {}),
-    ...(member.location ? { location: member.location } : {}),
-    ...(member.affiliation ? { affiliation: member.affiliation } : {}),
-    ...(member.timezone ? { timezone: member.timezone } : {}),
-    ...(member.personalWebsite ? { personal_website: member.personalWebsite } : {}),
-    ...(member.joinedMonth ? { joined_month: member.joinedMonth } : {}),
-    ...(member.whatsapp ? { whatsapp: member.whatsapp } : {}),
-    ...(member.calendarEmail ? { calendar_email: member.calendarEmail } : {}),
-    ...(member.githubUrl ? { github_url: member.githubUrl } : {}),
+    // Last, so a governance field can never be overwritten by a profile key of the same name.
+    // The service re-checks every key against its own whitelist regardless.
+    ...(member.profile ?? {}),
   };
+}
+
+/**
+ * The registry fields the break-glass gateway tool can carry, renamed to its camelCase parameters.
+ *
+ * Narrower than the HTTP path on purpose, and narrower than it looks: `adminbot_upsert_lab_member`
+ * declares a fixed parameter object (extensions/adminbot/index.ts), so a key it does not name is
+ * rejected rather than ignored. Fields outside this map are simply not settable over the legacy
+ * token path -- which is the same restriction that path already had, now stated in one place
+ * instead of being implied by which lines somebody remembered to write.
+ */
+const TOOL_PROFILE_PARAMS: Record<string, string> = {
+  role: "role",
+  research_branch: "researchBranch",
+  research_topics: "researchTopics",
+  projects: "projects",
+  hours_per_week: "hoursPerWeek",
+  location: "location",
+  affiliation: "affiliation",
+  timezone: "timezone",
+  personal_website: "personalWebsite",
+  openreview_id: "openreviewId",
+};
+
+function toolProfileParams(profile: Record<string, unknown> | undefined): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(profile ?? {})) {
+    const param = TOOL_PROFILE_PARAMS[key];
+    if (param !== undefined) {
+      params[param] = value;
+    }
+  }
+  return params;
 }
 
 // Saves a member from the Lab Members admin editor. Governance fields (privilege_level,
@@ -1411,15 +1450,8 @@ export async function saveAdminBotMember(
       ...(member.privilegeLevel ? { privilegeLevel: member.privilegeLevel } : {}),
       ...(member.collaboratorSubgroup ? { collaboratorSubgroup: member.collaboratorSubgroup } : {}),
       ...(member.notes ? { notes: member.notes } : {}),
-      ...(member.role ? { role: member.role } : {}),
       ...(member.status ? { status: member.status } : {}),
-      ...(member.researchTopics ? { researchTopics: member.researchTopics } : {}),
-      ...(member.projects ? { projects: member.projects } : {}),
-      ...(member.hoursPerWeek !== undefined ? { hoursPerWeek: member.hoursPerWeek } : {}),
-      ...(member.location ? { location: member.location } : {}),
-      ...(member.affiliation ? { affiliation: member.affiliation } : {}),
-      ...(member.timezone ? { timezone: member.timezone } : {}),
-      ...(member.personalWebsite ? { personalWebsite: member.personalWebsite } : {}),
+      ...toolProfileParams(member.profile),
     });
     host.adminBotNotice = { kind: "success", text: `Saved member ${member.id}.` };
     await loadAdminBot(host);
@@ -1429,6 +1461,61 @@ export async function saveAdminBotMember(
       text: formatAdminBotToolError(err),
     };
   }
+}
+
+/**
+ * Folds one roster row into another and retires it.
+ *
+ * Member session only, and no gateway-tool fallback: unlike a save, there is no narrower version
+ * of this that the shared service principal could safely perform, and the service refuses it to
+ * that principal anyway. Break-glass access simply does not offer the affordance.
+ *
+ * The notice names what the merge could not decide. A conflict is not an error -- the survivor's
+ * answer stands, which is what the admin asked for by choosing which record survives -- but it is
+ * the one thing about a merge nobody can see afterwards, so it is said out loud once.
+ */
+export async function mergeAdminBotMembers(
+  host: AdminBotHost,
+  survivorId: string,
+  duplicateId: string,
+): Promise<void> {
+  host.adminBotNotice = null;
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    host.adminBotNotice = {
+      kind: "error",
+      text: "Sign in with your admin account to merge roster records.",
+    };
+    return;
+  }
+  const result = await mergeLabMembersAsAdmin(
+    survivorId,
+    duplicateId,
+    stored.sessionToken,
+    resolveAdminBotBaseUrl(host.settings),
+  );
+  if (!result.ok) {
+    host.adminBotNotice = {
+      kind: "error",
+      text:
+        result.kind === "unreachable"
+          ? ADMINBOT_TOOLS_UNAVAILABLE_MESSAGE
+          : result.kind === "forbidden"
+            ? "Your session no longer has admin access — sign in again and retry."
+            : (result.message ?? "Couldn't merge those records."),
+    };
+    return;
+  }
+  const conflicts = result.value.conflicts ?? [];
+  host.adminBotNotice = {
+    kind: "success",
+    text: conflicts.length
+      ? `Merged ${duplicateId} into ${survivorId}. Kept ${survivorId}'s answer for ${conflicts
+          .map((conflict) => conflict.field)
+          .join(", ")}.`
+      : `Merged ${duplicateId} into ${survivorId}.`,
+  };
+  await loadAdminBot(host);
 }
 
 // Saves the signed-in member's own roster row from the Lab Members table. Uses the
@@ -1746,6 +1833,8 @@ export async function saveAdminBotPaper(
   // them would make a member's ordinary edit look like an attempt to record a venue decision.
   const details = {
     ...(paper.feedbackGivers === undefined ? {} : { feedback_givers: paper.feedbackGivers }),
+    ...(paper.authorRoles === undefined ? {} : { author_roles: paper.authorRoles }),
+    ...(paper.authorLinks === undefined ? {} : { author_links: paper.authorLinks }),
     ...(paper.venue === undefined ? {} : { venue: paper.venue }),
   };
   const acceptance = {

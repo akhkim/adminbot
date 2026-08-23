@@ -4730,40 +4730,113 @@
   margin-top: var(--space-1);
 }
 
-/* Pipeline stepper — the Amazon/GCP order-status pattern.
-   A percentage is not actionable; a stepper shows where the work is, what is behind it, and what
-   is left, in one glance. The dots are also the control, so the picture and the action are the
-   same object rather than a bar plus a separate select. */
-.stepper {
+/* PaperFlow timeline — a trunk and four branches, one lane each.
+   Replaces the single-track stepper. The chart is not a line: slides, social, the arXiv package
+   and the venue all open off the compiled PDF and run at their own pace, so drawing one row of
+   dots had to invent an order between things that do not wait on each other. Every state here is
+   read off the evidence rows, so a field filled in below closes a dot above on the next render. */
+.ptl {
   margin: var(--space-3) 0 var(--space-2);
-  overflow-x: auto;
-  /* overflow-x also clips vertically, which shaved the top of the scaled-up current dot, its glow
-     ring, and the ping animation; give the track headroom so the highlight reads to the full top. */
-  padding: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
-.stepper__track {
+.ptl__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: 0;
+}
+
+.ptl__head-title {
+  font-size: var(--control-ui-text-sm);
+  font-weight: 650;
+  color: var(--text-strong);
+}
+
+.ptl__head-hint {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* The trunk carries the accent rail; the branches are indented under it so the page shape says
+   "these hang off that" before any label has to. */
+.ptl__lane {
+  padding: var(--space-2) 0 var(--space-2) var(--space-3);
+  border-left: 2px solid var(--border);
+}
+
+.ptl__lane--trunk {
+  border-left-color: var(--accent);
+}
+
+/* A lane whose gate is still shut is drawn back rather than hidden: knowing the poster is coming
+   and why it cannot start yet is the thing the old stepper could not say at all. */
+.ptl__lane.is-shut {
+  opacity: 0.55;
+}
+
+.ptl__lane-title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 650;
+  color: var(--text-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ptl__lane-icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.ptl__lane-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.ptl__lane-gate {
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.ptl__lane-gate--done {
+  color: var(--ok, var(--accent));
+}
+
+.ptl__track {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
   list-style: none;
   margin: 0;
-  padding: 0;
-  min-width: 30rem;
+  padding: 4px 0;
+  min-width: 0;
+  overflow-x: auto;
 }
 
-.stepper__step {
+.ptl__step {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   text-align: center;
+  min-width: 5.5rem;
 }
 
-/* The connector is drawn by each step to its left neighbour, so the line always matches the
-   states either side of it rather than being one bar underneath. */
-.stepper__step:not(:first-child)::before {
+/* Each step draws the connector to its left neighbour, so the line always matches the two states
+   it joins instead of being one bar underneath that agrees with neither. */
+.ptl__step:not(:first-child)::before {
   content: "";
   position: absolute;
   top: 9px;
@@ -4773,91 +4846,65 @@
   background: var(--border);
 }
 
-.stepper__step--done::before,
-.stepper__step--current::before {
+.ptl__step--done::before {
   background: var(--ok, var(--accent));
 }
 
-.stepper__dot {
+.ptl__dot {
   position: relative;
   z-index: 1;
   display: grid;
   place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
+  width: 18px;
+  height: 18px;
   border: 2px solid var(--border);
   border-radius: 50%;
   background: var(--bg);
   color: transparent;
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1;
-  cursor: pointer;
-  transition:
-    background 120ms ease,
-    border-color 120ms ease,
-    transform 120ms ease;
 }
 
-.stepper__dot:hover {
-  border-color: var(--accent);
-  transform: scale(1.12);
-}
-
-.stepper__dot:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.stepper__step--done .stepper__dot {
+.ptl__step--done .ptl__dot {
   border-color: var(--ok, var(--accent));
   background: var(--ok, var(--accent));
   color: var(--bg);
 }
 
-/* The current step is the one thing that should read at a glance: filled ring, larger, and the
-   only label with weight. The halo pings gently so the active spot stays visible in peripheral
-   vision without being a distraction. */
-.stepper__step--current .stepper__dot {
+/* Ready is the frontier and usually several dots at once, which is the whole point of the lanes:
+   the ring says "this one can be done now" without claiming it is next in any sequence. */
+.ptl__step--ready .ptl__dot {
   border-color: var(--accent);
-  background: var(--bg);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
-  transform: scale(1.15);
-  animation: stepper-ping 6s ease-in-out infinite;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 26%, transparent);
 }
 
-@keyframes stepper-ping {
-  0%,
-  100% {
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent);
-  }
-  50% {
-    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 22%, transparent);
-  }
+.ptl__step--attention .ptl__dot {
+  border-color: var(--danger, var(--warn, var(--accent)));
+  color: var(--danger, var(--warn, var(--accent)));
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .stepper__step--current .stepper__dot {
-    animation: none;
-  }
-}
-
-.stepper__label {
+.ptl__label {
   font-size: var(--control-ui-text-xs);
   color: var(--muted);
   line-height: 1.25;
-  max-width: 10ch;
-  /* Break between words only. `anywhere` split "Submission" into "Submissio n". */
+  max-width: 11ch;
   overflow-wrap: normal;
 }
 
-.stepper__step--current .stepper__label {
+.ptl__step--ready .ptl__label {
   color: var(--text-strong);
   font-weight: 650;
 }
 
-.stepper__step--done .stepper__label {
-  color: color-mix(in srgb, var(--muted) 85%, transparent);
+.ptl__step--attention .ptl__label {
+  color: var(--danger, var(--warn, var(--text-strong)));
+  font-weight: 650;
+}
+
+/* The pipeline pointer, now a plain control in the card's button row rather than the picture. */
+.my-work-item__step {
+  display: inline-flex;
+  align-items: center;
 }
 
 /* PaperFlow map overlay. The chart is a light-mode export, so it sits on its own white sheet
@@ -7647,21 +7694,33 @@
   display: inline;
 }
 
+/* An "i", not a "?", and drawn to be seen.
+   The badge was a dim question mark on a dim border: at 1.15rem against --text-muted it was
+   nearly invisible on the card, and a question mark next to a field reads as a query about the
+   field rather than an offer of help. A filled disc with a stronger foreground fixes both --
+   this is the only affordance on the row that opens something, so it should look like one. */
 .paper-slot__help > summary {
   display: inline-grid;
   place-items: center;
   width: 1.15rem;
   height: 1.15rem;
   margin-left: var(--space-1);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong, var(--border));
   border-radius: 50%;
-  color: var(--text-muted);
-  font-size: 0.75em;
+  background: var(--bg-muted);
+  color: var(--muted-strong, var(--text));
+  font-size: 0.72em;
+  font-weight: 700;
+  font-style: normal;
   line-height: 1;
   cursor: help;
   list-style: none;
   vertical-align: middle;
   user-select: none;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
 }
 
 .paper-slot__help > summary::-webkit-details-marker {
@@ -7669,8 +7728,10 @@
 }
 
 .paper-slot__help > summary:hover,
+.paper-slot__help > summary:focus-visible,
 .paper-slot__help[open] > summary {
   border-color: var(--accent, #534ab7);
+  background: color-mix(in srgb, var(--accent, #534ab7) 14%, transparent);
   color: var(--accent, #534ab7);
 }
 

@@ -25,6 +25,7 @@ import type {
   AdminBotSettings,
   AdminBotStoredProposal,
 } from "../contracts/actions.js";
+import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type {
   AdminBotConferenceAttendeeRecord,
   AdminBotNudgeLedgerRecord,
@@ -37,6 +38,7 @@ import type {
   AdminBotPaperSlotRecord,
   AdminBotPaperSlotStatus,
 } from "../contracts/paper-slots.js";
+import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
 import {
   AdminBotService,
@@ -426,6 +428,34 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
 
       CREATE INDEX IF NOT EXISTS adminbot_slack_channel_naming_updated_idx
         ON adminbot_slack_channel_naming(updated_at);
+
+      -- One row per member per surface: a re-rating is a change of mind, not a second vote.
+      -- Anonymous rows share one slot per feature (see adminBotFeedbackId).
+      CREATE TABLE IF NOT EXISTS adminbot_feedback (
+        id TEXT PRIMARY KEY,
+        feature_id TEXT NOT NULL,
+        rating INTEGER NOT NULL,
+        member_id TEXT,
+        updated_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_feedback_feature_idx
+        ON adminbot_feedback(feature_id, updated_at);
+
+      -- One entry per author per paper per week. Keyed by the week's Monday (UTC) so two people
+      -- in different timezones writing the same evening land in the same bucket.
+      CREATE TABLE IF NOT EXISTS adminbot_paper_weekly_updates (
+        paper_id TEXT NOT NULL,
+        member_id TEXT NOT NULL,
+        week_start TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        PRIMARY KEY (paper_id, member_id, week_start)
+      );
+
+      CREATE INDEX IF NOT EXISTS adminbot_paper_weekly_updates_week_idx
+        ON adminbot_paper_weekly_updates(week_start);
     `);
     this.migrateStoredOnboarding();
     this.migrateRetiredPrivilegeLevels();
@@ -662,6 +692,78 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       )
       .all() as Array<{ payload_json: string }>;
     return rows.map((row) => parseJson<AdminBotLabMember>(row.payload_json));
+  }
+
+  deleteLabMember(memberId: string): boolean {
+    const result = this.db
+      .prepare("DELETE FROM adminbot_lab_members WHERE id = ?")
+      .run(memberId) as { changes?: number };
+    return (result.changes ?? 0) > 0;
+  }
+
+  /**
+   * Every table that names a member, and the column it names them in.
+   *
+   * Written out rather than discovered from the schema at runtime: a column called `member_id` is
+   * not automatically a roster reference, and a merge that repointed the wrong one would be a
+   * silent data corruption rather than a failure. Adding a table with a member column means adding
+   * it here, which the merge test asserts by counting what moved.
+   */
+  private static readonly MEMBER_REFERENCE_COLUMNS: ReadonlyArray<[string, string]> = [
+    ["adminbot_account_registrations", "member_id"],
+    ["adminbot_cv_changes", "member_id"],
+    ["adminbot_logistics_requests", "member_id"],
+    ["adminbot_member_locations", "member_id"],
+    ["adminbot_nudge_ledger", "member_id"],
+    ["adminbot_paper_conference_attendees", "member_id"],
+    ["adminbot_paper_reimbursements", "member_id"],
+    ["adminbot_paper_social_draft_consents", "member_id"],
+    ["adminbot_paper_social_drafts", "generated_by_member_id"],
+    ["adminbot_paper_slots", "provided_by_member_id"],
+    ["adminbot_paper_slots", "waived_by_member_id"],
+    ["adminbot_password_resets", "member_id"],
+    // The login itself. Moving it is the point of a merge -- one person with two accounts ends up
+    // with one account they can still sign in to -- and the collision rule decides which address
+    // that is: if the survivor already has a credential, theirs stands and the duplicate's row is
+    // dropped, so the retired address stops working. Both outcomes are in the merge's audit line.
+    //
+    // Live sessions are deliberately NOT in this sweep. They are repointable in principle, but a
+    // session is a bearer of someone's identity and a merge is a human judgement that two records
+    // are one person; if that judgement is ever wrong, a repointed session hands one person's
+    // signed-in browser the other's record. The service revokes the retired member's sessions
+    // instead, which costs a sign-in and cannot be wrong.
+    ["adminbot_member_credentials", "member_id"],
+  ];
+
+  reassignMemberReferences(fromMemberId: string, toMemberId: string): Record<string, number> {
+    const moved: Record<string, number> = {};
+    // One transaction: a half-repointed member is worse than an unmerged one, because the rows
+    // that did move no longer name a record anybody can find their way back from. Written as an
+    // explicit BEGIN/COMMIT for the same reason replaceVenueIndex is -- node:sqlite's DatabaseSync
+    // has no `transaction()` wrapper.
+    this.db.exec("BEGIN");
+    try {
+      for (const [table, column] of AdminBotSqliteStore.MEMBER_REFERENCE_COLUMNS) {
+        // The tall tables key on (subject, member), so a row that would collide with one the
+        // survivor already has is dropped rather than updated -- two attendee rows for one person
+        // on one paper is not a merge, it is a duplicate with a new name. INSERT OR REPLACE
+        // semantics are wrong here for the same reason: the survivor's own answer wins.
+        const result = this.db
+          .prepare(`UPDATE OR IGNORE "${table}" SET ${column} = ? WHERE ${column} = ?`)
+          .run(toMemberId, fromMemberId) as { changes?: number };
+        const changes = result.changes ?? 0;
+        if (changes > 0) {
+          moved[`${table}.${column}`] = (moved[`${table}.${column}`] ?? 0) + changes;
+        }
+        // Whatever the UPDATE could not move is a collision with a row the survivor already owns.
+        this.db.prepare(`DELETE FROM "${table}" WHERE ${column} = ?`).run(fromMemberId);
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return moved;
   }
 
   recordCvChanges(events: AdminBotCvChangeEvent[]): AdminBotCvChangeEvent[] {
@@ -1642,6 +1744,86 @@ export class AdminBotSqliteStore implements AdminBotServiceStore {
       .prepare("DELETE FROM adminbot_sessions WHERE expires_at < ?")
       .run(cutoffIso);
     return Number(result.changes ?? 0);
+  }
+
+  savePaperWeeklyUpdate(update: AdminBotPaperWeeklyUpdate): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_paper_weekly_updates (
+          paper_id, member_id, week_start, updated_at, payload_json
+        ) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(paper_id, member_id, week_start) DO UPDATE SET
+          updated_at = excluded.updated_at,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        update.paper_id,
+        update.member_id,
+        update.week_start,
+        update.updated_at,
+        JSON.stringify(update),
+      );
+  }
+
+  listPaperWeeklyUpdates(params?: {
+    paperId?: string;
+    weekStart?: string;
+  }): AdminBotPaperWeeklyUpdate[] {
+    const clauses: string[] = [];
+    const values: string[] = [];
+    if (params?.paperId) {
+      clauses.push("paper_id = ?");
+      values.push(params.paperId);
+    }
+    if (params?.weekStart) {
+      clauses.push("week_start = ?");
+      values.push(params.weekStart);
+    }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json FROM adminbot_paper_weekly_updates ${where} ORDER BY week_start DESC, member_id`,
+      )
+      .all(...values) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotPaperWeeklyUpdate>(row.payload_json));
+  }
+
+  saveFeedback(entry: AdminBotFeedbackEntry): void {
+    this.db
+      .prepare(
+        `INSERT INTO adminbot_feedback (
+          id, feature_id, rating, member_id, updated_at, payload_json
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          feature_id = excluded.feature_id,
+          rating = excluded.rating,
+          member_id = excluded.member_id,
+          updated_at = excluded.updated_at,
+          payload_json = excluded.payload_json`,
+      )
+      .run(
+        entry.id,
+        entry.feature_id,
+        entry.rating,
+        entry.member_id ?? null,
+        entry.updated_at,
+        JSON.stringify(entry),
+      );
+  }
+
+  listFeedback(featureId?: string): AdminBotFeedbackEntry[] {
+    const rows = (
+      featureId
+        ? this.db
+            .prepare(
+              "SELECT payload_json FROM adminbot_feedback WHERE feature_id = ? ORDER BY updated_at DESC",
+            )
+            .all(featureId)
+        : this.db
+            .prepare("SELECT payload_json FROM adminbot_feedback ORDER BY updated_at DESC")
+            .all()
+    ) as Array<{ payload_json: string }>;
+    return rows.map((row) => parseJson<AdminBotFeedbackEntry>(row.payload_json));
   }
 
   saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void {

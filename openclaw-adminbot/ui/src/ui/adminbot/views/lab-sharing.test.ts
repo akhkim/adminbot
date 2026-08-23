@@ -43,6 +43,18 @@ function input(container: HTMLElement, selector: string, value: string): void {
 }
 
 describe("renderLabSharing", () => {
+  // Every panel here runs on mock data and no control reaches a service. Saying so once at the
+  // top is what keeps the tab from reading as a working feature with wrong numbers in it.
+  it("marks the whole tab as a preview without hiding any of it", () => {
+    const { container } = renderView();
+    const banner = container.querySelector('[data-testid="lab-sharing-coming-soon"]');
+    expect(banner).not.toBeNull();
+    expect(banner?.textContent).toContain("Coming soon");
+    expect(banner?.textContent).toContain("Nothing you type here is saved yet");
+    // The panels stay exactly as they were.
+    expect(container.querySelector('[data-testid="lab-sharing-seek-help"]')).not.toBeNull();
+  });
+
   it("renders every panel on the page", () => {
     const { container } = renderView();
     for (const testId of [

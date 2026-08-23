@@ -192,6 +192,25 @@ describe("renderMyWork", () => {
     expect(container.textContent).toContain("Everything is in");
   });
 
+  it("does not claim everything is in on a paper the lab has simply stopped chasing", () => {
+    // The regression: `missing_slots` is empty for a rejected paper because nothing is nudged on
+    // one, and the summary read that emptiness as completion -- so a paper with nothing on file
+    // but a rejection logged announced "Everything is in".
+    const { container } = draw({
+      overview: [overviewRow({ provided_count: 0, closed: true, missing_slots: [] })],
+    });
+    expect(container.textContent).not.toContain("Everything is in");
+    expect(container.textContent).toContain("Rejected");
+  });
+
+  it("says the work is waiting rather than done when nothing is chaseable yet", () => {
+    const { container } = draw({
+      overview: [overviewRow({ provided_count: 3, missing_slots: [] })],
+    });
+    expect(container.textContent).not.toContain("Everything is in");
+    expect(container.textContent).toContain("Waiting on earlier steps");
+  });
+
   it("carries the venue and its deadline as the card's subtitle", () => {
     const { container } = draw({
       overview: [overviewRow({ venue: "ICLR 2027", deadline: "2026-09-24" })],
@@ -319,6 +338,57 @@ describe("ownPapers — whose paper is it", () => {
 
   it("does not claim somebody else's paper", () => {
     expect(ownPapers(stateWith(["Andrew Yook", "Jane Doe"], "Joeun Yook"))).toHaveLength(0);
+  });
+
+  // The point of the recorded links: a paper one coauthor files shows up for all of them, whatever
+  // the paper happens to call them.
+  it("shows a coauthor a paper somebody else filed, by recorded link rather than by spelling", () => {
+    const state = {
+      memberId: "andrew-kim",
+      adminBotData: {
+        members: [{ id: "andrew-kim", name: "Andrew Kim", privilege_level: "member", access: [] }],
+        papers: [
+          {
+            id: "adminbot",
+            title: "AdminBot",
+            // The printed list spells him a way the roster does not, and he did not file it.
+            authors: ["Joeun Yook*", "A. K. Kim", "Zhijing Jin"],
+            author_links: [
+              { name: "Joeun Yook*", member_id: "joeun-yook" },
+              { name: "A. K. Kim", member_id: "andrew-kim" },
+              { name: "Zhijing Jin", member_id: "zhijing-jin" },
+            ],
+            current_step: "brainstorming_docs",
+            submitted_by_member_id: "joeun-yook",
+          },
+        ],
+      },
+    } as never;
+    expect(ownPapers(state).map((paper) => paper.title)).toEqual(["AdminBot"]);
+  });
+
+  it("does not show a paper to an external coauthor's address", () => {
+    const state = {
+      memberId: "bs@tue.mpg.de",
+      adminBotData: {
+        members: [{ id: "bs@tue.mpg.de", name: "Bernhard", privilege_level: "member", access: [] }],
+        papers: [
+          {
+            id: "adminbot",
+            title: "AdminBot",
+            authors: ["Joeun Yook", "Bernhard Schölkopf"],
+            // An external is an email on the paper, never a member id, so nothing keys off them.
+            author_links: [
+              { name: "Joeun Yook", member_id: "joeun-yook" },
+              { name: "Bernhard Schölkopf", email: "bs@tue.mpg.de" },
+            ],
+            current_step: "brainstorming_docs",
+            submitted_by_member_id: "joeun-yook",
+          },
+        ],
+      },
+    } as never;
+    expect(ownPapers(state)).toHaveLength(0);
   });
 });
 
@@ -554,4 +624,3 @@ describe("the banners above the list", () => {
     expect(container.querySelector('[data-testid="prereg-open"]')).toBeNull();
   });
 });
-

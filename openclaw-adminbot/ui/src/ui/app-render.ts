@@ -13,6 +13,11 @@ import {
   type AccessRole,
 } from "./adminbot/access.ts";
 import {
+  loadStoredMemberSession,
+  resolveAdminBotBaseUrl,
+  submitFeedback,
+} from "./adminbot/auth/session.ts";
+import {
   applyAdminBotOwnProfilePhoto,
   approveAdminBotAction,
   runAdminBotCvDigestJob,
@@ -28,6 +33,7 @@ import {
   polishAdminBotOwnProfilePhoto,
   removePendingAdminBotAction,
   resetAdminBotReimbursement,
+  mergeAdminBotMembers,
   saveAdminBotMember,
   saveAdminBotOwnProfile,
   saveAdminBotOwnSchedule,
@@ -61,6 +67,7 @@ import {
   nudgeAdminBotPaperAuthors,
   recordAdminBotSocialConsent,
   saveAdminBotPaperSlot,
+  saveAdminBotPaperWeeklyUpdate,
   saveAdminBotSocialDraft,
   setAdminBotPaperAttendee,
   setAdminBotPaperReimbursement,
@@ -101,11 +108,11 @@ import {
   type MeetingFormState,
   type SignatureFormState,
 } from "./adminbot/data/logistics-requests.ts";
+import "./components/feedback-widget.ts";
 import {
   decideAdminBotRegistration,
   loadAdminBotRegistrations,
 } from "./adminbot/data/registrations.ts";
-import "./components/feedback-widget.ts";
 import { feedbackConfigForTab } from "./adminbot/feedback-tab.ts";
 import { agoLabel, alertText, nudgeAlerts } from "./adminbot/nudge-alerts.ts";
 import { renderAdminBot, type AdminBotPanel } from "./adminbot/views/admin.ts";
@@ -856,6 +863,9 @@ function paperWorkspaceProps(
         requestHostUpdate?.(),
       );
     },
+    onSaveWeeklyUpdate: (paperId, body) => {
+      void saveAdminBotPaperWeeklyUpdate(state, paperId, body).finally(() => requestHostUpdate?.());
+    },
   };
 }
 
@@ -902,9 +912,49 @@ function renderFeedbackWidget(state: AppViewState) {
     return nothing;
   }
   return html`
-    <adminbot-feedback-widget feature-id=${config.featureId} github-file=${config.githubFile}>
+    <adminbot-feedback-widget
+      feature-id=${config.featureId}
+      github-file=${config.githubFile}
+      @feedback=${(event: Event) => void sendFeedback(state, event as CustomEvent)}
+    >
     </adminbot-feedback-widget>
   `;
+}
+
+/**
+ * Sends a submitted rating to AdminBot.
+ *
+ * Two things it deliberately does not do. It does not send the intermediate events -- the widget
+ * emits one per star click so it can persist a half-finished vote locally, and only `submitted`
+ * marks the member actually pressing Send. And it does not surface a failure: the widget has
+ * already thanked the member and dismissed itself by the time this runs, so an error toast would
+ * be about a request they never knew they made. The vote survives in their browser either way.
+ */
+async function sendFeedback(state: AppViewState, event: CustomEvent): Promise<void> {
+  const detail = (event.detail ?? {}) as {
+    featureId?: string;
+    rating?: number;
+    comment?: string;
+    githubFile?: string;
+    submitted?: boolean;
+  };
+  if (!detail.submitted || !detail.featureId || typeof detail.rating !== "number") {
+    return;
+  }
+  const stored = loadStoredMemberSession();
+  if (!stored) {
+    return;
+  }
+  await submitFeedback(
+    {
+      featureId: detail.featureId,
+      rating: detail.rating,
+      ...(detail.comment ? { comment: detail.comment } : {}),
+      ...(detail.githubFile ? { githubFile: detail.githubFile } : {}),
+    },
+    stored.sessionToken,
+    resolveAdminBotBaseUrl(state.settings),
+  );
 }
 
 // Deep links and sign-out both leave `state.tab` pointing at a surface the current role may not
@@ -3130,12 +3180,15 @@ export function renderApp(state: AppViewState) {
               error: state.adminBotProfileOverviewError,
               notice: state.adminBotProfileOverviewNotice,
               reminding: state.adminBotProfileOverviewReminding,
-              incompleteOnly: state.adminBotProfileOverviewIncompleteOnly,
-              onIncompleteOnlyChange: (incompleteOnly: boolean) => {
-                state.adminBotProfileOverviewIncompleteOnly = incompleteOnly;
+              filter: state.adminBotProfileOverviewFilter,
+              onFilterChange: (filter) => {
+                state.adminBotProfileOverviewFilter = filter;
+                requestHostUpdate?.();
               },
-              onRemind: () => {
-                void remindAdminBotIncompleteProfiles(state).finally(() => requestHostUpdate?.());
+              onRemind: (scope) => {
+                void remindAdminBotIncompleteProfiles(state, scope).finally(() =>
+                  requestHostUpdate?.(),
+                );
               },
               // The follow-up to a thin row is a look at the person, which is Lab Members' job.
               onOpenMember: (memberId: string) => {
@@ -3588,6 +3641,8 @@ export function renderApp(state: AppViewState) {
               onRemove: (proposal) => void removePendingAdminBotAction(state, proposal),
               onExecute: (proposal) => void executeAdminBotAction(state, proposal),
               onSaveMember: (member) => void saveAdminBotMember(state, member),
+              onMergeMembers: (survivorId, duplicateId) =>
+                void mergeAdminBotMembers(state, survivorId, duplicateId),
               onSaveOwnProfile: (memberId, fields) =>
                 void saveAdminBotOwnProfile(state, memberId, fields),
               // The checklist itself lives at the bottom of the profile page instead of in a

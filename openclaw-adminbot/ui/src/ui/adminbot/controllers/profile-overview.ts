@@ -67,14 +67,17 @@ export async function loadAdminBotProfileOverview(
 }
 
 /**
- * Sends the reminder now.
+ * Sends the reminder now, for whatever the page is filtered to.
  *
- * The message and the recipients are both computed by the service from roster state -- this button
- * chooses neither, which is why an admin can press it without composing anything. The service also
- * keeps its own cadence, so a second press within the window sends nothing rather than nagging.
+ * The message is still composed entirely by the service from roster state -- this button chooses
+ * words for nobody. What the scope adds is subtraction: `include` picks which of the two gaps to
+ * chase and the id list narrows to the rows on screen, and the service re-derives both from the
+ * roster, so neither can address somebody it does not already consider owed a reminder. The
+ * service also keeps its own cadence, so a second press within the window sends nothing.
  */
 export async function remindAdminBotIncompleteProfiles(
   host: AdminBotProfileOverviewHost,
+  scope?: { include: "profile" | "timeline" | "both"; memberIds: string[] },
 ): Promise<void> {
   const wire = session(host);
   if (!wire) {
@@ -85,7 +88,7 @@ export async function remindAdminBotIncompleteProfiles(
   host.adminBotProfileOverviewError = null;
   host.adminBotProfileOverviewNotice = null;
   try {
-    const result = await runMandatoryFieldsReminder(wire.token, wire.baseUrl);
+    const result = await runMandatoryFieldsReminder(wire.token, wire.baseUrl, scope);
     if (!result.ok) {
       host.adminBotProfileOverviewError = failureText(result, wire.baseUrl);
       return;

@@ -7,9 +7,11 @@
 // The "i" button links to the source file for the function being rated, so a member who wants the
 // function improved can open it on GitHub and file their own PR.
 //
-// Frontend-only for now: the vote is not yet sent anywhere. Every submission dispatches a
-// `feedback` CustomEvent with `{ featureId, rating, comment, githubFile }` so the write path can be
-// attached later without touching this component.
+// The component still owns only the browser half: it stores the vote locally so the widget knows
+// not to ask again, and dispatches a `feedback` CustomEvent with
+// `{ featureId, rating, comment, githubFile, submitted }` for the host to send. `submitted` is
+// what separates a star being clicked from the member actually pressing Send -- the host writes
+// the second and ignores the first, so a member trying out the stars does not file four ratings.
 import { LitElement, css, html, nothing } from "lit";
 import { property } from "lit/decorators.js";
 import { getSafeLocalStorage } from "../../local-storage.ts";
@@ -195,6 +197,8 @@ export class AdminbotFeedbackWidget extends LitElement {
           rating: this.rating,
           comment,
           githubFile: this.githubFile,
+          // False while the member is still picking a star; true once Send is pressed.
+          submitted: this.submitted,
         },
       }),
     );

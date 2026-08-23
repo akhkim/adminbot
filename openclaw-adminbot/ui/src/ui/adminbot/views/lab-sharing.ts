@@ -1160,12 +1160,33 @@ function renderAnnouncementsPanel(state: AppViewState) {
 // Entry point
 // ---------------------------------------------------------------------------
 
+/**
+ * The banner that says what this tab is.
+ *
+ * Every panel below runs on mock data and no control on the page reaches a service (see the MOCK
+ * markers throughout this file). Without a banner the tab reads as a working feature whose data
+ * happens to be wrong, and the first person to post a help request would discover otherwise by
+ * having it vanish. Saying it once, at the top, costs a strip of page and makes the whole tab
+ * honest -- which is why the panels themselves are left exactly as they are.
+ */
+function renderComingSoonBanner() {
+  return html`
+    <div class="lab-sharing__coming-soon" role="status" data-testid="lab-sharing-coming-soon">
+      <span class="pill warn">${t("labSharing.comingSoon.badge")}</span>
+      <span class="lab-sharing__coming-soon-copy">
+        <strong>${t("labSharing.comingSoon.title")}</strong>
+        <span>${t("labSharing.comingSoon.body")}</span>
+      </span>
+    </div>
+  `;
+}
+
 export function renderLabSharing(state: AppViewState) {
   return html`
-    <div class="lab-sharing" data-testid="lab-sharing">
-      ${renderDirectorPanel()} ${renderInvitesPanel(state)} ${renderYourRequestsPanel(state)}
-      ${renderSeekHelpPanel(state)} ${renderOpenProjectsPanel(state)}
-      ${renderAnnouncementsPanel(state)}
+    <div class="lab-sharing" data-testid="lab-sharing" data-preview="true">
+      ${renderComingSoonBanner()} ${renderDirectorPanel()} ${renderInvitesPanel(state)}
+      ${renderYourRequestsPanel(state)} ${renderSeekHelpPanel(state)}
+      ${renderOpenProjectsPanel(state)} ${renderAnnouncementsPanel(state)}
     </div>
   `;
 }

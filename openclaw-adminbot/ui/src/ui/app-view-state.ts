@@ -487,7 +487,9 @@ export type AppViewState = {
   adminBotProfileOverviewLoadedAt: number | null;
   adminBotProfileOverviewReminding: boolean;
   adminBotProfileOverviewNotice: string | null;
-  adminBotProfileOverviewIncompleteOnly: boolean;
+  /** Per-paper draft for the external-coauthor boxes, so a re-render does not clear what was typed. */
+  myWorkCoauthorDraft: Record<string, { email: string; name: string }>;
+  adminBotProfileOverviewFilter: import("./adminbot/views/profile-overview.ts").ProfileOverviewFilter;
   // My Projects & Papers: what each paper still owes, and the slots of whichever cards are open.
   // `loadedAt` is the same "ask for it" sentinel the overview above uses.
   adminBotPaperSlotOverview: import("./adminbot/auth/session.ts").PaperSlotOverviewRow[];

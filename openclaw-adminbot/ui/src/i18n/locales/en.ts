@@ -447,7 +447,7 @@ export const en: TranslationMap = {
     dashboard: "What needs you, and where the lab stands.",
     profile: "Your details, and anything still blank.",
     myWork: "What you are working on, and anything holding it up.",
-    labSharing: "Share resources, ideas, and collaborate.",
+    labSharing: "Coming soon — share resources, ideas, and collaborate.",
     agents: "Workspaces, tools, identities.",
     adminbot: "Approval queue and execution controls.",
     adminbotRegistrations: "Approve or reject pending member signups and roster claims.",
@@ -1240,6 +1240,17 @@ export const en: TranslationMap = {
     empty: "No active members yet.",
     allCaughtUp: "Everyone is caught up.",
     incompleteOnly: "Only show people with something outstanding",
+    filters: {
+      gapLabel: "Filter by what is outstanding",
+      membershipLabel: "Filter by membership",
+      any: "Anything outstanding",
+      profile: "Missing profile fields",
+      timeline: "No timeline",
+      all: "Everyone",
+      everyone: "Everyone on the roster",
+      fullMembers: "Full members only",
+    },
+    remindTimeline: "Remind {count} about their timeline",
     progressLabel: "{filled} of {total} required fields filled",
     timelineShort: "thin",
     timelineBreakdown:
@@ -1447,6 +1458,13 @@ export const en: TranslationMap = {
     },
   },
   labSharing: {
+    comingSoon: {
+      badge: "Coming soon",
+      title: "Lab Sharing is a preview.",
+      body:
+        "Everything below is sample data to show the shape of the feature. Nothing you type here " +
+        "is saved yet, and no request, invite or announcement reaches anybody.",
+    },
     director: {
       availabilityAvailable: "Available",
       availabilityBusy: "Busy",

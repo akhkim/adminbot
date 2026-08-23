@@ -10,9 +10,30 @@
 // Read-only. The single button runs the reminder the daily cron already sends; it composes nothing
 // and picks nobody -- the service does both.
 import { html, nothing } from "lit";
+import {
+  adminBotTimelineEntryTarget,
+  isAdminBotFullMember,
+} from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { t } from "../../../i18n/index.ts";
 import { icons } from "../../icons.ts";
 import type { MemberProfileOverviewRow } from "../auth/session.ts";
+
+/**
+ * Which gap the page is looking at.
+ *
+ * `any` is the working view -- somebody owes something. The two narrow values exist because the
+ * two gaps are chased with different sentences and often on different days: a profile sweep before
+ * a grant report, a timeline sweep before term planning. `all` turns the filter off.
+ */
+export type ProfileOverviewGap = "any" | "profile" | "timeline" | "all";
+
+/** Who the page is looking at. See isAdminBotFullMember for why the distinction matters. */
+export type ProfileOverviewMembership = "everyone" | "full";
+
+export type ProfileOverviewFilter = {
+  gap: ProfileOverviewGap;
+  membership: ProfileOverviewMembership;
+};
 
 export type AdminBotProfileOverviewProps = {
   members: MemberProfileOverviewRow[];
@@ -21,20 +42,71 @@ export type AdminBotProfileOverviewProps = {
   error: string | null;
   notice: string | null;
   reminding: boolean;
-  onRemind: () => void;
+  /**
+   * Nudges exactly the rows the filter is showing, and only about the gap it is filtering on.
+   * The page and the message cannot disagree about who is being chased for what, because the
+   * filter decides both.
+   */
+  onRemind: (scope: { include: "profile" | "timeline" | "both"; memberIds: string[] }) => void;
   onOpenMember: (memberId: string) => void;
-  /** Hides the rows that are already finished, which is most of them on a good week. */
-  incompleteOnly: boolean;
-  onIncompleteOnlyChange: (incompleteOnly: boolean) => void;
+  filter: ProfileOverviewFilter;
+  onFilterChange: (filter: ProfileOverviewFilter) => void;
 };
 
-/**
- * How many timeline entries count as "has actually planned their term".
- *
- * Two is the threshold from the brainstorming doc: one row is somebody trying the page out, and
- * the people this sweep is looking for are the ones who never came back to it.
- */
-const TIMELINE_ENTRY_TARGET = 2;
+/** Whether this row is short of the timeline target. Full members only -- see the contract. */
+export function hasTimelineGap(row: MemberProfileOverviewRow): boolean {
+  return (
+    isAdminBotFullMember({ privilege_level: row.privilege_level }) &&
+    row.timeline.total < adminBotTimelineEntryTarget
+  );
+}
+
+/** The rows a filter shows. Exported so the page and its tests agree on one definition. */
+export function filterOverviewRows(
+  members: MemberProfileOverviewRow[],
+  filter: ProfileOverviewFilter,
+): MemberProfileOverviewRow[] {
+  return members.filter((row) => {
+    if (
+      filter.membership === "full" &&
+      !isAdminBotFullMember({ privilege_level: row.privilege_level })
+    ) {
+      return false;
+    }
+    switch (filter.gap) {
+      case "profile":
+        return row.missing_fields.length > 0;
+      case "timeline":
+        return hasTimelineGap(row);
+      case "any":
+        return row.missing_fields.length > 0 || hasTimelineGap(row);
+      default:
+        return true;
+    }
+  });
+}
+
+/** What the Remind button would send, given the filter. `all` chases both gaps, like `any`. */
+export function remindScopeFor(
+  members: MemberProfileOverviewRow[],
+  filter: ProfileOverviewFilter,
+): { include: "profile" | "timeline" | "both"; memberIds: string[] } {
+  const include =
+    filter.gap === "profile" ? "profile" : filter.gap === "timeline" ? "timeline" : "both";
+  const memberIds = filterOverviewRows(members, {
+    ...filter,
+    gap: filter.gap === "all" ? "any" : filter.gap,
+  })
+    .filter((row) =>
+      include === "profile"
+        ? row.missing_fields.length > 0
+        : include === "timeline"
+          ? hasTimelineGap(row)
+          : row.missing_fields.length > 0 || hasTimelineGap(row),
+    )
+    .map((row) => row.id);
+  return { include, memberIds };
+}
 
 function completionPercent(row: MemberProfileOverviewRow, total: number): number {
   if (total <= 0) {
@@ -106,7 +178,7 @@ function renderMissingCell(row: MemberProfileOverviewRow) {
  * and "which kind" only matters once somebody has stopped on a row.
  */
 function renderTimelineCell(row: MemberProfileOverviewRow) {
-  const short = row.timeline.total < TIMELINE_ENTRY_TARGET;
+  const short = row.timeline.total < adminBotTimelineEntryTarget;
   return html`
     <span
       class="profile-overview__timeline ${short ? "is-short" : ""}"
@@ -152,13 +224,22 @@ function renderRow(props: AdminBotProfileOverviewProps, row: MemberProfileOvervi
   `;
 }
 
+const GAP_OPTIONS: Array<{ value: ProfileOverviewGap; labelKey: string }> = [
+  { value: "any", labelKey: "profileOverview.filters.any" },
+  { value: "profile", labelKey: "profileOverview.filters.profile" },
+  { value: "timeline", labelKey: "profileOverview.filters.timeline" },
+  { value: "all", labelKey: "profileOverview.filters.all" },
+];
+
+const MEMBERSHIP_OPTIONS: Array<{ value: ProfileOverviewMembership; labelKey: string }> = [
+  { value: "everyone", labelKey: "profileOverview.filters.everyone" },
+  { value: "full", labelKey: "profileOverview.filters.fullMembers" },
+];
+
 export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProps) {
-  const rows = props.incompleteOnly
-    ? props.members.filter(
-        (row) => row.missing_fields.length > 0 || row.timeline.total < TIMELINE_ENTRY_TARGET,
-      )
-    : props.members;
-  const outstanding = props.members.filter((row) => row.missing_fields.length > 0).length;
+  const rows = filterOverviewRows(props.members, props.filter);
+  const scope = remindScopeFor(props.members, props.filter);
+  const outstanding = scope.memberIds.length;
   return html`
     <section class="adminbot-shell profile-overview" data-testid="adminbot-profile-overview">
       <div class="card adminbot-card adminbot-card--wide">
@@ -168,30 +249,69 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
             <div class="card-sub">${t("profileOverview.sub")}</div>
           </div>
           <div class="profile-overview__actions">
-            <label class="profile-overview__toggle">
-              <input
-                type="checkbox"
-                .checked=${props.incompleteOnly}
-                @change=${(event: Event) => {
-                  const box = event.currentTarget;
-                  if (box instanceof HTMLInputElement) {
-                    props.onIncompleteOnlyChange(box.checked);
-                  }
-                }}
-              />
-              ${t("profileOverview.incompleteOnly")}
+            <!-- Two filters rather than one checkbox. The two gaps are chased with different
+                 sentences and usually on different days -- a profile sweep before a report, a
+                 timeline sweep before term planning -- and the membership filter is what makes
+                 "full members who have not planned their term" a view rather than a squint. The
+                 Remind button follows the filter, so the page and the message can never disagree
+                 about who is being chased for what. -->
+            <label class="profile-overview__filter">
+              <span class="sr-only">${t("profileOverview.filters.gapLabel")}</span>
+              <select
+                class="target__select"
+                data-testid="profile-overview-filter-gap"
+                @change=${(event: Event) =>
+                  props.onFilterChange({
+                    ...props.filter,
+                    gap: (event.target as HTMLSelectElement).value as ProfileOverviewGap,
+                  })}
+              >
+                ${GAP_OPTIONS.map(
+                  (option) => html`
+                    <option value=${option.value} ?selected=${option.value === props.filter.gap}>
+                      ${t(option.labelKey)}
+                    </option>
+                  `,
+                )}
+              </select>
+            </label>
+            <label class="profile-overview__filter">
+              <span class="sr-only">${t("profileOverview.filters.membershipLabel")}</span>
+              <select
+                class="target__select"
+                data-testid="profile-overview-filter-membership"
+                @change=${(event: Event) =>
+                  props.onFilterChange({
+                    ...props.filter,
+                    membership: (event.target as HTMLSelectElement)
+                      .value as ProfileOverviewMembership,
+                  })}
+              >
+                ${MEMBERSHIP_OPTIONS.map(
+                  (option) => html`
+                    <option
+                      value=${option.value}
+                      ?selected=${option.value === props.filter.membership}
+                    >
+                      ${t(option.labelKey)}
+                    </option>
+                  `,
+                )}
+              </select>
             </label>
             <button
               class="btn btn--sm"
               type="button"
               data-testid="profile-overview-remind"
               ?disabled=${props.reminding || outstanding === 0}
-              @click=${props.onRemind}
+              @click=${() => props.onRemind(scope)}
             >
               <span aria-hidden="true">${icons.send}</span>
               ${props.reminding
                 ? t("profileOverview.reminding")
-                : t("profileOverview.remind", { count: String(outstanding) })}
+                : props.filter.gap === "timeline"
+                  ? t("profileOverview.remindTimeline", { count: String(outstanding) })
+                  : t("profileOverview.remind", { count: String(outstanding) })}
             </button>
           </div>
         </div>
@@ -234,9 +354,9 @@ export function renderAdminBotProfileOverview(props: AdminBotProfileOverviewProp
                 </div>
               `
             : html`<p class="logistics-requests__empty">
-                ${props.incompleteOnly
-                  ? t("profileOverview.allCaughtUp")
-                  : t("profileOverview.empty")}
+                ${props.filter.gap === "all"
+                  ? t("profileOverview.empty")
+                  : t("profileOverview.allCaughtUp")}
               </p>`}
       </div>
     </section>

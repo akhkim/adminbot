@@ -2,7 +2,7 @@
 import { render } from "lit";
 import { describe, expect, it } from "vitest";
 import type { MemberProfileOverviewRow } from "../auth/session.ts";
-import { renderAdminBotProfileOverview } from "./profile-overview.ts";
+import { renderAdminBotProfileOverview, type ProfileOverviewFilter } from "./profile-overview.ts";
 
 type DrawOptions = {
   members?: MemberProfileOverviewRow[];
@@ -11,13 +11,13 @@ type DrawOptions = {
   error?: string | null;
   notice?: string | null;
   reminding?: boolean;
-  incompleteOnly?: boolean;
+  filter?: Partial<ProfileOverviewFilter>;
 };
 
 function draw(options: DrawOptions = {}) {
-  const reminds: number[] = [];
+  const reminds: Array<{ include: string; memberIds: string[] }> = [];
   const opened: string[] = [];
-  const toggles: boolean[] = [];
+  const filters: ProfileOverviewFilter[] = [];
   const container = document.createElement("div");
   document.body.append(container);
   render(
@@ -28,14 +28,14 @@ function draw(options: DrawOptions = {}) {
       error: options.error ?? null,
       notice: options.notice ?? null,
       reminding: options.reminding ?? false,
-      incompleteOnly: options.incompleteOnly ?? false,
-      onIncompleteOnlyChange: (next) => toggles.push(next),
-      onRemind: () => reminds.push(1),
+      filter: { gap: "all", membership: "everyone", ...options.filter },
+      onFilterChange: (next) => filters.push(next),
+      onRemind: (scope) => reminds.push(scope),
       onOpenMember: (id) => opened.push(id),
     }),
     container,
   );
-  return { container, reminds, opened, toggles };
+  return { container, reminds, opened, filters };
 }
 
 function member(fields: Partial<MemberProfileOverviewRow> = {}): MemberProfileOverviewRow {
@@ -124,20 +124,46 @@ describe("profile overview", () => {
         timeline: { availability: 0, time_off: 0, milestones: 1, trips: 0, total: 1 },
       }),
     ];
-    expect(rows(draw({ members: people, incompleteOnly: false }).container)).toHaveLength(3);
+    expect(rows(draw({ members: people, filter: { gap: "all" } }).container)).toHaveLength(3);
     // A thin timeline counts as outstanding too -- it is half of what this page is for.
-    const swept = rows(draw({ members: people, incompleteOnly: true }).container);
+    const swept = rows(draw({ members: people, filter: { gap: "any" } }).container);
     expect(swept.map((row) => row.textContent?.includes("Done"))).toEqual([false, false]);
   });
 
-  it("asks to see everyone when the filter is turned off", () => {
-    const drawn = draw({ members: [member()], incompleteOnly: true });
-    const toggle = drawn.container.querySelector<HTMLInputElement>(
-      ".profile-overview__toggle input",
+  it("changes what is outstanding through the filter", () => {
+    const drawn = draw({ members: [member()], filter: { gap: "any" } });
+    const select = drawn.container.querySelector<HTMLSelectElement>(
+      '[data-testid="profile-overview-filter-gap"]',
     );
-    toggle!.checked = false;
-    toggle?.dispatchEvent(new Event("change", { bubbles: true }));
-    expect(drawn.toggles).toEqual([false]);
+    select!.value = "timeline";
+    select?.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(drawn.filters).toEqual([{ gap: "timeline", membership: "everyone" }]);
+  });
+
+  // The whole point of the pair of filters: full members who never planned their term are a
+  // group an admin can now see and chase in one gesture.
+  it("finds full members with no timeline, and chases only them", () => {
+    const people = [
+      member({ id: "planned", name: "Planned" }),
+      member({
+        id: "thin",
+        name: "Thin",
+        timeline: { availability: 0, time_off: 0, milestones: 0, trips: 0, total: 0 },
+      }),
+      member({
+        id: "guest",
+        name: "Guest",
+        privilege_level: "external_collaborator",
+        timeline: { availability: 0, time_off: 0, milestones: 0, trips: 0, total: 0 },
+      }),
+    ];
+    const drawn = draw({ members: people, filter: { gap: "timeline", membership: "full" } });
+    // The collaborator is not asked when they are working; the full member with nothing is.
+    expect(rows(drawn.container).map((row) => row.textContent?.includes("Thin"))).toEqual([true]);
+    drawn.container
+      .querySelector<HTMLButtonElement>('[data-testid="profile-overview-remind"]')
+      ?.click();
+    expect(drawn.reminds).toEqual([{ include: "timeline", memberIds: ["thin"] }]);
   });
 
   it("counts only incomplete profiles on the reminder button", () => {
@@ -197,7 +223,7 @@ describe("profile overview", () => {
   });
 
   it("says the sweep is clear rather than showing a bare header", () => {
-    const { container } = draw({ members: [member()], incompleteOnly: true });
+    const { container } = draw({ members: [member()], filter: { gap: "any" } });
     expect(container.querySelector(".profile-overview__table")).toBeNull();
     expect(container.querySelector(".logistics-requests__empty")?.textContent).toContain(
       "Everyone is caught up",

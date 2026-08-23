@@ -33,14 +33,35 @@ import {
   type AdminBotPaperSlotDefinition,
 } from "../../../../../extensions/adminbot/src/contracts/paper-slots.js";
 import { icons } from "../../icons.ts";
+import type { MemberOption } from "./member-select.ts";
+import { renderPaperCoauthors, type PaperAuthorLink } from "./paper-coauthors.ts";
 import type { PaperflowStageRow, PaperSlotRow } from "../auth/session.ts";
 
 export type PaperDetailsProps = {
   authors: string[];
+  /**
+   * The author list as people. When present the card renders the coauthor picker instead of the
+   * free-text box, which is what makes a paper visible to every coauthor rather than to whoever
+   * spelled a name the way the roster does.
+   */
+  authorLinks?: PaperAuthorLink[];
+  /** The roster to search when adding an author. */
+  members?: MemberOption[];
+  /** Draft state for the external-author boxes, held by the caller across re-renders. */
+  coauthorDraft?: { email: string; name: string };
+  onCoauthorDraftChange?: (draft: { email?: string; name?: string }) => void;
   feedbackGivers: string[];
   venue: string;
+  /** What each author does on this paper, in prose. See `author_roles` on the record. */
+  authorRoles: string;
   /** Absent for a reader who may not edit this paper; the block renders read-only instead. */
-  onSaveDetails?: (details: { authors: string[]; feedbackGivers: string[]; venue: string }) => void;
+  onSaveDetails?: (details: {
+    authors: string[];
+    feedbackGivers: string[];
+    venue: string;
+    authorRoles: string;
+    authorLinks?: PaperAuthorLink[];
+  }) => void;
 };
 
 export type PaperSlotsProps = {
@@ -310,14 +331,19 @@ function renderChildSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
             ? nothing
             : html`<span class="paper-slot__optional">optional</span>`}
           <!-- A <details> rather than a tooltip: it works on touch, it is reachable by keyboard,
-               and the answer stays open while the reader types the value it describes. -->
+               and the answer stays open while the reader types the value it describes.
+
+               The glyph is "i", not "?". A question mark next to a field reads as "is something
+               wrong with this?" and, at the size a badge has to be, a dim one was hard to see at
+               all; an info mark says the same thing the aria-label does -- there is an
+               explanation here -- and earns the contrast it is drawn with. -->
           ${definition.hint
             ? html`<details class="paper-slot__help">
                 <summary
                   aria-label=${`What goes in ${definition.label}?`}
                   data-testid=${`paper-slot-help-${props.paperId}-${slot}`}
                 >
-                  ?
+                  i
                 </summary>
                 <p>${definition.hint}</p>
                 ${definition.example
@@ -358,14 +384,19 @@ function renderSlot(props: PaperSlotsProps, slot: AdminBotPaperSlot) {
             ? nothing
             : html`<span class="paper-slot__optional">optional</span>`}
           <!-- A <details> rather than a tooltip: it works on touch, it is reachable by keyboard,
-               and the answer stays open while the reader types the value it describes. -->
+               and the answer stays open while the reader types the value it describes.
+
+               The glyph is "i", not "?". A question mark next to a field reads as "is something
+               wrong with this?" and, at the size a badge has to be, a dim one was hard to see at
+               all; an info mark says the same thing the aria-label does -- there is an
+               explanation here -- and earns the contrast it is drawn with. -->
           ${definition.hint
             ? html`<details class="paper-slot__help">
                 <summary
                   aria-label=${`What goes in ${definition.label}?`}
                   data-testid=${`paper-slot-help-${props.paperId}-${slot}`}
                 >
-                  ?
+                  i
                 </summary>
                 <p>${definition.hint}</p>
                 ${definition.example
@@ -472,23 +503,45 @@ function renderDetails(props: PaperSlotsProps) {
     return nothing;
   }
   const save = details.onSaveDetails;
-  const commit = (patch: Partial<{ authors: string[]; feedbackGivers: string[]; venue: string }>) =>
+  const commit = (
+    patch: Partial<{
+      authors: string[];
+      feedbackGivers: string[];
+      venue: string;
+      authorRoles: string;
+      authorLinks: PaperAuthorLink[];
+    }>,
+  ) =>
     save?.({
       authors: details.authors,
       feedbackGivers: details.feedbackGivers,
       venue: details.venue,
+      authorRoles: details.authorRoles,
       ...patch,
     });
   return html`
     <section class="paper-slots__details" data-testid=${`paper-details-${props.paperId}`}>
-      ${renderNameList({
-        id: `paper-authors-${props.paperId}`,
-        label: "Author list",
-        hint: "In the order the paper prints them. The first lab member on this list gets the venue-stage emails.",
-        values: details.authors,
-        placeholder: "Ada Lovelace, Rahul Babu Shrestha, Zhijing Jin",
-        ...(save ? { onChange: (authors: string[]) => commit({ authors }) } : {}),
-      })}
+      <!-- The picker when the caller can supply the roster, the old text box otherwise (the admin
+           grid and any surface that has not been given a member list yet). Both write the same
+           record; only the picker records *who* each name is. -->
+      ${details.authorLinks && details.members
+        ? renderPaperCoauthors({
+            paperId: props.paperId,
+            links: details.authorLinks,
+            members: details.members,
+            draftEmail: details.coauthorDraft?.email ?? "",
+            draftName: details.coauthorDraft?.name ?? "",
+            onDraftChange: (draft) => details.onCoauthorDraftChange?.(draft),
+            ...(save ? { onChange: (authorLinks) => commit({ authorLinks }) } : {}),
+          })
+        : renderNameList({
+            id: `paper-authors-${props.paperId}`,
+            label: "Author list",
+            hint: "In the order the paper prints them. The first lab member on this list gets the venue-stage emails.",
+            values: details.authors,
+            placeholder: "Ada Lovelace, Rahul Babu Shrestha, Zhijing Jin",
+            ...(save ? { onChange: (authors: string[]) => commit({ authors }) } : {}),
+          })}
       ${renderNameList({
         id: `paper-feedback-givers-${props.paperId}`,
         label: "Feedback givers",
@@ -497,6 +550,37 @@ function renderDetails(props: PaperSlotsProps) {
         placeholder: "Bernhard Schölkopf, Terry Zhang",
         ...(save ? { onChange: (feedbackGivers: string[]) => commit({ feedbackGivers }) } : {}),
       })}
+      <!-- A paragraph, not a field per author. Contributions do not divide cleanly by name, and
+           what an author wants at submission time is a sentence they can paste into the
+           contributions statement rather than a form they have to fill in twice. Commits on
+           change (blur), like the venue box: a contributions paragraph is meaningless half-typed,
+           and a save per keystroke would be a save per keystroke. -->
+      ${save
+        ? html`
+            <label class="paper-detail">
+              <span class="paper-detail__label">What each author does</span>
+              <textarea
+                class="input paper-detail__paragraph"
+                rows="3"
+                placeholder="Ada ran the experiments and wrote §4. Rahul built the dataset pipeline. Zhijing advised throughout."
+                data-testid=${`paper-author-roles-${props.paperId}`}
+                .value=${details.authorRoles}
+                @change=${(event: Event) =>
+                  commit({ authorRoles: (event.target as HTMLTextAreaElement).value.trim() })}
+              ></textarea>
+              <span class="paper-detail__hint">
+                Who did what on this paper, in your own words. This is what the contributions
+                statement gets written from — and what a coauthor reads when they want to know
+                whose section is whose.
+              </span>
+            </label>
+          `
+        : html`
+            <div class="paper-detail">
+              <span class="paper-detail__label">What each author does</span>
+              <p class="paper-detail__readonly">${details.authorRoles || "—"}</p>
+            </div>
+          `}
       ${save
         ? html`
             <label class="paper-detail">

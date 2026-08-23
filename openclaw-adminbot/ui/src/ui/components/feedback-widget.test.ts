@@ -144,11 +144,14 @@ describe("adminbot-feedback-widget", () => {
     });
     await clickStar(el, 2);
     await el.updateComplete;
+    // `submitted` is false here on purpose: the host only writes a rating the member actually
+    // pressed Send on, so clicking through the stars cannot file four ratings.
     expect(detail).toEqual({
       featureId: "my-work",
       rating: 3,
       comment: "",
       githubFile: "https://github.com/example/lab/blob/main/views/my-work.ts",
+      submitted: false,
     });
     const send = el.shadowRoot?.querySelector<HTMLButtonElement>(".fb__send");
     expect(send?.disabled).toBe(false);

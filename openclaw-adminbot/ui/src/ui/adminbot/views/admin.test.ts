@@ -9,6 +9,7 @@ import {
   createEmptyAdminBotDashboardData,
 } from "../controllers/admin.ts";
 import { renderAdminBot, type AdminBotProps } from "./admin.ts";
+import { PROFILE_FIELDS } from "../member-fields.ts";
 
 function member(overrides: Partial<AdminBotLabMember> = {}): AdminBotLabMember {
   return { ...members[0]!, ...overrides };
@@ -168,6 +169,136 @@ describe("renderAdminBot members panel — edit affordance", () => {
       "#adminbot-edit-member-0 [data-collaborator-subgroup-field]",
     );
     expect(editField?.hidden).toBe(true);
+  });
+
+  // The roster is written down two paths that do not know about each other, so one person can be
+  // two half-records. The panel is a comparison an admin resolves, never an automatic merge.
+  it("offers to combine two records that look like one person", () => {
+    const saved: Array<[string, string]> = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [
+            member({ id: "terry-jingchen-zhang", name: "Terry Jingchen Zhang", email: "t@lab.co" }),
+            member({
+              id: "terry-zhang",
+              name: "Terry Zhang",
+              email: "terry@cs.test",
+              slack_user_id: "U09",
+            }),
+          ],
+          loadedAt: Date.now(),
+        },
+        onMergeMembers: (survivorId, duplicateId) => saved.push([survivorId, duplicateId]),
+      }),
+    );
+    const panel = container.querySelector('[data-testid="member-duplicates"]');
+    expect(panel).not.toBeNull();
+    // Either record can be the survivor -- only a human knows which spelling the lab uses.
+    expect(
+      panel?.querySelector('[data-testid="member-merge-terry-jingchen-zhang-terry-zhang"]'),
+    ).not.toBeNull();
+    expect(
+      panel?.querySelector('[data-testid="member-merge-terry-zhang-terry-jingchen-zhang"]'),
+    ).not.toBeNull();
+
+    globalThis.confirm = () => true;
+    panel
+      ?.querySelector<HTMLButtonElement>(
+        '[data-testid="member-merge-terry-jingchen-zhang-terry-zhang"]',
+      )
+      ?.click();
+    expect(saved).toEqual([["terry-jingchen-zhang", "terry-zhang"]]);
+  });
+
+  it("merges nothing without a confirmation", () => {
+    const saved: Array<[string, string]> = [];
+    const container = renderToDiv(
+      baseProps({
+        mode: "admin",
+        data: {
+          ...createEmptyAdminBotDashboardData(),
+          members: [
+            member({ id: "miu-nicole-takagi", name: "Miu Nicole Takagi" }),
+            member({ id: "miu-takagi", name: "Miu Takagi", email: "miu@cs.test" }),
+          ],
+          loadedAt: Date.now(),
+        },
+        onMergeMembers: (survivorId, duplicateId) => saved.push([survivorId, duplicateId]),
+      }),
+    );
+    globalThis.confirm = () => false;
+    container
+      .querySelector<HTMLButtonElement>(
+        '[data-testid="member-merge-miu-takagi-miu-nicole-takagi"]',
+      )
+      ?.click();
+    expect(saved).toEqual([]);
+  });
+
+  it("keeps the panel off the page when there is nothing to combine", () => {
+    const container = renderToDiv(baseProps({ mode: "admin" }));
+    expect(container.querySelector('[data-testid="member-duplicates"]')).toBeNull();
+  });
+
+  // The whole point of the shared registry: the roster editor and the member's own profile page
+  // ask for the same facts. It used to be twenty fields against twenty-seven, so an admin looking
+  // at a record could not fill in a preferred name, a CV link or any social but GitHub.
+  it("offers every member field the profile page does", () => {
+    const container = renderToDiv(baseProps({ mode: "admin" }));
+    const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
+    const missing = PROFILE_FIELDS.filter(
+      (field) => !popover?.querySelector(`[name="${field.key}"]`),
+    ).map((field) => field.key);
+    expect(missing).toEqual([]);
+  });
+
+  it("keeps admin-only fields out of a member's own edit form", () => {
+    const container = renderToDiv(
+      // `mode` is admin-or-general; the self-edit popover is what a non-admin gets on their own
+      // row, which is the general roster view plus a signed-in member id.
+      baseProps({ mode: "general", signedInMemberId: "pat" }),
+    );
+    const popover = container.querySelector<HTMLElement>("#adminbot-self-edit-member-0");
+    const adminOnly = PROFILE_FIELDS.filter((field) => field.adminOnly);
+    expect(adminOnly.length).toBeGreaterThan(0);
+    for (const field of adminOnly) {
+      expect(popover?.querySelector(`[name="${field.key}"]`)).toBeNull();
+    }
+    // Everything else is still there -- the restriction is the flag, not a shorter list.
+    const missing = PROFILE_FIELDS.filter(
+      (field) => !field.adminOnly && !popover?.querySelector(`[name="${field.key}"]`),
+    ).map((field) => field.key);
+    expect(missing).toEqual([]);
+  });
+
+  it("sends registry fields in the service's wire shape, typed by the registry", () => {
+    const saved: AdminBotLabMemberSaveInput[] = [];
+    const container = renderToDiv(
+      baseProps({ mode: "admin", onSaveMember: (input) => saved.push(input) }),
+    );
+    const popover = container.querySelector<HTMLElement>("#adminbot-edit-member-0");
+    const set = (key: string, value: string) => {
+      const input = popover?.querySelector<HTMLInputElement>(`[name="${key}"]`);
+      input!.value = value;
+    };
+    set("preferred_name", "Pat");
+    set("research_topics", "robotics, world models");
+    set("hours_per_week", "12");
+    popover
+      ?.querySelector<HTMLFormElement>("form")
+      ?.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
+
+    expect(saved[0]?.profile).toMatchObject({
+      preferred_name: "Pat",
+      research_topics: ["robotics", "world models"],
+      hours_per_week: 12,
+    });
+    // A field the admin left blank is absent, not "" -- the service reads an empty string as
+    // "clear this", so sending every untouched field would wipe the record on each save.
+    expect(saved[0]?.profile).not.toHaveProperty("scholar_url");
   });
 
   it("prefills the subgroup of an external collaborator and sends it with the save", () => {

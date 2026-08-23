@@ -10484,3 +10484,98 @@ select.input:focus {
   font: inherit;
   text-align: center;
 }
+
+/* Possible duplicate roster records.
+   The lab's roster is written down two paths that do not know about each other -- the Quick-Start
+   survey and the Slack member export -- so one person can be two half-records. The panel is a
+   comparison, not a verdict: each side says what it alone would contribute, and the button on it
+   means "this is the record that survives". */
+.adminbot-duplicates__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  list-style: none;
+  margin: var(--space-3) 0 0;
+  padding: 0;
+}
+
+.adminbot-duplicate {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-muted);
+}
+
+.adminbot-duplicate__why {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+/* Two columns on anything wide enough to read them side by side, which is the whole point --
+   the admin is comparing two records, not reading two paragraphs. */
+.adminbot-duplicate__sides {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: var(--space-3);
+}
+
+.adminbot-duplicate__side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.adminbot-duplicate__name {
+  color: var(--text-strong);
+}
+
+.adminbot-duplicate__id {
+  font-family: var(--font-mono, monospace);
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.adminbot-duplicate__brings {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted-strong);
+  margin-bottom: var(--space-2);
+}
+
+/* Lab Sharing preview banner.
+   The tab renders a complete UI over mock data; the banner is what stops that from reading as a
+   working feature with wrong numbers in it. Warm rather than alarming -- nothing is broken, it is
+   just not connected yet. */
+.lab-sharing__coming-soon {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  border: 1px solid var(--warn-muted, var(--border));
+  border-radius: var(--radius-md);
+  background: var(--warn-subtle, var(--bg-muted));
+}
+
+.lab-sharing__coming-soon-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--control-ui-text-sm);
+  color: var(--muted-strong);
+}
+
+.lab-sharing__coming-soon-copy strong {
+  color: var(--text-strong);
+}

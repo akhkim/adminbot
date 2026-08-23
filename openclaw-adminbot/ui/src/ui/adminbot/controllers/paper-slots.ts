@@ -22,6 +22,7 @@ import {
   savePaperAttendee,
   savePaperReimbursementStatus,
   savePaperSlot,
+  savePaperWeeklyUpdate,
   savePaperSocialDraft,
   type PaperCycle,
   type PaperNudgeBatch,
@@ -38,7 +39,12 @@ export type AdminBotPaperSlotsHost = {
       privilege_level?: string;
       status?: string;
     }[];
-    settings?: { head_professor_member_id?: string };
+    // `| null` because that is what the app view state actually holds: the settings row is read
+    // asynchronously and is null until it arrives. Declaring it `undefined`-only made every call
+    // site in app-render.ts fail to typecheck against this host -- twelve identical errors for a
+    // shape mismatch that has never been a runtime problem, because every reader here already
+    // treats a missing row as "no head professor on file".
+    settings?: { head_professor_member_id?: string } | null;
   } | null;
   adminBotPaperSlotOverview: PaperSlotOverviewRow[];
   /** The whole cycle by paper id -- slots, drafts, consents, attendees, reimbursements. */
@@ -201,6 +207,48 @@ export async function loadAdminBotPaperSlots(
  * malformed comes back `invalid` with a reason, and echoing the optimistic version instead would
  * show a green tick on an artifact nobody can open.
  */
+/**
+ * Writes the signed-in member's own line for this week, and folds it into the cached cycle.
+ *
+ * Local merge rather than a re-read: the log is the one part of the card whose new row the client
+ * already has in full, and re-fetching the whole cycle to see a sentence you just typed is a
+ * visible pause for no new information.
+ */
+export async function saveAdminBotPaperWeeklyUpdate(
+  host: AdminBotPaperSlotsHost,
+  paperId: string,
+  body: string,
+): Promise<void> {
+  const wire = session(host);
+  if (!wire) {
+    host.adminBotPaperSlotsError = t("paperSlots.error.signIn");
+    return;
+  }
+  host.adminBotPaperSlotsError = null;
+  host.adminBotPaperSlotsBusyId = paperId;
+  try {
+    const result = await savePaperWeeklyUpdate(paperId, body, wire.token, wire.baseUrl);
+    if (!result.ok) {
+      host.adminBotPaperSlotsError = failureText(result, wire.baseUrl);
+      return;
+    }
+    const cycle = host.adminBotPaperSlots[paperId];
+    if (cycle) {
+      const saved = result.value.update;
+      const others = cycle.weeklyUpdates.filter(
+        (update) =>
+          !(update.member_id === saved.member_id && update.week_start === saved.week_start),
+      );
+      host.adminBotPaperSlots = {
+        ...host.adminBotPaperSlots,
+        [paperId]: { ...cycle, weeklyUpdates: [saved, ...others] },
+      };
+    }
+  } finally {
+    host.adminBotPaperSlotsBusyId = null;
+  }
+}
+
 export async function saveAdminBotPaperSlot(
   host: AdminBotPaperSlotsHost,
   paperId: string,

@@ -104,6 +104,12 @@
   color: var(--ok);
 }
 
+/* A rejected paper is quiet, not finished. Muted rather than warning-coloured: nothing is
+   overdue on it, and the next move is a venue rather than an artifact. */
+.my-work-item__outstanding.is-closed {
+  color: var(--muted);
+}
+
 .my-work-item__body {
   display: flex;
   flex-direction: column;
@@ -678,6 +684,14 @@
 }
 
 .paper-detail__hint,
+/* The contributions paragraph. Tall enough to hold three sentences without scrolling, which is
+   about the length of an honest answer, and it grows rather than scrolling past that. */
+.paper-detail__paragraph {
+  min-height: 4.5rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+
 .paper-detail__readonly {
   margin: 0;
   font-size: var(--control-ui-text-xs);
@@ -784,4 +798,238 @@
 
 .paper-stage--upcoming {
   opacity: 0.6;
+}
+
+/* Weekly updates.
+   The box for this week sits above the log, because the thing a person came here to do is write
+   their line, not read last month's. The log below is deliberately quiet -- it is context, and it
+   is read on a Monday by somebody scanning for what moved. */
+.weekly-updates {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-raised, var(--bg));
+}
+
+.weekly-updates__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--control-ui-text-sm);
+  font-weight: 650;
+  color: var(--text-strong);
+}
+
+.weekly-updates__icon {
+  display: inline-grid;
+  place-items: center;
+  color: var(--muted);
+}
+
+.weekly-updates__icon svg {
+  width: 15px;
+  height: 15px;
+}
+
+.weekly-updates__week {
+  margin-left: auto;
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.weekly-updates__own {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.weekly-updates__own-label {
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.weekly-updates__box {
+  min-height: 4.5rem;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.weekly-updates__hint,
+.weekly-updates__empty {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+.weekly-updates__log {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.weekly-updates__week-label {
+  display: block;
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  color: var(--muted-strong);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.weekly-updates__entries {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+
+/* Author beside the line rather than above it: the log is scanned down the left edge for a name,
+   and a stacked layout doubles its height for no gain. */
+.weekly-updates__entry {
+  display: grid;
+  grid-template-columns: minmax(6rem, 9rem) 1fr;
+  gap: var(--space-3);
+  align-items: baseline;
+}
+
+.weekly-updates__author {
+  font-size: var(--control-ui-text-xs);
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.weekly-updates__body {
+  font-size: var(--control-ui-text-sm);
+  color: var(--text);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 40rem) {
+  .weekly-updates__entry {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+/* The author list, as rows of people.
+   Each row says which of the three kinds it is, because the difference is what a reader needs:
+   a lab member sees the paper on their own page, an external is on the paper and nowhere else,
+   and an unlinked name is a question somebody still has to answer. */
+.coauthors {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.coauthors__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.coauthor {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+/* An unlinked row is the one thing on this list that needs doing, so it is the one that is
+   coloured. The other two are settled states and should read as calm. */
+.coauthor--unlinked {
+  border-color: var(--warn-muted, var(--border));
+  background: var(--warn-subtle, var(--bg-muted));
+}
+
+.coauthor__order {
+  min-width: 1.5rem;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  text-align: right;
+}
+
+.coauthor__identity {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  flex: 1;
+  min-width: 0;
+}
+
+.coauthor__name {
+  font-size: var(--control-ui-text-sm);
+  color: var(--text-strong);
+  overflow-wrap: anywhere;
+}
+
+.coauthor__badge {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.coauthor__badge--member {
+  color: var(--ok);
+}
+
+.coauthor__badge--unlinked {
+  color: var(--warn);
+}
+
+.coauthor__actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.coauthor__actions .btn {
+  padding-inline: var(--space-2);
+}
+
+.coauthors__add {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px dashed var(--border);
+}
+
+/* The external boxes sit on one line where there is room: a name, an address, and the button that
+   commits them, read left to right in the order they are filled. */
+.coauthors__add-external {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) minmax(12rem, 1.4fr) auto;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.coauthors__empty {
+  margin: 0;
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
+
+@media (max-width: 40rem) {
+  .coauthors__add-external {
+    grid-template-columns: 1fr;
+  }
 }

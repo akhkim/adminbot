@@ -27,6 +27,7 @@ import type {
   AdminBotSettings,
 } from "../contracts/actions.js";
 import type { AdminBotStoredProposal } from "../contracts/actions.js";
+import type { AdminBotFeedbackEntry } from "../contracts/feedback.js";
 import type {
   AdminBotConferenceAttendeeRecord,
   AdminBotNudgeLedgerRecord,
@@ -35,6 +36,7 @@ import type {
   AdminBotSocialDraftRecord,
 } from "../contracts/paper-cycle.js";
 import type { AdminBotPaperSlotRecord } from "../contracts/paper-slots.js";
+import type { AdminBotPaperWeeklyUpdate } from "../contracts/paper-weekly-updates.js";
 import type { AdminBotPaperflowEvidenceRecord } from "../contracts/paperflow-stages.js";
 import type { AdminBotServiceStore, AdminBotSlackChannelNamingRecord } from "../kernel/service.js";
 
@@ -73,6 +75,11 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
   private readonly sessions = new Map<string, AdminBotAuthSession>();
   private readonly passwordResets = new Map<string, AdminBotPasswordReset>();
   private readonly slackChannelNaming = new Map<string, AdminBotSlackChannelNamingRecord>();
+  // Keyed by adminBotFeedbackId, matching the SQLite primary key, so a re-rating collapses onto
+  // the same row in both stores.
+  private readonly feedback = new Map<string, AdminBotFeedbackEntry>();
+  // Keyed `paperId\u0000memberId\u0000weekStart`, matching the SQLite composite primary key.
+  private readonly paperWeeklyUpdates = new Map<string, AdminBotPaperWeeklyUpdate>();
 
   saveProposal(proposal: AdminBotStoredProposal): void {
     this.proposals.set(proposal.id, proposal);
@@ -118,6 +125,100 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
     return [...this.labMembers.values()].toSorted((left, right) =>
       left.name.localeCompare(right.name),
     );
+  }
+
+  deleteLabMember(memberId: string): boolean {
+    return this.labMembers.delete(memberId);
+  }
+
+  /**
+   * The in-memory mirror of the SQLite sweep.
+   *
+   * Every map here is keyed by something that includes the subject rather than the member, so a
+   * repoint is a rewrite of the value and, where the key itself names the member, a re-key. The
+   * collision rule matches SQLite's `UPDATE OR IGNORE` + delete: if the survivor already has a row
+   * for the same subject, theirs stands and the duplicate's is dropped.
+   */
+  reassignMemberReferences(fromMemberId: string, toMemberId: string): Record<string, number> {
+    const moved: Record<string, number> = {};
+    const bump = (label: string) => {
+      moved[label] = (moved[label] ?? 0) + 1;
+    };
+    const remap = <T extends { member_id?: string }>(
+      map: Map<string, T>,
+      label: string,
+      rekey: (key: string, record: T) => string,
+    ) => {
+      for (const [key, record] of [...map]) {
+        if (record.member_id !== fromMemberId) {
+          continue;
+        }
+        map.delete(key);
+        const updated = { ...record, member_id: toMemberId } as T;
+        const nextKey = rekey(key, updated);
+        if (!map.has(nextKey)) {
+          map.set(nextKey, updated);
+          bump(label);
+        }
+      }
+    };
+    remap(this.cvChanges, "cv_changes", (key) => key.replace(fromMemberId, toMemberId));
+    remap(this.logisticsRequests, "logistics_requests", (key) => key);
+    remap(this.nudgeLedger, "nudge_ledger", (key) => key.replace(fromMemberId, toMemberId));
+    remap(this.socialConsents, "social_draft_consents", (key) =>
+      key.replace(fromMemberId, toMemberId),
+    );
+    remap(this.conferenceAttendees, "conference_attendees", (key) =>
+      key.replace(fromMemberId, toMemberId),
+    );
+    remap(this.paperReimbursements, "paper_reimbursements", (key) =>
+      key.replace(fromMemberId, toMemberId),
+    );
+    remap(this.registrations, "account_registrations", (key) => key);
+    remap(this.passwordResets, "password_resets", (key) => key);
+    // Sessions are not repointed -- see the note in the SQLite store; the service revokes the
+    // retired member's instead. Credentials are, and the survivor's own wins a collision.
+    for (const [memberId, credential] of [...this.credentialsByMemberId]) {
+      if (memberId !== fromMemberId) {
+        continue;
+      }
+      this.credentialsByMemberId.delete(memberId);
+      if (this.credentialsByMemberId.has(toMemberId)) {
+        this.credentialsByEmail.delete(credential.email);
+        continue;
+      }
+      const moved_credential = { ...credential, member_id: toMemberId };
+      this.credentialsByMemberId.set(toMemberId, moved_credential);
+      this.credentialsByEmail.set(credential.email, moved_credential);
+      bump("member_credentials");
+    }
+    for (const [index, entry] of this.memberLocations.entries()) {
+      if (entry.member_id === fromMemberId) {
+        this.memberLocations[index] = { ...entry, member_id: toMemberId };
+        bump("member_locations");
+      }
+    }
+    for (const [key, draft] of [...this.socialDrafts]) {
+      if (draft.generated_by_member_id === fromMemberId) {
+        this.socialDrafts.set(key, { ...draft, generated_by_member_id: toMemberId });
+        bump("social_drafts");
+      }
+    }
+    for (const [key, slot] of [...this.paperSlots]) {
+      let updated = slot;
+      if (slot.provided_by_member_id === fromMemberId) {
+        updated = { ...updated, provided_by_member_id: toMemberId };
+        bump("paper_slots.provided_by");
+      }
+      if (slot.waived_by_member_id === fromMemberId) {
+        updated = { ...updated, waived_by_member_id: toMemberId };
+        bump("paper_slots.waived_by");
+      }
+      if (updated !== slot) {
+        this.paperSlots.set(key, updated);
+      }
+    }
+    return moved;
   }
 
   savePaper(paper: AdminBotPaperRecord): void {
@@ -519,6 +620,40 @@ export class AdminBotMemoryStore implements AdminBotServiceStore {
       }
     }
     return removed;
+  }
+
+  savePaperWeeklyUpdate(update: AdminBotPaperWeeklyUpdate): void {
+    this.paperWeeklyUpdates.set(
+      `${update.paper_id}\u0000${update.member_id}\u0000${update.week_start}`,
+      update,
+    );
+  }
+
+  listPaperWeeklyUpdates(params?: {
+    paperId?: string;
+    weekStart?: string;
+  }): AdminBotPaperWeeklyUpdate[] {
+    return [...this.paperWeeklyUpdates.values()]
+      .filter(
+        (update) =>
+          (!params?.paperId || update.paper_id === params.paperId) &&
+          (!params?.weekStart || update.week_start === params.weekStart),
+      )
+      .toSorted(
+        (left, right) =>
+          right.week_start.localeCompare(left.week_start) ||
+          left.member_id.localeCompare(right.member_id),
+      );
+  }
+
+  saveFeedback(entry: AdminBotFeedbackEntry): void {
+    this.feedback.set(entry.id, entry);
+  }
+
+  listFeedback(featureId?: string): AdminBotFeedbackEntry[] {
+    return [...this.feedback.values()]
+      .filter((entry) => !featureId || entry.feature_id === featureId)
+      .toSorted((left, right) => right.updated_at.localeCompare(left.updated_at));
   }
 
   saveSlackChannelNamingRecord(record: AdminBotSlackChannelNamingRecord): void {

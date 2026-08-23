@@ -15,6 +15,496 @@ function unwrap<T>(
   return result.payload;
 }
 
+function completeMember(fields: { id: string; privilege_level: string }) {
+  return {
+    name: `Complete ${fields.id}`,
+    slack_user_id: `U-${fields.id}`,
+    calendar_email: "complete@gmail.com",
+    location: "Toronto",
+    research_topics: ["nlp"],
+    correspondence_email: "complete@cs.toronto.edu",
+    whatsapp: "(+1) 555 0100",
+    joined_month: "2026-03",
+    github_url: "https://github.com/complete",
+    linkedin_url: "https://www.linkedin.com/in/complete",
+    linkedin_urn: "ACoAAB1234567",
+    cv_url: "https://example.com/cv.pdf",
+    intake_form_url: "https://docs.google.com/forms/d/e/complete/viewform",
+    openreview_id: "~Complete_Member1",
+    ...fields,
+  } as Parameters<AdminBotService["upsertLabMember"]>[0];
+}
+
+describe("AdminBotService paper coauthors", () => {
+  function lab() {
+    const service = new AdminBotService();
+    for (const [id, name, email] of [
+      ["joeun-yook", "Joeun Yook", "yookjoeu@cs.toronto.edu"],
+      // The roster refuses a non-@cs.toronto.edu address at member level, so the fixture uses the
+      // institutional ones -- which is what these three have in the real roster anyway.
+      ["andrew-kim", "Andrew Kim", "akim@cs.toronto.edu"],
+      ["zhijing-jin", "Zhijing Jin", "zjin@cs.toronto.edu"],
+    ] as const) {
+      unwrap(service.upsertLabMember({ id, name, email, privilege_level: "member" }));
+    }
+    return service;
+  }
+
+  // The whole point: Joeun files it, everybody on it sees it.
+  it("shows a paper to every coauthor, not just whoever filed it", () => {
+    const service = lab();
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot",
+        authors: ["Joeun Yook*", "Andrew Kim", "Zhijing Jin"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+    // Ownership is what lets somebody write to the paper and read its credentials. Reading the
+    // cycle at all is open to any signed-in member -- it is `entitled` inside it that is gated, so
+    // asserting on `ok` here would pass for a stranger too.
+    for (const memberId of ["joeun-yook", "andrew-kim", "zhijing-jin"]) {
+      expect(
+        service.upsertOwnPaper(memberId, { id: "adminbot", title: "AdminBot" }).ok,
+        `${memberId} should own this paper`,
+      ).toBe(true);
+    }
+    const stored = unwrap(service.listPapers()).papers.find((paper) => paper.id === "adminbot");
+    expect(stored?.author_links).toEqual([
+      { name: "Joeun Yook*", member_id: "joeun-yook" },
+      { name: "Andrew Kim", member_id: "andrew-kim" },
+      { name: "Zhijing Jin", member_id: "zhijing-jin" },
+    ]);
+  });
+
+  it("lets a coauthor edit the paper they were added to", () => {
+    const service = lab();
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot",
+        authors: ["Joeun Yook", "Andrew Kim"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+    // Andrew never filed it and is not the first author, but it is his paper too.
+    expect(
+      service.upsertOwnPaper("andrew-kim", { id: "adminbot", title: "AdminBot v2" }),
+    ).toMatchObject({ ok: true });
+    // Somebody who is not on it still cannot.
+    unwrap(service.upsertLabMember({ id: "stranger", name: "Stranger" }));
+    expect(service.upsertOwnPaper("stranger", { id: "adminbot", title: "Mine now" })).toMatchObject(
+      { ok: false },
+    );
+  });
+
+  it("records an external coauthor and gives them nothing else", () => {
+    const service = lab();
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "adminbot",
+        title: "AdminBot",
+        current_step: "brainstorming_docs",
+        authors: [],
+        author_links: [
+          { name: "Joeun Yook", member_id: "joeun-yook" },
+          { name: "Bernhard Schölkopf", email: "bs@tue.mpg.de" },
+        ],
+      }),
+    );
+    const stored = unwrap(service.listPapers()).papers.find((paper) => paper.id === "adminbot");
+    // On the paper, in the printed list...
+    expect(stored?.authors).toEqual(["Joeun Yook", "Bernhard Schölkopf"]);
+    expect(stored?.author_links?.[1]).toEqual({
+      name: "Bernhard Schölkopf",
+      email: "bs@tue.mpg.de",
+    });
+    // ...and nowhere else. No roster row was created for them.
+    expect(unwrap(service.listLabMembers()).members.map((member) => member.id)).not.toContain(
+      "bs@tue.mpg.de",
+    );
+    // And nothing chases them: the nudge walk only knows roster ids.
+    const overview = unwrap(service.listPaperSlotOverview()).papers.find(
+      (row) => row.paper_id === "adminbot",
+    );
+    expect(overview?.first_author_member_id).toBe("joeun-yook");
+  });
+
+  it("does not put a paper on the page of somebody who merely shares a name", () => {
+    const service = lab();
+    unwrap(service.upsertLabMember({ id: "wei-one", name: "Wei Chen" }));
+    unwrap(service.upsertLabMember({ id: "wei-two", name: "Wei Chen" }));
+    unwrap(
+      service.upsertOwnPaper("joeun-yook", {
+        id: "ambiguous",
+        title: "Ambiguous",
+        authors: ["Joeun Yook", "Wei Chen"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+    const stored = unwrap(service.listPapers()).papers.find((paper) => paper.id === "ambiguous");
+    // Left unlinked rather than guessed at -- the card asks somebody to pick.
+    expect(stored?.author_links?.[1]).toEqual({ name: "Wei Chen" });
+    // And neither Wei gets write access to a paper that might not be theirs.
+    expect(service.upsertOwnPaper("wei-one", { id: "ambiguous", title: "Mine" }).ok).toBe(false);
+    expect(service.upsertOwnPaper("wei-two", { id: "ambiguous", title: "Mine" }).ok).toBe(false);
+  });
+
+  it("backfills the back catalogue, and simulates unless told otherwise", () => {
+    const service = lab();
+    // A paper written before the picker: names only, no links.
+    unwrap(
+      service.upsertPaper({
+        id: "old",
+        title: "Old paper",
+        authors: ["Andrew Kim", "Somebody External"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+    // upsertPaper already links on write, so clear them to simulate a genuinely old row.
+    const stored = unwrap(service.listPapers()).papers.find((paper) => paper.id === "old");
+    expect(stored?.author_links).toBeDefined();
+
+    const dry = unwrap(service.backfillPaperAuthorLinks({ actor: "andrew-kim" }));
+    expect(dry.dry_run).toBe(true);
+    expect(dry.papers_scanned).toBe(1);
+    // The name nobody can place is reported rather than silently dropped.
+    expect(dry.unresolved).toEqual([{ paper_id: "old", name: "Somebody External" }]);
+  });
+});
+
+describe("AdminBotService weekly updates", () => {
+  // A Sunday evening: the week being asked about is 17-23 Aug.
+  const sunday = "2026-08-23T18:00:00.000Z";
+
+  function labWithPaper() {
+    const executor = { execute: vi.fn(async () => ({ handled: true })) };
+    const service = new AdminBotService(undefined, { executor });
+    unwrap(service.upsertLabMember({ id: "ada", name: "Ada Lovelace", slack_user_id: "U1" }));
+    unwrap(service.upsertLabMember({ id: "rahul", name: "Rahul Shrestha", slack_user_id: "U2" }));
+    unwrap(
+      service.upsertPaper({
+        id: "paper",
+        title: "Causal agents",
+        authors: ["Ada Lovelace", "Rahul Shrestha"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+    return service;
+  }
+
+  it("files an entry under the week containing now, and replaces it on a rewrite", () => {
+    const service = labWithPaper();
+    unwrap(
+      service.savePaperWeeklyUpdate({
+        paperId: "paper",
+        memberId: "ada",
+        body: "  Ran the ablation.  ",
+        nowIso: sunday,
+      }),
+    );
+    unwrap(
+      service.savePaperWeeklyUpdate({
+        paperId: "paper",
+        memberId: "ada",
+        body: "Ran the ablation and wrote §5.",
+        nowIso: sunday,
+      }),
+    );
+    const { updates } = unwrap(service.listPaperWeeklyUpdates("paper"));
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      week_start: "2026-08-17",
+      body: "Ran the ablation and wrote §5.",
+    });
+  });
+
+  it("refuses an empty line rather than storing a blank week", () => {
+    const service = labWithPaper();
+    expect(
+      service.savePaperWeeklyUpdate({ paperId: "paper", memberId: "ada", body: "   " }),
+    ).toMatchObject({ ok: false, status: 400 });
+    expect(
+      service.savePaperWeeklyUpdate({ paperId: "nope", memberId: "ada", body: "x" }),
+    ).toMatchObject({ ok: false, status: 404 });
+  });
+
+  it("asks every author who has not written, and nobody who has", async () => {
+    const service = labWithPaper();
+    unwrap(
+      service.savePaperWeeklyUpdate({
+        paperId: "paper",
+        memberId: "ada",
+        body: "Ran the ablation.",
+        nowIso: sunday,
+      }),
+    );
+    const gaps = unwrap(service.collectWeeklyUpdateGaps(sunday));
+    expect(gaps.week_start).toBe("2026-08-17");
+    expect(gaps.gaps).toEqual([
+      { paper_id: "paper", paper_title: "Causal agents", member_id: "rahul" },
+    ]);
+
+    const sent = unwrap(await service.sendWeeklyUpdateNudges("cron", sunday));
+    expect(sent.asked).toEqual(["rahul"]);
+    const message = (sent.created[0]?.proposed_payload as { message?: string })?.message ?? "";
+    expect(message).toContain("Causal agents");
+    expect(message).toContain("17–23 Aug");
+  });
+
+  it("does not ask the same person twice for the same week", async () => {
+    const service = labWithPaper();
+    const first = unwrap(await service.sendWeeklyUpdateNudges("cron", sunday));
+    expect(first.asked.sort()).toEqual(["ada", "rahul"]);
+    // A crontab that fires hourly, a retry and a manual press all collapse into one nudge.
+    const second = unwrap(await service.sendWeeklyUpdateNudges("cron", sunday));
+    expect(second.asked).toEqual([]);
+    expect(second.created).toEqual([]);
+    // Next week is a new question.
+    const nextWeek = unwrap(
+      await service.sendWeeklyUpdateNudges("cron", "2026-08-30T18:00:00.000Z"),
+    );
+    expect(nextWeek.asked.sort()).toEqual(["ada", "rahul"]);
+  });
+
+  it("leaves a rejected paper alone -- nobody owes a week on a paper that is not running", async () => {
+    const service = labWithPaper();
+    unwrap(
+      service.upsertPaper({
+        id: "paper",
+        title: "Causal agents",
+        authors: ["Ada Lovelace", "Rahul Shrestha"],
+        current_step: "brainstorming_docs",
+        venue_decision: "reject",
+      }),
+    );
+    expect(unwrap(service.collectWeeklyUpdateGaps(sunday)).gaps).toEqual([]);
+    expect(unwrap(await service.sendWeeklyUpdateNudges("cron", sunday)).created).toEqual([]);
+  });
+
+  it("keeps the prose out of the audit line", () => {
+    const service = labWithPaper();
+    unwrap(
+      service.savePaperWeeklyUpdate({
+        paperId: "paper",
+        memberId: "ada",
+        body: "Blocked because Rahul never replied",
+        nowIso: sunday,
+      }),
+    );
+    const event = service
+      .listAuditEvents()
+      .find((entry) => entry.type === "paper_weekly_update.saved");
+    expect(event?.details).toMatchObject({ paper_id: "paper", week_start: "2026-08-17" });
+    expect(JSON.stringify(event?.details)).not.toContain("Blocked");
+  });
+});
+
+describe("AdminBotService feedback", () => {
+  it("stores one standing verdict per member per surface, not one per click", () => {
+    const service = new AdminBotService();
+    const first = unwrap(
+      service.recordFeedback({ featureId: "my-work", rating: 2, memberId: "ada" }),
+    );
+    const second = unwrap(
+      service.recordFeedback({
+        featureId: "my-work",
+        rating: 4,
+        comment: "  better since the timeline  ",
+        memberId: "ada",
+      }),
+    );
+    const { entries } = unwrap(service.listFeedback());
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ rating: 4, comment: "better since the timeline" });
+    // "When did this person first tell us" is the question a changed rating must not reset.
+    expect(second.entry.submitted_at).toBe(first.entry.submitted_at);
+  });
+
+  it("keeps two members' verdicts apart and summarizes the surface", () => {
+    const service = new AdminBotService();
+    unwrap(service.recordFeedback({ featureId: "my-work", rating: 5, memberId: "ada" }));
+    unwrap(service.recordFeedback({ featureId: "my-work", rating: 2, memberId: "rahul" }));
+    unwrap(service.recordFeedback({ featureId: "profile", rating: 1, memberId: "ada" }));
+    const { summaries } = unwrap(service.listFeedback());
+    // Worst first: the list exists to find what is not working.
+    expect(summaries.map((row) => row.feature_id)).toEqual(["profile", "my-work"]);
+    expect(summaries[1]).toMatchObject({ feature_id: "my-work", count: 2, average: 3.5 });
+  });
+
+  it("refuses a rating off the scale rather than clamping it", () => {
+    const service = new AdminBotService();
+    expect(service.recordFeedback({ featureId: "my-work", rating: 0 })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+    expect(service.recordFeedback({ featureId: "my-work", rating: 7 })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+    expect(service.recordFeedback({ featureId: "", rating: 3 })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+    expect(unwrap(service.listFeedback()).entries).toEqual([]);
+  });
+
+  it("keeps the comment out of the audit line", () => {
+    const service = new AdminBotService();
+    unwrap(
+      service.recordFeedback({
+        featureId: "my-work",
+        rating: 3,
+        comment: "Zhijing never answers my emails",
+        memberId: "ada",
+      }),
+    );
+    const event = service.listAuditEvents().find((entry) => entry.type === "feedback.recorded");
+    expect(event?.details).toMatchObject({ feature_id: "my-work", rating: 3, has_comment: true });
+    expect(JSON.stringify(event?.details)).not.toContain("Zhijing");
+  });
+});
+
+describe("AdminBotService member merge", () => {
+  // The lab's real collision: the Quick-Start survey and the Slack member export write different
+  // halves of one person under two ids.
+  function twoHalves() {
+    const service = new AdminBotService();
+    unwrap(
+      service.upsertLabMember({
+        id: "terry-jingchen-zhang",
+        name: "Terry Jingchen Zhang",
+        email: "tzkpgc@gmail.com",
+        role: "Master's Student",
+        affiliation: "ETH",
+        research_topics: ["causality"],
+        notes: "Source: Quick-Start Survey\nCareer stage: MSc",
+      }),
+    );
+    unwrap(
+      service.upsertLabMember({
+        id: "terry-zhang",
+        name: "Terry Zhang",
+        email: "zjingchen@cs.toronto.edu",
+        slack_user_id: "U09QKBM74M6",
+        location: "Asia/Chongqing",
+        research_topics: ["multi-agent"],
+        notes: "Created from the Slack member export.",
+      }),
+    );
+    return service;
+  }
+
+  it("pairs the two halves up without pairing distinct people", () => {
+    const service = twoHalves();
+    unwrap(service.upsertLabMember({ id: "someone-else", name: "Ada Lovelace" }));
+    const { pairs } = unwrap(service.listDuplicateMembers());
+    expect(pairs).toHaveLength(1);
+    expect([pairs[0]?.left.id, pairs[0]?.right.id].toSorted()).toEqual([
+      "terry-jingchen-zhang",
+      "terry-zhang",
+    ]);
+  });
+
+  it("folds the duplicate into the survivor and retires it", () => {
+    const service = twoHalves();
+    const merged = unwrap(
+      service.mergeLabMembers({
+        survivorId: "terry-jingchen-zhang",
+        duplicateId: "terry-zhang",
+        actorId: "andrew-kim",
+      }),
+    );
+    // Everything only the Slack half knew.
+    expect(merged.member).toMatchObject({
+      id: "terry-jingchen-zhang",
+      name: "Terry Jingchen Zhang",
+      slack_user_id: "U09QKBM74M6",
+      location: "Asia/Chongqing",
+    });
+    expect(merged.member.research_topics).toEqual(["causality", "multi-agent"]);
+    expect(merged.member.notes).toContain("Career stage: MSc");
+    expect(merged.member.notes).toContain("Created from the Slack member export.");
+    // The login identity is never carried across, so it shows up as a conflict instead.
+    expect(merged.member.email).toBe("tzkpgc@gmail.com");
+    // And the retired row is gone from the roster.
+    const { members } = unwrap(service.listLabMembers());
+    expect(members.map((member) => member.id)).toEqual(["terry-jingchen-zhang"]);
+    expect(unwrap(service.listDuplicateMembers()).pairs).toEqual([]);
+  });
+
+  it("moves the rows that named the retired member", () => {
+    const service = twoHalves();
+    unwrap(
+      service.upsertPaper({
+        id: "paper",
+        title: "A paper",
+        authors: ["Terry Jingchen Zhang"],
+        current_step: "brainstorming_docs",
+      }),
+    );
+    unwrap(
+      service.setConferenceAttendee({
+        paperId: "paper",
+        name: "Terry Zhang",
+        memberId: "terry-zhang",
+        attending: "yes",
+        actorId: "andrew-kim",
+        privileged: true,
+      }),
+    );
+    const merged = unwrap(
+      service.mergeLabMembers({
+        survivorId: "terry-jingchen-zhang",
+        duplicateId: "terry-zhang",
+        actorId: "andrew-kim",
+      }),
+    );
+    expect(Object.values(merged.moved).reduce((sum, count) => sum + count, 0)).toBeGreaterThan(0);
+    const attendees = unwrap(service.listPaperSlots("paper", { isAdmin: true })).attendees;
+    expect(attendees.map((row) => row.member_id)).toEqual(["terry-jingchen-zhang"]);
+  });
+
+  it("refuses to merge a record into itself, or a record that does not exist", () => {
+    const service = twoHalves();
+    expect(
+      service.mergeLabMembers({
+        survivorId: "terry-zhang",
+        duplicateId: "terry-zhang",
+        actorId: "andrew-kim",
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
+    expect(
+      service.mergeLabMembers({
+        survivorId: "terry-zhang",
+        duplicateId: "nobody",
+        actorId: "andrew-kim",
+      }),
+    ).toMatchObject({ ok: false, status: 404 });
+  });
+
+  it("records the whole retired record in the audit, because a merge has no undo", () => {
+    const service = twoHalves();
+    unwrap(
+      service.mergeLabMembers({
+        survivorId: "terry-jingchen-zhang",
+        duplicateId: "terry-zhang",
+        actorId: "andrew-kim",
+      }),
+    );
+    const event = service.listAuditEvents().find((entry) => entry.type === "lab_member.merged");
+    expect(event?.actor).toBe("andrew-kim");
+    expect(event?.details).toMatchObject({
+      survivor_id: "terry-jingchen-zhang",
+      duplicate_id: "terry-zhang",
+    });
+    expect(
+      (event?.details as { retired_record?: { slack_user_id?: string } })?.retired_record,
+    ).toMatchObject({ slack_user_id: "U09QKBM74M6" });
+  });
+});
+
 describe("AdminBotService", () => {
   it("keeps a gated action pending until an allowed role approves the payload hash", () => {
     const service = new AdminBotService();
@@ -1914,6 +2404,86 @@ describe("AdminBotService", () => {
         (proposal) => (proposal.target as { recipientMemberId?: string })?.recipientMemberId,
       );
       expect(recipients.sort()).toEqual(["blank1", "blank2"]);
+    });
+
+    // The gap this sweep could not see before: a full member whose profile is complete but who
+    // has never told the lab when they are working. Most of what the Profile Overview page finds.
+    it("chases a full member with a complete profile and an empty timeline", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(service.upsertLabMember(completeMember({ id: "planner", privilege_level: "member" })));
+
+      const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
+      expect(result.created).toHaveLength(1);
+      const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
+      expect(message).toContain("Your timeline is empty");
+      expect(message).not.toContain("missing one or more required fields");
+    });
+
+    it("does not ask a collaborator when they are working", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(
+        service.upsertLabMember(
+          completeMember({ id: "guest", privilege_level: "external_collaborator" }),
+        ),
+      );
+      expect(unwrap(await service.sendMandatoryFieldsReminders("cron")).created).toEqual([]);
+    });
+
+    it("tells a member missing both in one message, not two", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(
+        service.upsertLabMember({
+          id: "both",
+          name: "Both",
+          slack_user_id: "U9",
+          privilege_level: "member",
+        }),
+      );
+      const result = unwrap(await service.sendMandatoryFieldsReminders("cron"));
+      expect(result.created).toHaveLength(1);
+      const message = (result.created[0]?.proposed_payload as { message?: string })?.message ?? "";
+      expect(message).toContain("missing one or more required fields");
+      expect(message).toContain("Your timeline is empty");
+    });
+
+    it("chases only the gap the caller asked for, and only the people it named", async () => {
+      const executor = { execute: vi.fn(async () => ({ handled: true })) };
+      const service = new AdminBotService(undefined, { executor });
+      unwrap(service.upsertLabMember(completeMember({ id: "planner", privilege_level: "member" })));
+      unwrap(
+        service.upsertLabMember({
+          id: "blank",
+          name: "Blank",
+          slack_user_id: "U8",
+          privilege_level: "member",
+        }),
+      );
+
+      // Timeline sweep: the member with a blank profile is missing that too, but this pass is
+      // about term planning and says so.
+      const timelineOnly = unwrap(
+        await service.sendMandatoryFieldsReminders("admin", {
+          include: "timeline",
+          recipientIds: ["planner"],
+        }),
+      );
+      expect(timelineOnly.created).toHaveLength(1);
+      expect(
+        (timelineOnly.created[0]?.target as { recipientMemberId?: string })?.recipientMemberId,
+      ).toBe("planner");
+
+      // And a profile sweep leaves the person whose only gap is the timeline alone.
+      const profileOnly = unwrap(
+        await service.sendMandatoryFieldsReminders("admin", { include: "profile" }),
+      );
+      expect(
+        profileOnly.created.map(
+          (proposal) => (proposal.target as { recipientMemberId?: string })?.recipientMemberId,
+        ),
+      ).toEqual(["blank"]);
     });
 
     it("leaves a member alone for three days after reminding them", async () => {

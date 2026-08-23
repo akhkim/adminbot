@@ -152,6 +152,7 @@ describe("renderPaperSlots", () => {
       authors: ["Ada Lovelace", "Rahul Babu Shrestha"],
       feedbackGivers: ["Bernhard Schölkopf"],
       venue: "ICLR 2027",
+      authorRoles: "Ada ran the experiments. Rahul built the dataset.",
       ...(onSaveDetails ? { onSaveDetails } : {}),
     });
 
@@ -187,6 +188,29 @@ describe("renderPaperSlots", () => {
       venue!.value = "NeurIPS 2027";
       venue!.dispatchEvent(new Event("change"));
       expect(saves[0]?.venue).toBe("NeurIPS 2027");
+    });
+
+    it("takes what each author does as a paragraph, and sends it with the save", () => {
+      const saves: Array<{ authorRoles: string }> = [];
+      const { container } = draw([], false, {
+        details: details((next) => saves.push(next)),
+      });
+      const roles = container.querySelector<HTMLTextAreaElement>(
+        '[data-testid="paper-author-roles-p1"]',
+      );
+      expect(roles?.value).toBe("Ada ran the experiments. Rahul built the dataset.");
+      roles!.value = "  Ada wrote §4. Zhijing advised throughout.  ";
+      roles!.dispatchEvent(new Event("change"));
+      // Trimmed on the way out, so a paragraph of whitespace is not a filled-in field.
+      expect(saves[0]?.authorRoles).toBe("Ada wrote §4. Zhijing advised throughout.");
+      // The rest of the details ride along unchanged rather than being cleared.
+      expect(saves[0]).toMatchObject({ venue: "ICLR 2027" });
+    });
+
+    it("shows the contributions paragraph read-only to somebody who may not edit", () => {
+      const { container } = draw([], false, { details: details() });
+      expect(container.querySelector('[data-testid="paper-author-roles-p1"]')).toBeNull();
+      expect(container.textContent).toContain("Ada ran the experiments.");
     });
 
     it("drops blank entries rather than storing an author nobody can resolve", () => {
@@ -454,6 +478,17 @@ describe("field guidance", () => {
     // row must not quietly lose the guidance its second field had.
     const fields = container.querySelectorAll(".paper-slot, .paper-slot__child");
     expect(helps.length).toBe(fields.length);
+  });
+
+  // A question mark next to a field reads as a query about the field; an "i" says there is an
+  // explanation here, which is what the badge actually offers.
+  it("marks the help badge with an info glyph, not a question mark", () => {
+    const { container } = draw([]);
+    const badge = container.querySelector<HTMLElement>(
+      '[data-testid="paper-slot-help-p1-overleaf_edit"]',
+    );
+    expect(badge?.textContent?.trim()).toBe("i");
+    expect(badge?.getAttribute("aria-label")).toContain("Overleaf project link");
   });
 
   it("explains in the popover what to put, and repeats the example", () => {

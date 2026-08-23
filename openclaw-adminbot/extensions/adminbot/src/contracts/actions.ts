@@ -122,6 +122,32 @@ export type AdminBotMemberRole = (typeof adminBotMemberRoles)[number];
  * whitelist -- the Slack directory sync writes it -- but it is no longer a field anybody types, so
  * chasing a member for it would be nagging them about something they cannot fix.
  */
+/**
+ * How many timeline entries count as "has actually planned their term".
+ *
+ * Two, from the brainstorming doc: one row is somebody trying the page out, and the people a
+ * sweep is looking for are the ones who never came back to it. Shared between the service (which
+ * decides who gets chased) and the Profile Overview page (which decides who is flagged), because
+ * a page that flags a different set from the one the reminder chases is a page nobody trusts.
+ */
+export const adminBotTimelineEntryTarget = 2;
+
+/**
+ * Privilege levels that count as being *on* the lab rather than adjacent to it.
+ *
+ * The timeline chase is aimed at these and not at collaborators or trials: a term plan is a thing
+ * the lab asks of its own people, and asking a coauthor at another university when they are
+ * working is both useless and slightly rude.
+ */
+export const adminBotFullMemberPrivileges = ["member", "admin"] as const;
+
+/** Which gap a profile reminder pass chases. See sendMandatoryFieldsReminders. */
+export type AdminBotProfileReminderScope = "profile" | "timeline" | "both";
+
+export function isAdminBotFullMember(member: { privilege_level?: string }): boolean {
+  return (adminBotFullMemberPrivileges as readonly string[]).includes(member.privilege_level ?? "");
+}
+
 export const adminBotMandatoryProfileFields = [
   "name",
   "calendar_email",
@@ -998,6 +1024,28 @@ export const adminBotPaperPresentationTypes = [
 
 export type AdminBotPaperPresentationType = (typeof adminBotPaperPresentationTypes)[number];
 
+/**
+ * One author, and who they are.
+ *
+ * Three states, and the distinction matters:
+ *   - `member_id` set: a lab member. The paper appears on their My Projects page, and every sweep
+ *     that walks the roster can reach them.
+ *   - `email` set: an external coauthor. They appear in this list, on the paper card, and nowhere
+ *     else in AdminBot -- no roster row, no account, no nudges, nothing addressed to them. The
+ *     address is recorded so the lab knows who the person on the paper actually is.
+ *   - neither: a name nobody has linked yet. Legacy rows and imports start here; the card offers
+ *     to resolve them.
+ *
+ * Never both. A member's address belongs on their roster row, and carrying a second copy here
+ * would be a second place for it to go stale.
+ */
+export type AdminBotPaperAuthorLink = {
+  /** The printed spelling, exactly as the paper prints it. Marks and all. */
+  name: string;
+  member_id?: string;
+  email?: string;
+};
+
 export type AdminBotPaperRecordInput = {
   id: string;
   title: string;
@@ -1009,12 +1057,42 @@ export type AdminBotPaperRecordInput = {
    */
   authors: string[];
   /**
+   * The same author list, with each entry linked to whoever it names.
+   *
+   * `authors` above is how the *paper* spells the names, and matching it back to the roster is
+   * guesswork: a co-first author signs "Joeun Yook*", a BibTeX paste says "Yook, Joeun", an accent
+   * is dropped, two people share a surname. That guess decided whose My Projects page a paper
+   * appeared on, so a paper filed by one coauthor was invisible to the rest until somebody
+   * happened to spell a name the way the roster did.
+   *
+   * This is the answer recorded rather than inferred: one entry per author, in print order, each
+   * carrying the printed spelling plus either a roster id (a lab member) or an email (somebody who
+   * is not on the roster and is not being added to it).
+   *
+   * `authors` is regenerated from this list on write, so the two cannot disagree -- and a caller
+   * that only knows the names (the admin form, an agent tool, an import) may still write `authors`
+   * alone, in which case the service resolves what it unambiguously can and leaves the rest as
+   * unlinked entries.
+   */
+  author_links?: AdminBotPaperAuthorLink[];
+  /**
    * People asked to read and comment on the draft, as names. Distinct from `authors`: a feedback
    * giver has not signed the paper and may never appear on it, and distinct from the social
    * coauthor-consent rows, which are about a post rather than the draft. Kept because "who have
    * we actually shown this to" is a question the card could not answer at all before.
    */
   feedback_givers?: string[];
+  /**
+   * What each author actually does on this paper, in prose.
+   *
+   * Free text and deliberately not a per-author map: contributions do not divide cleanly by name
+   * ("Ada and Rahul ran the experiments; Zhijing advised throughout"), the CRediT-style taxonomies
+   * that try are filled in badly or not at all, and the thing a reader wants at submission time is
+   * a paragraph they can paste into the contributions statement. One field, one paragraph.
+   *
+   * Distinct from `notes`, which is the paper's own scratchpad. This is about people.
+   */
+  author_roles?: string;
   current_step: AdminBotPaperStep;
   // Who the nudges go to by default. Free-text `authors` cannot answer this: it is how the paper
   // spells the names, not who on the roster owes the work.
@@ -1243,6 +1321,10 @@ export type AdminBotAuditEvent = {
     | "execution.idempotent_replay"
     | "lab_member.upserted"
     | "lab_member.notes_migrated"
+    // One pass over the back catalogue, linking printed author names to the people they name.
+    | "paper_author_links.backfilled"
+    // Carries the whole retired record in `details`, because a merge has no undo.
+    | "lab_member.merged"
     | "paper.upserted"
     | "paper_slot.updated"
     | "paper_slot.waived"
@@ -1255,9 +1337,15 @@ export type AdminBotAuditEvent = {
     | "paper_attendee.updated"
     | "paper_reimbursement.updated"
     | "paper_slots.backfilled"
+    // One author's account of one week. The prose stays out of `details` -- see the service.
+    | "paper_weekly_update.saved"
+    | "paper_weekly_updates.nudged"
     | "paper.deleted"
     | "onboarding.guide_sent"
     | "settings.updated"
+    // What somebody thought of one surface. Carries the rating, never the comment -- a comment can
+    // name a person, and the audit log is read by more people than the feedback table is.
+    | "feedback.recorded"
     | "auth.login_succeeded"
     | "auth.login_failed"
     | "auth.rate_limited"

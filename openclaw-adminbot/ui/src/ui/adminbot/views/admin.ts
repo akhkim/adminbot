@@ -1,6 +1,14 @@
 // oxlint-disable max-lines -- grandfathered at 2224 lines; see docs/adr/0006-deferred-monster-splits.md
 // Control UI view renders the AdminBot dashboard.
 import { html, nothing } from "lit";
+import { ifDefined } from "lit/directives/if-defined.js";
+import { t } from "../../../i18n/index.ts";
+import { findDuplicateMembers } from "../../../../../extensions/adminbot/src/contracts/member-duplicates.js";
+import {
+  isOptionalMemberField,
+  PROFILE_FIELDS,
+  type ProfileField,
+} from "../member-fields.ts";
 import {
   adminBotPaperSlotRegistry,
   type AdminBotPaperSlotDefinition,
@@ -11,7 +19,6 @@ import {
   daysUntil,
   readVenueTargets,
 } from "../venue-targets.ts";
-import { adminBotMemberRoles } from "../../../../../extensions/adminbot/src/contracts/actions.js";
 import { formatRelativeTimestamp } from "../../format.ts";
 import { icons } from "../../icons.ts";
 import type { MemberNudgeChannel, MemberProfileUpdate } from "../auth/session.ts";
@@ -79,6 +86,11 @@ export type AdminBotProps = {
   onRemove: (proposal: AdminBotActionProposal) => void;
   onExecute: (proposal: AdminBotActionProposal) => void;
   onSaveMember: (member: AdminBotLabMemberSaveInput) => void;
+  /**
+   * Folds one roster record into another. Absent for a caller that cannot merge (anything but a
+   * signed-in admin), which is what takes the panel off the page rather than a disabled button.
+   */
+  onMergeMembers?: (survivorId: string, duplicateId: string) => void;
   onSaveOwnProfile: (memberId: string, fields: MemberProfileUpdate) => void;
   // Reopens the post-login onboarding welcome screen on demand. Omitted (or a no-op) when the
   // signed-in member has no onboarding checklist to show.
@@ -488,6 +500,45 @@ function getFormValue(formData: FormData, key: string): string {
   return typeof raw === "string" ? raw.trim() : "";
 }
 
+/**
+ * Every registry field the form carries, in the wire shape the service already validates.
+ *
+ * One loop rather than a per-field line, which is what stops this from drifting away from the
+ * form again: a field added to the registry is rendered, read and saved without touching this
+ * function. `list` splits on commas, `numeric` is dropped unless it parses, and a blank answer is
+ * omitted rather than sent as "" -- the service treats an absent key as "leave it alone" and an
+ * empty string as "clear it", and a roster editor that clears every field the admin did not fill
+ * in would wipe half a record on every save.
+ */
+export function collectRegistryFields(data: FormData): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  for (const field of PROFILE_FIELDS) {
+    const raw = getFormValue(data, field.key).trim();
+    if (!raw) {
+      continue;
+    }
+    if (field.type === "list") {
+      const values = raw
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean);
+      if (values.length) {
+        patch[field.key] = values;
+      }
+      continue;
+    }
+    if (field.type === "numeric") {
+      const parsed = Number(raw);
+      if (Number.isFinite(parsed)) {
+        patch[field.key] = parsed;
+      }
+      continue;
+    }
+    patch[field.key] = raw;
+  }
+  return patch;
+}
+
 function submitMemberForm(event: Event, props: AdminBotProps): void {
   event.preventDefault();
   const form = event.currentTarget;
@@ -500,15 +551,9 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
   if (!id || !name) {
     return;
   }
-  const splitCsv = (key: string) =>
-    getFormValue(data, key)
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-  const hoursPerWeek = Number(getFormValue(data, "hoursPerWeek"));
-  // Each of these now has a field of its own, so the editor writes them there rather than
-  // re-encoding them as "Label: value" lines. notes is free prose again -- doing otherwise would
-  // recreate the two-sources-of-truth problem migrateMemberNotesToFields exists to end.
+  // notes is free prose. Each fact that used to be encoded into it as a "Label: value" line now
+  // has a column and a registry field of its own, so writing them back here would recreate the
+  // two-sources-of-truth problem migrateMemberNotesToFields exists to end.
   const notes = getFormValue(data, "notes").trim();
   // An existing record's email is left out of the payload entirely, not just made readonly on the
   // control: it is the member's login identity, and a form that can rewrite it can lock someone out
@@ -537,29 +582,10 @@ function submitMemberForm(event: Event, props: AdminBotProps): void {
           ) as AdminBotExternalCollaboratorSubgroup,
         }
       : {}),
-    ...(getFormValue(data, "role") ? { role: getFormValue(data, "role") } : {}),
     ...(getFormValue(data, "status")
       ? { status: getFormValue(data, "status") as AdminBotLabMemberSaveInput["status"] }
       : {}),
-    ...(splitCsv("researchTopics").length ? { researchTopics: splitCsv("researchTopics") } : {}),
-    ...(splitCsv("projects").length ? { projects: splitCsv("projects") } : {}),
-    ...(getFormValue(data, "hoursPerWeek") && Number.isFinite(hoursPerWeek)
-      ? { hoursPerWeek }
-      : {}),
-    ...(getFormValue(data, "location") ? { location: getFormValue(data, "location") } : {}),
-    ...(getFormValue(data, "affiliation")
-      ? { affiliation: getFormValue(data, "affiliation") }
-      : {}),
-    ...(getFormValue(data, "timezone") ? { timezone: getFormValue(data, "timezone") } : {}),
-    ...(getFormValue(data, "website") ? { personalWebsite: getFormValue(data, "website") } : {}),
-    ...(getFormValue(data, "joinedMonth")
-      ? { joinedMonth: getFormValue(data, "joinedMonth") }
-      : {}),
-    ...(getFormValue(data, "whatsapp") ? { whatsapp: getFormValue(data, "whatsapp") } : {}),
-    ...(getFormValue(data, "calendarEmail")
-      ? { calendarEmail: getFormValue(data, "calendarEmail") }
-      : {}),
-    ...(getFormValue(data, "github") ? { githubUrl: getFormValue(data, "github") } : {}),
+    profile: collectRegistryFields(data),
     ...(notes ? { notes } : {}),
   });
   form.closest<HTMLElement>("[popover]")?.hidePopover();
@@ -580,44 +606,22 @@ function syncCollaboratorSubgroupField(event: Event): void {
   }
 }
 
-// Whitelisted self-editable fields, matching what the AdminBot service accepts from a
-// non-admin member editing their own row. Governance fields (id, email, privilege_level,
-// status) are absent by construction, not merely hidden. Joined month / research interests
-// / calendar email / WhatsApp / GitHub / website have no column of their own and are
-// reassembled into `notes` with the same encoding the admin editor uses.
+/**
+ * A member's own edits from this row's popover, in the service's wire shape.
+ *
+ * Same registry and same reader as the admin editor above -- only the field list differs, and it
+ * differs by one rule: `adminOnly` fields are not rendered here and so cannot be sent. Governance
+ * fields (id, email, privilege_level, status) are absent by construction rather than hidden, and
+ * the service re-checks every key against SELF_PROFILE_EDITABLE_FIELDS regardless: this is the
+ * form, never the permission.
+ */
 function collectSelfProfileFields(form: HTMLFormElement): MemberProfileUpdate {
   const data = new FormData(form);
-  const splitCsv = (key: string) =>
-    getFormValue(data, key)
-      .split(",")
-      .map((value) => value.trim())
-      .filter(Boolean);
-  const hoursPerWeek = Number(getFormValue(data, "hoursPerWeek"));
-  const location = getFormValue(data, "location");
-  const personalWebsite = getFormValue(data, "website");
-  // Same reasoning as the admin editor above: these are fields now, not notes lines.
   const notes = getFormValue(data, "notes").trim();
   return {
-    name: getFormValue(data, "name"),
-    slack_user_id: getFormValue(data, "slackUserId"),
-    role: getFormValue(data, "role"),
-    research_topics: splitCsv("researchTopics"),
-    projects: splitCsv("projects"),
-    ...(getFormValue(data, "hoursPerWeek") && Number.isFinite(hoursPerWeek)
-      ? { hours_per_week: hoursPerWeek }
-      : {}),
-    location,
-    affiliation: getFormValue(data, "affiliation"),
-    timezone: getFormValue(data, "timezone"),
-    personal_website: personalWebsite,
-    // Carried explicitly now that they are fields rather than notes lines; omitting them here
-    // would make a member's own save silently drop whatever they typed.
-    joined_month: getFormValue(data, "joinedMonth"),
-    whatsapp: getFormValue(data, "whatsapp"),
-    calendar_email: getFormValue(data, "calendarEmail"),
-    github_url: getFormValue(data, "github"),
+    ...collectRegistryFields(data),
     notes,
-  };
+  } as MemberProfileUpdate;
 }
 
 function submitSelfProfileForm(event: Event, memberId: string, props: AdminBotProps): void {
@@ -1054,11 +1058,85 @@ function filterMemberSpreadsheet(event: Event): void {
 // supplied the fields are prefilled and the id is locked, so the same
 // submitMemberForm/onSaveMember upsert path edits the existing record (PUT is an
 // id-keyed merge) instead of creating a new one.
+/**
+ * One registry field as an admin control.
+ *
+ * Deliberately plainer than the profile page's version of the same field: this is a roster editor
+ * an admin passes through quickly, not the page a member fills in once, so there is no country
+ * picker, no photo upload and no per-field account check. The `name` is the field key, which is
+ * also the wire name, so `submitMemberForm` reads the form back without a translation table.
+ */
+function renderRegistryField(field: ProfileField, member: AdminBotLabMember | undefined, fallback: string) {
+  const raw = member ? (member as unknown as Record<string, unknown>)[field.key] : undefined;
+  const value = Array.isArray(raw)
+    ? raw.join(", ")
+    : raw === undefined || raw === null
+      ? fallback
+      : String(raw);
+  const label = html`<span>${t(field.labelKey)}</span>`;
+  const control = (() => {
+    switch (field.type) {
+      case "dropdown":
+        return html`<select name=${field.key}>
+          <option value="" ?selected=${!value}>Not set</option>
+          ${(field.options ?? []).map(
+            (option) => html`<option value=${option} ?selected=${option === value}>${option}</option>`,
+          )}
+        </select>`;
+      case "paragraph":
+        return html`<textarea name=${field.key} rows="3" .value=${value}></textarea>`;
+      case "numeric":
+        return html`<input
+          name=${field.key}
+          type="number"
+          min=${ifDefined(field.min)}
+          max=${ifDefined(field.max)}
+          .value=${value}
+        />`;
+      case "date":
+        return html`<input name=${field.key} type="date" .value=${value} />`;
+      case "link":
+        return html`<input name=${field.key} type="url" placeholder=${field.example} .value=${value} />`;
+      // `list` is stored as an array and edited here as one comma-separated line, the same way the
+      // old hand-written researchTopics/projects inputs did it. `phone` and `image` are single
+      // stored strings, so a plain box is the honest control for both.
+      default:
+        return html`<input
+          name=${field.key}
+          placeholder=${field.example}
+          .value=${value}
+          ?required=${!isOptionalMemberField(field)}
+        />`;
+    }
+  })();
+  return html`<label class="adminbot-form__field">${label}${control}</label>`;
+}
+
+// Shared roster fields for the admin add/edit-member popovers. When a member is
+// supplied the fields are prefilled and the id is locked, so the same
+// submitMemberForm/onSaveMember upsert path edits the existing record (PUT is an
+// id-keyed merge) instead of creating a new one.
+//
+// Everything below the governance block is rendered from the shared member field registry, so
+// this editor and the member's own Profile page ask for exactly the same facts. They used not to:
+// the roster editor stopped at twenty fields and reassembled five of them into `notes` lines, so
+// an admin could not fill in a preferred name, a correspondence email, a CV link or any social
+// but GitHub -- on a record where the member themselves could.
 function renderMemberFormFields(member?: AdminBotLabMember) {
   const noteDraft = parseMemberNotes(member?.notes);
   const editing = member !== undefined;
-  const numeric = (value: number | undefined) =>
-    value === undefined || value === null ? "" : String(value);
+  // Old records still carry these as "Label: value" lines in `notes`. The columns are the truth
+  // now (see migrateMemberNotesToFields), so the note line is only ever a prefill for a record
+  // that predates them -- saving writes the column and the line stops being read.
+  const legacyFallback: Record<string, string> = {
+    location: noteDraft.location,
+    joined_month: noteDraft.joinedMonth,
+    research_topics: noteDraft.researchInterests,
+    calendar_email: noteDraft.calendarEmail,
+    whatsapp: noteDraft.whatsapp,
+    github_url: noteDraft.github,
+    personal_website: noteDraft.website,
+  };
   return html`
     <div class="form-grid adminbot-form__grid">
       <label class="adminbot-form__field"
@@ -1069,10 +1147,6 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
           .value=${member?.id ?? ""}
           ?readonly=${editing}
           required
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Name</span
-        ><input name="name" placeholder="Pat" .value=${member?.name ?? ""} required
       /></label>
       <label class="adminbot-form__field"
         ><span>Email</span
@@ -1129,16 +1203,6 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
         </select>
       </label>
       <label class="adminbot-form__field"
-        ><span>Role</span
-        ><select name="role">
-          <option value="" ?selected=${!member?.role}>Not set</option>
-          ${adminBotMemberRoles.map(
-            (role) =>
-              html`<option value=${role} ?selected=${member?.role === role}>${role}</option>`,
-          )}
-        </select>
-      </label>
-      <label class="adminbot-form__field"
         ><span>Status</span
         ><select name="status">
           ${memberStatusOptions.map(
@@ -1152,63 +1216,9 @@ function renderMemberFormFields(member?: AdminBotLabMember) {
           )}
         </select></label
       >
-      <label class="adminbot-form__field"
-        ><span>Research topics</span
-        ><input
-          name="researchTopics"
-          placeholder="robotics, world models"
-          .value=${(member?.research_topics ?? []).join(", ")}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Projects</span
-        ><input
-          name="projects"
-          placeholder="Project Atlas, Data Engine"
-          .value=${(member?.projects ?? []).join(", ")}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Hours / week</span
-        ><input
-          name="hoursPerWeek"
-          type="number"
-          min="0"
-          max="168"
-          .value=${numeric(member?.hours_per_week)}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Affiliation</span><input name="affiliation" .value=${member?.affiliation ?? ""}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Timezone</span
-        ><input name="timezone" placeholder="America/New_York" .value=${member?.timezone ?? ""}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Location</span
-        ><input name="location" .value=${member?.location ?? noteDraft.location}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Joined month</span
-        ><input name="joinedMonth" placeholder="2026-06" .value=${noteDraft.joinedMonth}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Research interests</span
-        ><input name="researchInterests" .value=${noteDraft.researchInterests}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Calendar email</span
-        ><input name="calendarEmail" .value=${member?.calendar_email ?? noteDraft.calendarEmail}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>WhatsApp</span
-        ><input name="whatsapp" .value=${member?.whatsapp ?? noteDraft.whatsapp}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>GitHub</span><input name="github" .value=${member?.github_url ?? noteDraft.github}
-      /></label>
-      <label class="adminbot-form__field"
-        ><span>Website</span
-        ><input name="website" .value=${member?.personal_website ?? noteDraft.website}
-      /></label>
+      ${PROFILE_FIELDS.map((field) =>
+        renderRegistryField(field, member, legacyFallback[field.key] ?? ""),
+      )}
     </div>
     <label class="adminbot-form__field"
       ><span>Additional notes</span><textarea name="notes" rows="4">${noteDraft.notes}</textarea>
@@ -1250,8 +1260,16 @@ function renderMemberSelfEditPopover(
 ) {
   const editId = `adminbot-self-edit-member-${index}`;
   const noteDraft = parseMemberNotes(member.notes);
-  const numeric = (value: number | undefined) =>
-    value === undefined || value === null ? "" : String(value);
+  // Prefill only, for records that predate the columns -- see the same map in the admin editor.
+  const selfLegacyFallback: Record<string, string> = {
+    location: noteDraft.location,
+    joined_month: noteDraft.joinedMonth,
+    research_topics: noteDraft.researchInterests,
+    calendar_email: noteDraft.calendarEmail,
+    whatsapp: noteDraft.whatsapp,
+    github_url: noteDraft.github,
+    personal_website: noteDraft.website,
+  };
   return html`
     <article class="adminbot-editor-card adminbot-popover" id=${editId} popover>
       <button
@@ -1271,77 +1289,12 @@ function renderMemberSelfEditPopover(
         @submit=${(event: Event) => submitSelfProfileForm(event, member.id, props)}
       >
         <div class="form-grid adminbot-form__grid">
-          <label class="adminbot-form__field"
-            ><span>Name</span><input name="name" .value=${member.name ?? ""} required
-          /></label>
+          ${PROFILE_FIELDS.filter((field) => !field.adminOnly).map((field) =>
+            renderRegistryField(field, member, selfLegacyFallback[field.key] ?? ""),
+          )}
           <label class="adminbot-form__field"
             ><span>Slack user id</span
             ><input name="slackUserId" .value=${member.slack_user_id ?? ""}
-          /></label>
-          <label class="adminbot-form__field"
-            ><span>Role</span
-            ><select name="role">
-              <option value="" ?selected=${!member.role}>Not set</option>
-              ${adminBotMemberRoles.map(
-                (role) =>
-                  html`<option value=${role} ?selected=${member.role === role}>${role}</option>`,
-              )}
-            </select>
-          </label>
-          <label class="adminbot-form__field"
-            ><span>Research topics</span
-            ><input
-              name="researchTopics"
-              placeholder="Comma-separated"
-              .value=${(member.research_topics ?? []).join(", ")}
-          /></label>
-          <label class="adminbot-form__field"
-            ><span>Projects</span
-            ><input
-              name="projects"
-              placeholder="Comma-separated"
-              .value=${(member.projects ?? []).join(", ")}
-          /></label>
-          <label class="adminbot-form__field"
-            ><span>Hours / week</span
-            ><input
-              name="hoursPerWeek"
-              type="number"
-              min="0"
-              max="168"
-              .value=${numeric(member.hours_per_week)}
-          /></label>
-          <label class="adminbot-form__field"
-            ><span>Location</span
-            ><input name="location" .value=${member.location ?? noteDraft.location}
-          /></label>
-          <label class="adminbot-form__field"
-            ><span>Affiliation</span><input name="affiliation" .value=${member.affiliation ?? ""}
-          /></label>
-          <label class="adminbot-form__field"
-            ><span>Timezone</span
-            ><input name="timezone" placeholder="America/New_York" .value=${member.timezone ?? ""}
-          /></label>
-          <label class="adminbot-form__field"
-            ><span>Website</span><input name="website" .value=${noteDraft.website}
-          /></label>
-          <label class="adminbot-form__field"
-            ><span>Joined month</span
-            ><input name="joinedMonth" placeholder="2026-06" .value=${noteDraft.joinedMonth}
-          /></label>
-          <label class="adminbot-form__field"
-            ><span>Research interests</span
-            ><input name="researchInterests" .value=${noteDraft.researchInterests}
-          /></label>
-          <label class="adminbot-form__field"
-            ><span>Calendar email</span
-            ><input name="calendarEmail" .value=${noteDraft.calendarEmail}
-          /></label>
-          <label class="adminbot-form__field"
-            ><span>WhatsApp</span><input name="whatsapp" .value=${noteDraft.whatsapp}
-          /></label>
-          <label class="adminbot-form__field"
-            ><span>GitHub</span><input name="github" .value=${noteDraft.github}
           /></label>
         </div>
         <label class="adminbot-form__field"
@@ -1657,6 +1610,107 @@ function renderMemberSpreadsheet(props: AdminBotProps, allMembers: AdminBotLabMe
   `;
 }
 
+/** Plain English for why two rows look like one person. */
+const DUPLICATE_REASONS: Record<string, string> = {
+  same_email: "same email address",
+  same_slack_user_id: "same Slack account",
+  same_name: "same name",
+  name_contains: "one name is the other plus a middle name",
+};
+
+/** The fields this record has that the other one does not -- the half it would contribute. */
+function contributedFields(
+  candidate: AdminBotLabMember,
+  other: AdminBotLabMember,
+): string[] {
+  const record = candidate as unknown as Record<string, unknown>;
+  const compare = other as unknown as Record<string, unknown>;
+  const filled = (value: unknown) =>
+    Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null && value !== "";
+  return PROFILE_FIELDS.filter(
+    (field) => filled(record[field.key]) && !filled(compare[field.key]),
+  ).map((field) => t(field.labelKey));
+}
+
+/**
+ * The same person, twice.
+ *
+ * The roster is written down two paths -- the Quick-Start survey and the Slack member export --
+ * and neither knows about the other, so a person who arrived down both is two half-records under
+ * two ids. Nothing here merges on its own: the panel says which pairs look like one person and
+ * what each half would bring, and an admin says which record survives. Two people really can
+ * share a name, and only a human knows which of these is that.
+ */
+function renderDuplicateMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
+  if (props.mode !== "admin" || !props.onMergeMembers) {
+    return nothing;
+  }
+  const pairs = findDuplicateMembers(members);
+  if (pairs.length === 0) {
+    return nothing;
+  }
+  const merge = (survivor: AdminBotLabMember, duplicate: AdminBotLabMember) => {
+    if (
+      !globalThis.confirm(
+        `Merge "${duplicate.name}" (${duplicate.id}) into "${survivor.name}" (${survivor.id})?\n\n` +
+          `${survivor.id} keeps its own answers and gains everything only ${duplicate.id} knows. ` +
+          `Every paper, reimbursement and nudge that named ${duplicate.id} moves across, and ` +
+          `${duplicate.id} is deleted.\n\nThis cannot be undone from here.`,
+      )
+    ) {
+      return;
+    }
+    props.onMergeMembers?.(survivor.id, duplicate.id);
+  };
+  const side = (keep: AdminBotLabMember, drop: AdminBotLabMember) => {
+    const brings = contributedFields(keep, drop);
+    return html`
+      <div class="adminbot-duplicate__side">
+        <strong class="adminbot-duplicate__name">${keep.name}</strong>
+        <span class="adminbot-duplicate__id">${keep.id}</span>
+        <span class="adminbot-duplicate__brings">
+          ${brings.length ? `Only here: ${brings.slice(0, 6).join(", ")}` : "Nothing unique"}
+        </span>
+        <button
+          type="button"
+          class="btn btn--sm"
+          data-testid=${`member-merge-${keep.id}-${drop.id}`}
+          @click=${() => merge(keep, drop)}
+        >
+          Keep this one
+        </button>
+      </div>
+    `;
+  };
+  return html`
+    <section class="adminbot-card adminbot-duplicates" data-testid="member-duplicates">
+      <div class="card-title">Possible duplicate records</div>
+      <div class="card-sub">
+        ${pairs.length === 1 ? "One pair looks" : `${pairs.length} pairs look`} like the same person
+        recorded twice. Choose which record survives — it keeps its own answers and gains
+        everything only the other one knows.
+      </div>
+      <ul class="adminbot-duplicates__list">
+        ${pairs.map(
+          (pair) => html`
+            <li class="adminbot-duplicate">
+              <span class="adminbot-duplicate__why">
+                ${pair.confidence === "high"
+                  ? html`<span class="pill warn">Almost certainly one person</span>`
+                  : html`<span class="pill">Looks like one person</span>`}
+                ${pair.reasons.map((reason) => DUPLICATE_REASONS[reason] ?? reason).join(" · ")}
+              </span>
+              <div class="adminbot-duplicate__sides">
+                ${side(pair.left, pair.right)} ${side(pair.right, pair.left)}
+              </div>
+            </li>
+          `,
+        )}
+      </ul>
+    </section>
+  `;
+}
+
 function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
   const spreadsheet = renderMemberSpreadsheet(props, members);
   // The spreadsheet is the single roster view for every mode: admins edit any row, members
@@ -1664,7 +1718,7 @@ function renderMembers(props: AdminBotProps, members: AdminBotLabMember[]) {
   if (props.mode === "general") {
     return spreadsheet;
   }
-  return html`${spreadsheet}
+  return html`${renderDuplicateMembers(props, members)}${spreadsheet}
     <div class="adminbot-editor-grid">
       <article class="adminbot-editor-card adminbot-popover" id="adminbot-add-member" popover>
         <button

@@ -32,16 +32,13 @@ import {
   openEntries,
   resolveBlockerInput,
 } from "../blockers.ts";
+import { buildCoauthorEmail, firstFullMemberAuthor } from "../coauthor-email.ts";
 import type {
   AdminBotLabMember,
   AdminBotPaperRecord,
   AdminBotPaperSaveInput,
   AdminBotPaperStep,
 } from "../controllers/admin.ts";
-import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
-import { openLinkedInDraftDialog } from "../linkedin-draft-dialog.ts";
-import { decisionOf, isDecisionAnswered, renderDecisionBanner } from "../decision-popup.ts";
-import { buildCoauthorEmail, firstFullMemberAuthor } from "../coauthor-email.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
 import {
   ARCHIVAL_VENUES,
@@ -51,6 +48,9 @@ import {
   parseVenue,
   venueYears,
 } from "../data/venue-catalog.ts";
+import { decisionOf, isDecisionAnswered, renderDecisionBanner } from "../decision-popup.ts";
+import { openLinkedInDraftDialog } from "../linkedin-draft-dialog.ts";
+import { isDormant, nextStepFor, nextTasksFor } from "../next-step.ts";
 import {
   completedOnLabel,
   completionReadiness,
@@ -76,6 +76,8 @@ import {
 import { paperSteps, stepLabels } from "./admin.ts";
 import { renderPaperCycle } from "./paper-cycle.ts";
 import { renderPaperSlots } from "./paper-slots.ts";
+import { renderPaperWeeklyUpdates } from "./paper-weekly-updates.ts";
+import { renderPaperTimeline } from "./paper-timeline.ts";
 import { findOwnMember } from "./profile.ts";
 
 export type MyWorkProps = {
@@ -137,6 +139,8 @@ export type MyWorkProps = {
     attending: string,
   ) => void;
   onSetReimbursement: (paperId: string, memberId: string, status: string) => void;
+  /** Writes the signed-in member's own line for this week. Absent leaves the log read-only. */
+  onSaveWeeklyUpdate?: (paperId: string, body: string) => void;
 };
 
 export type BlockerDraft = {
@@ -168,6 +172,14 @@ export function reviewerName(state: AppViewState): string {
 }
 
 // A paper is "mine" if I filed it, I mentor it, or my name is on it.
+/**
+ * Every paper this member is on -- not just the ones they filed.
+ *
+ * A paper belongs to everyone who wrote it, so a project one coauthor registers has to appear on
+ * all of their pages. `author_links` is the recorded answer to "who is this author", written when
+ * somebody picked them, and it is checked first because it is the only line here that is not a
+ * guess about a string the venue owns.
+ */
 export function ownPapers(state: AppViewState): AdminBotPaperRecord[] {
   const member = findOwnMember(state);
   const memberId = state.memberId;
@@ -175,7 +187,10 @@ export function ownPapers(state: AppViewState): AdminBotPaperRecord[] {
   return (state.adminBotData?.papers ?? []).filter(
     (paper) =>
       (memberId && paper.submitted_by_member_id === memberId) ||
+      (memberId && paper.first_author_member_id === memberId) ||
       (memberId && paper.mentor_member_id === memberId) ||
+      (memberId &&
+        (paper.author_links ?? []).some((link) => link.member_id === memberId)) ||
       // Author entries carry marks that are about authorship, not identity -- "Joeun Yook*" for
       // equal contribution, "Yook, Joeun" from a BibTeX paste, an accent the roster spells
       // differently. This used to be a raw lowercase comparison, so a co-first author was
@@ -249,6 +264,46 @@ function renderStepControls(state: AppViewState, paper: AdminBotPaperRecord, pro
             </button>
           `
         : nothing}
+      <!-- The pipeline pointer, demoted to what it actually is.
+           The timeline above is read off the evidence and needs no pointer at all, but
+           current_step still buckets blockers and drives the Active Papers view, and it has to
+           be movable in both directions -- a mis-click, or a rejection that sends a paper back to
+           writing. Jumping *forward* past unfinished steps still asks first, because that is the
+           move that asserts work happened. -->
+      <label class="my-work-item__step">
+        <span class="sr-only">Pipeline step</span>
+        <select
+          class="target__select"
+          data-testid=${`my-work-step-${paper.id}`}
+          @change=${(event: Event) => {
+            const target = (event.target as HTMLSelectElement).value as AdminBotPaperStep;
+            const targetIndex = paperSteps.indexOf(target);
+            if (targetIndex - index > 1) {
+              const names = paperSteps
+                .slice(index, targetIndex)
+                .map((value) => stepLabel(value))
+                .join(", ");
+              if (
+                !globalThis.confirm(
+                  `Jumping to ${stepLabel(target)} marks these as done: ${names}.\n\nContinue?`,
+                )
+              ) {
+                (event.target as HTMLSelectElement).value = paper.current_step;
+                return;
+              }
+            }
+            saveStep(props, paper, target);
+          }}
+        >
+          ${paperSteps.map(
+            (step) => html`
+              <option value=${step} ?selected=${step === paper.current_step}>
+                ${stepLabel(step)}
+              </option>
+            `,
+          )}
+        </select>
+      </label>
     </div>
   `;
 }
@@ -453,7 +508,7 @@ function renderCardSummary(paper: AdminBotPaperRecord, props: MyWorkProps) {
   return html`
     <span class="my-work-item__evidence">
       <span
-        class=${`my-work-item__bar ${outstanding === 0 ? "is-complete" : ""}`}
+        class=${`my-work-item__bar ${row.provided_count >= row.required_count ? "is-complete" : ""}`}
         role="img"
         aria-label=${`${row.provided_count} of ${row.required_count} artifacts on file`}
       >
@@ -462,15 +517,42 @@ function renderCardSummary(paper: AdminBotPaperRecord, props: MyWorkProps) {
       <span class="my-work-item__evidence-count ab-num"
         >${row.provided_count}/${row.required_count}</span
       >
-      ${row.dormant
-        ? html`<span class="pill">Dormant</span>`
-        : outstanding
-          ? html`<span class="my-work-item__outstanding"
-              >${outstanding} outstanding${row.escalating ? " · escalating" : ""}</span
-            >`
-          : html`<span class="my-work-item__outstanding is-complete">Everything is in</span>`}
+      ${renderOutstanding(row, outstanding)}
     </span>
   `;
+}
+
+/**
+ * The one phrase on the closed card that says how this paper stands.
+ *
+ * "Everything is in" is a claim about the artifacts and nothing else, so it is made from the
+ * count and never from the length of `missing_slots`. Those are not the same statement: the
+ * service returns nothing outstanding for a paper it is not chasing, and a rejected paper is not
+ * chased -- which is how a paper with nothing on file but a rejection logged against it came to
+ * announce that everything was in.
+ *
+ * The two quiet states say why they are quiet instead:
+ *   - rejected: the next move is a venue, not an artifact, and no nudge will ask for one
+ *   - nothing chaseable: work is outstanding but every open slot is behind something unsettled
+ */
+function renderOutstanding(row: PaperSlotOverviewRow, outstanding: number) {
+  if (row.dormant) {
+    return html`<span class="pill">Dormant</span>`;
+  }
+  if (row.closed) {
+    return html`<span class="my-work-item__outstanding is-closed"
+      >Rejected — pick a new venue to reopen it</span
+    >`;
+  }
+  if (row.provided_count >= row.required_count) {
+    return html`<span class="my-work-item__outstanding is-complete">Everything is in</span>`;
+  }
+  if (outstanding === 0) {
+    return html`<span class="my-work-item__outstanding">Waiting on earlier steps</span>`;
+  }
+  return html`<span class="my-work-item__outstanding"
+    >${outstanding} outstanding${row.escalating ? " · escalating" : ""}</span
+  >`;
 }
 
 /** Venue and deadline as the card's subtitle -- the two facts that decide how urgent it is. */
@@ -647,6 +729,35 @@ function renderCompletion(paper: AdminBotPaperRecord, props: MyWorkProps) {
   `;
 }
 
+/**
+ * The weekly log: what each author did on this paper, week by week.
+ *
+ * Only rendered once the card's cycle has been fetched, like the rest of the card -- an empty log
+ * and an unloaded one look identical, and only one of them means nobody has written anything.
+ */
+function renderWeeklyUpdates(paper: AdminBotPaperRecord, props: MyWorkProps) {
+  const cycle = props.slots[paper.id];
+  if (!cycle) {
+    return nothing;
+  }
+  const names: Record<string, string> = {};
+  for (const update of cycle.weeklyUpdates) {
+    names[update.member_id] = props.memberName(update.member_id);
+  }
+  return renderPaperWeeklyUpdates({
+    paperId: paper.id,
+    updates: cycle.weeklyUpdates,
+    ...(props.memberId ? { memberId: props.memberId } : {}),
+    memberNames: names,
+    busy: props.slotsBusyId === paper.id,
+    // No session, no box: the service takes the author from the session, so a reader without one
+    // has nothing to write with.
+    ...(props.onSaveWeeklyUpdate && props.memberId
+      ? { onSave: (body: string) => props.onSaveWeeklyUpdate?.(paper.id, body) }
+      : {}),
+  });
+}
+
 /** The lists that hang off a paper: drafts and their sign-offs, who travelled, who is square. */
 function renderCycle(paper: AdminBotPaperRecord, props: MyWorkProps) {
   const cycle = props.slots[paper.id];
@@ -684,7 +795,6 @@ function renderCycle(paper: AdminBotPaperRecord, props: MyWorkProps) {
  * finds. The blocker button sits outside it so reporting a blocker does not also expand the card.
  */
 function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWorkProps) {
-  const { index } = paperProgress(paper);
   const blocked = openEntries(paper).length > 0;
   const open = props.openIds.includes(paper.id);
   const done = isPaperCompleted(paper);
@@ -743,25 +853,54 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
         ${open
           ? html`
               ${renderVenueTargets(paper)} ${renderTarget(paper, props)}
-              ${renderStepper(paper, props, index)} ${renderNextStep(paper)}
-              ${renderAcceptance(paper, props)}
+              ${renderPaperTimeline({
+                paperId: paper.id,
+                slots: props.slots[paper.id]?.slots ?? [],
+                paper,
+              })}
+              ${renderNextStep(paper)} ${renderAcceptance(paper, props)}
               ${renderPaperSlots({
                 paperId: paper.id,
                 slots: props.slots[paper.id]?.slots ?? [],
                 stages: props.slots[paper.id]?.stages ?? [],
                 details: {
                   authors: paper.authors ?? [],
+                  // The picker renders when the roster is on hand; without it the card falls back
+                  // to the old text box rather than showing an author list nobody can add to.
+                  authorLinks: paper.author_links ?? [],
+                  members: (state.adminBotData?.members ?? []).map((member) => ({
+                    id: member.id,
+                    name: member.name,
+                    ...(member.email ? { hint: member.email } : {}),
+                  })),
+                  // Optional-chained: this view is rendered against partial state doubles in
+                  // tests and against a host that may predate the field, and an author list that
+                  // throws is worse than one whose draft box starts empty.
+                  coauthorDraft: state.myWorkCoauthorDraft?.[paper.id] ?? { email: "", name: "" },
+                  onCoauthorDraftChange: (draft) => {
+                    const current = state.myWorkCoauthorDraft?.[paper.id] ?? { email: "", name: "" };
+                    state.myWorkCoauthorDraft = {
+                      ...state.myWorkCoauthorDraft,
+                      [paper.id]: { ...current, ...draft },
+                    };
+                    props.onRerender?.();
+                  },
                   feedbackGivers: paper.feedback_givers ?? [],
                   venue: paper.venue ?? paper.artifacts?.conference ?? "",
+                  authorRoles: paper.author_roles ?? "",
                   // Written through the same paper save every other control on this card uses, so
-                  // the three details and the step pointer cannot end up on different records.
+                  // the details and the step pointer cannot end up on different records.
                   onSaveDetails: (details) =>
                     props.onSavePaper({
                       id: paper.id,
                       title: paper.title,
                       authors: details.authors,
+                      // The links are the author list now; `authors` rides along for a service
+                      // old enough not to know about them, and is regenerated from the links.
+                      ...(details.authorLinks ? { authorLinks: details.authorLinks } : {}),
                       feedbackGivers: details.feedbackGivers,
                       venue: details.venue,
+                      authorRoles: details.authorRoles,
                       currentStep: paper.current_step,
                     }),
                 },
@@ -780,35 +919,14 @@ function renderItem(state: AppViewState, paper: AdminBotPaperRecord, props: MyWo
                 // is the only thing that can actually satisfy it.
                 onOpenDraft: () => openLinkedInDraftDialog(paper, { settings: state.settings }),
               })}
-              ${renderCycle(paper, props)} ${renderStepControls(state, paper, props)}
+              ${renderWeeklyUpdates(paper, props)} ${renderCycle(paper, props)}
+              ${renderStepControls(state, paper, props)}
             `
           : nothing}
       </div>
     </article>
   `;
 }
-
-/**
- * The pipeline as a stepper, and the stepper as the control.
- *
- * This replaces a percentage bar plus a select. The bar said "56%", which is not a thing anyone
- * can act on, and the select listed all eight steps as equals, so jumping from Brainstorming docs
- * to Social posts was one click and asserted five things had happened that had not.
- *
- * Clicking a dot moves the paper there. Backwards is free -- correcting a mis-click, or a genuine
- * regression like a rejection, is normal. Skipping *forward* past unfinished steps asks first,
- * because that is the move that silently marks work done and makes every later nudge wrong.
- */
-const STEPPER_SHORT_LABELS: Record<string, string> = {
-  brainstorming_docs: "Brainstorm",
-  overleaf_writing: "Overleaf",
-  submission: "Submission",
-  google_drive_pdf: "Drive PDF",
-  arxiv_polish: "arXiv",
-  social_posts: "Social",
-  slide_making: "Slides",
-  poster_making: "Poster",
-};
 
 /**
  * Target venue and confidence, editable in place.
@@ -938,52 +1056,6 @@ function venueOptions(selectedId: string) {
   `;
   return html`
     ${group("Archival", ARCHIVAL_VENUES)} ${group("Non-archival", NON_ARCHIVAL_VENUES)}
-  `;
-}
-
-function renderStepper(paper: AdminBotPaperRecord, props: MyWorkProps, currentIndex: number) {
-  const move = (step: AdminBotPaperStep, targetIndex: number) => {
-    const skipped = targetIndex - currentIndex;
-    if (skipped > 1) {
-      const names = paperSteps
-        .slice(currentIndex, targetIndex)
-        .map((value) => stepLabel(value))
-        .join(", ");
-      if (
-        !globalThis.confirm(
-          `Jumping to ${stepLabel(step)} marks these as done: ${names}.\n\nContinue?`,
-        )
-      ) {
-        return;
-      }
-    }
-    saveStep(props, paper, step);
-  };
-
-  return html`
-    <div class="stepper" role="group" aria-label=${`${paper.title} progress`}>
-      <ol class="stepper__track">
-        ${paperSteps.map((step, index) => {
-          const state = index < currentIndex ? "done" : index === currentIndex ? "current" : "todo";
-          return html`
-            <li class=${`stepper__step stepper__step--${state}`}>
-              <button
-                type="button"
-                class="stepper__dot"
-                data-testid=${`step-${paper.id}-${step}`}
-                aria-current=${state === "current" ? "step" : "false"}
-                title=${`Move to ${stepLabel(step)}`}
-                @click=${() => move(step, index)}
-              >
-                <span class="sr-only">${stepLabel(step)}</span>
-                ${state === "done" ? html`<span aria-hidden="true">✓</span>` : nothing}
-              </button>
-              <span class="stepper__label">${STEPPER_SHORT_LABELS[step] ?? stepLabel(step)}</span>
-            </li>
-          `;
-        })}
-      </ol>
-    </div>
   `;
 }
 
@@ -1206,9 +1278,7 @@ function renderAddForm(state: AppViewState, props: MyWorkProps) {
             `,
           )}
           ${NON_ARCHIVAL_VENUES.map(
-            (venue: CatalogVenue) => html`
-              <option value=${venue.id}>${venue.label}</option>
-            `,
+            (venue: CatalogVenue) => html` <option value=${venue.id}>${venue.label}</option> `,
           )}
           <option value="">Other / not decided yet</option>
         </select>
@@ -1539,7 +1609,8 @@ function renderDecisionBanners(
       onResetEmail: () => {
         emailTasks.set(paper.id, {
           open: true,
-          body: buildCoauthorEmail(paper, decision, venueOf(paper), props.memberName(memberId)).body,
+          body: buildCoauthorEmail(paper, decision, venueOf(paper), props.memberName(memberId))
+            .body,
         });
         props.onRerender?.();
       },

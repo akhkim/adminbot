@@ -1724,6 +1724,69 @@ async function handleAuthenticatedRoute(
     );
     return;
   }
+  if (req.method === "GET" && url.pathname === "/lab/members/duplicates") {
+    // Which roster rows look like one person. Privileged: it is a governance read over the whole
+    // roster, and it pairs people up by email and Slack id, which the plain roster read redacts
+    // for nobody but says nothing about either.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listDuplicateMembers());
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/lab/members/merge") {
+    // requireMemberPrivileged, not requirePrivileged: a merge retires a person's record, moves
+    // their login and cannot be undone from the UI, and the caller names both ids -- so it is
+    // exactly the kind of admin-composed write the service principal is kept out of. The same
+    // reasoning as /papers/slot-reminder/run.
+    if (!requireMemberPrivileged(res, principal) || principal.kind !== "member") {
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.mergeLabMembers({
+        survivorId: asString(body.survivor_id),
+        duplicateId: asString(body.duplicate_id),
+        actorId: principal.member.id,
+      }),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/feedback") {
+    // Any authenticated principal may leave feedback -- no privilege check, because a rating is
+    // the one write in this service that a plain member is *more* entitled to than an admin. It
+    // is not on the anonymous allowlist: the widget only renders on tabs behind a login, and an
+    // open write endpoint on a publicly tunnelled service is a spam target for no gain. A public
+    // surface that needs it later adds one line to ANONYMOUS_ROUTES, and the service already
+    // stores anonymous rows (see adminBotFeedbackId).
+    //
+    // Who said it comes from the session, never from the body: a caller-named member id would let
+    // anyone rate on anyone's behalf.
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.recordFeedback({
+        featureId: asString(body.feature_id),
+        rating: Number(body.rating),
+        ...(typeof body.comment === "string" ? { comment: body.comment } : {}),
+        ...(typeof body.github_file === "string" ? { githubFile: body.github_file } : {}),
+        ...(principal.kind === "member"
+          ? { memberId: principal.member.id, memberName: principal.member.name }
+          : {}),
+      }),
+    );
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/feedback") {
+    // Reading it is privileged: comments are written to the lab, not to the person sitting next to
+    // you, and a rating with a name on it is a judgement about somebody's work.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.listFeedback(url.searchParams.get("feature_id") ?? undefined));
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/settings") {
     // Lab-wide settings (escalation windows, head professor, applicant sheet id) are
     // governance config, not member-facing data.
@@ -2037,6 +2100,58 @@ async function handleAuthenticatedRoute(
       return;
     }
     sendServiceResult(res, await service.sendPaperflowStageNudges(principalActor(principal)));
+    return;
+  }
+  const weeklyUpdate = /^\/papers\/([^/]+)\/weekly-updates$/u.exec(url.pathname);
+  if (req.method === "POST" && weeklyUpdate?.[1]) {
+    // A member writes their own line and nobody else's, so the member id comes from the session
+    // rather than the body -- an admin has no exception here, because the whole value of the log
+    // is that every line is first-hand. The service principal has no line of its own to write.
+    if (principal.kind !== "member") {
+      sendJson(res, 401, { error: { message: "member session required" } });
+      return;
+    }
+    const body = readRecord(await readJson(req));
+    sendServiceResult(
+      res,
+      service.savePaperWeeklyUpdate({
+        paperId: decodeURIComponent(weeklyUpdate[1]),
+        memberId: principal.member.id,
+        body: asString(body.body),
+        ...(typeof body.week_start === "string" ? { weekStart: body.week_start } : {}),
+      }),
+    );
+    return;
+  }
+  if (req.method === "GET" && weeklyUpdate?.[1]) {
+    sendServiceResult(res, service.listPaperWeeklyUpdates(decodeURIComponent(weeklyUpdate[1])));
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/papers/weekly-updates/pending") {
+    // The preview for the Sunday sweep, computed by the same walk the send uses. Privileged: it
+    // lists who has not reported on what, which is governance state.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(res, service.collectWeeklyUpdateGaps(url.searchParams.get("now") ?? undefined));
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/weekly-updates/run") {
+    // requirePrivileged rather than requireMemberPrivileged, for the same reason
+    // /papers/paperflow-stages/run takes the service principal: the route accepts no message and
+    // no recipient list -- both are derived from the author lists and what has been filed -- so
+    // there is no admin-composed content for the member-session gate to protect. This is the
+    // route scripts/adminbot-weekly-update-cron.sh authenticates to on a Sunday.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      await service.sendWeeklyUpdateNudges(
+        principalActor(principal),
+        url.searchParams.get("now") ?? undefined,
+      ),
+    );
     return;
   }
   if (req.method === "POST" && url.pathname === "/papers/paperflow-evidence") {
@@ -2384,6 +2499,23 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, await service.sendMemberNudge(body, principalActor(principal)));
     return;
   }
+  if (req.method === "POST" && url.pathname === "/papers/author-links/backfill") {
+    // Rewrites the author list of every paper in the lab, so it takes a genuine admin member
+    // session rather than the service principal -- and it simulates unless the body says
+    // otherwise, for the same reason the execution path does.
+    if (!requireMemberPrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    sendServiceResult(
+      res,
+      service.backfillPaperAuthorLinks({
+        actor: principalActor(principal),
+        dryRun: body.dry_run !== false,
+      }),
+    );
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/members/notes/migrate") {
     // Rewrites stored member records, so it takes a genuine admin session rather than the shared
     // service principal: unlike the cron-driven routes, the caller chooses when this happens.
@@ -2409,16 +2541,35 @@ async function handleAuthenticatedRoute(
     return;
   }
   if (req.method === "POST" && url.pathname === "/members/mandatory-fields-reminder/run") {
-    // Unlike /nudges/send, this takes no message or recipient list from the caller -- both are
-    // computed entirely from roster state, so requireMemberPrivileged's protection (stop an
-    // admin-composed or agent-composed message going out under a borrowed session) doesn't apply.
-    // requirePrivileged (which the service principal satisfies) is what scripts/adminbot-
-    // mandatory-fields-cron.sh authenticates as; see /openreview/cycle/run for the identical
-    // reasoning applied to another cron-triggered auto-send.
+    // Unlike /nudges/send, this takes no message from the caller -- the text is computed entirely
+    // from roster state, so requireMemberPrivileged's protection (stop an admin-composed or
+    // agent-composed message going out under a borrowed session) doesn't apply. requirePrivileged
+    // (which the service principal satisfies) is what scripts/adminbot-mandatory-fields-cron.sh
+    // authenticates as; see /openreview/cycle/run for the identical reasoning applied to another
+    // cron-triggered auto-send.
+    //
+    // The body only ever *narrows*: `include` picks which gap to chase and `recipient_member_ids`
+    // subtracts from a list the service computes for itself, so neither can address somebody the
+    // roster does not already say is owed a reminder.
     if (!requirePrivileged(res, principal)) {
       return;
     }
-    sendServiceResult(res, await service.sendMandatoryFieldsReminders(principalActor(principal)));
+    const reminderBody = readRecord(await readJsonOrEmpty(req));
+    const rawInclude = asString(reminderBody.include);
+    const include =
+      rawInclude === "profile" || rawInclude === "timeline" || rawInclude === "both"
+        ? rawInclude
+        : undefined;
+    const reminderRecipients = Array.isArray(reminderBody.recipient_member_ids)
+      ? reminderBody.recipient_member_ids.filter((id): id is string => typeof id === "string")
+      : undefined;
+    sendServiceResult(
+      res,
+      await service.sendMandatoryFieldsReminders(principalActor(principal), {
+        ...(include ? { include } : {}),
+        ...(reminderRecipients?.length ? { recipientIds: reminderRecipients } : {}),
+      }),
+    );
     return;
   }
   if (req.method === "POST" && url.pathname === "/profile-photo/review/run") {

@@ -579,6 +579,108 @@ export async function upsertLabMemberAsAdmin(
   return { ok: true, value: result.body as LabMember };
 }
 
+/**
+ * Write this member's own line about their week on one paper.
+ *
+ * The member id is never sent: the service takes it from the session, because the log is only
+ * worth reading if every line is first-hand. `weekStart` is omitted in the ordinary case -- the
+ * service files it under the week containing now -- and passed only to correct an earlier week.
+ */
+export async function savePaperWeeklyUpdate(
+  paperId: string,
+  body: string,
+  sessionToken: string,
+  baseUrl: string,
+  weekStart?: string,
+): Promise<AuthResult<{ update: PaperWeeklyUpdate }>> {
+  const result = await authedJson(
+    baseUrl,
+    `/papers/${encodeURIComponent(paperId)}/weekly-updates`,
+    "POST",
+    sessionToken,
+    { body, ...(weekStart ? { week_start: weekStart } : {}) },
+  );
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...calendarFailure(result.response, result.body) };
+  }
+  return { ok: true, value: result.body as { update: PaperWeeklyUpdate } };
+}
+
+/**
+ * Send one member's verdict on one surface.
+ *
+ * Fire-and-forget from the caller's point of view: the widget has already stored the vote locally
+ * and dismissed itself, so a failed write must not put a dialog in front of somebody who has
+ * finished. The result is returned anyway, because a caller that wants to log it should be able
+ * to -- what it must not do is block the page on it.
+ */
+export async function submitFeedback(
+  input: { featureId: string; rating: number; comment?: string; githubFile?: string },
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/feedback", "POST", sessionToken, {
+    feature_id: input.featureId,
+    rating: input.rating,
+    ...(input.comment ? { comment: input.comment } : {}),
+    ...(input.githubFile ? { github_file: input.githubFile } : {}),
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/**
+ * Fold one roster row into another.
+ *
+ * Member session only, like every other governance write: the service refuses this to the shared
+ * service principal outright, because a merge retires a person's record and moves their login.
+ * The response carries what the merge could not decide -- fields both records answered
+ * differently, where the survivor's answer stands -- so the caller can show it rather than let it
+ * pass silently.
+ */
+export async function mergeLabMembersAsAdmin(
+  survivorId: string,
+  duplicateId: string,
+  sessionToken: string,
+  baseUrl: string,
+): Promise<
+  AuthResult<{
+    member: LabMember;
+    conflicts: Array<{ field: string; kept: unknown; discarded: unknown }>;
+    moved: Record<string, number>;
+  }>
+> {
+  const result = await authedJson(baseUrl, "/lab/members/merge", "POST", sessionToken, {
+    survivor_id: survivorId,
+    duplicate_id: duplicateId,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    if (result.response.status === 403) {
+      return { ok: false, kind: "forbidden" };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return {
+    ok: true,
+    value: result.body as {
+      member: LabMember;
+      conflicts: Array<{ field: string; kept: unknown; discarded: unknown }>;
+      moved: Record<string, number>;
+    },
+  };
+}
+
 // Approvals go over the member session rather than the gateway tool: the service records the
 // approver from the authenticated principal, and the shared service principal every agent tool
 // call uses cannot name a person (extensions/adminbot/src/api/server.ts).
@@ -2318,6 +2420,16 @@ export type PaperReimbursement = {
 };
 
 /** Everything one card needs: the checklist plus the lists that hang off the paper. */
+/** One author's account of their own week on one paper. */
+export type PaperWeeklyUpdate = {
+  paper_id: string;
+  member_id: string;
+  week_start: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type PaperCycle = {
   slots: PaperSlotRow[];
   drafts: PaperSocialDraft[];
@@ -2326,6 +2438,8 @@ export type PaperCycle = {
   reimbursements: PaperReimbursement[];
   /** The venue ladder. Read-only: closed by a bcc, never by a control on this card. */
   stages: PaperflowStageRow[];
+  /** The weekly log, newest week first. Written by each author about themselves. */
+  weeklyUpdates: PaperWeeklyUpdate[];
   cycleClosed: boolean;
   missingAcceptanceDetails: string[];
 };
@@ -2355,6 +2469,7 @@ export async function fetchPaperSlots(
     attendees?: PaperAttendee[];
     reimbursements?: PaperReimbursement[];
     paperflow_stages?: PaperflowStageRow[];
+    weekly_updates?: PaperWeeklyUpdate[];
     cycle_closed?: boolean;
     missing_acceptance_details?: string[];
   } | null;
@@ -2367,6 +2482,7 @@ export async function fetchPaperSlots(
       attendees: body?.attendees ?? [],
       reimbursements: body?.reimbursements ?? [],
       stages: body?.paperflow_stages ?? [],
+      weeklyUpdates: body?.weekly_updates ?? [],
       cycleClosed: Boolean(body?.cycle_closed),
       missingAcceptanceDetails: body?.missing_acceptance_details ?? [],
     },
@@ -2587,13 +2703,22 @@ export async function runPaperSlotReminder(
 export async function runMandatoryFieldsReminder(
   sessionToken: string,
   baseUrl: string,
+  /**
+   * Narrows the sweep to one gap and one set of people -- what the Profile Overview filter is
+   * showing. Omitted, the service chases both gaps across everyone owed a reminder, which is what
+   * the daily cron does.
+   */
+  scope?: { include: "profile" | "timeline" | "both"; memberIds: string[] },
 ): Promise<AuthResult<{ created: number; skipped: number }>> {
   const result = await authedJson(
     baseUrl,
     "/members/mandatory-fields-reminder/run",
     "POST",
     sessionToken,
-    {},
+    {
+      ...(scope ? { include: scope.include } : {}),
+      ...(scope?.memberIds.length ? { recipient_member_ids: scope.memberIds } : {}),
+    },
   );
   if ("unreachable" in result) {
     return { ok: false, kind: "unreachable" };
