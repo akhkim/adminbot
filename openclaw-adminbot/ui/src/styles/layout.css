@@ -8337,16 +8337,3 @@
   color: var(--warning, #a67c00);
   font-size: 0.85em;
 }
-
-/* An undecided paper: one line offering the two answers, so the surface that carries the news is
-   also the one that records it. Neutral — nothing has happened yet. */
-.decision-banner--pending {
-  border-left-color: var(--border);
-  background: var(--bg);
-}
-
-.decision-banner__ask {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}

@@ -85,17 +85,7 @@ function seenStamp(paper: AdminBotPaperRecord, decision: string): string {
 
 export type DecisionBannerProps = {
   paper: AdminBotPaperRecord;
-  /**
-   * The venue's answer, or null when nothing has been recorded.
-   *
-   * A null decision still draws, as one compact line offering the two answers. The banner used to
-   * appear only once a decision was already in the record, which meant the surface built to carry
-   * the news could not be used to enter it -- on a fresh deployment every paper was undecided and
-   * so the feature was invisible.
-   */
-  decision: "accept" | "reject" | null;
-  /** Records the venue's answer, which is what turns the prompt into the full banner. */
-  onDecide: (decision: "accept" | "reject") => void;
+  decision: "accept" | "reject";
   /** What the author has picked so far. Held by the caller so a re-render does not lose it. */
   draft: { presentation: string; attending: "yes" | "no" | ""; nextVenue: string };
   onDraft: (patch: Partial<DecisionBannerProps["draft"]>) => void;
@@ -134,38 +124,6 @@ export type DecisionBannerProps = {
 export function renderDecisionBanner(props: DecisionBannerProps) {
   const { paper, decision, draft } = props;
   const venue = paper.accepted_venue?.trim() || paper.artifacts?.conference?.trim() || "the venue";
-
-  if (!decision) {
-    return html`
-      <section
-        class="decision-banner decision-banner--pending decision-banner--collapsed"
-        data-testid=${`decision-banner-${paper.id}`}
-      >
-        <span class="decision-banner__verdict-line">
-          No decision recorded ·
-          <span class="decision-banner__paper">${paper.title}</span>
-        </span>
-        <span class="decision-banner__ask">
-          <button
-            type="button"
-            class="decision__choice"
-            data-testid=${`decision-set-accept-${paper.id}`}
-            @click=${() => props.onDecide("accept")}
-          >
-            Accepted
-          </button>
-          <button
-            type="button"
-            class="decision__choice"
-            data-testid=${`decision-set-reject-${paper.id}`}
-            @click=${() => props.onDecide("reject")}
-          >
-            Not accepted
-          </button>
-        </span>
-      </section>
-    `;
-  }
 
   const acknowledge = () => {
     const input: AdminBotPaperSaveInput = {
@@ -317,7 +275,7 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
           : nothing}
       </div>
       ${props.isEmailOwner && props.email?.open
-        ? renderEmailTask({ ...props, decision }, venue)
+        ? renderEmailTask(props, venue)
         : nothing}
     </section>
   `;
@@ -332,10 +290,7 @@ export function renderDecisionBanner(props: DecisionBannerProps) {
  * genuinely differ per paper are left in [BRACKETS], so what still needs a human is visible
  * without reading the whole thing.
  */
-function renderEmailTask(
-  props: DecisionBannerProps & { decision: "accept" | "reject" },
-  venue: string,
-) {
+function renderEmailTask(props: DecisionBannerProps, venue: string) {
   const { paper, decision, members } = props;
   const recipients = coauthorEmails(paper, members);
   const missing = unreachableAuthors(paper, members);
