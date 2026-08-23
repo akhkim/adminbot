@@ -2227,6 +2227,8 @@ export type PaperSlotOverviewRow = {
   closed: boolean;
   missing_slots: string[];
   missing_acceptance_details?: string[];
+  /** Who is travelling, counted by the service. Absent from a service older than this field. */
+  attendance?: { yes: number; no: number; unknown: number; going?: string[] };
   cycle_closed?: boolean;
   escalating: boolean;
   first_author_member_id?: string;

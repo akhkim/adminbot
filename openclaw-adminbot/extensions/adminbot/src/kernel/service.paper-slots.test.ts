@@ -306,3 +306,39 @@ describe("sendPaperSlotNudges", () => {
     });
   });
 });
+
+describe("attendance on the slot overview", () => {
+  it("counts who is travelling, so the admin table needs one request rather than one per paper", () => {
+    const service = new AdminBotService();
+    service.upsertPaper({
+      id: "p1",
+      title: "Accepted paper",
+      authors: ["Alice", "Bob"],
+      current_step: "submission",
+      venue_decision: "accept",
+    });
+    const attend = (name: string, attending: string) =>
+      service.setConferenceAttendee({
+        paperId: "p1",
+        name,
+        attending,
+        actorId: "admin",
+        privileged: true,
+      });
+    attend("Alice", "yes");
+    attend("Bob", "no");
+    attend("Carol", "unknown");
+
+    const row = service.listPaperSlotOverview().payload?.papers.find((p) => p.paper_id === "p1");
+    expect(row?.attendance).toEqual({ yes: 1, no: 1, unknown: 1, going: ["Alice"] });
+  });
+
+  it("reports zeroes rather than nothing when nobody has been asked", () => {
+    // The field is always present so the console never has to distinguish "no attendees" from
+    // "this service is too old to say".
+    const service = new AdminBotService();
+    service.upsertPaper({ id: "p2", title: "Quiet", authors: ["Alice"], current_step: "submission" });
+    const row = service.listPaperSlotOverview().payload?.papers.find((p) => p.paper_id === "p2");
+    expect(row?.attendance).toEqual({ yes: 0, no: 0, unknown: 0, going: [] });
+  });
+});

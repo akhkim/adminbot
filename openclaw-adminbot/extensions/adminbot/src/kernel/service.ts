@@ -300,6 +300,21 @@ export type AdminBotPaperSlotOverviewRow = {
   missing_slots: AdminBotPaperSlot[];
   /** Which acceptance details the author still owes, once the venue said yes. */
   missing_acceptance_details: string[];
+  /**
+   * Who is travelling, counted.
+   *
+   * Carried on the overview rather than left to a per-paper read because the question an admin
+   * asks is "who is going to EMNLP", which spans every accepted paper at once -- and answering it
+   * by fetching one cycle per paper would be a request per row of a table. The attendee rows are
+   * already loaded here to decide what to chase, so counting them is free.
+   */
+  attendance: {
+    yes: number;
+    no: number;
+    unknown: number;
+    /** Names of the people actually going, which is what a travel plan is made of. */
+    going: string[];
+  };
   /** Every artifact in, and every attending author square on expenses. Derived, never stored. */
   cycle_closed: boolean;
   escalating: boolean;
@@ -1687,6 +1702,12 @@ export class AdminBotService {
           .map((item) => item.slot)
           .filter((slot): slot is AdminBotPaperSlot => Boolean(slot)),
         missing_acceptance_details: missingAcceptanceDetails(paper),
+        attendance: {
+          yes: attendees.filter((row) => row.attending === "yes").length,
+          no: attendees.filter((row) => row.attending === "no").length,
+          unknown: attendees.filter((row) => row.attending === "unknown").length,
+          going: attendees.filter((row) => row.attending === "yes").map((row) => row.name),
+        },
         escalating: actionable.some((item) =>
           shouldEscalate(item, ledger.get(`paper_slot|${item.subjectId}`)),
         ),

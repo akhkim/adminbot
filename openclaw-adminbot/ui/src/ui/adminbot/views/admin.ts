@@ -1858,6 +1858,7 @@ function renderPapers(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
   }
   return html`
     ${renderPaperOverview(props, papers)} ${renderPreRegistrationBoard(papers, props)}
+    ${renderTravelBoard(props, papers)}
     ${renderPaperStats(papers)}
     ${renderBlockers(props, papers)}
     <article class="adminbot-editor-card">
@@ -1941,6 +1942,66 @@ function copyNudge(event: Event, message: string) {
  * Sorted highest-confidence first, matching the sheet's own rule -- "from most ready" -- because
  * the top of this list is the answer to "what is actually going in".
  */
+/**
+ * Who is travelling, by conference.
+ *
+ * Its own card rather than a line on the pre-registration table, because it answers a different
+ * question at a different time: that table is about work going out, this is about people going
+ * somewhere. Green, so it reads as settled rather than as something outstanding.
+ *
+ * Names, not counts. A number tells an admin how many flights to expect; the trip is planned
+ * from the list. `unknown` stays visible next to it because those are the people the nudge sweep
+ * is still chasing, and folding them into "not going" would make the lab look decided when it is
+ * only unasked.
+ */
+function renderTravelBoard(props: AdminBotProps, papers: AdminBotPaperRecord[]) {
+  const byId = new Map(papers.map((paper) => [paper.id, paper]));
+  const byVenue = new Map<string, { going: Set<string>; unknown: number; papers: number }>();
+  for (const row of props.paperSlotOverview ?? []) {
+    const paper = byId.get(row.paper_id);
+    const venue = paper?.accepted_venue?.trim();
+    if (!venue || !row.attendance) {
+      continue;
+    }
+    const entry = byVenue.get(venue) ?? { going: new Set<string>(), unknown: 0, papers: 0 };
+    for (const name of row.attendance.going ?? []) {
+      entry.going.add(name);
+    }
+    entry.unknown += row.attendance.unknown;
+    entry.papers += 1;
+    byVenue.set(venue, entry);
+  }
+  if (byVenue.size === 0) {
+    return nothing;
+  }
+  return html`
+    <article class="travel-board" data-testid="travel-board">
+      <div class="card-title">Conference travel</div>
+      ${[...byVenue.entries()].map(
+        ([venue, entry]) => html`
+          <section class="travel-board__venue">
+            <div class="travel-board__head">
+              <strong>${venue}</strong>
+              <span class="travel-board__count">
+                ${entry.going.size} going · ${entry.papers}
+                paper${entry.papers === 1 ? "" : "s"}
+                ${entry.unknown > 0
+                  ? html`· <span class="travel-board__open">${entry.unknown} not answered</span>`
+                  : nothing}
+              </span>
+            </div>
+            ${entry.going.size === 0
+              ? html`<p class="travel-board__empty">Nobody has said yes yet.</p>`
+              : html`<ul class="travel-board__people">
+                  ${[...entry.going].sort().map((name) => html`<li>${name}</li>`)}
+                </ul>`}
+          </section>
+        `,
+      )}
+    </article>
+  `;
+}
+
 function renderPreRegistrationBoard(papers: AdminBotPaperRecord[], props: AdminBotProps) {
   const venues = PRE_REGISTRATION_VENUES.filter((venue) => {
     const days = daysUntil(venue.deadline);
