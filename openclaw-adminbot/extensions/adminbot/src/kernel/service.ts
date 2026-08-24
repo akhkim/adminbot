@@ -1253,10 +1253,27 @@ export class AdminBotService {
     due: boolean;
     missing: Array<{ member_id: string; name: string; paper_count: number }>;
     stale: Array<{ member_id: string; name: string; registered: number; unregistered: number }>;
+    /** Who the sweep deliberately skipped, so the exclusion is visible rather than assumed. */
+    excluded: string[];
+    /**
+     * False when no head professor is configured, in which case nobody is exempt.
+     *
+     * Surfaced rather than left implicit: the exemption is keyed on a settings field, and a
+     * settings field that is unset makes an exclusion silently do nothing. A preview that says
+     * "excluded: none, head professor not configured" is the difference between choosing not to
+     * exempt the PI and not noticing that you failed to.
+     */
+    head_professor_configured: boolean;
   }> {
     const venue = params.venue?.trim() || "ICLR";
     const now = params.nowIso ? new Date(params.nowIso) : new Date();
     const schedule = this.groupMeetingSchedule();
+    // The head professor runs the meeting this reminder is aimed at. They are on nearly every
+    // paper in the lab as the supervisor rather than as the person who would register it, so
+    // chasing them about "your 84 active papers" is both wrong and the fastest way to make the
+    // whole reminder look untrustworthy.
+    const headProfessor = this.resolveSettings().head_professor_member_id?.trim() ?? "";
+    const excluded: string[] = [];
     const papers = this.store
       .listPapers()
       .filter((paper) => !isPaperDormant(paper, now) && !isPaperClosed(paper));
@@ -1275,6 +1292,10 @@ export class AdminBotService {
       const addressable =
         (typeof batch === "number" && batch >= 1 && batch <= 3) || isAdminBotFullMember(member);
       if (!addressable) {
+        continue;
+      }
+      if (headProfessor && member.id === headProfessor) {
+        excluded.push(member.id);
         continue;
       }
       const own = papers.filter((paper) => this.memberOwnsPaper(member, paper));
@@ -1304,6 +1325,8 @@ export class AdminBotService {
         due: isGroupMeetingNudgeDue(now, schedule),
         missing,
         stale,
+        excluded,
+        head_professor_configured: Boolean(headProfessor),
       },
     };
   }

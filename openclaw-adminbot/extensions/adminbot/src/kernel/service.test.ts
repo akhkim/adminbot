@@ -160,6 +160,38 @@ describe("AdminBotService pre-registration nudges", () => {
     expect(second.created).toEqual([]);
   });
 
+  it("leaves the head professor out of it, and says so", () => {
+    const service = lab();
+    unwrap(
+      service.upsertLabMember({
+        id: "pi",
+        name: "The PI",
+        slack_user_id: "U9",
+        privilege_level: "admin",
+        email: "pi@cs.toronto.edu",
+      }),
+    );
+    unwrap(service.updateSettings({ head_professor_member_id: "pi" }));
+    paperFor(service, "p-pi", "pi");
+    paperFor(service, "p-batched", "batched");
+
+    const result = unwrap(service.collectPreRegistrationNudges({ nowIso: sunday }));
+    // On nearly every paper as supervisor rather than as the person who would register it.
+    expect(result.missing.map((row) => row.member_id)).toEqual(["batched"]);
+    expect(result.excluded).toEqual(["pi"]);
+    expect(result.head_professor_configured).toBe(true);
+  });
+
+  it("says nobody is exempt when no head professor is configured", () => {
+    // The exemption is keyed on a settings field, and an unset field would make it silently do
+    // nothing. The preview has to distinguish "chose not to exempt" from "did not notice".
+    const service = lab();
+    paperFor(service, "p1", "batched");
+    const result = unwrap(service.collectPreRegistrationNudges({ nowIso: sunday }));
+    expect(result.excluded).toEqual([]);
+    expect(result.head_professor_configured).toBe(false);
+  });
+
   it("ignores a rejected paper -- it is not a plan", () => {
     const service = lab();
     unwrap(
