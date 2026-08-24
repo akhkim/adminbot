@@ -1230,8 +1230,7 @@ describe("the big-deadlines panel", () => {
   const scheduled = (overrides: Partial<AdminBotLabMember> = {}) =>
     member({ milestones: [{ date: "2027-06-12", label: "Graduation" }], ...overrides });
 
-  // The snapshot is 107 entries and 101 of them are workshops sharing a handful of instants, so an
-  // all-venues picker buried the conference somebody wanted under a hundred NeurIPS workshops.
+  // Workshops dominate the snapshot, so an all-venues picker buried conference targets.
   it("offers conferences and no workshops", () => {
     const picker = renderView({ members: [scheduled()] }).querySelector<HTMLSelectElement>(
       '[data-testid="time-availability-conference-pick"]',

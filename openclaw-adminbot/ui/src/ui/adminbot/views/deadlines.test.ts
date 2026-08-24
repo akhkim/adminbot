@@ -2,11 +2,13 @@
 
 import { render } from "lit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { DeadlineVenue } from "../data/deadlines.ts";
 import {
   buildDeadlineBoardEntries,
   filterDeadlineBoardEntries,
   groupDeadlineBoardEntries,
   renderDeadlines,
+  workshopSourceLinks,
 } from "./deadlines.ts";
 
 beforeEach(() => {
@@ -46,6 +48,27 @@ function buttonNamed(container: HTMLElement, name: string): HTMLButtonElement {
 }
 
 describe("deadline board model", () => {
+  it("keeps workshop CFP/homepage and OpenReview links independent", () => {
+    const workshop = {
+      entry_type: "workshop",
+      cfp_url: "https://workshop.example/cfp",
+      homepage_url: "https://workshop.example",
+      openreview_url: "https://openreview.net/group?id=Example/Workshop",
+    } as DeadlineVenue;
+    expect(workshopSourceLinks(workshop)).toEqual({
+      titleUrl: "https://workshop.example",
+      sourceUrl: "https://workshop.example/cfp",
+      sourceLabel: "Call for papers",
+      openReviewUrl: "https://openreview.net/group?id=Example/Workshop",
+    });
+    expect(workshopSourceLinks({ ...workshop, cfp_url: "", openreview_url: "" })).toEqual({
+      titleUrl: "https://workshop.example",
+      sourceUrl: "https://workshop.example",
+      sourceLabel: "Official site",
+      openReviewUrl: "",
+    });
+  });
+
   it("keeps all valid generated rows in chronological order", () => {
     const entries = buildDeadlineBoardEntries();
     expect(entries.length).toBeGreaterThan(100);
@@ -80,15 +103,15 @@ describe("deadline board model", () => {
         .map((entry) => entry.venue.id)
         .toSorted(),
     ).toEqual(entries.map((entry) => entry.venue.id).toSorted());
-    const neurips = entries.filter(
-      (entry) => entry.venue.venue_group === "NeurIPS 2026 Workshops",
-    );
+    const neurips = entries.filter((entry) => entry.venue.venue_group === "NeurIPS 2026 Workshops");
     const neuripsGroup = groups.find((group) => group.label === "NeurIPS 2026 Workshops");
     expect(neurips.length).toBeGreaterThan(100);
     expect(neuripsGroup?.entries.length).toBe(neurips.length);
-    expect(neuripsGroup?.sections.unknown.length).toBeGreaterThan(100);
+    expect(neuripsGroup?.sections.nonArchival.length).toBe(neurips.length);
+    expect(neuripsGroup?.sections.unknown.length).toBe(0);
     const emnlpGroup = groups.find((group) => group.label === "EMNLP 2026 Workshops");
-    expect(emnlpGroup?.sections.unknown.length).toBeGreaterThan(0);
+    expect(emnlpGroup?.sections.mixed.length).toBeGreaterThan(0);
+    expect(emnlpGroup?.sections.unknown.length).toBe(0);
     expect(groups.find((group) => group.label === "EMNLP 2026")?.sections.archival.length).toBe(1);
   });
 });
@@ -198,9 +221,14 @@ describe("renderDeadlines", () => {
     const groups = [...container.querySelectorAll<HTMLElement>(".deadline-group")];
     expect(groups.length).toBeGreaterThan(1);
     expect(groups.reduce((total, group) => total + Number(group.dataset.count), 0)).toBe(count);
-    groups[0].querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
+    const neuripsGroup = groups.find((group) =>
+      group.querySelector(".deadline-group__heading")?.textContent?.includes("NeurIPS 2026"),
+    )!;
+    neuripsGroup.querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
     await settle(container);
-    const openGroup = container.querySelector<HTMLElement>(".deadline-group")!;
+    const openGroup = [...container.querySelectorAll<HTMLElement>(".deadline-group")].find(
+      (group) => group.hasAttribute("data-open"),
+    )!;
     expect(openGroup.querySelector(".deadline-group__panel")?.hasAttribute("hidden")).toBe(false);
     expect(openGroup.querySelector(".deadline-group__row-date")?.textContent).toMatch(
       /\d{2}:\d{2} AoE/u,
@@ -219,6 +247,8 @@ describe("renderDeadlines", () => {
         (element) => element.className,
       ),
     ).toEqual(["deadline-group__row-detail", "deadline-card__labels"]);
+    expect(openGroup.querySelector(".deadline-group__row-name a")).not.toBeNull();
+    expect(openGroup.querySelector(".deadline-card__source--button")).not.toBeNull();
     expect(buttonNamed(container, "Groups").getAttribute("aria-pressed")).toBe("true");
 
     buttonNamed(container, "Cards").click();
@@ -238,7 +268,7 @@ describe("renderDeadlines", () => {
     expect(buttonNamed(container, "Table").getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("shows entry type and safe source links on cards", async () => {
+  it("links a workshop name to its homepage and keeps source actions separate", async () => {
     const container = await renderView();
     const workshop = [...container.querySelectorAll<HTMLElement>(".deadline-card")].find(
       (card) => card.dataset.entryType === "workshop",
@@ -252,9 +282,34 @@ describe("renderDeadlines", () => {
     expect(workshop.querySelector(".deadline-card__group-name")?.textContent).toBe(
       venue.venue_group,
     );
-    const source = workshop.querySelector<HTMLAnchorElement>(".deadline-card__source")!;
-    expect(source.target).toBe("_blank");
-    expect(source.rel.split(" ")).toEqual(expect.arrayContaining(["noopener", "noreferrer"]));
+    const title = workshop.querySelector<HTMLAnchorElement>(".deadline-card__name a")!;
+    const actions = [
+      ...workshop.querySelectorAll<HTMLAnchorElement>(".deadline-card__source--button"),
+    ];
+    const source = actions.find((link) =>
+      /Call for papers|Official site/u.test(link.textContent || ""),
+    )!;
+    const review = actions.find((link) => link.textContent?.includes("OpenReview"))!;
+    expect(title.href).toBe(venue.homepage_url);
+    expect(source.href).toBe(venue.cfp_url);
+    expect(title.href).not.toBe(source.href);
+    expect(title.href).not.toBe(review.href);
+    expect(review.textContent).toContain("OpenReview");
+    for (const link of [title, source, review]) {
+      expect(link.target).toBe("_blank");
+      expect(link.rel.split(" ")).toEqual(expect.arrayContaining(["noopener", "noreferrer"]));
+    }
+  });
+
+  it("keeps official conference titles linked across deadline surfaces", async () => {
+    const container = await renderView();
+    const conference = [...container.querySelectorAll<HTMLElement>(".deadline-card")].find(
+      (card) => card.dataset.entryType === "main_conference",
+    )!;
+
+    const title = conference.querySelector<HTMLAnchorElement>(".deadline-card__name a")!;
+    const source = conference.querySelector<HTMLAnchorElement>(".deadline-card__source")!;
+    expect(title.href).toBe(source.href);
   });
 
   it("ticks the lead and card countdowns every second", async () => {

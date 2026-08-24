@@ -40,6 +40,7 @@ import type {
   AdminBotPaperStep,
 } from "../controllers/admin.ts";
 import { DEADLINE_VENUES } from "../data/deadlines.ts";
+import { aoeInstantMs } from "../data/deadline-time.ts";
 import {
   ARCHIVAL_VENUES,
   type CatalogVenue,
@@ -124,8 +125,8 @@ export type MyWorkProps = {
    * The member's own page, rather than the admin view over every paper in the lab.
    *
    * Active Papers reuses this renderer to get the same cards and the same writes, and that is
-   * worth keeping -- but the banners above the list are addressed to one person. "137 of your 137
-   * papers not registered" and a decision prompt on somebody else's paper are both wrong there,
+   * worth keeping -- but the banners above the list are addressed to one person. "All of your
+   * papers are not registered" and a decision prompt on somebody else's paper are both wrong there,
    * and the second one invites an admin to answer a question that was asked of the author.
    */
   personal?: boolean;
@@ -1187,7 +1188,7 @@ function renderAddButton(state: AppViewState) {
  */
 function upcomingVenues(now = new Date()) {
   const future = DEADLINE_VENUES.filter((venue) => {
-    const due = Date.parse(venue.deadline_aoe.replace(" ", "T") + "Z");
+    const due = aoeInstantMs(venue.deadline_aoe);
     return Number.isFinite(due) && due > now.getTime();
   })
     // Archival conferences only. Sorting purely by date buries ICLR and ARR under fifty workshop

@@ -2,21 +2,27 @@
 """
 AdminBot deadline collector (Output 0 data source).
 
-Refreshes extensions/adminbot/content/deadlines/venues.json with the lab's UPCOMING
-submission/rebuttal deadlines:
+Refreshes extensions/adminbot/content/deadlines/venues.json with the lab's tracked
+submission/rebuttal deadlines, including recent entries used by the history view:
 
-  - NeurIPS 2026 workshops  -> collected live from OpenReview
-      (group parent = NeurIPS.cc/2026/Workshop). All workshops share the
-      OFFICIAL unified NeurIPS deadline: submission 2026-08-29 AoE,
-      hard accept/reject 2026-09-29 AoE.
-  - Conference milestones    -> curated + source-verified (aideadlines.org /
-      ACL Rolling Review / official CFPs). Kept as a small hand-checked table
-      because the freeform venues change slowly and must be exact.
+  - Workshops -> collected from each requested family's OpenReview parent.
+  - Conference milestones -> curated from official CFPs, except sources such as
+      IASEAI whose OpenReview venue can be checked directly.
 
 Times are AoE (UTC-12). Run:  python3 scripts/adminbot-deadline-collect.py
-Only OUTPUT is venues.json; nothing is sent.
+Writes venues.json and its generated UI datasets; nothing is sent.
 """
-import json, os, sys, time, urllib.error, urllib.parse, urllib.request, datetime
+import concurrent.futures
+import datetime
+import json
+import os
+import re
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from html.parser import HTMLParser
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 sys.path.insert(0, HERE)
@@ -57,6 +63,30 @@ OUT  = os.path.join(DEADLINES_DIR, "venues.json")
 # official CFP is announced; `python3 scripts/adminbot-deadline-collect.py` prints
 # what is still missing.
 CONFERENCES = [
+    # Source: https://2026.aaclnet.org/calls/main_conference_papers/
+    dict(id="arr_2026_may", name="ARR — May 2026 cycle (direct submission)",
+         venue_type="conference", venue_group="ARR May 2026", track="cycle",
+         venue_family="ARR", submission_type="direct",
+         deadline_label="ARR submission", deadline_aoe="2026-05-25 23:59:59",
+         notification_aoe="", link="https://2026.aaclnet.org/calls/main_conference_papers/"),
+    dict(id="aacl2026_commitment", name="AACL-IJCNLP 2026 (main, ARR commitment)",
+         venue_type="conference", venue_group="AACL-IJCNLP 2026", track="main",
+         venue_family="AACL", submission_type="commitment",
+         deadline_label="commitment", deadline_aoe="2026-08-07 23:59:59",
+         notification_aoe="2026-09-07 23:59:59",
+         link="https://2026.aaclnet.org/calls/main_conference_papers/"),
+    dict(id="aacl2026_commitment_second", name="AACL-IJCNLP 2026 (main, second ARR commitment)",
+         venue_type="conference", venue_group="AACL-IJCNLP 2026", track="main",
+         venue_family="AACL", submission_type="commitment",
+         deadline_label="second commitment", deadline_aoe="2026-08-25 23:59:59",
+         notification_aoe="2026-09-07 23:59:59",
+         link="https://2026.aaclnet.org/calls/main_conference_papers/"),
+    # Source: https://2026.aaclnet.org/calls/demos/
+    dict(id="aacl2026_demo", name="AACL-IJCNLP 2026 (system demonstrations)",
+         venue_type="conference", venue_group="AACL-IJCNLP 2026", track="demo",
+         venue_family="AACL", deadline_label="demo submission",
+         deadline_aoe="2026-07-15 23:59:59", notification_aoe="2026-09-01 23:59:59",
+         link="https://2026.aaclnet.org/calls/demos/"),
     dict(id="emnlp2026_commitment", name="EMNLP 2026 (main, ARR commitment)",
          venue_type="conference", venue_group="EMNLP 2026", track="main",
          submission_type="commitment",
@@ -134,13 +164,24 @@ CONFERENCES = [
 PENDING = [
     ("ACL 2027 (main, ARR commitment)", "https://2027.aclweb.org/"),
     ("ACL 2027 (system demonstrations)", "https://2027.aclweb.org/"),
-    ("EMNLP 2027 (main + demo)", "https://2027.emnlp.org/"),
+    ("EMNLP 2027 (main, ARR commitment)", "https://2027.emnlp.org/"),
+    ("EMNLP 2027 (system demonstrations)", "https://2027.emnlp.org/"),
     ("NAACL 2027 (system demonstrations)", "https://2027.naacl.org/"),
+    ("AACL next round (main + demo)", "https://aaclnet.org/"),
     ("NeurIPS 2027 (main)", "https://neurips.cc/Conferences/2027"),
     ("ICML 2027 (main)", "https://icml.cc/Conferences/2027"),
     ("COLM 2027 (main)", "https://colmweb.org/"),
     ("CLeaR 2027 (main)", "https://www.cclear.cc/"),
-    ("IASEAI 2027 (non-archival)", "https://www.iaseai.org/"),
+    ("IASEAI 2027 submission (OpenReview venue exists; deadline not announced)",
+     "https://openreview.net/group?id=IASEAI.org/2027/Conference"),
+]
+
+# Non-workshop venues whose OpenReview invitation is the authoritative date.
+OPENREVIEW_CONFERENCES = [
+    dict(id="iaseai2027_submission", name="IASEAI 2027", venue_family="IASEAI",
+         venue_group="IASEAI 2027", track="main", venue_type="conference",
+         deadline_label="submission", notification_aoe="",
+         group_id="IASEAI.org/2027/Conference"),
 ]
 
 # Curated non-NeurIPS workshops (each has its own per-workshop deadline).
@@ -152,8 +193,34 @@ EMNLP_WORKSHOPS = [
          submission_type="commitment",
          deadline_label="ARR commitment",   # direct channel (Jul 14) already closed
          deadline_aoe="2026-08-03 23:59:59", notification_aoe="2026-08-15 23:59:59",
+         homepage_url="https://sites.google.com/view/nlp4positiveimpact",
+         cfp_url="https://sites.google.com/view/nlp4positiveimpact/call-for-papers-2026",
+         openreview_url="https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment",
+         source_url="https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment",
+         source_checked_at="2026-08-24T00:00:00Z",
          link="https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment"),
 ]
+
+# Publication policy belongs to the workshop, not to its direct/ARR deadline row.
+# These workshop CFPs need a small override because OpenReview exposes the rows as
+# separate groups and some homepages hide the policy on a sibling page.
+WORKSHOP_POLICY_OVERRIDES = {
+    "emnlp2026_ws_LUHME": dict(
+        archival_status="archival", homepage_url="https://luhme.up.pt/",
+        cfp_url="https://luhme.up.pt/paper-submission/"),
+    "emnlp2026_ws_WNUT": dict(
+        archival_status="archival", homepage_url="https://noisy-text.github.io/2026/",
+        cfp_url="https://noisy-text.github.io/2026/#call-for-papers"),
+    "emnlp2026_ws_NLLP": dict(
+        archival_status="mixed", homepage_url="https://nllpw.org/workshop",
+        cfp_url="https://nllpw.org/workshop/call/"),
+    "emnlp2026_ws_PANDORA": dict(
+        archival_status="mixed", homepage_url="https://pandora-workshop.github.io/",
+        cfp_url="https://pandora-workshop.github.io/author"),
+    "emnlp2026_ws_REALM": dict(
+        archival_status="mixed", homepage_url="https://realm-workshop.github.io/",
+        cfp_url="https://realm-workshop.github.io/call_for_papers/"),
+}
 
 NEURIPS_WS_SUBMISSION = "2026-08-29 23:59:59"   # official recommended (AoE)
 NEURIPS_WS_NOTIF      = "2026-09-29 23:59:59"   # official hard accept/reject (AoE)
@@ -184,8 +251,8 @@ UNIFIED_ROUND_DEADLINES = {
     ("NeurIPS", 2026): (NEURIPS_WS_SUBMISSION, NEURIPS_WS_NOTIF),
 }
 
-# Only upcoming deadlines are tracked, so this year and next is the whole window a
-# workshop round can open in.
+# Sweep this year and next. Recent past rows remain in the generated dataset when
+# their source still publishes them, so the history view can render them.
 WORKSHOP_YEAR_SPAN = 2
 
 
@@ -213,33 +280,269 @@ def workshop_sources(today=None):
 # through and silently truncates the board. A small gap between calls plus backoff
 # on 429 keeps the whole sweep inside the budget. It runs weekly and unattended, so
 # slow-and-complete beats fast-and-partial.
-OPENREVIEW_GAP_SECONDS = 0.25
+OPENREVIEW_GAP_SECONDS = 1.1
 OPENREVIEW_RETRIES = 4
+
+HTTP_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+    ),
+    "Accept-Language": "en-US,en;q=0.9",
+}
+
+
+def checked_at():
+    """A day-stable UTC timestamp, so a same-day second generation is idempotent."""
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT00:00:00Z")
+
+
+def normalize_url(value):
+    """A safe absolute HTTP(S) URL, accepting host-only URLs published by OpenReview."""
+    raw = str(value or "").strip()
+    candidates = [
+        part.strip()
+        for part in re.split(r"\s*;\s*|\s+(?=https?://)", raw)
+        if part.strip()
+    ]
+    text = next(
+        (part for part in candidates if part.lower().startswith("https://")),
+        candidates[0] if candidates else "",
+    )
+    if not text:
+        return ""
+    if text.startswith("//"):
+        text = "https:" + text
+    elif re.match(r"^[A-Za-z][A-Za-z0-9+.-]*:", text) and "://" not in text:
+        return ""
+    elif "://" not in text:
+        text = "https://" + text
+    parsed = urllib.parse.urlsplit(text)
+    try:
+        hostname = parsed.hostname
+        parsed.port
+    except ValueError:
+        return ""
+    if parsed.scheme not in ("http", "https") or not hostname:
+        return ""
+    return urllib.parse.urlunsplit(parsed)
+
+
+CFP_SIGNAL = re.compile(r"(?:\bcall[\s_-]*for[\s_-]*papers?\b|\bcfp\b)", re.IGNORECASE)
+GENERIC_CONFERENCE_CFP = re.compile(r"^/Conferences/20\d{2}/CallForPapers/?$", re.IGNORECASE)
+NON_ARCHIVAL_SIGNAL = re.compile(
+    r"\b(?:non[ -]?archiv(?:al|ed)|not (?:be )?(?:published|included in (?:the )?(?:workshop )?proceedings)|"
+    r"no (?:formal |official )?proceedings|does not (?:constitute|count as) (?:a )?publication|"
+    r"will not preclude subsequent publication)\b",
+    re.IGNORECASE,
+)
+ARCHIVAL_SIGNAL = re.compile(
+    r"\b(?:(?:accepted )?(?:papers?|work|submissions?) (?:will (?:be )?)?"
+    r"(?:appear|be published|be included) in (?:the )?(?:workshop )?proceedings|"
+    r"(?:accepted )?(?:papers?|work|submissions?) (?:will (?:be )?)?"
+    r"(?:appear|be published|be included) in (?:the )?ACL Anthology)\b",
+    re.IGNORECASE,
+)
+
+
+def is_generic_conference_cfp(url):
+    parsed = urllib.parse.urlsplit(normalize_url(url))
+    host = parsed.hostname.lower().removeprefix("www.") if parsed.hostname else ""
+    return host in {"neurips.cc", "icml.cc", "iclr.cc"} and bool(
+        GENERIC_CONFERENCE_CFP.fullmatch(parsed.path)
+    )
+
+
+class _CfpParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.anchors = []
+        self.links = []
+        self._link = None
+        self._text = []
+        self.visible_text = []
+        self._hidden_depth = 0
+
+    def handle_starttag(self, tag, attrs):
+        if tag in {"script", "style", "template"}:
+            self._hidden_depth += 1
+        attrs = dict(attrs)
+        anchor = attrs.get("id") or attrs.get("name")
+        if anchor and CFP_SIGNAL.search(anchor.replace("-", " ")):
+            self.anchors.append(anchor)
+        if tag == "a" and attrs.get("href"):
+            self._link = attrs["href"]
+            self._text = []
+
+    def handle_data(self, data):
+        if not self._hidden_depth:
+            self.visible_text.append(data)
+        if self._link is not None:
+            self._text.append(data)
+
+    def handle_endtag(self, tag):
+        if tag in {"script", "style", "template"} and self._hidden_depth:
+            self._hidden_depth -= 1
+        if tag == "a" and self._link is not None:
+            self.links.append((self._link, " ".join(self._text)))
+            self._link = None
+            self._text = []
+
+
+def archival_status_from_html(html):
+    """Classify only an explicit publication statement; silence is unknown."""
+    parser = _CfpParser()
+    parser.feed(html)
+    text = " ".join(" ".join(parser.visible_text).split())
+    non_archival = bool(NON_ARCHIVAL_SIGNAL.search(text))
+    archival = bool(ARCHIVAL_SIGNAL.search(text))
+    if non_archival and archival:
+        return "mixed"
+    if not non_archival and not archival:
+        return "unknown"
+    return "non_archival" if non_archival else "archival"
+
+
+def _merge_archival_status(*statuses):
+    established = {status for status in statuses if status in {"archival", "non_archival", "mixed"}}
+    if "mixed" in established or established == {"archival", "non_archival"}:
+        return "mixed"
+    return established.pop() if len(established) == 1 else "unknown"
+
+
+def _fetch_html(url, timeout=15):
+    headers = {**HTTP_HEADERS, "Accept": "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8"}
+    request = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = response.read(2_000_000)
+        charset = response.headers.get_content_charset() or "utf-8"
+        return response.geturl(), body.decode(charset, errors="replace")
+
+
+def discover_workshop_metadata(homepage, existing="", existing_status="unknown"):
+    """Return a dedicated CFP URL and source-established archival status."""
+    homepage = normalize_url(homepage)
+    previous = normalize_url(existing)
+    if previous == homepage or is_generic_conference_cfp(previous):
+        previous = ""
+    if not homepage:
+        return previous, existing_status
+    try:
+        final_homepage, html = _fetch_html(homepage)
+    except Exception:
+        return previous, existing_status
+
+    parser = _CfpParser()
+    parser.feed(html)
+    homepage_status = archival_status_from_html(html)
+    base = urllib.parse.urldefrag(final_homepage)[0]
+    if parser.anchors:
+        anchor = urllib.parse.quote(parser.anchors[0], safe="-._~")
+        return f"{base}#{anchor}", homepage_status
+
+    candidates = []
+    for href, text in parser.links:
+        absolute = normalize_url(urllib.parse.urljoin(final_homepage, href))
+        candidate_base, fragment = urllib.parse.urldefrag(absolute)
+        if candidate_base == base and fragment and CFP_SIGNAL.search(fragment.replace("-", " ")):
+            return absolute, homepage_status
+        if not absolute or candidate_base == base:
+            continue
+        signal = f"{text} {urllib.parse.urlsplit(absolute).path} {urllib.parse.urlsplit(absolute).fragment}"
+        if CFP_SIGNAL.search(signal):
+            candidates.append(absolute)
+    for candidate in dict.fromkeys(candidates):
+        try:
+            final_candidate, candidate_html = _fetch_html(candidate)
+            if not is_generic_conference_cfp(final_candidate):
+                status = _merge_archival_status(
+                    homepage_status, archival_status_from_html(candidate_html)
+                )
+                return final_candidate, status
+        except Exception:
+            continue
+    return previous, homepage_status
+
+
+def discover_cfp_url(homepage, existing=""):
+    """Return a verified dedicated CFP URL, never a homepage placeholder."""
+    return discover_workshop_metadata(homepage, existing)[0]
+
+
+def enrich_workshop_sources(items, previous_by_id):
+    jobs = {}
+    for item in items:
+        if item.get("venue_type") != "workshop":
+            continue
+        homepage = normalize_url(item.get("homepage_url", ""))
+        if not homepage:
+            continue
+        previous = previous_by_id.get(item.get("id"), {})
+        existing = normalize_url(item.get("cfp_url", ""))
+        if not existing or existing == homepage:
+            existing = normalize_url(previous.get("cfp_url", ""))
+        if existing == homepage:
+            existing = ""
+        status = item.get("archival_status") or previous.get("archival_status", "unknown")
+        jobs.setdefault(homepage, (existing, status))
+
+    found = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
+        futures = {
+            executor.submit(discover_workshop_metadata, homepage, existing, status): homepage
+            for homepage, (existing, status) in jobs.items()
+        }
+        for future in concurrent.futures.as_completed(futures):
+            homepage = futures[future]
+            try:
+                found[homepage] = future.result()
+            except Exception:
+                found[homepage] = jobs[homepage]
+
+    for item in items:
+        if item.get("venue_type") != "workshop":
+            continue
+        homepage = normalize_url(item.get("homepage_url", ""))
+        item["cfp_url"], item["archival_status"] = found.get(
+            homepage, ("", item.get("archival_status", "unknown"))
+        )
+        item["link"] = item["cfp_url"] or homepage or normalize_url(item.get("openreview_url", ""))
+    print(
+        f"CFP discovery: {sum(bool(url) for url, _ in found.values())}/{len(found)} workshop sites; "
+        f"archival status established for {sum(status != 'unknown' for _, status in found.values())}"
+    )
+
+
+def openreview_url(group_id):
+    return "https://openreview.net/group?id=" + urllib.parse.quote(group_id, safe="/")
 
 
 def _openreview_get(url, timeout=30):
+    candidates = [url]
+    if url.startswith("https://api2.openreview.net/"):
+        candidates.append(url.replace("https://api2.", "https://api.", 1))
+    headers = {**HTTP_HEADERS, "Accept": "application/json,text/plain,*/*"}
     delay = 1.0
     for attempt in range(OPENREVIEW_RETRIES):
-        time.sleep(OPENREVIEW_GAP_SECONDS)
-        req = urllib.request.Request(url, headers={
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0 Safari/537.36"
-            ),
-            "Accept": "application/json,text/plain,*/*",
-            "Accept-Language": "en-US,en;q=0.9",
-        })
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                return json.load(r)
-        except urllib.error.HTTPError as e:
-            if e.code != 429 or attempt == OPENREVIEW_RETRIES - 1:
-                raise
-            retry_after = e.headers.get("Retry-After") if e.headers else None
-            wait = float(retry_after) if (retry_after or "").strip().isdigit() else delay
-            print(f"  rate limited; retrying in {wait:.0f}s", file=sys.stderr)
-            time.sleep(wait)
-            delay *= 2
+        last_error = None
+        for candidate in candidates:
+            time.sleep(OPENREVIEW_GAP_SECONDS)
+            try:
+                with urllib.request.urlopen(
+                    urllib.request.Request(candidate, headers=headers), timeout=timeout
+                ) as response:
+                    return json.load(response)
+            except urllib.error.HTTPError as error:
+                if error.code != 429:
+                    raise
+                last_error = error
+        if attempt == OPENREVIEW_RETRIES - 1:
+            raise last_error
+        retry_after = last_error.headers.get("Retry-After") if last_error.headers else None
+        wait = float(retry_after) if (retry_after or "").strip().isdigit() else delay
+        print(f"  rate limited; retrying in {wait:.0f}s", file=sys.stderr)
+        time.sleep(wait)
+        delay *= 2
     raise RuntimeError("unreachable")
 
 
@@ -248,12 +551,13 @@ def _group_value(content, key):
     return v.get("value") if isinstance(v, dict) else v
 
 
-def fetch_workshop_source(source):
+def fetch_workshop_source(source, previous_by_id=None):
     """Every workshop under one family-year's OpenReview parent group."""
     parent = source["parent"]
     data = _openreview_get(f"https://api2.openreview.net/groups?parent={parent}", timeout=60)
     pref = parent + "/"
     out = {}
+    previous_by_id = previous_by_id or {}
     for g in data.get("groups", []):
         gid = g.get("id", "")
         if not gid.startswith(pref):
@@ -265,20 +569,30 @@ def fetch_workshop_source(source):
         # A round without a unified date takes each workshop's own stamp when
         # OpenReview carries one. No date means no countdown to show, so it is left
         # out rather than published with a placeholder somebody would plan against.
-        deadline = source["deadline_aoe"] or _openreview_submission_deadline(gid)
+        item_id = source["id_prefix"] + rest
+        previous = previous_by_id.get(item_id, {})
+        observed_deadline = source["deadline_aoe"] or _openreview_submission_deadline(gid)
+        deadline = observed_deadline or previous.get("deadline_aoe", "")
         if not deadline:
             continue
         route = _submission_type(source["family"], rest)
+        homepage = normalize_url(_group_value(c, "web") or _group_value(c, "website"))
+        review_url = openreview_url(gid)
         out[rest] = dict(
-            id=source["id_prefix"] + rest,
+            id=item_id,
             name=_group_value(c, "title") or _group_value(c, "name") or rest,
             venue_type="workshop", venue_group=source["group"], track="workshop",
             venue_family=source["family"], submission_type=route,
             deadline_label=("ARR commitment" if route == SUBMISSION_COMMITMENT else "submission"),
             deadline_aoe=deadline,
             notification_aoe=source["notification_aoe"],
-            link=(_group_value(c, "web") or _group_value(c, "website")
-                  or f"https://openreview.net/group?id={gid}"))
+            homepage_url=homepage,
+            cfp_url="",
+            openreview_url=review_url,
+            source_url=review_url,
+            source_checked_at=(checked_at() if observed_deadline
+                               else previous.get("source_checked_at", "")),
+            link=homepage or review_url)
     return [out[k] for k in sorted(out)]
 
 
@@ -302,9 +616,8 @@ def _openreview_submission_deadline(group_id):
     to count down to. It lives on the venue's Submission invitation, one request
     per workshop.
 
-    An expired invitation answers 400, which is the API's way of saying the
-    deadline has already passed. That is not an error worth reporting: this file
-    only carries upcoming deadlines, so it is exactly the entries we mean to drop.
+    An unavailable or expired invitation yields no current observation. The caller
+    may retain a previous value, but must not advance its source-check timestamp.
     """
     url = f"https://api2.openreview.net/invitations?id={urllib.parse.quote(group_id, safe='/')}/-/Submission"
     try:
@@ -316,6 +629,39 @@ def _openreview_submission_deadline(group_id):
         if isinstance(duedate, (int, float)) and duedate > 0:
             return _aoe_stamp(duedate)
     return ""
+
+
+def fetch_openreview_conferences():
+    """Collect tracked standalone venues once their Submission invitation exists."""
+    entries = []
+    for source in OPENREVIEW_CONFERENCES:
+        group_id = source["group_id"]
+        try:
+            data = _openreview_get(
+                "https://api2.openreview.net/groups?id="
+                + urllib.parse.quote(group_id, safe="/")
+            )
+            group = next((g for g in data.get("groups", []) if g.get("id") == group_id), None)
+            deadline = _openreview_submission_deadline(group_id)
+        except Exception as error:
+            print(f"WARN: {source['name']} fetch failed ({error})", file=sys.stderr)
+            continue
+        if not group or not deadline:
+            continue
+        content = group.get("content", {}) or {}
+        homepage = normalize_url(_group_value(content, "web") or _group_value(content, "website"))
+        review_url = openreview_url(group_id)
+        entries.append(dict(
+            **{key: value for key, value in source.items() if key != "group_id"},
+            deadline_aoe=deadline,
+            homepage_url=homepage,
+            cfp_url="",
+            openreview_url=review_url,
+            source_url=review_url,
+            source_checked_at=checked_at(),
+            link=homepage or review_url,
+        ))
+    return entries
 
 
 # OpenReview names an ARR commitment venue by suffixing the group, which is the
@@ -330,7 +676,7 @@ def _submission_type(family, group_name):
             else SUBMISSION_DIRECT)
 
 
-def fetch_workshops():
+def fetch_workshops(previous_by_id=None):
     """Sweep every tracked family across the year window.
 
     Returns (entries, families that errored). A parent that simply has no children
@@ -340,9 +686,11 @@ def fetch_workshops():
     entries, failures = [], []
     for source in workshop_sources():
         try:
-            found = fetch_workshop_source(source)
-            if found:
-                print(f"OpenReview: {source['family']} {source['year']} -> {len(found)} workshops")
+            found = fetch_workshop_source(source, previous_by_id)
+            print(
+                f"OpenReview: {source['family']} {source['year']} -> "
+                f"{len(found)} publishable workshops"
+            )
             entries += found
         except Exception as e:
             print(f"WARN: {source['family']} {source['year']} fetch failed ({e})", file=sys.stderr)
@@ -365,18 +713,59 @@ def classify(item):
     item["entry_type"] = entry_type_of(
         item.get("venue_type", ""), item.get("track", ""), item["submission_type"]
     )
-    item["archival_status"] = archival_status_of(family, item.get("track", ""))
+    policy_id = re.sub(r"_ARR_Commitment$", "", item.get("id", ""))
+    policy_override = WORKSHOP_POLICY_OVERRIDES.get(policy_id, {})
+    default_status = archival_status_of(family, item.get("track", ""))
+    status = item.get("archival_status") if item.get("entry_type") == "workshop" else default_status
+    # NeurIPS 2026 workshop guidance is explicit: every workshop paper is
+    # non-archival and absent from proceedings. A separate journal invitation
+    # on a workshop site does not change the workshop paper's status.
+    if item.get("entry_type") == "workshop" and family == "NeurIPS":
+        status = "non_archival"
+    if policy_override:
+        status = policy_override["archival_status"]
+    item["archival_status"] = (
+        status if status in {"archival", "non_archival", "mixed", "unknown"} else default_status
+    )
     item["venue_priority"] = venue_priority_of(family, item.get("track", ""))
     # Kept while older calendar/matcher consumers migrate. New surfaces use the
-    # tri-state field above so an unknown venue is never presented as safe.
-    item["archival"] = is_archival(family, item.get("track", ""))
+    # explicit status above so an unknown venue is never presented as safe.
+    item["archival"] = item["archival_status"] == "archival"
+    if item["entry_type"] == "workshop":
+        legacy_link = normalize_url(item.get("link", ""))
+        homepage = normalize_url(policy_override.get("homepage_url", item.get("homepage_url", "")))
+        if not homepage and "openreview.net/group" not in legacy_link:
+            homepage = legacy_link
+        review_url = normalize_url(item.get("openreview_url", ""))
+        if not review_url:
+            match = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
+            pattern = WORKSHOP_PARENTS.get(family)
+            code = item.get("id", "").split("_ws_", 1)
+            if match and pattern and len(code) == 2:
+                gid = pattern.format(year=int(match.group(1))) + "/" + code[1]
+                review_url = openreview_url(gid)
+        item["homepage_url"] = homepage
+        item["cfp_url"] = normalize_url(policy_override.get("cfp_url", item.get("cfp_url", "")))
+        item["openreview_url"] = review_url
+        item["source_url"] = normalize_url(item.get("source_url", "")) or review_url
+        item.setdefault("source_checked_at", "")
+        item["link"] = item["cfp_url"] or homepage or review_url
+    else:
+        item["link"] = normalize_url(item.get("link", ""))
+        item["source_url"] = normalize_url(item.get("source_url", "")) or item["link"]
+        item.setdefault("source_checked_at", "")
     item["milestone"] = milestone_of(item.get("deadline_label", ""), item["submission_type"])
     return item
 
 
 def main():
-    items = list(CONFERENCES) + list(EMNLP_WORKSHOPS)
-    fetched, failures = fetch_workshops()
+    try:
+        previous_items = json.load(open(OUT)).get("items", [])
+    except Exception:
+        previous_items = []
+    previous_by_id = {item.get("id"): item for item in previous_items if item.get("id")}
+    items = list(CONFERENCES) + list(EMNLP_WORKSHOPS) + fetch_openreview_conferences()
+    fetched, failures = fetch_workshops(previous_by_id)
     items += fetched
     # Fail soft per family: one conference's OpenReview group being absent (its
     # workshop round has not opened yet, which is the normal state for most of the
@@ -385,9 +774,8 @@ def main():
     if failures:
         print(f"WARN: {len(failures)} workshop source(s) failed: {', '.join(failures)}", file=sys.stderr)
         try:
-            prev = json.load(open(OUT))
             kept = [
-                x for x in prev.get("items", [])
+                x for x in previous_items
                 if x.get("venue_type") == "workshop" and x.get("venue_family") in failures
             ]
             items += kept
@@ -395,23 +783,44 @@ def main():
         except Exception:
             pass
 
+    enrich_workshop_sources(items, previous_by_id)
     items = [classify(x) for x in items]
     # Ids must stay unique: a family kept from the previous sweep can collide with
     # one that was also fetched this time.
-    seen, unique = set(), []
+    positions, unique = {}, []
     for item in items:
-        if item["id"] in seen:
+        position = positions.get(item["id"])
+        if position is not None:
+            if item.get("source_checked_at") and not unique[position].get("source_checked_at"):
+                unique[position] = item
             continue
-        seen.add(item["id"])
+        positions[item["id"]] = len(unique)
         unique.append(item)
     items = unique
     items.sort(key=lambda x: (x["deadline_aoe"], x["name"]))
     doc = dict(timezone="AoE (UTC-12)",
-               note=("Upcoming only. NeurIPS 2026 workshops use the official unified "
+               note=("Tracked deadlines. NeurIPS 2026 workshops use the official unified "
                      "deadline (submission 2026-08-29, hard accept/reject 2026-09-29)."),
                count=len(items), items=items)
     json.dump(doc, open(OUT, "w"), indent=2, ensure_ascii=False)
     print(f"wrote {OUT} with {len(items)} items")
+
+    # The checked-in HTML is also directly runnable, so keep its embedded data in
+    # lockstep with the canonical JSON. The generated TypeScript wrapper replaces
+    # this array at request time, but the standalone file has no such injection.
+    board_path = os.path.join(DEADLINES_DIR, "deadlines-board.html")
+    board = open(board_path).read()
+    board, replacements = re.subn(
+        r"const DATA = \[.*?\];\n",
+        "const DATA = " + json.dumps(items, ensure_ascii=False, indent=2) + ";\n",
+        board,
+        count=1,
+        flags=re.DOTALL,
+    )
+    if replacements != 1:
+        raise RuntimeError("standalone deadline board has no replaceable DATA array")
+    open(board_path, "w").write(board)
+    print(f"wrote {board_path}")
 
     # keep the served-page dataset (Output 0 Control-UI surface) in sync
     ds = os.path.join(HERE, "..", "extensions", "adminbot", "src", "workflows", "deadlines", "generated", "dataset.ts")
@@ -426,7 +835,8 @@ def main():
     keys = ["id", "name", "venue_type", "venue_group", "track", "venue_family",
             "entry_type", "archival_status", "venue_priority", "archival",
             "submission_type", "milestone",
-            "deadline_label", "deadline_aoe", "notification_aoe", "link"]
+            "deadline_label", "deadline_aoe", "notification_aoe", "link",
+            "homepage_url", "cfp_url", "openreview_url", "source_url", "source_checked_at"]
     slim = [{k: it.get(k, "") for k in keys} for it in items]
     ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
     with open(ui_ds, "w") as f:
@@ -439,7 +849,7 @@ def main():
                 "  venue_family?: string;\n"
                 "  entry_type: \"main_conference\" | \"demo_track\" | \"workshop\" |\n"
                 "    \"arr_direct_submission\" | \"arr_commitment\" | \"rebuttal\" | \"other\";\n"
-                "  archival_status: \"archival\" | \"non_archival\" | \"unknown\";\n"
+                "  archival_status: \"archival\" | \"non_archival\" | \"mixed\" | \"unknown\";\n"
                 "  venue_priority: \"primary\" | \"secondary\" | \"standard\";\n"
                 "  /** Compatibility boolean. New consumers use archival_status. */\n"
                 "  archival?: boolean;\n"
@@ -449,7 +859,9 @@ def main():
                 "   *  See MILESTONES in scripts/adminbot_deadlines.py. Empty when unclassified. */\n"
                 "  milestone?: string;\n"
                 "  deadline_label: string;\n  deadline_aoe: string;\n"
-                "  notification_aoe?: string;\n  link?: string;\n};\n\n"
+                "  notification_aoe?: string;\n  link?: string;\n"
+                "  homepage_url?: string;\n  cfp_url?: string;\n  openreview_url?: string;\n"
+                "  source_url?: string;\n  source_checked_at?: string;\n};\n\n"
                 "export const DEADLINE_VENUES: DeadlineVenue[] = "
                 + json.dumps(slim, ensure_ascii=False, indent=2) + ";\n")
     print(f"wrote {ui_ds}")

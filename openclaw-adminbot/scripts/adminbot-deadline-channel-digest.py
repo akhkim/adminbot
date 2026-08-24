@@ -49,7 +49,7 @@ def build_message(venues, clock, window_days):
     entries = []
     for venue in venues:
         if venue["venue_type"] == "workshop":
-            grouped_workshops[(venue["venue_group"], venue["deadline_aoe"][:10])].append(venue)
+            grouped_workshops[(venue["venue_group"], venue["deadline_aoe"])].append(venue)
         else:
             entries.append((venue["deadline_aoe"], venue["name"], digest_line(venue, clock)))
     for (group, _date), members in grouped_workshops.items():

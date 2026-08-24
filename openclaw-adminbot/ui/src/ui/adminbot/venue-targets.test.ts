@@ -22,8 +22,7 @@ function paper(id: string, targets?: unknown): AdminBotPaperRecord {
 
 describe("venue targets", () => {
   it("offers only the venues the lab is aiming at, not the whole deadline board", () => {
-    // The board carries 147 venues, 137 of them workshop commitments inside 45 days. Offering
-    // that list would bury the two deadlines anyone is working toward.
+    // Offering every workshop would bury the two deadlines anyone is working toward.
     expect(PRE_REGISTRATION_VENUES.map((v) => v.label)).toEqual([
       "ICLR 2027",
       "ARR October",
@@ -79,6 +78,11 @@ describe("venue targets", () => {
     expect(daysUntil("2026-09-25", new Date("2026-08-22T12:00:00Z"))).toBe(35);
     expect(daysUntil("2026-08-01", new Date("2026-08-22T12:00:00Z"))).toBeLessThan(0);
     expect(daysUntil(undefined)).toBeUndefined();
+  });
+
+  it("keeps a date-only AoE deadline open until UTC-12 reaches midnight", () => {
+    expect(daysUntil("2026-08-29", new Date("2026-08-30T11:00:00Z"))).toBe(1);
+    expect(daysUntil("2026-08-29", new Date("2026-08-30T12:00:00Z"))).toBeLessThan(0);
   });
 
   it("shouts about the soonest deadline only", () => {

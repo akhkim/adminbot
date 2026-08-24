@@ -22,12 +22,12 @@ Sheet IDs (used only if no local CSV given; must be readable by the caller):
   ADMINBOT_ONGOING_SHEET_ID (tab "Paper submissions", gid 846550934)
   ADMINBOT_READY_SHEET_ID   (tab "Formatted Papers",  gid 1634319760)
 """
-import csv, io, json, os, re, sys, math, argparse, datetime, urllib.request
+import csv, io, json, os, re, sys, math, argparse, urllib.request
 from collections import Counter, defaultdict
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from adminbot_deadlines import DEADLINES_DIR as DDIR
+from adminbot_deadlines import AoEClock, DEADLINES_DIR as DDIR
 
 # ongoing Venue-string -> venue_group key used in venues.json
 TARGET_TO_GROUP = {
@@ -102,13 +102,13 @@ CONCEPTS = [
 TOPIC_THRESHOLD = 3.0
 
 
-def build_workshop_registry():
+def build_workshop_registry(clock=None):
     # Every workshop across venues.json (NeurIPS + EMNLP/NLP4PI + future), keyed by
     # the code after "_ws_". Each carries its own deadline, so matches use the right date.
     items = json.load(open(os.path.join(DDIR, "venues.json")))["items"]
     reg = {}
     for it in items:
-        if it.get("venue_type") != "workshop":
+        if it.get("venue_type") != "workshop" or (clock and clock.has_passed(it["deadline_aoe"])):
             continue
         reg[it["id"].rsplit("_ws_", 1)[-1]] = it
     return reg
@@ -155,13 +155,20 @@ def read_csv(local, sheet_id, gid, tab):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ongoing-csv"); ap.add_argument("--ready-csv")
-    ap.add_argument("--now", default=datetime.date.today().isoformat())
+    ap.add_argument("--now", help="YYYY-MM-DD or ISO-8601 instant (default: now)")
     ap.add_argument("--out", default=os.path.join(DDIR, "matches.json"))
     a = ap.parse_args()
-    now = datetime.date.fromisoformat(a.now)
-    cur_year = now.year
+    clock = AoEClock.resolve(a.now)
+    cur_year = clock.today.year
 
-    venues = {v["venue_group"]: v for v in json.load(open(os.path.join(DDIR, "venues.json")))["items"]}
+    venue_items = json.load(open(os.path.join(DDIR, "venues.json")))["items"]
+    venues = {}
+    for venue in venue_items:
+        if clock.has_passed(venue["deadline_aoe"]):
+            continue
+        group = venue["venue_group"]
+        if group not in venues or venue["deadline_aoe"] < venues[group]["deadline_aoe"]:
+            venues[group] = venue
 
     # ONGOING
     rows = read_csv(a.ongoing_csv, os.environ.get("ADMINBOT_ONGOING_SHEET_ID"), "846550934", "Paper submissions")
@@ -181,7 +188,7 @@ def main():
 
     # READY -> workshop suggestions. Topic-match against every workshop; each match
     # carries its own venue/deadline (so a lone NLP4PI match keeps its Aug 3 date).
-    reg = build_workshop_registry()
+    reg = build_workshop_registry(clock)
     WT, idf = build_workshop_index(reg)
     rows = read_csv(a.ready_csv, os.environ.get("ADMINBOT_READY_SHEET_ID"), "1634319760", "Formatted Papers")
     ready = []
@@ -207,7 +214,7 @@ def main():
                                        for c, s in picks],
                           confirmed=False))   # requires human confirmation before nudging
 
-    out = dict(generated=a.now, ongoing_count=len(ongoing), ready_suggestion_count=len(ready),
+    out = dict(generated=clock.now.isoformat(), ongoing_count=len(ongoing), ready_suggestion_count=len(ready),
                ongoing=ongoing, ready=ready)
     json.dump(out, open(a.out, "w"), indent=2, ensure_ascii=False)
     print(f"matched {len(ongoing)} ongoing papers -> live cadence")

@@ -4451,10 +4451,22 @@ adminbot-deadlines-view {
   white-space: nowrap;
 }
 
-.deadline-group__row .deadline-card__source {
+.deadline-group__row .deadline-card__actions {
   grid-area: source;
   margin: 0;
   padding: 0;
+}
+
+.deadline-group__row .deadline-card__source {
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+}
+
+.deadline-group__row .deadline-card__actions {
+  justify-content: flex-end;
 }
 
 .deadline-card {
@@ -4518,6 +4530,27 @@ adminbot-deadlines-view {
   line-height: 1.35;
 }
 
+.deadline-board__hero-name a,
+.deadline-card__name a,
+.deadline-group__row-name a,
+.deadline-table__name a {
+  color: inherit;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 3px;
+}
+
+.deadline-board__hero-name a:hover,
+.deadline-board__hero-name a:focus-visible,
+.deadline-card__name a:hover,
+.deadline-card__name a:focus-visible,
+.deadline-group__row-name a:hover,
+.deadline-group__row-name a:focus-visible,
+.deadline-table__name a:hover,
+.deadline-table__name a:focus-visible {
+  color: inherit;
+  text-decoration-color: currentcolor;
+}
+
 .deadline-card__group,
 .deadline-card__date,
 .deadline-card__note {
@@ -4563,11 +4596,17 @@ adminbot-deadlines-view {
   font-variant-numeric: tabular-nums;
 }
 
-.deadline-card__source {
-  align-self: flex-start;
+.deadline-card__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   margin-top: auto;
   padding-top: var(--space-4);
-  color: var(--accent);
+}
+
+.deadline-card__source {
+  color: var(--text);
   font-size: var(--control-ui-text-sm);
   text-decoration: none;
   white-space: nowrap;
@@ -4576,6 +4615,25 @@ adminbot-deadlines-view {
 .deadline-card__source:hover,
 .deadline-card__source:focus-visible {
   color: var(--text-strong);
+}
+
+.deadline-card__source--button {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+}
+
+.deadline-card__source--button:hover,
+.deadline-card__source--button:focus-visible {
+  border-color: var(--muted-strong);
+  color: var(--text-strong);
+}
+
+.deadline-card__missing {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xs);
 }
 
 .deadline-table-wrap {
@@ -4642,8 +4700,9 @@ adminbot-deadlines-view {
   color: var(--muted) !important;
 }
 
-.deadline-table .deadline-card__source {
-  display: inline;
+.deadline-table .deadline-card__actions {
+  display: inline-flex;
+  margin: 0;
   padding: 0;
 }
 
@@ -4745,6 +4804,11 @@ adminbot-deadlines-view {
 
   .deadline-group__row .deadline-card__source {
     justify-self: start;
+  }
+
+  .deadline-group__row .deadline-card__actions {
+    grid-column: 1 / -1;
+    justify-content: flex-start;
   }
 }
 
