@@ -443,7 +443,7 @@ export const vi: TranslationMap = {
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
-    adminbotDeadlines: "Upcoming conference & workshop deadlines.",
+    adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
     activity: "Tóm tắt hoạt động công cụ cục bộ trên trình duyệt.",
     overview: "Trạng thái, điểm vào, tình trạng.",
     workboard: "Hàng đợi công việc của tác nhân và bàn giao phiên.",

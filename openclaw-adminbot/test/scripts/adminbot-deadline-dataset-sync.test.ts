@@ -3,7 +3,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { DEADLINE_VENUES as pluginVenues } from "../../extensions/adminbot/src/workflows/deadlines/generated/dataset.js";
-import { DEADLINE_VENUES as controlUiVenues } from "../../ui/src/ui/adminbot/data/deadlines.js";
+import {
+  DEADLINE_VENUES as controlUiVenues,
+  type DeadlineVenue,
+} from "../../ui/src/ui/adminbot/data/deadlines.js";
 
 // venues.json is the source of truth; both TS modules are generated from it by
 // scripts/adminbot-deadline-collect.py. They drifted once already — the plugin dataset sat at 78
@@ -16,10 +19,11 @@ const venuesDoc = JSON.parse(
     path.join(repoRoot, "extensions", "adminbot", "content", "deadlines", "venues.json"),
     "utf8",
   ),
-) as { count: number; items: Array<Record<string, string>> };
+) as { history_version: number; count: number; items: DeadlineVenue[] };
 
 describe("AdminBot deadline dataset generation", () => {
   it("keeps venues.json self-consistent", () => {
+    expect(venuesDoc.history_version).toBe(1);
     expect(venuesDoc.items).not.toHaveLength(0);
     expect(venuesDoc.count).toBe(venuesDoc.items.length);
   });
@@ -34,6 +38,35 @@ describe("AdminBot deadline dataset generation", () => {
       openreview_url: "https://openreview.net/group?id=EMNLP/2026/Workshop/NLP4PI_ARR_Commitment",
     });
     expect(nlp4pi?.cfp_url).toMatch(/^https?:\/\//u);
+  });
+
+  it("keeps one current projection with dated history and explicit venue aliases", () => {
+    const expired = venuesDoc.items.filter(
+      (item) => Date.parse(item.deadline_aoe!.replace(" ", "T") + "-12:00") < Date.now(),
+    );
+    expect(expired.length).toBeGreaterThan(0);
+    for (const item of venuesDoc.items) {
+      expect(item.deadline_id).toBe(item.id);
+      expect(item.venue_id).toBeTruthy();
+      expect(item.venue_aliases).toContain(item.deadline_id);
+      expect(item.venue_aliases).toContain(item.venue_id);
+      expect(item.revisions.length).toBeGreaterThan(0);
+      expect(item.revisions.at(-1)?.deadline_aoe).toBe(item.deadline_aoe);
+      expect(typeof item.stale).toBe("boolean");
+    }
+  });
+
+  it("retains a real changed deadline without treating source-link updates as revisions", () => {
+    const revised = venuesDoc.items.filter((item) => item.revisions.length > 1);
+    expect(revised).toHaveLength(1);
+    expect(revised[0]).toMatchObject({
+      id: "emnlp2026_ws_MINT_ARR_Commitment",
+      deadline_aoe: "2026-08-31 23:59:00",
+    });
+    expect(revised[0]?.revisions.map((revision) => revision.deadline_aoe)).toEqual([
+      "2026-08-24 23:59:00",
+      "2026-08-31 23:59:00",
+    ]);
   });
 
   it("keeps both generated datasets in step with venues.json", () => {

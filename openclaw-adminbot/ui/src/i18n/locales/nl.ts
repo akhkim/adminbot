@@ -445,7 +445,7 @@ export const nl: TranslationMap = {
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
-    adminbotDeadlines: "Upcoming conference & workshop deadlines.",
+    adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
     activity: "Browserlokale samenvattingen van toolactiviteit.",
     overview: "Status, toegangspunten, gezondheid.",
     workboard: "Werkwachtrij voor agents en sessieoverdracht.",

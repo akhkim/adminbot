@@ -103,12 +103,18 @@ TOPIC_THRESHOLD = 3.0
 
 
 def build_workshop_registry(clock=None):
-    # Every workshop across venues.json (NeurIPS + EMNLP/NLP4PI + future), keyed by
-    # the code after "_ws_". Each carries its own deadline, so matches use the right date.
+    # Every upcoming workshop across venues.json, keyed by the code after "_ws_".
+    # The dataset retains expired records for the Past view; matching must not suggest them.
+    clock = clock or AoEClock.resolve()
     items = json.load(open(os.path.join(DDIR, "venues.json")))["items"]
     reg = {}
     for it in items:
-        if it.get("venue_type") != "workshop" or (clock and clock.has_passed(it["deadline_aoe"])):
+        if it.get("venue_type") != "workshop":
+            continue
+        try:
+            if clock.has_passed(it["deadline_aoe"]):
+                continue
+        except (KeyError, ValueError):
             continue
         reg[it["id"].rsplit("_ws_", 1)[-1]] = it
     return reg

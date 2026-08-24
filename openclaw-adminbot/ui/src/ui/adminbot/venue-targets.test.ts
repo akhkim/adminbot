@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import {
   PRE_REGISTRATION_VENUES,
   daysUntil,
@@ -8,7 +9,6 @@ import {
   readVenueTargets,
   serializeVenueTargets,
 } from "./venue-targets.ts";
-import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 
 function paper(id: string, targets?: unknown): AdminBotPaperRecord {
   return {
@@ -96,6 +96,6 @@ describe("venue targets", () => {
       paper("p1", [{ venue_id: "iclr2027_paper", label: "ICLR 2027", confidence: 80 }]),
       paper("p2"),
     ];
-    expect(papersNeedingRegistration(papers, "iclr2027_paper").map((p) => p.id)).toEqual(["p2"]);
+    expect(papersNeedingRegistration(papers, "ICLR").map((p) => p.id)).toEqual(["p2"]);
   });
 });

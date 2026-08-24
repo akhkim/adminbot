@@ -441,7 +441,7 @@ export const th: TranslationMap = {
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
-    adminbotDeadlines: "Upcoming conference & workshop deadlines.",
+    adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
     activity: "สรุปกิจกรรมของเครื่องมือภายในเบราว์เซอร์",
     overview: "สถานะ จุดเข้าใช้งาน และความพร้อมใช้งาน",
     workboard: "คิวงานของ Agent และการส่งต่อเซสชัน",

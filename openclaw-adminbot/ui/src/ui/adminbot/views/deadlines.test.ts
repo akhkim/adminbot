@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DeadlineVenue } from "../data/deadlines.ts";
 import {
   buildDeadlineBoardEntries,
+  entriesForDeadlinePeriod,
   filterDeadlineBoardEntries,
   groupDeadlineBoardEntries,
+  priorDeadlineRevisions,
   renderDeadlines,
   workshopSourceLinks,
 } from "./deadlines.ts";
@@ -77,7 +79,36 @@ describe("deadline board model", () => {
     }
   });
 
-  it("filters against a concrete venue group and venue name", () => {
+  it("retains expired deadlines newest first", () => {
+    const now = Date.now();
+    const past = entriesForDeadlinePeriod(buildDeadlineBoardEntries(), now, "past");
+    expect(past.length).toBeGreaterThan(0);
+    expect(past.every((entry) => entry.instant <= now)).toBe(true);
+    expect(past.map((entry) => entry.instant)).toEqual(
+      past.map((entry) => entry.instant).toSorted((left, right) => right - left),
+    );
+  });
+
+  it("applies type, archival-status, and priority filters independently", () => {
+    const entries = buildDeadlineBoardEntries();
+    const filtered = filterDeadlineBoardEntries(entries, "", "", {
+      entryType: "workshop",
+      archivalStatus: "mixed",
+      priority: "standard",
+    });
+
+    expect(filtered.length).toBeGreaterThan(0);
+    expect(
+      filtered.every(
+        (entry) =>
+          entry.venue.entry_type === "workshop" &&
+          entry.venue.archival_status === "mixed" &&
+          entry.venue.venue_priority === "standard",
+      ),
+    ).toBe(true);
+  });
+
+  it("filters against the generated group label and concrete venue name", () => {
     const entries = buildDeadlineBoardEntries();
     const group = filterDeadlineBoardEntries(entries, "ICLR 2027", "");
     expect(group.length).toBeGreaterThan(1);
@@ -86,6 +117,14 @@ describe("deadline board model", () => {
     const searched = filterDeadlineBoardEntries(entries, "", "impact-speech");
     expect(searched).toHaveLength(1);
     expect(searched[0].venue.name).toContain("IMPACT-SPEECH");
+  });
+
+  it("exposes only earlier deadline revisions as history", () => {
+    const revisions = [
+      { observed_at: "2026-08-01T00:00:00Z", deadline_aoe: "2026-09-24 23:59:59" },
+      { observed_at: "2026-08-02T00:00:00Z", deadline_aoe: "2026-09-25 23:59:59" },
+    ];
+    expect(priorDeadlineRevisions({ revisions } as DeadlineVenue)).toEqual([revisions[0]]);
   });
 
   it("groups the filtered chronology without duplicating deadlines", () => {
@@ -122,7 +161,7 @@ describe("renderDeadlines", () => {
 
     expect(container.querySelector("iframe")).toBeNull();
     expect(container.querySelector(".deadline-board__header")?.textContent).toContain(
-      "Upcoming conference & workshop deadlines.",
+      "Past and upcoming conference & workshop deadlines.",
     );
     expect(container.querySelector(".deadline-board__hero")).not.toBeNull();
     expect(container.querySelectorAll(".deadline-board__stats > div")).toHaveLength(4);
@@ -131,6 +170,9 @@ describe("renderDeadlines", () => {
       container.querySelector<HTMLInputElement>('.deadline-board__search input[type="search"]')
         ?.placeholder,
     ).toBe("Search conferences & workshops…");
+    expect(
+      container.querySelectorAll<HTMLSelectElement>(".deadline-board__facet select"),
+    ).toHaveLength(3);
     expect(container.querySelectorAll(".deadline-card").length).toBeGreaterThan(100);
     const boardChildren = [...container.querySelector(".deadline-board")!.children];
     expect(boardChildren.indexOf(container.querySelector(".deadline-board__modes")!)).toBeLessThan(
@@ -176,6 +218,8 @@ describe("renderDeadlines", () => {
     expect(labels).toContain("ICLR 2027");
     expect(labels).toContain("EACL 2027");
     expect(labels).toContain("ARR October 2026");
+    expect(labels).not.toContain("Workshops of ICLR 2027");
+    expect(labels).not.toContain("Workshops of EACL 2027");
 
     buttonNamed(container, "Groups").click();
     await settle(container);
@@ -186,6 +230,81 @@ describe("renderDeadlines", () => {
     expect(headings).toContain("NeurIPS 2026 Workshops");
     expect(headings).toContain("ICLR 2027");
     expect(headings).toContain("EACL 2027");
+  });
+
+  it("shows Past newest first with exact times and keeps all filters available", async () => {
+    const container = await renderView();
+    expect(
+      [...container.querySelectorAll(".deadline-board__period button")].map((button) =>
+        button.textContent?.trim(),
+      ),
+    ).toEqual(["Past", "Upcoming"]);
+    buttonNamed(container, "Past").click();
+    await settle(container);
+
+    const cards = [...container.querySelectorAll<HTMLElement>(".deadline-card")];
+    expect(cards.length).toBeGreaterThan(0);
+    expect(cards.every((card) => card.dataset.period === "past")).toBe(true);
+    expect(cards[0].querySelector(".deadline-card__countdown")?.textContent?.trim()).toBe("Passed");
+    expect(container.querySelector(".deadline-board__eyebrow")?.textContent).toContain(
+      "Most recent deadline",
+    );
+    expect(container.querySelector(".deadline-board__hero-meta")?.textContent).toMatch(
+      /\d{2}:\d{2} AoE/u,
+    );
+    expect(container.querySelector(".deadline-board__stats")?.textContent).toContain(
+      "Passed today",
+    );
+
+    buttonNamed(container, "Groups").click();
+    await settle(container);
+    const groups = [...container.querySelectorAll<HTMLElement>(".deadline-group")];
+    expect(groups.length).toBeGreaterThan(0);
+    expect(groups.every((group) => group.dataset.period === "past")).toBe(true);
+    expect(groups[0].querySelector(".deadline-group__summary-countdown")?.textContent?.trim()).toBe(
+      "Passed",
+    );
+    groups[0].querySelector<HTMLButtonElement>(".deadline-group__summary")!.click();
+    await settle(container);
+    const openGroup = [...container.querySelectorAll<HTMLElement>(".deadline-group")].find(
+      (group) => group.hasAttribute("data-open"),
+    )!;
+    expect(openGroup.querySelector(".deadline-group__row-countdown")?.textContent?.trim()).toBe(
+      "Passed",
+    );
+    expect(openGroup.querySelector(".deadline-group__row-date")?.textContent).toMatch(
+      /\d{2}:\d{2} AoE/u,
+    );
+    buttonNamed(container, "Cards").click();
+    await settle(container);
+
+    const entryType = container.querySelector<HTMLSelectElement>(
+      '[data-testid="deadline-filter-entry-type"]',
+    )!;
+    entryType.value = "arr_commitment";
+    entryType.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle(container);
+    const filteredCards = [...container.querySelectorAll<HTMLElement>(".deadline-card")];
+    expect(filteredCards.length).toBeGreaterThan(0);
+    expect(filteredCards.every((card) => card.dataset.entryType === "arr_commitment")).toBe(true);
+    expect(buttonNamed(container, "Past").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("filters directly to one workshop group", async () => {
+    const container = await renderView();
+    const button = [
+      ...container.querySelectorAll<HTMLButtonElement>(".deadline-board__groups button"),
+    ].find((candidate) => candidate.textContent?.includes("NeurIPS 2026 Workshops"))!;
+
+    button.click();
+    await settle(container);
+
+    const groups = [...container.querySelectorAll(".deadline-card__group")].map(
+      (node) => node.textContent?.trim() ?? "",
+    );
+    expect(groups.length).toBeGreaterThan(50);
+    expect(groups.every((label) => label.startsWith("NeurIPS 2026 Workshops"))).toBe(true);
+    expect(button.getAttribute("aria-pressed")).toBe("true");
   });
 
   it("searches the visible board in place", async () => {
@@ -204,6 +323,45 @@ describe("renderDeadlines", () => {
     expect(stats[0]?.querySelector("dd")?.textContent).toBe("1");
     expect(stats[1]?.querySelector("dt")?.textContent).toBe("Due today");
     expect(stats[1]?.querySelector("dd")?.textContent).toBe("1");
+  });
+
+  it("updates groups, summary, and the active group for combined filters", async () => {
+    const container = await renderView();
+    const workshopGroup = [
+      ...container.querySelectorAll<HTMLButtonElement>(".deadline-board__groups button"),
+    ].find((button) => button.textContent?.includes("NeurIPS 2026 Workshops"))!;
+    workshopGroup.click();
+    await settle(container);
+
+    const entryType = container.querySelector<HTMLSelectElement>(
+      '[data-testid="deadline-filter-entry-type"]',
+    )!;
+    entryType.value = "arr_commitment";
+    entryType.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle(container);
+
+    const cards = [...container.querySelectorAll<HTMLElement>(".deadline-card")];
+    expect(cards.length).toBeGreaterThan(0);
+    expect(cards.every((card) => card.dataset.entryType === "arr_commitment")).toBe(true);
+    expect(buttonNamed(container, `All ${cards.length}`).getAttribute("aria-pressed")).toBe("true");
+    expect(container.querySelector(".deadline-board__stats dd")?.textContent).toBe(
+      String(cards.length),
+    );
+    expect(container.querySelector(".deadline-board__foot")?.textContent).toContain(
+      `Showing ${cards.length} of ${cards.length} matching upcoming deadlines`,
+    );
+
+    const priority = container.querySelector<HTMLSelectElement>(
+      '[data-testid="deadline-filter-priority"]',
+    )!;
+    priority.value = "primary";
+    priority.dispatchEvent(new Event("change", { bubbles: true }));
+    await settle(container);
+    expect(
+      [...container.querySelectorAll<HTMLElement>(".deadline-card")].every(
+        (card) => card.dataset.venuePriority === "primary",
+      ),
+    ).toBe(true);
   });
 
   it("switches among cards, grouped disclosures, and a complete table", async () => {

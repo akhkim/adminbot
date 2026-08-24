@@ -1,6 +1,6 @@
 # AdminBot Deadline Tracker (operator guide)
 
-Collects the lab's upcoming conference/workshop deadlines and drives reminders.
+Collects the lab's conference/workshop deadlines, retains expired history, and drives reminders.
 Three outputs share one dataset (`extensions/adminbot/content/deadlines/venues.json`):
 
 - **Output 0** — a live countdown **board** (`deadlines-board.html`).
@@ -21,6 +21,13 @@ On Aurora, export the two sheets first with the authenticated `gog`/`gws`
 account (the same one used elsewhere), then pass them as `--ongoing-csv` /
 `--ready-csv`. Without local CSVs the matcher falls back to the Google Sheets
 CSV endpoint using `ADMINBOT_ONGOING_SHEET_ID` / `ADMINBOT_READY_SHEET_ID`.
+
+The collector merges by stable deadline id. Top-level fields are the current
+projection; append-only `revisions` retain earlier accepted dates, and explicit
+`venue_aliases` bridge existing deadline-board and venue-catalog identifiers.
+Both deadline pages expose Upcoming and Past views. Reminder, matching, calendar,
+summary, Time Availability, and My Work consumers continue to select only the
+current upcoming projection relevant to their workflow.
 
 `matches.json` marks **ongoing** papers `confirmed:true` (deterministic `Venue`
 match) and **ready→workshop** suggestions `confirmed:false`. A human sets

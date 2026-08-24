@@ -3,7 +3,9 @@
 AdminBot deadline collector (Output 0 data source).
 
 Refreshes extensions/adminbot/content/deadlines/venues.json with the lab's tracked
-submission/rebuttal deadlines, including recent entries used by the history view:
+Existing records are merged by stable id: expired or disappeared records remain,
+and changed dates append revisions while the top-level fields stay the current
+projection consumed by ordinary workflows.
 
   - Workshops -> collected from each requested family's OpenReview parent.
   - Conference milestones -> curated from official CFPs, except sources such as
@@ -42,13 +44,14 @@ from adminbot_deadlines import (  # noqa: E402
 )
 OUT  = os.path.join(DEADLINES_DIR, "venues.json")
 
-# --- curated, source-verified upcoming conference milestones (AoE 23:59:59) ---
+# --- curated, source-verified conference milestones (AoE 23:59:59) ---
 #
 # The set tracked here is the guidebook's, not a wishlist (see is_archival in
 # adminbot_deadlines.py, which is where the policy is written):
 #
-#   archival      main and demo tracks of ACL / EMNLP / NAACL / EACL, and
-#                 NeurIPS / ICML / ICLR / COLM / CLeaR
+#   primary       ACL / EMNLP / NAACL main+demo, NeurIPS / ICML / ICLR / COLM /
+#                 CLeaR main
+#   secondary     EACL / AACL main+demo
 #   non-archival  IASEAI
 #   workshops     swept independently for the requested parent families; their
 #                 archival status remains unknown unless a source classifies it
@@ -455,10 +458,9 @@ def discover_workshop_metadata(homepage, existing="", existing_status="unknown")
         try:
             final_candidate, candidate_html = _fetch_html(candidate)
             if not is_generic_conference_cfp(final_candidate):
-                status = _merge_archival_status(
+                return final_candidate, _merge_archival_status(
                     homepage_status, archival_status_from_html(candidate_html)
                 )
-                return final_candidate, status
         except Exception:
             continue
     return previous, homepage_status
@@ -590,6 +592,7 @@ def fetch_workshop_source(source, previous_by_id=None):
             cfp_url="",
             openreview_url=review_url,
             source_url=review_url,
+            _source_observed=bool(observed_deadline),
             source_checked_at=(checked_at() if observed_deadline
                                else previous.get("source_checked_at", "")),
             link=homepage or review_url)
@@ -707,6 +710,8 @@ def classify(item):
     set on each of them is a field that will be wrong. An entry may still declare
     `venue_family` itself when the name does not carry it (IASEAI, ARR).
     """
+    item.pop("group_label", None)
+    item.pop("_source_observed", None)
     family = item.get("venue_family") or family_of(item.get("venue_group", ""), item.get("name", ""))
     item["venue_family"] = family
     item.setdefault("submission_type", "")
@@ -758,15 +763,86 @@ def classify(item):
     return item
 
 
+REVISION_FIELDS = ("deadline_aoe", "notification_aoe", "deadline_label", "link")
+REVISION_CHANGE_FIELDS = ("deadline_aoe", "notification_aoe", "deadline_label")
+
+
+def canonical_venue_identity(item):
+    """Use an existing venue/catalog identity, separate from the dated row id."""
+    deadline_id = item["id"]
+    family = item.get("venue_family", "")
+    track = item.get("track", "")
+    if item.get("entry_type") == "workshop":
+        query = urllib.parse.parse_qs(urllib.parse.urlsplit(item.get("openreview_url", "")).query)
+        group_id = (query.get("id") or [""])[0]
+        return re.sub(r"_ARR_Commitment$", "", group_id, flags=re.IGNORECASE) or deadline_id
+    if track == "demo" and family:
+        return f"{family}-demo"
+    if track == "main" and family in ARR_FAMILIES:
+        return f"{family}-main"
+    if track == "main" and family:
+        return family
+    return deadline_id
+
+
+def merge_history(item, previous=None, stale=False):
+    """Keep one current projection while retaining every observed deadline revision."""
+    previous = previous or {}
+    revisions = []
+    for raw_revision in previous.get("revisions", []):
+        revision = dict(raw_revision)
+        if revisions and all(
+            revisions[-1].get(key, "") == revision.get(key, "")
+            for key in REVISION_CHANGE_FIELDS
+        ):
+            revisions[-1] = revision
+        else:
+            revisions.append(revision)
+    if previous and not revisions:
+        revisions.append(dict(
+            observed_at=previous.get("source_checked_at") or checked_at(),
+            **{key: previous.get(key, "") for key in REVISION_FIELDS},
+        ))
+    projection = {key: item.get(key, "") for key in REVISION_FIELDS}
+    if not revisions or any(
+        revisions[-1].get(key, "") != projection[key]
+        for key in REVISION_CHANGE_FIELDS
+    ):
+        revisions.append(dict(observed_at=checked_at(), **projection))
+    else:
+        revisions[-1]["link"] = projection["link"]
+
+    deadline_id = item["id"]
+    venue_id = canonical_venue_identity(item)
+    previous_deadline_id = previous.get("deadline_id") or previous.get("id")
+    aliases = list(dict.fromkeys([venue_id, deadline_id, previous_deadline_id]))
+    aliases = [alias for alias in aliases if alias]
+    item.update(
+        deadline_id=deadline_id,
+        venue_id=venue_id,
+        venue_aliases=aliases,
+        revisions=revisions,
+        stale=stale,
+    )
+    return item
+
+
 def main():
     try:
-        previous_items = json.load(open(OUT)).get("items", [])
+        previous_doc = json.load(open(OUT))
     except Exception:
-        previous_items = []
+        previous_doc = {}
+    previous_items = previous_doc.get("items", [])
+    previous_has_history = previous_doc.get("history_version") == 1
     previous_by_id = {item.get("id"): item for item in previous_items if item.get("id")}
     items = list(CONFERENCES) + list(EMNLP_WORKSHOPS) + fetch_openreview_conferences()
     fetched, failures = fetch_workshops(previous_by_id)
     items += fetched
+    observed_ids = {
+        item["id"] for item in items
+        if item.get("_source_observed", True)
+    }
+    fallback_ids = set()
     # Fail soft per family: one conference's OpenReview group being absent (its
     # workshop round has not opened yet, which is the normal state for most of the
     # year) must not drop the families that did answer. Only a family that failed
@@ -778,6 +854,7 @@ def main():
                 x for x in previous_items
                 if x.get("venue_type") == "workshop" and x.get("venue_family") in failures
             ]
+            fallback_ids.update(item["id"] for item in kept)
             items += kept
             print(f"kept {len(kept)} workshop entries from the previous sweep", file=sys.stderr)
         except Exception:
@@ -796,10 +873,23 @@ def main():
             continue
         positions[item["id"]] = len(unique)
         unique.append(item)
-    items = unique
+    items = [
+        merge_history(
+            item,
+            previous_by_id.get(item["id"]),
+            (bool(previous_by_id.get(item["id"], {}).get("stale")) and previous_has_history
+             if item["id"] in fallback_ids else item["id"] not in observed_ids),
+        )
+        for item in unique
+    ]
+    current_ids = {item["id"] for item in items}
+    for deadline_id, previous in previous_by_id.items():
+        if deadline_id not in current_ids:
+            items.append(merge_history(classify(dict(previous)), previous, stale=True))
     items.sort(key=lambda x: (x["deadline_aoe"], x["name"]))
-    doc = dict(timezone="AoE (UTC-12)",
-               note=("Tracked deadlines. NeurIPS 2026 workshops use the official unified "
+    doc = dict(history_version=1, timezone="AoE (UTC-12)",
+               note=("Current projections with append-only deadline revisions. "
+                     "NeurIPS 2026 workshops use the official unified "
                      "deadline (submission 2026-08-29, hard accept/reject 2026-09-29)."),
                count=len(items), items=items)
     json.dump(doc, open(OUT, "w"), indent=2, ensure_ascii=False)
@@ -836,14 +926,23 @@ def main():
             "entry_type", "archival_status", "venue_priority", "archival",
             "submission_type", "milestone",
             "deadline_label", "deadline_aoe", "notification_aoe", "link",
-            "homepage_url", "cfp_url", "openreview_url", "source_url", "source_checked_at"]
+            "homepage_url", "cfp_url", "openreview_url", "source_url", "source_checked_at",
+            "deadline_id", "venue_id", "venue_aliases", "revisions", "stale"]
     slim = [{k: it.get(k, "") for k in keys} for it in items]
     ui_ds = os.path.join(HERE, "..", "ui", "src", "ui", "adminbot", "data", "deadlines.ts")
     with open(ui_ds, "w") as f:
         f.write("// Generated from extensions/adminbot/content/deadlines/venues.json by\n"
                 "// scripts/adminbot-deadline-collect.py. Do not hand-edit; regenerate instead.\n\n"
+                "export type DeadlineRevision = {\n"
+                "  observed_at: string;\n  deadline_aoe: string;\n"
+                "  notification_aoe?: string;\n  deadline_label?: string;\n  link?: string;\n};\n\n"
                 "export type DeadlineVenue = {\n"
                 "  id: string;\n  name: string;\n  venue_type: string;\n  venue_group: string;\n"
+                "  /** Stable dated-deadline identity; equal to the legacy id. */\n"
+                "  deadline_id: string;\n"
+                "  /** Canonical venue identity, with every accepted legacy form listed below. */\n"
+                "  venue_id: string;\n  venue_aliases: string[];\n"
+                "  revisions: DeadlineRevision[];\n  stale: boolean;\n"
                 "  track?: string;\n"
                 "  /** Conference family, e.g. \"EMNLP\". Empty when it is not one the lab tracks. */\n"
                 "  venue_family?: string;\n"

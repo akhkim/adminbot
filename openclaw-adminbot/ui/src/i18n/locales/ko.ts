@@ -442,7 +442,7 @@ export const ko: TranslationMap = {
     adminbotMembers: "Privilege levels and access profiles.",
     adminbotPapers: "PaperPublish records and current steps.",
     adminbotAnnouncements: "Nudge members or send a general announcement.",
-    adminbotDeadlines: "Upcoming conference & workshop deadlines.",
+    adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
     activity: "브라우저 로컬 도구 활동 요약입니다.",
     overview: "상태, 진입점, 상태 정보.",
     workboard: "에이전트 작업 대기열 및 세션 인계.",

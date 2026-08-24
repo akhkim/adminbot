@@ -45,7 +45,9 @@ describe("standalone deadline board foundation", () => {
         "Search conferences & workshops…",
       );
       expect(
-        [...document.querySelectorAll(".modes .toggle button")].map((button) => button.textContent),
+        [...document.querySelectorAll('[role="group"][aria-label="View"] button')].map(
+          (button) => button.textContent,
+        ),
       ).toEqual(["Groups", "Cards", "Table"]);
       expect(document.querySelector("#v-groups")?.getAttribute("aria-pressed")).toBe("true");
       expect(document.querySelector("#group-list")?.classList).not.toContain("hidden");

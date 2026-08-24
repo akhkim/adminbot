@@ -463,7 +463,7 @@ export const en: TranslationMap = {
     adminbotAnnouncements: "Nudge members or send a general announcement.",
     adminbotConferencePapers: "Accepted papers at a conference, ranked against what you work on.",
     adminbotCalendar: "Draft an event, and invite the people the roster can describe.",
-    adminbotDeadlines: "Upcoming conference & workshop deadlines.",
+    adminbotDeadlines: "Past and upcoming conference & workshop deadlines.",
     activity: "Browser-local tool activity summaries.",
     overview: "Status, entry points, health.",
     workboard: "Agent work queue and session handoff.",

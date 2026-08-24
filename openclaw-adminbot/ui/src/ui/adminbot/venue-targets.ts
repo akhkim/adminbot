@@ -14,6 +14,7 @@
 
 import type { AdminBotPaperRecord } from "./controllers/admin.ts";
 import { aoeInstantMs } from "./data/deadline-time.ts";
+import { DEADLINE_VENUES } from "./data/deadlines.ts";
 
 /** One bet: a venue, and how likely the authors think they will actually submit to it. */
 export type VenueTarget = {
@@ -127,9 +128,21 @@ export function papersNeedingRegistration(
   papers: AdminBotPaperRecord[],
   venueId: string,
 ): AdminBotPaperRecord[] {
+  const canonical = canonicalVenueId(venueId);
   return papers.filter(
-    (paper) => !readVenueTargets(paper).some((target) => target.venue_id === venueId),
+    (paper) =>
+      !readVenueTargets(paper).some((target) => canonicalVenueId(target.venue_id) === canonical),
   );
+}
+
+export function canonicalVenueId(value: string): string {
+  const candidate = value.trim().toLowerCase();
+  for (const deadline of DEADLINE_VENUES) {
+    if (deadline.venue_aliases.some((alias) => alias.toLowerCase() === candidate)) {
+      return deadline.venue_id.toLowerCase();
+    }
+  }
+  return candidate;
 }
 
 // ── the venue picker on a paper card ─────────────────────────────────────────────────────
