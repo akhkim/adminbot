@@ -35,6 +35,146 @@ function completeMember(fields: { id: string; privilege_level: string }) {
   } as Parameters<AdminBotService["upsertLabMember"]>[0];
 }
 
+describe("AdminBotService pre-registration nudges", () => {
+  // Sunday 18:00 Toronto: sixteen hours before the Monday 10:00 meeting, inside the window.
+  const sunday = "2026-08-23T22:00:00.000Z";
+  const thursday = "2026-08-20T15:00:00.000Z";
+
+  function lab() {
+    const executor = { execute: vi.fn(async () => ({ handled: true })) };
+    const service = new AdminBotService(undefined, { executor });
+    // batch 1, not a full member -- addressable by batch alone.
+    unwrap(
+      service.upsertLabMember({
+        id: "batched",
+        name: "Batched Person",
+        slack_user_id: "U1",
+        privilege_level: "external_collaborator",
+        test_onboard_batch: 1,
+      }),
+    );
+    // a full member with no batch -- batch 3 by the rule.
+    unwrap(
+      service.upsertLabMember({
+        id: "full",
+        name: "Full Member",
+        slack_user_id: "U2",
+        privilege_level: "member",
+        email: "full@cs.toronto.edu",
+      }),
+    );
+    // neither: no batch, not full. Deliberately never addressed.
+    unwrap(
+      service.upsertLabMember({
+        id: "untouched",
+        name: "Untouched Person",
+        slack_user_id: "U3",
+        privilege_level: "external_collaborator",
+      }),
+    );
+    return service;
+  }
+
+  function paperFor(service: AdminBotService, id: string, memberId: string, targets?: string) {
+    unwrap(
+      service.upsertPaper({
+        id,
+        title: `Paper ${id}`,
+        authors: [],
+        author_links: [{ name: "Author", member_id: memberId }],
+        current_step: "brainstorming_docs",
+        ...(targets ? { artifacts: { venue_targets: targets } } : {}),
+      }),
+    );
+  }
+
+  const iclr = JSON.stringify([{ venue_id: "iclr2027_paper", label: "ICLR 2027", confidence: 80 }]);
+
+  it("asks batch members and full members, and leaves everybody else alone", () => {
+    const service = lab();
+    paperFor(service, "p-batched", "batched");
+    paperFor(service, "p-full", "full");
+    paperFor(service, "p-untouched", "untouched");
+    const { missing } = unwrap(service.collectPreRegistrationNudges({ nowIso: sunday }));
+    expect(missing.map((row) => row.member_id).toSorted()).toEqual(["batched", "full"]);
+  });
+
+  it("separates who has nothing registered from who has some of it done", () => {
+    const service = lab();
+    // Nothing aimed at ICLR.
+    paperFor(service, "p1", "batched");
+    // One registered, one not.
+    paperFor(service, "p2", "full", iclr);
+    paperFor(service, "p3", "full");
+    const result = unwrap(service.collectPreRegistrationNudges({ nowIso: sunday }));
+    expect(result.missing.map((row) => row.member_id)).toEqual(["batched"]);
+    expect(result.stale).toEqual([
+      { member_id: "full", name: "Full Member", registered: 1, unregistered: 1 },
+    ]);
+  });
+
+  it("says nothing to somebody whose papers are all registered", () => {
+    const service = lab();
+    paperFor(service, "p2", "full", iclr);
+    const result = unwrap(service.collectPreRegistrationNudges({ nowIso: sunday }));
+    expect(result.missing).toEqual([]);
+    expect(result.stale).toEqual([]);
+  });
+
+  it("sends only inside the twenty-hour window", async () => {
+    const service = lab();
+    paperFor(service, "p1", "batched");
+    const early = unwrap(await service.sendPreRegistrationNudges("cron", { nowIso: thursday }));
+    expect(early.created).toEqual([]);
+    expect(early.skipped_reason).toContain("20 hours");
+
+    const due = unwrap(await service.sendPreRegistrationNudges("cron", { nowIso: sunday }));
+    expect(due.asked).toEqual(["batched"]);
+    const message = (due.created[0]?.proposed_payload as { message?: string })?.message ?? "";
+    // The reason comes before the ask -- a bare instruction reads as paperwork.
+    expect(message).toContain("Why it matters");
+    expect(message).toContain("ICLR");
+  });
+
+  it("tells somebody with a partial list about the rest, not about ICLR again", async () => {
+    const service = lab();
+    paperFor(service, "p2", "full", iclr);
+    paperFor(service, "p3", "full");
+    const sent = unwrap(await service.sendPreRegistrationNudges("cron", { nowIso: sunday }));
+    expect(sent.asked).toEqual(["full"]);
+    const message = (sent.created[0]?.proposed_payload as { message?: string })?.message ?? "";
+    expect(message).toContain("thanks for registering");
+    expect(message).toContain("one other active paper");
+  });
+
+  it("asks once per meeting however often the job runs", async () => {
+    const service = lab();
+    paperFor(service, "p1", "batched");
+    const first = unwrap(await service.sendPreRegistrationNudges("cron", { nowIso: sunday }));
+    expect(first.asked).toEqual(["batched"]);
+    const second = unwrap(
+      await service.sendPreRegistrationNudges("cron", { nowIso: "2026-08-23T23:00:00.000Z" }),
+    );
+    expect(second.asked).toEqual([]);
+    expect(second.created).toEqual([]);
+  });
+
+  it("ignores a rejected paper -- it is not a plan", () => {
+    const service = lab();
+    unwrap(
+      service.upsertPaper({
+        id: "rejected",
+        title: "Rejected",
+        authors: [],
+        author_links: [{ name: "Author", member_id: "batched" }],
+        current_step: "brainstorming_docs",
+        venue_decision: "reject",
+      }),
+    );
+    expect(unwrap(service.collectPreRegistrationNudges({ nowIso: sunday })).missing).toEqual([]);
+  });
+});
+
 describe("AdminBotService paper coauthors", () => {
   function lab() {
     const service = new AdminBotService();

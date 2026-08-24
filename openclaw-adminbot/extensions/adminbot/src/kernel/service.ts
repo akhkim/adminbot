@@ -79,6 +79,13 @@ import {
   type AdminBotFeedbackSummary,
 } from "../contracts/feedback.js";
 import {
+  adminBotDefaultGroupMeeting,
+  adminBotGroupMeetingNudgeWindowHours,
+  hoursUntilGroupMeeting,
+  isGroupMeetingNudgeDue,
+  type GroupMeetingSchedule,
+} from "../contracts/group-meeting.js";
+import {
   findDuplicateMembers,
   planMemberMerge,
   type MemberDuplicatePair,
@@ -119,6 +126,7 @@ import {
   type AdminBotPaperflowEvidenceRecord,
   type AdminBotPaperflowStage,
 } from "../contracts/paperflow-stages.js";
+import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import {
   byUrgency,
   prepareLogisticsRequest,
@@ -1210,6 +1218,205 @@ export class AdminBotService {
       }
       const details = event.details as { week_start?: unknown; member_ids?: unknown } | undefined;
       if (details?.week_start !== weekStart || !Array.isArray(details.member_ids)) {
+        continue;
+      }
+      for (const id of details.member_ids) {
+        if (typeof id === "string") {
+          asked.add(id);
+        }
+      }
+    }
+    return asked;
+  }
+
+  /**
+   * Who the lab is chasing about the ICLR pre-registration, and what each of them is owed.
+   *
+   * The addressable set is "batch 1, 2 or 3", where an explicit batch comes from the spreadsheet's
+   * Test Onboard column and every full member counts as batch 3. A member with neither -- no batch
+   * and not a full member -- is deliberately untouched: those are the people the lab has not
+   * started onboarding, and a nudge about a submission plan would be the first thing AdminBot ever
+   * said to them.
+   *
+   * Two outcomes, because two different things are wanted from these people:
+   *   - no paper aimed at ICLR: they are asked to pre-register, with the reason spelled out.
+   *   - some paper aimed at ICLR: they are asked to bring the *rest* of their papers up to date,
+   *     which is the thing that is actually outstanding for them.
+   *
+   * Dormant and closed papers are left out of both counts. A rejected paper is not a plan.
+   */
+  collectPreRegistrationNudges(
+    params: { venue?: string; nowIso?: string } = {},
+  ): AdminBotServiceResponse<{
+    venue: string;
+    hours_until_meeting: number;
+    due: boolean;
+    missing: Array<{ member_id: string; name: string; paper_count: number }>;
+    stale: Array<{ member_id: string; name: string; registered: number; unregistered: number }>;
+  }> {
+    const venue = params.venue?.trim() || "ICLR";
+    const now = params.nowIso ? new Date(params.nowIso) : new Date();
+    const schedule = this.groupMeetingSchedule();
+    const papers = this.store
+      .listPapers()
+      .filter((paper) => !isPaperDormant(paper, now) && !isPaperClosed(paper));
+    const missing: Array<{ member_id: string; name: string; paper_count: number }> = [];
+    const stale: Array<{
+      member_id: string;
+      name: string;
+      registered: number;
+      unregistered: number;
+    }> = [];
+    for (const member of this.store.listLabMembers()) {
+      if (member.status === "alumni" || member.status === "external") {
+        continue;
+      }
+      const batch = member.test_onboard_batch;
+      const addressable =
+        (typeof batch === "number" && batch >= 1 && batch <= 3) || isAdminBotFullMember(member);
+      if (!addressable) {
+        continue;
+      }
+      const own = papers.filter((paper) => this.memberOwnsPaper(member, paper));
+      if (own.length === 0) {
+        continue;
+      }
+      const registered = own.filter((paper) => paperTargetsVenue(paper, venue));
+      if (registered.length === 0) {
+        missing.push({ member_id: member.id, name: member.name, paper_count: own.length });
+        continue;
+      }
+      if (registered.length < own.length) {
+        stale.push({
+          member_id: member.id,
+          name: member.name,
+          registered: registered.length,
+          unregistered: own.length - registered.length,
+        });
+      }
+    }
+    return {
+      ok: true,
+      status: 200,
+      payload: {
+        venue,
+        hours_until_meeting: Math.round(hoursUntilGroupMeeting(now, schedule) * 10) / 10,
+        due: isGroupMeetingNudgeDue(now, schedule),
+        missing,
+        stale,
+      },
+    };
+  }
+
+  /** The meeting the pre-meeting reminders are aimed at, from settings or the lab's default. */
+  private groupMeetingSchedule(): GroupMeetingSchedule {
+    const settings = this.resolveSettings();
+    return {
+      weekday:
+        typeof settings.group_meeting_weekday === "number"
+          ? settings.group_meeting_weekday
+          : adminBotDefaultGroupMeeting.weekday,
+      time: settings.group_meeting_time?.trim() || adminBotDefaultGroupMeeting.time,
+      timezone: settings.group_meeting_timezone?.trim() || adminBotDefaultGroupMeeting.timezone,
+    };
+  }
+
+  /**
+   * Send the pre-meeting pre-registration reminders.
+   *
+   * Refuses outside the twenty-hour window unless `force` says otherwise: the window is the whole
+   * point of the message ("before Monday's meeting"), and one sent on a Wednesday is a different,
+   * worse message. `force` exists so an admin can send deliberately after checking the preview.
+   *
+   * One reminder per member per meeting, from the audit ledger -- an hourly cron, a retry and a
+   * manual press all collapse into one.
+   */
+  async sendPreRegistrationNudges(
+    actor: string,
+    params: { venue?: string; nowIso?: string; force?: boolean } = {},
+  ): Promise<
+    AdminBotServiceResponse<
+      AdminBotMemberNudgeResult & { skipped_reason?: string; asked: string[] }
+    >
+  > {
+    const collected = this.collectPreRegistrationNudges(params);
+    if (!collected.ok) {
+      return collected;
+    }
+    const { venue, due, missing, stale } = collected.payload;
+    if (!due && params.force !== true) {
+      return {
+        ok: true,
+        status: 200,
+        payload: {
+          created: [],
+          skipped: [],
+          asked: [],
+          skipped_reason: `not within ${adminBotGroupMeetingNudgeWindowHours} hours of the group meeting`,
+        },
+      };
+    }
+    const now = params.nowIso ? new Date(params.nowIso) : new Date();
+    const meetingKey = this.groupMeetingKey(now);
+    const alreadyAsked = this.preRegistrationAskedFor(meetingKey);
+    const created: AdminBotMemberNudgeResult["created"] = [];
+    const skipped: AdminBotMemberNudgeResult["skipped"] = [];
+    const asked: string[] = [];
+    const send = async (memberId: string, message: string) => {
+      if (alreadyAsked.has(memberId)) {
+        return;
+      }
+      const result = await this.sendMemberNudge(
+        { channel: "slack", recipient_member_ids: [memberId], message },
+        actor,
+      );
+      if (!result.ok) {
+        skipped.push({ member_id: memberId, reason: result.error.message });
+        return;
+      }
+      created.push(...result.payload.created);
+      skipped.push(...result.payload.skipped);
+      if (result.payload.created.length > 0) {
+        asked.push(memberId);
+      }
+    };
+    for (const row of missing) {
+      await send(
+        row.member_id,
+        buildPreRegistrationMessage({ venue, paperCount: row.paper_count }),
+      );
+    }
+    for (const row of stale) {
+      await send(
+        row.member_id,
+        buildRegistrationUpdateMessage({ venue, unregistered: row.unregistered }),
+      );
+    }
+    if (asked.length > 0) {
+      this.recordAudit({
+        type: "prereg.nudged",
+        actor,
+        details: { meeting: meetingKey, venue, member_ids: asked },
+      });
+    }
+    return { ok: true, status: 200, payload: { created, skipped, asked } };
+  }
+
+  /** The meeting a moment belongs to, as a stable key for the ledger. */
+  private groupMeetingKey(now: Date): string {
+    const hours = hoursUntilGroupMeeting(now, this.groupMeetingSchedule());
+    const meeting = new Date(now.getTime() + hours * 60 * 60 * 1000);
+    return meeting.toISOString().slice(0, 10);
+  }
+
+  private preRegistrationAskedFor(meetingKey: string): Set<string> {
+    const asked = new Set<string>();
+    for (const event of this.store.listAuditEvents()) {
+      if (event.type !== "prereg.nudged") {
+        continue;
+      }
+      const details = event.details as { meeting?: unknown; member_ids?: unknown } | undefined;
+      if (details?.meeting !== meetingKey || !Array.isArray(details.member_ids)) {
         continue;
       }
       for (const id of details.member_ids) {
@@ -4919,6 +5126,8 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
 
 const SELF_PROFILE_PRIVILEGED_FIELDS = [
   "privilege_level",
+  // Decides who the batch sweeps address, so it is not a fact a member states about themselves.
+  "test_onboard_batch",
   "collaborator_subgroup",
   "access_overrides",
   "status",
@@ -5128,6 +5337,46 @@ function byProfileProgress(
  * a member who gets one nudge about their profile and another about their timeline reads a system
  * that does not know what it already sent.
  */
+/**
+ * The ask, with the reason in front of it.
+ *
+ * A bare "pre-register your papers" reads as paperwork, and paperwork is what people skip on a
+ * Sunday. The reason is the whole message: the lab plans reviewer load, mentor time and travel off
+ * these numbers, and a paper nobody registered is a paper nobody planned for.
+ */
+function buildPreRegistrationMessage(params: { venue: string; paperCount: number }): string {
+  const papers = params.paperCount === 1 ? "your paper" : `your ${params.paperCount} active papers`;
+  return [
+    `Before tomorrow's group meeting: none of ${papers} is registered for ${params.venue} yet.`,
+    "",
+    `Why it matters: the lab plans around these. Who reviews what, who needs mentor time, and how ` +
+      `much of the next six weeks is ${params.venue} rather than everything else, all come off the ` +
+      `pre-registration list. A paper nobody registered is a paper nobody planned for -- and the ` +
+      `usual way that shows up is a deadline week where three people needed the same reviewer.`,
+    "",
+    `It takes a minute: open My Projects & Papers, press Pre-register a paper, and give each one ` +
+      `a rough likelihood. A guess is fine -- 50% is a real answer, and it is far more useful than ` +
+      `a blank.`,
+  ].join("\n");
+}
+
+/** For somebody who has registered something: the rest of their papers still need an answer. */
+function buildRegistrationUpdateMessage(params: { venue: string; unregistered: number }): string {
+  const papers =
+    params.unregistered === 1
+      ? "one other active paper"
+      : `${params.unregistered} other active papers`;
+  return [
+    `Before tomorrow's group meeting: thanks for registering for ${params.venue} -- you have ` +
+      `${papers} with no venue on them yet.`,
+    "",
+    "Open My Projects & Papers and add where each of those is aimed, with a rough likelihood. " +
+      "Not everything is going to " +
+      params.venue +
+      ", and knowing which ones are not is just as useful for planning as knowing which ones are.",
+  ].join("\n");
+}
+
 function buildProfileReminderMessage(needs: { profile: boolean; timeline: boolean }): string {
   const lines: string[] = [];
   if (needs.profile) {

@@ -2192,6 +2192,39 @@ async function handleAuthenticatedRoute(
     sendServiceResult(res, service.collectWeeklyUpdateGaps(url.searchParams.get("now") ?? undefined));
     return;
   }
+  if (req.method === "GET" && url.pathname === "/papers/pre-registration/pending") {
+    // The preview: who has nothing aimed at the venue, who has some of it done, and whether the
+    // meeting window is open. Read-only and computed by the same walk the send uses.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    sendServiceResult(
+      res,
+      service.collectPreRegistrationNudges({
+        ...(url.searchParams.get("venue") ? { venue: url.searchParams.get("venue") as string } : {}),
+        ...(url.searchParams.get("now") ? { nowIso: url.searchParams.get("now") as string } : {}),
+      }),
+    );
+    return;
+  }
+  if (req.method === "POST" && url.pathname === "/papers/pre-registration/run") {
+    // requirePrivileged, like the other cron-triggered sweeps: no message and no recipient list
+    // comes from the caller. `force` is the one thing a body may say, and it only lifts the
+    // twenty-hour window -- it cannot address anybody the walk did not already find.
+    if (!requirePrivileged(res, principal)) {
+      return;
+    }
+    const body = readRecord(await readJsonOrEmpty(req));
+    sendServiceResult(
+      res,
+      await service.sendPreRegistrationNudges(principalActor(principal), {
+        ...(typeof body.venue === "string" ? { venue: body.venue } : {}),
+        ...(typeof body.now === "string" ? { nowIso: body.now } : {}),
+        ...(body.force === true ? { force: true } : {}),
+      }),
+    );
+    return;
+  }
   if (req.method === "POST" && url.pathname === "/papers/weekly-updates/run") {
     // requirePrivileged rather than requireMemberPrivileged, for the same reason
     // /papers/paperflow-stages/run takes the service principal: the route accepts no message and

@@ -133,6 +133,19 @@ export type AdminBotMemberRole = (typeof adminBotMemberRoles)[number];
 export const adminBotTimelineEntryTarget = 2;
 
 /**
+ * Which onboarding test batch a member is in, if any.
+ *
+ * Kept on the roster rather than read from the spreadsheet it originates in: a sweep that had to
+ * open an xlsx on somebody's laptop is a sweep that runs only when that laptop is open. The
+ * importer writes it (scripts/adminbot-import-test-onboard.mjs); nothing else does.
+ *
+ * Absent is meaningful. A member with no batch and no full-member privilege is deliberately out of
+ * scope for the batch sweeps -- they are the people the lab has not started onboarding.
+ */
+export const adminBotTestOnboardBatches = [1, 2, 3] as const;
+export type AdminBotTestOnboardBatch = (typeof adminBotTestOnboardBatches)[number];
+
+/**
  * Privilege levels that count as being *on* the lab rather than adjacent to it.
  *
  * The timeline chase is aimed at these and not at collaborators or trials: a term plan is a thing
@@ -718,6 +731,13 @@ export type AdminBotCvScanResult = {
 export type AdminBotLabMemberInput = {
   id: string;
   name: string;
+  /**
+   * Onboarding test batch, imported from the lab spreadsheet's "Test Onboard" column.
+   *
+   * Governance-owned: it decides who a batch sweep addresses, so it is not something a member
+   * sets about themselves. See adminBotTestOnboardBatches.
+   */
+  test_onboard_batch?: number;
   // Governance-owned: the department directory address, required to be @cs.toronto.edu for
   // everyone except external_collaborator (see validateCsEmail in kernel/service.ts).
   email?: string;
@@ -902,6 +922,15 @@ export type AdminBotSettingsInput = {
   // source tree, and /settings is admin-gated on read as well as write.
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
+  /**
+   * When the weekly group meeting is, for the reminders that are aimed at it.
+   *
+   * Settings rather than a constant: the meeting moves, and a nudge that fires against a
+   * hard-coded Monday morning would keep firing after it moved. Weekday is 0 Sunday..6 Saturday.
+   */
+  group_meeting_weekday?: number;
+  group_meeting_time?: string;
+  group_meeting_timezone?: string;
   applicant_last_reviewed_at?: string;
   /**
    * Recorded meetings shorter than this are filed but not listed. A test call, a two-minute room
@@ -919,6 +948,10 @@ export type AdminBotSettings = {
   head_professor_member_id?: string;
   head_professor_whatsapp?: string;
   applicant_sheet_id?: string;
+  /** See the note on AdminBotSettingsInput. Defaults live in contracts/group-meeting.ts. */
+  group_meeting_weekday?: number;
+  group_meeting_time?: string;
+  group_meeting_timezone?: string;
   applicant_last_reviewed_at?: string;
   /** See the note on AdminBotSettingsInput. Optional so a settings row written before meetings existed still parses. */
   meeting_minimum_minutes?: number;
@@ -1340,6 +1373,8 @@ export type AdminBotAuditEvent = {
     // One author's account of one week. The prose stays out of `details` -- see the service.
     | "paper_weekly_update.saved"
     | "paper_weekly_updates.nudged"
+    // The pre-meeting pre-registration reminder, keyed by the meeting it was sent before.
+    | "prereg.nudged"
     | "paper.deleted"
     | "onboarding.guide_sent"
     | "settings.updated"
