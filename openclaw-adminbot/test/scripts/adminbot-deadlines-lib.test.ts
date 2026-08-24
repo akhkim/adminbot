@@ -174,6 +174,39 @@ describe("workshop source URLs", () => {
     ).toEqual(["archival", "non_archival", "mixed", "unknown"]);
   });
 
+  it("keeps cross-submission rules explicit and extracts bounded topic evidence", () => {
+    expect(
+      runPython(
+        "m = load('adminbot-deadline-collect')\n" +
+          "allowed = m.cross_submission_from_html('<p>Dual submissions are allowed.</p>')\n" +
+          "allowed_review = m.cross_submission_from_html('<p>Work under review elsewhere is welcome.</p>')\n" +
+          "allowed_concurrent = m.cross_submission_from_html('<p>Submissions may be concurrently submitted elsewhere.</p>')\n" +
+          "blocked = m.cross_submission_from_html('<p>Papers must not be under review elsewhere.</p>')\n" +
+          "faq = m.cross_submission_from_html('<h2>Are dual submissions allowed?</h2>')\n" +
+          "after_acceptance = m.cross_submission_from_html('<p>If accepted, the paper cannot be submitted elsewhere.</p>')\n" +
+          "acceptance_suffix = m.cross_submission_from_html('<p>The paper cannot be submitted elsewhere after acceptance.</p>')\n" +
+          "unclear = m.cross_submission_from_html('<p>We welcome strong papers.</p>')\n" +
+          "topics = m.topic_profile_from_html('<h2>Topics of interest include</h2><p>AI safety; interpretability; reliable agents.</p><h2>Important dates</h2>')\n" +
+          "parenthesized = m.topic_profile_from_html('<h2>Topics of interest include</h2><p>GEPA, tools, Trace), evaluation.</p><h2>Important dates</h2>')\n" +
+          "print(json.dumps([allowed[0], allowed_review[0], allowed_concurrent[0], blocked[0], faq[0], after_acceptance[0], acceptance_suffix[0], unclear[0], topics, parenthesized[0]]))",
+      ),
+    ).toEqual([
+      "allowed",
+      "allowed",
+      "allowed",
+      "prohibited",
+      "unclear",
+      "unclear",
+      "unclear",
+      "unclear",
+      [
+        ["AI safety", "interpretability", "reliable agents"],
+        "AI safety; interpretability; reliable agents.",
+      ],
+      ["GEPA", "tools", "Trace", "evaluation"],
+    ]);
+  });
+
   it("normalizes published links and rejects unsafe schemes", () => {
     expect(
       runPython(

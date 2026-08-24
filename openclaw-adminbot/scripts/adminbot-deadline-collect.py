@@ -346,6 +346,36 @@ ARCHIVAL_SIGNAL = re.compile(
     r"(?:appear|be published|be included) in (?:the )?ACL Anthology)\b",
     re.IGNORECASE,
 )
+ALLOWED_CROSS_SUBMISSION_SIGNAL = re.compile(
+    r"\b(?:(?:dual|concurrent|cross)[ -]?submissions? (?:(?:are|is)\s+)?"
+    r"(?:allowed|permitted|welcome)|(?:allow|permit|welcome|accept)(?:ing)? "
+    r"(?:dual|concurrent|cross)[ -]?submissions?|"
+    r"(?:papers?|work|submissions?) (?:that (?:is|are) )?(?:currently )?"
+    r"under review elsewhere (?:are|is) (?:allowed|permitted|welcome)|"
+    r"(?:may|can) be (?:under review|concurrently submitted) elsewhere)\b",
+    re.IGNORECASE,
+)
+PROHIBITED_CROSS_SUBMISSION_SIGNAL = re.compile(
+    r"\b(?:(?:dual|concurrent|cross)[ -]?submissions? (?:(?:are|is)\s+)?"
+    r"(?:not allowed|prohibited|forbidden)|(?:do not|does not|cannot|may not) "
+    r"(?:allow|permit|accept) (?:dual|concurrent|cross)[ -]?submissions?|"
+    r"must not be (?:submitted|under review|published) elsewhere|"
+    r"(?:cannot|may not) be (?:submitted|under review) elsewhere|"
+    r"not (?:currently )?(?:submitted|under review) elsewhere)\b",
+    re.IGNORECASE,
+)
+TOPIC_SECTION_SIGNAL = re.compile(
+    r"\b(?:topics?(?: of interest)? (?:include|are)|areas?(?: of interest)? (?:include|are)|"
+    r"we (?:invite|welcome|accept) submissions? (?:on|about|covering)|scope includes)\b",
+    re.IGNORECASE,
+)
+
+# One event key across its workshops. NeurIPS 2026 is explicitly multi-site, so the location
+# remains a list rather than pretending that every attendee travels to the main Sydney meeting.
+PARENT_CONFERENCE_LOCATIONS = {
+    ("EMNLP", "2026"): "Budapest, Hungary",
+    ("NeurIPS", "2026"): "Sydney, Australia; Atlanta, USA; Paris, France",
+}
 
 
 def is_generic_conference_cfp(url):
@@ -406,6 +436,78 @@ def archival_status_from_html(html):
     return "non_archival" if non_archival else "archival"
 
 
+def _visible_text(html):
+    parser = _CfpParser()
+    parser.feed(html)
+    return " ".join(" ".join(parser.visible_text).split())
+
+
+def _evidence_for(text, signal):
+    """The bounded sentence containing a policy signal, not an uncited whole CFP."""
+    match = signal.search(text)
+    if not match:
+        return ""
+    start = max(text.rfind(".", 0, match.start()), text.rfind("!", 0, match.start()),
+                text.rfind("?", 0, match.start())) + 1
+    stops = [text.find(mark, match.end()) for mark in ".!?"
+             if text.find(mark, match.end()) >= 0]
+    end = min(stops) + 1 if stops else min(len(text), match.end() + 220)
+    return text[start:end].strip()[:400]
+
+
+def cross_submission_from_html(html):
+    """Return only an explicit cross-submission policy; silence and conflict stay unclear."""
+    text = _visible_text(html)
+    allowed = _evidence_for(text, ALLOWED_CROSS_SUBMISSION_SIGNAL)
+    prohibited = _evidence_for(text, PROHIBITED_CROSS_SUBMISSION_SIGNAL)
+    # FAQ headings are questions, not policies. Likewise, a restriction that begins only after
+    # acceptance does not establish whether a paper may be under review elsewhere now.
+    if allowed.endswith("?"):
+        allowed = ""
+    if prohibited.endswith("?") or re.search(
+            r"\b(?:(?:if|once) accepted|after acceptance)\b", prohibited, re.IGNORECASE):
+        prohibited = ""
+    if bool(allowed) == bool(prohibited):
+        return "unclear", ""
+    return ("allowed", allowed) if allowed else ("prohibited", prohibited)
+
+
+def topic_profile_from_html(html):
+    """Extract a compact official topic list without using keywords as the match decision."""
+    text = _visible_text(html)
+    match = TOPIC_SECTION_SIGNAL.search(text)
+    if not match:
+        return [], ""
+    tail = text[match.end():match.end() + 1600]
+    stop = re.search(r"\b(?:important dates|submission guidelines|format|review process|contact)\b",
+                     tail, re.IGNORECASE)
+    evidence = tail[:stop.start() if stop else len(tail)].strip(" :-")[:1200]
+    topics = []
+    for topic in re.split(r"\s*[;•|]\s*|\s*,\s*", evidence):
+        clean = re.sub(r"\s+", " ", topic).strip(" .:-")
+        if clean.count("(") != clean.count(")"):
+            clean = re.sub(r"[()]", "", clean)
+            clean = re.sub(r"\s+", " ", clean).strip(" .:-")
+        if 3 <= len(clean) <= 180 and clean.lower() not in {item.lower() for item in topics}:
+            topics.append(clean)
+        if len(topics) == 20:
+            break
+    return topics, evidence
+
+
+def workshop_profile_from_html(html, source_url):
+    topics, topic_evidence = topic_profile_from_html(html)
+    status, policy_evidence = cross_submission_from_html(html)
+    return dict(
+        topic_profile=topics,
+        topic_evidence=topic_evidence,
+        cross_submission_status=status,
+        cross_submission_evidence=policy_evidence,
+        cross_submission_source_url=normalize_url(source_url),
+        profile_extracted_at=checked_at(),
+    )
+
+
 def _merge_archival_status(*statuses):
     established = {status for status in statuses if status in {"archival", "non_archival", "mixed"}}
     if "mixed" in established or established == {"archival", "non_archival"}:
@@ -422,18 +524,18 @@ def _fetch_html(url, timeout=15):
         return response.geturl(), body.decode(charset, errors="replace")
 
 
-def discover_workshop_metadata(homepage, existing="", existing_status="unknown"):
-    """Return a dedicated CFP URL and source-established archival status."""
+def discover_workshop_profile(homepage, existing="", existing_status="unknown"):
+    """Return the dedicated CFP, publication policy, and bounded matching profile."""
     homepage = normalize_url(homepage)
     previous = normalize_url(existing)
     if previous == homepage or is_generic_conference_cfp(previous):
         previous = ""
     if not homepage:
-        return previous, existing_status
+        return previous, existing_status, {}
     try:
         final_homepage, html = _fetch_html(homepage)
     except Exception:
-        return previous, existing_status
+        return previous, existing_status, {}
 
     parser = _CfpParser()
     parser.feed(html)
@@ -441,14 +543,15 @@ def discover_workshop_metadata(homepage, existing="", existing_status="unknown")
     base = urllib.parse.urldefrag(final_homepage)[0]
     if parser.anchors:
         anchor = urllib.parse.quote(parser.anchors[0], safe="-._~")
-        return f"{base}#{anchor}", homepage_status
+        source = f"{base}#{anchor}"
+        return source, homepage_status, workshop_profile_from_html(html, source)
 
     candidates = []
     for href, text in parser.links:
         absolute = normalize_url(urllib.parse.urljoin(final_homepage, href))
         candidate_base, fragment = urllib.parse.urldefrag(absolute)
         if candidate_base == base and fragment and CFP_SIGNAL.search(fragment.replace("-", " ")):
-            return absolute, homepage_status
+            return absolute, homepage_status, workshop_profile_from_html(html, absolute)
         if not absolute or candidate_base == base:
             continue
         signal = f"{text} {urllib.parse.urlsplit(absolute).path} {urllib.parse.urlsplit(absolute).fragment}"
@@ -458,12 +561,21 @@ def discover_workshop_metadata(homepage, existing="", existing_status="unknown")
         try:
             final_candidate, candidate_html = _fetch_html(candidate)
             if not is_generic_conference_cfp(final_candidate):
-                return final_candidate, _merge_archival_status(
-                    homepage_status, archival_status_from_html(candidate_html)
+                return (
+                    final_candidate,
+                    _merge_archival_status(homepage_status,
+                                           archival_status_from_html(candidate_html)),
+                    workshop_profile_from_html(candidate_html, final_candidate),
                 )
         except Exception:
             continue
-    return previous, homepage_status
+    return previous, homepage_status, workshop_profile_from_html(html, final_homepage)
+
+
+def discover_workshop_metadata(homepage, existing="", existing_status="unknown"):
+    """Compatibility projection for callers that only need URL and archival status."""
+    url, status, _ = discover_workshop_profile(homepage, existing, existing_status)
+    return url, status
 
 
 def discover_cfp_url(homepage, existing=""):
@@ -491,7 +603,7 @@ def enrich_workshop_sources(items, previous_by_id):
     found = {}
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
         futures = {
-            executor.submit(discover_workshop_metadata, homepage, existing, status): homepage
+            executor.submit(discover_workshop_profile, homepage, existing, status): homepage
             for homepage, (existing, status) in jobs.items()
         }
         for future in concurrent.futures.as_completed(futures):
@@ -499,19 +611,30 @@ def enrich_workshop_sources(items, previous_by_id):
             try:
                 found[homepage] = future.result()
             except Exception:
-                found[homepage] = jobs[homepage]
+                existing, status = jobs[homepage]
+                found[homepage] = (existing, status, {})
 
     for item in items:
         if item.get("venue_type") != "workshop":
             continue
         homepage = normalize_url(item.get("homepage_url", ""))
-        item["cfp_url"], item["archival_status"] = found.get(
-            homepage, ("", item.get("archival_status", "unknown"))
+        previous = previous_by_id.get(item.get("id"), {})
+        cfp_url, archival_status, profile = found.get(
+            homepage, ("", item.get("archival_status", "unknown"), {})
         )
+        item["cfp_url"] = cfp_url
+        item["archival_status"] = archival_status
+        for key in ("topic_profile", "topic_evidence", "cross_submission_status",
+                    "cross_submission_evidence", "cross_submission_source_url",
+                    "profile_extracted_at"):
+            default = [] if key == "topic_profile" else ""
+            item[key] = profile.get(key, previous.get(key, default))
         item["link"] = item["cfp_url"] or homepage or normalize_url(item.get("openreview_url", ""))
     print(
-        f"CFP discovery: {sum(bool(url) for url, _ in found.values())}/{len(found)} workshop sites; "
-        f"archival status established for {sum(status != 'unknown' for _, status in found.values())}"
+        f"CFP discovery: {sum(bool(url) for url, _, _ in found.values())}/{len(found)} workshop sites; "
+        f"archival status established for {sum(status != 'unknown' for _, status, _ in found.values())}; "
+        f"cross-submission rules established for "
+        f"{sum(profile.get('cross_submission_status') in {'allowed', 'prohibited'} for _, _, profile in found.values())}"
     )
 
 
@@ -755,6 +878,25 @@ def classify(item):
         item["source_url"] = normalize_url(item.get("source_url", "")) or review_url
         item.setdefault("source_checked_at", "")
         item["link"] = item["cfp_url"] or homepage or review_url
+        year_match = re.search(r"\b(20\d{2})\b", item.get("venue_group", ""))
+        year = year_match.group(1) if year_match else "unknown"
+        item["parent_conference_key"] = f"{family.lower()}-{year}"
+        item["conference_location"] = PARENT_CONFERENCE_LOCATIONS.get((family, year), "")
+        topics = item.get("topic_profile")
+        item["topic_profile"] = topics if isinstance(topics, list) and topics else [item["name"]]
+        if not str(item.get("topic_evidence", "")).strip():
+            item["topic_evidence"] = "Workshop title from its official listing."
+        if item.get("cross_submission_status") not in {"allowed", "prohibited", "unclear"}:
+            item["cross_submission_status"] = "unclear"
+        if not str(item.get("cross_submission_evidence", "")).strip():
+            item["cross_submission_evidence"] = (
+                "No explicit cross-submission rule was found on the collected CFP."
+            )
+        item["cross_submission_source_url"] = (
+            normalize_url(item.get("cross_submission_source_url", "")) or item["cfp_url"]
+            or item["source_url"]
+        )
+        item.setdefault("profile_extracted_at", "")
     else:
         item["link"] = normalize_url(item.get("link", ""))
         item["source_url"] = normalize_url(item.get("source_url", "")) or item["link"]

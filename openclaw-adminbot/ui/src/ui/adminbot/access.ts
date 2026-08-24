@@ -85,6 +85,7 @@ const TAB_MINIMUM_ROLE: Record<Tab, AccessRole> = {
   // Active Papers is the lab-wide pipeline across every author, not the viewer's own work -- that
   // is My Work, which stays member-visible and is scoped to them.
   adminbotPapers: "admin",
+  adminbotWorkshopNudges: "admin",
   adminbot: "admin",
   adminbotRegistrations: "admin",
   // Everybody's completeness at once, which is a governance read; the service re-checks it.

@@ -65,6 +65,7 @@ describe("iconForTab", () => {
       adminbotRecLetters: "fileText",
       adminbotMeetingRequests: "clock",
       adminbotPapers: "fileText",
+      adminbotWorkshopNudges: "send",
       adminbotConferencePapers: "fileText",
       adminbotAnnouncements: "activity",
       adminbotCalendar: "clock",
@@ -118,6 +119,7 @@ describe("titleForTab", () => {
       adminbotMeetingRequests: "Meeting Request",
       adminbotReimbursements: "Reimbursement Form Prep",
       adminbotPapers: "Active Papers",
+      adminbotWorkshopNudges: "Workshop Nudges",
       adminbotConferencePapers: "Conference Papers",
       adminbotAnnouncements: "Announcements",
       adminbotCalendar: "Calendar",
@@ -166,6 +168,7 @@ describe("subtitleForTab", () => {
       adminbotMeetingRequests: "Ask for a slot, and say what the call is for.",
       adminbotReimbursements: "Upload receipts, answer questions, and generate expense forms.",
       adminbotPapers: "PaperPublish records and current steps.",
+      adminbotWorkshopNudges: "Review paper–workshop matches and send workshop nudges.",
       adminbotConferencePapers: "Accepted papers at a conference, ranked against what you work on.",
       adminbotAnnouncements: "Nudge members or send a general announcement.",
       adminbotCalendar: "Draft an event, and invite the people the roster can describe.",
@@ -252,6 +255,7 @@ describe("tabFromPath", () => {
     expect(tabFromPath("/adminbot/papers")).toBe("adminbotPapers");
     expect(tabFromPath("/adminbot/announcements")).toBe("adminbotAnnouncements");
     expect(tabFromPath("/adminbot/deadlines")).toBe("adminbotDeadlines");
+    expect(tabFromPath("/adminbot/workshop-nudges")).toBe("adminbotWorkshopNudges");
     expect(tabFromPath("/activity")).toBe("activity");
     expect(tabFromPath("/sessions")).toBe("sessions");
   });

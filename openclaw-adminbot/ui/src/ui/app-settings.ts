@@ -481,7 +481,11 @@ export async function refreshActiveTab(host: SettingsHost, opts?: { chatStartup?
         await loadAdminBotRegistrations(app);
         break;
       case "adminbotDeadlines":
-        // Deadlines tab renders from the bundled snapshot; no gateway load needed.
+        // Deadlines is bundled and has no server state to refresh.
+        break;
+      case "adminbotWorkshopNudges":
+        // Matching is deliberately administrator-triggered: opening the route must not start an
+        // Ollama-backed sweep over the native paper store.
         break;
       case "activity":
         break;
