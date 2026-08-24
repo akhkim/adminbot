@@ -616,13 +616,14 @@ export type AdminBotMemberTrip = {
   link?: string;
 };
 
-// A single dated milestone on a member's horizon — a thesis deadline, a defence, graduation. A
-// date rather than a range: these are moments to plan back from, not stretches of time, which is
-// what keeps them out of `availability` (hours over a range) and `time_off` (absence over a range).
-//
-// Conference submission deadlines deliberately do NOT live here: the Control UI merges these with
-// the bundled venue snapshot it already ships, so nobody retypes a date the lab already tracks.
+// A single dated milestone on a member's horizon — a thesis deadline, a defence, graduation, or a
+// deadline they opted to copy from the board. A date rather than a range: these are moments to plan
+// back from, not stretches of time, which is what keeps them out of `availability` (hours over a
+// range) and `time_off` (absence over a range).
 export type AdminBotMemberMilestone = {
+  // Present only for a deadline copied from the board. Personal milestones remain valid without
+  // one; linked rows use it to follow accepted date revisions and prevent duplicate additions.
+  deadline_id?: string;
   date: string;
   label: string;
   link?: string;

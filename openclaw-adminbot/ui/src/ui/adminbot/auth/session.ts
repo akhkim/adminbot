@@ -449,9 +449,12 @@ export type MemberTimeOffRow = {
 };
 
 export type MemberMilestoneRow = {
+  deadline_id?: string;
   date: string;
   label: string;
   link?: string;
+  time?: string;
+  timezone?: string;
 };
 
 /**

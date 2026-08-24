@@ -130,6 +130,10 @@ import {
 } from "../contracts/paperflow-stages.js";
 import { paperTargetsVenue } from "../contracts/venue-targets.js";
 import {
+  isDeadlineMilestoneId,
+  reconcileDeadlineMilestones,
+} from "../workflows/deadlines/member-milestones.js";
+import {
   byUrgency,
   prepareLogisticsRequest,
   withoutAttachmentBytes,
@@ -617,6 +621,21 @@ export class AdminBotService {
     private readonly options: AdminBotServiceOptions = {},
   ) {
     this.pruneRetainedAuditEvents();
+    this.refreshStoredDeadlineMilestones();
+  }
+
+  private refreshStoredDeadlineMilestones(): void {
+    for (const member of this.store.listLabMembers()) {
+      const milestones = reconcileDeadlineMilestones(member.milestones);
+      if (milestones === member.milestones) {
+        continue;
+      }
+      const updated = { ...member, milestones };
+      if (!milestones?.length) {
+        delete updated.milestones;
+      }
+      this.store.saveLabMember(updated);
+    }
   }
 
   // One connector call may mutate an external service. Share it across concurrent retries so
@@ -978,6 +997,12 @@ export class AdminBotService {
   }
 
   upsertLabMember(member: AdminBotLabMemberInput): AdminBotServiceResponse<AdminBotLabMember> {
+    if (Array.isArray(member.milestones)) {
+      member = {
+        ...member,
+        milestones: reconcileDeadlineMilestones(member.milestones) ?? [],
+      };
+    }
     const existing = this.store.getLabMember(member.id);
     const privilegeLevel =
       member.privilege_level ?? existing?.privilege_level ?? DEFAULT_MEMBER_PRIVILEGE_LEVEL;
@@ -6036,6 +6061,12 @@ function validateMilestones(member: AdminBotLabMemberInput): string | undefined 
     const labelError = validateLabel(row.label, "milestone label");
     if (labelError) {
       return labelError;
+    }
+    if (
+      row.deadline_id !== undefined &&
+      (typeof row.deadline_id !== "string" || !isDeadlineMilestoneId(row.deadline_id))
+    ) {
+      return "milestone deadline_id must identify a deadline-board entry";
     }
     const linkError = validateExternalLink(row.link, "milestone");
     if (linkError) {

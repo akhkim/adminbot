@@ -29,6 +29,13 @@ Both deadline pages expose Upcoming and Past views. Reminder, matching, calendar
 summary, Time Availability, and My Work consumers continue to select only the
 current upcoming projection relevant to their workflow.
 
+Signed-in members can add any upcoming board entry, including a workshop, from the Time
+Availability deadline picker. Copied milestones carry the dated `deadline_id`, so the service
+prevents duplicate additions and refreshes their date, label, time zone, and link when the accepted
+deadline revision changes. Personal milestones remain valid without that ID. An existing copied
+row is linked once when its label and current or retained historical date uniquely identify a board
+entry; ambiguous rows remain personal.
+
 `matches.json` marks **ongoing** papers `confirmed:true` (deterministic `Venue`
 match) and **ready→workshop** suggestions `confirmed:false`. A human sets
 `confirmed:true` on the workshop pairs they approve before those get nudged.

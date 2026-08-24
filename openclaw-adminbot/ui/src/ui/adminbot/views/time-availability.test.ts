@@ -1,7 +1,7 @@
 import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminBotLabMember } from "../controllers/admin.ts";
-import { allUpcomingConferences, upcomingMajorDeadlines } from "../data/deadline-time.ts";
+import { allUpcomingVenues, aoeInstantMs, upcomingMajorDeadlines } from "../data/deadline-time.ts";
 import {
   allocationBins,
   rangeBins,
@@ -785,16 +785,16 @@ describe("the split tables and the deadline panel", () => {
   });
 
   // Four archival conferences is the right default and a bad restriction: the venue somebody needs
-  // on their timeline is often the fifth conference down. The picker reaches those, and copies the
-  // snapshot's own cutoff across so nobody retypes an AoE deadline wrong.
+  // on their timeline is often a workshop or the fifth conference down. The picker reaches every
+  // entry, and copies the snapshot's own cutoff across so nobody retypes an AoE deadline wrong.
   it("adds a venue the panel does not already show, with its exact cutoff", () => {
     const onSaveSchedule = vi.fn();
     const container = renderView({ members: [scheduled()], onSaveSchedule });
     const picker = container.querySelector<HTMLSelectElement>(
-      '[data-testid="time-availability-conference-pick"]',
+      '[data-testid="time-availability-deadline-pick"]',
     )!;
     const shown = upcomingMajorDeadlines(Date.now(), 4, { archivalOnly: true }).map(
-      (entry) => entry.venue.id,
+      (entry) => entry.venue.deadline_id,
     );
     const offered = [...picker.options].map((option) => option.value);
     expect(offered.length).toBeGreaterThan(0);
@@ -804,14 +804,15 @@ describe("the split tables and the deadline panel", () => {
 
     picker.value = offered[0];
     container
-      .querySelector<HTMLFormElement>('[data-testid="time-availability-add-conference"]')
+      .querySelector<HTMLFormElement>('[data-testid="time-availability-add-deadline"]')
       ?.requestSubmit();
     expect(onSaveSchedule).toHaveBeenCalledTimes(1);
     const [, patch] = onSaveSchedule.mock.calls[0];
     const added = patch.milestones.at(-1);
-    const venue = allUpcomingConferences(Date.now()).find(
-      (entry) => entry.venue.id === offered[0],
+    const venue = allUpcomingVenues(Date.now()).find(
+      (entry) => entry.venue.deadline_id === offered[0],
     )!.venue;
+    expect(added.deadline_id).toBe(venue.deadline_id);
     expect(added.label).toBe(venue.name);
     expect(added.date).toBe(venue.deadline_aoe.slice(0, 10));
     expect(added.time).toBe(venue.deadline_aoe.slice(11, 16));
@@ -819,12 +820,22 @@ describe("the split tables and the deadline panel", () => {
     expect(added.timezone).toBe("Etc/GMT+12");
   });
 
-  // Reading someone else's schedule is an admin act; adding to it is not.
-  it("keeps the conference picker off a schedule the viewer cannot edit", () => {
+  it("shows no active deadline picker to a signed-out visitor", () => {
     expect(
-      renderView({ members: [scheduled()], viewerMemberId: "someone-else" }).querySelector(
-        '[data-testid="time-availability-add-conference"]',
+      renderView({ members: [scheduled()], viewerMemberId: null }).querySelector(
+        '[data-testid="time-availability-add-deadline"]',
       ),
+    ).toBeNull();
+  });
+
+  // Reading someone else's schedule is an admin act; adding to it is not.
+  it("keeps the deadline picker off a schedule the viewer cannot edit", () => {
+    expect(
+      renderView({
+        members: [scheduled()],
+        viewerIsAdmin: true,
+        viewerMemberId: "someone-else",
+      }).querySelector('[data-testid="time-availability-add-deadline"]'),
     ).toBeNull();
   });
 
@@ -1230,25 +1241,46 @@ describe("the big-deadlines panel", () => {
   const scheduled = (overrides: Partial<AdminBotLabMember> = {}) =>
     member({ milestones: [{ date: "2027-06-12", label: "Graduation" }], ...overrides });
 
-  // Workshops dominate the snapshot, so an all-venues picker buried conference targets.
-  it("offers conferences and no workshops", () => {
+  it("offers workshops as well as conferences", () => {
     const picker = renderView({ members: [scheduled()] }).querySelector<HTMLSelectElement>(
-      '[data-testid="time-availability-conference-pick"]',
+      '[data-testid="time-availability-deadline-pick"]',
     )!;
-    const conferences = new Set(
-      allUpcomingConferences(Date.now()).map((entry) => entry.venue.id),
-    );
     const offered = [...picker.options].map((option) => option.value);
     expect(offered.length).toBeGreaterThan(0);
-    for (const id of offered) {
-      expect(conferences.has(id)).toBe(true);
-    }
+    const offeredEntries = allUpcomingVenues(Date.now()).filter((entry) =>
+      offered.includes(entry.venue.deadline_id),
+    );
+    expect(offeredEntries.some((entry) => entry.venue.entry_type === "workshop")).toBe(true);
+    expect(offeredEntries.some((entry) => entry.venue.entry_type !== "workshop")).toBe(true);
+  });
+
+  it("does not offer a deadline already linked to the timeline", () => {
+    const deadline = allUpcomingVenues(Date.now()).find(
+      (entry) => entry.venue.entry_type === "workshop",
+    )!;
+    const picker = renderView({
+      members: [
+        scheduled({
+          milestones: [
+            {
+              deadline_id: deadline.venue.deadline_id,
+              date: "2000-01-01",
+              label: "An intentionally stale copy",
+            },
+          ],
+        }),
+      ],
+    }).querySelector<HTMLSelectElement>('[data-testid="time-availability-deadline-pick"]')!;
+
+    expect([...picker.options].map((option) => option.value)).not.toContain(
+      deadline.venue.deadline_id,
+    );
   });
 
   it("presents the picker as one of the tab's editors", () => {
     const view = renderView({ members: [scheduled()] });
-    const section = view.querySelector('[data-testid="time-availability-add-conference-section"]');
-    expect(section?.querySelector(".card-title")?.textContent).toContain("Add a conference");
+    const section = view.querySelector('[data-testid="time-availability-add-deadline-section"]');
+    expect(section?.querySelector(".card-title")?.textContent).toContain("Add a deadline");
     expect(section?.querySelector("button.primary")).not.toBeNull();
     // Deliberately not classed as an editor: it lives in the deadlines panel, and the commitment
     // form is found by .adminbot-time-availability__form.
@@ -1284,10 +1316,10 @@ describe("the big-deadlines panel", () => {
     expect(listed).not.toContain(nearest?.venue.name);
     const offered = [
       ...view.querySelectorAll<HTMLOptionElement>(
-        '[data-testid="time-availability-conference-pick"] option',
+        '[data-testid="time-availability-deadline-pick"] option',
       ),
     ].map((option) => option.value);
-    expect(offered).toContain(nearest?.venue.id);
+    expect(offered).toContain(nearest?.venue.deadline_id);
   });
 
   // The bug this pins: the link and the remove button were both placed in the same grid cell, so
@@ -1314,5 +1346,55 @@ describe("the big-deadlines panel", () => {
         '[data-testid="time-availability-deadline-remove-preset"]',
       ),
     ).toBeNull();
+  });
+
+  it("removes a linked row by deadline id while keeping a matching personal row", () => {
+    const deadline = allUpcomingVenues(Date.now())[0]!;
+    const linked = {
+      deadline_id: deadline.venue.deadline_id,
+      date: deadline.venue.deadline_aoe.slice(0, 10),
+      label: deadline.venue.name,
+      time: deadline.venue.deadline_aoe.slice(11, 16),
+      timezone: "Etc/GMT+12",
+    };
+    const personal = { date: linked.date, label: linked.label };
+    const onSaveSchedule = vi.fn();
+    const view = renderView({
+      members: [scheduled({ milestones: [linked, personal] })],
+      onSaveSchedule,
+    });
+    view
+      .querySelector<HTMLButtonElement>('[data-testid="time-availability-deadline-remove-own"]')
+      ?.click();
+
+    const [, patch] = onSaveSchedule.mock.calls[0];
+    expect(patch.milestones).toEqual([personal]);
+  });
+
+  it("keeps an AoE milestone visible after its displayed date has rolled over in UTC", () => {
+    const deadline = allUpcomingVenues(Date.now())[0]!;
+    const cutoff = aoeInstantMs(deadline.venue.deadline_aoe);
+    vi.useFakeTimers();
+    vi.setSystemTime(cutoff - 60 * 60 * 1000);
+    try {
+      const view = renderView({
+        members: [
+          scheduled({
+            milestones: [
+              {
+                deadline_id: deadline.venue.deadline_id,
+                date: deadline.venue.deadline_aoe.slice(0, 10),
+                label: deadline.venue.name,
+                time: deadline.venue.deadline_aoe.slice(11, 16),
+                timezone: "Etc/GMT+12",
+              },
+            ],
+          }),
+        ],
+      });
+      expect(view.textContent).toContain(deadline.venue.name);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

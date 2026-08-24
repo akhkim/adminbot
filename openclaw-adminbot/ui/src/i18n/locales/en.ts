@@ -1150,11 +1150,11 @@ export const en: TranslationMap = {
       time: "Time (optional)",
       timezone: "Time zone",
       aoeZone: "Anywhere on Earth (UTC−12)",
-      addConference: "Add a conference",
+      addConference: "Add a deadline",
       addConferenceHint:
         "Anything from the lab's snapshot that is not already on your panel. Its date, cutoff time and zone are copied across, and the row is yours — you can remove it again.",
-      conference: "Conference",
-      submitConference: "Add conference",
+      conference: "Deadline",
+      submitConference: "Add deadline",
       removePreset: "Hide",
       removePresetHint:
         "Takes this off your panel only. The lab's deadline board is unchanged, and you can add it back below.",
