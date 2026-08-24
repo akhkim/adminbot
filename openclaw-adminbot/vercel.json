@@ -5,6 +5,10 @@
   "outputDirectory": "dist/control-ui",
   "rewrites": [
     {
+      "source": "/adminbot/deadlines",
+      "destination": "/adminbot/deadlines/index.html"
+    },
+    {
       "source": "/assets/:path*",
       "destination": "/assets/:path*"
     },
@@ -14,6 +18,24 @@
     }
   ],
   "headers": [
+    {
+      "source": "/robots.txt",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "text/plain; charset=utf-8"
+        }
+      ]
+    },
+    {
+      "source": "/sitemap.xml",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/xml; charset=utf-8"
+        }
+      ]
+    },
     {
       "source": "/assets/(.*)",
       "headers": [
