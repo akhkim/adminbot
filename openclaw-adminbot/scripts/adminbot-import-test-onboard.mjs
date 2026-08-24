@@ -10,24 +10,49 @@
 // somebody else's batch on a member is worse than leaving the batch off.
 //
 //   node scripts/adminbot-import-test-onboard.mjs --file "<xlsx>" [--apply]
+//   node scripts/adminbot-import-test-onboard.mjs --file "<xlsx>" --extract rows.json
+//   node scripts/adminbot-import-test-onboard.mjs --rows rows.json [--apply]
+//
+// Two steps, because the two halves live on different machines: the spreadsheet is on somebody's
+// laptop and the roster is on the deployment. `--extract` reads the sheet and writes the handful of
+// fields it needs, touching no service and needing no session; `--rows` applies that file, needing
+// neither the spreadsheet nor openpyxl. One-shot still works wherever both are available.
 //
 // Without --apply it prints what it would write and changes nothing. Needs ADMINBOT_SESSION (an
-// admin member session) and optionally ADMINBOT_BASE.
+// admin member session) and optionally ADMINBOT_BASE -- which must name the deployment you mean,
+// because the default is whatever AdminBot answers on this machine's own port, and that is very
+// often not the one the sweep will run on.
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
 const args = process.argv.slice(2);
 const fileIndex = args.indexOf("--file");
 const file = fileIndex >= 0 ? args[fileIndex + 1] : undefined;
+const rowsIndex = args.indexOf("--rows");
+const rowsFile = rowsIndex >= 0 ? args[rowsIndex + 1] : undefined;
+const extractIndex = args.indexOf("--extract");
+const extractTo = extractIndex >= 0 ? args[extractIndex + 1] : undefined;
 const apply = args.includes("--apply");
 const BASE = process.env.ADMINBOT_BASE ?? "http://127.0.0.1:8765";
 const SESSION = process.env.ADMINBOT_SESSION;
 
-if (!file || !existsSync(file)) {
-  console.error("usage: --file <spreadsheet.xlsx> [--apply]");
+if (!file && !rowsFile) {
+  console.error(
+    "usage: --file <spreadsheet.xlsx> [--extract rows.json] [--apply]\n" +
+      "       --rows rows.json [--apply]",
+  );
   process.exit(1);
 }
-if (!SESSION) {
+if (file && !existsSync(file)) {
+  console.error(`no such spreadsheet: ${file}`);
+  process.exit(1);
+}
+if (rowsFile && !existsSync(rowsFile)) {
+  console.error(`no such rows file: ${rowsFile}`);
+  process.exit(1);
+}
+// --extract never touches the service, so it needs no session. Everything else does.
+if (!extractTo && !SESSION) {
   console.error("set ADMINBOT_SESSION to an admin member session token");
   process.exit(1);
 }
@@ -58,7 +83,18 @@ for r in range(2, ws.max_row + 1):
     })
 print(json.dumps(rows))
 `;
-const sheetRows = JSON.parse(execFileSync("python3", ["-c", script, file], { encoding: "utf8" }));
+const sheetRows = rowsFile
+  ? JSON.parse(readFileSync(rowsFile, "utf8"))
+  : JSON.parse(execFileSync("python3", ["-c", script, file], { encoding: "utf8" }));
+
+if (extractTo) {
+  writeFileSync(extractTo, `${JSON.stringify(sheetRows, null, 2)}\n`);
+  console.log(
+    `wrote ${sheetRows.length} row(s) to ${extractTo}\n` +
+      `copy it across and apply with: --rows <file> --apply`,
+  );
+  process.exit(0);
+}
 
 const membersRes = await fetch(`${BASE}/lab/members`, {
   headers: { Authorization: `Bearer ${SESSION}` },
