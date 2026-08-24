@@ -52,7 +52,7 @@ export function filterDeadlineBoardEntries(
     if (!needle) {
       return true;
     }
-    return [venue.name, venue.group_label, venue.entry_type, venue.deadline_label]
+    return [venue.name, venue.venue_group, venue.entry_type, venue.deadline_label]
       .join(" ")
       .toLocaleLowerCase()
       .includes(needle);
@@ -64,7 +64,7 @@ export function groupDeadlineBoardEntries(
 ): DeadlineBoardGroup[] {
   const groups = new Map<string, DeadlineBoardGroup>();
   for (const entry of entries) {
-    const id = entry.venue.group_label.trim() || entry.venue.venue_group.trim();
+    const id = entry.venue.venue_group.trim();
     const kind: DeadlineGroupKind =
       entry.venue.entry_type === "rebuttal"
         ? "other"
@@ -106,7 +106,7 @@ function groupOptions(entries: readonly DeadlineBoardEntry[]) {
     } else {
       groups.set(entry.venue.venue_group, {
         id: entry.venue.venue_group,
-        label: entry.venue.group_label,
+        label: entry.venue.venue_group,
         count: 1,
       });
     }
@@ -244,7 +244,7 @@ class AdminbotDeadlinesView extends LitElement {
     const parts = countdownParts(entry.instant - this.now);
     return html`
       <section class="deadline-board__hero" data-urgency=${urgency(entry, this.now)}>
-        <p class="deadline-board__eyebrow">Next deadline · ${entry.venue.group_label}</p>
+        <p class="deadline-board__eyebrow">Next deadline · ${entry.venue.venue_group}</p>
         <h2 class="deadline-board__hero-name">${entry.venue.name}</h2>
         <p class="deadline-board__hero-meta">
           ${capitalize(entry.venue.deadline_label)} · ${aoeDateTimeLabel(entry.venue.deadline_aoe)}
@@ -407,9 +407,9 @@ class AdminbotDeadlinesView extends LitElement {
         <h2 class="deadline-card__name">${venue.name}</h2>
         <p
           class="deadline-card__group"
-          title=${`${venue.group_label} · ${capitalize(venue.deadline_label)}`}
+          title=${`${venue.venue_group} · ${capitalize(venue.deadline_label)}`}
         >
-          <span class="deadline-card__group-name">${venue.group_label}</span>
+          <span class="deadline-card__group-name">${venue.venue_group}</span>
           <span aria-hidden="true">·</span>
           <span class="deadline-card__stage">${capitalize(venue.deadline_label)}</span>
         </p>
@@ -474,7 +474,7 @@ class AdminbotDeadlinesView extends LitElement {
                       >${ENTRY_TYPE_LABELS[entry.venue.entry_type]}</span
                     >
                   </td>
-                  <td class="deadline-table__venue">${entry.venue.group_label}</td>
+                  <td class="deadline-table__venue">${entry.venue.venue_group}</td>
                   <td>${this.renderSourceLink(entry.venue, "↗")}</td>
                 </tr>
               `,

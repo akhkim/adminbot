@@ -44,6 +44,7 @@ import {
   ARCHIVAL_VENUES,
   type CatalogVenue,
   NON_ARCHIVAL_VENUES,
+  WORKSHOP_VENUES,
   formatVenue,
   parseVenue,
   venueYears,
@@ -1071,6 +1072,7 @@ function venueOptions(selectedId: string) {
   `;
   return html`
     ${group("Archival", ARCHIVAL_VENUES)} ${group("Non-archival", NON_ARCHIVAL_VENUES)}
+    ${group("Workshops (check the CFP)", WORKSHOP_VENUES)}
   `;
 }
 

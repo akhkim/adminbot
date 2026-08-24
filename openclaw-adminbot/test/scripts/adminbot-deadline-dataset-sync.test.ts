@@ -37,7 +37,6 @@ describe("AdminBot deadline dataset generation", () => {
       expect(venue.name).toBe(source.name);
       expect(venue.deadline_aoe).toBe(source.deadline_aoe);
       expect(venue.venue_group).toBe(source.venue_group);
-      expect(venue.group_label).toBe(source.group_label);
     }
   });
 
@@ -56,6 +55,18 @@ describe("AdminBot deadline dataset generation", () => {
       expect(["archival", "non_archival", "unknown"]).toContain(venue.archival_status);
       expect(["primary", "secondary", "standard"]).toContain(venue.venue_priority);
     }
+  });
+
+  it("supplies unambiguous labels for workshop groups", () => {
+    const labels = new Set(
+      controlUiVenues
+        .filter((venue) => venue.entry_type === "workshop")
+        .map((venue) => venue.venue_group),
+    );
+    expect(labels).toContain("EMNLP 2026 Workshops");
+    expect(labels).toContain("NeurIPS 2026 Workshops");
+    expect(labels).not.toContain("EMNLP 2026");
+    expect(labels).not.toContain("NeurIPS 2026");
   });
 
   it("uses sortable AoE timestamps and keeps the list ordered by deadline", () => {

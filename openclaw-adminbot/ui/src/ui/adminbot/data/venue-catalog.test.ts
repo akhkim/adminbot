@@ -4,6 +4,7 @@ import {
   ARCHIVAL_VENUES,
   CATALOG_VENUES,
   NON_ARCHIVAL_VENUES,
+  WORKSHOP_VENUES,
   formatVenue,
   parseVenue,
   venueYears,
@@ -22,11 +23,9 @@ describe("venue catalog", () => {
       expect(ids).toContain(family);
     }
     expect(ids).toContain("IASEAI");
-    expect(ARCHIVAL_VENUES.every((venue) => venue.archival)).toBe(true);
-    // Workshops and IASEAI leave the paper free to go somewhere archival afterwards.
-    expect(NON_ARCHIVAL_VENUES.every((venue) => !venue.archival)).toBe(true);
-    expect(NON_ARCHIVAL_VENUES.map((venue) => venue.id)).toContain("COLM-workshop");
-    expect(NON_ARCHIVAL_VENUES.map((venue) => venue.id)).not.toContain("CLeaR-workshop");
+    expect(NON_ARCHIVAL_VENUES.map((venue) => venue.id)).toEqual(["IASEAI"]);
+    expect(WORKSHOP_VENUES.map((venue) => venue.id)).toContain("COLM-workshop");
+    expect(WORKSHOP_VENUES.map((venue) => venue.id)).not.toContain("CLeaR-workshop");
   });
 
   it("offers last year through two out, so a late registration and a plan both fit", () => {

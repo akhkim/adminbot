@@ -1,12 +1,12 @@
 import { JSDOM } from "jsdom";
 import { describe, expect, it } from "vitest";
 import { renderDeadlinesWebUi } from "./board.js";
+import { DEADLINE_VENUES } from "./generated/dataset.js";
 
 const items = [
   {
     name: "First Workshop",
-    venue_group: "TEST Workshops",
-    group_label: "Workshops of TEST 2035",
+    venue_group: "TEST 2035 Workshops",
     entry_type: "workshop",
     archival_status: "archival",
     archival: true,
@@ -17,8 +17,7 @@ const items = [
   },
   {
     name: "Second Workshop",
-    venue_group: "TEST Workshops",
-    group_label: "Workshops of TEST 2035",
+    venue_group: "TEST 2035 Workshops",
     entry_type: "workshop",
     archival_status: "non_archival",
     archival: false,
@@ -55,7 +54,7 @@ describe("standalone deadline board foundation", () => {
       expect(document.querySelector(".hero .hmeta")?.textContent).toContain("12:30 AoE");
       expect(document.querySelector(".card .cdl")?.textContent).toContain("12:30 AoE");
       expect(document.querySelector(".card .ccd")?.textContent).toBe("0d 00:30:00");
-      expect(document.querySelector(".cgroup-name")?.textContent).toBe("Workshops of TEST 2035");
+      expect(document.querySelector(".cgroup-name")?.textContent).toBe("TEST 2035 Workshops");
       expect(document.querySelector(".cgroup-stage")?.textContent).toBe("Submission");
       const children = [...document.querySelector(".container")!.children];
       expect(children.indexOf(document.querySelector(".modes")!)).toBeLessThan(
@@ -122,6 +121,36 @@ describe("standalone deadline board foundation", () => {
       const css = document.querySelector("style")?.textContent ?? "";
       expect(css).toMatch(/\.cd \.num\s*\{[^}]*color: var\(--h-color/u);
       expect(css).toMatch(/\.ccd\s*\{[^}]*color: var\(--u\)/u);
+    } finally {
+      dom.window.close();
+    }
+  });
+
+  it("uses generated workshop labels in cards and grouped headings", () => {
+    const dom = new JSDOM(renderDeadlinesWebUi(DEADLINE_VENUES), {
+      runScripts: "dangerously",
+      url: "http://localhost/deadlines",
+      beforeParse(window) {
+        window.Date.now = () => Date.UTC(2026, 6, 25, 0, 0, 0);
+      },
+    });
+    try {
+      const document = dom.window.document;
+      document.querySelector<HTMLButtonElement>("#v-cards")!.click();
+      const cardLabels = [...document.querySelectorAll(".cgroup-name")].map((node) =>
+        node.textContent?.trim(),
+      );
+      expect(cardLabels).toContain("EMNLP 2026 Workshops");
+      expect(cardLabels).toContain("NeurIPS 2026 Workshops");
+
+      document.querySelector<HTMLButtonElement>("#v-groups")!.click();
+      const headings = [...document.querySelectorAll(".deadline-group__heading strong")].map(
+        (node) => node.textContent?.trim(),
+      );
+      expect(headings).toContain("EMNLP 2026 Workshops");
+      expect(headings).toContain("NeurIPS 2026 Workshops");
+      expect(headings).toContain("ICLR 2027");
+      expect(headings).toContain("EACL 2027");
     } finally {
       dom.window.close();
     }

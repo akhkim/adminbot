@@ -843,7 +843,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
     }
     const groups = [
       ...new Map(
-        entries.map((x) => [x.venue_group, { id: x.venue_group, label: x.group_label }]),
+        entries.map((x) => [x.venue_group, { id: x.venue_group, label: x.venue_group }]),
       ).values(),
     ];
     chips.replaceChildren();
@@ -876,7 +876,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
       (x) =>
         x._sub > now &&
         (!query ||
-          (x.name + " " + x.group_label + " " + x.entry_type).toLowerCase().includes(query)),
+          (x.name + " " + x.venue_group + " " + x.entry_type).toLowerCase().includes(query)),
     );
   }
   const grid = document.getElementById("grid"),
@@ -909,7 +909,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
       const u = urgencyLabel(next._sub, now);
       hero.style.setProperty("--h-color", u.cvar);
       const p = parts(next._sub - now);
-      hero.innerHTML = \`<div class="lbl">Next deadline · \${esc(next.group_label)}</div>
+      hero.innerHTML = \`<div class="lbl">Next deadline · \${esc(next.venue_group)}</div>
       <div class="hname">\${esc(next.name)}</div>
       <div class="hmeta">\${cap(next.deadline_label)} · \${fmtAoeDateTime(next.deadline_aoe)} · <span style="color:\${u.cvar}">\${u.txt}</span></div>
       <div class="cd" data-t="\${next._sub}">
@@ -966,7 +966,7 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
         return \`<div class="card" style="--u:\${u.cvar}">
       <div class="row1"><span class="badge">\${type}</span><span class="pill">\${u.txt}</span></div>
       <div class="cname">\${esc(x.name)}</div>
-      <div class="cgroup" title="\${esc(x.group_label)} · \${esc(cap(x.deadline_label))}"><span class="cgroup-name">\${esc(x.group_label)}</span><span aria-hidden="true">·</span><span class="cgroup-stage">\${esc(cap(x.deadline_label))}</span></div>
+      <div class="cgroup" title="\${esc(x.venue_group)} · \${esc(cap(x.deadline_label))}"><span class="cgroup-name">\${esc(x.venue_group)}</span><span aria-hidden="true">·</span><span class="cgroup-stage">\${esc(cap(x.deadline_label))}</span></div>
       <div class="cdl">\${fmtAoeDateTime(x.deadline_aoe)}</div>
       <div class="ccd" data-t="\${x._sub}">\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}</div>
       \${notif}\${link}
@@ -984,14 +984,14 @@ const TEMPLATE = `<title>Jinesis Deadlines</title>
         return \`<tr style="--u:\${u.cvar}"><td class="tcd">\${fmtAoeDateTime(x.deadline_aoe)}</td>
       <td class="tcd countdown" data-t="\${x._sub}">\${p.d}d \${pad(p.h)}:\${pad(p.m)}:\${pad(p.s)}</td>
       <td class="name"><span class="dot" style="--u:\${u.cvar}"></span>\${esc(x.name)}</td>
-      <td class="meta"><span class="badge">\${type}</span></td><td class="meta">\${esc(x.group_label)}</td><td>\${link}</td></tr>\`;
+      <td class="meta"><span class="badge">\${type}</span></td><td class="meta">\${esc(x.venue_group)}</td><td>\${link}</td></tr>\`;
       })
       .join("");
   }
   function groupEntries(list) {
     const groups = new Map();
     list.forEach((entry) => {
-      const id = entry.group_label.trim() || entry.venue_group.trim();
+      const id = entry.venue_group.trim();
       const kind =
         entry.entry_type === "rebuttal"
           ? "other"
