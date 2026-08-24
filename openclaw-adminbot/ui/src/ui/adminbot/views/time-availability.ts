@@ -49,7 +49,7 @@ import {
   type TripRow,
 } from "../data/availability.ts";
 import {
-  allUpcomingConferences,
+  allUpcomingVenues,
   aoeInstantMs,
   MS_DAY,
   upcomingMajorDeadlines,
@@ -1379,7 +1379,7 @@ function clockLabel(time: string | undefined, timezone: string | undefined) {
  * with its own date, or the fifth conference down. Narrowing the picker to the same rule that fills
  * the panel would leave it offering nothing exactly when the panel was already enough.
  */
-function addableVenues(
+function addableDeadlines(
   now: number,
   milestones: readonly MilestoneRow[],
   dismissed: readonly string[],
@@ -1388,15 +1388,20 @@ function addableVenues(
   const shown = new Set(
     upcomingMajorDeadlines(now, CONFERENCE_DEADLINE_COUNT, { archivalOnly: true })
       .filter((entry) => !hidden.has(entry.venue.name.trim()))
-      .map((entry) => entry.venue.id),
+      .map((entry) => entry.venue.deadline_id),
   );
-  // Matched on the label because that is what an added venue is stored as -- the milestone list
-  // holds no venue id, and inventing one would mean a second identity for the same row.
-  const added = new Set(milestones.map((row) => row.label.trim()));
-  // Conferences only: workshop-heavy rounds would otherwise bury conference targets.
-  return allUpcomingConferences(now).filter(
-    (entry) => !shown.has(entry.venue.id) && !added.has(entry.venue.name.trim()),
-  );
+  return allUpcomingVenues(now).filter((entry) => {
+    if (shown.has(entry.venue.deadline_id)) {
+      return false;
+    }
+    return !milestones.some(
+      (row) =>
+        row.deadline_id === entry.venue.deadline_id ||
+        (!row.deadline_id &&
+          row.label.trim() === entry.venue.name.trim() &&
+          row.date === entry.venue.deadline_aoe.slice(0, 10)),
+    );
+  });
 }
 
 /**
@@ -1412,13 +1417,13 @@ function addableVenues(
  * The selection lives in the DOM rather than in app state on purpose: it is discarded the moment it
  * is used, and a draft that survives a re-render would outlive the reason anyone chose it.
  */
-function renderAddConference(
+function renderAddDeadline(
   props: AdminBotTimeAvailabilityProps,
   milestones: readonly MilestoneRow[],
   now: number,
   dismissed: readonly string[],
 ) {
-  const options = addableVenues(now, milestones, dismissed);
+  const options = addableDeadlines(now, milestones, dismissed);
   if (!options.length) {
     return nothing;
   }
@@ -1428,7 +1433,7 @@ function renderAddConference(
          form is found. Sharing that class would have made "the form" ambiguous. -->
     <section
       class="adminbot-time-availability__deadline-add"
-      data-testid="time-availability-add-conference-section"
+      data-testid="time-availability-add-deadline-section"
     >
       <div class="card-title">${t("adminbotTimeAvailability.milestones.addConference")}</div>
       <p class="adminbot-time-availability__form-hint">
@@ -1436,12 +1441,12 @@ function renderAddConference(
       </p>
     <form
       class="adminbot-form adminbot-time-availability__deadline-form"
-      data-testid="time-availability-add-conference"
+      data-testid="time-availability-add-deadline"
       @submit=${(event: Event) => {
         event.preventDefault();
         const form = event.currentTarget as HTMLFormElement;
         const select = form.querySelector("select");
-        const picked = options.find((entry) => entry.venue.id === select?.value);
+        const picked = options.find((entry) => entry.venue.deadline_id === select?.value);
         if (!picked) {
           return;
         }
@@ -1450,6 +1455,7 @@ function renderAddConference(
           milestones: [
             ...milestones,
             {
+              deadline_id: venue.deadline_id,
               date: venue.deadline_aoe.slice(0, 10),
               label: venue.name,
               // The snapshot states every deadline in AoE, so the clock is copied across with the
@@ -1462,16 +1468,16 @@ function renderAddConference(
         });
       }}
     >
-      <label class="adminbot-form__field" for="time-availability-conference-pick">
+      <label class="adminbot-form__field" for="time-availability-deadline-pick">
         <span>${t("adminbotTimeAvailability.milestones.conference")}</span>
         <select
-          id="time-availability-conference-pick"
-          data-testid="time-availability-conference-pick"
+          id="time-availability-deadline-pick"
+          data-testid="time-availability-deadline-pick"
         >
           ${options.map(
             (entry) => html`
-              <option value=${entry.venue.id}>
-                ${entry.venue.name} · ${tableDate(entry.venue.deadline_aoe.slice(0, 10))}
+              <option value=${entry.venue.deadline_id}>
+                ${entry.venue.name} · ${entry.venue.deadline_label} · ${tableDate(entry.venue.deadline_aoe.slice(0, 10))}
               </option>
             `,
           )}
@@ -1481,7 +1487,7 @@ function renderAddConference(
         <button
           type="submit"
           class="btn primary"
-          data-testid="time-availability-conference-add"
+          data-testid="time-availability-deadline-add"
           ?disabled=${props.saving}
         >
           <span aria-hidden="true">${icons.plus}</span>
@@ -1511,7 +1517,6 @@ function renderBigDeadlines(
   dismissed: readonly string[],
 ) {
   const now = Date.now();
-  const today = new Date(now).toISOString().slice(0, 10);
   // upcomingMajorDeadlines is the same helper the Deadlines board and the dashboard summary use,
   // so the three surfaces can never disagree about which conference is next.
   const hidden = new Set(dismissed.map((name) => name.trim()));
@@ -1520,18 +1525,19 @@ function renderBigDeadlines(
   })
     .filter((entry) => !hidden.has(entry.venue.name.trim()))
     .map((entry) => ({
-    date: entry.venue.deadline_aoe.slice(0, 10),
-    instant: entry.instant,
-    label: entry.venue.name,
-    link: entry.venue.link,
-    time: entry.venue.deadline_aoe.slice(11, 16),
+      date: entry.venue.deadline_aoe.slice(0, 10),
+      deadline_id: undefined as string | undefined,
+      instant: entry.instant,
+      label: entry.venue.name,
+      link: entry.venue.link,
+      time: entry.venue.deadline_aoe.slice(11, 16),
       timezone: AOE_TIMEZONE,
       own: false,
     }));
   const mine = milestones
-    .filter((row) => row.date >= today)
     .map((row) => ({
       date: row.date,
+      deadline_id: row.deadline_id,
       instant: milestoneInstant(row),
       label: row.label,
       link: row.link,
@@ -1539,6 +1545,9 @@ function renderBigDeadlines(
       timezone: row.timezone,
       own: true,
     }))
+    // Compare the real cutoff, not the date text: an AoE deadline remains open into the following
+    // UTC/Zurich calendar day.
+    .filter((row) => row.instant >= now)
     .slice(0, BIG_DEADLINE_LIMIT);
   // Conferences are added after the member's own rows are capped, so a full personal list can
   // never push them off the banner. Sorted by instant rather than by date so two things on the
@@ -1582,9 +1591,13 @@ function renderBigDeadlines(
                         props.selectedMemberId,
                         row.own
                           ? {
-                              milestones: milestones.filter(
-                                (candidate) =>
-                                  !(candidate.date === row.date && candidate.label === row.label),
+                              milestones: milestones.filter((candidate) =>
+                                row.deadline_id
+                                  ? candidate.deadline_id !== row.deadline_id
+                                  : !(
+                                      candidate.date === row.date &&
+                                      candidate.label === row.label
+                                    ),
                               ),
                             }
                           : { dismissed_deadlines: [...dismissed, row.label] },
@@ -1613,7 +1626,7 @@ function renderBigDeadlines(
         : html`<p class="adminbot-time-availability__empty-note">
             ${t("adminbotTimeAvailability.milestones.empty")}
           </p>`}
-      ${editable ? renderAddConference(props, milestones, now, dismissed) : nothing}
+      ${editable ? renderAddDeadline(props, milestones, now, dismissed) : nothing}
     </aside>
   `;
 }

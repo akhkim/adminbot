@@ -33,8 +33,10 @@ export type TimeOffRow = {
   link?: string;
 };
 
-// A dated milestone on the member's horizon — thesis, defence, graduation. A date, not a range.
+// A dated milestone on the member's horizon — personal or copied from the deadline board.
 export type MilestoneRow = {
+  /** Stable dated-deadline identity when this row was copied from the deadline board. */
+  deadline_id?: string;
   date: string;
   label: string;
   link?: string;
@@ -90,6 +92,9 @@ export function milestoneRows(value: unknown): MilestoneRow[] {
     return row && typeof row.date === "string" && typeof row.label === "string" && row.label.trim()
       ? [
           {
+            ...(typeof row.deadline_id === "string" && row.deadline_id.trim()
+              ? { deadline_id: row.deadline_id.trim() }
+              : {}),
             date: row.date,
             label: row.label,
             ...(typeof row.link === "string" ? { link: row.link } : {}),

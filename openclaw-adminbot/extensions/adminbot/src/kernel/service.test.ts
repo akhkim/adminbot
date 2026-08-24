@@ -4,6 +4,7 @@ import {
   adminBotSlackActivityOf,
   redactConfidentialMemberFields,
 } from "../contracts/actions.js";
+import { DEADLINE_VENUES } from "../workflows/deadlines/generated/dataset.js";
 import { AdminBotService, payloadHash } from "./service.js";
 
 function unwrap<T>(
@@ -1372,6 +1373,38 @@ describe("AdminBotService", () => {
     ]) {
       expect(service.updateOwnProfile("clock", bad)).toMatchObject({ ok: false, status: 400 });
     }
+  });
+
+  it("accepts board-linked milestones, refreshes their copy and rejects unknown ids", () => {
+    const service = new AdminBotService();
+    const deadline = DEADLINE_VENUES.find((entry) => entry.link)!;
+    unwrap(service.upsertLabMember({ id: "linked", name: "Linked", privilege_level: "member" }));
+
+    const saved = unwrap(
+      service.updateOwnProfile("linked", {
+        milestones: [
+          {
+            deadline_id: deadline.deadline_id,
+            date: "2000-01-01",
+            label: "Stale copy",
+            time: "00:00",
+            timezone: "UTC",
+          },
+        ],
+      }),
+    );
+    expect(saved.milestones?.[0]).toMatchObject({
+      deadline_id: deadline.deadline_id,
+      date: deadline.deadline_aoe.slice(0, 10),
+      label: deadline.name,
+      time: deadline.deadline_aoe.slice(11, 16),
+      timezone: "Etc/GMT+12",
+    });
+    expect(
+      service.updateOwnProfile("linked", {
+        milestones: [{ deadline_id: "not_on_the_board", date: "2027-01-01", label: "Unknown" }],
+      }),
+    ).toMatchObject({ ok: false, status: 400 });
   });
 
   // A partial row used to be "around, but less" with no number attached, which no chart could draw
