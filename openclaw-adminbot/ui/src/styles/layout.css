@@ -1157,8 +1157,7 @@
     opacity var(--duration-fast) var(--ease-out);
 }
 
-.dreaming-header-controls__mode:hover:not(:disabled)
-  .dreaming-header-controls__mode-detail,
+.dreaming-header-controls__mode:hover:not(:disabled) .dreaming-header-controls__mode-detail,
 .dreaming-header-controls__mode:focus-visible:not(:disabled)
   .dreaming-header-controls__mode-detail {
   max-width: 220px;
@@ -1408,7 +1407,21 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-12);
+  width: 100%;
+  max-width: 75rem;
+}
+
+/* Personal work remains at the dashboard's established reading width. The public deadline tool
+   below uses its full board width so it is the same component, not a compressed dashboard mode. */
+.dashboard__attention,
+.dashboard__summaries {
+  width: 100%;
   max-width: 62rem;
+}
+
+.dashboard__deadlines {
+  width: 100%;
+  min-width: 0;
 }
 
 /* Heads the band that holds the work waiting on you, so it reads as a heading rather than as a
@@ -2239,10 +2252,6 @@
   font-size: var(--control-ui-text-sm);
 }
 
-.dashboard-summary__row--paper {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
 .dashboard-summary__row-label {
   overflow: hidden;
   color: var(--text);
@@ -2264,13 +2273,6 @@
   background: var(--accent);
 }
 
-.dashboard-summary__row-value {
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-xs);
-  color: var(--muted);
-  text-align: right;
-}
-
 .dashboard-summary__row-step {
   overflow: hidden;
   font-family: var(--mono);
@@ -2279,40 +2281,6 @@
   text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* A venue name that links out. The icon used to be a standalone button with no styles at all, so
-   it rendered at the SVG's natural size and dominated the row; it now sits inline at text size. */
-.dashboard-summary__row-link {
-  color: inherit;
-  text-decoration: none;
-}
-
-.dashboard-summary__row-link:hover {
-  text-decoration: underline;
-}
-
-.dashboard-summary__row-link-icon {
-  display: inline-flex;
-  margin-left: 4px;
-  vertical-align: -1px;
-}
-
-.dashboard-summary__row-link-icon svg {
-  width: 11px;
-  height: 11px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.5px;
-}
-
-/* Urgency reads through the countdown value, matching the deadline board's bands. */
-.dashboard-summary__row[data-urgency="critical"] .dashboard-summary__row-value {
-  color: var(--danger, #a83b38);
-}
-
-.dashboard-summary__row[data-urgency="soon"] .dashboard-summary__row-value {
-  color: var(--warn, #9f5b12);
 }
 
 .dashboard-summary__more {
@@ -3335,7 +3303,7 @@
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
-  margin-top: var(--space-4);   /* add this line */
+  margin-top: var(--space-4); /* add this line */
 }
 
 /* A short stagger on first paint so a full list reads as arriving together, not as one block. */
@@ -3981,6 +3949,15 @@
   flex: 1;
   min-width: 0;
   padding: 24px clamp(16px, 4vw, 48px) 48px;
+  /* The public shell grows with its content, so the document -- not this main element -- is the
+     scroller. Keeping the signed-in pane's overflow/overscroll boundary here swallows wheel and
+     trackpad gestures instead of letting them reach the document. */
+  overflow: visible;
+  overscroll-behavior-y: auto;
+}
+
+.content--public-deadlines {
+  padding-top: clamp(24px, 4vw, 40px);
 }
 
 .sidebar-public-hint {
@@ -4011,13 +3988,6 @@
    Deadline board
    =========================================== */
 
-.deadlines {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-6);
-  max-width: 62rem;
-}
-
 /* Urgency is one variable resolved per row, so every part of a row -- countdown, dot, lead panel
    edge -- speaks with one voice and the scale lives in the token set rather than in each rule. */
 [data-urgency="critical"] {
@@ -4026,459 +3996,777 @@
 }
 
 [data-urgency="soon"] {
-  --deadline-urgency: var(--warn);
-  --deadline-urgency-subtle: var(--warn-subtle);
+  --deadline-urgency: #f5883e;
+  --deadline-urgency-subtle: color-mix(in srgb, #f5883e 12%, transparent);
 }
 
 [data-urgency="planned"] {
-  --deadline-urgency: var(--accent);
-  --deadline-urgency-subtle: var(--accent-subtle);
+  --deadline-urgency: #eab54a;
+  --deadline-urgency-subtle: color-mix(in srgb, #eab54a 12%, transparent);
 }
 
 [data-urgency="distant"] {
+  --deadline-urgency: var(--ok);
+  --deadline-urgency-subtle: var(--ok-subtle);
+}
+
+[data-urgency="passed"] {
   --deadline-urgency: var(--muted);
   --deadline-urgency-subtle: transparent;
 }
 
-/* ---- The one that is actually running ---- */
-
-.deadline-lead {
-  position: relative;
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: var(--space-1) var(--space-5);
-  padding: var(--space-6);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-xl);
-  background: var(--bg-elevated);
+/* The full tracker mirrors the standalone Output 0 board, but it is native app DOM. Nothing here
+   creates a vertical scroll container: the signed-in content pane or public document remains the
+   sole scrolling surface, including when the card list grows to hundreds of entries. */
+adminbot-deadlines-view {
+  display: block;
+  min-width: 0;
 }
 
-.deadline-lead__eyebrow {
-  grid-column: 1 / -1;
-  margin: 0;
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-tight);
-  color: var(--muted);
-}
-
-/* The number is the page. At this size the seconds column visibly ticks, which is the whole
-   argument for a live countdown over a printed date. */
-.deadline-lead__countdown {
-  grid-column: 1;
-  margin: var(--space-2) 0 0;
-  font-family: var(--mono);
-  font-size: clamp(2rem, 6vw, 3.25rem);
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: var(--tracking-tight);
-  font-variant-numeric: tabular-nums;
-  color: var(--deadline-urgency);
-}
-
-.deadline-lead__name {
-  grid-column: 1 / -1;
-  margin: var(--space-4) 0 0;
-  font-size: var(--control-ui-text-lg);
-  font-weight: 600;
-  color: var(--text-strong);
-}
-
-.deadline-lead__date {
-  grid-column: 1 / -1;
-  margin: var(--space-1) 0 0;
-  font-size: var(--control-ui-text-sm);
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-.deadline-lead .deadline-row__link {
-  grid-column: 4;
-  position: absolute;
-  top: var(--space-5);
-  right: var(--space-5);
-}
-
-.deadlines__intro {
-  margin: 0;
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
-}
-
-/* ---- Conferences ---- */
-
-.conferences {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  border-top: 1px solid var(--border);
-}
-
-.conference {
-  border-bottom: 1px solid var(--border);
-}
-
-/* The whole row is the control. A conference with ninety-nine workshops behind it should not ask
-   anyone to hunt for a caret. */
-.conference__summary {
-  display: grid;
-  grid-template-columns: 12px 8.5rem 1fr auto;
-  align-items: center;
-  gap: var(--space-4);
+.deadline-board {
   width: 100%;
-  padding: var(--space-4) var(--space-2);
-  border: none;
-  background: none;
-  text-align: left;
-  cursor: pointer;
-  font: inherit;
-  color: inherit;
-}
-
-.conference__summary:hover {
-  background: var(--bg-muted);
-}
-
-.conference__summary:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
-  border-radius: var(--radius-sm);
-}
-
-.conference__chevron {
-  display: inline-flex;
-  width: 12px;
-  height: 12px;
-  justify-self: center;
-  color: var(--muted);
-  transition: transform var(--duration-fast) var(--ease-out);
-}
-
-.conference__chevron svg {
-  width: 12px;
-  height: 12px;
-  stroke: currentColor;
-  fill: none;
-  stroke-width: 1.5px;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.conference[data-open] .conference__chevron {
-  transform: rotate(90deg);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .conference__chevron {
-    transition: none;
-  }
-}
-
-/* The dot carries the urgency band for anyone who cannot separate the countdown's hues. */
-.conference__countdown {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-sm);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  color: var(--deadline-urgency);
-}
-
-.conference__countdown::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  flex-shrink: 0;
-  border-radius: var(--radius-full);
-  background: var(--deadline-urgency);
-}
-
-.conference__name {
-  font-size: var(--control-ui-text-lg);
-  font-weight: 600;
-  letter-spacing: var(--tracking-tight);
-  color: var(--text-strong);
-}
-
-.conference__counts {
-  font-size: var(--control-ui-text-xs);
-  color: var(--muted);
-}
-
-.conference__panel {
-  padding: 0 var(--space-2) var(--space-5)
-    calc(12px + var(--space-4) + var(--space-2));
-}
-
-.conference__panel[hidden] {
-  display: none;
-}
-
-/* ---- Sections inside an opened conference ---- */
-
-.deadline-section + .deadline-section {
-  margin-top: var(--space-5);
-}
-
-.deadline-section__head {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-  margin: 0 0 var(--space-1);
-  padding-bottom: var(--space-2);
-  border-bottom: 1px solid var(--border);
-}
-
-.deadline-section__title {
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-tight);
-  color: var(--text-strong);
-}
-
-.deadline-section__count {
-  font-size: var(--control-ui-text-xs);
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-/* Whatever the whole section agrees on, said once instead of on every row. */
-.deadline-section__shared {
-  margin-left: auto;
-  font-size: var(--control-ui-text-xs);
-  color: var(--muted);
-}
-
-.deadline-section__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* Ruled rows rather than a stack of bordered cards: a hundred cards is a hundred boxes to look
-   past, and what is being scanned is the venue name. */
-.deadline-row {
-  display: grid;
-  grid-template-columns: 8.5rem auto 1fr auto;
-  align-items: baseline;
-  gap: var(--space-3) var(--space-4);
-  padding: var(--space-3) var(--space-2);
-  border-bottom: 1px solid var(--border);
-}
-
-.deadline-row:last-child {
-  border-bottom: none;
-}
-
-.deadline-row:hover {
-  background: var(--bg-muted);
-}
-
-/* Every cell names its own column. The date is omitted whenever a whole section shares one, and
-   with implicit placement that missing child slid the name and the link one track to the left,
-   stranding the link in the middle of the row. */
-.deadline-row__countdown {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  grid-column: 1;
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-sm);
-  font-variant-numeric: tabular-nums;
-  color: var(--deadline-urgency);
-}
-
-.deadline-row__countdown::before {
-  content: "";
-  width: 5px;
-  height: 5px;
-  flex-shrink: 0;
-  border-radius: var(--radius-full);
-  background: var(--deadline-urgency);
-}
-
-.deadline-row__date {
-  grid-column: 2;
-  font-size: var(--control-ui-text-sm);
-  font-variant-numeric: tabular-nums;
-  color: var(--muted);
-}
-
-.deadline-row__body {
-  grid-column: 3;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-/* Name first, stage after it. A workshop track is ninety-nine rows that agree on their stage and
-   differ only in name, so the name carries the row and the stage rides along one step down in
-   size -- the reverse of what the panel used to print, which was the stage ninety-nine times. */
-.deadline-row__title {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-width: 0;
-}
-
-.deadline-row__name {
-  font-size: var(--control-ui-text-md);
+  max-width: 75rem;
+  margin: 0 auto;
   color: var(--text);
 }
 
-.deadline-row__stage {
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-tight);
+.deadline-board__header {
+  margin-bottom: var(--space-4);
+}
+
+.deadline-board__header h1 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-2xl);
+  font-weight: 650;
+  letter-spacing: var(--tracking-tighter);
+}
+
+.deadline-board__header p {
+  margin: var(--space-2) 0 0;
   color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.deadline-board__eyebrow {
+  margin: 0 0 var(--space-2);
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.deadline-board__overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(14rem, 0.85fr);
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.deadline-board__hero {
+  position: relative;
+  min-width: 0;
+  padding: var(--space-6);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: linear-gradient(155deg, var(--bg-elevated), var(--card));
+}
+
+.deadline-board__hero::before,
+.deadline-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: var(--deadline-urgency);
+  content: "";
+}
+
+.deadline-board__hero-name {
+  margin: var(--space-3) 0 var(--space-1);
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-xl);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.3;
+}
+
+.deadline-board__hero-meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.deadline-board__hero-meta span {
+  color: var(--deadline-urgency);
+}
+
+.deadline-board__hero-countdown {
+  display: flex;
+  align-items: flex-end;
+  gap: clamp(var(--space-2), 2vw, var(--space-4));
+  margin-top: var(--space-5);
+  color: var(--border-strong);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.deadline-board__countdown-unit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.deadline-board__countdown-unit strong {
+  color: var(--deadline-urgency);
+  font-size: clamp(1.65rem, 5vw, 2.75rem);
+  font-weight: 600;
+  line-height: 1;
+}
+
+.deadline-board__countdown-unit small {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 0.625rem;
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.deadline-board__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(2, 1fr);
+  gap: var(--space-4);
+  margin: 0;
+}
+
+.deadline-board__stats > div {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+}
+
+.deadline-board__stats dt {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.deadline-board__stats dd {
+  margin: 0;
+  color: var(--deadline-urgency, var(--text-strong));
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-2xl);
+  font-variant-numeric: tabular-nums;
+}
+
+.deadline-board__controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+}
+
+.deadline-board__search {
+  grid-column: 1 / -1;
+}
+
+.deadline-board__search input {
+  width: 100%;
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font: inherit;
+}
+
+.deadline-board__search input::placeholder {
+  color: var(--muted);
+}
+
+.deadline-board__search input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.deadline-board__groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.deadline-board__groups button,
+.deadline-board__view button {
+  min-height: var(--control-h-md);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--control-ui-text-sm);
   white-space: nowrap;
 }
 
-/* Which deadline this is -- a commitment and a submission for one venue are different dates, and
-   the old list showed only the name, so the two were indistinguishable. */
-.deadline-row__label {
-  display: inline-block;
-  margin-left: var(--space-2);
-  padding: 1px var(--space-2);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-sm);
-  background: var(--panel);
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-tight);
+.deadline-board__groups button {
+  border-radius: var(--radius-full);
+}
+
+.deadline-board__groups button:hover,
+.deadline-board__groups button:focus-visible,
+.deadline-board__view button:hover,
+.deadline-board__view button:focus-visible {
+  border-color: var(--text-strong);
+  color: var(--text-strong);
+}
+
+.deadline-board__groups button:focus-visible,
+.deadline-board__view button:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.deadline-board__groups button[aria-pressed="true"],
+.deadline-board__view button[aria-pressed="true"] {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+  color: var(--text-strong);
+}
+
+.deadline-board__groups button span {
+  margin-left: var(--space-1);
   color: var(--muted);
-  vertical-align: 1px;
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-sm);
 }
 
-/* The ARR route, styled as a sibling of the deadline label rather than another
-   muted chip: which of the two routes is open decides whether a paper can use this
-   date at all, so it carries color where the label carries none. */
-.deadline-row__route {
-  display: inline-block;
-  margin-left: var(--space-2);
-  padding: 1px var(--space-2);
-  border: 1px solid currentcolor;
-  border-radius: var(--radius-sm);
+.deadline-board__view {
+  display: inline-flex;
+  align-self: start;
+}
+
+.deadline-board__modes {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--space-4);
+}
+
+.deadline-board__view button:first-child {
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
+}
+
+.deadline-board__view button + button {
+  margin-left: -1px;
+  border-radius: 0;
+}
+
+.deadline-board__view button:last-child {
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+
+.deadline-board__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(19rem, 100%), 1fr));
+  gap: var(--space-4);
+}
+
+.deadline-board__group-list {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.deadline-group {
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+  box-shadow: inset 3px 0 var(--deadline-urgency);
+}
+
+.deadline-group__summary {
+  display: grid;
+  grid-template-columns: 1rem 9.5rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-4) var(--space-5);
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.deadline-group__summary:hover {
+  background: var(--bg-muted);
+}
+
+.deadline-group__summary:focus-visible {
+  outline: none;
+  box-shadow: inset var(--focus-ring);
+}
+
+.deadline-group__chevron {
+  color: var(--muted);
+  font-size: var(--control-ui-text-xl);
+  line-height: 1;
+  transition: transform var(--duration-fast) var(--ease-out);
+}
+
+.deadline-group[data-open] .deadline-group__chevron {
+  transform: rotate(90deg);
+}
+
+.deadline-group__summary-countdown,
+.deadline-group__row-countdown {
+  color: var(--deadline-urgency);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.deadline-group__heading {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.deadline-group__heading strong {
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deadline-group__heading small,
+.deadline-group__count {
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.deadline-group__count {
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.deadline-group__panel {
+  border-top: 1px solid var(--border-strong);
+}
+
+.deadline-group__panel[hidden] {
+  display: none;
+}
+
+.deadline-group__section + .deadline-group__section {
+  border-top: 1px solid var(--border-strong);
+}
+
+.deadline-group__section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-5);
+  background: var(--bg-muted);
+  color: var(--muted);
   font-family: var(--mono);
   font-size: var(--control-ui-text-xs);
-  letter-spacing: var(--tracking-tight);
-  vertical-align: 1px;
 }
 
-/* Inside a row the chip is a flex item with its own gap; the inline margin is for the lead
-   card, where it sits in running text. */
-.deadline-row__title .deadline-row__route {
-  margin-left: 0;
+.deadline-group__section-head strong {
+  color: var(--text-strong);
+  font-weight: 500;
 }
 
-.deadline-row__route[data-route="direct"] {
-  color: var(--accent, var(--muted));
-}
-
-.deadline-row__route[data-route="commitment"] {
-  color: var(--ok-muted, var(--muted));
-}
-
-.deadlines__filter {
-  display: flex;
-  gap: var(--space-2);
+.deadline-group__row {
+  display: grid;
+  grid-template-columns: 7.75rem 13rem minmax(0, 1fr) auto;
+  grid-template-areas: "countdown date main source";
   align-items: center;
-  margin-bottom: var(--space-3);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  border-bottom: 1px solid var(--border);
 }
 
-.deadlines__filter button[aria-pressed="true"] {
-  background: var(--bg-accent);
+.deadline-group__row:last-child {
+  border-bottom: 0;
+}
+
+.deadline-group__row:hover {
+  background: var(--bg-muted);
+}
+
+.deadline-group__row-main {
+  grid-area: main;
+  min-width: 0;
+}
+
+.deadline-group__row-countdown {
+  grid-area: countdown;
+}
+
+.deadline-group__row-name {
+  margin: 0;
+  overflow-wrap: anywhere;
   color: var(--text);
+  font-size: var(--control-ui-text-md);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.deadline-group__row-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.deadline-group__row-note:empty {
+  display: none;
+}
+
+.deadline-group__row-date {
+  grid-area: date;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-sm);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.deadline-group__row .deadline-card__source {
+  grid-area: source;
+  margin: 0;
+  padding: 0;
+}
+
+.deadline-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 15rem;
+  padding: var(--space-5);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+}
+
+.deadline-card:hover {
+  border-color: color-mix(in srgb, var(--deadline-urgency) 50%, var(--border-strong));
+}
+
+.deadline-card__topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.deadline-card__type,
+.deadline-card__urgency {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  font-family: var(--mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.deadline-card__type {
+  border: 1px solid var(--border-strong);
+  color: var(--muted);
+}
+
+.deadline-card__labels {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.deadline-card__urgency {
+  background: var(--deadline-urgency-subtle);
+  color: var(--deadline-urgency);
+}
+
+.deadline-card__name {
+  margin: var(--space-4) 0 var(--space-2);
+  color: var(--text-strong);
+  font-size: var(--control-ui-text-lg);
+  font-weight: 600;
+  letter-spacing: var(--tracking-tight);
+  line-height: 1.35;
+}
+
+.deadline-card__group,
+.deadline-card__date,
+.deadline-card__note {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+  line-height: 1.45;
+}
+
+.deadline-card__group {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-1);
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.deadline-card__group-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.deadline-card__stage {
+  flex: 0 0 auto;
+}
+
+.deadline-card__date {
+  margin-top: var(--space-3);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.deadline-card__date span {
+  color: var(--muted);
+}
+
+.deadline-card__countdown {
+  margin: var(--space-3) 0;
+  color: var(--deadline-urgency);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-2xl);
+  font-variant-numeric: tabular-nums;
+}
+
+.deadline-card__source {
+  align-self: flex-start;
+  margin-top: auto;
+  padding-top: var(--space-4);
+  color: var(--accent);
+  font-size: var(--control-ui-text-sm);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.deadline-card__source:hover,
+.deadline-card__source:focus-visible {
+  color: var(--text-strong);
+}
+
+.deadline-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  background: var(--card);
+}
+
+.deadline-table {
+  width: 100%;
+  min-width: 60rem;
+  border-collapse: collapse;
+  font-size: var(--control-ui-text-sm);
+}
+
+.deadline-table th,
+.deadline-table td {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  text-align: left;
+  vertical-align: top;
+}
+
+.deadline-table th {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.deadline-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.deadline-table tbody tr:hover td {
+  background: var(--bg-muted);
+}
+
+.deadline-table__countdown {
+  color: var(--deadline-urgency) !important;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.deadline-table__date {
+  color: var(--text) !important;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.deadline-table__name {
+  color: var(--text) !important;
+}
+
+.deadline-table__venue {
+  color: var(--muted) !important;
+}
+
+.deadline-table .deadline-card__source {
+  display: inline;
+  padding: 0;
+}
+
+.deadline-board__empty {
+  padding: var(--space-8);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-xl);
+  color: var(--muted);
+  text-align: center;
+}
+
+.deadline-board__foot {
+  margin: var(--space-6) 0 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: var(--control-ui-text-xs);
+}
+
+.deadline-board__guide {
+  margin: calc(-1 * var(--space-2)) 0 var(--space-5);
+  color: var(--muted);
+  font-size: var(--control-ui-text-sm);
+}
+
+.deadline-board__guide summary {
+  width: max-content;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.deadline-board__guide dl {
+  display: grid;
+  gap: var(--space-2);
+  max-width: 46rem;
+  margin: var(--space-3) 0 0;
+  padding-left: var(--space-4);
+  border-left: 2px solid var(--border-strong);
+}
+
+.deadline-board__guide dl > div {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: var(--space-3);
+}
+
+.deadline-board__guide dt {
+  color: var(--text-strong);
   font-weight: 600;
 }
 
-.deadlines__filter-count {
-  margin-left: var(--space-2);
-  font-family: var(--mono);
-  font-size: var(--control-ui-text-xs);
-  color: var(--muted);
-}
-
-.deadline-row__note {
-  font-size: var(--control-ui-text-xs);
-  color: var(--muted);
-}
-
-.deadline-row__link {
-  color: var(--muted);
-  font-size: var(--control-ui-text-md);
-  text-decoration: none;
-  line-height: 1;
-}
-
-.deadline-row__link:hover,
-.deadline-row__link:focus-visible {
-  color: var(--accent);
-}
-
-.deadlines__empty {
+.deadline-board__guide dd {
   margin: 0;
-  padding: var(--space-5);
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-lg);
-  font-size: var(--control-ui-text-sm);
-  color: var(--muted);
 }
 
-@media (max-width: 640px) {
-  /* The name leads on a phone; the countdown and counts fall under it rather than competing for
-     a row that cannot hold four columns. */
-  .conference__summary {
-    grid-template-columns: 12px 1fr;
-    row-gap: var(--space-1);
+@media (max-width: 760px) {
+  .deadline-board__overview {
+    grid-template-columns: 1fr;
   }
 
-  .conference__countdown {
+  .deadline-board__controls {
+    grid-template-columns: 1fr;
+  }
+
+  .deadline-board__groups {
+    grid-column: 1;
+  }
+
+  .deadline-group__summary {
+    grid-template-columns: 1rem minmax(0, 1fr) auto;
+  }
+
+  .deadline-group__summary-countdown {
+    grid-row: 2;
     grid-column: 2;
-    order: 2;
   }
 
-  .conference__name {
+  .deadline-group__heading {
+    grid-row: 1;
     grid-column: 2;
-    order: 1;
   }
 
-  .conference__counts {
-    grid-column: 2;
-    order: 3;
+  .deadline-group__count {
+    grid-row: 1 / span 2;
+    grid-column: 3;
   }
 
-  .conference__panel {
-    padding-left: var(--space-2);
+  .deadline-group__row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "countdown date"
+      "main main"
+      "source source";
+    gap: var(--space-2) var(--space-4);
   }
 
-  .deadline-row {
-    grid-template-columns: auto 1fr auto;
-    row-gap: var(--space-1);
+  .deadline-group__row-main {
+    grid-column: auto;
   }
 
-  .deadline-row__countdown {
-    grid-area: 1 / 1;
+  .deadline-group__row .deadline-card__source {
+    justify-self: start;
+  }
+}
+
+@media (max-width: 480px) {
+  .deadline-board__guide dl > div {
+    grid-template-columns: 1fr;
+    gap: 0;
   }
 
-  .deadline-row__date {
-    grid-area: 1 / 2;
+  .deadline-board__hero,
+  .deadline-card {
+    padding: var(--space-4);
   }
 
-  .deadline-row__link {
-    grid-area: 1 / 3;
+  .deadline-board__hero-countdown {
+    gap: var(--space-2);
   }
 
-  .deadline-row__body {
-    grid-area: 2 / 1 / auto / -1;
-  }
-
-  .deadline-section__shared {
-    margin-left: 0;
+  .deadline-board__countdown-unit strong {
+    font-size: 1.5rem;
   }
 }
 
@@ -6243,7 +6531,6 @@
   opacity: 0.55;
 }
 
-
 /* Four numbers, not a chart: the question is "how much is in flight", and a chart takes longer
    to read than the answer is worth. */
 .pstats {
@@ -6268,9 +6555,13 @@
   font-variant-numeric: tabular-nums;
 }
 
-.pstat__label { font-size: var(--control-ui-text-sm); }
-.pstat__sub { font-size: var(--control-ui-text-xs); color: var(--muted); }
-
+.pstat__label {
+  font-size: var(--control-ui-text-sm);
+}
+.pstat__sub {
+  font-size: var(--control-ui-text-xs);
+  color: var(--muted);
+}
 
 /* Registration form. The base .my-work-add-form is a one-line flex row built for a single title
    input; with a venue picker and confidence chips it needs to stack, so this raises specificity
@@ -6507,7 +6798,9 @@
   transition: border-color 120ms ease;
 }
 
-.pstat:hover { border-color: var(--accent); }
+.pstat:hover {
+  border-color: var(--accent);
+}
 
 /* An open tile takes the whole row and its list becomes a proper table. */
 .pstat[open] {
@@ -6522,7 +6815,9 @@
   list-style: none;
 }
 
-.pstat__summary::-webkit-details-marker { display: none; }
+.pstat__summary::-webkit-details-marker {
+  display: none;
+}
 
 .pstat__summary::after {
   content: "▸ show papers";
@@ -6531,7 +6826,9 @@
   margin-top: 0.35rem;
 }
 
-.pstat[open] .pstat__summary::after { content: "▾ hide"; }
+.pstat[open] .pstat__summary::after {
+  content: "▾ hide";
+}
 
 .pstat__list {
   margin: var(--space-3) 0 0;
@@ -6551,7 +6848,9 @@
   border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
 }
 
-.pstat__list li:last-child { border-bottom: 0; }
+.pstat__list li:last-child {
+  border-bottom: 0;
+}
 
 .pstat__paper {
   font-size: var(--control-ui-text-sm);
@@ -6566,11 +6865,19 @@
   text-align: right;
 }
 
-.pstat__empty { margin: var(--space-3) 0 0; text-align: left; }
+.pstat__empty {
+  margin: var(--space-3) 0 0;
+  text-align: left;
+}
 
 @media (max-width: 640px) {
-  .pstat__list li { grid-template-columns: 1fr; gap: 0.15rem; }
-  .pstat__meta { text-align: left; }
+  .pstat__list li {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+  .pstat__meta {
+    text-align: left;
+  }
 }
 
 /* Dormant papers rest quietly rather than disappearing: the card explains itself. */
@@ -7862,7 +8169,6 @@
   color: #fff;
 }
 
-
 .paper-slots__group-icon svg {
   fill: #fff;
   stroke: #fff;
@@ -7889,7 +8195,6 @@
   align-items: start;
 }
 
-
 .paper-slot {
   width: 100%;
   padding: var(--space-3);
@@ -7898,7 +8203,6 @@
   background: color-mix(in srgb, var(--bg) 85%, var(--branch-accent-subtle, transparent));
   transition: opacity 0.15s ease;
 }
-
 
 .paper-slot--grouped {
   border-left: 3px solid var(--branch-strong, var(--border-strong));
@@ -8238,7 +8542,9 @@
   background: var(--bg);
   color: var(--text);
   font-size: 0.85em;
-  transition: border-color 0.15s ease, background 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
 }
 
 .paper-slot .input::placeholder {
@@ -8254,7 +8560,8 @@
   outline: none;
   border-color: var(--branch-strong, var(--accent));
   background: var(--bg);
-  box-shadow: 0 0 0 3px var(--branch-accent-subtle, color-mix(in srgb, var(--accent) 12%, transparent));
+  box-shadow: 0 0 0 3px
+    var(--branch-accent-subtle, color-mix(in srgb, var(--accent) 12%, transparent));
 }
 
 .paper-slot .input:disabled {
@@ -8287,7 +8594,6 @@
 .paper-slot__head + input {
   margin-top: var(--space-1);
 }
-
 
 /* ── Conference pre-registration ───────────────────────────────────────────
    The banner is the loudest thing on the page on purpose, and it removes itself
@@ -8696,7 +9002,6 @@
   font-size: 0.9em;
 }
 
-
 /* ── The decision banner ───────────────────────────────────────────────────
    Inline, under the pre-registration banner. A modal was the first attempt and
    it covered the page for something that is news rather than an interruption. */
@@ -8792,7 +9097,6 @@
   color: #fff;
   font-weight: 600;
 }
-
 
 /* Conference travel. Green because it is settled information — who is going — rather than
    something outstanding, which is what the amber surfaces mean. */

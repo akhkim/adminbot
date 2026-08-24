@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import {
   aoeDateLabel,
+  aoeDateTimeLabel,
   aoeInstantMs,
   countdownLabel,
   upcomingMajorDeadlines,
@@ -29,11 +30,15 @@ describe("aoeDateLabel", () => {
   it("prints the calendar date the deadline is written as", () => {
     expect(aoeDateLabel("2026-09-19 23:59:59")).toBe("Sep 19, 2026");
   });
+
+  it("keeps the AoE wall-clock time with the displayed date", () => {
+    expect(aoeDateTimeLabel("2026-09-19 17:30:59")).toBe("Sep 19, 2026 · 17:30 AoE");
+  });
 });
 
 describe("countdownLabel", () => {
-  it("drops the leading 0d inside the last day", () => {
-    expect(countdownLabel(2 * HOUR + 3 * 60_000 + 4000)).toBe("02:03:04");
+  it("keeps the leading 0d inside the last day", () => {
+    expect(countdownLabel(2 * HOUR + 3 * 60_000 + 4000)).toBe("0d 02:03:04");
   });
 
   it("shows whole days ahead of the clock beyond a day", () => {
@@ -41,7 +46,7 @@ describe("countdownLabel", () => {
   });
 
   it("floors at zero rather than counting up past a passed deadline", () => {
-    expect(countdownLabel(-5000)).toBe("00:00:00");
+    expect(countdownLabel(-5000)).toBe("0d 00:00:00");
   });
 });
 

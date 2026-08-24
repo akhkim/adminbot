@@ -23,7 +23,7 @@ function runPython(body: string): unknown {
   const preamble = [
     "import json, sys, importlib.util",
     `sys.path.insert(0, ${JSON.stringify(scriptsDir)})`,
-    "from adminbot_deadlines import AoEClock, DeadlineDataset, SlackNotifier, urgency_marker",
+    "from adminbot_deadlines import AoEClock, DeadlineDataset, SlackNotifier, urgency_marker, archival_status_of, entry_type_of, venue_priority_of, WORKSHOP_FAMILIES",
     "def load(name):",
     `    spec = importlib.util.spec_from_file_location(name.replace('-', '_'), ${JSON.stringify(scriptsDir)} + '/' + name + '.py')`,
     "    module = importlib.util.module_from_spec(spec)",
@@ -115,6 +115,40 @@ describe("urgency_marker", () => {
     expect(
       runPython("print(json.dumps([urgency_marker(d) for d in [0, 3, 4, 7, 8, 30, 31]]))"),
     ).toEqual(["🔴", "🔴", "🟠", "🟠", "🟡", "🟡", "🟢"]);
+  });
+});
+
+describe("venue classification", () => {
+  it("keeps entry type, archival status, and priority independent", () => {
+    expect(
+      runPython(
+        "print(json.dumps({" +
+          "'primary': [entry_type_of('conference', 'main'), archival_status_of('ACL', 'main'), venue_priority_of('ACL', 'main')], " +
+          "'secondary': [entry_type_of('conference', 'demo'), archival_status_of('AACL', 'demo'), venue_priority_of('AACL', 'demo')], " +
+          "'workshop': [entry_type_of('workshop', 'workshop'), archival_status_of('ACL', 'workshop'), venue_priority_of('ACL', 'workshop')], " +
+          "'unknown': archival_status_of('Unlisted', 'main'), " +
+          "'explicit_non_archival': archival_status_of('IASEAI', 'main')}))",
+      ),
+    ).toEqual({
+      primary: ["main_conference", "archival", "primary"],
+      secondary: ["demo_track", "archival", "secondary"],
+      workshop: ["workshop", "unknown", "standard"],
+      unknown: "unknown",
+      explicit_non_archival: "non_archival",
+    });
+  });
+
+  it("does not derive the workshop sweep from ARR or archival families", () => {
+    expect(runPython("print(json.dumps(list(WORKSHOP_FAMILIES)))")).toEqual([
+      "ACL",
+      "EMNLP",
+      "NAACL",
+      "EACL",
+      "NeurIPS",
+      "ICML",
+      "ICLR",
+      "COLM",
+    ]);
   });
 });
 

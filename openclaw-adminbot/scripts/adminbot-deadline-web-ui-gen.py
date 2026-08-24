@@ -19,7 +19,13 @@ OUT = os.path.join(REPO_ROOT, "extensions", "adminbot", "src", "workflows", "dea
 
 def main():
     board = open(BOARD).read()
-    board = re.sub(r"const DATA = .*?;\n", "const DATA = __ITEMS_JSON__;\n", board, count=1)
+    board = re.sub(
+        r"const DATA = \[.*?\];\n",
+        "const DATA = __ITEMS_JSON__;\n",
+        board,
+        count=1,
+        flags=re.DOTALL,
+    )
     if "__ITEMS_JSON__" not in board:
         raise SystemExit("board template has no `const DATA = ...;` line to replace")
     # escape for a TS template literal: backslash, then backtick, then ${ (keep placeholder literal)

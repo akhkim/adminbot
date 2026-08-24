@@ -60,6 +60,7 @@ describe("renderPublicShell", () => {
     );
     reimbursements?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
     expect(state.tab).toBe("adminbotReimbursements");
+    expect(window.location.pathname).toBe("/adminbot/reimbursements");
   });
 
   // Leaving the open surface is the same move as opening the root: an anonymous visitor with a
@@ -72,7 +73,14 @@ describe("renderPublicShell", () => {
   });
 
   // The deadline board is a bundled snapshot, so it has to render with no gateway and no session.
-  it("renders the deadline board without a session behind it", () => {
-    expect(container.textContent).toContain("Deadlines");
+  it("renders the deadline board without a session behind it", async () => {
+    document.body.append(container);
+    const view = container.querySelector("adminbot-deadlines-view") as {
+      updateComplete?: Promise<unknown>;
+    };
+    await view.updateComplete;
+    container.remove();
+    expect(container.textContent).toContain("Upcoming conference & workshop deadlines.");
+    expect(container.querySelector(".content--public-deadlines > .adminbot-card")).toBeNull();
   });
 });

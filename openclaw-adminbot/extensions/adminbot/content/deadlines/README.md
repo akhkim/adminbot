@@ -25,29 +25,29 @@ ACL / EMNLP / NAACL / EACL (main + demo), NeurIPS / ICML / ICLR / COLM / CLeaR
 (main), IASEAI (non-archival), and the **workshops** of the eight — CLeaR is
 tracked for its main track only. Only _upcoming_ deadlines are collected.
 
-### Archival vs non-archival
+### Independent venue classifications
 
-Every venue carries an `archival` flag, and the board is organised around it,
-because it is the question a member is actually asking when they scan these
-dates:
+Every row stores three separate facts:
 
-- **Archival** — counts as publishing the paper, so it cannot be submitted
-  anywhere else afterwards. The *ACL main and demo tracks, and the ML
-  conferences' main tracks.
-- **Non-archival** — does not count as publishing, so the same paper can still
-  go to a conference afterwards. Every workshop, and IASEAI.
-- Neither — a rebuttal is work on a paper already in, not somewhere to send a
-  new one, so it sits outside both columns.
+- `entry_type` says whether it is a main conference, demo track, workshop, ARR
+  direct submission, ARR commitment, rebuttal, or other date.
+- `archival_status` is `archival`, `non_archival`, or `unknown`. Unknown remains
+  unknown; absence from an archival list is never presented as evidence that a
+  submission is safe.
+- `venue_priority` is the lab's `primary`, `secondary`, or `standard` priority.
 
-The policy is written once, in `is_archival()` in `scripts/adminbot_deadlines.py`,
-and the collector stamps the result onto each venue. Nothing downstream re-derives
-it: the Control UI, the served board and the calendar publisher all read the field.
-A family nobody has classified is treated as non-archival and stays out of the
-archival column, so an unrecognised venue can never be presented as safe advice.
+ACL, EMNLP, and NAACL main/demo plus NeurIPS, ICML, ICLR, COLM, and CLeaR are
+primary archival. EACL and AACL main/demo are secondary archival. IASEAI is the
+only explicitly non-archival family. Workshop archival status remains unknown
+unless a source classifies it; workshop entry type alone does not decide it.
+
+The ARR-family, archival-priority, and workshop-sweep sets are declared
+independently in `scripts/adminbot_deadlines.py`. This keeps AACL in ARR and the
+secondary archival set without silently adding AACL workshops to the sweep.
 
 ### ARR routes
 
-The *ACL venues take papers two ways, and which one is open depends on the
+The \*ACL venues take papers two ways, and which one is open depends on the
 paper's history. Each is its own dated entry, tagged `submission_type`:
 
 - `direct` — submit fresh into the ARR cycle.

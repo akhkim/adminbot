@@ -37,6 +37,24 @@ describe("AdminBot deadline dataset generation", () => {
       expect(venue.name).toBe(source.name);
       expect(venue.deadline_aoe).toBe(source.deadline_aoe);
       expect(venue.venue_group).toBe(source.venue_group);
+      expect(venue.group_label).toBe(source.group_label);
+    }
+  });
+
+  it("carries the three independent venue classifications", () => {
+    const entryTypes = new Set([
+      "main_conference",
+      "demo_track",
+      "workshop",
+      "arr_direct_submission",
+      "arr_commitment",
+      "rebuttal",
+      "other",
+    ]);
+    for (const venue of controlUiVenues) {
+      expect(entryTypes).toContain(venue.entry_type);
+      expect(["archival", "non_archival", "unknown"]).toContain(venue.archival_status);
+      expect(["primary", "secondary", "standard"]).toContain(venue.venue_priority);
     }
   });
 
@@ -46,16 +64,15 @@ describe("AdminBot deadline dataset generation", () => {
       expect(deadline).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u);
     }
     // The reminder cadence walks this list in order, so ordering is behavior, not cosmetics.
-    expect(deadlines).toEqual([...deadlines].sort());
+    expect(deadlines).toEqual(deadlines.toSorted());
   });
 
-  // The archival split is the board's organising idea, and it is stamped by the collector rather
-  // than re-derived per surface (see is_archival in scripts/adminbot_deadlines.py). A generator
-  // that stopped emitting the field would leave every venue reading as non-archival, which is
-  // silent: the board would still render, just with an empty archival column.
-  it("stamps the archival classification onto every venue", () => {
+  // Kept only for older non-display consumers. New surfaces use archival_status so false never
+  // turns an unknown venue into a claim that it is non-archival.
+  it("keeps the legacy archival boolean aligned with the tri-state classification", () => {
     for (const venue of controlUiVenues) {
       expect(typeof venue.archival).toBe("boolean");
+      expect(venue.archival).toBe(venue.archival_status === "archival");
     }
     expect(controlUiVenues.some((venue) => venue.archival)).toBe(true);
   });
@@ -67,9 +84,11 @@ describe("AdminBot deadline dataset generation", () => {
       expect([...ARR, ...ML]).toContain(venue.venue_family);
       expect(["main", "demo"]).toContain(venue.track);
     }
-    // Workshops are never archival, whichever family they belong to.
+    // Workshop status is not inferred from its entry type.
     for (const venue of controlUiVenues.filter((candidate) => candidate.track === "workshop")) {
       expect(venue.archival).toBe(false);
+      expect(venue.archival_status).toBe("unknown");
+      expect(venue.venue_priority).toBe("standard");
     }
   });
 

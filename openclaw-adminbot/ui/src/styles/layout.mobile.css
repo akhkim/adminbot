@@ -597,6 +597,11 @@
     gap: 12px;
   }
 
+  .content.content--deadlines,
+  .content.content--public-deadlines {
+    padding: 20px 16px 40px;
+  }
+
   /* Cards */
   .card {
     padding: 12px;
@@ -840,6 +845,11 @@
   .content {
     padding: 4px 4px 12px;
     gap: 10px;
+  }
+
+  .content.content--deadlines,
+  .content.content--public-deadlines {
+    padding: 16px 12px 32px;
   }
 
   .card {
@@ -1105,22 +1115,21 @@
 
   /* The paper title is the only part of the row that identifies which paper it is, and sharing a
      line with a 64px bar and a 7rem step name left it a few characters wide. It takes the whole
-     first line, and the two glanceable parts share the second. The paper-deadline variant is
-     exempt: a venue and a countdown are both short, and they still fit side by side. */
-  .dashboard-summary__row:not(.dashboard-summary__row--paper) {
+     first line, and the two glanceable parts share the second. */
+  .dashboard-summary__row {
     grid-template-columns: minmax(0, 1fr) minmax(0, max-content);
     gap: var(--space-1) var(--space-3);
   }
 
-  .dashboard-summary__row:not(.dashboard-summary__row--paper) .dashboard-summary__row-label {
+  .dashboard-summary__row .dashboard-summary__row-label {
     grid-column: 1 / -1;
   }
 
-  .dashboard-summary__row:not(.dashboard-summary__row--paper) .dashboard-summary__bar {
+  .dashboard-summary__row .dashboard-summary__bar {
     grid-column: 1;
   }
 
-  .dashboard-summary__row:not(.dashboard-summary__row--paper) .dashboard-summary__row-step {
+  .dashboard-summary__row .dashboard-summary__row-step {
     grid-column: 2;
   }
 

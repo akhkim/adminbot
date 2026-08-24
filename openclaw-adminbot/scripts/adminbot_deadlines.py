@@ -29,7 +29,7 @@ URGENCY_BANDS = ((3, "🔴"), (7, "🟠"), (30, "🟡"))
 URGENCY_DEFAULT = "🟢"
 
 
-# --- archival classification -------------------------------------------------
+# --- venue classification ----------------------------------------------------
 #
 # Whether submitting somewhere burns the paper. An archival venue publishes it in
 # proceedings, so the work cannot then be submitted to a second archival venue; a
@@ -45,19 +45,13 @@ URGENCY_DEFAULT = "🟢"
 #
 # Source: Zhijing's guidebook (see content/deadlines/README.md).
 
-# The *ACL family. Main and demo tracks are archival; their workshops are not.
-# All four run submissions through ACL Rolling Review.
-ARR_FAMILIES = ("ACL", "EMNLP", "NAACL", "EACL")
-
-# ML conferences whose main track is archival. CLeaR is deliberately here and
-# deliberately absent from the workshop sweep below: the lab tracks its main
-# track only.
-ML_ARCHIVAL_FAMILIES = ("NeurIPS", "ICML", "ICLR", "COLM", "CLeaR")
-
-# Families whose workshops the lab tracks. CLeaR is not among them.
-WORKSHOP_FAMILIES = ARR_FAMILIES + ("NeurIPS", "ICML", "ICLR", "COLM")
-
-# Non-archival by nature: submitting does not consume the paper.
+# These sets answer different questions and deliberately do not derive from one
+# another. In particular, AACL uses ARR and is secondary archival, but its
+# workshops are not in the requested sweep.
+ARR_FAMILIES = ("ACL", "EMNLP", "NAACL", "EACL", "AACL")
+PRIMARY_ARCHIVAL_FAMILIES = ("ACL", "EMNLP", "NAACL", "NeurIPS", "ICML", "ICLR", "COLM", "CLeaR")
+SECONDARY_ARCHIVAL_FAMILIES = ("EACL", "AACL")
+WORKSHOP_FAMILIES = ("ACL", "EMNLP", "NAACL", "EACL", "NeurIPS", "ICML", "ICLR", "COLM")
 NON_ARCHIVAL_FAMILIES = ("IASEAI",)
 
 # Tracks that count as the archival part of an archival venue. Anything else
@@ -65,26 +59,71 @@ NON_ARCHIVAL_FAMILIES = ("IASEAI",)
 # is not a submission that burns the paper.
 ARCHIVAL_TRACKS = ("main", "demo")
 
-ALL_FAMILIES = tuple(
-    dict.fromkeys(ARR_FAMILIES + ML_ARCHIVAL_FAMILIES + WORKSHOP_FAMILIES + NON_ARCHIVAL_FAMILIES)
-)
+ALL_FAMILIES = tuple(dict.fromkeys(
+    ARR_FAMILIES
+    + PRIMARY_ARCHIVAL_FAMILIES
+    + SECONDARY_ARCHIVAL_FAMILIES
+    + WORKSHOP_FAMILIES
+    + NON_ARCHIVAL_FAMILIES
+))
+
+ENTRY_MAIN_CONFERENCE = "main_conference"
+ENTRY_DEMO_TRACK = "demo_track"
+ENTRY_WORKSHOP = "workshop"
+ENTRY_ARR_DIRECT = "arr_direct_submission"
+ENTRY_ARR_COMMITMENT = "arr_commitment"
+ENTRY_REBUTTAL = "rebuttal"
+ENTRY_OTHER = "other"
+
+ARCHIVAL = "archival"
+NON_ARCHIVAL = "non_archival"
+UNKNOWN_ARCHIVAL = "unknown"
+
+PRIORITY_PRIMARY = "primary"
+PRIORITY_SECONDARY = "secondary"
+PRIORITY_STANDARD = "standard"
+
+
+def entry_type_of(venue_type: str, track: str, submission_type: str = "") -> str:
+    """The kind of dated entry, independently of archival status or priority."""
+    if venue_type == "rebuttal" or track == "rebuttal":
+        return ENTRY_REBUTTAL
+    if venue_type == "workshop" or track == "workshop":
+        return ENTRY_WORKSHOP
+    if track == "demo":
+        return ENTRY_DEMO_TRACK
+    if submission_type == SUBMISSION_DIRECT:
+        return ENTRY_ARR_DIRECT
+    if submission_type == SUBMISSION_COMMITMENT:
+        return ENTRY_ARR_COMMITMENT
+    if venue_type == "conference" or track == "main":
+        return ENTRY_MAIN_CONFERENCE
+    return ENTRY_OTHER
+
+
+def archival_status_of(family: str, track: str) -> str:
+    """Known archival status without treating an absent classification as safe."""
+    if track in ARCHIVAL_TRACKS and family in PRIMARY_ARCHIVAL_FAMILIES + SECONDARY_ARCHIVAL_FAMILIES:
+        return ARCHIVAL
+    if family in NON_ARCHIVAL_FAMILIES:
+        return NON_ARCHIVAL
+    return UNKNOWN_ARCHIVAL
+
+
+def venue_priority_of(family: str, track: str) -> str:
+    """Lab priority for main/demo venues; workshops and other dates stay standard."""
+    if track not in ARCHIVAL_TRACKS:
+        return PRIORITY_STANDARD
+    if family in PRIMARY_ARCHIVAL_FAMILIES:
+        return PRIORITY_PRIMARY
+    if family in SECONDARY_ARCHIVAL_FAMILIES:
+        return PRIORITY_SECONDARY
+    return PRIORITY_STANDARD
 
 
 def is_archival(family: str, track: str) -> bool:
-    """True when publishing here consumes the paper.
-
-    Deliberately closed: a family nobody has classified is treated as
-    non-archival rather than guessed at, because the expensive mistake is telling
-    someone a venue is safe to submit to twice when it is not... and the reverse
-    error (calling an archival venue non-archival) is the one that would do that.
-    So an unknown family is *not* archival, and it also does not reach the board's
-    archival column, where a wrong entry would be read as advice.
-    """
-    if family in NON_ARCHIVAL_FAMILIES:
-        return False
-    if family in ARR_FAMILIES or family in ML_ARCHIVAL_FAMILIES:
-        return track in ARCHIVAL_TRACKS
-    return False
+    """Compatibility boolean for consumers that only ask whether status is archival."""
+    return archival_status_of(family, track) == ARCHIVAL
 
 
 def family_of(venue_group: str, name: str = "") -> str:

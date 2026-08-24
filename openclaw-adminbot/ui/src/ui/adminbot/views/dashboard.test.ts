@@ -154,9 +154,26 @@ describe("renderDashboard", () => {
     ).toContain("Nothing is blocked.");
   });
 
-  it("puts the deadline summary beside the work summary", () => {
+  it("uses the complete public deadline board instead of a dashboard-only summary", async () => {
     const container = renderPage(createState(), "member");
-    expect(container.querySelector("adminbot-deadline-summary")).not.toBeNull();
+    document.body.append(container);
+    const board = container.querySelector("adminbot-deadlines-view") as HTMLElement & {
+      updateComplete: Promise<unknown>;
+    };
+    await board.updateComplete;
+
+    expect(container.querySelector("adminbot-deadline-summary")).toBeNull();
+    expect(container.querySelector('[data-testid="dashboard-deadlines"]')).not.toBeNull();
+    expect(board.querySelector('.deadline-board__search input[type="search"]')).not.toBeNull();
+    expect(board.querySelector('[data-testid="deadline-group-all"]')).not.toBeNull();
+    expect(
+      [...board.querySelectorAll<HTMLElement>(".deadline-group")].reduce(
+        (total, group) => total + Number(group.dataset.count),
+        0,
+      ),
+    ).toBeGreaterThan(100);
+    expect(board.textContent).toContain("Upcoming conference & workshop deadlines.");
+    container.remove();
   });
 
   // A blank mandatory field never blocks saving or leaving the profile editor (see profile.ts),

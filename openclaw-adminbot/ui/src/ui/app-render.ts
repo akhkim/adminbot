@@ -3088,7 +3088,7 @@ export function renderApp(state: AppViewState) {
       <main
         class="content ${isChat ? "content--chat" : ""} ${state.tab === "logs"
           ? "content--logs"
-          : ""}"
+          : ""} ${state.tab === "adminbotDeadlines" ? "content--deadlines" : ""}"
       >
         ${state.updateStatusBanner
           ? html`<div class="callout ${state.updateStatusBanner.tone}" role="alert">
@@ -3123,7 +3123,7 @@ export function renderApp(state: AppViewState) {
               </button>
             </div>`
           : nothing}
-        ${state.tab === "config" || isChat
+        ${state.tab === "config" || isChat || state.tab === "adminbotDeadlines"
           ? nothing
           : html`<section
               class=${chatHeaderHidden
