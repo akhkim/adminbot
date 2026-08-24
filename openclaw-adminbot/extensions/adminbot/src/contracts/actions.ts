@@ -160,10 +160,23 @@ export type AdminBotTestOnboardBatch = (typeof adminBotTestOnboardBatches)[numbe
  * and this reads that place.
  */
 export function adminBotIsFullMemberType(memberType: string | undefined): boolean {
-  return (memberType ?? "")
-    .split(",")
-    .map((part) => part.trim().toLowerCase())
-    .includes("full");
+  return adminBotMemberTypeTokens(memberType).includes("full");
+}
+
+/**
+ * Has this person left?
+ *
+ * Checked *after* the batch, and it wins. A batch is a note about a term that has already
+ * happened, and the spreadsheet keeps it after somebody leaves -- three alumni still carry batch 2
+ * and 3 from when they were active. Reading the batch alone put them back in a sweep about next
+ * term's submissions, which is a message to somebody who is no longer here.
+ */
+export function adminBotIsAlumniType(memberType: string | undefined): boolean {
+  return adminBotMemberTypeTokens(memberType).includes("alumni");
+}
+
+function adminBotMemberTypeTokens(memberType: string | undefined): string[] {
+  return (memberType ?? "").split(",").map((part) => part.trim().toLowerCase());
 }
 
 /**

@@ -232,6 +232,27 @@ describe("AdminBotService pre-registration nudges", () => {
     expect(result.missing.map((row) => row.member_id)).toEqual(["full"]);
   });
 
+  it("keeps alumni out even when the sheet still gives them a batch", () => {
+    // Three real rows look like this: batch 2 or 3 from a term they were here for, alumni now.
+    // The batch outlives the person's time in the lab, so it cannot be the last word.
+    const service = lab();
+    unwrap(
+      service.upsertLabMember({
+        id: "left-but-batched",
+        name: "Left But Batched",
+        slack_user_id: "U7",
+        privilege_level: "member",
+        member_type: "alumni",
+        test_onboard_batch: 3,
+        email: "left@cs.toronto.edu",
+      }),
+    );
+    paperFor(service, "p-left", "left-but-batched");
+    paperFor(service, "p-batched", "batched");
+    const result = unwrap(service.collectPreRegistrationNudges({ nowIso: sunday }));
+    expect(result.missing.map((row) => row.member_id)).toEqual(["batched"]);
+  });
+
   it("leaves the head professor out of it, and says so", () => {
     const service = lab();
     unwrap(

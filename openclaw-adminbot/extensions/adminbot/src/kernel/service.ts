@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  adminBotIsAlumniType,
   adminBotIsFullMemberType,
   adminBotTimelineEntryTarget,
   isAdminBotFullMember,
@@ -1309,8 +1310,12 @@ export class AdminBotService {
       // they are not somebody this lab plans its term around.
       const batch = member.test_onboard_batch;
       const addressable =
-        (typeof batch === "number" && batch >= 1 && batch <= 3) ||
-        adminBotIsFullMemberType(member.member_type);
+        ((typeof batch === "number" && batch >= 1 && batch <= 3) ||
+          adminBotIsFullMemberType(member.member_type)) &&
+        // Alumni are out even when they carry a batch. The spreadsheet keeps the batch after
+        // somebody leaves, so reading it alone sent a message about next term's submissions to
+        // three people who have already gone.
+        !adminBotIsAlumniType(member.member_type);
       if (!addressable) {
         continue;
       }
