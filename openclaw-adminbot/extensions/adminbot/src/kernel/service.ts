@@ -5338,42 +5338,53 @@ function byProfileProgress(
  * that does not know what it already sent.
  */
 /**
- * The ask, with the reason in front of it.
+ * The ask, urgent, with the reason attached to it.
  *
- * A bare "pre-register your papers" reads as paperwork, and paperwork is what people skip on a
- * Sunday. The reason is the whole message: the lab plans reviewer load, mentor time and travel off
- * these numbers, and a paper nobody registered is a paper nobody planned for.
+ * Urgency here is a fact rather than a tone: the meeting is tomorrow morning, the planning happens
+ * *in* that meeting, and a paper with no venue on it at 9:30 is a paper that gets planned around
+ * rather than planned for. So the deadline leads, the consequence is concrete, and the ask is one
+ * line somebody can act on from their phone. What it does not do is manufacture alarm -- no
+ * all-caps, no "URGENT" prefix, no threat. A reminder that shouts every week stops being read by
+ * the third week, and this one needs to work tomorrow.
  */
 function buildPreRegistrationMessage(params: { venue: string; paperCount: number }): string {
   const papers = params.paperCount === 1 ? "your paper" : `your ${params.paperCount} active papers`;
   return [
-    `Before tomorrow's group meeting: none of ${papers} is registered for ${params.venue} yet.`,
+    `*Needed before tomorrow's 9:30 group meeting* — none of ${papers} is registered for ` +
+      `${params.venue} yet.`,
     "",
-    `Why it matters: the lab plans around these. Who reviews what, who needs mentor time, and how ` +
-      `much of the next six weeks is ${params.venue} rather than everything else, all come off the ` +
-      `pre-registration list. A paper nobody registered is a paper nobody planned for -- and the ` +
-      `usual way that shows up is a deadline week where three people needed the same reviewer.`,
+    `We plan the next six weeks in that meeting: who reviews what, who needs mentor time, and ` +
+      `whose deadline lands where. All of it comes off the pre-registration list, so a paper that ` +
+      `is not on it tomorrow morning is a paper the lab plans *around* instead of planning *for* ` +
+      `— and that is how three people end up needing the same reviewer in the same week.`,
     "",
-    `It takes a minute: open My Projects & Papers, press Pre-register a paper, and give each one ` +
-      `a rough likelihood. A guess is fine -- 50% is a real answer, and it is far more useful than ` +
-      `a blank.`,
+    `Please do it tonight: My Projects & Papers → *Pre-register a paper* → pick the venue and a ` +
+      `rough likelihood for each one. Two minutes. A guess is a real answer — 50% tells us far ` +
+      `more than a blank does.`,
   ].join("\n");
 }
 
-/** For somebody who has registered something: the rest of their papers still need an answer. */
+/**
+ * For somebody who has registered something: the rest of their papers still need an answer.
+ *
+ * Same deadline, gentler opening. They have already done the thing being asked for once, and
+ * opening on what they have not done reads as a complaint rather than a reminder.
+ */
 function buildRegistrationUpdateMessage(params: { venue: string; unregistered: number }): string {
   const papers =
     params.unregistered === 1
       ? "one other active paper"
       : `${params.unregistered} other active papers`;
   return [
-    `Before tomorrow's group meeting: thanks for registering for ${params.venue} -- you have ` +
-      `${papers} with no venue on them yet.`,
+    `*Before tomorrow's 9:30 group meeting* — thanks for registering for ${params.venue}. You ` +
+      `have ${papers} with no venue on it yet.`,
     "",
-    "Open My Projects & Papers and add where each of those is aimed, with a rough likelihood. " +
-      "Not everything is going to " +
-      params.venue +
-      ", and knowing which ones are not is just as useful for planning as knowing which ones are.",
+    `We plan reviewer load and mentor time off the full list tomorrow morning, so the gaps are ` +
+      `what bite: not everything is going to ${params.venue}, and knowing which ones are not is ` +
+      `just as useful as knowing which ones are.`,
+    "",
+    "Please finish it tonight: My Projects & Papers → *Pre-register a paper*, venue and rough " +
+      "likelihood for each of the rest. Two minutes.",
   ].join("\n");
 }
 

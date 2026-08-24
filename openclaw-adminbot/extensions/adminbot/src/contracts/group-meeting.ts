@@ -21,7 +21,7 @@ export type GroupMeetingSchedule = {
 
 export const adminBotDefaultGroupMeeting: GroupMeetingSchedule = {
   weekday: 1,
-  time: "10:00",
+  time: "09:30",
   timezone: "America/Toronto",
 };
 
@@ -31,7 +31,7 @@ export const adminBotGroupMeetingNudgeWindowHours = 20;
 function parseTime(time: string): { hour: number; minute: number } {
   const match = /^(\d{1,2}):(\d{2})$/u.exec(time.trim());
   if (!match) {
-    return { hour: 10, minute: 0 };
+    return { hour: 9, minute: 30 };
   }
   const hour = Math.min(23, Math.max(0, Number(match[1])));
   const minute = Math.min(59, Math.max(0, Number(match[2])));

@@ -36,7 +36,7 @@ function completeMember(fields: { id: string; privilege_level: string }) {
 }
 
 describe("AdminBotService pre-registration nudges", () => {
-  // Sunday 18:00 Toronto: sixteen hours before the Monday 10:00 meeting, inside the window.
+  // Sunday 18:00 Toronto: 15.5 hours before the Monday 09:30 meeting, inside the window.
   const sunday = "2026-08-23T22:00:00.000Z";
   const thursday = "2026-08-20T15:00:00.000Z";
 
@@ -131,8 +131,9 @@ describe("AdminBotService pre-registration nudges", () => {
     const due = unwrap(await service.sendPreRegistrationNudges("cron", { nowIso: sunday }));
     expect(due.asked).toEqual(["batched"]);
     const message = (due.created[0]?.proposed_payload as { message?: string })?.message ?? "";
-    // The reason comes before the ask -- a bare instruction reads as paperwork.
-    expect(message).toContain("Why it matters");
+    // The deadline leads and the consequence is concrete -- a bare instruction reads as paperwork.
+    expect(message).toContain("before tomorrow's 9:30 group meeting");
+    expect(message).toContain("plans *around*");
     expect(message).toContain("ICLR");
   });
 
