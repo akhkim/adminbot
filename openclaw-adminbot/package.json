@@ -1330,6 +1330,7 @@
     "adminbot:dev": "node --import tsx start-adminbot.ts",
     "adminbot:email": "node --import tsx scripts/adminbot-email-automation.ts",
     "adminbot:openreview": "python3 scripts/adminbot-openreview.py",
+    "adminbot:workshop-nudges": "node --import tsx scripts/adminbot-workshop-nudges.ts",
     "adminbot:references": "node scripts/adminbot-reference-check.mjs",
     "adminbot:roster-sync": "node --import tsx scripts/adminbot-vector-roster-sync.ts",
     "adminbot:tunnel": "node scripts/adminbot-model-tunnel.mjs",

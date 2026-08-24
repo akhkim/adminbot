@@ -67,6 +67,7 @@ describe("TAB_GROUPS", () => {
     expect(byLabel("admin")).toEqual([
       "adminbot",
       "adminbotPapers",
+      "adminbotWorkshopNudges",
       "adminbotRegistrations",
       "adminbotOnboarding",
       "adminbotProfileOverview",

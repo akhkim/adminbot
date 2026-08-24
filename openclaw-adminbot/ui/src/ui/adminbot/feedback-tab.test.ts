@@ -24,6 +24,7 @@ describe("feedbackConfigForTab", () => {
       "adminbotOnboarding",
       "adminbotSettings",
       "adminbotPapers",
+      "adminbotWorkshopNudges",
       "adminbotAnnouncements",
       "adminbotCalendar",
     ] as const) {

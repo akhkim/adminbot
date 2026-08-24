@@ -36,8 +36,10 @@ import {
   createEmptyAdminBotMemberNudgeState,
   createEmptyAdminBotReimbursementState,
   createEmptyVenuePapersState,
+  createEmptyWorkshopNudgeReviewState,
   type AdminBotCvDigestJobState,
   type AdminBotVenuePapersState,
+  type WorkshopNudgeReviewState,
   type AdminBotDashboardData,
   type AdminBotMemberNudgeState,
   type AdminBotReimbursementState,
@@ -665,6 +667,7 @@ export class OpenClawApp extends LitElement {
   @state() nudgeBellOpen = false;
   @state() adminBotCvDigestJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() adminBotVenuePapers: AdminBotVenuePapersState = createEmptyVenuePapersState();
+  @state() adminBotWorkshopNudges: WorkshopNudgeReviewState = createEmptyWorkshopNudgeReviewState();
   @state() adminBotVenueIndexJob: AdminBotCvDigestJobState = { status: "idle" };
   @state() myWorkBlockerDraft: BlockerDraft | null = null;
   @state() myWorkBlockers: Blocker[] = [];

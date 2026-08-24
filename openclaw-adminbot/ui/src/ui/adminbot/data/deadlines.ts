@@ -429,7 +429,7 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "deadline_aoe": "2026-08-22 01:00:00",
         "notification_aoe": "",
         "deadline_label": "ARR commitment",
-        "link": "https://luhme.up.pt/call-for-papers/"
+        "link": "https://luhme.up.pt/paper-submission/"
       }
     ],
     "stale": true
@@ -546,7 +546,7 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "deadline_aoe": "2026-08-22 23:59:00",
         "notification_aoe": "",
         "deadline_label": "ARR commitment",
-        "link": "https://noisy-text.github.io/2026/"
+        "link": "https://noisy-text.github.io/2026/#call-for-papers"
       }
     ],
     "stale": true
@@ -897,7 +897,7 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "deadline_aoe": "2026-08-27 23:59:00",
         "notification_aoe": "",
         "deadline_label": "ARR commitment",
-        "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/NLLP_ARR_Commitment"
+        "link": "https://nllpw.org/workshop/call/"
       }
     ],
     "stale": false
@@ -936,7 +936,7 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "deadline_aoe": "2026-08-29 00:59:00",
         "notification_aoe": "",
         "deadline_label": "ARR commitment",
-        "link": "https://pandora-workshop.github.io#call-for-paper-is-out"
+        "link": "https://pandora-workshop.github.io/author"
       }
     ],
     "stale": false
@@ -2129,7 +2129,7 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
     "notification_aoe": "2026-09-29 23:59:59",
     "link": "https://ml4physicalsciences.github.io/2026/",
     "homepage_url": "https://ml4physicalsciences.github.io/2026/",
-    "cfp_url": "https://ml4physicalsciences.github.io/2026/",
+    "cfp_url": "",
     "openreview_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ML4PS",
     "source_url": "https://openreview.net/group?id=NeurIPS.cc/2026/Workshop/ML4PS",
     "source_checked_at": "2026-08-24T00:00:00Z",
@@ -5623,7 +5623,7 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "deadline_aoe": "2026-08-31 23:59:00",
         "notification_aoe": "",
         "deadline_label": "ARR commitment",
-        "link": "https://realm-workshop.github.io/#call-for-papers"
+        "link": "https://realm-workshop.github.io/call_for_papers/"
       }
     ],
     "stale": false
@@ -5701,7 +5701,7 @@ export const DEADLINE_VENUES: DeadlineVenue[] = [
         "deadline_aoe": "2026-09-01 23:59:00",
         "notification_aoe": "",
         "deadline_label": "submission",
-        "link": "https://openreview.net/group?id=EMNLP/2026/Workshop/NLLP"
+        "link": "https://nllpw.org/workshop/call/"
       }
     ],
     "stale": false

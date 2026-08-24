@@ -16,6 +16,7 @@ import {
   removePendingAction,
   fetchMemberResource,
   loadStoredMemberSession,
+  previewWorkshopNudges,
   polishOwnProfilePhoto,
   resolveAdminBotBaseUrl,
   sendOnboardingGuide as sendOnboardingGuideRequest,
@@ -25,6 +26,7 @@ import {
   publishCvDigest,
   searchVenuePapers,
   sendMemberNudge,
+  sendWorkshopNudges,
   updateOwnProfile,
   updateSettingsAsAdmin,
   updateOwnSchedule,
@@ -196,6 +198,117 @@ export function createEmptyVenuePapersState(): AdminBotVenuePapersState {
     error: null,
     result: null,
     expanded: [],
+  };
+}
+
+export type WorkshopNudgeRecommendation = {
+  pair_id: string;
+  final_rank?: number;
+  semantic_score: number;
+  topic_relevance: number;
+  topic_evidence: string[];
+  rank_explanation: string;
+  draftable: boolean;
+  draft_fragment?: string;
+  paper: {
+    paper_id: string;
+    title: string;
+    year?: number;
+    current_submission_state?: string;
+    publication_sources: string[];
+    recipient_display_name?: string;
+  };
+  workshop: {
+    workshop_id: string;
+    name: string;
+    parent_conference_key: string;
+    parent_conference: string;
+    conference_location: string;
+    topics: string[];
+    cross_submission_status: "allowed" | "prohibited" | "unclear";
+    cross_submission_evidence: string;
+    cross_submission_source_url: string;
+    profile_extracted_at: string;
+    routes: Array<{
+      deadline_id: string;
+      label: string;
+      submission_type: string;
+      deadline_aoe: string;
+      source_url: string;
+    }>;
+  };
+  attendance?: {
+    attendance_likelihood?: number;
+    source: string;
+    last_confirmed_at: string;
+  };
+};
+
+export type WorkshopNudgeResult = {
+  generated_at: string;
+  paper_count: number;
+  workshop_count: number;
+  recipients: Array<{
+    recipient_member_id: string;
+    recipient_display_name?: string;
+    delivery_ready: boolean;
+    delivery_blocked_reason?: string;
+    recommendations: WorkshopNudgeRecommendation[];
+    draft: {
+      text: string;
+      pair_ids: string[];
+      recommendations: WorkshopNudgeRecommendation[];
+    } | null;
+  }>;
+  unresolved_recipients: Array<{
+    paper: WorkshopNudgeRecommendation["paper"];
+    recommendations: WorkshopNudgeRecommendation[];
+  }>;
+  excluded_by_submission_rules: WorkshopNudgeRecommendation[];
+  coverage: {
+    members_without_usable_papers: Array<{ member_id: string; name: string }>;
+    papers_with_unresolved_authors: Array<{
+      paper_id: string;
+      title: string;
+      author_names: string[];
+    }>;
+    papers_without_active_recipients: Array<{ paper_id: string; title: string }>;
+  };
+};
+
+export type WorkshopNudgeReviewState = {
+  loading: boolean;
+  sending: boolean;
+  error: string | null;
+  result: WorkshopNudgeResult | null;
+  selectedRecipientIds: string[];
+  view: WorkshopNudgeViewState;
+};
+
+export type WorkshopNudgeViewState = {
+  tab: "recipients" | "unresolved" | "excluded";
+  query: string;
+  recipientFilter: "all" | "ready" | "missing_slack" | "no_allowed";
+  page: number;
+  detailKey: string | null;
+};
+
+export type WorkshopNudgeViewPatch = Partial<WorkshopNudgeViewState>;
+
+export function createEmptyWorkshopNudgeReviewState(): WorkshopNudgeReviewState {
+  return {
+    loading: false,
+    sending: false,
+    error: null,
+    result: null,
+    selectedRecipientIds: [],
+    view: {
+      tab: "recipients",
+      query: "",
+      recipientFilter: "all",
+      page: 0,
+      detailKey: null,
+    },
   };
 }
 
@@ -637,6 +750,7 @@ export type AdminBotHost = {
   // row and the document it wrote, so this only has to survive long enough to report the outcome.
   adminBotCvDigestJob: AdminBotCvDigestJobState;
   adminBotVenuePapers: AdminBotVenuePapersState;
+  adminBotWorkshopNudges: WorkshopNudgeReviewState;
   adminBotVenueIndexJob: AdminBotCvDigestJobState;
   // The viewer's own roster id, for prefilling their interests from their profile. Null under
   // break-glass gateway access, where there is no "me" to read topics from.
@@ -1234,6 +1348,145 @@ export async function searchAdminBotVenuePapers(host: AdminBotHost): Promise<voi
     host.adminBotVenuePapers = {
       ...host.adminBotVenuePapers,
       searching: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export async function loadWorkshopNudgePreview(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    host.adminBotWorkshopNudges = {
+      ...host.adminBotWorkshopNudges,
+      error: "Sign in with a lab administrator account before refreshing recommendations.",
+    };
+    return;
+  }
+  const current = host.adminBotWorkshopNudges;
+  if (current.loading || current.sending) {
+    return;
+  }
+  host.adminBotWorkshopNudges = {
+    ...current,
+    loading: true,
+    error: null,
+    selectedRecipientIds: [],
+  };
+  try {
+    const result = await previewWorkshopNudges(session.sessionToken, session.baseUrl);
+    if (!result.ok) {
+      host.adminBotWorkshopNudges = {
+        ...host.adminBotWorkshopNudges,
+        loading: false,
+        result: null,
+        error: result.message?.trim() || cvErrorText(result.kind, "load workshop nudges"),
+      };
+      return;
+    }
+    const value = result.value as WorkshopNudgeResult;
+    host.adminBotWorkshopNudges = {
+      ...host.adminBotWorkshopNudges,
+      loading: false,
+      result: value,
+      selectedRecipientIds: value.recipients
+        .filter((recipient) => recipient.delivery_ready)
+        .map((recipient) => recipient.recipient_member_id),
+      view: { ...host.adminBotWorkshopNudges.view, page: 0, detailKey: null },
+    };
+  } catch (error) {
+    host.adminBotWorkshopNudges = {
+      ...host.adminBotWorkshopNudges,
+      loading: false,
+      result: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+export function toggleWorkshopNudgeRecipient(host: AdminBotHost, memberId: string): void {
+  const selected = host.adminBotWorkshopNudges.selectedRecipientIds;
+  host.adminBotWorkshopNudges = {
+    ...host.adminBotWorkshopNudges,
+    selectedRecipientIds: selected.includes(memberId)
+      ? selected.filter((id) => id !== memberId)
+      : [...selected, memberId],
+  };
+}
+
+export function setWorkshopNudgeRecipients(
+  host: AdminBotHost,
+  memberIds: string[],
+  selected: boolean,
+): void {
+  const current = new Set(host.adminBotWorkshopNudges.selectedRecipientIds);
+  for (const memberId of memberIds) {
+    if (selected) {
+      current.add(memberId);
+    } else {
+      current.delete(memberId);
+    }
+  }
+  host.adminBotWorkshopNudges = {
+    ...host.adminBotWorkshopNudges,
+    selectedRecipientIds: [...current],
+  };
+}
+
+export function updateWorkshopNudgeView(host: AdminBotHost, patch: WorkshopNudgeViewPatch): void {
+  host.adminBotWorkshopNudges = {
+    ...host.adminBotWorkshopNudges,
+    view: { ...host.adminBotWorkshopNudges.view, ...patch },
+  };
+}
+
+export async function sendWorkshopNudgeSelection(host: AdminBotHost): Promise<void> {
+  const session = requirePrivilegedSession(host);
+  if (!session) {
+    return;
+  }
+  const current = host.adminBotWorkshopNudges;
+  if (current.sending || current.loading) {
+    return;
+  }
+  if (!current.selectedRecipientIds.length) {
+    host.adminBotWorkshopNudges = { ...current, error: "Select at least one recipient." };
+    return;
+  }
+  host.adminBotWorkshopNudges = { ...current, sending: true, error: null };
+  try {
+    const result = await sendWorkshopNudges(
+      current.selectedRecipientIds,
+      session.sessionToken,
+      session.baseUrl,
+    );
+    if (!result.ok) {
+      host.adminBotWorkshopNudges = {
+        ...host.adminBotWorkshopNudges,
+        sending: false,
+        error: result.message?.trim() || cvErrorText(result.kind, "send workshop nudges"),
+      };
+      return;
+    }
+    const value = result.value as {
+      created: Array<{ member_id: string }>;
+      skipped: Array<{ member_id: string; reason: string }>;
+    };
+    const skipped = value.skipped.length
+      ? ` Skipped ${value.skipped.length}: ${value.skipped.map((entry) => entry.reason).join(", ")}.`
+      : "";
+    host.adminBotNotice = {
+      kind: value.skipped.length ? "error" : "success",
+      text: `Sent ${value.created.length} workshop nudge${value.created.length === 1 ? "" : "s"}.${skipped}`,
+    };
+    host.adminBotWorkshopNudges = {
+      ...host.adminBotWorkshopNudges,
+      sending: false,
+      selectedRecipientIds: [],
+    };
+  } catch (error) {
+    host.adminBotWorkshopNudges = {
+      ...host.adminBotWorkshopNudges,
+      sending: false,
       error: error instanceof Error ? error.message : String(error),
     };
   }
@@ -1846,9 +2099,7 @@ export async function saveAdminBotPaper(
       : { is_archival: paper.isArchival === "true" }),
     // Sent even when empty, so clearing the choice actually clears it. Dropping falsy values
     // here made Reset look like it worked and then quietly leave the old track on file.
-    ...(paper.presentationType === undefined
-      ? {}
-      : { presentation_type: paper.presentationType }),
+    ...(paper.presentationType === undefined ? {} : { presentation_type: paper.presentationType }),
   };
   // Prefer the member's own session: the service scopes the write to what that member may change
   // (any paper for an admin, their own for an author). The gateway tool path stays as the fallback

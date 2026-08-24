@@ -3707,6 +3707,16 @@ export class AdminBotService {
     };
   }
 
+  listConferenceAttendance(): AdminBotServiceResponse<{
+    attendees: AdminBotConferenceAttendeeRecord[];
+  }> {
+    return {
+      ok: true,
+      status: 200,
+      payload: { attendees: this.store.listConferenceAttendees() },
+    };
+  }
+
   deletePaper(paperId: string): AdminBotServiceResponse<{ deleted: true; paper_id: string }> {
     const paper = this.store.getPaper(paperId);
     if (!paper) {

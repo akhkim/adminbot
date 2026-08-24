@@ -1364,6 +1364,47 @@ export async function searchVenuePapers(
   return { ok: true, value: result.body };
 }
 
+/** Computes the current native-paper workshop preview. Admin only; it sends nothing. */
+export async function previewWorkshopNudges(
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/workshop-nudges/preview", "POST", sessionToken, {});
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
+/** Recomputes selected recipients and sends one server-generated Slack nudge to each. */
+export async function sendWorkshopNudges(
+  recipientMemberIds: string[],
+  sessionToken: string,
+  baseUrl: string,
+): Promise<AuthResult<unknown>> {
+  const result = await authedJson(baseUrl, "/workshop-nudges/send", "POST", sessionToken, {
+    recipient_member_ids: recipientMemberIds,
+  });
+  if ("unreachable" in result) {
+    return { ok: false, kind: "unreachable" };
+  }
+  if (!result.response.ok) {
+    const message = (result.body as { error?: { message?: unknown } } | null)?.error?.message;
+    if (typeof message === "string" && message.trim()) {
+      return { ok: false, kind: "auth-failed", message: message.trim() };
+    }
+    return { ok: false, ...mapErrorResponse(result.response, result.body, { weakOn400: false }) };
+  }
+  return { ok: true, value: result.body };
+}
+
 /** Rebuilds every configured conference index (POST /venue-papers/index). Admin only. */
 export async function rebuildVenueIndexes(
   sessionToken: string,
