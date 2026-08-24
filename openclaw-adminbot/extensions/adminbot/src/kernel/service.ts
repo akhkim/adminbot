@@ -915,6 +915,8 @@ export class AdminBotService {
     const headProfessorWhatsapp = normalizeOptionalString(settings.head_professor_whatsapp);
     const applicantSheetId = normalizeOptionalString(settings.applicant_sheet_id);
     const applicantLastReviewedAt = normalizeOptionalString(settings.applicant_last_reviewed_at);
+    const groupMeetingTime = normalizeOptionalString(settings.group_meeting_time);
+    const groupMeetingTimezone = normalizeOptionalString(settings.group_meeting_timezone);
     const next: AdminBotSettings = {
       ...current,
       ...(typeof settings.cv_recency_window_months === "number"
@@ -930,6 +932,17 @@ export class AdminBotService {
       ...(headProfessorWhatsapp ? { head_professor_whatsapp: headProfessorWhatsapp } : {}),
       ...(applicantSheetId ? { applicant_sheet_id: applicantSheetId } : {}),
       ...(applicantLastReviewedAt ? { applicant_last_reviewed_at: applicantLastReviewedAt } : {}),
+      // The meeting the pre-meeting reminders are aimed at. These were declared on the settings
+      // type but never accepted here, so a write appeared to succeed and changed nothing -- the
+      // reminder kept using the compiled-in default, which is the one failure a settings field
+      // must not have.
+      ...(typeof settings.group_meeting_weekday === "number" &&
+      settings.group_meeting_weekday >= 0 &&
+      settings.group_meeting_weekday <= 6
+        ? { group_meeting_weekday: settings.group_meeting_weekday }
+        : {}),
+      ...(groupMeetingTime ? { group_meeting_time: groupMeetingTime } : {}),
+      ...(groupMeetingTimezone ? { group_meeting_timezone: groupMeetingTimezone } : {}),
       // Replaced wholesale rather than merged: the list is ordered and an admin removing a venue
       // has to be able to express that, which a merge cannot.
       ...(settings.venue_sources
@@ -6137,6 +6150,30 @@ function normalizeVenueSources(sources: AdminBotVenueSource[]): AdminBotVenueSou
 }
 
 function validateSettings(settings: AdminBotSettingsInput): string | undefined {
+  if (
+    settings.group_meeting_weekday !== undefined &&
+    (!Number.isInteger(settings.group_meeting_weekday) ||
+      settings.group_meeting_weekday < 0 ||
+      settings.group_meeting_weekday > 6)
+  ) {
+    return "group meeting weekday must be 0 (Sunday) to 6 (Saturday)";
+  }
+  if (
+    settings.group_meeting_time !== undefined &&
+    settings.group_meeting_time.trim() !== "" &&
+    !/^\d{1,2}:\d{2}$/u.test(settings.group_meeting_time.trim())
+  ) {
+    // Refused rather than defaulted: a time the parser cannot read would silently fall back to
+    // the compiled-in one, which is a reminder going out at a time nobody chose.
+    return "group meeting time must look like 09:30";
+  }
+  if (settings.group_meeting_timezone !== undefined && settings.group_meeting_timezone.trim()) {
+    try {
+      new Intl.DateTimeFormat("en-US", { timeZone: settings.group_meeting_timezone.trim() });
+    } catch {
+      return "group meeting timezone must be an IANA name like America/Toronto";
+    }
+  }
   if (
     settings.paper_escalation_business_days !== undefined &&
     (!Number.isInteger(settings.paper_escalation_business_days) ||

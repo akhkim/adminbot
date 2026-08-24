@@ -160,6 +160,43 @@ describe("AdminBotService pre-registration nudges", () => {
     expect(second.created).toEqual([]);
   });
 
+  it("stores the meeting schedule, so moving the meeting actually moves the reminder", () => {
+    // Regression: these were declared on the settings type but not accepted by updateSettings, so
+    // a write returned 200 and changed nothing -- the reminder kept using the compiled default.
+    const service = lab();
+    unwrap(
+      service.updateSettings({
+        group_meeting_weekday: 2,
+        group_meeting_time: "14:00",
+        group_meeting_timezone: "Europe/Zurich",
+      }),
+    );
+    const stored = unwrap(service.getSettings());
+    expect(stored).toMatchObject({
+      group_meeting_weekday: 2,
+      group_meeting_time: "14:00",
+      group_meeting_timezone: "Europe/Zurich",
+    });
+    // And the window follows it: Sunday is no longer the run-up to anything.
+    expect(unwrap(service.collectPreRegistrationNudges({ nowIso: sunday })).due).toBe(false);
+  });
+
+  it("refuses a schedule it cannot read rather than falling back to the default", () => {
+    const service = lab();
+    expect(service.updateSettings({ group_meeting_time: "half nine" })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+    expect(service.updateSettings({ group_meeting_weekday: 9 })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+    expect(service.updateSettings({ group_meeting_timezone: "Mars/Olympus" })).toMatchObject({
+      ok: false,
+      status: 400,
+    });
+  });
+
   it("leaves the head professor out of it, and says so", () => {
     const service = lab();
     unwrap(
