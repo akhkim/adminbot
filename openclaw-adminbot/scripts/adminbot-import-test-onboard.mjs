@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Import the lab spreadsheet's "Test Onboard" column onto the roster.
+// Import the lab spreadsheet's "Test Onboard" (R) and "Member Type" (S) columns onto the roster.
 //
-// The batch decides who the pre-meeting pre-registration sweep addresses, and it lives in a
-// spreadsheet on somebody's laptop. A sweep that had to open that file is a sweep that runs only
+// Together they decide who the pre-meeting sweeps address, and both live in a spreadsheet on
+// somebody's laptop. A sweep that had to open that file is a sweep that runs only
 // when the laptop is open, so the number is copied onto the member record once and read from there
 // afterwards. Re-running is safe: it writes the same value, and only for rows it can match.
 //
@@ -41,13 +41,21 @@ ws = wb["Full Slack Member List"]
 rows = []
 for r in range(2, ws.max_row + 1):
     batch = ws.cell(r, 18).value          # R: Test Onboard
-    if batch is None:
+    member_type = ws.cell(r, 19).value    # S: Member Type
+    member_type = str(member_type).strip() if member_type else ""
+    if batch is None and not member_type:
         continue
     emails = [ws.cell(r, 17).value, ws.cell(r, 5).value]   # Q: Slack email, E: correspondence
     emails = [str(e).strip().lower() for e in emails if e]
     if not emails:
         continue
-    rows.append({"row": r, "name": ws.cell(r, 1).value, "batch": int(batch), "emails": emails})
+    rows.append({
+        "row": r,
+        "name": ws.cell(r, 1).value,
+        "batch": int(batch) if batch is not None else None,
+        "member_type": member_type,
+        "emails": emails,
+    })
 print(json.dumps(rows))
 `;
 const sheetRows = JSON.parse(execFileSync("python3", ["-c", script, file], { encoding: "utf8" }));
@@ -79,20 +87,31 @@ for (const row of sheetRows) {
     continue;
   }
   matched += 1;
-  if (member.test_onboard_batch === row.batch) {
+  const patch = {};
+  if (row.batch !== null && member.test_onboard_batch !== row.batch) {
+    patch.test_onboard_batch = row.batch;
+  }
+  if (row.member_type && member.member_type !== row.member_type) {
+    patch.member_type = row.member_type;
+  }
+  if (Object.keys(patch).length === 0) {
     continue;
   }
   changed += 1;
-  console.log(
-    `${apply ? "writing" : "would write"} batch ${row.batch} -> ${member.id} (${member.name})`,
-  );
+  const summary = [
+    patch.test_onboard_batch !== undefined ? `batch ${patch.test_onboard_batch}` : null,
+    patch.member_type !== undefined ? `type "${patch.member_type}"` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  console.log(`${apply ? "writing" : "would write"} ${summary} -> ${member.id} (${member.name})`);
   if (!apply) {
     continue;
   }
   const res = await fetch(`${BASE}/lab/members/${encodeURIComponent(member.id)}`, {
     method: "PUT",
     headers: { Authorization: `Bearer ${SESSION}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ name: member.name, test_onboard_batch: row.batch }),
+    body: JSON.stringify({ name: member.name, ...patch }),
   });
   if (!res.ok) {
     console.error(`  failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
@@ -100,7 +119,8 @@ for (const row of sheetRows) {
 }
 
 console.log(
-  `\n${sheetRows.length} batched row(s) in the sheet · ${matched} matched to the roster · ${changed} ${apply ? "written" : "to write"}`,
+  `\n${sheetRows.length} row(s) with a batch or a member type · ${matched} matched to the roster · ` +
+    `${changed} ${apply ? "written" : "to write"}`,
 );
 if (unmatched.length > 0) {
   // Named individually: an unmatched row is somebody whose address the roster does not carry, and

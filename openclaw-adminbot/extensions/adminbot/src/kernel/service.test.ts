@@ -50,26 +50,32 @@ describe("AdminBotService pre-registration nudges", () => {
         name: "Batched Person",
         slack_user_id: "U1",
         privilege_level: "external_collaborator",
+        member_type: "coauthor-major",
         test_onboard_batch: 1,
       }),
     );
-    // a full member with no batch -- batch 3 by the rule.
+    // full in the spreadsheet's own column, no batch -- batch 3 by the rule.
     unwrap(
       service.upsertLabMember({
         id: "full",
         name: "Full Member",
         slack_user_id: "U2",
         privilege_level: "member",
+        member_type: "full, coauthor-minor",
         email: "full@cs.toronto.edu",
       }),
     );
-    // neither: no batch, not full. Deliberately never addressed.
+    // The case that made this rule wrong the first time: the roster calls a visiting professor a
+    // `member`, and the spreadsheet calls them external-prof. Not the lab's own people, no batch,
+    // never addressed.
     unwrap(
       service.upsertLabMember({
         id: "untouched",
-        name: "Untouched Person",
+        name: "Visiting Professor",
         slack_user_id: "U3",
-        privilege_level: "external_collaborator",
+        privilege_level: "member",
+        member_type: "external-prof",
+        email: "prof@cs.toronto.edu",
       }),
     );
     return service;
@@ -197,6 +203,35 @@ describe("AdminBotService pre-registration nudges", () => {
     });
   });
 
+  it("does not treat a roster `member` as a full member", () => {
+    // The defect this rule replaced: privilege_level is `member` for nearly everyone the lab has
+    // ever collaborated with, so reading it as "full member" swept in alumni, one-paper coauthors
+    // and visiting professors -- 47 of 77 people on the real roster.
+    const service = lab();
+    paperFor(service, "p-prof", "untouched");
+    const result = unwrap(service.collectPreRegistrationNudges({ nowIso: sunday }));
+    expect(result.missing.map((row) => row.member_id)).toEqual([]);
+  });
+
+  it("reads the Member Type column the way the spreadsheet writes it", () => {
+    const service = lab();
+    // "full, coauthor-minor" is full; "alumni, coauthor-major" is not.
+    unwrap(
+      service.upsertLabMember({
+        id: "alum",
+        name: "Former Member",
+        slack_user_id: "U8",
+        privilege_level: "member",
+        member_type: "alumni, coauthor-major",
+        email: "alum@cs.toronto.edu",
+      }),
+    );
+    paperFor(service, "p-full", "full");
+    paperFor(service, "p-alum", "alum");
+    const result = unwrap(service.collectPreRegistrationNudges({ nowIso: sunday }));
+    expect(result.missing.map((row) => row.member_id)).toEqual(["full"]);
+  });
+
   it("leaves the head professor out of it, and says so", () => {
     const service = lab();
     unwrap(
@@ -205,6 +240,9 @@ describe("AdminBotService pre-registration nudges", () => {
         name: "The PI",
         slack_user_id: "U9",
         privilege_level: "admin",
+        // The spreadsheet calls the PI "full", so she is addressable and the exemption is what
+        // keeps her out -- not an accident of the audience rule.
+        member_type: "full",
         email: "pi@cs.toronto.edu",
       }),
     );

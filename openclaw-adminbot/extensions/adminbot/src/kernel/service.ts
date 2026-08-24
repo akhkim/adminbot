@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  adminBotIsFullMemberType,
   adminBotTimelineEntryTarget,
   isAdminBotFullMember,
   type AdminBotProfileReminderScope,
@@ -1301,9 +1302,15 @@ export class AdminBotService {
       if (member.status === "alumni" || member.status === "external") {
         continue;
       }
+      // Columns R and S of the lab spreadsheet, and nothing else. `privilege_level` was the first
+      // attempt at "full member" and is not that question: the roster marks nearly everyone the
+      // lab has ever collaborated with as `member`, so it swept in alumni, one-paper coauthors and
+      // two visiting professors. Somebody who is in neither column is deliberately untouched --
+      // they are not somebody this lab plans its term around.
       const batch = member.test_onboard_batch;
       const addressable =
-        (typeof batch === "number" && batch >= 1 && batch <= 3) || isAdminBotFullMember(member);
+        (typeof batch === "number" && batch >= 1 && batch <= 3) ||
+        adminBotIsFullMemberType(member.member_type);
       if (!addressable) {
         continue;
       }
@@ -5162,8 +5169,9 @@ const SELF_PROFILE_EDITABLE_FIELDS = [
 
 const SELF_PROFILE_PRIVILEGED_FIELDS = [
   "privilege_level",
-  // Decides who the batch sweeps address, so it is not a fact a member states about themselves.
+  // Decide who the batch sweeps address, so they are not facts a member states about themselves.
   "test_onboard_batch",
+  "member_type",
   "collaborator_subgroup",
   "access_overrides",
   "status",

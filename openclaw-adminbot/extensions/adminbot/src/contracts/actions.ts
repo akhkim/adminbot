@@ -146,6 +146,27 @@ export const adminBotTestOnboardBatches = [1, 2, 3] as const;
 export type AdminBotTestOnboardBatch = (typeof adminBotTestOnboardBatches)[number];
 
 /**
+ * Does the lab's own Member Type column call this person a full member?
+ *
+ * The spreadsheet's column S, kept verbatim: a comma-separated list like "full",
+ * "full, coauthor-major", "alumni, coauthor-minor", "external-prof". Matched token-wise rather
+ * than by substring, so the answer is about what the list *says* rather than what it contains.
+ *
+ * This exists because `privilege_level` is not the same question and makes a bad proxy for it.
+ * The roster marks nearly everyone the lab has ever collaborated with as `member` -- visiting
+ * professors, alumni, one-paper coauthors -- so a sweep aimed at "full members" that read
+ * privilege_level addressed 47 people out of 77 who the spreadsheet does not call full, including
+ * two external professors. Whoever the lab means by "full member" is written down in one place,
+ * and this reads that place.
+ */
+export function adminBotIsFullMemberType(memberType: string | undefined): boolean {
+  return (memberType ?? "")
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .includes("full");
+}
+
+/**
  * Privilege levels that count as being *on* the lab rather than adjacent to it.
  *
  * The timeline chase is aimed at these and not at collaborators or trials: a term plan is a thing
@@ -731,6 +752,14 @@ export type AdminBotCvScanResult = {
 export type AdminBotLabMemberInput = {
   id: string;
   name: string;
+  /**
+   * The lab spreadsheet's "Member Type" column, verbatim ("full", "full, coauthor-major",
+   * "alumni", "external-prof", ...).
+   *
+   * Governance-owned and imported, for the same reason the batch is: it decides who a sweep
+   * addresses. Read it through adminBotIsFullMemberType rather than comparing strings.
+   */
+  member_type?: string;
   /**
    * Onboarding test batch, imported from the lab spreadsheet's "Test Onboard" column.
    *
