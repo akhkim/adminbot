@@ -158,6 +158,29 @@ console.log(
   `\n${sheetRows.length} row(s) with a batch or a member type · ${matched} matched to the roster · ` +
     `${changed} ${apply ? "written" : "to write"}`,
 );
+
+// Which of them the pre-meeting sweep would actually address, because the list above is every
+// person in the sheet and reads alarmingly like a recipient list. It is not one: recording that
+// somebody is an acquaintance or an external prof is what *keeps* them out of the sweep. Kept in
+// step with collectPreRegistrationNudges in kernel/service.ts.
+const tokens = (value) =>
+  String(value ?? "")
+    .split(",")
+    .map((part) => part.trim().toLowerCase());
+const addressable = sheetRows.filter((row) => {
+  const batched = row.batch !== null && row.batch >= 1 && row.batch <= 3;
+  const full = tokens(row.member_type).includes("full");
+  return (batched || full) && !tokens(row.member_type).includes("alumni");
+});
+console.log(
+  `\n${addressable.length} of these rows are in scope for the pre-registration sweep ` +
+    `(batch 1-3 or full, alumni excluded). The rest are recorded precisely so the sweep can tell ` +
+    `they are not in scope -- an acquaintance with no member type on file looks the same as a ` +
+    `full member the importer has not reached yet.\n` +
+    `The sweep then narrows further to people who are on the roster and have at least one live ` +
+    `paper, so the number it actually messages is smaller than this. ` +
+    `GET /papers/pre-registration/pending is the count that matters.`,
+);
 if (unmatched.length > 0) {
   // Named individually: an unmatched row is somebody whose address the roster does not carry, and
   // a count alone would never get anybody to fix it.
