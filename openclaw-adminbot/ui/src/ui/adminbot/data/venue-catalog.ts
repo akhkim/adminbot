@@ -18,52 +18,55 @@ export type CatalogVenue = {
   suffix: string;
   /** Option text in the venue select, where the year lives in its own select. */
   label: string;
-  /** False for workshops and IASEAI: submitting there leaves the paper free to go elsewhere. */
-  archival: boolean;
 };
 
-function venue(family: string, track: string, archival: boolean): CatalogVenue {
+function venue(family: string, track: string): CatalogVenue {
   return {
     id: track ? `${family}-${track}` : family,
     family,
     suffix: track ? ` (${track})` : "",
     label: track ? `${family} (${track})` : family,
-    archival,
   };
 }
 
 /** Publishing here consumes the paper. Listed roughly in the order the lab aims at them. */
 export const ARCHIVAL_VENUES: CatalogVenue[] = [
-  venue("ACL", "main", true),
-  venue("ACL", "demo", true),
-  venue("EMNLP", "main", true),
-  venue("EMNLP", "demo", true),
-  venue("NAACL", "main", true),
-  venue("NAACL", "demo", true),
-  venue("EACL", "main", true),
-  venue("EACL", "demo", true),
-  venue("NeurIPS", "", true),
-  venue("ICML", "", true),
-  venue("ICLR", "", true),
-  venue("COLM", "", true),
-  venue("CLeaR", "", true),
-  venue("AAAI", "", true),
+  venue("ACL", "main"),
+  venue("ACL", "demo"),
+  venue("EMNLP", "main"),
+  venue("EMNLP", "demo"),
+  venue("NAACL", "main"),
+  venue("NAACL", "demo"),
+  venue("EACL", "main"),
+  venue("EACL", "demo"),
+  venue("NeurIPS", ""),
+  venue("ICML", ""),
+  venue("ICLR", ""),
+  venue("COLM", ""),
+  venue("CLeaR", ""),
+  venue("AAAI", ""),
 ];
 
 /** Non-archival: the paper can still be submitted somewhere archival afterwards. */
-export const NON_ARCHIVAL_VENUES: CatalogVenue[] = [
-  venue("IASEAI", "", false),
-  venue("ACL", "workshop", false),
-  venue("EMNLP", "workshop", false),
-  venue("NAACL", "workshop", false),
-  venue("EACL", "workshop", false),
-  venue("NeurIPS", "workshop", false),
-  venue("ICML", "workshop", false),
-  venue("ICLR", "workshop", false),
-  venue("COLM", "workshop", false),
+export const NON_ARCHIVAL_VENUES: CatalogVenue[] = [venue("IASEAI", "")];
+
+/** Workshop archival policy varies by CFP and is not inferred from its parent. */
+export const WORKSHOP_VENUES: CatalogVenue[] = [
+  venue("ACL", "workshop"),
+  venue("EMNLP", "workshop"),
+  venue("NAACL", "workshop"),
+  venue("EACL", "workshop"),
+  venue("NeurIPS", "workshop"),
+  venue("ICML", "workshop"),
+  venue("ICLR", "workshop"),
+  venue("COLM", "workshop"),
 ];
 
-export const CATALOG_VENUES: CatalogVenue[] = [...ARCHIVAL_VENUES, ...NON_ARCHIVAL_VENUES];
+export const CATALOG_VENUES: CatalogVenue[] = [
+  ...ARCHIVAL_VENUES,
+  ...NON_ARCHIVAL_VENUES,
+  ...WORKSHOP_VENUES,
+];
 
 export function findVenue(id: string): CatalogVenue | undefined {
   return CATALOG_VENUES.find((entry) => entry.id === id);
